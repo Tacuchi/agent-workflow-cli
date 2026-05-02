@@ -1,0 +1,30 @@
+{
+  "sessions": [
+    {
+      "code": "001",
+      "flow": "dev",
+      "name": "foo",
+      "folder": "session001-dev-foo",
+      "path": ".qtc/sessions/session001-dev-foo",
+      "state": "active",
+      "phase": "requirement",
+      "date": "2026-01-01",
+      "summary": "Implementar el feature foo de prueba para validar el lifecycle de sesiones."
+    },
+    {
+      "code": "002",
+      "flow": "analyze",
+      "name": "bar",
+      "folder": "session002-analyze-bar",
+      "path": ".qtc/sessions/session002-analyze-bar",
+      "state": "active",
+      "phase": "requirement",
+      "date": "2026-01-02",
+      "summary": "Evaluar si el patrón de prueba bar resuelve el caso ABC."
+    }
+  ],
+  "active_count": 2,
+  "closed_count": 1,
+  "total_count": 3,
+  "next_correlative": "004"
+}

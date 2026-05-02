@@ -1,0 +1,19 @@
+{
+  "sessions": [
+    {
+      "code": "003",
+      "flow": "dev",
+      "name": "baz",
+      "folder": "session003-dev-baz",
+      "path": ".qtc/sessions/session003-dev-baz",
+      "state": "closed",
+      "phase": "closure",
+      "date": "2026-01-03",
+      "summary": "Tarea cerrada baz: ya fue completada y graduada."
+    }
+  ],
+  "active_count": 2,
+  "closed_count": 1,
+  "total_count": 3,
+  "next_correlative": "004"
+}
