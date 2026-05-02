@@ -6,10 +6,17 @@ export interface DirEntry {
   type: DirEntryType;
 }
 
+export interface FileStat {
+  mtime: Date;
+  size: number;
+  type: DirEntryType;
+}
+
 export interface FileSystemPort {
   readText(path: string): Promise<string>;
   writeText(path: string, content: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   list(path: string): Promise<DirEntry[]>;
   mkdirp(path: string): Promise<void>;
+  stat(path: string): Promise<FileStat>;
 }

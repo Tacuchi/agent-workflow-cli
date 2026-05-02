@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { DirEntry, DirEntryType, FileSystemPort } from "../ports/file-system.js";
+import type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "../ports/file-system.js";
 
 export class NodeFileSystem implements FileSystemPort {
   async readText(path: string): Promise<string> {
@@ -30,5 +30,11 @@ export class NodeFileSystem implements FileSystemPort {
 
   async mkdirp(path: string): Promise<void> {
     await mkdir(path, { recursive: true });
+  }
+
+  async stat(path: string): Promise<FileStat> {
+    const s = await stat(path);
+    const type: DirEntryType = s.isFile() ? "file" : s.isDirectory() ? "dir" : "other";
+    return { mtime: s.mtime, size: s.size, type };
   }
 }

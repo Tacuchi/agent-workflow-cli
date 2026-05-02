@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileSystemPort } from "../../src/ports/file-system.js";
+import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
 import { RuntimeConfigService } from "../../src/runtime/config-service.js";
 
 const HOME = "/home/test";
@@ -40,6 +40,9 @@ class FakeFs implements FileSystemPort {
     throw new Error("not implemented");
   }
   async mkdirp(): Promise<void> {
+    throw new Error("not implemented");
+  }
+  async stat(): Promise<FileStat> {
     throw new Error("not implemented");
   }
 }

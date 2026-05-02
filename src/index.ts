@@ -17,7 +17,7 @@ export type {
   TaskStatus,
   Tipo,
 } from "./domain/session.js";
-export type { DirEntry, DirEntryType, FileSystemPort } from "./ports/file-system.js";
+export type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "./ports/file-system.js";
 export type { GitPort } from "./ports/git.js";
 export type { ProcessPort, RunOptions, RunResult } from "./ports/process.js";
 export type { EnvPort } from "./ports/env.js";
@@ -32,3 +32,15 @@ export { NodeEnv } from "./adapters/node-env.js";
 export { NodeFileSystem } from "./adapters/node-file-system.js";
 export { NodeProcess } from "./adapters/node-process.js";
 export { RuntimeConfigService } from "./runtime/config-service.js";
+export {
+  type ListSessionsInput,
+  type ListSessionsOutput,
+  parseSessionFolder,
+  type SessionEntry,
+  SessionsService,
+} from "./application/sessions-service.js";
+export { firstNonEmptyLine, parseMdSection, parseMdValue } from "./application/markdown.js";
+export { CommandRegistry, type QtcCommand } from "./cli/registry.js";
+export { parseArgv, type ParsedArgs, type PluginArgs } from "./cli/parser.js";
+export type { CliContext } from "./cli/types.js";
+export { sessionsCommand } from "./cli/commands/sessions.js";
