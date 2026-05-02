@@ -11,6 +11,11 @@ import { dependenciasListCommand } from "./commands/dependencias-list.js";
 import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
+import {
+  autoPlanDecideCommand,
+  specialtyChooseCommand,
+  topicChangeCheckCommand,
+} from "./commands/orchestration.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
 import { sessionArtifactsCommand } from "./commands/session-artifacts.js";
 import { sessionCloseCommand } from "./commands/session-close.js";
@@ -18,6 +23,21 @@ import { sessionCreateCommand } from "./commands/session-create.js";
 import { sessionResumeCommand } from "./commands/session-resume.js";
 import { sessionsCommand } from "./commands/sessions.js";
 import { tasksDataCommand } from "./commands/tasks-data.js";
+import {
+  phaseDetectCommand,
+  skillIndexCommand,
+  stackCommand,
+  workflowsCommand,
+  workspaceModeCommand,
+} from "./commands/wave2-extras.js";
+import {
+  checkBranchCommand,
+  checkpointReadCommand,
+  compressCheckpointCommand,
+  phaseNextCommand,
+  resumeSummaryCommand,
+  sourcesCommand,
+} from "./commands/wave2-final.js";
 import { parseArgv } from "./parser.js";
 import { CommandRegistry } from "./registry.js";
 import { renderRaw, writeStderr, writeStdout } from "./render.js";
@@ -40,6 +60,20 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(sessionArtifactsCommand);
   registry.register(sessionCloseCommand);
   registry.register(sessionCreateCommand);
+  registry.register(autoPlanDecideCommand);
+  registry.register(topicChangeCheckCommand);
+  registry.register(specialtyChooseCommand);
+  registry.register(stackCommand);
+  registry.register(workspaceModeCommand);
+  registry.register(skillIndexCommand);
+  registry.register(phaseDetectCommand);
+  registry.register(workflowsCommand);
+  registry.register(sourcesCommand);
+  registry.register(checkpointReadCommand);
+  registry.register(resumeSummaryCommand);
+  registry.register(compressCheckpointCommand);
+  registry.register(phaseNextCommand);
+  registry.register(checkBranchCommand);
   registry.register(projectMdUpsertCommand);
   registry.register(sessionResumeCommand);
 
@@ -87,6 +121,9 @@ async function run(argv: string[]): Promise<ExitCode> {
 function emit<T>(result: CommandResult<T>): void {
   if (result.ok && result.data !== undefined) {
     writeStdout(renderRaw(result.data));
+  } else if (result.ok && result.data === undefined) {
+    // Command already wrote stdout itself (e.g., auto-plan-decide with custom float repr).
+    return;
   } else {
     writeStdout(renderRaw({ ok: result.ok, error: result.error }));
   }
