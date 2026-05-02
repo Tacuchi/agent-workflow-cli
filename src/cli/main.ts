@@ -9,9 +9,12 @@ import { RuntimeConfigService } from "../runtime/config-service.js";
 import { decisionesListCommand } from "./commands/decisiones-list.js";
 import { dependenciasListCommand } from "./commands/dependencias-list.js";
 import { historyDataCommand } from "./commands/history-data.js";
+import { historyUpdateCommand } from "./commands/history-update.js";
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
 import { sessionArtifactsCommand } from "./commands/session-artifacts.js";
+import { sessionCloseCommand } from "./commands/session-close.js";
+import { sessionCreateCommand } from "./commands/session-create.js";
 import { sessionResumeCommand } from "./commands/session-resume.js";
 import { sessionsCommand } from "./commands/sessions.js";
 import { tasksDataCommand } from "./commands/tasks-data.js";
@@ -33,7 +36,10 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(decisionesListCommand);
   registry.register(dependenciasListCommand);
   registry.register(historyDataCommand);
+  registry.register(historyUpdateCommand);
   registry.register(sessionArtifactsCommand);
+  registry.register(sessionCloseCommand);
+  registry.register(sessionCreateCommand);
   registry.register(projectMdUpsertCommand);
   registry.register(sessionResumeCommand);
 

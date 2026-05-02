@@ -7,7 +7,14 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "ignore": ["dist", "node_modules", "coverage", "**/*.snap", "tests/fixtures/golden/**"]
+    "ignore": [
+      "dist",
+      "node_modules",
+      "coverage",
+      "**/*.snap",
+      "tests/fixtures/golden/**",
+      "tests/fixtures/golden-write/**"
+    ]
   },
   "formatter": {
     "enabled": true,

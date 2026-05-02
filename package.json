@@ -1,6 +1,6 @@
 {
   "name": "@tacuchi/agent-workflow",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Runtime CLI for the qtc-* plugin family. Replaces qtc_core Python scripts with a TypeScript-based npm package.",
   "type": "module",
   "bin": {
