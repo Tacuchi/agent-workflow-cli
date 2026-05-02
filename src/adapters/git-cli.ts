@@ -1,4 +1,4 @@
-import type { GitPort } from "../ports/git.js";
+import type { DiffNumstatEntry, GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
 
 export class GitCliAdapter implements GitPort {
@@ -51,5 +51,30 @@ export class GitCliAdapter implements GitPort {
       throw new Error(`git log failed in ${repoPath}: ${result.stderr.trim()}`);
     }
     return result.stdout;
+  }
+
+  async diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]> {
+    try {
+      const result = await this.process.run("git", ["diff", "--numstat", "HEAD"], {
+        cwd: repoPath,
+        timeoutMs: 5000,
+      });
+      if (result.code !== 0) return [];
+      const entries: DiffNumstatEntry[] = [];
+      for (const line of result.stdout.split("\n")) {
+        const parts = line.split("\t");
+        if (
+          parts.length >= 3 &&
+          parts[0] !== undefined &&
+          parts[1] !== undefined &&
+          parts[2] !== undefined
+        ) {
+          entries.push({ added: parts[0], removed: parts[1], path: parts[2] });
+        }
+      }
+      return entries;
+    } catch {
+      return [];
+    }
   }
 }

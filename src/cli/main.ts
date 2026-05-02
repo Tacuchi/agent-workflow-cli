@@ -6,10 +6,12 @@ import { NodeFileSystem } from "../adapters/node-file-system.js";
 import { NodeProcess } from "../adapters/node-process.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
+import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./commands/checkpoint-write.js";
 import { decisionesListCommand } from "./commands/decisiones-list.js";
 import { dependenciasListCommand } from "./commands/dependencias-list.js";
 import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
+import { hookCommand } from "./commands/hook.js";
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
 import {
   autoPlanDecideCommand,
@@ -74,6 +76,9 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(compressCheckpointCommand);
   registry.register(phaseNextCommand);
   registry.register(checkBranchCommand);
+  registry.register(checkpointWriteCommand);
+  registry.register(autoCompactOnCloseCommand);
+  registry.register(hookCommand);
   registry.register(projectMdUpsertCommand);
   registry.register(sessionResumeCommand);
 
