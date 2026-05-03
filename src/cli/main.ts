@@ -12,6 +12,7 @@ import { dependenciasListCommand } from "./commands/dependencias-list.js";
 import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
+import { mcpCommand } from "./commands/mcp.js";
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
 import {
   autoPlanDecideCommand,
@@ -79,6 +80,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(checkpointWriteCommand);
   registry.register(autoCompactOnCloseCommand);
   registry.register(hookCommand);
+  registry.register(mcpCommand);
   registry.register(projectMdUpsertCommand);
   registry.register(sessionResumeCommand);
 
