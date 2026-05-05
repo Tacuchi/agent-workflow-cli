@@ -218,10 +218,7 @@ describe("selfInstallSkill", () => {
     const ctx = buildCtx(home, fs, proc);
     const dest = join(home, ".claude/skills", SKILL_DIR_NAME);
 
-    const result = await selfInstallSkill(
-      buildArgs({ from: source }, ["--dry-run"]),
-      ctx,
-    );
+    const result = await selfInstallSkill(buildArgs({ from: source }, ["--dry-run"]), ctx);
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.status).toBe("dry-run");
