@@ -98,7 +98,7 @@ export async function runCheckpointWrite(
     }
   }
 
-  const state = await extractSessionState(fs, git, cwd, sessionPath);
+  const state = await extractSessionState(fs, git, cwd, paths, sessionPath);
   const md = formatCheckpointMd(state);
   await fs.mkdirp(sessionPath);
   await fs.writeText(cpPath, md);
@@ -142,11 +142,12 @@ async function extractSessionState(
   fs: FileSystemPort,
   git: GitPort,
   cwd: string,
+  paths: PathsService,
   sessionPath: string,
 ): Promise<SessionState> {
   const folder = sessionPath.split(/[\\/]/).pop() ?? "";
   const parsed = parseSessionFolder(folder);
-  const { phase, branches } = await readPhaseFromBlock(fs, cwd, folder);
+  const { phase, branches } = await readPhaseFromBlock(fs, cwd, paths, folder);
 
   const tasks = await countTasks(fs, sessionPath);
   const progressPct = tasks.total > 0 ? Math.round((100 * tasks.closed) / tasks.total) : null;
@@ -191,11 +192,12 @@ function parseSessionFolder(folder: string): {
 async function readPhaseFromBlock(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
   folder: string,
 ): Promise<{ phase: string | null; branches: string[] }> {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (!block) continue;
     for (const s of block.sessions) {
       if (s.folder === folder) return { phase: s.phase, branches: s.branches };
@@ -460,7 +462,7 @@ async function writeCheckpointForActive(
     }
   }
   try {
-    const state = await extractSessionState(fs, git, cwd, sessionPath);
+    const state = await extractSessionState(fs, git, cwd, paths, sessionPath);
     const md = formatCheckpointMd(state);
     await fs.mkdirp(sessionPath);
     await fs.writeText(cpPath, md);

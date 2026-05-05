@@ -41,7 +41,7 @@ export async function runSessionResume(
   const objetivoPath = join(session.path, "OBJETIVO.md");
   const objetivoText = (await fs.exists(objetivoPath)) ? await fs.readText(objetivoPath) : null;
 
-  const fromBlock = await phaseFromProjectBlock(fs, cwd, session.folder);
+  const fromBlock = await phaseFromProjectBlock(fs, cwd, paths, session.folder);
   const phase = fromBlock.phase ?? "requerimiento";
   const state = fromBlock.phase ? "active" : "closed_or_missing";
 
@@ -61,12 +61,13 @@ export async function runSessionResume(
 async function phaseFromProjectBlock(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
   folder: string,
 ): Promise<{ phase: string | null; branches: string[] }> {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
     const text = await fs.readText(file);
-    const block = parseProjectBlock(text);
+    const block = parseProjectBlock(text, paths.blockMarkers());
     if (!block) continue;
     for (const s of block.sessions) {
       if (s.folder === folder) {
