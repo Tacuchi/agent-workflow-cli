@@ -1,8 +1,13 @@
-// Mirror de qtc_core/doctor.py:cmd_plugin_doctor.
-// Adaptado para el mundo post-Python: `python_version` se conserva como campo
-// (nullable) leído por spawn `python3 --version`; en cuanto Python desaparece
-// el valor pasa a null sin romper el shape. `exported_skills` se lee de
-// `.claude-plugin/plugin.json:exportedSkills` o de un --exports-file JSON.
+// Plugin doctor — health check del plugin qtc-* (manifest, hooks, MCP, skills).
+// Comportamiento dependiente de `qtcContractVersion` del manifest:
+//   - >= 6.3 (single-path post-session032): skip checks de Python (marker
+//     `~/.qtc/<flow>/.plugin-version`, qtc-core lib en `~/.qtc/lib/`, scripts
+//     `qtc-utils.py` / `branch-check.py`, version de python3). Estos artefactos
+//     ya no existen en plugins single-path.
+//   - < 6.3 (legacy dual-path): chequea presencia de scripts y marker como
+//     antes; util para detectar instalaciones rotas en versiones antiguas.
+// `exported_skills` se lee de `.claude-plugin/plugin.json:exportedSkills` o
+// de un --exports-file JSON.
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { extname, join, relative, resolve, sep } from "node:path";
@@ -233,8 +238,9 @@ export async function runPluginDoctor(
     }
   }
 
-  // 4. Manifest version drift.
+  // 4. Manifest version drift + qtcContractVersion gate.
   const manifestsInfo: Record<string, string | null> = {};
+  let manifestQtcContractVersion: string | null = null;
   for (const relPath of [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"]) {
     const manifestPath = join(pluginRoot, relPath);
     if (!(await fs.exists(manifestPath))) {
@@ -273,113 +279,129 @@ export async function runPluginDoctor(
       findings.push({
         level: "error",
         file: relPath,
-        msg: `version drift: manifest=${manifestVersion} vs script __version__=${pluginVersion}`,
+        msg: `version drift: manifest=${manifestVersion} vs declared=${pluginVersion}`,
       });
     }
+    if (
+      manifestQtcContractVersion === null &&
+      isRecord(data) &&
+      typeof data.qtcContractVersion === "string"
+    ) {
+      manifestQtcContractVersion = data.qtcContractVersion;
+    }
   }
+  // Si el manifest declara qtcContractVersion >= 6.3, el plugin opera en
+  // single-path y no debe chequearse la presencia de artefactos Python.
+  const isSinglePathContract = isContractVersionAtLeast(manifestQtcContractVersion, 6, 3);
 
-  // 5. Marker file (~/.qtc/<flow>/.plugin-version).
+  // 5/5b/6 — checks legacy de era dual-path. En contracts >= 6.3 (single-path)
+  // estos artefactos ya no existen físicamente: el plugin son SKILLs+HOOKS+MCP
+  // puro y el runtime CLI vive como paquete npm independiente.
   const home = homedir();
   const pluginCacheDir = join(home, ".qtc", flow);
-  const markerFile = join(pluginCacheDir, ".plugin-version");
   let installedMarker: string | null = null;
-  if (await fs.exists(markerFile)) {
-    try {
-      const raw = (await fs.readText(markerFile)).trim();
-      installedMarker = raw.length > 0 ? raw : null;
-    } catch (e) {
-      findings.push({
-        level: "warn",
-        file: markerFile,
-        msg: `cannot read marker: ${(e as Error).message}`,
-      });
-    }
-    if (installedMarker && installedMarker !== pluginVersion) {
-      findings.push({
-        level: "warn",
-        file: markerFile,
-        msg: `installed plugin v${installedMarker} differs from script __version__ v${pluginVersion} — reinstall/re-sync`,
-      });
-    }
-  }
-
-  // 5b. qtc-core lib install state + compat range.
-  const coreLibMarker = join(home, ".qtc", "lib", ".qtc-core-version");
   let qtcCoreInstalled: string | null = null;
-  if (await fs.exists(coreLibMarker)) {
-    try {
-      const raw = (await fs.readText(coreLibMarker)).trim();
-      qtcCoreInstalled = raw.length > 0 ? raw : null;
-    } catch {
-      // ignore
-    }
-  }
   let compatOk: boolean | null = null;
-  if (compatRange) {
-    if (!qtcCoreInstalled) {
-      findings.push({
-        level: "error",
-        file: coreLibMarker,
-        msg: `plugin requiere qtc-core ${compatRange} pero ~/.qtc/lib/.qtc-core-version no existe — instalá qtc-core o reiniciá la sesión para que SessionStart hook lo copie`,
-      });
-      compatOk = false;
-    } else {
-      compatOk = semverSatisfies(qtcCoreInstalled, compatRange);
-      if (compatOk === null) {
+  const scriptsInfo: Record<string, ScriptInfo> = {};
+
+  if (!isSinglePathContract) {
+    // 5. Marker file (~/.qtc/<flow>/.plugin-version) — solo legacy.
+    const markerFile = join(pluginCacheDir, ".plugin-version");
+    if (await fs.exists(markerFile)) {
+      try {
+        const raw = (await fs.readText(markerFile)).trim();
+        installedMarker = raw.length > 0 ? raw : null;
+      } catch (e) {
         findings.push({
           level: "warn",
-          file: "compat_range",
-          msg: `no pude parsear compat_range '${compatRange}' (esperado '~X.Y.Z', '^X.Y.Z' o 'X.Y.Z') — validación contra qtc-core skipped`,
+          file: markerFile,
+          msg: `cannot read marker: ${(e as Error).message}`,
         });
-      } else if (!compatOk) {
+      }
+      if (installedMarker && installedMarker !== pluginVersion) {
         findings.push({
-          level: "error",
-          file: "compat_range",
-          msg: `qtc-core instalado v${qtcCoreInstalled} NO satisface compat_range del plugin (${compatRange}) — el plugin va a fallar en runtime`,
+          level: "warn",
+          file: markerFile,
+          msg: `installed plugin v${installedMarker} differs from declared v${pluginVersion} — reinstall/re-sync`,
         });
       }
     }
-  }
 
-  // 6. Scripts (./scripts/ + ~/.qtc/<flow>/scripts/).
-  const scriptsInfo: Record<string, ScriptInfo> = {};
-  const expectedScripts = input.expectedScripts ??
-    DEFAULT_EXPECTED_SCRIPTS_BY_FLOW[flow] ?? ["qtc-utils.py"];
-  const localScriptsDir = join(pluginRoot, "scripts");
-  const installedScriptsDir = join(pluginCacheDir, "scripts");
-  for (const name of expectedScripts) {
-    const local = join(localScriptsDir, name);
-    const installed = join(installedScriptsDir, name);
-    const localOk = await fs.exists(local);
-    const installedOk = await fs.exists(installed);
-    scriptsInfo[name] = { local: localOk, installed: installedOk };
-    if (!localOk) {
-      findings.push({
-        level: "error",
-        file: `scripts/${name}`,
-        msg: "script missing in repo ./scripts/",
-      });
-    }
-    if (!installedOk) {
-      findings.push({
-        level: "warn",
-        file: installed,
-        msg: `script not installed (SessionStart hook debe copiarlo desde ./scripts/${name})`,
-      });
-    }
-    if (localOk && installedOk) {
+    // 5b. qtc-core lib install state + compat range — solo legacy.
+    const coreLibMarker = join(home, ".qtc", "lib", ".qtc-core-version");
+    if (await fs.exists(coreLibMarker)) {
       try {
-        const a = await fs.stat(local);
-        const b = await fs.stat(installed);
-        if (a.size !== b.size) {
-          findings.push({
-            level: "warn",
-            file: `scripts/${name}`,
-            msg: "local and installed copies differ in size — reinstall para sincronizar",
-          });
-        }
+        const raw = (await fs.readText(coreLibMarker)).trim();
+        qtcCoreInstalled = raw.length > 0 ? raw : null;
       } catch {
         // ignore
+      }
+    }
+    if (compatRange) {
+      if (!qtcCoreInstalled) {
+        findings.push({
+          level: "error",
+          file: coreLibMarker,
+          msg: `plugin requiere qtc-core ${compatRange} pero ~/.qtc/lib/.qtc-core-version no existe — instalá qtc-core o reiniciá la sesión para que SessionStart hook lo copie`,
+        });
+        compatOk = false;
+      } else {
+        compatOk = semverSatisfies(qtcCoreInstalled, compatRange);
+        if (compatOk === null) {
+          findings.push({
+            level: "warn",
+            file: "compat_range",
+            msg: `no pude parsear compat_range '${compatRange}' (esperado '~X.Y.Z', '^X.Y.Z' o 'X.Y.Z') — validación contra qtc-core skipped`,
+          });
+        } else if (!compatOk) {
+          findings.push({
+            level: "error",
+            file: "compat_range",
+            msg: `qtc-core instalado v${qtcCoreInstalled} NO satisface compat_range del plugin (${compatRange}) — el plugin va a fallar en runtime`,
+          });
+        }
+      }
+    }
+
+    // 6. Scripts (./scripts/ + ~/.qtc/<flow>/scripts/) — solo legacy.
+    const expectedScripts = input.expectedScripts ??
+      DEFAULT_EXPECTED_SCRIPTS_BY_FLOW[flow] ?? ["qtc-utils.py"];
+    const localScriptsDir = join(pluginRoot, "scripts");
+    const installedScriptsDir = join(pluginCacheDir, "scripts");
+    for (const name of expectedScripts) {
+      const local = join(localScriptsDir, name);
+      const installed = join(installedScriptsDir, name);
+      const localOk = await fs.exists(local);
+      const installedOk = await fs.exists(installed);
+      scriptsInfo[name] = { local: localOk, installed: installedOk };
+      if (!localOk) {
+        findings.push({
+          level: "error",
+          file: `scripts/${name}`,
+          msg: "script missing in repo ./scripts/",
+        });
+      }
+      if (!installedOk) {
+        findings.push({
+          level: "warn",
+          file: installed,
+          msg: `script not installed (SessionStart hook debe copiarlo desde ./scripts/${name})`,
+        });
+      }
+      if (localOk && installedOk) {
+        try {
+          const a = await fs.stat(local);
+          const b = await fs.stat(installed);
+          if (a.size !== b.size) {
+            findings.push({
+              level: "warn",
+              file: `scripts/${name}`,
+              msg: "local and installed copies differ in size — reinstall para sincronizar",
+            });
+          }
+        } catch {
+          // ignore
+        }
       }
     }
   }
@@ -480,19 +502,22 @@ export async function runPluginDoctor(
     }
   }
 
-  // 9. Python version (transitional — null when Python is gone).
-  const pythonVersion = detectPythonVersion();
-  if (pythonVersion) {
-    const m = pythonVersion.match(/^(\d+)\.(\d+)/);
-    if (m?.[1] && m[2]) {
-      const major = Number.parseInt(m[1], 10);
-      const minor = Number.parseInt(m[2], 10);
-      if (major < 3 || (major === 3 && minor < 8)) {
-        findings.push({
-          level: "warn",
-          file: "python",
-          msg: `python ${pythonVersion} is too old; recommend 3.8+`,
-        });
+  // 9. Python version — solo legacy. En single-path no existe runtime Python.
+  let pythonVersion: string | null = null;
+  if (!isSinglePathContract) {
+    pythonVersion = detectPythonVersion();
+    if (pythonVersion) {
+      const m = pythonVersion.match(/^(\d+)\.(\d+)/);
+      if (m?.[1] && m[2]) {
+        const major = Number.parseInt(m[1], 10);
+        const minor = Number.parseInt(m[2], 10);
+        if (major < 3 || (major === 3 && minor < 8)) {
+          findings.push({
+            level: "warn",
+            file: "python",
+            msg: `python ${pythonVersion} is too old; recommend 3.8+`,
+          });
+        }
       }
     }
   }
@@ -662,6 +687,17 @@ async function collectMarkdownFiles(fs: FileSystemPort, dir: string): Promise<st
     }
   }
   return out;
+}
+
+function isContractVersionAtLeast(version: string | null, major: number, minor: number): boolean {
+  if (!version) return false;
+  const m = version.trim().match(/^(\d+)\.(\d+)/);
+  if (!m?.[1] || !m[2]) return false;
+  const x = Number.parseInt(m[1], 10);
+  const y = Number.parseInt(m[2], 10);
+  if (x > major) return true;
+  if (x < major) return false;
+  return y >= minor;
 }
 
 function semverSatisfies(installed: string, range: string): boolean | null {
