@@ -7,6 +7,7 @@ import { NodeFileSystem } from "../adapters/node-file-system.js";
 import { NodeProcess } from "../adapters/node-process.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
+import { NamespaceResolver } from "../runtime/namespace-resolver.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./commands/checkpoint-write.js";
 import { decisionesListCommand } from "./commands/decisiones-list.js";
 import { dependenciasListCommand } from "./commands/dependencias-list.js";
@@ -145,7 +146,10 @@ async function run(argv: string[]): Promise<ExitCode> {
   );
   const runtime = await runtimeService.resolveRuntime();
 
-  const ctx: CliContext = { fs, env, git, process: proc, runtime };
+  const namespaceResolver = new NamespaceResolver(fs, env);
+  const namespace = await namespaceResolver.resolve(parsed.values.get("namespace"));
+
+  const ctx: CliContext = { fs, env, git, process: proc, runtime, namespace };
 
   try {
     const result = await command.execute(parsed, ctx);
