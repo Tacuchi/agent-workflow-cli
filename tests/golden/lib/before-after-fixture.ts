@@ -1,7 +1,9 @@
 import { cpSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PathsService } from "../../../src/application/paths-service.js";
 import type { EnvPort } from "../../../src/ports/env.js";
+import { normalizeNamespace } from "../../../src/runtime/namespace.js";
 
 export interface FixtureClone {
   cwd: string;
@@ -54,4 +56,13 @@ export function normalizeLastActivity(text: string): string {
  */
 export function normalizeTodayDate(text: string): string {
   return text.replace(/\b20\d{2}-\d{2}-\d{2}\b/g, "DATE");
+}
+
+/**
+ * Constructs a `PathsService` for tests with namespace=qtc, so that all path
+ * methods produce the legacy `.qtc/...` literals. Used by golden tests when
+ * services are migrated to take `paths: PathsService` as a dependency.
+ */
+export function makeQtcPaths(env: TestEnv): PathsService {
+  return new PathsService(normalizeNamespace("qtc"), env.homeDir(), env.cwd());
 }
