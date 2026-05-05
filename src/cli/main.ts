@@ -19,13 +19,16 @@ import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
 import { mcpCommand } from "./commands/mcp.js";
+import { attachMultirootCommand, detachMultirootCommand } from "./commands/multiroot.js";
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
 import {
   autoPlanDecideCommand,
   specialtyChooseCommand,
   topicChangeCheckCommand,
 } from "./commands/orchestration.js";
+import { pluginDoctorCommand } from "./commands/plugin-doctor.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
+import { releaseDataCommand } from "./commands/release-data.js";
 import { sessionArtifactsCommand } from "./commands/session-artifacts.js";
 import { sessionCloseCommand } from "./commands/session-close.js";
 import { sessionCreateCommand } from "./commands/session-create.js";
@@ -47,6 +50,12 @@ import {
   resumeSummaryCommand,
   sourcesCommand,
 } from "./commands/wave2-final.js";
+import {
+  bootstrapDsnCommand,
+  codeScanCommand,
+  graduateCommand,
+  upgradeHubModeCommand,
+} from "./commands/wave4d-simple.js";
 import { parseArgv } from "./parser.js";
 import { CommandRegistry } from "./registry.js";
 import { renderRaw, writeStderr, writeStdout } from "./render.js";
@@ -91,6 +100,14 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(profilesCommand);
   registry.register(logsCommand);
   registry.register(nextNumberCommand);
+  registry.register(bootstrapDsnCommand);
+  registry.register(graduateCommand);
+  registry.register(upgradeHubModeCommand);
+  registry.register(codeScanCommand);
+  registry.register(pluginDoctorCommand);
+  registry.register(releaseDataCommand);
+  registry.register(attachMultirootCommand);
+  registry.register(detachMultirootCommand);
   registry.register(projectMdUpsertCommand);
   registry.register(sessionResumeCommand);
 

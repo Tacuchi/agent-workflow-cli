@@ -62,8 +62,15 @@ export async function buildSessionEntry(
 
   const status = await readStatus(fs, sessionPath);
   const hasStatus = status !== null;
-  const state: SessionState = status?.state ?? "active";
-  const phase: Phase | "requirement" = status?.phase ?? "requirement";
+  let state: SessionState;
+  let phase: Phase | "requirement";
+  if (status) {
+    state = status.state;
+    phase = status.phase;
+  } else {
+    state = await stateFromLegacyHeuristic(fs, sessionPath);
+    phase = "requirement";
+  }
 
   const requirement = await readRequirement(fs, sessionPath);
   const date = requirement.date ?? (await mtimeAsDate(fs, sessionPath));
@@ -166,6 +173,22 @@ function normalizeCode(input: string): string {
     return input.padStart(3, "0");
   }
   return input.replace("session", "").split("-")[0] ?? "";
+}
+
+async function stateFromLegacyHeuristic(
+  fs: FileSystemPort,
+  sessionPath: string,
+): Promise<SessionState> {
+  if (!(await fs.exists(sessionPath))) return "active";
+  const entries = await fs.list(sessionPath);
+  let hasMt = false;
+  let hasMf = false;
+  for (const e of entries) {
+    if (e.type !== "file") continue;
+    if (e.name.startsWith("MT-") && e.name.endsWith(".md")) hasMt = true;
+    if (e.name.startsWith("MF-") && e.name.endsWith(".md")) hasMf = true;
+  }
+  return hasMt && hasMf ? "closed" : "active";
 }
 
 async function readStatus(
