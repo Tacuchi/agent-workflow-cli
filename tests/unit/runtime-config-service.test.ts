@@ -1,12 +1,18 @@
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
+import { PathsService } from "../../src/application/paths-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
 import { RuntimeConfigService } from "../../src/runtime/config-service.js";
+import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
 const HOME = "/home/test";
 const USER_CONFIG = join(HOME, ".qtc", "agent-workflow", "runtime.json");
 const CORE_CONFIG = "/repo/core-workflow-plugin/config/agent-workflow-runtime.json";
+
+function makeQtcPathsForTest(home: string): PathsService {
+  return new PathsService(normalizeNamespace("qtc"), home, "/cwd");
+}
 
 class FakeEnv implements EnvPort {
   constructor(private readonly vars: Record<string, string | undefined> = {}) {}
@@ -50,14 +56,16 @@ class FakeFs implements FileSystemPort {
 describe("RuntimeConfigService.resolveRuntime", () => {
   let fs: FakeFs;
   let env: FakeEnv;
+  let paths: PathsService;
 
   beforeEach(() => {
     fs = new FakeFs(new Map());
     env = new FakeEnv();
+    paths = makeQtcPathsForTest(HOME);
   });
 
   it("returns default when no env, no user config, no core config", async () => {
-    const service = new RuntimeConfigService(fs, env);
+    const service = new RuntimeConfigService(fs, env, paths);
 
     const resolved = await service.resolveRuntime();
 
@@ -75,7 +83,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
         [USER_CONFIG, JSON.stringify({ packageName: "x", binName: "ignored", envOverride: "Y" })],
       ]),
     );
-    const service = new RuntimeConfigService(fs, env);
+    const service = new RuntimeConfigService(fs, env, paths);
 
     const resolved = await service.resolveRuntime();
 
@@ -97,7 +105,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
         ],
       ]),
     );
-    const service = new RuntimeConfigService(fs, env);
+    const service = new RuntimeConfigService(fs, env, paths);
 
     const resolved = await service.resolveRuntime();
 
@@ -119,7 +127,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
         ],
       ]),
     );
-    const service = new RuntimeConfigService(fs, env, { coreConfigPath: CORE_CONFIG });
+    const service = new RuntimeConfigService(fs, env, paths, { coreConfigPath: CORE_CONFIG });
 
     const resolved = await service.resolveRuntime();
 
@@ -130,7 +138,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
 
   it("ignores empty env override", async () => {
     env = new FakeEnv({ QTC_AGENT_WORKFLOW_BIN: "   " });
-    const service = new RuntimeConfigService(fs, env);
+    const service = new RuntimeConfigService(fs, env, paths);
 
     const resolved = await service.resolveRuntime();
 
@@ -140,14 +148,14 @@ describe("RuntimeConfigService.resolveRuntime", () => {
 
   it("throws on invalid JSON in config file", async () => {
     fs = new FakeFs(new Map([[USER_CONFIG, "{ not json"]]));
-    const service = new RuntimeConfigService(fs, env);
+    const service = new RuntimeConfigService(fs, env, paths);
 
     await expect(service.resolveRuntime()).rejects.toThrow(/Invalid JSON in runtime config/);
   });
 
   it("throws when config is missing required field", async () => {
     fs = new FakeFs(new Map([[USER_CONFIG, JSON.stringify({ packageName: "x" })]]));
-    const service = new RuntimeConfigService(fs, env);
+    const service = new RuntimeConfigService(fs, env, paths);
 
     await expect(service.resolveRuntime()).rejects.toThrow(
       /missing or invalid string field 'binName'/,

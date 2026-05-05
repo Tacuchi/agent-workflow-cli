@@ -139,18 +139,19 @@ async function run(argv: string[]): Promise<ExitCode> {
     return 1;
   }
 
-  const coreConfigPath = resolveCoreConfigPath(env);
-  const runtimeService = new RuntimeConfigService(
-    fs,
-    env,
-    coreConfigPath ? { coreConfigPath } : {},
-  );
-  const runtime = await runtimeService.resolveRuntime();
-
   const namespaceResolver = new NamespaceResolver(fs, env);
   const namespace = await namespaceResolver.resolve(parsed.values.get("namespace"));
 
   const paths = new PathsService(namespace.namespace, env.homeDir(), env.cwd());
+
+  const coreConfigPath = resolveCoreConfigPath(env, paths);
+  const runtimeService = new RuntimeConfigService(
+    fs,
+    env,
+    paths,
+    coreConfigPath ? { coreConfigPath } : {},
+  );
+  const runtime = await runtimeService.resolveRuntime();
 
   const ctx: CliContext = { fs, env, git, process: proc, runtime, namespace, paths };
 
@@ -204,12 +205,12 @@ function printHelp(commands: string[]): void {
   writeStdout(`${lines.join("\n")}\n`);
 }
 
-function resolveCoreConfigPath(env: NodeEnv): string | undefined {
+function resolveCoreConfigPath(env: NodeEnv, paths: PathsService): string | undefined {
   const fromEnv = env.get("QTC_CORE_CONFIG_PATH");
   if (fromEnv && fromEnv.trim().length > 0) {
     return fromEnv;
   }
-  return join(env.homeDir(), ".qtc", "lib", "config", "agent-workflow-runtime.json");
+  return join(paths.userLibConfigDir(), "agent-workflow-runtime.json");
 }
 
 run(process.argv.slice(2)).then((code) => {

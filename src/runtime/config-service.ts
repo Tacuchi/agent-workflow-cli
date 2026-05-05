@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import type { PathsService } from "../application/paths-service.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import {
@@ -15,6 +15,7 @@ export class RuntimeConfigService {
   constructor(
     private readonly fs: FileSystemPort,
     private readonly env: EnvPort,
+    private readonly paths: PathsService,
     private readonly options: RuntimeConfigServiceOptions = {},
   ) {}
 
@@ -58,7 +59,7 @@ export class RuntimeConfigService {
   }
 
   private userConfigPath(): string {
-    return join(this.env.homeDir(), ".qtc", "agent-workflow", "runtime.json");
+    return this.paths.userRuntimeJson();
   }
 
   private async tryReadConfig(
