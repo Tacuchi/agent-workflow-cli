@@ -1,5 +1,3 @@
-// Mirror de qtc_core/orchestration.py.
-
 const DESIGN_KEYWORDS = new Set([
   "ui",
   "ux",

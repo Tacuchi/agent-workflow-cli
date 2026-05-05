@@ -1,4 +1,3 @@
-// Mirror de developer-workflow-plugin/scripts/qtc-utils.py:cmd_graduate.
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";

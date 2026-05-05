@@ -1,4 +1,3 @@
-// Mirrors qtc_core/templates/objetivo_*.md byte-byte.
 // Placeholders: {folder}, {origen_block}, {objetivo}, {tipo}, {modalidad}.
 
 const DEFAULT_TEMPLATE = `# Objetivo — {folder}

@@ -1,4 +1,3 @@
-// Mirror de developer-workflow-plugin/scripts/dbhub-mcp-runner.js.
 // Launcher que resuelve DSN y spawnea `npx -y @bytebase/dbhub` con stdio inherit.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";

@@ -1,4 +1,3 @@
-// Mirror de los comandos dev-only restantes de qtc_core/{config,context,history}.py.
 import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

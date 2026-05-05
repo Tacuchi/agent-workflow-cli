@@ -1,4 +1,3 @@
-// Mirror de qtc_core/code_scan.py.
 import { readFileSync, realpathSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";

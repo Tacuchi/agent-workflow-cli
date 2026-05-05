@@ -1,4 +1,3 @@
-// Mirror de developer-workflow-plugin/scripts/qtc-utils.py:cmd_bootstrap_dsn.
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { PathsService } from "./paths-service.js";

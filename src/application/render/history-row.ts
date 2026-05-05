@@ -1,5 +1,3 @@
-// Mirror de qtc_core/history.py:render_refs + builtin renderers.
-
 const BUILTIN_RENDERERS: Record<string, (val: string) => string> = {
   dec: (val) => `[DEC](../docs/decisiones/${val}.md)`,
   decision: (val) => `[DEC](../docs/decisiones/${val}.md)`,
@@ -11,10 +9,9 @@ const BUILTIN_RENDERERS: Record<string, (val: string) => string> = {
 
 export interface OrigenLookup {
   /**
-   * Returns the session folder name for `<flow>-<code>` if it exists in
-   * `.qtc/sessions/`, or undefined when no match. The renderer falls back to
-   * a plain `origen:<flow>-<code>` string in the latter case (mirror of the
-   * Python `_builtin_origen` behaviour).
+   * Returns the session folder name for `<flow>-<code>` if it exists in the
+   * sessions directory, or undefined when no match. The renderer falls back
+   * to a plain `origen:<flow>-<code>` string in the latter case.
    */
   resolveFolder(flow: string, code: string): string | undefined;
 }

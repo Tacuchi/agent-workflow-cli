@@ -1,4 +1,3 @@
-// Mirror de qtc_core/auto_plan.py.
 import { extractPathsOrRepos, tokens } from "./orchestration.js";
 
 const RFC_KEYWORDS = new Set(["rfc", "post-mortem", "postmortem"]);

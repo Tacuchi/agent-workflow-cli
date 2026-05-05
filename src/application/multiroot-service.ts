@@ -1,4 +1,3 @@
-// Mirror de qtc_core/multiroot.py: cmd_attach_multiroot + cmd_detach_multiroot.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";

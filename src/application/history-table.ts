@@ -1,6 +1,5 @@
-// Mirror de qtc_core/history.py:history_ensure, history_has_flow_column,
-// _history_row_regex, history_upsert. The history file path itself is
-// resolved by callers via `PathsService.cwdHistoryFile()` and passed in.
+// The history file path itself is resolved by callers via
+// `PathsService.cwdHistoryFile()` and passed in.
 import { join } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 

@@ -1,4 +1,3 @@
-// Mirror de qtc_core/upgrade.py.
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";

@@ -1,4 +1,3 @@
-// Mirror de qtc_core/project.py:detect_stack_dict.
 import { join } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { ProjectStack } from "./parsers/project-block.js";

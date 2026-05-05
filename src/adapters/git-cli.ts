@@ -33,11 +33,9 @@ export class GitCliAdapter implements GitPort {
     if (result.code !== 0) {
       throw new Error(`git status failed in ${repoPath}: ${result.stderr.trim()}`);
     }
-    // Mirror Python qtc_core.sources._git which does `result.stdout.strip()` BEFORE
-    // splitting — this consumes the leading space of the first line in porcelain
-    // format (e.g., ` M path` → `M path`, then [3:] would be off by one). We
-    // replicate that quirk to keep byte-byte parity with Python while migrating;
-    // the bug stays until we fix it in both runtimes.
+    // NOTE: trim BEFORE splitting consumes the leading space of the first line
+    // in porcelain format (e.g., ` M path` → `M path`, then [3:] would be off
+    // by one). This quirk is preserved for back-compat with prior consumers.
     const raw = result.stdout.trim();
     return raw
       .split("\n")

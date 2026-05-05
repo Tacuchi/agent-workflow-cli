@@ -1,4 +1,3 @@
-// Mirror de core-workflow-plugin/scripts/branch-check.py.
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
