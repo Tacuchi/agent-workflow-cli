@@ -1,11 +1,12 @@
 import type {
   ParsedProjectBlock,
+  ProjectBlockMarkers,
   ProjectFuente,
   ProjectMode,
   ProjectSession,
   ProjectStack,
 } from "../parsers/project-block.js";
-import { QTC_PROJECT_END, QTC_PROJECT_START } from "../parsers/project-block.js";
+import { LEGACY_QTC_MARKERS } from "../parsers/project-block.js";
 
 export interface RenderProjectBlockInput {
   proyecto: string;
@@ -15,9 +16,15 @@ export interface RenderProjectBlockInput {
   lastActivity?: string;
   mode?: ProjectMode;
   workingBranches?: Record<string, string>;
+  /** Path used in the "Histórico:" line. Default `.qtc/HISTORY.md` for back-compat. */
+  historicoPath?: string;
+  /** Markers used to wrap the block. Default = legacy QTC markers. */
+  markers?: ProjectBlockMarkers;
 }
 
 export function renderProjectBlock(input: RenderProjectBlockInput): string {
+  const markers = input.markers ?? LEGACY_QTC_MARKERS;
+  const historicoPath = input.historicoPath ?? ".qtc/HISTORY.md";
   const last = input.lastActivity ?? formatNowMinute();
   const proyectoText =
     input.proyecto.trim().length > 0
@@ -33,10 +40,10 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   }
   statusLines.push(formatActiveSessions(input.sessions));
   statusLines.push(`- Última actividad: ${last}`);
-  statusLines.push("- Histórico: `.qtc/HISTORY.md`");
+  statusLines.push(`- Histórico: \`${historicoPath}\``);
 
   return [
-    QTC_PROJECT_START,
+    markers.start,
     "## Proyecto",
     "",
     proyectoSection,
@@ -52,7 +59,7 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
     "## Status",
     "",
     statusLines.join("\n"),
-    QTC_PROJECT_END,
+    markers.end,
   ].join("\n");
 }
 
@@ -73,6 +80,8 @@ export function blockFromParsed(
   } else if (parsed.last_activity !== null) {
     input.lastActivity = parsed.last_activity;
   }
+  if (overrides.markers !== undefined) input.markers = overrides.markers;
+  if (overrides.historicoPath !== undefined) input.historicoPath = overrides.historicoPath;
   return renderProjectBlock(input);
 }
 

@@ -31,8 +31,21 @@ export interface ParsedProjectBlock {
   last_activity: string | null;
 }
 
-export const QTC_PROJECT_START = "<!-- QTC-PROJECT-START -->";
-export const QTC_PROJECT_END = "<!-- QTC-PROJECT-END -->";
+export interface ProjectBlockMarkers {
+  start: string;
+  end: string;
+}
+
+export const LEGACY_QTC_MARKERS: ProjectBlockMarkers = {
+  start: "<!-- QTC-PROJECT-START -->",
+  end: "<!-- QTC-PROJECT-END -->",
+};
+
+// Keep the old constants for back-compat (some callers still import them).
+// They are aliases of LEGACY_QTC_MARKERS fields.
+export const QTC_PROJECT_START = LEGACY_QTC_MARKERS.start;
+export const QTC_PROJECT_END = LEGACY_QTC_MARKERS.end;
+
 const STACK_KEY_MAP: Record<string, keyof ProjectStack> = {
   lenguaje: "language",
   framework: "framework",
@@ -40,12 +53,15 @@ const STACK_KEY_MAP: Record<string, keyof ProjectStack> = {
   build: "build",
 };
 
-export function parseProjectBlock(text: string): ParsedProjectBlock | null {
-  if (!text.includes(QTC_PROJECT_START) || !text.includes(QTC_PROJECT_END)) {
+export function parseProjectBlock(
+  text: string,
+  markers: ProjectBlockMarkers = LEGACY_QTC_MARKERS,
+): ParsedProjectBlock | null {
+  if (!text.includes(markers.start) || !text.includes(markers.end)) {
     return null;
   }
-  const start = text.indexOf(QTC_PROJECT_START) + QTC_PROJECT_START.length;
-  const end = text.indexOf(QTC_PROJECT_END, start);
+  const start = text.indexOf(markers.start) + markers.start.length;
+  const end = text.indexOf(markers.end, start);
   if (end < 0) return null;
   const inner = text.slice(start, end);
 
