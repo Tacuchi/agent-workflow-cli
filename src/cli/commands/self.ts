@@ -1,4 +1,5 @@
 import { selfDoctor } from "../../application/self/doctor-self.js";
+import { selfInstallSkill } from "../../application/self/install-skill.js";
 import { selfNamespace } from "../../application/self/namespace-info.js";
 import { selfUpdate } from "../../application/self/update-self.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -18,6 +19,8 @@ export const selfCommand: QtcCommand = {
         return selfDoctor(ctx);
       case "update":
         return selfUpdate(ctx);
+      case "install-skill":
+        return selfInstallSkill(ctx);
       case undefined:
       case "":
         return {
