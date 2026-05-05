@@ -8,6 +8,7 @@ import {
   type ProjectSession,
   parseProjectBlock,
 } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
 export interface SourcesInput {
@@ -52,10 +53,11 @@ export async function runSources(
   fs: FileSystemPort,
   env: EnvPort,
   git: GitPort,
+  paths: PathsService,
   input: SourcesInput,
 ): Promise<SourcesOutput> {
   const cwd = env.cwd();
-  const block = await readProjectBlock(fs, cwd);
+  const block = await readProjectBlock(fs, cwd, paths);
   const verbose = input.verbose === true;
 
   if (!block || block.fuentes.length === 0) {
@@ -120,10 +122,10 @@ export async function runSources(
   return payload;
 }
 
-async function readProjectBlock(fs: FileSystemPort, cwd: string) {
+async function readProjectBlock(fs: FileSystemPort, cwd: string, paths: PathsService) {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (block) return block;
   }
   return null;

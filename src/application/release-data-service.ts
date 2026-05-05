@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { type SessionEntry, buildSessionEntry, parseSessionFolder } from "./session-resolver.js";
 
@@ -71,11 +72,13 @@ function sessionCodeInt(code: string | null | undefined): number | null {
 export async function listSessionsForRelease(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
   options: { since?: string; includeOpen?: boolean; includeClosed?: boolean } = {},
 ): Promise<ReleaseSession[]> {
+  void cwd;
   const includeOpen = options.includeOpen ?? true;
   const includeClosed = options.includeClosed ?? true;
-  const qtcDir = join(cwd, ".qtc", "sessions");
+  const qtcDir = paths.cwdSessionsDir();
   if (!(await fs.exists(qtcDir))) return [];
 
   const sinceInt = sessionCodeInt(options.since);
@@ -121,12 +124,12 @@ export interface SessionArtifactsResult {
 export async function readSessionArtifacts(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   sessionCode: string,
   kinds?: string[],
 ): Promise<SessionArtifactsResult> {
-  // Resolve session: simple lookup in CWD/.qtc/sessions matching code.
-  const cwd = env.cwd();
-  const qtcDir = join(cwd, ".qtc", "sessions");
+  void env;
+  const qtcDir = paths.cwdSessionsDir();
   const targetInt = sessionCodeInt(sessionCode);
   if (!(await fs.exists(qtcDir)) || targetInt === null) {
     return { error: `session_not_found:${sessionCode}` };
@@ -220,11 +223,12 @@ export async function readSessionArtifacts(
 export async function listGraduatedBundles(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
   options: { sessionCode?: string; sourceAlias?: string } = {},
 ): Promise<GraduatedBundle[]> {
   let docsDir: string;
   try {
-    docsDir = await getDocsDir(fs, cwd, options.sourceAlias);
+    docsDir = await getDocsDir(fs, cwd, paths, options.sourceAlias);
   } catch {
     return [];
   }
@@ -262,10 +266,11 @@ export async function listGraduatedBundles(
 async function getDocsDir(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
   sourceAlias: string | undefined,
 ): Promise<string> {
   if (!sourceAlias) return join(cwd, "docs");
-  const sources = await readSources(fs, cwd);
+  const sources = await readSources(fs, cwd, paths);
   const found = sources.find((s) => s.alias === sourceAlias);
   if (!found) {
     throw new Error(
@@ -280,27 +285,33 @@ async function getDocsDir(
 async function getReleaseDir(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
   sourceAlias: string | undefined,
 ): Promise<string> {
-  return join(await getDocsDir(fs, cwd, sourceAlias), "release");
+  return join(await getDocsDir(fs, cwd, paths, sourceAlias), "release");
 }
 
 async function readSources(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
 ): Promise<{ alias: string; path: string }[]> {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (block) return block.fuentes;
   }
   return [];
 }
 
-async function readWorkspaceMode(fs: FileSystemPort, cwd: string): Promise<"project" | "hub"> {
+async function readWorkspaceMode(
+  fs: FileSystemPort,
+  cwd: string,
+  paths: PathsService,
+): Promise<"project" | "hub"> {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (block) return block.mode;
   }
   return "project";
@@ -329,6 +340,7 @@ async function collectFilesByExt(fs: FileSystemPort, dir: string, ext: string): 
 export async function runReleaseData(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   input: ReleaseDataInput,
 ): Promise<ReleaseDataOutput | ReleaseDataError> {
   const cwd = env.cwd();
@@ -337,13 +349,13 @@ export async function runReleaseData(
   const includeOpen = input.includeOpen ?? true;
   const includeClosed = input.includeClosed ?? true;
 
-  const workspaceMode = await readWorkspaceMode(fs, cwd);
+  const workspaceMode = await readWorkspaceMode(fs, cwd, paths);
 
   let docsRoot: string;
   let releaseRoot: string;
   try {
-    docsRoot = await getDocsDir(fs, cwd, input.sourceAlias);
-    releaseRoot = await getReleaseDir(fs, cwd, input.sourceAlias);
+    docsRoot = await getDocsDir(fs, cwd, paths, input.sourceAlias);
+    releaseRoot = await getReleaseDir(fs, cwd, paths, input.sourceAlias);
   } catch (e) {
     return { error: (e as Error).message, workspace_mode: workspaceMode };
   }
@@ -353,7 +365,7 @@ export async function runReleaseData(
     includeClosed,
   };
   if (input.since !== undefined) sinceOpts.since = input.since;
-  const sessions = await listSessionsForRelease(fs, cwd, sinceOpts);
+  const sessions = await listSessionsForRelease(fs, cwd, paths, sinceOpts);
 
   const enriched: ReleaseSession[] = [];
   const legacy: string[] = [];
@@ -389,7 +401,7 @@ export async function runReleaseData(
   if (includeGraduated) {
     const opts: { sourceAlias?: string } = {};
     if (input.sourceAlias !== undefined) opts.sourceAlias = input.sourceAlias;
-    payload.graduated_bundles = await listGraduatedBundles(fs, cwd, opts);
+    payload.graduated_bundles = await listGraduatedBundles(fs, cwd, paths, opts);
   }
   return payload;
 }

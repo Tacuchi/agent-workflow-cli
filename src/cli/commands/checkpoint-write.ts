@@ -13,10 +13,10 @@ export const checkpointWriteCommand: QtcCommand = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const force = args.flags.has("--force");
-    const options: Parameters<typeof runCheckpointWrite>[3] = {};
+    const options: Parameters<typeof runCheckpointWrite>[4] = {};
     if (code !== undefined) options.code = code;
     if (force) options.force = true;
-    const data = await runCheckpointWrite(ctx.fs, ctx.env, ctx.git, options);
+    const data = await runCheckpointWrite(ctx.fs, ctx.env, ctx.git, ctx.paths, options);
     return { ok: true, data, exitCode: 0 };
   },
 };
@@ -25,7 +25,7 @@ export const autoCompactOnCloseCommand: QtcCommand = {
   name: "auto-compact-on-close",
   describe: "SessionEnd hook target — write checkpoints for all active sessions.",
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const data = await runAutoCompactOnClose(ctx.fs, ctx.env, ctx.git);
+    const data = await runAutoCompactOnClose(ctx.fs, ctx.env, ctx.git, ctx.paths);
     return { ok: true, data, exitCode: 0 };
   },
 };

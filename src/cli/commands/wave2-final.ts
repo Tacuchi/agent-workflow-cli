@@ -20,7 +20,7 @@ export const sourcesCommand: QtcCommand = {
     const skipGit = args.flags.has("--no-git");
     const flow = args.values.get("flow");
     const verbose = args.flags.has("--verbose");
-    const input: Parameters<typeof runSources>[3] = {};
+    const input: Parameters<typeof runSources>[4] = {};
     if (session !== undefined) input.sessionCode = session;
     if (scopeRaw !== undefined) {
       input.scope = scopeRaw
@@ -31,7 +31,7 @@ export const sourcesCommand: QtcCommand = {
     if (skipGit) input.skipGit = true;
     if (flow !== undefined) input.flowOverride = flow;
     if (verbose) input.verbose = true;
-    const data = await runSources(ctx.fs, ctx.env, ctx.git, input);
+    const data = await runSources(ctx.fs, ctx.env, ctx.git, ctx.paths, input);
     return { ok: true, data, exitCode: 0 };
   },
 };
@@ -41,7 +41,7 @@ export const checkpointReadCommand: QtcCommand = {
   describe: "Read CHECKPOINT.md of the active (or --code) session.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
-    const data = await runCheckpointRead(ctx.fs, ctx.env, code);
+    const data = await runCheckpointRead(ctx.fs, ctx.env, ctx.paths, code);
     if ("error" in data) {
       return {
         ok: false,
@@ -58,7 +58,7 @@ export const resumeSummaryCommand: QtcCommand = {
   name: "resume-summary",
   describe: "Compact resume payload for PostCompact hook.",
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const data = await runResumeSummary(ctx.fs, ctx.env);
+    const data = await runResumeSummary(ctx.fs, ctx.env, ctx.paths);
     return { ok: true, data, exitCode: 0 };
   },
 };
@@ -69,13 +69,13 @@ export const compressCheckpointCommand: QtcCommand = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const thresholdRaw = args.values.get("threshold");
-    const options: Parameters<typeof runCompressCheckpoint>[2] = {};
+    const options: Parameters<typeof runCompressCheckpoint>[3] = {};
     if (code !== undefined) options.code = code;
     if (thresholdRaw !== undefined) {
       const n = Number.parseInt(thresholdRaw, 10);
       if (Number.isFinite(n)) options.threshold = n;
     }
-    const data = await runCompressCheckpoint(ctx.fs, ctx.env, options);
+    const data = await runCompressCheckpoint(ctx.fs, ctx.env, ctx.paths, options);
     if ("error" in data) {
       return {
         ok: false,

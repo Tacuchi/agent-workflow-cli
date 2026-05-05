@@ -3,6 +3,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { firstNonEmptyLine, parseMdSection, parseMdValue } from "./markdown.js";
 import { type ProjectSession, parseProjectBlock } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
 const DEFAULT_STALE_THRESHOLD_SECONDS = 300;
@@ -181,11 +182,12 @@ export interface CheckpointReadError {
 export async function runCheckpointRead(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   code: string | undefined,
 ): Promise<CheckpointReadOutput | CheckpointReadError> {
-  const folder = await resolveTargetSession(fs, env, code);
+  const folder = await resolveTargetSession(fs, env, paths, code);
   if (!folder) return { error: "no hay sesión activa única; especificá --code" };
-  const sessionPath = join(env.cwd(), ".qtc", "sessions", folder);
+  const sessionPath = join(paths.cwdSessionsDir(), folder);
   const cp = await readLatestCheckpoint(fs, sessionPath);
   if (!cp) {
     return { session: folder, checkpoint: null, reason: "CHECKPOINT.md no existe" };
@@ -208,11 +210,12 @@ export async function findActiveSessions(
 async function resolveTargetSession(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   code: string | undefined,
 ): Promise<string | null> {
   if (code) {
     // Look for matching folder.
-    const sessionsDir = join(env.cwd(), ".qtc", "sessions");
+    const sessionsDir = paths.cwdSessionsDir();
     if (!(await fs.exists(sessionsDir))) return null;
     const entries = await fs.list(sessionsDir);
     const norm = code.replace("session", "").split("-")[0]?.padStart(3, "0") ?? code;
@@ -250,6 +253,7 @@ export interface ResumeSummaryOutput {
 export async function runResumeSummary(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
 ): Promise<ResumeSummaryOutput> {
   const cwd = env.cwd();
   const actives = await findActiveSessions(fs, cwd);
@@ -276,7 +280,7 @@ export async function runResumeSummary(
     };
   }
 
-  const sessionPath = join(cwd, ".qtc", "sessions", target.folder);
+  const sessionPath = join(paths.cwdSessionsDir(), target.folder);
   const cp = await readLatestCheckpoint(fs, sessionPath);
   const cpStatus = await computeCheckpointStatus(fs, sessionPath);
 
@@ -335,11 +339,12 @@ const DEFAULT_COMPRESS_THRESHOLD = 200;
 export async function runCompressCheckpoint(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   options: { code?: string; threshold?: number } = {},
 ): Promise<CompressCheckpointOutput | CompressCheckpointError> {
-  const folder = await resolveTargetSession(fs, env, options.code);
+  const folder = await resolveTargetSession(fs, env, paths, options.code);
   if (!folder) return { error: "no hay sesión activa única; especificá --code" };
-  const sessionPath = join(env.cwd(), ".qtc", "sessions", folder);
+  const sessionPath = join(paths.cwdSessionsDir(), folder);
   const threshold = options.threshold ?? DEFAULT_COMPRESS_THRESHOLD;
 
   const candidates: CompressCheckpointOutput["candidates"] = [];

@@ -74,7 +74,7 @@ export const codeScanCommand: QtcCommand = {
 
     const inlinePatterns = collectInlinePatterns(process.argv.slice(2));
 
-    const input: Parameters<typeof runCodeScan>[2] = {};
+    const input: Parameters<typeof runCodeScan>[3] = {};
     if (root !== undefined) input.root = root;
     if (patternsFile !== undefined) input.patternsFile = patternsFile;
     if (inlinePatterns.length > 0) input.inlinePatterns = inlinePatterns;
@@ -96,7 +96,7 @@ export const codeScanCommand: QtcCommand = {
       if (Number.isFinite(n)) input.maxPerPattern = n;
     }
 
-    const data = await runCodeScan(ctx.fs, ctx.env, input);
+    const data = await runCodeScan(ctx.fs, ctx.env, ctx.paths, input);
     return { ok: true, data, exitCode: 0 };
   },
 };

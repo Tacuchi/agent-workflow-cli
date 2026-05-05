@@ -4,6 +4,7 @@ import type { DirEntry, FileSystemPort } from "../ports/file-system.js";
 import type { DiffNumstatEntry, GitPort } from "../ports/git.js";
 import { findActiveSessions } from "./checkpoint-service.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
 
@@ -61,10 +62,11 @@ export async function runCheckpointWrite(
   fs: FileSystemPort,
   env: EnvPort,
   git: GitPort,
+  paths: PathsService,
   options: { code?: string; force?: boolean } = {},
 ): Promise<CheckpointWriteOutput | CheckpointWriteSkipped> {
   const cwd = env.cwd();
-  const folder = await resolveTargetFolder(fs, env, options.code);
+  const folder = await resolveTargetFolder(fs, env, paths, options.code);
   if (!folder) {
     const actives = await findActiveSessions(fs, cwd);
     if (actives.length === 0) {
@@ -77,7 +79,7 @@ export async function runCheckpointWrite(
     };
   }
 
-  const sessionPath = join(cwd, ".qtc", "sessions", folder);
+  const sessionPath = join(paths.cwdSessionsDir(), folder);
   if (!(await fs.exists(sessionPath))) {
     throw new Error(`folder no existe: ${sessionPath}`);
   }
@@ -117,10 +119,11 @@ export async function runCheckpointWrite(
 async function resolveTargetFolder(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   code: string | undefined,
 ): Promise<string | null> {
   if (code) {
-    const sessionsDir = join(env.cwd(), ".qtc", "sessions");
+    const sessionsDir = paths.cwdSessionsDir();
     if (!(await fs.exists(sessionsDir))) return null;
     const entries = await fs.list(sessionsDir);
     const norm = code.replace("session", "").split("-")[0]?.padStart(3, "0") ?? code;
@@ -419,6 +422,7 @@ export async function runAutoCompactOnClose(
   fs: FileSystemPort,
   env: EnvPort,
   git: GitPort,
+  paths: PathsService,
 ): Promise<AutoCompactOnCloseOutput | AutoCompactOnCloseSkipped> {
   const cwd = env.cwd();
   const actives = await findActiveSessions(fs, cwd);
@@ -427,7 +431,7 @@ export async function runAutoCompactOnClose(
   }
   const written: AutoCompactOnCloseOutput["checkpoints_written"] = [];
   for (const a of actives) {
-    const entry = await writeCheckpointForActive(fs, git, cwd, a.folder);
+    const entry = await writeCheckpointForActive(fs, git, cwd, paths, a.folder);
     if (entry) written.push(entry);
   }
   return { checkpoints_written: written };
@@ -437,10 +441,11 @@ async function writeCheckpointForActive(
   fs: FileSystemPort,
   git: GitPort,
   cwd: string,
+  paths: PathsService,
   folder: string,
 ): Promise<AutoCompactOnCloseOutput["checkpoints_written"][number] | null> {
   if (!folder) return null;
-  const sessionPath = join(cwd, ".qtc", "sessions", folder);
+  const sessionPath = join(paths.cwdSessionsDir(), folder);
   if (!(await fs.exists(sessionPath))) return null;
   const cpPath = join(sessionPath, "CHECKPOINT.md");
   if (await fs.exists(cpPath)) {

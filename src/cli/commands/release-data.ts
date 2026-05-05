@@ -8,7 +8,7 @@ export const releaseDataCommand: QtcCommand = {
   name: "release-data",
   describe: "Dump consolidado para los skills release y release-scripts.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const input: Parameters<typeof runReleaseData>[2] = {};
+    const input: Parameters<typeof runReleaseData>[3] = {};
     const since = args.values.get("since");
     if (since !== undefined) input.since = since;
     const source = args.values.get("source");
@@ -19,7 +19,7 @@ export const releaseDataCommand: QtcCommand = {
     if (args.flags.has("--skip-content")) input.skipContent = true;
     if (args.flags.has("--verbose")) input.verbose = true;
 
-    const data = await runReleaseData(ctx.fs, ctx.env, input);
+    const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input);
     return { ok: true, data, exitCode: 0 };
   },
 };

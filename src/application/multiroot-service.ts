@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 
 export interface MultirootInput {
   paths?: string[];
@@ -76,10 +77,11 @@ type Mode = "attach" | "detach";
 export async function runMultiroot(
   fs: FileSystemPort,
   env: EnvPort,
+  pathsService: PathsService,
   mode: Mode,
   input: MultirootInput,
 ): Promise<MultirootResult | MultirootError> {
-  const { paths, scopeDir, scope } = await resolveScopeAndPaths(fs, env, input);
+  const { paths, scopeDir, scope } = await resolveScopeAndPaths(fs, env, pathsService, input);
 
   if (input.fromSources && paths.length === 0) {
     return {
@@ -115,6 +117,7 @@ export async function runMultiroot(
 async function resolveScopeAndPaths(
   fs: FileSystemPort,
   env: EnvPort,
+  pathsService: PathsService,
   input: MultirootInput,
 ): Promise<{ paths: string[]; scopeDir: string; scope: "global" | "workspace" }> {
   let paths: string[] = [];
@@ -128,7 +131,7 @@ async function resolveScopeAndPaths(
     );
   }
   if (input.fromSources) {
-    paths = await readSourcesFromProject(fs, env);
+    paths = await readSourcesFromProject(fs, env, pathsService);
   }
 
   let scopeDir: string;
@@ -146,11 +149,15 @@ async function resolveScopeAndPaths(
   return { paths, scopeDir, scope };
 }
 
-async function readSourcesFromProject(fs: FileSystemPort, env: EnvPort): Promise<string[]> {
+async function readSourcesFromProject(
+  fs: FileSystemPort,
+  env: EnvPort,
+  pathsService: PathsService,
+): Promise<string[]> {
   const cwd = env.cwd();
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), pathsService.blockMarkers());
     if (block && block.fuentes.length > 0) {
       return block.fuentes.map((f) => f.path).filter((p) => p && p.length > 0);
     }

@@ -35,7 +35,7 @@ export const attachMultirootCommand: QtcCommand = {
   name: "attach-multiroot",
   describe: "Configura visibilidad multi-root en Claude Code y Codex CLI.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const data = await runMultiroot(ctx.fs, ctx.env, "attach", buildInput(args));
+    const data = await runMultiroot(ctx.fs, ctx.env, ctx.paths, "attach", buildInput(args));
     return { ok: true, data, exitCode: 0 };
   },
 };
@@ -44,7 +44,7 @@ export const detachMultirootCommand: QtcCommand = {
   name: "detach-multiroot",
   describe: "Quita visibilidad multi-root previamente configurada.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const data = await runMultiroot(ctx.fs, ctx.env, "detach", buildInput(args));
+    const data = await runMultiroot(ctx.fs, ctx.env, ctx.paths, "detach", buildInput(args));
     return { ok: true, data, exitCode: 0 };
   },
 };

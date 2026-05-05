@@ -3,21 +3,24 @@ import { readFileSync, realpathSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { PathsService } from "./paths-service.js";
 
-const DEFAULT_EXCLUDES = [
-  "node_modules",
-  "target",
-  "dist",
-  "build",
-  ".qtc",
-  "docs",
-  "tests",
-  "test",
-  ".git",
-  "__pycache__",
-  ".idea",
-  ".vscode",
-];
+function defaultExcludes(paths: PathsService): string[] {
+  return [
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    `.${paths.namespace}`,
+    "docs",
+    "tests",
+    "test",
+    ".git",
+    "__pycache__",
+    ".idea",
+    ".vscode",
+  ];
+}
 
 const DEFAULT_EXTENSIONS = [
   ".java",
@@ -117,6 +120,7 @@ export interface CodeScanError {
 export async function runCodeScan(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   input: CodeScanInput,
 ): Promise<CodeScanOutput | CodeScanError> {
   const rootArg = input.root ?? ".";
@@ -146,7 +150,7 @@ export async function runCodeScan(
   }
 
   const extensions = (input.extOverride ?? DEFAULT_EXTENSIONS).map((e) => e.toLowerCase());
-  const excludes = (input.excludeOverride ?? DEFAULT_EXCLUDES).map((e) => e.toLowerCase());
+  const excludes = (input.excludeOverride ?? defaultExcludes(paths)).map((e) => e.toLowerCase());
   const maxPerPattern = input.maxPerPattern ?? 200;
 
   const result = await scanFiles(fs, rootPath, patterns, extensions, excludes, maxPerPattern);
