@@ -2,13 +2,13 @@
 // Launcher que resuelve DSN y spawnea `npx -y @bytebase/dbhub` con stdio inherit.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import type { PathsService } from "./paths-service.js";
 
 export interface DbhubLauncherDeps {
   /** Returns process.env (or test override). */
   env: Record<string, string | undefined>;
-  /** Returns `os.homedir()` (or test override). */
-  home: string;
+  /** Path resolver — provides the dsn.env file location for the active namespace. */
+  paths: PathsService;
   /** Returns `process.platform` (or test override). */
   platform: NodeJS.Platform;
 }
@@ -37,17 +37,16 @@ export function resolveDsn(instance: string, deps: DbhubLauncherDeps): DbhubReso
   if (fromEnv && fromEnv.length > 0) {
     return { dsn: fromEnv, source: "env" };
   }
-  const fromFile = loadDsnFromFile(deps.home)[dsnVar];
+  const fromFile = loadDsnFromFile(deps.paths.userDsnFile())[dsnVar];
   if (fromFile && fromFile.length > 0) {
     return { dsn: fromFile, source: "dsn.env" };
   }
   throw new DbhubLauncherError(
-    `[dbhub-mcp-runner] ${dsnVar} no visible — no está en process.env ni en ~/.qtc/dev/dsn.env. Asegurate de exportarlo en ~/.zshenv (macOS/Linux) o System Environment (Windows) y reiniciar Claude Code desde una terminal donde 'echo $${dsnVar}' devuelva valor.`,
+    `[dbhub-mcp-runner] ${dsnVar} no visible — no está en process.env ni en ${deps.paths.userDsnFile()}. Asegurate de exportarlo en ~/.zshenv (macOS/Linux) o System Environment (Windows) y reiniciar Claude Code desde una terminal donde 'echo $${dsnVar}' devuelva valor.`,
   );
 }
 
-function loadDsnFromFile(home: string): Record<string, string> {
-  const file = join(home, ".qtc", "dev", "dsn.env");
+function loadDsnFromFile(file: string): Record<string, string> {
   let raw: string;
   try {
     raw = readFileSync(file, "utf-8");

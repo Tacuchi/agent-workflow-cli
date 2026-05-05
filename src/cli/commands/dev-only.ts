@@ -22,7 +22,7 @@ export const profilesCommand: QtcCommand = {
   name: "profiles",
   describe: "Resolve user preferences from ~/.qtc/user-config.md.",
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const data = await runProfiles(ctx.fs);
+    const data = await runProfiles(ctx.fs, ctx.paths);
     return { ok: true, data, exitCode: 0 };
   },
 };
@@ -37,7 +37,7 @@ export const logsCommand: QtcCommand = {
     const input: { tail?: number; clear?: boolean } = {};
     if (tail !== undefined && Number.isFinite(tail)) input.tail = tail;
     if (clear) input.clear = true;
-    const data = await runLogs(ctx.env, input);
+    const data = await runLogs(ctx.env, ctx.paths, input);
     return { ok: true, data, exitCode: 0 };
   },
 };

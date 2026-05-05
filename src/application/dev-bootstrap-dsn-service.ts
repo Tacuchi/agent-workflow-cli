@@ -1,7 +1,7 @@
 // Mirror de developer-workflow-plugin/scripts/qtc-utils.py:cmd_bootstrap_dsn.
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import type { PathsService } from "./paths-service.js";
 
 export interface BootstrapDsnInput {
   certDsn: string | undefined;
@@ -19,8 +19,11 @@ export interface BootstrapDsnError {
   exitCode: 2;
 }
 
-export function runBootstrapDsn(input: BootstrapDsnInput): BootstrapDsnOutput | BootstrapDsnError {
-  const target = join(homedir(), ".qtc", "dev", "dsn.env");
+export function runBootstrapDsn(
+  paths: PathsService,
+  input: BootstrapDsnInput,
+): BootstrapDsnOutput | BootstrapDsnError {
+  const target = paths.userDsnFile();
   const lines: string[] = [];
   const written: string[] = [];
 

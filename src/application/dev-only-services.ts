@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { firstNonEmptyLine, parseMdSection, parseMdValue } from "./markdown.js";
+import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
 // ─── harness ────────────────────────────────────────────────────────────────
@@ -66,7 +67,10 @@ export interface ProfilesOutput {
   legacy_section_detected: boolean;
 }
 
-export async function runProfiles(fs: FileSystemPort): Promise<ProfilesOutput> {
+export async function runProfiles(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<ProfilesOutput> {
   const result: ProfilesOutput = {
     validation_mode: "ask",
     teaching_mode: "off",
@@ -75,9 +79,8 @@ export async function runProfiles(fs: FileSystemPort): Promise<ProfilesOutput> {
     legacy_section_detected: false,
   };
 
-  const home = homedir();
-  const sharedCfg = join(home, ".qtc", "user-config.md");
-  const legacyCfg = join(home, ".developer-workflow", "user-config.md");
+  const sharedCfg = paths.userConfigMd();
+  const legacyCfg = join(homedir(), ".developer-workflow", "user-config.md");
   const userCfg = (await fs.exists(sharedCfg))
     ? sharedCfg
     : (await fs.exists(legacyCfg))
@@ -136,16 +139,18 @@ export interface LogsListOutput {
 
 export type LogsOutput = LogsClearedOutput | LogsListOutput;
 
-export async function runLogs(env: EnvPort, input: LogsInput): Promise<LogsOutput> {
-  // Mirror Python `_log_dir`: prefer .qtc/logs/ in cwd, fallback ~/.qtc/<flow>/logs/.
-  // Without a flow context, fallback to ~/.qtc/logs/.
-  const cwd = env.cwd();
-  const cwdQtc = join(cwd, ".qtc");
-  const logDir =
-    existsSync(cwdQtc) && statSync(cwdQtc).isDirectory()
-      ? join(cwdQtc, "logs")
-      : join(homedir(), ".qtc", "logs");
-  const path = join(logDir, "qtc-utils.log");
+export async function runLogs(
+  env: EnvPort,
+  paths: PathsService,
+  input: LogsInput,
+): Promise<LogsOutput> {
+  // Prefer the in-cwd ${ns}/logs/ when present, fallback to ~/.${ns}/logs/.
+  void env;
+  const cwdRoot = paths.cwdRoot();
+  const path =
+    existsSync(cwdRoot) && statSync(cwdRoot).isDirectory()
+      ? paths.cwdLogFile()
+      : join(paths.userLogsDir(), "agent-workflow.log");
 
   if (input.clear === true) {
     if (existsSync(path)) unlinkSync(path);

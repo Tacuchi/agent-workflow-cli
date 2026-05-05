@@ -13,7 +13,7 @@ export const bootstrapDsnCommand: QtcCommand = {
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const certDsn = ctx.env.get("DB_CERT_DSN");
     const prodDsn = ctx.env.get("DB_PROD_DSN");
-    const result = runBootstrapDsn({ certDsn, prodDsn });
+    const result = runBootstrapDsn(ctx.paths, { certDsn, prodDsn });
     if ("error" in result) {
       return {
         ok: false,

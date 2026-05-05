@@ -3,11 +3,12 @@ import type { CommandResult, ExitCode } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import { writeStderr } from "../render.js";
+import type { CliContext } from "../types.js";
 
 export const mcpCommand: QtcCommand = {
   name: "mcp",
   describe: "MCP server launchers. Subcommands: dbhub <instance>.",
-  async execute(args: ParsedArgs): Promise<CommandResult> {
+  async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const subcommand = args.rest[0];
     if (subcommand !== "dbhub") {
       return {
@@ -36,7 +37,7 @@ export const mcpCommand: QtcCommand = {
         instance,
         deps: {
           env: { ...process.env },
-          home: process.env.HOME ?? "",
+          paths: ctx.paths,
           platform: process.platform,
         },
       });
