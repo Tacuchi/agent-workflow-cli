@@ -3,8 +3,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import { PathsService } from "../../src/application/paths-service.js";
 import { SessionsService } from "../../src/application/sessions-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
+import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = join(HERE, "..", "fixtures", "sample-workspace");
@@ -27,7 +29,9 @@ function loadGolden(name: string): unknown {
 }
 
 describe("SessionsService — golden parity vs python qtc_core", () => {
-  const service = new SessionsService(new NodeFileSystem(), new FixtureEnv());
+  const env = new FixtureEnv();
+  const paths = new PathsService(normalizeNamespace("qtc"), env.homeDir(), env.cwd());
+  const service = new SessionsService(new NodeFileSystem(), env, paths);
 
   it("default mode (active filter) matches python sessions-default.json", async () => {
     const result = await service.list();

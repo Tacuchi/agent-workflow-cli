@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { Phase, SessionState } from "../domain/types.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { PathsService } from "./paths-service.js";
 import {
   type SessionEntry,
   buildSessionEntry,
@@ -31,11 +32,12 @@ export class SessionsService {
   constructor(
     private readonly fs: FileSystemPort,
     private readonly env: EnvPort,
+    private readonly paths: PathsService,
   ) {}
 
   async list(input: ListSessionsInput = {}): Promise<ListSessionsOutput> {
     const cwd = this.env.cwd();
-    const sessionsDir = join(cwd, ".qtc", "sessions");
+    const sessionsDir = this.paths.cwdSessionsDir();
     const sessions = await this.scanFolder(sessionsDir, undefined, cwd, input.verbose === true);
 
     const legacyEntries: SessionEntry[] = [];
@@ -74,7 +76,7 @@ export class SessionsService {
       payload.legacy = legacy;
     }
     if (input.verbose === true) {
-      payload.history_exists = await this.fs.exists(join(cwd, ".qtc", "HISTORY.md"));
+      payload.history_exists = await this.fs.exists(this.paths.cwdHistoryFile());
     }
 
     return payload;

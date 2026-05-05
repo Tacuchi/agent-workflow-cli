@@ -18,7 +18,7 @@ export const sessionsCommand: QtcCommand<ListSessionsOutput> = {
         ? "all"
         : undefined;
 
-    const service = new SessionsService(ctx.fs, ctx.env);
+    const service = new SessionsService(ctx.fs, ctx.env, ctx.paths);
     const data = await service.list({ includeLegacy, verbose, ...(state ? { state } : {}) });
 
     return { ok: true, data, exitCode: 0 };
