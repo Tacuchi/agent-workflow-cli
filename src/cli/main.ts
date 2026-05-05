@@ -189,11 +189,16 @@ function readPackageVersion(): string {
 
 function printHelp(commands: string[]): void {
   const lines = [
-    "agent-workflow — runtime CLI for the qtc-* plugin family",
+    "agent-workflow — generic session-lifecycle CLI",
     "",
     "Usage:",
-    "  agent-workflow [--flow <core|dev|design|analyze>] [--plugin-root <path>]",
-    "                 [--plugin-version <semver>] [--compat <range>] <command> [args...]",
+    "  agent-workflow [--namespace <name>] [--flow <core|dev|design|analyze>]",
+    "                 [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
+    "                 <command> [args...]",
+    "",
+    "Namespace controls the artifact directory (default: 'agent-workflow'). Set",
+    "`AW_NAMESPACE=<name>` or pass `--namespace <name>` to use a custom namespace.",
+    "For qtc-* plugin compatibility, use --namespace qtc.",
     "",
     "Commands:",
     ...commands.map((c) => `  ${c}`),

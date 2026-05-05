@@ -1,7 +1,7 @@
 {
   "name": "@tacuchi/agent-workflow",
   "version": "0.9.1",
-  "description": "Runtime CLI for the qtc-* plugin family. Replaces qtc_core Python scripts with a TypeScript-based npm package.",
+  "description": "Agnostic runtime CLI for session-lifecycle workflows. Default namespace: 'agent-workflow'. Use `--namespace qtc` for compatibility with qtc-* plugins.",
   "type": "module",
   "bin": {
     "agent-workflow": "./dist/cli/main.js",
@@ -28,7 +28,7 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
-  "keywords": ["qtc", "cli", "agent-workflow", "claude-code", "codex"],
+  "keywords": ["cli", "agent-workflow", "session-lifecycle", "claude-code", "codex", "namespace"],
   "author": "Tacuchi <jesus.loayza@quetalcompra.com>",
   "license": "MIT",
   "repository": {
