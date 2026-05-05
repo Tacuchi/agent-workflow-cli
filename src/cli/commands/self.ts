@@ -1,5 +1,6 @@
 import { selfDoctor } from "../../application/self/doctor-self.js";
 import { selfNamespace } from "../../application/self/namespace-info.js";
+import { selfUpdate } from "../../application/self/update-self.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
@@ -15,6 +16,8 @@ export const selfCommand: QtcCommand = {
         return selfNamespace(ctx);
       case "doctor":
         return selfDoctor(ctx);
+      case "update":
+        return selfUpdate(ctx);
       case undefined:
       case "":
         return {

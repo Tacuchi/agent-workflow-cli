@@ -1,0 +1,41 @@
+import type { CliContext } from "../../cli/types.js";
+import type { CommandResult, ExitCode } from "../../domain/types.js";
+
+export interface SelfUpdateData {
+  command: string;
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+}
+
+export async function selfUpdate(ctx: CliContext): Promise<CommandResult<SelfUpdateData>> {
+  // Optional TTY confirm
+  if (process.stdout.isTTY === true) {
+    const { confirm } = await import("@inquirer/prompts");
+    const ok = await confirm({
+      message: `Run \`npm install -g ${ctx.runtime.packageName}@latest\`?`,
+      default: true,
+    });
+    if (!ok) {
+      return {
+        ok: true,
+        data: { command: "(cancelled)", exit_code: 0, stdout: "", stderr: "" },
+        exitCode: 0,
+      };
+    }
+  }
+
+  const args = ["install", "-g", `${ctx.runtime.packageName}@latest`];
+  const result = await ctx.process.run("npm", args, {});
+  const code = result.code as ExitCode;
+  return {
+    ok: result.code === 0,
+    data: {
+      command: `npm ${args.join(" ")}`,
+      exit_code: result.code,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    },
+    exitCode: code === 0 || code === 1 || code === 2 ? code : 1,
+  };
+}
