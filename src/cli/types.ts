@@ -1,3 +1,4 @@
+import type { PathsService } from "../application/paths-service.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -12,4 +13,5 @@ export interface CliContext {
   process: ProcessPort;
   runtime: ResolvedRuntime;
   namespace: ResolvedNamespace;
+  paths: PathsService;
 }

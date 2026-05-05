@@ -5,6 +5,7 @@ import { GitCliAdapter } from "../adapters/git-cli.js";
 import { NodeEnv } from "../adapters/node-env.js";
 import { NodeFileSystem } from "../adapters/node-file-system.js";
 import { NodeProcess } from "../adapters/node-process.js";
+import { PathsService } from "../application/paths-service.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
 import { NamespaceResolver } from "../runtime/namespace-resolver.js";
@@ -149,7 +150,9 @@ async function run(argv: string[]): Promise<ExitCode> {
   const namespaceResolver = new NamespaceResolver(fs, env);
   const namespace = await namespaceResolver.resolve(parsed.values.get("namespace"));
 
-  const ctx: CliContext = { fs, env, git, process: proc, runtime, namespace };
+  const paths = new PathsService(namespace.namespace, env.homeDir(), env.cwd());
+
+  const ctx: CliContext = { fs, env, git, process: proc, runtime, namespace, paths };
 
   try {
     const result = await command.execute(parsed, ctx);
