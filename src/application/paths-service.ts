@@ -39,6 +39,12 @@ export class PathsService {
   userConfigMd(): string {
     return join(this.userRoot(), "user-config.md");
   }
+  userPluginVersionFile(flow: string): string {
+    return join(this.userRoot(), flow, ".plugin-version");
+  }
+  userCoreLibMarker(): string {
+    return join(this.userRoot(), "lib", `.${this.ns}-core-version`);
+  }
 
   // cwd-level (.${ns}/... in current workspace)
   cwdRoot(): string {

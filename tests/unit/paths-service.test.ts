@@ -44,4 +44,15 @@ describe("PathsService", () => {
   it("namespace getter returns the underlying value", () => {
     expect(qtcPaths.namespace).toBe("qtc");
   });
+
+  it("resolves user plugin version file per flow", () => {
+    expect(qtcPaths.userPluginVersionFile("dev")).toBe("/home/u/.qtc/dev/.plugin-version");
+    expect(qtcPaths.userPluginVersionFile("design")).toBe("/home/u/.qtc/design/.plugin-version");
+  });
+
+  it("resolves user core-lib version marker", () => {
+    expect(qtcPaths.userCoreLibMarker()).toBe("/home/u/.qtc/lib/.qtc-core-version");
+    const ps = new PathsService(normalizeNamespace("agent-workflow"), "/home/u", "/cwd");
+    expect(ps.userCoreLibMarker()).toBe("/home/u/.agent-workflow/lib/.agent-workflow-core-version");
+  });
 });

@@ -1,18 +1,23 @@
-// Plugin doctor — health check del plugin qtc-* (manifest, hooks, MCP, skills).
+// Plugin doctor — health check del plugin (manifest, hooks, MCP, skills).
 // Comportamiento dependiente de `qtcContractVersion` del manifest:
 //   - >= 6.3 (single-path post-session032): skip checks de Python (marker
-//     `~/.qtc/<flow>/.plugin-version`, qtc-core lib en `~/.qtc/lib/`, scripts
-//     `qtc-utils.py` / `branch-check.py`, version de python3). Estos artefactos
-//     ya no existen en plugins single-path.
-//   - < 6.3 (legacy dual-path): chequea presencia de scripts y marker como
-//     antes; util para detectar instalaciones rotas en versiones antiguas.
+//     `<userRoot>/<flow>/.plugin-version`, core-lib version marker, scripts,
+//     version de python3). Estos artefactos ya no existen en plugins single-path.
+//   - < 6.3 (legacy dual-path): chequea presencia de marker como antes para
+//     detectar instalaciones rotas en versiones antiguas.
+//
+// Phase 3 agnostic CLI: los servidores MCP esperados se leen de
+// `runtime.expectedMcpServers` (vacio = no expectations). El soporte de
+// scripts Python se eliminó por completo (Python ya no es parte del runtime).
+//
 // `exported_skills` se lee de `.claude-plugin/plugin.json:exportedSkills` o
 // de un --exports-file JSON.
 import { spawnSync } from "node:child_process";
-import { homedir } from "node:os";
 import { extname, join, relative, resolve, sep } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { ResolvedRuntime } from "../runtime/types.js";
+import type { PathsService } from "./paths-service.js";
 
 const SESSION_SPECIFIC_MARKERS = [
   "session034",
@@ -22,19 +27,12 @@ const SESSION_SPECIFIC_MARKERS = [
   "tb_acceso_usuario_rol",
 ];
 
-const DEFAULT_EXPECTED_SCRIPTS_BY_FLOW: Record<string, string[]> = {
-  dev: ["qtc-utils.py", "branch-check.py"],
-  design: ["qtc-utils.py"],
-  analyze: ["qtc-utils.py"],
-};
-
 export interface PluginDoctorInput {
   pluginRoot?: string;
   flow?: string;
   pluginVersion?: string;
   pluginName?: string;
   compatRange?: string;
-  expectedScripts?: string[];
   exportsFile?: string;
 }
 
@@ -48,11 +46,6 @@ export interface SkillFrontmatterInfo {
   dir: string;
   name: string | null;
   version: string | null;
-}
-
-export interface ScriptInfo {
-  local: boolean;
-  installed: boolean;
 }
 
 export type HooksInfoValue = string[] | "invalid-structure" | null;
@@ -81,7 +74,6 @@ export interface DoctorOutput {
   readme_count_match: boolean | null;
   manifests: Record<string, string | null>;
   installed_marker: string | null;
-  scripts: Record<string, ScriptInfo>;
   hooks: Record<string, HooksInfoValue>;
   mcp: Record<string, McpServerInfo>;
   skills: SkillFrontmatterInfo[];
@@ -92,6 +84,8 @@ export interface DoctorOutput {
 export async function runPluginDoctor(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
+  runtime: ResolvedRuntime,
   input: PluginDoctorInput,
 ): Promise<{ data: DoctorOutput; hasError: boolean }> {
   const cwd = env.cwd();
@@ -100,7 +94,7 @@ export async function runPluginDoctor(
     : cwd;
   const flow = input.flow ?? "core";
   const inputPluginVersion = input.pluginVersion ?? null;
-  const pluginName = input.pluginName ?? `qtc-${flow}`;
+  const pluginName = input.pluginName ?? `${paths.namespace}-${flow}`;
   const compatRange = input.compatRange ?? null;
 
   const skillsDir = join(pluginRoot, "skills");
@@ -239,9 +233,6 @@ export async function runPluginDoctor(
   }
 
   // 4. Manifest version drift + qtcContractVersion gate.
-  // Si no se pasó --plugin-version, .claude-plugin/plugin.json:version es la fuente
-  // canónica; .codex-plugin/plugin.json debe coincidir. Si se pasa --plugin-version,
-  // ambos manifiestos se comparan contra él.
   const manifestsInfo: Record<string, string | null> = {};
   let manifestQtcContractVersion: string | null = null;
   let canonicalVersion: string | null = inputPluginVersion;
@@ -298,22 +289,19 @@ export async function runPluginDoctor(
   }
   const pluginVersion = canonicalVersion ?? "unknown";
   // Si el manifest declara qtcContractVersion >= 6.3, el plugin opera en
-  // single-path y no debe chequearse la presencia de artefactos Python.
+  // single-path y no debe chequearse la presencia de artefactos legacy.
   const isSinglePathContract = isContractVersionAtLeast(manifestQtcContractVersion, 6, 3);
 
-  // 5/5b/6 — checks legacy de era dual-path. En contracts >= 6.3 (single-path)
-  // estos artefactos ya no existen físicamente: el plugin son SKILLs+HOOKS+MCP
-  // puro y el runtime CLI vive como paquete npm independiente.
-  const home = homedir();
-  const pluginCacheDir = join(home, ".qtc", flow);
+  // 5/5b — checks legacy de era dual-path. Solo el marker de plugin version y
+  // el marker de core-lib se siguen revisando para detectar instalaciones rotas
+  // en plugins viejos. Los scripts Python se eliminaron por completo.
   let installedMarker: string | null = null;
   let qtcCoreInstalled: string | null = null;
   let compatOk: boolean | null = null;
-  const scriptsInfo: Record<string, ScriptInfo> = {};
 
   if (!isSinglePathContract) {
-    // 5. Marker file (~/.qtc/<flow>/.plugin-version) — solo legacy.
-    const markerFile = join(pluginCacheDir, ".plugin-version");
+    // 5. Marker file (~/.<ns>/<flow>/.plugin-version) — solo legacy.
+    const markerFile = paths.userPluginVersionFile(flow);
     if (await fs.exists(markerFile)) {
       try {
         const raw = (await fs.readText(markerFile)).trim();
@@ -334,8 +322,8 @@ export async function runPluginDoctor(
       }
     }
 
-    // 5b. qtc-core lib install state + compat range — solo legacy.
-    const coreLibMarker = join(home, ".qtc", "lib", ".qtc-core-version");
+    // 5b. core lib install state + compat range — solo legacy.
+    const coreLibMarker = paths.userCoreLibMarker();
     if (await fs.exists(coreLibMarker)) {
       try {
         const raw = (await fs.readText(coreLibMarker)).trim();
@@ -345,71 +333,7 @@ export async function runPluginDoctor(
       }
     }
     if (compatRange) {
-      if (!qtcCoreInstalled) {
-        findings.push({
-          level: "error",
-          file: coreLibMarker,
-          msg: `plugin requiere qtc-core ${compatRange} pero ~/.qtc/lib/.qtc-core-version no existe — instalá qtc-core o reiniciá la sesión para que SessionStart hook lo copie`,
-        });
-        compatOk = false;
-      } else {
-        compatOk = semverSatisfies(qtcCoreInstalled, compatRange);
-        if (compatOk === null) {
-          findings.push({
-            level: "warn",
-            file: "compat_range",
-            msg: `no pude parsear compat_range '${compatRange}' (esperado '~X.Y.Z', '^X.Y.Z' o 'X.Y.Z') — validación contra qtc-core skipped`,
-          });
-        } else if (!compatOk) {
-          findings.push({
-            level: "error",
-            file: "compat_range",
-            msg: `qtc-core instalado v${qtcCoreInstalled} NO satisface compat_range del plugin (${compatRange}) — el plugin va a fallar en runtime`,
-          });
-        }
-      }
-    }
-
-    // 6. Scripts (./scripts/ + ~/.qtc/<flow>/scripts/) — solo legacy.
-    const expectedScripts = input.expectedScripts ??
-      DEFAULT_EXPECTED_SCRIPTS_BY_FLOW[flow] ?? ["qtc-utils.py"];
-    const localScriptsDir = join(pluginRoot, "scripts");
-    const installedScriptsDir = join(pluginCacheDir, "scripts");
-    for (const name of expectedScripts) {
-      const local = join(localScriptsDir, name);
-      const installed = join(installedScriptsDir, name);
-      const localOk = await fs.exists(local);
-      const installedOk = await fs.exists(installed);
-      scriptsInfo[name] = { local: localOk, installed: installedOk };
-      if (!localOk) {
-        findings.push({
-          level: "error",
-          file: `scripts/${name}`,
-          msg: "script missing in repo ./scripts/",
-        });
-      }
-      if (!installedOk) {
-        findings.push({
-          level: "warn",
-          file: installed,
-          msg: `script not installed (SessionStart hook debe copiarlo desde ./scripts/${name})`,
-        });
-      }
-      if (localOk && installedOk) {
-        try {
-          const a = await fs.stat(local);
-          const b = await fs.stat(installed);
-          if (a.size !== b.size) {
-            findings.push({
-              level: "warn",
-              file: `scripts/${name}`,
-              msg: "local and installed copies differ in size — reinstall para sincronizar",
-            });
-          }
-        } catch {
-          // ignore
-        }
-      }
+      compatOk = evaluateCompat(qtcCoreInstalled, compatRange, coreLibMarker, findings);
     }
   }
 
@@ -458,11 +382,11 @@ export async function runPluginDoctor(
     }
   }
 
-  // 8. MCP.
+  // 8. MCP — servidores esperados leídos del runtime config (Phase 3).
   const mcpInfo: Record<string, McpServerInfo> = {};
   const mcpPath = join(pluginRoot, ".mcp.json");
-  const expectedMcpServers = ["qtc-cert", "qtc-prod"];
-  if (await fs.exists(mcpPath)) {
+  const expectedMcpServers = runtime.expectedMcpServers ?? [];
+  if (expectedMcpServers.length > 0 && (await fs.exists(mcpPath))) {
     let mcpData: unknown = null;
     try {
       mcpData = JSON.parse(await fs.readText(mcpPath));
@@ -529,7 +453,7 @@ export async function runPluginDoctor(
     }
   }
 
-  // 10. Exported skills (read from .claude-plugin/plugin.json:exportedSkills or --exports-file).
+  // 10. Exported skills.
   const exportedInfo: ExportedSkillRecord[] = [];
   const exportedSkills = await loadExportedSkills(fs, pluginRoot, input.exportsFile, pluginName);
   const skillsByName = new Map<string, SkillFrontmatterInfo>();
@@ -604,7 +528,6 @@ export async function runPluginDoctor(
       readme_count_match: readmeCountMatch,
       manifests: manifestsInfo,
       installed_marker: installedMarker,
-      scripts: scriptsInfo,
       hooks: hooksInfo,
       mcp: mcpInfo,
       skills: skillsInfo,
@@ -613,6 +536,37 @@ export async function runPluginDoctor(
     },
     hasError,
   };
+}
+
+function evaluateCompat(
+  qtcCoreInstalled: string | null,
+  compatRange: string,
+  coreLibMarker: string,
+  findings: DoctorFinding[],
+): boolean | null {
+  if (!qtcCoreInstalled) {
+    findings.push({
+      level: "error",
+      file: coreLibMarker,
+      msg: `plugin requiere core ${compatRange} pero ${coreLibMarker} no existe — instalá el core lib o reiniciá la sesión para que SessionStart hook lo copie`,
+    });
+    return false;
+  }
+  const compatOk = semverSatisfies(qtcCoreInstalled, compatRange);
+  if (compatOk === null) {
+    findings.push({
+      level: "warn",
+      file: "compat_range",
+      msg: `no pude parsear compat_range '${compatRange}' (esperado '~X.Y.Z', '^X.Y.Z' o 'X.Y.Z') — validación contra core lib skipped`,
+    });
+  } else if (!compatOk) {
+    findings.push({
+      level: "error",
+      file: "compat_range",
+      msg: `core lib instalado v${qtcCoreInstalled} NO satisface compat_range del plugin (${compatRange}) — el plugin va a fallar en runtime`,
+    });
+  }
+  return compatOk;
 }
 
 interface ExportedSkillEntry {
