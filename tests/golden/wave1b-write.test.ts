@@ -10,6 +10,7 @@ import { runSessionCreate } from "../../src/application/session-create-service.j
 import {
   TestEnv,
   cloneFixture,
+  makeQtcPaths,
   normalizeLastActivity,
   normalizeTodayDate,
   readFile,
@@ -29,7 +30,8 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("history-update --code 001 --state closed --summary 'tarea cerrada via test'", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const result = await runHistoryUpdate(fs, env, {
+    const paths = makeQtcPaths(env);
+    const result = await runHistoryUpdate(fs, env, paths, {
       code: "001",
       state: "closed",
       summary: "tarea cerrada via test",

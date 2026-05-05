@@ -13,7 +13,7 @@ export const historyDataCommand: QtcCommand = {
     const input: { verbose?: boolean; includeDocs?: boolean } = {};
     if (verbose) input.verbose = true;
     if (includeDocs) input.includeDocs = true;
-    const data = await runHistoryDataCommand(ctx.fs, ctx.env, input);
+    const data = await runHistoryDataCommand(ctx.fs, ctx.env, ctx.paths, input);
     return { ok: true, data, exitCode: 0 };
   },
 };

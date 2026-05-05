@@ -44,13 +44,12 @@ export function buildRow(params: {
 
 export async function upsertRow(
   fs: FileSystemPort,
-  cwd: string,
+  historyFile: string,
   code: string,
   buildNewRow: (hasFlow: boolean) => string,
 ): Promise<UpsertAction> {
-  const path = historyPath(cwd);
-  await ensureHistoryFile(fs, path);
-  const text = await fs.readText(path);
+  await ensureHistoryFile(fs, historyFile);
+  const text = await fs.readText(historyFile);
   const hasFlow = hasFlowColumn(text);
   const newRow = buildNewRow(hasFlow);
 
@@ -61,14 +60,14 @@ export async function upsertRow(
       return "unchanged";
     }
     const updated = text.replace(rowRegex, newRow);
-    await fs.writeText(path, updated);
+    await fs.writeText(historyFile, updated);
     return "updated";
   }
 
   let appended = text;
   if (!appended.endsWith("\n")) appended += "\n";
   appended += `${newRow}\n`;
-  await fs.writeText(path, appended);
+  await fs.writeText(historyFile, appended);
   return "added";
 }
 

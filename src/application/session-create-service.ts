@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type ResolvedOrigen, renderOrigenBlock, resolveOrigen } from "./handoff.js";
-import { buildRow, upsertRow } from "./history-table.js";
+import { buildRow, historyPath, upsertRow } from "./history-table.js";
 import {
   type ProjectMdUpsertOutput,
   runProjectMdUpsertWrite,
@@ -179,7 +179,7 @@ async function writeHistoryRow(
   if (origen) refsParts.push(`origen:${origen.flow}-${origen.code}`);
   const initialRefs = refsParts.length > 0 ? renderRefs(refsParts.join(",")) : "—";
 
-  await upsertRow(fs, cwd, code, (hasFlow) =>
+  await upsertRow(fs, historyPath(cwd), code, (hasFlow) =>
     buildRow({
       code,
       flow,

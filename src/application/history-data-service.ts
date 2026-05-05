@@ -1,6 +1,6 @@
-import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { PathsService } from "./paths-service.js";
 import {
   type SessionEntry,
   buildSessionEntry,
@@ -32,10 +32,11 @@ export interface HistoryDataOutput {
 export async function runHistoryDataCommand(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   input: HistoryDataInput,
 ): Promise<HistoryDataOutput> {
   const cwd = env.cwd();
-  const sessionsDir = join(cwd, ".qtc", "sessions");
+  const sessionsDir = paths.cwdSessionsDir();
   const folders = await listSessionFolders(fs, sessionsDir);
   const verbose = input.verbose === true;
   const includeDocs = input.includeDocs === true;
@@ -65,7 +66,7 @@ export async function runHistoryDataCommand(
   };
   // Docs scanning is currently unused in tests/fixtures; deferred until needed.
 
-  const historyPath = join(cwd, ".qtc", "HISTORY.md");
+  const historyPath = paths.cwdHistoryFile();
   const existingRows: string[] = [];
   if (await fs.exists(historyPath)) {
     const text = await fs.readText(historyPath);

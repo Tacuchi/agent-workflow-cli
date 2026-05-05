@@ -15,7 +15,7 @@ export const historyUpdateCommand: QtcCommand = {
     const summary = args.values.get("summary");
     const refs = args.values.get("refs");
 
-    const input: Parameters<typeof runHistoryUpdate>[2] = {};
+    const input: Parameters<typeof runHistoryUpdate>[3] = {};
     if (code !== undefined) input.code = code;
     if (state !== undefined) input.state = state;
     if (sesion !== undefined) input.sesionName = sesion;
@@ -23,7 +23,7 @@ export const historyUpdateCommand: QtcCommand = {
     if (summary !== undefined) input.summary = summary;
     if (refs !== undefined) input.refs = refs;
 
-    const data = await runHistoryUpdate(ctx.fs, ctx.env, input);
+    const data = await runHistoryUpdate(ctx.fs, ctx.env, ctx.paths, input);
     if ("error" in data) {
       return {
         ok: false,

@@ -1,6 +1,6 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { type UpsertAction, buildRow, upsertRow } from "./history-table.js";
+import { type UpsertAction, buildRow, historyPath, upsertRow } from "./history-table.js";
 import {
   type ProjectMdUpsertOutput,
   runProjectMdUpsertWrite,
@@ -69,7 +69,7 @@ export async function runSessionClose(
   const date = session.date ?? formatToday();
   const summary = session.summary ?? "";
 
-  const action = await upsertRow(fs, cwd, session.code ?? input.code, (hasFlow) =>
+  const action = await upsertRow(fs, historyPath(cwd), session.code ?? input.code, (hasFlow) =>
     buildRow({
       code: session.code ?? input.code ?? "",
       flow: session.flow ?? null,

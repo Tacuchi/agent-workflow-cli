@@ -8,10 +8,12 @@ import { runDecisionesCommand } from "../../src/application/decisiones-service.j
 import { runDependenciasCommand } from "../../src/application/dependencias-service.js";
 import { runHistoryDataCommand } from "../../src/application/history-data-service.js";
 import { runObjetivoCommand } from "../../src/application/objetivo-service.js";
+import { PathsService } from "../../src/application/paths-service.js";
 import { runProjectMdRead } from "../../src/application/project-md-service.js";
 import { runSessionResume } from "../../src/application/session-resume-service.js";
 import { runTasksCommand } from "../../src/application/tasks-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
+import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = join(HERE, "..", "fixtures", "sample-workspace");
@@ -35,6 +37,7 @@ function loadGolden(name: string): unknown {
 
 const fs = new NodeFileSystem();
 const env = new FixtureEnv();
+const paths = new PathsService(normalizeNamespace("qtc"), env.homeDir(), env.cwd());
 
 describe("Wave 1 read commands — golden parity vs python qtc_core", () => {
   it("objetivo-data --code 001", async () => {
@@ -68,7 +71,7 @@ describe("Wave 1 read commands — golden parity vs python qtc_core", () => {
   });
 
   it("history-data", async () => {
-    const result = await runHistoryDataCommand(fs, env, {});
+    const result = await runHistoryDataCommand(fs, env, paths, {});
     expect(result).toEqual(loadGolden("history-data.json"));
   });
 

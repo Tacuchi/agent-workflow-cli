@@ -1,6 +1,7 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type UpsertAction, buildRow, upsertRow } from "./history-table.js";
+import type { PathsService } from "./paths-service.js";
 import { renderRefs } from "./render/history-row.js";
 import { type SessionEntry, resolveSession } from "./session-resolver.js";
 
@@ -29,6 +30,7 @@ export type HistoryUpdateResult = HistoryUpdateOutput | HistoryUpdateError;
 export async function runHistoryUpdate(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   input: HistoryUpdateInput,
 ): Promise<HistoryUpdateResult> {
   const validation = validate(input);
@@ -41,7 +43,7 @@ export async function runHistoryUpdate(
   const refsRendered = renderRefs(input.refs);
   const codeNum = normalizeCode(code);
 
-  const action = await upsertRow(fs, env.cwd(), codeNum, (hasFlow) =>
+  const action = await upsertRow(fs, paths.cwdHistoryFile(), codeNum, (hasFlow) =>
     buildRow({
       code: codeNum,
       flow: fields.flow,
