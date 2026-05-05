@@ -42,7 +42,7 @@ export const hookCommand: QtcCommand = {
       return { ok: true, data: undefined, exitCode: result.exitCode };
     }
     if (subcommand === "sql-mutation-guard") {
-      const result = runSqlMutationGuard({ stdin, env: ctx.env });
+      const result = runSqlMutationGuard({ stdin, env: ctx.env, runtime: ctx.runtime });
       if (result.stderr) writeStderr(result.stderr);
       return { ok: true, data: undefined, exitCode: result.exitCode };
     }

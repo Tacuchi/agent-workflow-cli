@@ -1,5 +1,7 @@
 // Mirror de developer-workflow-plugin/scripts/sql-mutation-guard.py.
+// Patterns y display name son read del runtime config (Phase 3 agnostic CLI).
 import type { EnvPort } from "../ports/env.js";
+import type { ResolvedRuntime } from "../runtime/types.js";
 
 const MUTATION_KEYWORDS = [
   "INSERT",
@@ -15,8 +17,6 @@ const MUTATION_KEYWORDS = [
   "COPY",
 ];
 
-const TOOL_NAME_PATTERN = /^mcp__plugin.*qtc-(cert|prod).*__execute_sql$/;
-const SERVER_PATTERN = /qtc-(cert|prod)/;
 const MUTATION_PATTERN = new RegExp(`\\b(${MUTATION_KEYWORDS.join("|")})\\b`, "i");
 const COMMENT_LINE_RE = /--[^\n]*/g;
 const COMMENT_BLOCK_RE = /\/\*[\s\S]*?\*\//g;
@@ -29,42 +29,75 @@ export interface SqlGuardResult {
 export interface SqlGuardInput {
   stdin: string;
   env: EnvPort;
+  runtime: ResolvedRuntime;
 }
 
 export function runSqlMutationGuard(input: SqlGuardInput): SqlGuardResult {
+  const patterns = input.runtime.mcpGuards?.sqlMutation;
+  if (!patterns) {
+    // No config → guard disabled. Allow tool through.
+    return { exitCode: 0 };
+  }
   if ((input.env.get("QTC_SQL_GUARD") ?? "").toLowerCase() === "off") {
     return { exitCode: 0 };
   }
-  const raw = input.stdin.trim();
-  if (raw.length === 0) return { exitCode: 0 };
+  const payload = parsePayload(input.stdin);
+  if (!payload) return { exitCode: 0 };
 
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    return { exitCode: 0 };
-  }
+  const compiled = compilePatterns(patterns);
+  if (!compiled) return { exitCode: 0 };
 
   const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
-  if (!TOOL_NAME_PATTERN.test(toolName)) return { exitCode: 0 };
+  if (!compiled.tool.test(toolName)) return { exitCode: 0 };
 
-  const serverMatch = toolName.match(SERVER_PATTERN);
-  const server = serverMatch?.[1] ?? "?";
+  const serverMatch = toolName.match(compiled.server);
+  const serverFull = serverMatch?.[0] ?? "?";
+  const serverSuffix = serverMatch?.[1] ?? serverFull;
 
-  const allowEnv = (input.env.get("QTC_SQL_GUARD_ALLOW") ?? "").toLowerCase();
-  if (allowEnv.length > 0) {
-    const allowed = new Set(allowEnv.split(",").map((s) => s.trim()));
-    if (allowed.has(server)) return { exitCode: 0 };
-  }
+  if (isAllowedServer(input.env, serverSuffix)) return { exitCode: 0 };
 
   const sql = extractSql(payload.tool_input);
   if (!sql) return { exitCode: 0 };
-
   const keyword = findMutation(sql);
   if (keyword === null) return { exitCode: 0 };
 
-  const msg = formatBlockMessage(toolName, server, keyword);
+  const display = input.runtime.displayName ?? "agent-workflow";
+  const msg = formatBlockMessage(toolName, serverFull, keyword, display);
   return { exitCode: 2, stderr: msg };
+}
+
+function parsePayload(stdin: string): Record<string, unknown> | null {
+  const raw = stdin.trim();
+  if (raw.length === 0) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function compilePatterns(patterns: {
+  toolPattern: string;
+  serverPattern: string;
+}): { tool: RegExp; server: RegExp } | null {
+  try {
+    return {
+      tool: new RegExp(patterns.toolPattern),
+      server: new RegExp(patterns.serverPattern),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedServer(env: EnvPort, serverSuffix: string): boolean {
+  const allowEnv = (env.get("QTC_SQL_GUARD_ALLOW") ?? "").toLowerCase();
+  if (allowEnv.length === 0) return false;
+  const allowed = new Set(allowEnv.split(",").map((s) => s.trim()));
+  return allowed.has(serverSuffix);
 }
 
 function extractSql(toolInput: unknown): string {
@@ -89,15 +122,20 @@ function stripComments(sql: string): string {
   return sql.replace(COMMENT_BLOCK_RE, " ").replace(COMMENT_LINE_RE, " ");
 }
 
-function formatBlockMessage(toolName: string, server: string, keyword: string): string {
+function formatBlockMessage(
+  toolName: string,
+  server: string,
+  keyword: string,
+  display: string,
+): string {
   // Mirror Python `print(msg, file=sys.stderr)` — print appends a trailing `\n`.
   return `${[
-    "[qtc-dev sql-mutation-guard] Bloqueado por shared-contract §30 (política BD universal de la familia qtc-*).",
+    `[${display} sql-mutation-guard] Bloqueado por shared-contract §30 (política BD universal).`,
     `  Tool      : ${toolName}`,
-    `  Servidor  : qtc-${server}`,
+    `  Servidor  : ${server}`,
     `  Keyword   : ${keyword}`,
     "",
-    "Las mutaciones a BD (DML/DDL) NO se ejecutan desde una sesión qtc-*.",
+    "Las mutaciones a BD (DML/DDL) NO se ejecutan desde una sesión.",
     "Materializá el cambio como script SQL en docs/scripts/ del workspace",
     "de la fuente y pedile al usuario que lo aplique manualmente.",
     "",
