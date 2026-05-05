@@ -23,6 +23,11 @@ export interface BranchCheckInput {
   env: EnvPort;
   git: GitPort;
   paths: PathsService;
+  /**
+   * Display name used as message prefix (e.g., "qtc-core", "agent-workflow").
+   * Defaults to "agent-workflow" when omitted.
+   */
+  displayName?: string;
 }
 
 export async function runBranchCheckHook(input: BranchCheckInput): Promise<BranchCheckResult> {
@@ -87,6 +92,7 @@ async function verifyBranch(
       expected,
       dirty: changedFiles.length > 0,
       changedFiles,
+      displayName: input.displayName ?? "agent-workflow",
     }),
   };
 }
@@ -155,11 +161,12 @@ interface BlockMessageInput {
   expected: string;
   dirty: boolean;
   changedFiles: string[];
+  displayName: string;
 }
 
 function formatBlockMessage(info: BlockMessageInput): string {
   const lines: string[] = [
-    "[qtc-core] Rama de trabajo incorrecta para esta fuente.",
+    `[${info.displayName}] Rama de trabajo incorrecta para esta fuente.`,
     `  Fuente:        ${info.alias} (${info.path})`,
     `  Rama actual:   ${info.current}`,
     `  Rama esperada: ${info.expected}`,

@@ -37,6 +37,7 @@ export const hookCommand: QtcCommand = {
         env: ctx.env,
         git: ctx.git,
         paths: ctx.paths,
+        displayName: ctx.runtime.displayName ?? ctx.namespace.namespace,
       });
       if (result.stderr) writeStderr(result.stderr);
       return { ok: true, data: undefined, exitCode: result.exitCode };
