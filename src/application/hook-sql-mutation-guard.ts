@@ -37,7 +37,7 @@ export function runSqlMutationGuard(input: SqlGuardInput): SqlGuardResult {
     // No config → guard disabled. Allow tool through.
     return { exitCode: 0 };
   }
-  if ((input.env.get("QTC_SQL_GUARD") ?? "").toLowerCase() === "off") {
+  if ((input.env.get("AW_SQL_GUARD") ?? "").toLowerCase() === "off") {
     return { exitCode: 0 };
   }
   const payload = parsePayload(input.stdin);
@@ -93,7 +93,7 @@ function compilePatterns(patterns: {
 }
 
 function isAllowedServer(env: EnvPort, serverSuffix: string): boolean {
-  const allowEnv = (env.get("QTC_SQL_GUARD_ALLOW") ?? "").toLowerCase();
+  const allowEnv = (env.get("AW_SQL_GUARD_ALLOW") ?? "").toLowerCase();
   if (allowEnv.length === 0) return false;
   const allowed = new Set(allowEnv.split(",").map((s) => s.trim()));
   return allowed.has(serverSuffix);
@@ -127,7 +127,6 @@ function formatBlockMessage(
   keyword: string,
   display: string,
 ): string {
-  // Mirror Python `print(msg, file=sys.stderr)` — print appends a trailing `\n`.
   return `${[
     `[${display} sql-mutation-guard] Bloqueado por shared-contract §30 (política BD universal).`,
     `  Tool      : ${toolName}`,
@@ -139,8 +138,8 @@ function formatBlockMessage(
     "de la fuente y pedile al usuario que lo aplique manualmente.",
     "",
     "Para excepciones puntuales delegadas por el usuario, usar:",
-    "  QTC_SQL_GUARD=off              # desactiva el hook por completo",
-    "  QTC_SQL_GUARD_ALLOW=cert       # permite sólo cert (no prod)",
+    "  AW_SQL_GUARD=off               # desactiva el hook por completo",
+    "  AW_SQL_GUARD_ALLOW=cert        # permite sólo cert (no prod)",
     "",
   ].join("\n")}\n`;
 }
