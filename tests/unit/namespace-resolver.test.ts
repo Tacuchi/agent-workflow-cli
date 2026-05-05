@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { NamespaceResolver } from "../../src/runtime/namespace-resolver.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
+import { NamespaceResolver } from "../../src/runtime/namespace-resolver.js";
 
 class FakeEnv implements EnvPort {
   constructor(private vars: Record<string, string | undefined> = {}) {}
-  get(name: string) { return this.vars[name]; }
-  homeDir() { return "/home/u"; }
-  cwd() { return "/cwd"; }
+  get(name: string) {
+    return this.vars[name];
+  }
+  homeDir() {
+    return "/home/u";
+  }
+  cwd() {
+    return "/cwd";
+  }
 }
 
 class FakeFs implements FileSystemPort {
@@ -17,11 +23,19 @@ class FakeFs implements FileSystemPort {
     if (v === undefined) throw new Error(`ENOENT: ${p}`);
     return v;
   }
-  async writeText(): Promise<void> { throw new Error("nyi"); }
-  async exists(p: string) { return this.files.has(p); }
-  async list(): Promise<DirEntry[]> { return []; }
+  async writeText(): Promise<void> {
+    throw new Error("nyi");
+  }
+  async exists(p: string) {
+    return this.files.has(p);
+  }
+  async list(): Promise<DirEntry[]> {
+    return [];
+  }
   async mkdirp(): Promise<void> {}
-  async stat(): Promise<FileStat> { throw new Error("nyi"); }
+  async stat(): Promise<FileStat> {
+    throw new Error("nyi");
+  }
 }
 
 describe("NamespaceResolver", () => {

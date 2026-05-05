@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   LEGACY_QTC_MARKERS,
-  parseProjectBlock,
   type ProjectBlockMarkers,
+  parseProjectBlock,
 } from "../../src/application/parsers/project-block.js";
 import { renderProjectBlock } from "../../src/application/render/project-block.js";
 

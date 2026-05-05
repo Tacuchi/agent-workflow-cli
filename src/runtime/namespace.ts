@@ -9,9 +9,7 @@ export function isValidNamespace(value: string): boolean {
 export function normalizeNamespace(value: string): Namespace {
   const trimmed = value.trim();
   if (!isValidNamespace(trimmed)) {
-    throw new Error(
-      `Invalid namespace '${trimmed}'. Must match ${NAMESPACE_REGEX.source}.`,
-    );
+    throw new Error(`Invalid namespace '${trimmed}'. Must match ${NAMESPACE_REGEX.source}.`);
   }
   return trimmed as Namespace;
 }
