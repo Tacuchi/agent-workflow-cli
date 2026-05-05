@@ -19,7 +19,7 @@ export const releaseDataCommand: QtcCommand = {
     if (args.flags.has("--skip-content")) input.skipContent = true;
     if (args.flags.has("--verbose")) input.verbose = true;
 
-    const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input);
+    const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input, ctx.runtime);
     return { ok: true, data, exitCode: 0 };
   },
 };

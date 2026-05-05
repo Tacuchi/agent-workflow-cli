@@ -62,6 +62,7 @@ export const upgradeHubModeCommand: QtcCommand = {
       ctx.env,
       ctx.paths,
       dryRun ? { dryRun: true } : {},
+      ctx.runtime,
     );
     return { ok: true, data, exitCode: 0 };
   },

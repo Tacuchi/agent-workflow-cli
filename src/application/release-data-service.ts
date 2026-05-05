@@ -2,6 +2,7 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { ResolvedRuntime } from "../runtime/types.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
@@ -127,6 +128,7 @@ export async function readSessionArtifacts(
   paths: PathsService,
   sessionCode: string,
   kinds?: string[],
+  runtime?: ResolvedRuntime,
 ): Promise<SessionArtifactsResult> {
   void env;
   const qtcDir = paths.cwdSessionsDir();
@@ -146,11 +148,13 @@ export async function readSessionArtifacts(
   const hasReq = await fs.exists(join(sessionPath, "REQUIREMENTS.md"));
   const hasObj = await fs.exists(join(sessionPath, "OBJETIVO.md"));
   if (hasReq && !hasObj) {
+    const migrateCmd =
+      runtime?.slashCommands?.migrate ?? "(run namespace-specific migrate command)";
     return {
       error: "legacy_format",
       session: folderName,
       path: sessionPath,
-      hint: "La sesión usa REQUIREMENTS.md (formato pre-0.9). Migrar con /qtc-core:migrate --upgrade-topology antes de consumir release.",
+      hint: `La sesión usa REQUIREMENTS.md (formato pre-0.9). Migrar con ${migrateCmd} --upgrade-topology antes de consumir release.`,
     };
   }
 
@@ -342,6 +346,7 @@ export async function runReleaseData(
   env: EnvPort,
   paths: PathsService,
   input: ReleaseDataInput,
+  runtime?: ResolvedRuntime,
 ): Promise<ReleaseDataOutput | ReleaseDataError> {
   const cwd = env.cwd();
   const verbose = input.verbose ?? false;
@@ -367,14 +372,14 @@ export async function runReleaseData(
   if (input.since !== undefined) sinceOpts.since = input.since;
   const sessions = await listSessionsForRelease(fs, cwd, paths, sinceOpts);
 
+  const migrateCmd = runtime?.slashCommands?.migrate ?? "(run namespace-specific migrate command)";
   const enriched: ReleaseSession[] = [];
   const legacy: string[] = [];
   for (const s of sessions) {
     const item = { ...s };
     if (s.is_legacy_format) {
       legacy.push(s.folder);
-      item.legacy_warning =
-        "Sesión usa formato pre-0.9 (REQUIREMENTS.md). Migrar con /qtc-core:migrate --upgrade-topology antes de release.";
+      item.legacy_warning = `Sesión usa formato pre-0.9 (REQUIREMENTS.md). Migrar con ${migrateCmd} --upgrade-topology antes de release.`;
     }
     // Mirror Python build_session_entry compact=True: path always relative.
     if (item.path) item.path = relpath(item.path, cwd);

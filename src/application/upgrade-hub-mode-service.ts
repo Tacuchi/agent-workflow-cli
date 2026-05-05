@@ -2,6 +2,7 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { ResolvedRuntime } from "../runtime/types.js";
 import {
   type ParsedProjectBlock,
   type ProjectBlockMarkers,
@@ -34,6 +35,7 @@ export async function runUpgradeHubMode(
   env: EnvPort,
   paths: PathsService,
   input: UpgradeHubModeInput,
+  runtime?: ResolvedRuntime,
 ): Promise<UpgradeHubModeOutput> {
   const cwd = env.cwd();
   const candidates = [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")];
@@ -50,11 +52,15 @@ export async function runUpgradeHubMode(
     }
   }
 
+  const projectInitCmd =
+    runtime?.slashCommands?.projectInit ?? "(run namespace-specific project-init command)";
+  const hubInitCmd = runtime?.slashCommands?.hubInit ?? "(run namespace-specific hub-init command)";
+
   if (!block) {
     return {
       applied: false,
       reason: "no_qtc_project_block_found",
-      hint: "Corre /qtc-core:project-init o /qtc-core:hub-init primero.",
+      hint: `Corre ${projectInitCmd} o ${hubInitCmd} primero.`,
     };
   }
 
@@ -68,7 +74,7 @@ export async function runUpgradeHubMode(
       reason: "not_eligible",
       current_mode: currentMode,
       sources_count: sourcesCount,
-      hint: "El workspace ya está en hub mode o tiene <2 fuentes. Para promover manualmente, corre /qtc-core:hub-init.",
+      hint: `El workspace ya está en hub mode o tiene <2 fuentes. Para promover manualmente, corre ${hubInitCmd}.`,
     };
   }
 

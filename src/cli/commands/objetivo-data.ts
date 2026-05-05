@@ -14,6 +14,7 @@ export const objetivoDataCommand: QtcCommand = {
       ctx.env,
       ctx.paths,
       code !== undefined ? { code } : {},
+      ctx.runtime,
     );
     return { ok: true, data, exitCode: 0 };
   },
