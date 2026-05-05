@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { GitCliAdapter } from "../adapters/git-cli.js";
 import { NodeEnv } from "../adapters/node-env.js";
@@ -119,6 +120,11 @@ async function run(argv: string[]): Promise<ExitCode> {
     return 1;
   }
 
+  if (parsed.flags.has("--version")) {
+    writeStdout(`${readPackageVersion()}\n`);
+    return 0;
+  }
+
   if (parsed.command === undefined || parsed.flags.has("--help") || parsed.flags.has("-h")) {
     printHelp(registry.list());
     return parsed.command === undefined ? 1 : 0;
@@ -160,6 +166,16 @@ function emit<T>(result: CommandResult<T>): void {
     return;
   } else {
     writeStdout(renderRaw({ ok: result.ok, error: result.error }));
+  }
+}
+
+function readPackageVersion(): string {
+  try {
+    const require = createRequire(import.meta.url);
+    const pkg = require("../../package.json") as { version?: string };
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
   }
 }
 

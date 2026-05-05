@@ -99,7 +99,7 @@ export async function runPluginDoctor(
     ? resolve(input.pluginRoot.startsWith("/") ? input.pluginRoot : join(cwd, input.pluginRoot))
     : cwd;
   const flow = input.flow ?? "core";
-  const pluginVersion = input.pluginVersion ?? "unknown";
+  const inputPluginVersion = input.pluginVersion ?? null;
   const pluginName = input.pluginName ?? `qtc-${flow}`;
   const compatRange = input.compatRange ?? null;
 
@@ -239,8 +239,12 @@ export async function runPluginDoctor(
   }
 
   // 4. Manifest version drift + qtcContractVersion gate.
+  // Si no se pasó --plugin-version, .claude-plugin/plugin.json:version es la fuente
+  // canónica; .codex-plugin/plugin.json debe coincidir. Si se pasa --plugin-version,
+  // ambos manifiestos se comparan contra él.
   const manifestsInfo: Record<string, string | null> = {};
   let manifestQtcContractVersion: string | null = null;
+  let canonicalVersion: string | null = inputPluginVersion;
   for (const relPath of [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"]) {
     const manifestPath = join(pluginRoot, relPath);
     if (!(await fs.exists(manifestPath))) {
@@ -275,11 +279,13 @@ export async function runPluginDoctor(
     const manifestVersion =
       isRecord(data) && typeof data.version === "string" ? data.version : null;
     manifestsInfo[relPath] = manifestVersion;
-    if (manifestVersion !== pluginVersion) {
+    if (canonicalVersion === null && manifestVersion !== null) {
+      canonicalVersion = manifestVersion;
+    } else if (canonicalVersion !== null && manifestVersion !== canonicalVersion) {
       findings.push({
         level: "error",
         file: relPath,
-        msg: `version drift: manifest=${manifestVersion} vs declared=${pluginVersion}`,
+        msg: `version drift: manifest=${manifestVersion} vs declared=${canonicalVersion}`,
       });
     }
     if (
@@ -290,6 +296,7 @@ export async function runPluginDoctor(
       manifestQtcContractVersion = data.qtcContractVersion;
     }
   }
+  const pluginVersion = canonicalVersion ?? "unknown";
   // Si el manifest declara qtcContractVersion >= 6.3, el plugin opera en
   // single-path y no debe chequearse la presencia de artefactos Python.
   const isSinglePathContract = isContractVersionAtLeast(manifestQtcContractVersion, 6, 3);
