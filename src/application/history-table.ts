@@ -1,5 +1,6 @@
-// Mirror de qtc_core/history.py:history_path, history_ensure, history_has_flow_column,
-// _history_row_regex, history_upsert.
+// Mirror de qtc_core/history.py:history_ensure, history_has_flow_column,
+// _history_row_regex, history_upsert. The history file path itself is
+// resolved by callers via `PathsService.cwdHistoryFile()` and passed in.
 import { join } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 
@@ -9,10 +10,6 @@ const HISTORY_TEMPLATE =
   "|---|-------|--------|-------|--------|---------|------|\n";
 
 export type UpsertAction = "added" | "updated" | "unchanged";
-
-export function historyPath(cwd: string): string {
-  return join(cwd, ".qtc", "HISTORY.md");
-}
 
 export async function ensureHistoryFile(fs: FileSystemPort, path: string): Promise<void> {
   if (await fs.exists(path)) return;
