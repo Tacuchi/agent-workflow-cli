@@ -15,11 +15,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "LICENSE",
-    "README.md"
-  ],
+  "files": ["dist", "LICENSE", "README.md"],
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
@@ -32,14 +28,7 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
-  "keywords": [
-    "cli",
-    "agent-workflow",
-    "session-lifecycle",
-    "claude-code",
-    "codex",
-    "namespace"
-  ],
+  "keywords": ["cli", "agent-workflow", "session-lifecycle", "claude-code", "codex", "namespace"],
   "author": "Tacuchi <jesus.loayza@quetalcompra.com>",
   "license": "MIT",
   "repository": {

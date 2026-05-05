@@ -59,6 +59,11 @@ import {
   graduateCommand,
   upgradeHubModeCommand,
 } from "./commands/wave4d-simple.js";
+import {
+  type MenuAction,
+  runInteractiveMenu,
+  shouldShowInteractiveMenu,
+} from "./interactive-menu.js";
 import { parseArgv } from "./parser.js";
 import { CommandRegistry } from "./registry.js";
 import { renderRaw, writeStderr, writeStdout } from "./render.js";
@@ -127,9 +132,23 @@ async function run(argv: string[]): Promise<ExitCode> {
     return 0;
   }
 
-  if (parsed.command === undefined || parsed.flags.has("--help") || parsed.flags.has("-h")) {
+  const isTTY = process.stdout.isTTY === true;
+  const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
+
+  if (
+    shouldShowInteractiveMenu({
+      command: parsed.command,
+      isTTY,
+      hasHelp,
+    })
+  ) {
+    const action = await runInteractiveMenu(readPackageVersion());
+    return await dispatchMenuAction(action, registry);
+  }
+
+  if (parsed.command === undefined || hasHelp) {
     printHelp(registry.list());
-    return parsed.command === undefined ? 1 : 0;
+    return 0;
   }
 
   const command = registry.resolve(parsed.command);
@@ -174,6 +193,27 @@ function emit<T>(result: CommandResult<T>): void {
     return;
   } else {
     writeStdout(renderRaw({ ok: result.ok, error: result.error }));
+  }
+}
+
+async function dispatchMenuAction(
+  action: MenuAction,
+  registry: CommandRegistry,
+): Promise<ExitCode> {
+  switch (action) {
+    case "doctor":
+      writeStdout("Doctor will run in Phase 5b. For now, use `agent-workflow plugin-doctor`.\n");
+      return 0;
+    case "update":
+      writeStdout(
+        "Update will run in Phase 5b. For now, run `npm install -g @tacuchi/agent-workflow@latest` manually.\n",
+      );
+      return 0;
+    case "help":
+      printHelp(registry.list());
+      return 0;
+    case "exit":
+      return 0;
   }
 }
 
