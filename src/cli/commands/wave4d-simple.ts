@@ -57,7 +57,12 @@ export const upgradeHubModeCommand: QtcCommand = {
   describe: "Detect and apply Mode: hub upgrade when ≥2 sources declared.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dryRun = args.flags.has("--dry-run");
-    const data = await runUpgradeHubMode(ctx.fs, ctx.env, dryRun ? { dryRun: true } : {});
+    const data = await runUpgradeHubMode(
+      ctx.fs,
+      ctx.env,
+      ctx.paths,
+      dryRun ? { dryRun: true } : {},
+    );
     return { ok: true, data, exitCode: 0 };
   },
 };

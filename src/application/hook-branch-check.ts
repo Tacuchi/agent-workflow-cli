@@ -8,6 +8,7 @@ import {
   type ProjectSession,
   parseProjectBlock,
 } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 
 const TOOLS_OF_INTEREST = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const REFERENCE_DOC = "skills/session/references/branch-verification.md";
@@ -22,6 +23,7 @@ export interface BranchCheckInput {
   fs: FileSystemPort;
   env: EnvPort;
   git: GitPort;
+  paths: PathsService;
 }
 
 export async function runBranchCheckHook(input: BranchCheckInput): Promise<BranchCheckResult> {
@@ -44,7 +46,7 @@ async function resolveBranchCheckTarget(input: BranchCheckInput): Promise<Resolv
   const filePath = extractFilePath(payload.tool_input);
   if (!filePath) return null;
 
-  const block = await readBlock(input.fs, input.env.cwd());
+  const block = await readBlock(input.fs, input.env.cwd(), input.paths);
   if (!block) return null;
   const source = findOwningSource(block.fuentes, filePath);
   if (!source) return null;
@@ -108,10 +110,10 @@ function extractFilePath(toolInput: unknown): string | null {
   return null;
 }
 
-async function readBlock(fs: FileSystemPort, cwd: string) {
+async function readBlock(fs: FileSystemPort, cwd: string, paths: PathsService) {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (block) return block;
   }
   return null;

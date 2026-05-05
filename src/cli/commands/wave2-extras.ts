@@ -22,7 +22,7 @@ export const workspaceModeCommand: QtcCommand = {
   describe: "Read workspace mode (project|hub) + sources + working branches.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verbose = args.flags.has("--verbose");
-    const data = await runWorkspaceMode(ctx.fs, ctx.env, { verbose });
+    const data = await runWorkspaceMode(ctx.fs, ctx.env, ctx.paths, { verbose });
     return { ok: true, data, exitCode: 0 };
   },
 };

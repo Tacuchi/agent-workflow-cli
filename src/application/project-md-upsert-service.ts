@@ -3,12 +3,12 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import {
   type ParsedProjectBlock,
+  type ProjectBlockMarkers,
   type ProjectMode,
   type ProjectSession,
-  QTC_PROJECT_END,
-  QTC_PROJECT_START,
   parseProjectBlock,
 } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { type RenderProjectBlockInput, renderProjectBlock } from "./render/project-block.js";
 import { detectStackDict } from "./stack-detect.js";
@@ -53,22 +53,25 @@ export interface ProjectMdUpsertError {
 export async function runProjectMdUpsertWrite(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   input: ProjectMdUpsertInput,
 ): Promise<ProjectMdUpsertOutput | ProjectMdUpsertError> {
   const cwd = env.cwd();
   const files = [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")];
-  const existing = await readExistingBlock(fs, files);
+  const markers = paths.blockMarkers();
+  const existing = await readExistingBlock(fs, files, markers);
 
   const baseSessions = existing ? [...existing.sessions] : [];
   const opResult = applyOperation(input, baseSessions);
   if ("error" in opResult) return opResult;
 
   const renderInput = await buildRenderInput(fs, cwd, input, existing, opResult.sessions);
+  renderInput.markers = markers;
   if (input.lastActivity !== undefined) {
     renderInput.lastActivity = input.lastActivity;
   }
   const block = renderProjectBlock(renderInput);
-  const writeResults = await writeAllFiles(fs, files, cwd, block);
+  const writeResults = await writeAllFiles(fs, files, cwd, block, markers);
 
   return composePayload(input, writeResults, opResult.sessions, renderInput);
 }
@@ -76,10 +79,11 @@ export async function runProjectMdUpsertWrite(
 async function readExistingBlock(
   fs: FileSystemPort,
   files: string[],
+  markers: ProjectBlockMarkers,
 ): Promise<ParsedProjectBlock | null> {
   for (const f of files) {
     if (!(await fs.exists(f))) continue;
-    const parsed = parseProjectBlock(await fs.readText(f));
+    const parsed = parseProjectBlock(await fs.readText(f), markers);
     if (parsed) return parsed;
   }
   return null;
@@ -170,13 +174,14 @@ async function writeAllFiles(
   files: string[],
   cwd: string,
   block: string,
+  markers: ProjectBlockMarkers,
 ): Promise<WriteSummary> {
   const results: UpsertFileResult[] = [];
   let hasError = false;
   for (const f of files) {
     const baseInfo = { file: pathBasename(f), path: relpath(f, cwd) };
     try {
-      const action = await upsertProjectBlockInFile(fs, f, block);
+      const action = await upsertProjectBlockInFile(fs, f, block, markers);
       results.push({ ...baseInfo, action });
     } catch (err) {
       hasError = true;
@@ -219,14 +224,15 @@ async function upsertProjectBlockInFile(
   fs: FileSystemPort,
   filePath: string,
   block: string,
+  markers: ProjectBlockMarkers,
 ): Promise<"created" | "updated" | "unchanged" | "appended"> {
   if (!(await fs.exists(filePath))) {
     await fs.writeText(filePath, `${block}\n`);
     return "created";
   }
   const text = await fs.readText(filePath);
-  if (text.includes(QTC_PROJECT_START) && text.includes(QTC_PROJECT_END)) {
-    return replaceBlock(fs, filePath, text, block);
+  if (text.includes(markers.start) && text.includes(markers.end)) {
+    return replaceBlock(fs, filePath, text, block, markers);
   }
   return appendBlock(fs, filePath, text, block);
 }
@@ -236,9 +242,10 @@ async function replaceBlock(
   filePath: string,
   text: string,
   block: string,
+  markers: ProjectBlockMarkers,
 ): Promise<"updated" | "unchanged"> {
-  const start = text.indexOf(QTC_PROJECT_START);
-  const end = text.indexOf(QTC_PROJECT_END, start) + QTC_PROJECT_END.length;
+  const start = text.indexOf(markers.start);
+  const end = text.indexOf(markers.end, start) + markers.end.length;
   const replaced = text.slice(0, start) + block + text.slice(end);
   if (replaced === text) return "unchanged";
   await fs.writeText(filePath, replaced);

@@ -2,7 +2,12 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { type ParsedProjectBlock, parseProjectBlock } from "./parsers/project-block.js";
+import {
+  type ParsedProjectBlock,
+  type ProjectBlockMarkers,
+  parseProjectBlock,
+} from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 import { renderProjectBlock } from "./render/project-block.js";
 
 export interface UpgradeHubModeInput {
@@ -27,15 +32,17 @@ export interface UpgradeHubModeOutput {
 export async function runUpgradeHubMode(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   input: UpgradeHubModeInput,
 ): Promise<UpgradeHubModeOutput> {
   const cwd = env.cwd();
   const candidates = [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")];
+  const markers = paths.blockMarkers();
   let block: ParsedProjectBlock | null = null;
   let sourceFile: string | null = null;
   for (const f of candidates) {
     if (!(await fs.exists(f))) continue;
-    const parsed = parseProjectBlock(await fs.readText(f));
+    const parsed = parseProjectBlock(await fs.readText(f), markers);
     if (parsed) {
       block = parsed;
       sourceFile = f;
@@ -84,12 +91,13 @@ export async function runUpgradeHubMode(
     ...(block.last_activity !== null ? { lastActivity: block.last_activity } : {}),
     mode: "hub",
     workingBranches: block.working_branches,
+    markers,
   });
 
   const results: NonNullable<UpgradeHubModeOutput["results"]> = [];
   for (const f of candidates) {
     try {
-      const action = await upsertProjectBlock(fs, f, newBlock);
+      const action = await upsertProjectBlock(fs, f, newBlock, markers);
       const fname = f.split(/[\\/]/).pop() ?? f;
       results.push({ file: fname, action });
     } catch (err) {
@@ -121,17 +129,16 @@ async function upsertProjectBlock(
   fs: FileSystemPort,
   filePath: string,
   block: string,
+  markers: ProjectBlockMarkers,
 ): Promise<"created" | "updated" | "unchanged" | "appended"> {
-  const QTC_START = "<!-- QTC-PROJECT-START -->";
-  const QTC_END = "<!-- QTC-PROJECT-END -->";
   if (!(await fs.exists(filePath))) {
     await fs.writeText(filePath, `${block}\n`);
     return "created";
   }
   const text = await fs.readText(filePath);
-  if (text.includes(QTC_START) && text.includes(QTC_END)) {
-    const start = text.indexOf(QTC_START);
-    const end = text.indexOf(QTC_END, start) + QTC_END.length;
+  if (text.includes(markers.start) && text.includes(markers.end)) {
+    const start = text.indexOf(markers.start);
+    const end = text.indexOf(markers.end, start) + markers.end.length;
     const replaced = text.slice(0, start) + block + text.slice(end);
     if (replaced === text) return "unchanged";
     await fs.writeText(filePath, replaced);

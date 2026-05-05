@@ -31,7 +31,13 @@ export const hookCommand: QtcCommand = {
     }
     const stdin = await readStdin();
     if (subcommand === "branch-check") {
-      const result = await runBranchCheckHook({ stdin, fs: ctx.fs, env: ctx.env, git: ctx.git });
+      const result = await runBranchCheckHook({
+        stdin,
+        fs: ctx.fs,
+        env: ctx.env,
+        git: ctx.git,
+        paths: ctx.paths,
+      });
       if (result.stderr) writeStderr(result.stderr);
       return { ok: true, data: undefined, exitCode: result.exitCode };
     }

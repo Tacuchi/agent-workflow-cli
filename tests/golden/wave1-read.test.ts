@@ -81,7 +81,7 @@ describe("Wave 1 read commands — golden parity vs python qtc_core", () => {
   });
 
   it("project-md-upsert --read", async () => {
-    const result = await runProjectMdRead(fs, env);
+    const result = await runProjectMdRead(fs, env, paths);
     expect(result).toEqual(loadGolden("project-read.json"));
   });
 

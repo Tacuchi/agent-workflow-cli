@@ -45,7 +45,8 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("project-md-upsert --add-session session999-dev-test --phase planning --branches sample:main", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const result = await runProjectMdUpsertWrite(fs, env, {
+    const paths = makeQtcPaths(env);
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "add-session",
       sessionFolder: "session999-dev-test",
       phase: "planning",
@@ -64,7 +65,8 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("project-md-upsert --remove-session session001-dev-foo", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const result = await runProjectMdUpsertWrite(fs, env, {
+    const paths = makeQtcPaths(env);
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "remove-session",
       sessionFolder: "session001-dev-foo",
     });
@@ -81,7 +83,8 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("project-md-upsert --update-phase session001-dev-foo --phase execution", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const result = await runProjectMdUpsertWrite(fs, env, {
+    const paths = makeQtcPaths(env);
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "update-phase",
       sessionFolder: "session001-dev-foo",
       phase: "execution",

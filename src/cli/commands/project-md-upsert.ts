@@ -15,7 +15,7 @@ export const projectMdUpsertCommand: QtcCommand = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verbose = args.flags.has("--verbose");
     if (args.flags.has("--read")) {
-      const data = await runProjectMdRead(ctx.fs, ctx.env, { verbose });
+      const data = await runProjectMdRead(ctx.fs, ctx.env, ctx.paths, { verbose });
       return { ok: true, data, exitCode: 0 };
     }
 
@@ -58,7 +58,7 @@ export const projectMdUpsertCommand: QtcCommand = {
       if (alias && branch) input.workingBranches = { [alias]: branch };
     }
 
-    const data = await runProjectMdUpsertWrite(ctx.fs, ctx.env, input);
+    const data = await runProjectMdUpsertWrite(ctx.fs, ctx.env, ctx.paths, input);
     if ("error" in data) {
       return {
         ok: false,

@@ -68,7 +68,13 @@ export async function runSessionCreate(
 
   await writeObjetivo(fs, folderInfo, flow, input, origen);
   await writeHistoryRow(fs, paths, folderInfo.code, flow, input, origen);
-  const projectMd = await registerInProjectBlock(fs, env, folderInfo.folder, input.branchesRaw);
+  const projectMd = await registerInProjectBlock(
+    fs,
+    env,
+    paths,
+    folderInfo.folder,
+    input.branchesRaw,
+  );
   if ("error" in projectMd) return { error: projectMd.error };
 
   const branches = parseBranches(input.branchesRaw);
@@ -199,17 +205,18 @@ async function writeHistoryRow(
 async function registerInProjectBlock(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   folder: string,
   branchesRaw: string | undefined,
 ): Promise<ProjectMdUpsertOutput | { error: string }> {
   const branches = parseBranches(branchesRaw);
-  const projectInput: Parameters<typeof runProjectMdUpsertWrite>[2] = {
+  const projectInput: Parameters<typeof runProjectMdUpsertWrite>[3] = {
     op: "add-session",
     sessionFolder: folder,
     phase: "planning",
   };
   if (branches.length > 0) projectInput.branches = branches;
-  return runProjectMdUpsertWrite(fs, env, projectInput);
+  return runProjectMdUpsertWrite(fs, env, paths, projectInput);
 }
 
 function composeRecord(

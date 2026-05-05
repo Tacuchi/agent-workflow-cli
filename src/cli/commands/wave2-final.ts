@@ -122,7 +122,7 @@ export const checkBranchCommand: QtcCommand = {
     const flow = args.values.get("flow");
     const strict = args.flags.has("--strict");
 
-    const input: Parameters<typeof runCheckBranch>[3] = {};
+    const input: Parameters<typeof runCheckBranch>[4] = {};
     if (alias !== undefined) input.alias = alias;
     if (pathArg !== undefined) input.pathArg = pathArg;
     if (fileArg !== undefined) input.fileArg = fileArg;
@@ -130,7 +130,7 @@ export const checkBranchCommand: QtcCommand = {
     if (flow !== undefined) input.flowOverride = flow;
     if (strict) input.strict = true;
 
-    const data = await runCheckBranch(ctx.fs, ctx.env, ctx.git, input);
+    const data = await runCheckBranch(ctx.fs, ctx.env, ctx.git, ctx.paths, input);
     const exit: 0 | 1 | 2 = strict && data.match === false ? 2 : 0;
     return { ok: true, data, exitCode: exit };
   },

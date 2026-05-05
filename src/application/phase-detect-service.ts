@@ -82,7 +82,7 @@ export async function runPhaseDetect(
   const objetivo = await loadObjetivo(fs, session.path);
   const counts = await loadTaskCounts(fs, session.path);
   const hasScripts = await hasAnyScript(fs, session.path);
-  const currentInQtc = await readPhaseFromBlock(fs, env.cwd(), session.folder);
+  const currentInQtc = await readPhaseFromBlock(fs, env.cwd(), paths, session.folder);
   const suggested = pickSuggested(objetivo, counts, hasScripts, currentInQtc);
 
   return {
@@ -154,11 +154,12 @@ function divergesFrom(current: string | null, suggested: string): boolean {
 async function readPhaseFromBlock(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
   folder: string,
 ): Promise<string | null> {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (!block) continue;
     for (const s of block.sessions) {
       if (s.folder === folder) return s.phase;

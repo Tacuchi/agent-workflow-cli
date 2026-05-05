@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type ParsedProjectBlock, parseProjectBlock } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
 export interface ProjectReadOutput {
@@ -13,6 +14,7 @@ export interface ProjectReadOutput {
 export async function runProjectMdRead(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   options: { verbose?: boolean } = {},
 ): Promise<ProjectReadOutput> {
   const cwd = env.cwd();
@@ -21,7 +23,7 @@ export async function runProjectMdRead(
   for (const file of files) {
     if (!(await fs.exists(file))) continue;
     const text = await fs.readText(file);
-    const parsed = parseProjectBlock(text);
+    const parsed = parseProjectBlock(text, paths.blockMarkers());
     if (parsed) {
       block = parsed;
       break;

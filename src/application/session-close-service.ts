@@ -87,7 +87,7 @@ export async function runSessionClose(
       }),
   );
 
-  const projectMd = await runProjectMdUpsertWrite(fs, env, {
+  const projectMd = await runProjectMdUpsertWrite(fs, env, paths, {
     op: "remove-session",
     sessionFolder: session.folder,
   });

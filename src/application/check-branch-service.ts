@@ -7,6 +7,7 @@ import {
   type ProjectSession,
   parseProjectBlock,
 } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 
 export interface CheckBranchInput {
   alias?: string;
@@ -39,10 +40,11 @@ export async function runCheckBranch(
   fs: FileSystemPort,
   env: EnvPort,
   git: GitPort,
+  paths: PathsService,
   input: CheckBranchInput,
 ): Promise<CheckBranchOutput> {
   const cwd = env.cwd();
-  const block = await readBlock(fs, cwd);
+  const block = await readBlock(fs, cwd, paths);
   const sources = block?.fuentes ?? [];
   if (sources.length === 0) {
     return { match: true, reason: "no_sources_declared" };
@@ -123,10 +125,10 @@ export async function runCheckBranch(
   };
 }
 
-async function readBlock(fs: FileSystemPort, cwd: string) {
+async function readBlock(fs: FileSystemPort, cwd: string, paths: PathsService) {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (block) return block;
   }
   return null;

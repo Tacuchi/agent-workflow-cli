@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
+import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
 export interface WorkspaceModeOutput {
@@ -17,13 +18,14 @@ export interface WorkspaceModeOutput {
 export async function runWorkspaceMode(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   options: { verbose?: boolean } = {},
 ): Promise<WorkspaceModeOutput> {
   const cwd = env.cwd();
   const candidates = [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")];
   for (const file of candidates) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (!block) continue;
     const out: WorkspaceModeOutput = {
       mode: block.mode,

@@ -38,7 +38,7 @@ export async function runPhaseNext(
   if (!session) return { error: `Sesión no encontrada: ${code}` };
 
   const cwd = env.cwd();
-  const current = await readPhaseFromBlock(fs, cwd, session.folder);
+  const current = await readPhaseFromBlock(fs, cwd, paths, session.folder);
   if (current === null) {
     return {
       projectMd: null,
@@ -92,7 +92,7 @@ export async function runPhaseNext(
     };
   }
 
-  const projectMd = await runProjectMdUpsertWrite(fs, env, {
+  const projectMd = await runProjectMdUpsertWrite(fs, env, paths, {
     op: "update-phase",
     sessionFolder: session.folder,
     phase: newPhase,
@@ -116,11 +116,12 @@ export async function runPhaseNext(
 async function readPhaseFromBlock(
   fs: FileSystemPort,
   cwd: string,
+  paths: PathsService,
   folder: string,
 ): Promise<string | null> {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (!block) continue;
     for (const s of block.sessions) {
       if (s.folder === folder) return s.phase;
