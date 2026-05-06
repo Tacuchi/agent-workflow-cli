@@ -17,7 +17,10 @@ class FakeEnv implements EnvPort {
 }
 
 class FakeFs implements FileSystemPort {
-  constructor(private files: Map<string, string> = new Map()) {}
+  constructor(
+    private files: Map<string, string> = new Map(),
+    private dirs: Map<string, DirEntry[]> = new Map(),
+  ) {}
   async readText(p: string) {
     const v = this.files.get(p);
     if (v === undefined) throw new Error(`ENOENT: ${p}`);
@@ -27,10 +30,14 @@ class FakeFs implements FileSystemPort {
     throw new Error("nyi");
   }
   async exists(p: string) {
-    return this.files.has(p);
+    if (this.files.has(p)) return true;
+    if (this.dirs.has(p)) return true;
+    return false;
   }
-  async list(): Promise<DirEntry[]> {
-    return [];
+  async list(p: string): Promise<DirEntry[]> {
+    const v = this.dirs.get(p);
+    if (v === undefined) throw new Error(`ENOENT: ${p}`);
+    return v;
   }
   async mkdirp(): Promise<void> {}
   async stat(): Promise<FileStat> {
@@ -87,6 +94,83 @@ describe("NamespaceResolver", () => {
   it("handles empty/whitespace env as absent", async () => {
     const env = new FakeEnv({ AW_NAMESPACE: "   " });
     const r = new NamespaceResolver(new FakeFs(), env);
+    const result = await r.resolve(undefined);
+    expect(result.source).toBe("default");
+  });
+
+  it("auto-detects namespace from workspace cwd containing .qtc/sessions/", async () => {
+    const dirs = new Map<string, DirEntry[]>([
+      [
+        "/cwd",
+        [
+          { name: ".qtc", path: "/cwd/.qtc", type: "dir" },
+          { name: ".git", path: "/cwd/.git", type: "dir" },
+          { name: "src", path: "/cwd/src", type: "dir" },
+        ],
+      ],
+      ["/cwd/.qtc/sessions", []],
+    ]);
+    const fs = new FakeFs(new Map(), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv());
+    const result = await r.resolve(undefined);
+    expect(result.namespace).toBe("qtc");
+    expect(result.source).toBe("workspace");
+  });
+
+  it("ignores .git/ in workspace detect (no sessions/ subdir)", async () => {
+    const dirs = new Map<string, DirEntry[]>([
+      ["/cwd", [{ name: ".git", path: "/cwd/.git", type: "dir" }]],
+    ]);
+    const fs = new FakeFs(new Map(), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv());
+    const result = await r.resolve(undefined);
+    expect(result.source).toBe("default");
+  });
+
+  it("falls back to default when multiple namespace candidates match (ambiguous)", async () => {
+    const dirs = new Map<string, DirEntry[]>([
+      [
+        "/cwd",
+        [
+          { name: ".qtc", path: "/cwd/.qtc", type: "dir" },
+          { name: ".other", path: "/cwd/.other", type: "dir" },
+        ],
+      ],
+      ["/cwd/.qtc/sessions", []],
+      ["/cwd/.other/sessions", []],
+    ]);
+    const fs = new FakeFs(new Map(), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv());
+    const result = await r.resolve(undefined);
+    expect(result.source).toBe("default");
+  });
+
+  it("workspace auto-detect wins over user config (locality > preference)", async () => {
+    const dirs = new Map<string, DirEntry[]>([
+      ["/cwd", [{ name: ".qtc", path: "/cwd/.qtc", type: "dir" }]],
+      ["/cwd/.qtc/sessions", []],
+    ]);
+    const fs = new FakeFs(new Map([[CONFIG_PATH, "configns"]]), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv());
+    const result = await r.resolve(undefined);
+    expect(result.namespace).toBe("qtc");
+    expect(result.source).toBe("workspace");
+  });
+
+  it("user config used when workspace cannot be determined (e.g., from $HOME)", async () => {
+    const dirs = new Map<string, DirEntry[]>([
+      ["/cwd", [{ name: "regular", path: "/cwd/regular", type: "dir" }]],
+    ]);
+    const fs = new FakeFs(new Map([[CONFIG_PATH, "fallbackns"]]), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv());
+    const result = await r.resolve(undefined);
+    expect(result.namespace).toBe("fallbackns");
+    expect(result.source).toBe("config");
+  });
+
+  it("handles unreadable cwd gracefully (returns default)", async () => {
+    const fs = new FakeFs(); // empty dirs map → list() throws
+    const r = new NamespaceResolver(fs, new FakeEnv());
     const result = await r.resolve(undefined);
     expect(result.source).toBe("default");
   });

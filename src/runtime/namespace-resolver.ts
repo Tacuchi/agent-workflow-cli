@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { type Namespace, normalizeNamespace } from "./namespace.js";
+import { NAMESPACE_REGEX, type Namespace, normalizeNamespace } from "./namespace.js";
 
-export type NamespaceSource = "flag" | "env" | "config" | "default";
+export type NamespaceSource = "flag" | "env" | "config" | "workspace" | "default";
 
 export interface ResolvedNamespace {
   namespace: Namespace;
@@ -27,11 +27,37 @@ export class NamespaceResolver {
     if (envVal !== undefined && envVal.trim().length > 0) {
       return { namespace: normalizeNamespace(envVal), source: "env" };
     }
+    const workspaceNs = await this.detectFromWorkspace(this.env.cwd());
+    if (workspaceNs !== null) {
+      return { namespace: workspaceNs, source: "workspace" };
+    }
     const configPath = join(this.env.homeDir(), ".config", "agent-workflow", "namespace");
     if (await this.fs.exists(configPath)) {
       const raw = await this.fs.readText(configPath);
       return { namespace: normalizeNamespace(raw), source: "config" };
     }
     return { namespace: normalizeNamespace(DEFAULT_NAMESPACE), source: "default" };
+  }
+
+  private async detectFromWorkspace(cwd: string): Promise<Namespace | null> {
+    let entries: { name: string; path: string; type: string }[];
+    try {
+      entries = await this.fs.list(cwd);
+    } catch {
+      return null;
+    }
+    const matches: Namespace[] = [];
+    for (const entry of entries) {
+      if (entry.type !== "dir") continue;
+      if (!entry.name.startsWith(".")) continue;
+      const candidate = entry.name.slice(1);
+      if (!NAMESPACE_REGEX.test(candidate)) continue;
+      const sessionsPath = join(entry.path, "sessions");
+      if (await this.fs.exists(sessionsPath)) {
+        matches.push(candidate as Namespace);
+      }
+    }
+    if (matches.length === 1) return matches[0] ?? null;
+    return null;
   }
 }

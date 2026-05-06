@@ -1,7 +1,7 @@
 {
   "name": "@tacuchi/agent-workflow",
-  "version": "1.1.0",
-  "description": "Agnostic runtime CLI for session-lifecycle workflows. Default namespace: 'agent-workflow'. Use `--namespace qtc` for compatibility with qtc-* plugins.",
+  "version": "1.2.0",
+  "description": "Agnostic runtime CLI for session-lifecycle workflows. Auto-detects namespace from workspace; falls back to 'agent-workflow'. Compatible with qtc-* plugins (auto-detect when .qtc/sessions/ is present).",
   "type": "module",
   "bin": {
     "agent-workflow": "./dist/cli/main.js",

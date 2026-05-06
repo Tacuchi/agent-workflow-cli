@@ -1,6 +1,6 @@
 export type Namespace = string & { readonly __brand: "namespace" };
 
-const NAMESPACE_REGEX = /^[a-z][a-z0-9-]{1,30}$/;
+export const NAMESPACE_REGEX = /^[a-z][a-z0-9-]{1,30}$/;
 
 export function isValidNamespace(value: string): boolean {
   return NAMESPACE_REGEX.test(value);
