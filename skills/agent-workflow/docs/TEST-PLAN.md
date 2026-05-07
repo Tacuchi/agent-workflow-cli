@@ -50,7 +50,7 @@ Una empresa nueva (sin plugins QTC) instala skill + CLI y completa un workflow E
 
 - **Precondición**: máquina sin `agent-workflow` ni skill instalado.
 - **Pasos**:
-  1. `npm install -g @tacuchi/agent-workflow`.
+  1. `npm install -g @tacuchi/agent-workflow-cli`.
   2. `agent-workflow self install-skill`.
   3. `agent-workflow self doctor`.
 - **Criterio**: doctor reporta `cli_version >= 1.2.0`, `skill.installed = true`, `skill.path` apunta al directorio correcto.

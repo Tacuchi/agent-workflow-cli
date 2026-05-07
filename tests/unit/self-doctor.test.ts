@@ -78,6 +78,51 @@ describe("selfDoctor", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.skill.installed).toBe(false);
+      expect(result.data.skill.legacy_leftover).toBeUndefined();
+    }
+  });
+
+  it("flags legacy skill leftover when ~/.claude/skills/agent-workflow-manager exists", async () => {
+    const fs = new FakeFs(
+      new Set([
+        "/home/u/.claude/skills/agent-workflow",
+        "/home/u/.claude/skills/agent-workflow-manager",
+      ])
+    );
+    const ctx = {
+      fs,
+      env: new FakeEnv(),
+      paths,
+      namespace: { namespace: ns, source: "config" },
+      runtime,
+    } as unknown as CliContext;
+    const result = await selfDoctor(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.skill.installed).toBe(true);
+      expect(result.data.skill.legacy_leftover).toBe(true);
+      expect(result.data.skill.legacy_leftover_path).toBe(
+        "/home/u/.claude/skills/agent-workflow-manager"
+      );
+      expect(result.data.skill.legacy_leftover_warning).toContain("agent-workflow-manager");
+    }
+  });
+
+  it("does not flag leftover when only the new skill is present", async () => {
+    const fs = new FakeFs(new Set(["/home/u/.claude/skills/agent-workflow"]));
+    const ctx = {
+      fs,
+      env: new FakeEnv(),
+      paths,
+      namespace: { namespace: ns, source: "env" },
+      runtime,
+    } as unknown as CliContext;
+    const result = await selfDoctor(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.skill.installed).toBe(true);
+      expect(result.data.skill.legacy_leftover).toBeUndefined();
+      expect(result.data.skill.legacy_leftover_path).toBeUndefined();
     }
   });
 });

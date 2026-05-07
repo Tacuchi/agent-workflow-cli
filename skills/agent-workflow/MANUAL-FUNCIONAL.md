@@ -231,7 +231,7 @@ Empresa nueva que adopta el workflow desde cero.
 
 ```bash
 # 1. Instalar CLI
-npm install -g @tacuchi/agent-workflow
+npm install -g @tacuchi/agent-workflow-cli
 
 # 2. Instalar skill (si usás Claude Code)
 agent-workflow self install-skill

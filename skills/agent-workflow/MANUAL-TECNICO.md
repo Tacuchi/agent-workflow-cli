@@ -251,7 +251,7 @@ agent-workflow sources
 
 ```bash
 agent-workflow self update                      # check
-npm i -g @tacuchi/agent-workflow@latest         # actualizar binario
+npm i -g @tacuchi/agent-workflow-cli@latest         # actualizar binario
 agent-workflow self install-skill --force       # actualizar skill
 ```
 
@@ -260,7 +260,7 @@ agent-workflow self install-skill --force       # actualizar skill
 | Error | Causa probable | Acción |
 |---|---|---|
 | `NOT_IN_WORKSPACE` | Namespace apunta a tree no existente | `self namespace` para ver el resuelto; setear `--namespace` o env. |
-| Mismatch entre `self doctor.cli_version` y `package.json` | Binario global desactualizado | `npm i -g @tacuchi/agent-workflow@latest` |
+| Mismatch entre `self doctor.cli_version` y `package.json` | Binario global desactualizado | `npm i -g @tacuchi/agent-workflow-cli@latest` |
 | Hook `branch-check` bloquea edits inesperadamente | Sesión declara una rama distinta a la actual | `agent-workflow check-branch --source <alias>` para ver expected vs current; checkout o re-declarar. |
 
 ## 11. Referencias

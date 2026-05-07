@@ -1,7 +1,7 @@
 ---
 name: agent-workflow
-description: Universal skill for the @tacuchi/agent-workflow-cli CLI. Teach Claude Code how to drive session-lifecycle workflows (planning → execution → validation → closure), history bookkeeping, source/branch checks, checkpoints, doctor, hooks, and self-management. Use whenever the user works with session-based development inside a workspace that hosts an `.agent-workflow/` (or `.qtc/` for the QTC plugin family) artifact tree.
-version: 1.1.0
+description: Universal skill for the @tacuchi/agent-workflow-cli CLI. Teach Claude Code how to drive session-lifecycle workflows (planning → execution → validation → closure), history bookkeeping, source/branch checks, checkpoints, doctor, hooks, and self-management. Use whenever the user works with session-based development inside a workspace that hosts an `.agent-workflow/` or `.workflow/` (QTC plugin family) artifact tree.
+version: 1.2.0
 ---
 
 # agent-workflow — universal CLI skill
@@ -31,11 +31,12 @@ Short alias: `aw`.
 1. CLI flag `--namespace <name>`
 2. Env var `AW_NAMESPACE` (or `AGENT_WORKFLOW_NAMESPACE`)
 3. User config `~/.config/agent-workflow/namespace`
-4. Default literal: `agent-workflow`
+4. Workspace auto-detect: `.<ns>/sessions/` directory in CWD
+5. Default literal: `agent-workflow`
 
-For QTC plugin compatibility, qtc-* plugins export `AW_NAMESPACE=qtc` from their SessionStart hooks; the CLI then reads/writes `~/.qtc/`, `.qtc/sessions/`, and the `QTC-PROJECT` block in `CLAUDE.md` / `AGENTS.md`.
+For QTC plugin compatibility, the `qtc` plugin reclaims namespace `workflow` from its SessionStart hook by writing `workflow` to `~/.config/agent-workflow/namespace`; the CLI then reads/writes `~/.workflow/`, `.workflow/sessions/`, and the `QTC-PROJECT` block in `CLAUDE.md` / `AGENTS.md`.
 
-When you invoke the CLI from a fresh shell where no plugin has set the env, use `--namespace <name>` explicitly or the binary will operate on the default `agent-workflow` namespace and miss the QTC artifacts.
+When you invoke the CLI from a fresh shell where no plugin has set the user-config, use `--namespace <name>` explicitly or run from inside a workspace whose `.<ns>/sessions/` dir is autodetected. The binary will otherwise operate on the default `agent-workflow` namespace.
 
 ### Output contract
 

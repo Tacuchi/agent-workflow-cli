@@ -21,12 +21,20 @@ export interface SelfDoctorReport {
   skill: {
     installed: boolean;
     path: string;
+    legacy_leftover?: boolean;
+    legacy_leftover_path?: string;
+    legacy_leftover_warning?: string;
   };
 }
+
+const LEGACY_SKILL_DIR = "agent-workflow-manager";
 
 export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoctorReport>> {
   const skillPath = join(ctx.env.homeDir(), ".claude", "skills", "agent-workflow");
   const skillInstalled = await ctx.fs.exists(skillPath);
+
+  const legacyPath = join(ctx.env.homeDir(), ".claude", "skills", LEGACY_SKILL_DIR);
+  const legacyLeftover = await ctx.fs.exists(legacyPath);
 
   return {
     ok: true,
@@ -51,6 +59,13 @@ export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoc
       skill: {
         installed: skillInstalled,
         path: skillPath,
+        ...(legacyLeftover
+          ? {
+              legacy_leftover: true,
+              legacy_leftover_path: legacyPath,
+              legacy_leftover_warning: `Skill legacy detectada en ${legacyPath}. Reemplazada por '${skillPath}' tras el rename de agent-workflow-manager → agent-workflow. Recomendado: mv ${legacyPath} ${legacyPath}.bak (preserva evidencia) y cuando estés tranquilo, rm -rf el .bak.`,
+            }
+          : {}),
       },
     },
     exitCode: 0,
