@@ -1,8 +1,8 @@
-# Test plan — Workflow universal (CLI agent-workflow + skill agent-workflow-manager)
+# Test plan — Workflow universal (CLI agent-workflow + skill agent-workflow)
 
 Specs (no implementación). Validan los 3 contratos arquitecturales.
 
-Generable a `agent-workflow-manager/docs/TEST-PLAN.md` para que cualquier consumidor del workflow tenga la batería de aceptación.
+Generable a `skills/agent-workflow/docs/TEST-PLAN.md` para que cualquier consumidor del workflow tenga la batería de aceptación.
 
 ## Convenciones
 
@@ -16,7 +16,7 @@ Cada comando que el skill referencia ejecuta y devuelve la forma JSON declarada 
 
 ### A1 — Surface match
 
-- **Precondición**: CLI instalado globalmente, skill instalado en `~/.claude/skills/agent-workflow-manager`.
+- **Precondición**: CLI instalado globalmente, skill instalado en `~/.claude/skills/agent-workflow`.
 - **Pasos**:
   1. Listar comandos del CLI (`agent-workflow --help`).
   2. Para cada comando: parse top-level del SKILL.md y de las 11 references; verificar que aparece exactamente en 1 reference.
@@ -77,7 +77,7 @@ Una empresa nueva (sin plugins QTC) instala skill + CLI y completa un workflow E
 - **Precondición**: B1 + B2 ejecutados; Claude Code abierto en `/tmp/acme-test`.
 - **Pasos**:
   1. Pedirle al modelo: "create a session for fixing the login bug".
-  2. Observar si el modelo invoca el skill `agent-workflow-manager`.
+  2. Observar si el modelo invoca el skill `agent-workflow`.
   3. Observar comandos ejecutados por el modelo.
 - **Criterio**: el modelo lee SKILL.md, identifica `session-create`, lo ejecuta con namespace correcto.
 - **Frontera**: depende de que la SessionStart del entorno setee `AW_NAMESPACE` o el modelo use `--namespace`.
@@ -158,6 +158,6 @@ Estos tests cierran H4 (gap de tests existentes en agent-workflow/tests/).
 Implementación recomendada (no en alcance):
 - A1, A2, A3 → vitest unit en `agent-workflow/tests/unit/`.
 - B1, B2 → bash + golden fixtures en `agent-workflow/tests/golden/external-namespace.test.ts`.
-- B3 → manual + grabado en `agent-workflow-manager/docs/MANUAL-FUNCIONAL.md`.
+- B3 → manual + grabado en `skills/agent-workflow/MANUAL-FUNCIONAL.md`.
 - C1, C2, C3 → bash + workspace fixture comparativo.
 - D1..D4 → vitest unit con stdin mock + spawn snapshot.

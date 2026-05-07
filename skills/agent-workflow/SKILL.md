@@ -1,12 +1,12 @@
 ---
-name: agent-workflow-manager
-description: Universal skill for the @tacuchi/agent-workflow CLI. Teach Claude Code how to drive session-lifecycle workflows (planning → execution → validation → closure), history bookkeeping, source/branch checks, checkpoints, doctor, hooks, and self-management. Use whenever the user works with session-based development inside a workspace that hosts an `.agent-workflow/` (or `.qtc/` for the QTC plugin family) artifact tree.
-version: 1.0.0
+name: agent-workflow
+description: Universal skill for the @tacuchi/agent-workflow-cli CLI. Teach Claude Code how to drive session-lifecycle workflows (planning → execution → validation → closure), history bookkeeping, source/branch checks, checkpoints, doctor, hooks, and self-management. Use whenever the user works with session-based development inside a workspace that hosts an `.agent-workflow/` (or `.qtc/` for the QTC plugin family) artifact tree.
+version: 1.1.0
 ---
 
 # agent-workflow — universal CLI skill
 
-`@tacuchi/agent-workflow` is a generic, namespace-aware CLI that runs the canonical session-lifecycle workflow used by the qtc-* plugin family and any other plugin that opts into the same artifact contract.
+`@tacuchi/agent-workflow-cli` is a generic, namespace-aware CLI that runs the canonical session-lifecycle workflow used by the qtc-* plugin family and any other plugin that opts into the same artifact contract.
 
 This skill teaches Claude Code:
 
@@ -105,7 +105,7 @@ agent-workflow plugin-doctor --plugin-root /path/to/plugin
 
 ## Cross-references
 
-- CLI repo: <https://github.com/Tacuchi/agent-workflow>
-- npm: <https://www.npmjs.com/package/@tacuchi/agent-workflow>
-- This skill: <https://github.com/Tacuchi/agent-workflow-manager>
-- Install: `npm i -g @tacuchi/agent-workflow && agent-workflow self install-skill`
+- CLI repo: <https://github.com/Tacuchi/agent-workflow-cli>
+- npm: <https://www.npmjs.com/package/@tacuchi/agent-workflow-cli>
+- This skill is bundled in the CLI tarball — no standalone repo. `agent-workflow self install-skill` copies it from the bundled location to `~/.claude/skills/agent-workflow/`.
+- Install: `npm i -g @tacuchi/agent-workflow-cli && agent-workflow self install-skill`

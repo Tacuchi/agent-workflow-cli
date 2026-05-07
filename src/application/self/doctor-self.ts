@@ -25,7 +25,7 @@ export interface SelfDoctorReport {
 }
 
 export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoctorReport>> {
-  const skillPath = join(ctx.env.homeDir(), ".claude", "skills", "agent-workflow-manager");
+  const skillPath = join(ctx.env.homeDir(), ".claude", "skills", "agent-workflow");
   const skillInstalled = await ctx.fs.exists(skillPath);
 
   return {

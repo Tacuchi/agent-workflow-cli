@@ -46,8 +46,8 @@ const runtime: ResolvedRuntime = {
 };
 
 describe("selfDoctor", () => {
-  it("reports skill installed when ~/.claude/skills/agent-workflow-manager exists", async () => {
-    const fs = new FakeFs(new Set(["/home/u/.claude/skills/agent-workflow-manager"]));
+  it("reports skill installed when ~/.claude/skills/agent-workflow exists", async () => {
+    const fs = new FakeFs(new Set(["/home/u/.claude/skills/agent-workflow"]));
     const ctx = {
       fs,
       env: new FakeEnv(),
@@ -59,7 +59,7 @@ describe("selfDoctor", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.skill.installed).toBe(true);
-      expect(result.data.skill.path).toBe("/home/u/.claude/skills/agent-workflow-manager");
+      expect(result.data.skill.path).toBe("/home/u/.claude/skills/agent-workflow");
       expect(result.data.namespace.value).toBe("qtc");
       expect(result.data.paths.user_root).toBe("/home/u/.qtc");
     }

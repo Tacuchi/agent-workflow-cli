@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
-import {
-  DEFAULT_SOURCE,
-  SKILL_DIR_NAME,
-  selfInstallSkill,
-} from "../../src/application/self/install-skill.js";
+import { SKILL_DIR_NAME, selfInstallSkill } from "../../src/application/self/install-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { EnvPort } from "../../src/ports/env.js";
@@ -57,13 +53,8 @@ class RealFs implements FileSystemPort {
 
 class FakeProcess implements ProcessPort {
   public lastInvocation: { cmd: string; args: string[] } | undefined;
-  constructor(private cloneImpl: (dest: string) => Promise<RunResult>) {}
   async run(cmd: string, args: string[], _opts?: RunOptions): Promise<RunResult> {
     this.lastInvocation = { cmd, args };
-    if (cmd === "git" && args[0] === "clone") {
-      const dest = args[args.length - 1] ?? "";
-      return this.cloneImpl(dest);
-    }
     return { code: 1, stdout: "", stderr: `unexpected: ${cmd} ${args.join(" ")}` };
   }
   async which(_cmd: string): Promise<string | undefined> {
@@ -101,12 +92,12 @@ function buildCtx(home: string, fs: FileSystemPort, process: ProcessPort): CliCo
 }
 
 const validSkillContent = `---
-name: agent-workflow-manager
+name: agent-workflow
 description: Universal skill for the agent-workflow CLI.
-version: 1.0.0
+version: 1.1.0
 ---
 
-# agent-workflow-manager
+# agent-workflow
 Body.
 `;
 
@@ -140,9 +131,9 @@ describe("selfInstallSkill", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it("installs from a local path into ~/.claude/skills/agent-workflow-manager/", async () => {
+  it("installs from a local path into ~/.claude/skills/agent-workflow/", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
     const args = buildArgs({ from: source }, []);
 
@@ -162,7 +153,7 @@ describe("selfInstallSkill", () => {
       join(home, ".claude/skills", SKILL_DIR_NAME, "SKILL.md"),
       "utf8",
     );
-    expect(installedSkill).toContain("name: agent-workflow-manager");
+    expect(installedSkill).toContain("name: agent-workflow");
 
     // .git should NOT be copied
     const gitExists = await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME, ".git"));
@@ -178,7 +169,7 @@ describe("selfInstallSkill", () => {
 
   it("rejects when destination exists without --force", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
     const dest = join(home, ".claude/skills", SKILL_DIR_NAME);
     await mkdir(dest, { recursive: true });
@@ -197,7 +188,7 @@ describe("selfInstallSkill", () => {
 
   it("overwrites destination with --force", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
     const dest = join(home, ".claude/skills", SKILL_DIR_NAME);
     await mkdir(dest, { recursive: true });
@@ -210,12 +201,12 @@ describe("selfInstallSkill", () => {
     }
 
     const fresh = await readFile(join(dest, "SKILL.md"), "utf8");
-    expect(fresh).toContain("name: agent-workflow-manager");
+    expect(fresh).toContain("name: agent-workflow");
   });
 
   it("--dry-run does not write anything", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
     const dest = join(home, ".claude/skills", SKILL_DIR_NAME);
 
@@ -230,7 +221,7 @@ describe("selfInstallSkill", () => {
 
   it("rejects local source missing SKILL.md", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
     const badSource = join(workdir, "bad");
     await mkdir(badSource, { recursive: true });
@@ -244,7 +235,7 @@ describe("selfInstallSkill", () => {
 
   it("rejects local source with invalid SKILL.md frontmatter", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
     const invalidSource = join(workdir, "invalid");
     await makeFakeRepo(invalidSource, false);
@@ -258,7 +249,7 @@ describe("selfInstallSkill", () => {
 
   it("rejects nonexistent local path", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
     const result = await selfInstallSkill(
@@ -271,15 +262,9 @@ describe("selfInstallSkill", () => {
     }
   });
 
-  it("clones when source is a URL", async () => {
+  it("rejects --from <https URL> with INVALID_SOURCE (bundled-only since v3.0.2)", async () => {
     const fs = new RealFs();
-    let clonedTo: string | undefined;
-    const proc = new FakeProcess(async (dest) => {
-      clonedTo = dest;
-      // Simulate git clone by populating the dest dir
-      await makeFakeRepo(dest);
-      return { code: 0, stdout: "", stderr: "" };
-    });
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
     const result = await selfInstallSkill(
@@ -287,44 +272,34 @@ describe("selfInstallSkill", () => {
       ctx,
     );
 
-    expect(result.ok).toBe(true);
-    if (result.ok && result.data) {
-      expect(result.data.source_kind).toBe("url");
-      expect(result.data.status).toBe("installed");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_SOURCE");
+      expect(result.error.message).toContain("bundled");
     }
-    expect(clonedTo).toBeDefined();
-    expect(proc.lastInvocation?.cmd).toBe("git");
-    expect(proc.lastInvocation?.args.slice(0, 3)).toEqual(["clone", "--depth", "1"]);
+    // No git invocation — URL is rejected up front.
+    expect(proc.lastInvocation).toBeUndefined();
   });
 
-  it("fails gracefully when git clone exits non-zero", async () => {
+  it("rejects --from git@... ssh URL with INVALID_SOURCE", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({
-      code: 128,
-      stdout: "",
-      stderr: "fatal: repository not found",
-    }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
     const result = await selfInstallSkill(
-      buildArgs({ from: "https://github.com/missing/repo.git" }, []),
+      buildArgs({ from: "git@github.com:Tacuchi/agent-workflow-cli.git" }, []),
       ctx,
     );
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.code).toBe("CLONE_FAILED");
-      expect(result.error.message).toContain("128");
+      expect(result.error.code).toBe("INVALID_SOURCE");
     }
   });
 
-  it("default source is the canonical GitHub URL", () => {
-    expect(DEFAULT_SOURCE).toBe("https://github.com/Tacuchi/agent-workflow-manager.git");
-  });
-
-  it("uses bundled skill when --from is not provided (v2.0.0+)", async () => {
+  it("uses bundled skill when --from is not provided", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
     // Inject a resolver that returns the fake source we built in beforeEach.
@@ -342,7 +317,7 @@ describe("selfInstallSkill", () => {
       join(home, ".claude/skills", SKILL_DIR_NAME, "SKILL.md"),
       "utf8",
     );
-    expect(installed).toContain("name: agent-workflow-manager");
+    expect(installed).toContain("name: agent-workflow");
 
     // git was NOT invoked — bundled path uses no clone.
     expect(proc.lastInvocation).toBeUndefined();
@@ -350,7 +325,7 @@ describe("selfInstallSkill", () => {
 
   it("returns BUNDLED_NOT_FOUND when bundled is missing and --from omitted", async () => {
     const fs = new RealFs();
-    const proc = new FakeProcess(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
     const result = await selfInstallSkill(buildArgs({}, []), ctx, async () => null);
@@ -360,8 +335,12 @@ describe("selfInstallSkill", () => {
     if (!result.ok) {
       expect(result.error.code).toBe("BUNDLED_NOT_FOUND");
       expect(result.error.message).toContain("--from");
-      expect(result.error.message).toContain(DEFAULT_SOURCE);
+      expect(result.error.message).not.toContain("http");
     }
     expect(proc.lastInvocation).toBeUndefined();
+  });
+
+  it("SKILL_DIR_NAME points to the new bundled skill name", () => {
+    expect(SKILL_DIR_NAME).toBe("agent-workflow");
   });
 });

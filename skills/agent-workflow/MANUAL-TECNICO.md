@@ -2,7 +2,7 @@
 
 Manual de implementación y mantenimiento del workflow universal.
 
-Audiencia: developers que mantienen, extienden o integran el CLI `@tacuchi/agent-workflow` y el skill `agent-workflow-manager`.
+Audiencia: developers que mantienen, extienden o integran el CLI `@tacuchi/agent-workflow-cli` y el skill `agent-workflow` que viaja bundled adentro.
 
 Esta es documentación del **workflow universal**, no de los plugins downstream (qtc-* o cualquier otro).
 
@@ -15,14 +15,14 @@ Esta es documentación del **workflow universal**, no de los plugins downstream 
                    │ tool calls / hooks
                    ▼
 ┌────────────────────────────────────────────────────────────┐
-│ Skill: agent-workflow-manager (universal, AI-facing)       │
+│ Skill: agent-workflow (universal, AI-facing, bundled)      │
 │   SKILL.md + 11 references/                                │
 │   Enseña al modelo cuándo y cómo invocar el CLI.           │
 └──────────────────┬─────────────────────────────────────────┘
                    │ shell exec
                    ▼
 ┌────────────────────────────────────────────────────────────┐
-│ CLI: @tacuchi/agent-workflow (Node 20+, ESM, npm)          │
+│ CLI: @tacuchi/agent-workflow-cli (Node 20+, ESM, npm)      │
 │   bin: agent-workflow / aw                                 │
 │   43 subcomandos en 11 familias.                           │
 └──────────────────┬─────────────────────────────────────────┘
@@ -46,8 +46,8 @@ Componentes:
 
 | Componente | Propósito | Lenguaje | Repo |
 |---|---|---|---|
-| CLI `agent-workflow` | runtime ejecutable del workflow | TypeScript (ESM, Node 20+) | github.com/Tacuchi/agent-workflow |
-| Skill `agent-workflow-manager` | manual AI-facing del CLI | Markdown (frontmatter Anthropic Skill) | github.com/Tacuchi/agent-workflow-manager |
+| CLI `agent-workflow` (paquete `@tacuchi/agent-workflow-cli`) | runtime ejecutable del workflow | TypeScript (ESM, Node 20+) | github.com/Tacuchi/agent-workflow-cli |
+| Skill `agent-workflow` | manual AI-facing del CLI (bundled en el tarball) | Markdown (frontmatter Anthropic Skill) | bundled en `skills/agent-workflow/` del CLI |
 | Plugin downstream | superficie específica de dominio | Markdown + JSON manifests | (cada empresa / dominio) |
 
 ## 2. Contratos
@@ -186,11 +186,11 @@ Razón: el CLI consolida resolución de namespace + DSN persistido + envoltorio 
    ```
 3. Skills propias en `skills/<nombre>/SKILL.md` — solo lógica de negocio. NO re-implementar lifecycle, parsing de artefactos, gestión de sesiones (eso lo hace el CLI).
 4. Hooks adicionales (`PreToolUse`, etc.) que invocan `agent-workflow ...` con el namespace ya en `~/.config/...`.
-5. Documentar en CLAUDE.md/AGENTS.md del workspace cliente cómo se compone con el skill universal `agent-workflow-manager`.
+5. Documentar en CLAUDE.md/AGENTS.md del workspace cliente cómo se compone con el skill universal `agent-workflow`.
 
 ### 7.2 Nuevo subcomando del CLI
 
-Pipeline en `/Users/tacuchi/Git/agent-workflow`:
+Pipeline en `/Users/tacuchi/Git/agent-workflow-cli`:
 
 1. Definir contrato JSON en `src/application/<command>/Service.ts`.
 2. Adapter Node en `src/adapters/<command>/`.
@@ -199,7 +199,7 @@ Pipeline en `/Users/tacuchi/Git/agent-workflow`:
 5. Si tiene side-effects de filesystem: golden fixture en `tests/fixtures/golden-write/<command>-XX/` + golden test en `tests/golden/`.
 6. Bump en `package.json` + entry en `CHANGELOG.md`.
 7. Update del skill: agregar entry en la reference correspondiente o crear nueva.
-8. Bump del skill (`agent-workflow-manager`) si la reference cambió.
+8. Bump del skill `agent-workflow` (frontmatter `version`) si la reference cambió. La skill viaja bundled en `skills/agent-workflow/` del repo del CLI.
 
 ### 7.3 Nuevo flow del workflow
 
@@ -208,7 +208,7 @@ Concepto: un flow define la composición de skills durante el lifecycle de una s
 1. Crear plugin downstream con `skills/<flow>-workflow/SKILL.md`.
 2. Registrar el workflow vía CLI ya cubre la búsqueda con `workflows` (lectura de los plugins instalados).
 3. La forma del payload registrado se expone vía `agent-workflow workflows --flow <name>`: `session_args`, `artifacts_by_phase`, `skills_by_phase`, `refs_format`, `resume_counters`.
-4. El skill `agent-workflow-manager` no necesita cambios — el flow es dato runtime que el modelo descubre vía `workflows`.
+4. El skill `agent-workflow` no necesita cambios — el flow es dato runtime que el modelo descubre vía `workflows`.
 
 ## 8. Versioning + release
 
@@ -268,5 +268,4 @@ agent-workflow self install-skill --force       # actualizar skill
 - Workflow universal API: `references/<familia>.md` (este skill).
 - Quick start funcional: `MANUAL-FUNCIONAL.md` (este skill).
 - Test plan de aceptación: `docs/TEST-PLAN.md` (graduado de session037).
-- CLI repo: github.com/Tacuchi/agent-workflow.
-- Skill repo: github.com/Tacuchi/agent-workflow-manager.
+- CLI repo: github.com/Tacuchi/agent-workflow-cli (la skill vive bundled adentro del tarball; ya no hay repo standalone).

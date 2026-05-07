@@ -295,5 +295,4 @@ Ver `MANUAL-TECNICO.md` sección 7.1 para los pasos.
 - API completa del CLI: `SKILL.md` + `references/<familia>.md`.
 - Manual técnico (mantenimiento + extensión): `MANUAL-TECNICO.md`.
 - Test plan: `docs/TEST-PLAN.md`.
-- Repo CLI: github.com/Tacuchi/agent-workflow.
-- Repo skill: github.com/Tacuchi/agent-workflow-manager.
+- Repo CLI: github.com/Tacuchi/agent-workflow-cli (la skill vive bundled adentro del tarball; ya no hay repo standalone).

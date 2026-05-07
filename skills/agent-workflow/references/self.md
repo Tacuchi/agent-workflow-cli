@@ -21,7 +21,7 @@ Use this when paths look wrong — it tells you exactly which override won the p
 
 ## self doctor
 
-Health check the CLI install: binary location, Node version, namespace config, expected paths, and whether the skill is installed under `~/.claude/skills/agent-workflow-manager/`.
+Health check the CLI install: binary location, Node version, namespace config, expected paths, and whether the skill is installed under `~/.claude/skills/agent-workflow/`.
 
 ```bash
 agent-workflow self doctor
@@ -31,7 +31,7 @@ Returns a structured report. Non-zero exit when something is broken.
 
 ## self update
 
-Wraps `npm install -g @tacuchi/agent-workflow@latest`. Confirms interactively when stdout is a TTY.
+Wraps `npm install -g @tacuchi/agent-workflow-cli@latest`. Confirms interactively when stdout is a TTY.
 
 ```bash
 agent-workflow self update
@@ -41,15 +41,14 @@ Skips confirmation in non-TTY contexts. Failures from the underlying `npm` invoc
 
 ## self install-skill
 
-Download this skill repo (`agent-workflow-manager`) and install its contents at `~/.claude/skills/agent-workflow-manager/`. After installation the skill is auto-discovered by Claude Code on next session start.
+Copy the bundled skill (shipped inside the CLI tarball) to `~/.claude/skills/agent-workflow/`. After installation the skill is auto-discovered by Claude Code on next session start.
 
 ```bash
-# Default — clone from the public GitHub repo
+# Default — copy from the bundled location inside the CLI tarball
 agent-workflow self install-skill
 
-# Override the source (local clone, fork, branch)
-agent-workflow self install-skill --from /Users/me/Git/agent-workflow-manager
-agent-workflow self install-skill --from https://github.com/Tacuchi/agent-workflow-manager.git
+# Override the source (local checkout, fork)
+agent-workflow self install-skill --from /Users/me/Git/agent-workflow-cli/skills/agent-workflow
 
 # Overwrite an existing install
 agent-workflow self install-skill --force
@@ -62,8 +61,8 @@ Flags:
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--from <url\|path>` | `https://github.com/Tacuchi/agent-workflow-manager.git` | Accepts a git remote URL or a local filesystem path. |
-| `--force` | off | Required to overwrite an existing `~/.claude/skills/agent-workflow-manager/` directory. |
+| `--from <path>` | bundled location inside the CLI tarball | Accepts a local filesystem path only. Remote URLs are no longer supported — the skill is bundled-only. |
+| `--force` | off | Required to overwrite an existing `~/.claude/skills/agent-workflow/` directory. |
 | `--dry-run` | off | Print the resolved source/destination and exit without copying. |
 
-The installer validates that the source contains a `SKILL.md` with a valid frontmatter (`name`, `description`) before copying.
+The installer validates that the source contains a `SKILL.md` with valid frontmatter (`name`, `description`) before copying.
