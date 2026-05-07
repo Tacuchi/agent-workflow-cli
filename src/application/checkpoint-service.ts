@@ -2,7 +2,11 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { firstNonEmptyLine, parseMdSection, parseMdValue } from "./markdown.js";
-import { type ProjectSession, parseProjectBlock } from "./parsers/project-block.js";
+import {
+  type ProjectBlockMarkers,
+  type ProjectSession,
+  parseProjectBlock,
+} from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
@@ -198,10 +202,11 @@ export async function runCheckpointRead(
 export async function findActiveSessions(
   fs: FileSystemPort,
   cwd: string,
+  markers?: ProjectBlockMarkers,
 ): Promise<ProjectSession[]> {
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file));
+    const block = parseProjectBlock(await fs.readText(file), markers);
     if (block) return block.sessions;
   }
   return [];
@@ -226,7 +231,7 @@ async function resolveTargetSession(
     }
     return null;
   }
-  const actives = await findActiveSessions(fs, env.cwd());
+  const actives = await findActiveSessions(fs, env.cwd(), paths.blockMarkers());
   return actives.length === 1 ? (actives[0]?.folder ?? null) : null;
 }
 
@@ -256,7 +261,7 @@ export async function runResumeSummary(
   paths: PathsService,
 ): Promise<ResumeSummaryOutput> {
   const cwd = env.cwd();
-  const actives = await findActiveSessions(fs, cwd);
+  const actives = await findActiveSessions(fs, cwd, paths.blockMarkers());
   if (actives.length === 0) {
     return {
       active_sessions: [],

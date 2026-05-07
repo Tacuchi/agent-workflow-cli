@@ -68,7 +68,7 @@ export async function runCheckpointWrite(
   const cwd = env.cwd();
   const folder = await resolveTargetFolder(fs, env, paths, options.code);
   if (!folder) {
-    const actives = await findActiveSessions(fs, cwd);
+    const actives = await findActiveSessions(fs, cwd, paths.blockMarkers());
     if (actives.length === 0) {
       return { skipped: true, reason: "no hay sesiones activas en QTC-PROJECT.Status" };
     }
@@ -134,7 +134,7 @@ async function resolveTargetFolder(
     }
     return null;
   }
-  const actives = await findActiveSessions(fs, env.cwd());
+  const actives = await findActiveSessions(fs, env.cwd(), paths.blockMarkers());
   return actives.length === 1 ? (actives[0]?.folder ?? null) : null;
 }
 
@@ -427,7 +427,7 @@ export async function runAutoCompactOnClose(
   paths: PathsService,
 ): Promise<AutoCompactOnCloseOutput | AutoCompactOnCloseSkipped> {
   const cwd = env.cwd();
-  const actives = await findActiveSessions(fs, cwd);
+  const actives = await findActiveSessions(fs, cwd, paths.blockMarkers());
   if (actives.length === 0) {
     return { skipped: true, reason: "no hay sesiones activas" };
   }
