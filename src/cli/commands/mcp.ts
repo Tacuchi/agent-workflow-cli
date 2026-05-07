@@ -2,7 +2,6 @@ import { DbhubLauncherError, runDbhubLauncher } from "../../application/mcp-dbhu
 import type { CommandResult, ExitCode } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
-import { writeStderr } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const mcpCommand: QtcCommand = {
@@ -44,8 +43,11 @@ export const mcpCommand: QtcCommand = {
       return { ok: true, data: undefined, exitCode: clampExit(result.exitCode) };
     } catch (err) {
       if (err instanceof DbhubLauncherError) {
-        writeStderr(`${err.message}\n`);
-        return { ok: true, data: undefined, exitCode: 1 };
+        return {
+          ok: false,
+          error: { code: "DBHUB_LAUNCHER_FAILED", message: err.message },
+          exitCode: 1,
+        };
       }
       throw err;
     }

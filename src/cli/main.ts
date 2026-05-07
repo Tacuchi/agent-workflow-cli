@@ -67,7 +67,13 @@ import {
 } from "./interactive-menu.js";
 import { parseArgv } from "./parser.js";
 import { CommandRegistry } from "./registry.js";
-import { renderRaw, writeStderr, writeStdout } from "./render.js";
+import {
+  emitError,
+  formatArgvError,
+  formatUnknownCommand,
+  renderRaw,
+  writeStdout,
+} from "./render.js";
 import type { CliContext } from "./types.js";
 
 async function run(argv: string[]): Promise<ExitCode> {
@@ -125,7 +131,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   try {
     parsed = parseArgv(argv);
   } catch (err) {
-    writeStderr(`${(err as Error).message}\n`);
+    emitError(formatArgvError((err as Error).message));
     return 1;
   }
 
@@ -155,8 +161,7 @@ async function run(argv: string[]): Promise<ExitCode> {
 
   const command = registry.resolve(parsed.command);
   if (!command) {
-    writeStderr(`Unknown command: ${parsed.command}\n`);
-    printHelp(registry.list());
+    emitError(formatUnknownCommand(parsed.command, registry.list()));
     return 1;
   }
 
