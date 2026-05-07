@@ -30,7 +30,7 @@ function loadGolden(name: string): unknown {
 
 describe("SessionsService — golden parity vs python qtc_core", () => {
   const env = new FixtureEnv();
-  const paths = new PathsService(normalizeNamespace("qtc"), env.homeDir(), env.cwd());
+  const paths = new PathsService(normalizeNamespace("workflow"), env.homeDir(), env.cwd());
   const service = new SessionsService(new NodeFileSystem(), env, paths);
 
   it("default mode (active filter) matches python sessions-default.json", async () => {

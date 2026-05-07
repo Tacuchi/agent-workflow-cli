@@ -40,11 +40,11 @@ export async function resolveOrigen(
 
   const sessionsDir = paths.cwdSessionsDir();
   if (!(await fs.exists(sessionsDir))) {
-    return { error: ".qtc/sessions/ no existe en el CWD" };
+    return { error: `${sessionsDir} no existe en el CWD` };
   }
   const candidate = await findCandidate(fs, sessionsDir, parsed.codeNorm, parsed.flow);
   if (!candidate) {
-    return { error: `no se encontró session${parsed.codeNorm}-${parsed.flow}-* en .qtc/sessions/` };
+    return { error: `no se encontró session${parsed.codeNorm}-${parsed.flow}-* en ${sessionsDir}` };
   }
 
   const deliverableName = ORIGEN_DELIVERABLE[parsed.flow];

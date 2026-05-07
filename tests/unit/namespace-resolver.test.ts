@@ -98,22 +98,22 @@ describe("NamespaceResolver", () => {
     expect(result.source).toBe("default");
   });
 
-  it("auto-detects namespace from workspace cwd containing .qtc/sessions/", async () => {
+  it("auto-detects namespace from workspace cwd containing .workflow/sessions/", async () => {
     const dirs = new Map<string, DirEntry[]>([
       [
         "/cwd",
         [
-          { name: ".qtc", path: "/cwd/.qtc", type: "dir" },
+          { name: ".workflow", path: "/cwd/.workflow", type: "dir" },
           { name: ".git", path: "/cwd/.git", type: "dir" },
           { name: "src", path: "/cwd/src", type: "dir" },
         ],
       ],
-      ["/cwd/.qtc/sessions", []],
+      ["/cwd/.workflow/sessions", []],
     ]);
     const fs = new FakeFs(new Map(), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv());
     const result = await r.resolve(undefined);
-    expect(result.namespace).toBe("qtc");
+    expect(result.namespace).toBe("workflow");
     expect(result.source).toBe("workspace");
   });
 
@@ -132,11 +132,11 @@ describe("NamespaceResolver", () => {
       [
         "/cwd",
         [
-          { name: ".qtc", path: "/cwd/.qtc", type: "dir" },
+          { name: ".workflow", path: "/cwd/.workflow", type: "dir" },
           { name: ".other", path: "/cwd/.other", type: "dir" },
         ],
       ],
-      ["/cwd/.qtc/sessions", []],
+      ["/cwd/.workflow/sessions", []],
       ["/cwd/.other/sessions", []],
     ]);
     const fs = new FakeFs(new Map(), dirs);
@@ -147,13 +147,13 @@ describe("NamespaceResolver", () => {
 
   it("workspace auto-detect wins over user config (locality > preference)", async () => {
     const dirs = new Map<string, DirEntry[]>([
-      ["/cwd", [{ name: ".qtc", path: "/cwd/.qtc", type: "dir" }]],
-      ["/cwd/.qtc/sessions", []],
+      ["/cwd", [{ name: ".workflow", path: "/cwd/.workflow", type: "dir" }]],
+      ["/cwd/.workflow/sessions", []],
     ]);
     const fs = new FakeFs(new Map([[CONFIG_PATH, "configns"]]), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv());
     const result = await r.resolve(undefined);
-    expect(result.namespace).toBe("qtc");
+    expect(result.namespace).toBe("workflow");
     expect(result.source).toBe("workspace");
   });
 

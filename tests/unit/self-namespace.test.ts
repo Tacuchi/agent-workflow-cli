@@ -7,13 +7,13 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 describe("selfNamespace", () => {
   it("returns namespace and source from context", async () => {
     const ctx = {
-      namespace: { namespace: normalizeNamespace("qtc"), source: "env" },
-      paths: new PathsService(normalizeNamespace("qtc"), "/h", "/c"),
+      namespace: { namespace: normalizeNamespace("workflow"), source: "env" },
+      paths: new PathsService(normalizeNamespace("workflow"), "/h", "/c"),
     } as unknown as CliContext;
     const result = await selfNamespace(ctx);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data).toEqual({ namespace: "qtc", source: "env" });
+      expect(result.data).toEqual({ namespace: "workflow", source: "env" });
     }
   });
 

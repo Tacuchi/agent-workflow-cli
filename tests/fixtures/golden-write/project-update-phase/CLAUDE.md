@@ -1,4 +1,4 @@
-<!-- QTC-PROJECT-START -->
+<!-- WORKFLOW-PROJECT-START -->
 ## Proyecto
 
 Workspace fixture sample-workspace para tests golden de @tacuchi/agent-workflow-cli.
@@ -20,5 +20,5 @@ _Stack sin detectar._
 - Sesiones activas:
   - session001-dev-foo · fase: execution
 - Última actividad: 2026-05-02 16:13
-- Histórico: `.qtc/HISTORY.md`
-<!-- QTC-PROJECT-END -->
+- Histórico: `.workflow/HISTORY.md`
+<!-- WORKFLOW-PROJECT-END -->

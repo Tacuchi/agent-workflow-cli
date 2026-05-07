@@ -1,6 +1,6 @@
 {
   "session": "session001-dev-foo",
-  "path": ".qtc/sessions/session001-dev-foo/DECISIONES.md",
+  "path": ".workflow/sessions/session001-dev-foo/DECISIONES.md",
   "exists": true,
   "count": 3,
   "items": [

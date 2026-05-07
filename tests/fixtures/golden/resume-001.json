@@ -1,7 +1,7 @@
 {
   "code": "001",
   "folder": "session001-dev-foo",
-  "path": ".qtc/sessions/session001-dev-foo",
+  "path": ".workflow/sessions/session001-dev-foo",
   "flow": "dev",
   "state_from_qtc_project": "active",
   "phase_from_qtc_project": "requerimiento",

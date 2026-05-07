@@ -1,6 +1,6 @@
 {
   "session": "session001-dev-foo",
-  "path": ".qtc/sessions/session001-dev-foo",
+  "path": ".workflow/sessions/session001-dev-foo",
   "code": "001",
   "flow": "dev",
   "state": "active",

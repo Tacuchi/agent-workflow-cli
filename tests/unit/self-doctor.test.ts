@@ -37,7 +37,7 @@ class FakeFs implements FileSystemPort {
   }
 }
 
-const ns = normalizeNamespace("qtc");
+const ns = normalizeNamespace("workflow");
 const paths = new PathsService(ns, "/home/u", "/cwd");
 const runtime: ResolvedRuntime = {
   packageName: "@tacuchi/agent-workflow-cli",
@@ -60,8 +60,8 @@ describe("selfDoctor", () => {
     if (result.ok && result.data) {
       expect(result.data.skill.installed).toBe(true);
       expect(result.data.skill.path).toBe("/home/u/.claude/skills/agent-workflow");
-      expect(result.data.namespace.value).toBe("qtc");
-      expect(result.data.paths.user_root).toBe("/home/u/.qtc");
+      expect(result.data.namespace.value).toBe("workflow");
+      expect(result.data.paths.user_root).toBe("/home/u/.workflow");
     }
   });
 

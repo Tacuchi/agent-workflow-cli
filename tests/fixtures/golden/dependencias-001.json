@@ -1,6 +1,6 @@
 {
   "session": "session001-dev-foo",
-  "path": ".qtc/sessions/session001-dev-foo/DEPENDENCIAS.md",
+  "path": ".workflow/sessions/session001-dev-foo/DEPENDENCIAS.md",
   "exists": true,
   "headers": [
     "Paquete",

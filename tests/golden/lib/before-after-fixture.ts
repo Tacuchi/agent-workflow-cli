@@ -59,10 +59,10 @@ export function normalizeTodayDate(text: string): string {
 }
 
 /**
- * Constructs a `PathsService` for tests with namespace=qtc, so that all path
- * methods produce the legacy `.qtc/...` literals. Used by golden tests when
+ * Constructs a `PathsService` for tests with namespace=workflow, so that all
+ * path methods produce `.workflow/...` literals. Used by golden tests when
  * services are migrated to take `paths: PathsService` as a dependency.
  */
-export function makeQtcPaths(env: TestEnv): PathsService {
-  return new PathsService(normalizeNamespace("qtc"), env.homeDir(), env.cwd());
+export function makeWorkflowPaths(env: TestEnv): PathsService {
+  return new PathsService(normalizeNamespace("workflow"), env.homeDir(), env.cwd());
 }

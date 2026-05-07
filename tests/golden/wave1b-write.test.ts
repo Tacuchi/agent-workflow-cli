@@ -10,7 +10,7 @@ import { runSessionCreate } from "../../src/application/session-create-service.j
 import {
   TestEnv,
   cloneFixture,
-  makeQtcPaths,
+  makeWorkflowPaths,
   normalizeLastActivity,
   normalizeTodayDate,
   readFile,
@@ -30,22 +30,22 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("history-update --code 001 --state closed --summary 'tarea cerrada via test'", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const paths = makeQtcPaths(env);
+    const paths = makeWorkflowPaths(env);
     const result = await runHistoryUpdate(fs, env, paths, {
       code: "001",
       state: "closed",
       summary: "tarea cerrada via test",
     });
     expect(result).toEqual({ code: "001", flow: "dev", action: "updated", state: "closed" });
-    expect(readFile(join(clone.cwd, ".qtc", "HISTORY.md"))).toEqual(
-      loadGoldenFile("history-update-001-closed", ".qtc/HISTORY.md"),
+    expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(
+      loadGoldenFile("history-update-001-closed", ".workflow/HISTORY.md"),
     );
   });
 
   it("project-md-upsert --add-session session999-dev-test --phase planning --branches sample:main", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const paths = makeQtcPaths(env);
+    const paths = makeWorkflowPaths(env);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "add-session",
       sessionFolder: "session999-dev-test",
@@ -65,7 +65,7 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("project-md-upsert --remove-session session001-dev-foo", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const paths = makeQtcPaths(env);
+    const paths = makeWorkflowPaths(env);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "remove-session",
       sessionFolder: "session001-dev-foo",
@@ -83,7 +83,7 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("project-md-upsert --update-phase session001-dev-foo --phase execution", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const paths = makeQtcPaths(env);
+    const paths = makeWorkflowPaths(env);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "update-phase",
       sessionFolder: "session001-dev-foo",
@@ -102,7 +102,7 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("session-close --code 001 --graduated-decisions 001-stack-typescript", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const paths = makeQtcPaths(env);
+    const paths = makeWorkflowPaths(env);
     const result = await runSessionClose(fs, env, paths, {
       code: "001",
       graduatedDecisions: "001-stack-typescript",
@@ -115,8 +115,8 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
       refs: "[DEC](../docs/decisiones/001-stack-typescript.md)",
       qtc_project_updated: true,
     });
-    expect(readFile(join(clone.cwd, ".qtc", "HISTORY.md"))).toEqual(
-      loadGoldenFile("session-close-001", ".qtc/HISTORY.md"),
+    expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(
+      loadGoldenFile("session-close-001", ".workflow/HISTORY.md"),
     );
     expect(normalizeLastActivity(readFile(join(clone.cwd, "CLAUDE.md")))).toEqual(
       normalizeLastActivity(loadGoldenFile("session-close-001", "CLAUDE.md")),
@@ -126,7 +126,7 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
   it("session-create --flow dev --name nueva-tarea --objetivo ... --branches sample:main", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
-    const paths = makeQtcPaths(env);
+    const paths = makeWorkflowPaths(env);
     const result = await runSessionCreate(fs, env, paths, {
       flow: "dev",
       name: "nueva-tarea",
@@ -141,15 +141,15 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
 
     const objPath = join(
       clone.cwd,
-      ".qtc",
+      ".workflow",
       "sessions",
       "session004-dev-nueva-tarea",
       "OBJETIVO.md",
     );
     expect(existsSync(objPath)).toBe(true);
     expect(readFile(objPath)).toEqual(loadGoldenFile("session-create-dev", "OBJETIVO.md"));
-    expect(normalizeTodayDate(readFile(join(clone.cwd, ".qtc", "HISTORY.md")))).toEqual(
-      normalizeTodayDate(loadGoldenFile("session-create-dev", ".qtc/HISTORY.md")),
+    expect(normalizeTodayDate(readFile(join(clone.cwd, ".workflow", "HISTORY.md")))).toEqual(
+      normalizeTodayDate(loadGoldenFile("session-create-dev", ".workflow/HISTORY.md")),
     );
     expect(normalizeLastActivity(readFile(join(clone.cwd, "CLAUDE.md")))).toEqual(
       normalizeLastActivity(loadGoldenFile("session-create-dev", "CLAUDE.md")),

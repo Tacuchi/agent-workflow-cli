@@ -5,7 +5,7 @@
       "flow": "dev",
       "name": "baz",
       "folder": "session003-dev-baz",
-      "path": ".qtc/sessions/session003-dev-baz",
+      "path": ".workflow/sessions/session003-dev-baz",
       "state": "closed",
       "phase": "closure",
       "date": "2026-01-03",

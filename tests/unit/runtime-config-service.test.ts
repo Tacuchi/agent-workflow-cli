@@ -7,11 +7,11 @@ import { RuntimeConfigService } from "../../src/runtime/config-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
 const HOME = "/home/test";
-const USER_CONFIG = join(HOME, ".qtc", "agent-workflow", "runtime.json");
+const USER_CONFIG = join(HOME, ".workflow", "agent-workflow", "runtime.json");
 const CORE_CONFIG = "/repo/core-workflow-plugin/config/agent-workflow-runtime.json";
 
 function makeQtcPathsForTest(home: string): PathsService {
-  return new PathsService(normalizeNamespace("qtc"), home, "/cwd");
+  return new PathsService(normalizeNamespace("workflow"), home, "/cwd");
 }
 
 class FakeEnv implements EnvPort {

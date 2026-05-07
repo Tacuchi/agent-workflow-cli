@@ -16,15 +16,15 @@ export interface RenderProjectBlockInput {
   lastActivity?: string;
   mode?: ProjectMode;
   workingBranches?: Record<string, string>;
-  /** Path used in the "Histórico:" line. Default `.qtc/HISTORY.md` for back-compat. */
+  /** Path used in the "Histórico:" line. Default `.workflow/HISTORY.md`. */
   historicoPath?: string;
-  /** Markers used to wrap the block. Default = legacy QTC markers. */
+  /** Markers used to wrap the block. Default = legacy QTC markers (kept for back-compat parsing). */
   markers?: ProjectBlockMarkers;
 }
 
 export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const markers = input.markers ?? LEGACY_QTC_MARKERS;
-  const historicoPath = input.historicoPath ?? ".qtc/HISTORY.md";
+  const historicoPath = input.historicoPath ?? ".workflow/HISTORY.md";
   const last = input.lastActivity ?? formatNowMinute();
   const proyectoText =
     input.proyecto.trim().length > 0

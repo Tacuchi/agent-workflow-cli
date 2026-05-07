@@ -37,7 +37,7 @@ function loadGolden(name: string): unknown {
 
 const fs = new NodeFileSystem();
 const env = new FixtureEnv();
-const paths = new PathsService(normalizeNamespace("qtc"), env.homeDir(), env.cwd());
+const paths = new PathsService(normalizeNamespace("workflow"), env.homeDir(), env.cwd());
 
 describe("Wave 1 read commands — golden parity vs python qtc_core", () => {
   it("objetivo-data --code 001", async () => {

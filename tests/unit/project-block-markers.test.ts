@@ -34,7 +34,7 @@ describe("project-block markers — parametric", () => {
     });
     expect(out.startsWith(LEGACY_QTC_MARKERS.start)).toBe(true);
     expect(out.endsWith(LEGACY_QTC_MARKERS.end)).toBe(true);
-    expect(out).toContain("- Histórico: `.qtc/HISTORY.md`");
+    expect(out).toContain("- Histórico: `.workflow/HISTORY.md`");
   });
 
   it("render uses custom markers + historicoPath when provided", () => {
