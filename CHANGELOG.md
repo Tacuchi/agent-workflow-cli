@@ -1,8 +1,28 @@
 # Changelog
 
-All notable changes to `@tacuchi/agent-workflow` are documented in this file.
+All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [3.0.0] — 2026-05-07
+
+Breaking — paquete renombrado de `@tacuchi/agent-workflow` a `@tacuchi/agent-workflow-cli`. Repo upstream renombrado de `Tacuchi/agent-workflow` a `Tacuchi/agent-workflow-cli`. Bin (`agent-workflow`) y alias (`aw`) sin cambios. Roadmap del upgrade en hub `qtc-plugin-upgrade` (RFC 001 v2).
+
+### Changed
+
+- `package.json:name` → `@tacuchi/agent-workflow-cli`.
+- `package.json:repository`, `bugs`, `homepage` → URLs del repo nuevo.
+
+### Migration
+
+Consumidores de `@tacuchi/agent-workflow@^2`:
+
+```bash
+npm uninstall -g @tacuchi/agent-workflow
+npm install -g @tacuchi/agent-workflow-cli
+```
+
+Las rutas instaladas (`agent-workflow`, `aw`) y la API pública del CLI no cambian — sólo el nombre del paquete y la URL del repo.
 
 ## [2.0.2] — 2026-05-06
 

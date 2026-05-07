@@ -40,7 +40,7 @@ class FakeFs implements FileSystemPort {
 const ns = normalizeNamespace("qtc");
 const paths = new PathsService(ns, "/home/u", "/cwd");
 const runtime: ResolvedRuntime = {
-  packageName: "@tacuchi/agent-workflow",
+  packageName: "@tacuchi/agent-workflow-cli",
   binName: "agent-workflow",
   source: "default",
 };

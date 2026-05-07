@@ -70,7 +70,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
     const resolved = await service.resolveRuntime();
 
     expect(resolved).toEqual({
-      packageName: "@tacuchi/agent-workflow",
+      packageName: "@tacuchi/agent-workflow-cli",
       binName: "agent-workflow",
       source: "default",
     });
@@ -98,7 +98,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
         [
           USER_CONFIG,
           JSON.stringify({
-            packageName: "@tacuchi/agent-workflow",
+            packageName: "@tacuchi/agent-workflow-cli",
             binName: "user-bin",
             envOverride: "AW_AGENT_WORKFLOW_BIN",
           }),
@@ -120,7 +120,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
         [
           CORE_CONFIG,
           JSON.stringify({
-            packageName: "@tacuchi/agent-workflow",
+            packageName: "@tacuchi/agent-workflow-cli",
             binName: "core-bin",
             envOverride: "AW_AGENT_WORKFLOW_BIN",
           }),
@@ -165,7 +165,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
   it("loads extended schema with displayName, mcpGuards, expectedMcpServers, slashCommands", async () => {
     const fullConfig = {
       schemaVersion: 1,
-      packageName: "@tacuchi/agent-workflow",
+      packageName: "@tacuchi/agent-workflow-cli",
       binName: "agent-workflow",
       envOverride: "AW_AGENT_WORKFLOW_BIN",
       displayName: "QTC Workflow",

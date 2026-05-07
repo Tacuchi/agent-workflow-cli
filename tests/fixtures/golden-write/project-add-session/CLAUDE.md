@@ -1,7 +1,7 @@
 <!-- QTC-PROJECT-START -->
 ## Proyecto
 
-Workspace fixture sample-workspace para tests golden de @tacuchi/agent-workflow.
+Workspace fixture sample-workspace para tests golden de @tacuchi/agent-workflow-cli.
 
 Mode: single-repo
 

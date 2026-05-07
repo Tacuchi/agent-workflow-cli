@@ -1,6 +1,6 @@
 {
   "block": {
-    "proyecto": "Workspace fixture sample-workspace para tests golden de @tacuchi/agent-workflow.\n\nMode: single-repo",
+    "proyecto": "Workspace fixture sample-workspace para tests golden de @tacuchi/agent-workflow-cli.\n\nMode: single-repo",
     "mode": "project",
     "fuentes": [
       {

@@ -84,7 +84,7 @@ function buildCtx(home: string, fs: FileSystemPort, process: ProcessPort): CliCo
   const ns = normalizeNamespace("agent-workflow");
   const paths = new PathsService(ns, home, home);
   const runtime: ResolvedRuntime = {
-    packageName: "@tacuchi/agent-workflow",
+    packageName: "@tacuchi/agent-workflow-cli",
     binName: "agent-workflow",
     source: "default",
   };

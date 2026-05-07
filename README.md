@@ -1,11 +1,11 @@
-# @tacuchi/agent-workflow
+# @tacuchi/agent-workflow-cli
 
 Agnostic runtime CLI for session-lifecycle workflows. Pairs with the qtc-* family of plugins (and other namespace ecosystems) to provide commands like `sessions`, `session-create`, `session-close`, `checkpoint-write`, `plugin-doctor`, `auto-plan-decide`, and more.
 
 ## Install
 
 ```bash
-npm install -g @tacuchi/agent-workflow
+npm install -g @tacuchi/agent-workflow-cli
 ```
 
 The CLI exposes two binaries: `agent-workflow` (canonical) and `aw` (short alias).
