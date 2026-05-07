@@ -1,6 +1,6 @@
 {
   "name": "@tacuchi/agent-workflow",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Agnostic runtime CLI for session-lifecycle workflows. Auto-detects namespace from workspace; falls back to 'agent-workflow'. Compatible with qtc-* plugins (auto-detect when .qtc/sessions/ is present). v2.0.0 (RFC 002 Fase D): bundles the agent-workflow-manager skill in the tarball — `self install-skill` defaults to copying from the bundled location instead of git-cloning. Override with `--from <path|url>` for power users.",
   "type": "module",
   "bin": {

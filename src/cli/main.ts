@@ -206,7 +206,7 @@ async function dispatchMenuAction(
     case "doctor":
       return await run(["self", "doctor"]);
     case "install-skill":
-      return await run(["self", "install-skill"]);
+      return await run(["self", "install-skill", "--force"]);
     case "update":
       return await run(["self", "update"]);
     case "help":
