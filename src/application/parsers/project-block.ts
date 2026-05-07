@@ -57,6 +57,15 @@ export function parseProjectBlock(
   text: string,
   markers: ProjectBlockMarkers = LEGACY_QTC_MARKERS,
 ): ParsedProjectBlock | null {
+  const primary = parseWithMarkers(text, markers);
+  if (primary !== null) return primary;
+  if (markers.start !== LEGACY_QTC_MARKERS.start) {
+    return parseWithMarkers(text, LEGACY_QTC_MARKERS);
+  }
+  return null;
+}
+
+function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedProjectBlock | null {
   if (!text.includes(markers.start) || !text.includes(markers.end)) {
     return null;
   }

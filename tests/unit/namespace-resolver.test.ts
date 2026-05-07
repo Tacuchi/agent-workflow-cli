@@ -174,4 +174,58 @@ describe("NamespaceResolver", () => {
     const result = await r.resolve(undefined);
     expect(result.source).toBe("default");
   });
+
+  it("ignores legacy '.qtc/sessions/' in workspace autodetect (denylist)", async () => {
+    const dirs = new Map<string, DirEntry[]>([
+      ["/cwd", [{ name: ".qtc", path: "/cwd/.qtc", type: "dir" }]],
+      ["/cwd/.qtc/sessions", []],
+    ]);
+    const fs = new FakeFs(new Map(), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv());
+    const result = await r.resolve(undefined);
+    expect(result.namespace).toBe("agent-workflow");
+    expect(result.source).toBe("default");
+  });
+
+  it("legacy '.qtc/' denylist does not affect explicit --namespace qtc", async () => {
+    const r = new NamespaceResolver(new FakeFs(), new FakeEnv());
+    const result = await r.resolve("qtc");
+    expect(result.namespace).toBe("qtc");
+    expect(result.source).toBe("flag");
+  });
+
+  it("legacy '.qtc/' denylist does not affect AW_NAMESPACE=qtc env override", async () => {
+    const env = new FakeEnv({ AW_NAMESPACE: "qtc" });
+    const r = new NamespaceResolver(new FakeFs(), env);
+    const result = await r.resolve(undefined);
+    expect(result.namespace).toBe("qtc");
+    expect(result.source).toBe("env");
+  });
+
+  it("legacy '.qtc/' denylist does not affect user-config = qtc", async () => {
+    const fs = new FakeFs(new Map([[CONFIG_PATH, "qtc"]]));
+    const r = new NamespaceResolver(fs, new FakeEnv());
+    const result = await r.resolve(undefined);
+    expect(result.namespace).toBe("qtc");
+    expect(result.source).toBe("config");
+  });
+
+  it("'.qtc/' denylist preserves '.workflow/' detection when both present", async () => {
+    const dirs = new Map<string, DirEntry[]>([
+      [
+        "/cwd",
+        [
+          { name: ".qtc", path: "/cwd/.qtc", type: "dir" },
+          { name: ".workflow", path: "/cwd/.workflow", type: "dir" },
+        ],
+      ],
+      ["/cwd/.qtc/sessions", []],
+      ["/cwd/.workflow/sessions", []],
+    ]);
+    const fs = new FakeFs(new Map(), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv());
+    const result = await r.resolve(undefined);
+    expect(result.namespace).toBe("workflow");
+    expect(result.source).toBe("workspace");
+  });
 });

@@ -94,7 +94,6 @@ export async function runPluginDoctor(
     : cwd;
   const flow = input.flow ?? "core";
   const inputPluginVersion = input.pluginVersion ?? null;
-  const pluginName = input.pluginName ?? `${paths.namespace}-${flow}`;
   const compatRange = input.compatRange ?? null;
 
   const skillsDir = join(pluginRoot, "skills");
@@ -236,6 +235,7 @@ export async function runPluginDoctor(
   const manifestsInfo: Record<string, string | null> = {};
   let manifestQtcContractVersion: string | null = null;
   let canonicalVersion: string | null = inputPluginVersion;
+  let manifestPluginName: string | null = null;
   for (const relPath of [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"]) {
     const manifestPath = join(pluginRoot, relPath);
     if (!(await fs.exists(manifestPath))) {
@@ -270,6 +270,14 @@ export async function runPluginDoctor(
     const manifestVersion =
       isRecord(data) && typeof data.version === "string" ? data.version : null;
     manifestsInfo[relPath] = manifestVersion;
+    if (
+      manifestPluginName === null &&
+      isRecord(data) &&
+      typeof data.name === "string" &&
+      data.name.length > 0
+    ) {
+      manifestPluginName = data.name;
+    }
     if (canonicalVersion === null && manifestVersion !== null) {
       canonicalVersion = manifestVersion;
     } else if (canonicalVersion !== null && manifestVersion !== canonicalVersion) {
@@ -288,6 +296,7 @@ export async function runPluginDoctor(
     }
   }
   const pluginVersion = canonicalVersion ?? "unknown";
+  const pluginName = input.pluginName ?? manifestPluginName ?? `${paths.namespace}-${flow}`;
   // Si el manifest declara qtcContractVersion >= 6.3, el plugin opera en
   // single-path y no debe chequearse la presencia de artefactos legacy.
   const isSinglePathContract = isContractVersionAtLeast(manifestQtcContractVersion, 6, 3);

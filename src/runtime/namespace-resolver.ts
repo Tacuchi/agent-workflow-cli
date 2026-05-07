@@ -13,6 +13,8 @@ export interface ResolvedNamespace {
 export const DEFAULT_NAMESPACE = "agent-workflow";
 export const ENV_VAR_NAMESPACE = "AW_NAMESPACE";
 
+const LEGACY_NAMESPACE_DENYLIST = new Set<string>(["qtc"]);
+
 export class NamespaceResolver {
   constructor(
     private readonly fs: FileSystemPort,
@@ -52,6 +54,7 @@ export class NamespaceResolver {
       if (!entry.name.startsWith(".")) continue;
       const candidate = entry.name.slice(1);
       if (!NAMESPACE_REGEX.test(candidate)) continue;
+      if (LEGACY_NAMESPACE_DENYLIST.has(candidate)) continue;
       const sessionsPath = join(entry.path, "sessions");
       if (await this.fs.exists(sessionsPath)) {
         matches.push(candidate as Namespace);
