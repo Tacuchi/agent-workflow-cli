@@ -7,6 +7,8 @@ import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
+const SELF_SUBCOMMANDS = ["namespace", "doctor", "update", "install-skill"] as const;
+
 export const selfCommand: QtcCommand = {
   name: "self",
   describe: "Manage the agent-workflow CLI itself (namespace, doctor, update, install-skill).",
@@ -18,25 +20,26 @@ export const selfCommand: QtcCommand = {
       case "doctor":
         return selfDoctor(ctx);
       case "update":
-        return selfUpdate(ctx);
+        return selfUpdate(args, ctx);
       case "install-skill":
         return selfInstallSkill(args, ctx);
       case undefined:
       case "":
         return {
-          ok: false,
-          error: {
-            code: "INVALID_INPUT",
-            message: "uso: self <namespace|doctor|update|install-skill>",
+          ok: true,
+          data: {
+            subcommands: [...SELF_SUBCOMMANDS],
+            help_hint:
+              "uso: aw self <subcommand>. Ej: 'aw self doctor' o 'aw self update --dry-run'",
           },
-          exitCode: 1,
+          exitCode: 0,
         };
       default:
         return {
           ok: false,
           error: {
             code: "INVALID_INPUT",
-            message: `unknown self subcommand: '${sub}'. uso: self <namespace|doctor|update|install-skill>`,
+            message: `unknown self subcommand: '${sub}'. uso: self <${SELF_SUBCOMMANDS.join("|")}>`,
           },
           exitCode: 1,
         };

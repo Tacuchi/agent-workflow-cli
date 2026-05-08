@@ -1,3 +1,4 @@
+import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult, ExitCode } from "../../domain/types.js";
 
@@ -6,9 +7,24 @@ export interface SelfUpdateData {
   exit_code: number;
   stdout: string;
   stderr: string;
+  would_run?: boolean;
 }
 
-export async function selfUpdate(ctx: CliContext): Promise<CommandResult<SelfUpdateData>> {
+export async function selfUpdate(
+  args: ParsedArgs,
+  ctx: CliContext,
+): Promise<CommandResult<SelfUpdateData>> {
+  const npmArgs = ["install", "-g", `${ctx.runtime.packageName}@latest`];
+  const cmdString = `npm ${npmArgs.join(" ")}`;
+
+  if (args.flags.has("--dry-run")) {
+    return {
+      ok: true,
+      data: { command: cmdString, exit_code: 0, stdout: "", stderr: "", would_run: true },
+      exitCode: 0,
+    };
+  }
+
   // Optional TTY confirm
   if (process.stdout.isTTY === true) {
     const { confirm } = await import("@inquirer/prompts");
@@ -25,13 +41,12 @@ export async function selfUpdate(ctx: CliContext): Promise<CommandResult<SelfUpd
     }
   }
 
-  const args = ["install", "-g", `${ctx.runtime.packageName}@latest`];
-  const result = await ctx.process.run("npm", args, {});
+  const result = await ctx.process.run("npm", npmArgs, {});
   const code = result.code as ExitCode;
   return {
     ok: result.code === 0,
     data: {
-      command: `npm ${args.join(" ")}`,
+      command: cmdString,
       exit_code: result.code,
       stdout: result.stdout,
       stderr: result.stderr,

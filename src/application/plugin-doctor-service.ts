@@ -1,24 +1,22 @@
 // Plugin doctor — health check del plugin (manifest, hooks, MCP, skills).
-// Comportamiento dependiente de `qtcContractVersion` del manifest:
-//   - >= 6.3 (single-path post-session032): skip checks de Python (marker
-//     `<userRoot>/<flow>/.plugin-version`, core-lib version marker, scripts,
-//     version de python3). Estos artefactos ya no existen en plugins single-path.
-//   - < 6.3 (legacy dual-path): chequea presencia de marker como antes para
-//     detectar instalaciones rotas en versiones antiguas.
 //
 // Phase 3 agnostic CLI: los servidores MCP esperados se leen de
-// `runtime.expectedMcpServers` (vacio = no expectations). El soporte de
-// scripts Python se eliminó por completo (Python ya no es parte del runtime).
+// `runtime.expectedMcpServers` (vacio = no expectations).
+//
+// Post-session013 (RFC 002 G4 H-08): la gate `qtcContractVersion < 6.3`
+// (dual-path legacy) fue eliminada. Todo plugin actual opera en single-path,
+// por lo que `installed_marker`, `qtc_core_installed`, `compat_ok` y
+// `python_version` son siempre `null` en el output. Se mantienen los campos
+// en `DoctorOutput` por back-compat de shape, no de comportamiento.
 //
 // `exported_skills` se lee de `.claude-plugin/plugin.json:exportedSkills` o
 // de un --exports-file JSON.
 //
 // Estructura interna (post-session011 G2 refactor):
-// `runPluginDoctor` orquesta 8 helpers self-contained, cada uno con
+// `runPluginDoctor` orquesta 7 helpers self-contained, cada uno con
 // complexity <= 15. Cada helper retorna `{...result, findings}` y el orchestrator
 // agrega los findings al final.
-import { spawnSync } from "node:child_process";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { basename, extname, join, relative, resolve, sep } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
@@ -106,22 +104,9 @@ export async function runPluginDoctor(
   const readmeResult = await checkReadmeSync(readmePath, skillsResult.skillsCount, fs);
   const fdFindings = await checkFrontendDesignGeneralization(skillsDir, pluginRoot, fs);
   const manifestsResult = await parseManifests(pluginRoot, fs, input.pluginVersion ?? null);
-  const isSinglePathContract = isContractVersionAtLeast(
-    manifestsResult.manifestQtcContractVersion,
-    6,
-    3,
-  );
   const pluginVersion = manifestsResult.canonicalVersion ?? "unknown";
-  const pluginName =
-    input.pluginName ?? manifestsResult.manifestPluginName ?? `${paths.namespace}-${flow}`;
-  const legacyResult = await checkLegacyMarkers(
-    paths,
-    flow,
-    pluginVersion,
-    compatRange,
-    isSinglePathContract,
-    fs,
-  );
+  const fallbackName = basename(pluginRoot) || `${paths.namespace}-${flow}`;
+  const pluginName = input.pluginName ?? manifestsResult.manifestPluginName ?? fallbackName;
   const hooksResult = await parseHooks(pluginRoot, fs);
   const mcpResult = await validateMcp(pluginRoot, runtime, env, fs);
   const exportedResult = await validateExportedSkills(
@@ -138,7 +123,6 @@ export async function runPluginDoctor(
     ...readmeResult.findings,
     ...fdFindings,
     ...manifestsResult.findings,
-    ...legacyResult.findings,
     ...hooksResult.findings,
     ...mcpResult.findings,
     ...exportedResult.findings,
@@ -153,15 +137,15 @@ export async function runPluginDoctor(
       plugin: pluginName,
       plugin_root: pluginRoot,
       plugin_version: pluginVersion,
-      qtc_core_installed: legacyResult.qtcCoreInstalled,
+      qtc_core_installed: null,
       compat_range: compatRange,
-      compat_ok: legacyResult.compatOk,
-      python_version: legacyResult.pythonVersion,
+      compat_ok: null,
+      python_version: null,
       skills_count: skillsResult.skillsCount,
       readme_count_expected: readmeResult.readmeCountExpected,
       readme_count_match: readmeResult.readmeCountMatch,
       manifests: manifestsResult.manifestsInfo,
-      installed_marker: legacyResult.installedMarker,
+      installed_marker: null,
       hooks: hooksResult.hooksInfo,
       mcp: mcpResult.mcpInfo,
       skills: skillsResult.skillsInfo,
@@ -476,101 +460,6 @@ async function parseManifestFile(
   };
 }
 
-// ---------- 5/5b/9. Legacy markers + python (gated by !isSinglePathContract) ----------
-
-interface LegacyMarkersResult {
-  installedMarker: string | null;
-  qtcCoreInstalled: string | null;
-  compatOk: boolean | null;
-  pythonVersion: string | null;
-  findings: DoctorFinding[];
-}
-
-async function checkLegacyMarkers(
-  paths: PathsService,
-  flow: string,
-  pluginVersion: string,
-  compatRange: string | null,
-  isSinglePathContract: boolean,
-  fs: FileSystemPort,
-): Promise<LegacyMarkersResult> {
-  const findings: DoctorFinding[] = [];
-  if (isSinglePathContract) {
-    return {
-      installedMarker: null,
-      qtcCoreInstalled: null,
-      compatOk: null,
-      pythonVersion: null,
-      findings,
-    };
-  }
-  const installedMarker = await readPluginVersionMarker(paths, flow, pluginVersion, fs, findings);
-  const coreLibMarker = paths.userCoreLibMarker();
-  const qtcCoreInstalled = await readMarkerText(coreLibMarker, fs);
-  const compatOk = compatRange
-    ? evaluateCompat(qtcCoreInstalled, compatRange, coreLibMarker, findings)
-    : null;
-  const pythonVersion = checkPythonVersion(findings);
-  return { installedMarker, qtcCoreInstalled, compatOk, pythonVersion, findings };
-}
-
-async function readPluginVersionMarker(
-  paths: PathsService,
-  flow: string,
-  pluginVersion: string,
-  fs: FileSystemPort,
-  findings: DoctorFinding[],
-): Promise<string | null> {
-  const markerFile = paths.userPluginVersionFile(flow);
-  if (!(await fs.exists(markerFile))) return null;
-  let installedMarker: string | null = null;
-  try {
-    const raw = (await fs.readText(markerFile)).trim();
-    installedMarker = raw.length > 0 ? raw : null;
-  } catch (e) {
-    findings.push({
-      level: "warn",
-      file: markerFile,
-      msg: `cannot read marker: ${(e as Error).message}`,
-    });
-  }
-  if (installedMarker && installedMarker !== pluginVersion) {
-    findings.push({
-      level: "warn",
-      file: markerFile,
-      msg: `installed plugin v${installedMarker} differs from declared v${pluginVersion} — reinstall/re-sync`,
-    });
-  }
-  return installedMarker;
-}
-
-async function readMarkerText(markerFile: string, fs: FileSystemPort): Promise<string | null> {
-  if (!(await fs.exists(markerFile))) return null;
-  try {
-    const raw = (await fs.readText(markerFile)).trim();
-    return raw.length > 0 ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-function checkPythonVersion(findings: DoctorFinding[]): string | null {
-  const pythonVersion = detectPythonVersion();
-  if (!pythonVersion) return null;
-  const m = pythonVersion.match(/^(\d+)\.(\d+)/);
-  if (!m?.[1] || !m[2]) return pythonVersion;
-  const major = Number.parseInt(m[1], 10);
-  const minor = Number.parseInt(m[2], 10);
-  if (major < 3 || (major === 3 && minor < 8)) {
-    findings.push({
-      level: "warn",
-      file: "python",
-      msg: `python ${pythonVersion} is too old; recommend 3.8+`,
-    });
-  }
-  return pythonVersion;
-}
-
 // ---------- 7. Hooks JSON ----------
 
 interface HooksResult {
@@ -796,39 +685,6 @@ async function validateSingleExportedSkill(
   return record;
 }
 
-// ---------- compat range evaluation (unchanged) ----------
-
-function evaluateCompat(
-  qtcCoreInstalled: string | null,
-  compatRange: string,
-  coreLibMarker: string,
-  findings: DoctorFinding[],
-): boolean | null {
-  if (!qtcCoreInstalled) {
-    findings.push({
-      level: "error",
-      file: coreLibMarker,
-      msg: `plugin requiere core ${compatRange} pero ${coreLibMarker} no existe — instalá el core lib o reiniciá la sesión para que SessionStart hook lo copie`,
-    });
-    return false;
-  }
-  const compatOk = semverSatisfies(qtcCoreInstalled, compatRange);
-  if (compatOk === null) {
-    findings.push({
-      level: "warn",
-      file: "compat_range",
-      msg: `no pude parsear compat_range '${compatRange}' (esperado '~X.Y.Z', '^X.Y.Z' o 'X.Y.Z') — validación contra core lib skipped`,
-    });
-  } else if (!compatOk) {
-    findings.push({
-      level: "error",
-      file: "compat_range",
-      msg: `core lib instalado v${qtcCoreInstalled} NO satisface compat_range del plugin (${compatRange}) — el plugin va a fallar en runtime`,
-    });
-  }
-  return compatOk;
-}
-
 // ---------- exported skills registry loader (split for cx <= 15) ----------
 
 interface ExportedSkillEntry {
@@ -931,71 +787,6 @@ async function collectMarkdownFiles(fs: FileSystemPort, dir: string): Promise<st
     }
   }
   return out;
-}
-
-function isContractVersionAtLeast(version: string | null, major: number, minor: number): boolean {
-  if (!version) return false;
-  const m = version.trim().match(/^(\d+)\.(\d+)/);
-  if (!m?.[1] || !m[2]) return false;
-  const x = Number.parseInt(m[1], 10);
-  const y = Number.parseInt(m[2], 10);
-  if (x > major) return true;
-  if (x < major) return false;
-  return y >= minor;
-}
-
-function semverSatisfies(installed: string, range: string): boolean | null {
-  const inst = parseSemver(installed);
-  if (!inst) return null;
-  const m = range.trim().match(/^([~^]?)(\d+)\.(\d+)\.(\d+)$/);
-  if (!m) return null;
-  const op = m[1] ?? "";
-  const x = Number.parseInt(m[2] ?? "0", 10);
-  const y = Number.parseInt(m[3] ?? "0", 10);
-  const z = Number.parseInt(m[4] ?? "0", 10);
-  if (op === "~") {
-    return tupleGte(inst, [x, y, z]) && tupleLt(inst, [x, y + 1, 0]);
-  }
-  if (op === "^") {
-    return tupleGte(inst, [x, y, z]) && tupleLt(inst, [x + 1, 0, 0]);
-  }
-  return inst[0] === x && inst[1] === y && inst[2] === z;
-}
-
-function parseSemver(v: string): [number, number, number] | null {
-  const m = v.trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
-  if (!m) return null;
-  return [
-    Number.parseInt(m[1] ?? "0", 10),
-    Number.parseInt(m[2] ?? "0", 10),
-    Number.parseInt(m[3] ?? "0", 10),
-  ];
-}
-
-function tupleGte(a: [number, number, number], b: [number, number, number]): boolean {
-  if (a[0] !== b[0]) return a[0] > b[0];
-  if (a[1] !== b[1]) return a[1] > b[1];
-  return a[2] >= b[2];
-}
-
-function tupleLt(a: [number, number, number], b: [number, number, number]): boolean {
-  if (a[0] !== b[0]) return a[0] < b[0];
-  if (a[1] !== b[1]) return a[1] < b[1];
-  return a[2] < b[2];
-}
-
-function detectPythonVersion(): string | null {
-  try {
-    const r = spawnSync("python3", ["--version"], { encoding: "utf-8" });
-    if (r.status === 0) {
-      const text = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-      const m = text.match(/Python\s+(\d+\.\d+\.\d+)/);
-      if (m?.[1]) return m[1];
-    }
-  } catch {
-    // ignore
-  }
-  return null;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

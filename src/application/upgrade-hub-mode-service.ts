@@ -39,23 +39,13 @@ export async function runUpgradeHubMode(
   const cwd = env.cwd();
   const candidates = [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")];
   const markers = paths.blockMarkers();
-  let block: ParsedProjectBlock | null = null;
-  let sourceFile: string | null = null;
-  for (const f of candidates) {
-    if (!(await fs.exists(f))) continue;
-    const parsed = parseProjectBlock(await fs.readText(f), markers);
-    if (parsed) {
-      block = parsed;
-      sourceFile = f;
-      break;
-    }
-  }
+  const found = await findProjectBlock(candidates, markers, fs);
 
-  const projectInitCmd =
-    runtime?.slashCommands?.projectInit ?? "(run namespace-specific project-init command)";
-  const hubInitCmd = runtime?.slashCommands?.hubInit ?? "(run namespace-specific hub-init command)";
-
-  if (!block) {
+  if (!found) {
+    const projectInitCmd =
+      runtime?.slashCommands?.projectInit ?? "(run namespace-specific project-init command)";
+    const hubInitCmd =
+      runtime?.slashCommands?.hubInit ?? "(run namespace-specific hub-init command)";
     return {
       applied: false,
       reason: "no_qtc_project_block_found",
@@ -63,11 +53,13 @@ export async function runUpgradeHubMode(
     };
   }
 
-  const eligible = isEligibleForHubUpgrade(block);
+  const { block, sourceFile } = found;
   const currentMode = block.mode || "project";
   const sourcesCount = block.fuentes.length;
 
-  if (!eligible) {
+  if (!isEligibleForHubUpgrade(block)) {
+    const hubInitCmd =
+      runtime?.slashCommands?.hubInit ?? "(run namespace-specific hub-init command)";
     return {
       applied: false,
       reason: "not_eligible",
@@ -99,20 +91,7 @@ export async function runUpgradeHubMode(
     markers,
   });
 
-  const results: NonNullable<UpgradeHubModeOutput["results"]> = [];
-  for (const f of candidates) {
-    try {
-      const action = await upsertProjectBlock(fs, f, newBlock, markers);
-      const fname = f.split(/[\\/]/).pop() ?? f;
-      results.push({ file: fname, action });
-    } catch (err) {
-      const fname = f.split(/[\\/]/).pop() ?? f;
-      results.push({
-        file: fname,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  const results = await applyBlockToCandidates(candidates, newBlock, markers, fs);
 
   return {
     applied: true,
@@ -122,6 +101,41 @@ export async function runUpgradeHubMode(
     source_file: sourceFile,
     results,
   };
+}
+
+async function findProjectBlock(
+  candidates: string[],
+  markers: ProjectBlockMarkers,
+  fs: FileSystemPort,
+): Promise<{ block: ParsedProjectBlock; sourceFile: string } | null> {
+  for (const f of candidates) {
+    if (!(await fs.exists(f))) continue;
+    const parsed = parseProjectBlock(await fs.readText(f), markers);
+    if (parsed) return { block: parsed, sourceFile: f };
+  }
+  return null;
+}
+
+async function applyBlockToCandidates(
+  candidates: string[],
+  newBlock: string,
+  markers: ProjectBlockMarkers,
+  fs: FileSystemPort,
+): Promise<NonNullable<UpgradeHubModeOutput["results"]>> {
+  const results: NonNullable<UpgradeHubModeOutput["results"]> = [];
+  for (const f of candidates) {
+    const fname = f.split(/[\\/]/).pop() ?? f;
+    try {
+      const action = await upsertProjectBlock(fs, f, newBlock, markers);
+      results.push({ file: fname, action });
+    } catch (err) {
+      results.push({
+        file: fname,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return results;
 }
 
 function isEligibleForHubUpgrade(block: ParsedProjectBlock): boolean {

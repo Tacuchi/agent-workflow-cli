@@ -60,6 +60,7 @@ import {
   graduateCommand,
   upgradeHubModeCommand,
 } from "./commands/wave4d-simple.js";
+import { renderGroupedCommandLines } from "./help-groups.js";
 import {
   type MenuAction,
   runInteractiveMenu,
@@ -247,7 +248,8 @@ function printHelp(commands: string[]): void {
     "via SessionStart hook; new workspaces use .workflow/sessions/.",
     "",
     "Commands:",
-    ...commands.map((c) => `  ${c}`),
+    "",
+    ...renderGroupedCommandLines(commands),
     "",
     "Aliases:",
     "  aw                  short alias of `agent-workflow`",

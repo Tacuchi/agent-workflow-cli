@@ -176,6 +176,11 @@ interface ScanResult {
   by_severity: { alta: number; media: number; baja: number };
 }
 
+interface CompiledPattern {
+  pattern: ScanPattern;
+  regex: RegExp | null;
+}
+
 async function scanFiles(
   fs: FileSystemPort,
   root: string,
@@ -184,56 +189,83 @@ async function scanFiles(
   excludes: string[],
   maxPerPattern: number,
 ): Promise<ScanResult> {
-  const compiled = patterns.map((p) => {
+  const compiled = compilePatterns(patterns);
+  const matches: ScanMatch[] = [];
+  const counts: Record<string, number> = {};
+  for (const p of patterns) counts[p.id] = 0;
+
+  for await (const filePath of walkFiles(fs, root, extensions, excludes)) {
+    await scanSingleFile(fs, filePath, compiled, counts, maxPerPattern, matches);
+  }
+
+  return { matches, counts, by_severity: tallyBySeverity(matches) };
+}
+
+function compilePatterns(patterns: ScanPattern[]): CompiledPattern[] {
+  return patterns.map((p) => {
     try {
       return { pattern: p, regex: compilePattern(p.regex) };
     } catch {
       return { pattern: p, regex: null };
     }
   });
+}
 
-  const matches: ScanMatch[] = [];
-  const counts: Record<string, number> = {};
-  for (const p of patterns) counts[p.id] = 0;
-
-  for await (const filePath of walkFiles(fs, root, extensions, excludes)) {
-    let text: string;
-    try {
-      text = await fs.readText(filePath);
-    } catch {
-      continue;
-    }
-    const lines = text.split("\n");
-    // Mirror Python str.splitlines() — drop trailing empty.
-    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      for (const { pattern, regex } of compiled) {
-        if (!regex) continue;
-        if ((counts[pattern.id] ?? 0) >= maxPerPattern) continue;
-        if (regex.test(line)) {
-          counts[pattern.id] = (counts[pattern.id] ?? 0) + 1;
-          matches.push({
-            pattern_id: pattern.id,
-            severity: pattern.severity,
-            file: filePath,
-            line: i + 1,
-            snippet: line.trim().slice(0, 200),
-            recommendation: pattern.recommendation,
-          });
-        }
-      }
-    }
+async function scanSingleFile(
+  fs: FileSystemPort,
+  filePath: string,
+  compiled: CompiledPattern[],
+  counts: Record<string, number>,
+  maxPerPattern: number,
+  matches: ScanMatch[],
+): Promise<void> {
+  let text: string;
+  try {
+    text = await fs.readText(filePath);
+  } catch {
+    return;
   }
+  const lines = text.split("\n");
+  // Mirror Python str.splitlines() — drop trailing empty.
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  for (let i = 0; i < lines.length; i++) {
+    scanLine(lines[i] ?? "", i + 1, filePath, compiled, counts, maxPerPattern, matches);
+  }
+}
 
-  const bySeverity = { alta: 0, media: 0, baja: 0 };
+function scanLine(
+  line: string,
+  lineNumber: number,
+  filePath: string,
+  compiled: CompiledPattern[],
+  counts: Record<string, number>,
+  maxPerPattern: number,
+  matches: ScanMatch[],
+): void {
+  for (const { pattern, regex } of compiled) {
+    if (!regex) continue;
+    if ((counts[pattern.id] ?? 0) >= maxPerPattern) continue;
+    if (!regex.test(line)) continue;
+    counts[pattern.id] = (counts[pattern.id] ?? 0) + 1;
+    matches.push({
+      pattern_id: pattern.id,
+      severity: pattern.severity,
+      file: filePath,
+      line: lineNumber,
+      snippet: line.trim().slice(0, 200),
+      recommendation: pattern.recommendation,
+    });
+  }
+}
+
+function tallyBySeverity(matches: ScanMatch[]): { alta: number; media: number; baja: number } {
+  const out = { alta: 0, media: 0, baja: 0 };
   for (const m of matches) {
     if (m.severity === "alta" || m.severity === "media" || m.severity === "baja") {
-      bySeverity[m.severity] += 1;
+      out[m.severity] += 1;
     }
   }
-
-  return { matches, counts, by_severity: bySeverity };
+  return out;
 }
 
 function compilePattern(regex: string): RegExp {
@@ -256,23 +288,28 @@ async function* walkFiles(
   while (stack.length > 0) {
     const dir = stack.pop();
     if (!dir) break;
-    let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
-    try {
-      entries = await fs.list(dir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.type === "dir") {
-        if (!exSet.has(entry.name.toLowerCase())) {
-          stack.push(entry.path);
-        }
-      } else if (entry.type === "file") {
-        const ext = extname(entry.name).toLowerCase();
-        if (extSet.has(ext)) {
-          yield entry.path;
-        }
-      }
+    yield* visitDir(fs, dir, exSet, extSet, stack);
+  }
+}
+
+async function* visitDir(
+  fs: FileSystemPort,
+  dir: string,
+  exSet: Set<string>,
+  extSet: Set<string>,
+  stack: string[],
+): AsyncGenerator<string> {
+  let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
+  try {
+    entries = await fs.list(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.type === "dir" && !exSet.has(entry.name.toLowerCase())) {
+      stack.push(entry.path);
+    } else if (entry.type === "file" && extSet.has(extname(entry.name).toLowerCase())) {
+      yield entry.path;
     }
   }
 }

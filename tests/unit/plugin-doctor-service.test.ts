@@ -94,14 +94,23 @@ describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
     expect(data.plugin_version).toBe("1.0.0");
   });
 
-  it("falls back to `${ns}-${flow}` when manifest is missing", async () => {
+  it("falls back to basename(pluginRoot) when manifest is missing (H-04)", async () => {
     const pluginRoot = "/cwd/no-manifest-plugin";
     const fs = new FakeFs(new Map(), new Map([[pluginRoot, []]]));
     const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
       pluginRoot,
     });
-    expect(data.plugin).toBe("workflow-core"); // ns=workflow, flow=core (default)
+    expect(data.plugin).toBe("no-manifest-plugin"); // basename of pluginRoot
     expect(data.plugin_version).toBe("unknown");
+  });
+
+  it("falls back to `${ns}-${flow}` when basename is empty (e.g., pluginRoot='/')", async () => {
+    const pluginRoot = "/";
+    const fs = new FakeFs(new Map(), new Map([[pluginRoot, []]]));
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot,
+    });
+    expect(data.plugin).toBe("workflow-core");
   });
 
   it("respects explicit input.pluginName over manifest", async () => {
