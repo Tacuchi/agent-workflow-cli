@@ -5,31 +5,20 @@ import type { ResolvedRuntime } from "../runtime/types.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
-import { type SessionEntry, buildSessionEntry, parseSessionFolder } from "./session-resolver.js";
+import { getDocsDir, getReleaseDir } from "./release-data/common.js";
+import {
+  type ReleaseSession,
+  enrichSessionsWithLegacyMeta,
+  listSessionsForRelease,
+} from "./release-data/sessions.js";
+import { type GraduatedBundle, listGraduatedBundles } from "./release-data/bundles.js";
 
-const ARTIFACT_FILES: Record<string, string> = {
-  objetivo: "OBJETIVO.md",
-  decisiones: "DECISIONES.md",
-  tasks: "TASKS.md",
-  dependencias: "DEPENDENCIAS.md",
-  checkpoint: "CHECKPOINT.md",
-};
-const SCRIPTS_SUBDIR = "scripts";
-
-export interface ReleaseSession extends SessionEntry {
-  is_legacy_format?: boolean;
-  release_eligible?: boolean;
-  legacy_warning?: string;
-}
-
-export interface GraduatedBundle {
-  nnn: string;
-  session_code: string;
-  slug: string;
-  path: string;
-  forward_count: number;
-  rollback_count: number;
-}
+export type { ReleaseSession } from "./release-data/sessions.js";
+export type { GraduatedBundle } from "./release-data/bundles.js";
+export type { SessionArtifactsResult } from "./release-data/artifacts.js";
+export { listSessionsForRelease } from "./release-data/sessions.js";
+export { readSessionArtifacts } from "./release-data/artifacts.js";
+export { listGraduatedBundles } from "./release-data/bundles.js";
 
 export interface ReleaseDataInput {
   since?: string;
@@ -57,300 +46,6 @@ export interface ReleaseDataOutput {
 export interface ReleaseDataError {
   error: string;
   workspace_mode?: "project" | "hub";
-}
-
-function sessionCodeInt(code: string | null | undefined): number | null {
-  if (!code) return null;
-  let s = String(code)
-    .trim()
-    .replace(/session/g, "");
-  s = (s.split("-")[0] ?? "").trim();
-  const n = Number.parseInt(s, 10);
-  return Number.isNaN(n) ? null : n;
-}
-
-export async function listSessionsForRelease(
-  fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-  options: { since?: string; includeOpen?: boolean; includeClosed?: boolean } = {},
-): Promise<ReleaseSession[]> {
-  void cwd;
-  const includeOpen = options.includeOpen ?? true;
-  const includeClosed = options.includeClosed ?? true;
-  const qtcDir = paths.cwdSessionsDir();
-  if (!(await fs.exists(qtcDir))) return [];
-
-  const sinceInt = sessionCodeInt(options.since);
-  const entries = (await fs.list(qtcDir))
-    .filter((e) => e.type === "dir" && /^session\d{3}-/.test(e.name))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const result: ReleaseSession[] = [];
-  for (const folder of entries) {
-    const entry = (await buildSessionEntry(fs, folder.path, folder.name)) as ReleaseSession;
-    const codeInt = sessionCodeInt(entry.code);
-    if (sinceInt !== null && codeInt !== null && codeInt <= sinceInt) continue;
-    if (entry.state === "active" && !includeOpen) continue;
-    if (entry.state === "closed" && !includeClosed) continue;
-
-    const hasObjetivo = await fs.exists(join(folder.path, "OBJETIVO.md"));
-    const hasRequirements = await fs.exists(join(folder.path, "REQUIREMENTS.md"));
-    entry.is_legacy_format = hasRequirements && !hasObjetivo;
-    entry.release_eligible = !entry.is_legacy_format;
-    result.push(entry);
-  }
-  return result;
-}
-
-export interface SessionArtifactsResult {
-  session?: string;
-  path?: string;
-  code?: string | null;
-  flow?: string | null;
-  state?: string;
-  phase?: string;
-  scripts?: { name: string; path: string; size: number | null; is_rollback: boolean }[];
-  error?: string;
-  hint?: string;
-  [k: string]:
-    | unknown
-    | { path: string; content: string; size: number }
-    | { path: string; error: string }
-    | { error: string }
-    | null;
-}
-
-export async function readSessionArtifacts(
-  fs: FileSystemPort,
-  env: EnvPort,
-  paths: PathsService,
-  sessionCode: string,
-  kinds?: string[],
-  runtime?: ResolvedRuntime,
-): Promise<SessionArtifactsResult> {
-  void env;
-  const found = await findSessionFolder(fs, paths.cwdSessionsDir(), sessionCode);
-  if (!found) return { error: `session_not_found:${sessionCode}` };
-
-  const { sessionPath, folderName } = found;
-
-  const legacyCheck = await detectLegacyFormat(fs, sessionPath, folderName, runtime);
-  if (legacyCheck) return legacyCheck;
-
-  const entry = await buildSessionEntry(fs, sessionPath, folderName);
-  const result: SessionArtifactsResult = {
-    session: entry.folder,
-    path: entry.path,
-    code: entry.code,
-    flow: entry.flow,
-    state: entry.state,
-    phase: entry.phase,
-  };
-
-  const targetKinds = kinds ?? [...Object.keys(ARTIFACT_FILES), "scripts"];
-  for (const kind of targetKinds) {
-    if (kind === "scripts") {
-      result.scripts = await readScriptsArtifacts(fs, sessionPath);
-    } else {
-      (result as Record<string, unknown>)[kind] = await readArtifactKind(fs, sessionPath, kind);
-    }
-  }
-  return result;
-}
-
-async function findSessionFolder(
-  fs: FileSystemPort,
-  qtcDir: string,
-  sessionCode: string,
-): Promise<{ sessionPath: string; folderName: string } | null> {
-  const targetInt = sessionCodeInt(sessionCode);
-  if (!(await fs.exists(qtcDir)) || targetInt === null) return null;
-  const folders = (await fs.list(qtcDir)).filter(
-    (e) => e.type === "dir" && /^session\d{3}-/.test(e.name),
-  );
-  const match = folders.find((f) => sessionCodeInt(parseSessionFolder(f.name).code) === targetInt);
-  if (!match) return null;
-  return { sessionPath: match.path, folderName: match.name };
-}
-
-async function detectLegacyFormat(
-  fs: FileSystemPort,
-  sessionPath: string,
-  folderName: string,
-  runtime: ResolvedRuntime | undefined,
-): Promise<SessionArtifactsResult | null> {
-  const hasReq = await fs.exists(join(sessionPath, "REQUIREMENTS.md"));
-  const hasObj = await fs.exists(join(sessionPath, "OBJETIVO.md"));
-  if (!hasReq || hasObj) return null;
-  const migrateCmd = runtime?.slashCommands?.migrate ?? "(run namespace-specific migrate command)";
-  return {
-    error: "legacy_format",
-    session: folderName,
-    path: sessionPath,
-    hint: `La sesión usa REQUIREMENTS.md (formato pre-0.9). Migrar con ${migrateCmd} --upgrade-topology antes de consumir release.`,
-  };
-}
-
-async function readScriptsArtifacts(
-  fs: FileSystemPort,
-  sessionPath: string,
-): Promise<{ name: string; path: string; size: number | null; is_rollback: boolean }[]> {
-  const scriptsDir = join(sessionPath, SCRIPTS_SUBDIR);
-  if (!(await fs.exists(scriptsDir))) return [];
-  const files = await collectFilesByExt(fs, scriptsDir, ".sql");
-  files.sort((a, b) => a.localeCompare(b));
-  const items: { name: string; path: string; size: number | null; is_rollback: boolean }[] = [];
-  for (const f of files) {
-    let size: number | null = null;
-    try {
-      size = (await fs.stat(f)).size;
-    } catch {
-      // ignore
-    }
-    items.push({
-      name: f.split("/").pop() ?? f,
-      path: f,
-      size,
-      is_rollback: f.endsWith(".rollback.sql"),
-    });
-  }
-  return items;
-}
-
-async function readArtifactKind(
-  fs: FileSystemPort,
-  sessionPath: string,
-  kind: string,
-): Promise<unknown> {
-  const filename = ARTIFACT_FILES[kind];
-  if (!filename) return { error: `unknown_kind:${kind}` };
-  const artifactPath = join(sessionPath, filename);
-  if (!(await fs.exists(artifactPath))) return null;
-  try {
-    const content = await fs.readText(artifactPath);
-    const size = (await fs.stat(artifactPath)).size;
-    return { path: artifactPath, content, size };
-  } catch (e) {
-    return { path: artifactPath, error: (e as Error).message };
-  }
-}
-
-export async function listGraduatedBundles(
-  fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-  options: { sessionCode?: string; sourceAlias?: string } = {},
-): Promise<GraduatedBundle[]> {
-  let docsDir: string;
-  try {
-    docsDir = await getDocsDir(fs, cwd, paths, options.sourceAlias);
-  } catch {
-    return [];
-  }
-  const scriptsDir = join(docsDir, "scripts");
-  if (!(await fs.exists(scriptsDir))) return [];
-
-  const targetCode = options.sessionCode ? sessionCodeInt(options.sessionCode) : null;
-  const dirEntries = (await fs.list(scriptsDir))
-    .filter((e) => e.type === "dir")
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const bundles: GraduatedBundle[] = [];
-  for (const entry of dirEntries) {
-    const m = entry.name.match(/^(\d{3})-session(\d{3})-(.+)$/);
-    if (!m || !m[1] || !m[2] || !m[3]) continue;
-    const nnn = m[1];
-    const sessionNnn = m[2];
-    const slug = m[3];
-    if (targetCode !== null && Number.parseInt(sessionNnn, 10) !== targetCode) continue;
-    const sqlFiles = await collectFilesByExt(fs, entry.path, ".sql");
-    const rollback = sqlFiles.filter((f) => f.endsWith(".rollback.sql"));
-    const forward = sqlFiles.filter((f) => !f.endsWith(".rollback.sql"));
-    bundles.push({
-      nnn,
-      session_code: sessionNnn,
-      slug,
-      path: entry.path,
-      forward_count: forward.length,
-      rollback_count: rollback.length,
-    });
-  }
-  return bundles;
-}
-
-async function getDocsDir(
-  fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-  sourceAlias: string | undefined,
-): Promise<string> {
-  if (!sourceAlias) return join(cwd, "docs");
-  const sources = await readSources(fs, cwd, paths);
-  const found = sources.find((s) => s.alias === sourceAlias);
-  if (!found) {
-    throw new Error(
-      `Fuente '${sourceAlias}' no encontrada. Aliases disponibles: ${sources
-        .map((s) => s.alias)
-        .join(", ")}`,
-    );
-  }
-  return join(found.path, "docs");
-}
-
-async function getReleaseDir(
-  fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-  sourceAlias: string | undefined,
-): Promise<string> {
-  return join(await getDocsDir(fs, cwd, paths, sourceAlias), "release");
-}
-
-async function readSources(
-  fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-): Promise<{ alias: string; path: string }[]> {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block.fuentes;
-  }
-  return [];
-}
-
-async function readWorkspaceMode(
-  fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-): Promise<"project" | "hub"> {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block.mode;
-  }
-  return "project";
-}
-
-async function collectFilesByExt(fs: FileSystemPort, dir: string, ext: string): Promise<string[]> {
-  const result: string[] = [];
-  const stack: string[] = [dir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) break;
-    let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
-    try {
-      entries = await fs.list(current);
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (e.type === "dir") stack.push(e.path);
-      else if (e.type === "file" && e.name.endsWith(ext)) result.push(e.path);
-    }
-  }
-  return result;
 }
 
 export async function runReleaseData(
@@ -405,23 +100,15 @@ export async function runReleaseData(
   return payload;
 }
 
-function enrichSessionsWithLegacyMeta(
-  sessions: ReleaseSession[],
+async function readWorkspaceMode(
+  fs: FileSystemPort,
   cwd: string,
-  runtime: ResolvedRuntime | undefined,
-): { enriched: ReleaseSession[]; legacy: string[] } {
-  const migrateCmd = runtime?.slashCommands?.migrate ?? "(run namespace-specific migrate command)";
-  const enriched: ReleaseSession[] = [];
-  const legacy: string[] = [];
-  for (const s of sessions) {
-    const item = { ...s };
-    if (s.is_legacy_format) {
-      legacy.push(s.folder);
-      item.legacy_warning = `Sesión usa formato pre-0.9 (REQUIREMENTS.md). Migrar con ${migrateCmd} --upgrade-topology antes de release.`;
-    }
-    // Mirror Python build_session_entry compact=True: path always relative.
-    if (item.path) item.path = relpath(item.path, cwd);
-    enriched.push(item);
+  paths: PathsService,
+): Promise<"project" | "hub"> {
+  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
+    if (!(await fs.exists(file))) continue;
+    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
+    if (block) return block.mode;
   }
-  return { enriched, legacy };
+  return "project";
 }
