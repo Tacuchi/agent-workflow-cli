@@ -6,6 +6,8 @@ import {
 } from "../../application/project-md-upsert-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
+import { parseFuentesSpecs } from "../parsers/fuentes.js";
+import { parseWorkingBranches } from "../parsers/working-branches.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
@@ -99,56 +101,4 @@ function pickOperation(args: ParsedArgs): { op: UpsertOp; folder?: string } | nu
     if (folder !== undefined) return { op, folder };
   }
   return null;
-}
-
-function parseWorkingBranches(specs: string[]): Record<string, string> | undefined {
-  const out: Record<string, string> = {};
-  for (const raw of specs) {
-    const idx = raw.indexOf(":");
-    if (idx <= 0) continue;
-    const alias = raw.slice(0, idx).trim();
-    const branch = raw.slice(idx + 1).trim();
-    if (alias && branch) out[alias] = branch;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
-interface FuenteSpec {
-  alias: string;
-  path: string;
-  mainBranch?: string;
-}
-
-function parseFuentesSpecs(specs: string[]): { fuentes: FuenteSpec[] } | { error: string } {
-  const out: FuenteSpec[] = [];
-  for (const raw of specs) {
-    const trimmed = raw.trim();
-    const firstColon = trimmed.indexOf(":");
-    if (firstColon <= 0) {
-      return {
-        error: `--fuente formato inválido '${raw}': se esperaba 'alias:path[:rama-principal]'`,
-      };
-    }
-    const alias = trimmed.slice(0, firstColon).trim();
-    const rest = trimmed.slice(firstColon + 1);
-    const lastColon = rest.lastIndexOf(":");
-    let path: string;
-    let rama: string | undefined;
-    if (lastColon < 0) {
-      path = rest.trim();
-    } else {
-      path = rest.slice(0, lastColon).trim();
-      const ramaCandidate = rest.slice(lastColon + 1).trim();
-      if (ramaCandidate.length > 0) rama = ramaCandidate;
-    }
-    if (!alias || !path) {
-      return {
-        error: `--fuente formato inválido '${raw}': alias y path son obligatorios`,
-      };
-    }
-    const entry: FuenteSpec = { alias, path };
-    if (rama !== undefined) entry.mainBranch = rama;
-    out.push(entry);
-  }
-  return { fuentes: out };
 }

@@ -9,7 +9,13 @@ import { PathsService } from "../application/paths-service.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
 import { NamespaceResolver } from "../runtime/namespace-resolver.js";
+import { autoPlanDecideCommand } from "./commands/auto-plan-decide.js";
+import { bootstrapDsnCommand } from "./commands/bootstrap-dsn.js";
+import { checkBranchCommand } from "./commands/check-branch.js";
+import { checkpointReadCommand } from "./commands/checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./commands/checkpoint-write.js";
+import { codeScanCommand } from "./commands/code-scan.js";
+import { compressCheckpointCommand } from "./commands/compress-checkpoint.js";
 import { decisionesListCommand } from "./commands/decisiones-list.js";
 import { dependenciasListCommand } from "./commands/dependencias-list.js";
 import {
@@ -18,6 +24,7 @@ import {
   nextNumberCommand,
   profilesCommand,
 } from "./commands/dev-only.js";
+import { graduateCommand } from "./commands/graduate.js";
 import { graduationCheckCommand } from "./commands/graduation-check.js";
 import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
@@ -26,43 +33,28 @@ import { hubInitCommand } from "./commands/hub-init.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./commands/multiroot.js";
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
-import {
-  autoPlanDecideCommand,
-  specialtyChooseCommand,
-  topicChangeCheckCommand,
-} from "./commands/orchestration.js";
+import { phaseDetectCommand } from "./commands/phase-detect.js";
+import { phaseNextCommand } from "./commands/phase-next.js";
 import { pluginDoctorCommand } from "./commands/plugin-doctor.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
 import { releaseDataCommand } from "./commands/release-data.js";
+import { resumeSummaryCommand } from "./commands/resume-summary.js";
 import { selfCommand } from "./commands/self.js";
 import { sessionArtifactsCommand } from "./commands/session-artifacts.js";
 import { sessionCloseCommand } from "./commands/session-close.js";
 import { sessionCreateCommand } from "./commands/session-create.js";
 import { sessionResumeCommand } from "./commands/session-resume.js";
 import { sessionsCommand } from "./commands/sessions.js";
+import { skillIndexCommand } from "./commands/skill-index.js";
+import { sourcesCommand } from "./commands/sources.js";
+import { specialtyChooseCommand } from "./commands/specialty-choose.js";
+import { stackCommand } from "./commands/stack.js";
 import { tasksDataCommand } from "./commands/tasks-data.js";
+import { topicChangeCheckCommand } from "./commands/topic-change-check.js";
+import { upgradeHubModeCommand } from "./commands/upgrade-hub-mode.js";
 import { visibilityCommand } from "./commands/visibility.js";
-import {
-  phaseDetectCommand,
-  skillIndexCommand,
-  stackCommand,
-  workflowsCommand,
-  workspaceModeCommand,
-} from "./commands/wave2-extras.js";
-import {
-  checkBranchCommand,
-  checkpointReadCommand,
-  compressCheckpointCommand,
-  phaseNextCommand,
-  resumeSummaryCommand,
-  sourcesCommand,
-} from "./commands/wave2-final.js";
-import {
-  bootstrapDsnCommand,
-  codeScanCommand,
-  graduateCommand,
-  upgradeHubModeCommand,
-} from "./commands/wave4d-simple.js";
+import { workflowsCommand } from "./commands/workflows.js";
+import { workspaceModeCommand } from "./commands/workspace-mode.js";
 import { renderGroupedCommandLines } from "./help-groups.js";
 import {
   type MenuAction,

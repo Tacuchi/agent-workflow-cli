@@ -1,6 +1,8 @@
 import { type HubInitFuente, runHubInit } from "../../application/hub-init-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
+import { type FuenteSpec, parseFuentesSpecs } from "../parsers/fuentes.js";
+import { parseWorkingBranches } from "../parsers/working-branches.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
@@ -15,16 +17,20 @@ export const hubInitCommand: QtcCommand = {
     }
 
     const fuentesRaw = args.valuesMulti.get("fuente") ?? [];
-    const fuentes = parseFuentes(fuentesRaw);
-    if ("error" in fuentes) return invalid(fuentes.error);
+    if (fuentesRaw.length < 2) {
+      return invalid("hub-init requiere mínimo 2 --fuente alias:path");
+    }
+    const fuentesParsed = parseFuentesSpecs(fuentesRaw);
+    if ("error" in fuentesParsed) return invalid(fuentesParsed.error);
+    const fuentes = fuentesParsed.fuentes.map(toHubInitFuente);
 
-    const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []);
+    const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []) ?? {};
     const mainBranch = args.values.get("main-branch");
     const workspace = args.values.get("workspace");
 
     const data = await runHubInit(ctx.fs, ctx.env, ctx.paths, {
       proyecto,
-      fuentes: fuentes.value,
+      fuentes,
       workingBranches,
       ...(mainBranch !== undefined ? { mainBranch } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
@@ -58,43 +64,8 @@ export const hubInitCommand: QtcCommand = {
   },
 };
 
-function parseFuentes(specs: string[]): { value: HubInitFuente[] } | { error: string } {
-  if (specs.length < 2) {
-    return { error: "hub-init requiere mínimo 2 --fuente alias:path" };
-  }
-  const out: HubInitFuente[] = [];
-  for (const raw of specs) {
-    const trimmed = raw.trim();
-    const colon = trimmed.indexOf(":");
-    if (colon <= 0) {
-      return {
-        error: `--fuente formato inválido '${raw}': se esperaba 'alias:path[:rama]'`,
-      };
-    }
-    const alias = trimmed.slice(0, colon).trim();
-    const rest = trimmed.slice(colon + 1);
-    const lastColon = rest.lastIndexOf(":");
-    const path = lastColon < 0 ? rest.trim() : rest.slice(0, lastColon).trim();
-    if (!alias || !path) {
-      return {
-        error: `--fuente formato inválido '${raw}': alias y path son obligatorios`,
-      };
-    }
-    out.push({ alias, path });
-  }
-  return { value: out };
-}
-
-function parseWorkingBranches(specs: string[]): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const raw of specs) {
-    const idx = raw.indexOf(":");
-    if (idx <= 0) continue;
-    const alias = raw.slice(0, idx).trim();
-    const branch = raw.slice(idx + 1).trim();
-    if (alias && branch) out[alias] = branch;
-  }
-  return out;
+function toHubInitFuente(spec: FuenteSpec): HubInitFuente {
+  return { alias: spec.alias, path: spec.path };
 }
 
 function invalid(message: string): CommandResult {
