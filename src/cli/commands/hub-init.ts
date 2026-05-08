@@ -24,7 +24,8 @@ export const hubInitCommand: QtcCommand = {
     if ("error" in fuentesParsed) return invalid(fuentesParsed.error);
     const fuentes = fuentesParsed.fuentes.map(toHubInitFuente);
 
-    const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []) ?? {};
+    const workingBranches =
+      parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []) ?? {};
     const mainBranch = args.values.get("main-branch");
     const workspace = args.values.get("workspace");
 

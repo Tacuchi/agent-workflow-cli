@@ -5,13 +5,13 @@ import type { ResolvedRuntime } from "../runtime/types.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
+import { type GraduatedBundle, listGraduatedBundles } from "./release-data/bundles.js";
 import { getDocsDir, getReleaseDir } from "./release-data/common.js";
 import {
   type ReleaseSession,
   enrichSessionsWithLegacyMeta,
   listSessionsForRelease,
 } from "./release-data/sessions.js";
-import { type GraduatedBundle, listGraduatedBundles } from "./release-data/bundles.js";
 
 export type { ReleaseSession } from "./release-data/sessions.js";
 export type { GraduatedBundle } from "./release-data/bundles.js";

@@ -2,8 +2,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { attachClaude, type ClaudeResult, detachClaude } from "./multiroot/claude.js";
-import { attachCodex, type CodexResult, detachCodex } from "./multiroot/codex.js";
+import { type ClaudeResult, attachClaude, detachClaude } from "./multiroot/claude.js";
+import { type CodexResult, attachCodex, detachCodex } from "./multiroot/codex.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 

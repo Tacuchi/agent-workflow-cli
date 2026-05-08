@@ -3,8 +3,8 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import {
   type DoctorFinding,
   type ExportedSkillRecord,
-  isRecord,
   type SkillFrontmatterInfo,
+  isRecord,
 } from "./common.js";
 
 export interface ExportedSkillsResult {

@@ -1,10 +1,6 @@
 import { join, relative, sep } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import {
-  collectMarkdownFiles,
-  type DoctorFinding,
-  type SkillFrontmatterInfo,
-} from "./common.js";
+import { type DoctorFinding, type SkillFrontmatterInfo, collectMarkdownFiles } from "./common.js";
 
 const SESSION_SPECIFIC_MARKERS = [
   "session034",

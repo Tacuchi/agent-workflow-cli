@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
-import { type DoctorFinding, isRecord, type McpServerInfo } from "./common.js";
+import { type DoctorFinding, type McpServerInfo, isRecord } from "./common.js";
 
 export interface McpResult {
   mcpInfo: Record<string, McpServerInfo>;
