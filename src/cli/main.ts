@@ -18,6 +18,7 @@ import {
   nextNumberCommand,
   profilesCommand,
 } from "./commands/dev-only.js";
+import { graduationCheckCommand } from "./commands/graduation-check.js";
 import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
@@ -114,6 +115,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(autoCompactOnCloseCommand);
   registry.register(hookCommand);
   registry.register(hubInitCommand);
+  registry.register(graduationCheckCommand);
   registry.register(mcpCommand);
   registry.register(visibilityCommand);
   registry.register(harnessCommand);

@@ -4,6 +4,19 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.7.0] — 2026-05-07
+
+**Minor — `graduation-check` command + soporte para regla canónica de routing hub-vs-fuente (session005).** Nuevo chequeo orientado a hub workspaces que detecta artefactos graduados a `<fuente>/docs/<categoria>/` sin breadcrumb correspondiente en `<hub>/docs/<categoria>/000-INDEX.md`. Apoya el cumplimiento de la regla documentada en `qtc-workflow-plugin/skills/session/references/graduacion-routing.md`.
+
+### Added
+
+- **`agent-workflow graduation-check`** (`src/application/graduation-check-service.ts` + `src/cli/commands/graduation-check.ts`): walks `docs/{manuales,rfcs,post-mortems,analisis,refactors}` en cada fuente declarada en CLAUDE.md/AGENTS.md del cwd y reporta orphans (archivo en fuente sin mención en `<hub>/docs/<categoria>/000-INDEX.md`). Retorna `status: ok|warn|skipped`. Skip silencioso fuera de hub mode (CLAUDE.md no encontrado, no `Mode: hub`, o sin fuentes declaradas). Exit code 1 si hay warnings.
+
+### Documentation context
+
+- La regla canónica + tabla de defaults (rfc/post-mortem/analisis → hub; manual/refactor/script → fuente) vive en el plugin `qtc-workflow-plugin`. El comando del CLI valida cumplimiento, no impone decisiones.
+- Prompt M12 `graduacion-destino` agregado al catálogo (en `qtc-workflow-plugin/skills/session/references/prompts-catalog.md`) — disparado al closure en hub mode.
+
 ## [4.6.0] — 2026-05-07
 
 **Minor — RFC 002 G4 UX polish + cleanup legacy + 0 lint complexity warnings (session013).** Cierra los 5 friction points (H-04..H-08) declarados en RFC 002 y reduce las 8 lint complexity warnings residuales del codebase a **0** (RFC 002 metric promise honrada).
