@@ -21,6 +21,7 @@ import {
 import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
+import { hubInitCommand } from "./commands/hub-init.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./commands/multiroot.js";
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
@@ -39,6 +40,7 @@ import { sessionCreateCommand } from "./commands/session-create.js";
 import { sessionResumeCommand } from "./commands/session-resume.js";
 import { sessionsCommand } from "./commands/sessions.js";
 import { tasksDataCommand } from "./commands/tasks-data.js";
+import { visibilityCommand } from "./commands/visibility.js";
 import {
   phaseDetectCommand,
   skillIndexCommand,
@@ -111,7 +113,9 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(checkpointWriteCommand);
   registry.register(autoCompactOnCloseCommand);
   registry.register(hookCommand);
+  registry.register(hubInitCommand);
   registry.register(mcpCommand);
+  registry.register(visibilityCommand);
   registry.register(harnessCommand);
   registry.register(profilesCommand);
   registry.register(logsCommand);
