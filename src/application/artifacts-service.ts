@@ -37,7 +37,7 @@ interface ArtifactsBlock {
   dependencias_present?: boolean;
   checkpoint_present?: boolean;
   entrega_present?: boolean;
-  recomendacion_present?: boolean;
+  conclusiones_present?: boolean;
   discovery_present?: boolean;
   evidencia_present?: boolean;
   hallazgos_present?: boolean;
@@ -159,7 +159,7 @@ interface PresenceFlags {
   dependencias_present: boolean;
   checkpoint_present: boolean;
   entrega_present: boolean;
-  recomendacion_present: boolean;
+  conclusiones_present: boolean;
   discovery_present: boolean;
   evidencia_present: boolean;
   hallazgos_present: boolean;
@@ -170,7 +170,7 @@ async function readPresenceFlags(fs: FileSystemPort, sessionPath: string): Promi
     dependencias_present: await fs.exists(join(sessionPath, "DEPENDENCIAS.md")),
     checkpoint_present: await fs.exists(join(sessionPath, "CHECKPOINT.md")),
     entrega_present: await fs.exists(join(sessionPath, "ENTREGA.md")),
-    recomendacion_present: await fs.exists(join(sessionPath, "RECOMENDACION.md")),
+    conclusiones_present: await fs.exists(join(sessionPath, "CONCLUSIONES.md")),
     discovery_present: await fs.exists(join(sessionPath, "DISCOVERY.md")),
     evidencia_present: await fs.exists(join(sessionPath, "EVIDENCIA.md")),
     hallazgos_present: await fs.exists(join(sessionPath, "HALLAZGOS.md")),

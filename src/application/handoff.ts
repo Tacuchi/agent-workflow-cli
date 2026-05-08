@@ -10,7 +10,7 @@ const ORIGEN_DELIVERABLE: Record<KnownFlow, string> = {
   core: "OBJETIVO.md",
   dev: "OBJETIVO.md",
   design: "ENTREGA.md",
-  analyze: "RECOMENDACION.md",
+  analyze: "CONCLUSIONES.md",
 };
 
 export interface ResolvedOrigen {

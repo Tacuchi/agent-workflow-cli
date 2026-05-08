@@ -26,8 +26,8 @@ const LEGACY_PHASE_MAP: Record<string, string> = {
   exploración: "execution",
   sintesis: "execution",
   síntesis: "execution",
-  recomendacion: "execution",
-  recomendación: "execution",
+  conclusiones: "execution",
+  conclusión: "execution",
 };
 
 export function normalizePhase(raw: string | undefined | null): string | null {

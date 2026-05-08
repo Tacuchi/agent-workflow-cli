@@ -265,7 +265,7 @@ async function listArtefacts(
     entrega: await has("ENTREGA.md"),
     evidencia: await has("EVIDENCIA.md"),
     hallazgos: await has("HALLAZGOS.md"),
-    recomendacion: await has("RECOMENDACION.md"),
+    conclusiones: await has("CONCLUSIONES.md"),
     scripts_count: scriptsCount,
   };
 }
