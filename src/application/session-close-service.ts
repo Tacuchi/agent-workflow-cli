@@ -16,6 +16,7 @@ export interface SessionCloseInput {
   graduatedScripts?: string;
   graduatedDesign?: string;
   graduatedRfc?: string;
+  graduatedConclusions?: string;
   refs?: string;
 }
 
@@ -42,6 +43,7 @@ const FLAG_TO_TAG: Record<string, string> = {
   graduatedScripts: "scripts",
   graduatedDesign: "design",
   graduatedRfc: "rfc",
+  graduatedConclusions: "conclusion",
 };
 
 export async function runSessionClose(

@@ -123,6 +123,24 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
     );
   });
 
+  it("session-close --code 001 --graduated-conclusions 002-audit-runtime", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionClose(fs, env, paths, {
+      code: "001",
+      graduatedConclusions: "002-audit-runtime",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose).toEqual({
+      code: "001",
+      folder: "session001-dev-foo",
+      history_action: "updated",
+      refs: "[CONCLUSION](../docs/conclusiones/002-audit-runtime.md)",
+      qtc_project_updated: true,
+    });
+  });
+
   it("session-create --flow dev --name nueva-tarea --objetivo ... --branches sample:main", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);

@@ -5,6 +5,8 @@ const BUILTIN_RENDERERS: Record<string, (val: string) => string> = {
   sql: (val) => `[SQL](../docs/scripts/${val}/)`,
   script: (val) => `[SQL](../docs/scripts/${val}/)`,
   scripts: (val) => `[SQL](../docs/scripts/${val}/)`,
+  conclusion: (val) => `[CONCLUSION](../docs/conclusiones/${val}.md)`,
+  conclusions: (val) => `[CONCLUSION](../docs/conclusiones/${val}.md)`,
 };
 
 export interface OrigenLookup {
