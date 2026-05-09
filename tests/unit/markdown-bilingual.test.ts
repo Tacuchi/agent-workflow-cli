@@ -22,6 +22,50 @@ describe("bilingualAliases", () => {
   it("returns the original key as a single-element array when keyword is unregistered", () => {
     expect(bilingualAliases("Custom heading")).toEqual(["Custom heading"]);
   });
+
+  it("covers analyze-investigate skill template headings", () => {
+    expect(bilingualAliases("Pregunta original")).toContain("Original question");
+    expect(bilingualAliases("Original question")).toContain("Pregunta original");
+    expect(bilingualAliases("Fuentes consultadas")).toContain("Sources consulted");
+    expect(bilingualAliases("Raw finding")).toContain("Hallazgo crudo");
+  });
+
+  it("covers analyze-synthesize TASKS+FINDINGS template headings", () => {
+    expect(bilingualAliases("Plan summary")).toContain("Resumen del plan");
+    expect(bilingualAliases("Tareas")).toContain("Tasks");
+    expect(bilingualAliases("Patterns identified")).toContain("Patrones identificados");
+    expect(bilingualAliases("Falsos positivos descartados")).toContain("False positives discarded");
+    expect(bilingualAliases("Model decision")).toContain("Decisión de modelo");
+  });
+
+  it("covers analyze-conclude CONCLUSIONS template headings", () => {
+    expect(bilingualAliases("Resumen")).toContain("Summary");
+    expect(bilingualAliases("Conclusiones")).toContain("Conclusions");
+    expect(bilingualAliases("Recommendations")).toContain("Recomendaciones");
+    expect(bilingualAliases("Trazabilidad")).toContain("Traceability");
+    expect(bilingualAliases("Open (gaps)")).toContain("Abierto (gaps)");
+  });
+
+  it("covers design-deliver DELIVERY template headings", () => {
+    expect(bilingualAliases("Componentes")).toContain("Components");
+    expect(bilingualAliases("Flows / interactions")).toContain("Flujos / interacciones");
+    expect(bilingualAliases("UX decisions")).toContain("Decisiones UX");
+    expect(bilingualAliases("Validation criteria")).toContain("Criterios de validación");
+  });
+
+  it("covers design-discover DISCOVERY headings", () => {
+    expect(bilingualAliases("Usuarios")).toContain("Users");
+    expect(bilingualAliases("Current flow")).toContain("Flow actual");
+    expect(bilingualAliases("Applicable design system")).toContain("Design system aplicable");
+    expect(bilingualAliases("Hallazgos clave")).toContain("Key findings");
+  });
+
+  it("covers design-develop PROBLEM/IDEAS headings", () => {
+    expect(bilingualAliases("Restricciones clave")).toContain("Key constraints");
+    expect(bilingualAliases("Métricas de éxito")).toContain("Success metrics");
+    expect(bilingualAliases("Variante")).toContain("Variant");
+    expect(bilingualAliases("Initial recommendation")).toContain("Recomendación inicial");
+  });
 });
 
 describe("parseMdValueBilingual", () => {
