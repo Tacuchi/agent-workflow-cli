@@ -4,6 +4,68 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.0] — 2026-05-08
+
+**Minor — R1 atomic-write port + R3 i18n Sprint 1+2 (sessions 017–019).** Cimiento bilingüe del runtime: lectura tolerante a artefactos en ES (legacy) o EN (canónico nuevo), escritura canónica en EN para sesiones nuevas. Sin breaking — sesiones legacy `OBJETIVO.md` siguen siendo legibles por los nuevos resolvers.
+
+### Added — R1 atomic-write + bilingual resolvers (session017, `3e53e76`)
+
+- **`NodeFileSystem.writeText` con atomic-write** (`src/adapters/node-file-system.ts`): write a `<path>.<pid>.<n>.tmp` + `rename` atómico. Cubre transparentemente los ~21 sitios de escritura vía el `FileSystemPort`. Habilita writes seguros del lock file (R2 Phase 1) y otros artefactos sin condición de carrera.
+- **`src/application/session-artifacts.ts`** (NUEVO): `ArtifactKind` (14 kinds: `objective`, `findings`, `decisions`, `evidence`, `conclusions`, `recommendation`, `delivery`, `dependencies`, `discovery`, `problem`, `tasks`, `checkpoint`, `status`, `requirements`), `ARTIFACT_FILENAMES`, helpers `canonicalArtifactFilename`, `canonicalArtifactPath`, `findArtifact`, `listExistingArtifacts`. EN preferido + ES legacy fallback + case-insensitive + `fs.exists` fallback.
+- **Parsers bilingües** (`src/application/markdown.ts`): `KEYWORD_GROUPS` con 17 grupos iniciales + `bilingualAliases`. Funciones `parseMdValueBilingual` / `parseMdSectionBilingual` con normalización NFD + accent strip + lowercase. Drop-in replacements de los originales.
+- **20 tests** en `tests/unit/session-artifacts.test.ts` cubriendo los 14 kinds, fallback case-insensitive, fs.exists fallback, listado.
+- **9 tests** en `tests/unit/markdown-bilingual.test.ts` cubriendo lookup bilingüe + accent normalization.
+
+### Added — R3 Sprint 1 i18n templates (session018, `fa03324`)
+
+- **`templates/objective.ts`** + **`checkpoint/markdown.ts`**: emisión EN canónica (`## Modality`, `## Current phase`, `## Last activity`, `## Type`, etc.). Sesiones nuevas reciben templates en EN; sesiones legacy ES siguen siendo legibles por los parsers bilingües.
+- **`session-create-service.ts:173`**: write canónico de `OBJECTIVE.md` (en lugar del legacy `OBJETIVO.md`). Las sesiones legacy con `OBJETIVO.md` siguen siendo resueltas por `findArtifact`.
+- **Flags `--modality` / `--type`** en `session-create` (legacy `--modalidad` / `--tipo` aceptados, normalizados a EN al persistir).
+
+### Added — R3 Sprint 2 KEYWORD_GROUPS extendido (session019, `c231210`)
+
+- **+27 grupos en `KEYWORD_GROUPS`** cubriendo headings emitidos por las 6 specialty skills (analyze-investigate, analyze-synthesize, analyze-conclude, design-deliver, design-discover, design-develop) y skills de orquestación.
+
+### Changed
+
+- **Política i18n del runtime qtc-*** (documentada en `qtc-workflow-plugin/docs/agent-rules.md`): runtime EN UPPERCASE, prosa libre en idioma del usuario, AI↔usuario en idioma del usuario, legacy via aliases ES+EN permanentes.
+
+### Migration
+
+Sesiones legacy `OBJETIVO.md` siguen funcionando sin tocar nada. Sesiones nuevas escriben `OBJECTIVE.md` y discriminators EN. No requiere migración manual.
+
+### Tests
+
+- 294 tests passing (vs 268 en 5.0.0). Lint: 0 errors. 34 test files.
+
+## [5.2.0] — 2026-05-08
+
+**Minor — refactor 5 services CLI >400 líneas (session012).** Cuatro splits modulares (plugin-doctor 794, multiroot 557, checkpoint-write 304, dev-graduate, etc.) preservando comportamiento.
+
+### Changed
+
+- **`src/application/multiroot-service.ts`** + **`src/application/plugin-doctor/exported-skills.ts`**: biome auto-format imports + line wrap.
+- **`src/application/checkpoint-write-service.ts`** (304 líneas) refactor a 8 helpers, complejidad ciclomática 206 → ≤15.
+- **`src/application/multiroot-service.ts`** (557 líneas) refactor.
+- **`src/application/plugin-doctor/`** (794 líneas) split en 8 helpers.
+
+## [5.0.2] — 2026-05-08
+
+**Patch — refactor multi-command files + extract shared parsers (session010).** Split de archivos multi-comando del CLI (wave2-extras 5 cmds, wave2-final 6 cmds, wave4d-simple 4 cmds) extrayendo parsers compartidos.
+
+### Changed
+
+- Split de archivos multi-comando del CLI por bounded context.
+- Extracción de parsers compartidos a módulo común.
+
+## [5.0.1] — 2026-05-08
+
+**Patch — `--graduated-conclusions` flag en session-close (session005).** Permite documentar slugs de conclusiones graduadas en `HISTORY.md` al cerrar la sesión.
+
+### Added
+
+- **`--graduated-conclusions <slug>`** flag en `agent-workflow session-close`. Mapeado a la columna `Refs` de `HISTORY.md` con link relativo a `docs/conclusiones/<num>-<slug>.md`.
+
 ## [5.0.0] — 2026-05-08
 
 **Major BREAKING — modelo de artefactos simplificado (session006).** Refactor del comando `graduate` para soportar un set canónico de 6 kinds y resolver el destino siempre al workspace root (hub o project), eliminando el prompt M12 de routing por sesión. Sesiones cerradas con el modelo anterior (`docs/planes/`, `docs/refactors/`, `docs/design/`, `docs/design-system/`, `docs/rfcs/`, `docs/post-mortems/`, `docs/analisis/`) quedan tal cual; las nuevas siguen el set reducido.
