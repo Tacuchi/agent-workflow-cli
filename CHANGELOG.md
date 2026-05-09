@@ -4,6 +4,35 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.4.0] — 2026-05-08
+
+**Minor — R2 Phase 1: lock file mínimo (session022).** Cierra la primera fase del hardening file-based identificada en `agent-workflow-last/.workflow/sessions/session016-analyze-cli-bd-local-i18n/CONCLUSIONES.md` §R2. Serializa escrituras a archivos centralizados (HISTORY.md y bloque QTC-PROJECT en CLAUDE.md/AGENTS.md) en escenarios multi-host vía `.<ns>/.lock` con auto-expire 5min. Apoyado en el atomic-write port-level introducido en R1 (`5.3.0`).
+
+### Added
+
+- **`src/application/lock-service.ts`** (NUEVO):
+  - `acquireLock(lockPath, fs, options): Promise<LockHandle>` — claim atómico vía atomic-write con detección de stale (TTL default 5min) y robo de lock corrupto.
+  - `LockHandle` con `release()` idempotente que escribe marker vacío (próximo acquire lo trata como expirado).
+  - `LockBusyError` con `holder` (pid + ts) para mensajes de error informativos.
+  - Helpers exportados: `parseLock`, `isExpired`, `DEFAULT_LOCK_TTL_MS = 300_000`.
+  - Inyección de `now()` y `pid` para testabilidad.
+- **`PathsService.cwdLockFile()`** — resuelve `.<ns>/.lock` dentro del workspace.
+- **20 tests** en `tests/unit/lock-service.test.ts` cubriendo: happy-path, concurrent acquire (LockBusy), stale lock steal, TTL boundary, corrupt JSON, empty release marker, structurally invalid JSON, release idempotente, parser y predicado de expiración.
+
+### Changed
+
+- **`runHistoryUpdate`** (`src/application/history-update-service.ts`) ahora envuelve el `upsertRow` en acquire/release. Si el lock está ocupado retorna `{error: "lock ocupado (pid X desde ts); reintenta o espera 5min"}` para que el caller lo proyecte al envelope JSON estándar.
+- **`runProjectMdUpsertWrite`** (`src/application/project-md-upsert-service.ts`) idem — wrap del `writeAllFiles` (CLAUDE.md / AGENTS.md) en acquire/release.
+- **`acquireLock`** asegura `fs.mkdirp(dirname(lockPath))` antes del write, para casos como `runHubInit` donde `.workspace/` no existe todavía.
+
+### Migration
+
+Sin breaking changes. Comandos que previamente escribían HISTORY.md / CLAUDE.md / AGENTS.md siguen funcionando idénticamente; ahora bajo lock cooperativo. En escenarios single-host (caso típico) el lock se acquire/release en milisegundos sin contención observable. En escenarios multi-host (p.ej. dos máquinas escribiendo el mismo HISTORY.md sobre un repo compartido) el segundo proceso recibe `LockBusy` con info del holder en vez de pisar la escritura.
+
+### Tests
+
+- 314 tests passing (vs 294 en 5.3.0). Lint: 0 errors. 35 test files.
+
 ## [5.3.0] — 2026-05-08
 
 **Minor — R1 atomic-write port + R3 i18n Sprint 1+2 (sessions 017–019).** Cimiento bilingüe del runtime: lectura tolerante a artefactos en ES (legacy) o EN (canónico nuevo), escritura canónica en EN para sesiones nuevas. Sin breaking — sesiones legacy `OBJETIVO.md` siguen siendo legibles por los nuevos resolvers.

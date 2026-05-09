@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { LockBusyError, acquireLock } from "./lock-service.js";
 import {
   type ParsedProjectBlock,
   type ProjectBlockMarkers,
@@ -83,9 +84,25 @@ export async function runProjectMdUpsertWrite(
     renderInput.lastActivity = input.lastActivity;
   }
   const block = renderProjectBlock(renderInput);
-  const writeResults = await writeAllFiles(fs, files, cwd, block, markers);
 
-  return composePayload(input, writeResults, opResult.sessions, renderInput);
+  let lock: import("./lock-service.js").LockHandle;
+  try {
+    lock = await acquireLock(paths.cwdLockFile(), fs);
+  } catch (err) {
+    if (err instanceof LockBusyError) {
+      return {
+        error: `lock ocupado (pid ${err.holder.pid} desde ${err.holder.ts}); reintenta o espera 5min`,
+      };
+    }
+    throw err;
+  }
+
+  try {
+    const writeResults = await writeAllFiles(fs, files, cwd, block, markers);
+    return composePayload(input, writeResults, opResult.sessions, renderInput);
+  } finally {
+    await lock.release();
+  }
 }
 
 async function readExistingBlock(

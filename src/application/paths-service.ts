@@ -64,6 +64,9 @@ export class PathsService {
   cwdLogFile(): string {
     return join(this.cwdLogsDir(), "agent-workflow.log");
   }
+  cwdLockFile(): string {
+    return join(this.cwdRoot(), ".lock");
+  }
 
   // CLAUDE.md / AGENTS.md project block markers
   blockMarkers(): ProjectBlockMarkers {

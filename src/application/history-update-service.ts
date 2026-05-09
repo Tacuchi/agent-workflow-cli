@@ -1,6 +1,7 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type UpsertAction, buildRow, upsertRow } from "./history-table.js";
+import { LockBusyError, acquireLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { renderRefs } from "./render/history-row.js";
 import { type SessionEntry, resolveSession } from "./session-resolver.js";
@@ -43,20 +44,35 @@ export async function runHistoryUpdate(
   const refsRendered = renderRefs(input.refs);
   const codeNum = normalizeCode(code);
 
-  const action = await upsertRow(fs, paths.cwdHistoryFile(), codeNum, (hasFlow) =>
-    buildRow({
-      code: codeNum,
-      flow: fields.flow,
-      sesionName: fields.sesionName,
-      date: fields.date,
-      state,
-      summary: fields.summary,
-      refs: refsRendered,
-      hasFlow,
-    }),
-  );
+  let lock: import("./lock-service.js").LockHandle;
+  try {
+    lock = await acquireLock(paths.cwdLockFile(), fs);
+  } catch (err) {
+    if (err instanceof LockBusyError) {
+      return {
+        error: `lock ocupado (pid ${err.holder.pid} desde ${err.holder.ts}); reintenta o espera 5min`,
+      };
+    }
+    throw err;
+  }
 
-  return { code: codeNum, flow: fields.flow, action, state };
+  try {
+    const action = await upsertRow(fs, paths.cwdHistoryFile(), codeNum, (hasFlow) =>
+      buildRow({
+        code: codeNum,
+        flow: fields.flow,
+        sesionName: fields.sesionName,
+        date: fields.date,
+        state,
+        summary: fields.summary,
+        refs: refsRendered,
+        hasFlow,
+      }),
+    );
+    return { code: codeNum, flow: fields.flow, action, state };
+  } finally {
+    await lock.release();
+  }
 }
 
 function validate(input: HistoryUpdateInput): HistoryUpdateError | null {
