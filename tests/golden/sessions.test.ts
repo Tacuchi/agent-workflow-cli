@@ -28,7 +28,7 @@ function loadGolden(name: string): unknown {
   return JSON.parse(readFileSync(join(GOLDEN_DIR, name), "utf8"));
 }
 
-describe("SessionsService — golden parity vs python qtc_core", () => {
+describe("SessionsService — golden parity (legacy ES fixture)", () => {
   const env = new FixtureEnv();
   const paths = new PathsService(normalizeNamespace("workflow"), env.homeDir(), env.cwd());
   const service = new SessionsService(new NodeFileSystem(), env, paths);

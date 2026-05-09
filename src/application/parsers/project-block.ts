@@ -41,11 +41,6 @@ export const LEGACY_QTC_MARKERS: ProjectBlockMarkers = {
   end: "<!-- QTC-PROJECT-END -->",
 };
 
-// Keep the old constants for back-compat (some callers still import them).
-// They are aliases of LEGACY_QTC_MARKERS fields.
-export const QTC_PROJECT_START = LEGACY_QTC_MARKERS.start;
-export const QTC_PROJECT_END = LEGACY_QTC_MARKERS.end;
-
 const STACK_KEY_MAP: Record<string, keyof ProjectStack> = {
   lenguaje: "language",
   framework: "framework",

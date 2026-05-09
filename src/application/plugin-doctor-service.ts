@@ -3,10 +3,6 @@
 // Phase 3 agnostic CLI: los servidores MCP esperados se leen de
 // `runtime.expectedMcpServers` (vacio = no expectations).
 //
-// Post-session013 (RFC 002 G4 H-08): la gate `qtcContractVersion < 6.3`
-// (dual-path legacy) fue eliminada. `installed_marker`, `qtc_core_installed`,
-// `compat_ok` y `python_version` son siempre `null` (back-compat de shape).
-//
 // Estructura interna: `runPluginDoctor` orquesta 6 helpers self-contained
 // (skills/manifests/hooks/mcp/exported-skills), cada uno devuelve `{...result, findings}`.
 import { basename, join, resolve } from "node:path";
@@ -53,15 +49,11 @@ export interface DoctorOutput {
   plugin: string;
   plugin_root: string;
   plugin_version: string;
-  qtc_core_installed: string | null;
   compat_range: string | null;
-  compat_ok: boolean | null;
-  python_version: string | null;
   skills_count: number;
   readme_count_expected: number | null;
   readme_count_match: boolean | null;
   manifests: Record<string, string | null>;
-  installed_marker: string | null;
   hooks: Record<string, HooksInfoValue>;
   mcp: Record<string, McpServerInfo>;
   skills: SkillFrontmatterInfo[];
@@ -122,15 +114,11 @@ export async function runPluginDoctor(
       plugin: pluginName,
       plugin_root: pluginRoot,
       plugin_version: pluginVersion,
-      qtc_core_installed: null,
       compat_range: compatRange,
-      compat_ok: null,
-      python_version: null,
       skills_count: skillsResult.skillsCount,
       readme_count_expected: readmeResult.readmeCountExpected,
       readme_count_match: readmeResult.readmeCountMatch,
       manifests: manifestsResult.manifestsInfo,
-      installed_marker: null,
       hooks: hooksResult.hooksInfo,
       mcp: mcpResult.mcpInfo,
       skills: skillsResult.skillsInfo,

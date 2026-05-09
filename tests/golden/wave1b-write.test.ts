@@ -26,7 +26,7 @@ function loadGoldenFile(scenario: string, relativePath: string): string {
 
 const fs = new NodeFileSystem();
 
-describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
+describe("Wave 1B write commands — golden parity (legacy ES fixture)", () => {
   it("history-update --code 001 --state closed --summary 'tarea cerrada via test'", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);

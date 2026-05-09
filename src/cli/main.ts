@@ -257,7 +257,7 @@ function printHelp(commands: string[]): void {
 }
 
 function resolveCoreConfigPath(env: NodeEnv, paths: PathsService): string | undefined {
-  const fromEnv = env.get("QTC_CORE_CONFIG_PATH");
+  const fromEnv = env.get("AGENT_WORKFLOW_CONFIG_PATH") ?? env.get("QTC_CORE_CONFIG_PATH");
   if (fromEnv && fromEnv.trim().length > 0) {
     return fromEnv;
   }

@@ -39,7 +39,7 @@ const fs = new NodeFileSystem();
 const env = new FixtureEnv();
 const paths = new PathsService(normalizeNamespace("workflow"), env.homeDir(), env.cwd());
 
-describe("Wave 1 read commands — golden parity vs python qtc_core", () => {
+describe("Wave 1 read commands — golden parity (legacy ES fixture)", () => {
   it("objetivo-data --code 001", async () => {
     const result = await runObjetivoCommand(fs, env, paths, { code: "001" });
     expect(result).toEqual(loadGolden("objetivo-001.json"));

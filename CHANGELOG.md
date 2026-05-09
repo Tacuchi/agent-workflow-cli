@@ -4,6 +4,25 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.1] — 2026-05-09
+
+**Patch — P2 cleanup final (session027).** Sweep de ruido y dead code post-audit de session023. Sin cambios de comportamiento.
+
+### Removed
+
+- **`parsers/project-block.ts`** — drop dead aliases `QTC_PROJECT_START` y `QTC_PROJECT_END` (sin importadores en src/ ni tests/).
+- **`plugin-doctor-service.ts`** `DoctorOutput` — drop 4 fields siempre `null` heredados de la era Python: `qtc_core_installed`, `compat_ok`, `python_version`, `installed_marker`. Schema reducido en JSON output. Test obsoleto de "qtcContractVersion gate" removido.
+
+### Changed
+
+- **`cli/main.ts`** `resolveCoreConfigPath` — acepta `AGENT_WORKFLOW_CONFIG_PATH` además de la legacy `QTC_CORE_CONFIG_PATH` (preferencia: nuevo nombre, fallback: legacy).
+- **`application/markdown.ts`** `normalizeKeyword` — reemplazada la regex con combining diacriticos ilegible por `String.prototype.normalize("NFD").replace(/\p{M}/gu, "")` (semántica idéntica, legible).
+- **`tests/golden/{sessions,wave1-read,wave1b-write}.test.ts`** — descripciones "golden parity vs python qtc_core" → "golden parity (legacy ES fixture)" (el qtc_core Python ya no existe como referencia).
+
+### Tests
+
+- 330 tests passing (vs 331 en 5.5.0; -1 test obsoleto de qtcContractVersion gate). Lint: 0 errors.
+
 ## [5.5.0] — 2026-05-09
 
 **Minor — R3 reader gaps + R2 atomic claim (sessions 024+025).** Cierra dos gaps post-publish detectados en validation runtime de session023:

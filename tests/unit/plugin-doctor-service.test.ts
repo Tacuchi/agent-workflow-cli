@@ -296,25 +296,6 @@ describe("runPluginDoctor — manifest version drift", () => {
   });
 });
 
-describe("runPluginDoctor — qtcContractVersion gate", () => {
-  it("skips legacy checks when qtcContractVersion >= 6.3 (single-path)", async () => {
-    const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
-      new Map([
-        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("qtc", "1.0.0", "6.4")],
-        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("qtc", "1.0.0", "6.4")],
-      ]),
-      new Map([[pluginRoot, []]]),
-    );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
-      pluginRoot,
-    });
-    // installed_marker / qtc_core_installed should be null (skipped).
-    expect(data.installed_marker).toBeNull();
-    expect(data.qtc_core_installed).toBeNull();
-  });
-});
-
 describe("runPluginDoctor — hooks JSON", () => {
   it("reports hook keys when JSON is valid", async () => {
     const pluginRoot = "/cwd/p";

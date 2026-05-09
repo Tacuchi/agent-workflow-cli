@@ -138,10 +138,7 @@ const KEYWORD_GROUPS: ReadonlyArray<readonly string[]> = [
 ];
 
 function normalizeKeyword(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/̀|́|̂|̃|̄|̈|̧/g, "");
+  return s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 }
 
 const ALIAS_INDEX = new Map<string, readonly string[]>();
