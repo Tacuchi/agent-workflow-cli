@@ -4,6 +4,39 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.9.1] — 2026-05-09
+
+**Patch — Claude Code MCP target fix (session033).** Tras 5.9.0 los servidores MCP escritos por `agent-workflow self` y `agent-workflow mcp setup` quedaban en `.claude/settings.json`, archivo que Claude Code no consulta para `mcpServers`. Ahora se escribe en el archivo canónico según la doc oficial de Claude Code: `.mcp.json` para project scope (workspace) y `~/.claude.json` para user scope (global). Codex sigue intacto en `.codex/config.toml`.
+
+### Changed
+
+- `mcp-host-writer.ts` redirige el writer/remover de Claude: `<scopeDir>/.mcp.json` para `scope=workspace`, `<scopeDir>/.claude.json` para `scope=global`. `ScopeInput` admite ahora `kind?: "workspace" | "global"` (default `workspace`).
+- `mcp-host-reader.ts` lee del mismo archivo según `kind`. La firma de `readMcpEntry` añade un parámetro opcional `kind` (default `workspace`).
+- `mcp-setup-service.ts` y `mcp-remove-service.ts` propagan el scope al writer y actualizan el hint de refusal global a `~/.claude.json` / `~/.codex/config.toml`.
+- `mcp-doctor-service.ts` consulta el snapshot pasando el scope al reader, alineado con el nuevo target.
+
+### Fixed
+
+- `/mcp` en Claude Code ahora detecta los MCP `cert` / `prod` registrados via wizard. Antes Claude Code los ignoraba porque `.claude/settings.json` no es fuente de `mcpServers` (solo hooks/permissions).
+
+### Migrated
+
+- Cleanup automático: cada `setup` o `remove` borra de paso la entrada `mcpServers[name]` en `.claude/settings.json` legacy si existe, dejando intactas `permissions` y demás claves. La operación crea backup `.claude/settings.json.bak.<ts>`.
+
+### Tests
+
+- 362 tests pasando (44 archivos). +5 vs 5.9.0:
+  - 2 nuevos en `mcp-host-writer.test.ts` (cleanup legacy con/sin entradas remanentes).
+  - 1 nuevo en `mcp-host-writer.test.ts` (global scope → `.claude.json`).
+  - 1 nuevo en `mcp-host-reader.test.ts` (project scope ignora `.claude/settings.json` legacy).
+  - 1 nuevo en `mcp-host-reader.test.ts` (global scope lee `.claude.json`).
+
+### Decisions
+
+- **DEC-005**: `.claude/settings.json` queda reservado para hooks / permissions / `additionalDirectories` (multiroot, hub-init). No se usa más para MCP. Razón: la doc oficial de Claude Code (`code.claude.com/docs/en/mcp`) no la lista entre los archivos de scope MCP.
+- **DEC-006**: Mapeo de scopes CLI → scopes Claude Code: `workspace` → project (`.mcp.json` checkeable a git), `global` → user (`~/.claude.json`). El scope "local" de Claude Code (entries por proyecto en `~/.claude.json`) no se expone porque colisiona semánticamente con nuestro `workspace`.
+- **DEC-007**: El cleanup legacy es one-shot por entrada (no purge masivo): se ejecuta en cada `setup`/`remove` que toque la misma entry. Razón: minimizar riesgo de borrar configuración de otros consumidores que hayan usado el mismo nombre.
+
 ## [5.9.0] — 2026-05-09
 
 **Minor — manual MCP config flow desde `agent-workflow self` (session032).** Agrega un wizard interactivo para configurar conexiones MCP de BD sin pasar por `mcp setup` directo: nombres normalizados (no solo `cert|prod`), DSN persistido en `~/.workflow/dev/dsn.env` sin imprimirlo en claro, install/uninstall por host (Claude/Codex), y diagnóstico contra el MCP doctor existente. Acompaña la R3 de session031 (verificar instalación global del usuario).

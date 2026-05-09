@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
 import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
-describe("writeMcpEntry — Claude (settings.json)", () => {
+describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
   let scopeDir: string;
 
   beforeEach(() => {
@@ -24,12 +24,13 @@ describe("writeMcpEntry — Claude (settings.json)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea settings.json inicial con la entrada cert", () => {
+  it("crea .mcp.json inicial con la entrada cert", () => {
     const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.backup).toBeNull();
-    const settingsPath = join(scopeDir, ".claude", "settings.json");
-    const content = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    const mcpJsonPath = join(scopeDir, ".mcp.json");
+    expect(result.target).toBe(mcpJsonPath);
+    const content = JSON.parse(readFileSync(mcpJsonPath, "utf-8"));
     expect(content.mcpServers.cert).toEqual({
       command: "agent-workflow",
       args: ["mcp", "dbhub", "cert"],
@@ -42,48 +43,108 @@ describe("writeMcpEntry — Claude (settings.json)", () => {
     const second = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
     expect(second.action).toBe("skipped-idempotent");
     expect(second.backup).toBeNull();
-    const baks = readdirSync(join(scopeDir, ".claude")).filter((f) =>
-      f.startsWith("settings.json.bak."),
-    );
+    const baks = readdirSync(scopeDir).filter((f) => f.startsWith(".mcp.json.bak."));
     expect(baks).toHaveLength(0);
   });
 
-  it("preserva permissions.additionalDirectories existente", () => {
-    const settingsPath = join(scopeDir, ".claude", "settings.json");
+  it("preserva otras entradas existentes en .mcp.json", () => {
+    const mcpJsonPath = join(scopeDir, ".mcp.json");
     const initial = {
-      permissions: { additionalDirectories: ["/some/path"] },
       mcpServers: { other: { command: "x", args: [], env: {} } },
     };
-    writeFileSync(`${scopeDir}/.claude-pre.json`, JSON.stringify(initial)); // sentinel for clarity
-    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
-    writeFileSync(settingsPath, JSON.stringify(initial, null, 2));
+    writeFileSync(mcpJsonPath, JSON.stringify(initial, null, 2));
     writeMcpEntry("claude", buildMcpEntry("prod"), { scopeDir });
-    const content = JSON.parse(readFileSync(settingsPath, "utf-8"));
-    expect(content.permissions.additionalDirectories).toEqual(["/some/path"]);
+    const content = JSON.parse(readFileSync(mcpJsonPath, "utf-8"));
     expect(content.mcpServers.other).toBeDefined();
     expect(content.mcpServers.prod).toBeDefined();
   });
 
   it("dry-run no escribe el archivo aunque haya cambios", () => {
-    const settingsPath = join(scopeDir, ".claude", "settings.json");
-    expect(existsSync(settingsPath)).toBe(false);
+    const mcpJsonPath = join(scopeDir, ".mcp.json");
+    expect(existsSync(mcpJsonPath)).toBe(false);
     const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
     expect(result.action).toBe("dry-run");
     expect(result.diff).toBeDefined();
-    expect(existsSync(settingsPath)).toBe(false);
+    expect(existsSync(mcpJsonPath)).toBe(false);
   });
 
   it("crea backup si pisa contenido distinto", () => {
-    const settingsPath = join(scopeDir, ".claude", "settings.json");
-    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
+    const mcpJsonPath = join(scopeDir, ".mcp.json");
     writeFileSync(
-      settingsPath,
+      mcpJsonPath,
       JSON.stringify({ mcpServers: { cert: { command: "old", args: [], env: {} } } }, null, 2),
     );
     const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.backup).not.toBeNull();
     expect(existsSync(result.backup ?? "")).toBe(true);
+  });
+
+  it("limpia entrada legacy en .claude/settings.json al escribir", () => {
+    const legacyPath = join(scopeDir, ".claude", "settings.json");
+    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
+    writeFileSync(
+      legacyPath,
+      JSON.stringify(
+        {
+          permissions: { additionalDirectories: ["/some/path"] },
+          mcpServers: { cert: { command: "old", args: [], env: {} } },
+        },
+        null,
+        2,
+      ),
+    );
+    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    const legacy = JSON.parse(readFileSync(legacyPath, "utf-8"));
+    expect(legacy.permissions.additionalDirectories).toEqual(["/some/path"]);
+    expect(legacy.mcpServers).toBeUndefined();
+  });
+
+  it("limpia entrada legacy en .claude/settings.json conservando otras entradas mcpServers", () => {
+    const legacyPath = join(scopeDir, ".claude", "settings.json");
+    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
+    writeFileSync(
+      legacyPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            cert: { command: "old", args: [], env: {} },
+            keep: { command: "x", args: [], env: {} },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    const legacy = JSON.parse(readFileSync(legacyPath, "utf-8"));
+    expect(legacy.mcpServers.cert).toBeUndefined();
+    expect(legacy.mcpServers.keep).toBeDefined();
+  });
+});
+
+describe("writeMcpEntry — Claude (~/.claude.json, global scope)", () => {
+  let scopeDir: string;
+
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-claude-global-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  it("escribe en .claude.json cuando scope.kind=global, preservando otras claves del archivo", () => {
+    const claudeJsonPath = join(scopeDir, ".claude.json");
+    writeFileSync(claudeJsonPath, JSON.stringify({ numStartups: 42, mcpServers: {} }, null, 2));
+    const result = writeMcpEntry("claude", buildMcpEntry("cert"), {
+      scopeDir,
+      kind: "global",
+    });
+    expect(result.action).toBe("written");
+    expect(result.target).toBe(claudeJsonPath);
+    const content = JSON.parse(readFileSync(claudeJsonPath, "utf-8"));
+    expect(content.numStartups).toBe(42);
+    expect(content.mcpServers.cert).toBeDefined();
   });
 });
 

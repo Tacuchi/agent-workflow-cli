@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readMcpEntry } from "../../src/application/mcp-host-reader.js";
 
-describe("readMcpEntry — Claude", () => {
+describe("readMcpEntry — Claude (project scope = .mcp.json)", () => {
   let scopeDir: string;
   beforeEach(() => {
     scopeDir = mkdtempSync(join(tmpdir(), "mcp-reader-claude-"));
@@ -13,15 +13,15 @@ describe("readMcpEntry — Claude", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("retorna exists=false si settings.json no existe", () => {
+  it("retorna exists=false si .mcp.json no existe", () => {
     const snap = readMcpEntry("claude", scopeDir, "cert");
     expect(snap.exists).toBe(false);
+    expect(snap.target).toBe(join(scopeDir, ".mcp.json"));
   });
 
   it("retorna exists=false si la entrada no está", () => {
-    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     writeFileSync(
-      join(scopeDir, ".claude", "settings.json"),
+      join(scopeDir, ".mcp.json"),
       JSON.stringify({ mcpServers: { other: { command: "x", args: [], env: {} } } }),
     );
     const snap = readMcpEntry("claude", scopeDir, "cert");
@@ -29,9 +29,8 @@ describe("readMcpEntry — Claude", () => {
   });
 
   it("extrae command/args/env si la entrada existe", () => {
-    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     writeFileSync(
-      join(scopeDir, ".claude", "settings.json"),
+      join(scopeDir, ".mcp.json"),
       JSON.stringify({
         mcpServers: {
           cert: {
@@ -50,10 +49,51 @@ describe("readMcpEntry — Claude", () => {
   });
 
   it("retorna exists=false si JSON inválido", () => {
-    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
-    writeFileSync(join(scopeDir, ".claude", "settings.json"), "{ not valid json");
+    writeFileSync(join(scopeDir, ".mcp.json"), "{ not valid json");
     const snap = readMcpEntry("claude", scopeDir, "cert");
     expect(snap.exists).toBe(false);
+  });
+
+  it("ignora .claude/settings.json legacy (project scope no lo lee)", () => {
+    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(scopeDir, ".claude", "settings.json"),
+      JSON.stringify({
+        mcpServers: { cert: { command: "agent-workflow", args: [], env: {} } },
+      }),
+    );
+    const snap = readMcpEntry("claude", scopeDir, "cert");
+    expect(snap.exists).toBe(false);
+  });
+});
+
+describe("readMcpEntry — Claude (global scope = ~/.claude.json)", () => {
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-reader-claude-global-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  it("lee de .claude.json cuando kind=global", () => {
+    writeFileSync(
+      join(scopeDir, ".claude.json"),
+      JSON.stringify({
+        numStartups: 1,
+        mcpServers: {
+          cert: {
+            command: "agent-workflow",
+            args: ["mcp", "dbhub", "cert"],
+            env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+          },
+        },
+      }),
+    );
+    const snap = readMcpEntry("claude", scopeDir, "cert", "global");
+    expect(snap.exists).toBe(true);
+    expect(snap.target).toBe(join(scopeDir, ".claude.json"));
+    expect(snap.command).toBe("agent-workflow");
   });
 });
 

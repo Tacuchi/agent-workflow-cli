@@ -44,7 +44,7 @@ export function runMcpRemove(
     return {
       ok: false,
       error: "global_requires_force",
-      hint: "Tocar '~/.claude/settings.json' o '~/.codex/config.toml' afecta TODOS los proyectos. Reintentá con --force o usá --dry-run para previsualizar.",
+      hint: "Tocar '~/.claude.json' o '~/.codex/config.toml' afecta TODOS los proyectos. Reintentá con --force o usá --dry-run para previsualizar.",
       exitCode: 2,
     };
   }
@@ -61,7 +61,7 @@ export function runMcpRemove(
 
   for (const host of input.hosts) {
     for (const instance of input.instances) {
-      removeOne(host, instance, scopeDir, opts, removed, skipped, errors);
+      removeOne(host, instance, scopeDir, input.scope, opts, removed, skipped, errors);
     }
   }
 
@@ -79,6 +79,7 @@ function removeOne(
   host: McpHost,
   instance: McpInstance,
   scopeDir: string,
+  scope: "workspace" | "global",
   opts: McpWriteOpts,
   removed: McpWriteResult[],
   skipped: McpWriteResult[],
@@ -86,7 +87,7 @@ function removeOne(
 ): void {
   const entry: McpEntry = buildMcpEntry(instance);
   try {
-    const result = removeMcpEntry(host, entry, { scopeDir }, opts);
+    const result = removeMcpEntry(host, entry, { scopeDir, kind: scope }, opts);
     if (result.action === "skipped-idempotent") {
       skipped.push(result);
     } else {

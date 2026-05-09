@@ -105,9 +105,8 @@ describe("runMcpDoctor", () => {
 
   it("status=extra-entry cuando entry existe pero shape difiere", () => {
     writeDsn(paths, { DB_CERT_DSN: "postgres://x" });
-    mkdirSync(join(root, ".claude"), { recursive: true });
     writeFileSync(
-      join(root, ".claude", "settings.json"),
+      join(root, ".mcp.json"),
       JSON.stringify({
         mcpServers: {
           cert: {

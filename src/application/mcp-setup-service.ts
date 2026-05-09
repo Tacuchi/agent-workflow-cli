@@ -43,7 +43,7 @@ export function runMcpSetup(env: EnvPort, input: McpSetupInput): McpSetupResult 
     return {
       ok: false,
       error: "global_requires_force",
-      hint: "Tocar '~/.claude/settings.json' o '~/.codex/config.toml' afecta TODOS los proyectos. Reintentá con --force o usá --dry-run para previsualizar.",
+      hint: "Tocar '~/.claude.json' o '~/.codex/config.toml' afecta TODOS los proyectos. Reintentá con --force o usá --dry-run para previsualizar.",
       exitCode: 2,
     };
   }
@@ -60,7 +60,17 @@ export function runMcpSetup(env: EnvPort, input: McpSetupInput): McpSetupResult 
 
   for (const host of input.hosts) {
     for (const instance of input.instances) {
-      applyOne(host, instance, scopeDir, opts, input.dsnVars, applied, skipped, errors);
+      applyOne(
+        host,
+        instance,
+        scopeDir,
+        input.scope,
+        opts,
+        input.dsnVars,
+        applied,
+        skipped,
+        errors,
+      );
     }
   }
 
@@ -78,6 +88,7 @@ function applyOne(
   host: McpHost,
   instance: McpInstance,
   scopeDir: string,
+  scope: "workspace" | "global",
   opts: McpWriteOpts,
   dsnVars: Record<string, string> | undefined,
   applied: McpWriteResult[],
@@ -86,7 +97,7 @@ function applyOne(
 ): void {
   const entry: McpEntry = buildMcpEntry(instance, dsnVars?.[normalizeMcpInstance(instance)]);
   try {
-    const result = writeMcpEntry(host, entry, { scopeDir }, opts);
+    const result = writeMcpEntry(host, entry, { scopeDir, kind: scope }, opts);
     if (result.action === "skipped-idempotent") {
       skipped.push(result);
     } else {

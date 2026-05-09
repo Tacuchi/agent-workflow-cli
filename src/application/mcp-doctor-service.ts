@@ -70,7 +70,7 @@ function buildReport(
 ): McpDriftReport {
   const dsnKey = dsnVars?.[normalizeMcpInstance(instance)] ?? dsnKeyForInstance(instance);
   const entry = buildMcpEntry(instance, dsnVars?.[normalizeMcpInstance(instance)]);
-  const snapshot = readMcpEntry(host, scopeDir, entry.name);
+  const snapshot = readMcpEntry(host, scopeDir, entry.name, scope);
   const dsnPresent = Boolean(env.get(dsnKey)) || (dsn.exists && Boolean(dsn.values[dsnKey]));
 
   const dsnInfo = {

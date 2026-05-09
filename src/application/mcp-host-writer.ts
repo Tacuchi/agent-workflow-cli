@@ -11,6 +11,46 @@ import type {
 
 export interface ScopeInput {
   scopeDir: string;
+  kind?: "workspace" | "global";
+}
+
+function claudeMcpFile(scope: ScopeInput): string {
+  return scope.kind === "global"
+    ? join(scope.scopeDir, ".claude.json")
+    : join(scope.scopeDir, ".mcp.json");
+}
+
+function legacyClaudeSettingsFile(scope: ScopeInput): string {
+  return join(scope.scopeDir, ".claude", "settings.json");
+}
+
+function cleanupLegacyClaudeMcpEntry(scope: ScopeInput, name: string, dryRun: boolean): void {
+  if (dryRun) return;
+  const legacy = legacyClaudeSettingsFile(scope);
+  if (!existsSync(legacy)) return;
+  let data: Record<string, unknown>;
+  try {
+    const text = readFileSync(legacy, "utf-8");
+    if (text.trim().length === 0) return;
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+    data = parsed as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const mcpServers = data.mcpServers;
+  if (!mcpServers || typeof mcpServers !== "object" || Array.isArray(mcpServers)) return;
+  const servers = mcpServers as Record<string, unknown>;
+  if (!(name in servers)) return;
+  servers[name] = undefined;
+  const remaining = Object.fromEntries(Object.entries(servers).filter(([, v]) => v !== undefined));
+  if (Object.keys(remaining).length === 0) {
+    data.mcpServers = undefined;
+  } else {
+    data.mcpServers = remaining;
+  }
+  backupFile(legacy);
+  writeFileSync(legacy, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
 }
 
 export class McpWriterError extends Error {
@@ -49,13 +89,14 @@ function writeClaudeMcpEntry(
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
-  const settingsFile = join(scope.scopeDir, ".claude", "settings.json");
+  const settingsFile = claudeMcpFile(scope);
   const data = readClaudeSettings(settingsFile);
   const mcpServers = ensureRecord(data, "mcpServers");
   const existing = mcpServers[entry.name];
   const expected = expectedClaudeShape(entry);
 
   if (deepEqual(existing, expected)) {
+    cleanupLegacyClaudeMcpEntry(scope, entry.name, opts.dryRun ?? false);
     return resultSkipped("claude", settingsFile, entry.name);
   }
 
@@ -77,6 +118,7 @@ function writeClaudeMcpEntry(
   mkdirSync(dirname(settingsFile), { recursive: true });
   const backup = backupFile(settingsFile);
   writeFileSync(settingsFile, newJson, "utf-8");
+  cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
   return resultWritten("claude", settingsFile, entry.name, backup);
 }
 
@@ -132,16 +174,24 @@ function removeClaudeMcpEntry(
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
-  const settingsFile = join(scope.scopeDir, ".claude", "settings.json");
+  const settingsFile = claudeMcpFile(scope);
   const data = readClaudeSettings(settingsFile);
   const mcpServers = ensureRecord(data, "mcpServers");
   const existing = mcpServers[entry.name];
   if (existing === undefined) {
+    cleanupLegacyClaudeMcpEntry(scope, entry.name, opts.dryRun ?? false);
     return resultSkipped("claude", settingsFile, entry.name);
   }
 
-  delete mcpServers[entry.name];
-  data.mcpServers = mcpServers;
+  mcpServers[entry.name] = undefined;
+  const remaining = Object.fromEntries(
+    Object.entries(mcpServers).filter(([, v]) => v !== undefined),
+  );
+  if (Object.keys(remaining).length === 0) {
+    data.mcpServers = undefined;
+  } else {
+    data.mcpServers = remaining;
+  }
 
   const newJson = `${JSON.stringify(data, null, 2)}\n`;
   if (opts.dryRun) {
@@ -151,6 +201,7 @@ function removeClaudeMcpEntry(
   mkdirSync(dirname(settingsFile), { recursive: true });
   const backup = backupFile(settingsFile);
   writeFileSync(settingsFile, newJson, "utf-8");
+  cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
   return resultRemoved("claude", settingsFile, entry.name, backup);
 }
 
@@ -200,9 +251,9 @@ function readClaudeSettings(file: string): Record<string, unknown> {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
-    throw new Error("settings.json no es un objeto JSON");
+    throw new Error("contenido no es un objeto JSON");
   } catch (err) {
-    throw new McpWriterError(`settings.json inválido en ${file}`, file, (err as Error).message);
+    throw new McpWriterError(`JSON inválido en ${file}`, file, (err as Error).message);
   }
 }
 

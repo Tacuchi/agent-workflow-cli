@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type { McpHost } from "../domain/mcp-entry.js";
 
+export type ReaderScopeKind = "workspace" | "global";
+
 export interface McpEntrySnapshot {
   host: McpHost;
   target: string;
@@ -14,13 +16,22 @@ export interface McpEntrySnapshot {
   raw?: unknown;
 }
 
-export function readMcpEntry(host: McpHost, scopeDir: string, name: string): McpEntrySnapshot {
-  if (host === "claude") return readClaudeMcpEntry(scopeDir, name);
+export function readMcpEntry(
+  host: McpHost,
+  scopeDir: string,
+  name: string,
+  kind: ReaderScopeKind = "workspace",
+): McpEntrySnapshot {
+  if (host === "claude") return readClaudeMcpEntry(scopeDir, name, kind);
   return readCodexMcpEntry(scopeDir, name);
 }
 
-function readClaudeMcpEntry(scopeDir: string, name: string): McpEntrySnapshot {
-  const target = join(scopeDir, ".claude", "settings.json");
+function readClaudeMcpEntry(
+  scopeDir: string,
+  name: string,
+  kind: ReaderScopeKind,
+): McpEntrySnapshot {
+  const target = kind === "global" ? join(scopeDir, ".claude.json") : join(scopeDir, ".mcp.json");
   if (!existsSync(target)) {
     return { host: "claude", target, name, exists: false };
   }

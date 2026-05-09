@@ -1,6 +1,6 @@
 {
   "name": "@tacuchi/agent-workflow-cli",
-  "version": "5.9.0",
+  "version": "5.9.1",
   "description": "Agnostic runtime CLI for session-lifecycle workflows. Auto-detects namespace from any `.<ns>/sessions/` dir in CWD; falls back to 'agent-workflow'. Plugins can reclaim a fixed namespace via SessionStart hook (writes to `~/.config/agent-workflow/namespace`). Bundles the universal `agent-workflow` skill in the tarball — `self install-skill` copies it from the bundled location to `~/.claude/skills/agent-workflow/` and `~/.codex/skills/agent-workflow/` (dual-target by default; opt-out with `--target claude|codex`). Override the source with `--from <local-path>` for skill development.",
   "type": "module",
   "bin": {
