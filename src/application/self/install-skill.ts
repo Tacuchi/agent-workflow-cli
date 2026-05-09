@@ -8,12 +8,16 @@ import type { CommandResult } from "../../domain/types.js";
 export const SKILL_DIR_NAME = "agent-workflow";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
 
-export type InstallTarget = "claude" | "codex";
+export type InstallTarget = "claude" | "codex" | "agents";
 
 export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
   claude: [".claude", "skills"],
   codex: [".codex", "skills"],
+  agents: [".agents", "skills"],
 };
+
+export const AGENTS_LOCK_REL = [".agents", ".skill-lock.json"] as const;
+export const LEGACY_SKILL_NAME = "agent-workflow-manager";
 
 export interface SelfInstallTargetResult {
   target: InstallTarget;
@@ -31,7 +35,9 @@ export interface SelfInstallSkillData {
   dests: SelfInstallTargetResult[];
 }
 
-const TARGET_CHOICES: readonly (InstallTarget | "all")[] = ["claude", "codex", "all"];
+const TARGET_CHOICES: readonly (InstallTarget | "all")[] = ["claude", "codex", "agents", "all"];
+
+const ALL_INSTALL_TARGETS: readonly InstallTarget[] = ["claude", "codex"];
 
 export async function selfInstallSkill(
   args: ParsedArgs,
@@ -136,7 +142,7 @@ function resolveTargets(targetArg: string): Resolved<InstallTarget[]> {
     };
   }
   const targets: InstallTarget[] =
-    targetArg === "all" ? ["claude", "codex"] : [targetArg as InstallTarget];
+    targetArg === "all" ? [...ALL_INSTALL_TARGETS] : [targetArg as InstallTarget];
   return { ok: true, value: targets };
 }
 
@@ -182,6 +188,7 @@ function buildDestByTarget(home: string): Record<InstallTarget, string> {
   return {
     claude: join(home, ...TARGET_ROOTS.claude, SKILL_DIR_NAME),
     codex: join(home, ...TARGET_ROOTS.codex, SKILL_DIR_NAME),
+    agents: join(home, ...TARGET_ROOTS.agents, SKILL_DIR_NAME),
   };
 }
 

@@ -67,7 +67,14 @@ describe("selfCommand — without subcommand (H-07)", () => {
     expect(noSub.ok).toBe(true);
     if (noSub.ok) {
       const data = noSub.data as { subcommands: string[]; help_hint: string };
-      expect(data.subcommands).toEqual(["namespace", "doctor", "update", "install-skill"]);
+      expect(data.subcommands).toEqual([
+        "namespace",
+        "doctor",
+        "update",
+        "install-skill",
+        "uninstall-skill",
+        "bootstrap",
+      ]);
       expect(data.help_hint).toContain("aw self");
       expect(noSub.exitCode).toBe(0);
     }

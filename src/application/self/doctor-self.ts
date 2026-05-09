@@ -2,7 +2,13 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { type InstallTarget, SKILL_DIR_NAME, TARGET_ROOTS } from "./install-skill.js";
+import {
+  AGENTS_LOCK_REL,
+  type InstallTarget,
+  LEGACY_SKILL_NAME,
+  SKILL_DIR_NAME,
+  TARGET_ROOTS,
+} from "./install-skill.js";
 
 export interface SkillTargetReport {
   target: InstallTarget;
@@ -11,6 +17,10 @@ export interface SkillTargetReport {
   legacy_leftover?: boolean;
   legacy_leftover_path?: string;
   legacy_leftover_warning?: string;
+  lock_present?: boolean;
+  lock_canonical_entry?: boolean;
+  lock_legacy_entry?: boolean;
+  lock_warning?: string;
 }
 
 export interface SelfDoctorReport {
@@ -34,34 +44,17 @@ export interface SelfDoctorReport {
   };
 }
 
-const LEGACY_SKILL_DIR = "agent-workflow-manager";
+const FS_TARGETS: readonly InstallTarget[] = ["claude", "codex"] as const;
 
 export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoctorReport>> {
   const home = ctx.env.homeDir();
-  const targets: InstallTarget[] = ["claude", "codex"];
-
   const targetReports: SkillTargetReport[] = [];
-  for (const target of targets) {
-    const skillPath = join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
-    const legacyPath = join(home, ...TARGET_ROOTS[target], LEGACY_SKILL_DIR);
-    const installed = await ctx.fs.exists(skillPath);
-    const legacyLeftover = await ctx.fs.exists(legacyPath);
 
-    targetReports.push({
-      target,
-      path: skillPath,
-      installed,
-      ...(legacyLeftover
-        ? {
-            legacy_leftover: true,
-            legacy_leftover_path: legacyPath,
-            legacy_leftover_warning: `Skill legacy detectada en ${legacyPath}. Reemplazada por '${skillPath}' tras el rename de agent-workflow-manager → agent-workflow. Recomendado: mv ${legacyPath} ${legacyPath}.bak (preserva evidencia) y cuando estés tranquilo, rm -rf el .bak.`,
-          }
-        : {}),
-    });
+  for (const target of FS_TARGETS) {
+    targetReports.push(await reportFsTarget(ctx, home, target));
   }
-
-  const installedAny = targetReports.some((t) => t.installed);
+  const agentsReport = await reportAgentsTarget(ctx, home);
+  if (agentsReport) targetReports.push(agentsReport);
 
   return {
     ok: true,
@@ -84,12 +77,88 @@ export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoc
         ...(ctx.runtime.displayName ? { display_name: ctx.runtime.displayName } : {}),
       },
       skill: {
-        installed: installedAny,
+        installed: targetReports.some((t) => t.installed),
         targets: targetReports,
       },
     },
     exitCode: 0,
   };
+}
+
+async function reportFsTarget(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+): Promise<SkillTargetReport> {
+  const skillPath = join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
+  const legacyPath = join(home, ...TARGET_ROOTS[target], LEGACY_SKILL_NAME);
+  const installed = await ctx.fs.exists(skillPath);
+  const legacyLeftover = await ctx.fs.exists(legacyPath);
+
+  return {
+    target,
+    path: skillPath,
+    installed,
+    ...(legacyLeftover
+      ? {
+          legacy_leftover: true,
+          legacy_leftover_path: legacyPath,
+          legacy_leftover_warning: legacyWarning(legacyPath, skillPath),
+        }
+      : {}),
+  };
+}
+
+async function reportAgentsTarget(
+  ctx: CliContext,
+  home: string,
+): Promise<SkillTargetReport | null> {
+  const agentsRoot = join(home, ...TARGET_ROOTS.agents.slice(0, 1));
+  if (!(await ctx.fs.exists(agentsRoot))) return null;
+
+  const skillPath = join(home, ...TARGET_ROOTS.agents, SKILL_DIR_NAME);
+  const legacyPath = join(home, ...TARGET_ROOTS.agents, LEGACY_SKILL_NAME);
+  const installed = await ctx.fs.exists(skillPath);
+  const legacyLeftover = await ctx.fs.exists(legacyPath);
+
+  const lockPath = join(home, ...AGENTS_LOCK_REL);
+  const lockPresent = await ctx.fs.exists(lockPath);
+  let lockCanonical: boolean | undefined;
+  let lockLegacy: boolean | undefined;
+  let lockWarning: string | undefined;
+
+  if (lockPresent) {
+    try {
+      const raw = await ctx.fs.readText(lockPath);
+      const parsed = JSON.parse(raw) as { skills?: Record<string, unknown> };
+      const skills = parsed.skills ?? {};
+      lockCanonical = Object.hasOwn(skills, SKILL_DIR_NAME);
+      lockLegacy = Object.hasOwn(skills, LEGACY_SKILL_NAME);
+    } catch (err) {
+      lockWarning = `Could not parse ${lockPath}: ${(err as Error).message}. Skipping lock-based detection — filesystem scan still reliable.`;
+    }
+  }
+
+  return {
+    target: "agents",
+    path: skillPath,
+    installed,
+    ...(legacyLeftover
+      ? {
+          legacy_leftover: true,
+          legacy_leftover_path: legacyPath,
+          legacy_leftover_warning: legacyWarning(legacyPath, skillPath),
+        }
+      : {}),
+    lock_present: lockPresent,
+    ...(lockCanonical !== undefined ? { lock_canonical_entry: lockCanonical } : {}),
+    ...(lockLegacy !== undefined ? { lock_legacy_entry: lockLegacy } : {}),
+    ...(lockWarning ? { lock_warning: lockWarning } : {}),
+  };
+}
+
+function legacyWarning(legacyPath: string, skillPath: string): string {
+  return `Skill legacy detectada en ${legacyPath}. Reemplazada por '${skillPath}' tras el rename de agent-workflow-manager → agent-workflow. Usá 'agent-workflow self uninstall-skill --legacy' para limpiar.`;
 }
 
 function readPackageVersion(): string {

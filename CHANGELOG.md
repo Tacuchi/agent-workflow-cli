@@ -4,6 +4,52 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.0] — 2026-05-09
+
+**Minor — clean install flow for fresh machines (session030).** Cierra el gap descubierto en T6 de session029: la skill legacy `agent-workflow-manager` persistía en `~/.agents/skills/` (registry de un installer multi-agent que sirve a Codex, Claude Code, Cursor y otros), fuera del scan de `self doctor`. La sesión agrega un tercer target `agents`, un subcomando para desinstalar y un wizard de bootstrap.
+
+### Added
+
+- **`self uninstall-skill`** (subcomando nuevo). Flags:
+  - `--target <claude|codex|agents|all>` (default `all`).
+  - `--legacy` (también borra `agent-workflow-manager` en el target).
+  - `--dry-run` (preview sin tocar fs).
+  - Cuando opera sobre `agents`, actualiza `~/.agents/.skill-lock.json` removiendo las entries `skills.<name>` (preserva `dismissed`, `lastSelectedAgents` y todo lo demás). Si el lock está malformado, emite `lock_warning` y lo deja intacto (failsafe).
+  - Output JSON: `{ status, removed: [{target, path, kind, status}], lock_updated, lock_path?, lock_warning? }`.
+- **`self bootstrap`** (subcomando nuevo). Wizard no-interactivo de instalación limpia:
+  1. Llama a `self doctor` y captura leftovers.
+  2. Si hay legacy → ejecuta `self uninstall-skill --legacy --target all` automáticamente.
+  3. Ejecuta `self install-skill --force --target all` (claude+codex).
+  4. Imprime `next_steps[]` con los comandos para instalar el plugin `qtc` en cada harness detectado.
+  - Soporta `--dry-run` (cascadea a sub-pasos).
+- **Target `agents`** en `InstallTarget`: `~/.agents/skills/agent-workflow/`. Disponible en `--target` de install/uninstall/doctor.
+- Constantes públicas en `install-skill.ts`: `AGENTS_LOCK_REL`, `LEGACY_SKILL_NAME` para reuso por uninstall y doctor.
+- **3 archivos nuevos de tests**: `self-uninstall-skill.test.ts` (7 tests), `self-bootstrap.test.ts` (3 tests), tests adicionales en `self-doctor.test.ts` (4 escenarios para target agents incluyendo lock parsing y malformed lock failsafe).
+
+### Changed — `self doctor`
+
+- **`skill.targets[]` ahora incluye `agents`** cuando `~/.agents/` existe. Cada entry de target `agents` agrega 4 campos opcionales: `lock_present`, `lock_canonical_entry`, `lock_legacy_entry`, `lock_warning`. Detecta legacy `agent-workflow-manager` tanto en filesystem (`legacy_leftover`) como en lock (`lock_legacy_entry`).
+- `legacy_leftover_warning` actualizado para sugerir `agent-workflow self uninstall-skill --legacy` en lugar del manual `mv` viejo.
+- Para targets `claude`/`codex` el comportamiento sigue idéntico — solo se agrega el target `agents` cuando el directorio existe.
+
+### Changed — `self install-skill`
+
+- `--target` choices acepta también `agents` (single-target opt-in).
+- `--target=all` mantiene comportamiento de session029: instala en `claude` + `codex` (no en `agents` por default — el agents target es opt-in para quienes usan el skill-installer multi-agent). Sin breaking changes vs 5.6.0.
+
+### Migration
+
+Sin cambios de output JSON breaking. La nueva entry `agents` en `skill.targets[]` aparece sólo cuando existe `~/.agents/` (tooling que la consume nuevo o ausente sigue funcionando idéntico). El nuevo subcomando `bootstrap` reemplaza el flujo manual previo (instalar CLI → install-skill → instalar plugin); recomendado correrlo en máquinas nuevas.
+
+**Fresh-machine flow recomendado:**
+1. `npm install -g @tacuchi/agent-workflow-cli`.
+2. `agent-workflow self bootstrap` (limpieza + dual-target install).
+3. Instalar el plugin `qtc` en Claude Code/Codex con los comandos que imprime `next_steps[]`.
+
+### Tests
+
+- 348 tests passing (vs 335 en 5.6.0; +13 netos: 7 uninstall + 3 bootstrap + 4 doctor agents + 1 self-command actualizado para los 6 subcomandos). Lint: 0 errors, 1 warning pre-existente en `runSessionClose` (fuera de scope). Build limpio.
+
 ## [5.6.0] — 2026-05-09
 
 **Minor — dual-target skill install + doctor (session029).** `self install-skill` y `self doctor` ahora operan en `~/.claude/skills/agent-workflow/` **y** `~/.codex/skills/agent-workflow/`. Cierra el gap detectado al verificar T6 de session028: el skill `agent-workflow` se publicaba sólo en Claude Code, dejando Codex sin la skill manager. Cambio de output JSON.

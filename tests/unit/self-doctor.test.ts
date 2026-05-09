@@ -20,9 +20,14 @@ class FakeEnv implements EnvPort {
 }
 
 class FakeFs implements FileSystemPort {
-  constructor(private files: Set<string>) {}
-  async readText(): Promise<string> {
-    throw new Error("nyi");
+  constructor(
+    private files: Set<string>,
+    private contents: Map<string, string> = new Map(),
+  ) {}
+  async readText(p: string): Promise<string> {
+    const content = this.contents.get(p);
+    if (content === undefined) throw new Error(`no fixture content for ${p}`);
+    return content;
   }
   async writeText(): Promise<void> {}
   async exists(p: string) {
@@ -150,6 +155,121 @@ describe("selfDoctor", () => {
       expect(codex?.installed).toBe(false);
       expect(codex?.legacy_leftover).toBe(true);
       expect(codex?.legacy_leftover_path).toBe("/home/u/.codex/skills/agent-workflow-manager");
+    }
+  });
+
+  it("omits agents target when ~/.agents/ does not exist", async () => {
+    const fs = new FakeFs(new Set(["/home/u/.claude/skills/agent-workflow"]));
+    const ctx = {
+      fs,
+      env: new FakeEnv(),
+      paths,
+      namespace: { namespace: ns, source: "env" },
+      runtime,
+    } as unknown as CliContext;
+    const result = await selfDoctor(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const targets = result.data.skill.targets.map((t) => t.target);
+      expect(targets).toEqual(["claude", "codex"]);
+      expect(targets).not.toContain("agents");
+    }
+  });
+
+  it("includes agents target when ~/.agents/ exists; parses lock for canonical entry", async () => {
+    const fs = new FakeFs(
+      new Set([
+        "/home/u/.agents",
+        "/home/u/.agents/skills/agent-workflow",
+        "/home/u/.agents/.skill-lock.json",
+      ]),
+      new Map([
+        [
+          "/home/u/.agents/.skill-lock.json",
+          JSON.stringify({
+            version: 3,
+            skills: { "agent-workflow": { source: "x" } },
+            dismissed: {},
+            lastSelectedAgents: ["codex"],
+          }),
+        ],
+      ]),
+    );
+    const ctx = {
+      fs,
+      env: new FakeEnv(),
+      paths,
+      namespace: { namespace: ns, source: "env" },
+      runtime,
+    } as unknown as CliContext;
+    const result = await selfDoctor(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const agents = result.data.skill.targets.find((t) => t.target === "agents");
+      expect(agents).toBeDefined();
+      expect(agents?.installed).toBe(true);
+      expect(agents?.lock_present).toBe(true);
+      expect(agents?.lock_canonical_entry).toBe(true);
+      expect(agents?.lock_legacy_entry).toBe(false);
+    }
+  });
+
+  it("flags legacy_leftover and lock_legacy_entry when ~/.agents has agent-workflow-manager", async () => {
+    const fs = new FakeFs(
+      new Set([
+        "/home/u/.agents",
+        "/home/u/.agents/skills/agent-workflow-manager",
+        "/home/u/.agents/.skill-lock.json",
+      ]),
+      new Map([
+        [
+          "/home/u/.agents/.skill-lock.json",
+          JSON.stringify({
+            version: 3,
+            skills: { "agent-workflow-manager": { source: "github" } },
+            dismissed: {},
+            lastSelectedAgents: ["codex"],
+          }),
+        ],
+      ]),
+    );
+    const ctx = {
+      fs,
+      env: new FakeEnv(),
+      paths,
+      namespace: { namespace: ns, source: "env" },
+      runtime,
+    } as unknown as CliContext;
+    const result = await selfDoctor(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const agents = result.data.skill.targets.find((t) => t.target === "agents");
+      expect(agents?.installed).toBe(false);
+      expect(agents?.legacy_leftover).toBe(true);
+      expect(agents?.lock_canonical_entry).toBe(false);
+      expect(agents?.lock_legacy_entry).toBe(true);
+    }
+  });
+
+  it("emits lock_warning when ~/.agents/.skill-lock.json is malformed", async () => {
+    const fs = new FakeFs(
+      new Set(["/home/u/.agents", "/home/u/.agents/.skill-lock.json"]),
+      new Map([["/home/u/.agents/.skill-lock.json", "{ not json"]]),
+    );
+    const ctx = {
+      fs,
+      env: new FakeEnv(),
+      paths,
+      namespace: { namespace: ns, source: "env" },
+      runtime,
+    } as unknown as CliContext;
+    const result = await selfDoctor(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const agents = result.data.skill.targets.find((t) => t.target === "agents");
+      expect(agents?.lock_present).toBe(true);
+      expect(agents?.lock_warning).toContain("Could not parse");
+      expect(agents?.lock_canonical_entry).toBeUndefined();
     }
   });
 
