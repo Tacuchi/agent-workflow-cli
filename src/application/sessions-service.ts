@@ -7,6 +7,7 @@ import {
   type SessionEntry,
   buildSessionEntry,
   listSessionFolders,
+  readHistoryStateMap,
   serializeSessionEntry,
 } from "./session-resolver.js";
 
@@ -38,13 +39,26 @@ export class SessionsService {
   async list(input: ListSessionsInput = {}): Promise<ListSessionsOutput> {
     const cwd = this.env.cwd();
     const sessionsDir = this.paths.cwdSessionsDir();
-    const sessions = await this.scanFolder(sessionsDir, undefined, cwd, input.verbose === true);
+    const historyStateByCode = await readHistoryStateMap(this.fs, this.paths.cwdHistoryFile());
+    const sessions = await this.scanFolder(
+      sessionsDir,
+      undefined,
+      cwd,
+      input.verbose === true,
+      historyStateByCode,
+    );
 
     const legacyEntries: SessionEntry[] = [];
     if (input.includeLegacy === true) {
       for (const prefix of [".claude", ".codex"] as const) {
         const dir = join(cwd, prefix, "sessions");
-        const entries = await this.scanFolder(dir, prefix, cwd, input.verbose === true);
+        const entries = await this.scanFolder(
+          dir,
+          prefix,
+          cwd,
+          input.verbose === true,
+          historyStateByCode,
+        );
         legacyEntries.push(...entries);
       }
     }
@@ -87,11 +101,16 @@ export class SessionsService {
     legacySource: string | undefined,
     cwd: string,
     verbose: boolean,
+    historyStateByCode: Map<string, SessionState>,
   ): Promise<SessionEntry[]> {
     const folders = await listSessionFolders(this.fs, dir);
     const result: SessionEntry[] = [];
     for (const folder of folders) {
-      const opts: { verbose: boolean; legacySource?: string } = { verbose };
+      const opts: {
+        verbose: boolean;
+        legacySource?: string;
+        historyStateByCode?: Map<string, SessionState>;
+      } = { verbose, historyStateByCode };
       if (legacySource !== undefined) {
         opts.legacySource = legacySource;
       }

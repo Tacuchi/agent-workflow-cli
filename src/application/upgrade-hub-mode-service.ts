@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
+import { withCwdLock } from "./lock-service.js";
 import {
   type ParsedProjectBlock,
   type ProjectBlockMarkers,
@@ -91,7 +92,18 @@ export async function runUpgradeHubMode(
     markers,
   });
 
-  const results = await applyBlockToCandidates(candidates, newBlock, markers, fs);
+  const lockResult = await withCwdLock(fs, paths, () =>
+    applyBlockToCandidates(candidates, newBlock, markers, fs),
+  );
+  if (
+    lockResult &&
+    typeof lockResult === "object" &&
+    !Array.isArray(lockResult) &&
+    "error" in lockResult
+  ) {
+    return { applied: false, reason: lockResult.error };
+  }
+  const results = lockResult;
 
   return {
     applied: true,

@@ -1,6 +1,7 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type UpsertAction, buildRow, upsertRow } from "./history-table.js";
+import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import {
   type ProjectMdUpsertOutput,
@@ -72,13 +73,11 @@ export async function runSessionClose(
   const date = session.date ?? formatToday();
   const summary = session.summary ?? "";
 
-  const action = await upsertRow(
-    fs,
-    paths.cwdHistoryFile(),
-    session.code ?? input.code,
-    (hasFlow) =>
+  const codeNorm = session.code ?? input.code ?? "";
+  const upsertResult = await withCwdLock(fs, paths, () =>
+    upsertRow(fs, paths.cwdHistoryFile(), codeNorm, (hasFlow) =>
       buildRow({
-        code: session.code ?? input.code ?? "",
+        code: codeNorm,
         flow: session.flow ?? null,
         sesionName: session.name,
         date,
@@ -87,7 +86,12 @@ export async function runSessionClose(
         refs: refsRendered,
         hasFlow,
       }),
+    ),
   );
+  if (upsertResult && typeof upsertResult === "object" && "error" in upsertResult) {
+    return { error: upsertResult.error };
+  }
+  const action: UpsertAction = upsertResult;
 
   const projectMd = await runProjectMdUpsertWrite(fs, env, paths, {
     op: "remove-session",

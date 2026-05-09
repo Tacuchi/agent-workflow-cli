@@ -1,6 +1,10 @@
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "../ports/file-system.js";
+
+interface NodeError extends Error {
+  code?: string;
+}
 
 export class NodeFileSystem implements FileSystemPort {
   private static writeCounter = 0;
@@ -26,6 +30,37 @@ export class NodeFileSystem implements FileSystemPort {
       } catch {
         // tmp may not exist if writeFile failed before creating it
       }
+      throw err;
+    }
+  }
+
+  /**
+   * Atomic create-or-fail via O_CREAT|O_EXCL. Returns { created: false } if
+   * the file already exists; other I/O errors propagate.
+   */
+  async writeTextExclusive(path: string, content: string): Promise<{ created: boolean }> {
+    let handle: Awaited<ReturnType<typeof open>> | null = null;
+    try {
+      handle = await open(path, "wx");
+    } catch (err) {
+      if ((err as NodeError).code === "EEXIST") {
+        return { created: false };
+      }
+      throw err;
+    }
+    try {
+      await handle.writeFile(content, "utf8");
+    } finally {
+      await handle.close();
+    }
+    return { created: true };
+  }
+
+  async remove(path: string): Promise<void> {
+    try {
+      await unlink(path);
+    } catch (err) {
+      if ((err as NodeError).code === "ENOENT") return;
       throw err;
     }
   }

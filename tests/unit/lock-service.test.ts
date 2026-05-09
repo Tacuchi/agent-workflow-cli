@@ -20,6 +20,14 @@ class FakeFs implements FileSystemPort {
   async writeText(p: string, content: string): Promise<void> {
     this.files.set(p, content);
   }
+  async writeTextExclusive(p: string, content: string): Promise<{ created: boolean }> {
+    if (this.files.has(p)) return { created: false };
+    this.files.set(p, content);
+    return { created: true };
+  }
+  async remove(p: string): Promise<void> {
+    this.files.delete(p);
+  }
   async exists(p: string): Promise<boolean> {
     return this.files.has(p) || this.dirs.has(p);
   }

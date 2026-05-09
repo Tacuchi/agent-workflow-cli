@@ -3,6 +3,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type ResolvedOrigen, renderOrigenBlock, resolveOrigen } from "./handoff.js";
 import { buildRow, upsertRow } from "./history-table.js";
+import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import {
   type ProjectMdUpsertOutput,
@@ -93,7 +94,12 @@ export async function runSessionCreate(
   if ("error" in folderInfo) return folderInfo;
 
   await writeObjetivo(fs, folderInfo, flow, input, origen);
-  await writeHistoryRow(fs, paths, folderInfo.code, flow, input, origen);
+  const historyResult = await withCwdLock(fs, paths, () =>
+    writeHistoryRow(fs, paths, folderInfo.code, flow, input, origen),
+  );
+  if (historyResult && typeof historyResult === "object" && "error" in historyResult) {
+    return { error: historyResult.error };
+  }
   const projectMd = await registerInProjectBlock(
     fs,
     env,

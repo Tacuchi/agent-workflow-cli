@@ -69,7 +69,7 @@ export async function resolveOrigen(
 
 export function renderOrigenBlock(origen: ResolvedOrigen | OrigenError | null): string {
   if (!origen || "error" in origen) return "";
-  const parts: string[] = ["", "## Origen", `Derivado de \`${origen.folder}\`.`];
+  const parts: string[] = ["", "## Origin", `Derivado de \`${origen.folder}\`.`];
   if (origen.summary) {
     parts.push("");
     parts.push(origen.summary);

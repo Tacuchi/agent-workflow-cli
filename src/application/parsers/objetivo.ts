@@ -1,9 +1,4 @@
-import {
-  firstNonEmptyLine,
-  parseMdSection,
-  parseMdSectionBilingual,
-  parseMdValueBilingual,
-} from "../markdown.js";
+import { firstNonEmptyLine, parseMdSectionBilingual, parseMdValueBilingual } from "../markdown.js";
 
 export interface ParsedObjetivo {
   titulo: string | null;
@@ -83,7 +78,7 @@ function extractFuentes(text: string): string[] {
 }
 
 function extractOrigen(text: string): string | null {
-  const section = parseMdSection(text, "Origen");
+  const section = parseMdSectionBilingual(text, "Origen");
   if (section === undefined) return null;
   return firstNonEmptyLine(section) ?? null;
 }

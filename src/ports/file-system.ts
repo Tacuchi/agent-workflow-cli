@@ -15,6 +15,15 @@ export interface FileStat {
 export interface FileSystemPort {
   readText(path: string): Promise<string>;
   writeText(path: string, content: string): Promise<void>;
+  /**
+   * Atomically create file with content. Returns `{ created: true }` on success
+   * or `{ created: false }` if path already exists. Used by lock-service to
+   * implement true atomic claim (O_CREAT|O_EXCL semantics). Errors other than
+   * "already exists" propagate as exceptions.
+   */
+  writeTextExclusive(path: string, content: string): Promise<{ created: boolean }>;
+  /** Idempotent file removal. ENOENT is silently ignored. */
+  remove(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   list(path: string): Promise<DirEntry[]>;
   mkdirp(path: string): Promise<void>;

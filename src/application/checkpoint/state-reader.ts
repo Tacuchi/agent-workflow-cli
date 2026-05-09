@@ -172,7 +172,7 @@ async function readOrigen(fs: FileSystemPort, sessionPath: string): Promise<stri
   const lines = text.split("\n");
   let inOrigen = false;
   for (const line of lines) {
-    if (line.match(/^##\s+Origen\s*$/i)) {
+    if (line.match(/^##\s+(Origen|Origin)\s*$/i)) {
       inOrigen = true;
       continue;
     }

@@ -57,6 +57,12 @@ export function parseSessionFolder(folder: string): {
 export interface BuildEntryOptions {
   legacySource?: string;
   verbose?: boolean;
+  /**
+   * Map of code → SessionState parsed from HISTORY.md. When provided, takes
+   * precedence over STATUS.md and the legacy heuristic. Pass via the caller
+   * (SessionsService) so HISTORY.md is read once per scan.
+   */
+  historyStateByCode?: Map<string, SessionState>;
 }
 
 export async function buildSessionEntry(
@@ -69,13 +75,24 @@ export async function buildSessionEntry(
 
   const status = await readStatus(fs, sessionPath);
   const hasStatus = status !== null;
+  const checkpointPhase = await readPhaseFromCheckpoint(fs, sessionPath);
+  const historyState = code !== null ? (options.historyStateByCode?.get(code) ?? null) : null;
+
   let state: SessionState;
-  let phase: Phase | "requirement";
-  if (status) {
+  if (historyState !== null) {
+    state = historyState;
+  } else if (status) {
     state = status.state;
-    phase = status.phase;
   } else {
     state = await stateFromLegacyHeuristic(fs, sessionPath);
+  }
+
+  let phase: Phase | "requirement";
+  if (checkpointPhase !== null) {
+    phase = checkpointPhase;
+  } else if (status) {
+    phase = status.phase;
+  } else {
     phase = "requirement";
   }
 
@@ -215,6 +232,49 @@ async function readStatus(
   const state: SessionState = stateRaw === "closed" ? "closed" : "active";
   const phase: Phase = isPhase(phaseRaw) ? phaseRaw : "planning";
   return { state, phase };
+}
+
+async function readPhaseFromCheckpoint(
+  fs: FileSystemPort,
+  sessionPath: string,
+): Promise<Phase | null> {
+  const path = join(sessionPath, "CHECKPOINT.md");
+  if (!(await fs.exists(path))) return null;
+  const text = await fs.readText(path);
+  // EN canon: "- Current phase: execution (2/4)"
+  // ES legacy: "- Fase actual: execution (2/4)"
+  const raw =
+    parseMdValueBilingual(text, "Current phase") ?? parseMdValueBilingual(text, "Fase actual");
+  if (!raw) return null;
+  const first = raw.trim().toLowerCase().split(/\s+/)[0];
+  return isPhase(first) ? first : null;
+}
+
+/**
+ * Parse HISTORY.md table once per scan and return Map<code, SessionState>.
+ * Format: `| 001 | dev | name | date | active|closed | summary | refs |`.
+ * Returns empty Map if HISTORY.md is missing or unparseable.
+ */
+export async function readHistoryStateMap(
+  fs: FileSystemPort,
+  historyPath: string,
+): Promise<Map<string, SessionState>> {
+  const map = new Map<string, SessionState>();
+  if (!(await fs.exists(historyPath))) return map;
+  const text = await fs.readText(historyPath);
+  for (const line of text.split("\n")) {
+    if (!line.startsWith("|")) continue;
+    const cells = line.split("|").map((c) => c.trim());
+    // Expected: ["", code, flow, name, date, state, summary, refs, ""]
+    if (cells.length < 7) continue;
+    const code = cells[1];
+    const stateCell = cells[5]?.toLowerCase();
+    if (!code || !/^\d{3}$/.test(code)) continue;
+    if (stateCell === "active" || stateCell === "closed") {
+      map.set(code, stateCell);
+    }
+  }
+  return map;
 }
 
 async function readRequirement(

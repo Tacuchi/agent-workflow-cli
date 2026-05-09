@@ -4,6 +4,47 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.0] — 2026-05-09
+
+**Minor — R3 reader gaps + R2 atomic claim (sessions 024+025).** Cierra dos gaps post-publish detectados en validation runtime de session023:
+
+1. **R3 Sprint 4 (reader-side completion)**: el canon EN ya se emitía en write paths (R3 Sprints 1-3) pero los readers core seguían ES-only. `aw sessions` reportaba sesiones cerradas como `active` y `phase: requirement` (legacy hardcoded). CHECKPOINT.md nuevos con headings EN no disparaban `findUnfilledPlaceholders`. `## Origen` (ES) era el único header reconocido para handoff origen.
+2. **R2 atomic claim**: el `acquireLock` original hacía check-then-write no atómico. Bajo concurrencia 2 procesos podían pasar `fs.exists()` simultáneo y ambos overwritear el lock. Adicionalmente, `session-create`, `session-close` y `upgrade-hub-mode` escribían HISTORY.md / CLAUDE.md / AGENTS.md sin acquire del lock — bypass de R2 en los flows que más tocan esos archivos.
+
+### Added — R2 atomic primitive (session025)
+
+- **`FileSystemPort.writeTextExclusive(path, content): Promise<{ created: boolean }>`** (NUEVO): atomic create-or-fail vía `O_CREAT|O_EXCL`. Devuelve `{ created: false }` si el path ya existe. Cross-platform (POSIX + Windows) via Node `fs.open(path, 'wx')` con captura de EEXIST.
+- **`FileSystemPort.remove(path): Promise<void>`** (NUEVO): unlink idempotente (silencia ENOENT).
+- **`withCwdLock<T>(fs, paths, fn, options?): Promise<T | { error }>`** en `lock-service.ts`: helper que centraliza acquire/try/release. Devuelve shape `{error}` para que callers lo propaguen sin throw.
+- **9 tests nuevos**: 5 en `tests/unit/node-file-system-exclusive.test.ts` (atomic primitive sobre FS real, incluye prueba de 5 calls paralelos → exactamente 1 success), 4 en `tests/unit/lock-service-atomic.test.ts` (race semantics: holder activo / stale / release marker).
+
+### Changed — R2 acquireLock atómico (session025)
+
+- **`acquireLock`** (`src/application/lock-service.ts`) reescrito con loop hasta 3 retries: `writeTextExclusive` → si holder activo, `LockBusyError`; si stale/release-marker, `remove` + retry. Elimina el patrón check-then-write previo.
+- **`session-create-service.ts`**, **`session-close-service.ts`**, **`upgrade-hub-mode-service.ts`** ahora envuelven sus writes a HISTORY.md / CLAUDE.md / AGENTS.md en `withCwdLock`. Cierra los 3 sitios de bypass detectados en session023.
+
+### Changed — R3 readers bilingual (session024)
+
+- **`SessionsService.list`** (`src/application/sessions-service.ts`) ahora lee state desde HISTORY.md (source-of-truth post-R2) vía nuevo `readHistoryStateMap()` en `session-resolver.ts`. Cadena de prioridad: HISTORY.md > STATUS.md > legacy heuristic. STATUS.md preservado como fallback para sesiones pre-R2.
+- **`buildSessionEntry`** ahora lee phase desde CHECKPOINT.md vía nuevo `readPhaseFromCheckpoint()` (matchea `## Current phase` EN o `## Fase actual` ES legacy). Cadena: CHECKPOINT.md > STATUS.md > "requirement" (legacy default).
+- **`computeCheckpointStatus`** (`src/application/checkpoint-service.ts`) `sectionToField()` extendido con matchers EN canon (`last action`, `next step`, `files touched`, `critical context`). `parseMdValue("Actualizado")` con fallback a `"Updated"`.
+- **`extractOrigen`** (`src/application/parsers/objetivo.ts`) usa `parseMdSectionBilingual("Origen")` que resuelve EN+ES vía KEYWORD_GROUPS.
+- **`readOrigenSummary`** (`src/application/checkpoint/state-reader.ts`) regex bilingual `/^##\s+(Origen|Origin)\s*$/i`.
+- **`renderOrigenBlock`** (`src/application/handoff.ts`) emite `## Origin` (EN canon) en sesiones nuevas; lectura ES legacy preservada.
+
+### Added — R3 EN canon test fixture
+
+- **`tests/fixtures/sample-workspace-en/`** (NUEVO, 7 archivos): fixture con HISTORY.md + sesiones EN canon (`OBJECTIVE.md`, `## Current phase`, `## Last action`). Complementa la fixture ES legacy `sample-workspace/` que se mantiene intocada.
+- **8 tests nuevos**: 3 en `tests/golden/sessions-state-from-history.test.ts`, 2 en `tests/unit/checkpoint-placeholders-en.test.ts`, 3 en `tests/unit/origen-bilingual.test.ts`.
+
+### Migration
+
+Sin breaking changes. La API pública sumó 2 métodos a `FileSystemPort` (`writeTextExclusive`, `remove`) — implementaciones custom del port deben agregarlas. Los readers ahora son bilingual: sesiones legacy ES siguen funcionando idénticamente; sesiones canónicas EN ahora se leen correctamente. `aw sessions` reportará phases reales (`closure`, `execution`, etc.) en lugar de `requirement` para sesiones con CHECKPOINT.md.
+
+### Tests
+
+- 331 tests passing (vs 314 en 5.4.0). Lint: 0 errors. 40 test files.
+
 ## [5.4.0] — 2026-05-08
 
 **Minor — R2 Phase 1: lock file mínimo (session022).** Cierra la primera fase del hardening file-based identificada en `agent-workflow-last/.workflow/sessions/session016-analyze-cli-bd-local-i18n/CONCLUSIONES.md` §R2. Serializa escrituras a archivos centralizados (HISTORY.md y bloque QTC-PROJECT en CLAUDE.md/AGENTS.md) en escenarios multi-host vía `.<ns>/.lock` con auto-expire 5min. Apoyado en el atomic-write port-level introducido en R1 (`5.3.0`).

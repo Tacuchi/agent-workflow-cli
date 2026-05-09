@@ -85,7 +85,7 @@ export async function computeCheckpointStatus(
   }
   const text = await fs.readText(path);
   const placeholders = findUnfilledPlaceholders(text);
-  const actualizado = parseMdValue(text, "Actualizado");
+  const actualizado = parseMdValue(text, "Actualizado") ?? parseMdValue(text, "Updated");
   const ts = parseActualizado(actualizado);
   const age = ts !== null ? Math.max(0, Math.floor((now.getTime() - ts.getTime()) / 1000)) : null;
 
@@ -141,7 +141,13 @@ function splitSections(text: string): [string, string][] {
 
 function sectionToField(header: string): string | null {
   const h = stripAccentsLower(header);
-  if (h.includes("lo ultimo que hice")) return "ultimo";
+  // EN canon (R3) — emitted by current write paths.
+  if (h === "last action" || h.startsWith("last action")) return "ultimo";
+  if (h === "next step" || h.startsWith("next step")) return "proximo";
+  if (h.startsWith("files touched")) return "archivos_proposito";
+  if (h.startsWith("critical context")) return "contexto";
+  // ES legacy — preserved for sessions written pre-R3.
+  if (h.includes("lo ultimo que hice") || h === "lo ultimo") return "ultimo";
   if (h.includes("proximo paso")) return "proximo";
   if (h.startsWith("archivos tocados")) return "archivos_proposito";
   if (h.includes("contexto critico")) return "contexto";
