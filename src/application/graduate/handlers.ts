@@ -1,5 +1,6 @@
 import { basename, join } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import { findArtifact } from "../session-artifacts.js";
 import {
   copyTree,
   extractDecisionBlock,
@@ -80,8 +81,8 @@ export async function graduateDecision(
   decId: string | undefined,
 ): Promise<GraduateResult> {
   if (!decId) return { error: "--id (DEC-NNN) obligatorio para --kind decision" };
-  const decFile = join(ctx.sessionPath, "DECISIONES.md");
-  if (!(await ctx.fs.exists(decFile))) {
+  const decFile = await findArtifact(ctx.sessionPath, "decisions", ctx.fs);
+  if (!decFile) {
     return { error: "DECISIONES.md no existe en la sesión" };
   }
   const text = await ctx.fs.readText(decFile);
@@ -182,10 +183,21 @@ export async function graduateEspecificacion(
   ctx: GraduateContext,
   sourceArg: string | undefined,
 ): Promise<GraduateResult> {
-  const sourceRel = sourceArg && sourceArg.length > 0 ? sourceArg : "ENTREGA.md";
-  const sourceFile = join(ctx.sessionPath, sourceRel);
-  if (!(await ctx.fs.exists(sourceFile))) {
-    return { error: `Fuente no existe: ${sourceRel} en la sesión` };
+  let sourceFile: string;
+  let sourceRel: string;
+  if (sourceArg && sourceArg.length > 0) {
+    sourceRel = sourceArg;
+    sourceFile = join(ctx.sessionPath, sourceArg);
+    if (!(await ctx.fs.exists(sourceFile))) {
+      return { error: `Fuente no existe: ${sourceRel} en la sesión` };
+    }
+  } else {
+    const found = await findArtifact(ctx.sessionPath, "delivery", ctx.fs);
+    if (!found) {
+      return { error: "Fuente no existe: ENTREGA.md en la sesión" };
+    }
+    sourceFile = found;
+    sourceRel = basename(found);
   }
   const content = await ctx.fs.readText(sourceFile);
   const destRoot = join(ctx.workspaceRoot, "docs", "especificaciones");
@@ -208,8 +220,8 @@ export async function graduateEspecificacion(
 }
 
 export async function graduateConclusion(ctx: GraduateContext): Promise<GraduateResult> {
-  const sourceFile = join(ctx.sessionPath, "CONCLUSIONES.md");
-  if (!(await ctx.fs.exists(sourceFile))) {
+  const sourceFile = await findArtifact(ctx.sessionPath, "conclusions", ctx.fs);
+  if (!sourceFile) {
     return { error: "CONCLUSIONES.md no existe en la sesión" };
   }
   const content = await ctx.fs.readText(sourceFile);

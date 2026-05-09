@@ -6,6 +6,7 @@ import { parseObjetivo } from "./parsers/objetivo.js";
 import { type TaskItem, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
+import { findArtifact, listExistingArtifacts } from "./session-artifacts.js";
 import { resolveSession } from "./session-resolver.js";
 
 export interface ArtifactsInput {
@@ -117,8 +118,8 @@ async function summarizeObjetivo(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<ObjetivoSummary | null> {
-  const path = join(sessionPath, "OBJETIVO.md");
-  if (!(await fs.exists(path))) return null;
+  const path = await findArtifact(sessionPath, "objective", fs);
+  if (!path) return null;
   const text = await fs.readText(path);
   const parsed = parseObjetivo(text);
   return {
@@ -135,8 +136,8 @@ async function summarizeTasks(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<TasksSummary | null> {
-  const path = join(sessionPath, "TASKS.md");
-  if (!(await fs.exists(path))) return null;
+  const path = await findArtifact(sessionPath, "tasks", fs);
+  if (!path) return null;
   const text = await fs.readText(path);
   const parsed = parseTasks(text);
   return {
@@ -149,8 +150,8 @@ async function summarizeTasks(
 }
 
 async function countDecisiones(fs: FileSystemPort, sessionPath: string): Promise<number> {
-  const path = join(sessionPath, "DECISIONES.md");
-  if (!(await fs.exists(path))) return 0;
+  const path = await findArtifact(sessionPath, "decisions", fs);
+  if (!path) return 0;
   const text = await fs.readText(path);
   return parseDecisiones(text).length;
 }
@@ -166,14 +167,15 @@ interface PresenceFlags {
 }
 
 async function readPresenceFlags(fs: FileSystemPort, sessionPath: string): Promise<PresenceFlags> {
+  const present = await listExistingArtifacts(sessionPath, fs);
   return {
-    dependencias_present: await fs.exists(join(sessionPath, "DEPENDENCIAS.md")),
-    checkpoint_present: await fs.exists(join(sessionPath, "CHECKPOINT.md")),
-    entrega_present: await fs.exists(join(sessionPath, "ENTREGA.md")),
-    conclusiones_present: await fs.exists(join(sessionPath, "CONCLUSIONES.md")),
-    discovery_present: await fs.exists(join(sessionPath, "DISCOVERY.md")),
-    evidencia_present: await fs.exists(join(sessionPath, "EVIDENCIA.md")),
-    hallazgos_present: await fs.exists(join(sessionPath, "HALLAZGOS.md")),
+    dependencias_present: present.dependencies !== null,
+    checkpoint_present: present.checkpoint !== null,
+    entrega_present: present.delivery !== null,
+    conclusiones_present: present.conclusions !== null,
+    discovery_present: present.discovery !== null,
+    evidencia_present: present.evidence !== null,
+    hallazgos_present: present.findings !== null,
   };
 }
 

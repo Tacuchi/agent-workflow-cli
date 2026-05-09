@@ -1,8 +1,8 @@
-import { join } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
 import type { PathsService } from "../paths-service.js";
 import { relpath } from "../paths.js";
+import { listExistingArtifacts } from "../session-artifacts.js";
 import { type SessionEntry, buildSessionEntry } from "../session-resolver.js";
 import { sessionCodeInt } from "./common.js";
 
@@ -37,8 +37,9 @@ export async function listSessionsForRelease(
     if (entry.state === "active" && !includeOpen) continue;
     if (entry.state === "closed" && !includeClosed) continue;
 
-    const hasObjetivo = await fs.exists(join(folder.path, "OBJETIVO.md"));
-    const hasRequirements = await fs.exists(join(folder.path, "REQUIREMENTS.md"));
+    const present = await listExistingArtifacts(folder.path, fs);
+    const hasObjetivo = present.objective !== null;
+    const hasRequirements = present.requirements !== null;
     entry.is_legacy_format = hasRequirements && !hasObjetivo;
     entry.release_eligible = !entry.is_legacy_format;
     result.push(entry);

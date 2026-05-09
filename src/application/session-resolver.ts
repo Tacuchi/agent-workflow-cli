@@ -2,9 +2,15 @@ import { join } from "node:path";
 import type { Flow, Phase, SessionState } from "../domain/types.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { firstNonEmptyLine, parseMdSection, parseMdValue } from "./markdown.js";
+import {
+  firstNonEmptyLine,
+  parseMdSectionBilingual,
+  parseMdValue,
+  parseMdValueBilingual,
+} from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
+import { findArtifact } from "./session-artifacts.js";
 
 export const KNOWN_FLOWS: ReadonlyArray<Flow> = ["core", "dev", "design", "analyze"];
 const SESSION_FOLDER_RE = /^session(\d{3})-(.+)$/;
@@ -215,24 +221,19 @@ async function readRequirement(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<{ date?: string; summary?: string; branch?: string }> {
-  const objetivoPath = join(sessionPath, "OBJETIVO.md");
-  const requirementsPath = join(sessionPath, "REQUIREMENTS.md");
-  const path = (await fs.exists(objetivoPath))
-    ? objetivoPath
-    : (await fs.exists(requirementsPath))
-      ? requirementsPath
-      : null;
+  const path =
+    (await findArtifact(sessionPath, "objective", fs)) ??
+    (await findArtifact(sessionPath, "requirements", fs));
   if (path === null) return {};
 
   const text = await fs.readText(path);
-  const date = parseMdValue(text, "Fecha de inicio");
-  const branch = parseMdValue(text, "Rama");
+  const date = parseMdValueBilingual(text, "Fecha de inicio");
+  const branch = parseMdValueBilingual(text, "Rama");
   const section =
-    parseMdSection(text, "Requerimiento") ??
-    parseMdSection(text, "Brief") ??
-    parseMdSection(text, "Pregunta") ??
-    parseMdSection(text, "Descripción") ??
-    parseMdSection(text, "Descripcion");
+    parseMdSectionBilingual(text, "Requerimiento") ??
+    parseMdSectionBilingual(text, "Brief") ??
+    parseMdSectionBilingual(text, "Pregunta") ??
+    parseMdSectionBilingual(text, "Descripción");
   const firstLine = section ? firstNonEmptyLine(section) : undefined;
   const summary = firstLine ? firstLine.slice(0, 100) : undefined;
   return {

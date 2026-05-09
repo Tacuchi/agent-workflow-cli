@@ -4,6 +4,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
+import { findArtifact } from "./session-artifacts.js";
 import { resolveSession } from "./session-resolver.js";
 
 export interface SessionResumeInput {
@@ -38,8 +39,8 @@ export async function runSessionResume(
     return { error: "session_not_found", code: input.code ?? null };
   }
   const cwd = env.cwd();
-  const objetivoPath = join(session.path, "OBJETIVO.md");
-  const objetivoText = (await fs.exists(objetivoPath)) ? await fs.readText(objetivoPath) : null;
+  const objetivoPath = await findArtifact(session.path, "objective", fs);
+  const objetivoText = objetivoPath ? await fs.readText(objetivoPath) : null;
 
   const fromBlock = await phaseFromProjectBlock(fs, cwd, paths, session.folder);
   const phase = fromBlock.phase ?? "requerimiento";

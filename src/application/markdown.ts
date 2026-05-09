@@ -52,3 +52,87 @@ export function firstNonEmptyLine(text: string): string | undefined {
 function joinTrim(lines: string[]): string {
   return lines.join("\n").trim();
 }
+
+/**
+ * Bilingual / accent-tolerant keyword groups. Each inner array enumerates every
+ * accepted form of the same logical keyword (used as `key` in {@link parseMdValue}
+ * or `heading` in {@link parseMdSection}). The first entry of each group is the
+ * canonical form the runtime emits today (Spanish until R3 Sprint 1; English
+ * variants are accepted now so legacy/migrated artifacts both parse).
+ *
+ * Precedent: `PHASE_INDEX` and `PLANNING_PHASES` already carry bilingual
+ * `planning|planificacion|plan` aliases. R1 generalizes that pattern to all
+ * heading-keywords the parsers consume.
+ */
+const KEYWORD_GROUPS: ReadonlyArray<readonly string[]> = [
+  ["Descripción", "Descripcion", "Description"],
+  ["Requerimiento", "Requirement"],
+  ["Pregunta", "Question"],
+  ["Brief"],
+  ["Fase actual", "Current phase"],
+  ["Modalidad", "Modality"],
+  ["Tipo", "Type"],
+  ["Lo último que hice", "Lo ultimo que hice", "Last action"],
+  ["Próximo paso", "Proximo paso", "Next step"],
+  ["Decisiones recientes", "Recent decisions"],
+  ["Archivos tocados", "Files touched"],
+  [
+    "Archivos tocados (post-último-commit)",
+    "Archivos tocados (post-ultimo-commit)",
+    "Files touched (post-last-commit)",
+  ],
+  ["Contexto crítico para retomar", "Contexto critico para retomar", "Critical context to resume"],
+  ["Fecha de inicio", "Start date"],
+  ["Rama", "Branch"],
+  ["State"],
+  ["Phase"],
+];
+
+function normalizeKeyword(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/̀|́|̂|̃|̄|̈|̧/g, "");
+}
+
+const ALIAS_INDEX = new Map<string, readonly string[]>();
+for (const group of KEYWORD_GROUPS) {
+  for (const variant of group) {
+    ALIAS_INDEX.set(normalizeKeyword(variant), group);
+  }
+}
+
+/**
+ * Resolve a heading-keyword to the full list of accepted aliases. If the
+ * keyword is not registered in {@link KEYWORD_GROUPS}, returns a one-item array
+ * with the original key so callers degrade to the non-bilingual behaviour.
+ */
+export function bilingualAliases(key: string): readonly string[] {
+  return ALIAS_INDEX.get(normalizeKeyword(key)) ?? [key];
+}
+
+/**
+ * Like {@link parseMdValue} but tries every alias of `key` registered in
+ * {@link KEYWORD_GROUPS}. Returns the first match. Use for fields whose name
+ * the runtime is migrating ES → EN, or fields where unaccented variants are
+ * common (e.g. `"Proximo paso"`).
+ */
+export function parseMdValueBilingual(text: string, key: string): string | undefined {
+  for (const candidate of bilingualAliases(key)) {
+    const value = parseMdValue(text, candidate);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Like {@link parseMdSection} but tries every alias of `heading` registered in
+ * {@link KEYWORD_GROUPS}. Returns the first match.
+ */
+export function parseMdSectionBilingual(text: string, heading: string): string | undefined {
+  for (const candidate of bilingualAliases(heading)) {
+    const value = parseMdSection(text, candidate);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}

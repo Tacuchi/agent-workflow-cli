@@ -3,6 +3,7 @@ import type { DirEntry, FileSystemPort } from "../../ports/file-system.js";
 import type { DiffNumstatEntry, GitPort } from "../../ports/git.js";
 import { parseProjectBlock } from "../parsers/project-block.js";
 import type { PathsService } from "../paths-service.js";
+import { findArtifact, listExistingArtifacts } from "../session-artifacts.js";
 
 export interface SessionState {
   code: string | null;
@@ -93,8 +94,8 @@ async function countTasks(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<{ open: number; closed: number; total: number }> {
-  const path = join(sessionPath, "TASKS.md");
-  if (!(await fs.exists(path))) return { open: 0, closed: 0, total: 0 };
+  const path = await findArtifact(sessionPath, "tasks", fs);
+  if (!path) return { open: 0, closed: 0, total: 0 };
   const text = await fs.readText(path);
   const open = (text.match(/^\s*[-*]\s*\[\s\]/gm) ?? []).length;
   const closed = (text.match(/^\s*[-*]\s*\[[xX]\]/gm) ?? []).length;
@@ -102,8 +103,8 @@ async function countTasks(
 }
 
 async function countDecisions(fs: FileSystemPort, sessionPath: string): Promise<number> {
-  const path = join(sessionPath, "DECISIONES.md");
-  if (!(await fs.exists(path))) return 0;
+  const path = await findArtifact(sessionPath, "decisions", fs);
+  if (!path) return 0;
   const text = await fs.readText(path);
   return (text.match(/^#{2,3}\s+DEC[- ]\d+/gm) ?? []).length;
 }
@@ -112,8 +113,8 @@ async function readLastDecision(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<{ id: string; excerpt: string } | null> {
-  const path = join(sessionPath, "DECISIONES.md");
-  if (!(await fs.exists(path))) return null;
+  const path = await findArtifact(sessionPath, "decisions", fs);
+  if (!path) return null;
   const text = await fs.readText(path);
   const matches = [...text.matchAll(/^#{2,3}\s+(DEC[- ]\d+[^\n]*)$/gm)];
   if (matches.length === 0) return null;
@@ -135,20 +136,20 @@ async function listArtefacts(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<Record<string, boolean | number>> {
-  const has = async (name: string) => fs.exists(join(sessionPath, name));
+  const present = await listExistingArtifacts(sessionPath, fs);
   const scriptsDir = join(sessionPath, "scripts");
   const scriptsCount = (await fs.exists(scriptsDir))
     ? (await listSqlFiles(fs, scriptsDir)).length
     : 0;
   return {
-    objetivo: await has("OBJETIVO.md"),
-    tasks: await has("TASKS.md"),
-    decisiones: await has("DECISIONES.md"),
-    dependencias: await has("DEPENDENCIAS.md"),
-    entrega: await has("ENTREGA.md"),
-    evidencia: await has("EVIDENCIA.md"),
-    hallazgos: await has("HALLAZGOS.md"),
-    conclusiones: await has("CONCLUSIONES.md"),
+    objetivo: present.objective !== null,
+    tasks: present.tasks !== null,
+    decisiones: present.decisions !== null,
+    dependencias: present.dependencies !== null,
+    entrega: present.delivery !== null,
+    evidencia: present.evidence !== null,
+    hallazgos: present.findings !== null,
+    conclusiones: present.conclusions !== null,
     scripts_count: scriptsCount,
   };
 }
@@ -165,8 +166,8 @@ async function listSqlFiles(fs: FileSystemPort, dir: string): Promise<string[]> 
 }
 
 async function readOrigen(fs: FileSystemPort, sessionPath: string): Promise<string | null> {
-  const path = join(sessionPath, "OBJETIVO.md");
-  if (!(await fs.exists(path))) return null;
+  const path = await findArtifact(sessionPath, "objective", fs);
+  if (!path) return null;
   const text = await fs.readText(path);
   const lines = text.split("\n");
   let inOrigen = false;

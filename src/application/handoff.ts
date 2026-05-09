@@ -1,16 +1,17 @@
-import { join } from "node:path";
+import { basename } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { PathsService } from "./paths-service.js";
+import { type ArtifactKind, canonicalArtifactFilename, findArtifact } from "./session-artifacts.js";
 
 const KNOWN_FLOWS = ["core", "dev", "design", "analyze"] as const;
 type KnownFlow = (typeof KNOWN_FLOWS)[number];
 
-const ORIGEN_DELIVERABLE: Record<KnownFlow, string> = {
-  core: "OBJETIVO.md",
-  dev: "OBJETIVO.md",
-  design: "ENTREGA.md",
-  analyze: "CONCLUSIONES.md",
+const ORIGEN_DELIVERABLE_KIND: Record<KnownFlow, ArtifactKind> = {
+  core: "objective",
+  dev: "objective",
+  design: "delivery",
+  analyze: "conclusions",
 };
 
 export interface ResolvedOrigen {
@@ -47,10 +48,12 @@ export async function resolveOrigen(
     return { error: `no se encontró session${parsed.codeNorm}-${parsed.flow}-* en ${sessionsDir}` };
   }
 
-  const deliverableName = ORIGEN_DELIVERABLE[parsed.flow];
-  const deliverablePath = join(candidate.path, deliverableName);
-  const deliverableExists = await fs.exists(deliverablePath);
-  const summary = deliverableExists ? await extractSummary(fs, deliverablePath) : null;
+  const deliverableKind = ORIGEN_DELIVERABLE_KIND[parsed.flow];
+  const deliverablePath = await findArtifact(candidate.path, deliverableKind, fs);
+  const deliverableName = deliverablePath
+    ? basename(deliverablePath)
+    : canonicalArtifactFilename(deliverableKind);
+  const summary = deliverablePath ? await extractSummary(fs, deliverablePath) : null;
 
   return {
     folder: candidate.name,
@@ -58,7 +61,7 @@ export async function resolveOrigen(
     flow: parsed.flow,
     code: parsed.codeNorm,
     deliverable_name: deliverableName,
-    deliverable_exists: deliverableExists,
+    deliverable_exists: deliverablePath !== null,
     deliverable_rel: `../${candidate.name}/${deliverableName}`,
     summary,
   };

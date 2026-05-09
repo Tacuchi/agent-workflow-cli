@@ -3,6 +3,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
+import { findArtifact } from "./session-artifacts.js";
 import { resolveSession } from "./session-resolver.js";
 
 const PHASE_ORDER = ["planning", "execution", "validation", "closure"] as const;
@@ -107,17 +108,16 @@ interface ObjetivoState {
 }
 
 async function loadObjetivo(fs: FileSystemPort, sessionPath: string): Promise<ObjetivoState> {
-  const objetivoPath = join(sessionPath, "OBJETIVO.md");
-  const exists = await fs.exists(objetivoPath);
+  const objetivoPath = await findArtifact(sessionPath, "objective", fs);
   let text = "";
-  if (exists) {
+  if (objetivoPath) {
     text = await fs.readText(objetivoPath);
   } else {
-    const reqPath = join(sessionPath, "REQUIREMENTS.md");
-    if (await fs.exists(reqPath)) text = await fs.readText(reqPath);
+    const reqPath = await findArtifact(sessionPath, "requirements", fs);
+    if (reqPath) text = await fs.readText(reqPath);
   }
   const hasCriteria = text.includes("[ ]") || text.toLowerCase().includes("[x]");
-  return { exists, text, hasCriteria };
+  return { exists: objetivoPath !== null, text, hasCriteria };
 }
 
 async function loadTaskCounts(fs: FileSystemPort, sessionPath: string): Promise<TaskCounts> {

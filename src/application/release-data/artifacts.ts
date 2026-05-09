@@ -3,15 +3,16 @@ import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
 import type { PathsService } from "../paths-service.js";
+import { type ArtifactKind, findArtifact } from "../session-artifacts.js";
 import { buildSessionEntry, parseSessionFolder } from "../session-resolver.js";
 import { collectFilesByExt, sessionCodeInt } from "./common.js";
 
-const ARTIFACT_FILES: Record<string, string> = {
-  objetivo: "OBJETIVO.md",
-  decisiones: "DECISIONES.md",
-  tasks: "TASKS.md",
-  dependencias: "DEPENDENCIAS.md",
-  checkpoint: "CHECKPOINT.md",
+const KIND_TO_ARTIFACT: Record<string, ArtifactKind> = {
+  objetivo: "objective",
+  decisiones: "decisions",
+  tasks: "tasks",
+  dependencias: "dependencies",
+  checkpoint: "checkpoint",
 };
 const SCRIPTS_SUBDIR = "scripts";
 
@@ -60,7 +61,7 @@ export async function readSessionArtifacts(
     phase: entry.phase,
   };
 
-  const targetKinds = kinds ?? [...Object.keys(ARTIFACT_FILES), "scripts"];
+  const targetKinds = kinds ?? [...Object.keys(KIND_TO_ARTIFACT), "scripts"];
   for (const kind of targetKinds) {
     if (kind === "scripts") {
       result.scripts = await readScriptsArtifacts(fs, sessionPath);
@@ -92,8 +93,8 @@ async function detectLegacyFormat(
   folderName: string,
   runtime: ResolvedRuntime | undefined,
 ): Promise<SessionArtifactsResult | null> {
-  const hasReq = await fs.exists(join(sessionPath, "REQUIREMENTS.md"));
-  const hasObj = await fs.exists(join(sessionPath, "OBJETIVO.md"));
+  const hasReq = (await findArtifact(sessionPath, "requirements", fs)) !== null;
+  const hasObj = (await findArtifact(sessionPath, "objective", fs)) !== null;
   if (!hasReq || hasObj) return null;
   const migrateCmd = runtime?.slashCommands?.migrate ?? "(run namespace-specific migrate command)";
   return {
@@ -135,10 +136,10 @@ async function readArtifactKind(
   sessionPath: string,
   kind: string,
 ): Promise<unknown> {
-  const filename = ARTIFACT_FILES[kind];
-  if (!filename) return { error: `unknown_kind:${kind}` };
-  const artifactPath = join(sessionPath, filename);
-  if (!(await fs.exists(artifactPath))) return null;
+  const artifactKind = KIND_TO_ARTIFACT[kind];
+  if (!artifactKind) return { error: `unknown_kind:${kind}` };
+  const artifactPath = await findArtifact(sessionPath, artifactKind, fs);
+  if (!artifactPath) return null;
   try {
     const content = await fs.readText(artifactPath);
     const size = (await fs.stat(artifactPath)).size;

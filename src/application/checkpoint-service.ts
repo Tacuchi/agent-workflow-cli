@@ -1,13 +1,20 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { firstNonEmptyLine, parseMdSection, parseMdValue } from "./markdown.js";
+import {
+  firstNonEmptyLine,
+  parseMdSection,
+  parseMdSectionBilingual,
+  parseMdValue,
+  parseMdValueBilingual,
+} from "./markdown.js";
 import {
   type ProjectBlockMarkers,
   type ProjectSession,
   parseProjectBlock,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
+import { type ArtifactKind, findArtifact } from "./session-artifacts.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
 const DEFAULT_STALE_THRESHOLD_SECONDS = 300;
@@ -44,19 +51,16 @@ export async function readLatestCheckpoint(
   return {
     path,
     actualizado: parseMdValue(text, "Actualizado") ?? null,
-    fase: parseMdValue(text, "Fase actual") ?? null,
+    fase: parseMdValueBilingual(text, "Fase actual") ?? null,
     avance: parseMdValue(text, "Avance") ?? null,
-    ultimo: parseMdSection(text, "Lo último que hice") ?? null,
-    proximo: parseMdSection(text, "Próximo paso") ?? parseMdSection(text, "Proximo paso") ?? null,
-    decisiones: parseMdSection(text, "Decisiones recientes") ?? null,
+    ultimo: parseMdSectionBilingual(text, "Lo último que hice") ?? null,
+    proximo: parseMdSectionBilingual(text, "Próximo paso") ?? null,
+    decisiones: parseMdSectionBilingual(text, "Decisiones recientes") ?? null,
     archivos:
-      parseMdSection(text, "Archivos tocados (post-último-commit)") ??
-      parseMdSection(text, "Archivos tocados") ??
+      parseMdSectionBilingual(text, "Archivos tocados (post-último-commit)") ??
+      parseMdSectionBilingual(text, "Archivos tocados") ??
       null,
-    contexto:
-      parseMdSection(text, "Contexto crítico para retomar") ??
-      parseMdSection(text, "Contexto critico para retomar") ??
-      null,
+    contexto: parseMdSectionBilingual(text, "Contexto crítico para retomar") ?? null,
     refs: parseMdSection(text, "Refs") ?? null,
     raw: text,
   };
@@ -338,7 +342,7 @@ export interface CompressCheckpointError {
   error: string;
 }
 
-const COMPRESS_CANDIDATES = ["HALLAZGOS.md", "EVIDENCIA.md", "DISCOVERY.md", "PROBLEMA.md"];
+const COMPRESS_KINDS: ArtifactKind[] = ["findings", "evidence", "discovery", "problem"];
 const DEFAULT_COMPRESS_THRESHOLD = 200;
 
 export async function runCompressCheckpoint(
@@ -353,14 +357,14 @@ export async function runCompressCheckpoint(
   const threshold = options.threshold ?? DEFAULT_COMPRESS_THRESHOLD;
 
   const candidates: CompressCheckpointOutput["candidates"] = [];
-  for (const fname of COMPRESS_CANDIDATES) {
-    const fpath = join(sessionPath, fname);
-    if (!(await fs.exists(fpath))) continue;
+  for (const kind of COMPRESS_KINDS) {
+    const fpath = await findArtifact(sessionPath, kind, fs);
+    if (!fpath) continue;
     const text = await fs.readText(fpath);
     const lines = text.split("\n");
     if (lines.length <= threshold) continue;
     candidates.push({
-      file: fname,
+      file: basename(fpath),
       lines: lines.length,
       excess: lines.length - threshold,
       head_excerpt: (firstNonEmptyLine(text) ?? "").slice(0, 50),

@@ -1,14 +1,33 @@
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "../ports/file-system.js";
 
 export class NodeFileSystem implements FileSystemPort {
+  private static writeCounter = 0;
+
   async readText(path: string): Promise<string> {
     return readFile(path, "utf8");
   }
 
+  /**
+   * Atomic write: stage to `<path>.<pid>.<n>.tmp` and rename onto `path`.
+   * `rename` is atomic on POSIX/NTFS within the same filesystem, so a concurrent
+   * reader either sees the previous full content or the new full content — never
+   * a half-written file. On failure, the tmp is best-effort unlinked.
+   */
   async writeText(path: string, content: string): Promise<void> {
-    await writeFile(path, content, "utf8");
+    const tmpPath = `${path}.${process.pid}.${++NodeFileSystem.writeCounter}.tmp`;
+    try {
+      await writeFile(tmpPath, content, "utf8");
+      await rename(tmpPath, path);
+    } catch (err) {
+      try {
+        await unlink(tmpPath);
+      } catch {
+        // tmp may not exist if writeFile failed before creating it
+      }
+      throw err;
+    }
   }
 
   async exists(path: string): Promise<boolean> {

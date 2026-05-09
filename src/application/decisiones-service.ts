@@ -1,9 +1,9 @@
-import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type ParsedDecision, parseDecisiones } from "./parsers/decisiones.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
+import { canonicalArtifactPath, findArtifact } from "./session-artifacts.js";
 import { resolveSession } from "./session-resolver.js";
 
 export interface DecisionesCommandInput {
@@ -36,18 +36,17 @@ export async function runDecisionesCommand(
   if (!session) {
     return { error: "session_not_found", code: input.code ?? null };
   }
-  const decPath = join(session.path, "DECISIONES.md");
-  const pathPosix = relpath(decPath, env.cwd());
-
-  if (!(await fs.exists(decPath))) {
+  const decPath = await findArtifact(session.path, "decisions", fs);
+  if (!decPath) {
     return {
       session: session.folder,
-      path: pathPosix,
+      path: relpath(canonicalArtifactPath(session.path, "decisions"), env.cwd()),
       exists: false,
       count: 0,
       items: [],
     };
   }
+  const pathPosix = relpath(decPath, env.cwd());
   const text = await fs.readText(decPath);
   const items = parseDecisiones(text, input.full === true);
   return {

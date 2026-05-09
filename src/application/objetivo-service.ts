@@ -1,10 +1,10 @@
-import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
 import { type ParsedObjetivo, parseObjetivo } from "./parsers/objetivo.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
+import { findArtifact } from "./session-artifacts.js";
 import { resolveSession } from "./session-resolver.js";
 
 export interface ObjetivoCommandOutput extends ParsedObjetivo {
@@ -38,8 +38,8 @@ export async function runObjetivoCommand(
   if (!session) {
     return notFound(input.code);
   }
-  const objetivoPath = join(session.path, "OBJETIVO.md");
-  if (!(await fs.exists(objetivoPath))) {
+  const objetivoPath = await findArtifact(session.path, "objective", fs);
+  if (!objetivoPath) {
     const migrateCmd =
       runtime?.slashCommands?.migrate ?? "(run namespace-specific migrate command)";
     return {
