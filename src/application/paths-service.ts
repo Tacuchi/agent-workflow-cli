@@ -29,6 +29,9 @@ export class PathsService {
   userDsnFile(): string {
     return join(this.userDevDir(), "dsn.env");
   }
+  userMcpConnectionsFile(): string {
+    return join(this.userDevDir(), "mcp-connections.json");
+  }
   userLogsDir(): string {
     return join(this.userRoot(), "logs");
   }

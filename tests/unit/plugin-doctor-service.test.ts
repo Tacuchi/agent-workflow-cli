@@ -58,8 +58,8 @@ const validHooksJson = JSON.stringify({
   },
 });
 
-function manifestJson(name: string, version: string, qtcContractVersion = "6.4"): string {
-  return JSON.stringify({ name, version, qtcContractVersion });
+function manifestJson(name: string, version: string, contractVersion = "6.4"): string {
+  return JSON.stringify({ name, version, contractVersion });
 }
 
 function skillFrontmatter(name: string, version = "1.0.0"): string {
@@ -76,12 +76,12 @@ Test content.
 }
 
 describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
-  it("derives plugin name from manifest.name (e.g., 'qtc')", async () => {
-    const pluginRoot = "/cwd/qtc-plugin";
+  it("derives plugin name from manifest.name", async () => {
+    const pluginRoot = "/cwd/acme-plugin";
     const fs = new FakeFs(
       new Map([
-        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("qtc", "1.0.0")],
-        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("qtc", "1.0.0")],
+        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
+        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
         [`${pluginRoot}/hooks/hooks.json`, validHooksJson],
         [`${pluginRoot}/codex-hooks/hooks.json`, validHooksJson],
       ]),
@@ -90,7 +90,7 @@ describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
     const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
       pluginRoot,
     });
-    expect(data.plugin).toBe("qtc");
+    expect(data.plugin).toBe("acme");
     expect(data.plugin_version).toBe("1.0.0");
   });
 
@@ -114,11 +114,11 @@ describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
   });
 
   it("respects explicit input.pluginName over manifest", async () => {
-    const pluginRoot = "/cwd/qtc-plugin";
+    const pluginRoot = "/cwd/acme-plugin";
     const fs = new FakeFs(
       new Map([
-        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("qtc", "1.0.0")],
-        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("qtc", "1.0.0")],
+        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
+        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
       ]),
       new Map([[pluginRoot, []]]),
     );
@@ -253,8 +253,8 @@ describe("runPluginDoctor — manifest version drift", () => {
     const pluginRoot = "/cwd/p";
     const fs = new FakeFs(
       new Map([
-        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("qtc", "1.0.0")],
-        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("qtc", "1.0.1")],
+        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
+        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("acme", "1.0.1")],
       ]),
       new Map([[pluginRoot, []]]),
     );
@@ -270,8 +270,8 @@ describe("runPluginDoctor — manifest version drift", () => {
     const pluginRoot = "/cwd/p";
     const fs = new FakeFs(
       new Map([
-        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("qtc", "1.0.0")],
-        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("qtc", "1.0.0")],
+        [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
+        [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
       ]),
       new Map([[pluginRoot, []]]),
     );
@@ -284,7 +284,7 @@ describe("runPluginDoctor — manifest version drift", () => {
   it("emits warn for missing manifest", async () => {
     const pluginRoot = "/cwd/p";
     const fs = new FakeFs(
-      new Map([[`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("qtc", "1.0.0")]]),
+      new Map([[`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")]]),
       new Map([[pluginRoot, []]]),
     );
     const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {

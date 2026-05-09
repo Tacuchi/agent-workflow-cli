@@ -1,7 +1,15 @@
 // Launcher que resuelve DSN y spawnea `npx -y @bytebase/dbhub` con stdio inherit.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import {
+  normalizeDsnVarName,
+  validateDsnVarName,
+  validateMcpInstance,
+} from "../domain/mcp-entry.js";
+import { dsnKeyForInstance } from "./dsn-reader-service.js";
 import type { PathsService } from "./paths-service.js";
+
+export const DBHUB_DSN_VAR_ENV = "DBHUB_DSN_VAR";
 
 export interface DbhubLauncherDeps {
   /** Returns process.env (or test override). */
@@ -24,14 +32,12 @@ export class DbhubLauncherError extends Error {
   }
 }
 
-const VALID_INSTANCES = new Set(["cert", "prod"]);
-
 export function dsnVarFor(instance: string): string {
-  return instance === "prod" ? "DB_PROD_DSN" : "DB_CERT_DSN";
+  return dsnKeyForInstance(instance);
 }
 
 export function resolveDsn(instance: string, deps: DbhubLauncherDeps): DbhubResolvedDsn {
-  const dsnVar = dsnVarFor(instance);
+  const dsnVar = resolveDsnVar(instance, deps);
   const fromEnv = deps.env[dsnVar];
   if (fromEnv && fromEnv.length > 0) {
     return { dsn: fromEnv, source: "env" };
@@ -45,6 +51,20 @@ export function resolveDsn(instance: string, deps: DbhubLauncherDeps): DbhubReso
   );
 }
 
+function resolveDsnVar(instance: string, deps: DbhubLauncherDeps): string {
+  const configured = deps.env[DBHUB_DSN_VAR_ENV];
+  if (configured === undefined || configured.trim().length === 0) {
+    return dsnVarFor(instance);
+  }
+  const validation = validateDsnVarName(configured);
+  if (!validation.ok) {
+    throw new DbhubLauncherError(
+      `[dbhub-mcp-runner] ${DBHUB_DSN_VAR_ENV} inválida '${configured}': ${validation.error}`,
+    );
+  }
+  return normalizeDsnVarName(validation.value);
+}
+
 function loadDsnFromFile(file: string): Record<string, string> {
   let raw: string;
   try {
@@ -54,7 +74,7 @@ function loadDsnFromFile(file: string): Record<string, string> {
   }
   const out: Record<string, string> = {};
   for (const line of raw.split(/\r?\n/)) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
     if (m?.[1] && m[2] !== undefined) {
       out[m[1]] = m[2];
     }
@@ -76,12 +96,13 @@ export interface DbhubLauncherResult {
  * Resolves only when the spawned child exits.
  */
 export async function runDbhubLauncher(input: DbhubLauncherInput): Promise<DbhubLauncherResult> {
-  const instance = input.instance.toLowerCase();
-  if (!VALID_INSTANCES.has(instance)) {
+  const validation = validateMcpInstance(input.instance);
+  if (!validation.ok) {
     throw new DbhubLauncherError(
-      `[dbhub-mcp-runner] instance inválido '${input.instance}'; esperado 'cert' o 'prod'`,
+      `[dbhub-mcp-runner] instance inválido '${input.instance}': ${validation.error}`,
     );
   }
+  const instance = validation.value;
   const { dsn } = resolveDsn(instance, input.deps);
 
   const isWin = input.deps.platform === "win32";

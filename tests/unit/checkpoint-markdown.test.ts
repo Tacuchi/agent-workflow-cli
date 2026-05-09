@@ -112,6 +112,6 @@ describe("formatCheckpointMd — EN headings", () => {
 
   it("trailing comment uses EN", () => {
     const md = formatCheckpointMd(baseState());
-    expect(md).toContain("<!-- written by qtc-core.checkpoint at 2026-05-08 12:00 -->");
+    expect(md).toContain("<!-- written by agent-workflow.checkpoint at 2026-05-08 12:00 -->");
   });
 });

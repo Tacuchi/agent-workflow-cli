@@ -4,6 +4,37 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.9.0] — 2026-05-09
+
+**Minor — manual MCP config flow desde `agent-workflow self` (session032).** Agrega un wizard interactivo para configurar conexiones MCP de BD sin pasar por `mcp setup` directo: nombres normalizados (no solo `cert|prod`), DSN persistido en `~/.workflow/dev/dsn.env` sin imprimirlo en claro, install/uninstall por host (Claude/Codex), y diagnóstico contra el MCP doctor existente. Acompaña la R3 de session031 (verificar instalación global del usuario).
+
+### Added
+
+- **Submenú MCP en `agent-workflow self`** — flujo interactivo con acciones `list`, `use-env`, `create-env`, `install-claude`, `install-codex`, `doctor`, `remove`, `cancel`. Soporta nombres custom además de `cert`/`prod`.
+- **`mcp-connections-service`** — CRUD de conexiones registradas (read/upsert/delete) sobre el almacenamiento actual del CLI.
+- **`mcp-remove-service`** — desinstalación por host preservando otras entradas del usuario en `.claude/settings.json` / `.codex/config.toml`.
+- **`self/mcp-config`** — orquesta el wizard, captura DSN sin echo, deriva `mcpEntryNameFor` y compone con `runMcpSetup` / `runMcpDoctor` / `runMcpRemove`.
+- **Tests nuevos** — `mcp-remove-service.test.ts` (3) + `self-mcp-config.test.ts` (cubre flujos principales y errores).
+- **`mcp-host-writer`** — soporte de remove preservando entradas no-MCP.
+
+### Changed
+
+- **`mcp-entry`**: `validateMcpInstance` acepta nombres normalizados (`qtc-<nombre>`) además de `cert`/`prod`. `normalizeDsnVarName` y `validateDsnVarName` exportados para reuso (DEC-001).
+- **`mcp-dbhub-launcher`**: `resolveDsn()` ahora resuelve `DB_<NORMALIZED>_DSN` derivado del nombre custom (DEC-002).
+- **`mcp-doctor-service`**: errores con `ok:false` preservan `data` para que el wizard pueda mostrar `data.reports` y guiar la corrección de drift (DEC-003).
+- **`agent-workflow self`**: el menú interactivo expone la nueva entrada MCP-config.
+- Refactors menores en commands (`mcp.ts`, `self.ts`, `session-*`, `sources.ts`, `project-md-upsert.ts`) y descripción del paquete generalizada (no menciona `qtc-workflow-plugin` puntualmente).
+
+### Decisions (session032)
+
+- **DEC-001**: nombres MCP normalizados expuestos como `qtc-<nombre>` — compatibilidad con `cert`/`prod` + conexiones manuales.
+- **DEC-002**: DSN custom en `~/.workflow/dev/dsn.env` con clave `DB_<NORMALIZED>_DSN` — reutiliza el almacén actual del CLI.
+- **DEC-003**: preservar `data` cuando un comando devuelve `ok:false` — habilita diagnóstico accionable en `mcp doctor`.
+
+### Tests
+
+- 357 tests passing (vs 348 en 5.7.0; +9 netos). Build: `tsc` limpio.
+
 ## [5.7.0] — 2026-05-09
 
 **Minor — clean install flow for fresh machines (session030).** Cierra el gap descubierto en T6 de session029: la skill legacy `agent-workflow-manager` persistía en `~/.agents/skills/` (registry de un installer multi-agent que sirve a Codex, Claude Code, Cursor y otros), fuera del scan de `self doctor`. La sesión agrega un tercer target `agents`, un subcomando para desinstalar y un wizard de bootstrap.

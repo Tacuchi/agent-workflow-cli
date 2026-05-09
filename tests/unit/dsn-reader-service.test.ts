@@ -44,5 +44,7 @@ describe("readBootstrapDsn", () => {
   it("dsnKeyForInstance maps cert→DB_CERT_DSN and prod→DB_PROD_DSN", () => {
     expect(dsnKeyForInstance("cert")).toBe("DB_CERT_DSN");
     expect(dsnKeyForInstance("prod")).toBe("DB_PROD_DSN");
+    expect(dsnKeyForInstance("reporting")).toBe("DB_REPORTING_DSN");
+    expect(dsnKeyForInstance("sales-qa")).toBe("DB_SALES_QA_DSN");
   });
 });

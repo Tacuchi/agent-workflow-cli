@@ -76,6 +76,30 @@ describe("runMcpSetup", () => {
     expect(result.dry_run).toBe(true);
   });
 
+  it("acepta conexiones custom y normaliza el nombre del server", () => {
+    const result = runMcpSetup(env, {
+      hosts: ["codex"],
+      instances: ["reporting"],
+      scope: "workspace",
+      workspace,
+    });
+    if ("ok" in result) throw new Error("did not expect refusal");
+    expect(result.applied).toHaveLength(1);
+    expect(result.applied[0]?.name).toBe("reporting");
+  });
+
+  it("incluye DBHUB_DSN_VAR cuando la conexión usa una variable DSN custom", () => {
+    const result = runMcpSetup(env, {
+      hosts: ["claude"],
+      instances: ["reporting"],
+      scope: "workspace",
+      workspace,
+      dsnVars: { reporting: "REPORTING_DATABASE_URL" },
+    });
+    if ("ok" in result) throw new Error("did not expect refusal");
+    expect(result.applied[0]?.name).toBe("reporting");
+  });
+
   it("scope=global sin --force ni --dry-run retorna refusal con exit 2", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude"],

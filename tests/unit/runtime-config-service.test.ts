@@ -168,25 +168,25 @@ describe("RuntimeConfigService.resolveRuntime", () => {
       packageName: "@tacuchi/agent-workflow-cli",
       binName: "agent-workflow",
       envOverride: "AW_AGENT_WORKFLOW_BIN",
-      displayName: "QTC Workflow",
+      displayName: "Acme Workflow",
       mcpGuards: {
         sqlMutation: {
-          toolPattern: "^mcp__plugin.*qtc-(cert|prod).*__execute_sql$",
-          serverPattern: "qtc-(cert|prod)",
+          toolPattern: "^mcp__plugin.*(cert|prod).*__execute_sql$",
+          serverPattern: "(cert|prod)",
         },
       },
-      expectedMcpServers: ["qtc-cert", "qtc-prod"],
-      slashCommands: { migrate: "/qtc-core:migrate", session: "/qtc-core:session" },
+      expectedMcpServers: ["cert", "prod"],
+      slashCommands: { migrate: "/acme-core:migrate", session: "/acme-core:session" },
     };
     fs = new FakeFs(new Map([[USER_CONFIG, JSON.stringify(fullConfig)]]));
     const service = new RuntimeConfigService(fs, env, paths);
     const resolved = await service.resolveRuntime();
 
-    expect(resolved.displayName).toBe("QTC Workflow");
-    expect(resolved.mcpGuards?.sqlMutation?.toolPattern).toContain("qtc-(cert|prod)");
-    expect(resolved.expectedMcpServers).toEqual(["qtc-cert", "qtc-prod"]);
-    expect(resolved.slashCommands?.migrate).toBe("/qtc-core:migrate");
-    expect(resolved.slashCommands?.session).toBe("/qtc-core:session");
+    expect(resolved.displayName).toBe("Acme Workflow");
+    expect(resolved.mcpGuards?.sqlMutation?.toolPattern).toContain("(cert|prod)");
+    expect(resolved.expectedMcpServers).toEqual(["cert", "prod"]);
+    expect(resolved.slashCommands?.migrate).toBe("/acme-core:migrate");
+    expect(resolved.slashCommands?.session).toBe("/acme-core:session");
   });
 
   it("ignores malformed extended fields gracefully", async () => {

@@ -14,7 +14,7 @@ describe("readMcpEntry — Claude", () => {
   });
 
   it("retorna exists=false si settings.json no existe", () => {
-    const snap = readMcpEntry("claude", scopeDir, "qtc-cert");
+    const snap = readMcpEntry("claude", scopeDir, "cert");
     expect(snap.exists).toBe(false);
   });
 
@@ -24,7 +24,7 @@ describe("readMcpEntry — Claude", () => {
       join(scopeDir, ".claude", "settings.json"),
       JSON.stringify({ mcpServers: { other: { command: "x", args: [], env: {} } } }),
     );
-    const snap = readMcpEntry("claude", scopeDir, "qtc-cert");
+    const snap = readMcpEntry("claude", scopeDir, "cert");
     expect(snap.exists).toBe(false);
   });
 
@@ -34,7 +34,7 @@ describe("readMcpEntry — Claude", () => {
       join(scopeDir, ".claude", "settings.json"),
       JSON.stringify({
         mcpServers: {
-          "qtc-cert": {
+          cert: {
             command: "agent-workflow",
             args: ["mcp", "dbhub", "cert"],
             env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
@@ -42,7 +42,7 @@ describe("readMcpEntry — Claude", () => {
         },
       }),
     );
-    const snap = readMcpEntry("claude", scopeDir, "qtc-cert");
+    const snap = readMcpEntry("claude", scopeDir, "cert");
     expect(snap.exists).toBe(true);
     expect(snap.command).toBe("agent-workflow");
     expect(snap.args).toEqual(["mcp", "dbhub", "cert"]);
@@ -52,7 +52,7 @@ describe("readMcpEntry — Claude", () => {
   it("retorna exists=false si JSON inválido", () => {
     mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     writeFileSync(join(scopeDir, ".claude", "settings.json"), "{ not valid json");
-    const snap = readMcpEntry("claude", scopeDir, "qtc-cert");
+    const snap = readMcpEntry("claude", scopeDir, "cert");
     expect(snap.exists).toBe(false);
   });
 });
@@ -71,17 +71,17 @@ describe("readMcpEntry — Codex", () => {
     writeFileSync(
       join(scopeDir, ".codex", "config.toml"),
       `
-[mcp_servers.qtc-prod]
+[mcp_servers.prod]
 command = "agent-workflow"
 args = ["mcp", "dbhub", "prod"]
 
-[mcp_servers.qtc-prod.env]
+[mcp_servers.prod.env]
 MAX_ROWS = "1000"
 READONLY = "true"
 TRANSPORT = "stdio"
 `,
     );
-    const snap = readMcpEntry("codex", scopeDir, "qtc-prod");
+    const snap = readMcpEntry("codex", scopeDir, "prod");
     expect(snap.exists).toBe(true);
     expect(snap.command).toBe("agent-workflow");
     expect(snap.args).toEqual(["mcp", "dbhub", "prod"]);
@@ -91,7 +91,7 @@ TRANSPORT = "stdio"
   it("retorna exists=false si TOML inválido", () => {
     mkdirSync(join(scopeDir, ".codex"), { recursive: true });
     writeFileSync(join(scopeDir, ".codex", "config.toml"), "[invalid =");
-    const snap = readMcpEntry("codex", scopeDir, "qtc-cert");
+    const snap = readMcpEntry("codex", scopeDir, "cert");
     expect(snap.exists).toBe(false);
   });
 });

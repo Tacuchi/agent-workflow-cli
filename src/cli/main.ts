@@ -198,7 +198,12 @@ function emit<T>(result: CommandResult<T>): void {
     // Command already wrote stdout itself (e.g., auto-plan-decide with custom float repr).
     return;
   } else {
-    writeStdout(renderRaw({ ok: result.ok, error: result.error }));
+    const payload: { ok: boolean; error: typeof result.error; data?: unknown } = {
+      ok: result.ok,
+      error: result.error,
+    };
+    if (result.data !== undefined) payload.data = result.data;
+    writeStdout(renderRaw(payload));
   }
 }
 
@@ -211,6 +216,8 @@ async function dispatchMenuAction(
       return await run(["self", "doctor"]);
     case "install-skill":
       return await run(["self", "install-skill", "--force"]);
+    case "mcp":
+      return await run(["self", "mcp"]);
     case "update":
       return await run(["self", "update"]);
     case "help":
@@ -242,8 +249,8 @@ function printHelp(commands: string[]): void {
     "",
     "Namespace resolution order: --namespace flag > AW_NAMESPACE env > workspace",
     "auto-detect (.<ns>/sessions/ in cwd) > ~/.config/agent-workflow/namespace >",
-    "default 'agent-workflow'. The qtc-workflow-plugin reclaims namespace 'workflow'",
-    "via SessionStart hook; new workspaces use .workflow/sessions/.",
+    "default 'agent-workflow'. Plugins can reclaim a namespace via SessionStart",
+    "hook; new workspaces use .<namespace>/sessions/.",
     "",
     "Commands:",
     "",
@@ -257,7 +264,7 @@ function printHelp(commands: string[]): void {
 }
 
 function resolveCoreConfigPath(env: NodeEnv, paths: PathsService): string | undefined {
-  const fromEnv = env.get("AGENT_WORKFLOW_CONFIG_PATH") ?? env.get("QTC_CORE_CONFIG_PATH");
+  const fromEnv = env.get("AGENT_WORKFLOW_CONFIG_PATH");
   if (fromEnv && fromEnv.trim().length > 0) {
     return fromEnv;
   }

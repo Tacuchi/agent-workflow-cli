@@ -14,7 +14,7 @@ Print the resolved namespace and the source it came from (env / flag / config / 
 agent-workflow self namespace
 
 # Result:
-# { "namespace": "qtc", "source": "env", "expected_paths": { "user_dir": "~/.qtc", "workspace": ".qtc" } }
+# { "namespace": "workflow", "source": "env", "expected_paths": { "user_dir": "~/.workflow", "workspace": ".workflow" } }
 ```
 
 Use this when paths look wrong — it tells you exactly which override won the precedence chain.

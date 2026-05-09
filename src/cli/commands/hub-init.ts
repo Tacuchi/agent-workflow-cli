@@ -9,7 +9,7 @@ import type { CliContext } from "../types.js";
 export const hubInitCommand: QtcCommand = {
   name: "hub-init",
   describe:
-    "Bootstrap atómico de hub workspace: persiste QTC-PROJECT (mode=hub) + attach-multiroot. Flags: --proyecto, --fuente alias:path (repetible, mín 2), --working-branch alias:rama (repetible), [--main-branch], [--workspace], [--skip-attach], [--dry-run].",
+    "Bootstrap atómico de hub workspace: persiste <NS>-PROJECT (mode=hub) + attach-multiroot. Flags: --proyecto, --fuente alias:path (repetible, mín 2), --working-branch alias:rama (repetible), [--main-branch], [--workspace], [--skip-attach], [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const proyecto = args.values.get("proyecto");
     if (proyecto === undefined || proyecto.trim().length === 0) {

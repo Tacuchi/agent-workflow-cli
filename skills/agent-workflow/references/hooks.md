@@ -26,10 +26,10 @@ Exit codes:
 PreToolUse guard for MCP SQL execution tools. Reads the tool input, matches against the runtime config's `mcpGuards.sqlMutation` patterns, and blocks `INSERT`/`UPDATE`/`DELETE`/DDL against the configured "no-mutate" servers.
 
 ```bash
-echo '{"tool":"mcp__plugin_qtc-dev_qtc-cert__execute_sql","tool_input":{"sql":"UPDATE x SET ..."}}' \
+echo '{"tool":"mcp__plugin_acme-dev_cert__execute_sql","tool_input":{"sql":"UPDATE x SET ..."}}' \
   | agent-workflow hook sql-mutation-guard
 ```
 
-The patterns live in `~/.<namespace>/lib/config/<namespace>-runtime.json` — for the `qtc` namespace this blocks mutations against `qtc-cert` and `qtc-prod`.
+The patterns live in `~/.<namespace>/lib/config/<namespace>-runtime.json`. Configure them with the MCP server names that must be read-only, such as `cert` and `prod`.
 
 Exit codes: same conventions as `branch-check`.

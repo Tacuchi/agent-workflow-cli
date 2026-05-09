@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 
 const HISTORY_TEMPLATE =
-  "# QTC Session History\n\n" +
+  "# Session History\n\n" +
   "| # | Flujo | Sesión | Fecha | Estado | Resumen | Refs |\n" +
   "|---|-------|--------|-------|--------|---------|------|\n";
 

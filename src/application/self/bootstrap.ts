@@ -119,16 +119,16 @@ function buildNextSteps(dests: SelfInstallTargetResult[]): BootstrapNextStep[] {
     {
       harness: "claude-code",
       detected: dests.some((d) => d.target === "claude"),
-      install_command: "/plugin marketplace add <marketplace-url>; /plugin install qtc",
+      install_command: "/plugin marketplace add <marketplace-url>; /plugin install <plugin-name>",
       description:
-        "En Claude Code: agregá el marketplace si aún no está, después instalá el plugin 'qtc'.",
+        "En Claude Code: agregá el marketplace si aún no está, después instalá el plugin requerido.",
     },
     {
       harness: "codex",
       detected: dests.some((d) => d.target === "codex"),
-      install_command: "codex plugin install <marketplace-url>#qtc",
+      install_command: "codex plugin install <marketplace-url>#<plugin-name>",
       description:
-        "En Codex: instalá el plugin 'qtc' desde el marketplace y reiniciá la app para refrescar el cache.",
+        "En Codex: instalá el plugin desde el marketplace y reiniciá la app para refrescar el cache.",
     },
   ];
 }

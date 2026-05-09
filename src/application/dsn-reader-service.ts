@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { McpInstance } from "../domain/mcp-entry.js";
+import { type McpInstance, normalizeMcpInstance } from "../domain/mcp-entry.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface DsnReadResult {
@@ -28,5 +28,8 @@ export function readBootstrapDsn(paths: PathsService): DsnReadResult {
 }
 
 export function dsnKeyForInstance(instance: McpInstance): string {
-  return instance === "cert" ? "DB_CERT_DSN" : "DB_PROD_DSN";
+  const normalized = normalizeMcpInstance(instance);
+  if (normalized === "cert") return "DB_CERT_DSN";
+  if (normalized === "prod") return "DB_PROD_DSN";
+  return `DB_${normalized.toUpperCase().replace(/-/g, "_")}_DSN`;
 }

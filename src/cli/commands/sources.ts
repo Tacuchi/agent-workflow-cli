@@ -6,7 +6,7 @@ import type { CliContext } from "../types.js";
 
 export const sourcesCommand: QtcCommand = {
   name: "sources",
-  describe: "List sources from QTC-PROJECT block with git status enrichment.",
+  describe: "List sources from <NS>-PROJECT block with git status enrichment.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const session = args.values.get("session");
     const scopeRaw = args.values.get("scope");

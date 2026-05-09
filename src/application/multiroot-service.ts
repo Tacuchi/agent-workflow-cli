@@ -43,8 +43,8 @@ export async function runMultiroot(
 
   if (input.fromSources && paths.length === 0) {
     return {
-      error: "no_sources_in_qtc_project",
-      hint: "El bloque QTC-PROJECT no declara fuentes; pasá --path explícito.",
+      error: "no_sources_in_project_block",
+      hint: "El bloque <NS>-PROJECT no declara fuentes; pasá --path explícito.",
     };
   }
   if (paths.length === 0) {

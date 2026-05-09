@@ -40,7 +40,7 @@ export async function runCheckpointWrite(
   if (!folder) {
     const actives = await findActiveSessions(fs, cwd, paths.blockMarkers());
     if (actives.length === 0) {
-      return { skipped: true, reason: "no hay sesiones activas en QTC-PROJECT.Status" };
+      return { skipped: true, reason: "no hay sesiones activas en <NS>-PROJECT.Status" };
     }
     return {
       skipped: true,

@@ -1,6 +1,7 @@
 import { selfBootstrap } from "../../application/self/bootstrap.js";
 import { selfDoctor } from "../../application/self/doctor-self.js";
 import { selfInstallSkill } from "../../application/self/install-skill.js";
+import { selfMcpConfig } from "../../application/self/mcp-config.js";
 import { selfNamespace } from "../../application/self/namespace-info.js";
 import { selfUninstallSkill } from "../../application/self/uninstall-skill.js";
 import { selfUpdate } from "../../application/self/update-self.js";
@@ -15,13 +16,14 @@ const SELF_SUBCOMMANDS = [
   "update",
   "install-skill",
   "uninstall-skill",
+  "mcp",
   "bootstrap",
 ] as const;
 
 export const selfCommand: QtcCommand = {
   name: "self",
   describe:
-    "Manage the agent-workflow CLI itself (namespace, doctor, update, install-skill, uninstall-skill, bootstrap).",
+    "Manage the agent-workflow CLI itself (namespace, doctor, update, install-skill, uninstall-skill, mcp, bootstrap).",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const sub = args.rest[0];
     switch (sub) {
@@ -35,6 +37,8 @@ export const selfCommand: QtcCommand = {
         return selfInstallSkill(args, ctx);
       case "uninstall-skill":
         return selfUninstallSkill(args, ctx);
+      case "mcp":
+        return selfMcpConfig(args, ctx);
       case "bootstrap":
         return selfBootstrap(args, ctx);
       case undefined:
@@ -44,7 +48,7 @@ export const selfCommand: QtcCommand = {
           data: {
             subcommands: [...SELF_SUBCOMMANDS],
             help_hint:
-              "uso: aw self <subcommand>. Ej: 'aw self bootstrap' (instalación limpia guiada) o 'aw self doctor'.",
+              "uso: aw self <subcommand>. Ej: 'aw self mcp' (configurar MCP database), 'aw self bootstrap' o 'aw self doctor'.",
           },
           exitCode: 0,
         };

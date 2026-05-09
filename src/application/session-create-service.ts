@@ -123,7 +123,7 @@ function validateInput(input: SessionCreateInput): ValidatedInput | SessionCreat
   if (!flow) {
     return {
       error:
-        "flow no resuelto. Pasá --flow <dev|design|analyze> o invocá el comando desde un plugin de flow (qtc-dev/design/analyze).",
+        "flow no resuelto. Pasá --flow <dev|design|analyze> o invocá el comando desde un plugin de flow.",
       expected: ["dev", "design", "analyze"],
     };
   }
@@ -155,7 +155,7 @@ interface FolderInfo {
   code: string;
   folder: string;
   sessionPath: string;
-  qtcDir: string;
+  sessionsDir: string;
 }
 
 async function prepareSessionFolder(
@@ -164,20 +164,20 @@ async function prepareSessionFolder(
   flow: SessionFlow,
   name: string,
 ): Promise<FolderInfo | SessionCreateError> {
-  const qtcDir = paths.cwdSessionsDir();
-  await fs.mkdirp(qtcDir);
-  const code = await nextCode(fs, qtcDir);
+  const sessionsDir = paths.cwdSessionsDir();
+  await fs.mkdirp(sessionsDir);
+  const code = await nextCode(fs, sessionsDir);
   const folder = `session${code}-${flow}-${name}`;
-  const sessionPath = join(qtcDir, folder);
+  const sessionPath = join(sessionsDir, folder);
   if (await fs.exists(sessionPath)) {
     return { error: `Ya existe ${sessionPath}` };
   }
   await fs.mkdirp(sessionPath);
-  return { code, folder, sessionPath, qtcDir };
+  return { code, folder, sessionPath, sessionsDir };
 }
 
-async function nextCode(fs: FileSystemPort, qtcDir: string): Promise<string> {
-  const entries = await fs.list(qtcDir);
+async function nextCode(fs: FileSystemPort, sessionsDir: string): Promise<string> {
+  const entries = await fs.list(sessionsDir);
   const numbers = entries
     .filter((e) => e.type === "dir")
     .map((e) => e.name.match(/^session(\d{3})-/))

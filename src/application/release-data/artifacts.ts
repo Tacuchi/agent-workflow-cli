@@ -74,12 +74,12 @@ export async function readSessionArtifacts(
 
 async function findSessionFolder(
   fs: FileSystemPort,
-  qtcDir: string,
+  sessionsDir: string,
   sessionCode: string,
 ): Promise<{ sessionPath: string; folderName: string } | null> {
   const targetInt = sessionCodeInt(sessionCode);
-  if (!(await fs.exists(qtcDir)) || targetInt === null) return null;
-  const folders = (await fs.list(qtcDir)).filter(
+  if (!(await fs.exists(sessionsDir)) || targetInt === null) return null;
+  const folders = (await fs.list(sessionsDir)).filter(
     (e) => e.type === "dir" && /^session\d{3}-/.test(e.name),
   );
   const match = folders.find((f) => sessionCodeInt(parseSessionFolder(f.name).code) === targetInt);

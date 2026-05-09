@@ -63,8 +63,10 @@ export class SessionsService {
       }
     }
 
-    const qtcCodes = new Set(sessions.map((s) => s.code).filter((c): c is string => c !== null));
-    const legacy = legacyEntries.filter((l) => l.code === null || !qtcCodes.has(l.code));
+    const sessionCodes = new Set(
+      sessions.map((s) => s.code).filter((c): c is string => c !== null),
+    );
+    const legacy = legacyEntries.filter((l) => l.code === null || !sessionCodes.has(l.code));
 
     const numericCodes = sessions
       .map((s) => s.code)

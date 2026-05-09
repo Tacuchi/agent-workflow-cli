@@ -1,6 +1,6 @@
 # @tacuchi/agent-workflow-cli
 
-Agnostic runtime CLI for session-lifecycle workflows. Pairs with the qtc-* family of plugins (and other namespace ecosystems) to provide commands like `sessions`, `session-create`, `session-close`, `checkpoint-write`, `plugin-doctor`, `auto-plan-decide`, and more.
+Agnostic runtime CLI for session-lifecycle workflows. Pairs with namespace-aware plugins to provide commands like `sessions`, `session-create`, `session-close`, `checkpoint-write`, `plugin-doctor`, `auto-plan-decide`, and more.
 
 ## Install
 
@@ -47,7 +47,7 @@ Resolution order (first match wins):
 4. `~/.config/agent-workflow/namespace` user config.
 5. Default: `agent-workflow`.
 
-For qtc-* workspaces (with `.qtc/sessions/` present), the CLI auto-detects `qtc` without configuration.
+For plugin workspaces with a single `.<namespace>/sessions/` directory, the CLI auto-detects the namespace without configuration.
 
 ## Commands (selected)
 

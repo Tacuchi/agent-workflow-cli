@@ -6,7 +6,7 @@ export interface ManifestsResult {
   manifestsInfo: Record<string, string | null>;
   canonicalVersion: string | null;
   manifestPluginName: string | null;
-  manifestQtcContractVersion: string | null;
+  manifestContractVersion: string | null;
   findings: DoctorFinding[];
 }
 
@@ -19,7 +19,7 @@ export async function parseManifests(
   const manifestsInfo: Record<string, string | null> = {};
   let canonicalVersion: string | null = inputPluginVersion;
   let manifestPluginName: string | null = null;
-  let manifestQtcContractVersion: string | null = null;
+  let manifestContractVersion: string | null = null;
   for (const relPath of [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"]) {
     const parsed = await parseManifestFile(join(pluginRoot, relPath), relPath, fs);
     manifestsInfo[relPath] = parsed.version;
@@ -41,15 +41,15 @@ export async function parseManifests(
         msg: `version drift: manifest=${parsed.version} vs declared=${canonicalVersion}`,
       });
     }
-    if (manifestQtcContractVersion === null && parsed.qtcContractVersion !== null) {
-      manifestQtcContractVersion = parsed.qtcContractVersion;
+    if (manifestContractVersion === null && parsed.contractVersion !== null) {
+      manifestContractVersion = parsed.contractVersion;
     }
   }
   return {
     manifestsInfo,
     canonicalVersion,
     manifestPluginName,
-    manifestQtcContractVersion,
+    manifestContractVersion,
     findings,
   };
 }
@@ -57,7 +57,7 @@ export async function parseManifests(
 interface ParsedManifest {
   version: string | null;
   name: string | null;
-  qtcContractVersion: string | null;
+  contractVersion: string | null;
   parseError: boolean;
   findings: DoctorFinding[];
 }
@@ -70,7 +70,7 @@ async function parseManifestFile(
   const findings: DoctorFinding[] = [];
   if (!(await fs.exists(manifestPath))) {
     findings.push({ level: "warn", file: relPath, msg: "manifest missing" });
-    return { version: null, name: null, qtcContractVersion: null, parseError: true, findings };
+    return { version: null, name: null, contractVersion: null, parseError: true, findings };
   }
   let raw: string;
   try {
@@ -81,7 +81,7 @@ async function parseManifestFile(
       file: relPath,
       msg: `invalid JSON: ${(e as Error).message}`,
     });
-    return { version: null, name: null, qtcContractVersion: null, parseError: true, findings };
+    return { version: null, name: null, contractVersion: null, parseError: true, findings };
   }
   let data: unknown;
   try {
@@ -92,16 +92,15 @@ async function parseManifestFile(
       file: relPath,
       msg: `invalid JSON: ${(e as Error).message}`,
     });
-    return { version: null, name: null, qtcContractVersion: null, parseError: true, findings };
+    return { version: null, name: null, contractVersion: null, parseError: true, findings };
   }
   if (!isRecord(data)) {
-    return { version: null, name: null, qtcContractVersion: null, parseError: false, findings };
+    return { version: null, name: null, contractVersion: null, parseError: false, findings };
   }
   return {
     version: typeof data.version === "string" ? data.version : null,
     name: typeof data.name === "string" && data.name.length > 0 ? data.name : null,
-    qtcContractVersion:
-      typeof data.qtcContractVersion === "string" ? data.qtcContractVersion : null,
+    contractVersion: typeof data.contractVersion === "string" ? data.contractVersion : null,
     parseError: false,
     findings,
   };

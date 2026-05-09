@@ -25,7 +25,7 @@ agent-workflow history-update \
   --sesion "aw-skill-repo" \
   --date 2026-05-05 \
   --summary "Sub-proyecto 2 del spec ..." \
-  --refs "[OBJETIVO](.qtc/sessions/session035-dev-aw-skill-repo/OBJETIVO.md)"
+  --refs "[OBJETIVO](.workflow/sessions/session035-dev-aw-skill-repo/OBJETIVO.md)"
 ```
 
 Flags:

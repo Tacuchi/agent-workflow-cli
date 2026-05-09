@@ -4,7 +4,7 @@ Manual de implementación y mantenimiento del workflow universal.
 
 Audiencia: developers que mantienen, extienden o integran el CLI `@tacuchi/agent-workflow-cli` y el skill `agent-workflow` que viaja bundled adentro.
 
-Esta es documentación del **workflow universal**, no de los plugins downstream (qtc-* o cualquier otro).
+Esta es documentación del **workflow universal**, no de plugins downstream específicos.
 
 ## 1. Arquitectura
 
@@ -36,7 +36,7 @@ Esta es documentación del **workflow universal**, no de los plugins downstream 
 └────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────────┐
-│ Plugin downstream (opcional, ej. qtc-core/dev/design/...)  │
+│ Plugin downstream (opcional, específico de un dominio)     │
 │   Solo skills de negocio + hooks que invocan al CLI.       │
 │   NO duplica lógica del workflow universal.                │
 └────────────────────────────────────────────────────────────┘
@@ -81,8 +81,8 @@ planning → execution → validation → closure
 
 **Convencionales (del plugin downstream)**:
 
-- `EVIDENCIA.md`, `HALLAZGOS.md`, `RECOMENDACION.md` — convención del flow `analyze` (qtc-analyze).
-- `DISCOVERY.md`, `PROBLEMA.md`, `IDEAS.md`, `ENTREGA.md` — convención del flow `design` (qtc-design).
+- `EVIDENCIA.md`, `HALLAZGOS.md`, `RECOMENDACION.md` — convención del flow `analyze`.
+- `DISCOVERY.md`, `PROBLEMA.md`, `IDEAS.md`, `ENTREGA.md` — convención del flow `design`.
 - `DEPENDENCIAS.md` — convención cross-flow. Reader: `dependencias-list`.
 
 El CLI los trata como markdown free-form (no parsea estructura). El plugin downstream define el shape.

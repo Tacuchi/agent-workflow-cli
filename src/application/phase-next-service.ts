@@ -46,7 +46,7 @@ export async function runPhaseNext(
         code: session.code ?? code,
         folder: session.folder,
         updated: false,
-        reason: "session_not_in_qtc_project",
+        reason: "session_not_in_project_block",
       },
     };
   }

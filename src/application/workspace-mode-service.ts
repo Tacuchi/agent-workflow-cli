@@ -44,7 +44,7 @@ export async function runWorkspaceMode(
     sources: [],
     working_branches: {},
     source_file: null,
-    reason: "no_qtc_project_block_found",
+    reason: "no_project_block_found",
   };
   if (options.verbose === true) {
     empty.sources_count = 0;

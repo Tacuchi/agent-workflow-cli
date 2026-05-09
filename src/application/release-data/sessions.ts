@@ -21,11 +21,11 @@ export async function listSessionsForRelease(
   void cwd;
   const includeOpen = options.includeOpen ?? true;
   const includeClosed = options.includeClosed ?? true;
-  const qtcDir = paths.cwdSessionsDir();
-  if (!(await fs.exists(qtcDir))) return [];
+  const sessionsDir = paths.cwdSessionsDir();
+  if (!(await fs.exists(sessionsDir))) return [];
 
   const sinceInt = sessionCodeInt(options.since);
-  const entries = (await fs.list(qtcDir))
+  const entries = (await fs.list(sessionsDir))
     .filter((e) => e.type === "dir" && /^session\d{3}-/.test(e.name))
     .sort((a, b) => a.name.localeCompare(b.name));
 

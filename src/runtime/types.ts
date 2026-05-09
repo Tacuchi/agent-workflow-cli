@@ -21,7 +21,7 @@ export interface AgentWorkflowRuntimeConfig {
   packageName: string;
   binName: string;
   envOverride: string;
-  /** Optional human-readable name (e.g., "QTC Workflow"). Default: namespace. */
+  /** Optional human-readable name (e.g., "Acme Workflow"). Default: namespace. */
   displayName?: string;
   /** PreToolUse guard configurations. Empty = guard disabled. */
   mcpGuards?: McpGuards;

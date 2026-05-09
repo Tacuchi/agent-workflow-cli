@@ -5,6 +5,7 @@ import {
   type McpHost,
   type McpInstance,
   buildMcpEntry,
+  normalizeMcpInstance,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import { dsnKeyForInstance, readBootstrapDsn } from "./dsn-reader-service.js";
@@ -16,6 +17,7 @@ export interface McpDoctorInput {
   instances: McpInstance[];
   scope: "workspace" | "global";
   workspace?: string;
+  dsnVars?: Record<string, string>;
 }
 
 export interface McpDoctorResult {
@@ -42,7 +44,7 @@ export function runMcpDoctor(
 
   for (const host of input.hosts) {
     for (const instance of input.instances) {
-      reports.push(buildReport(host, instance, scopeDir, dsn, input.scope));
+      reports.push(buildReport(env, host, instance, scopeDir, dsn, input.scope, input.dsnVars));
     }
   }
 
@@ -58,16 +60,18 @@ export function runMcpDoctor(
 }
 
 function buildReport(
+  env: EnvPort,
   host: McpHost,
   instance: McpInstance,
   scopeDir: string,
   dsn: ReturnType<typeof readBootstrapDsn>,
   scope: "workspace" | "global",
+  dsnVars: Record<string, string> | undefined,
 ): McpDriftReport {
-  const entry = buildMcpEntry(instance);
+  const dsnKey = dsnVars?.[normalizeMcpInstance(instance)] ?? dsnKeyForInstance(instance);
+  const entry = buildMcpEntry(instance, dsnVars?.[normalizeMcpInstance(instance)]);
   const snapshot = readMcpEntry(host, scopeDir, entry.name);
-  const dsnKey = dsnKeyForInstance(instance);
-  const dsnPresent = dsn.exists && Boolean(dsn.values[dsnKey]);
+  const dsnPresent = Boolean(env.get(dsnKey)) || (dsn.exists && Boolean(dsn.values[dsnKey]));
 
   const dsnInfo = {
     path: dsn.path,

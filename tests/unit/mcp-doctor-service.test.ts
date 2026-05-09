@@ -110,7 +110,7 @@ describe("runMcpDoctor", () => {
       join(root, ".claude", "settings.json"),
       JSON.stringify({
         mcpServers: {
-          "qtc-cert": {
+          cert: {
             command: "node",
             args: ["custom.js"],
             env: { CUSTOM: "true" },

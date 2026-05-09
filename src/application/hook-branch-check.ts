@@ -24,7 +24,7 @@ export interface BranchCheckInput {
   git: GitPort;
   paths: PathsService;
   /**
-   * Display name used as message prefix (e.g., "qtc-core", "agent-workflow").
+   * Display name used as message prefix (e.g., "acme-core", "agent-workflow").
    * Defaults to "agent-workflow" when omitted.
    */
   displayName?: string;

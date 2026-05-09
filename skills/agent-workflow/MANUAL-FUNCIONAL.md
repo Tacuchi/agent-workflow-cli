@@ -22,7 +22,7 @@ Beneficios:
 - Sesiones aisladas: cada trabajo tiene su carpeta, su rama, su brief.
 - Recuperación post-compact: si el contexto del modelo se libera, retomás con `CHECKPOINT.md`.
 - Historial trazable: `HISTORY.md` lista todas las sesiones del workspace.
-- Portátil: el mismo CLI funciona en cualquier dominio (qtc-*, ACME, etc.) cambiando solo el namespace.
+- Portátil: el mismo CLI funciona en cualquier dominio cambiando solo el namespace.
 
 ## 2. Conceptos clave
 
@@ -36,7 +36,7 @@ Directorio del proyecto con un bloque `<NS>-PROJECT` declarado en `CLAUDE.md` o 
 
 ### Namespace
 
-Identificador del dominio (ej. `qtc`, `acme`, `agent-workflow`). Define dónde viven las sesiones (`.<ns>/`) y el bloque project (`<NS>-PROJECT`).
+Identificador del dominio (ej. `workflow`, `acme`, `agent-workflow`). Define dónde viven las sesiones (`.<ns>/`) y el bloque project (`<NS>-PROJECT`).
 
 ### Flow
 
@@ -44,7 +44,7 @@ Tipo de trabajo: `dev` (implementación), `design` (UX/UI), `analyze` (investiga
 
 ### Plugin downstream
 
-Capa opcional que agrega skills de negocio sobre el workflow universal (ej. `qtc-dev` para el stack QTC). Sin plugin, el workflow funciona igual; con plugin, ganás reglas específicas del dominio.
+Capa opcional que agrega skills de negocio sobre el workflow universal. Sin plugin, el workflow funciona igual; con plugin, ganás reglas específicas del dominio.
 
 ## 3. Las 4 fases
 
@@ -190,7 +190,7 @@ agent-workflow checkpoint-read --code sessionNNN    # reentrar limpio
 agent-workflow session-close \
   --code session042 \
   --graduated-decisions "DEC-001-slug-a,DEC-003-slug-b" \
-  --refs "[CHECKPOINT](.qtc/sessions/session042-.../CHECKPOINT.md)"
+  --refs "[CHECKPOINT](.<ns>/sessions/session042-.../CHECKPOINT.md)"
 ```
 
 Antes de cerrar, considerá:

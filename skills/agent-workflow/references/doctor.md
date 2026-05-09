@@ -8,7 +8,7 @@ Health check for a plugin: validates frontmatter, manifest version, hooks, MCP e
 
 ```bash
 agent-workflow plugin-doctor --plugin-root /Users/me/Git/core-workflow-plugin
-agent-workflow plugin-doctor --plugin-root /path --plugin-name qtc-core --plugin-version 3.24.0
+agent-workflow plugin-doctor --plugin-root /path --plugin-name acme-core --plugin-version 3.24.0
 agent-workflow plugin-doctor --plugin-root /path --compat-range "^3.0.0"
 agent-workflow plugin-doctor --plugin-root /path --exports-file plugin.json
 ```

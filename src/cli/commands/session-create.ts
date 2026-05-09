@@ -10,7 +10,7 @@ import type { CliContext } from "../types.js";
 
 export const sessionCreateCommand: QtcCommand = {
   name: "session-create",
-  describe: "Create a new session: folder + OBJETIVO + HISTORY row + QTC-PROJECT entry.",
+  describe: "Create a new session: folder + OBJETIVO + HISTORY row + <NS>-PROJECT entry.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionCreateInput = {};
     const flow = args.values.get("flow") ?? args.plugin.flow;

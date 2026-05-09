@@ -73,6 +73,7 @@ describe("selfCommand — without subcommand (H-07)", () => {
         "update",
         "install-skill",
         "uninstall-skill",
+        "mcp",
         "bootstrap",
       ]);
       expect(data.help_hint).toContain("aw self");

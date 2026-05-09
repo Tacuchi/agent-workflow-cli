@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { PathsService } from "./paths-service.js";
 
@@ -11,6 +11,12 @@ export interface BootstrapDsnOutput {
   ok: true;
   path: string;
   wrote: string[];
+}
+
+export interface WriteDsnValueOutput {
+  ok: true;
+  path: string;
+  key: string;
 }
 
 export interface BootstrapDsnError {
@@ -51,4 +57,43 @@ export function runBootstrapDsn(
     // ignore chmod failures
   }
   return { ok: true, path: target, wrote: written };
+}
+
+export function writeDsnValue(
+  paths: PathsService,
+  input: { key: string; value: string },
+): WriteDsnValueOutput {
+  const target = paths.userDsnFile();
+  const existing = readDsnLines(target);
+  const next = upsertDsnLine(existing, input.key, input.value);
+
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, `${next.join("\n")}\n`, "utf-8");
+  try {
+    chmodSync(target, 0o600);
+  } catch {
+    // ignore chmod failures
+  }
+  return { ok: true, path: target, key: input.key };
+}
+
+function readDsnLines(path: string): string[] {
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf-8")
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0);
+}
+
+function upsertDsnLine(lines: string[], key: string, value: string): string[] {
+  const prefix = `${key}=`;
+  let replaced = false;
+  const next = lines.map((line) => {
+    if (line.startsWith(prefix)) {
+      replaced = true;
+      return `${key}=${value}`;
+    }
+    return line;
+  });
+  if (!replaced) next.push(`${key}=${value}`);
+  return next;
 }

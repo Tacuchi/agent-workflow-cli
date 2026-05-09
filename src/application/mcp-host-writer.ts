@@ -34,6 +34,16 @@ export function writeMcpEntry(
   return writeCodexMcpEntry(entry, scope, opts);
 }
 
+export function removeMcpEntry(
+  host: McpHost,
+  entry: McpEntry,
+  scope: ScopeInput,
+  opts: McpWriteOpts = {},
+): McpWriteResult {
+  if (host === "claude") return removeClaudeMcpEntry(entry, scope, opts);
+  return removeCodexMcpEntry(entry, scope, opts);
+}
+
 function writeClaudeMcpEntry(
   entry: McpEntry,
   scope: ScopeInput,
@@ -115,6 +125,70 @@ function writeCodexMcpEntry(
   const backup = backupFile(configFile);
   writeFileSync(configFile, newContent, "utf-8");
   return resultWritten("codex", configFile, entry.name, backup);
+}
+
+function removeClaudeMcpEntry(
+  entry: McpEntry,
+  scope: ScopeInput,
+  opts: McpWriteOpts,
+): McpWriteResult {
+  const settingsFile = join(scope.scopeDir, ".claude", "settings.json");
+  const data = readClaudeSettings(settingsFile);
+  const mcpServers = ensureRecord(data, "mcpServers");
+  const existing = mcpServers[entry.name];
+  if (existing === undefined) {
+    return resultSkipped("claude", settingsFile, entry.name);
+  }
+
+  delete mcpServers[entry.name];
+  data.mcpServers = mcpServers;
+
+  const newJson = `${JSON.stringify(data, null, 2)}\n`;
+  if (opts.dryRun) {
+    return resultDryRun("claude", settingsFile, entry.name, [`mcpServers.${entry.name}: remove`]);
+  }
+
+  mkdirSync(dirname(settingsFile), { recursive: true });
+  const backup = backupFile(settingsFile);
+  writeFileSync(settingsFile, newJson, "utf-8");
+  return resultRemoved("claude", settingsFile, entry.name, backup);
+}
+
+function removeCodexMcpEntry(
+  entry: McpEntry,
+  scope: ScopeInput,
+  opts: McpWriteOpts,
+): McpWriteResult {
+  const configFile = join(scope.scopeDir, ".codex", "config.toml");
+  const oldContent = existsSync(configFile) ? readFileSync(configFile, "utf-8") : "";
+  if (oldContent.length > 0) {
+    try {
+      parseToml(oldContent);
+    } catch (err) {
+      throw new McpWriterError(
+        `config.toml inválido en ${configFile}`,
+        configFile,
+        (err as Error).message,
+      );
+    }
+  }
+
+  const newContent = removeCodexMcpBlocks(oldContent, entry.name);
+  if (newContent === oldContent) {
+    return resultSkipped("codex", configFile, entry.name);
+  }
+
+  if (opts.dryRun) {
+    return resultDryRun("codex", configFile, entry.name, [
+      `[mcp_servers.${entry.name}]: remove`,
+      `[mcp_servers.${entry.name}.env]: remove`,
+    ]);
+  }
+
+  mkdirSync(dirname(configFile), { recursive: true });
+  const backup = backupFile(configFile);
+  writeFileSync(configFile, newContent, "utf-8");
+  return resultRemoved("codex", configFile, entry.name, backup);
 }
 
 function readClaudeSettings(file: string): Record<string, unknown> {
@@ -233,6 +307,15 @@ function resultWritten(
   backup: string | null,
 ): McpWriteResult {
   return action(host, target, name, "written", backup);
+}
+
+function resultRemoved(
+  host: McpHost,
+  target: string,
+  name: string,
+  backup: string | null,
+): McpWriteResult {
+  return action(host, target, name, "removed", backup);
 }
 
 function resultSkipped(host: McpHost, target: string, name: string): McpWriteResult {

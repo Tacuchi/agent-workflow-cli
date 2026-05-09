@@ -24,13 +24,13 @@ describe("writeMcpEntry — Claude (settings.json)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea settings.json inicial con la entrada qtc-cert", () => {
+  it("crea settings.json inicial con la entrada cert", () => {
     const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.backup).toBeNull();
     const settingsPath = join(scopeDir, ".claude", "settings.json");
     const content = JSON.parse(readFileSync(settingsPath, "utf-8"));
-    expect(content.mcpServers["qtc-cert"]).toEqual({
+    expect(content.mcpServers.cert).toEqual({
       command: "agent-workflow",
       args: ["mcp", "dbhub", "cert"],
       env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
@@ -61,7 +61,7 @@ describe("writeMcpEntry — Claude (settings.json)", () => {
     const content = JSON.parse(readFileSync(settingsPath, "utf-8"));
     expect(content.permissions.additionalDirectories).toEqual(["/some/path"]);
     expect(content.mcpServers.other).toBeDefined();
-    expect(content.mcpServers["qtc-prod"]).toBeDefined();
+    expect(content.mcpServers.prod).toBeDefined();
   });
 
   it("dry-run no escribe el archivo aunque haya cambios", () => {
@@ -78,11 +78,7 @@ describe("writeMcpEntry — Claude (settings.json)", () => {
     mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     writeFileSync(
       settingsPath,
-      JSON.stringify(
-        { mcpServers: { "qtc-cert": { command: "old", args: [], env: {} } } },
-        null,
-        2,
-      ),
+      JSON.stringify({ mcpServers: { cert: { command: "old", args: [], env: {} } } }, null, 2),
     );
     const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
     expect(result.action).toBe("written");
@@ -101,18 +97,15 @@ describe("writeMcpEntry — Codex (config.toml)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea config.toml inicial con [mcp_servers.qtc-cert] y [mcp_servers.qtc-cert.env]", () => {
+  it("crea config.toml inicial con [mcp_servers.cert] y [mcp_servers.cert.env]", () => {
     const result = writeMcpEntry("codex", buildMcpEntry("cert"), { scopeDir });
     expect(result.action).toBe("written");
     const configPath = join(scopeDir, ".codex", "config.toml");
     const text = readFileSync(configPath, "utf-8");
-    expect(text).toContain("[mcp_servers.qtc-cert]");
-    expect(text).toContain("[mcp_servers.qtc-cert.env]");
+    expect(text).toContain("[mcp_servers.cert]");
+    expect(text).toContain("[mcp_servers.cert.env]");
     const parsed = parseToml(text) as Record<string, unknown>;
-    const mcp = (parsed.mcp_servers as Record<string, unknown>)?.["qtc-cert"] as Record<
-      string,
-      unknown
-    >;
+    const mcp = (parsed.mcp_servers as Record<string, unknown>)?.cert as Record<string, unknown>;
     expect(mcp).toBeDefined();
     expect(mcp.command).toBe("agent-workflow");
     expect(mcp.args).toEqual(["mcp", "dbhub", "cert"]);
@@ -135,7 +128,7 @@ describe("writeMcpEntry — Codex (config.toml)", () => {
     expect(text).toContain("additional_writable_roots");
     expect(text).toContain('"/path/a"');
     expect(text).toContain('"/path/b"');
-    expect(text).toContain("[mcp_servers.qtc-prod]");
+    expect(text).toContain("[mcp_servers.prod]");
   });
 
   it("dry-run no escribe config.toml", () => {
@@ -153,7 +146,7 @@ describe("writeMcpEntry — Codex (config.toml)", () => {
     const configPath = join(scopeDir, ".codex", "config.toml");
     const parsed = parseToml(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
     const mcp = parsed.mcp_servers as Record<string, unknown>;
-    expect(mcp["qtc-cert"]).toBeDefined();
-    expect(mcp["qtc-prod"]).toBeDefined();
+    expect(mcp.cert).toBeDefined();
+    expect(mcp.prod).toBeDefined();
   });
 });

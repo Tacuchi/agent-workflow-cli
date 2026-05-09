@@ -227,7 +227,7 @@ function baseNoBlock(
     missing: [],
     extra: [],
     status: "no-project-block",
-    detail: "QTC-PROJECT no encontrado o sin fuentes en CLAUDE.md/AGENTS.md",
+    detail: "<NS>-PROJECT no encontrado o sin fuentes en CLAUDE.md/AGENTS.md",
   };
 }
 

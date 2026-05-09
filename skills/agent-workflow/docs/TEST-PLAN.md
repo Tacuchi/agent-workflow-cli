@@ -25,7 +25,7 @@ Cada comando que el skill referencia ejecuta y devuelve la forma JSON declarada 
 
 ### A2 — JSON contract por comando
 
-- **Precondición**: workspace de prueba con `qtc-PROJECT` block y al menos una sesión.
+- **Precondición**: workspace de prueba con bloque `<NS>-PROJECT` y al menos una sesión.
 - **Pasos** (por cada comando read-only):
   1. Ejecutar `agent-workflow <cmd> [flags] | jq '.'`.
   2. Validar que `jq` retorna 0 (JSON parseable).
@@ -44,7 +44,7 @@ Cada comando que el skill referencia ejecuta y devuelve la forma JSON declarada 
 
 ## Contract B — Skill ↔ usuario externo
 
-Una empresa nueva (sin plugins QTC) instala skill + CLI y completa un workflow E2E sin tocar plugins.
+Una empresa nueva instala skill + CLI y completa un workflow E2E sin tocar plugins.
 
 ### B1 — Install path
 
@@ -82,36 +82,36 @@ Una empresa nueva (sin plugins QTC) instala skill + CLI y completa un workflow E
 - **Criterio**: el modelo lee SKILL.md, identifica `session-create`, lo ejecuta con namespace correcto.
 - **Frontera**: depende de que la SessionStart del entorno setee `AW_NAMESPACE` o el modelo use `--namespace`.
 
-## Contract C — Plugins QTC sin lógica universal
+## Contract C — Plugins downstream sin lógica universal
 
-El workflow universal opera con namespace alternativo (sin plugins QTC) y produce resultados equivalentes.
+El workflow universal opera con namespaces alternativos y produce resultados equivalentes.
 
 ### C1 — Equivalencia operacional
 
-- **Precondición**: workspace QTC real (con plugins instalados) + workspace alternativo "vanilla" (sin plugins, con bloque `<NS>-PROJECT` propio).
+- **Precondición**: workspace con plugins instalados + workspace alternativo "vanilla" (sin plugins, con bloque `<NS>-PROJECT` propio).
 - **Pasos**: ejecutar la misma secuencia (`session-create → tasks-data → checkpoint-write → session-close`) en ambos workspaces, con namespaces respectivos.
-- **Criterio**: ambos generan estructuras isomorfas (`.<ns>/sessions/sessionNNN-dev-<slug>/OBJETIVO.md` + fila en `HISTORY.md` + bloque `<NS>-PROJECT` actualizado). Diferencias permitidas: contenido de `OBJETIVO.md` (texto), header del bloque project (`QTC-PROJECT` vs `ACME-PROJECT`).
-- **Frontera**: no valida los skills de negocio QTC (coding-standards, sql-organizer) — esos son específicos del namespace.
+- **Criterio**: ambos generan estructuras isomorfas (`.<ns>/sessions/sessionNNN-dev-<slug>/OBJETIVO.md` + fila en `HISTORY.md` + bloque `<NS>-PROJECT` actualizado). Diferencias permitidas: contenido de `OBJETIVO.md` (texto), header del bloque project (`WORKFLOW-PROJECT` vs `ACME-PROJECT`).
+- **Frontera**: no valida los skills de negocio downstream — esos son específicos del namespace.
 
-### C2 — Plugins QTC no implementan lifecycle
+### C2 — Plugins downstream no implementan lifecycle
 
-- **Precondición**: repos `qtc-core/dev/design/analyze` accesibles.
+- **Precondición**: repos del plugin downstream accesibles.
 - **Pasos**:
-  1. `grep -rn "def session_create\|function sessionCreate\|create_session" qtc-{core,dev,design,analyze}/skills/` (debe retornar 0 hits).
-  2. `find qtc-{core,dev,design,analyze} -name "*.py"` (debe retornar 0 archivos).
+  1. `grep -rn "def session_create\|function sessionCreate\|create_session" <plugin-root>/skills/` (debe retornar 0 hits).
+  2. `find <plugin-root> -name "*.py"` (debe retornar 0 archivos si el plugin es sólo skills/hooks declarativos).
   3. Para cada hook en `hooks.json`: validar que invoca `agent-workflow ...` (no script local).
 - **Criterio**: 0 funciones de lifecycle, 0 archivos Python, 100% de hooks invocan al CLI.
 - **Frontera**: no valida que los skills de negocio sean correctos — solo que no duplican lógica universal.
 
 ### C3 — `AW_NAMESPACE` propagation
 
-- **Precondición**: nuevo Claude Code session en workspace QTC.
+- **Precondición**: nuevo Claude Code session en workspace del plugin.
 - **Pasos**:
   1. Esperar SessionStart hook.
   2. Verificar `cat ~/.config/agent-workflow/namespace`.
   3. Correr `agent-workflow self namespace`.
-- **Criterio**: archivo contiene `qtc`, comando reporta `{ namespace: "qtc", source: "user-config" }` (o "workspace" si v1.2.0 detectó bloque local).
-- **Frontera**: no valida cómo otros plugins (no-QTC) propagan su namespace.
+- **Criterio**: archivo contiene el namespace esperado, comando reporta `{ namespace: "<namespace>", source: "user-config" }` (o "workspace" si detectó bloque local).
+- **Frontera**: no valida cómo plugins no instalados propagan su namespace.
 
 ## Contract D — Hooks (cobertura faltante en tests del CLI)
 
@@ -140,7 +140,7 @@ Estos tests cierran H4 (gap de tests existentes en agent-workflow/tests/).
 
 ### D4 — `plugin-doctor`
 
-- **Precondición**: plugin root válido (ej. `qtc-core`).
+- **Precondición**: plugin root válido.
 - **Pasos**: `agent-workflow plugin-doctor --plugin-root /Users/tacuchi/Git/core-workflow-plugin`.
 - **Criterio**: JSON con `status: "ok"` o `findings: []`. Si manifests no declaran `exportedSkills`, dejar warning explícito (no error).
 - **Frontera**: no valida correctness de los skills exportados — solo presencia.
@@ -151,7 +151,7 @@ Estos tests cierran H4 (gap de tests existentes en agent-workflow/tests/).
 |---|---|---|
 | A — CLI ↔ skill | 3 (A1, A2, A3) | crítica |
 | B — Skill ↔ usuario externo | 3 (B1, B2, B3) | alta |
-| C — Plugins QTC sin lógica universal | 3 (C1, C2, C3) | alta |
+| C — Plugins downstream sin lógica universal | 3 (C1, C2, C3) | alta |
 | D — Hooks gap | 4 (D1, D2, D3, D4) | media |
 | **Total** | **13 specs** | |
 

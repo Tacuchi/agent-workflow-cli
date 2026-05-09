@@ -10,6 +10,8 @@ import {
 import { renderRefs } from "./render/history-row.js";
 import { resolveSession } from "./session-resolver.js";
 
+type ResolvedSession = NonNullable<Awaited<ReturnType<typeof resolveSession>>>;
+
 export interface SessionCloseInput {
   code?: string;
   graduatedDecisions?: string;
@@ -57,41 +59,9 @@ export async function runSessionClose(
   const session = await resolveSession(fs, env, paths, input.code, true);
   if (!session) return { error: `Sesión no encontrada: ${input.code}` };
 
-  const refsParts: string[] = [];
-  for (const [key, tag] of Object.entries(FLAG_TO_TAG)) {
-    const value = (input as unknown as Record<string, string | undefined>)[key];
-    if (value !== undefined && value.trim().length > 0) {
-      refsParts.push(`${tag}:${value.trim()}`);
-    }
-  }
-  if (input.refs && input.refs.trim().length > 0) {
-    refsParts.push(input.refs.trim());
-  }
-  const refsCombined = refsParts.length > 0 ? refsParts.join(",") : null;
-  const refsRendered = refsCombined ? renderRefs(refsCombined) : "—";
-
-  const date = session.date ?? formatToday();
-  const summary = session.summary ?? "";
-
-  const codeNorm = session.code ?? input.code ?? "";
-  const upsertResult = await withCwdLock(fs, paths, () =>
-    upsertRow(fs, paths.cwdHistoryFile(), codeNorm, (hasFlow) =>
-      buildRow({
-        code: codeNorm,
-        flow: session.flow ?? null,
-        sesionName: session.name,
-        date,
-        state: "closed",
-        summary,
-        refs: refsRendered,
-        hasFlow,
-      }),
-    ),
-  );
-  if (upsertResult && typeof upsertResult === "object" && "error" in upsertResult) {
-    return { error: upsertResult.error };
-  }
-  const action: UpsertAction = upsertResult;
+  const refsRendered = buildCloseRefs(input);
+  const actionResult = await markHistoryClosed(fs, paths, session, input, refsRendered);
+  if (typeof actionResult === "object") return actionResult;
 
   const projectMd = await runProjectMdUpsertWrite(fs, env, paths, {
     op: "remove-session",
@@ -106,11 +76,59 @@ export async function runSessionClose(
     sessionClose: {
       code: session.code ?? input.code ?? "",
       folder: session.folder,
-      history_action: action,
+      history_action: actionResult,
       refs: refsRendered,
       qtc_project_updated: true,
     },
   };
+}
+
+function buildCloseRefs(input: SessionCloseInput): string {
+  const refsParts = collectCloseRefs(input);
+  const refsCombined = refsParts.length > 0 ? refsParts.join(",") : null;
+  return refsCombined ? renderRefs(refsCombined) : "—";
+}
+
+function collectCloseRefs(input: SessionCloseInput): string[] {
+  const refsParts: string[] = [];
+  for (const [key, tag] of Object.entries(FLAG_TO_TAG)) {
+    const value = (input as unknown as Record<string, string | undefined>)[key];
+    if (value !== undefined && value.trim().length > 0) {
+      refsParts.push(`${tag}:${value.trim()}`);
+    }
+  }
+  if (input.refs && input.refs.trim().length > 0) {
+    refsParts.push(input.refs.trim());
+  }
+  return refsParts;
+}
+
+async function markHistoryClosed(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: ResolvedSession,
+  input: SessionCloseInput,
+  refsRendered: string,
+): Promise<UpsertAction | SessionCloseError> {
+  const codeNorm = session.code ?? input.code ?? "";
+  const upsertResult = await withCwdLock(fs, paths, () =>
+    upsertRow(fs, paths.cwdHistoryFile(), codeNorm, (hasFlow) =>
+      buildRow({
+        code: codeNorm,
+        flow: session.flow ?? null,
+        sesionName: session.name,
+        date: session.date ?? formatToday(),
+        state: "closed",
+        summary: session.summary ?? "",
+        refs: refsRendered,
+        hasFlow,
+      }),
+    ),
+  );
+  if (upsertResult && typeof upsertResult === "object" && "error" in upsertResult) {
+    return { error: upsertResult.error };
+  }
+  return upsertResult;
 }
 
 function formatToday(): string {

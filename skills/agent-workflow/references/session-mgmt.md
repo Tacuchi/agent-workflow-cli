@@ -82,7 +82,7 @@ agent-workflow session-close --code session035 \
   --graduated-decisions "DEC-007,DEC-009" \
   --graduated-plan "TASKS" \
   --graduated-scripts "019" \
-  --refs "[CHECKPOINT](.qtc/sessions/session035-dev-aw-skill-repo/CHECKPOINT.md)"
+  --refs "[CHECKPOINT](.workflow/sessions/session035-dev-aw-skill-repo/CHECKPOINT.md)"
 ```
 
 Flags:

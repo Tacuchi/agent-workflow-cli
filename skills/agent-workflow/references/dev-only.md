@@ -44,7 +44,7 @@ Compute the next NNN correlative for a directory. Used by `session-create` and t
 
 ```bash
 agent-workflow next-number /path/to/sessions
-agent-workflow next-number .qtc/sessions
+agent-workflow next-number .workflow/sessions
 ```
 
 The directory argument is positional (not a flag).

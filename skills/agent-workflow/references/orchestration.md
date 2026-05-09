@@ -8,7 +8,7 @@ Decide whether an OBJETIVO needs full planning, lite planning, or skip-to-execut
 
 ```bash
 agent-workflow auto-plan-decide --objetivo "Bug: login redirect loop"
-agent-workflow auto-plan-decide --objetivo-file .qtc/sessions/sessionNNN-.../OBJETIVO.md
+agent-workflow auto-plan-decide --objetivo-file .workflow/sessions/sessionNNN-.../OBJETIVO.md
 ```
 
 Output:
@@ -25,7 +25,7 @@ Detect whether a fresh user request diverges from the active session's OBJETIVO.
 
 ```bash
 agent-workflow topic-change-check \
-  --objetivo-file .qtc/sessions/sessionNNN/OBJETIVO.md \
+  --objetivo-file .workflow/sessions/sessionNNN/OBJETIVO.md \
   --request "Quiero refactorizar el módulo de pagos"
 ```
 

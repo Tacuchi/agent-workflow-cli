@@ -21,7 +21,7 @@ export function formatCheckpointMd(state: SessionState): string {
   appendFilesTouched(lines, state);
   appendContext(lines);
   appendRefs(lines, state);
-  lines.push("", `<!-- written by qtc-core.checkpoint at ${state.timestamp} -->`, "");
+  lines.push("", `<!-- written by agent-workflow.checkpoint at ${state.timestamp} -->`, "");
   return lines.join("\n");
 }
 

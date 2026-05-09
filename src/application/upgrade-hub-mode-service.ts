@@ -49,7 +49,7 @@ export async function runUpgradeHubMode(
       runtime?.slashCommands?.hubInit ?? "(run namespace-specific hub-init command)";
     return {
       applied: false,
-      reason: "no_qtc_project_block_found",
+      reason: "no_project_block_found",
       hint: `Corre ${projectInitCmd} o ${hubInitCmd} primero.`,
     };
   }
