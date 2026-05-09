@@ -131,7 +131,7 @@ describe("selfInstallSkill", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it("installs from a local path into ~/.claude/skills/agent-workflow/", async () => {
+  it("default --target=all installs into both ~/.claude/skills/ and ~/.codex/skills/", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
@@ -144,79 +144,135 @@ describe("selfInstallSkill", () => {
     if (result.ok && result.data) {
       expect(result.data.status).toBe("installed");
       expect(result.data.source_kind).toBe("path");
-      expect(result.data.dest).toBe(join(home, ".claude/skills", SKILL_DIR_NAME));
-      expect(result.data.overwrote_existing).toBe(false);
-      expect(result.data.files_copied).toBeGreaterThan(0);
+      expect(result.data.dests).toHaveLength(2);
+      const claudeDest = result.data.dests.find((d) => d.target === "claude");
+      const codexDest = result.data.dests.find((d) => d.target === "codex");
+      expect(claudeDest?.dest).toBe(join(home, ".claude/skills", SKILL_DIR_NAME));
+      expect(codexDest?.dest).toBe(join(home, ".codex/skills", SKILL_DIR_NAME));
+      expect(claudeDest?.overwrote_existing).toBe(false);
+      expect(codexDest?.overwrote_existing).toBe(false);
+      expect(claudeDest?.files_copied).toBeGreaterThan(0);
+      expect(codexDest?.files_copied).toBeGreaterThan(0);
     }
 
-    const installedSkill = await readFile(
+    const claudeSkill = await readFile(
       join(home, ".claude/skills", SKILL_DIR_NAME, "SKILL.md"),
       "utf8",
     );
-    expect(installedSkill).toContain("name: agent-workflow");
-
-    // .git should NOT be copied
-    const gitExists = await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME, ".git"));
-    expect(gitExists).toBe(false);
-
-    // References preserved
-    const ref = await readFile(
-      join(home, ".claude/skills", SKILL_DIR_NAME, "references/session-mgmt.md"),
+    const codexSkill = await readFile(
+      join(home, ".codex/skills", SKILL_DIR_NAME, "SKILL.md"),
       "utf8",
     );
-    expect(ref).toContain("session-mgmt");
+    expect(claudeSkill).toContain("name: agent-workflow");
+    expect(codexSkill).toContain("name: agent-workflow");
+
+    // .git should NOT be copied (in either target)
+    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME, ".git"))).toBe(false);
+    expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME, ".git"))).toBe(false);
   });
 
-  it("rejects when destination exists without --force", async () => {
+  it("--target=claude installs only to ~/.claude/skills/", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
-    const dest = join(home, ".claude/skills", SKILL_DIR_NAME);
-    await mkdir(dest, { recursive: true });
-    await writeFile(join(dest, "SKILL.md"), "old\n", "utf8");
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "claude" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.dests).toHaveLength(1);
+      expect(result.data.dests[0]?.target).toBe("claude");
+    }
+    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(true);
+    expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME))).toBe(false);
+  });
+
+  it("--target=codex installs only to ~/.codex/skills/", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "codex" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.dests).toHaveLength(1);
+      expect(result.data.dests[0]?.target).toBe("codex");
+    }
+    expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME))).toBe(true);
+    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
+  });
+
+  it("--target=invalid is rejected with INVALID_TARGET", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "vscode" }, []), ctx);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_TARGET");
+    }
+  });
+
+  it("rejects when destination exists without --force (any target with conflict)", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+    const claudeDest = join(home, ".claude/skills", SKILL_DIR_NAME);
+    await mkdir(claudeDest, { recursive: true });
+    await writeFile(join(claudeDest, "SKILL.md"), "old\n", "utf8");
 
     const result = await selfInstallSkill(buildArgs({ from: source }, []), ctx);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("DEST_EXISTS");
+      expect(result.error.message).toContain("--force");
     }
 
-    // Old content preserved
-    const old = await readFile(join(dest, "SKILL.md"), "utf8");
+    // Old content preserved; codex not created either.
+    const old = await readFile(join(claudeDest, "SKILL.md"), "utf8");
     expect(old).toBe("old\n");
+    expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME))).toBe(false);
   });
 
-  it("overwrites destination with --force", async () => {
+  it("overwrites existing dest with --force; reports overwrote_existing per target", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
-    const dest = join(home, ".claude/skills", SKILL_DIR_NAME);
-    await mkdir(dest, { recursive: true });
-    await writeFile(join(dest, "SKILL.md"), "old\n", "utf8");
+    const claudeDest = join(home, ".claude/skills", SKILL_DIR_NAME);
+    await mkdir(claudeDest, { recursive: true });
+    await writeFile(join(claudeDest, "SKILL.md"), "old\n", "utf8");
 
     const result = await selfInstallSkill(buildArgs({ from: source }, ["--force"]), ctx);
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
-      expect(result.data.overwrote_existing).toBe(true);
+      const claude = result.data.dests.find((d) => d.target === "claude");
+      const codex = result.data.dests.find((d) => d.target === "codex");
+      expect(claude?.overwrote_existing).toBe(true);
+      expect(codex?.overwrote_existing).toBe(false);
     }
 
-    const fresh = await readFile(join(dest, "SKILL.md"), "utf8");
+    const fresh = await readFile(join(claudeDest, "SKILL.md"), "utf8");
     expect(fresh).toContain("name: agent-workflow");
   });
 
-  it("--dry-run does not write anything", async () => {
+  it("--dry-run does not write anything; dests reports preview per target", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
-    const dest = join(home, ".claude/skills", SKILL_DIR_NAME);
 
     const result = await selfInstallSkill(buildArgs({ from: source }, ["--dry-run"]), ctx);
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.status).toBe("dry-run");
+      expect(result.data.dests).toHaveLength(2);
+      expect(result.data.dests.every((d) => d.status === "dry-run")).toBe(true);
     }
 
-    expect(await fs.exists(dest)).toBe(false);
+    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
+    expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME))).toBe(false);
   });
 
   it("rejects local source missing SKILL.md", async () => {
@@ -277,7 +333,6 @@ describe("selfInstallSkill", () => {
       expect(result.error.code).toBe("INVALID_SOURCE");
       expect(result.error.message).toContain("bundled");
     }
-    // No git invocation — URL is rejected up front.
     expect(proc.lastInvocation).toBeUndefined();
   });
 
@@ -302,7 +357,6 @@ describe("selfInstallSkill", () => {
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
-    // Inject a resolver that returns the fake source we built in beforeEach.
     const result = await selfInstallSkill(buildArgs({}, []), ctx, async () => source);
 
     expect(result.ok).toBe(true);
@@ -319,7 +373,6 @@ describe("selfInstallSkill", () => {
     );
     expect(installed).toContain("name: agent-workflow");
 
-    // git was NOT invoked — bundled path uses no clone.
     expect(proc.lastInvocation).toBeUndefined();
   });
 
@@ -340,7 +393,7 @@ describe("selfInstallSkill", () => {
     expect(proc.lastInvocation).toBeUndefined();
   });
 
-  it("SKILL_DIR_NAME points to the new bundled skill name", () => {
+  it("SKILL_DIR_NAME points to the bundled skill name", () => {
     expect(SKILL_DIR_NAME).toBe("agent-workflow");
   });
 });

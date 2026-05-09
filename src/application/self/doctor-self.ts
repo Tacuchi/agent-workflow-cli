@@ -2,6 +2,16 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
+import { type InstallTarget, SKILL_DIR_NAME, TARGET_ROOTS } from "./install-skill.js";
+
+export interface SkillTargetReport {
+  target: InstallTarget;
+  path: string;
+  installed: boolean;
+  legacy_leftover?: boolean;
+  legacy_leftover_path?: string;
+  legacy_leftover_warning?: string;
+}
 
 export interface SelfDoctorReport {
   cli_version: string;
@@ -20,21 +30,38 @@ export interface SelfDoctorReport {
   };
   skill: {
     installed: boolean;
-    path: string;
-    legacy_leftover?: boolean;
-    legacy_leftover_path?: string;
-    legacy_leftover_warning?: string;
+    targets: SkillTargetReport[];
   };
 }
 
 const LEGACY_SKILL_DIR = "agent-workflow-manager";
 
 export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoctorReport>> {
-  const skillPath = join(ctx.env.homeDir(), ".claude", "skills", "agent-workflow");
-  const skillInstalled = await ctx.fs.exists(skillPath);
+  const home = ctx.env.homeDir();
+  const targets: InstallTarget[] = ["claude", "codex"];
 
-  const legacyPath = join(ctx.env.homeDir(), ".claude", "skills", LEGACY_SKILL_DIR);
-  const legacyLeftover = await ctx.fs.exists(legacyPath);
+  const targetReports: SkillTargetReport[] = [];
+  for (const target of targets) {
+    const skillPath = join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
+    const legacyPath = join(home, ...TARGET_ROOTS[target], LEGACY_SKILL_DIR);
+    const installed = await ctx.fs.exists(skillPath);
+    const legacyLeftover = await ctx.fs.exists(legacyPath);
+
+    targetReports.push({
+      target,
+      path: skillPath,
+      installed,
+      ...(legacyLeftover
+        ? {
+            legacy_leftover: true,
+            legacy_leftover_path: legacyPath,
+            legacy_leftover_warning: `Skill legacy detectada en ${legacyPath}. Reemplazada por '${skillPath}' tras el rename de agent-workflow-manager → agent-workflow. Recomendado: mv ${legacyPath} ${legacyPath}.bak (preserva evidencia) y cuando estés tranquilo, rm -rf el .bak.`,
+          }
+        : {}),
+    });
+  }
+
+  const installedAny = targetReports.some((t) => t.installed);
 
   return {
     ok: true,
@@ -57,15 +84,8 @@ export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoc
         ...(ctx.runtime.displayName ? { display_name: ctx.runtime.displayName } : {}),
       },
       skill: {
-        installed: skillInstalled,
-        path: skillPath,
-        ...(legacyLeftover
-          ? {
-              legacy_leftover: true,
-              legacy_leftover_path: legacyPath,
-              legacy_leftover_warning: `Skill legacy detectada en ${legacyPath}. Reemplazada por '${skillPath}' tras el rename de agent-workflow-manager → agent-workflow. Recomendado: mv ${legacyPath} ${legacyPath}.bak (preserva evidencia) y cuando estés tranquilo, rm -rf el .bak.`,
-            }
-          : {}),
+        installed: installedAny,
+        targets: targetReports,
       },
     },
     exitCode: 0,

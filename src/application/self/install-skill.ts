@@ -8,14 +8,30 @@ import type { CommandResult } from "../../domain/types.js";
 export const SKILL_DIR_NAME = "agent-workflow";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
 
+export type InstallTarget = "claude" | "codex";
+
+export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
+  claude: [".claude", "skills"],
+  codex: [".codex", "skills"],
+};
+
+export interface SelfInstallTargetResult {
+  target: InstallTarget;
+  dest: string;
+  status: "installed" | "dry-run" | "skipped";
+  overwrote_existing: boolean;
+  files_copied?: number;
+  error?: string;
+}
+
 export interface SelfInstallSkillData {
-  status: "installed" | "dry-run";
+  status: "installed" | "dry-run" | "partial";
   source: string;
   source_kind: "path" | "bundled";
-  dest: string;
-  files_copied?: number;
-  overwrote_existing?: boolean;
+  dests: SelfInstallTargetResult[];
 }
+
+const TARGET_CHOICES: readonly (InstallTarget | "all")[] = ["claude", "codex", "all"];
 
 export async function selfInstallSkill(
   args: ParsedArgs,
@@ -24,49 +40,29 @@ export async function selfInstallSkill(
 ): Promise<CommandResult<SelfInstallSkillData>> {
   const force = args.flags.has("--force");
   const dryRun = args.flags.has("--dry-run");
-  const fromArg = args.values.get("from");
-  const dest = join(ctx.env.homeDir(), ".claude", "skills", SKILL_DIR_NAME);
+  const targetArg = args.values.get("target") ?? "all";
 
-  let sourceArg: string;
-  let sourceKind: "path" | "bundled";
+  const targetsResult = resolveTargets(targetArg);
+  if (!targetsResult.ok) return targetsResult.result;
+  const targets = targetsResult.value;
 
-  if (fromArg !== undefined) {
-    if (looksLikeRemoteUrl(fromArg)) {
-      return {
-        ok: false,
-        error: {
-          code: "INVALID_SOURCE",
-          message:
-            "--from must be a local filesystem path. Remote URLs are no longer supported — the skill is bundled inside the CLI tarball. Drop --from to install the bundled skill, or pass a local checkout path.",
-        },
-        exitCode: 1,
-      };
-    }
-    sourceArg = fromArg;
-    sourceKind = "path";
-  } else {
-    const bundled = await resolveBundled();
-    if (bundled === null) {
-      return {
-        ok: false,
-        error: {
-          code: "BUNDLED_NOT_FOUND",
-          message: `Bundled skill not found relative to the CLI install. This usually means you are running from a dev checkout without a build, or the tarball is missing 'skills/'. Use --from <local-path> to override.`,
-        },
-        exitCode: 1,
-      };
-    }
-    sourceArg = bundled;
-    sourceKind = "bundled";
-  }
+  const sourceResult = await resolveSource(args.values.get("from"), resolveBundled);
+  if (!sourceResult.ok) return sourceResult.result;
+  const { sourceArg, sourceKind } = sourceResult.value;
 
-  const destExists = await ctx.fs.exists(dest);
-  if (destExists && !force && !dryRun) {
+  const destByTarget = buildDestByTarget(ctx.env.homeDir());
+  const existingTargets = await Promise.all(
+    targets.map(async (t) => ({ target: t, exists: await ctx.fs.exists(destByTarget[t]) })),
+  );
+
+  const blocking = existingTargets.filter((t) => t.exists && !force && !dryRun);
+  if (blocking.length > 0) {
+    const names = blocking.map((t) => destByTarget[t.target]).join(", ");
     return {
       ok: false,
       error: {
         code: "DEST_EXISTS",
-        message: `Destination ${dest} already exists. Use --force to overwrite or --dry-run to preview.`,
+        message: `Destination already exists: ${names}. Use --force to overwrite, --dry-run to preview, or --target <claude|codex> to install only one.`,
       },
       exitCode: 1,
     };
@@ -79,15 +75,121 @@ export async function selfInstallSkill(
         status: "dry-run",
         source: sourceArg,
         source_kind: sourceKind,
-        dest,
-        overwrote_existing: destExists,
+        dests: existingTargets.map((t) => ({
+          target: t.target,
+          dest: destByTarget[t.target],
+          status: "dry-run",
+          overwrote_existing: t.exists,
+        })),
       },
       exitCode: 0,
     };
   }
 
-  const sourceExists = await ctx.fs.exists(sourceArg);
-  if (!sourceExists) {
+  const validation = await validateSourceContents(sourceArg, ctx);
+  if (validation) return validation;
+
+  const results: SelfInstallTargetResult[] = [];
+  for (const t of existingTargets) {
+    const dest = destByTarget[t.target];
+    if (t.exists && force) {
+      await rm(dest, { recursive: true, force: true });
+    }
+    const filesCopied = await copyTree(sourceArg, dest);
+    results.push({
+      target: t.target,
+      dest,
+      status: "installed",
+      overwrote_existing: t.exists,
+      files_copied: filesCopied,
+    });
+  }
+
+  return {
+    ok: true,
+    data: {
+      status: "installed",
+      source: sourceArg,
+      source_kind: sourceKind,
+      dests: results,
+    },
+    exitCode: 0,
+  };
+}
+
+type Resolved<T> =
+  | { ok: true; value: T }
+  | { ok: false; result: CommandResult<SelfInstallSkillData> };
+
+function resolveTargets(targetArg: string): Resolved<InstallTarget[]> {
+  if (!TARGET_CHOICES.includes(targetArg as InstallTarget | "all")) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        error: {
+          code: "INVALID_TARGET",
+          message: `--target must be one of: ${TARGET_CHOICES.join(", ")}. Got '${targetArg}'.`,
+        },
+        exitCode: 1,
+      },
+    };
+  }
+  const targets: InstallTarget[] =
+    targetArg === "all" ? ["claude", "codex"] : [targetArg as InstallTarget];
+  return { ok: true, value: targets };
+}
+
+async function resolveSource(
+  fromArg: string | undefined,
+  resolveBundled: () => Promise<string | null>,
+): Promise<Resolved<{ sourceArg: string; sourceKind: "path" | "bundled" }>> {
+  if (fromArg !== undefined) {
+    if (looksLikeRemoteUrl(fromArg)) {
+      return {
+        ok: false,
+        result: {
+          ok: false,
+          error: {
+            code: "INVALID_SOURCE",
+            message:
+              "--from must be a local filesystem path. Remote URLs are no longer supported — the skill is bundled inside the CLI tarball. Drop --from to install the bundled skill, or pass a local checkout path.",
+          },
+          exitCode: 1,
+        },
+      };
+    }
+    return { ok: true, value: { sourceArg: fromArg, sourceKind: "path" } };
+  }
+  const bundled = await resolveBundled();
+  if (bundled === null) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        error: {
+          code: "BUNDLED_NOT_FOUND",
+          message: `Bundled skill not found relative to the CLI install. This usually means you are running from a dev checkout without a build, or the tarball is missing 'skills/'. Use --from <local-path> to override.`,
+        },
+        exitCode: 1,
+      },
+    };
+  }
+  return { ok: true, value: { sourceArg: bundled, sourceKind: "bundled" } };
+}
+
+function buildDestByTarget(home: string): Record<InstallTarget, string> {
+  return {
+    claude: join(home, ...TARGET_ROOTS.claude, SKILL_DIR_NAME),
+    codex: join(home, ...TARGET_ROOTS.codex, SKILL_DIR_NAME),
+  };
+}
+
+async function validateSourceContents(
+  sourceArg: string,
+  ctx: CliContext,
+): Promise<CommandResult<SelfInstallSkillData> | null> {
+  if (!(await ctx.fs.exists(sourceArg))) {
     return {
       ok: false,
       error: {
@@ -97,9 +199,7 @@ export async function selfInstallSkill(
       exitCode: 1,
     };
   }
-  const stagingDir = sourceArg;
-
-  const skillPath = join(stagingDir, "SKILL.md");
+  const skillPath = join(sourceArg, "SKILL.md");
   if (!(await ctx.fs.exists(skillPath))) {
     return {
       ok: false,
@@ -121,33 +221,9 @@ export async function selfInstallSkill(
       exitCode: 1,
     };
   }
-
-  if (destExists && force) {
-    await rm(dest, { recursive: true, force: true });
-  }
-
-  const filesCopied = await copyTree(stagingDir, dest);
-
-  return {
-    ok: true,
-    data: {
-      status: "installed",
-      source: sourceArg,
-      source_kind: sourceKind,
-      dest,
-      files_copied: filesCopied,
-      overwrote_existing: destExists,
-    },
-    exitCode: 0,
-  };
+  return null;
 }
 
-/**
- * Reject `--from` values that look like a remote URL up front so users get a
- * clear error instead of a confusing "path does not exist". The skill is
- * bundled-only since v3.0.2 — the standalone repo `Tacuchi/agent-workflow-manager`
- * is no longer maintained.
- */
 function looksLikeRemoteUrl(value: string): boolean {
   return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/)/.test(value);
 }
@@ -173,15 +249,6 @@ async function copyTree(src: string, dest: string): Promise<number> {
   return count;
 }
 
-/**
- * Resolve the bundled skill path by walking up from this module's directory
- * until a `skills/agent-workflow/SKILL.md` is found. Returns the directory
- * containing SKILL.md, or null if no candidate is reachable.
- *
- * Works in both dist (`dist/application/self/install-skill.js`) and dev
- * (`src/application/self/install-skill.ts` via a runner) layouts because the
- * walk-up looks for the marker file rather than a fixed depth.
- */
 export async function resolveBundledSkillPath(): Promise<string | null> {
   const here = dirname(fileURLToPath(import.meta.url));
   let current = here;

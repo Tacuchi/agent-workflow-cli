@@ -4,6 +4,38 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.6.0] — 2026-05-09
+
+**Minor — dual-target skill install + doctor (session029).** `self install-skill` y `self doctor` ahora operan en `~/.claude/skills/agent-workflow/` **y** `~/.codex/skills/agent-workflow/`. Cierra el gap detectado al verificar T6 de session028: el skill `agent-workflow` se publicaba sólo en Claude Code, dejando Codex sin la skill manager. Cambio de output JSON.
+
+### Added
+
+- **`self install-skill --target <claude|codex|all>`** — flag nuevo, default `all`. Instala en ambos targets en una sola invocación. `claude` o `codex` para opt-out single-target.
+- **`InstallTarget`** y **`TARGET_ROOTS`** exports en `src/application/self/install-skill.ts` — usados también por `doctor-self.ts` para mantener un solo source-of-truth de los paths.
+- **3 tests nuevos netos** en `tests/unit/self-install-skill.test.ts` (--target=claude, --target=codex, --target=invalid; los demás reformulan los originales para validar el nuevo shape `dests[]`) y **2 tests nuevos** en `tests/unit/self-doctor.test.ts` (ambos targets installed, leftover en codex independiente).
+
+### Changed — `self install-skill`
+
+- **Output shape**: el campo `dest` (string) se reemplaza por `dests[]` (array de `{ target, dest, status, overwrote_existing, files_copied }`). Cambio de shape — bump minor.
+- **`DEST_EXISTS`**: ahora reporta los paths conflictivos de cada target en el mensaje de error y agrega la sugerencia `--target <claude|codex>` para instalar uno solo.
+- **`--force`**: opera por target independiente. Si sólo `~/.claude/skills/agent-workflow` existe, se sobrescribe sólo ese — el reporte por target indica `overwrote_existing: true|false` correctamente.
+- Refactor interno: `selfInstallSkill` extrae `resolveTargets`, `resolveSource`, `validateSourceContents`, `buildDestByTarget` para bajar la complejidad cognitiva.
+
+### Changed — `self doctor`
+
+- **Output shape `skill`**: se reemplaza `skill.path`/`skill.legacy_leftover*` por `skill.targets[]` (array de `{ target, path, installed, legacy_leftover?, legacy_leftover_path?, legacy_leftover_warning? }`). `skill.installed` queda como agregado (`true` si al menos uno de los targets tiene la skill).
+- Detección de leftover `agent-workflow-manager` ahora corre por target: si Codex tenía leftover y Claude Code no (o viceversa), se reporta correctamente.
+
+### Migration
+
+Cambio de shape en JSON output — consumidores que dependían de `data.dest` (install-skill) o `data.skill.path` (doctor) tienen que migrar a la nueva shape `data.dests[].dest` y `data.skill.targets[].path`. Documentado arriba.
+
+`self install-skill` sin flags ahora instala en ambos targets (cambio de default). Para preservar el comportamiento legacy single-target Claude Code, usar `--target claude`.
+
+### Tests
+
+- 335 tests passing (vs 330 en 5.5.1; +5 netos cubriendo dual-target). Lint: 0 errors, 1 warning pre-existente en `runSessionClose` (fuera de scope).
+
 ## [5.5.1] — 2026-05-09
 
 **Patch — P2 cleanup final (session027).** Sweep de ruido y dead code post-audit de session023. Sin cambios de comportamiento.
