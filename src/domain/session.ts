@@ -1,7 +1,7 @@
 import type { Flow, Phase, SessionState } from "./types.js";
 
-export type Modalidad = "tecnica" | "datos" | "incidente";
-export type Tipo = "proyecto" | "sistema" | "feature" | "refactor" | "chore";
+export type Modalidad = "technical" | "data" | "incident" | "tecnica" | "datos" | "incidente";
+export type Tipo = "project" | "system" | "proyecto" | "sistema" | "feature" | "refactor" | "chore";
 export type TaskStatus = "open" | "closed";
 
 export interface SessionRef {

@@ -23,9 +23,9 @@ export const sessionCreateCommand: QtcCommand = {
     if (branches !== undefined) input.branchesRaw = branches;
     const from = args.values.get("from");
     if (from !== undefined) input.origenRaw = from;
-    const tipo = args.values.get("tipo");
+    const tipo = args.values.get("tipo") ?? args.values.get("type");
     if (tipo !== undefined) input.tipo = tipo;
-    const modalidad = args.values.get("modalidad");
+    const modalidad = args.values.get("modalidad") ?? args.values.get("modality");
     if (modalidad !== undefined) input.modalidad = modalidad;
 
     const data = await runSessionCreate(ctx.fs, ctx.env, ctx.paths, input);

@@ -21,7 +21,7 @@ export function formatCheckpointMd(state: SessionState): string {
   appendFilesTouched(lines, state);
   appendContext(lines);
   appendRefs(lines, state);
-  lines.push("", `<!-- escrito por qtc-core.checkpoint en ${state.timestamp} -->`, "");
+  lines.push("", `<!-- written by qtc-core.checkpoint at ${state.timestamp} -->`, "");
   return lines.join("\n");
 }
 
@@ -31,66 +31,66 @@ function appendHeader(lines: string[], state: SessionState): void {
   const progress = state.progress_pct;
   const progressLine =
     progress !== null
-      ? `${progress}% (${state.tasks.closed} de ${state.tasks.total} tareas completas)`
-      : "_avance no determinado (TASKS.md ausente o vacío)_";
+      ? `${progress}% (${state.tasks.closed} of ${state.tasks.total} tasks complete)`
+      : "_progress unknown (TASKS.md missing or empty)_";
   lines.push(
     `# Checkpoint — ${state.folder}`,
     "",
-    `- Actualizado: ${state.timestamp}`,
-    `- Fase actual: ${phase} (${phaseIdx})`,
-    `- Avance: ${progressLine}`,
+    `- Updated: ${state.timestamp}`,
+    `- Current phase: ${phase} (${phaseIdx})`,
+    `- Progress: ${progressLine}`,
     "",
-    "## Lo último que hice",
+    "## Last action",
     "",
-    "_[AI: 1-3 oraciones del último avance concreto. Revisa últimos diffs y la última entrada de DECISIONES.md.]_",
+    "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and the latest entry in DECISIONS.md.]_",
     "",
-    "## Próximo paso",
+    "## Next step",
     "",
-    "_[AI: 1-2 oraciones de qué hace falta hacer. Revisa primer item abierto en TASKS.md.]_",
+    "_[AI: 1-2 sentences on what remains. Review the first open item in TASKS.md.]_",
     "",
   );
 }
 
 function appendDecisions(lines: string[], state: SessionState): void {
-  lines.push("## Decisiones recientes", "");
+  lines.push("## Recent decisions", "");
   if (state.last_decision) {
     lines.push(`- ${state.last_decision.id}: ${state.last_decision.excerpt}`);
   } else {
-    lines.push("_Sin decisiones registradas._");
+    lines.push("_No decisions recorded._");
   }
 }
 
 function appendFilesTouched(lines: string[], state: SessionState): void {
-  lines.push("", "## Archivos tocados (post-último-commit)", "");
+  lines.push("", "## Files touched (post-last-commit)", "");
   const files = state.files_touched;
   if (files.length === 0) {
-    lines.push("_Sin cambios sin commitear detectados en el cwd._");
+    lines.push("_No uncommitted changes detected in cwd._");
     return;
   }
   for (const f of files.slice(0, 20)) {
-    lines.push(`- ${f.path} (+${f.added} -${f.removed}) — _[AI: propósito en 1 línea]_`);
+    lines.push(`- ${f.path} (+${f.added} -${f.removed}) — _[AI: purpose in 1 line]_`);
   }
   if (files.length > 20) {
-    lines.push(`- _… y ${files.length - 20} más_`);
+    lines.push(`- _… and ${files.length - 20} more_`);
   }
 }
 
 function appendContext(lines: string[]): void {
-  lines.push("", "## Contexto crítico para retomar", "");
+  lines.push("", "## Critical context to resume", "");
   lines.push(
-    "_[AI: 2-3 párrafos con la info mínima para continuar sin re-explorar. Qué descubriste, qué decisiones quedaron tomadas, qué hay que tener presente.]_",
+    "_[AI: 2-3 paragraphs with the minimum info needed to continue without re-exploring. What was discovered, what decisions are settled, what to keep in mind.]_",
   );
 }
 
 function appendRefs(lines: string[], state: SessionState): void {
   lines.push("", "## Refs", "");
-  if (state.origen) lines.push(`- Origen: ${state.origen}`);
-  if (state.branches.length > 0) lines.push(`- Ramas: ${state.branches.join(", ")}`);
+  if (state.origen) lines.push(`- Origin: ${state.origen}`);
+  if (state.branches.length > 0) lines.push(`- Branches: ${state.branches.join(", ")}`);
   const present = collectArtefacts(state.artefacts);
   if (present.length > 0) {
-    lines.push(`- Artefactos presentes: ${present.join(", ")}`);
+    lines.push(`- Artifacts present: ${present.join(", ")}`);
   }
-  lines.push("- Skills usadas: _[AI: enumera las skills invocadas durante la sesión]_");
+  lines.push("- Skills used: _[AI: list the skills invoked during the session]_");
 }
 
 function collectArtefacts(artefacts: Record<string, boolean | number>): string[] {

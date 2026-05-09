@@ -162,10 +162,10 @@ describe("Wave 1B write commands — golden parity vs python qtc_core", () => {
       ".workflow",
       "sessions",
       "session004-dev-nueva-tarea",
-      "OBJETIVO.md",
+      "OBJECTIVE.md",
     );
     expect(existsSync(objPath)).toBe(true);
-    expect(readFile(objPath)).toEqual(loadGoldenFile("session-create-dev", "OBJETIVO.md"));
+    expect(readFile(objPath)).toEqual(loadGoldenFile("session-create-dev", "OBJECTIVE.md"));
     expect(normalizeTodayDate(readFile(join(clone.cwd, ".workflow", "HISTORY.md")))).toEqual(
       normalizeTodayDate(loadGoldenFile("session-create-dev", ".workflow/HISTORY.md")),
     );

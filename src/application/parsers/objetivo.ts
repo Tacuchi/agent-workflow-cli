@@ -1,4 +1,9 @@
-import { firstNonEmptyLine, parseMdSection, parseMdValue } from "../markdown.js";
+import {
+  firstNonEmptyLine,
+  parseMdSection,
+  parseMdSectionBilingual,
+  parseMdValueBilingual,
+} from "../markdown.js";
 
 export interface ParsedObjetivo {
   titulo: string | null;
@@ -18,8 +23,8 @@ const KNOWN_FUENTE_PATTERNS: readonly RegExp[] = [
 export function parseObjetivo(text: string): ParsedObjetivo {
   return {
     titulo: extractTitle(text),
-    tipo: parseMdValue(text, "Tipo") ?? sectionFirstLine(text, "Tipo"),
-    modalidad: parseMdValue(text, "Modalidad") ?? sectionFirstLine(text, "Modalidad"),
+    tipo: parseMdValueBilingual(text, "Tipo") ?? sectionFirstLine(text, "Tipo"),
+    modalidad: parseMdValueBilingual(text, "Modalidad") ?? sectionFirstLine(text, "Modalidad"),
     brief: extractBrief(text),
     criterios_aceptacion: extractCriteria(text),
     fuentes_mencionadas: extractFuentes(text),
@@ -33,14 +38,14 @@ function extractTitle(text: string): string | null {
 }
 
 function sectionFirstLine(text: string, name: string): string | null {
-  const section = parseMdSection(text, name);
+  const section = parseMdSectionBilingual(text, name);
   if (section === undefined) return null;
   return firstNonEmptyLine(section) ?? null;
 }
 
 function extractBrief(text: string): string | null {
-  for (const name of ["Requerimiento", "Brief", "Pregunta", "Descripción", "Descripcion"]) {
-    const section = parseMdSection(text, name);
+  for (const name of ["Requerimiento", "Brief", "Pregunta", "Descripción"]) {
+    const section = parseMdSectionBilingual(text, name);
     if (section !== undefined) {
       return section.trim();
     }
@@ -49,11 +54,7 @@ function extractBrief(text: string): string | null {
 }
 
 function extractCriteria(text: string): string[] {
-  const section =
-    parseMdSection(text, "Criterios de aceptación") ??
-    parseMdSection(text, "Criterios de aceptacion") ??
-    parseMdSection(text, "Acceptance criteria") ??
-    parseMdSection(text, "Aceptación");
+  const section = parseMdSectionBilingual(text, "Criterios de aceptación");
   if (section === undefined) return [];
   const items: string[] = [];
   for (const line of section.split("\n")) {

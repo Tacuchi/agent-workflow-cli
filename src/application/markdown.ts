@@ -86,6 +86,22 @@ const KEYWORD_GROUPS: ReadonlyArray<readonly string[]> = [
   ["Rama", "Branch"],
   ["State"],
   ["Phase"],
+  ["Contexto", "Context"],
+  [
+    "Criterios de aceptación",
+    "Criterios de aceptacion",
+    "Acceptance criteria",
+    "Aceptación",
+    "Aceptacion",
+  ],
+  ["Criterios de éxito", "Criterios de exito", "Success criteria"],
+  ["Temas", "Topics"],
+  ["Origen", "Origin"],
+  ["Avance", "Progress"],
+  ["Actualizado", "Updated"],
+  ["Ramas", "Branches"],
+  ["Artefactos presentes", "Artifacts present"],
+  ["Skills usadas", "Skills used"],
 ];
 
 function normalizeKeyword(s: string): string {

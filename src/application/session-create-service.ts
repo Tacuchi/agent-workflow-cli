@@ -9,10 +9,36 @@ import {
   runProjectMdUpsertWrite,
 } from "./project-md-upsert-service.js";
 import { renderRefs } from "./render/history-row.js";
+import { canonicalArtifactPath } from "./session-artifacts.js";
 import { getObjetivoTemplate, renderTemplate } from "./templates/objetivo.js";
 
-const VALID_TIPOS_DESIGN = ["proyecto", "sistema"] as const;
-const VALID_MODALIDADES_ANALYZE = ["tecnica", "datos", "incidente"] as const;
+const TIPO_ALIASES: Record<string, string> = {
+  proyecto: "project",
+  project: "project",
+  sistema: "system",
+  system: "system",
+};
+const VALID_TIPOS_DESIGN = ["project", "system"] as const;
+const TIPO_LEGACY_ACCEPTED = ["proyecto", "sistema"] as const;
+
+const MODALIDAD_ALIASES: Record<string, string> = {
+  tecnica: "technical",
+  technical: "technical",
+  datos: "data",
+  data: "data",
+  incidente: "incident",
+  incident: "incident",
+};
+const VALID_MODALIDADES_ANALYZE = ["technical", "data", "incident"] as const;
+const MODALIDAD_LEGACY_ACCEPTED = ["tecnica", "datos", "incidente"] as const;
+
+function normalizeTipo(raw: string): string {
+  return TIPO_ALIASES[raw.trim().toLowerCase()] ?? raw;
+}
+
+function normalizeModalidad(raw: string): string {
+  return MODALIDAD_ALIASES[raw.trim().toLowerCase()] ?? raw;
+}
 
 type SessionFlow = "dev" | "design" | "analyze";
 
@@ -170,7 +196,10 @@ async function writeObjetivo(
   };
   if (flow === "design" && input.tipo) values.tipo = input.tipo;
   if (flow === "analyze" && input.modalidad) values.modalidad = input.modalidad;
-  await fs.writeText(join(folderInfo.sessionPath, "OBJETIVO.md"), renderTemplate(template, values));
+  await fs.writeText(
+    canonicalArtifactPath(folderInfo.sessionPath, "objective"),
+    renderTemplate(template, values),
+  );
 }
 
 async function writeHistoryRow(
@@ -232,7 +261,7 @@ function composeRecord(
     path: folderInfo.sessionPath,
     phase: "planning",
     branches,
-    objective_path: join(folderInfo.sessionPath, "OBJETIVO.md"),
+    objective_path: canonicalArtifactPath(folderInfo.sessionPath, "objective"),
     history_updated: true,
     origen: origen ? { flow: origen.flow, code: origen.code, folder: origen.folder } : null,
     ...(flow === "design" && input.tipo ? { tipo: input.tipo } : {}),
@@ -253,40 +282,47 @@ function validateFlowSpecifics(
 function validateDesignArgs(input: SessionCreateInput): SessionCreateError | null {
   if (!input.tipo) {
     return {
-      error: "--tipo es obligatorio para flow=design",
+      error: "--type es obligatorio para flow=design",
       expected: [...VALID_TIPOS_DESIGN],
     };
   }
-  if (!(VALID_TIPOS_DESIGN as readonly string[]).includes(input.tipo)) {
-    return { error: `--tipo inválido: '${input.tipo}'`, expected: [...VALID_TIPOS_DESIGN] };
+  const normalized = normalizeTipo(input.tipo);
+  if (!(VALID_TIPOS_DESIGN as readonly string[]).includes(normalized)) {
+    return {
+      error: `--type inválido: '${input.tipo}'`,
+      expected: [...VALID_TIPOS_DESIGN, ...TIPO_LEGACY_ACCEPTED],
+    };
   }
-  if (input.modalidad) return { error: "--modalidad sólo aplica a flow=analyze" };
+  input.tipo = normalized;
+  if (input.modalidad) return { error: "--modality sólo aplica a flow=analyze" };
   return null;
 }
 
 function validateAnalyzeArgs(input: SessionCreateInput): SessionCreateError | null {
   if (!input.modalidad) {
     return {
-      error: "--modalidad es obligatorio para flow=analyze",
+      error: "--modality es obligatorio para flow=analyze",
       expected: [...VALID_MODALIDADES_ANALYZE],
     };
   }
-  if (!(VALID_MODALIDADES_ANALYZE as readonly string[]).includes(input.modalidad)) {
+  const normalized = normalizeModalidad(input.modalidad);
+  if (!(VALID_MODALIDADES_ANALYZE as readonly string[]).includes(normalized)) {
     return {
-      error: `--modalidad inválido: '${input.modalidad}'`,
-      expected: [...VALID_MODALIDADES_ANALYZE],
+      error: `--modality inválido: '${input.modalidad}'`,
+      expected: [...VALID_MODALIDADES_ANALYZE, ...MODALIDAD_LEGACY_ACCEPTED],
     };
   }
-  if (input.tipo) return { error: "--tipo sólo aplica a flow=design" };
+  input.modalidad = normalized;
+  if (input.tipo) return { error: "--type sólo aplica a flow=design" };
   return null;
 }
 
 function validateDevArgs(input: SessionCreateInput): SessionCreateError | null {
   if (input.tipo) {
-    return { error: "--tipo sólo aplica a flow=design (flow actual: 'dev')" };
+    return { error: "--type sólo aplica a flow=design (flow actual: 'dev')" };
   }
   if (input.modalidad) {
-    return { error: "--modalidad sólo aplica a flow=analyze (flow actual: 'dev')" };
+    return { error: "--modality sólo aplica a flow=analyze (flow actual: 'dev')" };
   }
   return null;
 }

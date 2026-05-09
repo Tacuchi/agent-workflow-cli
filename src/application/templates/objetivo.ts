@@ -1,65 +1,65 @@
 // Placeholders: {folder}, {origen_block}, {objetivo}, {tipo}, {modalidad}.
 
-const DEFAULT_TEMPLATE = `# Objetivo — {folder}
+const DEFAULT_TEMPLATE = `# Objective — {folder}
 {origen_block}
-## Requerimiento
+## Requirement
 {objetivo}
 
-## Contexto
-<!-- Lo que NO está en el requerimiento. Sin repetir lo de arriba. Bullets cortos: motivación, restricciones, área afectada. -->
+## Context
+<!-- What is NOT in the requirement. Don't repeat the above. Short bullets: motivation, constraints, area affected. -->
 
-## Criterios de aceptación
-- [ ] <describir criterio 1>
-- [ ] <describir criterio 2>
+## Acceptance criteria
+- [ ] <criterion 1>
+- [ ] <criterion 2>
 `;
 
-const DEV_TEMPLATE = `# Objetivo — {folder}
+const DEV_TEMPLATE = `# Objective — {folder}
 {origen_block}
-## Requerimiento
+## Requirement
 {objetivo}
 
-## Contexto
-<!-- Lo que NO está en el requerimiento. Sin repetir lo de arriba. Bullets cortos: módulos afectados, motivación, restricciones técnicas. -->
+## Context
+<!-- What is NOT in the requirement. Don't repeat the above. Short bullets: modules affected, motivation, technical constraints. -->
 
-## Criterios de aceptación
-- [ ] <describir criterio 1>
-- [ ] <describir criterio 2>
+## Acceptance criteria
+- [ ] <criterion 1>
+- [ ] <criterion 2>
 
-## Temas
-<!-- Opcional. Slug-kebab: descripción corta, para /release-scripts. -->
+## Topics
+<!-- Optional. Slug-kebab: short description, used by /release-scripts. -->
 `;
 
-const DESIGN_TEMPLATE = `# Objetivo — {folder}
+const DESIGN_TEMPLATE = `# Objective — {folder}
 {origen_block}
-## Tipo
+## Type
 {tipo}
 
 ## Brief
 {objetivo}
 
-## Contexto
-<!-- Lo que NO está en el brief. Sin repetir lo de arriba. Bullets cortos: usuarios, constraints, design system existente, referencias externas. -->
+## Context
+<!-- What is NOT in the brief. Don't repeat the above. Short bullets: users, constraints, existing design system, external references. -->
 
-## Criterios de aceptación
-- [ ] <describir criterio 1>
-- [ ] <describir criterio 2>
+## Acceptance criteria
+- [ ] <criterion 1>
+- [ ] <criterion 2>
 `;
 
-const ANALYZE_TEMPLATE = `# Objetivo — {folder}
+const ANALYZE_TEMPLATE = `# Objective — {folder}
 {origen_block}
-## Modalidad
+## Modality
 {modalidad}
 
-## Pregunta
+## Question
 {objetivo}
 
-## Contexto
-<!-- Lo que NO está en la pregunta. Sin repetir lo de arriba. Bullets cortos: sistemas/fuentes involucrados, restricciones, stakeholders. -->
+## Context
+<!-- What is NOT in the question. Don't repeat the above. Short bullets: systems/sources involved, constraints, stakeholders. -->
 
-## Criterios de éxito
-<!-- Qué convierte esta investigación en "respondida". Checklist \`- [ ]\`. -->
-- [ ] <criterio 1>
-- [ ] <criterio 2>
+## Success criteria
+<!-- What turns this investigation into "answered". Checklist \`- [ ]\`. -->
+- [ ] <criterion 1>
+- [ ] <criterion 2>
 `;
 
 const TEMPLATES_BY_FLOW: Record<string, string> = {
