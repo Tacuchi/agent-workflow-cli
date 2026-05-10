@@ -4,6 +4,19 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.11.3] — 2026-05-10
+
+**Patch — `aw self update` ya no falla con UNHANDLED al cancelar el confirm (session041).**
+
+### Fixed
+
+- Cuando el usuario cancelaba el prompt de confirmación de `aw self update` con Ctrl-C / Esc, inquirer lanzaba `ExitPromptError` ("User force closed the prompt with 0 null") que se propagaba hasta el dispatcher y salía como `{"ok": false, "error": {"code": "UNHANDLED", ...}}` con exit code 1. Ahora se captura la excepción y se trata igual que un "no" explícito: `command: "(cancelled)"`, `exitCode: 0`. Aplica también cuando el usuario pulsa `u` en el Update tab del TUI y luego cancela en la confirmación que aparece en shell.
+- Como bonus se hizo inyectable la función de confirm (`selfUpdate(args, ctx, confirm?)`), permitiendo cubrir con tests los 3 caminos (cancel/no/yes) sin depender de un TTY real.
+
+### Tests
+
+- 398 verdes (+3 vs 5.11.2): cancel-throws → cancelled, no → cancelled, yes → npm install. Vía mock de `confirmFn` con `process.stdout.isTTY` patcheado.
+
 ## [5.11.2] — 2026-05-10
 
 **Patch — Esc cancela edit mode (session040).** Bug reportado sobre 5.11.1.

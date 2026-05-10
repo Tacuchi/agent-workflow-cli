@@ -10,9 +10,25 @@ export interface SelfUpdateData {
   would_run?: boolean;
 }
 
+export type ConfirmFn = (message: string) => Promise<boolean>;
+
+const defaultConfirm: ConfirmFn = async (message) => {
+  const { confirm } = await import("@inquirer/prompts");
+  return confirm({ message, default: true });
+};
+
+function cancelled(): CommandResult<SelfUpdateData> {
+  return {
+    ok: true,
+    data: { command: "(cancelled)", exit_code: 0, stdout: "", stderr: "" },
+    exitCode: 0,
+  };
+}
+
 export async function selfUpdate(
   args: ParsedArgs,
   ctx: CliContext,
+  confirm: ConfirmFn = defaultConfirm,
 ): Promise<CommandResult<SelfUpdateData>> {
   const npmArgs = ["install", "-g", `${ctx.runtime.packageName}@latest`];
   const cmdString = `npm ${npmArgs.join(" ")}`;
@@ -25,20 +41,17 @@ export async function selfUpdate(
     };
   }
 
-  // Optional TTY confirm
+  // Optional TTY confirm. Inquirer throws `ExitPromptError` when the user
+  // force-closes the prompt (Ctrl-C / Esc); treat that as a plain cancel
+  // instead of letting it bubble up as UNHANDLED.
   if (process.stdout.isTTY === true) {
-    const { confirm } = await import("@inquirer/prompts");
-    const ok = await confirm({
-      message: `Run \`npm install -g ${ctx.runtime.packageName}@latest\`?`,
-      default: true,
-    });
-    if (!ok) {
-      return {
-        ok: true,
-        data: { command: "(cancelled)", exit_code: 0, stdout: "", stderr: "" },
-        exitCode: 0,
-      };
+    let ok: boolean;
+    try {
+      ok = await confirm(`Run \`npm install -g ${ctx.runtime.packageName}@latest\`?`);
+    } catch {
+      return cancelled();
     }
+    if (!ok) return cancelled();
   }
 
   const result = await ctx.process.run("npm", npmArgs, {});

@@ -109,3 +109,48 @@ describe("selfUpdate — without --dry-run", () => {
     }
   });
 });
+
+describe("selfUpdate — confirm cancellation (TTY)", () => {
+  function withFakeTty<T>(fn: () => Promise<T>): Promise<T> {
+    const original = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: true });
+    return fn().finally(() => {
+      Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: original });
+    });
+  }
+
+  it("Ctrl-C / Esc en el confirm (rechaza la promise) cae como cancelled, no UNHANDLED", async () => {
+    const proc = new RecordingProcess();
+    const result = await withFakeTty(() =>
+      selfUpdate(buildArgs([]), buildCtx(proc), async () => {
+        throw new Error("User force closed the prompt with 0 null");
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.command).toBe("(cancelled)");
+      expect(result.data.exit_code).toBe(0);
+      expect(result.exitCode).toBe(0);
+    }
+    expect(proc.invocations).toHaveLength(0);
+  });
+
+  it("'no' explícito en el confirm también devuelve cancelled", async () => {
+    const proc = new RecordingProcess();
+    const result = await withFakeTty(() =>
+      selfUpdate(buildArgs([]), buildCtx(proc), async () => false),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.command).toBe("(cancelled)");
+    expect(proc.invocations).toHaveLength(0);
+  });
+
+  it("'sí' en el confirm dispara npm install", async () => {
+    const proc = new RecordingProcess();
+    const result = await withFakeTty(() =>
+      selfUpdate(buildArgs([]), buildCtx(proc), async () => true),
+    );
+    expect(result.ok).toBe(true);
+    expect(proc.invocations).toHaveLength(1);
+  });
+});
