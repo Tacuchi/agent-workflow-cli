@@ -428,15 +428,39 @@ function isDsnVisible(ctx: CliContext, dsnVar: string): boolean {
   return Boolean(dsn.values[dsnVar]);
 }
 
-function formatConnectionsTable(connections: SelfMcpConnectionView[]): string {
-  const header = "| nombre | DSN var (nombre) | Instalado en Claude Code | Instalado en Codex |";
-  const separator = "|---|---|---|---|";
-  if (connections.length === 0) return `${header}\n${separator}`;
-  const rows = connections.map(
-    (item) =>
-      `| ${item.nombre} | ${item.dsn_var} | ${item.instalado.claude_code} | ${item.instalado.codex} |`,
-  );
-  return [header, separator, ...rows].join("\n");
+export function formatConnectionsTable(connections: SelfMcpConnectionView[]): string {
+  const headers = ["nombre", "DSN var", "Claude Code", "Codex"];
+  const rows = connections.map((item) => [
+    item.nombre,
+    item.dsn_var,
+    item.instalado.claude_code,
+    item.instalado.codex,
+  ]);
+  return renderBoxTable(headers, rows);
+}
+
+function renderBoxTable(headers: string[], rows: string[][]): string {
+  const widths = headers.map((h, col) => {
+    const cellMax = rows.reduce((max, row) => Math.max(max, (row[col] ?? "").length), 0);
+    return Math.max(h.length, cellMax);
+  });
+  const buildLine = (left: string, mid: string, right: string): string =>
+    `${left}${widths.map((w) => "─".repeat(w + 2)).join(mid)}${right}`;
+  const buildRow = (cells: string[]): string =>
+    `│${cells.map((cell, col) => ` ${(cell ?? "").padEnd(widths[col] ?? 0)} `).join("│")}│`;
+
+  const top = buildLine("┌", "┬", "┐");
+  const headerSep = buildLine("├", "┼", "┤");
+  const bottom = buildLine("└", "┴", "┘");
+  const out: string[] = [top, buildRow(headers)];
+  if (rows.length === 0) {
+    out.push(bottom);
+    return out.join("\n");
+  }
+  out.push(headerSep);
+  for (const row of rows) out.push(buildRow(row));
+  out.push(bottom);
+  return out.join("\n");
 }
 
 async function resolveRegisteredConnection(

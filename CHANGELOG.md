@@ -4,6 +4,20 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.9.2] — 2026-05-09
+
+**Patch — render box-drawing del listado de conexiones MCP (session034).** El header del prompt en `agent-workflow self mcp` mostraba el pipe-table markdown (`| nombre | DSN var ... |`) literal porque `@inquirer/prompts` no renderiza markdown. Ahora la tabla usa caracteres Unicode de box-drawing (`┌─┬─┐ │ ├─┼─┤ └─┴─┘`) con anchos de columna calculados a partir de header + celdas. Headers acortados a `nombre`, `DSN var`, `Claude Code`, `Codex`. Sin nuevas dependencias.
+
+### Changed
+
+- `formatConnectionsTable` (ahora exportada en `src/application/self/mcp-config.ts`) emite tabla box-drawing con padding interno fijo y anchos auto-calculados.
+
+### Tests
+
+- 367 tests pasando (+5 vs 5.9.1):
+  - 5 nuevos en `tests/unit/format-connections-table.test.ts` cubriendo: caso vacío, una conexión, anchos auto-ajustados, múltiples conexiones, snapshot exacto.
+  - 1 actualizado en `self-mcp-config.test.ts` (assertion contra `│ ... │` en vez de `| ... |`).
+
 ## [5.9.1] — 2026-05-09
 
 **Patch — Claude Code MCP target fix (session033).** Tras 5.9.0 los servidores MCP escritos por `agent-workflow self` y `agent-workflow mcp setup` quedaban en `.claude/settings.json`, archivo que Claude Code no consulta para `mcpServers`. Ahora se escribe en el archivo canónico según la doc oficial de Claude Code: `.mcp.json` para project scope (workspace) y `~/.claude.json` para user scope (global). Codex sigue intacto en `.codex/config.toml`.
