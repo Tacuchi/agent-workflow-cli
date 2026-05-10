@@ -128,6 +128,20 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
     { isActive },
   );
 
+  // Esc cancela cualquier input mode (new-name / new-dsn) y vuelve a list.
+  // TextInput de @inkjs/ui no tiene onCancel propio, así que registramos
+  // un useInput dedicado que coexiste con el del TextInput.
+  useInput(
+    (_, key) => {
+      if (!isActive) return;
+      if (mode.kind !== "new-name" && mode.kind !== "new-dsn") return;
+      if (key.escape) {
+        setMode({ kind: "list" });
+      }
+    },
+    { isActive },
+  );
+
   // Render
   return (
     <Box flexDirection="column">

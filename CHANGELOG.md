@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.11.2] — 2026-05-10
+
+**Patch — Esc cancela edit mode (session040).** Bug reportado sobre 5.11.1.
+
+### Fixed
+
+- En los modos de input del wizard MCP (`new-name`, `new-dsn`), pulsar `Esc` no cancelaba ni regresaba al list mode. Causa: `TextInput` de `@inkjs/ui` no expone `onCancel` y mi listener de Esc previo sólo cubría `confirm-delete`. Se agregó un tercer `useInput` en `McpTab` que coexiste con el del TextInput y reacciona a `key.escape` cuando `mode.kind ∈ {new-name, new-dsn}`, devolviendo al list mode (libera el input lock + restaura el keymap).
+
 ## [5.11.1] — 2026-05-10
 
 **Patch — fixes UX reportados sobre 5.11.0 (session039).** Tres bugs concretos que afectaban la usabilidad básica de la TUI con tabs.
