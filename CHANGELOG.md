@@ -4,6 +4,47 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.10.0] — 2026-05-10
+
+**Minor — TUI con ink para el menú interactivo + wizard MCP (session036).** Reemplaza la fachada `@inquirer/prompts` del menú principal y del wizard `self mcp` por una TUI basada en [ink](https://github.com/vadimdemedes/ink). Los comandos headless (skills/IA) no cambian: cualquier invocación con args sigue produciendo el mismo JSON de antes.
+
+### Added
+
+- **TUI ink-based** para el flujo interactivo (`agent-workflow` sin args + TTY):
+  - `src/cli/tui/screens/main-menu.tsx`: menú principal con secciones `── Verificar / configurar ──` y `── Mantenimiento ──`, navegable con ↑↓ + ⏎.
+  - `src/cli/tui/screens/mcp-wizard.tsx`: wizard MCP completo dentro de ink. Reemplaza inline las llamadas `prompts.select` / `prompts.input` por `<SectionedMenu>` / `<TextInput>` (de `@inkjs/ui`).
+  - `src/cli/tui/screens/mcp-done.tsx`: pantalla de confirmación tras completar una acción MCP (verde/rojo + tabla de conexiones actualizada). `⏎` vuelve al menú; `q` sale.
+  - `src/cli/tui/components/sectioned-menu.tsx`: menú con separadores, wrap-around, `defaultValue`-aware.
+  - `src/cli/tui/components/connections-table.tsx`: render del box-table (re-usa `formatConnectionsTable`).
+  - `src/cli/tui/components/input-prompt.tsx`: `TextInput` con soporte para `validate` (re-render con error inline).
+  - `src/cli/tui/run.tsx`: punto de entrada `runTui(version, ctx)` que devuelve `TuiResult` (menu-action / exit).
+- **Tests TUI** con `ink-testing-library`:
+  - `tui-main-menu.test.tsx` (5): render, navegación con ↑↓ + ⏎, foco inicial, paridad de etiquetas.
+  - `tui-sectioned-menu.test.tsx` (4): salto de separadores, wrap-around, `defaultValue` posiciona foco.
+  - `tui-connections-table.test.tsx` (2): placeholder vacío + render con datos.
+- Dependencias runtime: `ink@^5`, `react@^18`, `@inkjs/ui@^2`. Dev: `@types/react`, `ink-testing-library@^4`.
+- `tsconfig.json`: `jsx: "react-jsx"` + `jsxImportSource: "react"`.
+
+### Changed
+
+- `src/cli/main.ts`: ahora construye `CliContext` antes del check `shouldShowInteractiveMenu` para poder pasarlo a la TUI. Cuando hay TTY y no hay comando, ejecuta `runTui(...)` en lugar de `runInteractiveMenu` (eliminado).
+- `src/cli/interactive-menu.ts`: queda sólo el predicado `shouldShowInteractiveMenu` y el tipo `MenuAction`. La función `runInteractiveMenu` se eliminó (reemplazada por `runTui`).
+- El comando `aw self mcp` headless mantiene `@inquirer/prompts` como fallback (skill/IA siguen funcionando vía dynamic import en `loadPrompts`).
+- `vitest.config.ts`: include añade `tests/**/*.test.tsx`.
+
+### Tests
+
+- 379 tests pasando (+11 vs 5.9.3):
+  - 5 nuevos en `tui-main-menu.test.tsx`.
+  - 4 nuevos en `tui-sectioned-menu.test.tsx`.
+  - 2 nuevos en `tui-connections-table.test.tsx`.
+
+### Decisions
+
+- **DEC-010**: dual-mode estricto. TUI sólo se monta cuando `command === undefined && isTTY === true`. Cualquier invocación con argumentos (caso skill/IA/script) salta directo al dispatcher con JSON; cero overhead de ink/react para automatización.
+- **DEC-011**: el wizard MCP corre dentro de ink reusando el mismo `selfMcpConfig` del dominio — la TUI sólo provee un adapter alternativo para `SelfMcpPrompts` (mismo contrato que ya existía en 5.9.x). No se duplica lógica de negocio.
+- **DEC-012**: `update`, `doctor`, `install-skill`, `help` siguen saliendo de la TUI para ejecutarse como comandos one-shot (mantienen output JSON para parity con headless). Re-entrar a la TUI tras esas acciones queda fuera de scope; el usuario relanza `aw` si quiere otra acción.
+
 ## [5.9.3] — 2026-05-09
 
 **Patch — UX polish del wizard MCP + backups transitorios (session035).** Dos mejoras complementarias en el flujo de `agent-workflow self`:

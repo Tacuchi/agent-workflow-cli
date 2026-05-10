@@ -56,11 +56,7 @@ import { visibilityCommand } from "./commands/visibility.js";
 import { workflowsCommand } from "./commands/workflows.js";
 import { workspaceModeCommand } from "./commands/workspace-mode.js";
 import { renderGroupedCommandLines } from "./help-groups.js";
-import {
-  type MenuAction,
-  runInteractiveMenu,
-  shouldShowInteractiveMenu,
-} from "./interactive-menu.js";
+import { type MenuAction, shouldShowInteractiveMenu } from "./interactive-menu.js";
 import { parseArgv } from "./parser.js";
 import { CommandRegistry } from "./registry.js";
 import {
@@ -70,6 +66,7 @@ import {
   renderRaw,
   writeStdout,
 } from "./render.js";
+import { runTui } from "./tui/run.js";
 import type { CliContext } from "./types.js";
 
 async function run(argv: string[]): Promise<ExitCode> {
@@ -142,28 +139,6 @@ async function run(argv: string[]): Promise<ExitCode> {
   const isTTY = process.stdout.isTTY === true;
   const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
 
-  if (
-    shouldShowInteractiveMenu({
-      command: parsed.command,
-      isTTY,
-      hasHelp,
-    })
-  ) {
-    const action = await runInteractiveMenu(readPackageVersion());
-    return await dispatchMenuAction(action, registry);
-  }
-
-  if (parsed.command === undefined || hasHelp) {
-    printHelp(registry.list());
-    return 0;
-  }
-
-  const command = registry.resolve(parsed.command);
-  if (!command) {
-    emitError(formatUnknownCommand(parsed.command, registry.list()));
-    return 1;
-  }
-
   const namespaceResolver = new NamespaceResolver(fs, env);
   const namespace = await namespaceResolver.resolve(parsed.values.get("namespace"));
 
@@ -179,6 +154,31 @@ async function run(argv: string[]): Promise<ExitCode> {
   const runtime = await runtimeService.resolveRuntime();
 
   const ctx: CliContext = { fs, env, git, process: proc, runtime, namespace, paths };
+
+  if (
+    shouldShowInteractiveMenu({
+      command: parsed.command,
+      isTTY,
+      hasHelp,
+    })
+  ) {
+    const tuiResult = await runTui(readPackageVersion(), ctx);
+    if (tuiResult.kind === "menu-action") {
+      return await dispatchMenuAction(tuiResult.action, registry);
+    }
+    return tuiResult.exitCode;
+  }
+
+  if (parsed.command === undefined || hasHelp) {
+    printHelp(registry.list());
+    return 0;
+  }
+
+  const command = registry.resolve(parsed.command);
+  if (!command) {
+    emitError(formatUnknownCommand(parsed.command, registry.list()));
+    return 1;
+  }
 
   try {
     const result = await command.execute(parsed, ctx);
