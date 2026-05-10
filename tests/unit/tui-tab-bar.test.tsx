@@ -31,10 +31,9 @@ describe("TabBar", () => {
     expect(lastFrame()).toContain("MCP (3)");
   });
 
-  it("activo tiene línea ═ debajo, inactivos sólo espacios", () => {
+  it("renderea en una sola línea (sin barra debajo)", () => {
     const { lastFrame } = render(<TabBar tabs={TABS} activeId="b" />);
     const lines = (lastFrame() ?? "").split("\n");
-    expect(lines.length).toBe(2);
-    expect(lines[1]).toContain("═");
+    expect(lines.length).toBe(1);
   });
 });

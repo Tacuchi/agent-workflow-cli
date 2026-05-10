@@ -8,9 +8,11 @@ import {
 import type { CommandResult } from "../../../domain/types.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
+import { ConfirmModal } from "../components/confirm-modal.js";
 import { ConnectionsGrid } from "../components/connections-grid.js";
 import { InputPrompt } from "../components/input-prompt.js";
 import { Toast, type ToastTone } from "../components/toast.js";
+import { useInputLock } from "../input-lock.js";
 import { colors, icons } from "../theme.js";
 
 type Mode =
@@ -41,6 +43,24 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [toast, setToast] = useState<{ tone: ToastTone; message: string } | null>(null);
   const startedRef = useRef(false);
+  const { lock, unlock } = useInputLock();
+
+  // Lock global hotkeys (q/Tab/?/1-4) while a non-list mode owns the screen
+  // (input prompt or confirm modal). Clear any prior toast so the previous
+  // action result doesn't bleed into the new modal.
+  useEffect(() => {
+    if (mode.kind === "list") {
+      unlock();
+    } else {
+      lock();
+      setToast(null);
+    }
+  }, [mode, lock, unlock]);
+
+  // Always release the lock when the tab unmounts.
+  useEffect(() => {
+    return () => unlock();
+  }, [unlock]);
 
   const refresh = useCallback(async () => {
     try {
@@ -166,12 +186,18 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
           </Box>
         ) : null}
         {mode.kind === "confirm-delete" ? (
-          <Box flexDirection="column">
-            <Text color={colors.warning} bold>
-              {icons.cross} ¿Eliminar la conexión <Text color={colors.fg}>{mode.name}</Text>?
-            </Text>
-            <Text color={colors.fgSubtle}>y para confirmar · n / Esc para cancelar</Text>
-          </Box>
+          <ConfirmModal
+            tone="danger"
+            title="Eliminar conexión"
+            body={[
+              `Vas a eliminar la conexión '${mode.name}'.`,
+              "Esta acción no se puede deshacer.",
+            ]}
+            confirmKey="y"
+            confirmLabel={`Sí, eliminar ${mode.name}`}
+            cancelKey="n / Esc"
+            cancelLabel="Cancelar"
+          />
         ) : null}
         {mode.kind === "busy" ? (
           <Text color={colors.warning}>

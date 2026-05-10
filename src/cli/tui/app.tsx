@@ -7,6 +7,7 @@ import { Header } from "./components/header.js";
 import { KeymapBar, type KeymapEntry } from "./components/keymap-bar.js";
 import { ScreenFrame } from "./components/screen-frame.js";
 import { TabBar, type TabDescriptor } from "./components/tab-bar.js";
+import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { McpTab } from "./tabs/mcp-tab.js";
 import { SkillsTab } from "./tabs/skills-tab.js";
 import { StatusTab } from "./tabs/status-tab.js";
@@ -34,27 +35,45 @@ export interface AppProps {
   onResult: (result: TuiResult) => void;
 }
 
-export function App({ version, ctx, onResult }: AppProps) {
+export function App(props: AppProps) {
+  return (
+    <InputLockProvider>
+      <AppShell {...props} />
+    </InputLockProvider>
+  );
+}
+
+function AppShell({ version, ctx, onResult }: AppProps) {
   const [activeTab, setActiveTab] = useState<TabId>("status");
   const [helpOpen, setHelpOpen] = useState(false);
   const { exit } = useApp();
+  const { locked: inputLocked } = useInputLock();
 
-  useInput((input, key) => {
-    if (helpOpen) {
-      handleHelpKey(input, key, setHelpOpen);
-      return;
-    }
-    handleAppKey(input, key, {
-      setActiveTab,
-      setHelpOpen,
-      onExit: () => {
-        onResult({ kind: "exit", exitCode: 0 });
-        exit();
-      },
-    });
-  });
+  useInput(
+    (input, key) => {
+      if (helpOpen) {
+        handleHelpKey(input, key, setHelpOpen);
+        return;
+      }
+      handleAppKey(input, key, {
+        setActiveTab,
+        setHelpOpen,
+        onExit: () => {
+          onResult({ kind: "exit", exitCode: 0 });
+          exit();
+        },
+      });
+    },
+    { isActive: !inputLocked },
+  );
 
   const keymap: KeymapEntry[] = useMemo(() => {
+    if (inputLocked) {
+      return [
+        { key: "⏎", action: "aceptar" },
+        { key: "Esc", action: "cancelar" },
+      ];
+    }
     const tabKeys = keymapForTab(activeTab);
     return [
       ...tabKeys,
@@ -62,7 +81,7 @@ export function App({ version, ctx, onResult }: AppProps) {
       { key: "?", action: "ayuda" },
       { key: "q", action: "salir" },
     ];
-  }, [activeTab]);
+  }, [activeTab, inputLocked]);
 
   const tabContentActive = !helpOpen;
 

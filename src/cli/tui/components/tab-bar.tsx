@@ -14,48 +14,31 @@ export interface TabBarProps<T extends string> {
 
 export function TabBar<T extends string>({ tabs, activeId }: TabBarProps<T>) {
   return (
-    <Box flexDirection="column">
-      <Box>
-        {tabs.map((tab, idx) => {
-          const isActive = tab.id === activeId;
-          const labelText = tab.badge !== undefined ? `${tab.label} (${tab.badge})` : tab.label;
-          return (
-            <Box key={tab.id}>
-              {idx > 0 ? <Text>{icons.tabSeparator}</Text> : null}
-              {isActive ? (
-                <>
-                  <Text color={colors.accent}>{icons.tabActiveLeft} </Text>
-                  <Text color={colors.fg} bold>
-                    {labelText}
-                  </Text>
-                  <Text color={colors.accent}> {icons.tabActiveRight}</Text>
-                </>
-              ) : (
-                <>
-                  <Text color={colors.fgMoreSubtle}> </Text>
-                  <Text color={colors.fgSubtle}>{labelText}</Text>
-                  <Text color={colors.fgMoreSubtle}> </Text>
-                </>
-              )}
-            </Box>
-          );
-        })}
-      </Box>
-      <Box>
-        {tabs.map((tab, idx) => {
-          const isActive = tab.id === activeId;
-          const labelText = tab.badge !== undefined ? `${tab.label} (${tab.badge})` : tab.label;
-          const length = labelText.length + 4;
-          return (
-            <Box key={`${tab.id}-rule`}>
-              {idx > 0 ? <Text>{icons.tabSeparator}</Text> : null}
-              <Text color={isActive ? colors.accent : colors.fgMoreSubtle}>
-                {(isActive ? "═" : " ").repeat(length)}
-              </Text>
-            </Box>
-          );
-        })}
-      </Box>
+    <Box>
+      {tabs.map((tab, idx) => {
+        const isActive = tab.id === activeId;
+        const labelText = tab.badge !== undefined ? `${tab.label} (${tab.badge})` : tab.label;
+        return (
+          <Box key={tab.id}>
+            {idx > 0 ? <Text>{icons.tabSeparator}</Text> : null}
+            {isActive ? (
+              <>
+                <Text color={colors.accent}>{icons.tabActiveLeft} </Text>
+                <Text color={colors.fg} bold>
+                  {labelText}
+                </Text>
+                <Text color={colors.accent}> {icons.tabActiveRight}</Text>
+              </>
+            ) : (
+              <>
+                <Text color={colors.fgMoreSubtle}> </Text>
+                <Text color={colors.fgSubtle}>{labelText}</Text>
+                <Text color={colors.fgMoreSubtle}> </Text>
+              </>
+            )}
+          </Box>
+        );
+      })}
     </Box>
   );
 }

@@ -4,6 +4,33 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.11.1] — 2026-05-10
+
+**Patch — fixes UX reportados sobre 5.11.0 (session039).** Tres bugs concretos que afectaban la usabilidad básica de la TUI con tabs.
+
+### Fixed
+
+- **Línea `═══` debajo del tab activo eliminada**: la regla decorativa que dibujaba debajo del bracket `[ activo ]` no alineaba con el ancho real del label, ensuciando el header. La TabBar ahora renderea en una sola línea con sólo brackets en accent. (`components/tab-bar.tsx`)
+- **Hotkeys globales (`q`, `Tab`, `?`, `1..4`) ya no se disparan mientras se escribe en un TextInput**: escribir `qwerty` en el campo "Nombre de la nueva conexión" ya no cierra el TUI (la `q` global no captura más). Se agregó `InputLockContext` (`src/cli/tui/input-lock.tsx`) que el `McpTab` activa al entrar a cualquier modo no-list (input prompt o confirm modal) y libera al volver a list mode. La KeymapBar también cambia dinámicamente a `⏎ aceptar · Esc cancelar` cuando hay lock, indicando claramente las teclas válidas.
+- **Confirm-delete rediseñado como modal warning bordereado**: ya no es un texto plano debajo de la tabla. Ahora usa el nuevo `ConfirmModal` (`components/confirm-modal.tsx`) con borde redondeado en color `warning`, ícono `⚠`, título "Eliminar conexión", body de 2 líneas (incluye "Esta acción no se puede deshacer") y opciones `y / n+Esc` apiladas verticalmente. Además, el toast de la acción anterior se limpia automáticamente al entrar a cualquier modal — ya no aparecen dos `✗` superpuestos.
+
+### Added
+
+- `src/cli/tui/input-lock.tsx`: contexto global con `lock()` / `unlock()` / `locked`. Usado por `App` para gatear su `useInput` global.
+- `src/cli/tui/components/confirm-modal.tsx`: componente reusable para confirmaciones con tone (`warning` / `danger` / `info`), título + body multi-línea + opciones `confirmKey / cancelKey`.
+
+### Tests
+
+- 395 tests verdes (+6 vs 5.11.0):
+  - 3 nuevos en `tui-input-lock.test.tsx`: locked=false el handler global recibe `q`; locked=true NO la recibe; smoke de la API del context.
+  - 3 nuevos en `tui-confirm-modal.test.tsx`: render con título + body multi-line; body string como una línea; borde redondeado presente.
+  - 1 ajustado en `tui-tab-bar.test.tsx`: ahora espera 1 línea en vez de 2 (regla eliminada).
+
+### Decisions
+
+- **DEC-018**: el lock global se implementa con React Context, no con prop drilling. Razón: cualquier futuro tab que abra inputs (Skills si pide path custom, Settings, etc.) puede usar el mismo `useInputLock()` sin tocar `App`. La alternativa (prop drilling) hubiera obligado a propagar `onInputLock` por toda la jerarquía.
+- **DEC-019**: durante `busy` (await async) también se mantiene el lock. Razón: las operaciones MCP son <1s típicamente; permitir Tab/q durante un await crea race conditions con setState post-unmount. Trade-off aceptado.
+
 ## [5.11.0] — 2026-05-10
 
 **Minor — Reestructuración a UI con tabs (session038).** Reemplaza el menú lineal por una TUI con tabs horizontales + contenido contextual por tab. Patrón Crush adaptado: Status (health), MCP (tabla interactiva con hotkeys), Skills (estado + reinstalar), Update (delega a npm). Header con cwd, keymap dinámica por tab, overlay de ayuda con `?`.
