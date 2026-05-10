@@ -4,6 +4,26 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.11.5] — 2026-05-10
+
+**Patch — TUI dispatch de update sin doble-confirm (session043).**
+
+### Fixed
+
+- Tras pulsar **"Actualizar ahora (npm install)"** en el Update tab, el flujo seguía mostrando el `inquirer.confirm` y devolvía `(cancelled)`. Causa: el `await waitUntilExit` de session042 no era suficiente para drenar todos los bytes residuales que ink dejaba en stdin tras el unmount; inquirer los interpretaba como force-close. Solución correcta: el menú del TUI ya **es** la confirmación — pedir `(Y/n)` además es redundante. Ahora `dispatchMenuAction("update")` dispatcha `aw self update --yes`, que salta el `inquirer.confirm` y va directo a `npm install`. Cero race condition porque inquirer ni siquiera se invoca.
+
+### Added
+
+- **`--yes` / `-y`** en `aw self update`: salta el confirm de TTY y procede al install. Útil tanto desde el TUI (automático) como en scripts CI.
+
+### Behavior preserved
+
+- Llamar `aw self update` directamente desde shell **sin** `--yes` sigue mostrando el `inquirer.confirm` antes de instalar. La protección "estás seguro" se mantiene para invocaciones manuales en CLI.
+
+### Tests
+
+- 404 verdes (+2 vs 5.11.4): `--yes` salta confirm aún con TTY simulado; `-y` es alias equivalente.
+
 ## [5.11.4] — 2026-05-10
 
 **Patch — UpdateTab con menú + fix race ink/inquirer (session042).**

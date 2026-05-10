@@ -44,7 +44,11 @@ export async function selfUpdate(
   // Optional TTY confirm. Inquirer throws `ExitPromptError` when the user
   // force-closes the prompt (Ctrl-C / Esc); treat that as a plain cancel
   // instead of letting it bubble up as UNHANDLED.
-  if (process.stdout.isTTY === true) {
+  // `--yes` / `-y` skips the confirm — used when the TUI dispatches update
+  // (the menu selection is already the confirmation; asking again
+  // duplicates the prompt and races with ink's stdin teardown).
+  const skipConfirm = args.flags.has("--yes") || args.flags.has("-y");
+  if (process.stdout.isTTY === true && !skipConfirm) {
     let ok: boolean;
     try {
       ok = await confirm(`Run \`npm install -g ${ctx.runtime.packageName}@latest\`?`);

@@ -219,7 +219,10 @@ async function dispatchMenuAction(
     case "mcp":
       return await run(["self", "mcp"]);
     case "update":
-      return await run(["self", "update"]);
+      // The TUI menu selection is already the confirmation; --yes
+      // suppresses the redundant inquirer prompt (which also races with
+      // ink's stdin teardown and can phantom-cancel).
+      return await run(["self", "update", "--yes"]);
     case "help":
       printHelp(registry.list());
       return 0;

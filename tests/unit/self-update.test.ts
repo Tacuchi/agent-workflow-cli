@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { selfUpdate } from "../../src/application/self/update-self.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
@@ -151,6 +151,25 @@ describe("selfUpdate — confirm cancellation (TTY)", () => {
       selfUpdate(buildArgs([]), buildCtx(proc), async () => true),
     );
     expect(result.ok).toBe(true);
+    expect(proc.invocations).toHaveLength(1);
+  });
+
+  it("--yes salta el confirm aunque haya TTY (path desde TUI)", async () => {
+    const proc = new RecordingProcess();
+    const confirmSpy = vi.fn();
+    const result = await withFakeTty(() =>
+      selfUpdate(buildArgs(["--yes"]), buildCtx(proc), confirmSpy),
+    );
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(proc.invocations).toHaveLength(1);
+    expect(result.ok).toBe(true);
+  });
+
+  it("-y también salta el confirm", async () => {
+    const proc = new RecordingProcess();
+    const confirmSpy = vi.fn();
+    await withFakeTty(() => selfUpdate(buildArgs(["-y"]), buildCtx(proc), confirmSpy));
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(proc.invocations).toHaveLength(1);
   });
 });
