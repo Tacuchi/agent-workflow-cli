@@ -7,14 +7,14 @@ const ARROW_UP = "[A";
 const ENTER = "\r";
 
 describe("SectionedMenu (TUI)", () => {
-  it("renderiza secciones con label en formato ── X ──", () => {
+  it("renderiza secciones con label + accent y items debajo", () => {
     const items: MenuItem<string>[] = [
       { kind: "section", label: "Grupo A" },
       { kind: "item", label: "uno", value: "1" },
     ];
     const { lastFrame } = render(<SectionedMenu items={items} onSelect={() => {}} />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("── Grupo A ──");
+    expect(frame).toContain("── Grupo A");
     expect(frame).toContain("uno");
   });
 

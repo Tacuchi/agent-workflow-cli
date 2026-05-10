@@ -1,6 +1,7 @@
 import { TextInput } from "@inkjs/ui";
 import { Box, Text } from "ink";
 import { useState } from "react";
+import { colors, icons } from "../theme.js";
 
 export interface InputPromptProps {
   message: string;
@@ -31,11 +32,14 @@ export function InputPrompt(props: InputPromptProps) {
 
   return (
     <Box flexDirection="column">
-      <Text>
-        <Text color="cyan">? </Text>
-        {message}
-      </Text>
-      <Box marginLeft={2}>
+      <Box>
+        <Text color={colors.accent}>{icons.promptMark} </Text>
+        <Text color={colors.fg} bold>
+          {message}
+        </Text>
+      </Box>
+      <Box marginLeft={2} marginTop={1}>
+        <Text color={colors.fgMoreSubtle}>{icons.arrow} </Text>
         <TextInput
           isDisabled={!isActive}
           {...(defaultValue !== undefined ? { defaultValue } : {})}
@@ -43,8 +47,10 @@ export function InputPrompt(props: InputPromptProps) {
         />
       </Box>
       {error ? (
-        <Box marginLeft={2}>
-          <Text color="red">{error}</Text>
+        <Box marginLeft={2} marginTop={1}>
+          <Text color={colors.error}>
+            {icons.cross} {error}
+          </Text>
         </Box>
       ) : null}
     </Box>

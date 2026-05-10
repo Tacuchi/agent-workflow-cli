@@ -9,10 +9,12 @@ import {
 import type { CommandResult } from "../../../domain/types.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
-import { Footer } from "../components/footer.js";
 import { Header } from "../components/header.js";
 import { InputPrompt } from "../components/input-prompt.js";
+import { KeymapBar } from "../components/keymap-bar.js";
+import { ScreenFrame } from "../components/screen-frame.js";
 import { type MenuItem, SectionedMenu } from "../components/sectioned-menu.js";
+import { colors, icons } from "../theme.js";
 
 interface SelectPromptState {
   kind: "select";
@@ -123,26 +125,30 @@ export function McpWizardScreen({ version, ctx, onDone }: McpWizardScreenProps) 
 
   if (errorMessage) {
     return (
-      <Box flexDirection="column">
-        <Header version={version} subtitle="Configurar MCP database (dbhub)" />
-        <Text color="red">Error: {errorMessage}</Text>
-      </Box>
+      <ScreenFrame>
+        <Header version={version} subtitle="MCP database" />
+        <Text color={colors.error}>
+          {icons.cross} {errorMessage}
+        </Text>
+      </ScreenFrame>
     );
   }
 
   return (
-    <Box flexDirection="column">
-      <Header version={version} subtitle="Configurar MCP database (dbhub)" />
+    <ScreenFrame>
+      <Header version={version} subtitle="MCP database" />
       {activePrompt === null ? (
         <Box>
           <Spinner label="Procesando..." />
         </Box>
       ) : activePrompt.kind === "select" ? (
         <Box flexDirection="column">
-          <Text>
-            <Text color="cyan">? </Text>
-            {activePrompt.message}
-          </Text>
+          <Box>
+            <Text color={colors.accent}>{icons.promptMark} </Text>
+            <Text color={colors.fg} bold>
+              {activePrompt.message}
+            </Text>
+          </Box>
           <Box marginTop={1}>
             <SectionedMenu
               items={activePrompt.items}
@@ -163,7 +169,13 @@ export function McpWizardScreen({ version, ctx, onDone }: McpWizardScreenProps) 
           onSubmit={(value) => activePrompt.resolve(value)}
         />
       )}
-      <Footer hint="↑↓ navegar · ⏎ confirmar · Ctrl-C cancelar" />
-    </Box>
+      <KeymapBar
+        entries={[
+          { key: "↑↓", action: "navegar" },
+          { key: "⏎", action: "confirmar" },
+          { key: "^C", action: "cancelar" },
+        ]}
+      />
+    </ScreenFrame>
   );
 }

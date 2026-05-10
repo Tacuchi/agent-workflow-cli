@@ -4,6 +4,36 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.10.1] — 2026-05-10
+
+**Patch — UX polish de la TUI inspirado en charmbracelet/crush (session037).** Mismos screens que 5.10.0, mejor estética: paleta cohesiva, marco redondeado por pantalla, jerarquía visual más clara y barra de teclas persistente.
+
+### Added
+
+- `src/cli/tui/theme.ts`: paleta + iconografía centralizada. 4 niveles de foreground (`fg`/`fgSubtle`/`fgMoreSubtle`), accent (`cyan`) distinto de primary (`magenta`), iconos minimal Unicode (`◆ ✓ ✗ ❯ → ─ › ●`).
+- `src/cli/tui/components/screen-frame.tsx`: wrapper `<Box borderStyle="round">` que encuadra cada pantalla con padding generoso (`paddingX={2}`, `paddingY={1}`).
+- `src/cli/tui/components/keymap-bar.tsx`: barra de teclas inferior con formato `key action · key action`, key en accent bold + action en gray.
+
+### Changed
+
+- **Header** (`components/header.tsx`): de `agent-workflow v5.10.0` plano a una línea bicolor — `◆ agent-workflow · v… · subtitle` con accent en el subtítulo. Una sola fila en vez de dos.
+- **SectionedMenu**: secciones ahora tienen accent + `marginTop={1}` (en vez de `── X ──`); items con bullet `❯` en focus + bold; items no-focused con bullet vacío + color subtle. Menos ruido, más jerarquía.
+- **MainMenu / McpWizard / McpDone**: cada screen envuelta en `ScreenFrame`. Reemplazo de `<Footer hint="…">` por `<KeymapBar entries={…}>` estructurada.
+- **InputPrompt**: prompt mark `›` en accent + arrow `→` antes del campo de input. Errores con icono `✗` en rojo.
+- **McpDone**: status icon `✓`/`✗` en color (verde/rojo) en vez de prefijo de texto.
+- **ConnectionsTable**: placeholder vacío en `fgMoreSubtle` italic; tabla rendea con color `fgSubtle` para que destaque sobre la prosa.
+- Eliminado `src/cli/tui/components/footer.tsx` (reemplazado por `KeymapBar`).
+
+### Tests
+
+- 1 test ajustado: `tui-sectioned-menu.test.tsx` ahora valida `── Grupo A` (sin trailing dashes — el render del separator label cambió).
+- 379 tests verdes (igual que 5.10.0).
+
+### Decisions
+
+- **DEC-013**: paleta basada en colores nombrados de ink (16-color) en vez de hex. Razón: máxima compatibilidad con terminals que no soportan truecolor; charmtone-style se logra con foreground hierarchy + accent contrast en vez de gradientes.
+- **DEC-014**: tomada inspiración de Crush, NO copiado. Mantenemos los íconos Unicode mínimos comunes (`◆ ✓ ✗ ❯ →`) en vez de dependencias de iconos custom; nuestra TUI es funcional, no decorativa.
+
 ## [5.10.0] — 2026-05-10
 
 **Minor — TUI con ink para el menú interactivo + wizard MCP (session036).** Reemplaza la fachada `@inquirer/prompts` del menú principal y del wizard `self mcp` por una TUI basada en [ink](https://github.com/vadimdemedes/ink). Los comandos headless (skills/IA) no cambian: cualquier invocación con args sigue produciendo el mismo JSON de antes.

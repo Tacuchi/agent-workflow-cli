@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
+import { colors, icons } from "../theme.js";
 
 export type MenuItem<T extends string> =
   | { kind: "item"; label: string; value: T; description?: string }
@@ -57,18 +58,25 @@ export function SectionedMenu<T extends string>(props: SectionedMenuProps<T>) {
             return <Text key={key}> </Text>;
           }
           return (
-            <Text key={key} color="gray" dimColor>
-              ── {item.label} ──
-            </Text>
+            <Box key={key} marginTop={1}>
+              <Text color={colors.fgMoreSubtle}>{icons.section.repeat(2)} </Text>
+              <Text color={colors.accent} bold>
+                {item.label}
+              </Text>
+            </Box>
           );
         }
         const selectable = selectables.find((entry) => entry.index === index);
         const isFocused = selectable?.index === selectables[focused]?.index;
         return (
-          <Text key={key} {...(isFocused ? { color: "cyan" } : {})}>
-            {isFocused ? "❯ " : "  "}
-            {item.label}
-          </Text>
+          <Box key={key}>
+            <Text color={isFocused ? colors.primary : colors.fgMoreSubtle} bold={isFocused}>
+              {isFocused ? `${icons.focusBullet} ` : `${icons.dimBullet} `}
+            </Text>
+            <Text {...(isFocused ? { color: colors.fg, bold: true } : { color: colors.fgSubtle })}>
+              {item.label}
+            </Text>
+          </Box>
         );
       })}
     </Box>

@@ -1,15 +1,27 @@
 import { Box, Text } from "ink";
+import { colors, icons } from "../theme.js";
 
-export function Header({ version, subtitle }: { version: string; subtitle?: string }) {
+export interface HeaderProps {
+  version: string;
+  subtitle?: string;
+}
+
+export function Header({ version, subtitle }: HeaderProps) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text color="cyan" bold>
-          agent-workflow
+        <Text color={colors.primary} bold>
+          {icons.brand} agent-workflow
         </Text>
-        <Text color="gray"> v{version}</Text>
+        <Text color={colors.fgMoreSubtle}> · </Text>
+        <Text color={colors.fgSubtle}>v{version}</Text>
+        {subtitle ? (
+          <>
+            <Text color={colors.fgMoreSubtle}> · </Text>
+            <Text color={colors.accent}>{subtitle}</Text>
+          </>
+        ) : null}
       </Box>
-      {subtitle ? <Text color="gray">{subtitle}</Text> : null}
     </Box>
   );
 }
