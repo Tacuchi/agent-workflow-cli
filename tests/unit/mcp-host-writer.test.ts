@@ -68,7 +68,7 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     expect(existsSync(mcpJsonPath)).toBe(false);
   });
 
-  it("crea backup si pisa contenido distinto", () => {
+  it("backup transitorio: tras write OK no quedan .bak.<ts> en disco y result.backup es null", () => {
     const mcpJsonPath = join(scopeDir, ".mcp.json");
     writeFileSync(
       mcpJsonPath,
@@ -76,8 +76,19 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     );
     const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
     expect(result.action).toBe("written");
-    expect(result.backup).not.toBeNull();
-    expect(existsSync(result.backup ?? "")).toBe(true);
+    expect(result.backup).toBeNull();
+    const baks = readdirSync(scopeDir).filter((f) => f.startsWith(".mcp.json.bak."));
+    expect(baks).toHaveLength(0);
+  });
+
+  it("purga .bak.<ts> históricos al iniciar el write", () => {
+    const mcpJsonPath = join(scopeDir, ".mcp.json");
+    writeFileSync(mcpJsonPath, JSON.stringify({ mcpServers: {} }, null, 2));
+    writeFileSync(`${mcpJsonPath}.bak.1`, "stale");
+    writeFileSync(`${mcpJsonPath}.bak.99999`, "stale");
+    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    const baks = readdirSync(scopeDir).filter((f) => f.startsWith(".mcp.json.bak."));
+    expect(baks).toHaveLength(0);
   });
 
   it("limpia entrada legacy en .claude/settings.json al escribir", () => {

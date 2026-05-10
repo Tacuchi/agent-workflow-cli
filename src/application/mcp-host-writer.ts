@@ -1,5 +1,13 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type {
   McpEntry,
@@ -49,8 +57,10 @@ function cleanupLegacyClaudeMcpEntry(scope: ScopeInput, name: string, dryRun: bo
   } else {
     data.mcpServers = remaining;
   }
-  backupFile(legacy);
+  purgeStaleBackups(legacy);
+  const legacyBackup = backupFile(legacy);
   writeFileSync(legacy, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  discardBackup(legacyBackup);
 }
 
 export class McpWriterError extends Error {
@@ -116,10 +126,12 @@ function writeClaudeMcpEntry(
   }
 
   mkdirSync(dirname(settingsFile), { recursive: true });
+  purgeStaleBackups(settingsFile);
   const backup = backupFile(settingsFile);
   writeFileSync(settingsFile, newJson, "utf-8");
+  discardBackup(backup);
   cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
-  return resultWritten("claude", settingsFile, entry.name, backup);
+  return resultWritten("claude", settingsFile, entry.name, null);
 }
 
 function writeCodexMcpEntry(
@@ -164,9 +176,11 @@ function writeCodexMcpEntry(
   }
 
   mkdirSync(dirname(configFile), { recursive: true });
+  purgeStaleBackups(configFile);
   const backup = backupFile(configFile);
   writeFileSync(configFile, newContent, "utf-8");
-  return resultWritten("codex", configFile, entry.name, backup);
+  discardBackup(backup);
+  return resultWritten("codex", configFile, entry.name, null);
 }
 
 function removeClaudeMcpEntry(
@@ -199,10 +213,12 @@ function removeClaudeMcpEntry(
   }
 
   mkdirSync(dirname(settingsFile), { recursive: true });
+  purgeStaleBackups(settingsFile);
   const backup = backupFile(settingsFile);
   writeFileSync(settingsFile, newJson, "utf-8");
+  discardBackup(backup);
   cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
-  return resultRemoved("claude", settingsFile, entry.name, backup);
+  return resultRemoved("claude", settingsFile, entry.name, null);
 }
 
 function removeCodexMcpEntry(
@@ -237,9 +253,11 @@ function removeCodexMcpEntry(
   }
 
   mkdirSync(dirname(configFile), { recursive: true });
+  purgeStaleBackups(configFile);
   const backup = backupFile(configFile);
   writeFileSync(configFile, newContent, "utf-8");
-  return resultRemoved("codex", configFile, entry.name, backup);
+  discardBackup(backup);
+  return resultRemoved("codex", configFile, entry.name, null);
 }
 
 function readClaudeSettings(file: string): Record<string, unknown> {
@@ -302,6 +320,36 @@ function backupFile(path: string): string | null {
   const backupPath = `${path}.bak.${ts}`;
   copyFileSync(path, backupPath);
   return backupPath;
+}
+
+function discardBackup(backupPath: string | null): void {
+  if (backupPath === null) return;
+  try {
+    if (existsSync(backupPath)) unlinkSync(backupPath);
+  } catch {
+    // best-effort: nunca bloquear el write OK por un cleanup fallido
+  }
+}
+
+function purgeStaleBackups(filePath: string): void {
+  const dir = dirname(filePath);
+  if (!existsSync(dir)) return;
+  const base = basename(filePath);
+  const re = new RegExp(`^${escapeRegex(base)}\\.bak\\.\\d+$`);
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!re.test(entry)) continue;
+    try {
+      unlinkSync(join(dir, entry));
+    } catch {
+      // ignore individual failure
+    }
+  }
 }
 
 function escapeRegex(s: string): string {

@@ -4,6 +4,40 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.9.3] — 2026-05-09
+
+**Patch — UX polish del wizard MCP + backups transitorios (session035).** Dos mejoras complementarias en el flujo de `agent-workflow self`:
+
+### Changed
+
+- **Tabla de conexiones con status icons**: `si`/`no`/`drift` se renderizan como `✓` / `–` / `!` (1 char visible). Headers acortados a `nombre` / `DSN var` / `Claude` / `Codex`.
+- **Header contextual antes de la tabla**: `Conexiones MCP registradas (N):` + tabla + leyenda `✓ instalado · – no instalado · ! drift de configuración`. La leyenda ayuda al primer encuentro con los símbolos.
+- **Choices del menú post-tabla con prefix + Separator**: agrupa `── Instalar / Actualizar ──` (Claude Code, Codex), `── Operar ──` (Diagnosticar, Eliminar), y bloque final separado para Cancelar. Símbolos `▸` / `·` / `✗` / `⏎` para jerarquía visual.
+- **Menú raíz `agent-workflow self` con misma estructura**: separador `── Verificar / configurar ──` (Doctor, Skill, MCP) y `── Mantenimiento ──` (Update, Help) + Salir aislado.
+- **Wizard `mcp` también separado por intención**: `── Conexiones existentes ──` y `── Registrar nueva conexión ──`.
+- **Mensajes de prompt más específicos**: `Conexión a operar` (en vez de `Conexión`), `Nombre de la nueva conexión (slug-kebab)`, `Variable de entorno con la DSN (UPPER_SNAKE_CASE)`.
+- **`SelfMcpPrompts.select` admite separadores** vía `{ type: "separator", separator?: string }`; `loadPrompts` los traduce a `Separator()` real de `@inquirer/prompts`.
+
+### Fixed
+
+- **Backups `<file>.bak.<ts>` ahora son transitorios**: tras `setup` o `remove` exitoso se eliminan automáticamente. Antes quedaban acumulados en `.claude/`, `.mcp.json`, `.claude.json` y `.codex/config.toml` después de cada operación.
+- **Purge histórico al iniciar**: cada `setup`/`remove` purga `<file>.bak.<digits>` previos del archivo objetivo (limpieza de versiones anteriores).
+- **Cleanup legacy también pasa por purge + discard**: el barrido de `mcpServers` en `.claude/settings.json` ya no deja `.bak` huérfanos.
+- `result.backup` ahora es `null` en happy path. Si el `writeFileSync` lanza, el `.bak` queda como recovery (best-effort).
+
+### Tests
+
+- 368 tests pasando (+1 vs 5.9.2):
+  - 4 reescritos en `format-connections-table.test.ts` para validar status icons (`✓`/`–`/`!`) y headers cortos.
+  - 1 reescrito en `mcp-host-writer.test.ts`: `result.backup === null` tras write OK + 0 archivos `.bak.*` en disco.
+  - 1 nuevo en `mcp-host-writer.test.ts`: pre-existing `.bak.<digits>` se purgan al iniciar el write.
+  - 1 actualizado en `self-mcp-config.test.ts`: assertion contra fila con icons.
+
+### Decisions
+
+- **DEC-008**: status icons elegidos = `✓` / `–` / `!`. Evitamos emojis (dependientes de fuente/terminal); estos 3 están en BMP y se renderizan en cualquier terminal moderna.
+- **DEC-009**: el `result.backup` retorna `null` en happy path. La promesa "no dejes residuos" prioriza limpieza visible sobre rastro de auditoría — quien quiera auditoría tiene git/snapshots externos.
+
 ## [5.9.2] — 2026-05-09
 
 **Patch — render box-drawing del listado de conexiones MCP (session034).** El header del prompt en `agent-workflow self mcp` mostraba el pipe-table markdown (`| nombre | DSN var ... |`) literal porque `@inquirer/prompts` no renderiza markdown. Ahora la tabla usa caracteres Unicode de box-drawing (`┌─┬─┐ │ ├─┼─┤ └─┴─┘`) con anchos de columna calculados a partir de header + celdas. Headers acortados a `nombre`, `DSN var`, `Claude Code`, `Codex`. Sin nuevas dependencias.

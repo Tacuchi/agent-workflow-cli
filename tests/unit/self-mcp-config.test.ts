@@ -96,9 +96,7 @@ describe("selfMcpConfig", () => {
     if (!result.ok) throw new Error("expected ok");
     expect(result.data.connection?.server_name).toBe("reporting");
     expect(result.data.connection?.dsn_var).toBe("REPORTING_DATABASE_URL");
-    expect(result.data.table).toContain(
-      "│ reporting │ REPORTING_DATABASE_URL │ no          │ no    │",
-    );
+    expect(result.data.table).toContain("│ reporting │ REPORTING_DATABASE_URL │ –      │ –     │");
     expect(existsSync(ctx.paths.userMcpConnectionsFile())).toBe(true);
     expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).not.toContain(
       "postgres://secret",

@@ -42,10 +42,23 @@ interface PromptChoice<T extends string> {
   description?: string;
 }
 
+interface PromptSeparator {
+  type: "separator";
+  separator?: string;
+}
+
+type PromptChoiceOrSeparator<T extends string> = PromptChoice<T> | PromptSeparator;
+
+function isPromptSeparator<T extends string>(
+  choice: PromptChoiceOrSeparator<T>,
+): choice is PromptSeparator {
+  return (choice as PromptSeparator).type === "separator";
+}
+
 export interface SelfMcpPrompts {
   select<T extends string>(options: {
     message: string;
-    choices: PromptChoice<T>[];
+    choices: PromptChoiceOrSeparator<T>[];
     default?: T;
   }): Promise<T>;
   input(options: {
@@ -160,14 +173,17 @@ async function listConnectionsMenu(
   }
 
   const action = await prompts.select<ConnectionMenuAction>({
-    message: formatConnectionsTable(connections),
+    message: formatConnectionsBlock(connections),
     default: "install-claude",
     choices: [
-      { name: "Instalar/Actualizar en Claude Code", value: "install-claude" },
-      { name: "Instalar/Actualizar en Codex", value: "install-codex" },
-      { name: "Diagnosticar", value: "doctor" },
-      { name: "Eliminar", value: "remove" },
-      { name: "Cancelar", value: "cancel" },
+      { type: "separator", separator: "── Instalar / Actualizar ──" },
+      { name: "▸ Claude Code", value: "install-claude" },
+      { name: "▸ Codex", value: "install-codex" },
+      { type: "separator", separator: "── Operar ──" },
+      { name: "· Diagnosticar", value: "doctor" },
+      { name: "✗ Eliminar", value: "remove" },
+      { type: "separator" },
+      { name: "⏎ Cancelar", value: "cancel" },
     ],
   });
   if (action === "cancel") {
@@ -428,15 +444,30 @@ function isDsnVisible(ctx: CliContext, dsnVar: string): boolean {
   return Boolean(dsn.values[dsnVar]);
 }
 
+const INSTALL_STATUS_ICON: Record<InstallStatus, string> = {
+  si: "✓",
+  no: "–",
+  drift: "!",
+};
+
 export function formatConnectionsTable(connections: SelfMcpConnectionView[]): string {
-  const headers = ["nombre", "DSN var", "Claude Code", "Codex"];
+  const headers = ["nombre", "DSN var", "Claude", "Codex"];
   const rows = connections.map((item) => [
     item.nombre,
     item.dsn_var,
-    item.instalado.claude_code,
-    item.instalado.codex,
+    INSTALL_STATUS_ICON[item.instalado.claude_code],
+    INSTALL_STATUS_ICON[item.instalado.codex],
   ]);
   return renderBoxTable(headers, rows);
+}
+
+function formatConnectionsBlock(connections: SelfMcpConnectionView[]): string {
+  const header =
+    connections.length === 0
+      ? "Conexiones MCP registradas (ninguna):"
+      : `Conexiones MCP registradas (${connections.length}):`;
+  const legend = "Leyenda: ✓ instalado · – no instalado · ! drift de configuración";
+  return [header, formatConnectionsTable(connections), legend].join("\n");
 }
 
 function renderBoxTable(headers: string[], rows: string[][]): string {
@@ -481,7 +512,7 @@ async function resolveRegisteredConnection(
     return found;
   }
   const selected = await prompts.select<McpInstance>({
-    message: "Conexión",
+    message: "Conexión a operar",
     default: connections[0]?.name ?? "cert",
     choices: connections.map((item) => ({
       name: `${item.name} (${item.dsnVar})`,
@@ -502,7 +533,7 @@ async function resolveConnectionName(
     return validation.value;
   }
   const value = await prompts.input({
-    message: "Nombre de conexión",
+    message: "Nombre de la nueva conexión (slug-kebab)",
     default: "cert",
     validate: (input) => {
       const validation = validateMcpInstance(input);
@@ -526,7 +557,7 @@ async function resolveDsnVar(
     return validation.value;
   }
   const value = await prompts.input({
-    message: "Nombre de variable DSN",
+    message: "Variable de entorno con la DSN (UPPER_SNAKE_CASE)",
     default: defaultDsnVar(name),
     validate: (input) => {
       const validation = validateDsnVarName(input);
@@ -579,7 +610,24 @@ function shellStartupFile(): string {
 async function loadPrompts(): Promise<SelfMcpPrompts> {
   const prompts = await import("@inquirer/prompts");
   return {
-    select: prompts.select,
+    select: <T extends string>(options: {
+      message: string;
+      choices: PromptChoiceOrSeparator<T>[];
+      default?: T;
+    }) => {
+      const choices = options.choices.map((choice) => {
+        if (isPromptSeparator(choice)) {
+          return new prompts.Separator(choice.separator);
+        }
+        return { name: choice.name, value: choice.value };
+      });
+      const baseOpts: Parameters<typeof prompts.select<T>>[0] = {
+        message: options.message,
+        choices,
+      };
+      if (options.default !== undefined) baseOpts.default = options.default;
+      return prompts.select(baseOpts);
+    },
     input: prompts.input,
   };
 }
@@ -592,10 +640,13 @@ async function resolveAction(args: ParsedArgs, prompts: SelfMcpPrompts): Promise
       message: "Configurar MCP database (dbhub)",
       default: "list",
       choices: [
-        { name: "Listar conexiones existentes", value: "list" },
-        { name: "Utilizar DSN env var existente", value: "use-env" },
-        { name: "Crear DSN env var", value: "create-env" },
-        { name: "Cancelar", value: "cancel" },
+        { type: "separator", separator: "── Conexiones existentes ──" },
+        { name: "▸ Listar / operar", value: "list" },
+        { type: "separator", separator: "── Registrar nueva conexión ──" },
+        { name: "▸ Utilizar DSN env var existente", value: "use-env" },
+        { name: "▸ Crear DSN env var (ayuda)", value: "create-env" },
+        { type: "separator" },
+        { name: "⏎ Cancelar", value: "cancel" },
       ],
     }),
     fromArgs: false,

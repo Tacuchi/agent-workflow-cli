@@ -28,61 +28,52 @@ describe("formatConnectionsTable", () => {
     expect(lines[0]?.endsWith("┐")).toBe(true);
     expect(lines[1]).toContain("nombre");
     expect(lines[1]).toContain("DSN var");
-    expect(lines[1]).toContain("Claude Code");
+    expect(lines[1]).toContain("Claude");
     expect(lines[1]).toContain("Codex");
     expect(lines[2]?.startsWith("└")).toBe(true);
-    expect(lines[2]?.endsWith("┘")).toBe(true);
   });
 
-  it("una conexión: 5 líneas (top, header, sep, row, bottom) y celdas alineadas al header", () => {
+  it("una conexión con status icons (no/no): – en ambas columnas", () => {
     const out = formatConnectionsTable([view("cert", "DB_CERT_DSN")]);
     const lines = out.split("\n");
     expect(lines).toHaveLength(5);
-    expect(lines[2]?.startsWith("├")).toBe(true);
-    expect(lines[2]?.endsWith("┤")).toBe(true);
     expect(lines[3]).toContain("│ cert");
     expect(lines[3]).toContain("DB_CERT_DSN");
-    expect(lines[3]).toContain("│ no          │"); // padding al ancho de "Claude Code"
-    expect(lines[3]).toContain("│ no    │"); // padding al ancho de "Codex"
-    expect(lines[4]?.startsWith("└")).toBe(true);
+    expect(lines[3]).toContain("│ –      │"); // padded a "Claude"
+    expect(lines[3]).toMatch(/│ – {5}│$/); // último char antes del cierre = padded "Codex"
+  });
+
+  it("status icons mapean: si→✓ · no→– · drift→!", () => {
+    const out = formatConnectionsTable([
+      view("a", "DSN_A", "si", "no"),
+      view("b", "DSN_B", "drift", "si"),
+    ]);
+    const lines = out.split("\n");
+    expect(lines[3]).toContain("│ ✓"); // Claude=si
+    expect(lines[3]).toContain("│ –"); // Codex=no
+    expect(lines[4]).toContain("│ !"); // Claude=drift
+    expect(lines[4]).toMatch(/│ ✓ {5}│$/); // Codex=si
   });
 
   it("ancho de columna se ajusta al valor más largo (no al header)", () => {
     const out = formatConnectionsTable([view("reporting-warehouse", "REPORTING_WAREHOUSE_DSN")]);
     const lines = out.split("\n");
-    // El header "nombre" se padding-extiende para acomodar "reporting-warehouse"
     expect(lines[1]).toMatch(/│ nombre {14}│/);
     expect(lines[3]).toContain("│ reporting-warehouse │");
   });
 
-  it("múltiples conexiones: una fila por conexión, todas con anchos consistentes", () => {
+  it("snapshot exacto para 2 conexiones con todos los estados mixtos", () => {
     const out = formatConnectionsTable([
       view("cert", "DB_CERT_DSN", "si", "no"),
       view("prod", "DB_PROD_DSN", "drift", "si"),
     ]);
-    const lines = out.split("\n");
-    expect(lines).toHaveLength(6); // top, header, sep, row, row, bottom
-    const widths = lines.map((l) => [...l].length);
-    expect(new Set(widths).size).toBe(1); // todas las líneas mismo largo visual
-    expect(lines[3]).toContain("│ cert   │"); // padded a ancho de "nombre" header
-    expect(lines[4]).toContain("│ prod   │");
-    expect(lines[3]).toContain("│ si          │"); // cert claude_code=si padded a Claude Code
-    expect(lines[4]).toContain("│ drift       │"); // prod claude_code=drift
-    expect(lines[4]).toContain("│ si    │"); // prod codex=si padded a "Codex"
-  });
-
-  it("snapshot exacto para 2 conexiones con estado mixto", () => {
-    const out = formatConnectionsTable([
-      view("cert", "DB_CERT_DSN", "no", "no"),
-      view("prod", "DB_PROD_DSN", "no", "no"),
-    ]);
     const expected = [
-      "┌────────┬─────────────┬─────────────┬───────┐",
-      "│ nombre │ DSN var     │ Claude Code │ Codex │",
-      "├────────┼─────────────┼─────────────┼───────┤",
-      "│ cert   │ DB_CERT_DSN │ no          │ no    │",
-      "│ prod   │ DB_PROD_DSN │ no          │ no    │",
-      "└────────┴─────────────┴─────────────┴───────┘",
+      "┌────────┬─────────────┬────────┬───────┐",
+      "│ nombre │ DSN var     │ Claude │ Codex │",
+      "├────────┼─────────────┼────────┼───────┤",
+      "│ cert   │ DB_CERT_DSN │ ✓      │ –     │",
+      "│ prod   │ DB_PROD_DSN │ !      │ ✓     │",
+      "└────────┴─────────────┴────────┴───────┘",
     ].join("\n");
     expect(out).toBe(expected);
   });
