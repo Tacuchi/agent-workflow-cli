@@ -1,7 +1,7 @@
 import { selfBootstrap } from "../../application/self/bootstrap.js";
 import { selfDoctor } from "../../application/self/doctor-self.js";
-import { selfInstallPluginSkills } from "../../application/self/install-plugin-skills.js";
 import { installPluginSkillsFromGit } from "../../application/self/install-plugin-skills-git.js";
+import { selfInstallPluginSkills } from "../../application/self/install-plugin-skills.js";
 import { selfInstallSkill } from "../../application/self/install-skill.js";
 import { selfMcpConfig } from "../../application/self/mcp-config.js";
 import { selfNamespace } from "../../application/self/namespace-info.js";

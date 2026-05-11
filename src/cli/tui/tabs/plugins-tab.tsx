@@ -1,7 +1,7 @@
-import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { Box, Text, useInput } from "ink";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { installPluginSkillsFromGit } from "../../../application/self/install-plugin-skills-git.js";
 import { selfInstallPluginSkills } from "../../../application/self/install-plugin-skills.js";
 import type { InstallTarget } from "../../../application/self/install-skill.js";
@@ -35,9 +35,7 @@ interface PluginEntry {
   targets: PluginTargetStatus[];
 }
 
-type Mode =
-  | { kind: "idle" }
-  | { kind: "entering-url"; target: InstallTarget; force: boolean };
+type Mode = { kind: "idle" } | { kind: "entering-url"; target: InstallTarget; force: boolean };
 
 const TARGET_LABELS: Record<InstallTarget, string> = {
   warp: "Warp",
@@ -168,20 +166,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
   useInput(
     (input, key) => {
       if (!isActive || busy || mode.kind !== "idle") return;
-      if (key.upArrow) {
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      }
-      if (key.downArrow) {
-        setCursor((c) => (plugins.length === 0 ? 0 : Math.min(plugins.length - 1, c + 1)));
-        return;
-      }
-      if (input === "w") void install("warp");
-      else if (input === "W") void install("warp", true);
-      else if (input === "a") void install("agents");
-      else if (input === "A") void install("agents", true);
-      else if (input === "r") void install("warp", false, true);
-      else if (input === "R") void install("warp", true, true);
+      handlePluginsKey(input, key, plugins.length, setCursor, install);
     },
     { isActive },
   );
@@ -243,46 +228,9 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         Plugin Skills
       </Text>
       <Box marginTop={1} flexDirection="column">
-        {plugins.map((plugin, i) => {
-          const focused = isActive && i === cursor;
-          return (
-            <Box key={plugin.id} flexDirection="column" marginBottom={1}>
-              <Box>
-                <Text color={focused ? colors.primary : colors.fgMoreSubtle} bold={focused}>
-                  {focused ? icons.focusBullet : " "}
-                </Text>
-                <Text color={focused ? colors.fg : colors.fgSubtle} bold={focused}>
-                  {plugin.label}
-                </Text>
-                {plugin.version ? (
-                  <Text color={colors.fgMoreSubtle}> v{plugin.version}</Text>
-                ) : null}
-                {plugin.skillCount !== null ? (
-                  <Text color={colors.fgMoreSubtle}> · {plugin.skillCount} skills</Text>
-                ) : null}
-                {!plugin.sourcePath && !plugin.sourceUrl ? (
-                  <Text color={colors.warning}> (fuente no encontrada)</Text>
-                ) : !plugin.sourcePath && plugin.sourceUrl ? (
-                  <Text color={colors.fgMoreSubtle}> (instalará desde git)</Text>
-                ) : null}
-              </Box>
-              <Box flexDirection="column" marginLeft={2}>
-                {plugin.targets.map((t) => (
-                  <Box key={t.id}>
-                    <Text
-                      color={t.installed ? colors.success : colors.fgMoreSubtle}
-                      bold={t.installed}
-                    >
-                      {t.installed ? icons.check : "–"}{" "}
-                    </Text>
-                    <Text color={colors.fgSubtle}>{t.label}</Text>
-                    <Text color={colors.fgMoreSubtle}> · {t.path}</Text>
-                  </Box>
-                ))}
-              </Box>
-            </Box>
-          );
-        })}
+        {plugins.map((plugin, i) => (
+          <PluginRow key={plugin.id} plugin={plugin} focused={isActive && i === cursor} />
+        ))}
       </Box>
       {busy ? (
         <Box marginTop={1}>
@@ -292,6 +240,41 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         </Box>
       ) : null}
       {toast ? <Toast tone={toast.tone} message={toast.message} /> : null}
+    </Box>
+  );
+}
+
+function PluginRow({ plugin, focused }: { plugin: PluginEntry; focused: boolean }) {
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Box>
+        <Text color={focused ? colors.primary : colors.fgMoreSubtle} bold={focused}>
+          {focused ? icons.focusBullet : " "}
+        </Text>
+        <Text color={focused ? colors.fg : colors.fgSubtle} bold={focused}>
+          {plugin.label}
+        </Text>
+        {plugin.version ? <Text color={colors.fgMoreSubtle}> v{plugin.version}</Text> : null}
+        {plugin.skillCount !== null ? (
+          <Text color={colors.fgMoreSubtle}> · {plugin.skillCount} skills</Text>
+        ) : null}
+        {!plugin.sourcePath && !plugin.sourceUrl ? (
+          <Text color={colors.warning}> (fuente no encontrada)</Text>
+        ) : !plugin.sourcePath && plugin.sourceUrl ? (
+          <Text color={colors.fgMoreSubtle}> (instalará desde git)</Text>
+        ) : null}
+      </Box>
+      <Box flexDirection="column" marginLeft={2}>
+        {plugin.targets.map((t) => (
+          <Box key={t.id}>
+            <Text color={t.installed ? colors.success : colors.fgMoreSubtle} bold={t.installed}>
+              {t.installed ? icons.check : "–"}{" "}
+            </Text>
+            <Text color={colors.fgSubtle}>{t.label}</Text>
+            <Text color={colors.fgMoreSubtle}> · {t.path}</Text>
+          </Box>
+        ))}
+      </Box>
     </Box>
   );
 }
@@ -393,4 +376,29 @@ function semverDesc(a: string, b: string): number {
   const [aMaj = 0, aMin = 0, aPatch = 0] = parse(a);
   const [bMaj = 0, bMin = 0, bPatch = 0] = parse(b);
   return bMaj - aMaj || bMin - aMin || bPatch - aPatch;
+}
+
+type InstallFn = (target: InstallTarget, force?: boolean, forceGit?: boolean) => void;
+
+function handlePluginsKey(
+  input: string,
+  key: { upArrow?: boolean; downArrow?: boolean },
+  pluginsLength: number,
+  setCursor: (fn: (c: number) => number) => void,
+  install: InstallFn,
+): void {
+  if (key.upArrow) {
+    setCursor((c) => Math.max(0, c - 1));
+    return;
+  }
+  if (key.downArrow) {
+    setCursor((c) => (pluginsLength === 0 ? 0 : Math.min(pluginsLength - 1, c + 1)));
+    return;
+  }
+  if (input === "w") install("warp");
+  else if (input === "W") install("warp", true);
+  else if (input === "a") install("agents");
+  else if (input === "A") install("agents", true);
+  else if (input === "r") install("warp", false, true);
+  else if (input === "R") install("warp", true, true);
 }

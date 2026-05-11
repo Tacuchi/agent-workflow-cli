@@ -93,40 +93,7 @@ export async function selfInstallPluginSkills(
     results.push(result);
   }
 
-  const installed = results.filter((r) => r.status === "installed").length;
-  const skipped = results.filter((r) => r.status === "skipped").length;
-  const hasErrors = results.some((r) => r.reason?.startsWith("error:"));
-
-  const overallStatus = dryRun
-    ? "dry-run"
-    : installed === 0 && skipped > 0
-      ? "partial"
-      : "installed";
-
-  const summary = dryRun
-    ? `[dry-run] ${results.length} skills se copiarían a ${destRoot}.`
-    : `${installed} skills instalados, ${skipped} omitidos en ${destRoot}.`;
-
-  return {
-    ok: !hasErrors,
-    data: {
-      status: overallStatus,
-      from: fromDir,
-      namespace,
-      target: targetArg,
-      skills: results,
-      summary,
-    },
-    ...(hasErrors
-      ? {
-          error: {
-            code: "INSTALL_PARTIAL",
-            message: `Algunos skills fallaron. Ver data.skills para detalles.`,
-          },
-        }
-      : {}),
-    exitCode: hasErrors ? 1 : 0,
-  };
+  return buildInstallResult({ results, dryRun, destRoot, fromDir, namespace, target: targetArg });
 }
 
 interface ProcessSkillOpts {
@@ -225,4 +192,37 @@ async function dirExists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function buildInstallResult(opts: {
+  results: PluginSkillResult[];
+  dryRun: boolean;
+  destRoot: string;
+  fromDir: string;
+  namespace: string;
+  target: InstallTarget;
+}): CommandResult<SelfInstallPluginSkillsData> {
+  const { results, dryRun, destRoot, fromDir, namespace, target } = opts;
+  const installed = results.filter((r) => r.status === "installed").length;
+  const skipped = results.filter((r) => r.status === "skipped").length;
+  const hasErrors = results.some((r) => r.reason?.startsWith("error:"));
+
+  const status = dryRun ? "dry-run" : installed === 0 && skipped > 0 ? "partial" : "installed";
+  const summary = dryRun
+    ? `[dry-run] ${results.length} skills se copiarían a ${destRoot}.`
+    : `${installed} skills instalados, ${skipped} omitidos en ${destRoot}.`;
+
+  return {
+    ok: !hasErrors,
+    data: { status, from: fromDir, namespace, target, skills: results, summary },
+    ...(hasErrors
+      ? {
+          error: {
+            code: "INSTALL_PARTIAL",
+            message: "Algunos skills fallaron. Ver data.skills para detalles.",
+          },
+        }
+      : {}),
+    exitCode: hasErrors ? 1 : 0,
+  };
 }
