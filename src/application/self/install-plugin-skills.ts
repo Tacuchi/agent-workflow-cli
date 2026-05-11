@@ -1,0 +1,228 @@
+import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { ParsedArgs } from "../../cli/parser.js";
+import type { CliContext } from "../../cli/types.js";
+import type { CommandResult } from "../../domain/types.js";
+import { type InstallTarget, TARGET_ROOTS } from "./install-skill.js";
+
+export interface PluginSkillResult {
+  skillName: string;
+  dest: string;
+  status: "installed" | "skipped" | "dry-run";
+  reason?: string;
+}
+
+export interface SelfInstallPluginSkillsData {
+  status: "installed" | "dry-run" | "partial" | "nothing";
+  from: string;
+  namespace: string;
+  target: InstallTarget;
+  skills: PluginSkillResult[];
+  summary: string;
+}
+
+const VALID_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "warp", "oz"];
+
+export async function selfInstallPluginSkills(
+  args: ParsedArgs,
+  ctx: CliContext,
+): Promise<CommandResult<SelfInstallPluginSkillsData>> {
+  const fromDir = args.values.get("from");
+  const targetArg = (args.values.get("target") ?? "warp") as InstallTarget;
+  const namespace = args.values.get("namespace") ?? "";
+  const force = args.flags.has("--force");
+  const dryRun = args.flags.has("--dry-run");
+
+  if (!fromDir) {
+    return {
+      ok: false,
+      error: { code: "INVALID_INPUT", message: "--from <skills-dir> es obligatorio." },
+      exitCode: 1,
+    };
+  }
+
+  if (!VALID_TARGETS.includes(targetArg)) {
+    return {
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: `--target debe ser uno de: ${VALID_TARGETS.join(", ")}. Recibido: '${targetArg}'`,
+      },
+      exitCode: 1,
+    };
+  }
+
+  if (!(await dirExists(fromDir))) {
+    return {
+      ok: false,
+      error: { code: "SOURCE_NOT_FOUND", message: `El directorio --from '${fromDir}' no existe.` },
+      exitCode: 1,
+    };
+  }
+
+  const skillDirs = await scanSkillDirs(fromDir);
+  if (skillDirs.length === 0) {
+    return {
+      ok: true,
+      data: {
+        status: "nothing",
+        from: fromDir,
+        namespace,
+        target: targetArg,
+        skills: [],
+        summary: `No se encontraron skills válidos en '${fromDir}'.`,
+      },
+      exitCode: 0,
+    };
+  }
+
+  const destRoot = join(ctx.env.homeDir(), ...TARGET_ROOTS[targetArg]);
+  const results: PluginSkillResult[] = [];
+
+  for (const { name: dirName, path: skillSrcDir } of skillDirs) {
+    const finalName = namespace ? `${namespace}-${dirName}` : dirName;
+    const dest = join(destRoot, finalName);
+    const result = await processSkill({
+      finalName,
+      skillSrcDir,
+      dest,
+      namespace,
+      force,
+      dryRun,
+    });
+    results.push(result);
+  }
+
+  const installed = results.filter((r) => r.status === "installed").length;
+  const skipped = results.filter((r) => r.status === "skipped").length;
+  const hasErrors = results.some((r) => r.reason?.startsWith("error:"));
+
+  const overallStatus = dryRun
+    ? "dry-run"
+    : installed === 0 && skipped > 0
+      ? "partial"
+      : "installed";
+
+  const summary = dryRun
+    ? `[dry-run] ${results.length} skills se copiarían a ${destRoot}.`
+    : `${installed} skills instalados, ${skipped} omitidos en ${destRoot}.`;
+
+  return {
+    ok: !hasErrors,
+    data: {
+      status: overallStatus,
+      from: fromDir,
+      namespace,
+      target: targetArg,
+      skills: results,
+      summary,
+    },
+    ...(hasErrors
+      ? {
+          error: {
+            code: "INSTALL_PARTIAL",
+            message: `Algunos skills fallaron. Ver data.skills para detalles.`,
+          },
+        }
+      : {}),
+    exitCode: hasErrors ? 1 : 0,
+  };
+}
+
+interface ProcessSkillOpts {
+  finalName: string;
+  skillSrcDir: string;
+  dest: string;
+  namespace: string;
+  force: boolean;
+  dryRun: boolean;
+}
+
+async function processSkill(opts: ProcessSkillOpts): Promise<PluginSkillResult> {
+  const { finalName, skillSrcDir, dest, namespace, force, dryRun } = opts;
+
+  if (dryRun) {
+    return { skillName: finalName, dest, status: "dry-run" };
+  }
+
+  if (!force && (await dirExists(dest))) {
+    return {
+      skillName: finalName,
+      dest,
+      status: "skipped",
+      reason: "ya existe (usa --force para sobreescribir)",
+    };
+  }
+
+  try {
+    await mkdir(dest, { recursive: true });
+    await cp(skillSrcDir, dest, {
+      recursive: true,
+      filter: (src) => !src.includes("/.git"),
+    });
+
+    if (namespace) {
+      await patchFrontmatterName(join(dest, "SKILL.md"), finalName);
+    }
+
+    return { skillName: finalName, dest, status: "installed" };
+  } catch (err) {
+    return {
+      skillName: finalName,
+      dest,
+      status: "skipped",
+      reason: `error: ${(err as Error).message}`,
+    };
+  }
+}
+
+async function scanSkillDirs(fromDir: string): Promise<{ name: string; path: string }[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(fromDir);
+  } catch {
+    return [];
+  }
+
+  const results: { name: string; path: string }[] = [];
+  for (const entry of entries) {
+    const full = join(fromDir, entry);
+    const skillMd = join(full, "SKILL.md");
+    try {
+      const s = await stat(full);
+      if (!s.isDirectory()) continue;
+      await stat(skillMd);
+      const content = await readFile(skillMd, "utf8");
+      if (hasValidFrontmatter(content)) {
+        results.push({ name: entry, path: full });
+      }
+    } catch {
+      // not a valid skill dir — skip
+    }
+  }
+  return results;
+}
+
+async function patchFrontmatterName(skillMdPath: string, newName: string): Promise<void> {
+  const content = await readFile(skillMdPath, "utf8");
+  const patched = content.replace(/^(---\s*\n[\s\S]*?)name:\s*\S[^\n]*/m, `$1name: ${newName}`);
+  if (patched !== content) {
+    await writeFile(skillMdPath, patched, "utf8");
+  }
+}
+
+function hasValidFrontmatter(content: string): boolean {
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!match) return false;
+  const block = match[1] ?? "";
+  return /^name:\s*\S/m.test(block) && /^description:\s*\S/m.test(block);
+}
+
+async function dirExists(p: string): Promise<boolean> {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}

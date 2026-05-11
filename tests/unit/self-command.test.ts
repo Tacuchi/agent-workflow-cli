@@ -72,6 +72,7 @@ describe("selfCommand — without subcommand (H-07)", () => {
         "doctor",
         "update",
         "install-skill",
+        "install-plugin-skills",
         "uninstall-skill",
         "mcp",
         "bootstrap",
