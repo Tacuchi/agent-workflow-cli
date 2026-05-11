@@ -17,6 +17,8 @@ function buildInput(args: ParsedArgs): MultirootInput {
   if (ws !== undefined) input.workspace = ws;
   if (args.flags.has("--skip-claude")) input.skipClaude = true;
   if (args.flags.has("--skip-codex")) input.skipCodex = true;
+  if (args.flags.has("--skip-warp")) input.skipWarp = true;
+  if (args.flags.has("--skip-oz")) input.skipOz = true;
   return input;
 }
 

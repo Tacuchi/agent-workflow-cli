@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
+import { HARNESSES } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import {
   AGENTS_LOCK_REL,
@@ -44,7 +45,9 @@ export interface SelfDoctorReport {
   };
 }
 
-const FS_TARGETS: readonly InstallTarget[] = ["claude", "codex"] as const;
+const FS_TARGETS: readonly InstallTarget[] = HARNESSES.filter((h) => h.mcpHostId !== null).map(
+  (h) => h.installTarget,
+);
 
 export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoctorReport>> {
   const home = ctx.env.homeDir();

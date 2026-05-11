@@ -29,8 +29,8 @@ export interface SelfUninstallSkillData {
   lock_warning?: string;
 }
 
-const TARGET_CHOICES: readonly UninstallTargetChoice[] = ["claude", "codex", "agents", "all"];
-const ALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents"];
+const ALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "warp", "oz"];
+const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"];
 
 export async function selfUninstallSkill(
   args: ParsedArgs,

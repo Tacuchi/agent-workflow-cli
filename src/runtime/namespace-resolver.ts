@@ -10,7 +10,7 @@ export interface ResolvedNamespace {
   source: NamespaceSource;
 }
 
-export const DEFAULT_NAMESPACE = "agent-workflow";
+export const DEFAULT_NAMESPACE = "workflow";
 export const ENV_VAR_NAMESPACE = "AW_NAMESPACE";
 
 const LEGACY_NAMESPACE_DENYLIST = new Set<string>(["qtc"]);

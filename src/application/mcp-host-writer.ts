@@ -16,6 +16,7 @@ import type {
   McpWriteOpts,
   McpWriteResult,
 } from "../domain/mcp-entry.js";
+import { resolveWarpProjectMcpPath } from "./multiroot/warp.js";
 
 export interface ScopeInput {
   scopeDir: string;
@@ -81,6 +82,7 @@ export function writeMcpEntry(
   opts: McpWriteOpts = {},
 ): McpWriteResult {
   if (host === "claude") return writeClaudeMcpEntry(entry, scope, opts);
+  if (host === "warp") return writeWarpMcpEntry(entry, scope, opts);
   return writeCodexMcpEntry(entry, scope, opts);
 }
 
@@ -91,6 +93,7 @@ export function removeMcpEntry(
   opts: McpWriteOpts = {},
 ): McpWriteResult {
   if (host === "claude") return removeClaudeMcpEntry(entry, scope, opts);
+  if (host === "warp") return removeWarpMcpEntry(entry, scope, opts);
   return removeCodexMcpEntry(entry, scope, opts);
 }
 
@@ -260,7 +263,72 @@ function removeCodexMcpEntry(
   return resultRemoved("codex", configFile, entry.name, null);
 }
 
-function readClaudeSettings(file: string): Record<string, unknown> {
+function writeWarpMcpEntry(
+  entry: McpEntry,
+  scope: ScopeInput,
+  opts: McpWriteOpts,
+): McpWriteResult {
+  const settingsFile = resolveWarpProjectMcpPath(scope.scopeDir);
+  const data = readJsonFile(settingsFile);
+  const mcpServers = ensureRecord(data, "mcpServers");
+  const existing = mcpServers[entry.name];
+  const expected = expectedClaudeShape(entry);
+
+  if (deepEqual(existing, expected)) {
+    return resultSkipped("warp", settingsFile, entry.name);
+  }
+
+  mcpServers[entry.name] = expected;
+  data.mcpServers = mcpServers;
+  const newJson = `${JSON.stringify(data, null, 2)}\n`;
+
+  if (opts.dryRun) {
+    return resultDryRun("warp", settingsFile, entry.name, [
+      `mcpServers.${entry.name}: ${existing ? "update" : "add"}`,
+    ]);
+  }
+
+  mkdirSync(dirname(settingsFile), { recursive: true });
+  purgeStaleBackups(settingsFile);
+  const backup = backupFile(settingsFile);
+  writeFileSync(settingsFile, newJson, "utf-8");
+  discardBackup(backup);
+  return resultWritten("warp", settingsFile, entry.name, null);
+}
+
+function removeWarpMcpEntry(
+  entry: McpEntry,
+  scope: ScopeInput,
+  opts: McpWriteOpts,
+): McpWriteResult {
+  const settingsFile = resolveWarpProjectMcpPath(scope.scopeDir);
+  const data = readJsonFile(settingsFile);
+  const mcpServers = ensureRecord(data, "mcpServers");
+  const existing = mcpServers[entry.name];
+  if (existing === undefined) {
+    return resultSkipped("warp", settingsFile, entry.name);
+  }
+
+  mcpServers[entry.name] = undefined;
+  const remaining = Object.fromEntries(
+    Object.entries(mcpServers).filter(([, v]) => v !== undefined),
+  );
+  data.mcpServers = Object.keys(remaining).length === 0 ? undefined : remaining;
+  const newJson = `${JSON.stringify(data, null, 2)}\n`;
+
+  if (opts.dryRun) {
+    return resultDryRun("warp", settingsFile, entry.name, [`mcpServers.${entry.name}: remove`]);
+  }
+
+  mkdirSync(dirname(settingsFile), { recursive: true });
+  purgeStaleBackups(settingsFile);
+  const backup = backupFile(settingsFile);
+  writeFileSync(settingsFile, newJson, "utf-8");
+  discardBackup(backup);
+  return resultRemoved("warp", settingsFile, entry.name, null);
+}
+
+function readJsonFile(file: string): Record<string, unknown> {
   if (!existsSync(file)) return {};
   const text = readFileSync(file, "utf-8");
   if (text.trim().length === 0) return {};
@@ -273,6 +341,10 @@ function readClaudeSettings(file: string): Record<string, unknown> {
   } catch (err) {
     throw new McpWriterError(`JSON inválido en ${file}`, file, (err as Error).message);
   }
+}
+
+function readClaudeSettings(file: string): Record<string, unknown> {
+  return readJsonFile(file);
 }
 
 function ensureRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {

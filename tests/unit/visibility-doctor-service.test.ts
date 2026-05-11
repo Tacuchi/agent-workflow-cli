@@ -103,7 +103,7 @@ describe("runVisibilityDoctor", () => {
       'additional_writable_roots = [\n  "/tmp/a",\n  "/tmp/b"\n]\n',
     );
     const result = await runVisibilityDoctor(fs, env, paths, { workspace });
-    expect(result.summary.ok).toBe(2);
+    expect(result.summary.ok).toBe(3);
     for (const r of result.reports) expect(r.status).toBe("ok");
   });
 
@@ -139,6 +139,28 @@ describe("runVisibilityDoctor", () => {
     const claude = result.reports.find((r) => r.host === "claude");
     expect(claude?.status).toBe("extra-paths");
     expect(claude?.extra).toEqual(["/tmp/extra"]);
+  });
+
+  it("warp siempre reporta status=ok (no tiene additionalDirectories)", async () => {
+    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
+    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const warp = result.reports.find((r) => r.host === "warp");
+    expect(warp).toBeDefined();
+    expect(warp?.status).toBe("ok");
+    expect(warp?.missing).toHaveLength(0);
+    expect(warp?.extra).toHaveLength(0);
+    expect(warp?.declared_paths).toHaveLength(0);
+    expect(warp?.registered_paths).toHaveLength(0);
+  });
+
+  it("reports tiene exactamente 3 entradas: claude, codex, warp", async () => {
+    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
+    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    expect(result.reports).toHaveLength(3);
+    const hosts = result.reports.map((r) => r.host);
+    expect(hosts).toContain("claude");
+    expect(hosts).toContain("codex");
+    expect(hosts).toContain("warp");
   });
 
   it("global=true reporta global-pollution si ~/.claude tiene fuentes del hub", async () => {

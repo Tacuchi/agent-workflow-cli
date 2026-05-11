@@ -75,9 +75,13 @@ describe("selfDoctor", () => {
     }
   });
 
-  it("reports both targets installed when claude and codex have it", async () => {
+  it("reports all 3 file-hosting targets when claude, codex and warp have it", async () => {
     const fs = new FakeFs(
-      new Set(["/home/u/.claude/skills/agent-workflow", "/home/u/.codex/skills/agent-workflow"]),
+      new Set([
+        "/home/u/.claude/skills/agent-workflow",
+        "/home/u/.codex/skills/agent-workflow",
+        "/home/u/.warp/skills/agent-workflow",
+      ]),
     );
     const ctx = {
       fs,
@@ -171,7 +175,7 @@ describe("selfDoctor", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       const targets = result.data.skill.targets.map((t) => t.target);
-      expect(targets).toEqual(["claude", "codex"]);
+      expect(targets).toEqual(["claude", "codex", "warp"]);
       expect(targets).not.toContain("agents");
     }
   });

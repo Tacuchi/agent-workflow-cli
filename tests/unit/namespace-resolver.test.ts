@@ -48,10 +48,10 @@ class FakeFs implements FileSystemPort {
 describe("NamespaceResolver", () => {
   const CONFIG_PATH = "/home/u/.config/agent-workflow/namespace";
 
-  it("returns default 'agent-workflow' when no flag/env/config", async () => {
+  it("returns default 'workflow' when no flag/env/config", async () => {
     const r = new NamespaceResolver(new FakeFs(), new FakeEnv());
     const result = await r.resolve(undefined);
-    expect(result.namespace).toBe("agent-workflow");
+    expect(result.namespace).toBe("workflow");
     expect(result.source).toBe("default");
   });
 
@@ -183,7 +183,7 @@ describe("NamespaceResolver", () => {
     const fs = new FakeFs(new Map(), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv());
     const result = await r.resolve(undefined);
-    expect(result.namespace).toBe("agent-workflow");
+    expect(result.namespace).toBe("workflow");
     expect(result.source).toBe("default");
   });
 

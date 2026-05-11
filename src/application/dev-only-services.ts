@@ -3,14 +3,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { HARNESSES, type Harness } from "../domain/harnesses.js";
 import { firstNonEmptyLine, parseMdSection, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
 // ─── harness ────────────────────────────────────────────────────────────────
-
-const KNOWN_HARNESSES = ["claude-code", "codex", "unknown"] as const;
-type Harness = (typeof KNOWN_HARNESSES)[number];
 
 export interface HarnessOutput {
   harness: Harness;
@@ -19,40 +17,52 @@ export interface HarnessOutput {
   known_harnesses: string[];
 }
 
-export function runHarness(envGet: (k: string) => string | undefined): HarnessOutput {
-  let detectedVia = "unknown";
-  let harness: Harness = "unknown";
+export function runHarness(
+  envGet: (k: string) => string | undefined,
+  homedirFn: () => string = homedir,
+): HarnessOutput {
+  const knownHarnesses = [...HARNESSES.map((h) => h.id), "unknown"];
 
-  if (envGet("CLAUDECODE")) {
-    harness = "claude-code";
-    detectedVia = "env:CLAUDECODE";
-  } else if (envGet("CLAUDE_PLUGIN_ROOT")) {
-    harness = "claude-code";
-    detectedVia = "env:CLAUDE_PLUGIN_ROOT";
-  } else if (envGet("CLAUDE_AGENT_ID")) {
-    harness = "claude-code";
-    detectedVia = "env:CLAUDE_AGENT_ID";
-  } else if (envGet("CODEX_HOME")) {
-    harness = "codex";
-    detectedVia = "env:CODEX_HOME";
-  } else if (envGet("CODEX_RUNTIME")) {
-    harness = "codex";
-    detectedVia = "env:CODEX_RUNTIME";
-  } else {
-    const codexHome = join(homedir(), ".codex");
-    if (existsSync(codexHome) && statSync(codexHome).isDirectory()) {
-      if (existsSync(join(codexHome, "config.toml")) || existsSync(join(codexHome, "sessions"))) {
-        harness = "codex";
-        detectedVia = "fs:~/.codex/";
+  // First-match over HARNESSES registry (oz before warp for overlap handling)
+  for (const spec of HARNESSES) {
+    for (const marker of spec.envMarkers) {
+      if (envGet(marker)) {
+        return {
+          harness: spec.id,
+          supports_plan_subagent: spec.id === "claude-code",
+          detected_via: `env:${marker}`,
+          known_harnesses: knownHarnesses,
+        };
       }
+    }
+    if (spec.termProgramMatch && envGet("TERM_PROGRAM") === spec.termProgramMatch) {
+      return {
+        harness: spec.id,
+        supports_plan_subagent: spec.id === "claude-code",
+        detected_via: `env:TERM_PROGRAM=${spec.termProgramMatch}`,
+        known_harnesses: knownHarnesses,
+      };
+    }
+  }
+
+  // Filesystem fallback: detect codex by ~/.codex/ directory presence
+  const codexHome = join(homedirFn(), ".codex");
+  if (existsSync(codexHome) && statSync(codexHome).isDirectory()) {
+    if (existsSync(join(codexHome, "config.toml")) || existsSync(join(codexHome, "sessions"))) {
+      return {
+        harness: "codex",
+        supports_plan_subagent: false,
+        detected_via: "fs:~/.codex/",
+        known_harnesses: knownHarnesses,
+      };
     }
   }
 
   return {
-    harness,
-    supports_plan_subagent: harness === "claude-code",
-    detected_via: detectedVia,
-    known_harnesses: [...KNOWN_HARNESSES],
+    harness: "unknown",
+    supports_plan_subagent: false,
+    detected_via: "unknown",
+    known_harnesses: knownHarnesses,
   };
 }
 

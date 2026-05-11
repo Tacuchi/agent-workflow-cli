@@ -1,4 +1,4 @@
-export type McpHost = "claude" | "codex";
+export type McpHost = "claude" | "codex" | "warp";
 
 export type McpInstance = string;
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
+import { harnessForMcpHost } from "../domain/harnesses.js";
 import type { McpHost } from "../domain/mcp-entry.js";
 
 export type ReaderScopeKind = "workspace" | "global";
@@ -22,37 +23,44 @@ export function readMcpEntry(
   name: string,
   kind: ReaderScopeKind = "workspace",
 ): McpEntrySnapshot {
-  if (host === "claude") return readClaudeMcpEntry(scopeDir, name, kind);
-  return readCodexMcpEntry(scopeDir, name);
+  const spec = harnessForMcpHost(host);
+  if (!spec) return { host, target: scopeDir, name, exists: false };
+
+  const projectPath = spec.projectMcpPath;
+  if (!projectPath) return { host, target: scopeDir, name, exists: false };
+
+  // Codex uses TOML with mcp_servers key; all others (claude, warp) use JSON with mcpServers key
+  if (host === "codex") {
+    const target = join(scopeDir, ".codex", "config.toml");
+    return readTomlMcpEntry(host, target, name, "mcp_servers");
+  }
+
+  // JSON readers: claude uses .mcp.json (workspace) or .claude.json (global); warp uses .warp/.mcp.json
+  const target =
+    host === "claude" && kind === "global"
+      ? join(scopeDir, ".claude.json")
+      : join(scopeDir, ...projectPath.split("/"));
+  return readJsonMcpEntry(host, target, name);
 }
 
-function readClaudeMcpEntry(
-  scopeDir: string,
-  name: string,
-  kind: ReaderScopeKind,
-): McpEntrySnapshot {
-  const target = kind === "global" ? join(scopeDir, ".claude.json") : join(scopeDir, ".mcp.json");
-  if (!existsSync(target)) {
-    return { host: "claude", target, name, exists: false };
-  }
+function readJsonMcpEntry(host: McpHost, target: string, name: string): McpEntrySnapshot {
+  if (!existsSync(target)) return { host, target, name, exists: false };
   const text = readFileSync(target, "utf-8");
-  if (text.trim().length === 0) {
-    return { host: "claude", target, name, exists: false };
-  }
+  if (text.trim().length === 0) return { host, target, name, exists: false };
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(text);
   } catch {
-    return { host: "claude", target, name, exists: false };
+    return { host, target, name, exists: false };
   }
   const mcpServers = (data.mcpServers ?? {}) as Record<string, unknown>;
   const entry = mcpServers[name];
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-    return { host: "claude", target, name, exists: false };
+    return { host, target, name, exists: false };
   }
   const e = entry as Record<string, unknown>;
   return {
-    host: "claude",
+    host,
     target,
     name,
     exists: true,
@@ -65,29 +73,29 @@ function readClaudeMcpEntry(
   };
 }
 
-function readCodexMcpEntry(scopeDir: string, name: string): McpEntrySnapshot {
-  const target = join(scopeDir, ".codex", "config.toml");
-  if (!existsSync(target)) {
-    return { host: "codex", target, name, exists: false };
-  }
+function readTomlMcpEntry(
+  host: McpHost,
+  target: string,
+  name: string,
+  serversKey: string,
+): McpEntrySnapshot {
+  if (!existsSync(target)) return { host, target, name, exists: false };
   const text = readFileSync(target, "utf-8");
-  if (text.trim().length === 0) {
-    return { host: "codex", target, name, exists: false };
-  }
+  if (text.trim().length === 0) return { host, target, name, exists: false };
   let data: Record<string, unknown>;
   try {
     data = parseToml(text) as Record<string, unknown>;
   } catch {
-    return { host: "codex", target, name, exists: false };
+    return { host, target, name, exists: false };
   }
-  const mcpServers = (data.mcp_servers ?? {}) as Record<string, unknown>;
+  const mcpServers = (data[serversKey] ?? {}) as Record<string, unknown>;
   const entry = mcpServers[name];
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-    return { host: "codex", target, name, exists: false };
+    return { host, target, name, exists: false };
   }
   const e = entry as Record<string, unknown>;
   return {
-    host: "codex",
+    host,
     target,
     name,
     exists: true,

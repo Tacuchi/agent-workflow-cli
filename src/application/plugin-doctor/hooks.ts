@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { HARNESSES } from "../../domain/harnesses.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { type DoctorFinding, type HooksInfoValue, isRecord } from "./common.js";
 
@@ -10,7 +11,10 @@ export interface HooksResult {
 export async function parseHooks(pluginRoot: string, fs: FileSystemPort): Promise<HooksResult> {
   const findings: DoctorFinding[] = [];
   const hooksInfo: Record<string, HooksInfoValue> = {};
-  for (const relPath of ["hooks/hooks.json", "codex-hooks/hooks.json"]) {
+  const hookRelPaths = HARNESSES.filter((h) => h.pluginHooksDir !== null).map(
+    (h) => `${h.pluginHooksDir}/hooks.json`,
+  );
+  for (const relPath of hookRelPaths) {
     const result = await parseHookFile(join(pluginRoot, relPath), relPath, fs);
     hooksInfo[relPath] = result.value;
     findings.push(...result.findings);

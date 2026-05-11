@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { HARNESSES } from "../domain/harnesses.js";
 import type { Phase, SessionState } from "../domain/types.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -50,7 +51,11 @@ export class SessionsService {
 
     const legacyEntries: SessionEntry[] = [];
     if (input.includeLegacy === true) {
-      for (const prefix of [".claude", ".codex"] as const) {
+      // Only scan legacy session dirs for harnesses with file-based plugins (claude/codex)
+      const legacyPrefixes = HARNESSES.filter((h) => h.pluginManifest !== null)
+        .map((h) => h.skillsDirs[0]?.split("/")[0])
+        .filter((p): p is string => p !== undefined);
+      for (const prefix of legacyPrefixes) {
         const dir = join(cwd, prefix, "sessions");
         const entries = await this.scanFolder(
           dir,

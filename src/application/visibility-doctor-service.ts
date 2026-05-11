@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import type { McpHost } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type ParsedProjectBlock, parseProjectBlock } from "./parsers/project-block.js";
@@ -15,7 +16,7 @@ export type VisibilityDriftStatus =
   | "global-pollution";
 
 export interface VisibilityHostReport {
-  host: "claude" | "codex";
+  host: McpHost;
   scope: "workspace" | "global";
   target: string;
   declared_paths: string[];
@@ -56,6 +57,7 @@ export async function runVisibilityDoctor(
   const reports: VisibilityHostReport[] = [
     inspectClaude(workspace, declared, "workspace"),
     inspectCodex(workspace, declared, "workspace"),
+    inspectWarp(workspace, declared, "workspace"),
   ];
 
   const globalReports: VisibilityHostReport[] = [];
@@ -153,8 +155,29 @@ function inspectCodexGlobal(home: string, declared: string[] | null): Visibility
   return globalPollutionReport("codex", target, declared ?? [], registered);
 }
 
+function inspectWarp(
+  _scopeDir: string,
+  _declared: string[] | null,
+  scope: "workspace" | "global",
+): VisibilityHostReport {
+  // Warp Terminal does not have a workspace additionalDirectories concept.
+  // Report is always ok — workspace path management is not applicable for Warp.
+  const target = join(_scopeDir, ".warp", "settings.toml");
+  return {
+    host: "warp",
+    scope,
+    target,
+    declared_paths: [],
+    registered_paths: [],
+    missing: [],
+    extra: [],
+    status: "ok",
+    detail: "Warp Terminal does not require workspace path registration (noop)",
+  };
+}
+
 function diffReport(
-  host: "claude" | "codex",
+  host: McpHost,
   scope: "workspace" | "global",
   target: string,
   declared: string[],
@@ -188,7 +211,7 @@ function diffReport(
 }
 
 function globalPollutionReport(
-  host: "claude" | "codex",
+  host: McpHost,
   target: string,
   declared: string[],
   registered: string[],
@@ -214,7 +237,7 @@ function globalPollutionReport(
 }
 
 function baseNoBlock(
-  host: "claude" | "codex",
+  host: McpHost,
   scope: "workspace" | "global",
   target: string,
 ): VisibilityHostReport {

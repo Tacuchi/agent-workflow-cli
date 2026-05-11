@@ -131,7 +131,7 @@ describe("selfInstallSkill", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it("default --target=all installs into both ~/.claude/skills/ and ~/.codex/skills/", async () => {
+  it("default --target=all installs into ~/.claude/skills/, ~/.codex/skills/, ~/.warp/skills/, ~/.agents/skills/", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
@@ -144,7 +144,7 @@ describe("selfInstallSkill", () => {
     if (result.ok && result.data) {
       expect(result.data.status).toBe("installed");
       expect(result.data.source_kind).toBe("path");
-      expect(result.data.dests).toHaveLength(2);
+      expect(result.data.dests).toHaveLength(4);
       const claudeDest = result.data.dests.find((d) => d.target === "claude");
       const codexDest = result.data.dests.find((d) => d.target === "codex");
       expect(claudeDest?.dest).toBe(join(home, ".claude/skills", SKILL_DIR_NAME));
@@ -201,6 +201,40 @@ describe("selfInstallSkill", () => {
     }
     expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME))).toBe(true);
     expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
+  });
+
+  it("--target=warp installs only to ~/.warp/skills/", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "warp" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.dests).toHaveLength(1);
+      expect(result.data.dests[0]?.target).toBe("warp");
+      expect(result.data.dests[0]?.dest).toBe(join(home, ".warp/skills", SKILL_DIR_NAME));
+    }
+    expect(await fs.exists(join(home, ".warp/skills", SKILL_DIR_NAME))).toBe(true);
+    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
+  });
+
+  it("--target=oz installs only to ~/.agents/skills/", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "oz" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.dests).toHaveLength(1);
+      expect(result.data.dests[0]?.target).toBe("oz");
+      expect(result.data.dests[0]?.dest).toBe(join(home, ".agents/skills", SKILL_DIR_NAME));
+    }
+    expect(await fs.exists(join(home, ".agents/skills", SKILL_DIR_NAME))).toBe(true);
+    expect(await fs.exists(join(home, ".warp/skills", SKILL_DIR_NAME))).toBe(false);
   });
 
   it("--target=invalid is rejected with INVALID_TARGET", async () => {
@@ -267,7 +301,7 @@ describe("selfInstallSkill", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.status).toBe("dry-run");
-      expect(result.data.dests).toHaveLength(2);
+      expect(result.data.dests).toHaveLength(4);
       expect(result.data.dests.every((d) => d.status === "dry-run")).toBe(true);
     }
 

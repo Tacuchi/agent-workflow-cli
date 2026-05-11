@@ -135,3 +135,51 @@ TRANSPORT = "stdio"
     expect(snap.exists).toBe(false);
   });
 });
+
+describe("readMcpEntry — Warp (.warp/.mcp.json, DEC-W3)", () => {
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-reader-warp-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  it("retorna exists=false si .warp/.mcp.json no existe", () => {
+    const snap = readMcpEntry("warp", scopeDir, "cert");
+    expect(snap.exists).toBe(false);
+    expect(snap.target).toBe(join(scopeDir, ".warp", ".mcp.json"));
+  });
+
+  it("extrae command/args/env desde .warp/.mcp.json", () => {
+    mkdirSync(join(scopeDir, ".warp"), { recursive: true });
+    writeFileSync(
+      join(scopeDir, ".warp", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          cert: {
+            command: "agent-workflow",
+            args: ["mcp", "dbhub", "cert"],
+            env: { MAX_ROWS: "500" },
+          },
+        },
+      }),
+    );
+    const snap = readMcpEntry("warp", scopeDir, "cert");
+    expect(snap.exists).toBe(true);
+    expect(snap.host).toBe("warp");
+    expect(snap.command).toBe("agent-workflow");
+    expect(snap.args).toEqual(["mcp", "dbhub", "cert"]);
+    expect(snap.env).toEqual({ MAX_ROWS: "500" });
+  });
+
+  it("retorna exists=false si la entrada no está en mcpServers", () => {
+    mkdirSync(join(scopeDir, ".warp"), { recursive: true });
+    writeFileSync(
+      join(scopeDir, ".warp", ".mcp.json"),
+      JSON.stringify({ mcpServers: { other: { command: "x" } } }),
+    );
+    const snap = readMcpEntry("warp", scopeDir, "cert");
+    expect(snap.exists).toBe(false);
+  });
+});

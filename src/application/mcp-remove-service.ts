@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { HARNESSES } from "../domain/harnesses.js";
 import {
   type McpEntry,
   type McpHost,
@@ -44,7 +45,7 @@ export function runMcpRemove(
     return {
       ok: false,
       error: "global_requires_force",
-      hint: "Tocar '~/.claude.json' o '~/.codex/config.toml' afecta TODOS los proyectos. Reintentá con --force o usá --dry-run para previsualizar.",
+      hint: buildGlobalHint(input.hosts),
       exitCode: 2,
     };
   }
@@ -119,4 +120,12 @@ function resolveScopeDir(env: EnvPort, input: McpRemoveInput): string {
   if (input.scope === "global") return homedir();
   if (input.workspace) return resolve(input.workspace);
   return resolve(env.cwd());
+}
+
+function buildGlobalHint(hosts: McpHost[]): string {
+  const paths = HARNESSES.filter((h) => hosts.includes(h.mcpHostId as McpHost))
+    .map((h) => h.globalMcpPaths?.darwin.stable)
+    .filter((p): p is string => p !== undefined);
+  const files = paths.length > 0 ? paths.join(", ") : "archivos de config globales";
+  return `Tocar ${files} afecta TODOS los proyectos. Reintentá con --force o usá --dry-run para previsualizar.`;
 }

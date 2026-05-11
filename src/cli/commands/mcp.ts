@@ -3,6 +3,7 @@ import { DbhubLauncherError, runDbhubLauncher } from "../../application/mcp-dbhu
 import { runMcpDoctor } from "../../application/mcp-doctor-service.js";
 import { runMcpRemove } from "../../application/mcp-remove-service.js";
 import { runMcpSetup } from "../../application/mcp-setup-service.js";
+import { HARNESSES } from "../../domain/harnesses.js";
 import {
   DEFAULT_MCP_INSTANCES,
   type McpHost,
@@ -15,7 +16,11 @@ import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
-const HOST_VALUES: ReadonlySet<string> = new Set(["claude", "codex", "both"]);
+// File-writing hosts derived from registry (excludes oz which has no file writer)
+const FILE_HOSTS: readonly McpHost[] = HARNESSES.filter((h) => h.mcpHostId !== null).map(
+  (h) => h.mcpHostId as McpHost,
+);
+const HOST_VALUES: ReadonlySet<string> = new Set([...FILE_HOSTS, "both", "all"]);
 
 export const mcpCommand: QtcCommand = {
   name: "mcp",
@@ -204,19 +209,22 @@ function resolveHosts(args: ParsedArgs, ctx: CliContext): { value: McpHost[] } |
     const harness = runHarness((k) => ctx.env.get(k));
     if (harness.harness === "claude-code") return { value: ["claude"] };
     if (harness.harness === "codex") return { value: ["codex"] };
-    return { value: ["claude", "codex"] };
+    if (harness.harness === "warp") return { value: ["warp"] };
+    return { value: [...FILE_HOSTS] };
   }
   if (!HOST_VALUES.has(flag)) {
+    const validList = [...FILE_HOSTS, "both", "all"].join(" | ");
     return {
       ok: false,
       error: {
         code: "INVALID_INPUT",
-        message: `--host inválido: '${flag}'. Valores válidos: claude | codex | both`,
+        message: `--host inválido: '${flag}'. Valores válidos: ${validList}`,
       },
       exitCode: 1,
     };
   }
-  return { value: flag === "both" ? ["claude", "codex"] : [flag as McpHost] };
+  if (flag === "both" || flag === "all") return { value: [...FILE_HOSTS] };
+  return { value: [flag as McpHost] };
 }
 
 function resolveInstances(args: ParsedArgs): { value: McpInstance[] } | CommandResult {

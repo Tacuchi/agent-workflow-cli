@@ -8,12 +8,14 @@ import type { CommandResult } from "../../domain/types.js";
 export const SKILL_DIR_NAME = "agent-workflow";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
 
-export type InstallTarget = "claude" | "codex" | "agents";
+export type InstallTarget = "claude" | "codex" | "agents" | "warp" | "oz";
 
 export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
   claude: [".claude", "skills"],
   codex: [".codex", "skills"],
   agents: [".agents", "skills"],
+  warp: [".warp", "skills"],
+  oz: [".agents", "skills"],
 };
 
 export const AGENTS_LOCK_REL = [".agents", ".skill-lock.json"] as const;
@@ -35,9 +37,16 @@ export interface SelfInstallSkillData {
   dests: SelfInstallTargetResult[];
 }
 
-const TARGET_CHOICES: readonly (InstallTarget | "all")[] = ["claude", "codex", "agents", "all"];
+const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [
+  "claude",
+  "codex",
+  "agents",
+  "warp",
+  "oz",
+  "all",
+];
 
-const ALL_INSTALL_TARGETS: readonly InstallTarget[] = ["claude", "codex"];
+const ALL_INSTALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "warp", "oz"];
 
 export async function selfInstallSkill(
   args: ParsedArgs,
@@ -189,6 +198,8 @@ function buildDestByTarget(home: string): Record<InstallTarget, string> {
     claude: join(home, ...TARGET_ROOTS.claude, SKILL_DIR_NAME),
     codex: join(home, ...TARGET_ROOTS.codex, SKILL_DIR_NAME),
     agents: join(home, ...TARGET_ROOTS.agents, SKILL_DIR_NAME),
+    warp: join(home, ...TARGET_ROOTS.warp, SKILL_DIR_NAME),
+    oz: join(home, ...TARGET_ROOTS.oz, SKILL_DIR_NAME),
   };
 }
 

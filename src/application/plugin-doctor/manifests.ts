@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { HARNESSES } from "../../domain/harnesses.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { type DoctorFinding, isRecord } from "./common.js";
 
@@ -20,7 +21,10 @@ export async function parseManifests(
   let canonicalVersion: string | null = inputPluginVersion;
   let manifestPluginName: string | null = null;
   let manifestContractVersion: string | null = null;
-  for (const relPath of [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"]) {
+  const manifestRelPaths = HARNESSES.map((h) => h.pluginManifest).filter(
+    (m): m is string => m !== null,
+  );
+  for (const relPath of manifestRelPaths) {
     const parsed = await parseManifestFile(join(pluginRoot, relPath), relPath, fs);
     manifestsInfo[relPath] = parsed.version;
     findings.push(...parsed.findings);

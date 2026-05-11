@@ -222,3 +222,62 @@ describe("writeMcpEntry — Codex (config.toml)", () => {
     expect(mcp.prod).toBeDefined();
   });
 });
+
+describe("writeMcpEntry — Warp (.warp/.mcp.json, project scope)", () => {
+  let scopeDir: string;
+
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-warp-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  it("crea .warp/.mcp.json inicial con mcpServers.cert", () => {
+    const result = writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir });
+    expect(result.action).toBe("written");
+    expect(result.host).toBe("warp");
+    const mcpPath = join(scopeDir, ".warp", ".mcp.json");
+    expect(result.target).toBe(mcpPath);
+    const content = JSON.parse(readFileSync(mcpPath, "utf-8"));
+    expect(content.mcpServers.cert).toEqual({
+      command: "agent-workflow",
+      args: ["mcp", "dbhub", "cert"],
+      env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+    });
+  });
+
+  it("idempotencia: segunda corrida retorna skipped-idempotent", () => {
+    writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir });
+    const second = writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir });
+    expect(second.action).toBe("skipped-idempotent");
+    expect(second.backup).toBeNull();
+  });
+
+  it("preserva otras entradas existentes en .warp/.mcp.json", () => {
+    const mcpPath = join(scopeDir, ".warp", ".mcp.json");
+    mkdirSync(join(scopeDir, ".warp"), { recursive: true });
+    writeFileSync(mcpPath, JSON.stringify({ mcpServers: { other: { command: "x", args: [], env: {} } } }, null, 2));
+    writeMcpEntry("warp", buildMcpEntry("prod"), { scopeDir });
+    const content = JSON.parse(readFileSync(mcpPath, "utf-8"));
+    expect(content.mcpServers.other).toBeDefined();
+    expect(content.mcpServers.prod).toBeDefined();
+  });
+
+  it("dry-run no escribe el archivo", () => {
+    const mcpPath = join(scopeDir, ".warp", ".mcp.json");
+    expect(existsSync(mcpPath)).toBe(false);
+    const result = writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
+    expect(result.action).toBe("dry-run");
+    expect(result.diff).toBeDefined();
+    expect(existsSync(mcpPath)).toBe(false);
+  });
+
+  it("cert y prod coexisten en .warp/.mcp.json", () => {
+    writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir });
+    writeMcpEntry("warp", buildMcpEntry("prod"), { scopeDir });
+    const content = JSON.parse(readFileSync(join(scopeDir, ".warp", ".mcp.json"), "utf-8"));
+    expect(content.mcpServers.cert).toBeDefined();
+    expect(content.mcpServers.prod).toBeDefined();
+  });
+});

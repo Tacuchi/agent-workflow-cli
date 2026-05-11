@@ -1,4 +1,5 @@
 import { join, posix as posixPath, relative } from "node:path";
+import { HARNESSES } from "../domain/harnesses.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 
@@ -51,10 +52,10 @@ export async function runSkillIndex(
 }
 
 async function readPluginName(fs: FileSystemPort, pluginRoot: string): Promise<string | null> {
-  for (const candidate of [
-    join(pluginRoot, ".claude-plugin", "plugin.json"),
-    join(pluginRoot, ".codex-plugin", "plugin.json"),
-  ]) {
+  const manifestPaths = HARNESSES.map((h) => h.pluginManifest).filter(
+    (m): m is string => m !== null,
+  );
+  for (const candidate of manifestPaths.map((rel) => join(pluginRoot, ...rel.split("/")))) {
     if (!(await fs.exists(candidate))) continue;
     try {
       const text = await fs.readText(candidate);
