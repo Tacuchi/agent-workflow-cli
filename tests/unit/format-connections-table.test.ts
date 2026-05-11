@@ -9,13 +9,14 @@ function view(
   dsnVar: string,
   claude: "si" | "no" | "drift" = "no",
   codex: "si" | "no" | "drift" = "no",
+  warp: "si" | "no" | "drift" = "no",
 ): SelfMcpConnectionView {
   return {
     nombre,
     server_name: nombre,
     dsn_var: dsnVar,
     dsn_visible: false,
-    instalado: { claude_code: claude, codex },
+    instalado: { claude_code: claude, codex, warp },
   };
 }
 
@@ -30,6 +31,7 @@ describe("formatConnectionsTable", () => {
     expect(lines[1]).toContain("DSN var");
     expect(lines[1]).toContain("Claude");
     expect(lines[1]).toContain("Codex");
+    expect(lines[1]).toContain("Warp");
     expect(lines[2]?.startsWith("└")).toBe(true);
   });
 
@@ -40,7 +42,7 @@ describe("formatConnectionsTable", () => {
     expect(lines[3]).toContain("│ cert");
     expect(lines[3]).toContain("DB_CERT_DSN");
     expect(lines[3]).toContain("│ –      │"); // padded a "Claude"
-    expect(lines[3]).toMatch(/│ – {5}│$/); // último char antes del cierre = padded "Codex"
+    expect(lines[3]).toMatch(/│ – {4}│$/); // último char antes del cierre = padded "Warp"
   });
 
   it("status icons mapean: si→✓ · no→– · drift→!", () => {
@@ -52,7 +54,8 @@ describe("formatConnectionsTable", () => {
     expect(lines[3]).toContain("│ ✓"); // Claude=si
     expect(lines[3]).toContain("│ –"); // Codex=no
     expect(lines[4]).toContain("│ !"); // Claude=drift
-    expect(lines[4]).toMatch(/│ ✓ {5}│$/); // Codex=si
+    expect(lines[4]).toContain("│ ✓     │"); // Codex=si
+    expect(lines[4]).toMatch(/│ – {4}│$/); // Warp=no (last col)
   });
 
   it("ancho de columna se ajusta al valor más largo (no al header)", () => {
@@ -68,12 +71,12 @@ describe("formatConnectionsTable", () => {
       view("prod", "DB_PROD_DSN", "drift", "si"),
     ]);
     const expected = [
-      "┌────────┬─────────────┬────────┬───────┐",
-      "│ nombre │ DSN var     │ Claude │ Codex │",
-      "├────────┼─────────────┼────────┼───────┤",
-      "│ cert   │ DB_CERT_DSN │ ✓      │ –     │",
-      "│ prod   │ DB_PROD_DSN │ !      │ ✓     │",
-      "└────────┴─────────────┴────────┴───────┘",
+      "┌────────┬─────────────┬────────┬───────┬──────┐",
+      "│ nombre │ DSN var     │ Claude │ Codex │ Warp │",
+      "├────────┼─────────────┼────────┼───────┼──────┤",
+      "│ cert   │ DB_CERT_DSN │ ✓      │ –     │ –    │",
+      "│ prod   │ DB_PROD_DSN │ !      │ ✓     │ –    │",
+      "└────────┴─────────────┴────────┴───────┴──────┘",
     ].join("\n");
     expect(out).toBe(expected);
   });

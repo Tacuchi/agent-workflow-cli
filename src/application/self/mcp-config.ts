@@ -29,12 +29,19 @@ type SelfMcpAction =
   | "create-env"
   | "install-claude"
   | "install-codex"
+  | "install-warp"
   | "doctor"
   | "remove"
   | "cancel";
 
 type InstallStatus = "si" | "no" | "drift";
-type ConnectionMenuAction = "install-claude" | "install-codex" | "doctor" | "remove" | "cancel";
+type ConnectionMenuAction =
+  | "install-claude"
+  | "install-codex"
+  | "install-warp"
+  | "doctor"
+  | "remove"
+  | "cancel";
 
 interface PromptChoice<T extends string> {
   name: string;
@@ -76,6 +83,7 @@ export interface SelfMcpConnectionView {
   instalado: {
     claude_code: InstallStatus;
     codex: InstallStatus;
+    warp: InstallStatus;
   };
 }
 
@@ -120,6 +128,8 @@ export async function selfMcpConfig(
     case "install-claude":
       return runConnectionAction(args, ctx, prompt, resolved.action);
     case "install-codex":
+      return runConnectionAction(args, ctx, prompt, resolved.action);
+    case "install-warp":
       return runConnectionAction(args, ctx, prompt, resolved.action);
     case "doctor":
       return runConnectionAction(args, ctx, prompt, resolved.action);
@@ -179,6 +189,7 @@ async function listConnectionsMenu(
       { type: "separator", separator: "── Instalar / Actualizar ──" },
       { name: "▸ Claude Code", value: "install-claude" },
       { name: "▸ Codex", value: "install-codex" },
+      { name: "▸ Warp Terminal", value: "install-warp" },
       { type: "separator", separator: "── Operar ──" },
       { name: "· Diagnosticar", value: "doctor" },
       { name: "✗ Eliminar", value: "remove" },
@@ -288,6 +299,8 @@ async function runConnectionAction(
       return installConnection(args, ctx, connection, "claude");
     case "install-codex":
       return installConnection(args, ctx, connection, "codex");
+    case "install-warp":
+      return installConnection(args, ctx, connection, "warp");
     case "doctor":
       return doctorConnection(ctx, connection);
     case "remove":
@@ -338,7 +351,7 @@ function doctorConnection(
   ctx: CliContext,
   connection: McpConnection,
 ): CommandResult<SelfMcpConfigData> {
-  const doctor = runDoctor(ctx, connection, ["claude", "codex"]);
+  const doctor = runDoctor(ctx, connection, ["claude", "codex", "warp"]);
   const allOk = doctor.summary.ok === doctor.reports.length;
   return {
     ok: allOk,
@@ -367,7 +380,7 @@ function removeConnection(
 ): CommandResult<SelfMcpConfigData> {
   const dryRun = args.flags.has("--dry-run");
   const remove = runMcpRemove(ctx.env, {
-    hosts: ["claude", "codex"],
+    hosts: ["claude", "codex", "warp"],
     instances: [connection.name],
     scope: "workspace",
     dryRun,
@@ -386,7 +399,7 @@ function removeConnection(
       ...(deleted ? { registry: { path: deleted.path, changed: deleted.removed } } : {}),
       summary: dryRun
         ? `Previsualización de eliminación para '${connection.name}'.`
-        : `Conexión '${connection.name}' eliminada de Claude Code, Codex y del registro local.`,
+        : `Conexión '${connection.name}' eliminada de Claude Code, Codex, Warp y del registro local.`,
     },
     ...(hasErrors
       ? {
@@ -424,6 +437,7 @@ function connectionView(ctx: CliContext, connection: McpConnection): SelfMcpConn
     instalado: {
       claude_code: installStatus(ctx, connection, "claude"),
       codex: installStatus(ctx, connection, "codex"),
+      warp: installStatus(ctx, connection, "warp"),
     },
   };
 }
@@ -451,12 +465,13 @@ const INSTALL_STATUS_ICON: Record<InstallStatus, string> = {
 };
 
 export function formatConnectionsTable(connections: SelfMcpConnectionView[]): string {
-  const headers = ["nombre", "DSN var", "Claude", "Codex"];
+  const headers = ["nombre", "DSN var", "Claude", "Codex", "Warp"];
   const rows = connections.map((item) => [
     item.nombre,
     item.dsn_var,
     INSTALL_STATUS_ICON[item.instalado.claude_code],
     INSTALL_STATUS_ICON[item.instalado.codex],
+    INSTALL_STATUS_ICON[item.instalado.warp],
   ]);
   return renderBoxTable(headers, rows);
 }
@@ -660,18 +675,23 @@ function isAction(value: string | undefined): value is SelfMcpAction {
     value === "create-env" ||
     value === "install-claude" ||
     value === "install-codex" ||
+    value === "install-warp" ||
     value === "doctor" ||
     value === "remove" ||
     value === "cancel"
   );
 }
 
-function hostAction(host: McpHost): "install-claude" | "install-codex" {
-  return host === "claude" ? "install-claude" : "install-codex";
+function hostAction(host: McpHost): "install-claude" | "install-codex" | "install-warp" {
+  if (host === "claude") return "install-claude";
+  if (host === "warp") return "install-warp";
+  return "install-codex";
 }
 
 function hostLabel(host: McpHost): string {
-  return host === "claude" ? "Claude Code" : "Codex";
+  if (host === "claude") return "Claude Code";
+  if (host === "warp") return "Warp Terminal";
+  return "Codex";
 }
 
 function refusal(
