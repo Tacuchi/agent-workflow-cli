@@ -257,7 +257,10 @@ describe("writeMcpEntry — Warp (.warp/.mcp.json, project scope)", () => {
   it("preserva otras entradas existentes en .warp/.mcp.json", () => {
     const mcpPath = join(scopeDir, ".warp", ".mcp.json");
     mkdirSync(join(scopeDir, ".warp"), { recursive: true });
-    writeFileSync(mcpPath, JSON.stringify({ mcpServers: { other: { command: "x", args: [], env: {} } } }, null, 2));
+    writeFileSync(
+      mcpPath,
+      JSON.stringify({ mcpServers: { other: { command: "x", args: [], env: {} } } }, null, 2),
+    );
     writeMcpEntry("warp", buildMcpEntry("prod"), { scopeDir });
     const content = JSON.parse(readFileSync(mcpPath, "utf-8"));
     expect(content.mcpServers.other).toBeDefined();

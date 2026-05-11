@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { HARNESSES, type Harness } from "../domain/harnesses.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { HARNESSES, type Harness } from "../domain/harnesses.js";
 import { firstNonEmptyLine, parseMdSection, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";

@@ -263,11 +263,7 @@ function removeCodexMcpEntry(
   return resultRemoved("codex", configFile, entry.name, null);
 }
 
-function writeWarpMcpEntry(
-  entry: McpEntry,
-  scope: ScopeInput,
-  opts: McpWriteOpts,
-): McpWriteResult {
+function writeWarpMcpEntry(entry: McpEntry, scope: ScopeInput, opts: McpWriteOpts): McpWriteResult {
   const settingsFile = resolveWarpProjectMcpPath(scope.scopeDir);
   const data = readJsonFile(settingsFile);
   const mcpServers = ensureRecord(data, "mcpServers");

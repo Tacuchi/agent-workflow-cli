@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildOzMcpInvocation,
-  mcpEntryToOzServer,
-} from "../../src/application/multiroot/oz.js";
+import { buildOzMcpInvocation, mcpEntryToOzServer } from "../../src/application/multiroot/oz.js";
 
 describe("buildOzMcpInvocation", () => {
   it("genera comando oz con --mcp y JSON minificado", () => {
     const result = buildOzMcpInvocation(["--agent", "myAgent"], {
-      cert: { command: "agent-workflow", args: ["mcp", "dbhub", "cert"], env: { READONLY: "true" } },
+      cert: {
+        command: "agent-workflow",
+        args: ["mcp", "dbhub", "cert"],
+        env: { READONLY: "true" },
+      },
     });
     expect(result.command).toContain("oz agent run");
     expect(result.command).toContain("--mcp");

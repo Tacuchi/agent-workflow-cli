@@ -51,7 +51,7 @@ export function resolveWarpGlobalMcpPath(
   // Expand ~ and %LOCALAPPDATA%
   if (raw.startsWith("~")) return join(home, raw.slice(1));
   if (raw.includes("%LOCALAPPDATA%")) {
-    const localAppData = process.env["LOCALAPPDATA"] ?? join(home, "AppData", "Local");
+    const localAppData = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
     return raw.replace("%LOCALAPPDATA%", localAppData);
   }
   return raw;
@@ -109,10 +109,7 @@ export function attachWarpMcp(
 /**
  * Removes an MCP server entry from Warp's .mcp.json.
  */
-export function detachWarpMcp(
-  file: string,
-  name: string,
-): WarpMcpWriteOk | WarpMcpWriteFail {
+export function detachWarpMcp(file: string, name: string): WarpMcpWriteOk | WarpMcpWriteFail {
   if (!existsSync(file)) {
     return { file, backup: null, added: [], already_present: [], written: false };
   }

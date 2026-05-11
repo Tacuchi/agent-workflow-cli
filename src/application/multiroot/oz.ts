@@ -42,7 +42,7 @@ export function buildOzMcpInvocation(
   return {
     command,
     mcpJson,
-    hint: `Oz does not write a config file. Run the command above or set OZ_MCP_CONFIG env var.`,
+    hint: "Oz does not write a config file. Run the command above or set OZ_MCP_CONFIG env var.",
   };
 }
 

@@ -4,16 +4,8 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type ClaudeResult, attachClaude, detachClaude } from "./multiroot/claude.js";
 import { type CodexResult, attachCodex, detachCodex } from "./multiroot/codex.js";
-import {
-  type OzAttachNoop,
-  attachOz,
-  detachOz,
-} from "./multiroot/oz.js";
-import {
-  type WarpResult,
-  attachWarp,
-  detachWarp,
-} from "./multiroot/warp.js";
+import { type OzAttachNoop, attachOz, detachOz } from "./multiroot/oz.js";
+import { type WarpResult, attachWarp, detachWarp } from "./multiroot/warp.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 

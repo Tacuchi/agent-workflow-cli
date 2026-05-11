@@ -63,9 +63,21 @@ describe("HARNESSES registry — shape invariants", () => {
 });
 
 describe("resolveGlobalMcpRawPath", () => {
-  const warpSpec = HARNESSES.find((h) => h.id === "warp")!;
-  const claudeSpec = HARNESSES.find((h) => h.id === "claude-code")!;
-  const ozSpec = HARNESSES.find((h) => h.id === "oz")!;
+  const warpSpec =
+    harnessById("warp") ??
+    (() => {
+      throw new Error("warp not found");
+    })();
+  const claudeSpec =
+    harnessById("claude-code") ??
+    (() => {
+      throw new Error("claude-code not found");
+    })();
+  const ozSpec =
+    harnessById("oz") ??
+    (() => {
+      throw new Error("oz not found");
+    })();
 
   it("warp darwin stable → ~/.warp/.mcp.json", () => {
     expect(resolveGlobalMcpRawPath(warpSpec, "darwin", "stable")).toBe("~/.warp/.mcp.json");
