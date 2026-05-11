@@ -1,6 +1,7 @@
 import { selfBootstrap } from "../../application/self/bootstrap.js";
 import { selfDoctor } from "../../application/self/doctor-self.js";
 import { selfInstallPluginSkills } from "../../application/self/install-plugin-skills.js";
+import { installPluginSkillsFromGit } from "../../application/self/install-plugin-skills-git.js";
 import { selfInstallSkill } from "../../application/self/install-skill.js";
 import { selfMcpConfig } from "../../application/self/mcp-config.js";
 import { selfNamespace } from "../../application/self/namespace-info.js";
@@ -17,6 +18,7 @@ const SELF_SUBCOMMANDS = [
   "update",
   "install-skill",
   "install-plugin-skills",
+  "install-plugin-skills-git",
   "uninstall-skill",
   "mcp",
   "bootstrap",
@@ -25,7 +27,7 @@ const SELF_SUBCOMMANDS = [
 export const selfCommand: QtcCommand = {
   name: "self",
   describe:
-    "Manage the agent-workflow CLI itself (namespace, doctor, update, install-skill, install-plugin-skills, uninstall-skill, mcp, bootstrap).",
+    "Manage the agent-workflow CLI itself (namespace, doctor, update, install-skill, install-plugin-skills, install-plugin-skills-git, uninstall-skill, mcp, bootstrap).",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const sub = args.rest[0];
     switch (sub) {
@@ -39,6 +41,8 @@ export const selfCommand: QtcCommand = {
         return selfInstallSkill(args, ctx);
       case "install-plugin-skills":
         return selfInstallPluginSkills(args, ctx);
+      case "install-plugin-skills-git":
+        return installPluginSkillsFromGit(args, ctx);
       case "uninstall-skill":
         return selfUninstallSkill(args, ctx);
       case "mcp":

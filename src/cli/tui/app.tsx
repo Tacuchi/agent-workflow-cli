@@ -9,6 +9,7 @@ import { ScreenFrame } from "./components/screen-frame.js";
 import { TabBar, type TabDescriptor } from "./components/tab-bar.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { McpTab } from "./tabs/mcp-tab.js";
+import { PluginsTab } from "./tabs/plugins-tab.js";
 import { SkillsTab } from "./tabs/skills-tab.js";
 import { StatusTab } from "./tabs/status-tab.js";
 import { UpdateTab } from "./tabs/update-tab.js";
@@ -18,15 +19,16 @@ export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
   | { kind: "exit"; exitCode: ExitCode };
 
-type TabId = "status" | "mcp" | "skills" | "update";
+type TabId = "status" | "mcp" | "skills" | "update" | "plugins";
 
-const TAB_ORDER: readonly TabId[] = ["status", "mcp", "skills", "update"] as const;
+const TAB_ORDER: readonly TabId[] = ["status", "mcp", "skills", "update", "plugins"] as const;
 
 const TABS: TabDescriptor<TabId>[] = [
   { id: "status", label: "Status" },
   { id: "mcp", label: "MCP" },
   { id: "skills", label: "Skills" },
   { id: "update", label: "Update" },
+  { id: "plugins", label: "Plugins" },
 ];
 
 export interface AppProps {
@@ -104,6 +106,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
             }}
           />
         ) : null}
+        {activeTab === "plugins" ? <PluginsTab ctx={ctx} isActive={tabContentActive} /> : null}
       </Box>
       {helpOpen ? <HelpOverlay /> : <KeymapBar entries={keymap} />}
     </ScreenFrame>
@@ -148,6 +151,7 @@ function handleAppKey(
     "2": "mcp",
     "3": "skills",
     "4": "update",
+    "5": "plugins",
   };
   const target = byNumber[input];
   if (target) handlers.setActiveTab(target);
@@ -178,6 +182,13 @@ function keymapForTab(tab: TabId): KeymapEntry[] {
         { key: "↑↓", action: "navegar" },
         { key: "⏎", action: "seleccionar" },
       ];
+    case "plugins":
+      return [
+        { key: "↑↓", action: "navegar" },
+        { key: "w / a", action: "instalar (Warp / Agents)" },
+        { key: "W / A", action: "forzar reinstalar" },
+        { key: "r / R", action: "clonar desde git en Warp" },
+      ];
     case "status":
       return [];
   }
@@ -198,7 +209,7 @@ function HelpOverlay() {
       </Text>
       <Box marginTop={1} flexDirection="column">
         <Help label="Tab / ⇧Tab" desc="cambiar tab" />
-        <Help label="1 .. 4" desc="ir a tab por número" />
+        <Help label="1 .. 5" desc="ir a tab por número" />
         <Help label="?" desc="abrir/cerrar esta ayuda" />
         <Help label="q" desc="salir del TUI" />
       </Box>
@@ -211,6 +222,15 @@ function HelpOverlay() {
         <Help label="c / x / w" desc="instalar en Claude / Codex / Warp" />
         <Help label="d" desc="diagnosticar conexión" />
         <Help label="D" desc="eliminar conexión (con confirmación)" />
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text color={colors.fgSubtle} bold>
+          Plugins
+        </Text>
+        <Help label="↑↓" desc="navegar plugins" />
+        <Help label="w / a" desc="instalar skills en Warp Terminal / Agents" />
+        <Help label="W / A" desc="forzar reinstalar (sobrescribe existente)" />
+        <Help label="r / R" desc="clonar desde git e instalar en Warp (R = force)" />
       </Box>
       <Box marginTop={1}>
         <Text color={colors.fgMoreSubtle}>Esc cierra esta ventana.</Text>

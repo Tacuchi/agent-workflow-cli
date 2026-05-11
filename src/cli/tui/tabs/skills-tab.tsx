@@ -42,6 +42,11 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
         installed: await ctx.fs.exists(`${home}/.codex/skills/agent-workflow`),
         path: "~/.codex/skills/agent-workflow/",
       },
+      {
+        target: "Warp Terminal",
+        installed: await ctx.fs.exists(`${home}/.warp/skills/agent-workflow`),
+        path: "~/.warp/skills/agent-workflow/",
+      },
     ];
     setSkills(targets);
   }
@@ -64,7 +69,7 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
           if (result.ok) {
             setToast({
               tone: "success",
-              message: "Skill instalada/actualizada en Claude + Codex.",
+              message: "Skill instalada/actualizada en Claude, Codex y Warp.",
             });
           } else {
             setToast({ tone: "error", message: result.error?.message ?? "Falló la instalación." });
