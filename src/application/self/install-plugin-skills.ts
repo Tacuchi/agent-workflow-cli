@@ -1,4 +1,14 @@
-import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  copyFile,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
@@ -60,7 +70,13 @@ export async function selfInstallPluginSkills(
     };
   }
 
+  await dbg(
+    `selfInstallPluginSkills start — from=${fromDir} target=${targetArg} ns=${namespace} force=${force}`,
+  );
   const skillDirs = await scanSkillDirs(fromDir);
+  await dbg(
+    `scanSkillDirs found ${skillDirs.length} skill(s): ${skillDirs.map((s) => s.name).join(", ")}`,
+  );
   if (skillDirs.length === 0) {
     return {
       ok: true,
@@ -112,7 +128,9 @@ async function processSkill(opts: ProcessSkillOpts): Promise<PluginSkillResult> 
     return { skillName: finalName, dest, status: "dry-run" };
   }
 
-  if (!force && (await dirExists(dest))) {
+  const alreadyExists = await dirExists(dest);
+  await dbg(`processSkill name=${finalName} dest=${dest} exists=${alreadyExists} force=${force}`);
+  if (!force && alreadyExists) {
     return {
       skillName: finalName,
       dest,
@@ -122,18 +140,20 @@ async function processSkill(opts: ProcessSkillOpts): Promise<PluginSkillResult> 
   }
 
   try {
-    // Remove dest first when force=true so the copy is always clean.
     if (force) {
       await rm(dest, { recursive: true, force: true });
     }
+    await dbg(`copyDir ${skillSrcDir} → ${dest}`);
     await copyDir(skillSrcDir, dest);
 
     if (namespace) {
       await patchFrontmatterName(join(dest, "SKILL.md"), finalName);
     }
 
+    await dbg(`processSkill installed ${finalName}`);
     return { skillName: finalName, dest, status: "installed" };
   } catch (err) {
+    await dbg(`processSkill ERROR ${finalName}: ${(err as Error).message}`);
     return {
       skillName: finalName,
       dest,
@@ -160,11 +180,15 @@ async function scanSkillDirs(fromDir: string): Promise<{ name: string; path: str
       if (!s.isDirectory()) continue;
       await stat(skillMd);
       const content = await readFile(skillMd, "utf8");
-      if (hasValidFrontmatter(content)) {
+      const valid = hasValidFrontmatter(content);
+      await dbg(
+        `  entry=${entry} isDir=true hasSkillMd=true frontmatterOk=${valid} firstBytes=${JSON.stringify(content.slice(0, 80))}`,
+      );
+      if (valid) {
         results.push({ name: entry, path: full });
       }
-    } catch {
-      // not a valid skill dir — skip
+    } catch (e) {
+      await dbg(`  entry=${entry} skip reason=${(e as Error).message}`);
     }
   }
   return results;
@@ -202,6 +226,13 @@ function hasValidFrontmatter(content: string): boolean {
   if (!match) return false;
   const block = match[1] ?? "";
   return /^name:\s*\S/m.test(block) && /^description:\s*\S/m.test(block);
+}
+
+const DEBUG_LOG = join(tmpdir(), "aw-debug.log");
+
+async function dbg(msg: string): Promise<void> {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  await appendFile(DEBUG_LOG, line, "utf8").catch(() => {});
 }
 
 async function dirExists(p: string): Promise<boolean> {

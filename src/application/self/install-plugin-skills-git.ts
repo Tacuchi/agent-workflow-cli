@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile, readdir, rm, stat } from "node:fs/promises";
+import { appendFile, readFile, readdir, rm, stat } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,12 @@ import type { CommandResult } from "../../domain/types.js";
 import type { SelfInstallPluginSkillsData } from "./install-plugin-skills.js";
 import { selfInstallPluginSkills } from "./install-plugin-skills.js";
 import type { InstallTarget } from "./install-skill.js";
+
+const DEBUG_LOG = join(tmpdir(), "aw-debug.log");
+async function dbg(msg: string): Promise<void> {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  await appendFile(DEBUG_LOG, line, "utf8").catch(() => {});
+}
 
 const VALID_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "warp", "oz"];
 
@@ -46,10 +52,15 @@ export async function installPluginSkillsFromGit(
   const ref = args.values.get("ref") ?? (hashIdx >= 0 ? rawUrl.slice(hashIdx + 1) : undefined);
 
   const tempDir = await mkdtemp(join(tmpdir(), "aw-git-install-"));
+  await dbg(
+    `installPluginSkillsFromGit url=${url} ref=${ref} target=${targetArg} ns=${namespace} tempDir=${tempDir}`,
+  );
   try {
     try {
       await gitClone(url, tempDir, ref);
+      await dbg(`gitClone OK → ${tempDir}`);
     } catch (err) {
+      await dbg(`gitClone FAILED: ${(err as Error).message}`);
       return {
         ok: false,
         error: { code: "GIT_CLONE_FAILED", message: (err as Error).message },
@@ -57,9 +68,8 @@ export async function installPluginSkillsFromGit(
       };
     }
 
-    // If the cloned repo is a marketplace (has marketplace-codex.json),
-    // resolve the actual plugin source from the manifest and clone it too.
     const resolvedDir = await resolvePluginDir(tempDir, namespace);
+    await dbg(`resolvePluginDir → ${resolvedDir}`);
     if (!resolvedDir) {
       return {
         ok: false,
