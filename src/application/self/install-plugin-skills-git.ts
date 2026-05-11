@@ -92,7 +92,7 @@ async function gitClone(url: string, dest: string, ref?: string): Promise<void> 
   gitArgs.push(url, dest);
 
   await new Promise<void>((resolve, reject) => {
-    const proc = spawn("git", gitArgs, { stdio: "pipe", shell: process.platform === "win32" });
+    const proc = spawn("git", gitArgs, { stdio: "pipe" });
     let stderr = "";
     proc.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();

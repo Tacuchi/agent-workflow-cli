@@ -1,4 +1,5 @@
-import { cp, readFile, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ParsedArgs } from "../../cli/parser.js";
@@ -247,7 +248,7 @@ function looksLikeRemoteUrl(value: string): boolean {
 }
 
 function hasValidFrontmatter(content: string): boolean {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  const match = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return false;
   const block = match[1] ?? "";
   return /^name:\s*\S/m.test(block) && /^description:\s*\S/m.test(block);
@@ -255,16 +256,26 @@ function hasValidFrontmatter(content: string): boolean {
 
 async function copyTree(src: string, dest: string): Promise<number> {
   let count = 0;
-  await cp(src, dest, {
-    recursive: true,
-    filter: (source: string) => {
-      const rel = source.slice(src.length);
-      if (rel.startsWith("/.git") || rel === "/.git") return false;
-      count += 1;
-      return true;
-    },
+  await copyDirCounting(src, dest, () => {
+    count += 1;
   });
   return count;
+}
+
+async function copyDirCounting(src: string, dest: string, onFile: () => void): Promise<void> {
+  await mkdir(dest, { recursive: true });
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === ".git") continue;
+    const srcPath = join(src, entry.name);
+    const destPath = join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirCounting(srcPath, destPath, onFile);
+    } else {
+      await copyFile(srcPath, destPath);
+      onFile();
+    }
+  }
 }
 
 export async function resolveBundledSkillPath(): Promise<string | null> {
