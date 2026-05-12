@@ -11,6 +11,12 @@ import {
 } from "./project-md-upsert-service.js";
 import { renderRefs } from "./render/history-row.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
+import {
+  VALID_DEV_TYPES,
+  fallbackLogMessage,
+  inferType,
+  isValidDevType,
+} from "./session/infer-type.js";
 import { getObjetivoTemplate, renderTemplate } from "./templates/objetivo.js";
 
 const TIPO_ALIASES: Record<string, string> = {
@@ -201,6 +207,7 @@ async function writeObjetivo(
     origen_block: renderOrigenBlock(origen),
   };
   if (flow === "design" && input.tipo) values.tipo = input.tipo;
+  if (flow === "dev" && input.tipo) values.tipo = input.tipo;
   if (flow === "analyze" && input.modalidad) values.modalidad = input.modalidad;
   await fs.writeText(
     canonicalArtifactPath(folderInfo.sessionPath, "objective"),
@@ -271,6 +278,7 @@ function composeRecord(
     history_updated: true,
     origen: origen ? { flow: origen.flow, code: origen.code, folder: origen.folder } : null,
     ...(flow === "design" && input.tipo ? { tipo: input.tipo } : {}),
+    ...(flow === "dev" && input.tipo ? { tipo: input.tipo } : {}),
     ...(flow === "analyze" && input.modalidad ? { modalidad: input.modalidad } : {}),
     flow,
   };
@@ -324,11 +332,30 @@ function validateAnalyzeArgs(input: SessionCreateInput): SessionCreateError | nu
 }
 
 function validateDevArgs(input: SessionCreateInput): SessionCreateError | null {
-  if (input.tipo) {
-    return { error: "--type sólo aplica a flow=design (flow actual: 'dev')" };
-  }
+  // flow=dev v2.8+: acepta `--type <feature|refactor|bugfix|chore>`. Si no se pasa,
+  // se infiere por heurística desde `--objetivo` con fallback a `feature` (Mit-A+C
+  // de session050). Capa 1 (template inyecta) + Capa 2 (heurística) + Capa 3 (default-on
+  // en lectura) garantizan que `## Type` nunca esté ausente.
   if (input.modalidad) {
     return { error: "--modality sólo aplica a flow=analyze (flow actual: 'dev')" };
+  }
+  if (input.tipo) {
+    const candidate = input.tipo.trim().toLowerCase();
+    if (!isValidDevType(candidate)) {
+      return {
+        error: `--type inválido para flow=dev: '${input.tipo}'`,
+        expected: [...VALID_DEV_TYPES],
+      };
+    }
+    input.tipo = candidate;
+    return null;
+  }
+  // Sin --type → inferir desde --objetivo (Mit-C).
+  const inferred = inferType(input.objetivo ?? "");
+  input.tipo = inferred.type;
+  if (inferred.confidence === "fallback") {
+    // Log canónico (Mit-C fallback). Va a stderr para no contaminar el JSON de stdout.
+    console.error(fallbackLogMessage(inferred.type));
   }
   return null;
 }

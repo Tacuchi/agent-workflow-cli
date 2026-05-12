@@ -1,5 +1,8 @@
 # Objective — session004-dev-nueva-tarea
 
+## Type
+feature
+
 ## Requirement
 Probar session-create del CLI TS
 

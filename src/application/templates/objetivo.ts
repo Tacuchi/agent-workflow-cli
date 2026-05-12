@@ -15,6 +15,9 @@ const DEFAULT_TEMPLATE = `# Objective — {folder}
 
 const DEV_TEMPLATE = `# Objective — {folder}
 {origen_block}
+## Type
+{tipo}
+
 ## Requirement
 {objetivo}
 
