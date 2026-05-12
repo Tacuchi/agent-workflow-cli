@@ -1,13 +1,17 @@
 import { spawn } from "node:child_process";
 import type { ProcessPort, RunOptions, RunResult } from "../ports/process.js";
 
+const WIN_SHELL_CMDS = new Set(["npm", "npx", "yarn", "pnpm", "node-gyp"]);
+
 export class NodeProcess implements ProcessPort {
   async run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
+    const useShell = process.platform === "win32" && WIN_SHELL_CMDS.has(cmd);
     return new Promise((resolve, reject) => {
       const child = spawn(cmd, args, {
         cwd: opts.cwd,
         env: opts.env ?? process.env,
         stdio: ["pipe", "pipe", "pipe"],
+        shell: useShell,
       });
 
       let stdout = "";
