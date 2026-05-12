@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { WarpPostInstallHint } from "../../../application/mcp-warp-postinstall-hint.js";
 import {
   type SelfMcpConfigData,
   type SelfMcpConnectionView,
@@ -91,6 +92,7 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
   const [cursor, setCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [toast, setToast] = useState<{ tone: ToastTone; message: string } | null>(null);
+  const [warpHint, setWarpHint] = useState<WarpPostInstallHint | null>(null);
   const startedRef = useRef(false);
   const { lock, unlock } = useInputLock();
 
@@ -132,13 +134,21 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
     async (action: string, name: string, label: string) => {
       setMode({ kind: "busy", label });
       setToast(null);
+      setWarpHint(null);
       try {
         const result: CommandResult<SelfMcpConfigData> = await selfMcpConfig(
           buildArgs(action, { name }),
           ctx,
         );
         const summary = result.data?.summary ?? result.error?.message ?? "";
-        setToast({ tone: result.ok ? "success" : "error", message: summary });
+        const isWarpInstall = result.ok && action === "install-warp" && result.data?.warp_hint;
+        setToast({
+          tone: result.ok ? (isWarpInstall ? "info" : "success") : "error",
+          message: summary,
+        });
+        if (isWarpInstall && result.data?.warp_hint) {
+          setWarpHint(result.data.warp_hint);
+        }
         await refresh();
       } catch (err) {
         setToast({ tone: "error", message: (err as Error).message });
@@ -311,6 +321,13 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
       </Box>
 
       {toast ? <Toast tone={toast.tone} message={toast.message} /> : null}
+      {warpHint ? <WarpHintPanel hint={warpHint} /> : null}
+      <Box marginTop={1}>
+        <Text color={colors.fgMoreSubtle}>
+          Warp lee <Text bold>.warp/.mcp.json</Text> solo si{" "}
+          <Text bold>File-based MCP Servers</Text> está activo en Settings.
+        </Text>
+      </Box>
     </Box>
   );
 
@@ -345,4 +362,27 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
       setMode({ kind: "list" });
     }
   }
+}
+
+function WarpHintPanel({ hint }: { hint: WarpPostInstallHint }) {
+  const steps = hint.lines.slice(1);
+  return (
+    <Box
+      marginTop={1}
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={colors.info}
+      paddingX={1}
+    >
+      <Text color={colors.info} bold>
+        {icons.bullet} Para que Warp lo spawnee:
+      </Text>
+      {steps.map((line, idx) => (
+        <Text key={line} color={colors.fg}>
+          {`  ${idx + 1}. ${line}`}
+        </Text>
+      ))}
+      <Text color={colors.fgMoreSubtle}>Doc: {hint.doc_url}</Text>
+    </Box>
+  );
 }

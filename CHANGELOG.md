@@ -4,6 +4,39 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.16.0] — 2026-05-12
+
+**Minor — UX post-install del target Warp + subcomando `mcp warp-status` (session001-dev-fix-warp-mcp-target-path).** Los paths `~/.warp/.mcp.json` y `.warp/.mcp.json` ya son los correctos según docs.warp.dev (Warp los lee, con Auto-spawn On by default). El gap real era de UX: si el toggle global **File-based MCP Servers** está apagado en Settings, Warp detecta el archivo pero no spawnea el server, y el TUI marcaba `✓` sin avisar del paso pendiente. Esta versión cierra ese gap sin tocar paths/writer/reader.
+
+### Added
+
+- `src/application/mcp-warp-postinstall-hint.ts` — servicio puro `buildWarpPostInstallHint(name, scope, file)` que devuelve 5 líneas con los pasos para que Warp efectivamente spawnee el server (verificar toggle, reabrir tab/reiniciar app, confirmar provider en Settings). `formatWarpPostInstallHint` lo formatea para stdout.
+- Campo opcional `warp_hint: WarpPostInstallHint` en `SelfMcpConfigData` (retornado por `install-warp` cuando el setup es exitoso). El TUI lo renderea en un panel info con borde redondeado.
+- Campo opcional `warp_hints: WarpPostInstallHint[]` en el data de `mcp setup` cuando `--host warp` o `--host all/both` están incluidos.
+- Subcomando `agent-workflow mcp warp-status` — inspecciona `<cwd>/.warp/.mcp.json` y `~/.warp/.mcp.json`, lista los `mcpServers` encontrados y devuelve el hint formateado por scope.
+- Footer persistente en el tab **MCP** del TUI con el recordatorio: "Warp lee `.warp/.mcp.json` solo si File-based MCP Servers está activo en Settings".
+- Detail informativo en `mcp doctor` para reportes `status=ok` con `host=warp` recordando activar el toggle.
+- 8 tests nuevos en `tests/unit/mcp-warp-postinstall-hint.test.ts`.
+
+### Changed
+
+- TUI tab **MCP**: tras `install-warp` exitoso, el toast pasa a tono `info` (en vez de `success`) cuando hay acción pendiente del usuario; debajo aparece el panel `WarpHintPanel` con los pasos numerados.
+- `mcp setup` summary diferencia warp del resto: cuando se escribe `.warp/.mcp.json`, el summary recuerda activar el toggle en lugar de declarar "instalado en Warp Terminal" sin matices.
+- `biome.json`: ignora `.warp/**` y `.workflow/**` para evitar que el formatter toque artefactos del usuario.
+
+### Behavior preserved
+
+- Los paths del host `warp` (`~/.warp/.mcp.json` global y `.warp/.mcp.json` project) se mantienen sin cambios.
+- Writer, reader y harness spec de Warp siguen igual: la única diferencia es la capa de UX que ahora comunica el paso pendiente.
+
+### Tests
+
+- 475 verdes (467 → 475, +8 del hint).
+
+### Decisions
+
+- **DEC-001 (session001-dev-fix-warp-mcp-target-path)**: dejar la decisión `DEC-W3` intacta (paths correctos según doc Warp) y resolver el bug solo por capa de UX. Alternativa descartada: convertir el target en "print + copy al clipboard" — más ruidosa y el usuario no quería pasos manuales.
+
 ## [5.15.0] — 2026-05-12
 
 **Minor — TUI unificada por menús navegables (session048).** Toda la TUI pasa de "atajos por tecla dedicada" a "Enter abre menú navegable por target". El usuario ya no necesita memorizar mapeos de teclas: pulsa Enter sobre la fila y elige la acción con flechas.

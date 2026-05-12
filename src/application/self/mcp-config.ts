@@ -22,6 +22,11 @@ import { type McpDoctorResult, runMcpDoctor } from "../mcp-doctor-service.js";
 import { readMcpEntry } from "../mcp-host-reader.js";
 import { type McpRemoveResult, runMcpRemove } from "../mcp-remove-service.js";
 import { type McpSetupResult, runMcpSetup } from "../mcp-setup-service.js";
+import {
+  type WarpPostInstallHint,
+  buildWarpPostInstallHint,
+} from "../mcp-warp-postinstall-hint.js";
+import { resolveWarpProjectMcpPath } from "../multiroot/warp.js";
 
 type SelfMcpAction =
   | "list"
@@ -96,6 +101,7 @@ export interface SelfMcpConfigData {
   setup?: McpSetupResult;
   remove?: McpRemoveResult;
   doctor?: McpDoctorResult;
+  warp_hint?: WarpPostInstallHint;
   env_help?: {
     platform: string;
     variable: string;
@@ -324,6 +330,14 @@ function installConnection(
   if ("ok" in setup) return refusal(hostAction(host), connectionView(ctx, connection), setup.hint);
   const doctor = runDoctor(ctx, connection, [host]);
   const hasErrors = setup.errors.length > 0;
+  const warpHint =
+    host === "warp" && !hasErrors
+      ? buildWarpPostInstallHint(
+          mcpEntryNameFor(connection.name),
+          "workspace",
+          resolveWarpProjectMcpPath(resolve(ctx.env.cwd())),
+        )
+      : undefined;
   return {
     ok: !hasErrors,
     data: {
@@ -333,7 +347,10 @@ function installConnection(
       table: formatConnectionsTable(connectionViews(ctx)),
       setup,
       doctor,
-      summary: `Conexión '${connection.name}' instalada/actualizada en ${hostLabel(host)}.`,
+      ...(warpHint ? { warp_hint: warpHint } : {}),
+      summary: warpHint
+        ? `Conexión '${connection.name}' escrita en ${warpHint.file}. Activá 'File-based MCP Servers' en Warp Settings para que la spawnee.`
+        : `Conexión '${connection.name}' instalada/actualizada en ${hostLabel(host)}.`,
     },
     ...(hasErrors
       ? {

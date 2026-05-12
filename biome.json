@@ -13,7 +13,9 @@
       "coverage",
       "**/*.snap",
       "tests/fixtures/golden/**",
-      "tests/fixtures/golden-write/**"
+      "tests/fixtures/golden-write/**",
+      ".warp/**",
+      ".workflow/**"
     ]
   },
   "formatter": {

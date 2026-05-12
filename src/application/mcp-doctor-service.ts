@@ -130,6 +130,12 @@ function buildReport(
     dsn: dsnInfo,
     mcp: { name: entry.name, present: true, matches: true },
     status: "ok",
+    ...(host === "warp"
+      ? {
+          detail:
+            "Recordá activar 'File-based MCP Servers' en Warp Settings para que Warp lo spawnee.",
+        }
+      : {}),
   };
 }
 

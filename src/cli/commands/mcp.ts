@@ -1,13 +1,26 @@
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { runHarness } from "../../application/dev-only-services.js";
 import { DbhubLauncherError, runDbhubLauncher } from "../../application/mcp-dbhub-launcher.js";
 import { runMcpDoctor } from "../../application/mcp-doctor-service.js";
 import { runMcpRemove } from "../../application/mcp-remove-service.js";
 import { runMcpSetup } from "../../application/mcp-setup-service.js";
+import {
+  type WarpPostInstallHint,
+  buildWarpPostInstallHint,
+  formatWarpPostInstallHint,
+} from "../../application/mcp-warp-postinstall-hint.js";
+import {
+  resolveWarpGlobalMcpPath,
+  resolveWarpProjectMcpPath,
+} from "../../application/multiroot/warp.js";
 import { HARNESSES } from "../../domain/harnesses.js";
 import {
   DEFAULT_MCP_INSTANCES,
   type McpHost,
   type McpInstance,
+  mcpEntryNameFor,
   validateDsnVarName,
   validateMcpInstance,
 } from "../../domain/mcp-entry.js";
@@ -25,18 +38,20 @@ const HOST_VALUES: ReadonlySet<string> = new Set([...FILE_HOSTS, "both", "all"])
 export const mcpCommand: QtcCommand = {
   name: "mcp",
   describe:
-    "MCP server tooling. Subcomandos: dbhub <instance> | setup/remove/doctor [--host h] [--instance i] [--workspace dir] [--global] [--dry-run] [--force].",
+    "MCP server tooling. Subcomandos: dbhub <instance> | setup/remove/doctor [--host h] [--instance i] [--workspace dir] [--global] [--dry-run] [--force] | warp-status.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const subcommand = args.rest[0];
     if (subcommand === "dbhub") return runDbhubSub(args, ctx);
     if (subcommand === "setup") return runSetupSub(args, ctx);
     if (subcommand === "remove") return runRemoveSub(args, ctx);
     if (subcommand === "doctor") return runDoctorSub(args, ctx);
+    if (subcommand === "warp-status") return runWarpStatusSub(args, ctx);
     return {
       ok: false,
       error: {
         code: "INVALID_INPUT",
-        message: "mcp requiere subcomando: dbhub <instance> | setup | remove | doctor",
+        message:
+          "mcp requiere subcomando: dbhub <instance> | setup | remove | doctor | warp-status",
       },
       exitCode: 1,
     };
@@ -86,10 +101,11 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
   if (!("value" in dsnVars)) return dsnVars;
 
   const workspace = args.values.get("workspace");
+  const scope: "workspace" | "global" = args.flags.has("--global") ? "global" : "workspace";
   const result = runMcpSetup(ctx.env, {
     hosts: hosts.value,
     instances: instances.value,
-    scope: args.flags.has("--global") ? "global" : "workspace",
+    scope,
     ...(workspace !== undefined ? { workspace } : {}),
     dryRun: args.flags.has("--dry-run"),
     force: args.flags.has("--force"),
@@ -109,9 +125,12 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
   }
 
   const hasErrors = result.errors.length > 0;
+  const warpHints = !hasErrors
+    ? buildWarpHintsFor(hosts.value, instances.value, scope, ctx, workspace)
+    : [];
   return {
     ok: !hasErrors,
-    data: result,
+    data: { ...result, ...(warpHints.length > 0 ? { warp_hints: warpHints } : {}) },
     ...(hasErrors
       ? {
           error: {
@@ -122,6 +141,61 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
       : {}),
     exitCode: hasErrors ? 1 : 0,
   };
+}
+
+function buildWarpHintsFor(
+  hosts: McpHost[],
+  instances: McpInstance[],
+  scope: "workspace" | "global",
+  ctx: CliContext,
+  workspace: string | undefined,
+): WarpPostInstallHint[] {
+  if (!hosts.includes("warp")) return [];
+  const file =
+    scope === "global"
+      ? (resolveWarpGlobalMcpPath() ?? "~/.warp/.mcp.json")
+      : resolveWarpProjectMcpPath(resolve(workspace ?? ctx.env.cwd()));
+  return instances.map((instance) =>
+    buildWarpPostInstallHint(mcpEntryNameFor(instance), scope, file),
+  );
+}
+
+async function runWarpStatusSub(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
+  const projectFile = resolveWarpProjectMcpPath(resolve(ctx.env.cwd()));
+  const globalFile = resolveWarpGlobalMcpPath() ?? `${homedir()}/.warp/.mcp.json`;
+  const sources = [
+    { scope: "workspace" as const, file: projectFile },
+    { scope: "global" as const, file: globalFile },
+  ];
+  const reports = sources.map(({ scope, file }) => {
+    const exists = existsSync(file);
+    const servers = exists ? readMcpServersFromFile(file) : [];
+    const hint = buildWarpPostInstallHint(servers[0] ?? "<server>", scope, file);
+    return { scope, file, exists, servers, hint, hint_formatted: formatWarpPostInstallHint(hint) };
+  });
+  const anyDetected = reports.some((r) => r.exists);
+  return {
+    ok: true,
+    data: {
+      reports,
+      summary: anyDetected
+        ? "Archivos .warp/.mcp.json detectados. Activá 'File-based MCP Servers' en Warp Settings si todavía no lo hiciste."
+        : "No se encontró .warp/.mcp.json en cwd ni en home. Primero registrá una conexión con 'agent-workflow mcp setup --host warp'.",
+    },
+    exitCode: 0,
+  };
+}
+
+function readMcpServersFromFile(file: string): string[] {
+  try {
+    const text = readFileSync(file, "utf-8");
+    if (text.trim().length === 0) return [];
+    const parsed = JSON.parse(text) as { mcpServers?: Record<string, unknown> };
+    if (!parsed.mcpServers || typeof parsed.mcpServers !== "object") return [];
+    return Object.keys(parsed.mcpServers);
+  } catch {
+    return [];
+  }
 }
 
 async function runRemoveSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
