@@ -11,16 +11,39 @@ import type { CliContext } from "../../types.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
 import { ConnectionsGrid } from "../components/connections-grid.js";
 import { InputPrompt } from "../components/input-prompt.js";
+import {
+  type MenuItem,
+  type MenuItemTrailing,
+  SectionedMenu,
+} from "../components/sectioned-menu.js";
 import { Toast, type ToastTone } from "../components/toast.js";
 import { useInputLock } from "../input-lock.js";
-import { colors, icons } from "../theme.js";
+import { type ColorName, colors, icons } from "../theme.js";
 
 type Mode =
   | { kind: "list" }
+  | { kind: "action-menu"; target: SelfMcpConnectionView }
   | { kind: "new-name" }
   | { kind: "new-dsn"; name: string }
   | { kind: "confirm-delete"; name: string }
   | { kind: "busy"; label: string };
+
+type ConnectionAction = "install-claude" | "install-codex" | "install-warp" | "doctor" | "remove";
+
+const ACTION_LABELS: Record<
+  Exclude<ConnectionAction, "remove" | "doctor">,
+  { label: string; busy: string }
+> = {
+  "install-claude": { label: "Instalar en Claude Code", busy: "instalando en Claude..." },
+  "install-codex": { label: "Instalar en Codex", busy: "instalando en Codex..." },
+  "install-warp": { label: "Instalar en Warp", busy: "instalando en Warp..." },
+};
+
+const STATUS_TRAILING: Record<"si" | "no" | "drift", MenuItemTrailing> = {
+  si: { icon: icons.check, color: colors.success as ColorName, text: "instalado" },
+  no: { icon: "–", color: colors.fgMoreSubtle as ColorName, text: "no instalado" },
+  drift: { icon: "!", color: colors.warning as ColorName, text: "drift" },
+};
 
 export interface McpTabProps {
   ctx: CliContext;
@@ -35,6 +58,32 @@ function buildArgs(action: string, values: Record<string, string> = {}): ParsedA
     values: new Map(Object.entries(values)),
     valuesMulti: new Map(),
   };
+}
+
+function buildActionMenuItems(target: SelfMcpConnectionView): MenuItem<ConnectionAction>[] {
+  return [
+    {
+      kind: "item",
+      label: ACTION_LABELS["install-claude"].label,
+      value: "install-claude",
+      trailing: STATUS_TRAILING[target.instalado.claude_code],
+    },
+    {
+      kind: "item",
+      label: ACTION_LABELS["install-codex"].label,
+      value: "install-codex",
+      trailing: STATUS_TRAILING[target.instalado.codex],
+    },
+    {
+      kind: "item",
+      label: ACTION_LABELS["install-warp"].label,
+      value: "install-warp",
+      trailing: STATUS_TRAILING[target.instalado.warp],
+    },
+    { kind: "section" },
+    { kind: "item", label: "Diagnosticar conexión", value: "doctor" },
+    { kind: "item", label: "Eliminar conexión…", value: "remove" },
+  ];
 }
 
 export function McpTab({ ctx, isActive }: McpTabProps) {
@@ -108,9 +157,10 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
         setMode({ kind: "new-name" });
         return;
       }
-      const target = connections[cursor];
-      if (!target) return;
-      handleRowAction(input, target.nombre, runAction, (m) => setMode(m));
+      if (key.return) {
+        const target = connections[cursor];
+        if (target) setMode({ kind: "action-menu", target });
+      }
     },
     { isActive },
   );
@@ -128,18 +178,38 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
     { isActive },
   );
 
-  // Esc cancela cualquier input mode (new-name / new-dsn) y vuelve a list.
-  // TextInput de @inkjs/ui no tiene onCancel propio, así que registramos
-  // un useInput dedicado que coexiste con el del TextInput.
+  // Esc cancela cualquier input mode (new-name / new-dsn / action-menu) y
+  // vuelve a list. TextInput de @inkjs/ui no tiene onCancel propio, así que
+  // registramos un useInput dedicado que coexiste con el del TextInput.
   useInput(
     (_, key) => {
       if (!isActive) return;
-      if (mode.kind !== "new-name" && mode.kind !== "new-dsn") return;
+      if (mode.kind !== "new-name" && mode.kind !== "new-dsn" && mode.kind !== "action-menu") {
+        return;
+      }
       if (key.escape) {
         setMode({ kind: "list" });
       }
     },
     { isActive },
+  );
+
+  const handleActionSelect = useCallback(
+    (action: ConnectionAction) => {
+      if (mode.kind !== "action-menu") return;
+      const name = mode.target.nombre;
+      if (action === "remove") {
+        setMode({ kind: "confirm-delete", name });
+        return;
+      }
+      if (action === "doctor") {
+        void runAction("doctor", name, "diagnosticando...");
+        return;
+      }
+      const { busy } = ACTION_LABELS[action];
+      void runAction(action, name, busy);
+    },
+    [mode, runAction],
   );
 
   // Render
@@ -158,6 +228,26 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
       <Box marginTop={1}>
         {mode.kind === "list" ? (
           <ConnectionsGrid connections={connections} cursor={cursor} isActive={isActive} />
+        ) : null}
+        {mode.kind === "action-menu" ? (
+          <Box flexDirection="column">
+            <Text color={colors.fgSubtle}>
+              {icons.bullet} acciones de{" "}
+              <Text color={colors.fg} bold>
+                {mode.target.nombre}
+              </Text>
+            </Text>
+            <Box marginTop={1}>
+              <SectionedMenu
+                items={buildActionMenuItems(mode.target)}
+                onSelect={handleActionSelect}
+                isActive={isActive}
+              />
+            </Box>
+            <Box marginTop={1}>
+              <Text color={colors.fgMoreSubtle}>Esc para cerrar sin aplicar.</Text>
+            </Box>
+          </Box>
         ) : null}
         {mode.kind === "new-name" ? (
           <InputPrompt
@@ -239,19 +329,6 @@ export function McpTab({ ctx, isActive }: McpTabProps) {
       return true;
     }
     return false;
-  }
-
-  function handleRowAction(
-    input: string,
-    name: string,
-    run: (action: string, name: string, label: string) => Promise<void>,
-    transitionMode: (mode: Mode) => void,
-  ): void {
-    if (input === "c") void run("install-claude", name, "instalando en Claude...");
-    else if (input === "x") void run("install-codex", name, "instalando en Codex...");
-    else if (input === "w") void run("install-warp", name, "instalando en Warp...");
-    else if (input === "d") void run("doctor", name, "diagnosticando...");
-    else if (input === "D") transitionMode({ kind: "confirm-delete", name });
   }
 
   async function registerConnection(name: string, dsnVar: string) {

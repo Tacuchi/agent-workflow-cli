@@ -19,16 +19,16 @@ export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
   | { kind: "exit"; exitCode: ExitCode };
 
-type TabId = "status" | "mcp" | "skills" | "update" | "plugins";
+type TabId = "status" | "mcp" | "skills" | "plugins" | "update";
 
-const TAB_ORDER: readonly TabId[] = ["status", "mcp", "skills", "update", "plugins"] as const;
+const TAB_ORDER: readonly TabId[] = ["status", "mcp", "skills", "plugins", "update"] as const;
 
 const TABS: TabDescriptor<TabId>[] = [
   { id: "status", label: "Status" },
   { id: "mcp", label: "MCP" },
   { id: "skills", label: "Skills" },
-  { id: "update", label: "Update" },
   { id: "plugins", label: "Warp Plugins" },
+  { id: "update", label: "Update" },
 ];
 
 export interface AppProps {
@@ -150,8 +150,8 @@ function handleAppKey(
     "1": "status",
     "2": "mcp",
     "3": "skills",
-    "4": "update",
-    "5": "plugins",
+    "4": "plugins",
+    "5": "update",
   };
   const target = byNumber[input];
   if (target) handlers.setActiveTab(target);
@@ -170,13 +170,14 @@ function keymapForTab(tab: TabId): KeymapEntry[] {
     case "mcp":
       return [
         { key: "↑↓", action: "navegar" },
+        { key: "⏎", action: "acciones" },
         { key: "n", action: "nueva" },
-        { key: "c/x", action: "install" },
-        { key: "d", action: "doctor" },
-        { key: "D", action: "borrar" },
       ];
     case "skills":
-      return [{ key: "i", action: "instalar / actualizar" }];
+      return [
+        { key: "↑↓", action: "navegar" },
+        { key: "⏎", action: "acciones" },
+      ];
     case "update":
       return [
         { key: "↑↓", action: "navegar" },
@@ -185,9 +186,8 @@ function keymapForTab(tab: TabId): KeymapEntry[] {
     case "plugins":
       return [
         { key: "↑↓", action: "navegar" },
-        { key: "w / a", action: "instalar (Warp / Agents)" },
-        { key: "W / A", action: "forzar reinstalar" },
-        { key: "r / R", action: "clonar desde git en Warp" },
+        { key: "⏎", action: "acciones" },
+        { key: "n", action: "nuevo" },
       ];
     case "status":
       return [];
@@ -218,20 +218,29 @@ function HelpOverlay() {
           MCP
         </Text>
         <Help label="↑↓" desc="navegar conexiones" />
+        <Help label="⏎" desc="abrir menú de acciones de la conexión" />
+        <Help label="↑↓ ⏎" desc="navegar el menú y aplicar" />
+        <Help label="Esc" desc="cerrar menú sin aplicar" />
         <Help label="n" desc="registrar nueva conexión" />
-        <Help label="c / x / w" desc="instalar en Claude / Codex / Warp" />
-        <Help label="d" desc="diagnosticar conexión" />
-        <Help label="D" desc="eliminar conexión (con confirmación)" />
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text color={colors.fgSubtle} bold>
+          Skills
+        </Text>
+        <Help label="↑↓" desc="navegar targets (Claude / Codex / Warp)" />
+        <Help label="⏎" desc="abrir menú de acciones del target" />
+        <Help label="↑↓ ⏎" desc="navegar el menú y aplicar (instalar / desinstalar)" />
+        <Help label="Esc" desc="cerrar menú sin aplicar" />
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Text color={colors.fgSubtle} bold>
           Warp Plugins
         </Text>
         <Help label="↑↓" desc="navegar plugins" />
-        <Help label="w / a" desc="instalar skills en Warp Terminal / Agents" />
-        <Help label="W / A" desc="forzar reinstalar (sobrescribe existente)" />
-        <Help label="r / R" desc="clonar desde git e instalar en Warp (R = force)" />
-        <Help label="n / N" desc="nuevo plugin desde URL git en Warp / Agents" />
+        <Help label="⏎" desc="abrir menú de acciones del plugin" />
+        <Help label="↑↓ ⏎" desc="navegar el menú y aplicar" />
+        <Help label="Esc" desc="cerrar menú sin aplicar" />
+        <Help label="n" desc="agregar nuevo plugin desde URL git (menú de target)" />
       </Box>
       <Box marginTop={1}>
         <Text color={colors.fgMoreSubtle}>Esc cierra esta ventana.</Text>

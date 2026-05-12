@@ -30,14 +30,14 @@ function buildCtx(runImpl: CliContext["process"]["run"]): CliContext {
 }
 
 describe("UpdateTab", () => {
-  it("renderiza ambas opciones del menú", () => {
+  it("solo renderiza 'Buscar actualizaciones' hasta que un check encuentre una versión más reciente", () => {
     const ctx = buildCtx(async () => ({ code: 0, stdout: "", stderr: "" }));
     const { lastFrame } = render(
       <UpdateTab ctx={ctx} version="5.11.3" isActive={true} onRequestUpdate={() => {}} />,
     );
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Buscar actualizaciones");
-    expect(frame).toContain("Actualizar ahora");
+    expect(frame).not.toContain("(npm install)");
     expect(frame).toContain("v5.11.3");
   });
 
@@ -73,13 +73,17 @@ describe("UpdateTab", () => {
     unmount();
   });
 
-  it("'Actualizar ahora' (Down + Enter) llama onRequestUpdate", async () => {
+  it("'Actualizar a vX' aparece tras detectar outdated y Down+Enter llama onRequestUpdate", async () => {
     const onRequestUpdate = vi.fn();
-    const ctx = buildCtx(async () => ({ code: 0, stdout: "", stderr: "" }));
-    const { stdin, unmount } = render(
+    const ctx = buildCtx(async () => ({ code: 0, stdout: "5.99.0", stderr: "" }));
+    const { stdin, lastFrame, unmount } = render(
       <UpdateTab ctx={ctx} version="5.11.3" isActive={true} onRequestUpdate={onRequestUpdate} />,
     );
     await new Promise((r) => setTimeout(r, 50));
+    expect(lastFrame() ?? "").not.toContain("Actualizar a v5.99.0");
+    stdin.write(ENTER); // 'Buscar actualizaciones' → detecta outdated
+    await new Promise((r) => setTimeout(r, 100));
+    expect(lastFrame() ?? "").toContain("Actualizar a v5.99.0");
     stdin.write(ARROW_DOWN);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write(ENTER);

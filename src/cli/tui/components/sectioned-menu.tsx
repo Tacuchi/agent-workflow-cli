@@ -1,9 +1,21 @@
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
-import { colors, icons } from "../theme.js";
+import { useEffect, useState } from "react";
+import { type ColorName, colors, icons } from "../theme.js";
+
+export interface MenuItemTrailing {
+  icon: string;
+  color: ColorName;
+  text?: string;
+}
 
 export type MenuItem<T extends string> =
-  | { kind: "item"; label: string; value: T; description?: string }
+  | {
+      kind: "item";
+      label: string;
+      value: T;
+      description?: string;
+      trailing?: MenuItemTrailing;
+    }
   | { kind: "section"; label?: string };
 
 export interface SectionedMenuProps<T extends string> {
@@ -29,6 +41,15 @@ export function SectionedMenu<T extends string>(props: SectionedMenuProps<T>) {
 
   const [focused, setFocused] = useState<number>(initialFocus);
 
+  // Clamp defensivo: si los items cambian y el focus queda fuera de rango,
+  // re-anclar al último seleccionable. Cubre menus dinámicos (p.ej. update-tab).
+  useEffect(() => {
+    if (selectables.length === 0) return;
+    if (focused >= selectables.length) {
+      setFocused(selectables.length - 1);
+    }
+  }, [selectables.length, focused]);
+
   useInput(
     (_, key) => {
       if (selectables.length === 0) return;
@@ -49,36 +70,56 @@ export function SectionedMenu<T extends string>(props: SectionedMenuProps<T>) {
   );
 
   const keyedItems = computeStableKeys(items);
+  const focusedIndex = selectables[focused]?.index;
 
   return (
     <Box flexDirection="column">
       {keyedItems.map(({ item, index, key }) => {
         if (item.kind === "section") {
-          if (!item.label) {
-            return <Text key={key}> </Text>;
-          }
-          return (
-            <Box key={key} marginTop={1}>
-              <Text color={colors.fgMoreSubtle}>{icons.section.repeat(2)} </Text>
-              <Text color={colors.accent} bold>
-                {item.label}
-              </Text>
-            </Box>
-          );
+          return <SectionRow key={key} label={item.label} />;
         }
-        const selectable = selectables.find((entry) => entry.index === index);
-        const isFocused = selectable?.index === selectables[focused]?.index;
-        return (
-          <Box key={key}>
-            <Text color={isFocused ? colors.primary : colors.fgMoreSubtle} bold={isFocused}>
-              {isFocused ? `${icons.focusBullet} ` : `${icons.dimBullet} `}
-            </Text>
-            <Text {...(isFocused ? { color: colors.fg, bold: true } : { color: colors.fgSubtle })}>
-              {item.label}
-            </Text>
-          </Box>
-        );
+        return <ItemRow key={key} item={item} isFocused={index === focusedIndex} />;
       })}
+    </Box>
+  );
+}
+
+function SectionRow({ label }: { label: string | undefined }) {
+  if (!label) return <Text> </Text>;
+  return (
+    <Box marginTop={1}>
+      <Text color={colors.fgMoreSubtle}>{icons.section.repeat(2)} </Text>
+      <Text color={colors.accent} bold>
+        {label}
+      </Text>
+    </Box>
+  );
+}
+
+function ItemRow<T extends string>({
+  item,
+  isFocused,
+}: {
+  item: Extract<MenuItem<T>, { kind: "item" }>;
+  isFocused: boolean;
+}) {
+  const trailing = item.trailing;
+  return (
+    <Box justifyContent="space-between">
+      <Box>
+        <Text color={isFocused ? colors.primary : colors.fgMoreSubtle} bold={isFocused}>
+          {isFocused ? `${icons.focusBullet} ` : `${icons.dimBullet} `}
+        </Text>
+        <Text {...(isFocused ? { color: colors.fg, bold: true } : { color: colors.fgSubtle })}>
+          {item.label}
+        </Text>
+      </Box>
+      {trailing ? (
+        <Text color={trailing.color}>
+          {trailing.icon}
+          {trailing.text ? ` ${trailing.text}` : ""}
+        </Text>
+      ) : null}
     </Box>
   );
 }

@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { CliContext } from "../../types.js";
 import { type MenuItem, SectionedMenu } from "../components/sectioned-menu.js";
 import { Toast, type ToastTone } from "../components/toast.js";
@@ -14,15 +14,23 @@ export interface UpdateTabProps {
 
 type UpdateAction = "check" | "install";
 
-const MENU_ITEMS: MenuItem<UpdateAction>[] = [
-  { kind: "item", label: "Buscar actualizaciones", value: "check" },
-  { kind: "item", label: "Actualizar ahora (npm install)", value: "install" },
-];
-
 interface CheckResult {
   status: "uptodate" | "outdated" | "error";
   latest?: string;
   message: string;
+}
+
+function buildMenuItems(check: CheckResult | null): MenuItem<UpdateAction>[] {
+  const items: MenuItem<UpdateAction>[] = [
+    { kind: "item", label: "Buscar actualizaciones", value: "check" },
+  ];
+  if (check?.status === "outdated") {
+    const target = check.latest
+      ? `Actualizar a v${check.latest} (npm install)`
+      : "Actualizar ahora (npm install)";
+    items.push({ kind: "item", label: target, value: "install" });
+  }
+  return items;
 }
 
 export function UpdateTab({ ctx, version, isActive, onRequestUpdate }: UpdateTabProps) {
@@ -78,6 +86,8 @@ export function UpdateTab({ ctx, version, isActive, onRequestUpdate }: UpdateTab
     [busy, runCheck, onRequestUpdate],
   );
 
+  const menuItems = useMemo(() => buildMenuItems(check), [check]);
+
   return (
     <Box flexDirection="column">
       <Text color={colors.fg} bold>
@@ -98,7 +108,7 @@ export function UpdateTab({ ctx, version, isActive, onRequestUpdate }: UpdateTab
       </Box>
 
       <Box marginTop={1}>
-        <SectionedMenu items={MENU_ITEMS} onSelect={handleSelect} isActive={isActive && !busy} />
+        <SectionedMenu items={menuItems} onSelect={handleSelect} isActive={isActive && !busy} />
       </Box>
 
       {busy ? (

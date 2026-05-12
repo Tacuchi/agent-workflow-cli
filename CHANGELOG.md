@@ -4,6 +4,34 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.15.0] — 2026-05-12
+
+**Minor — TUI unificada por menús navegables (session048).** Toda la TUI pasa de "atajos por tecla dedicada" a "Enter abre menú navegable por target". El usuario ya no necesita memorizar mapeos de teclas: pulsa Enter sobre la fila y elige la acción con flechas.
+
+### Added
+
+- `MenuItemTrailing` opcional en `SectionedMenu`: icono + color + texto a la derecha del label. Permite mostrar estado por acción (instalado / no instalado / drift) sin componente nuevo.
+- Sección **Skills** en `HelpOverlay` (antes no existía).
+- Clamp defensivo del foco en `SectionedMenu` cuando los items cambian dinámicamente (cubre `update-tab` con install condicional).
+
+### Changed
+
+- **MCP tab**: Enter sobre una conexión abre un menú con `install-claude` / `install-codex` / `install-warp` (con estado por host), `doctor` y `remove`. Esc cierra. Atajos `c`/`x`/`w`/`d`/`D` retirados. `n` (nueva conexión) se mantiene.
+- **Plugins tab**: Enter sobre un plugin abre un menú con install/reinstall en Warp/Agents (con estado por target) y clonar desde git. `n` abre un menú de target (Warp / Agents) para nuevo plugin desde URL. Atajos `w`/`W`/`a`/`A`/`r`/`R`/`N` retirados.
+- **Skills tab**: cursor navegable por target con `↑↓`. Enter abre menú con "Instalar/Reinstalar" (siempre, con trailing) y "Desinstalar" (solo si el target está instalado). Acciones llaman `selfInstallSkill --target <X>` / `selfUninstallSkill --target <X>`. Atajo `i`/`I` global retirado. Ahora la instalación es granular por target en vez de todos a la vez.
+- **Update tab**: reubicado al final del orden (`Status / MCP / Skills / Plugins / Update`). Tecla `4` ahora va a Plugins; `5` a Update. El item "Actualizar ahora" deja de mostrarse por defecto: aparece únicamente cuando `Buscar actualizaciones` detecta `outdated`, con la versión objetivo en la etiqueta (`Actualizar a vX.Y.Z (npm install)`).
+- `KeymapBar` por tab simplificado: `MCP` y `Plugins` muestran `↑↓ / ⏎ / n`; `Skills` muestra `↑↓ / ⏎`. `HelpOverlay` reescrito por sección.
+- `SectionedMenu`: refactor a `SectionRow` / `ItemRow` para mantener complejidad cognitiva acotada tras agregar `trailing`.
+
+### Tests
+
+- 467 verdes (sin regresiones).
+- 2 tests de `tui-update-tab.test.tsx` adaptados a la nueva semántica (install condicional al `outdated`).
+
+### Decisions
+
+- **DEC-001 (session048)**: extender `SectionedMenu` con `trailing` opcional en lugar de crear un componente nuevo `ConnectionActionMenu`. Reusa la lógica de foco / wrap-around / `defaultValue`; cambio aditivo y retrocompatible para los consumidores existentes (`update-tab`).
+
 ## [5.11.5] — 2026-05-10
 
 **Patch — TUI dispatch de update sin doble-confirm (session043).**

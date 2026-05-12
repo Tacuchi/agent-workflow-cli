@@ -7,9 +7,14 @@ import { selfInstallPluginSkills } from "../../../application/self/install-plugi
 import type { InstallTarget } from "../../../application/self/install-skill.js";
 import type { CliContext } from "../../types.js";
 import { InputPrompt } from "../components/input-prompt.js";
+import {
+  type MenuItem,
+  type MenuItemTrailing,
+  SectionedMenu,
+} from "../components/sectioned-menu.js";
 import { Toast, type ToastTone } from "../components/toast.js";
 import { useInputLock } from "../input-lock.js";
-import { colors, icons } from "../theme.js";
+import { type ColorName, colors, icons } from "../theme.js";
 
 export interface PluginsTabProps {
   ctx: CliContext;
@@ -37,8 +42,19 @@ interface PluginEntry {
 
 type Mode =
   | { kind: "idle" }
+  | { kind: "action-menu"; target: PluginEntry }
+  | { kind: "new-plugin-menu" }
   | { kind: "entering-url"; target: InstallTarget; force: boolean }
   | { kind: "entering-custom-url"; target: InstallTarget };
+
+type PluginAction =
+  | "install-warp"
+  | "install-warp-force"
+  | "install-warp-git"
+  | "install-agents"
+  | "install-agents-force";
+
+type NewPluginTarget = "warp" | "agents";
 
 const TARGET_LABELS: Record<InstallTarget, string> = {
   warp: "Warp",
@@ -47,6 +63,49 @@ const TARGET_LABELS: Record<InstallTarget, string> = {
   codex: "Codex",
   oz: "Oz",
 };
+
+const INSTALLED_TRAILING: MenuItemTrailing = {
+  icon: icons.check,
+  color: colors.success as ColorName,
+  text: "instalado",
+};
+
+const NOT_INSTALLED_TRAILING: MenuItemTrailing = {
+  icon: "–",
+  color: colors.fgMoreSubtle as ColorName,
+  text: "no instalado",
+};
+
+function targetTrailing(plugin: PluginEntry, id: InstallTarget): MenuItemTrailing {
+  const installed = plugin.targets.find((t) => t.id === id)?.installed === true;
+  return installed ? INSTALLED_TRAILING : NOT_INSTALLED_TRAILING;
+}
+
+function buildActionMenuItems(plugin: PluginEntry): MenuItem<PluginAction>[] {
+  return [
+    {
+      kind: "item",
+      label: "Instalar/actualizar en Warp Terminal",
+      value: "install-warp",
+      trailing: targetTrailing(plugin, "warp"),
+    },
+    { kind: "item", label: "Reinstalar en Warp Terminal (force)", value: "install-warp-force" },
+    { kind: "item", label: "Clonar desde git e instalar en Warp", value: "install-warp-git" },
+    { kind: "section" },
+    {
+      kind: "item",
+      label: "Instalar/actualizar en Oz/Agents",
+      value: "install-agents",
+      trailing: targetTrailing(plugin, "agents"),
+    },
+    { kind: "item", label: "Reinstalar en Oz/Agents (force)", value: "install-agents-force" },
+  ];
+}
+
+const NEW_PLUGIN_MENU_ITEMS: MenuItem<NewPluginTarget>[] = [
+  { kind: "item", label: "Agregar nuevo plugin desde URL en Warp Terminal", value: "warp" },
+  { kind: "item", label: "Agregar nuevo plugin desde URL en Oz/Agents", value: "agents" },
+];
 
 export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
   const [plugins, setPlugins] = useState<PluginEntry[]>([]);
@@ -178,20 +237,119 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
   useInput(
     (input, key) => {
       if (!isActive || busy || mode.kind !== "idle") return;
-      handlePluginsKey(input, key, plugins.length, setCursor, install, addCustom);
+      if (key.upArrow) {
+        setCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setCursor((c) => (plugins.length === 0 ? 0 : Math.min(plugins.length - 1, c + 1)));
+        return;
+      }
+      if (input === "n" || input === "N") {
+        setMode({ kind: "new-plugin-menu" });
+        return;
+      }
+      if (key.return) {
+        const target = plugins[cursor];
+        if (target) setMode({ kind: "action-menu", target });
+      }
     },
     { isActive },
   );
 
-  // Esc cancels URL entry (both flavors)
+  // Esc cancela cualquier overlay (action-menu / new-plugin-menu / entering-url / entering-custom-url).
   useInput(
     (_, key) => {
       if (!isActive) return;
-      if (mode.kind !== "entering-url" && mode.kind !== "entering-custom-url") return;
+      if (mode.kind === "idle") return;
       if (key.escape) setMode({ kind: "idle" });
     },
     { isActive },
   );
+
+  const handleActionSelect = useCallback(
+    (action: PluginAction) => {
+      if (mode.kind !== "action-menu") return;
+      setMode({ kind: "idle" });
+      switch (action) {
+        case "install-warp":
+          void install("warp");
+          return;
+        case "install-warp-force":
+          void install("warp", true);
+          return;
+        case "install-warp-git":
+          void install("warp", false, true);
+          return;
+        case "install-agents":
+          void install("agents");
+          return;
+        case "install-agents-force":
+          void install("agents", true);
+          return;
+      }
+    },
+    [mode, install],
+  );
+
+  const handleNewPluginSelect = useCallback(
+    (target: NewPluginTarget) => {
+      setMode({ kind: "idle" });
+      addCustom(target);
+    },
+    [addCustom],
+  );
+
+  if (mode.kind === "action-menu") {
+    return (
+      <Box flexDirection="column">
+        <Text color={colors.fg} bold>
+          Warp Plugins
+        </Text>
+        <Box marginTop={1}>
+          <Text color={colors.fgSubtle}>
+            {icons.bullet} acciones de{" "}
+            <Text color={colors.fg} bold>
+              {mode.target.label}
+            </Text>
+          </Text>
+        </Box>
+        <Box marginTop={1}>
+          <SectionedMenu
+            items={buildActionMenuItems(mode.target)}
+            onSelect={handleActionSelect}
+            isActive={isActive}
+          />
+        </Box>
+        <Box marginTop={1}>
+          <Text color={colors.fgMoreSubtle}>Esc para cerrar sin aplicar.</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode.kind === "new-plugin-menu") {
+    return (
+      <Box flexDirection="column">
+        <Text color={colors.fg} bold>
+          Warp Plugins
+        </Text>
+        <Box marginTop={1}>
+          <Text color={colors.fgSubtle}>{icons.bullet} agregar nuevo plugin desde URL git</Text>
+        </Box>
+        <Box marginTop={1}>
+          <SectionedMenu
+            items={NEW_PLUGIN_MENU_ITEMS}
+            onSelect={handleNewPluginSelect}
+            isActive={isActive}
+          />
+        </Box>
+        <Box marginTop={1}>
+          <Text color={colors.fgMoreSubtle}>Esc para cerrar sin aplicar.</Text>
+        </Box>
+      </Box>
+    );
+  }
 
   // URL entry mode overlay
   if (mode.kind === "entering-url") {
@@ -258,9 +416,8 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         </Text>
         <Box marginTop={1}>
           <Text color={colors.fgMoreSubtle} italic>
-            (sin plugins detectados — pulsa <Text color={colors.accent}>n</Text> /{" "}
-            <Text color={colors.accent}>N</Text> para agregar desde URL git en Warp / Agents, o
-            instala qtc-workflow-plugin desde el marketplace de Claude Code)
+            (sin plugins detectados — pulsa <Text color={colors.accent}>n</Text> para agregar desde
+            URL git, o instala qtc-workflow-plugin desde el marketplace de Claude Code)
           </Text>
         </Box>
       </Box>
@@ -421,35 +578,6 @@ function semverDesc(a: string, b: string): number {
   const [aMaj = 0, aMin = 0, aPatch = 0] = parse(a);
   const [bMaj = 0, bMin = 0, bPatch = 0] = parse(b);
   return bMaj - aMaj || bMin - aMin || bPatch - aPatch;
-}
-
-type InstallFn = (target: InstallTarget, force?: boolean, forceGit?: boolean) => void;
-type AddCustomFn = (target: InstallTarget) => void;
-
-function handlePluginsKey(
-  input: string,
-  key: { upArrow?: boolean; downArrow?: boolean },
-  pluginsLength: number,
-  setCursor: (fn: (c: number) => number) => void,
-  install: InstallFn,
-  addCustom: AddCustomFn,
-): void {
-  if (key.upArrow) {
-    setCursor((c) => Math.max(0, c - 1));
-    return;
-  }
-  if (key.downArrow) {
-    setCursor((c) => (pluginsLength === 0 ? 0 : Math.min(pluginsLength - 1, c + 1)));
-    return;
-  }
-  if (input === "w") install("warp");
-  else if (input === "W") install("warp", true);
-  else if (input === "a") install("agents");
-  else if (input === "A") install("agents", true);
-  else if (input === "r") install("warp", false, true);
-  else if (input === "R") install("warp", true, true);
-  else if (input === "n") addCustom("warp");
-  else if (input === "N") addCustom("agents");
 }
 
 export function extractNamespaceFromUrl(rawUrl: string): string {
