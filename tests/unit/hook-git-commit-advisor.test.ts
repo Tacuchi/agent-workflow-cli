@@ -126,10 +126,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso C: sesión activa, mensaje sin tag → advisor stderr + exit 0", async () => {
-    writeFileSync(
-      join(workspace, "CLAUDE.md"),
-      buildBlock({ sessions: ["session053-dev-foo"] }),
-    );
+    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "fix algo"' },
@@ -143,10 +140,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso D: sesión activa, mensaje con tag → exit 0 silent", async () => {
-    writeFileSync(
-      join(workspace, "CLAUDE.md"),
-      buildBlock({ sessions: ["session053-dev-foo"] }),
-    );
+    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "fix algo (session053)"' },
@@ -157,10 +151,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso D.2: tag con código diferente también es aceptado (regex laxo session\\d{3})", async () => {
-    writeFileSync(
-      join(workspace, "CLAUDE.md"),
-      buildBlock({ sessions: ["session053-dev-foo"] }),
-    );
+    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "[session999] hotfix de emergencia"' },
@@ -171,10 +162,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso E: AW_COMMIT_ADVISOR=off bypass → exit 0 silent aunque haya sesión sin tag", async () => {
-    writeFileSync(
-      join(workspace, "CLAUDE.md"),
-      buildBlock({ sessions: ["session053-dev-foo"] }),
-    );
+    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
     const envOff = new FakeEnv(workspace, { AW_COMMIT_ADVISOR: "off" });
     const stdin = JSON.stringify({
       tool_name: "Bash",
@@ -186,10 +174,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso F: comillas simples también se parsean correctamente", async () => {
-    writeFileSync(
-      join(workspace, "CLAUDE.md"),
-      buildBlock({ sessions: ["session053-dev-foo"] }),
-    );
+    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: "git commit -m 'fix sin tag'" },
@@ -207,10 +192,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso H: AGENTS.md fallback cuando no hay CLAUDE.md", async () => {
-    writeFileSync(
-      join(workspace, "AGENTS.md"),
-      buildBlock({ sessions: ["session077-dev-bar"] }),
-    );
+    writeFileSync(join(workspace, "AGENTS.md"), buildBlock({ sessions: ["session077-dev-bar"] }));
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "fix sin tag"' },
