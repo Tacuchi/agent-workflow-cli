@@ -27,7 +27,7 @@ const TABS: TabDescriptor<TabId>[] = [
   { id: "status", label: "Status" },
   { id: "mcp", label: "MCP" },
   { id: "skills", label: "Skills" },
-  { id: "plugins", label: "Warp Plugins" },
+  { id: "plugins", label: "Plugins" },
   { id: "update", label: "Update" },
 ];
 
@@ -234,13 +234,13 @@ function HelpOverlay() {
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Text color={colors.fgSubtle} bold>
-          Warp Plugins
+          Plugins
         </Text>
         <Help label="↑↓" desc="navegar plugins" />
-        <Help label="⏎" desc="abrir menú de acciones del plugin" />
+        <Help label="⏎" desc="abrir menú de acciones (clear / reload / install por host)" />
         <Help label="↑↓ ⏎" desc="navegar el menú y aplicar" />
         <Help label="Esc" desc="cerrar menú sin aplicar" />
-        <Help label="n" desc="agregar nuevo plugin desde URL git (menú de target)" />
+        <Help label="n" desc="agregar nuevo plugin desde URL git (Warp/Agents)" />
       </Box>
       <Box marginTop={1}>
         <Text color={colors.fgMoreSubtle}>Esc cierra esta ventana.</Text>

@@ -58,6 +58,7 @@ const GROUPS: readonly CommandGroup[] = [
     name: "Doctor / Data",
     commands: [
       "plugin-doctor",
+      "plugin-cache",
       "history-data",
       "history-update",
       "release-data",

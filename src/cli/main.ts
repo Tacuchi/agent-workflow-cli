@@ -35,6 +35,7 @@ import { attachMultirootCommand, detachMultirootCommand } from "./commands/multi
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
 import { phaseDetectCommand } from "./commands/phase-detect.js";
 import { phaseNextCommand } from "./commands/phase-next.js";
+import { pluginCacheCommand } from "./commands/plugin-cache.js";
 import { pluginDoctorCommand } from "./commands/plugin-doctor.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
 import { releaseDataCommand } from "./commands/release-data.js";
@@ -115,6 +116,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(graduateCommand);
   registry.register(upgradeHubModeCommand);
   registry.register(codeScanCommand);
+  registry.register(pluginCacheCommand);
   registry.register(pluginDoctorCommand);
   registry.register(releaseDataCommand);
   registry.register(attachMultirootCommand);

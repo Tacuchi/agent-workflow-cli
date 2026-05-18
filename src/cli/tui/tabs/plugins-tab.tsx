@@ -5,6 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { installPluginSkillsFromGit } from "../../../application/self/install-plugin-skills-git.js";
 import { selfInstallPluginSkills } from "../../../application/self/install-plugin-skills.js";
 import type { InstallTarget } from "../../../application/self/install-skill.js";
+import {
+  type CacheTarget,
+  selfClearPluginCache,
+} from "../../../application/self/plugin-cache-clear.js";
+import { selfReloadPluginCache } from "../../../application/self/plugin-cache-reload.js";
 import type { CliContext } from "../../types.js";
 import { InputPrompt } from "../components/input-prompt.js";
 import {
@@ -21,8 +26,10 @@ export interface PluginsTabProps {
   isActive: boolean;
 }
 
+type HostId = "claude" | "codex" | "warp" | "agents";
+
 interface PluginTargetStatus {
-  id: InstallTarget;
+  id: HostId;
   label: string;
   path: string;
   installed: boolean;
@@ -52,16 +59,23 @@ type PluginAction =
   | "install-warp-force"
   | "install-warp-git"
   | "install-agents"
-  | "install-agents-force";
+  | "install-agents-force"
+  | "clear-claude"
+  | "reload-claude"
+  | "clear-codex"
+  | "reload-codex"
+  | "clear-warp"
+  | "reload-warp"
+  | "clear-agents"
+  | "reload-agents";
 
 type NewPluginTarget = "warp" | "agents";
 
-const TARGET_LABELS: Record<InstallTarget, string> = {
-  warp: "Warp",
-  agents: "Agents",
+const HOST_LABELS: Record<HostId, string> = {
   claude: "Claude Code",
   codex: "Codex",
-  oz: "Oz",
+  warp: "Warp Terminal",
+  agents: "Oz / Agents",
 };
 
 const INSTALLED_TRAILING: MenuItemTrailing = {
@@ -70,36 +84,103 @@ const INSTALLED_TRAILING: MenuItemTrailing = {
   text: "instalado",
 };
 
+const CACHED_TRAILING: MenuItemTrailing = {
+  icon: icons.check,
+  color: colors.success as ColorName,
+  text: "cacheado",
+};
+
 const NOT_INSTALLED_TRAILING: MenuItemTrailing = {
   icon: "–",
   color: colors.fgMoreSubtle as ColorName,
-  text: "no instalado",
+  text: "no detectado",
 };
 
-function targetTrailing(plugin: PluginEntry, id: InstallTarget): MenuItemTrailing {
+function targetTrailing(plugin: PluginEntry, id: HostId): MenuItemTrailing {
   const installed = plugin.targets.find((t) => t.id === id)?.installed === true;
-  return installed ? INSTALLED_TRAILING : NOT_INSTALLED_TRAILING;
+  if (!installed) return NOT_INSTALLED_TRAILING;
+  return id === "claude" || id === "codex" ? CACHED_TRAILING : INSTALLED_TRAILING;
 }
 
 function buildActionMenuItems(plugin: PluginEntry): MenuItem<PluginAction>[] {
-  return [
-    {
-      kind: "item",
-      label: "Instalar/actualizar en Warp Terminal",
-      value: "install-warp",
-      trailing: targetTrailing(plugin, "warp"),
-    },
-    { kind: "item", label: "Reinstalar en Warp Terminal (force)", value: "install-warp-force" },
-    { kind: "item", label: "Clonar desde git e instalar en Warp", value: "install-warp-git" },
-    { kind: "section" },
-    {
-      kind: "item",
-      label: "Instalar/actualizar en Oz/Agents",
-      value: "install-agents",
-      trailing: targetTrailing(plugin, "agents"),
-    },
-    { kind: "item", label: "Reinstalar en Oz/Agents (force)", value: "install-agents-force" },
-  ];
+  const items: MenuItem<PluginAction>[] = [];
+
+  // Claude Code section (host-managed cache)
+  items.push({
+    kind: "item",
+    label: "Limpiar cache de Claude Code",
+    value: "clear-claude",
+    trailing: targetTrailing(plugin, "claude"),
+  });
+  items.push({
+    kind: "item",
+    label: "Recargar en Claude Code (limpiar + reiniciar host)",
+    value: "reload-claude",
+  });
+
+  items.push({ kind: "section" });
+
+  // Codex section
+  items.push({
+    kind: "item",
+    label: "Limpiar cache de Codex",
+    value: "clear-codex",
+    trailing: targetTrailing(plugin, "codex"),
+  });
+  items.push({
+    kind: "item",
+    label: "Recargar en Codex (limpiar + reiniciar host)",
+    value: "reload-codex",
+  });
+
+  items.push({ kind: "section" });
+
+  // Warp section
+  items.push({
+    kind: "item",
+    label: "Instalar/actualizar en Warp Terminal",
+    value: "install-warp",
+    trailing: targetTrailing(plugin, "warp"),
+  });
+  items.push({
+    kind: "item",
+    label: "Reinstalar en Warp Terminal (force)",
+    value: "install-warp-force",
+  });
+  items.push({
+    kind: "item",
+    label: "Clonar desde git e instalar en Warp",
+    value: "install-warp-git",
+  });
+  items.push({ kind: "item", label: "Limpiar instalación en Warp", value: "clear-warp" });
+  items.push({
+    kind: "item",
+    label: "Recargar en Warp (limpiar + reinstalar desde cache)",
+    value: "reload-warp",
+  });
+
+  items.push({ kind: "section" });
+
+  // Agents section
+  items.push({
+    kind: "item",
+    label: "Instalar/actualizar en Oz/Agents",
+    value: "install-agents",
+    trailing: targetTrailing(plugin, "agents"),
+  });
+  items.push({
+    kind: "item",
+    label: "Reinstalar en Oz/Agents (force)",
+    value: "install-agents-force",
+  });
+  items.push({ kind: "item", label: "Limpiar instalación en Oz/Agents", value: "clear-agents" });
+  items.push({
+    kind: "item",
+    label: "Recargar en Oz/Agents (limpiar + reinstalar desde cache)",
+    value: "reload-agents",
+  });
+
+  return items;
 }
 
 const NEW_PLUGIN_MENU_ITEMS: MenuItem<NewPluginTarget>[] = [
@@ -182,7 +263,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
       namespaceOverride?: string,
     ) => {
       const namespace = namespaceOverride ?? plugins[cursor]?.namespace ?? "";
-      const label = TARGET_LABELS[target] ?? target;
+      const label = HOST_LABELS[target as HostId] ?? target;
       setBusy(`clonando e instalando en ${label}…`);
       setToast(null);
       try {
@@ -224,10 +305,71 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         await installFromGit(target, force, plugin.sourceUrl, plugin.sourceRef);
         return;
       }
-      // No source available — ask user for URL
       setMode({ kind: "entering-url", target, force });
     },
     [plugins, cursor, installFromLocal, installFromGit],
+  );
+
+  const clearCache = useCallback(
+    async (target: CacheTarget) => {
+      const plugin = plugins[cursor];
+      if (!plugin) return;
+      const label = HOST_LABELS[target];
+      setBusy(`limpiando ${label}…`);
+      setToast(null);
+      try {
+        const args = {
+          rest: [],
+          plugin: {},
+          flags: new Set<string>(),
+          values: new Map<string, string>([
+            ["plugin", plugin.namespace],
+            ["target", target],
+          ]),
+          valuesMulti: new Map(),
+        };
+        const result = await selfClearPluginCache(args, ctx);
+        const summary = result.data?.summary ?? result.error?.message ?? "";
+        setToast({ tone: result.ok ? "success" : "error", message: summary });
+        await refresh();
+      } catch (err) {
+        setToast({ tone: "error", message: (err as Error).message });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [plugins, cursor, ctx, refresh],
+  );
+
+  const reloadCache = useCallback(
+    async (target: CacheTarget) => {
+      const plugin = plugins[cursor];
+      if (!plugin) return;
+      const label = HOST_LABELS[target];
+      setBusy(`recargando ${label}…`);
+      setToast(null);
+      try {
+        const args = {
+          rest: [],
+          plugin: {},
+          flags: new Set<string>(),
+          values: new Map<string, string>([
+            ["plugin", plugin.namespace],
+            ["target", target],
+          ]),
+          valuesMulti: new Map(),
+        };
+        const result = await selfReloadPluginCache(args, ctx);
+        const summary = result.data?.summary ?? result.error?.message ?? "";
+        setToast({ tone: result.ok ? "success" : "error", message: summary });
+        await refresh();
+      } catch (err) {
+        setToast({ tone: "error", message: (err as Error).message });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [plugins, cursor, ctx, refresh],
   );
 
   const addCustom = useCallback((target: InstallTarget) => {
@@ -257,7 +399,6 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
     { isActive },
   );
 
-  // Esc cancela cualquier overlay (action-menu / new-plugin-menu / entering-url / entering-custom-url).
   useInput(
     (_, key) => {
       if (!isActive) return;
@@ -287,9 +428,33 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         case "install-agents-force":
           void install("agents", true);
           return;
+        case "clear-claude":
+          void clearCache("claude");
+          return;
+        case "reload-claude":
+          void reloadCache("claude");
+          return;
+        case "clear-codex":
+          void clearCache("codex");
+          return;
+        case "reload-codex":
+          void reloadCache("codex");
+          return;
+        case "clear-warp":
+          void clearCache("warp");
+          return;
+        case "reload-warp":
+          void reloadCache("warp");
+          return;
+        case "clear-agents":
+          void clearCache("agents");
+          return;
+        case "reload-agents":
+          void reloadCache("agents");
+          return;
       }
     },
-    [mode, install],
+    [mode, install, clearCache, reloadCache],
   );
 
   const handleNewPluginSelect = useCallback(
@@ -304,7 +469,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
     return (
       <Box flexDirection="column">
         <Text color={colors.fg} bold>
-          Warp Plugins
+          Plugins
         </Text>
         <Box marginTop={1}>
           <Text color={colors.fgSubtle}>
@@ -332,7 +497,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
     return (
       <Box flexDirection="column">
         <Text color={colors.fg} bold>
-          Warp Plugins
+          Plugins
         </Text>
         <Box marginTop={1}>
           <Text color={colors.fgSubtle}>{icons.bullet} agregar nuevo plugin desde URL git</Text>
@@ -351,13 +516,12 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
     );
   }
 
-  // URL entry mode overlay
   if (mode.kind === "entering-url") {
-    const label = TARGET_LABELS[mode.target] ?? mode.target;
+    const label = HOST_LABELS[mode.target as HostId] ?? mode.target;
     return (
       <Box flexDirection="column">
         <Text color={colors.fg} bold>
-          Warp Plugins
+          Plugins
         </Text>
         <Box marginTop={1}>
           <InputPrompt
@@ -377,13 +541,12 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
     );
   }
 
-  // Custom-URL entry overlay (`n` / `N` from the listing)
   if (mode.kind === "entering-custom-url") {
-    const label = TARGET_LABELS[mode.target] ?? mode.target;
+    const label = HOST_LABELS[mode.target as HostId] ?? mode.target;
     return (
       <Box flexDirection="column">
         <Text color={colors.fg} bold>
-          Warp Plugins
+          Plugins
         </Text>
         <Box marginTop={1}>
           <InputPrompt
@@ -412,7 +575,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
     return (
       <Box flexDirection="column">
         <Text color={colors.fg} bold>
-          Warp Plugins
+          Plugins
         </Text>
         <Box marginTop={1}>
           <Text color={colors.fgMoreSubtle} italic>
@@ -427,7 +590,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
   return (
     <Box flexDirection="column">
       <Text color={colors.fg} bold>
-        Warp Plugins
+        Plugins
       </Text>
       <Box marginTop={1} flexDirection="column">
         {plugins.map((plugin, i) => (
@@ -487,24 +650,36 @@ async function buildPluginEntries(homeDir: string): Promise<PluginEntry[]> {
 }
 
 async function detectQtcPlugin(homeDir: string): Promise<PluginEntry> {
+  const ns = "qtc";
   const cacheBase = join(homeDir, ".claude", "plugins", "cache", "qtc-marketplace", "qtc");
   const version = await findLatestVersion(cacheBase);
   const skillsDir = version ? join(cacheBase, version, "skills") : null;
   const skillCount = skillsDir ? await countSkillDirs(skillsDir) : null;
 
-  const ns = "qtc";
   const targets: PluginTargetStatus[] = [
     {
+      id: "claude",
+      label: HOST_LABELS.claude,
+      path: `~/.claude/plugins/cache/*/${ns}/`,
+      installed: await isHostCacheDetected(homeDir, "claude", ns),
+    },
+    {
+      id: "codex",
+      label: HOST_LABELS.codex,
+      path: `~/.codex/plugins/cache/*/${ns}/`,
+      installed: await isHostCacheDetected(homeDir, "codex", ns),
+    },
+    {
       id: "warp",
-      label: "Warp Terminal",
+      label: HOST_LABELS.warp,
       path: `~/.warp/skills/${ns}-*/`,
-      installed: await isInstalled(homeDir, "warp", ns),
+      installed: await areSkillsInstalled(homeDir, "warp", ns),
     },
     {
       id: "agents",
-      label: "Oz / Agents",
+      label: HOST_LABELS.agents,
       path: `~/.agents/skills/${ns}-*/`,
-      installed: await isInstalled(homeDir, "agents", ns),
+      installed: await areSkillsInstalled(homeDir, "agents", ns),
     },
   ];
 
@@ -549,28 +724,51 @@ async function countSkillDirs(skillsDir: string): Promise<number | null> {
   }
 }
 
-async function isInstalled(
+async function isHostCacheDetected(
   homeDir: string,
-  target: InstallTarget,
+  host: "claude" | "codex",
   namespace: string,
 ): Promise<boolean> {
-  const marker = `${namespace}-session`;
-  const roots: Record<string, string[]> = {
-    warp: [".warp", "skills"],
-    agents: [".agents", "skills"],
-    claude: [".claude", "skills"],
-    codex: [".codex", "skills"],
-    oz: [".agents", "skills"],
-  };
-  const segments = roots[target];
-  if (!segments) return false;
-  const markerPath = join(homeDir, ...segments, marker);
+  const cacheRoot = join(homeDir, `.${host}`, "plugins", "cache");
   try {
-    await stat(markerPath);
-    return true;
+    const marketplaces = await readdir(cacheRoot);
+    for (const mp of marketplaces) {
+      const pluginDir = join(cacheRoot, mp, namespace);
+      try {
+        const s = await stat(pluginDir);
+        if (s.isDirectory()) return true;
+      } catch {
+        // not here
+      }
+    }
   } catch {
     return false;
   }
+  return false;
+}
+
+async function areSkillsInstalled(
+  homeDir: string,
+  host: "warp" | "agents",
+  namespace: string,
+): Promise<boolean> {
+  const skillsRoot = join(homeDir, `.${host}`, "skills");
+  try {
+    const entries = await readdir(skillsRoot);
+    const prefix = `${namespace}-`;
+    for (const e of entries) {
+      if (!e.startsWith(prefix)) continue;
+      try {
+        const s = await stat(join(skillsRoot, e));
+        if (s.isDirectory()) return true;
+      } catch {
+        // skip
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 function semverDesc(a: string, b: string): number {

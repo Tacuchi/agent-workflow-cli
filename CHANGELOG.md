@@ -4,6 +4,25 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.19.0] — 2026-05-17
+
+**Minor — Gestión de cache de plugins por host desde el TUI + nuevo subcomando `plugin-cache`.** Resuelve el caso "actualicé el plugin pero el host sigue mostrando la versión vieja / no detecta nuevos skills" sin obligar al usuario a borrar dirs a mano. Cobertura: Claude Code, Codex, Warp y Oz/Agents.
+
+### Added
+
+- `src/application/self/plugin-cache-clear.ts` — `selfClearPluginCache(args, ctx)`. Borra el cache filesystem del plugin para el target indicado. Lógica por target: `claude`/`codex` borran `~/.{claude,codex}/plugins/cache/<marketplace>/<plugin>/` (todas las versiones) + entry en `installed_plugins.json` (el host re-instala al startup). `warp`/`agents` borran los skill dirs `~/.{warp,agents}/skills/<namespace>-*`. Idempotente: si nada para borrar → `status: nothing`.
+- `src/application/self/plugin-cache-reload.ts` — `selfReloadPluginCache(args, ctx)`. Wrapper de clear + reinstall según target. Para `claude`/`codex` devuelve hint "reiniciá <host>" (el host es quien re-instala). Para `warp`/`agents` resuelve source desde `--from <path>` o auto-detecta desde el cache compartido de Claude Code/Codex, y delega a `selfInstallPluginSkills` con `--force`.
+- Subcomando `agent-workflow plugin-cache <clear|reload> --plugin <ns> --target <claude|codex|warp|agents> [--from <path>] [--dry-run]` en `src/cli/commands/plugin-cache.ts`.
+- TUI Plugins tab (`src/cli/tui/tabs/plugins-tab.tsx`) — acciones nuevas por host en el action menu: "Limpiar cache de Claude Code", "Recargar en Claude Code", equivalentes para Codex, "Limpiar instalación en Warp", "Recargar en Warp", equivalentes para Oz/Agents. Las filas del plugin ahora muestran las 4 targets (Claude, Codex, Warp, Agents) con estado `cacheado` / `instalado` / `no detectado`. Renombre del tab "Warp Plugins" → "Plugins".
+- `tests/unit/plugin-cache-clear.test.ts` y `tests/unit/plugin-cache-reload.test.ts` — 14 tests cubriendo cada combinación target × estado: input inválido, missing cache (nothing), removal con installed_plugins.json update, dry-run no-touch, warp/agents skill dirs por prefix, codex sibling de claude, reload por host (cleared-only + hint), reload por skill-dir (clear + reinstall), reload sin source (SOURCE_NOT_FOUND), reload con `--from` explícito, reload dry-run.
+
+### Behavior
+
+- Cache filesystem clear es local — NO toca `enabledPlugins` en `settings.json`, NO modifica el marketplace ref. El plugin sigue enabled; el host re-clone al próximo startup.
+- Reload para Claude Code/Codex incluye hint explícito de reiniciar el host (el CLI no puede forzar reload de skills runtime en el host activo).
+- Comando idempotente: re-ejecutar sobre filesystem ya limpio devuelve `status: nothing` con exit 0.
+- TUI usa los application services directamente (no via `process.run`) — más rápido y testeable. Toast con summary tras cada acción.
+
 ## [5.18.0] — 2026-05-17
 
 **Minor — Nuevo PreToolUse hook `git-commit-advisor` (session053-dev-per-fuente-anchors-bash-hook).** Extiende la cobertura de hooks PreToolUse del runtime qtc-* a `Bash`. Detecta `git commit -m "..."` y emite advisor no-bloqueante (stderr + exit 0) cuando hay sesión activa y el mensaje no incluye el tag `session<NNN>`. Completa la opción E + F del CONCLUSIONS de session051: cerrar el gap de commits-fuera-de-sesión a nivel runtime (capa hook PreToolUse) sin romper ergonomía (advisor en lugar de gate).
