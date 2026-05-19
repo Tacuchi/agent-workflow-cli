@@ -4,6 +4,26 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] — 2026-05-19
+
+**Minor additive — wire-ups del cierre de sesión.** Cierra R4 + R5 del audit `.workflow/sessions/session072-analyze-docs-orphan-audit/CONCLUSIONS.md`. Implementado en session073-dev-close-wire-up-r4-r5.
+
+### Added
+
+- **R4 — Auto-transition de plan `active → done` al cerrar la sesión consumidora** (session073): `session-close` ahora lee OBJECTIVE.md de la sesión, detecta `## Origin (plan)` (regex `Derivado del plan \`<relpath>\``), resuelve el plan vía `resolveFromPlan`, y si `state == "active"` dispara `transitionPlanState(plan, "done", "session-close <code>")`. Append-only en `state_changes[]`. Idempotente: skip silencioso si ya `done`/`archived` o si el plan no resuelve. Output incluye `plan_transition: {plan, from, to}` cuando ocurre. Reutiliza la infra existente de `from-plan.ts`. Cobertura tests: 2 unit (active→done + done→done idempotente) + 3 golden end-to-end (active→done, done idempotente, archived no-aborta).
+- **R5 — 3 flags nuevos `--graduated-{manuales,especificaciones,release}` en `session-close`** (session073): cubre los 3 kinds canónicos que faltaban en el wire-up `session-close → HISTORY cross-link`. Total: 9 flags (6 canónicos + 3 legacy/alias). El flag legacy `--graduated-design` ahora se mapea al tag `especificacion` (antes producía URL rota `[DESIGN](val)`). Cobertura tests: 4 golden (1 por flag + alias).
+- **Validación NNN-prefix en slugs graduados** (session073, R5 DEC-003): los flags `--graduated-{decisions,conclusions,manuales,especificaciones,release,scripts}` ahora rechazan slugs sin prefijo `^\d{3}-` con error claro. Escape hatch `--allow-loose-slugs` para casos manuales (tests legacy, slugs históricos). Root-cause del bug `HISTORY 049` que tenía `[CONCLUSION](../docs/conclusiones/mejoras-flujos-qtc-runtime.md)` sin prefijo NNN — fixed retroactivamente como parte del cleanup R1 en session072.
+- **`BUILTIN_RENDERERS` en `history-row.ts` expandidos** (session073, R5): cubre los 12 kinds (con aliases): `dec/decision`, `plan`, `sql/script/scripts`, `conclusion/conclusions`, `manual/manuales`, `especificacion/especificaciones`, `release`. Antes faltaban `manual`, `especificacion`, `release`. El alias `design` legacy ahora rendera como `[ESPECIFICACION](...)`. Cobertura tests: 13 unit nuevos en `tests/unit/history-row.test.ts`.
+
+### Why
+
+R4 + R5 cierran 2 gaps estructurales detectados en el audit `docs/` (session072): planes que quedaban en `active` post-cierre + cross-links `HISTORY` rotos/faltantes. Ambos fixes son backwards-compatible: APIs existentes siguen funcionando idénticas. Las nuevas behaviors sólo se activan cuando hay `## Origin (plan)` o cuando se usan los flags nuevos. La validación NNN-prefix tiene escape (`--allow-loose-slugs`) para no romper scripts/tests legacy que asumen slugs sin prefijo.
+
+### Tests
+
+- Total: 586 (562 previos + 24 nuevos en este release).
+- Suite verde, sin regresiones.
+
 ## [6.1.0] — 2026-05-18
 
 **Minor additive — bundle del Sprint 1-4 del roadmap `docs/conclusiones/008-roadmap-export-plan-lifecycle.md` (session062).** Cierra F-C, F-E.2, F-E.3 y prepara consumo del bundle plugin v2.10.0 (F-A export-plan, F-B export-conclusions, F-F BACKLOG.md).
