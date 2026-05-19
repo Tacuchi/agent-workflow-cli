@@ -1,5 +1,6 @@
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
+import { validateSessionsExist } from "../parsers/sessions-csv.js";
 import type { PathsService } from "../paths-service.js";
 import { relpath } from "../paths.js";
 import { listExistingArtifacts } from "../session-artifacts.js";
@@ -16,7 +17,12 @@ export async function listSessionsForRelease(
   fs: FileSystemPort,
   cwd: string,
   paths: PathsService,
-  options: { since?: string; includeOpen?: boolean; includeClosed?: boolean } = {},
+  options: {
+    since?: string;
+    includeOpen?: boolean;
+    includeClosed?: boolean;
+    sessions?: string[];
+  } = {},
 ): Promise<ReleaseSession[]> {
   void cwd;
   const includeOpen = options.includeOpen ?? true;
@@ -24,7 +30,13 @@ export async function listSessionsForRelease(
   const sessionsDir = paths.cwdSessionsDir();
   if (!(await fs.exists(sessionsDir))) return [];
 
-  const sinceInt = sessionCodeInt(options.since);
+  const sessionsFilter = options.sessions;
+  const useDiscrete = sessionsFilter !== undefined && sessionsFilter.length > 0;
+  if (useDiscrete) {
+    await validateSessionsExist(fs, sessionsDir, sessionsFilter);
+  }
+  const wanted = useDiscrete ? new Set(sessionsFilter) : null;
+  const sinceInt = useDiscrete ? null : sessionCodeInt(options.since);
   const entries = (await fs.list(sessionsDir))
     .filter((e) => e.type === "dir" && /^session\d{3}-/.test(e.name))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -32,8 +44,12 @@ export async function listSessionsForRelease(
   const result: ReleaseSession[] = [];
   for (const folder of entries) {
     const entry = (await buildSessionEntry(fs, folder.path, folder.name)) as ReleaseSession;
-    const codeInt = sessionCodeInt(entry.code);
-    if (sinceInt !== null && codeInt !== null && codeInt <= sinceInt) continue;
+    if (wanted !== null) {
+      if (entry.code === null || !wanted.has(entry.code)) continue;
+    } else {
+      const codeInt = sessionCodeInt(entry.code);
+      if (sinceInt !== null && codeInt !== null && codeInt <= sinceInt) continue;
+    }
     if (entry.state === "active" && !includeOpen) continue;
     if (entry.state === "closed" && !includeClosed) continue;
 

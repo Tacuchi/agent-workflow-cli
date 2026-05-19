@@ -27,12 +27,14 @@ export const sessionCreateCommand: QtcCommand = {
     if (tipo !== undefined) input.tipo = tipo;
     const modalidad = args.values.get("modalidad") ?? args.values.get("modality");
     if (modalidad !== undefined) input.modalidad = modalidad;
+    const fromPlan = args.values.get("from-plan");
+    if (fromPlan !== undefined) input.fromPlanRaw = fromPlan;
 
     const data = await runSessionCreate(ctx.fs, ctx.env, ctx.paths, input);
     if ("error" in data) {
       return {
         ok: false,
-        error: { code: "INVALID_INPUT", message: data.error },
+        error: { code: data.code ?? "INVALID_INPUT", message: data.error },
         data,
         exitCode: 1,
       };

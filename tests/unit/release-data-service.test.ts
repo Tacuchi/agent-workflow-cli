@@ -243,6 +243,58 @@ describe("listSessionsForRelease", () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.code).toBe("001");
   });
+
+  describe("--sessions discrete filter", () => {
+    const baseSessionsDir = "/cwd/.workflow/sessions";
+
+    function fsWithSessions(codes: string[]): FakeFs {
+      const files = new Map<string, string>();
+      const dirEntries: DirEntry[] = [];
+      for (const c of codes) {
+        const folder = `session${c}-dev-foo`;
+        const path = `${baseSessionsDir}/${folder}`;
+        files.set(`${path}/OBJETIVO.md`, `# ${c}`);
+        dirEntries.push({ name: folder, path, type: "dir" });
+      }
+      const dirs = new Map<string, DirEntry[]>([[baseSessionsDir, dirEntries]]);
+      for (const c of codes) {
+        dirs.set(`${baseSessionsDir}/session${c}-dev-foo`, []);
+      }
+      return new FakeFs(files, dirs);
+    }
+
+    it("filters by discrete codes (order from dir, not from input)", async () => {
+      const fs = fsWithSessions(["001", "002", "003", "005"]);
+      const result = await listSessionsForRelease(fs, "/cwd", paths, {
+        sessions: ["003", "001"],
+      });
+      expect(result).toHaveLength(2);
+      expect(result.map((r) => r.code)).toEqual(["001", "003"]);
+    });
+
+    it("ignores --since when sessions filter is present (precedence)", async () => {
+      const fs = fsWithSessions(["001", "002", "003"]);
+      const result = await listSessionsForRelease(fs, "/cwd", paths, {
+        sessions: ["001"],
+        since: "002",
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.code).toBe("001");
+    });
+
+    it("throws UNKNOWN_SESSION when requested code does not exist", async () => {
+      const fs = fsWithSessions(["001", "002"]);
+      await expect(
+        listSessionsForRelease(fs, "/cwd", paths, { sessions: ["999"] }),
+      ).rejects.toThrow(/999/);
+    });
+
+    it("returns empty array when sessions=[] (treated as no filter)", async () => {
+      const fs = fsWithSessions(["001", "002"]);
+      const result = await listSessionsForRelease(fs, "/cwd", paths, { sessions: [] });
+      expect(result).toHaveLength(2);
+    });
+  });
 });
 
 describe("readSessionArtifacts", () => {

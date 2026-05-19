@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { type ResolvedPlan, resolveFromPlan, transitionPlanState } from "./from-plan.js";
 import { type ResolvedOrigen, renderOrigenBlock, resolveOrigen } from "./handoff.js";
 import { buildRow, upsertRow } from "./history-table.js";
 import { withCwdLock } from "./lock-service.js";
@@ -57,6 +58,7 @@ export interface SessionCreateInput {
   origenRaw?: string;
   tipo?: string;
   modalidad?: string;
+  fromPlanRaw?: string;
 }
 
 export interface SessionCreateRecordOutput {
@@ -71,6 +73,7 @@ export interface SessionCreateRecordOutput {
   flow: string;
   tipo?: string;
   modalidad?: string;
+  plan_transition?: { plan: string; from: string; to: string };
 }
 
 export interface SessionCreateFullOutput {
@@ -81,6 +84,7 @@ export interface SessionCreateFullOutput {
 export interface SessionCreateError {
   error: string;
   expected?: string[];
+  code?: string;
 }
 
 export async function runSessionCreate(
@@ -89,19 +93,38 @@ export async function runSessionCreate(
   paths: PathsService,
   input: SessionCreateInput,
 ): Promise<SessionCreateFullOutput | SessionCreateError> {
-  const validated = validateInput(input);
+  let plan: ResolvedPlan | null = null;
+  let effectiveInput = input;
+  if (input.fromPlanRaw !== undefined) {
+    const resolved = await resolveFromPlan(fs, paths, env.cwd(), input.fromPlanRaw);
+    if ("code" in resolved) {
+      return { error: resolved.message, code: resolved.code };
+    }
+    plan = resolved;
+    if (
+      (effectiveInput.objetivo === undefined || effectiveInput.objetivo.trim().length === 0) &&
+      plan.resumen !== null
+    ) {
+      effectiveInput = { ...effectiveInput, objetivo: plan.resumen };
+    }
+  }
+
+  const validated = validateInput(effectiveInput);
   if ("error" in validated) return validated;
   const { flow } = validated;
 
-  const origen = await resolveOrigenIfPresent(fs, env, paths, input.origenRaw);
+  const origen = await resolveOrigenIfPresent(fs, env, paths, effectiveInput.origenRaw);
   if (origen && "error" in origen) return origen;
 
-  const folderInfo = await prepareSessionFolder(fs, paths, flow, input.name ?? "");
+  const folderInfo = await prepareSessionFolder(fs, paths, flow, effectiveInput.name ?? "");
   if ("error" in folderInfo) return folderInfo;
 
-  await writeObjetivo(fs, folderInfo, flow, input, origen);
+  await writeObjetivo(fs, folderInfo, flow, effectiveInput, origen);
+  if (plan !== null) {
+    await appendPlanOriginToObjective(fs, folderInfo.sessionPath, plan);
+  }
   const historyResult = await withCwdLock(fs, paths, () =>
-    writeHistoryRow(fs, paths, folderInfo.code, flow, input, origen),
+    writeHistoryRow(fs, paths, folderInfo.code, flow, effectiveInput, origen),
   );
   if (historyResult && typeof historyResult === "object" && "error" in historyResult) {
     return { error: historyResult.error };
@@ -111,13 +134,36 @@ export async function runSessionCreate(
     env,
     paths,
     folderInfo.folder,
-    input.branchesRaw,
+    effectiveInput.branchesRaw,
   );
   if ("error" in projectMd) return { error: projectMd.error };
 
-  const branches = parseBranches(input.branchesRaw);
-  const recordOutput = composeRecord(folderInfo, flow, input, branches, origen);
+  const branches = parseBranches(effectiveInput.branchesRaw);
+  const recordOutput = composeRecord(folderInfo, flow, effectiveInput, branches, origen);
+  if (plan !== null && plan.frontmatter.state === "draft") {
+    await transitionPlanState(fs, plan, "active", `session-create ${folderInfo.code}`);
+    recordOutput.plan_transition = { plan: plan.filename, from: "draft", to: "active" };
+  } else if (plan !== null) {
+    recordOutput.plan_transition = {
+      plan: plan.filename,
+      from: plan.frontmatter.state,
+      to: plan.frontmatter.state,
+    };
+  }
   return { projectMd, sessionCreate: recordOutput };
+}
+
+async function appendPlanOriginToObjective(
+  fs: FileSystemPort,
+  sessionPath: string,
+  plan: ResolvedPlan,
+): Promise<void> {
+  const objectivePath = `${sessionPath}/OBJECTIVE.md`;
+  if (!(await fs.exists(objectivePath))) return;
+  const text = await fs.readText(objectivePath);
+  const note = `\n## Origin (plan)\n\nDerivado del plan \`${plan.relpath}\` (sessions: ${plan.frontmatter.sessions.join(", ")}).\n`;
+  const next = text.endsWith("\n") ? `${text}${note}` : `${text}\n${note}`;
+  await fs.writeText(objectivePath, next);
 }
 
 interface ValidatedInput {

@@ -1,3 +1,4 @@
+import { SessionsCsvError, parseSessionsCsv } from "../../application/parsers/sessions-csv.js";
 import { runReleaseData } from "../../application/release-data-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
@@ -9,8 +10,24 @@ export const releaseDataCommand: QtcCommand = {
   describe: "Dump consolidado para los skills release y release-scripts.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: Parameters<typeof runReleaseData>[3] = {};
+    const sessionsRaw = args.values.get("sessions");
     const since = args.values.get("since");
-    if (since !== undefined) input.since = since;
+    const warnings: string[] = [];
+    if (sessionsRaw !== undefined) {
+      try {
+        input.sessions = parseSessionsCsv(sessionsRaw);
+      } catch (e) {
+        if (e instanceof SessionsCsvError) {
+          return { ok: false, error: { code: e.code, message: e.message }, exitCode: 1 };
+        }
+        throw e;
+      }
+      if (since !== undefined) {
+        warnings.push("--sessions toma precedencia sobre --since; --since ignorado");
+      }
+    } else if (since !== undefined) {
+      input.since = since;
+    }
     const source = args.values.get("source");
     if (source !== undefined) input.sourceAlias = source;
     if (args.flags.has("--include-graduated")) input.includeGraduated = true;
@@ -19,7 +36,15 @@ export const releaseDataCommand: QtcCommand = {
     if (args.flags.has("--skip-content")) input.skipContent = true;
     if (args.flags.has("--verbose")) input.verbose = true;
 
-    const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input, ctx.runtime);
-    return { ok: true, data, exitCode: 0 };
+    try {
+      const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input, ctx.runtime);
+      const dataWithWarnings = warnings.length > 0 ? { ...data, warnings } : data;
+      return { ok: true, data: dataWithWarnings, exitCode: 0 };
+    } catch (e) {
+      if (e instanceof SessionsCsvError) {
+        return { ok: false, error: { code: e.code, message: e.message }, exitCode: 1 };
+      }
+      throw e;
+    }
   },
 };

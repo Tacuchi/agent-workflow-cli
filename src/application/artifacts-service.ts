@@ -42,6 +42,8 @@ interface ArtifactsBlock {
   discovery_present?: boolean;
   evidencia_present?: boolean;
   hallazgos_present?: boolean;
+  backlog_present?: boolean;
+  scripts_sql_present?: boolean;
   scripts?: { total: number; forward: number; rollback: number; has_bundle: boolean };
 }
 
@@ -164,6 +166,8 @@ interface PresenceFlags {
   discovery_present: boolean;
   evidencia_present: boolean;
   hallazgos_present: boolean;
+  backlog_present: boolean;
+  scripts_sql_present: boolean;
 }
 
 async function readPresenceFlags(fs: FileSystemPort, sessionPath: string): Promise<PresenceFlags> {
@@ -176,6 +180,8 @@ async function readPresenceFlags(fs: FileSystemPort, sessionPath: string): Promi
     discovery_present: present.discovery !== null,
     evidencia_present: present.evidence !== null,
     hallazgos_present: present.findings !== null,
+    backlog_present: present.backlog !== null,
+    scripts_sql_present: present.scripts_sql !== null,
   };
 }
 

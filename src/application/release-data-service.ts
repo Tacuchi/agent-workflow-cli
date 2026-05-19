@@ -28,6 +28,7 @@ export interface ReleaseDataInput {
   includeClosed?: boolean;
   skipContent?: boolean;
   verbose?: boolean;
+  sessions?: string[];
 }
 
 export interface ReleaseDataOutput {
@@ -68,11 +69,20 @@ export async function runReleaseData(
     return { error: (e as Error).message, workspace_mode: workspaceMode };
   }
 
-  const sinceOpts: { since?: string; includeOpen?: boolean; includeClosed?: boolean } = {
+  const sinceOpts: {
+    since?: string;
+    includeOpen?: boolean;
+    includeClosed?: boolean;
+    sessions?: string[];
+  } = {
     includeOpen: input.includeOpen ?? true,
     includeClosed: input.includeClosed ?? true,
   };
-  if (input.since !== undefined) sinceOpts.since = input.since;
+  if (input.sessions !== undefined && input.sessions.length > 0) {
+    sinceOpts.sessions = input.sessions;
+  } else if (input.since !== undefined) {
+    sinceOpts.since = input.since;
+  }
   const sessions = await listSessionsForRelease(fs, cwd, paths, sinceOpts);
   const { enriched, legacy } = enrichSessionsWithLegacyMeta(sessions, cwd, runtime);
 

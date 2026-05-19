@@ -20,7 +20,9 @@ export type ArtifactKind =
   | "tasks"
   | "checkpoint"
   | "status"
-  | "requirements";
+  | "requirements"
+  | "backlog"
+  | "scripts_sql";
 
 /**
  * Filename candidates per kind. Order matters: EN UPPERCASE first (canonical
@@ -45,6 +47,8 @@ export const ARTIFACT_FILENAMES: Record<ArtifactKind, readonly string[]> = {
   checkpoint: ["CHECKPOINT.md"],
   status: ["STATUS.md"],
   requirements: ["REQUIREMENTS.md"],
+  backlog: ["BACKLOG.md"],
+  scripts_sql: ["SCRIPTS.sql"],
 };
 
 /** Canonical EN UPPERCASE filename for `kind`. Use when writing a new artifact. */

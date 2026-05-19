@@ -1,10 +1,12 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { validateSessionsExist } from "./parsers/sessions-csv.js";
 import type { PathsService } from "./paths-service.js";
 import {
   type SessionEntry,
   buildSessionEntry,
   listSessionFolders,
+  parseSessionFolder,
   serializeSessionEntry,
 } from "./session-resolver.js";
 
@@ -13,6 +15,7 @@ const HISTORY_ROW_RE = /^\|\s*(\d{3})\s*\|/gm;
 export interface HistoryDataInput {
   verbose?: boolean;
   includeDocs?: boolean;
+  sessions?: string[];
 }
 
 export interface HistoryDocsInfo {
@@ -37,9 +40,19 @@ export async function runHistoryDataCommand(
 ): Promise<HistoryDataOutput> {
   const cwd = env.cwd();
   const sessionsDir = paths.cwdSessionsDir();
-  const folders = await listSessionFolders(fs, sessionsDir);
+  const allFolders = await listSessionFolders(fs, sessionsDir);
   const verbose = input.verbose === true;
   const includeDocs = input.includeDocs === true;
+
+  let folders = allFolders;
+  if (input.sessions !== undefined && input.sessions.length > 0) {
+    await validateSessionsExist(fs, sessionsDir, input.sessions);
+    const wanted = new Set(input.sessions);
+    folders = allFolders.filter((f) => {
+      const { code } = parseSessionFolder(f.name);
+      return code !== null && wanted.has(code);
+    });
+  }
 
   const sessions: SessionEntry[] = [];
   for (const folder of folders) {

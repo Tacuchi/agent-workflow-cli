@@ -4,6 +4,34 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.0] — 2026-05-18
+
+**Minor additive — bundle del Sprint 1-4 del roadmap `docs/conclusiones/008-roadmap-export-plan-lifecycle.md` (session062).** Cierra F-C, F-E.2, F-E.3 y prepara consumo del bundle plugin v2.10.0 (F-A export-plan, F-B export-conclusions, F-F BACKLOG.md).
+
+### Added
+
+- **`--sessions NNN[,NNN]` cross-export** (F-C, session063): flag discreto en `agent-workflow history-data` y `agent-workflow release-data`. Toma precedencia sobre `--since` con warning informativo. Validación temprana: `INVALID_INPUT` para tokens no numéricos, `UNKNOWN_SESSION` para códigos inexistentes. Helper `parseSessionsCsv` + `validateSessionsExist` extraídos a `src/application/parsers/sessions-csv.ts`. Cobertura tests: 13 + 5 + 4 = 22 nuevos.
+- **`--include-recent-closed [--recent-days N]` en `resume-summary`** (F-E.2, session067): cuando `active_sessions: []`, retorna `recent_closed_with_artifacts[]` con sesiones cerradas en ventana N (default 7 días) que cumplen heurística por flow:
+  - `analyze`: EVIDENCE + FINDINGS + CONCLUSIONS presentes.
+  - `dev`: TASKS con ≥50% closed + DECISIONS presente.
+  - `design`: DELIVERY presente.
+  Cobertura tests: 12 nuevos.
+- **`--from-plan <NNN|path>` en `session-create`** (F-E.3, session067): acepta NNN (busca en `docs/planes/NNN-*.md`) o path explícito. Lee frontmatter YAML del plan, deriva `objetivo` desde `## Resumen` si vacío, append `## Origin (plan)` al OBJECTIVE generado, transición `state: draft → active` en frontmatter del plan con entry append-only en `state_changes[]`. Idempotente si `state == active`. Errores: `PLAN_NOT_FOUND`, `PLAN_ARCHIVED`, `PLAN_INVALID_FRONTMATTER`. Nuevo módulo `src/application/from-plan.ts` con parser YAML minimal. Output incluye `plan_transition: {plan, from, to}`. Cobertura tests: 13 nuevos.
+- **`backlog_present` en `session-artifacts` payload** (F-F, session066): nuevo flag indica si la sesión tiene `BACKLOG.md` (artefacto opcional lazy). `backlog` agregado a `ArtifactKind` enum + `ARTIFACT_FILENAMES["backlog"]: ["BACKLOG.md"]`.
+- **`scripts_sql_present` en `session-artifacts` payload** (F-D pre-flag, session069): nuevo flag indica si la sesión tiene `SCRIPTS.sql` (consolidado SQL). `scripts_sql` agregado a `ArtifactKind` + `ARTIFACT_FILENAMES["scripts_sql"]: ["SCRIPTS.sql"]`. La doctrina F-D BREAKING vive en el plugin v3.0.0 (session071); el flag CLI es additive y se incluye desde v6.1.0.
+
+### Why
+
+Habilita el consumo del bundle plugin v2.10.0:
+- F-C es el habilitador del resto (sin él, ni `export-plan` ni `export-conclusions` ni `resume detect` pueden pasar refs discretas).
+- F-E.2 + F-E.3 cierran el ciclo lifecycle `close-sin-impl → resume detect → propone export-* → ejecuta --from-plan`.
+- `backlog_present` y `scripts_sql_present` informan a los skills consumidores qué artefactos lazy están disponibles.
+
+### Tests
+
+- Total: 562 (537 previos + 25 nuevos en este release).
+- Suite verde, sin regresiones.
+
 ## [6.0.0] — 2026-05-18
 
 **Major BREAKING — rename `RFC` → `Propuesta` en el contrato externo del CLI (flag, categoría de graduación, vocabulario de auto-plan).** El equipo qtc-* dejó de usar "RFC" como término; se reemplaza por "Propuesta" en todo el runtime.
