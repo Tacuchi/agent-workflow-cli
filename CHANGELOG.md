@@ -4,6 +4,39 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] — 2026-05-18
+
+**Major BREAKING — rename `RFC` → `Propuesta` en el contrato externo del CLI (flag, categoría de graduación, vocabulario de auto-plan).** El equipo qtc-* dejó de usar "RFC" como término; se reemplaza por "Propuesta" en todo el runtime.
+
+### Changed (BREAKING)
+
+- **Flag CLI**: `agent-workflow session-close --graduated-rfc <slug>` → `agent-workflow session-close --graduated-propuesta <slug>`. Los call sites del plugin actual no usaban este flag (sólo `--graduated-decisions/plan/scripts/design/conclusions`); workflows custom o scripts que pasen el flag viejo fallarán con "unknown option".
+- **`graduation-check`**: walkea `<source>/docs/propuestas/` en lugar de `<source>/docs/rfcs/`. Workspaces históricos con `docs/rfcs/` van a reportar 0 orphans en esa categoría (falso negativo). Migración por workspace: `git mv docs/rfcs docs/propuestas`.
+- **`auto-plan-decide`**: vocabulario `ANALYZE_KEYWORDS` y `PROPUESTA_KEYWORDS` (antes `RFC_KEYWORDS`) ya no incluyen `"rfc"`. OBJECTIVE con menciones a "RFC" ya no dispara `decision: "full"` automáticamente; usar "propuesta" en su lugar.
+
+### Why
+
+El usuario indicó que "RFC" no es un término que el equipo maneja y pidió cambiarlo a "Propuesta" en todo el runtime qtc-*. Es un rename de naming externo (flag + carpeta + vocabulario) + interno (identifiers TS).
+
+### Migration
+
+- Workspaces con sesiones que graduaron con `--graduated-rfc`: las filas históricas de `HISTORY.md` preservan el tag `rfc:` (es texto en la celda Refs, no se reprocesa). Sesiones nuevas usan `--graduated-propuesta` y el tag se renderiza como `propuesta:`.
+- Workspaces con `docs/rfcs/` físicos: `git mv docs/rfcs docs/propuestas` para que `graduation-check` los detecte.
+- Pareja con `qtc-workflow-plugin@>=2.9.0` (que también renombra `docs/rfcs/` → `docs/propuestas/` en sus refs y skills).
+
+### Internal
+
+- `src/application/auto-plan.ts`: `RFC_KEYWORDS` → `PROPUESTA_KEYWORDS`, `hasRfc` → `hasPropuesta`, `metrics.rfc` → `metrics.propuesta`.
+- `src/application/graduation-check-service.ts`: `CATEGORIAS` actualizado (`rfcs` → `propuestas`).
+- `src/application/orchestration.ts`: `ANALYZE_KEYWORDS` actualizado.
+- `src/application/session-close-service.ts`: interface `graduatedRfc` → `graduatedPropuesta`, `FLAG_TO_TAG` actualizado (`rfc` → `propuesta`).
+- `src/cli/commands/session-close.ts`: parsing del flag actualizado.
+- `tests/unit/dev-graduate-service.test.ts`: kind inválido en "rejects unknown kind" usa `"unknown"` en vez de `"rfc"`.
+
+### Tests
+
+515/515 passing. Typecheck clean.
+
 ## [5.19.0] — 2026-05-17
 
 **Minor — Gestión de cache de plugins por host desde el TUI + nuevo subcomando `plugin-cache`.** Resuelve el caso "actualicé el plugin pero el host sigue mostrando la versión vieja / no detecta nuevos skills" sin obligar al usuario a borrar dirs a mano. Cobertura: Claude Code, Codex, Warp y Oz/Agents.
