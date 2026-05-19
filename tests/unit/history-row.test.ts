@@ -1,0 +1,83 @@
+import { describe, expect, it } from "vitest";
+import { renderRefs } from "../../src/application/render/history-row.js";
+
+describe("renderRefs — BUILTIN_RENDERERS (post R5)", () => {
+  it("renderiza decision con prefijo NNN", () => {
+    expect(renderRefs("dec:001-stack-typescript")).toBe(
+      "[DEC](../docs/decisiones/001-stack-typescript.md)",
+    );
+  });
+
+  it("renderiza decision alias 'decision'", () => {
+    expect(renderRefs("decision:001-stack-typescript")).toBe(
+      "[DEC](../docs/decisiones/001-stack-typescript.md)",
+    );
+  });
+
+  it("renderiza plan", () => {
+    expect(renderRefs("plan:001-export-plan-2026-05-18")).toBe(
+      "[PLAN](../docs/planes/001-export-plan-2026-05-18.md)",
+    );
+  });
+
+  it("renderiza scripts (aliases sql/script/scripts)", () => {
+    const expected = "[SQL](../docs/scripts/001-session001-foo/)";
+    expect(renderRefs("scripts:001-session001-foo")).toBe(expected);
+    expect(renderRefs("script:001-session001-foo")).toBe(expected);
+    expect(renderRefs("sql:001-session001-foo")).toBe(expected);
+  });
+
+  it("renderiza conclusion (aliases conclusion/conclusions)", () => {
+    const expected = "[CONCLUSION](../docs/conclusiones/004-audit-test.md)";
+    expect(renderRefs("conclusion:004-audit-test")).toBe(expected);
+    expect(renderRefs("conclusions:004-audit-test")).toBe(expected);
+  });
+
+  it("renderiza manual (nuevo R5 — aliases manual/manuales)", () => {
+    const expected = "[MANUAL](../docs/manuales/001-mcp-setup.md)";
+    expect(renderRefs("manual:001-mcp-setup")).toBe(expected);
+    expect(renderRefs("manuales:001-mcp-setup")).toBe(expected);
+  });
+
+  it("renderiza especificacion (nuevo R5 — aliases especificacion/especificaciones)", () => {
+    const expected = "[ESPECIFICACION](../docs/especificaciones/001-export-func-format/)";
+    expect(renderRefs("especificacion:001-export-func-format")).toBe(expected);
+    expect(renderRefs("especificaciones:001-export-func-format")).toBe(expected);
+  });
+
+  it("renderiza release (nuevo R5)", () => {
+    expect(renderRefs("release:001-informe-release")).toBe(
+      "[RELEASE](../docs/release/001-informe-release.md)",
+    );
+  });
+
+  it("kind desconocido cae a renderer genérico", () => {
+    expect(renderRefs("foo:bar")).toBe("[FOO](bar)");
+  });
+
+  it("entrada vacía devuelve guion", () => {
+    expect(renderRefs("")).toBe("—");
+    expect(renderRefs(null)).toBe("—");
+    expect(renderRefs(undefined)).toBe("—");
+  });
+
+  it("combina múltiples refs con coma", () => {
+    expect(renderRefs("dec:001-stack,manual:002-mcp,conclusion:003-audit")).toBe(
+      "[DEC](../docs/decisiones/001-stack.md), [MANUAL](../docs/manuales/002-mcp.md), [CONCLUSION](../docs/conclusiones/003-audit.md)",
+    );
+  });
+
+  it("origen sin lookup cae a string literal", () => {
+    expect(renderRefs("origen:design-056")).toBe("origen:design-056");
+  });
+
+  it("origen con lookup resuelve a link a sessions/", () => {
+    const lookup = {
+      resolveFolder: (flow: string, code: string) =>
+        flow === "design" && code === "056" ? "session056-design-foo" : undefined,
+    };
+    expect(renderRefs("origen:design-056", lookup)).toBe(
+      "[origen:design-056](sessions/session056-design-foo/)",
+    );
+  });
+});

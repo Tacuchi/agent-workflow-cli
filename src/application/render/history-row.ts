@@ -7,6 +7,11 @@ const BUILTIN_RENDERERS: Record<string, (val: string) => string> = {
   scripts: (val) => `[SQL](../docs/scripts/${val}/)`,
   conclusion: (val) => `[CONCLUSION](../docs/conclusiones/${val}.md)`,
   conclusions: (val) => `[CONCLUSION](../docs/conclusiones/${val}.md)`,
+  manual: (val) => `[MANUAL](../docs/manuales/${val}.md)`,
+  manuales: (val) => `[MANUAL](../docs/manuales/${val}.md)`,
+  especificacion: (val) => `[ESPECIFICACION](../docs/especificaciones/${val}/)`,
+  especificaciones: (val) => `[ESPECIFICACION](../docs/especificaciones/${val}/)`,
+  release: (val) => `[RELEASE](../docs/release/${val}.md)`,
 };
 
 export interface OrigenLookup {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -141,6 +141,129 @@ describe("Wave 1B write commands — golden parity (legacy ES fixture)", () => {
     });
   });
 
+  it("session-close --graduated-manuales 003-mcp-setup (R5 new flag)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionClose(fs, env, paths, {
+      code: "001",
+      graduatedManuales: "003-mcp-setup",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.refs).toBe("[MANUAL](../docs/manuales/003-mcp-setup.md)");
+  });
+
+  it("session-close --graduated-especificaciones 001-export-func-format (R5 new flag)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionClose(fs, env, paths, {
+      code: "001",
+      graduatedEspecificaciones: "001-export-func-format",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.refs).toBe(
+      "[ESPECIFICACION](../docs/especificaciones/001-export-func-format/)",
+    );
+  });
+
+  it("session-close --graduated-release 001-informe-release (R5 new flag)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionClose(fs, env, paths, {
+      code: "001",
+      graduatedRelease: "001-informe-release",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.refs).toBe("[RELEASE](../docs/release/001-informe-release.md)");
+  });
+
+  it("session-close --graduated-design 001-spec-foo (legacy alias → especificacion)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionClose(fs, env, paths, {
+      code: "001",
+      graduatedDesign: "001-spec-foo",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.refs).toBe(
+      "[ESPECIFICACION](../docs/especificaciones/001-spec-foo/)",
+    );
+  });
+
+  it("session-close rechaza slug sin prefijo NNN (R5 — DEC-003)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionClose(fs, env, paths, {
+      code: "001",
+      graduatedConclusions: "mejoras-flujos-qtc-runtime",
+    });
+    if (!("error" in result)) throw new Error("expected error");
+    expect(result.error).toMatch(/graduated-conclusions requiere slug con prefijo NNN-/);
+  });
+
+  it("session-close acepta slug suelto con --allow-loose-slugs", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionClose(fs, env, paths, {
+      code: "001",
+      graduatedConclusions: "legacy-slug-sin-nnn",
+      allowLooseSlugs: true,
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.refs).toBe(
+      "[CONCLUSION](../docs/conclusiones/legacy-slug-sin-nnn.md)",
+    );
+  });
+
+  it("session-close transiciona plan active → done si OBJECTIVE tiene ## Origin (plan) (R4)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    seedPlanAndOrigin(clone.cwd, "session001-dev-foo", "001-test-plan", "active");
+
+    const result = await runSessionClose(fs, env, paths, { code: "001" });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.plan_transition).toEqual({
+      plan: "001-test-plan.md",
+      from: "active",
+      to: "done",
+    });
+    const planContent = readFile(join(clone.cwd, "docs", "planes", "001-test-plan.md"));
+    expect(planContent).toContain("state: done");
+    expect(planContent).toContain("from: active, to: done");
+    expect(planContent).toContain("session-close 001");
+  });
+
+  it("session-close skip silencioso si plan ya está done (R4 idempotente)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    seedPlanAndOrigin(clone.cwd, "session001-dev-foo", "001-test-plan", "done");
+
+    const result = await runSessionClose(fs, env, paths, { code: "001" });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.plan_transition).toBeUndefined();
+  });
+
+  it("session-close continúa sin abortar si plan archivado / no existe (R4 DEC-002)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    // Plan archivado: resolveFromPlan retorna PLAN_ARCHIVED → skip silencioso.
+    seedPlanAndOrigin(clone.cwd, "session001-dev-foo", "001-test-plan", "archived");
+
+    const result = await runSessionClose(fs, env, paths, { code: "001" });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.plan_transition).toBeUndefined();
+    // El cierre se completa correctamente igualmente.
+    expect(result.sessionClose.history_action).toBe("updated");
+  });
+
   it("session-create --flow dev --name nueva-tarea --objetivo ... --branches sample:main", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
@@ -174,3 +297,39 @@ describe("Wave 1B write commands — golden parity (legacy ES fixture)", () => {
     );
   });
 });
+
+/**
+ * Helper for R4 tests: creates a plan in docs/planes/ and appends ## Origin (plan)
+ * to the session's OBJETIVO.md so runSessionClose detects the wire-up.
+ */
+function seedPlanAndOrigin(
+  cwd: string,
+  sessionFolder: string,
+  planSlug: string,
+  state: "draft" | "active" | "done" | "archived",
+): void {
+  const planesDir = join(cwd, "docs", "planes");
+  mkdirSync(planesDir, { recursive: true });
+  const planRelpath = `docs/planes/${planSlug}.md`;
+  const planContent = `---
+state: ${state}
+sessions: [001]
+created: 2026-05-19
+slug: test-plan
+state_changes:
+  - {from: null, to: draft, when: '2026-05-19T00:00:00Z', trigger: 'export-plan create'}
+---
+
+# Plan test
+
+## Resumen
+
+Plan sintético para test R4.
+`;
+  writeFileSync(join(planesDir, `${planSlug}.md`), planContent);
+
+  const objetivoPath = join(cwd, ".workflow", "sessions", sessionFolder, "OBJETIVO.md");
+  const existing = readFileSync(objetivoPath, "utf8");
+  const withOrigin = `${existing.trimEnd()}\n\n## Origin (plan)\n\nDerivado del plan \`${planRelpath}\` (sessions: 001).\n`;
+  writeFileSync(objetivoPath, withOrigin);
+}

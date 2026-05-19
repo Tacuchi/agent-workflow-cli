@@ -202,4 +202,36 @@ describe("transitionPlanState", () => {
     expect(result.wrote).toBe(false);
     expect(fs.writes.has(planPath)).toBe(false);
   });
+
+  it("transitions active → done (session-close path R4)", async () => {
+    const activePlan = VALID_PLAN.replace("state: draft", "state: active");
+    const planPath = `${planesDir}/001-active.md`;
+    const fs = buildFs({ [planPath]: activePlan });
+    const resolved = await resolveFromPlan(fs, paths, "/cwd", "001");
+    if ("code" in resolved) throw new Error("expected success");
+
+    const result = await transitionPlanState(fs, resolved, "done", "session-close 073");
+    expect(result.wrote).toBe(true);
+    expect(result.from).toBe("active");
+
+    const updated = fs.writes.get(planPath);
+    expect(updated).toBeDefined();
+    expect(updated).toContain("state: done");
+    expect(updated).toContain("from: active, to: done");
+    expect(updated).toContain("session-close 073");
+    // Append-only: la entry previa de draft → ? sigue preservada (aunque acá empezó como active).
+    expect(updated).toContain("export-plan create");
+  });
+
+  it("done → done es idempotente (R4 skip silencioso)", async () => {
+    const donePlan = VALID_PLAN.replace("state: draft", "state: done");
+    const planPath = `${planesDir}/001-done.md`;
+    const fs = buildFs({ [planPath]: donePlan });
+    const resolved = await resolveFromPlan(fs, paths, "/cwd", "001");
+    if ("code" in resolved) throw new Error("expected success");
+
+    const result = await transitionPlanState(fs, resolved, "done", "session-close 073");
+    expect(result.wrote).toBe(false);
+    expect(fs.writes.has(planPath)).toBe(false);
+  });
 });

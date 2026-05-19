@@ -27,6 +27,13 @@ export const sessionCloseCommand: QtcCommand = {
     if (propuesta !== undefined) input.graduatedPropuesta = propuesta;
     const conclusions = args.values.get("graduated-conclusions");
     if (conclusions !== undefined) input.graduatedConclusions = conclusions;
+    const manuales = args.values.get("graduated-manuales");
+    if (manuales !== undefined) input.graduatedManuales = manuales;
+    const especificaciones = args.values.get("graduated-especificaciones");
+    if (especificaciones !== undefined) input.graduatedEspecificaciones = especificaciones;
+    const release = args.values.get("graduated-release");
+    if (release !== undefined) input.graduatedRelease = release;
+    if (args.flags.has("allow-loose-slugs")) input.allowLooseSlugs = true;
     const refs = args.values.get("refs");
     if (refs !== undefined) input.refs = refs;
 
