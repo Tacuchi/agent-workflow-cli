@@ -135,7 +135,7 @@ describe("runGraduate — input validation", () => {
   it("rejects unknown kind", async () => {
     const fs = baseSessionFs();
     const result = await runGraduate(fs, new FakeEnv(), pathsForCwd("/cwd"), {
-      kind: "rfc",
+      kind: "unknown",
       session: "042",
       slug: "x",
     });

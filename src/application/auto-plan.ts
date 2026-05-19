@@ -1,6 +1,6 @@
 import { extractPathsOrRepos, tokens } from "./orchestration.js";
 
-const RFC_KEYWORDS = new Set(["rfc", "post-mortem", "postmortem"]);
+const PROPUESTA_KEYWORDS = new Set(["propuesta", "post-mortem", "postmortem"]);
 
 const TRIVIAL_VERBS = new Set([
   "typo",
@@ -41,7 +41,7 @@ const DESIGN_KEYWORDS = new Set([
 ]);
 
 const ANALYZE_KEYWORDS = new Set([
-  "rfc",
+  "propuesta",
   "post-mortem",
   "postmortem",
   "análisis",
@@ -72,7 +72,7 @@ export interface AutoPlanResult {
     eta_hours: number;
     design?: boolean;
     analyze?: boolean;
-    rfc?: boolean;
+    propuesta?: boolean;
   };
 }
 
@@ -89,7 +89,7 @@ export function shouldSkipFullPlan(objetivoText: string | undefined): AutoPlanRe
   const sources = countSourcesMentioned(objetivoText);
   const hasDesign = mentionsAny(objetivoText, DESIGN_KEYWORDS);
   const hasAnalyze = mentionsAny(objetivoText, ANALYZE_KEYWORDS);
-  const hasRfc = mentionsAny(objetivoText, RFC_KEYWORDS);
+  const hasPropuesta = mentionsAny(objetivoText, PROPUESTA_KEYWORDS);
   const eta = estimateEtaHours(objetivoText);
   const trivial = looksTrivial(objetivoText);
 
@@ -97,7 +97,7 @@ export function shouldSkipFullPlan(objetivoText: string | undefined): AutoPlanRe
   if (criteria >= 2) signals.push(`>=2 criterios de aceptación (${criteria})`);
   if (sources >= 3) signals.push(`>=3 fuentes mencionadas (${sources})`);
   if (hasDesign) signals.push("menciona diseño/UI/UX");
-  if (hasRfc) signals.push("menciona RFC/post-mortem");
+  if (hasPropuesta) signals.push("menciona propuesta/post-mortem");
   if (eta > 4) signals.push(`ETA estimada ${formatNumber(eta)}h (>4h)`);
 
   if (signals.length > 0) {
@@ -111,7 +111,7 @@ export function shouldSkipFullPlan(objetivoText: string | undefined): AutoPlanRe
         eta_hours: eta,
         design: hasDesign,
         analyze: hasAnalyze,
-        rfc: hasRfc,
+        propuesta: hasPropuesta,
       },
     };
   }

@@ -1,4 +1,4 @@
-// Help grouping for `aw --help` (RFC 002 G4 H-06). Commands are organized by
+// Help grouping for `aw --help` (Propuesta 002 G4 H-06). Commands are organized by
 // family so users can scan by intent (session lifecycle, checkpoint workflow,
 // orchestration helpers, etc.) instead of one long alphabetical list.
 //

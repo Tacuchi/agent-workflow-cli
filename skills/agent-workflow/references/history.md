@@ -9,7 +9,7 @@ Read-only aggregator. Walks the `.<namespace>/sessions/` tree and returns the da
 ```bash
 agent-workflow history-data
 agent-workflow history-data --verbose
-agent-workflow history-data --include-docs   # also enumerate docs/scripts, docs/rfcs, etc.
+agent-workflow history-data --include-docs   # also enumerate docs/scripts, docs/propuestas, etc.
 ```
 
 Use this to detect drift between `HISTORY.md` and the on-disk session folders, or when you need to regenerate the table.

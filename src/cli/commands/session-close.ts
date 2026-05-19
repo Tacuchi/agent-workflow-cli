@@ -23,8 +23,8 @@ export const sessionCloseCommand: QtcCommand = {
     if (scripts !== undefined) input.graduatedScripts = scripts;
     const design = args.values.get("graduated-design");
     if (design !== undefined) input.graduatedDesign = design;
-    const rfc = args.values.get("graduated-rfc");
-    if (rfc !== undefined) input.graduatedRfc = rfc;
+    const propuesta = args.values.get("graduated-propuesta");
+    if (propuesta !== undefined) input.graduatedPropuesta = propuesta;
     const conclusions = args.values.get("graduated-conclusions");
     if (conclusions !== undefined) input.graduatedConclusions = conclusions;
     const refs = args.values.get("refs");

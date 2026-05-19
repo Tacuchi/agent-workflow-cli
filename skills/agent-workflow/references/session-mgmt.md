@@ -94,7 +94,7 @@ Flags:
 | `--graduated-plan <slug>` | Marks plan graduation (typically `TASKS`). |
 | `--graduated-scripts <NNN>` | SQL release bundle correlative if applicable. |
 | `--graduated-design <slug>` | Design entrega graduation. |
-| `--graduated-rfc <slug>` | RFC graduation. |
+| `--graduated-propuesta <slug>` | Propuesta graduation. |
 | `--refs <markdown>` | Replace the auto-generated Refs cell in HISTORY.md. |
 
 ## session-artifacts

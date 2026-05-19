@@ -230,7 +230,7 @@ Plugins downstream:
 
 Las decisiones técnicas que dieron forma a la arquitectura están en los repos respectivos:
 
-- Migración Python → TypeScript: RFC 004 en core-workflow-plugin (sesiones 022..032).
+- Migración Python → TypeScript: Propuesta 004 en core-workflow-plugin (sesiones 022..032).
 - CLI agnóstico: spec `agent-workflow-agnostic-design` (session034).
 - Skill repo separado: spec sub-proyecto 2 (session035).
 - Plugins namespace propagation: sub-proyecto 3 (session036).

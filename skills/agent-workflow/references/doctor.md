@@ -40,7 +40,7 @@ agent-workflow release-data --verbose
 
 ## graduate
 
-Promote a session-local artifact (DEC-NNN, TASKS, RFC, design entrega) into a workspace-level `docs/` location.
+Promote a session-local artifact (DEC-NNN, TASKS, Propuesta, design entrega) into a workspace-level `docs/` location.
 
 ```bash
 # Graduate a decision DEC-005 from session023
@@ -49,8 +49,8 @@ agent-workflow graduate --kind decision --session session023 --id DEC-005 --slug
 # Graduate the full plan
 agent-workflow graduate --kind plan --session session023 --slug cli-npm-agent-workflow
 
-# Graduate an analyze RFC / data / postmortem
-agent-workflow graduate --kind rfc --session session022 --slug cli-npm-agent-workflow
+# Graduate an analyze conclusion (unifica las modalidades technical / data / incident)
+agent-workflow graduate --kind conclusion --session session022 --slug cli-npm-agent-workflow
 agent-workflow graduate --kind data --session session004 --slug precarga-objetos-bd
 agent-workflow graduate --kind postmortem --session sessionNNN --slug incident-foo
 

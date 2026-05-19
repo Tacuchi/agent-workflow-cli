@@ -18,7 +18,7 @@ export interface SessionCloseInput {
   graduatedPlan?: string;
   graduatedScripts?: string;
   graduatedDesign?: string;
-  graduatedRfc?: string;
+  graduatedPropuesta?: string;
   graduatedConclusions?: string;
   refs?: string;
 }
@@ -45,7 +45,7 @@ const FLAG_TO_TAG: Record<string, string> = {
   graduatedPlan: "plan",
   graduatedScripts: "scripts",
   graduatedDesign: "design",
-  graduatedRfc: "rfc",
+  graduatedPropuesta: "propuesta",
   graduatedConclusions: "conclusion",
 };
 

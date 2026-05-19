@@ -1,4 +1,4 @@
-// Graduation routing check — detecta artefactos graduados a fuentes (docs/manuales|rfcs|post-mortems|analisis)
+// Graduation routing check — detecta artefactos graduados a fuentes (docs/manuales|propuestas|post-mortems|analisis)
 // sin breadcrumb correspondiente en el hub. Aplica solo en hub mode.
 //
 // Lee CLAUDE.md del cwd (hub workspace), parsea bloque `## Fuentes` para
@@ -13,7 +13,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 
-const CATEGORIAS = ["manuales", "rfcs", "post-mortems", "analisis", "refactors"] as const;
+const CATEGORIAS = ["manuales", "propuestas", "post-mortems", "analisis", "refactors"] as const;
 type Categoria = (typeof CATEGORIAS)[number];
 
 export interface GraduationCheckFinding {

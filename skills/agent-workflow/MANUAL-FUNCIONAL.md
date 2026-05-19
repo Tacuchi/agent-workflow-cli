@@ -104,7 +104,7 @@ Cerrás y dejás trazas.
 Salidas:
 - `CHECKPOINT.md`: estado para retomar luego si hace falta.
 - Fila `closed` en `HISTORY.md`.
-- Artefactos graduados (`docs/decisiones/`, `docs/rfcs/`, etc. — si aplica).
+- Artefactos graduados (`docs/decisiones/`, `docs/propuestas/`, etc. — si aplica).
 
 Comandos típicos:
 ```bash

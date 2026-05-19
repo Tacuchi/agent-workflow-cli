@@ -23,7 +23,7 @@ const DESIGN_KEYWORDS = new Set([
 ]);
 
 const ANALYZE_KEYWORDS = new Set([
-  "rfc",
+  "propuesta",
   "post-mortem",
   "postmortem",
   "análisis",
