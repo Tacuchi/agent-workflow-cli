@@ -375,31 +375,36 @@ function HostRow({
 }) {
   const focused = selected && !dimmed;
   const stateColor = state === "ok" ? colors.success : colors.fgFaint;
+  const cursorColor = focused ? colors.accent : colors.fgFaint;
+  // Estructura sin Box anidados flexGrow+column en la columna del label:
+  // mantenemos cursor + label en la MISMA caja horizontal para que Ink no
+  // desalinee verticalmente cuando el row contiene un Pill (caso `[hooks]`).
   return (
-    <Box>
-      <Text color={focused ? colors.accent : colors.fgFaint} {...(focused ? { bold: true } : {})}>
-        {selected ? "▸" : " "}
-      </Text>
-      <Text> </Text>
-      <Box flexGrow={1} flexDirection="column">
-        <Box>
-          <Text
-            color={focused ? colors.fgBright : colors.fgSubtle}
-            {...(focused ? { bold: true, inverse: true } : {})}
-          >
-            {focused ? ` ${label} ` : label}
-          </Text>
-          {hooks ? (
-            <Box marginLeft={1}>
-              <Pill tone="info">hooks</Pill>
-            </Box>
-          ) : null}
-        </Box>
+    <Box flexDirection="column">
+      <Box>
+        <Text color={cursorColor} {...(focused ? { bold: true } : {})}>
+          {selected ? "▸" : " "}
+        </Text>
+        <Text> </Text>
+        <Text
+          color={focused ? colors.fgBright : colors.fgSubtle}
+          {...(focused ? { bold: true, inverse: true } : {})}
+        >
+          {focused ? ` ${label} ` : label}
+        </Text>
+        {hooks ? (
+          <Box marginLeft={1}>
+            <Pill tone="info">hooks</Pill>
+          </Box>
+        ) : null}
+        <Box flexGrow={1} />
+        <Text color={stateColor} bold>
+          {state === "ok" ? icons.check : icons.cross}
+        </Text>
+      </Box>
+      <Box marginLeft={2}>
         <Text color={colors.fgFaint}>{note}</Text>
       </Box>
-      <Text color={stateColor} bold>
-        {state === "ok" ? icons.check : icons.cross}
-      </Text>
     </Box>
   );
 }

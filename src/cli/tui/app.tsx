@@ -55,7 +55,6 @@ const KEYS_BY_TAB: Record<TabId, KeymapEntry[]> = {
   mcp: [
     { key: "↑↓", action: "navegar" },
     { key: "⏎", action: "acciones", accent: true },
-    { key: "n", action: "nueva" },
     QUIT_HINT,
   ],
   skills: [

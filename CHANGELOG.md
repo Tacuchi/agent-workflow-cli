@@ -4,6 +4,34 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.3.1] — 2026-05-22
+
+**Patch — UX polish del TUI**. Refinamientos sobre v7.3.0 en MCP y Skills tras feedback de uso.
+
+### Changed
+
+- **MCP detail**: estado único derivado por connection (`instalado` / `parcial` / `no instalado`) en lugar de 3 líneas separadas por host (Claude Code / Codex / Warp). Pill al lado del nombre comunica el estado.
+- **MCP acciones**: composite simplificado similar a Skills. Acciones contextuales:
+  - Si `no instalado`: **Instalar** + **Diagnosticar**.
+  - Si `instalado`/`parcial`: **Reinstalar** + **Desinstalar** (danger) + **Diagnosticar**.
+  - **Instalar/Reinstalar** encadena `install-claude → install-codex → install-warp`; aborta + reporta si alguno falla.
+- **MCP nueva conexión**: movida desde el detail panel a una row `+ Nueva conexión` al final del panel de CONEXIONES. Atajo `n` global retirado.
+- **Skills HostRow**: cursor `▸` se renderizaba misaligned cuando el row contenía `Pill [hooks]` por flexbox anidado (`Box flexGrow column` envolviendo label + note). Refactor: cursor + label en una caja horizontal, note debajo con `marginLeft=2` matching el label.
+
+### Tests
+
+645/645 verde, sin cambios.
+
+### Migration
+
+```bash
+npm install -g @tacuchi/agent-workflow-cli@7.3.1
+agent-workflow self install --target claude --force
+agent-workflow self install --target codex --force
+```
+
+Sin breaking changes. Solo polish del TUI.
+
 ## [7.3.0] — 2026-05-22
 
 **Minor — TUI redesign**. Rediseño completo del TUI agent-workflow (Ink/React) inspirado en charmbracelet/crush con paleta azul moderna (sky/slate), marcos por sección, highlight inverse en foco y nuevo tab **Proyecto**. Refactor profundo de MCP/Skills a sub-modos de acciones seleccionables con `↑↓`+`Enter` (sin atajos letra-por-letra).
