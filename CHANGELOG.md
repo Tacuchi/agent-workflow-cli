@@ -4,6 +4,53 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.2] — 2026-05-22
+
+**Patch — One-command install (no plugin/marketplace needed)** (session083 T7). v7.0.1 expuso `/agent-workflow:*` slash commands a través de un Claude Code plugin instalable via marketplace, requiriendo dos pasos en el host: `agent-workflow self install` + `/plugin install agent-workflow@<marketplace>`. v7.0.2 colapsa el flow a **un solo comando**: `agent-workflow self install --target claude` ahora instala SKILL + commands user-level (subdirectorio = namespace) + hooks en `~/.claude/settings.json`. Zero plugin/marketplace requerido para arrancar.
+
+### Added
+
+- **`self install --target claude` ahora instala TRES cosas por default**:
+  1. **SKILL** → `~/.claude/skills/agent-workflow/` (comportamiento existente).
+  2. **User commands** → `~/.claude/commands/agent-workflow/<n>.md` (17 archivos: `session.md`, `compact.md`, `resume.md`, `project-init.md`, `hub-init.md`, `doctor.md`, `migrate.md`, `rules.md`, 9 export-*). Claude Code los descubre como `/agent-workflow:<name>` por convención subdirectorio-como-namespace. Borra+recrea el directorio destino (idempotente).
+  3. **Hooks** → merge en `~/.claude/settings.json` con backup automático (delega a `selfInstallHooks` internamente).
+- **Nuevos flags opt-out**:
+  - `--skill-only` → instala sólo el SKILL (comportamiento legacy v7.0.0/v7.0.1).
+  - `--no-commands` → instala SKILL + hooks pero skip commands.
+  - `--no-hooks` → instala SKILL + commands pero skip hooks.
+- **Output extendido**: cada `dests[]` entry ahora incluye `user_commands_dest`, `user_commands_files`, `hooks_status`, y opcionalmente `*_warning` campos cuando alguna sub-instalación falla (no-blocking).
+
+### Changed
+
+- `self install --target claude` por default es ahora una **superset** del comportamiento previo: scripts/users que asumían "sólo copia el SKILL" pueden añadir `--skill-only` para preservar comportamiento v7.0.0/v7.0.1. Para los targets `codex`, `warp`, `oz`, `agents` los commands user-level y hooks NO se instalan (no soportado todavía) — el SKILL sí.
+
+### Migration v7.0.1 → v7.0.2
+
+Si instalaste v7.0.1 + el plugin `agent-workflow` via marketplace, podés simplificar:
+
+```bash
+# Opcional: desinstalar plugin via marketplace (ahora redundante)
+# Desde Claude Code TUI: /plugin uninstall agent-workflow@qtc-marketplace
+
+# Upgrade CLI
+npm install -g @tacuchi/agent-workflow-cli@7.0.2
+
+# Re-instalar TODO con un solo comando
+agent-workflow self install --target claude
+
+# /reload-plugins en Claude Code → /agent-workflow:* aparece sin plugin
+```
+
+El plugin `agent-workflow` en `qtc-plugins-marketplace` y el `.claude-plugin/plugin.json` en el repo CLI quedan disponibles para usuarios que prefieran el flujo "marketplace install" (coexistencia OK), pero **no son requeridos** para uso normal.
+
+### Why
+
+T7 smoke reveló UX subóptima: aunque v7.0.1 hacía funcionar los slash commands `/agent-workflow:*`, requería al usuario aprender DOS sistemas de instalación (CLI npm + Claude Code plugin marketplace). El goal de la migración era simplificar — un solo comando, una sola fuente de verdad. v7.0.2 cierra ese gap aprovechando que Claude Code soporta subdirectorios en `~/.claude/commands/` como namespacing de slash commands.
+
+### Tests
+
+- Total: 645 (sin tests nuevos; el smoke end-to-end del usuario es la validación. La nueva lógica de `installUserCommands` y `installHooksForTarget` es additive y no rompe los 17 tests existentes de `selfInstallSkill`).
+
 ## [7.0.1] — 2026-05-22
 
 **Patch — Hotfix arquitectónico T7 smoke** (session083). v7.0.0 publicó el SKILL con commands dentro de `skills/agent-workflow/commands/` asumiendo que Claude Code los descubriría como slash commands. **No lo hace** — slash commands se discover sólo desde el `commands/` slot de un plugin (manifest `.claude-plugin/plugin.json`) o `~/.claude/commands/` user-level. v7.0.1 cierra el gap exponiendo el repo CLI como Claude Code plugin propio.

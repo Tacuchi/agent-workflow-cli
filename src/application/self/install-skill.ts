@@ -31,6 +31,11 @@ export interface SelfInstallTargetResult {
   files_copied?: number;
   cache_cleared?: boolean;
   cache_clear_warning?: string;
+  user_commands_dest?: string;
+  user_commands_files?: number;
+  user_commands_warning?: string;
+  hooks_status?: string;
+  hooks_warning?: string;
   error?: string;
 }
 
@@ -59,6 +64,18 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
   "agents",
 ]);
 
+// Per-target user-level commands directory (subdir = namespace).
+// File `<base>/<filename>.md` is invoked as `/agent-workflow:<filename>`.
+const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
+  claude: ".claude/commands/agent-workflow",
+  codex: null,
+  warp: null,
+  oz: null,
+  agents: null,
+};
+
+const HOOKS_AUTOINSTALL_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
+
 export async function selfInstallSkill(
   args: ParsedArgs,
   ctx: CliContext,
@@ -68,6 +85,9 @@ export async function selfInstallSkill(
   const dryRun = args.flags.has("--dry-run");
   const keepCache = args.flags.has("--keep-cache");
   const confirmAll = args.flags.has("--confirm-all");
+  const skillOnly = args.flags.has("--skill-only");
+  const skipCommands = skillOnly || args.flags.has("--no-commands");
+  const skipHooks = skillOnly || args.flags.has("--no-hooks");
   const targetArg = args.values.get("target");
 
   if (targetArg === undefined || targetArg.trim().length === 0) {
@@ -142,21 +162,12 @@ export async function selfInstallSkill(
 
   const results: SelfInstallTargetResult[] = [];
   for (const t of existingTargets) {
-    const dest = destByTarget[t.target];
-    const cacheOutcome = await preClearCache(t.target, ctx, keepCache);
-    if (t.exists && force) {
-      await rm(dest, { recursive: true, force: true });
-    }
-    const filesCopied = await copyTree(sourceArg, dest);
-    const entry: SelfInstallTargetResult = {
-      target: t.target,
-      dest,
-      status: "installed",
-      overwrote_existing: t.exists,
-      files_copied: filesCopied,
-      cache_cleared: cacheOutcome.cleared,
-    };
-    if (cacheOutcome.warning !== undefined) entry.cache_clear_warning = cacheOutcome.warning;
+    const entry = await installOneTarget(t, destByTarget[t.target], sourceArg, ctx, {
+      force,
+      keepCache,
+      skipCommands,
+      skipHooks,
+    });
     results.push(entry);
   }
 
@@ -314,6 +325,115 @@ async function copyDirCounting(src: string, dest: string, onFile: () => void): P
       await copyFile(srcPath, destPath);
       onFile();
     }
+  }
+}
+
+interface InstallOneFlags {
+  force: boolean;
+  keepCache: boolean;
+  skipCommands: boolean;
+  skipHooks: boolean;
+}
+
+async function installOneTarget(
+  t: { target: InstallTarget; exists: boolean },
+  dest: string,
+  sourceArg: string,
+  ctx: CliContext,
+  flags: InstallOneFlags,
+): Promise<SelfInstallTargetResult> {
+  const cacheOutcome = await preClearCache(t.target, ctx, flags.keepCache);
+  if (t.exists && flags.force) {
+    await rm(dest, { recursive: true, force: true });
+  }
+  const filesCopied = await copyTree(sourceArg, dest);
+  const entry: SelfInstallTargetResult = {
+    target: t.target,
+    dest,
+    status: "installed",
+    overwrote_existing: t.exists,
+    files_copied: filesCopied,
+    cache_cleared: cacheOutcome.cleared,
+  };
+  if (cacheOutcome.warning !== undefined) entry.cache_clear_warning = cacheOutcome.warning;
+  if (!flags.skipCommands) {
+    const cmdResult = await installUserCommands(t.target, sourceArg, ctx);
+    if (cmdResult.dest !== null) entry.user_commands_dest = cmdResult.dest;
+    if (cmdResult.installed) entry.user_commands_files = cmdResult.files_copied;
+    if (cmdResult.warning !== undefined) entry.user_commands_warning = cmdResult.warning;
+  }
+  if (!flags.skipHooks) {
+    const hookResult = await installHooksForTarget(t.target, ctx);
+    entry.hooks_status = hookResult.status;
+    if (hookResult.warning !== undefined) entry.hooks_warning = hookResult.warning;
+  }
+  return entry;
+}
+
+async function installUserCommands(
+  target: InstallTarget,
+  sourceSkillPath: string,
+  ctx: CliContext,
+): Promise<{ installed: boolean; dest: string | null; files_copied: number; warning?: string }> {
+  const relpath = USER_COMMANDS_RELPATH_BY_TARGET[target];
+  if (relpath === null) {
+    return {
+      installed: false,
+      dest: null,
+      files_copied: 0,
+      warning: `User-level commands not supported for target '${target}' yet (only claude).`,
+    };
+  }
+  const destDir = join(ctx.env.homeDir(), relpath);
+  const srcDir = join(sourceSkillPath, "commands");
+  if (!(await ctx.fs.exists(srcDir))) {
+    return {
+      installed: false,
+      dest: destDir,
+      files_copied: 0,
+      warning: `Source commands dir not found: ${srcDir}`,
+    };
+  }
+  await rm(destDir, { recursive: true, force: true });
+  await mkdir(destDir, { recursive: true });
+  const entries = await readdir(srcDir, { withFileTypes: true });
+  let copied = 0;
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".md")) continue;
+    if (entry.name === "README.md") continue;
+    await copyFile(join(srcDir, entry.name), join(destDir, entry.name));
+    copied += 1;
+  }
+  return { installed: true, dest: destDir, files_copied: copied };
+}
+
+async function installHooksForTarget(
+  target: InstallTarget,
+  ctx: CliContext,
+): Promise<{ status: string; warning?: string }> {
+  if (!HOOKS_AUTOINSTALL_TARGETS.has(target)) {
+    return {
+      status: "skipped",
+      warning: `Hooks auto-install only supported for 'claude' for now (target='${target}').`,
+    };
+  }
+  const { selfInstallHooks } = await import("./install-hooks.js");
+  const hookArgs: ParsedArgs = {
+    rest: ["install-hooks"],
+    plugin: {},
+    flags: new Set(),
+    values: new Map<string, string>([["target", target]]),
+    valuesMulti: new Map(),
+  };
+  try {
+    const result = await selfInstallHooks(hookArgs, ctx);
+    if (!result.ok) {
+      return { status: "error", warning: result.error?.message ?? "unknown error" };
+    }
+    return { status: result.data?.status ?? "unknown" };
+  } catch (err) {
+    return { status: "exception", warning: (err as Error).message };
   }
 }
 
