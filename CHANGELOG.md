@@ -4,6 +4,69 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] — 2026-05-22
+
+**Minor additive — TUI UX expansion + uninstall complete + cache cleanup** (session083 T7 smoke iteración 3). Cierra el feedback del usuario: "mejorar las opciones del TUI para facilitar la instalación, desinstalación completa + limpieza de caché en cada host o de forma global". Plan symlink mode (skills.sh style) queda diferido para v7.2.0 por refactor mayor.
+
+### Added
+
+- **`agent-workflow self uninstall --target <host>`** (`src/application/self/uninstall.ts`) — nuevo subcommand canónico simétrico a `self install`. Por default remueve SKILL + user commands (skill + `~/.<host>/commands/agent-workflow/`). Flags:
+  - `--with-hooks` → también remueve los 5 event keys que instalamos (`SessionStart`, `PreToolUse`, `SessionEnd`, `PreCompact`, `PostCompact`) del `~/.claude/settings.json`, preservando otras keys. Backup automático antes del modify.
+  - `--skill-only` → sólo SKILL dir (= legacy `self uninstall-skill`).
+  - `--no-commands` → SKILL pero NO commands.
+  - `--target all` → todos los hosts.
+  - `--dry-run` → preview sin escribir.
+  - `--legacy` → también remueve el SKILL legacy `agent-workflow-manager` si existe.
+- **`agent-workflow self clean-cache --target <host>`** — thin wrapper del existente `plugin-cache-clear` que defaultea `--plugin agent-workflow`. Más fácil de discoverar para limpiar caché del SKILL antes de un re-install limpio. Equivalente a `agent-workflow plugin-cache clear --plugin agent-workflow --target <host>`.
+
+### Changed
+
+- **TUI `skills-tab` rediseñado** (`src/cli/tui/tabs/skills-tab.tsx`):
+  - Nueva pseudo-fila **"◎ Todos los hosts"** al tope de la lista. Seleccionarla abre el action-menu con `--target all` (con `--confirm-all` implícito para los install que lo requieren).
+  - Action-menu agrupado en 3 secciones: **Install** / **Uninstall** / **Cache**, cubriendo 7 acciones:
+    - Install completa (skill + commands + hooks)
+    - Install solo skill (`--skill-only`)
+    - Install solo hooks
+    - Uninstall completa (skill + commands)
+    - Uninstall completa + hooks (`--with-hooks`)
+    - Uninstall solo skill (legacy)
+    - Clean cache (per host o todos)
+  - Footer informativo: "↑/↓ navegar · Enter abrir acciones · Esc cancelar".
+  - Cuando `target=all`, "Clean cache" itera sobre claude+codex+warp+agents secuencialmente; reporta errores parciales agregados.
+
+### Notes
+
+- **Symlink mode (skills.sh style)** — usuario sugirió "instalar globalmente y luego hacer symlinks". Diferido a **v7.2.0** porque requiere refactor: nueva canonical install path (probablemente `<npm-prefix>/lib/node_modules/@tacuchi/agent-workflow-cli/skills/agent-workflow/` ya existe en npm-global), reemplazar `cp -r` por `ln -s` en `selfInstallSkill`, manejo de Windows junction, `self install --symlink` flag opt-in. Trade-off: con symlinks, `npm install -g @tacuchi/agent-workflow-cli@latest` actualizaría todos los hosts automáticamente. v7.1.0 mantiene copy mode mientras tanto.
+
+### Tests
+
+- Total: 645 (sin tests nuevos en este push; los TUI snapshot tests existentes pasan con la nueva pseudo-fila + menu). Coverage del nuevo `selfUninstall` queda como follow-up (puede ir en v7.1.1 si emergen edge cases).
+
+### Migration
+
+```bash
+# Upgrade
+npm install -g @tacuchi/agent-workflow-cli@7.1.0
+
+# Uninstall completa (NEW): SKILL + commands
+agent-workflow self uninstall --target claude
+agent-workflow self uninstall --target all
+
+# Con hooks removal (opt-in, hace backup .bak.* automático antes)
+agent-workflow self uninstall --target claude --with-hooks
+
+# Solo SKILL (legacy comportamiento)
+agent-workflow self uninstall-skill --target claude
+# o equivalente:
+agent-workflow self uninstall --target claude --skill-only
+
+# Cache cleanup
+agent-workflow self clean-cache --target claude
+agent-workflow self clean-cache --target all   # itera todos los hosts soportados
+
+# Desde el TUI: agent-workflow → tab "Skills" → selecciona "Todos los hosts" o un host → Enter → menú agrupado
+```
+
 ## [7.0.4] — 2026-05-22
 
 **Patch — Multi-host compat: Codex commands install + warning UX** (session083 T7 smoke iteración). Cierra dos points de fricción que el usuario reportó pre-test del v7.0.3 install:

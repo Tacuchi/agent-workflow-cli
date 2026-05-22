@@ -7,6 +7,8 @@ import { selfInstallPluginSkills } from "../../application/self/install-plugin-s
 import { selfInstallSkill } from "../../application/self/install-skill.js";
 import { selfMcpConfig } from "../../application/self/mcp-config.js";
 import { selfNamespace } from "../../application/self/namespace-info.js";
+import { selfClearPluginCache } from "../../application/self/plugin-cache-clear.js";
+import { selfUninstall } from "../../application/self/uninstall.js";
 import { selfUninstallSkill } from "../../application/self/uninstall-skill.js";
 import { selfUpdate } from "../../application/self/update-self.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -19,11 +21,14 @@ const SELF_SUBCOMMANDS = [
   "doctor",
   "detect-hosts",
   "update",
+  "install",
   "install-skill",
   "install-hooks",
   "install-plugin-skills",
   "install-plugin-skills-git",
+  "uninstall",
   "uninstall-skill",
+  "clean-cache",
   "mcp",
   "bootstrap",
 ] as const;
@@ -52,8 +57,12 @@ export const selfCommand: QtcCommand = {
         return selfInstallPluginSkills(args, ctx);
       case "install-plugin-skills-git":
         return installPluginSkillsFromGit(args, ctx);
+      case "uninstall":
+        return selfUninstall(args, ctx);
       case "uninstall-skill":
         return selfUninstallSkill(args, ctx);
+      case "clean-cache":
+        return runCleanCache(args, ctx);
       case "mcp":
         return selfMcpConfig(args, ctx);
       case "bootstrap":
@@ -81,3 +90,8 @@ export const selfCommand: QtcCommand = {
     }
   },
 };
+
+async function runCleanCache(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
+  if (!args.values.has("plugin")) args.values.set("plugin", "agent-workflow");
+  return selfClearPluginCache(args, ctx);
+}

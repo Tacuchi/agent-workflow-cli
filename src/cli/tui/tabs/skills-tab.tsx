@@ -2,7 +2,9 @@ import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { selfInstallHooks } from "../../../application/self/install-hooks.js";
 import { type InstallTarget, selfInstallSkill } from "../../../application/self/install-skill.js";
+import { selfClearPluginCache } from "../../../application/self/plugin-cache-clear.js";
 import { selfUninstallSkill } from "../../../application/self/uninstall-skill.js";
+import { selfUninstall } from "../../../application/self/uninstall.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
 import {
@@ -19,6 +21,10 @@ export interface SkillsTabProps {
   isActive: boolean;
 }
 
+type TargetSpec =
+  | { kind: "host"; id: InstallTarget; label: string }
+  | { kind: "all"; label: string };
+
 interface SkillState {
   id: InstallTarget;
   label: string;
@@ -28,11 +34,24 @@ interface SkillState {
   path: string;
 }
 
-type Mode = { kind: "idle" } | { kind: "action-menu"; target: SkillState };
+type Mode = { kind: "idle" } | { kind: "action-menu"; target: TargetSpec };
 
-type SkillAction = "install" | "uninstall" | "install-hooks" | "install-hooks-keep-cache";
+type SkillAction =
+  | "install-full"
+  | "install-skill-only"
+  | "install-hooks"
+  | "uninstall-full"
+  | "uninstall-with-hooks"
+  | "uninstall-skill-only"
+  | "clean-cache";
 
 const HOOKS_SUPPORTED_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
+const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
+  "claude",
+  "codex",
+  "warp",
+  "agents",
+]);
 
 const INSTALLED_TRAILING: MenuItemTrailing = {
   icon: icons.check,
@@ -46,30 +65,64 @@ const NOT_INSTALLED_TRAILING: MenuItemTrailing = {
   text: "no instalado",
 };
 
-function buildActionMenuItems(skill: SkillState): MenuItem<SkillAction>[] {
-  const items: MenuItem<SkillAction>[] = [
-    {
-      kind: "item",
-      label: skill.installed ? "Reinstalar / actualizar skill" : "Instalar skill",
-      value: "install",
-      trailing: skill.installed ? INSTALLED_TRAILING : NOT_INSTALLED_TRAILING,
-    },
-  ];
-  if (skill.installed) {
-    items.push({ kind: "item", label: "Desinstalar skill", value: "uninstall" });
-  }
-  if (skill.hooks_supported) {
+function buildActionMenuItems(
+  target: TargetSpec,
+  host: SkillState | null,
+): MenuItem<SkillAction>[] {
+  const items: MenuItem<SkillAction>[] = [];
+  items.push({ kind: "section", label: "Install" });
+  items.push({
+    kind: "item",
+    label: host?.installed
+      ? "Reinstalar completa (skill + commands + hooks)"
+      : "Install completa (skill + commands + hooks)",
+    value: "install-full",
+    trailing: host?.installed ? INSTALLED_TRAILING : NOT_INSTALLED_TRAILING,
+  });
+  items.push({
+    kind: "item",
+    label: "Install solo skill (--skill-only)",
+    value: "install-skill-only",
+  });
+  if (target.kind === "host" && HOOKS_SUPPORTED_TARGETS.has(target.id)) {
     items.push({
       kind: "item",
-      label: skill.hooks_installed ? "Reinstalar hooks" : "Instalar hooks",
+      label: host?.hooks_installed ? "Reinstalar solo hooks" : "Install solo hooks",
       value: "install-hooks",
     });
+  } else if (target.kind === "all") {
     items.push({
       kind: "item",
-      label: "Instalar hooks (sin limpiar caché)",
-      value: "install-hooks-keep-cache",
+      label: "Install solo hooks (claude only)",
+      value: "install-hooks",
     });
   }
+  items.push({ kind: "section", label: "Uninstall" });
+  items.push({
+    kind: "item",
+    label: "Uninstall completa (skill + commands)",
+    value: "uninstall-full",
+  });
+  items.push({
+    kind: "item",
+    label: "Uninstall completa + hooks",
+    value: "uninstall-with-hooks",
+  });
+  items.push({
+    kind: "item",
+    label: "Uninstall solo skill (legacy)",
+    value: "uninstall-skill-only",
+  });
+  items.push({ kind: "section", label: "Cache" });
+  const cacheLabel =
+    target.kind === "all"
+      ? "Clean cache (claude + codex + warp + agents)"
+      : `Clean cache de ${target.label}`;
+  items.push({
+    kind: "item",
+    label: cacheLabel,
+    value: "clean-cache",
+  });
   return items;
 }
 
@@ -81,6 +134,9 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
   const [toast, setToast] = useState<{ tone: ToastTone; message: string } | null>(null);
   const startedRef = useRef(false);
   const { lock, unlock } = useInputLock();
+
+  // Row 0 = pseudo "All hosts"; rows 1..N = real hosts.
+  const totalRows = skills.length + 1;
 
   useEffect(() => {
     if (mode.kind === "idle") {
@@ -140,7 +196,7 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
       },
     ];
     setSkills(next);
-    setCursor((c) => Math.min(Math.max(0, next.length - 1), Math.max(0, c)));
+    setCursor((c) => Math.min(Math.max(0, c), next.length));
   }, [ctx]);
 
   useEffect(() => {
@@ -150,7 +206,7 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
   }, [refresh]);
 
   const runAction = useCallback(
-    async (action: SkillAction, target: InstallTarget, label: string) => {
+    async (action: SkillAction, target: TargetSpec, label: string) => {
       setBusy(label);
       setToast(null);
       try {
@@ -178,14 +234,13 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
         return;
       }
       if (key.downArrow) {
-        setCursor((c) => (skills.length === 0 ? 0 : Math.min(skills.length - 1, c + 1)));
+        setCursor((c) => Math.min(totalRows - 1, c + 1));
         return;
       }
       if (key.return) {
-        const target = skills[cursor];
-        if (target) setMode({ kind: "action-menu", target });
+        const target = rowToTarget(cursor, skills);
+        if (target !== null) setMode({ kind: "action-menu", target });
       }
-      // 'i'/'I' ya no se manejan: la instalación se hace por target desde el menu de acciones.
       void input;
     },
     { isActive },
@@ -203,15 +258,18 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
   const handleActionSelect = useCallback(
     (action: SkillAction) => {
       if (mode.kind !== "action-menu") return;
-      const { id, label } = mode.target;
+      const target = mode.target;
       setMode({ kind: "idle" });
-      const busyLabel = buildBusyLabel(action, label);
-      void runAction(action, id, busyLabel);
+      const busyLabel = buildBusyLabel(action, target.label);
+      void runAction(action, target, busyLabel);
     },
     [mode, runAction],
   );
 
   if (mode.kind === "action-menu") {
+    const targetSpec = mode.target;
+    const focusedHost =
+      targetSpec.kind === "host" ? (skills.find((s) => s.id === targetSpec.id) ?? null) : null;
     return (
       <Box flexDirection="column">
         <Text color={colors.fg} bold>
@@ -227,7 +285,7 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
         </Box>
         <Box marginTop={1}>
           <SectionedMenu
-            items={buildActionMenuItems(mode.target)}
+            items={buildActionMenuItems(mode.target, focusedHost)}
             onSelect={handleActionSelect}
             isActive={isActive}
           />
@@ -245,9 +303,13 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
         Skill {ctx.runtime.binName}
       </Text>
       <Box marginTop={1} flexDirection="column">
+        <AllHostsRow focused={isActive && cursor === 0} />
         {skills.map((s, i) => (
-          <SkillRow key={s.id} skill={s} focused={isActive && i === cursor} />
+          <SkillRow key={s.id} skill={s} focused={isActive && cursor === i + 1} />
         ))}
+      </Box>
+      <Box marginTop={1}>
+        <Text color={colors.fgMoreSubtle}>↑/↓ navegar · Enter abrir acciones · Esc cancelar</Text>
       </Box>
       {busy ? (
         <Box marginTop={1}>
@@ -257,6 +319,31 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
         </Box>
       ) : null}
       {toast ? <Toast tone={toast.tone} message={toast.message} /> : null}
+    </Box>
+  );
+}
+
+function rowToTarget(row: number, skills: SkillState[]): TargetSpec | null {
+  if (row === 0) return { kind: "all", label: "todos los hosts" };
+  const host = skills[row - 1];
+  if (!host) return null;
+  return { kind: "host", id: host.id, label: host.label };
+}
+
+function AllHostsRow({ focused }: { focused: boolean }) {
+  return (
+    <Box>
+      <Text color={focused ? colors.primary : colors.fgMoreSubtle} bold={focused}>
+        {focused ? icons.focusBullet : " "}{" "}
+      </Text>
+      <Text color={focused ? colors.primary : colors.fgSubtle} bold>
+        ◎ Todos los hosts
+      </Text>
+      <Text color={colors.fgMoreSubtle}>
+        {" "}
+        (apply install / uninstall / clean-cache a claude + codex + warp + agents en una sola
+        pasada)
+      </Text>
     </Box>
   );
 }
@@ -287,59 +374,130 @@ function SkillRow({ skill: s, focused }: { skill: SkillState; focused: boolean }
   );
 }
 
-function buildArgsFor(action: SkillAction, target: InstallTarget): ParsedArgs {
+function buildArgsFor(action: SkillAction, target: TargetSpec): ParsedArgs {
   const flags = new Set<string>();
-  const sub =
-    action === "install"
-      ? "install-skill"
-      : action === "uninstall"
-        ? "uninstall-skill"
-        : "install-hooks";
-  if (action === "install") flags.add("--force");
-  if (action === "install-hooks-keep-cache") flags.add("--keep-cache");
+  const values = new Map<string, string>();
+  const targetValue = target.kind === "all" ? "all" : target.id;
+  values.set("target", targetValue);
+  if (target.kind === "all") flags.add("--confirm-all");
+  if (action === "install-full") flags.add("--force");
+  if (action === "install-skill-only") {
+    flags.add("--force");
+    flags.add("--skill-only");
+  }
+  if (action === "uninstall-with-hooks") flags.add("--with-hooks");
+  if (action === "uninstall-skill-only") flags.add("--skill-only");
+  if (action === "clean-cache") values.set("plugin", "agent-workflow");
   return {
-    rest: [sub],
+    rest: [actionToSubcommand(action)],
     plugin: {},
     flags,
-    values: new Map([["target", target]]),
+    values,
     valuesMulti: new Map(),
   };
 }
 
-async function dispatchAction(action: SkillAction, target: InstallTarget, ctx: CliContext) {
-  const args = buildArgsFor(action, target);
+function actionToSubcommand(action: SkillAction): string {
   switch (action) {
-    case "install":
-      return selfInstallSkill(args, ctx);
-    case "uninstall":
-      return selfUninstallSkill(args, ctx);
+    case "install-full":
+    case "install-skill-only":
+      return "install-skill";
     case "install-hooks":
-    case "install-hooks-keep-cache":
-      return selfInstallHooks(args, ctx);
+      return "install-hooks";
+    case "uninstall-full":
+    case "uninstall-with-hooks":
+      return "uninstall";
+    case "uninstall-skill-only":
+      return "uninstall-skill";
+    case "clean-cache":
+      return "clean-cache";
   }
+}
+
+async function dispatchAction(action: SkillAction, target: TargetSpec, ctx: CliContext) {
+  const args = buildArgsFor(action, target);
+  if (action === "clean-cache" && target.kind === "all") {
+    return dispatchCleanCacheAll(ctx);
+  }
+  switch (action) {
+    case "install-full":
+    case "install-skill-only":
+      return selfInstallSkill(args, ctx);
+    case "install-hooks":
+      return selfInstallHooks(args, ctx);
+    case "uninstall-full":
+    case "uninstall-with-hooks":
+      return selfUninstall(args, ctx);
+    case "uninstall-skill-only":
+      return selfUninstallSkill(args, ctx);
+    case "clean-cache":
+      return selfClearPluginCache(args, ctx);
+  }
+}
+
+async function dispatchCleanCacheAll(ctx: CliContext) {
+  const hosts: InstallTarget[] = ["claude", "codex", "warp", "agents"];
+  const errors: string[] = [];
+  for (const host of hosts) {
+    if (!CACHE_CLEAR_HOSTS.has(host)) continue;
+    const args: ParsedArgs = {
+      rest: ["clean-cache"],
+      plugin: {},
+      flags: new Set(),
+      values: new Map([
+        ["plugin", "agent-workflow"],
+        ["target", host],
+      ]),
+      valuesMulti: new Map(),
+    };
+    const result = await selfClearPluginCache(args, ctx);
+    if (!result.ok) errors.push(`${host}: ${result.error?.message ?? "unknown"}`);
+  }
+  if (errors.length > 0) {
+    return {
+      ok: false as const,
+      error: { code: "PARTIAL_FAILURE", message: errors.join("; ") },
+      exitCode: 1,
+    };
+  }
+  return { ok: true as const, data: { status: "cleaned" }, exitCode: 0 };
 }
 
 function buildBusyLabel(action: SkillAction, label: string): string {
   switch (action) {
-    case "install":
-      return `instalando skill en ${label}…`;
-    case "uninstall":
-      return `desinstalando skill de ${label}…`;
+    case "install-full":
+      return `install completa en ${label}…`;
+    case "install-skill-only":
+      return `install skill en ${label}…`;
     case "install-hooks":
-      return `instalando hooks en ${label}…`;
-    case "install-hooks-keep-cache":
-      return `instalando hooks en ${label} (sin limpiar caché)…`;
+      return `install hooks en ${label}…`;
+    case "uninstall-full":
+      return `uninstall completa en ${label}…`;
+    case "uninstall-with-hooks":
+      return `uninstall completa + hooks en ${label}…`;
+    case "uninstall-skill-only":
+      return `uninstall skill en ${label}…`;
+    case "clean-cache":
+      return `limpiando caché en ${label}…`;
   }
 }
 
-function buildSuccessMessage(action: SkillAction, target: InstallTarget): string {
+function buildSuccessMessage(action: SkillAction, target: TargetSpec): string {
+  const t = target.label;
   switch (action) {
-    case "install":
-      return `Skill instalada/actualizada en ${target}.`;
-    case "uninstall":
-      return `Skill desinstalada de ${target}.`;
+    case "install-full":
+      return `Install completa OK en ${t}.`;
+    case "install-skill-only":
+      return `Skill instalada en ${t}.`;
     case "install-hooks":
-    case "install-hooks-keep-cache":
-      return `Hooks instalados en ${target}.`;
+      return `Hooks instalados en ${t}.`;
+    case "uninstall-full":
+      return `Uninstall completa OK en ${t}.`;
+    case "uninstall-with-hooks":
+      return `Uninstall completa + hooks OK en ${t}.`;
+    case "uninstall-skill-only":
+      return `Skill desinstalada de ${t}.`;
+    case "clean-cache":
+      return `Caché limpiada en ${t}.`;
   }
 }
