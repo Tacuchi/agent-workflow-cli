@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
-import { useCallback, useMemo, useState } from "react";
+import { Box, Text, useInput } from "ink";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CliContext } from "../../types.js";
-import { type MenuItem, SectionedMenu } from "../components/sectioned-menu.js";
-import { Toast, type ToastTone } from "../components/toast.js";
+import { PageHead } from "../components/page-head.js";
+import { Pill } from "../components/pill.js";
 import { colors, icons } from "../theme.js";
 
 export interface UpdateTabProps {
@@ -10,43 +10,35 @@ export interface UpdateTabProps {
   version: string;
   isActive: boolean;
   onRequestUpdate: () => void;
+  onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
 }
 
-type UpdateAction = "check" | "install";
+type Status = "idle" | "checking" | "uptodate" | "outdated" | "applying" | "done" | "error";
 
 interface CheckResult {
-  status: "uptodate" | "outdated" | "error";
+  status: Status;
   latest?: string;
-  message: string;
+  message?: string;
 }
 
-function buildMenuItems(check: CheckResult | null): MenuItem<UpdateAction>[] {
-  const items: MenuItem<UpdateAction>[] = [
-    { kind: "item", label: "Buscar actualizaciones", value: "check" },
-  ];
-  if (check?.status === "outdated") {
-    const target = check.latest
-      ? `Actualizar a v${check.latest} (npm install)`
-      : "Actualizar ahora (npm install)";
-    items.push({ kind: "item", label: target, value: "install" });
-  }
-  return items;
-}
-
-export function UpdateTab({ ctx, version, isActive, onRequestUpdate }: UpdateTabProps) {
-  const [check, setCheck] = useState<CheckResult | null>(null);
-  const [busy, setBusy] = useState(false);
+/**
+ * UpdateTab minimal — versión actual → última en una línea, acciones inline.
+ *
+ * Sin cards con bordes, sin section labels. Auto-check al montar.
+ * Acciones: `r` buscar / `i` aplicar / `o` release notes.
+ */
+export function UpdateTab({ ctx, version, isActive, onRequestUpdate, onToast }: UpdateTabProps) {
+  const [check, setCheck] = useState<CheckResult>({ status: "idle" });
+  const startedRef = useRef(false);
 
   const runCheck = useCallback(async () => {
-    setBusy(true);
-    setCheck(null);
+    setCheck({ status: "checking" });
     try {
       const result = await ctx.process.run("npm", ["view", ctx.runtime.packageName, "version"], {});
       if (result.code !== 0) {
-        setCheck({
-          status: "error",
-          message: `npm view falló (exit ${result.code}): ${result.stderr.trim() || "sin detalle"}`,
-        });
+        const msg = `npm view falló: ${result.stderr.trim() || "sin detalle"}`;
+        setCheck({ status: "error", message: msg });
+        onToast?.({ tone: "err", title: "Buscar actualización falló", body: msg });
         return;
       }
       const latest = result.stdout.trim();
@@ -55,75 +47,144 @@ export function UpdateTab({ ctx, version, isActive, onRequestUpdate }: UpdateTab
         return;
       }
       if (latest === version) {
-        setCheck({
-          status: "uptodate",
-          latest,
-          message: `Ya estás en la última versión (v${version}).`,
-        });
+        setCheck({ status: "uptodate", latest });
       } else {
-        setCheck({
-          status: "outdated",
-          latest,
-          message: `Hay una versión más reciente disponible: v${latest} (actualmente v${version}).`,
+        setCheck({ status: "outdated", latest });
+        onToast?.({
+          tone: "info",
+          title: "Hay una actualización disponible",
+          body: `v${version} → v${latest}`,
         });
       }
     } catch (err) {
       setCheck({ status: "error", message: (err as Error).message });
-    } finally {
-      setBusy(false);
     }
-  }, [ctx, version]);
+  }, [ctx, version, onToast]);
 
-  const handleSelect = useCallback(
-    (action: UpdateAction) => {
-      if (busy) return;
-      if (action === "check") {
+  // Auto-check al montar.
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void runCheck();
+  }, [runCheck]);
+
+  useInput(
+    (input) => {
+      if (!isActive) return;
+      if (check.status === "checking" || check.status === "applying") return;
+      if (input === "r" || input === "R") {
         void runCheck();
-      } else if (action === "install") {
-        onRequestUpdate();
+      } else if (input === "i" || input === "I") {
+        if (check.status === "outdated") {
+          setCheck({ ...check, status: "applying" });
+          onRequestUpdate();
+        }
+      } else if (input === "o" || input === "O") {
+        onToast?.({
+          tone: "info",
+          title: "Release notes",
+          body: `npm: https://www.npmjs.com/package/${ctx.runtime.packageName}`,
+        });
       }
     },
-    [busy, runCheck, onRequestUpdate],
+    { isActive },
   );
-
-  const menuItems = useMemo(() => buildMenuItems(check), [check]);
 
   return (
     <Box flexDirection="column">
-      <Text color={colors.fg} bold>
-        Actualizar CLI
-      </Text>
-      <Box marginTop={1} flexDirection="column">
+      <PageHead title="Update" />
+
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={check.status === "outdated" ? colors.borderActive : colors.borderFaint}
+        paddingX={1}
+        marginBottom={1}
+      >
+        <Text color={colors.fgMoreSubtle}>VERSIÓN</Text>
         <Box>
-          <Text color={colors.fg}>versión actual:</Text>
+          <Text color={colors.fgFaint}>actual</Text>
           <Text> </Text>
-          <Text color={colors.accent} bold>
+          <Text color={colors.fgBright} bold>
             v{version}
           </Text>
+          <Text color={colors.fgFaint}>{" → última "}</Text>
+          <Text
+            color={check.status === "outdated" ? colors.accent : colors.fgBright}
+            {...(check.status === "outdated" ? { bold: true } : {})}
+          >
+            v{check.latest ?? "?"}
+          </Text>
+          {check.status === "outdated" ? (
+            <Box marginLeft={1}>
+              <Pill tone="accent">disponible</Pill>
+            </Box>
+          ) : check.status === "uptodate" ? (
+            <Box marginLeft={1}>
+              <Pill tone="ok">al día</Pill>
+            </Box>
+          ) : check.status === "checking" ? (
+            <Box marginLeft={1}>
+              <Text color={colors.fgFaint}>{icons.spinner} consultando…</Text>
+            </Box>
+          ) : null}
         </Box>
-        <Box>
-          <Text color={colors.fgSubtle}>paquete: </Text>
-          <Text color={colors.fgSubtle}>{ctx.runtime.packageName}</Text>
-        </Box>
+        <Text color={colors.fgFaint}>{ctx.runtime.packageName} · registry.npmjs.org</Text>
       </Box>
 
-      <Box marginTop={1}>
-        <SectionedMenu items={menuItems} onSelect={handleSelect} isActive={isActive && !busy} />
+      <Box flexDirection="column" borderStyle="round" borderColor={colors.borderFaint} paddingX={1}>
+        <Text color={colors.fgMoreSubtle}>ACCIONES</Text>
+        <ActionKey k="r" label="buscar de nuevo" />
+        <ActionKey
+          k="i"
+          label={`aplicar v${check.latest ?? "?"}`}
+          primary={check.status === "outdated"}
+          disabled={check.status !== "outdated"}
+        />
+        <ActionKey k="o" label="release notes" />
       </Box>
 
-      {busy ? (
+      {check.status === "applying" ? (
         <Box marginTop={1}>
-          <Text color={colors.warning}>{icons.spinner} consultando npm registry...</Text>
+          <Text color={colors.warning}>
+            {icons.spinner} aplicando v{check.latest}… (npm install)
+          </Text>
         </Box>
       ) : null}
 
-      {check ? <CheckSummary result={check} /> : null}
+      {check.status === "error" ? (
+        <Box marginTop={1}>
+          <Text color={colors.error}>
+            {icons.cross} {check.message ?? "Error desconocido"}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }
 
-function CheckSummary({ result }: { result: CheckResult }) {
-  const tone: ToastTone =
-    result.status === "uptodate" ? "success" : result.status === "outdated" ? "info" : "error";
-  return <Toast tone={tone} message={result.message} />;
+function ActionKey({
+  k,
+  label,
+  primary,
+  disabled,
+}: {
+  k: string;
+  label: string;
+  primary?: boolean;
+  disabled?: boolean;
+}) {
+  const keyColor = disabled ? colors.fgFaint : primary ? colors.accent : colors.fgBright;
+  const labelColor = disabled ? colors.fgFaint : primary ? colors.fgBright : colors.fgSubtle;
+  return (
+    <Box>
+      <Text color={keyColor} {...(!disabled ? { bold: true } : {})}>
+        {k}
+      </Text>
+      <Text color={colors.fgFaint}> · </Text>
+      <Text color={labelColor} {...(primary && !disabled ? { bold: true } : {})}>
+        {label}
+      </Text>
+    </Box>
+  );
 }

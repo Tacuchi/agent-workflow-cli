@@ -225,6 +225,12 @@ async function dispatchMenuAction(
       // suppresses the redundant inquirer prompt (which also races with
       // ink's stdin teardown and can phantom-cancel).
       return await run(["self", "update", "--yes"]);
+    case "project-init":
+      // Dispara el flujo de inicialización single-repo. Vive como `project-md-upsert --init`.
+      return await run(["project-md-upsert", "--init"]);
+    case "hub-init":
+      // Dispara el flujo de inicialización multi-repo (interactivo).
+      return await run(["hub-init"]);
     case "help":
       printHelp(registry.list());
       return 0;

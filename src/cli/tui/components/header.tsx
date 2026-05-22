@@ -7,22 +7,25 @@ export interface HeaderProps {
   homeDir?: string;
 }
 
+/**
+ * Header — minimal chrome superior.
+ *
+ * Izquierda: diamante + name + version. Derecha: path corto.
+ * Sin "live indicator" — ruido innecesario.
+ */
 export function Header({ version, cwd, homeDir }: HeaderProps) {
   const path = cwd ? prettyPath(cwd, homeDir) : undefined;
   return (
     <Box justifyContent="space-between" marginBottom={1}>
       <Box>
-        <Text color={colors.primary} bold>
-          {icons.brand} agent-workflow
+        <Text color={colors.accent}>{icons.brand}</Text>
+        <Text> </Text>
+        <Text color={colors.fgBright} bold>
+          agent-workflow
         </Text>
-        <Text color={colors.fgMoreSubtle}> · </Text>
-        <Text color={colors.fgSubtle}>v{version}</Text>
+        <Text color={colors.fgFaint}> v{version}</Text>
       </Box>
-      {path ? (
-        <Box>
-          <Text color={colors.fgMoreSubtle}>{path}</Text>
-        </Box>
-      ) : null}
+      {path ? <Text color={colors.fgMoreSubtle}>{path}</Text> : null}
     </Box>
   );
 }

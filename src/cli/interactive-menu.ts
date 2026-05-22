@@ -8,4 +8,12 @@ export function shouldShowInteractiveMenu(input: MenuPredicateInput): boolean {
   return input.command === undefined && input.isTTY && !input.hasHelp;
 }
 
-export type MenuAction = "doctor" | "install-skill" | "mcp" | "update" | "help" | "exit";
+export type MenuAction =
+  | "doctor"
+  | "install-skill"
+  | "mcp"
+  | "update"
+  | "help"
+  | "exit"
+  | "project-init"
+  | "hub-init";

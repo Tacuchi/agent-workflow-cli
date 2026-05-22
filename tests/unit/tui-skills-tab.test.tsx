@@ -97,16 +97,13 @@ describe("SkillsTab (TUI) — hooks integration (T2.8)", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it("renders 3 hosts with skill + hooks status", async () => {
-    // No installs → all crosses
+  it("renders 3 hosts en la lista", async () => {
     const { lastFrame, unmount } = render(<SkillsTab ctx={buildCtx(home)} isActive={true} />);
     await new Promise((r) => setTimeout(r, 50));
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Claude Code");
     expect(frame).toContain("Codex");
     expect(frame).toContain("Warp Terminal");
-    // Hooks column only present for hooks-supported hosts (claude)
-    expect(frame).toContain("hooks");
     unmount();
   });
 
@@ -125,7 +122,7 @@ describe("SkillsTab (TUI) — hooks integration (T2.8)", () => {
     unmount();
   });
 
-  it("shows hooks ✗ when settings.json has no hooks key", async () => {
+  it("no muestra pill `hooks` cuando settings.json no tiene hooks key", async () => {
     await mkdir(join(home, ".claude"), { recursive: true });
     await writeFile(
       join(home, ".claude", "settings.json"),
@@ -135,7 +132,9 @@ describe("SkillsTab (TUI) — hooks integration (T2.8)", () => {
     const { lastFrame, unmount } = render(<SkillsTab ctx={buildCtx(home)} isActive={true} />);
     await new Promise((r) => setTimeout(r, 100));
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("hooks");
+    // No esperamos "hooks activos"; la lista de hosts no muestra hooks=false.
+    expect(frame).not.toContain("hooks activos");
+    expect(frame).toContain("Claude Code");
     unmount();
   });
 

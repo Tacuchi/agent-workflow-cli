@@ -8,7 +8,12 @@ const ESC = "[";
 
 function buildCtx() {
   return {
-    fs: { exists: async () => false } as never,
+    fs: {
+      exists: async () => false,
+      readText: async () => "",
+      mkdirp: async () => {},
+      writeText: async () => {},
+    } as never,
     env: {
       homeDir: () => "/home/test",
       cwd: () => "/home/test/project",
@@ -18,7 +23,11 @@ function buildCtx() {
       run: async () => ({ code: 0, stdout: "", stderr: "" }),
       which: async () => undefined,
     },
-    git: {} as never,
+    git: {
+      isGitRepo: async () => false,
+      currentBranch: async () => undefined,
+      changedFiles: async () => [],
+    } as never,
     namespace: { namespace: "workflow", source: "default" as const },
     runtime: {
       packageName: "@tacuchi/agent-workflow-cli",
@@ -32,6 +41,9 @@ function buildCtx() {
       cwdRoot: () => "/home/test/project",
       userRuntimeJson: () => "/tmp/runtime.json",
       userLibConfigDir: () => "/home/test/.workflow",
+      cwdHistoryFile: () => "/home/test/project/.workflow/HISTORY.md",
+      cwdSessionsDir: () => "/home/test/project/.workflow/sessions",
+      blockMarkers: () => ({ start: "<!-- AW-PROJECT-START -->", end: "<!-- AW-PROJECT-END -->" }),
     } as never,
   };
 }
@@ -41,8 +53,9 @@ describe("App (tabs)", () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("[ Status ]");
-    expect(frame).toContain("◆ agent-workflow");
+    // Active tab tiene el label envuelto en espacios para el inverse highlight.
+    expect(frame).toMatch(/1 +Status/);
+    expect(frame).toContain("agent-workflow");
     expect(frame).toContain("v9.9.9");
   });
 
@@ -52,22 +65,23 @@ describe("App (tabs)", () => {
     expect(lastFrame()).toContain("~/project");
   });
 
-  it("Tab cambia a la siguiente tab (MCP)", async () => {
+  it("Tab cambia a la siguiente tab (Proyecto)", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write(TAB);
     await new Promise((r) => setTimeout(r, 50));
-    expect(lastFrame()).toContain("[ MCP ]");
+    // Active tab Proyecto — el label se envuelve en espacios para el inverse.
+    expect(lastFrame()).toMatch(/2 +Proyecto/);
   });
 
-  it("número 3 va directo a Skills tab", async () => {
+  it("número 4 va directo a Skills tab", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
-    stdin.write("3");
+    stdin.write("4");
     await new Promise((r) => setTimeout(r, 50));
-    expect(lastFrame()).toContain("[ Skills ]");
+    expect(lastFrame()).toMatch(/4 +Skills/);
   });
 
   it("'q' resuelve con kind:exit", async () => {
@@ -78,15 +92,6 @@ describe("App (tabs)", () => {
     stdin.write("q");
     await new Promise((r) => setTimeout(r, 50));
     expect(onResult).toHaveBeenCalledWith({ kind: "exit", exitCode: 0 });
-  });
-
-  it("'?' abre el panel de ayuda", async () => {
-    const ctx = buildCtx();
-    const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
-    await new Promise((r) => setTimeout(r, 50));
-    stdin.write("?");
-    await new Promise((r) => setTimeout(r, 50));
-    expect(lastFrame()).toContain("Ayuda");
   });
 
   // ESC se referencia para asegurar el import del byte ESC en el test bundle.

@@ -1,10 +1,15 @@
 import { Box, Text } from "ink";
-import { colors, icons } from "../theme.js";
+import { colors } from "../theme.js";
 
 export interface TabDescriptor<T extends string> {
   id: T;
   label: string;
+  /** Atajo numérico (1-6). Se renderiza dim antes del label. */
+  key?: string;
+  /** Texto del badge — solo se muestra cuando es relevante. */
   badge?: string;
+  /** Dot alert al final del label si hay novedades. */
+  alert?: boolean;
 }
 
 export interface TabBarProps<T extends string> {
@@ -12,30 +17,31 @@ export interface TabBarProps<T extends string> {
   activeId: T;
 }
 
+/**
+ * TabBar minimal — `key label` por tab.
+ *
+ * Active = label inverse (fondo accent + texto bg) — destaca como un chip.
+ * Inactive = label mute + key faint.
+ * Badge dim opcional. Alert dot rojo opcional.
+ */
 export function TabBar<T extends string>({ tabs, activeId }: TabBarProps<T>) {
   return (
-    <Box>
+    <Box marginBottom={1}>
       {tabs.map((tab, idx) => {
         const isActive = tab.id === activeId;
-        const labelText = tab.badge !== undefined ? `${tab.label} (${tab.badge})` : tab.label;
         return (
-          <Box key={tab.id}>
-            {idx > 0 ? <Text>{icons.tabSeparator}</Text> : null}
-            {isActive ? (
-              <>
-                <Text color={colors.accent}>{icons.tabActiveLeft} </Text>
-                <Text color={colors.fg} bold>
-                  {labelText}
-                </Text>
-                <Text color={colors.accent}> {icons.tabActiveRight}</Text>
-              </>
-            ) : (
-              <>
-                <Text color={colors.fgMoreSubtle}> </Text>
-                <Text color={colors.fgSubtle}>{labelText}</Text>
-                <Text color={colors.fgMoreSubtle}> </Text>
-              </>
-            )}
+          <Box key={tab.id} marginLeft={idx === 0 ? 0 : 2}>
+            {tab.key ? (
+              <Text color={isActive ? colors.accent : colors.fgFaint}>{tab.key} </Text>
+            ) : null}
+            <Text
+              color={isActive ? colors.accent : colors.fgSubtle}
+              {...(isActive ? { bold: true, inverse: true } : {})}
+            >
+              {isActive ? ` ${tab.label} ` : tab.label}
+            </Text>
+            {tab.badge !== undefined ? <Text color={colors.fgFaint}> {tab.badge}</Text> : null}
+            {tab.alert ? <Text color={colors.error}> •</Text> : null}
           </Box>
         );
       })}

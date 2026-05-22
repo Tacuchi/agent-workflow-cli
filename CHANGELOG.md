@@ -4,6 +4,47 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.3.0] — 2026-05-22
+
+**Minor — TUI redesign**. Rediseño completo del TUI agent-workflow (Ink/React) inspirado en charmbracelet/crush con paleta azul moderna (sky/slate), marcos por sección, highlight inverse en foco y nuevo tab **Proyecto**. Refactor profundo de MCP/Skills a sub-modos de acciones seleccionables con `↑↓`+`Enter` (sin atajos letra-por-letra).
+
+### Added
+
+- **Tab Proyecto nuevo** (key `2`): data layer en `application/project-tab-data.ts` que agrega git workspace + sources (hub mode) + sesiones activas + pendientes (parseados de `TASKS.md`) + actividad reciente (git log + HISTORY.md tail). Landing condicional cuando no hay bloque AW-PROJECT: opciones seleccionables (`project-init` / `hub-init`) que disparan los comandos CLI al confirmar.
+- **Host registry centralizado** (`tui/hosts.ts`): 7 hosts soportados a nivel UI (claude/codex/warp/gemini/opencode/crush/agents) con flag `backed` indicando si el servicio install/uninstall ya los cubre.
+- **Componentes shared**: `HostChip`/`HostChipStrip`, `Pill`, `PageHead`, `ToastStack` + `useToasts` hook, `TuiPrefsService` para densidad persistida.
+- **MCP actions sub-mode**: `↑↓` navega conexiones, `Enter` entra a `actions`; en actions `↑↓` navega lista (Install Claude/Codex/Warp / Doctor / Eliminar / Nueva) y `Enter` aplica.
+- **Skills actions sub-mode**: igual patrón. Acciones contextuales (Instalar/Reinstalar + Desinstalar si instalado). Internamente encadena `clean-legacy → clean-cache → install` (install) y `uninstall → clean-cache` (uninstall).
+- **Plugins**: filtros (Todos/Instalados/Faltantes/Multi-host) + búsqueda incremental (`/`).
+- **Update**: card "VERSIÓN" + "ACCIONES", auto-check al montar, comparación actual → última.
+
+### Changed
+
+- **Paleta visual**: azul/celeste moderno (`#0ea5e9` accent, slate text/borders, emerald/amber/red/cyan semánticos) reemplaza pink/magenta.
+- **TabBar**: tab activa con `inverse` highlight (chip resaltado) en vez de chevron + brackets.
+- **MCP detail panel**: nombres completos de hosts (Claude Code / Codex / Warp) con `✓`/`✗` en lugar de glyphs `C/X/W`.
+- **MenuAction**: extendido con `project-init` y `hub-init`. `dispatchMenuAction` los routea a `project-md-upsert --init` y `hub-init` CLI commands.
+
+### Removed
+
+- **Command Palette** (Ctrl+K). El catálogo ya no aporta sobre tabs claras + acciones seleccionables; quita ruido.
+- **Skills "Todos los hosts"** y atajos `i`/`u` directos en Skills. Reemplazados por sub-mode actions.
+- **Hosts soportados card** del Status tab. Información reubicada en cada tab que la necesita.
+
+### Tests
+
+645/645 verde. Tests TUI actualizados: tab-bar acepta el inverse wrap con regex; skills-tab adapta a la lista sin "Todos los hosts"; update-tab al formato minimal.
+
+### Migration
+
+```bash
+npm install -g @tacuchi/agent-workflow-cli@7.3.0
+agent-workflow self install --target claude --force
+agent-workflow self install --target codex --force
+```
+
+Sin breaking changes en comandos CLI; el TUI cambia layout y atajos (sin Ctrl+K, sin i/u en Skills).
+
 ## [7.2.1] — 2026-05-22
 
 **Patch — Cleanup residual `qtc-*` post-smoke Codex v7.2.0**. El bulk sed de v7.2.0 buscó `qtc-*` (literal con asterisco) y dejó pasar refs no-asterisco (`qtc-session`, `qtc-dev`, `qtc-design`, `qtc-analyze`) que el smoke en `~/.codex/skills/agent-workflow/` evidenció. Limpia 7 refs vivas; preserva atribución histórica ("antes en qtc-*", version markers "qtc-dev v2.6+", "a partir de qtc-dev v2.6") y notas Strangler-Fig de convivencia (aliases legacy `qtc-*:*` siguen válidos vía `legacy-anchors.md`).

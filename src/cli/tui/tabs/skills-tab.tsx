@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { selfCleanLegacy } from "../../../application/self/clean-legacy.js";
 import { selfInstallHooks } from "../../../application/self/install-hooks.js";
 import { type InstallTarget, selfInstallSkill } from "../../../application/self/install-skill.js";
@@ -8,23 +8,22 @@ import { selfUninstallSkill } from "../../../application/self/uninstall-skill.js
 import { selfUninstall } from "../../../application/self/uninstall.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
-import {
-  type MenuItem,
-  type MenuItemTrailing,
-  SectionedMenu,
-} from "../components/sectioned-menu.js";
-import { Toast, type ToastTone } from "../components/toast.js";
+import { PageHead } from "../components/page-head.js";
+import { Pill } from "../components/pill.js";
 import { useInputLock } from "../input-lock.js";
-import { type ColorName, colors, icons } from "../theme.js";
+import { colors, icons } from "../theme.js";
 
 export interface SkillsTabProps {
   ctx: CliContext;
   isActive: boolean;
+  onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
 }
 
-type TargetSpec =
-  | { kind: "host"; id: InstallTarget; label: string }
-  | { kind: "all"; label: string };
+interface TargetSpec {
+  kind: "host";
+  id: InstallTarget;
+  label: string;
+}
 
 interface SkillState {
   id: InstallTarget;
@@ -35,133 +34,59 @@ interface SkillState {
   path: string;
 }
 
-type Mode = { kind: "idle" } | { kind: "action-menu"; target: TargetSpec };
+type SkillAction = "install-full" | "uninstall-full" | "clean-cache" | "clean-legacy";
 
-type SkillAction =
-  | "install-full"
-  | "install-skill-only"
-  | "install-hooks"
-  | "uninstall-full"
-  | "uninstall-with-hooks"
-  | "uninstall-skill-only"
-  | "clean-cache"
-  | "clean-legacy";
+type Mode = { kind: "list" } | { kind: "actions" };
 
 const HOOKS_SUPPORTED_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
-const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
-  "claude",
-  "codex",
-  "warp",
-  "agents",
-]);
 
-const INSTALLED_TRAILING: MenuItemTrailing = {
-  icon: icons.check,
-  color: colors.success as ColorName,
-  text: "instalado",
-};
-
-const NOT_INSTALLED_TRAILING: MenuItemTrailing = {
-  icon: icons.cross,
-  color: colors.fgMoreSubtle as ColorName,
-  text: "no instalado",
-};
-
-function buildActionMenuItems(
-  target: TargetSpec,
-  host: SkillState | null,
-): MenuItem<SkillAction>[] {
-  const items: MenuItem<SkillAction>[] = [];
-  items.push({ kind: "section", label: "Install" });
-  items.push({
-    kind: "item",
-    label: host?.installed
-      ? "Reinstalar completa (skill + commands + hooks)"
-      : "Install completa (skill + commands + hooks)",
-    value: "install-full",
-    trailing: host?.installed ? INSTALLED_TRAILING : NOT_INSTALLED_TRAILING,
-  });
-  items.push({
-    kind: "item",
-    label: "Install solo skill (--skill-only)",
-    value: "install-skill-only",
-  });
-  if (target.kind === "host" && HOOKS_SUPPORTED_TARGETS.has(target.id)) {
-    items.push({
-      kind: "item",
-      label: host?.hooks_installed ? "Reinstalar solo hooks" : "Install solo hooks",
-      value: "install-hooks",
-    });
-  } else if (target.kind === "all") {
-    items.push({
-      kind: "item",
-      label: "Install solo hooks (claude only)",
-      value: "install-hooks",
-    });
-  }
-  items.push({ kind: "section", label: "Uninstall" });
-  items.push({
-    kind: "item",
-    label: "Uninstall completa (skill + commands)",
-    value: "uninstall-full",
-  });
-  items.push({
-    kind: "item",
-    label: "Uninstall completa + hooks",
-    value: "uninstall-with-hooks",
-  });
-  items.push({
-    kind: "item",
-    label: "Uninstall solo skill (legacy)",
-    value: "uninstall-skill-only",
-  });
-  items.push({ kind: "section", label: "Cache" });
-  const cacheLabel =
-    target.kind === "all"
-      ? "Clean cache (claude + codex + warp + agents)"
-      : `Clean cache de ${target.label}`;
-  items.push({
-    kind: "item",
-    label: cacheLabel,
-    value: "clean-cache",
-  });
-  items.push({ kind: "section", label: "Legacy cleanup" });
-  const legacyLabel =
-    target.kind === "all"
-      ? "Clean legacy skills (qtc-*, agent-workflow-manager) en todos los hosts"
-      : `Clean legacy skills (qtc-*, agent-workflow-manager) en ${target.label}`;
-  items.push({
-    kind: "item",
-    label: legacyLabel,
-    value: "clean-legacy",
-  });
-  return items;
+interface SkillActionDef {
+  id: "install" | "uninstall";
+  label: (state: "installed" | "missing") => string;
+  danger?: boolean;
+  availableWhen: "always" | "installed";
 }
 
-export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
+const ACTION_DEFS: readonly SkillActionDef[] = [
+  {
+    id: "install",
+    label: (state) => (state === "installed" ? "Reinstalar" : "Instalar"),
+    availableWhen: "always",
+  },
+  {
+    id: "uninstall",
+    label: () => "Desinstalar",
+    danger: true,
+    availableWhen: "installed",
+  },
+];
+
+/**
+ * SkillsTab — split view con sub-mode actions.
+ *
+ * - `list` mode: cursor en lista de hosts. ↑↓ navega · ⏎ entra a actions.
+ * - `actions` mode: cursor en lista de acciones del host activo.
+ *   ↑↓ navega · ⏎ aplica · Esc vuelve.
+ *
+ * Acciones:
+ *  - Instalar/Reinstalar — encadena clean-legacy + clean-cache + install-full.
+ *  - Desinstalar — encadena uninstall-full + clean-cache. Solo disponible si instalado.
+ */
+export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const [skills, setSkills] = useState<SkillState[]>([]);
   const [cursor, setCursor] = useState(0);
-  const [mode, setMode] = useState<Mode>({ kind: "idle" });
+  const [actionCursor, setActionCursor] = useState(0);
+  const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [busy, setBusy] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ tone: ToastTone; message: string } | null>(null);
   const startedRef = useRef(false);
   const { lock, unlock } = useInputLock();
 
-  // Row 0 = pseudo "All hosts"; rows 1..N = real hosts.
-  const totalRows = skills.length + 1;
-
   useEffect(() => {
-    if (mode.kind === "idle") {
-      unlock();
-    } else {
-      lock();
-      setToast(null);
-    }
-  }, [mode, lock, unlock]);
+    if (busy) lock();
+    else unlock();
+  }, [busy, lock, unlock]);
 
-  useEffect(() => {
-    return () => unlock();
-  }, [unlock]);
+  useEffect(() => () => unlock(), [unlock]);
 
   const refresh = useCallback(async () => {
     const home = ctx.env.homeDir();
@@ -208,7 +133,7 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
       },
     ];
     setSkills(next);
-    setCursor((c) => Math.min(Math.max(0, c), next.length));
+    setCursor((c) => Math.min(Math.max(0, c), Math.max(0, next.length - 1)));
   }, [ctx]);
 
   useEffect(() => {
@@ -217,188 +142,299 @@ export function SkillsTab({ ctx, isActive }: SkillsTabProps) {
     void refresh();
   }, [refresh]);
 
-  const runAction = useCallback(
-    async (action: SkillAction, target: TargetSpec, label: string) => {
-      setBusy(label);
-      setToast(null);
+  const installedCount = skills.filter((s) => s.installed).length;
+  const totalCount = skills.length;
+
+  const currentTarget: TargetSpec | null = useMemo(() => {
+    const host = skills[cursor];
+    if (!host) return null;
+    return { kind: "host", id: host.id, label: host.label };
+  }, [cursor, skills]);
+
+  const focusedHost: SkillState | null = useMemo(() => {
+    if (!currentTarget) return null;
+    return skills.find((s) => s.id === currentTarget.id) ?? null;
+  }, [currentTarget, skills]);
+
+  const stateOfTarget: "installed" | "missing" = focusedHost?.installed ? "installed" : "missing";
+
+  // Acciones disponibles según el estado.
+  const availableActions = useMemo(
+    () => ACTION_DEFS.filter((a) => a.availableWhen === "always" || stateOfTarget === "installed"),
+    [stateOfTarget],
+  );
+
+  const runComposite = useCallback(
+    async (kind: "install" | "uninstall", target: TargetSpec) => {
+      const steps: SkillAction[] =
+        kind === "install"
+          ? ["clean-legacy", "clean-cache", "install-full"]
+          : ["uninstall-full", "clean-cache"];
+      const startLabel =
+        kind === "install" ? `instalando en ${target.label}…` : `desinstalando de ${target.label}…`;
+      setBusy(startLabel);
       try {
-        const result = await dispatchAction(action, target, ctx);
-        if (result.ok) {
-          setToast({ tone: "success", message: buildSuccessMessage(action, target) });
-        } else {
-          setToast({ tone: "error", message: result.error?.message ?? "La acción falló." });
+        for (const step of steps) {
+          setBusy(buildBusyLabel(step, target.label));
+          const result = await dispatchAction(step, target, ctx);
+          if (!result.ok) {
+            const failMsg = result.error?.message;
+            onToast?.(
+              failMsg !== undefined
+                ? { tone: "err", title: `Falló en paso ${step}`, body: failMsg }
+                : { tone: "err", title: `Falló en paso ${step}` },
+            );
+            await refresh();
+            return;
+          }
         }
+        const finalAction: SkillAction = kind === "install" ? "install-full" : "uninstall-full";
+        onToast?.({ tone: "ok", title: buildSuccessMessage(finalAction, target) });
         await refresh();
       } catch (err) {
-        setToast({ tone: "error", message: (err as Error).message });
+        onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
       } finally {
         setBusy(null);
       }
     },
-    [ctx, refresh],
+    [ctx, refresh, onToast],
   );
 
+  // input — list mode (cursor en la lista de hosts)
   useInput(
-    (input, key) => {
-      if (!isActive || busy || mode.kind !== "idle") return;
+    (_input, key) => {
+      if (!isActive || busy || mode.kind !== "list") return;
       if (key.upArrow) {
         setCursor((c) => Math.max(0, c - 1));
+        setActionCursor(0);
         return;
       }
       if (key.downArrow) {
-        setCursor((c) => Math.min(totalRows - 1, c + 1));
+        setCursor((c) => (skills.length === 0 ? 0 : Math.min(skills.length - 1, c + 1)));
+        setActionCursor(0);
         return;
       }
-      if (key.return) {
-        const target = rowToTarget(cursor, skills);
-        if (target !== null) setMode({ kind: "action-menu", target });
+      if (key.return && currentTarget) {
+        setActionCursor(0);
+        setMode({ kind: "actions" });
       }
-      void input;
     },
     { isActive },
   );
 
+  // input — actions mode (cursor en lista de acciones del detail panel)
   useInput(
-    (_, key) => {
-      if (!isActive) return;
-      if (mode.kind !== "action-menu") return;
-      if (key.escape) setMode({ kind: "idle" });
+    (_input, key) => {
+      if (!isActive || busy || mode.kind !== "actions") return;
+      if (key.upArrow) {
+        setActionCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setActionCursor((c) => Math.min(availableActions.length - 1, c + 1));
+        return;
+      }
+      if (key.escape) {
+        setMode({ kind: "list" });
+        return;
+      }
+      if (key.return && currentTarget) {
+        const def = availableActions[actionCursor];
+        if (!def) return;
+        void runComposite(def.id, currentTarget);
+        setMode({ kind: "list" });
+      }
     },
     { isActive },
   );
 
-  const handleActionSelect = useCallback(
-    (action: SkillAction) => {
-      if (mode.kind !== "action-menu") return;
-      const target = mode.target;
-      setMode({ kind: "idle" });
-      const busyLabel = buildBusyLabel(action, target.label);
-      void runAction(action, target, busyLabel);
-    },
-    [mode, runAction],
-  );
-
-  if (mode.kind === "action-menu") {
-    const targetSpec = mode.target;
-    const focusedHost =
-      targetSpec.kind === "host" ? (skills.find((s) => s.id === targetSpec.id) ?? null) : null;
-    return (
-      <Box flexDirection="column">
-        <Text color={colors.fg} bold>
-          Skill {ctx.runtime.binName}
-        </Text>
-        <Box marginTop={1}>
-          <Text color={colors.fgSubtle}>
-            {icons.bullet} acciones para{" "}
-            <Text color={colors.fg} bold>
-              {mode.target.label}
-            </Text>
-          </Text>
-        </Box>
-        <Box marginTop={1}>
-          <SectionedMenu
-            items={buildActionMenuItems(mode.target, focusedHost)}
-            onSelect={handleActionSelect}
-            isActive={isActive}
-          />
-        </Box>
-        <Box marginTop={1}>
-          <Text color={colors.fgMoreSubtle}>Esc para cerrar sin aplicar.</Text>
-        </Box>
-      </Box>
-    );
-  }
+  const inActionMode = mode.kind === "actions";
 
   return (
     <Box flexDirection="column">
-      <Text color={colors.fg} bold>
-        Skill {ctx.runtime.binName}
-      </Text>
-      <Box marginTop={1} flexDirection="column">
-        <AllHostsRow focused={isActive && cursor === 0} />
-        {skills.map((s, i) => (
-          <SkillRow key={s.id} skill={s} focused={isActive && cursor === i + 1} />
-        ))}
-      </Box>
-      <Box marginTop={1}>
-        <Text color={colors.fgMoreSubtle}>↑/↓ navegar · Enter abrir acciones · Esc cancelar</Text>
-      </Box>
-      {busy ? (
-        <Box marginTop={1}>
-          <Text color={colors.warning}>
-            {icons.spinner} {busy}
-          </Text>
+      <PageHead
+        title="Skills"
+        count={{
+          label: `${installedCount}/${totalCount}`,
+          tone: installedCount === totalCount && totalCount > 0 ? "ok" : "muted",
+        }}
+      />
+
+      <Box>
+        {/* Panel izquierdo: hosts */}
+        <Box
+          flexDirection="column"
+          minWidth={32}
+          marginRight={1}
+          borderStyle="round"
+          borderColor={inActionMode ? colors.borderFaint : colors.borderActive}
+          paddingX={1}
+        >
+          <Text color={colors.fgMoreSubtle}>HOSTS</Text>
+          {skills.map((s, i) => (
+            <HostRow
+              key={s.id}
+              label={s.label}
+              note={s.installed ? s.path : "no instalado"}
+              hooks={s.hooks_installed}
+              selected={cursor === i}
+              dimmed={inActionMode}
+              state={s.installed ? "ok" : "missing"}
+            />
+          ))}
         </Box>
-      ) : null}
-      {toast ? <Toast tone={toast.tone} message={toast.message} /> : null}
+
+        {/* Panel derecho: detalle + acciones */}
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          borderStyle="round"
+          borderColor={inActionMode ? colors.borderActive : colors.borderFaint}
+          paddingX={1}
+        >
+          <Text color={colors.fgMoreSubtle}>DETALLE</Text>
+          {currentTarget && focusedHost ? (
+            <>
+              <Box>
+                <Text color={colors.fgBright} bold>
+                  {currentTarget.label}
+                </Text>
+                <Box marginLeft={1}>
+                  <Pill tone={stateOfTarget === "installed" ? "ok" : "muted"}>
+                    {stateOfTarget === "installed" ? "instalado" : "no instalado"}
+                  </Pill>
+                </Box>
+              </Box>
+
+              <Box marginTop={1} flexDirection="column">
+                <Text color={colors.info}>{focusedHost.path}</Text>
+                {focusedHost.hooks_supported && focusedHost.hooks_installed ? (
+                  <Box marginTop={1}>
+                    <Pill tone="info">hooks activos</Pill>
+                  </Box>
+                ) : null}
+              </Box>
+
+              <Box marginTop={1} flexDirection="column">
+                {availableActions.map((a, i) => (
+                  <ActionRow
+                    key={a.id}
+                    label={a.label(stateOfTarget)}
+                    danger={a.danger === true}
+                    active={inActionMode && i === actionCursor}
+                  />
+                ))}
+              </Box>
+              <Text color={colors.fgFaint}>
+                {stateOfTarget === "installed"
+                  ? "reinstalar encadena clean-legacy + clean-cache + install · desinstalar encadena uninstall + clean-cache"
+                  : "instalar encadena clean-legacy + clean-cache + install"}
+              </Text>
+            </>
+          ) : (
+            <Text color={colors.fgFaint}>(seleccioná un host)</Text>
+          )}
+
+          {busy ? (
+            <Box marginTop={1}>
+              <Text color={colors.warning}>
+                {icons.spinner} {busy}
+              </Text>
+            </Box>
+          ) : null}
+        </Box>
+      </Box>
+
+      <Box marginTop={1}>
+        <Text color={colors.fgFaint}>
+          {inActionMode
+            ? "↑↓ navegar acciones · ⏎ aplicar · esc volver"
+            : "↑↓ navegar hosts · ⏎ ver acciones"}
+        </Text>
+      </Box>
     </Box>
   );
 }
 
-function rowToTarget(row: number, skills: SkillState[]): TargetSpec | null {
-  if (row === 0) return { kind: "all", label: "todos los hosts" };
-  const host = skills[row - 1];
-  if (!host) return null;
-  return { kind: "host", id: host.id, label: host.label };
-}
+// ===== sub-components =====
 
-function AllHostsRow({ focused }: { focused: boolean }) {
+function HostRow({
+  label,
+  note,
+  hooks,
+  selected,
+  dimmed,
+  state,
+}: {
+  label: string;
+  note: string;
+  hooks?: boolean;
+  selected: boolean;
+  dimmed: boolean;
+  state: "ok" | "missing";
+}) {
+  const focused = selected && !dimmed;
+  const stateColor = state === "ok" ? colors.success : colors.fgFaint;
   return (
     <Box>
-      <Text color={focused ? colors.primary : colors.fgMoreSubtle} bold={focused}>
-        {focused ? icons.focusBullet : " "}{" "}
+      <Text color={focused ? colors.accent : colors.fgFaint} {...(focused ? { bold: true } : {})}>
+        {selected ? "▸" : " "}
       </Text>
-      <Text color={focused ? colors.primary : colors.fgSubtle} bold>
-        ◎ Todos los hosts
-      </Text>
-      <Text color={colors.fgMoreSubtle}>
-        {" "}
-        (apply install / uninstall / clean-cache a claude + codex + warp + agents en una sola
-        pasada)
-      </Text>
-    </Box>
-  );
-}
-
-function SkillRow({ skill: s, focused }: { skill: SkillState; focused: boolean }) {
-  return (
-    <Box>
-      <Text color={focused ? colors.primary : colors.fgMoreSubtle} bold={focused}>
-        {focused ? icons.focusBullet : " "}{" "}
-      </Text>
-      <Text color={s.installed ? colors.success : colors.fgMoreSubtle} bold>
-        {s.installed ? icons.check : icons.cross}{" "}
-      </Text>
-      <Text color={focused ? colors.fg : colors.fgSubtle} bold={focused}>
-        {s.label}
-      </Text>
-      <Text color={colors.fgMoreSubtle}> · </Text>
-      <Text color={colors.fgSubtle}>{s.path}</Text>
-      {s.hooks_supported ? (
-        <>
-          <Text color={colors.fgMoreSubtle}> · </Text>
-          <Text color={s.hooks_installed ? colors.success : colors.fgMoreSubtle}>
-            hooks {s.hooks_installed ? icons.check : icons.cross}
+      <Text> </Text>
+      <Box flexGrow={1} flexDirection="column">
+        <Box>
+          <Text
+            color={focused ? colors.fgBright : colors.fgSubtle}
+            {...(focused ? { bold: true, inverse: true } : {})}
+          >
+            {focused ? ` ${label} ` : label}
           </Text>
-        </>
-      ) : null}
+          {hooks ? (
+            <Box marginLeft={1}>
+              <Pill tone="info">hooks</Pill>
+            </Box>
+          ) : null}
+        </Box>
+        <Text color={colors.fgFaint}>{note}</Text>
+      </Box>
+      <Text color={stateColor} bold>
+        {state === "ok" ? icons.check : icons.cross}
+      </Text>
     </Box>
   );
 }
+
+function ActionRow({
+  label,
+  danger,
+  active,
+}: {
+  label: string;
+  danger: boolean;
+  active: boolean;
+}) {
+  const cursorColor = active ? (danger ? colors.error : colors.accent) : colors.fgFaint;
+  const labelColor = danger ? colors.error : active ? colors.fgBright : colors.fgSubtle;
+  return (
+    <Box>
+      <Text color={cursorColor} {...(active ? { bold: true } : {})}>
+        {active ? "▸" : " "}
+      </Text>
+      <Text> </Text>
+      <Text color={labelColor} {...(active ? { bold: true, inverse: true } : {})}>
+        {active ? ` ${label} ` : label}
+      </Text>
+    </Box>
+  );
+}
+
+// ===== helpers (preserved) =====
 
 function buildArgsFor(action: SkillAction, target: TargetSpec): ParsedArgs {
   const flags = new Set<string>();
   const values = new Map<string, string>();
-  const targetValue = target.kind === "all" ? "all" : target.id;
-  values.set("target", targetValue);
-  if (target.kind === "all") flags.add("--confirm-all");
+  values.set("target", target.id);
   if (action === "install-full") flags.add("--force");
-  if (action === "install-skill-only") {
-    flags.add("--force");
-    flags.add("--skill-only");
-  }
-  if (action === "uninstall-with-hooks") flags.add("--with-hooks");
-  if (action === "uninstall-skill-only") flags.add("--skill-only");
   if (action === "clean-cache") values.set("plugin", "agent-workflow");
   return {
     rest: [actionToSubcommand(action)],
@@ -412,15 +448,9 @@ function buildArgsFor(action: SkillAction, target: TargetSpec): ParsedArgs {
 function actionToSubcommand(action: SkillAction): string {
   switch (action) {
     case "install-full":
-    case "install-skill-only":
       return "install-skill";
-    case "install-hooks":
-      return "install-hooks";
     case "uninstall-full":
-    case "uninstall-with-hooks":
       return "uninstall";
-    case "uninstall-skill-only":
-      return "uninstall-skill";
     case "clean-cache":
       return "clean-cache";
     case "clean-legacy":
@@ -430,20 +460,11 @@ function actionToSubcommand(action: SkillAction): string {
 
 async function dispatchAction(action: SkillAction, target: TargetSpec, ctx: CliContext) {
   const args = buildArgsFor(action, target);
-  if (action === "clean-cache" && target.kind === "all") {
-    return dispatchCleanCacheAll(ctx);
-  }
   switch (action) {
     case "install-full":
-    case "install-skill-only":
       return selfInstallSkill(args, ctx);
-    case "install-hooks":
-      return selfInstallHooks(args, ctx);
     case "uninstall-full":
-    case "uninstall-with-hooks":
       return selfUninstall(args, ctx);
-    case "uninstall-skill-only":
-      return selfUninstallSkill(args, ctx);
     case "clean-cache":
       return selfClearPluginCache(args, ctx);
     case "clean-legacy":
@@ -451,48 +472,12 @@ async function dispatchAction(action: SkillAction, target: TargetSpec, ctx: CliC
   }
 }
 
-async function dispatchCleanCacheAll(ctx: CliContext) {
-  const hosts: InstallTarget[] = ["claude", "codex", "warp", "agents"];
-  const errors: string[] = [];
-  for (const host of hosts) {
-    if (!CACHE_CLEAR_HOSTS.has(host)) continue;
-    const args: ParsedArgs = {
-      rest: ["clean-cache"],
-      plugin: {},
-      flags: new Set(),
-      values: new Map([
-        ["plugin", "agent-workflow"],
-        ["target", host],
-      ]),
-      valuesMulti: new Map(),
-    };
-    const result = await selfClearPluginCache(args, ctx);
-    if (!result.ok) errors.push(`${host}: ${result.error?.message ?? "unknown"}`);
-  }
-  if (errors.length > 0) {
-    return {
-      ok: false as const,
-      error: { code: "PARTIAL_FAILURE", message: errors.join("; ") },
-      exitCode: 1,
-    };
-  }
-  return { ok: true as const, data: { status: "cleaned" }, exitCode: 0 };
-}
-
 function buildBusyLabel(action: SkillAction, label: string): string {
   switch (action) {
     case "install-full":
       return `install completa en ${label}…`;
-    case "install-skill-only":
-      return `install skill en ${label}…`;
-    case "install-hooks":
-      return `install hooks en ${label}…`;
     case "uninstall-full":
       return `uninstall completa en ${label}…`;
-    case "uninstall-with-hooks":
-      return `uninstall completa + hooks en ${label}…`;
-    case "uninstall-skill-only":
-      return `uninstall skill en ${label}…`;
     case "clean-cache":
       return `limpiando caché en ${label}…`;
     case "clean-legacy":
@@ -505,19 +490,15 @@ function buildSuccessMessage(action: SkillAction, target: TargetSpec): string {
   switch (action) {
     case "install-full":
       return `Install completa OK en ${t}.`;
-    case "install-skill-only":
-      return `Skill instalada en ${t}.`;
-    case "install-hooks":
-      return `Hooks instalados en ${t}.`;
     case "uninstall-full":
       return `Uninstall completa OK en ${t}.`;
-    case "uninstall-with-hooks":
-      return `Uninstall completa + hooks OK en ${t}.`;
-    case "uninstall-skill-only":
-      return `Skill desinstalada de ${t}.`;
     case "clean-cache":
       return `Caché limpiada en ${t}.`;
     case "clean-legacy":
       return `Legacy skills removidos de ${t}.`;
   }
 }
+
+// Mantenemos imports para uso futuro de hooks/skill-only (no usados hoy).
+void selfInstallHooks;
+void selfUninstallSkill;

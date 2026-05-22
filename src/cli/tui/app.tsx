@@ -1,5 +1,5 @@
-import { Box, Text, useApp, useInput } from "ink";
-import { useMemo, useState } from "react";
+import { Box, useApp, useInput } from "ink";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
@@ -7,29 +7,74 @@ import { Header } from "./components/header.js";
 import { KeymapBar, type KeymapEntry } from "./components/keymap-bar.js";
 import { ScreenFrame } from "./components/screen-frame.js";
 import { TabBar, type TabDescriptor } from "./components/tab-bar.js";
+import { ToastStack, useToasts } from "./components/toast-stack.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { McpTab } from "./tabs/mcp-tab.js";
 import { PluginsTab } from "./tabs/plugins-tab.js";
+import { ProjectTab } from "./tabs/project-tab.js";
 import { SkillsTab } from "./tabs/skills-tab.js";
 import { StatusTab } from "./tabs/status-tab.js";
 import { UpdateTab } from "./tabs/update-tab.js";
-import { colors } from "./theme.js";
+import { type Density, TuiPrefsService } from "./tui-prefs.js";
 
 export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
   | { kind: "exit"; exitCode: ExitCode };
 
-type TabId = "status" | "mcp" | "skills" | "plugins" | "update";
+type TabId = "status" | "project" | "mcp" | "skills" | "plugins" | "update";
 
-const TAB_ORDER: readonly TabId[] = ["status", "mcp", "skills", "plugins", "update"] as const;
+const TAB_ORDER: readonly TabId[] = [
+  "status",
+  "project",
+  "mcp",
+  "skills",
+  "plugins",
+  "update",
+] as const;
 
-const TABS: TabDescriptor<TabId>[] = [
-  { id: "status", label: "Status" },
-  { id: "mcp", label: "MCP" },
-  { id: "skills", label: "Skills" },
-  { id: "plugins", label: "Plugins" },
-  { id: "update", label: "Update" },
-];
+// Atajo numérico → tab id.
+const TAB_BY_KEY: Record<string, TabId> = {
+  "1": "status",
+  "2": "project",
+  "3": "mcp",
+  "4": "skills",
+  "5": "plugins",
+  "6": "update",
+};
+
+const QUIT_HINT: KeymapEntry = { key: "q", action: "salir" };
+const TAB_HINT: KeymapEntry = { key: "Tab", action: "siguiente" };
+
+const KEYS_BY_TAB: Record<TabId, KeymapEntry[]> = {
+  status: [TAB_HINT, QUIT_HINT],
+  project: [
+    { key: "↑↓", action: "navegar" },
+    { key: "⏎", action: "aplicar", accent: true },
+    QUIT_HINT,
+  ],
+  mcp: [
+    { key: "↑↓", action: "navegar" },
+    { key: "⏎", action: "acciones", accent: true },
+    { key: "n", action: "nueva" },
+    QUIT_HINT,
+  ],
+  skills: [
+    { key: "↑↓", action: "navegar" },
+    { key: "⏎", action: "acciones", accent: true },
+    QUIT_HINT,
+  ],
+  plugins: [
+    { key: "↑↓", action: "navegar" },
+    { key: "/", action: "buscar" },
+    { key: "f", action: "filtros" },
+    QUIT_HINT,
+  ],
+  update: [
+    { key: "i", action: "aplicar", accent: true },
+    { key: "r", action: "buscar" },
+    QUIT_HINT,
+  ],
+};
 
 export interface AppProps {
   version: string;
@@ -47,114 +92,115 @@ export function App(props: AppProps) {
 
 function AppShell({ version, ctx, onResult }: AppProps) {
   const [activeTab, setActiveTab] = useState<TabId>("status");
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [density, setDensity] = useState<Density>("comfortable");
   const { exit } = useApp();
   const { locked: inputLocked } = useInputLock();
+  const { toasts, push: pushToast } = useToasts();
+
+  const prefsSvc = useMemo(() => new TuiPrefsService(ctx.fs, ctx.paths), [ctx.fs, ctx.paths]);
+
+  useEffect(() => {
+    void (async () => {
+      const prefs = await prefsSvc.load();
+      setDensity(prefs.density);
+    })();
+  }, [prefsSvc]);
+
+  /**
+   * Despacha acciones provenientes de las tabs (Proyecto landing, Update, etc).
+   * Las acciones que requieren ejecutar un comando CLI con stdin (init, update)
+   * salen del TUI primero y se manejan en `dispatchMenuAction` del main.
+   */
+  const runAction = useCallback(
+    (id: string, _payload?: Record<string, unknown>) => {
+      if (id === "project-init") {
+        onResult({ kind: "menu-action", action: "project-init" });
+        exit();
+        return;
+      }
+      if (id === "hub-init") {
+        onResult({ kind: "menu-action", action: "hub-init" });
+        exit();
+        return;
+      }
+      if (id === "quit") {
+        onResult({ kind: "exit", exitCode: 0 });
+        exit();
+        return;
+      }
+      if (id === "git:status") {
+        pushToast({
+          tone: "info",
+          title: "git status",
+          body: "Abrí tu terminal para ver el detalle.",
+        });
+        return;
+      }
+      pushToast({ tone: "info", title: id });
+    },
+    [pushToast, onResult, exit],
+  );
 
   useInput(
     (input, key) => {
-      if (helpOpen) {
-        handleHelpKey(input, key, setHelpOpen);
+      if (inputLocked) return;
+      if (input === "q" || input === "Q") {
+        onResult({ kind: "exit", exitCode: 0 });
+        exit();
         return;
       }
-      handleAppKey(input, key, {
-        setActiveTab,
-        setHelpOpen,
-        onExit: () => {
-          onResult({ kind: "exit", exitCode: 0 });
-          exit();
-        },
-      });
+      if (key.tab) {
+        setActiveTab((t) => cycleTab(t, key.shift === true));
+        return;
+      }
+      const target = TAB_BY_KEY[input];
+      if (target) setActiveTab(target);
     },
-    { isActive: !inputLocked },
+    { isActive: true },
   );
 
-  const keymap: KeymapEntry[] = useMemo(() => {
-    if (inputLocked) {
-      return [
-        { key: "⏎", action: "aceptar" },
-        { key: "Esc", action: "cancelar" },
-      ];
-    }
-    const tabKeys = keymapForTab(activeTab);
-    return [
-      ...tabKeys,
-      { key: "Tab", action: "cambiar tab" },
-      { key: "?", action: "ayuda" },
-      { key: "q", action: "salir" },
-    ];
-  }, [activeTab, inputLocked]);
+  const tabs: TabDescriptor<TabId>[] = [
+    { id: "status", label: "Status", key: "1" },
+    { id: "project", label: "Proyecto", key: "2" },
+    { id: "mcp", label: "MCP", key: "3" },
+    { id: "skills", label: "Skills", key: "4" },
+    { id: "plugins", label: "Plugins", key: "5" },
+    { id: "update", label: "Update", key: "6", alert: true },
+  ];
 
-  const tabContentActive = !helpOpen;
+  const keymap = KEYS_BY_TAB[activeTab] ?? [];
 
   return (
     <ScreenFrame>
       <Header version={version} cwd={ctx.env.cwd()} homeDir={ctx.env.homeDir()} />
-      <TabBar tabs={TABS} activeId={activeTab} />
-      <Box marginTop={1} flexDirection="column">
-        {activeTab === "status" ? <StatusTab ctx={ctx} isActive={tabContentActive} /> : null}
-        {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={tabContentActive} /> : null}
-        {activeTab === "skills" ? <SkillsTab ctx={ctx} isActive={tabContentActive} /> : null}
+      <TabBar tabs={tabs} activeId={activeTab} />
+      <Box marginTop={density === "compact" ? 0 : 1} flexDirection="column">
+        {activeTab === "status" ? <StatusTab ctx={ctx} isActive={true} /> : null}
+        {activeTab === "project" ? (
+          <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
+        ) : null}
+        {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
+        {activeTab === "skills" ? (
+          <SkillsTab ctx={ctx} isActive={true} onToast={pushToast} />
+        ) : null}
         {activeTab === "update" ? (
           <UpdateTab
             ctx={ctx}
             version={version}
-            isActive={tabContentActive}
+            isActive={true}
+            onToast={pushToast}
             onRequestUpdate={() => {
               onResult({ kind: "menu-action", action: "update" });
               exit();
             }}
           />
         ) : null}
-        {activeTab === "plugins" ? <PluginsTab ctx={ctx} isActive={tabContentActive} /> : null}
+        {activeTab === "plugins" ? <PluginsTab ctx={ctx} isActive={true} /> : null}
       </Box>
-      {helpOpen ? <HelpOverlay /> : <KeymapBar entries={keymap} />}
+      <ToastStack toasts={toasts} />
+      <KeymapBar entries={keymap} />
     </ScreenFrame>
   );
-}
-
-type AppKeyHandlers = {
-  setActiveTab: (next: TabId | ((prev: TabId) => TabId)) => void;
-  setHelpOpen: (open: boolean) => void;
-  onExit: () => void;
-};
-
-function handleHelpKey(
-  input: string,
-  key: { escape?: boolean },
-  setHelpOpen: (open: boolean) => void,
-): void {
-  if (key.escape || input === "?" || input === "q" || input === "Q") {
-    setHelpOpen(false);
-  }
-}
-
-function handleAppKey(
-  input: string,
-  key: { tab?: boolean; shift?: boolean },
-  handlers: AppKeyHandlers,
-): void {
-  if (input === "q" || input === "Q") {
-    handlers.onExit();
-    return;
-  }
-  if (input === "?") {
-    handlers.setHelpOpen(true);
-    return;
-  }
-  if (key.tab) {
-    handlers.setActiveTab((t) => cycleTab(t, key.shift === true));
-    return;
-  }
-  const byNumber: Record<string, TabId | undefined> = {
-    "1": "status",
-    "2": "mcp",
-    "3": "skills",
-    "4": "plugins",
-    "5": "update",
-  };
-  const target = byNumber[input];
-  if (target) handlers.setActiveTab(target);
 }
 
 function cycleTab(current: TabId, reverse: boolean): TabId {
@@ -163,100 +209,4 @@ function cycleTab(current: TabId, reverse: boolean): TabId {
     ? (idx - 1 + TAB_ORDER.length) % TAB_ORDER.length
     : (idx + 1) % TAB_ORDER.length;
   return TAB_ORDER[next] ?? "status";
-}
-
-function keymapForTab(tab: TabId): KeymapEntry[] {
-  switch (tab) {
-    case "mcp":
-      return [
-        { key: "↑↓", action: "navegar" },
-        { key: "⏎", action: "acciones" },
-        { key: "n", action: "nueva" },
-      ];
-    case "skills":
-      return [
-        { key: "↑↓", action: "navegar" },
-        { key: "⏎", action: "acciones" },
-      ];
-    case "update":
-      return [
-        { key: "↑↓", action: "navegar" },
-        { key: "⏎", action: "seleccionar" },
-      ];
-    case "plugins":
-      return [
-        { key: "↑↓", action: "navegar" },
-        { key: "⏎", action: "acciones" },
-        { key: "n", action: "nuevo" },
-      ];
-    case "status":
-      return [];
-  }
-}
-
-function HelpOverlay() {
-  return (
-    <Box
-      flexDirection="column"
-      marginTop={1}
-      borderStyle="round"
-      borderColor={colors.accent}
-      paddingX={2}
-      paddingY={1}
-    >
-      <Text color={colors.fg} bold>
-        Ayuda
-      </Text>
-      <Box marginTop={1} flexDirection="column">
-        <Help label="Tab / ⇧Tab" desc="cambiar tab" />
-        <Help label="1 .. 5" desc="ir a tab por número" />
-        <Help label="?" desc="abrir/cerrar esta ayuda" />
-        <Help label="q" desc="salir del TUI" />
-      </Box>
-      <Box marginTop={1} flexDirection="column">
-        <Text color={colors.fgSubtle} bold>
-          MCP
-        </Text>
-        <Help label="↑↓" desc="navegar conexiones" />
-        <Help label="⏎" desc="abrir menú de acciones de la conexión" />
-        <Help label="↑↓ ⏎" desc="navegar el menú y aplicar" />
-        <Help label="Esc" desc="cerrar menú sin aplicar" />
-        <Help label="n" desc="registrar nueva conexión" />
-      </Box>
-      <Box marginTop={1} flexDirection="column">
-        <Text color={colors.fgSubtle} bold>
-          Skills
-        </Text>
-        <Help label="↑↓" desc="navegar targets (Claude / Codex / Warp)" />
-        <Help label="⏎" desc="abrir menú de acciones del target" />
-        <Help label="↑↓ ⏎" desc="navegar el menú y aplicar (instalar / desinstalar)" />
-        <Help label="Esc" desc="cerrar menú sin aplicar" />
-      </Box>
-      <Box marginTop={1} flexDirection="column">
-        <Text color={colors.fgSubtle} bold>
-          Plugins
-        </Text>
-        <Help label="↑↓" desc="navegar plugins" />
-        <Help label="⏎" desc="abrir menú de acciones (clear / reload / install por host)" />
-        <Help label="↑↓ ⏎" desc="navegar el menú y aplicar" />
-        <Help label="Esc" desc="cerrar menú sin aplicar" />
-        <Help label="n" desc="agregar nuevo plugin desde URL git (Warp/Agents)" />
-      </Box>
-      <Box marginTop={1}>
-        <Text color={colors.fgMoreSubtle}>Esc cierra esta ventana.</Text>
-      </Box>
-    </Box>
-  );
-}
-
-function Help({ label, desc }: { label: string; desc: string }) {
-  return (
-    <Box>
-      <Text color={colors.accent} bold>
-        {label}
-      </Text>
-      <Text color={colors.fgMoreSubtle}> </Text>
-      <Text color={colors.fgSubtle}>{desc}</Text>
-    </Box>
-  );
 }

@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { installPluginSkillsFromGit } from "../../../application/self/install-plugin-skills-git.js";
 import { selfInstallPluginSkills } from "../../../application/self/install-plugin-skills.js";
 import type { InstallTarget } from "../../../application/self/install-skill.js";
@@ -11,7 +11,10 @@ import {
 } from "../../../application/self/plugin-cache-clear.js";
 import { selfReloadPluginCache } from "../../../application/self/plugin-cache-reload.js";
 import type { CliContext } from "../../types.js";
+import { HostChip, HostChipStrip } from "../components/host-chip.js";
 import { InputPrompt } from "../components/input-prompt.js";
+import { PageHead } from "../components/page-head.js";
+import { Pill } from "../components/pill.js";
 import {
   type MenuItem,
   type MenuItemTrailing,
@@ -188,14 +191,44 @@ const NEW_PLUGIN_MENU_ITEMS: MenuItem<NewPluginTarget>[] = [
   { kind: "item", label: "Agregar nuevo plugin desde URL en Oz/Agents", value: "agents" },
 ];
 
+type PluginFilter = "all" | "installed" | "missing" | "multi";
+
+const PLUGIN_FILTERS: Array<{ id: PluginFilter; label: string }> = [
+  { id: "all", label: "todos" },
+  { id: "installed", label: "instalados" },
+  { id: "missing", label: "faltantes" },
+  { id: "multi", label: "multi-host" },
+];
+
 export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
   const [plugins, setPlugins] = useState<PluginEntry[]>([]);
   const [cursor, setCursor] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
   const [toast, setToast] = useState<{ tone: ToastTone; message: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filter, setFilter] = useState<PluginFilter>("all");
   const startedRef = useRef(false);
   const { lock, unlock } = useInputLock();
+
+  // Filtra plugins según el filter activo + query case-insensitive.
+  const filteredPlugins = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return plugins.filter((p) => {
+      if (filter === "installed" && !p.targets.some((t) => t.installed)) return false;
+      if (filter === "missing" && p.sourcePath !== null) return false;
+      if (filter === "multi" && p.targets.filter((t) => t.installed).length < 2) return false;
+      if (q && !p.label.toLowerCase().includes(q) && !p.namespace.toLowerCase().includes(q))
+        return false;
+      return true;
+    });
+  }, [plugins, filter, query]);
+
+  // Cuando cambia el filtro, mover cursor al primero válido.
+  useEffect(() => {
+    setCursor((c) => Math.min(c, Math.max(0, filteredPlugins.length - 1)));
+  }, [filteredPlugins.length]);
 
   useEffect(() => {
     if (mode.kind === "idle") unlock();
@@ -224,7 +257,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
 
   const installFromLocal = useCallback(
     async (target: InstallTarget, force: boolean) => {
-      const plugin = plugins[cursor];
+      const plugin = filteredPlugins[cursor];
       if (!plugin?.sourcePath) return false;
       setBusy(`instalando en ${target}…`);
       setToast(null);
@@ -251,7 +284,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
       }
       return true;
     },
-    [plugins, cursor, ctx, refresh],
+    [filteredPlugins, cursor, ctx, refresh],
   );
 
   const installFromGit = useCallback(
@@ -262,7 +295,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
       ref?: string | null,
       namespaceOverride?: string,
     ) => {
-      const namespace = namespaceOverride ?? plugins[cursor]?.namespace ?? "";
+      const namespace = namespaceOverride ?? filteredPlugins[cursor]?.namespace ?? "";
       const label = HOST_LABELS[target as HostId] ?? target;
       setBusy(`clonando e instalando en ${label}…`);
       setToast(null);
@@ -289,12 +322,12 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         setBusy(null);
       }
     },
-    [plugins, cursor, ctx, refresh],
+    [filteredPlugins, cursor, ctx, refresh],
   );
 
   const install = useCallback(
     async (target: InstallTarget, force = false, forceGit = false) => {
-      const plugin = plugins[cursor];
+      const plugin = filteredPlugins[cursor];
       if (!plugin) return;
 
       if (!forceGit && plugin.sourcePath) {
@@ -307,12 +340,12 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
       }
       setMode({ kind: "entering-url", target, force });
     },
-    [plugins, cursor, installFromLocal, installFromGit],
+    [filteredPlugins, cursor, installFromLocal, installFromGit],
   );
 
   const clearCache = useCallback(
     async (target: CacheTarget) => {
-      const plugin = plugins[cursor];
+      const plugin = filteredPlugins[cursor];
       if (!plugin) return;
       const label = HOST_LABELS[target];
       setBusy(`limpiando ${label}…`);
@@ -338,12 +371,12 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         setBusy(null);
       }
     },
-    [plugins, cursor, ctx, refresh],
+    [filteredPlugins, cursor, ctx, refresh],
   );
 
   const reloadCache = useCallback(
     async (target: CacheTarget) => {
-      const plugin = plugins[cursor];
+      const plugin = filteredPlugins[cursor];
       if (!plugin) return;
       const label = HOST_LABELS[target];
       setBusy(`recargando ${label}…`);
@@ -369,7 +402,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         setBusy(null);
       }
     },
-    [plugins, cursor, ctx, refresh],
+    [filteredPlugins, cursor, ctx, refresh],
   );
 
   const addCustom = useCallback((target: InstallTarget) => {
@@ -379,20 +412,37 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
   useInput(
     (input, key) => {
       if (!isActive || busy || mode.kind !== "idle") return;
+      if (searchOpen) return; // InputPrompt has focus
       if (key.upArrow) {
         setCursor((c) => Math.max(0, c - 1));
         return;
       }
       if (key.downArrow) {
-        setCursor((c) => (plugins.length === 0 ? 0 : Math.min(plugins.length - 1, c + 1)));
+        setCursor((c) =>
+          filteredPlugins.length === 0 ? 0 : Math.min(filteredPlugins.length - 1, c + 1),
+        );
         return;
       }
       if (input === "n" || input === "N") {
         setMode({ kind: "new-plugin-menu" });
         return;
       }
+      if (input === "/") {
+        setSearchOpen(true);
+        return;
+      }
+      if (input === "f" || input === "F") {
+        const idx = PLUGIN_FILTERS.findIndex((f) => f.id === filter);
+        const next = PLUGIN_FILTERS[(idx + 1) % PLUGIN_FILTERS.length];
+        if (next) setFilter(next.id);
+        return;
+      }
+      if (input === "r" || input === "R") {
+        void refresh();
+        return;
+      }
       if (key.return) {
-        const target = plugins[cursor];
+        const target = filteredPlugins[cursor];
         if (target) setMode({ kind: "action-menu", target });
       }
     },
@@ -571,32 +621,108 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
     );
   }
 
-  if (plugins.length === 0 && !busy) {
-    return (
-      <Box flexDirection="column">
-        <Text color={colors.fg} bold>
-          Plugins
-        </Text>
+  const currentPlugin = filteredPlugins[cursor] ?? null;
+
+  return (
+    <Box flexDirection="column">
+      <PageHead
+        title="Plugins"
+        count={{ label: `${filteredPlugins.length}/${plugins.length}`, tone: "info" }}
+      />
+
+      {/* Filtros + búsqueda */}
+      <Box>
+        {PLUGIN_FILTERS.map((f, idx) => (
+          <Box key={f.id} marginLeft={idx === 0 ? 0 : 1}>
+            <Text color={filter === f.id ? colors.accent : colors.fgFaint} bold={filter === f.id}>
+              {filter === f.id ? `[${f.label}]` : ` ${f.label} `}
+            </Text>
+          </Box>
+        ))}
+        <Box marginLeft={2}>
+          <Text color={colors.fgFaint}>
+            <Text color={colors.accent} bold>
+              f
+            </Text>
+            {" filtros · "}
+            <Text color={colors.accent} bold>
+              /
+            </Text>
+            {" buscar · "}
+            <Text color={colors.accent} bold>
+              r
+            </Text>
+            {" refrescar"}
+          </Text>
+        </Box>
+      </Box>
+
+      {searchOpen ? (
+        <Box marginTop={1}>
+          <InputPrompt
+            message="Buscar plugin:"
+            defaultValue={query}
+            onSubmit={(v) => {
+              setQuery(v.trim());
+              setSearchOpen(false);
+            }}
+            isActive={isActive}
+          />
+        </Box>
+      ) : query ? (
+        <Box marginTop={1}>
+          <Text color={colors.fgFaint}>filtro:</Text>
+          <Text color={colors.info}> {query}</Text>
+          <Text color={colors.fgFaint}> (Esc o `/` para cambiar)</Text>
+        </Box>
+      ) : null}
+
+      {plugins.length === 0 && !busy ? (
         <Box marginTop={1}>
           <Text color={colors.fgMoreSubtle} italic>
             (sin plugins detectados — pulsa <Text color={colors.accent}>n</Text> para agregar desde
             URL git, o instala un companion plugin desde el marketplace de Claude Code)
           </Text>
         </Box>
-      </Box>
-    );
-  }
+      ) : (
+        <Box marginTop={1}>
+          {/* lista */}
+          <Box
+            flexDirection="column"
+            minWidth={42}
+            marginRight={1}
+            borderStyle="round"
+            borderColor={colors.borderActive}
+            paddingX={1}
+          >
+            <Text color={colors.fgMoreSubtle}>PLUGINS</Text>
+            {filteredPlugins.length === 0 ? (
+              <Text color={colors.fgFaint}>(sin resultados — `f` cambia filtro)</Text>
+            ) : (
+              filteredPlugins.map((p, i) => (
+                <PluginListRow key={p.id} plugin={p} focused={isActive && i === cursor} />
+              ))
+            )}
+          </Box>
 
-  return (
-    <Box flexDirection="column">
-      <Text color={colors.fg} bold>
-        Plugins
-      </Text>
-      <Box marginTop={1} flexDirection="column">
-        {plugins.map((plugin, i) => (
-          <PluginRow key={plugin.id} plugin={plugin} focused={isActive && i === cursor} />
-        ))}
-      </Box>
+          {/* detalle */}
+          <Box
+            flexDirection="column"
+            flexGrow={1}
+            borderStyle="round"
+            borderColor={colors.borderFaint}
+            paddingX={1}
+          >
+            <Text color={colors.fgMoreSubtle}>DETALLE</Text>
+            {currentPlugin ? (
+              <PluginDetail plugin={currentPlugin} />
+            ) : (
+              <Text color={colors.fgFaint}>(seleccioná un plugin)</Text>
+            )}
+          </Box>
+        </Box>
+      )}
+
       {busy ? (
         <Box marginTop={1}>
           <Text color={colors.warning}>
@@ -609,36 +735,89 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
   );
 }
 
-function PluginRow({ plugin, focused }: { plugin: PluginEntry; focused: boolean }) {
+function PluginListRow({ plugin, focused }: { plugin: PluginEntry; focused: boolean }) {
+  const installedHosts = plugin.targets.filter((t) => t.installed).map((t) => t.id);
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text color={focused ? colors.primary : colors.fgMoreSubtle} bold={focused}>
-          {focused ? icons.focusBullet : " "}
+    <Box>
+      <Text color={focused ? colors.accent : colors.fgFaint} {...(focused ? { bold: true } : {})}>
+        {focused ? "▸" : " "}
+      </Text>
+      <Text> </Text>
+      <Box minWidth={22}>
+        <Text
+          color={focused ? colors.fgBright : colors.fgSubtle}
+          {...(focused ? { bold: true, inverse: true } : {})}
+        >
+          {focused ? ` ${plugin.namespace} ` : plugin.namespace}
         </Text>
-        <Text color={focused ? colors.fg : colors.fgSubtle} bold={focused}>
-          {plugin.label}
-        </Text>
-        {plugin.version ? <Text color={colors.fgMoreSubtle}> v{plugin.version}</Text> : null}
-        {plugin.skillCount !== null ? (
-          <Text color={colors.fgMoreSubtle}> · {plugin.skillCount} skills</Text>
-        ) : null}
-        {!plugin.sourcePath && !plugin.sourceUrl ? (
-          <Text color={colors.warning}> (fuente no encontrada)</Text>
-        ) : !plugin.sourcePath && plugin.sourceUrl ? (
-          <Text color={colors.fgMoreSubtle}> (instalará desde git)</Text>
-        ) : null}
       </Box>
-      <Box flexDirection="column" marginLeft={2}>
+      <Box minWidth={10}>
+        <Text color={colors.info}>{plugin.version ? `v${plugin.version}` : "—"}</Text>
+      </Box>
+      <Box>
+        <Text color={colors.fgFaint}>
+          {installedHosts.length}/{plugin.targets.length}
+        </Text>
+      </Box>
+      <Box marginLeft={1}>
+        <HostChipStrip
+          active={installedHosts}
+          hosts={plugin.targets.map((t) => ({
+            id: t.id,
+            name: t.label,
+            glyph: t.id[0]?.toUpperCase() ?? "?",
+            short: t.id,
+            backed: true,
+          }))}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function PluginDetail({ plugin }: { plugin: PluginEntry }) {
+  return (
+    <Box flexDirection="column">
+      <Text color={colors.fgBright} bold>
+        {plugin.label}
+      </Text>
+      <Text color={colors.fgMoreSubtle}>
+        version · <Text color={colors.info}>{plugin.version ?? "—"}</Text>
+        {plugin.skillCount !== null ? (
+          <Text color={colors.fgFaint}> · {plugin.skillCount} skills</Text>
+        ) : null}
+      </Text>
+      {!plugin.sourcePath && !plugin.sourceUrl ? (
+        <Box marginTop={1}>
+          <Pill tone="warn">fuente no encontrada</Pill>
+        </Box>
+      ) : !plugin.sourcePath && plugin.sourceUrl ? (
+        <Box marginTop={1}>
+          <Pill tone="info">instalará desde git</Pill>
+        </Box>
+      ) : null}
+      <Box marginTop={1} flexDirection="column">
+        <Text color={colors.fgMoreSubtle}>hosts</Text>
         {plugin.targets.map((t) => (
           <Box key={t.id}>
-            <Text color={t.installed ? colors.success : colors.fgMoreSubtle} bold={t.installed}>
-              {t.installed ? icons.check : "–"}{" "}
-            </Text>
-            <Text color={colors.fgSubtle}>{t.label}</Text>
-            <Text color={colors.fgMoreSubtle}> · {t.path}</Text>
+            <HostChip id={t.id} on={t.installed} />
+            <Text> </Text>
+            <Text color={t.installed ? colors.fgBright : colors.fgFaint}>{t.label}</Text>
+            <Text color={colors.fgFaint}> · {t.path}</Text>
           </Box>
         ))}
+      </Box>
+      <Box marginTop={1}>
+        <Text color={colors.fgFaint}>
+          <Text color={colors.accent} bold>
+            ⏎
+          </Text>{" "}
+          acciones ·{" "}
+          <Text color={colors.accent} bold>
+            n
+          </Text>{" "}
+          nuevo desde URL
+        </Text>
       </Box>
     </Box>
   );
