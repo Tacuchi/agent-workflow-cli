@@ -30,7 +30,7 @@ Default: si `agent-workflow workspace-mode` retorna `hub` → `--scope all`. Sin
 2. **Manifests**: `.claude-plugin/plugin.json` y `.codex-plugin/plugin.json` existen y la versión coincide entre ambos.
 3. **Hooks**: `hooks/hooks.json` y `codex-hooks/hooks.json` parsean como JSON válido y los `command` apuntan al CLI (`agent-workflow ...`) — no a scripts Python locales.
 4. **Skills**: el directorio `skills/` existe; cada subdir tiene un `SKILL.md` con frontmatter completo (`name`, `description`, `version` semver) y `name` coincide con directorio.
-5. **MCP config** (si aplica): `.mcp.json` válido y env vars del DSN seteadas (qtc-dev only).
+5. **MCP config** (si aplica): `.mcp.json` válido y env vars del DSN seteadas (solo si el profile activo define `mcp_databases[]`).
 6. **runtime.json instalado** (agent-workflow only): `~/.workflow/agent-workflow/runtime.json` existe y matchea `config/agent-workflow-runtime.json`.
 
 ## Qué NO verifica (post-v6.3)

@@ -32,7 +32,7 @@ El camino post-compact lo coordinan los hooks `PreCompact` y `PostCompact` del p
 - **Slash explícito**: `/agent-workflow:compact`.
 - **NL del usuario**: "compactá", "guardá estado", "checkpoint", "vamos a compactar".
 - **Automático en SessionEnd hook**: al cerrar Claude Code/Codex, el hook escribe CHECKPOINT.md (no dispara `/compact` host porque la sesión ya termina).
-- **Automático en cierre de qtc-session**: el último paso de la skill `session` (closure) invoca `compact`.
+- **Automático en cierre de sesión**: el último paso de la skill `session` (closure) invoca `compact`.
 - **AI auto-trigger por contexto >75%**: cuando el AI estima carga de contexto >75% del modelo activo (heurística manual, no medición exacta), disparar `AskUserQuestion` con spec de M11 (`../session/references/prompts-catalog.md#M11`). Header `context`, 3 opciones (Compact ahora / Seguir, compact después / Cerrar sesión). Si elige "Compact ahora" → continuar con los pasos 1-5 abajo. Si elige otra → respetar la elección y dejar nota informal en CHECKPOINT.md cuando corresponda. **Si la sesión está en `closure`**: skip M11 (closure ya dispara compact opcional). NO narrar la pregunta en texto plano.
 
 ## Acción

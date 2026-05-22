@@ -90,9 +90,9 @@ Excepciones a recordar:
 - Hub mode con N>1 fuentes dirty → N questions tab-por-fuente.
 - Workspace marketplace / hub donde el workspace mismo (no las fuentes declaradas) tiene cambios: el AI **no** los commitea por iniciativa; sólo opera sobre las fuentes declaradas en `AW-PROJECT.Fuentes`.
 
-## Regla 4 — interacción con release / release-scripts / graduation
+## Regla 4 — interacción con export-scripts / graduation
 
-Los skills `release` y `release-scripts` (qtc-dev) son solo lectura/reporte: nunca commitean ni mergean. Lo mismo aplica a `graduate` (agent-workflow) — graduar artefactos crea/mueve archivos, pero el commit del cambio queda para el flujo M1 (Regla 3) o para la solicitud explícita del usuario.
+Los skills `export-scripts` y `graduate` (agent-workflow) son solo lectura/reporte: nunca commitean ni mergean — graduar artefactos crea/mueve archivos, pero el commit del cambio queda para el flujo M1 (Regla 3) o para la solicitud explícita del usuario.
 
 ## Regla 5 — bypass por mensaje literal
 

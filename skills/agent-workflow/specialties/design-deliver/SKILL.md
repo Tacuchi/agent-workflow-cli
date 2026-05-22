@@ -55,7 +55,7 @@ Producir `.workflow/sessions/<folder>/DELIVERY.md` (legacy: `ENTREGA.md`) con el
 
 ## Validation criteria
 
-- [cómo qtc-dev sabrá que la implementación cumple el spec]
+- [cómo dev sabrá que la implementación cumple el spec]
 
 ## Out of scope
 

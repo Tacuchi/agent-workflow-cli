@@ -4,6 +4,40 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.2.1] — 2026-05-22
+
+**Patch — Cleanup residual `qtc-*` post-smoke Codex v7.2.0**. El bulk sed de v7.2.0 buscó `qtc-*` (literal con asterisco) y dejó pasar refs no-asterisco (`qtc-session`, `qtc-dev`, `qtc-design`, `qtc-analyze`) que el smoke en `~/.codex/skills/agent-workflow/` evidenció. Limpia 7 refs vivas; preserva atribución histórica ("antes en qtc-*", version markers "qtc-dev v2.6+", "a partir de qtc-dev v2.6") y notas Strangler-Fig de convivencia (aliases legacy `qtc-*:*` siguen válidos vía `legacy-anchors.md`).
+
+### Changed
+
+- `doctrine/compact/SKILL.md` — trigger "Automático en cierre de **qtc-session**" → "Automático en cierre de **sesión**" (el skill se llama `session` ahora).
+- `specialties/design-deliver/SKILL.md` — placeholder template "[cómo **qtc-dev** sabrá ...]" → "[cómo **dev** sabrá ...]" (rol genérico).
+- `doctrine/session/references/branch-verification.md` — "Los flow plugins (qtc-dev, qtc-design, qtc-analyze) no duplican" → "Los workflows especializados (analyze-workflow, design-workflow, dev-workflow) no duplican" (los plugins de flujo se consolidaron como workflows en agent-workflow).
+- `doctrine/session/references/commits-policy.md` — Regla 4 retiraba skills `release`/`release-scripts` (qtc-dev) que ya no existen; reescrita alrededor de `export-scripts` y `graduate` (sucesores en agent-workflow tras consolidación de session061 / Propuesta 007).
+- `commands/doctor.md` — check #5 "MCP config ... (qtc-dev only)" → "(solo si el profile activo define `mcp_databases[]`)" (config MCP ahora vive en profile cascade, no en plugin).
+- `standards/coding-standards/references/fe-be-integration.md` — 2 refs vivas migradas a paths actuales: path "qtc-dev/coding-standards/database-conventions.md" → "agent-workflow:coding-standards/references/database-conventions.md"; "qtc-dev usa convención simple sparse" → "agent-workflow usa convención simple sparse".
+
+### Preserved (intencional, sin cambio)
+
+- Atribución histórica "antes en qtc-*" en descriptions de `workflows/{analyze,dev,design}-workflow/SKILL.md` y commands `migrate.md` / `project-init.md`.
+- Version markers "(qtc-dev v2.6+)" en `standards/coding-standards/references/{java-spring,angular-typescript}.md` y "a partir de qtc-dev v2.6 (session013)" en `fe-be-integration.md:3`.
+- Strangler-Fig convivencia notes en `doctrine/session/SKILL.md`, `lifecycle-deep.md`, `sandbox-readonly-rules.md`, prompts `C1`/`C2` (legacy aliases `qtc-*:*` válidos vía `legacy-anchors.md`).
+- Refs preservadas en v7.2.0: `migrate/SKILL.md`, `legacy-anchors.md`, `prompts-catalog.md` + prompts derivados, refs a `qtc-workflow-plugin` como companion plugin.
+
+### Tests
+
+Sin cambios funcionales; 645/645 verde se preserva. Audit grep cubre `qtc:` anchors literales pero NO `qtc-(dev|session|analyze|design|core)` no-asterisco — opcional ampliar el grep en una próxima sesión si se quiere cerrar la regla automatizada.
+
+### Migration
+
+```bash
+npm install -g @tacuchi/agent-workflow-cli@7.2.1
+agent-workflow self install --target claude --force
+agent-workflow self install --target codex --force
+```
+
+Sin breaking changes. Sólo prosa SKILL/commands.
+
 ## [7.2.0] — 2026-05-22
 
 **Minor — Agnostic CLI cleanup (session083 T7 closure)**. Eliminadas referencias residuales `qtc-*` hard-coded que el audit grep automatizado no detectaba (prosa SKILL, Java pkg examples, field names internos, detector plugins, CLAUDE/AGENTS root heredados del template QTC). El CLI ahora es estructuralmente agnóstico — la doctrina QTC (profile + aliases + lexico) vive únicamente en `qtc-workflow-plugin@v4.0.0+` companion.

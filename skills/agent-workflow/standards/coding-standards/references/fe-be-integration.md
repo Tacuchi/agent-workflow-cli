@@ -286,7 +286,7 @@ LIMIT p_tamanio;
 $$ LANGUAGE sql STABLE;
 ```
 
-Reglas qtc-dev/coding-standards/database-conventions.md siguen aplicando (header de 4 líneas, idempotencia, schema explícito, BEGIN/COMMIT en scripts).
+Reglas de `agent-workflow:coding-standards/references/database-conventions.md` siguen aplicando (header de 4 líneas, idempotencia, schema explícito, BEGIN/COMMIT en scripts).
 
 ## Refs
 
@@ -296,5 +296,5 @@ Reglas qtc-dev/coding-standards/database-conventions.md siguen aplicando (header
 - `agent-workflow:implement/SKILL.md` — phased mode (Phase 0/1/2 + gate M6 entre phases; S7 design-review antes de Phase 0 desde planning closure).
 - `agent-workflow:refactor/SKILL.md` — Strangler Fig para refactors completos.
 - `agent-workflow:prompts-catalog#M6,S7` — gates phased (S7 design-review antes de Phase 0; M6 entre phases). M9 retirado v2.8+.
-- [JSON Merge Patch RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396) — spec del comportamiento PATCH sparse (qtc-dev usa **convención simple sparse** en lugar del Content-Type RFC 7396, pero la semántica conceptual es idéntica salvo el caso "set to null intencional").
+- [JSON Merge Patch RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396) — spec del comportamiento PATCH sparse (agent-workflow usa **convención simple sparse** en lugar del Content-Type RFC 7396, pero la semántica conceptual es idéntica salvo el caso "set to null intencional").
 - [JSON Patch RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) — alternativa con array de operaciones; descartada por complejidad.
