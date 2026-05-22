@@ -4,6 +4,38 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.1] — 2026-05-22
+
+**Patch — Hotfix arquitectónico T7 smoke** (session083). v7.0.0 publicó el SKILL con commands dentro de `skills/agent-workflow/commands/` asumiendo que Claude Code los descubriría como slash commands. **No lo hace** — slash commands se discover sólo desde el `commands/` slot de un plugin (manifest `.claude-plugin/plugin.json`) o `~/.claude/commands/` user-level. v7.0.1 cierra el gap exponiendo el repo CLI como Claude Code plugin propio.
+
+### Added
+
+- **`.claude-plugin/plugin.json`** en la raíz del repo declarando el plugin `agent-workflow` con `commands: "./skills/agent-workflow/commands/"` + `skills: "./skills/"`. Permite que el repo CLI se instale como Claude Code plugin via marketplace (`/plugin install agent-workflow@<marketplace>`) y exponga los 17 slash commands con namespace canónico `/agent-workflow:*`.
+- **Distribución dual**: el repo ahora funciona como (1) **npm package** (`@tacuchi/agent-workflow-cli`) que provee el binario CLI + SKILL bundleado para `self install`, y (2) **Claude Code plugin** instalable desde marketplace que expone los slash commands. La SKILL y los commands viven en el mismo path (`skills/agent-workflow/`); el plugin manifest declara qué directorio mapea a qué slot del host.
+
+### Changed (BREAKING dentro de v7.x)
+
+- **17 commands renombrados** stripping prefijo: `agent-workflow-session.md` → `session.md`, `agent-workflow-compact.md` → `compact.md`, ... (los 17). Justificación: el namespace del plugin ya provee `agent-workflow:` — el prefijo en el filename causaba double-prefix `/agent-workflow:agent-workflow-session`. Post-rename: invocación canónica `/agent-workflow:session`, `/agent-workflow:export-plan`, etc.
+- **`skills/agent-workflow/commands/README.md`** actualizado con la lista de nombres canónicos + nota sobre el mecanismo de distribución (plugin via marketplace, NO via `self install-skill`).
+
+### Migration v7.0.0 → v7.0.1
+
+Si instalaste v7.0.0 y los slash commands no aparecen tras `/reload-plugins`:
+
+1. Upgrade del CLI: `npm install -g @tacuchi/agent-workflow-cli@7.0.1`.
+2. `agent-workflow self install-skill --target claude --force` (re-instala SKILL con nombres de commands canónicos).
+3. Agregar marketplace que hosta el plugin agent-workflow: en Claude Code, `/plugin marketplace add <URL-del-marketplace>`. Por ahora, `qtc-plugins-marketplace` v4.0.0+ incluye la entry `agent-workflow`.
+4. `/plugin install agent-workflow@qtc-marketplace`.
+5. `/reload-plugins` → debes ver `/agent-workflow:session`, `/agent-workflow:export-plan`, etc.
+
+### Why
+
+T7 smoke en workspace QTC piloto reveló que la instalación end-to-end del v7.0.0 no expone slash commands. Root cause: la migración T2 movió commands a `skills/agent-workflow/commands/` (un directorio dentro del SKILL) asumiendo discovery automático. Claude Code sólo descubre commands desde plugins registrados o user-level. Fix: convertir el repo CLI en plugin propio via `.claude-plugin/plugin.json` en la raíz + rename de commands para evitar double-prefix.
+
+### Tests
+
+- Total: 645 (sin tests nuevos en este patch — los renames + plugin manifest no requieren coverage adicional; el smoke end-to-end del usuario es la validación).
+
 ## [7.0.0] — 2026-05-22
 
 **Major BREAKING — Migración total de la doctrina lifecycle universal** (`docs/especificaciones/003-migracion-lifecycle-a-aw/DELIVERY.md`, T1+T2 de session083). El SKILL `agent-workflow` se convierte en autónomo y multi-empresa: hospeda 35 skills + 17 commands + 7 hooks template antes en `qtc-workflow-plugin`, parametrizados via `profile.json` cascade. CLI extendido con `--target` obligatorio + pre-clear de caché + sub-comandos `self detect-hosts` y `self install-hooks`. TUI `skills-tab` con sección Install/Uninstall. 645/645 tests verde, audit grep automatizado CI-friendly para R2 lock-in.

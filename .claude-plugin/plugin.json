@@ -1,0 +1,15 @@
+{
+  "name": "agent-workflow",
+  "version": "7.0.1",
+  "description": "Universal slash commands `/agent-workflow:*` para el runtime `@tacuchi/agent-workflow-cli@^7.0.0`. Hosta los 17 commands canónicos (session, resume, compact, project-init, hub-init, doctor, migrate, rules, 9 export-*) que invocan al CLI npm + leen la SKILL bundleada en `skills/agent-workflow/`. Instalación: `/plugin marketplace add ...` + `/plugin install agent-workflow@<marketplace>`. peerDependency: `@tacuchi/agent-workflow-cli@^7.0.0`.",
+  "author": {
+    "name": "Tacuchi",
+    "email": "jesus.loayza@quetalcompra.com"
+  },
+  "homepage": "https://github.com/Tacuchi/agent-workflow-cli",
+  "repository": "https://github.com/Tacuchi/agent-workflow-cli",
+  "license": "MIT",
+  "keywords": ["agent-workflow", "lifecycle", "session", "claude-code", "universal"],
+  "commands": "./skills/agent-workflow/commands/",
+  "skills": "./skills/"
+}

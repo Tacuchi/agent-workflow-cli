@@ -14,11 +14,13 @@ Contenido esperado (T2 PR2):
 
 Naming final: `/agent-workflow:<comando>` (decidido en D1 session082). Los aliases legacy de empresas existentes (e.g., `/qtc:*` en el caso de QTC) viven en el plugin hijo de la empresa correspondiente bajo `legacy-aliases/` por 2 sprints después del cutover (T5 del plan migración).
 
-Estado post-T2 (PR2): 17 commands migrados con prefijo `agent-workflow-` y todas las refs `/qtc:` reescritas a `/agent-workflow:`. Lista actual:
+Estado post-v7.0.1 (T7 hotfix): 17 commands con nombre canónico sin prefijo (el namespace del plugin "agent-workflow" lo provee). Invocación: `/agent-workflow:<filename>` (ej. `/agent-workflow:session`). Lista actual:
 
-- `agent-workflow-session.md`, `agent-workflow-compact.md`, `agent-workflow-resume.md`
-- `agent-workflow-export-plan.md`, `agent-workflow-export-scripts.md`, `agent-workflow-export-conclusions.md`
-- `agent-workflow-export-report.md`, `agent-workflow-export-arq.md`, `agent-workflow-export-tech-manuals.md`
-- `agent-workflow-export-qa-note.md`, `agent-workflow-export-requirement.md`, `agent-workflow-export-tech-note.md`
-- `agent-workflow-project-init.md`, `agent-workflow-hub-init.md`, `agent-workflow-doctor.md`
-- `agent-workflow-migrate.md`, `agent-workflow-rules.md`
+- `session.md`, `compact.md`, `resume.md`
+- `export-plan.md`, `export-scripts.md`, `export-conclusions.md`
+- `export-report.md`, `export-arq.md`, `export-tech-manuals.md`
+- `export-qa-note.md`, `export-requirement.md`, `export-tech-note.md`
+- `project-init.md`, `hub-init.md`, `doctor.md`
+- `migrate.md`, `rules.md`
+
+**Distribución como slash commands**: el repo `agent-workflow-cli` expone `.claude-plugin/plugin.json` en la raíz declarando este directorio como `commands` slot. El plugin se publica via `qtc-plugins-marketplace` (entry `agent-workflow`). `self install --target <host>` instala el SKILL pero NO registra los slash commands — el plugin debe instalarse por separado via `/plugin install agent-workflow@<marketplace>`.
