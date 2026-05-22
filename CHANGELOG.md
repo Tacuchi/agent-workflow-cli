@@ -4,6 +4,43 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.1] — 2026-05-22
+
+**Patch — Legacy skills cleanup** (session083 T7 smoke iteración 4). Cierra issue reportado por el usuario: Codex (y Warp) muestra warnings al iniciar porque `~/.agents/skills/` y `~/.warp/skills/` tienen 27+ skills `qtc-*` huérfanos del plugin v3.x install previo. v7.0.x removía solo el SKILL canónico, no detectaba estos leftovers.
+
+### Added
+
+- **`agent-workflow self clean-legacy --target <host>`** (`src/application/self/clean-legacy.ts`) — nuevo subcommand que detecta y remueve skills legacy del directorio `~/.<host>/skills/`. Por default elimina:
+  - **`qtc-*`** (prefix) — 37 skills del plugin v3.x (qtc-session, qtc-doctor, qtc-export-plan, etc.).
+  - **`agent-workflow-manager`** (full match) — pre-v3.x SKILL name.
+  - Flags: `--target {claude|codex|agents|warp|oz|all}` · `--dry-run` · `--prefix <p>` (repeatable, para agregar patterns adicionales) · sin tocar el SKILL canónico `agent-workflow` ni profile/commands/hooks user-level.
+  - Output: `removed[]` con path + prefix matched por entry; `prefixes_used`, `scanned_dirs`, `summary`.
+  - Dedup: si `--target all` y dos hosts comparten dir (ej. agents+oz comparten `~/.agents/skills`), escanea una sola vez.
+- **TUI: nueva acción "Legacy cleanup"** en el action-menu del skills-tab. Per host o "todos los hosts" con `--target all`. Aparece como sección separada para evitar confusión con uninstall del SKILL canónico.
+
+### Migration
+
+```bash
+# Upgrade
+npm install -g @tacuchi/agent-workflow-cli@7.1.1
+
+# Audit qué se va a borrar (dry-run)
+agent-workflow self clean-legacy --target all --dry-run
+
+# Limpieza real
+agent-workflow self clean-legacy --target all
+
+# O desde la TUI: agent-workflow → Skills → "◎ Todos los hosts" → Enter → "Clean legacy skills"
+```
+
+### Why
+
+T7 smoke en Codex (que lee también de `~/.agents/skills/`) reveló que el clean install del v7.1.0 quedaba "contaminado" por skills `qtc-*` legacy huérfanos del plugin v3.x que el CLI nunca había gestionado. Codex emite warnings al startup ("Skipped loading 4 skill(s) due to invalid SKILL.md files") porque esos SKILL.md son del formato antiguo. v7.1.1 expone la limpieza como ciudadana de primera clase en el CLI + TUI.
+
+### Tests
+
+- Total: 645 (test del subcommands list actualizado a 15 entries; coverage del nuevo `selfCleanLegacy` queda como follow-up — la lógica de scan+match+rm es trivial, el smoke del usuario es la validación).
+
 ## [7.1.0] — 2026-05-22
 
 **Minor additive — TUI UX expansion + uninstall complete + cache cleanup** (session083 T7 smoke iteración 3). Cierra el feedback del usuario: "mejorar las opciones del TUI para facilitar la instalación, desinstalación completa + limpieza de caché en cada host o de forma global". Plan symlink mode (skills.sh style) queda diferido para v7.2.0 por refactor mayor.

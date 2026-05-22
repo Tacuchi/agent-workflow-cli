@@ -1,4 +1,5 @@
 import { selfBootstrap } from "../../application/self/bootstrap.js";
+import { selfCleanLegacy } from "../../application/self/clean-legacy.js";
 import { selfDetectHosts } from "../../application/self/detect-hosts.js";
 import { selfDoctor } from "../../application/self/doctor-self.js";
 import { selfInstallHooks } from "../../application/self/install-hooks.js";
@@ -29,6 +30,7 @@ const SELF_SUBCOMMANDS = [
   "uninstall",
   "uninstall-skill",
   "clean-cache",
+  "clean-legacy",
   "mcp",
   "bootstrap",
 ] as const;
@@ -63,6 +65,8 @@ export const selfCommand: QtcCommand = {
         return selfUninstallSkill(args, ctx);
       case "clean-cache":
         return runCleanCache(args, ctx);
+      case "clean-legacy":
+        return selfCleanLegacy(args, ctx);
       case "mcp":
         return selfMcpConfig(args, ctx);
       case "bootstrap":

@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { selfCleanLegacy } from "../../../application/self/clean-legacy.js";
 import { selfInstallHooks } from "../../../application/self/install-hooks.js";
 import { type InstallTarget, selfInstallSkill } from "../../../application/self/install-skill.js";
 import { selfClearPluginCache } from "../../../application/self/plugin-cache-clear.js";
@@ -43,7 +44,8 @@ type SkillAction =
   | "uninstall-full"
   | "uninstall-with-hooks"
   | "uninstall-skill-only"
-  | "clean-cache";
+  | "clean-cache"
+  | "clean-legacy";
 
 const HOOKS_SUPPORTED_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
 const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
@@ -122,6 +124,16 @@ function buildActionMenuItems(
     kind: "item",
     label: cacheLabel,
     value: "clean-cache",
+  });
+  items.push({ kind: "section", label: "Legacy cleanup" });
+  const legacyLabel =
+    target.kind === "all"
+      ? "Clean legacy skills (qtc-*, agent-workflow-manager) en todos los hosts"
+      : `Clean legacy skills (qtc-*, agent-workflow-manager) en ${target.label}`;
+  items.push({
+    kind: "item",
+    label: legacyLabel,
+    value: "clean-legacy",
   });
   return items;
 }
@@ -411,6 +423,8 @@ function actionToSubcommand(action: SkillAction): string {
       return "uninstall-skill";
     case "clean-cache":
       return "clean-cache";
+    case "clean-legacy":
+      return "clean-legacy";
   }
 }
 
@@ -432,6 +446,8 @@ async function dispatchAction(action: SkillAction, target: TargetSpec, ctx: CliC
       return selfUninstallSkill(args, ctx);
     case "clean-cache":
       return selfClearPluginCache(args, ctx);
+    case "clean-legacy":
+      return selfCleanLegacy(args, ctx);
   }
 }
 
@@ -479,6 +495,8 @@ function buildBusyLabel(action: SkillAction, label: string): string {
       return `uninstall skill en ${label}…`;
     case "clean-cache":
       return `limpiando caché en ${label}…`;
+    case "clean-legacy":
+      return `removiendo legacy skills en ${label}…`;
   }
 }
 
@@ -499,5 +517,7 @@ function buildSuccessMessage(action: SkillAction, target: TargetSpec): string {
       return `Skill desinstalada de ${t}.`;
     case "clean-cache":
       return `Caché limpiada en ${t}.`;
+    case "clean-legacy":
+      return `Legacy skills removidos de ${t}.`;
   }
 }

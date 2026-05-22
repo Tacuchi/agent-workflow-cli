@@ -80,6 +80,7 @@ describe("selfCommand — without subcommand (H-07)", () => {
         "uninstall",
         "uninstall-skill",
         "clean-cache",
+        "clean-legacy",
         "mcp",
         "bootstrap",
       ]);
