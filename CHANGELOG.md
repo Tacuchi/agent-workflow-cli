@@ -4,6 +4,65 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] — 2026-05-22
+
+**Major BREAKING — Migración total de la doctrina lifecycle universal** (`docs/especificaciones/003-migracion-lifecycle-a-aw/DELIVERY.md`, T1+T2 de session083). El SKILL `agent-workflow` se convierte en autónomo y multi-empresa: hospeda 35 skills + 17 commands + 7 hooks template antes en `qtc-workflow-plugin`, parametrizados via `profile.json` cascade. CLI extendido con `--target` obligatorio + pre-clear de caché + sub-comandos `self detect-hosts` y `self install-hooks`. TUI `skills-tab` con sección Install/Uninstall. 645/645 tests verde, audit grep automatizado CI-friendly para R2 lock-in.
+
+### Changed (BREAKING)
+
+- **`self install-skill --target <host>` ahora es OBLIGATORIO** (antes default `all`). Pasar `--target all` requiere flag adicional `--confirm-all`. Errores nuevos: `TARGET_REQUIRED`, `CONFIRM_ALL_REQUIRED`. Migración: scripts que invocaban `self install-skill` deben agregar `--target <host>` o `--target all --confirm-all`.
+- **Estructura del SKILL bundleado**: antes flat (`SKILL.md` + `references/`), ahora 8 subcarpetas (`doctrine/` + `workflows/` + `specialties/` + `exports/` + `standards/` + `references/` + `commands/` + `hooks/`). 35 skills + 17 commands + 7 hooks template ahora viven dentro del bundle CLI.
+- **Anchors canónicos**: `qtc:<topic>` → `agent-workflow:<topic>` en el SKILL universal. Los aliases `qtc:*` se mantienen como alias permanentes en `references/legacy-anchors.md` para back-compat de CLAUDE.md históricos.
+- **Bloque CLAUDE.md por defecto**: `QTC-PROJECT` → `AW-PROJECT`. Workspaces QTC mantienen su bloque vía `profile.claude_md_block: "QTC-PROJECT"` cuando el profile QTC está cargado.
+
+### Added — T1 (PR1 cli-skill-skeleton)
+
+- **`skills/agent-workflow/{doctrine,workflows,specialties,exports,standards,commands,hooks}/`** — 7 nuevas subcarpetas (más `references/` pre-existente = 8 total) con README explicativo por cada una. Estructura definida en `docs/especificaciones/003-migracion-lifecycle-a-aw/ARCHITECTURE.md`.
+- **`src/application/profile/profile-service.ts`** — servicio `resolveProfile(fs, env, input)` con cascade 5 capas: (1) `--profile <path>` flag → (2) `AW_PROFILE` env → (3) `~/.config/agent-workflow/profile.json` (XDG-ish) → (4) `<cwd>/.<workspaceNamespace>/profile.json` → (5) `DEFAULT_PROFILE` embebido. Schema `Profile` con 8 campos: `namespace` (kebab), `company`, `claude_md_block` (`[A-Z][A-Z0-9_-]*`), `mcp_databases[]`, `lexicon_path`, `examples_path`, `migrate_legacy_rules[]`, `custom_anchors[]`. Validación manual (DEC-001 session083 — no Zod por consistencia con codebase). Errores tipados.
+- **`tests/unit/profile-service.test.ts`** — 19 unit tests (8 cascade + 3 errores + 8 schema validation).
+
+### Added — T2 (PR2 cli-doctrine-migration)
+
+- **Migración bulk de doctrina**: 35 skills genéricos copiados desde `qtc-workflow-plugin/skills/` a `skills/agent-workflow/{doctrine,workflows,specialties,exports,standards}/` según `MAPPING.md`. 17 commands `/qtc:*` → `/agent-workflow:*` migrados con prefijo `agent-workflow-` y refs internas reescritas mecánicamente. 1 hook template (`hooks/hooks.template.json`) migrado con `/qtc:` → `/agent-workflow:` rewrite. Cero hits residuales de `/qtc:` o `qtc-workflow-plugin` post-migración en el SKILL universal.
+- **Parametrización profile en 10 skills**: banner "**Profile parametrization**" prepended a cada uno de los 10 skills sensibles a empresa (5 antes-QTC: `project-init`, `hub-init`, `doctor`, `migrate`, `rules`; 5 ambiguos: `analyze-investigate`, `coding-standards`, `export-arq`, `export-report`, `refactor`) declarando qué campo de `profile.json` driva su comportamiento. Doc central `references/profile-parametrization.md` con el contrato completo por skill. Doc `references/legacy-anchors.md` documenta los aliases permanentes `qtc:*` → `agent-workflow:*` para back-compat de CLAUDE.md históricos. Audit grep final: 0 hits `QTC-PROJECT` / `qtc-cert`/`qtc-prod` / `qtc:<anchor>` / `/qtc:` slash / `MCP_QTC_*`. Residual permitido (12 hits): legacy detector `QTC-WORKFLOW` (preservado por intención en migrate/hub-init/project-init) + 2 ejemplos `RUNTIME QTC-*` como nombre de producto válido en prosa.
+- **`agent-workflow self install-hooks --target <host>`** (`src/application/self/install-hooks.ts`) — nuevo sub-comando que materializa `skills/agent-workflow/hooks/hooks.template.json` en la config del host destino. Adapter completo para `claude` (JSON merge en `~/.claude/settings.json`; preserva permissions, customFields, etc.; backup automático con timestamp si overwriteea hooks distintos; idempotente con detección por deep-equal; soporte `--dry-run`). Adapter stubs para `codex`, `warp`, `oz`, `agents` retornan `status: "unsupported"` con warning explicativo (Warp/OZ por DEC-W4 sin hook system; Codex usa mecanismo file-based diferente, futuro PR). Errores tipados: `TARGET_REQUIRED`, `INVALID_TARGET`, `TEMPLATE_NOT_FOUND`, `TEMPLATE_INVALID_JSON`, `TEMPLATE_INVALID_SCHEMA`, `SETTINGS_INVALID_JSON`.
+- **`tests/unit/self-install-hooks.test.ts`** — 14 tests integration con tmpdir cubriendo todos los caminos (R5 mitigation): TARGET_REQUIRED / INVALID_TARGET / unsupported targets (codex/warp/oz) / happy-path install / idempotent / preserves-other-keys / backup-on-overwrite / dry-run / SETTINGS_INVALID_JSON / template errors.
+- **TUI skills-tab Install/Uninstall section** (`src/cli/tui/tabs/skills-tab.tsx`): nuevas acciones `Instalar hooks` / `Reinstalar hooks` / `Instalar hooks (sin limpiar caché)` en el action-menu cuando el target soporta hooks (`claude`). Refresh detecta presencia de hooks en `~/.claude/settings.json` y muestra status inline (`hooks ✓` / `hooks ✗`) junto al skill status. Dispatcher común reusa `selfInstallSkill` / `selfInstallHooks` / `selfUninstallSkill` (contrato D2: zero lógica duplicada — TUI invoca CLI services). Sub-componente extraído `<SkillRow>` para complejidad cognitiva ≤15.
+- **`tests/unit/tui-skills-tab.test.tsx`** — 4 tests snapshot ink-testing-library cubriendo: render 3 hosts con skill+hooks status, hooks ✓ cuando settings.json tiene `hooks` key con entries, hooks ✗ cuando no, robustez ante settings.json con JSON inválido.
+- **`tests/unit/profile-parametrization-snapshot.test.ts`** — 5 tests golden coverage multi-empresa: DEFAULT_PROFILE (snapshot inline locked), QTC profile (8 campos preservados), ACME profile (hypothetical empresa nueva con workspace .acme/), DEFAULT_PROFILE Object.freeze, defensiva de no-aliasing entre resolves consecutivos.
+- **`tests/unit/skill-audit-grep.test.ts`** — 8 tests automatizados que ejecutan grep CI-friendly contra `skills/agent-workflow/{doctrine,workflows,specialties,exports,standards,commands,hooks}/` para R2 mitigation: 0 hits `QTC-PROJECT`, 0 hits `qtc-cert/qtc-prod`, 0 hits `qtc:<anchor>`, 0 hits `/qtc:` slash, 0 hits `MCP_QTC_*`, 0 hits `qtc-workflow-plugin`. Sanity check: 10 hits intencionales de `QTC-WORKFLOW` (legacy detector en migrate/hub-init/project-init). Lista de archivos EXEMPT documentada en código (commands/README.md + references/profile-parametrization.md + references/legacy-anchors.md son refs legítimas).
+- **`self install` extendido** (`src/application/self/install-skill.ts`): `--target {claude|codex|warp|oz|agents|all}` ahora **obligatorio** (antes default `all`). Errors nuevos: `TARGET_REQUIRED`, `CONFIRM_ALL_REQUIRED`. Flag `--confirm-all` requerido para `--target all` (excepto `--dry-run`). Pre-clear automático de caché del host destino vía `selfClearPluginCache` antes del copy (opt-out con `--keep-cache`). Output del install incluye `cache_cleared: boolean` y opcionalmente `cache_clear_warning` cuando el clear falla (no-blocking).
+- **`agent-workflow self detect-hosts`** (`src/application/self/detect-hosts.ts`) — nuevo sub-comando que reporta presencia de `~/.<host>/` config dir y `~/.<host>/skills/agent-workflow/` instalación por cada host (claude / codex / warp / oz / agents). Output: `{ hosts[], detected_count, installed_count, summary }`.
+- **`self bootstrap` actualizado** (`src/application/self/bootstrap.ts`): pasa `--confirm-all` al install interno cuando `--target all`. Backwards compat preservada.
+- **`tests/unit/self-install-skill.test.ts`** — 5 tests nuevos: TARGET_REQUIRED, CONFIRM_ALL_REQUIRED, dry-run skips confirm-all, cache_cleared reported, --keep-cache skips pre-clear.
+- **`tests/unit/self-detect-hosts.test.ts`** — 4 tests nuevos: no hosts detected, single host detected, skill installed detected, multi-host reporting.
+- **`tests/unit/self-command.test.ts`** — actualizado para incluir `detect-hosts` en la lista de subcommands.
+
+### Why
+
+v7.0.0 cierra el roadmap de autonomía del CLI: el SKILL `agent-workflow` deja de ser un cascarón que delega al plugin externo y se vuelve el lugar canónico para toda la doctrina lifecycle universal. El `profile-service` es el contrato multi-empresa que permite que el SKILL lea config de QTC, ACME, o cualquier empresa futura sin forks ni duplicación.
+
+La obligatoriedad de `--target` previene instalaciones accidentales en hosts no deseados; el pre-clear de caché evita estados intermedios donde el SKILL viejo coexiste con el nuevo en el cache del host. El sub-comando `self install-hooks --target claude` materializa los 7 hooks template en `~/.claude/settings.json` via JSON merge con backup, sin pisar otras keys (permissions, customFields). TUI `skills-tab` ofrece UX equivalente al CLI con dispatcher que reusa los services CLI (contrato D2 = zero lógica duplicada).
+
+### Pending para v7.0.0 (T3-T9)
+
+- **T3** — Bump a v7.0.0 + npm publish + smoke desde shell limpio.
+- **T4** — Plugin: tag v3.0.0-legacy + branch protegida `archive/v3.x-legacy`.
+- **T5** — Plugin: vaciar a placeholder + `profiles/profile-qtc.json` + `legacy-aliases/` + bump v4.0.0.
+- **T6** — Marketplace: bump `qtc` entry a v4.0.0 + nota peerDependency CLI ^7.0.0.
+- **T7** — Smoke test día 1 workspace QTC piloto.
+- **T8** — Monitoring semanas 1-4 post-PR5.
+- **T9** — Decisión semana 4 sobre retiro `legacy-aliases/`.
+
+### Tests
+
+- Total: 645 (586 previos + 19 T1 + 40 T2 = 59 nuevos). Suite verde, sin regresiones.
+  - T1: profile-service (19)
+  - T2.6: install-skill new behaviors + detect-hosts (9)
+  - T2.7: install-hooks adapter + tmpdir integration (14)
+  - T2.8: tui-skills-tab snapshot (4)
+  - T2.9: profile-parametrization snapshot (5) + skill-audit-grep automatizado (8)
+
 ## [6.2.0] — 2026-05-19
 
 **Minor additive — wire-ups del cierre de sesión.** Cierra R4 + R5 del audit `.workflow/sessions/session072-analyze-docs-orphan-audit/CONCLUSIONS.md`. Implementado en session073-dev-close-wire-up-r4-r5.

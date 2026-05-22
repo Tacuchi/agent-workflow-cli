@@ -70,8 +70,10 @@ describe("selfCommand — without subcommand (H-07)", () => {
       expect(data.subcommands).toEqual([
         "namespace",
         "doctor",
+        "detect-hosts",
         "update",
         "install-skill",
+        "install-hooks",
         "install-plugin-skills",
         "install-plugin-skills-git",
         "uninstall-skill",

@@ -1,5 +1,7 @@
 import { selfBootstrap } from "../../application/self/bootstrap.js";
+import { selfDetectHosts } from "../../application/self/detect-hosts.js";
 import { selfDoctor } from "../../application/self/doctor-self.js";
+import { selfInstallHooks } from "../../application/self/install-hooks.js";
 import { installPluginSkillsFromGit } from "../../application/self/install-plugin-skills-git.js";
 import { selfInstallPluginSkills } from "../../application/self/install-plugin-skills.js";
 import { selfInstallSkill } from "../../application/self/install-skill.js";
@@ -15,8 +17,10 @@ import type { CliContext } from "../types.js";
 const SELF_SUBCOMMANDS = [
   "namespace",
   "doctor",
+  "detect-hosts",
   "update",
   "install-skill",
+  "install-hooks",
   "install-plugin-skills",
   "install-plugin-skills-git",
   "uninstall-skill",
@@ -27,7 +31,7 @@ const SELF_SUBCOMMANDS = [
 export const selfCommand: QtcCommand = {
   name: "self",
   describe:
-    "Manage the agent-workflow CLI itself (namespace, doctor, update, install-skill, install-plugin-skills, install-plugin-skills-git, uninstall-skill, mcp, bootstrap).",
+    "Manage the agent-workflow CLI itself (namespace, doctor, detect-hosts, update, install-skill, install-hooks, install-plugin-skills, install-plugin-skills-git, uninstall-skill, mcp, bootstrap).",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const sub = args.rest[0];
     switch (sub) {
@@ -35,10 +39,14 @@ export const selfCommand: QtcCommand = {
         return selfNamespace(ctx);
       case "doctor":
         return selfDoctor(ctx);
+      case "detect-hosts":
+        return selfDetectHosts(ctx);
       case "update":
         return selfUpdate(args, ctx);
       case "install-skill":
         return selfInstallSkill(args, ctx);
+      case "install-hooks":
+        return selfInstallHooks(args, ctx);
       case "install-plugin-skills":
         return selfInstallPluginSkills(args, ctx);
       case "install-plugin-skills-git":

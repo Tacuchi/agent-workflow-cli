@@ -105,10 +105,11 @@ function buildUninstallArgs(dryRun: boolean): ParsedArgs {
 }
 
 function buildInstallArgs(dryRun: boolean): ParsedArgs {
+  const baseFlags = dryRun ? ["--force", "--dry-run"] : ["--force", "--confirm-all"];
   return {
     rest: [],
     plugin: {},
-    flags: new Set(dryRun ? ["--force", "--dry-run"] : ["--force"]),
+    flags: new Set(baseFlags),
     values: new Map([["target", "all"]]),
     valuesMulti: new Map(),
   };

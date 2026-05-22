@@ -1,0 +1,90 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'CONFIG_SRC=\"${CLAUDE_PLUGIN_ROOT}/config/agent-workflow-runtime.json\"; CONFIG_DST=\"$HOME/.workflow/agent-workflow/runtime.json\"; if [ -f \"$CONFIG_SRC\" ]; then mkdir -p \"$(dirname \"$CONFIG_DST\")\"; cp -f \"$CONFIG_SRC\" \"$CONFIG_DST\" 2>/dev/null; fi; NS_FILE=\"$HOME/.config/agent-workflow/namespace\"; mkdir -p \"$(dirname \"$NS_FILE\")\" 2>/dev/null; printf \"workflow\\n\" > \"$NS_FILE\" 2>/dev/null; exit 0'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-workflow hook branch-check",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*__execute_sql",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-workflow hook sql-mutation-guard",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-workflow hook git-commit-advisor",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-workflow auto-compact-on-close",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-workflow checkpoint-write",
+            "statusMessage": "Escribiendo CHECKPOINT.md antes de compactar... (tip: `/agent-workflow:compact` sintetiza el resumen con contexto vivo)",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-workflow resume-summary",
+            "statusMessage": "Recuperando estado tras compact...",
+            "timeout": 10
+          },
+          {
+            "type": "prompt",
+            "prompt": "Contexto compactado. El JSON anterior es output de `agent-workflow resume-summary`. Si hay `active_sessions`, invocá `/agent-workflow:resume` para sintetizar CHECKPOINT.md y presentar resumen. Si está vacío, terminá."
+          }
+        ]
+      }
+    ]
+  }
+}

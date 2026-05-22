@@ -135,7 +135,7 @@ describe("selfInstallSkill", () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
-    const args = buildArgs({ from: source }, []);
+    const args = buildArgs({ from: source, target: "all" }, ["--confirm-all"]);
 
     const result = await selfInstallSkill(args, ctx);
 
@@ -258,7 +258,10 @@ describe("selfInstallSkill", () => {
     await mkdir(claudeDest, { recursive: true });
     await writeFile(join(claudeDest, "SKILL.md"), "old\n", "utf8");
 
-    const result = await selfInstallSkill(buildArgs({ from: source }, []), ctx);
+    const result = await selfInstallSkill(
+      buildArgs({ from: source, target: "all" }, ["--confirm-all"]),
+      ctx,
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("DEST_EXISTS");
@@ -279,7 +282,10 @@ describe("selfInstallSkill", () => {
     await mkdir(claudeDest, { recursive: true });
     await writeFile(join(claudeDest, "SKILL.md"), "old\n", "utf8");
 
-    const result = await selfInstallSkill(buildArgs({ from: source }, ["--force"]), ctx);
+    const result = await selfInstallSkill(
+      buildArgs({ from: source, target: "all" }, ["--confirm-all", "--force"]),
+      ctx,
+    );
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       const claude = result.data.dests.find((d) => d.target === "claude");
@@ -297,7 +303,10 @@ describe("selfInstallSkill", () => {
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
-    const result = await selfInstallSkill(buildArgs({ from: source }, ["--dry-run"]), ctx);
+    const result = await selfInstallSkill(
+      buildArgs({ from: source, target: "all" }, ["--dry-run"]),
+      ctx,
+    );
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.status).toBe("dry-run");
@@ -316,7 +325,10 @@ describe("selfInstallSkill", () => {
     const badSource = join(workdir, "bad");
     await mkdir(badSource, { recursive: true });
 
-    const result = await selfInstallSkill(buildArgs({ from: badSource }, []), ctx);
+    const result = await selfInstallSkill(
+      buildArgs({ from: badSource, target: "all" }, ["--confirm-all"]),
+      ctx,
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("INVALID_SKILL_REPO");
@@ -330,7 +342,10 @@ describe("selfInstallSkill", () => {
     const invalidSource = join(workdir, "invalid");
     await makeFakeRepo(invalidSource, false);
 
-    const result = await selfInstallSkill(buildArgs({ from: invalidSource }, []), ctx);
+    const result = await selfInstallSkill(
+      buildArgs({ from: invalidSource, target: "all" }, ["--confirm-all"]),
+      ctx,
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("INVALID_SKILL_FRONTMATTER");
@@ -343,7 +358,7 @@ describe("selfInstallSkill", () => {
     const ctx = buildCtx(home, fs, proc);
 
     const result = await selfInstallSkill(
-      buildArgs({ from: join(workdir, "does-not-exist") }, []),
+      buildArgs({ from: join(workdir, "does-not-exist"), target: "all" }, ["--confirm-all"]),
       ctx,
     );
     expect(result.ok).toBe(false);
@@ -358,7 +373,9 @@ describe("selfInstallSkill", () => {
     const ctx = buildCtx(home, fs, proc);
 
     const result = await selfInstallSkill(
-      buildArgs({ from: "https://github.com/Tacuchi/agent-workflow-manager.git" }, []),
+      buildArgs({ from: "https://github.com/Tacuchi/agent-workflow-manager.git", target: "all" }, [
+        "--confirm-all",
+      ]),
       ctx,
     );
 
@@ -376,7 +393,9 @@ describe("selfInstallSkill", () => {
     const ctx = buildCtx(home, fs, proc);
 
     const result = await selfInstallSkill(
-      buildArgs({ from: "git@github.com:Tacuchi/agent-workflow-cli.git" }, []),
+      buildArgs({ from: "git@github.com:Tacuchi/agent-workflow-cli.git", target: "all" }, [
+        "--confirm-all",
+      ]),
       ctx,
     );
 
@@ -391,7 +410,11 @@ describe("selfInstallSkill", () => {
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
-    const result = await selfInstallSkill(buildArgs({}, []), ctx, async () => source);
+    const result = await selfInstallSkill(
+      buildArgs({ target: "all" }, ["--confirm-all"]),
+      ctx,
+      async () => source,
+    );
 
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
@@ -415,7 +438,11 @@ describe("selfInstallSkill", () => {
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
 
-    const result = await selfInstallSkill(buildArgs({}, []), ctx, async () => null);
+    const result = await selfInstallSkill(
+      buildArgs({ target: "all" }, ["--confirm-all"]),
+      ctx,
+      async () => null,
+    );
 
     expect(result.ok).toBe(false);
     expect(result.exitCode).toBe(1);
@@ -429,5 +456,70 @@ describe("selfInstallSkill", () => {
 
   it("SKILL_DIR_NAME points to the bundled skill name", () => {
     expect(SKILL_DIR_NAME).toBe("agent-workflow");
+  });
+
+  it("--target missing → TARGET_REQUIRED", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+    const result = await selfInstallSkill(buildArgs({ from: source }, []), ctx);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("TARGET_REQUIRED");
+      expect(result.error.message).toContain("--target");
+    }
+  });
+
+  it("--target all without --confirm-all → CONFIRM_ALL_REQUIRED", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "all" }, []), ctx);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("CONFIRM_ALL_REQUIRED");
+      expect(result.error.message).toContain("--confirm-all");
+    }
+  });
+
+  it("--target all with --dry-run does NOT require --confirm-all", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+    const result = await selfInstallSkill(
+      buildArgs({ from: source, target: "all" }, ["--dry-run"]),
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.status).toBe("dry-run");
+    }
+  });
+
+  it("--target claude without --keep-cache reports cache_cleared", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "claude" }, []), ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const claudeDest = result.data.dests.find((d) => d.target === "claude");
+      expect(claudeDest?.cache_cleared).toBe(true);
+    }
+  });
+
+  it("--keep-cache skips pre-clear (cache_cleared=false)", async () => {
+    const fs = new RealFs();
+    const proc = new FakeProcess();
+    const ctx = buildCtx(home, fs, proc);
+    const result = await selfInstallSkill(
+      buildArgs({ from: source, target: "claude" }, ["--keep-cache"]),
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const claudeDest = result.data.dests.find((d) => d.target === "claude");
+      expect(claudeDest?.cache_cleared).toBe(false);
+    }
   });
 });

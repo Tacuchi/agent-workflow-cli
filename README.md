@@ -1,6 +1,6 @@
 # @tacuchi/agent-workflow-cli
 
-Agnostic runtime CLI for session-lifecycle workflows. Pairs with namespace-aware plugins to provide commands like `sessions`, `session-create`, `session-close`, `checkpoint-write`, `plugin-doctor`, `auto-plan-decide`, and more.
+Agnostic runtime CLI for session-lifecycle workflows. Bundles the universal `agent-workflow` skill (35 skills + 17 commands + 7 hooks template) and supports multi-empresa parametrization via `profile.json` cascade. Pairs with optional company-specific plugins for legacy aliases.
 
 ## Install
 
@@ -10,31 +10,84 @@ npm install -g @tacuchi/agent-workflow-cli
 
 The CLI exposes two binaries: `agent-workflow` (canonical) and `aw` (short alias).
 
-## Bundled skill manager (v2.0.0+)
+## Bundled SKILL (v7.0.0+)
 
-The published tarball bundles the `agent-workflow-manager` skill under `skills/agent-workflow-manager/`. Install it into your Claude Code skills directory with:
+The published tarball bundles the universal `agent-workflow` SKILL under `skills/agent-workflow/`. Install it into your host's skill directory with `--target` (obligatorio desde v7.0.0):
 
 ```bash
-agent-workflow self install-skill
+# Specific host
+agent-workflow self install-skill --target claude
+agent-workflow self install-skill --target codex
+agent-workflow self install-skill --target warp
+
+# All detected hosts (requires --confirm-all)
+agent-workflow self install-skill --target all --confirm-all
 ```
 
-This copies the bundled skill to `~/.claude/skills/agent-workflow-manager/`. No network required.
+By default, the CLI clears any plugin cache for the target host before installing. Opt out with `--keep-cache`.
+
+```bash
+# Detect which hosts are present + which already have the SKILL
+agent-workflow self detect-hosts
+
+# Install hooks into ~/.claude/settings.json (claude only for now)
+agent-workflow self install-hooks --target claude
+
+# Dry-run
+agent-workflow self install-skill --target claude --dry-run
+```
+
+## Multi-empresa via profile.json
+
+The universal SKILL reads a `profile.json` to parametrize 10 sensitive skills (project-init, hub-init, doctor, migrate, rules, analyze-investigate, coding-standards, export-arq, export-report, refactor). Profile resolution cascade (highest precedence first):
+
+1. `--profile <path>` flag (explicit)
+2. `AW_PROFILE` env var
+3. `~/.config/agent-workflow/profile.json` (user-level)
+4. `<cwd>/.<namespace>/profile.json` (workspace-level)
+5. Embedded `DEFAULT_PROFILE` (8 fields with agnostic defaults)
+
+Schema (8 fields): `namespace` (kebab) · `company` · `claude_md_block` (`[A-Z][A-Z0-9_-]*`) · `mcp_databases[]` · `lexicon_path` · `examples_path` · `migrate_legacy_rules[]` · `custom_anchors[]`. See `skills/agent-workflow/references/profile-parametrization.md` for the per-skill contract.
+
+Example QTC profile:
+
+```json
+{
+  "namespace": "qtc",
+  "company": "QuetalCompra",
+  "claude_md_block": "QTC-PROJECT",
+  "mcp_databases": [
+    { "alias": "qtc-cert", "host": "10.0.0.10", "port": 5432, "database": "qtc_cert" },
+    { "alias": "qtc-prod", "host": "10.0.0.11", "port": 5432, "database": "qtc_prod" }
+  ],
+  "lexicon_path": "profiles/lexico-qtc.md",
+  "examples_path": "profiles/examples-qtc.md",
+  "migrate_legacy_rules": [
+    { "from": ".claude/sessions", "to": ".workflow/sessions", "scope": "anchor" }
+  ],
+  "custom_anchors": [
+    { "anchor": "qtc:super-admin-bypass", "target": "profiles/anchors/qtc-super-admin-bypass.md" }
+  ]
+}
+```
+
+The QTC profile + legacy aliases ship in the `qtc-workflow-plugin` companion plugin (v4.0.0+).
 
 ### Override the source
 
-Power users who want a specific revision (e.g., bleeding-edge from the upstream repo) can pass `--from`:
+Power users who want a specific revision can pass `--from`:
 
 ```bash
-# Clone from a git URL
-agent-workflow self install-skill --from https://github.com/Tacuchi/agent-workflow-manager.git
-
-# Copy from a local checkout
-agent-workflow self install-skill --from /path/to/agent-workflow-manager
+# Copy from a local checkout (skill development)
+agent-workflow self install-skill --target claude --from /path/to/agent-workflow-cli/skills/agent-workflow
 ```
 
 Flags:
 
-- `--force` — overwrite an existing destination.
+- `--target <claude|codex|warp|oz|agents|all>` — obligatorio.
+- `--confirm-all` — required when `--target all`.
+- `--keep-cache` — skip the automatic plugin cache clear before install.
+- `--force` — overwrite existing destination.
 - `--dry-run` — preview without writing.
 
 ## Namespace resolution

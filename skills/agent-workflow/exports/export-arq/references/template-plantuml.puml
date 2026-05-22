@@ -1,0 +1,77 @@
+' Plantilla PlantUML — arquitectura.puml
+'
+' Cuando se invoca `/agent-workflow:export-arq --diagrams plantuml`, el skill rellena
+' esta plantilla con los nodos del corpus + fuentes declaradas en AW-PROJECT.
+' El render visual lo hace el lector con plantuml.com/plantuml (online gratis)
+' o con plantuml.jar (local).
+'
+' Library: https://github.com/plantuml-stdlib/C4-PlantUML
+' Las llaves dobles {{PLACEHOLDER}} se reemplazan por el render del skill.
+
+@startuml {{ARCHIVO}}
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title {{PRODUCTO}} — Diagrama de Contexto C4
+
+' ===== Personas =====
+{{PERSONS_PUML}}
+' Ejemplo render esperado:
+' Person(dev, "Developer", "Miembro del equipo")
+
+' ===== Sistema bajo análisis =====
+{{SYSTEM_PUML}}
+' Ejemplo render esperado:
+' System(sistema, "Runtime qtc-*", "Coordinación de sesiones")
+
+' ===== Sistemas externos =====
+{{EXTERNAL_SYSTEMS_PUML}}
+' Ejemplo render esperado:
+' System_Ext(claude, "Claude Code", "Host AI principal")
+' System_Ext(codex, "Codex", "Host AI alternativo")
+' System_Ext(mcp_cert, "<mcp-cert> MCP", "Fuente de datos read-only")
+
+' ===== Relaciones =====
+{{RELATIONSHIPS_PUML}}
+' Ejemplo render esperado:
+' Rel(dev, sistema, "Usa")
+' Rel(sistema, claude, "Hooks + skills")
+' Rel(sistema, codex, "Hooks + skills")
+' Rel(sistema, mcp_cert, "SELECT/EXPLAIN/\d")
+
+SHOW_LEGEND()
+@enduml
+
+' ===========================================================================
+' Si el caller solicita Container view también, se genera un segundo bloque:
+' (skip si --scope sólo c4-context)
+' ===========================================================================
+
+@startuml {{ARCHIVO_CONTAINER}}
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title {{PRODUCTO}} — Diagrama de Contenedores C4
+
+{{PERSONS_PUML}}
+
+System_Boundary(sistema, "{{PRODUCTO}}") {
+  {{CONTAINERS_PUML}}
+  ' Ejemplo render esperado por contenedor:
+  ' Container(cli, "agent-workflow CLI", "Node.js + TypeScript", "Línea de comandos")
+  ' Container(plugin, "agent-workflow", "Markdown skills + JSON hooks", "Skills + commands")
+  ' Container(marketplace, "qtc-plugins-marketplace", "JSON manifest", "Distribución")
+}
+
+{{EXTERNAL_SYSTEMS_PUML}}
+
+{{CONTAINER_RELATIONSHIPS_PUML}}
+' Ejemplo render esperado:
+' Rel(dev, cli, "Ejecuta")
+' Rel(cli, plugin, "Lee skills/*")
+' Rel(plugin, marketplace, "Indexado por")
+
+SHOW_LEGEND()
+@enduml

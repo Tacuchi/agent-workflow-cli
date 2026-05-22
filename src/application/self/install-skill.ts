@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
+import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 
 export const SKILL_DIR_NAME = "agent-workflow";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
@@ -28,6 +29,8 @@ export interface SelfInstallTargetResult {
   status: "installed" | "dry-run" | "skipped";
   overwrote_existing: boolean;
   files_copied?: number;
+  cache_cleared?: boolean;
+  cache_clear_warning?: string;
   error?: string;
 }
 
@@ -49,6 +52,13 @@ const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [
 
 const ALL_INSTALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "warp", "oz"];
 
+const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
+  "claude",
+  "codex",
+  "warp",
+  "agents",
+]);
+
 export async function selfInstallSkill(
   args: ParsedArgs,
   ctx: CliContext,
@@ -56,7 +66,32 @@ export async function selfInstallSkill(
 ): Promise<CommandResult<SelfInstallSkillData>> {
   const force = args.flags.has("--force");
   const dryRun = args.flags.has("--dry-run");
-  const targetArg = args.values.get("target") ?? "all";
+  const keepCache = args.flags.has("--keep-cache");
+  const confirmAll = args.flags.has("--confirm-all");
+  const targetArg = args.values.get("target");
+
+  if (targetArg === undefined || targetArg.trim().length === 0) {
+    return {
+      ok: false,
+      error: {
+        code: "TARGET_REQUIRED",
+        message: `--target is required. Pick one of: ${TARGET_CHOICES.join(", ")}. Example: 'agent-workflow self install-skill --target claude'.`,
+      },
+      exitCode: 1,
+    };
+  }
+
+  if (targetArg === "all" && !confirmAll && !dryRun) {
+    return {
+      ok: false,
+      error: {
+        code: "CONFIRM_ALL_REQUIRED",
+        message:
+          "--target all installs into every detected host. Pass --confirm-all to acknowledge, or pick a specific host (claude|codex|warp|oz|agents).",
+      },
+      exitCode: 1,
+    };
+  }
 
   const targetsResult = resolveTargets(targetArg);
   if (!targetsResult.ok) return targetsResult.result;
@@ -108,17 +143,21 @@ export async function selfInstallSkill(
   const results: SelfInstallTargetResult[] = [];
   for (const t of existingTargets) {
     const dest = destByTarget[t.target];
+    const cacheOutcome = await preClearCache(t.target, ctx, keepCache);
     if (t.exists && force) {
       await rm(dest, { recursive: true, force: true });
     }
     const filesCopied = await copyTree(sourceArg, dest);
-    results.push({
+    const entry: SelfInstallTargetResult = {
       target: t.target,
       dest,
       status: "installed",
       overwrote_existing: t.exists,
       files_copied: filesCopied,
-    });
+      cache_cleared: cacheOutcome.cleared,
+    };
+    if (cacheOutcome.warning !== undefined) entry.cache_clear_warning = cacheOutcome.warning;
+    results.push(entry);
   }
 
   return {
@@ -275,6 +314,42 @@ async function copyDirCounting(src: string, dest: string, onFile: () => void): P
       await copyFile(srcPath, destPath);
       onFile();
     }
+  }
+}
+
+async function preClearCache(
+  target: InstallTarget,
+  ctx: CliContext,
+  keepCache: boolean,
+): Promise<{ cleared: boolean; warning?: string }> {
+  if (keepCache) return { cleared: false };
+  if (!CACHE_CLEAR_HOSTS.has(target)) return { cleared: false };
+
+  const cacheArgs: ParsedArgs = {
+    rest: ["clear-plugin-cache"],
+    plugin: {},
+    flags: new Set(),
+    values: new Map<string, string>([
+      ["plugin", SKILL_DIR_NAME],
+      ["target", target as CacheTarget],
+    ]),
+    valuesMulti: new Map(),
+  };
+
+  try {
+    const result = await selfClearPluginCache(cacheArgs, ctx);
+    if (!result.ok) {
+      return {
+        cleared: false,
+        warning: `cache_clear_failed: ${result.error?.message ?? "unknown"}`,
+      };
+    }
+    return { cleared: true };
+  } catch (err) {
+    return {
+      cleared: false,
+      warning: `cache_clear_exception: ${(err as Error).message}`,
+    };
   }
 }
 
