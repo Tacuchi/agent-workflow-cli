@@ -3,7 +3,27 @@ import { join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { type InstallTarget, TARGET_ROOTS } from "./install-skill.js";
+import type { InstallTarget } from "./install-skill.js";
+
+// Skills directories each host actually READS from (not just where we install).
+// Codex v0.133.0+ reads from `~/.codex/skills/` AND `~/.agents/skills/`, so
+// `clean-legacy --target codex` must scan both. Warp historically read from
+// multiple dirs (see HARNESSES.skillsDirs in domain/harnesses.ts).
+const LEGACY_SCAN_PATHS_BY_TARGET: Record<InstallTarget, readonly (readonly string[])[]> = {
+  claude: [[".claude", "skills"]],
+  codex: [
+    [".codex", "skills"],
+    [".agents", "skills"],
+  ],
+  warp: [
+    [".warp", "skills"],
+    [".agents", "skills"],
+    [".claude", "skills"],
+    [".codex", "skills"],
+  ],
+  oz: [[".agents", "skills"]],
+  agents: [[".agents", "skills"]],
+};
 
 export type CleanLegacyTargetChoice = InstallTarget | "all";
 
@@ -59,11 +79,14 @@ export async function selfCleanLegacy(
   const seenDirs = new Set<string>();
 
   for (const target of targets) {
-    const skillsDir = join(home, ...TARGET_ROOTS[target]);
-    if (seenDirs.has(skillsDir)) continue;
-    seenDirs.add(skillsDir);
-    scannedDirs.push(skillsDir);
-    removed.push(...(await scanDir(ctx, target, skillsDir, prefixes, dryRun)));
+    const pathsForTarget = LEGACY_SCAN_PATHS_BY_TARGET[target];
+    for (const pathSegments of pathsForTarget) {
+      const skillsDir = join(home, ...pathSegments);
+      if (seenDirs.has(skillsDir)) continue;
+      seenDirs.add(skillsDir);
+      scannedDirs.push(skillsDir);
+      removed.push(...(await scanDir(ctx, target, skillsDir, prefixes, dryRun)));
+    }
   }
 
   const status: SelfCleanLegacyData["status"] = dryRun

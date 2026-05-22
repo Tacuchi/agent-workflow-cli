@@ -4,6 +4,43 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.2] — 2026-05-22
+
+**Patch — `clean-legacy` escanea TODOS los paths que cada host lee** (session083 T7 smoke iteración 5). Bug en v7.1.1: `clean-legacy --target codex` sólo escaneaba `~/.codex/skills/` (donde el CLI instala) pero Codex v0.133.0 **también lee de `~/.agents/skills/`** — donde los 27 skills `qtc-*` legacy quedaron huérfanos. Resultado: el usuario corrió clean-legacy y Codex seguía mostrando warnings al arrancar.
+
+### Fixed
+
+- **`self clean-legacy` ahora escanea cada path que el host realmente lee**, no sólo el path donde instalamos el SKILL. Nueva tabla `LEGACY_SCAN_PATHS_BY_TARGET`:
+  - `claude` → `~/.claude/skills/`
+  - `codex` → `~/.codex/skills/` **+ `~/.agents/skills/`** (Codex v0.133.0+ lee también de agents)
+  - `warp` → `~/.warp/skills/` + `~/.agents/skills/` + `~/.claude/skills/` + `~/.codex/skills/` (Warp lee cross-host historicamente)
+  - `oz` → `~/.agents/skills/`
+  - `agents` → `~/.agents/skills/`
+- **Dedup mantenido**: si dos targets escanean el mismo dir (ej. `codex` + `oz` ambos tocan `~/.agents/`), se escanea una sola vez vía `seenDirs` set.
+
+### Why
+
+T7 smoke iteración 5: el usuario reportó "actualicé el CLI, limpie codex caché y legacy pero cuando abrí codex apareció lo mismo". Root cause: `clean-legacy --target codex` (v7.1.1) iteraba sobre `TARGET_ROOTS[codex] = [".codex", "skills"]` que es donde **instalamos**, no donde Codex **lee**. Codex v0.133.0 lee de múltiples paths siguiendo la convención agents-cross-host. Fix: separar el concepto "install target dir" del "scan paths" del host.
+
+### Migration
+
+```bash
+npm install -g @tacuchi/agent-workflow-cli@7.1.2
+
+# Verificar (debería listar los 27 qtc-* en ~/.agents/skills/ esta vez)
+agent-workflow self clean-legacy --target codex --dry-run
+
+# Limpieza real
+agent-workflow self clean-legacy --target codex
+
+# O nuke directo:
+agent-workflow self clean-legacy --target all
+```
+
+### Tests
+
+- Total: 645 (sin tests nuevos en este patch — la tabla LEGACY_SCAN_PATHS es config + el coverage existente cubre el algoritmo de scan/match/rm).
+
 ## [7.1.1] — 2026-05-22
 
 **Patch — Legacy skills cleanup** (session083 T7 smoke iteración 4). Cierra issue reportado por el usuario: Codex (y Warp) muestra warnings al iniciar porque `~/.agents/skills/` y `~/.warp/skills/` tienen 27+ skills `qtc-*` huérfanos del plugin v3.x install previo. v7.0.x removía solo el SKILL canónico, no detectaba estos leftovers.
