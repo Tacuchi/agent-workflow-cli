@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.3] — 2026-05-22
+
+**Patch — SKILL.md descriptions ≤1024 chars (Codex frontmatter validation)** (session083 T7 smoke iteración 6). Codex enforza una max length de **1024 chars** en el campo `description:` del frontmatter de cada SKILL.md. Dos skills migrados desde el plugin v3.x excedían: `export-arq` (1122 chars) y `export-report` (1360 chars), causando warnings al startup. Acortado quitando el version history del campo (queda en CHANGELOG del CLI).
+
+### Fixed
+
+- **`skills/agent-workflow/exports/export-arq/SKILL.md`** — description reducida de 1122 → ~720 chars. Removida la lista detallada v1.1/v1.2/v1.3 con sub-explicaciones. Mantiene: qué hace, input/output, default Structurizr + opt-in Mermaid/PlantUML, Mermaid preview link, audiencia, invocación.
+- **`skills/agent-workflow/exports/export-report/SKILL.md`** — description reducida de 1360 → ~750 chars. Removida la cadena de renames (`export-func` → `export-functional-specs` → ... → `export-report`) y el detalle por versión. Mantiene: qué hace, variantes A/B/C, estructura del informe (Objetivo + Componentes + Diagrama + Oportunidades), output dir, traducción técnico→ejecutiva, invocación.
+- Histórico completo de ambos skills disponible en este `CHANGELOG.md` (CLI) y en `git log` del repo.
+
+### Audit
+
+Post-fix, todos los 35 SKILL.md del bundle tienen `description:` ≤1024 chars. Único cercano: `doctrine/implement/SKILL.md` (935 chars) — bajo el límite, sin cambio necesario.
+
+### Migration
+
+```bash
+npm install -g @tacuchi/agent-workflow-cli@7.1.3
+agent-workflow self install --target codex --force   # reescribe SKILL files
+# Re-abrir Codex → ya no más warnings de frontmatter
+```
+
+### Tests
+
+- Total: 645 (sin tests nuevos; los cambios son sólo content del SKILL bundle. Coverage existente sigue verde).
+
 ## [7.1.2] — 2026-05-22
 
 **Patch — `clean-legacy` escanea TODOS los paths que cada host lee** (session083 T7 smoke iteración 5). Bug en v7.1.1: `clean-legacy --target codex` sólo escaneaba `~/.codex/skills/` (donde el CLI instala) pero Codex v0.133.0 **también lee de `~/.agents/skills/`** — donde los 27 skills `qtc-*` legacy quedaron huérfanos. Resultado: el usuario corrió clean-legacy y Codex seguía mostrando warnings al arrancar.
