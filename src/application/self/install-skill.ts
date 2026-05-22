@@ -66,15 +66,37 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
 
 // Per-target user-level commands directory (subdir = namespace).
 // File `<base>/<filename>.md` is invoked as `/agent-workflow:<filename>`.
+// Claude Code + Codex follow the same convention. Warp/OZ use rules/notebooks
+// instead of file-based slash commands (DEC-W3/W4) so they get null.
 const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
   claude: ".claude/commands/agent-workflow",
-  codex: null,
+  codex: ".codex/commands/agent-workflow",
   warp: null,
   oz: null,
   agents: null,
 };
 
+// Hosts where install-hooks merges into a user-level config (JSON/TOML).
+// Codex has a different config format (TOML) and no settled hook syntax at
+// the user level yet — see DEC-W4 for Warp/OZ (no hook system at all).
 const HOOKS_AUTOINSTALL_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
+
+function explainSkipReason(target: InstallTarget, kind: "commands" | "hooks"): string {
+  if (kind === "commands") {
+    if (target === "warp" || target === "oz") {
+      return `${target}: file-based slash commands not part of this host's model (uses rules/notebooks). SKILL alone is sufficient.`;
+    }
+    return `${target}: user-level commands install not implemented yet. SKILL is installed; CLI invocations work from within the host.`;
+  }
+  // hooks
+  if (target === "warp" || target === "oz") {
+    return `${target}: no hook system per DEC-W4. Skipped silently.`;
+  }
+  if (target === "codex") {
+    return `codex: hook merge into config.toml not implemented yet (different format from Claude's settings.json). SKILL works without hooks; CLI commands still callable manually.`;
+  }
+  return `${target}: hooks auto-install not supported yet.`;
+}
 
 export async function selfInstallSkill(
   args: ParsedArgs,
@@ -381,7 +403,7 @@ async function installUserCommands(
       installed: false,
       dest: null,
       files_copied: 0,
-      warning: `User-level commands not supported for target '${target}' yet (only claude).`,
+      warning: explainSkipReason(target, "commands"),
     };
   }
   const destDir = join(ctx.env.homeDir(), relpath);
@@ -415,7 +437,7 @@ async function installHooksForTarget(
   if (!HOOKS_AUTOINSTALL_TARGETS.has(target)) {
     return {
       status: "skipped",
-      warning: `Hooks auto-install only supported for 'claude' for now (target='${target}').`,
+      warning: explainSkipReason(target, "hooks"),
     };
   }
   const { selfInstallHooks } = await import("./install-hooks.js");

@@ -4,6 +4,39 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.4] — 2026-05-22
+
+**Patch — Multi-host compat: Codex commands install + warning UX** (session083 T7 smoke iteración). Cierra dos points de fricción que el usuario reportó pre-test del v7.0.3 install:
+
+### Added
+
+- **Codex commands install**: `self install --target codex` ahora también instala los 17 slash commands a `~/.codex/commands/agent-workflow/<n>.md` (paridad con Claude Code). Codex sigue la misma convención subdirectorio-como-namespace. Si Codex no descubre commands en esa ruta en tu versión, no es destructivo (sólo archivos extra que no se invocan).
+
+### Changed
+
+- **Mensajes de skip clarificados**: cuando `self install --target <warp|oz|codex>` omite alguna capa (commands o hooks), el `*_warning` field del output ahora explica *por qué* es comportamiento esperado en lugar de sonar a error:
+  - `warp` / `oz` + commands: "file-based slash commands not part of this host's model (uses rules/notebooks). SKILL alone is sufficient."
+  - `warp` / `oz` + hooks: "no hook system per DEC-W4. Skipped silently."
+  - `codex` + hooks: "hook merge into config.toml not implemented yet (different format from Claude's settings.json). SKILL works without hooks; CLI commands still callable manually."
+
+### Documented
+
+- **README "Per-target install matrix"**: nueva tabla en README enumera qué instala `self install --target <host>` por host (SKILL, user commands, hooks) + dónde van los archivos + por qué algunas capas se saltan en hosts específicos. Cubre los 5 targets (claude, codex, warp, oz, agents).
+
+### Why
+
+T7 smoke iterativo: con v7.0.3 listo para probar, el usuario pidió verificar compatibilidad con Codex y Warp antes del nuevo install. Audit mostró:
+- v7.0.3 instala SKILL correctamente en `~/.codex/skills/` y `~/.warp/skills/` ✓
+- Sin commands install en Codex (gap injustificado — Codex soporta la misma convención que Claude)
+- Sin commands/hooks install en Warp ✓ (intencional — DEC-W3/W4)
+- Mensajes de warning sonaban a error cuando eran skips esperados
+
+v7.0.4 cierra el gap de Codex (commands) y mejora la comunicación de los skips esperados (Warp/OZ).
+
+### Tests
+
+- Total: 645 (sin tests nuevos; cambios son tabla de targets + texto de warnings — coverage existente cubre la lógica de install).
+
 ## [7.0.3] — 2026-05-22
 
 **Patch — Hotfix UX + hook template** (session083 T7 smoke iteración). Cierra dos issues reportados en el clean install de v7.0.2.

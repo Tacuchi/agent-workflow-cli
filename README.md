@@ -15,26 +15,46 @@ The CLI exposes two binaries: `agent-workflow` (canonical) and `aw` (short alias
 The published tarball bundles the universal `agent-workflow` SKILL under `skills/agent-workflow/`. Install it into your host's skill directory with `--target` (obligatorio desde v7.0.0):
 
 ```bash
-# Specific host
-agent-workflow self install-skill --target claude
-agent-workflow self install-skill --target codex
-agent-workflow self install-skill --target warp
+# Specific host (alias 'install' = 'install-skill' desde v7.0.3)
+agent-workflow self install --target claude
+agent-workflow self install --target codex
+agent-workflow self install --target warp
 
 # All detected hosts (requires --confirm-all)
-agent-workflow self install-skill --target all --confirm-all
+agent-workflow self install --target all --confirm-all
 ```
 
 By default, the CLI clears any plugin cache for the target host before installing. Opt out with `--keep-cache`.
+
+### Per-target install matrix
+
+Since v7.0.2+v7.0.4, `self install --target <host>` installs **SKILL + user-level slash commands + hooks** in a single shot. The full set varies per host based on what the host supports:
+
+| Host | SKILL | User-level commands (`/agent-workflow:*`) | Hooks |
+|---|---|---|---|
+| `claude` | `~/.claude/skills/agent-workflow/` | `~/.claude/commands/agent-workflow/<n>.md` | `~/.claude/settings.json` (JSON merge + backup) |
+| `codex` | `~/.codex/skills/agent-workflow/` | `~/.codex/commands/agent-workflow/<n>.md` | skipped (config.toml format not yet wired) |
+| `warp` | `~/.warp/skills/agent-workflow/` | skipped (uses rules/notebooks, not slash commands — DEC-W3) | skipped (no hook system — DEC-W4) |
+| `oz` | `~/.agents/skills/agent-workflow/` | skipped (same as Warp) | skipped (same as Warp) |
+| `agents` | `~/.agents/skills/agent-workflow/` | skipped | skipped |
+
+For hosts where a layer is skipped, the SKILL is sufficient — the AI reads the SKILL contents and invokes CLI commands directly via `agent-workflow <subcommand>`.
+
+Opt-out flags for granular control:
+
+- `--skill-only` → only the SKILL (legacy v7.0.0/v7.0.1 behavior).
+- `--no-commands` → SKILL + hooks, no user commands.
+- `--no-hooks` → SKILL + commands, no hooks merge.
 
 ```bash
 # Detect which hosts are present + which already have the SKILL
 agent-workflow self detect-hosts
 
-# Install hooks into ~/.claude/settings.json (claude only for now)
+# Install hooks separately (claude only for now)
 agent-workflow self install-hooks --target claude
 
 # Dry-run
-agent-workflow self install-skill --target claude --dry-run
+agent-workflow self install --target claude --dry-run
 ```
 
 ## Multi-empresa via profile.json
