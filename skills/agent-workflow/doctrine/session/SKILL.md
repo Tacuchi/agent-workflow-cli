@@ -1,12 +1,12 @@
 ---
 name: session
-description: Lifecycle universal de sesiones qtc-* en 4 fases (planning/execution/validation/closure). Crea, retoma, lista o cierra sesiones componiendo skills de especialidad según el flow elegido (dev/design/analyze). Auto-plan antes de editar código. Topic-change detection en execution. Closure propone commits por fuente afectada (propose-then-execute). Invocado solo vía /agent-workflow:session.
+description: Lifecycle universal de sesiones agent-workflow en 4 fases (planning/execution/validation/closure). Crea, retoma, lista o cierra sesiones componiendo skills de especialidad según el flow elegido (dev/design/analyze). Auto-plan antes de editar código. Topic-change detection en execution. Closure propone commits por fuente afectada (propose-then-execute). Invocado solo vía /agent-workflow:session.
 version: 4.3.0
 ---
 
-# Session — Lifecycle universal qtc-* v3.0
+# Session — Lifecycle universal agent-workflow v3.0
 
-Skill **único** y **universal** para el ciclo de vida de sesiones de toda la familia qtc-*. Vive en agent-workflow; los flow plugins son especialistas standalone vía `/agent-workflow:use` y declaran su comportamiento como workflow consumido por este skill.
+Skill **único** y **universal** para el ciclo de vida de sesiones de toda la familia agent-workflow. Vive en agent-workflow; los flow plugins son especialistas standalone vía `/agent-workflow:use` y declaran su comportamiento como workflow consumido por este skill.
 
 ## Cuándo se invoca
 
@@ -380,4 +380,4 @@ agent-workflow sessions [--include-legacy]
 - **`references/auto-plan-rules.md`** — disparadores skip/lite/full.
 - **`references/sandbox-readonly-rules.md`** — reglas universales de plan mode (canon).
 - **shared-contract.md §14-§19** — contrato del lifecycle universal.
-- **`agent-workflow:redaccion-simple`** — guía transversal de redacción para todos los artefactos qtc-* (frases cortas, listas, sin jerga). Aplicar al escribir OBJECTIVE/TASKS/DECISIONS/EVIDENCE/FINDINGS/CONCLUSIONS/CHECKPOINT/STATUS/PROBLEM/IDEAS/DELIVERY.
+- **`agent-workflow:redaccion-simple`** — guía transversal de redacción para todos los artefactos agent-workflow (frases cortas, listas, sin jerga). Aplicar al escribir OBJECTIVE/TASKS/DECISIONS/EVIDENCE/FINDINGS/CONCLUSIONS/CHECKPOINT/STATUS/PROBLEM/IDEAS/DELIVERY.

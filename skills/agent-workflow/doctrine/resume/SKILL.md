@@ -27,8 +27,8 @@ Output:
 {
   "active_sessions": ["session046-dev-jobs-async"],
   "primary_session": "session046-dev-jobs-async",
-  "phase_from_qtc_project": "execution",
-  "branches_from_qtc_project": ["mscore-solicitud-spring=feature/session046"],
+  "phase_from_aw_project": "execution",
+  "branches_from_aw_project": ["mscore-solicitud-spring=feature/session046"],
   "checkpoint_present": true,
   "checkpoint": {
     "actualizado": "2026-04-25 20:14",

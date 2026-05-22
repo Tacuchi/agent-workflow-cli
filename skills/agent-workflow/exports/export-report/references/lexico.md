@@ -23,8 +23,8 @@ Tabla determinista que el skill `export-report` aplica durante el render (Paso 6
 | graduación · graduate · graduado | "publicación final" · "publicado" |
 | hub mode · hub workspace · workspace hub | "área de trabajo común" · "espacio de coordinación" |
 | Strangler Fig · opt-in · opt-out | (omitir; usar "migración progresiva" / "activación opcional") |
-| harness · runtime · runtime qtc-* | "entorno de trabajo del equipo" · "sistema" |
-| qtc-* · agent-workflow:rules · agent-workflow:session · agent-workflow:commits-policy · `/agent-workflow:*` | (omitir; usar "el sistema" · "las reglas comunes" · "el ciclo de trabajo") |
+| harness · runtime · runtime agent-workflow | "entorno de trabajo del equipo" · "sistema" |
+| agent-workflow · agent-workflow:rules · agent-workflow:session · agent-workflow:commits-policy · `/agent-workflow:*` | (omitir; usar "el sistema" · "las reglas comunes" · "el ciclo de trabajo") |
 | Codex · Claude Code · Warp · Oz | "herramientas del equipo" (genérico) salvo que el contexto justifique nombrarlas |
 | DEC-NNN | "decisión documentada N°NNN" · "una decisión" |
 | TUI · CLI · TTY | "interfaz textual" · "interfaz de línea de comandos" |
@@ -51,7 +51,7 @@ Tabla determinista que el skill `export-report` aplica durante el render (Paso 6
 ### Ejemplo 1 — Resumen ejecutivo
 
 **Antes (técnico)**:
-> El runtime qtc-* incorporó un nuevo hook PreToolUse que valida el branch antes de cada Edit/Write. Se migraron 36 sesiones legacy al formato canónico y se retiró el M9 contract-review en favor del DESIGN.md + S7 gate.
+> El runtime agent-workflow incorporó un nuevo hook PreToolUse que valida el branch antes de cada Edit/Write. Se migraron 36 sesiones legacy al formato canónico y se retiró el M9 contract-review en favor del DESIGN.md + S7 gate.
 
 **Después (ejecutivo)**:
 > El sistema incorporó controles automáticos que validan la línea de trabajo activa antes de cada cambio. Se completó la migración de ciclos de trabajo antiguos al formato común y se reemplazó la revisión técnica intermedia por una revisión de diseño previa.
@@ -112,7 +112,7 @@ agent-workflow
 agent-workflow:rules
 agent-workflow:session
 agent-workflow:commits-policy
-qtc-*
+agent-workflow
 agent-workflow:
 /agent-workflow:
 postmortem
@@ -133,7 +133,7 @@ Strangler Fig
 opt-in
 opt-out
 harness
-runtime qtc-*
+runtime agent-workflow
 Codex
 Claude Code
 Warp

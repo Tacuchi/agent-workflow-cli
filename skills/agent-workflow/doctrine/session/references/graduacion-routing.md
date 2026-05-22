@@ -1,6 +1,6 @@
 # Graduación: regla hub vs project (DEC-002)
 
-Regla canónica para decidir **dónde** se gradúa un artefacto al cerrar una sesión qtc-*. Reemplaza la regla anterior "hub-vs-fuente con prompt M12".
+Regla canónica para decidir **dónde** se gradúa un artefacto al cerrar una sesión agent-workflow. Reemplaza la regla anterior "hub-vs-fuente con prompt M12".
 
 ## Regla absoluta
 

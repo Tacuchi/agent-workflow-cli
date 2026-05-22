@@ -8,7 +8,7 @@ version: 1.1.0
 
 # Hub Init
 
-Bootstrap del bloque AW-PROJECT para un workspace **multi-repo** (hub mode). Hub mode introduce el marcador `Mode: hub` que activa heurísticas hub-aware en el resto de la familia qtc-*.
+Bootstrap del bloque AW-PROJECT para un workspace **multi-repo** (hub mode). Hub mode introduce el marcador `Mode: hub` que activa heurísticas hub-aware en el resto de la familia agent-workflow.
 
 ## Cuándo usar
 

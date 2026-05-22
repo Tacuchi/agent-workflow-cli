@@ -1,10 +1,10 @@
 ---
 name: design-brief
-description: Capta el brief inicial de una sesión de diseño y declara el `## Type` (project|system). Invocado desde la fase planning del lifecycle universal qtc-core cuando el OBJECTIVE menciona UI/UX/diseño/pantalla/mockup/wireframe. Produce OBJECTIVE.md con secciones Type, Brief, Context y Acceptance criteria. No produce código ni mocks aún — sólo capturar QUÉ y POR QUÉ.
+description: Capta el brief inicial de una sesión de diseño y declara el `## Type` (project|system). Invocado desde la fase planning del lifecycle universal de agent-workflow cuando el OBJECTIVE menciona UI/UX/diseño/pantalla/mockup/wireframe. Produce OBJECTIVE.md con secciones Type, Brief, Context y Acceptance criteria. No produce código ni mocks aún — sólo capturar QUÉ y POR QUÉ.
 version: 1.1.0
 ---
 
-# design-brief — qtc v1.0+
+# design-brief — agent-workflow v1.0+
 
 Specialty skill **design**: capta el brief y el tipo de sesión durante la fase `planning` del lifecycle universal.
 

@@ -66,7 +66,7 @@ Variante de diagrama: {{DIAGRAMS_ENGINE}}.
 ## Integraciones externas
 
 <!-- Sistemas externos con los que el workspace interactúa.
-     Para qtc-* runtime hub: MCP servers, hooks PreToolUse, marketplace, npm registry.
+     Para agent-workflow runtime hub: MCP servers, hooks PreToolUse, marketplace, npm registry.
      Tabla + opcional sequenceDiagram para flows críticos.
      Condicional por scope: aparece si --scope ∈ {integraciones, todo}. -->
 
@@ -121,7 +121,7 @@ Variante de diagrama: {{DIAGRAMS_ENGINE}}.
 
 Nombre del sistema/producto desde `AW-PROJECT.proyecto`. Si la descripción es larga, usar la primera frase (≤10 palabras). Capitalización natural (no mayúsculas a la fuerza).
 
-Ejemplo: `Runtime qtc-*` o `Sistema de mantenimiento de parámetros`.
+Ejemplo: `Runtime agent-workflow` o `Sistema de mantenimiento de parámetros`.
 
 ### `{{FECHA_SNAPSHOT}}`
 
@@ -147,9 +147,9 @@ Bloque Mermaid `C4Context`. Ejemplo de estructura:
 
 ```
 C4Context
-  title Diagrama de Contexto: Runtime qtc-*
+  title Diagrama de Contexto: Runtime agent-workflow
   Person(dev, "Developer", "Miembro del equipo")
-  System(sistema, "Runtime qtc-*", "Coordinación de sesiones")
+  System(sistema, "Runtime agent-workflow", "Coordinación de sesiones")
   System_Ext(claude, "Claude Code", "Host AI")
   System_Ext(codex, "Codex", "Host AI alternativo")
   System_Ext(npm, "npm registry", "Distribución CLI")
@@ -171,9 +171,9 @@ Bloque Mermaid `C4Container` con un contenedor por fuente. Ejemplo:
 
 ```
 C4Container
-  title Diagrama de Contenedores: Runtime qtc-*
+  title Diagrama de Contenedores: Runtime agent-workflow
   Person(dev, "Developer")
-  System_Boundary(sistema, "Runtime qtc-*") {
+  System_Boundary(sistema, "Runtime agent-workflow") {
     Container(cli, "agent-workflow CLI", "Node.js / TypeScript", "Línea de comandos del runtime")
     Container(plugin, "agent-workflow", "Markdown skills + hooks", "Skills y comandos invocables")
     Container(marketplace, "qtc-plugins-marketplace", "JSON manifest", "Distribución del plugin")

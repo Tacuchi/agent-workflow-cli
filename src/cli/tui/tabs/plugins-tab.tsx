@@ -580,7 +580,7 @@ export function PluginsTab({ ctx, isActive }: PluginsTabProps) {
         <Box marginTop={1}>
           <Text color={colors.fgMoreSubtle} italic>
             (sin plugins detectados — pulsa <Text color={colors.accent}>n</Text> para agregar desde
-            URL git, o instala qtc-workflow-plugin desde el marketplace de Claude Code)
+            URL git, o instala un companion plugin desde el marketplace de Claude Code)
           </Text>
         </Box>
       </Box>
@@ -645,13 +645,58 @@ function PluginRow({ plugin, focused }: { plugin: PluginEntry; focused: boolean 
 }
 
 async function buildPluginEntries(homeDir: string): Promise<PluginEntry[]> {
-  const qtcEntry = await detectQtcPlugin(homeDir);
-  return qtcEntry ? [qtcEntry] : [];
+  return detectCompanionPlugins(homeDir);
 }
 
-async function detectQtcPlugin(homeDir: string): Promise<PluginEntry> {
-  const ns = "qtc";
-  const cacheBase = join(homeDir, ".claude", "plugins", "cache", "qtc-marketplace", "qtc");
+async function detectCompanionPlugins(homeDir: string): Promise<PluginEntry[]> {
+  const tuples = await discoverPluginTuples(homeDir);
+  const entries: PluginEntry[] = [];
+  const seen = new Set<string>();
+  for (const { marketplace, namespace } of tuples) {
+    if (seen.has(namespace)) continue;
+    seen.add(namespace);
+    const entry = await buildCompanionEntry(homeDir, marketplace, namespace);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
+async function discoverPluginTuples(
+  homeDir: string,
+): Promise<Array<{ marketplace: string; namespace: string }>> {
+  const tuples: Array<{ marketplace: string; namespace: string }> = [];
+  const claudeCache = join(homeDir, ".claude", "plugins", "cache");
+  try {
+    const marketplaces = await readdir(claudeCache);
+    for (const mp of marketplaces) {
+      try {
+        const plugins = await readdir(join(claudeCache, mp));
+        for (const p of plugins) {
+          try {
+            const s = await stat(join(claudeCache, mp, p));
+            if (s.isDirectory()) {
+              tuples.push({ marketplace: mp, namespace: p });
+            }
+          } catch {
+            // skip non-stat entries
+          }
+        }
+      } catch {
+        // skip non-readable marketplace
+      }
+    }
+  } catch {
+    // no claude cache yet
+  }
+  return tuples;
+}
+
+async function buildCompanionEntry(
+  homeDir: string,
+  marketplace: string,
+  namespace: string,
+): Promise<PluginEntry | null> {
+  const cacheBase = join(homeDir, ".claude", "plugins", "cache", marketplace, namespace);
   const version = await findLatestVersion(cacheBase);
   const skillsDir = version ? join(cacheBase, version, "skills") : null;
   const skillCount = skillsDir ? await countSkillDirs(skillsDir) : null;
@@ -660,36 +705,36 @@ async function detectQtcPlugin(homeDir: string): Promise<PluginEntry> {
     {
       id: "claude",
       label: HOST_LABELS.claude,
-      path: `~/.claude/plugins/cache/*/${ns}/`,
-      installed: await isHostCacheDetected(homeDir, "claude", ns),
+      path: `~/.claude/plugins/cache/*/${namespace}/`,
+      installed: await isHostCacheDetected(homeDir, "claude", namespace),
     },
     {
       id: "codex",
       label: HOST_LABELS.codex,
-      path: `~/.codex/plugins/cache/*/${ns}/`,
-      installed: await isHostCacheDetected(homeDir, "codex", ns),
+      path: `~/.codex/plugins/cache/*/${namespace}/`,
+      installed: await isHostCacheDetected(homeDir, "codex", namespace),
     },
     {
       id: "warp",
       label: HOST_LABELS.warp,
-      path: `~/.warp/skills/${ns}-*/`,
-      installed: await areSkillsInstalled(homeDir, "warp", ns),
+      path: `~/.warp/skills/${namespace}-*/`,
+      installed: await areSkillsInstalled(homeDir, "warp", namespace),
     },
     {
       id: "agents",
       label: HOST_LABELS.agents,
-      path: `~/.agents/skills/${ns}-*/`,
-      installed: await areSkillsInstalled(homeDir, "agents", ns),
+      path: `~/.agents/skills/${namespace}-*/`,
+      installed: await areSkillsInstalled(homeDir, "agents", namespace),
     },
   ];
 
   return {
-    id: "qtc",
-    label: "qtc-workflow-plugin",
-    namespace: ns,
+    id: namespace,
+    label: `${marketplace}/${namespace}`,
+    namespace,
     sourcePath: skillsDir,
-    sourceUrl: "https://bitbucket.org/adminqtc-ti/qtc-workflow-plugin.git",
-    sourceRef: "feature/last",
+    sourceUrl: null,
+    sourceRef: null,
     version: version ?? null,
     skillCount,
     targets,

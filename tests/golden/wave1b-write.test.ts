@@ -113,7 +113,7 @@ describe("Wave 1B write commands — golden parity (legacy ES fixture)", () => {
       folder: "session001-dev-foo",
       history_action: "updated",
       refs: "[DEC](../docs/decisiones/001-stack-typescript.md)",
-      qtc_project_updated: true,
+      aw_project_updated: true,
     });
     expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(
       loadGoldenFile("session-close-001", ".workflow/HISTORY.md"),
@@ -137,7 +137,7 @@ describe("Wave 1B write commands — golden parity (legacy ES fixture)", () => {
       folder: "session001-dev-foo",
       history_action: "updated",
       refs: "[CONCLUSION](../docs/conclusiones/002-audit-runtime.md)",
-      qtc_project_updated: true,
+      aw_project_updated: true,
     });
   });
 

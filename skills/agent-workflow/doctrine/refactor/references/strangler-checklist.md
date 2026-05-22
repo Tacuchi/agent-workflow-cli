@@ -1,6 +1,6 @@
 # Strangler Fig — checklist de 12 pasos para refactor
 
-Pasos canónicos del skill `agent-workflow:refactor`. Reflejan Strangler Fig (Fowler) adaptado al stack qtc-* con flujo phased y prompts M7/M8/M6 + S7 (pre-Phase 0). M9 retirado en v2.8+ por DEC-002 de session049 — reemplazado por S7 desde planning closure.
+Pasos canónicos del skill `agent-workflow:refactor`. Reflejan Strangler Fig (Fowler) adaptado al stack agent-workflow con flujo phased y prompts M7/M8/M6 + S7 (pre-Phase 0). M9 retirado en v2.8+ por DEC-002 de session049 — reemplazado por S7 desde planning closure.
 
 ## Discovery (paso 1-2)
 

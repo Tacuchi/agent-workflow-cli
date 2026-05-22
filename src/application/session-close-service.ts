@@ -40,7 +40,7 @@ export interface SessionCloseOutput {
   folder: string;
   history_action: UpsertAction;
   refs: string;
-  qtc_project_updated: boolean;
+  aw_project_updated: boolean;
   plan_transition?: PlanTransitionInfo;
 }
 
@@ -107,7 +107,7 @@ export async function runSessionClose(
     folder: session.folder,
     history_action: actionResult,
     refs: refsRendered,
-    qtc_project_updated: true,
+    aw_project_updated: true,
   };
   if (planTransition) sessionClose.plan_transition = planTransition;
 

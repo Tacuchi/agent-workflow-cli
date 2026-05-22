@@ -4,6 +4,61 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.2.0] — 2026-05-22
+
+**Minor — Agnostic CLI cleanup (session083 T7 closure)**. Eliminadas referencias residuales `qtc-*` hard-coded que el audit grep automatizado no detectaba (prosa SKILL, Java pkg examples, field names internos, detector plugins, CLAUDE/AGENTS root heredados del template QTC). El CLI ahora es estructuralmente agnóstico — la doctrina QTC (profile + aliases + lexico) vive únicamente en `qtc-workflow-plugin@v4.0.0+` companion.
+
+### Breaking
+
+- **JSON output fields renamed** `qtc_project` → `aw_project` en payloads del CLI:
+  - `session-close` → `aw_project_updated: boolean`
+  - `phase-detect` → `current_phase_in_aw_project: string | null`
+  - `checkpoint-write` resume payload → `phase_from_aw_project` + `branches_from_aw_project`
+  - `session-resume` / `resume-summary` → `state_from_aw_project` + `phase_from_aw_project` + `branches_from_aw_project`
+- Consumers que parsean estos campos deben actualizar sus refs. El bloque markdown `CLAUDE.md`/`AGENTS.md` ya se llama `AW-PROJECT` desde v6.x; los nombres de los fields del JSON output venían arrastrados como tech debt.
+
+### Changed
+
+- **`CLAUDE.md` + `AGENTS.md` (root del CLI repo)** rewriteados agnósticos. Eliminadas las "Reglas transversales qtc-*" hard-coded con paths a `qtc-workflow-plugin/skills/`. Ahora describen el CLI: layout (src/, skills/, tests/), build commands, conventions (hex, manual schema validation, complexity ≤15, TS strict + ESM), profile.json cascade, slash commands matrix per host, hooks Claude-only.
+- **`README.md`** ejemplo de profile.json migrado de `qtc` literal a `acme` genérico con aclaración "(replace with your company namespace)". El plugin QTC sigue mencionado como reference implementation (`qtc-workflow-plugin@v4.0.0+`).
+- **`src/cli/tui/tabs/plugins-tab.tsx`** detector generalizado: `detectQtcPlugin` → `detectCompanionPlugins`. Itera sobre `~/.claude/plugins/cache/<marketplace>/<plugin>/`, dedupe por namespace, construye `PluginEntry[]` con label `<marketplace>/<plugin>`. Sin URLs git hard-coded (sourceUrl: null). Empty-state message: "instala un companion plugin desde el marketplace" (antes: "qtc-workflow-plugin").
+- **`skills/agent-workflow/`** — bulk sed `qtc-*` (literal con asterisco) → `agent-workflow` en 22 archivos: `rules/SKILL.md`, `prompts-catalog.md`, `commits-policy.md`, `redaccion-simple/SKILL.md`, `lifecycle-deep.md`, `branch-verification.md`, `sandbox-readonly-rules.md`, `hub-init/SKILL.md`, `doctor/SKILL.md`, `project-init/SKILL.md`, `session/SKILL.md`, `strangler-checklist.md`, `fe-be-integration.md`, exports {arq, report, tech-manuals, plan} templates + lexicos, `M1-closure-commit-prompt.md`.
+- **`standards/coding-standards/references/project-structure.md`** — Java package examples `com.qtc.[dominio]` generalizados a `com.<empresa>.[dominio]` con sustitución explícita; intro reescrita.
+- **`standards/coding-standards/references/{java-spring,frontend-structure}.md`** — typos de parametrization arreglados (`del tu ecosistema` → `de tu ecosistema`).
+- **`doctrine/implement/references/design-md-template.md`** — ejemplos de paths `com.qtc.credito.*` → `com.<empresa>.<dominio>.*`.
+- **`specialties/design-brief/SKILL.md`** — "lifecycle universal qtc-core" → "lifecycle universal de agent-workflow"; header `# design-brief — qtc v1.0+` → `# design-brief — agent-workflow v1.0+`.
+
+### Preserved (intencional)
+
+Refs **históricas** legítimas en:
+- `skills/agent-workflow/doctrine/migrate/SKILL.md` — doctrina de migración legacy `qtc-*`/`qtc-core`/`qtc-dev`/`qtc-design`/`qtc-analyze` → `agent-workflow`. El skill ES la migración.
+- `skills/agent-workflow/references/legacy-anchors.md` — mapping de anchors legacy → nuevos.
+- `skills/agent-workflow/doctrine/session/references/prompts-catalog.md` — history de extensiones session-by-session (M9, M10, S4-S7) que originaron desde workspaces qtc-plugin-v2 y sesiones qtc-core anteriores.
+- Refs a `qtc-workflow-plugin` como **companion plugin** (en `commands/README.md`, `README.md`, `profile-parametrization.md`) — son referencias al plugin existente, no doctrina embedded.
+
+### Migration
+
+```bash
+npm install -g @tacuchi/agent-workflow-cli@7.2.0
+agent-workflow self install --target claude --force
+agent-workflow self install --target codex --force
+```
+
+Si tu integración consume JSON output: cambiar `qtc_project_*` → `aw_project_*` en parsers/asserts. Si no consumes directamente, no hay acción necesaria.
+
+### Tests
+
+645 / 645 verde post-rename (golden fixtures `resume-001.json` + `wave1b-write.test.ts` actualizados). Audit grep automatizado en `tests/unit/skill-audit-grep.test.ts` sigue verde (cubre `QTC-PROJECT`, `qtc:` anchors literales, `QTC` aislado).
+
+### Why
+
+Usuario reportó (post-T7 v7.1.3): _"quiero terminar de limpiar todas las referencias a 'qtc' y el sistema legacy anterior, ya que el CLI no le debe pertenecer a QTC como tal sino que es un workflow agnóstico"_. El audit grep automatizado solo cubría hits exactos del bloque + anchors. Esta limpieza cubre los casos no detectados: prosa SKILL, ejemplos de código (Java pkgs), nombres de campos internos, detector de plugins, root CLAUDE/AGENTS legados.
+
+### Pending (futuro opcional)
+
+- `tests/unit/skill-audit-grep.test.ts` puede extenderse para hard-fail con `qtc-\*` (literal con asterisco) — diferido al próximo release.
+- 22 hits `qtc-dev` + 5 `qtc-design` + 4 `qtc-analyze` + 4 `qtc-core` son refs históricas con "antes en qtc-*" claramente marcado; no se modifican.
+
 ## [7.1.3] — 2026-05-22
 
 **Patch — SKILL.md descriptions ≤1024 chars (Codex frontmatter validation)** (session083 T7 smoke iteración 6). Codex enforza una max length de **1024 chars** en el campo `description:` del frontmatter de cada SKILL.md. Dos skills migrados desde el plugin v3.x excedían: `export-arq` (1122 chars) y `export-report` (1360 chars), causando warnings al startup. Acortado quitando el version history del campo (queda en CHANGELOG del CLI).

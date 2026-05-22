@@ -3,9 +3,9 @@
   "folder": "session001-dev-foo",
   "path": ".workflow/sessions/session001-dev-foo",
   "flow": "dev",
-  "state_from_qtc_project": "active",
-  "phase_from_qtc_project": "requerimiento",
-  "branches_from_qtc_project": [],
+  "state_from_aw_project": "active",
+  "phase_from_aw_project": "requerimiento",
+  "branches_from_aw_project": [],
   "objetivo": "# Objetivo — session001-dev-foo\n\n- Fecha de inicio: 2026-01-01\n\n## Tipo\nfeature\n\n## Requerimiento\n\nImplementar el feature foo de prueba para validar el lifecycle de sesiones.\n\n## Criterios de aceptación\n\n- [ ] foo funciona\n",
   "objetivo_text": "# Objetivo — session001-dev-foo\n\n- Fecha de inicio: 2026-01-01\n\n## Tipo\nfeature\n\n## Requerimiento\n\nImplementar el feature foo de prueba para validar el lifecycle de sesiones.\n\n## Criterios de aceptación\n\n- [ ] foo funciona\n"
 }

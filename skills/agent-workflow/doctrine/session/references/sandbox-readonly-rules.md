@@ -1,6 +1,6 @@
 # Sandbox read-only — reglas universales (agent-workflow)
 
-> Canon universal de la familia qtc-*. Cubre Claude Code "Plan mode", Codex sandbox read-only, Copilot read-only, y cualquier harness equivalente. Los flow plugins referencian esta versión y mantienen una copia local sólo si necesitan reglas adicionales propias.
+> Canon universal de la familia agent-workflow. Cubre Claude Code "Plan mode", Codex sandbox read-only, Copilot read-only, y cualquier harness equivalente. Los flow plugins referencian esta versión y mantienen una copia local sólo si necesitan reglas adicionales propias.
 
 Cuando el sistema indica que el AI está en sandbox read-only (Claude Code: system-reminder con `Plan mode is active` o `EnterPlanMode`; Codex: sandbox read-only; otros: harness con write disabled):
 

@@ -1,17 +1,17 @@
 ---
 name: redaccion-simple
-description: "Guía transversal de redacción para artefactos qtc-*. Reglas para escribir OBJECTIVE/TASKS/DECISIONS/EVIDENCE/FINDINGS/CONCLUSIONS/CHECKPOINT/STATUS/PROBLEM/IDEAS/DELIVERY (legacy ES = OBJETIVO/DECISIONES/EVIDENCIA/HALLAZGOS/CONCLUSIONES/PROBLEMA/ENTREGA) con frases cortas, listas sobre prosa, sin jerga. Activable cross-plugin como `agent-workflow:redaccion-simple`. Aplica a toda prosa que el AI produzca en contexto qtc-*: artefactos `.md` de sesión, mensajes de commit, descripciones de PR, READMEs ad-hoc, respuestas en chat sobre temas qtc-*. No requiere sesión activa."
+description: "Guía transversal de redacción para artefactos agent-workflow. Reglas para escribir OBJECTIVE/TASKS/DECISIONS/EVIDENCE/FINDINGS/CONCLUSIONS/CHECKPOINT/STATUS/PROBLEM/IDEAS/DELIVERY (legacy ES = OBJETIVO/DECISIONES/EVIDENCIA/HALLAZGOS/CONCLUSIONES/PROBLEMA/ENTREGA) con frases cortas, listas sobre prosa, sin jerga. Activable cross-plugin como `agent-workflow:redaccion-simple`. Aplica a toda prosa que el AI produzca en contexto agent-workflow: artefactos `.md` de sesión, mensajes de commit, descripciones de PR, READMEs ad-hoc, respuestas en chat sobre temas agent-workflow. No requiere sesión activa."
 version: 2.0.1
 ---
 
-# Redacción simple — Guía transversal qtc-*
+# Redacción simple — Guía transversal agent-workflow
 
-Reglas de estilo y formato para los artefactos que producen los plugins qtc-* (core, dev, design, analyze).
+Reglas de estilo y formato para los artefactos que producen los plugins agent-workflow (core, dev, design, analyze).
 
 ## Cuándo se invoca
 
-- Implícitamente al escribir cualquier `.md` dentro de una sesión qtc-* (artefactos canónicos).
-- Implícitamente al producir prosa en contexto qtc-* fuera de sesión activa: commit messages, descripciones de PR, READMEs ad-hoc, respuestas en chat sobre runtime/skills/sesiones qtc-*.
+- Implícitamente al escribir cualquier `.md` dentro de una sesión agent-workflow (artefactos canónicos).
+- Implícitamente al producir prosa en contexto agent-workflow fuera de sesión activa: commit messages, descripciones de PR, READMEs ad-hoc, respuestas en chat sobre runtime/skills/sesiones agent-workflow.
 - Explícitamente con `Skill(agent-workflow:redaccion-simple)` desde un flow plugin o desde la skill agregadora `agent-workflow:rules`.
 - Referenciada desde `session`, `compact`, `resume` y los skills de los flow plugins.
 

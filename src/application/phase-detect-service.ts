@@ -55,7 +55,7 @@ function countTasks(text: string): TaskCounts {
 export interface PhaseDetectOutput {
   code: string;
   folder: string;
-  current_phase_in_qtc_project: string | null;
+  current_phase_in_aw_project: string | null;
   suggested_phase: string;
   divergent: boolean;
   signals: {
@@ -89,7 +89,7 @@ export async function runPhaseDetect(
   return {
     code: session.code ?? code,
     folder: session.folder,
-    current_phase_in_qtc_project: currentInQtc,
+    current_phase_in_aw_project: currentInQtc,
     suggested_phase: suggested,
     divergent: divergesFrom(currentInQtc, suggested),
     signals: {

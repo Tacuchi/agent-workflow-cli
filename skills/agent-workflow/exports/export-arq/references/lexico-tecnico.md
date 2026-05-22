@@ -49,7 +49,7 @@ HACK:
 
 **Excepciones autorizadas** (V2 las exime):
 - La sección `## Referencias` puede contener placeholders esperados (ej. `docs/arquitectura/NNN-...` como path tipo).
-- El header puede contener identificadores del producto que sean canónicos (ej. "qtc-*").
+- El header puede contener identificadores del producto que sean canónicos (ej. "agent-workflow").
 
 ## Cómo validar
 

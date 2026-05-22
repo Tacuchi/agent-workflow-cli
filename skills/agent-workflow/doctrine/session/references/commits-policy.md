@@ -1,4 +1,4 @@
-# commits-policy — política controlada de commits qtc-*
+# commits-policy — política controlada de commits agent-workflow
 
 Anchor canónico: `agent-workflow:commits-policy`. Referenciable cross-plugin desde cualquier skill via path relativo o nombre.
 
@@ -47,7 +47,7 @@ docs: actualiza shared-contract con anchor commits-policy
 ```
 # multilinea (body extra prohibido)
 feat: agrega politica
-Esta política aplica a toda la familia qtc-*.
+Esta política aplica a toda la familia agent-workflow.
 
 # co-author trailer (prohibido)
 session007: agrega politica
@@ -60,7 +60,7 @@ session007: agrega politica
 
 ### Caso fuera de sesión activa
 
-Si el usuario pide un commit fuera del contexto de sesión qtc-* (ej. workspace sin AW-PROJECT, o trabajo ad-hoc), el formato se relaja a "1 línea + sin co-author"; el tag `session<NNN>` no aplica. El propose-then-execute de Regla 3 sigue activo — la única diferencia es que el mensaje sugerido omite el tag.
+Si el usuario pide un commit fuera del contexto de sesión agent-workflow (ej. workspace sin AW-PROJECT, o trabajo ad-hoc), el formato se relaja a "1 línea + sin co-author"; el tag `session<NNN>` no aplica. El propose-then-execute de Regla 3 sigue activo — la única diferencia es que el mensaje sugerido omite el tag.
 
 ## Regla 3 — propose-then-execute universal con AskUserQuestion
 
@@ -70,12 +70,12 @@ Disparadores canónicos:
 
 1. **Closure de `/agent-workflow:session`** (auto): antes de `session-close`, el skill `session` ejecuta el flujo M1 sobre las fuentes con `dirty=true`. Documentado en `skills/session/SKILL.md` §"Cerrar sesión — 2. Proponer commits".
 2. **Solicitud explícita del usuario con sesión activa** ("commitea esto", "guardá los cambios", "subí los cambios" sin mensaje literal): el AI llama `agent-workflow sources --session <CODE>` y dispara M1 según el resultado.
-3. **Solicitud explícita del usuario sin sesión activa** (workspace qtc-* hub/project sin sesiones registradas en `AW-PROJECT.Status`): el AI llama `agent-workflow sources` (sin `--session`) y dispara M1. El tag `session<NNN>` del mensaje sugerido se omite (Regla 2).
-4. **Solicitud del usuario en workspace no qtc-*** (sin `AW-PROJECT`): no hay `sources` disponible. El AI cae al flujo simple — sugiere 1-line msg en chat y espera confirmación antes de ejecutar. No invoca `AskUserQuestion`.
+3. **Solicitud explícita del usuario sin sesión activa** (workspace agent-workflow hub/project sin sesiones registradas en `AW-PROJECT.Status`): el AI llama `agent-workflow sources` (sin `--session`) y dispara M1. El tag `session<NNN>` del mensaje sugerido se omite (Regla 2).
+4. **Solicitud del usuario en workspace no agent-workflow** (sin `AW-PROJECT`): no hay `sources` disponible. El AI cae al flujo simple — sugiere 1-line msg en chat y espera confirmación antes de ejecutar. No invoca `AskUserQuestion`.
 
 Pasos del flujo M1:
 
-1. Llamar a `agent-workflow sources [--session <CODE>?]`. Si la salida es inválida (workspace no qtc-*) → ver disparador 4 arriba.
+1. Llamar a `agent-workflow sources [--session <CODE>?]`. Si la salida es inválida (workspace no agent-workflow) → ver disparador 4 arriba.
 2. Si hay 1+ fuentes con `dirty=true`, invocar **una sola** `AskUserQuestion` con N questions tab-por-fuente (N = #fuentes-dirty, máx 4 simultáneas). Spec literal → `prompts-catalog.md#M1`. Resumen:
    - Header de cada tab: `<alias>` puro.
    - 2 opciones explícitas: "Aprobar sugerido (Recomendado)" con el mensaje canónico / "Saltar esta fuente".

@@ -1,23 +1,23 @@
 ---
 name: rules
-description: "Bundle invokable de reglas transversales qtc-* — carga los 7 anchors canónicos (commits, sandbox plan-mode, MCP read-only, redacción, coding-standards, graduación, branch verification) en un solo lugar. Invocar antes de un commit ad-hoc fuera de `/agent-workflow:session`, antes de editar código sin sesión activa, durante onboarding de usuario nuevo a qtc-*, o cuando se quiera refrescar el contrato qtc-* en una conversación larga. No requiere sesión activa. v0.2.0: el anchor `agent-workflow:commits-policy` ahora documenta el propose-then-execute universal con AskUserQuestion M1 (cualquier solicitud o mención de commit, en/fuera de sesión, hub/project) + el bypass por mensaje literal."
+description: "Bundle invokable de reglas transversales agent-workflow — carga los 7 anchors canónicos (commits, sandbox plan-mode, MCP read-only, redacción, coding-standards, graduación, branch verification) en un solo lugar. Invocar antes de un commit ad-hoc fuera de `/agent-workflow:session`, antes de editar código sin sesión activa, durante onboarding de usuario nuevo a agent-workflow, o cuando se quiera refrescar el contrato agent-workflow en una conversación larga. No requiere sesión activa. v0.2.0: el anchor `agent-workflow:commits-policy` ahora documenta el propose-then-execute universal con AskUserQuestion M1 (cualquier solicitud o mención de commit, en/fuera de sesión, hub/project) + el bypass por mensaje literal."
 version: 0.2.0
 ---
 
 > **Profile parametrization**: lee `custom_anchors[]` de `profile.json` (resuelto vía cascade 5 capas). Ver [`references/profile-parametrization.md`](../../references/profile-parametrization.md) para el contrato completo y comportamiento por defecto cuando el profile está vacío.
 
-# Rules — Bundle invokable de reglas transversales qtc-*
+# Rules — Bundle invokable de reglas transversales agent-workflow
 
-Skill agregadora que **carga las reglas transversales del runtime qtc-*** en un solo entry point. No reemplaza al AGENTS.md/CLAUDE.md por fuente (anchor passive de system-prompt); complementa con activación on-demand cuando se necesita refrescar el contrato.
+Skill agregadora que **carga las reglas transversales del runtime agent-workflow** en un solo entry point. No reemplaza al AGENTS.md/CLAUDE.md por fuente (anchor passive de system-prompt); complementa con activación on-demand cuando se necesita refrescar el contrato.
 
 Cada sección abajo cita el canon de su anchor — el AI lee el archivo completo cuando la regla requiere precisión (parámetros, casos edge). Acá quedan los headers, las reglas operativas y "cómo aplicar fuera de sesión".
 
 ## Cuándo invocar
 
 - **Antes de un commit ad-hoc fuera de `/agent-workflow:session close`** — para refrescar la política de commits (formato, tag, prohibiciones) si el usuario te pide commitear.
-- **Antes de editar código en una fuente qtc-* sin sesión activa** — para cargar coding-standards y la sandbox plan-mode.
+- **Antes de editar código en una fuente agent-workflow sin sesión activa** — para cargar coding-standards y la sandbox plan-mode.
 - **Antes de ejecutar una query vía MCP `<mcp-cert>`/`<mcp-prod>`** — para refrescar el contrato read-only y reconocer cuándo proponer script SQL en lugar de mutación.
-- **Durante onboarding** de un usuario nuevo a qtc-* — bundle único que reemplaza leer 7 archivos sueltos.
+- **Durante onboarding** de un usuario nuevo a agent-workflow — bundle único que reemplaza leer 7 archivos sueltos.
 - **En conversaciones largas** donde el contexto qtc se diluyó — refresh rápido.
 - Explícitamente con `Skill(agent-workflow:rules)` o por NL ("qué reglas qtc tengo", "antes de commitear", "refrescá el contrato qtc").
 
@@ -42,7 +42,7 @@ Reglas operativas:
 - El tag `session<NNN>` **no aplica** (no hay sesión); el mensaje sugerido lo omite.
 - Mensaje sigue siendo 1 línea, descriptivo, sin co-author/firma/`--no-verify`.
 - **Sí hay propose-then-execute automático**: el AI llama `agent-workflow sources` (sin `--session`) y dispara M1 igual que en closure. Es el mismo prompt, con tag omitido del mensaje sugerido.
-- Workspace no qtc-* (sin `AW-PROJECT`): no hay `sources` disponible. El AI sugiere 1-line msg en chat, espera confirmación, ejecuta. M1 no se invoca en ese contexto.
+- Workspace no agent-workflow (sin `AW-PROJECT`): no hay `sources` disponible. El AI sugiere 1-line msg en chat, espera confirmación, ejecuta. M1 no se invoca en ese contexto.
 
 ---
 
@@ -51,7 +51,7 @@ Reglas operativas:
 **Canon**: `agent-workflow/skills/session/references/sandbox-readonly-rules.md`.
 
 Resumen:
-- Canon universal qtc-*. Cubre Claude Code (plan mode), Codex (sandbox read-only), Copilot (read-only), Warp y cualquier harness equivalente.
+- Canon universal agent-workflow. Cubre Claude Code (plan mode), Codex (sandbox read-only), Copilot (read-only), Warp y cualquier harness equivalente.
 - Se activa por system-reminder del host (`Plan mode is active`, `EnterPlanMode`, sandbox read-only flag, etc.).
 - En plan mode: el AI **describe en el plan file** qué haría en lugar de ejecutarlo. No crea/edita archivos, no ejecuta git/npm/SQL mutante.
 
@@ -61,7 +61,7 @@ Reglas operativas:
 - Matriz por subcomando CLI: ver §"Plan-mode-safe vs NO seguros" en el canon.
 
 **Cómo aplicar fuera de sesión**:
-- Aplica igual — el disparador es el system-reminder del host, no el lifecycle qtc-*.
+- Aplica igual — el disparador es el system-reminder del host, no el lifecycle agent-workflow.
 - Si la skill se carga fuera de sesión y el host está en plan mode, **describir el output en el plan file** sin ejecutar.
 
 ---
@@ -92,7 +92,7 @@ Reglas operativas (defensa en profundidad):
 **Canon**: `agent-workflow/skills/redaccion-simple/SKILL.md`.
 
 Resumen:
-- Guía universal de estilo para toda prosa que produzca el AI en contexto qtc-*: artefactos `.md` de sesión, commit messages, descripciones de PR, READMEs ad-hoc, respuestas en chat sobre runtime/skills qtc-*.
+- Guía universal de estilo para toda prosa que produzca el AI en contexto agent-workflow: artefactos `.md` de sesión, commit messages, descripciones de PR, READMEs ad-hoc, respuestas en chat sobre runtime/skills agent-workflow.
 - 6 reglas: frases cortas (≤15 palabras), listas sobre prosa, una idea por línea, "qué + por qué" en una línea, sin jerga inventada, sin relleno ("es importante notar…", "cabe destacar…").
 
 Reglas operativas por artefacto:
@@ -124,7 +124,7 @@ Reglas operativas:
 - Ramas: `feature/` `fix/` `hotfix/` + kebab.
 
 **Cómo aplicar fuera de sesión**:
-- Aplican igual a cualquier edit de código qtc-* o consumer. Sin sesión, la composición desde `dev-workflow`/`implement` no ocurre — depende de que el harness host enganche `coding-standards` por description engaging o de que `agent-workflow:rules` se invoque.
+- Aplican igual a cualquier edit de código agent-workflow o consumer. Sin sesión, la composición desde `dev-workflow`/`implement` no ocurre — depende de que el harness host enganche `coding-standards` por description engaging o de que `agent-workflow:rules` se invoque.
 
 ---
 
@@ -200,9 +200,9 @@ Tabla rápida para situaciones comunes sin sesión activa:
 |---|---|---|
 | Pedís un commit ad-hoc | commits-policy regla 2 + regla 3 universal | M1 propose-then-execute con `agent-workflow sources` (sin `--session`). Mensaje sugerido sin tag `session<NNN>`, sin co-author, sin `--no-verify`. |
 | Pedís commit con mensaje literal en la solicitud | commits-policy regla 5 | Bypass de M1; el AI ejecuta `git commit -m "<literal>"` directo (validando rama, hooks, Regla 2). |
-| Editás código de fuente qtc-* | coding-standards + branch-verification | Verificar rama (`agent-workflow sources`); aplicar reglas de stack. |
+| Editás código de fuente agent-workflow | coding-standards + branch-verification | Verificar rama (`agent-workflow sources`); aplicar reglas de stack. |
 | Ejecutás query MCP cert/prod | mcp-readonly | Sólo SELECT/EXPLAIN. Mutación → script en `docs/scripts/`. |
-| Escribís prosa qtc-* (PR description, README) | redaccion-simple | 6 reglas (frases cortas, listas, sin jerga). |
+| Escribís prosa agent-workflow (PR description, README) | redaccion-simple | 6 reglas (frases cortas, listas, sin jerga). |
 | Producís artefacto curable (decisión, manual) | graduacion-routing | Crear sesión retroactiva o documentar como fuera de scope graduable. |
 | Host en plan mode | sandbox-readonly | Describir en plan file, no ejecutar mutaciones. |
 
@@ -217,7 +217,7 @@ Compatible con plan mode sin restricciones adicionales.
 ## Referencias
 
 - **session SKILL** (`../session/SKILL.md`) — lifecycle universal donde estas reglas se invocan por composición durante las 4 fases.
-- **shared-contract** (`../../docs/shared-contract.md`) — contrato cross-plugin de la familia qtc-*.
+- **shared-contract** (`../../docs/shared-contract.md`) — contrato cross-plugin de la familia agent-workflow.
 - **Recomendación de uso conjunto con AGENTS.md/CLAUDE.md**:
   - El AGENTS.md/CLAUDE.md por fuente (o el bloque transversal en hub) lista 1 línea por anchor con su path canon. Sirve como "tabla de contenidos" siempre cargada.
   - Esta skill `agent-workflow:rules` carga los 7 anchors expandidos. Sirve cuando se necesita refrescar el contrato o cuando el AGENTS.md no está disponible.

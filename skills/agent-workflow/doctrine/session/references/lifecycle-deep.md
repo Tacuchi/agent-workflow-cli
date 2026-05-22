@@ -23,7 +23,7 @@ Output: `{harness: "claude-code"|"codex"|"unknown", supports_plan_subagent: bool
 ### Prompt al Plan agent (CC)
 
 ```
-Estructurá un plan accionable (TASKS.md) para esta sesión qtc-*.
+Estructurá un plan accionable (TASKS.md) para esta sesión agent-workflow.
 
 OBJECTIVE:
 <contenido de .workflow/sessions/<folder>/OBJECTIVE.md>

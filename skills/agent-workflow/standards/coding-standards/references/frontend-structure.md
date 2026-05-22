@@ -1,6 +1,6 @@
 # Estructura de Proyecto Frontend
 
-Convenciones de estructura para aplicaciones Angular del tu ecosistema.
+Convenciones de estructura para aplicaciones Angular de tu ecosistema.
 
 ## Versiones en uso
 

@@ -1,6 +1,6 @@
-# Catálogo de prompts interactivos qtc-* — referencia canónica
+# Catálogo de prompts interactivos agent-workflow — referencia canónica
 
-> Anchor: `agent-workflow:prompts-catalog`. Documento canónico que define **cuándo y cómo** los skills de la familia qtc-* deben usar `AskUserQuestion` (Claude Code) o equivalente. Referenciado desde `skills/session/SKILL.md`, `references/commits-policy.md`, `references/branch-verification.md` y los workflows de los flow plugins. Los SKILL apuntan acá; el spec literal de cada punto vive en `prompts/<id>-<slug>.md` (1 archivo por prompt) y este catálogo es el index.
+> Anchor: `agent-workflow:prompts-catalog`. Documento canónico que define **cuándo y cómo** los skills de la familia agent-workflow deben usar `AskUserQuestion` (Claude Code) o equivalente. Referenciado desde `skills/session/SKILL.md`, `references/commits-policy.md`, `references/branch-verification.md` y los workflows de los flow plugins. Los SKILL apuntan acá; el spec literal de cada punto vive en `prompts/<id>-<slug>.md` (1 archivo por prompt) y este catálogo es el index.
 >
 > Origen: session009-analyze-prompts-interactivos-session (propuesta). Ver `DECISIONES.md` de esa sesión para el razonamiento de DEC-001..008.
 >
@@ -145,7 +145,7 @@ Spec: [`prompts/C2-cost-guard.md`](prompts/C2-cost-guard.md). Cuándo: query cos
 Cuando no hay tool nativo, el AI imprime una lista numerada y espera respuesta:
 
 ```
-[Sesión qtc-* — decisión] <pregunta>
+[Sesión agent-workflow — decisión] <pregunta>
 
   1. <option 1 label> — <description>
   2. <option 2 label> — <description>

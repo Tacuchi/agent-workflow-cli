@@ -1,43 +1,43 @@
 # Estructura de Proyecto Backend
 
-Convenciones de estructura para microservicios Spring Boot del tu ecosistema.
+Convenciones de estructura para microservicios Spring Boot. Sustituir `<empresa>` por el namespace de tu organización (e.g., `qtc`, `acme`).
 
 ## Paquete base
 
-`com.qtc.[dominio]` → `com.qtc.credito`, `com.qtc.mantenimiento`, `com.qtc.solicitud`
+`com.<empresa>.[dominio]` → ejemplos: `com.acme.credito`, `com.acme.mantenimiento`, `com.acme.solicitud`.
 
 ## Estructura de paquetes
 
 Dos variantes en uso (ambas válidas, seguir la del proyecto actual):
 
 ```
-com.qtc.[dominio].core.controller
-com.qtc.[dominio].core.service
-com.qtc.[dominio].core.service.impl
-com.qtc.[dominio].core.service.generico
-com.qtc.[dominio].core.repository
-com.qtc.[dominio].core.model
-com.qtc.[dominio].core.request
-com.qtc.[dominio].core.request.dto
-com.qtc.[dominio].core.response
-com.qtc.[dominio].core.response.dto
-com.qtc.[dominio].core.config
-com.qtc.[dominio].core.exception
-com.qtc.[dominio].core.common
-com.qtc.[dominio].core.util
-com.qtc.[dominio].core.feign
-com.qtc.[dominio].core.seguridad
-com.qtc.[dominio].core.aspect
-com.qtc.[dominio].core.advice
+com.<empresa>.[dominio].core.controller
+com.<empresa>.[dominio].core.service
+com.<empresa>.[dominio].core.service.impl
+com.<empresa>.[dominio].core.service.generico
+com.<empresa>.[dominio].core.repository
+com.<empresa>.[dominio].core.model
+com.<empresa>.[dominio].core.request
+com.<empresa>.[dominio].core.request.dto
+com.<empresa>.[dominio].core.response
+com.<empresa>.[dominio].core.response.dto
+com.<empresa>.[dominio].core.config
+com.<empresa>.[dominio].core.exception
+com.<empresa>.[dominio].core.common
+com.<empresa>.[dominio].core.util
+com.<empresa>.[dominio].core.feign
+com.<empresa>.[dominio].core.seguridad
+com.<empresa>.[dominio].core.aspect
+com.<empresa>.[dominio].core.advice
 ```
 
 Variante sin `core`:
 ```
-com.qtc.[dominio].controller
-com.qtc.[dominio].service / service.impl
-com.qtc.[dominio].repository
-com.qtc.[dominio].model
-com.qtc.[dominio].dto.request / dto.response
+com.<empresa>.[dominio].controller
+com.<empresa>.[dominio].service / service.impl
+com.<empresa>.[dominio].repository
+com.<empresa>.[dominio].model
+com.<empresa>.[dominio].dto.request / dto.response
 ```
 
 ## Flujo de capas

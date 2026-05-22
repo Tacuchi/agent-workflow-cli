@@ -23,7 +23,7 @@ workspace "{{PRODUCTO}}" "{{DESCRIPCION_CORTA}}" {
     // ===== Sistema bajo análisis =====
     {{SYSTEM_DSL}}
     // Ejemplo render esperado:
-    // sistema = softwareSystem "Runtime qtc-*" "Coordinación de sesiones" {
+    // sistema = softwareSystem "Runtime agent-workflow" "Coordinación de sesiones" {
     //   cli = container "agent-workflow CLI" "Node.js + TypeScript" "Línea de comandos"
     //   plugin = container "agent-workflow" "Markdown skills + JSON hooks" "Skills y comandos"
     //   marketplace = container "qtc-plugins-marketplace" "JSON manifest" "Distribución"

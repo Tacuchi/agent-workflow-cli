@@ -1,17 +1,76 @@
 # agent-workflow-cli
 
-Runtime CLI de la familia qtc-* (`@tacuchi/agent-workflow-cli`). Gestiona ciclo de vida de sesiones, hooks PreToolUse y comandos read-only para flows dev/design/analyze.
+Agnostic runtime CLI + universal `agent-workflow` SKILL for session-lifecycle workflows across AI coding hosts (Claude Code, Codex, Warp, OZ).
 
-## Reglas transversales qtc-*
+Published as [`@tacuchi/agent-workflow-cli`](https://www.npmjs.com/package/@tacuchi/agent-workflow-cli). Bundles the full `agent-workflow` SKILL in the npm tarball: `self install --target <host>` copies skills + commands + hooks to the host's config directory.
 
-Reglas universales del runtime qtc-* que aplican aunque no haya sesión activa. Cada anchor cita su archivo canónico para deep-dive.
+## Layout
 
-- **`qtc:commits-policy`** (`qtc-workflow-plugin/skills/session/references/commits-policy.md`) — el AI nunca commitea por iniciativa propia. Cuando el usuario pide commit: 1 línea ≤72 chars descriptiva, con tag `session<NNN>` si hay sesión activa, sin `Co-Authored-By`, sin firmas de modelo, sin `--no-verify`.
-- **`qtc:sandbox-readonly`** (`qtc-workflow-plugin/skills/session/references/sandbox-readonly-rules.md`) — en plan mode del host (Claude Code / Codex / Copilot / Warp): no ejecutar mutaciones; describir en plan file qué se haría.
-- **`qtc:mcp-readonly`** (`qtc-workflow-plugin/docs/shared-contract/plugins.md` §30) — MCP `qtc-cert` / `qtc-prod` son `SELECT` / `EXPLAIN` / `\d` only. Mutación (`INSERT` / `UPDATE` / `DELETE` / `TRUNCATE` / `DDL`) se materializa como script SQL en `docs/scripts/`; el usuario lo aplica.
-- **`qtc:redaccion-simple`** (`qtc-workflow-plugin/skills/redaccion-simple/SKILL.md`) — toda prosa qtc-* (artefactos, commit messages, descripciones de PR, READMEs ad-hoc): frases cortas, listas sobre prosa, "qué + por qué" en una línea, sin jerga inventada, sin relleno.
-- **`qtc:coding-standards`** (`qtc-workflow-plugin/skills/coding-standards/SKILL.md`) — estándares por stack (Java/Spring, Angular/TypeScript, Node) + FE-BE R1-R6 (Sparse DTO, PATCH, sin fallbacks ocultos, Bean Validation); seguridad (sin secrets en código, SQL parametrizado, logging por nivel).
-- **`qtc:graduacion-routing`** (`qtc-workflow-plugin/skills/session/references/graduacion-routing.md`) — sólo 6 kinds graduan al cerrar sesión (`decision` / `manual` / `script` / `especificacion` / `conclusion` / `release`); routing automático por `workspace_mode` (hub vs project), sin prompt por sesión.
-- **`qtc:branch-verification`** (`qtc-workflow-plugin/skills/session/references/branch-verification.md`) — gate de rama por fuente al crear / retomar / entrar a execution (Casos A `match=false dirty=false` / B `match=false dirty=true` / C `analyze editando código`) + hard gate cross-fuente en hub mode.
+```
+src/
+  application/      services (hex core; pure functions, no I/O)
+    profile/        profile.json cascade resolver (DEFAULT → env → ~/.config → workspace → flag)
+    self/           install / uninstall / clean-cache / clean-legacy / detect-hosts
+  cli/              CLI entry + commands + TUI (Ink)
+  infrastructure/   adapters (FileSystem, Env)
+skills/agent-workflow/   universal SKILL (35 skills + 17 commands + 7 hooks template)
+tests/unit/         Vitest unit suite (645+ tests)
+tests/golden/       Snapshot tests for SKILL parametrization + TUI
+tests/fixtures/     Sample workspaces (EN + ES legacy)
+```
 
-Para cargar todas las reglas completas on-demand: `Skill(qtc:rules)`.
+## Commands
+
+```bash
+npm install          # install dependencies
+npm run build        # tsc → dist/
+npm run typecheck    # tsc --noEmit
+npm run lint         # biome check (lint + format)
+npm run test         # vitest run (full suite)
+npm run test:watch   # vitest watch mode
+npm run test:golden  # snapshot tests only
+```
+
+`prepublishOnly` chains lint + typecheck + test + build. Never bypass.
+
+## Conventions
+
+- **Architecture**: hexagonal. `application/` is pure; ports + adapters in `infrastructure/`. Side effects (fs, env) flow through ports.
+- **Schema validation**: manual (no Zod). DEC-001 per consistency with existing codebase. Throw typed errors with `code` keys (`TARGET_REQUIRED`, `INVALID_TARGET`, etc.).
+- **Cyclomatic complexity**: max 15 per function (Biome enforced). Extract sub-functions when over.
+- **TypeScript strict + ESM**: `exactOptionalPropertyTypes: true`. Use `{ ...(x !== undefined ? { x } : {}) }` for optional spreads.
+- **Error model**: throw `Error` with `code: string` + `message`. CLI layer catches and prints JSON `{ ok: false, error: { code, message } }`.
+- **No external deps for the runtime SKILL**: the SKILL.md files in `skills/agent-workflow/` are pure markdown + JSON; no compilation. `tsc` only compiles `src/`.
+
+## Multi-empresa (`profile.json`)
+
+The CLI is agnostic. Empresas (e.g. QTC) extend behavior via a companion plugin that ships a `profile.json` with:
+
+```json
+{
+  "namespace": "acme",
+  "company": "Acme Corp",
+  "claude_md_block": "ACME-PROJECT",
+  "mcp_databases": [
+    { "alias": "acme-stage", "host": "...", "port": 5432, "database": "..." }
+  ],
+  "lexicon_path": "profiles/lexico-acme.md",
+  "examples_path": "profiles/examples-acme.md",
+  "migrate_legacy_rules": [],
+  "custom_anchors": []
+}
+```
+
+Cascade resolution: `--profile <path>` flag → `AW_PROFILE` env → `~/.config/agent-workflow/profile.json` → `<workspace>/.agent-workflow/profile.json` → embedded defaults.
+
+The companion plugin (`qtc-workflow-plugin`, etc.) auto-copies its `profile.json` via a SessionStart hook on first install. Not required for the agnostic install path — the CLI alone is functional.
+
+## Slash commands
+
+User-level commands installed under `~/.<host>/commands/agent-workflow/` (Claude/Codex). Invoked as `/agent-workflow:<name>` (e.g. `/agent-workflow:session`, `/agent-workflow:compact`).
+
+For Warp/OZ, only the SKILL is copied (no slash commands or hooks).
+
+## Hooks
+
+Claude-only. `self install --target claude` JSON-merges 5 events into `~/.claude/settings.json` (with backup): SessionStart, PreToolUse, SessionEnd, PreCompact, PostCompact. Other hosts skip with a warning.

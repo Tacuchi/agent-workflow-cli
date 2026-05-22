@@ -16,9 +16,9 @@ export interface SessionResumeOutput {
   folder: string;
   path: string;
   flow: string | null;
-  state_from_qtc_project: string;
-  phase_from_qtc_project: string;
-  branches_from_qtc_project: string[];
+  state_from_aw_project: string;
+  phase_from_aw_project: string;
+  branches_from_aw_project: string[];
   objetivo: string | null;
   objetivo_text: string | null;
 }
@@ -51,9 +51,9 @@ export async function runSessionResume(
     folder: session.folder,
     path: relpath(session.path, cwd),
     flow: session.flow,
-    state_from_qtc_project: state,
-    phase_from_qtc_project: phase,
-    branches_from_qtc_project: fromBlock.branches,
+    state_from_aw_project: state,
+    phase_from_aw_project: phase,
+    branches_from_aw_project: fromBlock.branches,
     objetivo: objetivoText,
     objetivo_text: objetivoText,
   };

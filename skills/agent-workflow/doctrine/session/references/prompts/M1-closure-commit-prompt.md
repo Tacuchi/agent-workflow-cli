@@ -10,7 +10,7 @@ El AI invoca M1 ante **cualquiera** de estos 3 disparadores canónicos. La condi
 
 1. **Closure de `/agent-workflow:session`** (auto): antes de `session-close`, el skill `session` ejecuta `agent-workflow sources --session <CODE>` y dispara M1 si hay 1+ fuentes `dirty=true`. Documentado en `skills/session/SKILL.md` §"Cerrar sesión — 2. Proponer commits".
 2. **Solicitud explícita con sesión activa** (planning/execution): el usuario dice "commitea esto", "guardá los cambios", "subí lo nuevo" sin mensaje literal. El AI ejecuta `agent-workflow sources --session <CODE>` y dispara M1 igual que en closure. El mensaje sugerido incluye tag `session<NNN>`.
-3. **Solicitud explícita sin sesión activa**: el usuario pide commit en una fuente qtc-* (hub o project) que no tiene sesión registrada en `AW-PROJECT.Status.Sesiones activas`. El AI ejecuta `agent-workflow sources` (sin `--session`) y dispara M1. El mensaje sugerido **omite** el tag `session<NNN>`.
+3. **Solicitud explícita sin sesión activa**: el usuario pide commit en una fuente agent-workflow (hub o project) que no tiene sesión registrada en `AW-PROJECT.Status.Sesiones activas`. El AI ejecuta `agent-workflow sources` (sin `--session`) y dispara M1. El mensaje sugerido **omite** el tag `session<NNN>`.
 
 ## Forma
 
@@ -37,7 +37,7 @@ Si el usuario aporta el mensaje exacto en la solicitud (`"commitea con mensaje '
 
 Si el mensaje literal viola Regla 2 (multi-línea, co-author, etc.), el AI avisa antes de ejecutar y pide confirmación. No reescribe silenciosamente.
 
-### Workspace no qtc-* (sin AW-PROJECT)
+### Workspace no agent-workflow (sin AW-PROJECT)
 
 `agent-workflow sources` falla → no hay fuentes que enumerar. El AI cae al flujo simple: sugiere 1-line msg en chat, espera confirmación, ejecuta. No invoca M1.
 

@@ -69,29 +69,29 @@ The universal SKILL reads a `profile.json` to parametrize 10 sensitive skills (p
 
 Schema (8 fields): `namespace` (kebab) · `company` · `claude_md_block` (`[A-Z][A-Z0-9_-]*`) · `mcp_databases[]` · `lexicon_path` · `examples_path` · `migrate_legacy_rules[]` · `custom_anchors[]`. See `skills/agent-workflow/references/profile-parametrization.md` for the per-skill contract.
 
-Example QTC profile:
+Example profile (replace `acme` with your company namespace):
 
 ```json
 {
-  "namespace": "qtc",
-  "company": "QuetalCompra",
-  "claude_md_block": "QTC-PROJECT",
+  "namespace": "acme",
+  "company": "Acme Corp",
+  "claude_md_block": "ACME-PROJECT",
   "mcp_databases": [
-    { "alias": "qtc-cert", "host": "10.0.0.10", "port": 5432, "database": "qtc_cert" },
-    { "alias": "qtc-prod", "host": "10.0.0.11", "port": 5432, "database": "qtc_prod" }
+    { "alias": "acme-stage", "host": "10.0.0.10", "port": 5432, "database": "acme_stage" },
+    { "alias": "acme-prod", "host": "10.0.0.11", "port": 5432, "database": "acme_prod" }
   ],
-  "lexicon_path": "profiles/lexico-qtc.md",
-  "examples_path": "profiles/examples-qtc.md",
+  "lexicon_path": "profiles/lexico-acme.md",
+  "examples_path": "profiles/examples-acme.md",
   "migrate_legacy_rules": [
     { "from": ".claude/sessions", "to": ".workflow/sessions", "scope": "anchor" }
   ],
   "custom_anchors": [
-    { "anchor": "qtc:super-admin-bypass", "target": "profiles/anchors/qtc-super-admin-bypass.md" }
+    { "anchor": "acme:super-admin-bypass", "target": "profiles/anchors/acme-super-admin-bypass.md" }
   ]
 }
 ```
 
-The QTC profile + legacy aliases ship in the `qtc-workflow-plugin` companion plugin (v4.0.0+).
+Companion plugins package this profile + optional legacy aliases + custom skills. The QTC plugin (`qtc-workflow-plugin@v4.0.0+`) is a reference implementation.
 
 ### Override the source
 

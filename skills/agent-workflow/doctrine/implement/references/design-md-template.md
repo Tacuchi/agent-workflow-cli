@@ -26,7 +26,7 @@ Template canónico copy-paste-friendly para producir el `DESIGN.md` de una sesi�
 - <2-4 bullets de anti-scope explícito (qué NO toca).>
 
 ## Current state
-<ASCII flow del estado actual. Citar paths concretos (com.qtc..., src/...).>
+<ASCII flow del estado actual. Citar paths concretos (com.<empresa>.<dominio>..., src/...).>
 
 ```
 <diagrama ASCII de flow / componentes actuales>
@@ -86,7 +86,7 @@ None
 ## Reglas de redacción
 
 - **Frases cortas**. Listas sobre prosa larga.
-- **Citar paths concretos** en current/target state: `com.qtc.credito.core.service.PdfRenderer`, `src/cli/menu.tsx`, `mscore-delivery-spring/...`.
+- **Citar paths concretos** en current/target state: `com.<empresa>.<dominio>.core.service.PdfRenderer`, `src/cli/menu.tsx`, `mscore-delivery-spring/...`.
 - **DD sin alternativa descartada** es sospechoso — el AI debe forzarse a buscar una. Si genuinamente no hay alternativa razonable, escribirlo explícito ("Alternativas descartadas: ninguna razonable; era la única opción que respeta <constraint>").
 - **Open questions vacías** = `None`. Nunca omitir la sección.
 - **No copiar código completo de impl** en `## New interfaces` — sólo firmas. La impl va en Phase 0 tasks.

@@ -169,7 +169,7 @@ public class ControllerExceptionHandler {
 
 ## Estructura de proyecto
 
-Ver `references/project-structure.md` para la estructura completa de paquetes, entidades, repositories, services, wrappers request/response y convención de DTOs del tu ecosistema.
+Ver `references/project-structure.md` para la estructura completa de paquetes, entidades, repositories, services, wrappers request/response y convención de DTOs de tu ecosistema.
 
 ## Queries SQL
 

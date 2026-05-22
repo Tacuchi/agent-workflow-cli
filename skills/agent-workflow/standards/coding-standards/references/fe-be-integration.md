@@ -1,6 +1,6 @@
 # FE-BE Integration — reglas transversales
 
-> Anchor: `agent-workflow:fe-be-integration`. Reglas canónicas para la integración Frontend ↔ Backend en proyectos qtc-* a partir de qtc-dev v2.6 (session013) — actualizado en v2.7 (session015) para reflejar el modelo phased extendido Phase 0-5. Aplica a sesiones `flow=dev` con `## Type: feature|refactor` y a refactors guiados por el skill `agent-workflow:refactor`.
+> Anchor: `agent-workflow:fe-be-integration`. Reglas canónicas para la integración Frontend ↔ Backend en proyectos agent-workflow a partir de qtc-dev v2.6 (session013) — actualizado en v2.7 (session015) para reflejar el modelo phased extendido Phase 0-5. Aplica a sesiones `flow=dev` con `## Type: feature|refactor` y a refactors guiados por el skill `agent-workflow:refactor`.
 >
 > Origen: session013-dev-flujo-feature-refactor-phased + session015-dev-aplicar-flujo-fases-extendido. Prior art: [JSON Merge Patch RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396), [Walking Skeleton — Cockburn](https://codeclimate.com/blog/kickstart-your-next-project-with-a-walking-skeleton), [CQRS — Microsoft Learn](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs).
 
@@ -292,7 +292,7 @@ Reglas qtc-dev/coding-standards/database-conventions.md siguen aplicando (header
 
 - `agent-workflow:coding-standards/references/java-spring.md` — convenciones Spring Boot (Constructor Injection, @Transactional, records).
 - `agent-workflow:coding-standards/references/angular-typescript.md` — convenciones Angular (HttpClient, ApiService, environments).
-- `agent-workflow:coding-standards/references/database-conventions.md` — convenciones BD qtc-* (schemas, naming, scripts).
+- `agent-workflow:coding-standards/references/database-conventions.md` — convenciones BD agent-workflow (schemas, naming, scripts).
 - `agent-workflow:implement/SKILL.md` — phased mode (Phase 0/1/2 + gate M6 entre phases; S7 design-review antes de Phase 0 desde planning closure).
 - `agent-workflow:refactor/SKILL.md` — Strangler Fig para refactors completos.
 - `agent-workflow:prompts-catalog#M6,S7` — gates phased (S7 design-review antes de Phase 0; M6 entre phases). M9 retirado v2.8+.

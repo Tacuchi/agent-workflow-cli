@@ -64,7 +64,7 @@ Plantilla para un manual técnico individual. Cada archivo del dossier `docs/man
 
 Título descriptivo en oración (no en infinitivo de comando). Ejemplos:
 - "Configurar un servidor MCP de consulta a base de datos"
-- "Crear y cerrar una sesión qtc-* desde cero"
+- "Crear y cerrar una sesión agent-workflow desde cero"
 - "Migrar sesiones legacy al formato común"
 
 ### `{{SESIONES_ORIGEN}}`

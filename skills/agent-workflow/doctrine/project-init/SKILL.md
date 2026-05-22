@@ -8,7 +8,7 @@ version: 1.0.0
 
 # Project Init
 
-Bootstrap del bloque AW-PROJECT para un workspace **single-repo** (project mode). El bloque es la memoria permanente del proyecto y lo lee toda la familia qtc-* (sessions, doctor, hooks).
+Bootstrap del bloque AW-PROJECT para un workspace **single-repo** (project mode). El bloque es la memoria permanente del proyecto y lo lee toda la familia agent-workflow (sessions, doctor, hooks).
 
 ## Cuándo usar
 

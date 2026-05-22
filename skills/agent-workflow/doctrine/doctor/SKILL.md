@@ -1,14 +1,14 @@
 ---
 name: doctor
-description: "Health check read-only de la familia qtc-*. Orquesta `agent-workflow plugin-doctor` por fuente declarada en `agent-workflow sources` (hub mode) o sobre el cwd (single-repo). Default scope = all en hub, cwd en single-repo. Reporta versión del manifest, integridad de hooks, presencia de SKILL.md con frontmatter completo, runtime.json instalado y MCP config si aplica. Sin acciones ni mutaciones — sólo diagnóstico."
+description: "Health check read-only de la familia agent-workflow. Orquesta `agent-workflow plugin-doctor` por fuente declarada en `agent-workflow sources` (hub mode) o sobre el cwd (single-repo). Default scope = all en hub, cwd en single-repo. Reporta versión del manifest, integridad de hooks, presencia de SKILL.md con frontmatter completo, runtime.json instalado y MCP config si aplica. Sin acciones ni mutaciones — sólo diagnóstico."
 version: 1.0.0
 ---
 
 > **Profile parametrization**: lee `mcp_databases[]` de `profile.json` (resuelto vía cascade 5 capas). Ver [`references/profile-parametrization.md`](../../references/profile-parametrization.md) para el contrato completo y comportamiento por defecto cuando el profile está vacío.
 
-# Doctor — qtc-* health check (orquestador)
+# Doctor — agent-workflow health check (orquestador)
 
-Skill canónica del comando `/agent-workflow:doctor`. Orquesta diagnósticos read-only sobre los plugins qtc-* declarados en el workspace. El trabajo pesado lo hace el CLI runtime (`@tacuchi/agent-workflow-cli`); esta skill resuelve el scope, llama al CLI por plugin y agrega los resultados.
+Skill canónica del comando `/agent-workflow:doctor`. Orquesta diagnósticos read-only sobre los plugins agent-workflow declarados en el workspace. El trabajo pesado lo hace el CLI runtime (`@tacuchi/agent-workflow-cli`); esta skill resuelve el scope, llama al CLI por plugin y agrega los resultados.
 
 ## Cuándo se invoca
 

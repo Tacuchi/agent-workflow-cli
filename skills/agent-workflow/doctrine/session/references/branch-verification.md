@@ -1,6 +1,6 @@
 # Verificación de rama de trabajo — Referencia canónica (agent-workflow)
 
-> Documento canónico de la familia qtc-* para validación y orquestación de ramas. Referenciado por `skills/session/SKILL.md` y el hook PreToolUse (`agent-workflow hook branch-check`). Los flow plugins (qtc-dev, qtc-design, qtc-analyze) **no duplican** este flujo — apuntan acá.
+> Documento canónico de la familia agent-workflow para validación y orquestación de ramas. Referenciado por `skills/session/SKILL.md` y el hook PreToolUse (`agent-workflow hook branch-check`). Los flow plugins (qtc-dev, qtc-design, qtc-analyze) **no duplican** este flujo — apuntan acá.
 
 ## Contexto
 

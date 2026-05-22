@@ -260,8 +260,8 @@ export interface ResumeSummaryOutput {
   active_sessions: string[];
   primary_session: string | null;
   primary_session_code?: string | null;
-  phase_from_qtc_project?: string | null;
-  branches_from_qtc_project?: string[];
+  phase_from_aw_project?: string | null;
+  branches_from_aw_project?: string[];
   checkpoint_present: boolean;
   checkpoint_path?: string | null;
   checkpoint_status: CheckpointStatus["status"];
@@ -334,8 +334,8 @@ export async function runResumeSummary(
     active_sessions: actives.map((a) => a.folder),
     primary_session: target.folder,
     primary_session_code: codeMatch && codeMatch.length > 0 ? codeMatch : null,
-    phase_from_qtc_project: target.phase,
-    branches_from_qtc_project: target.branches,
+    phase_from_aw_project: target.phase,
+    branches_from_aw_project: target.branches,
     checkpoint_present: cp !== null,
     checkpoint_path: cpStatus.checkpoint_path,
     checkpoint_status: cpStatus.status,

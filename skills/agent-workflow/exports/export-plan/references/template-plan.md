@@ -91,7 +91,7 @@ state_changes:
 
 ## Resumen
 
-Consolidación de la propuesta familia `/agent-workflow:export-*` (session055) y el dev de export-scripts (session061) en un plan ejecutable que cubra los gaps restantes del bundle. Audiencia: equipo runtime qtc-*. Output esperado: 2-3 sesiones dev secuenciadas que cierren docs/conclusiones/007.
+Consolidación de la propuesta familia `/agent-workflow:export-*` (session055) y el dev de export-scripts (session061) en un plan ejecutable que cubra los gaps restantes del bundle. Audiencia: equipo runtime agent-workflow. Output esperado: 2-3 sesiones dev secuenciadas que cierren docs/conclusiones/007.
 
 ## Fases
 
@@ -119,7 +119,7 @@ Total: ≈8.5h en 3 tareas (3 abiertas).
 
 ## Dependencias externas
 
-- Ninguna externa al runtime qtc-*.
+- Ninguna externa al runtime agent-workflow.
 
 ## Riesgos
 
