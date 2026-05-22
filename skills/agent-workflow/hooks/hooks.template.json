@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'CONFIG_SRC=\"${CLAUDE_PLUGIN_ROOT}/config/agent-workflow-runtime.json\"; CONFIG_DST=\"$HOME/.workflow/agent-workflow/runtime.json\"; if [ -f \"$CONFIG_SRC\" ]; then mkdir -p \"$(dirname \"$CONFIG_DST\")\"; cp -f \"$CONFIG_SRC\" \"$CONFIG_DST\" 2>/dev/null; fi; NS_FILE=\"$HOME/.config/agent-workflow/namespace\"; mkdir -p \"$(dirname \"$NS_FILE\")\" 2>/dev/null; printf \"workflow\\n\" > \"$NS_FILE\" 2>/dev/null; exit 0'",
+            "command": "sh -c 'NS_FILE=\"$HOME/.config/agent-workflow/namespace\"; mkdir -p \"$(dirname \"$NS_FILE\")\" 2>/dev/null; printf \"workflow\\n\" > \"$NS_FILE\" 2>/dev/null; exit 0'",
             "timeout": 5
           }
         ]

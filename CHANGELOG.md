@@ -4,6 +4,47 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.3] — 2026-05-22
+
+**Patch — Hotfix UX + hook template** (session083 T7 smoke iteración). Cierra dos issues reportados en el clean install de v7.0.2.
+
+### Fixed
+
+- **`self install` alias** → `self install-skill`. Hasta v7.0.2 el subcommand era `install-skill` pero la documentación + UX intuitiva del usuario sugería tipear `self install`. v7.0.3 acepta ambos: `agent-workflow self install --target claude` (alias) y `agent-workflow self install-skill --target claude` (canónico) hacen lo mismo. Mismo flow, mismo output.
+- **Hook template `SessionStart` removida ref a `${CLAUDE_PLUGIN_ROOT}`**. Claude Code REJECTA cualquier hook en `~/.claude/settings.json` (user-level) que referencie `${CLAUDE_PLUGIN_ROOT}` con error: *"Hook command references `${CLAUDE_PLUGIN_ROOT}` but the hook is not associated with a plugin"*. La variable sólo existe en contexto de plugin install (`<plugin>/hooks/hooks.json`), no en user settings. v7.0.3 simplifica el SessionStart hook eliminando el copy step de `agent-workflow-runtime.json` (era legacy del plugin v3.x) y deja sólo el namespace file write:
+  ```sh
+  sh -c 'NS_FILE="$HOME/.config/agent-workflow/namespace"; mkdir -p "$(dirname "$NS_FILE")" 2>/dev/null; printf "workflow\\n" > "$NS_FILE" 2>/dev/null; exit 0'
+  ```
+  El comportamiento del SessionStart hook ahora: setea `~/.config/agent-workflow/namespace` a "workflow" al iniciar sesión en Claude Code. Idempotente, no-op si ya está bien.
+
+### Migration v7.0.2 → v7.0.3
+
+```bash
+# 1. Limpieza opcional del settings.json roto (el install lo va a reescribir)
+# Si querés ver el estado actual de hooks:
+# node -e "console.log(JSON.stringify(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.claude/settings.json','utf8')).hooks?.SessionStart, null, 2))"
+
+# 2. Upgrade CLI
+npm install -g @tacuchi/agent-workflow-cli@7.0.3
+
+# 3. Re-install (el alias 'install' ahora funciona; rewrite del hook automático)
+agent-workflow self install --target claude
+
+# 4. /reload-plugins en Claude Code — el error de CLAUDE_PLUGIN_ROOT desaparece
+```
+
+### Why
+
+T7 smoke con v7.0.2 reveló dos puntos de fricción:
+1. **UX**: documenté `self install` en CHANGELOG/README pero el subcommand era `install-skill`. Tipear el comando documentado fallaba.
+2. **Hook portabilidad**: la template heredada del plugin v3.x usaba `${CLAUDE_PLUGIN_ROOT}` que sólo funciona en hooks instalados via plugin install (no user-level). v7.0.2 copiaba la template tal cual a `~/.claude/settings.json` y Claude Code la rechazaba.
+
+Ambos issues son de la fase de migración (T2 movió hooks template sin re-evaluar el contexto user-level). v7.0.3 los cierra.
+
+### Tests
+
+- Total: 645 (sin tests nuevos; el alias y el template rewrite son cambios mínimos. Coverage existente cubre la lógica del router + install).
+
 ## [7.0.2] — 2026-05-22
 
 **Patch — One-command install (no plugin/marketplace needed)** (session083 T7). v7.0.1 expuso `/agent-workflow:*` slash commands a través de un Claude Code plugin instalable via marketplace, requiriendo dos pasos en el host: `agent-workflow self install` + `/plugin install agent-workflow@<marketplace>`. v7.0.2 colapsa el flow a **un solo comando**: `agent-workflow self install --target claude` ahora instala SKILL + commands user-level (subdirectorio = namespace) + hooks en `~/.claude/settings.json`. Zero plugin/marketplace requerido para arrancar.

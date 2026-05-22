@@ -43,6 +43,7 @@ export const selfCommand: QtcCommand = {
         return selfDetectHosts(ctx);
       case "update":
         return selfUpdate(args, ctx);
+      case "install":
       case "install-skill":
         return selfInstallSkill(args, ctx);
       case "install-hooks":
