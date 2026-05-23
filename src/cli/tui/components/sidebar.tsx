@@ -45,13 +45,7 @@ export function Sidebar({
   width = DEFAULT_WIDTH,
 }: SidebarProps) {
   return (
-    <Box
-      flexDirection="column"
-      width={width}
-      flexShrink={0}
-      paddingX={1}
-      paddingY={1}
-    >
+    <Box flexDirection="column" width={width} flexShrink={0} paddingX={1} paddingY={1}>
       {/* Brand block — separación interna entre brand y version + divisor abajo */}
       <Box flexDirection="column">
         <Text wrap="truncate-end">

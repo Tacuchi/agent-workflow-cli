@@ -108,11 +108,7 @@ export function DetailPanel({
             <Text color={colors.mute}>ACTIONS</Text>
             <Box flexDirection="column" marginTop={0}>
               {actions.map((a, i) => (
-                <DetailActionRow
-                  key={a.name}
-                  action={a}
-                  focused={i === focusedAction}
-                />
+                <DetailActionRow key={a.name} action={a} focused={i === focusedAction} />
               ))}
             </Box>
           </>
@@ -152,11 +148,7 @@ function DetailActionRow({
     : action.danger
       ? colors.faint
       : colors.dim;
-  const focusBarColor = focused
-    ? action.danger
-      ? colors.err
-      : colors.accent
-    : colors.faint;
+  const focusBarColor = focused ? (action.danger ? colors.err : colors.accent) : colors.faint;
   const bg = focused ? colors.bgHighlight : undefined;
   const bgProp = bg ? { backgroundColor: bg } : {};
   const innerPad = " ".repeat(ACTION_INNER_PAD);

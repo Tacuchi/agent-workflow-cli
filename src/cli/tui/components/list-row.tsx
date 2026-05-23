@@ -94,9 +94,7 @@ export function ListRow({
   // Available: widthHint del parent o fallback (termCols - overhead).
   const fallbackOverhead = 36;
   const available =
-    widthHint !== undefined
-      ? widthHint
-      : Math.max(8, (stdout?.columns ?? 100) - fallbackOverhead);
+    widthHint !== undefined ? widthHint : Math.max(8, (stdout?.columns ?? 100) - fallbackOverhead);
 
   // RightLen — content alineado a la derecha. Siempre full (no truncar).
   const rightLen =
@@ -169,11 +167,7 @@ export function ListRow({
         {meta.length > 0
           ? meta.map((m, i) => (
               <Box key={`${m.label}-${i}`}>
-                <Text
-                  {...bgProp}
-                  color={metaBaseColor ?? toneColor(m.tone)}
-                  bold={focused}
-                >
+                <Text {...bgProp} color={metaBaseColor ?? toneColor(m.tone)} bold={focused}>
                   {m.label}
                 </Text>
                 <Text {...bgProp}> </Text>

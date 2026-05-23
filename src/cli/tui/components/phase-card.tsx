@@ -67,10 +67,7 @@ export function PhaseCard({ phase, active = false }: PhaseCardProps) {
             {phase.slash && phase.slash !== "—" ? (
               <Text color={colors.accent}>{phase.slash}</Text>
             ) : null}
-            {phase.slash &&
-            phase.slash !== "—" &&
-            phase.hook &&
-            phase.hook !== "—" ? (
+            {phase.slash && phase.slash !== "—" && phase.hook && phase.hook !== "—" ? (
               <Text color={colors.dim}> · </Text>
             ) : null}
             {phase.hook && phase.hook !== "—" ? (

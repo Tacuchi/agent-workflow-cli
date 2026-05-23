@@ -36,8 +36,7 @@ export function FamilyCard({
   const titleLen = [...family.title].length;
   const countStr = String(family.items.length);
   const countLen = countStr.length;
-  const used =
-    FOCUS_OUTER + INNER_PAD * 2 + 1 + 1 + titleLen + 1 + countLen;
+  const used = FOCUS_OUTER + INNER_PAD * 2 + 1 + 1 + titleLen + 1 + countLen;
 
   const termCols = stdout?.columns ?? 100;
   // Overhead aproximado: ScreenFrame (6) + Sidebar (24) + Main paddingX (2) +
