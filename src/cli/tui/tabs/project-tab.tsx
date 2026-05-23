@@ -8,6 +8,8 @@ import {
   buildProjectTabData,
 } from "../../../application/project-tab-data.js";
 import type { CliContext } from "../../types.js";
+import { FrameBox } from "../components/frame-box.js";
+import { PageHead } from "../components/page-head.js";
 import { Pill } from "../components/pill.js";
 import { colors, icons } from "../theme.js";
 
@@ -149,17 +151,18 @@ const LANDING_OPTIONS: readonly LandingOption[] = [
 function NotInitialized({ data, cursor }: { data: ProjectTabData; cursor: number }) {
   return (
     <Box flexDirection="column">
-      <Text color={colors.fgBright} bold>
-        Workspace no inicializado
-      </Text>
+      <PageHead title="Proyecto" count={{ label: "no inicializado", tone: "warn" }} />
       <Text color={colors.fgSubtle}>
         No encuentro bloque AW-PROJECT en CLAUDE.md / AGENTS.md de este directorio.
       </Text>
 
-      <Box marginTop={1} flexDirection="column">
-        {LANDING_OPTIONS.map((opt, i) => (
-          <LandingRow key={opt.actionId} option={opt} active={i === cursor} />
-        ))}
+      <Box marginTop={1}>
+        <FrameBox title="elegí cómo inicializar" accent>
+          {LANDING_OPTIONS.map((opt, i) => (
+            <LandingRow key={opt.actionId} option={opt} active={i === cursor} />
+          ))}
+          <Text color={colors.fgSubtle}>↑↓ navegar · ⏎ aplicar</Text>
+        </FrameBox>
       </Box>
 
       <Box marginTop={1} flexDirection="column">
@@ -193,16 +196,13 @@ function LandingRow({ option, active }: { option: LandingOption; active: boolean
           {active ? "▸" : " "}
         </Text>
         <Text> </Text>
-        <Text
-          color={active ? colors.fgBright : colors.fgSubtle}
-          {...(active ? { bold: true, inverse: true } : {})}
-        >
-          {active ? ` ${option.title} ` : option.title}
+        <Text color={active ? colors.accent : colors.fgBright} {...(active ? { bold: true } : {})}>
+          {option.title}
         </Text>
       </Box>
       <Box marginLeft={2} flexDirection="column">
-        <Text color={colors.fgMoreSubtle}>{option.desc}</Text>
-        <Text color={colors.info}>{option.cli}</Text>
+        <Text color={colors.fgSubtle}>{option.desc}</Text>
+        <Text color={active ? colors.accent : colors.info}>{option.cli}</Text>
       </Box>
     </Box>
   );

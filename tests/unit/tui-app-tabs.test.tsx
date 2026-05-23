@@ -65,23 +65,24 @@ describe("App (tabs)", () => {
     expect(lastFrame()).toContain("~/project");
   });
 
-  it("Tab cambia a la siguiente tab (Proyecto)", async () => {
+  it("Tab cambia a la siguiente tab (Workflow)", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write(TAB);
     await new Promise((r) => setTimeout(r, 50));
-    // Active tab Proyecto — el label se envuelve en espacios para el inverse.
-    expect(lastFrame()).toMatch(/2 +Proyecto/);
+    // TAB_ORDER post-T3: status → workflow → project → mcp → skills.
+    expect(lastFrame()).toMatch(/2 +Workflow/);
   });
 
-  it("número 4 va directo a Skills tab", async () => {
+  it("número 5 va directo a Skills tab", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
-    stdin.write("4");
+    stdin.write("5");
     await new Promise((r) => setTimeout(r, 50));
-    expect(lastFrame()).toMatch(/4 +Skills/);
+    // TAB_BY_KEY post-T3: {1:status, 2:workflow, 3:project, 4:mcp, 5:skills}.
+    expect(lastFrame()).toMatch(/5 +Skills/);
   });
 
   it("'q' resuelve con kind:exit", async () => {

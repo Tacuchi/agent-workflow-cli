@@ -8,6 +8,8 @@ import { selfUninstallSkill } from "../../../application/self/uninstall-skill.js
 import { selfUninstall } from "../../../application/self/uninstall.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
+import { FrameBox } from "../components/frame-box.js";
+import { ListRow, type MetaChip } from "../components/list-row.js";
 import { PageHead } from "../components/page-head.js";
 import { Pill } from "../components/pill.js";
 import { useInputLock } from "../input-lock.js";
@@ -202,8 +204,13 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
 
   // input — list mode (cursor en la lista de hosts)
   useInput(
-    (_input, key) => {
+    (input, key) => {
       if (!isActive || busy || mode.kind !== "list") return;
+      // Empty-state shortcut: `i` instala directo en Claude.
+      if ((input === "i" || input === "I") && installedCount === 0) {
+        void runComposite("install", { kind: "host", id: "claude", label: "Claude Code" });
+        return;
+      }
       if (key.upArrow) {
         setCursor((c) => Math.max(0, c - 1));
         setActionCursor(0);
@@ -260,28 +267,63 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         }}
       />
 
+      {/* First-use banner — solo cuando 0 hosts instalados */}
+      {installedCount === 0 && skills.length > 0 ? (
+        <FrameBox title="primer arranque" accent>
+          <Box flexDirection="row">
+            <Text color={colors.accent}>{icons.star} </Text>
+            <Text color={colors.fgBright} bold>
+              Nada instalado todavía — empezá por Claude Code.
+            </Text>
+          </Box>
+          <Text color={colors.fgSubtle} wrap="wrap">
+            Claude soporta SKILL + commands + hooks. Codex y Warp soportan solo SKILL.
+          </Text>
+          <Box marginTop={1} flexDirection="row">
+            <Text color={colors.accent} bold>
+              i {icons.play} Install on Claude
+            </Text>
+            <Text color={colors.fgSubtle}> · ⏎ ver acciones</Text>
+          </Box>
+        </FrameBox>
+      ) : null}
+
       <Box>
         {/* Panel izquierdo: hosts */}
         <Box
           flexDirection="column"
-          minWidth={32}
+          minWidth={36}
           marginRight={1}
           borderStyle="round"
           borderColor={inActionMode ? colors.borderFaint : colors.borderActive}
           paddingX={1}
         >
           <Text color={colors.fgMoreSubtle}>HOSTS</Text>
-          {skills.map((s, i) => (
-            <HostRow
-              key={s.id}
-              label={s.label}
-              note={s.installed ? s.path : "no instalado"}
-              hooks={s.hooks_installed}
-              selected={cursor === i}
-              dimmed={inActionMode}
-              state={s.installed ? "ok" : "missing"}
-            />
-          ))}
+          {skills.map((s, i) => {
+            const meta: MetaChip[] = [];
+            if (s.hooks_supported) {
+              meta.push({
+                label: s.hooks_installed ? "hooks active" : "hooks inactive",
+                tone: s.hooks_installed ? "ok" : "dim",
+              });
+            }
+            return (
+              <ListRow
+                key={s.id}
+                icon={icons.diamond}
+                iconActive={s.installed}
+                title={s.label}
+                subtitle={s.installed ? s.path : "no instalado"}
+                meta={meta}
+                state={{
+                  label: s.installed ? `${icons.check} installed` : "· missing",
+                  tone: s.installed ? "ok" : "dim",
+                }}
+                chevron
+                active={cursor === i && !inActionMode}
+              />
+            );
+          })}
         </Box>
 
         {/* Panel derecho: detalle + acciones */}
@@ -358,57 +400,6 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
 
 // ===== sub-components =====
 
-function HostRow({
-  label,
-  note,
-  hooks,
-  selected,
-  dimmed,
-  state,
-}: {
-  label: string;
-  note: string;
-  hooks?: boolean;
-  selected: boolean;
-  dimmed: boolean;
-  state: "ok" | "missing";
-}) {
-  const focused = selected && !dimmed;
-  const stateColor = state === "ok" ? colors.success : colors.fgFaint;
-  const cursorColor = focused ? colors.accent : colors.fgFaint;
-  // Estructura sin Box anidados flexGrow+column en la columna del label:
-  // mantenemos cursor + label en la MISMA caja horizontal para que Ink no
-  // desalinee verticalmente cuando el row contiene un Pill (caso `[hooks]`).
-  return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color={cursorColor} {...(focused ? { bold: true } : {})}>
-          {selected ? "▸" : " "}
-        </Text>
-        <Text> </Text>
-        <Text
-          color={focused ? colors.fgBright : colors.fgSubtle}
-          {...(focused ? { bold: true, inverse: true } : {})}
-        >
-          {focused ? ` ${label} ` : label}
-        </Text>
-        {hooks ? (
-          <Box marginLeft={1}>
-            <Pill tone="info">hooks</Pill>
-          </Box>
-        ) : null}
-        <Box flexGrow={1} />
-        <Text color={stateColor} bold>
-          {state === "ok" ? icons.check : icons.cross}
-        </Text>
-      </Box>
-      <Box marginLeft={2}>
-        <Text color={colors.fgFaint}>{note}</Text>
-      </Box>
-    </Box>
-  );
-}
-
 function ActionRow({
   label,
   danger,
@@ -439,7 +430,9 @@ function buildArgsFor(action: SkillAction, target: TargetSpec): ParsedArgs {
   const flags = new Set<string>();
   const values = new Map<string, string>();
   values.set("target", target.id);
-  if (action === "install-full") flags.add("--force");
+  // `--force` aplica a install y uninstall: sobreescribir sin confirm prompt.
+  // Decisión de producto (handoff README §Estados, línea ~216).
+  if (action === "install-full" || action === "uninstall-full") flags.add("--force");
   if (action === "clean-cache") values.set("plugin", "agent-workflow");
   return {
     rest: [actionToSubcommand(action)],

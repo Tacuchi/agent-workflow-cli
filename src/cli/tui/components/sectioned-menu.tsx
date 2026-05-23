@@ -42,7 +42,7 @@ export function SectionedMenu<T extends string>(props: SectionedMenuProps<T>) {
   const [focused, setFocused] = useState<number>(initialFocus);
 
   // Clamp defensivo: si los items cambian y el focus queda fuera de rango,
-  // re-anclar al último seleccionable. Cubre menus dinámicos (p.ej. update-tab).
+  // re-anclar al último seleccionable. Cubre menus dinámicos.
   useEffect(() => {
     if (selectables.length === 0) return;
     if (focused >= selectables.length) {

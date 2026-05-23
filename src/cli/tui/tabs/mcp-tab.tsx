@@ -9,36 +9,26 @@ import {
 import type { CommandResult } from "../../../domain/types.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
+import { ActionModal, type ActionModalAction } from "../components/action-modal.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
+import { FrameBox } from "../components/frame-box.js";
 import { InputPrompt } from "../components/input-prompt.js";
+import { ListRow } from "../components/list-row.js";
 import { PageHead } from "../components/page-head.js";
-import { Pill } from "../components/pill.js";
 import { useInputLock } from "../input-lock.js";
 import { colors, icons } from "../theme.js";
+
+type InstalledState = "installed" | "partial" | "missing";
 
 type Mode =
   | { kind: "list" }
   | { kind: "actions" }
-  | { kind: "new-name" }
-  | { kind: "new-dsn"; name: string }
+  | { kind: "wizard-name"; editingName?: string; prefillDsn?: string }
+  | { kind: "wizard-dsn"; name: string; editingExisting?: string }
   | { kind: "confirm-delete"; name: string }
   | { kind: "busy"; label: string };
 
-type CompositeAction = "install" | "reinstall" | "uninstall" | "doctor";
-
-interface McpActionDef {
-  id: CompositeAction;
-  label: string;
-  danger?: boolean;
-  availableWhen: "missing" | "installed" | "always";
-}
-
-const ACTION_DEFS: readonly McpActionDef[] = [
-  { id: "install", label: "Instalar", availableWhen: "missing" },
-  { id: "reinstall", label: "Reinstalar", availableWhen: "installed" },
-  { id: "doctor", label: "Diagnosticar (doctor)", availableWhen: "always" },
-  { id: "uninstall", label: "Desinstalar", availableWhen: "installed", danger: true },
-];
+type ActionId = "test" | "install" | "edit" | "remove";
 
 export interface McpTabProps {
   ctx: CliContext;
@@ -57,19 +47,23 @@ function buildArgs(action: string, values: Record<string, string> = {}): ParsedA
 }
 
 /**
- * MCPTab — split view con sub-modes.
+ * McpTab — listado MCP + ActionModal + Add wizard inline.
  *
- * Lista: connections reales + row "+ Nueva conexión" al final.
- * Detail: estado único (instalado/no instalado/parcial) + acciones composite.
+ * Layout single-column:
+ *   PageHead → action hint → FrameBox "connections" (ListRow per conn) →
+ *   ActionModal (cuando mode='actions') | Wizard (cuando mode='wizard-*') |
+ *   ConfirmModal (cuando mode='confirm-delete') | Busy banner.
  *
- * Modes:
- * - `list` — cursor en lista (connections + new-row). ↑↓ navega · ⏎ entra
- *   a `actions` (si conn) o a `new-name` (si new-row).
- * - `actions` — cursor en acciones contextuales del host activo. ↑↓ navega
- *   · ⏎ aplica · esc vuelve.
+ * Acciones del modal (depende de installedState):
+ *   - Test connection — corre `mcp doctor` (existing backend).
+ *   - Install on hosts — encadena install-claude + install-codex + install-warp.
+ *   - Edit — re-abre el wizard pre-rellenado para sobreescribir el DSN env var.
+ *   - Remove (danger) — abre ConfirmModal y luego corre `mcp remove`.
  *
- * Install composite: encadena install-claude + install-codex + install-warp.
- * Si alguno falla, aborta el resto y reporta.
+ * Atajos:
+ *   - `a` (en list mode) → abre Add wizard.
+ *   - ↑↓ + ⏎ navega y aplica.
+ *   - Esc cierra modal/wizard.
  */
 export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
   const [connections, setConnections] = useState<SelfMcpConnectionView[]>([]);
@@ -92,7 +86,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       const result = await selfMcpConfig(buildArgs("list"), ctx);
       const next = result.ok ? (result.data?.connections ?? []) : [];
       setConnections(next);
-      setCursor((c) => Math.min(Math.max(0, c), next.length));
+      setCursor((c) => Math.min(Math.max(0, c), Math.max(0, next.length - 1)));
     } catch (err) {
       onToast?.({ tone: "err", title: "Error cargando MCP", body: (err as Error).message });
     }
@@ -104,11 +98,9 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     void refresh();
   }, [refresh]);
 
-  // cursor index >= connections.length → "Nueva conexión" row
-  const isNewRow = cursor === connections.length;
-  const current = isNewRow ? null : connections[cursor];
+  const current = connections[cursor] ?? null;
 
-  const installedState = useMemo<"installed" | "partial" | "missing">(() => {
+  const installedState = useMemo<InstalledState>(() => {
     if (!current) return "missing";
     const states = [current.instalado.claude_code, current.instalado.codex, current.instalado.warp];
     const someInstalled = states.some((s) => s === "si");
@@ -118,15 +110,14 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     return "missing";
   }, [current]);
 
-  const availableActions = useMemo(
-    () =>
-      ACTION_DEFS.filter((def) => {
-        if (def.availableWhen === "always") return true;
-        if (def.availableWhen === "missing") return installedState === "missing";
-        return installedState !== "missing";
-      }),
-    [installedState],
-  );
+  const driftAny = useMemo(() => {
+    if (!current) return false;
+    return (
+      current.instalado.claude_code === "drift" ||
+      current.instalado.codex === "drift" ||
+      current.instalado.warp === "drift"
+    );
+  }, [current]);
 
   const runRawAction = useCallback(
     async (action: string, name: string, label: string): Promise<boolean> => {
@@ -136,8 +127,9 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           buildArgs(action, { name }),
           ctx,
         );
-        const isWarpInstall = result.ok && action === "install-warp" && result.data?.warp_hint;
-        if (isWarpInstall && result.data?.warp_hint) setWarpHint(result.data.warp_hint);
+        if (result.ok && action === "install-warp" && result.data?.warp_hint) {
+          setWarpHint(result.data.warp_hint);
+        }
         if (!result.ok) {
           const summary = result.error?.message ?? "fallo";
           onToast?.({ tone: "err", title: `Falló paso ${action}`, body: summary });
@@ -152,37 +144,13 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     [ctx, onToast],
   );
 
-  const runComposite = useCallback(
-    async (kind: CompositeAction, name: string) => {
+  const runInstallComposite = useCallback(
+    async (name: string) => {
       setWarpHint(null);
-      if (kind === "doctor") {
-        const ok = await runRawAction("doctor", name, `diagnosticando ${name}…`);
-        if (ok) onToast?.({ tone: "ok", title: `Diagnóstico OK · ${name}` });
-        await refresh();
-        setMode({ kind: "list" });
-        return;
-      }
-      if (kind === "uninstall") {
-        const ok = await runRawAction("remove", name, `eliminando ${name}…`);
-        if (ok) onToast?.({ tone: "ok", title: `Conexión '${name}' eliminada` });
-        await refresh();
-        setMode({ kind: "list" });
-        return;
-      }
-      // install / reinstall — encadenar install-claude + install-codex + install-warp
       const steps: { action: string; label: string }[] = [
-        {
-          action: "install-claude",
-          label: `${kind === "reinstall" ? "reinstalando" : "instalando"} en Claude…`,
-        },
-        {
-          action: "install-codex",
-          label: `${kind === "reinstall" ? "reinstalando" : "instalando"} en Codex…`,
-        },
-        {
-          action: "install-warp",
-          label: `${kind === "reinstall" ? "reinstalando" : "instalando"} en Warp…`,
-        },
+        { action: "install-claude", label: "instalando en Claude…" },
+        { action: "install-codex", label: "instalando en Codex…" },
+        { action: "install-warp", label: "instalando en Warp…" },
       ];
       for (const step of steps) {
         const ok = await runRawAction(step.action, name, step.label);
@@ -194,7 +162,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       }
       onToast?.({
         tone: "ok",
-        title: `${kind === "reinstall" ? "Reinstalación" : "Instalación"} OK · ${name}`,
+        title: `Instalación OK · ${name}`,
         body: "claude + codex + warp",
       });
       await refresh();
@@ -203,47 +171,106 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     [runRawAction, refresh, onToast],
   );
 
-  const applyAction = useCallback(
-    (def: McpActionDef) => {
-      if (!current) return;
-      if (def.id === "uninstall") {
-        setMode({ kind: "confirm-delete", name: current.nombre });
-        return;
-      }
-      void runComposite(def.id, current.nombre);
+  const runDoctor = useCallback(
+    async (name: string) => {
+      const ok = await runRawAction("doctor", name, `pinging ${name}…`);
+      if (ok) onToast?.({ tone: "ok", title: `Test OK · ${name}` });
+      await refresh();
+      setMode({ kind: "list" });
     },
-    [current, runComposite],
+    [runRawAction, refresh, onToast],
   );
 
-  const totalListRows = connections.length + 1; // +1 = "Nueva conexión"
+  const applyModalAction = useCallback(
+    (id: ActionId) => {
+      if (!current) return;
+      switch (id) {
+        case "test":
+          void runDoctor(current.nombre);
+          return;
+        case "install":
+          void runInstallComposite(current.nombre);
+          return;
+        case "edit":
+          setMode({
+            kind: "wizard-name",
+            editingName: current.nombre,
+            prefillDsn: current.dsn_var,
+          });
+          return;
+        case "remove":
+          setMode({ kind: "confirm-delete", name: current.nombre });
+          return;
+      }
+    },
+    [current, runDoctor, runInstallComposite],
+  );
 
-  // input — list mode (cursor en lista, incluye new-row)
+  // Acciones del ActionModal — siempre las 4 disponibles cuando hay conexión.
+  const modalActions: ActionModalAction[] = useMemo(() => {
+    const installLabel =
+      installedState === "installed"
+        ? "Reinstall on hosts"
+        : installedState === "partial"
+          ? "Complete install"
+          : "Install on hosts";
+    return [
+      {
+        id: "test",
+        icon: icons.refresh,
+        label: "Test connection",
+        desc: "Corre `mcp doctor` y reporta drift / hosts faltantes.",
+      },
+      {
+        id: "install",
+        icon: icons.install,
+        label: installLabel,
+        desc: "Encadena install-claude + install-codex + install-warp.",
+        steps: ["install-claude", "install-codex", "install-warp"],
+      },
+      {
+        id: "edit",
+        icon: icons.edit,
+        label: "Edit connection",
+        desc: "Re-abre el wizard con la DSN env var pre-rellenada.",
+      },
+      {
+        id: "remove",
+        icon: icons.cross,
+        label: "Remove connection",
+        desc: "Quita la entrada del profile.json (no afecta el DSN).",
+        danger: true,
+      },
+    ];
+  }, [installedState]);
+
+  // input — list mode
   useInput(
-    (_input, key) => {
+    (input, key) => {
       if (!isActive || mode.kind !== "list") return;
+      if (input === "a" || input === "A") {
+        setMode({ kind: "wizard-name" });
+        return;
+      }
       if (key.upArrow) {
         setCursor((c) => Math.max(0, c - 1));
         setActionCursor(0);
         return;
       }
       if (key.downArrow) {
-        setCursor((c) => Math.min(totalListRows - 1, c + 1));
+        setCursor((c) => (connections.length === 0 ? 0 : Math.min(connections.length - 1, c + 1)));
         setActionCursor(0);
         return;
       }
-      if (key.return) {
-        if (isNewRow) {
-          setMode({ kind: "new-name" });
-        } else if (current) {
-          setActionCursor(0);
-          setMode({ kind: "actions" });
-        }
+      if (key.return && current) {
+        setActionCursor(0);
+        setMode({ kind: "actions" });
       }
     },
     { isActive },
   );
 
-  // input — actions mode (cursor en lista de acciones)
+  // input — actions mode (modal)
   useInput(
     (_input, key) => {
       if (!isActive || mode.kind !== "actions") return;
@@ -252,7 +279,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
         return;
       }
       if (key.downArrow) {
-        setActionCursor((c) => Math.min(availableActions.length - 1, c + 1));
+        setActionCursor((c) => Math.min(modalActions.length - 1, c + 1));
         return;
       }
       if (key.escape) {
@@ -260,8 +287,8 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
         return;
       }
       if (key.return) {
-        const def = availableActions[actionCursor];
-        if (def) applyAction(def);
+        const def = modalActions[actionCursor];
+        if (def) applyModalAction(def.id as ActionId);
       }
     },
     { isActive },
@@ -284,11 +311,11 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     { isActive },
   );
 
-  // input — esc en new-name/new-dsn
+  // input — esc en wizard
   useInput(
     (_input, key) => {
       if (!isActive) return;
-      if (mode.kind === "new-name" || mode.kind === "new-dsn") {
+      if (mode.kind === "wizard-name" || mode.kind === "wizard-dsn") {
         if (key.escape) setMode({ kind: "list" });
       }
     },
@@ -297,78 +324,201 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
 
   return (
     <Box flexDirection="column">
-      <PageHead title="MCP" count={{ label: `${connections.length}`, tone: "info" }} />
+      <PageHead title="MCP" count={{ label: `${connections.length} db`, tone: "info" }} />
 
       {mode.kind === "list" || mode.kind === "actions" ? (
-        <McpSplitView
-          connections={connections}
-          cursor={cursor}
-          current={current ?? null}
-          installedState={installedState}
-          actionMode={mode.kind === "actions"}
-          actionCursor={actionCursor}
-          availableActions={availableActions}
-        />
+        <>
+          <Box marginBottom={1} flexDirection="row">
+            <Text color={colors.accent} bold>
+              a {icons.play} + add connection
+            </Text>
+            <Text color={colors.fgSubtle}> · ⏎ acciones · ↑↓ navegar</Text>
+          </Box>
+
+          <FrameBox
+            title={`connections · ${connections.length}`}
+            accent={connections.length > 0}
+            dim={connections.length === 0}
+          >
+            {connections.length === 0 ? (
+              <Box flexDirection="column">
+                <Text color={colors.fgSubtle}>
+                  Sin conexiones registradas todavía. Presioná <Text color={colors.accent}>a</Text>{" "}
+                  para registrar la primera.
+                </Text>
+              </Box>
+            ) : (
+              connections.map((c, i) => {
+                const cInstalled = [c.instalado.claude_code, c.instalado.codex, c.instalado.warp];
+                const cAllInstalled = cInstalled.every((s) => s === "si");
+                const cAnyInstalled = cInstalled.some((s) => s === "si");
+                const cDrift = cInstalled.some((s) => s === "drift");
+                const stateLabel = cAllInstalled
+                  ? "installed"
+                  : cAnyInstalled
+                    ? "partial"
+                    : "missing";
+                const stateTone = cAllInstalled ? "ok" : cAnyInstalled ? "warn" : "dim";
+                return (
+                  <ListRow
+                    key={c.nombre}
+                    icon={icons.db}
+                    iconActive={cAllInstalled}
+                    title={c.nombre}
+                    subtitle={`${c.server_name} · ${c.dsn_var}`}
+                    meta={
+                      cDrift
+                        ? [{ label: "drift", tone: "warn" }]
+                        : [{ label: "registered", tone: "ok" }]
+                    }
+                    state={{ label: stateLabel, tone: stateTone }}
+                    chevron
+                    active={i === cursor && mode.kind !== "actions"}
+                  />
+                );
+              })
+            )}
+          </FrameBox>
+        </>
       ) : null}
 
-      {mode.kind === "new-name" ? (
-        <InputPrompt
-          message="Nombre de la nueva conexión (slug-kebab):"
-          onSubmit={(value) => {
-            const trimmed = value.trim();
-            if (!trimmed) {
-              onToast?.({ tone: "err", title: "Nombre vacío" });
-              setMode({ kind: "list" });
-              return;
+      {/* ActionModal (panel below list) */}
+      {mode.kind === "actions" && current ? (
+        <Box marginTop={1}>
+          <ActionModal
+            glyph={icons.db}
+            title={current.nombre}
+            subtitle={`${current.server_name} · ${current.dsn_var}`}
+            state={{
+              label:
+                installedState === "installed"
+                  ? "installed"
+                  : installedState === "partial"
+                    ? "partial"
+                    : "missing",
+              tone:
+                installedState === "installed"
+                  ? "ok"
+                  : installedState === "partial"
+                    ? "warn"
+                    : "dim",
+            }}
+            actions={
+              driftAny
+                ? modalActions.map((a) =>
+                    a.id === "test"
+                      ? {
+                          ...a,
+                          hint: { tone: "warn", icon: icons.alertDot, text: "drift detectado" },
+                        }
+                      : a,
+                  )
+                : modalActions
             }
-            setMode({ kind: "new-dsn", name: trimmed });
-          }}
-          isActive={isActive}
-        />
+            cursor={actionCursor}
+          />
+        </Box>
       ) : null}
 
-      {mode.kind === "new-dsn" ? (
-        <Box flexDirection="column">
-          <Box>
+      {/* Wizard step 1 — alias / nombre */}
+      {mode.kind === "wizard-name" ? (
+        <Box marginTop={1} flexDirection="column">
+          <FrameBox
+            title={
+              mode.editingName
+                ? `edit MCP connection · ${mode.editingName}`
+                : "register MCP connection"
+            }
+            accent
+          >
             <Text color={colors.fgSubtle}>
-              {icons.bullet} nombre:{" "}
+              Paso 1/2 — alias de la conexión (slug-kebab).{" "}
+              {mode.editingName ? `Actual: ${mode.editingName}` : ""}
+            </Text>
+            <Box marginTop={1}>
+              <InputPrompt
+                message="alias:"
+                onSubmit={(value) => {
+                  const trimmed = value.trim() || mode.editingName || "";
+                  if (!trimmed) {
+                    onToast?.({ tone: "err", title: "Alias vacío" });
+                    setMode({ kind: "list" });
+                    return;
+                  }
+                  setMode({
+                    kind: "wizard-dsn",
+                    name: trimmed,
+                    ...(mode.editingName ? { editingExisting: mode.editingName } : {}),
+                  });
+                }}
+                isActive={isActive}
+              />
+            </Box>
+            <Text color={colors.fgSubtle}>Esc cancelar</Text>
+          </FrameBox>
+        </Box>
+      ) : null}
+
+      {/* Wizard step 2 — DSN env var + live JSON preview */}
+      {mode.kind === "wizard-dsn" ? (
+        <Box marginTop={1} flexDirection="column">
+          <FrameBox title="register MCP connection · paso 2/2" accent>
+            <Box>
+              <Text color={colors.fgSubtle}>alias · </Text>
               <Text color={colors.fgBright} bold>
                 {mode.name}
               </Text>
-            </Text>
-          </Box>
-          <Box marginTop={1}>
-            <InputPrompt
-              message="Variable de entorno con la DSN (UPPER_SNAKE_CASE):"
-              onSubmit={(value) => {
-                const dsnVar = value.trim();
-                if (!dsnVar) {
-                  onToast?.({ tone: "err", title: "DSN var vacía" });
-                  setMode({ kind: "list" });
-                  return;
-                }
-                void registerConnection(mode.name, dsnVar);
-              }}
-              isActive={isActive}
-            />
-          </Box>
+            </Box>
+            <Box marginTop={1}>
+              <InputPrompt
+                message="DSN env var (UPPER_SNAKE_CASE):"
+                onSubmit={(value) => {
+                  const dsnVar = value.trim();
+                  if (!dsnVar) {
+                    onToast?.({ tone: "err", title: "DSN var vacía" });
+                    setMode({ kind: "list" });
+                    return;
+                  }
+                  void registerConnection(mode.name, dsnVar);
+                }}
+                isActive={isActive}
+              />
+            </Box>
+            <Box marginTop={1} flexDirection="column">
+              <Text color={colors.fgMoreSubtle}>PREVIEW · profile.json</Text>
+              <Text color={colors.fgSubtle}>{"{"}</Text>
+              <Text color={colors.fgSubtle}>{`  "mcp-servers": {`}</Text>
+              <Text color={colors.fg}>{`    "${mode.name}": {`}</Text>
+              <Text color={colors.fg}>{`      "env": "<DSN env var>",`}</Text>
+              <Text color={colors.fg}>{`      "type": "stdio"`}</Text>
+              <Text color={colors.fg}>{"    }"}</Text>
+              <Text color={colors.fgSubtle}>{"  }"}</Text>
+              <Text color={colors.fgSubtle}>{"}"}</Text>
+            </Box>
+            <Text color={colors.fgSubtle}>⏎ registrar · Esc cancelar</Text>
+          </FrameBox>
         </Box>
       ) : null}
 
       {mode.kind === "confirm-delete" ? (
-        <ConfirmModal
-          tone="danger"
-          title="Eliminar conexión"
-          body={[`Vas a eliminar la conexión '${mode.name}'.`, "Esta acción no se puede deshacer."]}
-          confirmKey="y"
-          confirmLabel={`Sí, eliminar ${mode.name}`}
-          cancelKey="n / Esc"
-          cancelLabel="Cancelar"
-        />
+        <Box marginTop={1}>
+          <ConfirmModal
+            tone="danger"
+            title="Eliminar conexión"
+            body={[
+              `Vas a eliminar la conexión '${mode.name}'.`,
+              "Esta acción no se puede deshacer.",
+            ]}
+            confirmKey="y"
+            confirmLabel={`Sí, eliminar ${mode.name}`}
+            cancelKey="n / Esc"
+            cancelLabel="Cancelar"
+          />
+        </Box>
       ) : null}
 
       {mode.kind === "busy" ? (
-        <Box>
+        <Box marginTop={1}>
           <Text color={colors.warning}>
             {icons.spinner} {mode.label}
           </Text>
@@ -376,14 +526,6 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       ) : null}
 
       {warpHint ? <WarpHintPanel hint={warpHint} /> : null}
-
-      <Box marginTop={1}>
-        <Text color={colors.fgFaint}>
-          {mode.kind === "actions"
-            ? "↑↓ navegar acciones · ⏎ aplicar · esc volver"
-            : "↑↓ navegar · ⏎ acciones / nueva"}
-        </Text>
-      </Box>
     </Box>
   );
 
@@ -407,214 +549,6 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
 }
 
 // ===== sub-components =====
-
-function McpSplitView({
-  connections,
-  cursor,
-  current,
-  installedState,
-  actionMode,
-  actionCursor,
-  availableActions,
-}: {
-  connections: SelfMcpConnectionView[];
-  cursor: number;
-  current: SelfMcpConnectionView | null;
-  installedState: "installed" | "partial" | "missing";
-  actionMode: boolean;
-  actionCursor: number;
-  availableActions: readonly McpActionDef[];
-}) {
-  const isNewRow = cursor === connections.length;
-  return (
-    <Box>
-      {/* lista */}
-      <Box
-        flexDirection="column"
-        minWidth={42}
-        marginRight={1}
-        borderStyle="round"
-        borderColor={actionMode ? colors.borderFaint : colors.borderActive}
-        paddingX={1}
-      >
-        <Text color={colors.fgMoreSubtle}>CONEXIONES</Text>
-        {connections.map((c, i) => (
-          <McpListRow key={c.nombre} conn={c} selected={i === cursor} dimmed={actionMode} />
-        ))}
-        <NewConnectionRow selected={isNewRow} dimmed={actionMode} />
-      </Box>
-
-      {/* detalle */}
-      <Box
-        flexDirection="column"
-        flexGrow={1}
-        borderStyle="round"
-        borderColor={actionMode ? colors.borderActive : colors.borderFaint}
-        paddingX={1}
-      >
-        <Text color={colors.fgMoreSubtle}>DETALLE</Text>
-        {isNewRow ? (
-          <Box marginTop={1} flexDirection="column">
-            <Text color={colors.fgBright} bold>
-              Nueva conexión
-            </Text>
-            <Text color={colors.fgFaint}>
-              ⏎ inicia el flujo de registro (nombre + DSN env var).
-            </Text>
-          </Box>
-        ) : current ? (
-          <McpDetail
-            conn={current}
-            installedState={installedState}
-            actionMode={actionMode}
-            actionCursor={actionCursor}
-            availableActions={availableActions}
-          />
-        ) : (
-          <Text color={colors.fgFaint}>(seleccioná una)</Text>
-        )}
-      </Box>
-    </Box>
-  );
-}
-
-function McpListRow({
-  conn,
-  selected,
-  dimmed,
-}: {
-  conn: SelfMcpConnectionView;
-  selected: boolean;
-  dimmed: boolean;
-}) {
-  const focused = selected && !dimmed;
-  const cursorColor = focused ? colors.accent : colors.fgFaint;
-  const nameColor = dimmed ? colors.fgSubtle : focused ? colors.fgBright : colors.fgSubtle;
-  return (
-    <Box>
-      <Text color={cursorColor} {...(focused ? { bold: true } : {})}>
-        {selected ? "▸" : " "}
-      </Text>
-      <Text> </Text>
-      <Box minWidth={14}>
-        <Text color={nameColor} {...(focused ? { bold: true, inverse: true } : {})}>
-          {focused ? ` ${conn.nombre} ` : conn.nombre}
-        </Text>
-      </Box>
-      <Box>
-        <Text color={colors.info}>{conn.dsn_var}</Text>
-      </Box>
-    </Box>
-  );
-}
-
-function NewConnectionRow({ selected, dimmed }: { selected: boolean; dimmed: boolean }) {
-  const focused = selected && !dimmed;
-  const cursorColor = focused ? colors.accent : colors.fgFaint;
-  const labelColor = focused ? colors.fgBright : colors.fgSubtle;
-  const label = "+ Nueva conexión";
-  return (
-    <Box>
-      <Text color={cursorColor} {...(focused ? { bold: true } : {})}>
-        {selected ? "▸" : " "}
-      </Text>
-      <Text> </Text>
-      <Text color={labelColor} {...(focused ? { bold: true, inverse: true } : {})}>
-        {focused ? ` ${label} ` : label}
-      </Text>
-    </Box>
-  );
-}
-
-function McpDetail({
-  conn,
-  installedState,
-  actionMode,
-  actionCursor,
-  availableActions,
-}: {
-  conn: SelfMcpConnectionView;
-  installedState: "installed" | "partial" | "missing";
-  actionMode: boolean;
-  actionCursor: number;
-  availableActions: readonly McpActionDef[];
-}) {
-  const driftAny =
-    conn.instalado.claude_code === "drift" ||
-    conn.instalado.codex === "drift" ||
-    conn.instalado.warp === "drift";
-  const statePillTone =
-    installedState === "installed" ? "ok" : installedState === "partial" ? "warn" : "muted";
-  const stateLabel =
-    installedState === "installed"
-      ? "instalado"
-      : installedState === "partial"
-        ? "parcial"
-        : "no instalado";
-  return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color={colors.fgBright} bold>
-          {conn.nombre}
-        </Text>
-        <Box marginLeft={1}>
-          <Pill tone={statePillTone}>{stateLabel}</Pill>
-        </Box>
-        {driftAny ? (
-          <Box marginLeft={1}>
-            <Pill tone="warn">drift</Pill>
-          </Box>
-        ) : null}
-      </Box>
-      <Text color={colors.fgMoreSubtle}>
-        DSN env var · <Text color={colors.info}>{conn.dsn_var}</Text>
-      </Text>
-      <Text color={colors.fgMoreSubtle}>
-        server name · <Text color={colors.info}>{conn.server_name}</Text>
-      </Text>
-
-      <Box marginTop={1} flexDirection="column">
-        {availableActions.map((a, i) => (
-          <ActionRow
-            key={a.id}
-            label={a.label}
-            danger={a.danger === true}
-            active={actionMode && i === actionCursor}
-          />
-        ))}
-      </Box>
-      <Text color={colors.fgFaint}>
-        {installedState === "missing"
-          ? "instalar encadena claude + codex + warp"
-          : "reinstalar reaplica · desinstalar quita en todos los hosts"}
-      </Text>
-    </Box>
-  );
-}
-
-function ActionRow({
-  label,
-  danger,
-  active,
-}: {
-  label: string;
-  danger: boolean;
-  active: boolean;
-}) {
-  const cursorColor = active ? (danger ? colors.error : colors.accent) : colors.fgFaint;
-  const labelColor = danger ? colors.error : active ? colors.fgBright : colors.fgSubtle;
-  return (
-    <Box>
-      <Text color={cursorColor} {...(active ? { bold: true } : {})}>
-        {active ? "▸" : " "}
-      </Text>
-      <Text> </Text>
-      <Text color={labelColor} {...(active ? { bold: true, inverse: true } : {})}>
-        {active ? ` ${label} ` : label}
-      </Text>
-    </Box>
-  );
-}
 
 function WarpHintPanel({ hint }: { hint: WarpPostInstallHint }) {
   const steps = hint.lines.slice(1);

@@ -4,6 +4,55 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] — 2026-05-23
+
+**Major — TUI redesign handoff impl** (session085). Implementa el handoff `docs/referencias/design_handoff_aw_tui_redesign/`: single-column layouts, ActionModal compartido, Command Palette ⌘K reintroducida, y un nuevo tab Workflow que mapea el harness completo.
+
+### Breaking changes
+
+- **TAB_ORDER reducido de 6 a 5**: `[status, workflow, project, mcp, skills]`. Atajos numéricos cambian: `2` ahora va a Workflow (antes Proyecto), `5` a Skills (antes Plugins).
+- **Tab Update eliminada**: la lógica de update check vive ahora como banner accent dentro del Status tab. Atajos `r/i/o` se preservan cuando Status está activa.
+- **Tab Plugins eliminada**: información implícita en otros tabs (Skills ya cubre hosts; Workflow ya cubre el catálogo CLI).
+
+### Added
+
+- **Tab Workflow nuevo** (key `2`): mapa educacional del harness. 5 fases del lifecycle (Discover → Start → Plan → Work → Close) con PhaseCards en row · 11 command families con FamilyCards 3-col · 17 slash commands + 5 hooks side-by-side · totales derivados con `.length`/`.reduce` para evitar drift. Data en `data/workflow-content.ts` verificada contra `aw --help` + `skills/agent-workflow/commands/` + `hooks/hooks.template.json`.
+- **Command Palette ⌘K / Ctrl+K** (reintroducida tras v7.3.0): filter input + ↑↓ navegación + ⏎ ejecuta + Esc cierra. Catálogo de 14 comandos en 5 categorías (tabs, install, mcp, project, self).
+- **Componentes shared nuevos** en `components/`: `<FrameBox>` (refactor de `SectionFrame` con prop `accent`), `<ListRow>` (cursor + icon-box + title/subtitle + meta chips + state pill + chevron — usado por Skills + MCP), `<StatTile>` (clickable con cursor), `<PhaseCard>` + `<FamilyCard>` (Workflow tab), `<ActionModal>` (skills + MCP), `<CommandPalette>`.
+- **First-use banner** en Skills cuando 0 hosts instalados: FrameBox accent con CTA `i ▸ Install on Claude` (shortcut directo bypassa modal).
+- **MCP Add wizard inline** 2-step con preview JSON live del `profile.json` durante step 2 (DSN env var).
+- **Status stat tiles 4-col**: cli · hosts X/7 · hooks armed/off · mcp N db. Tiles `hosts` y `mcp` clickables → navegan con ↑↓/←→ + ⏎. Detecta hooks armed leyendo `~/.claude/settings.json`.
+- **MenuAction palette routes**: `install-skill`, `doctor`, `update`, `help`, `mcp` accesibles desde la palette (exit-to-CLI).
+
+### Changed
+
+- **Status tab refactor**: Update banner FrameBox accent arriba (lógica migrada desde update-tab) · 4 stat tiles en row · Skill coverage FrameBox con ProgressLine + chips de hosts.
+- **MCP tab rewrite** (640 → 380 líneas): single-column. Header con `a ▸ + add connection`. ListRow per conexión con `<ActionModal>` para 4 acciones (Test/Install/Edit/Remove). Edit re-abre wizard pre-rellenado.
+- **Skills tab**: `HostRow` ad-hoc reemplazado por `<ListRow>` compartido. `--force` ahora aplica también a uninstall (era solo install).
+- **Project NotInitialized landing**: envuelto en FrameBox accent con título `elegí cómo inicializar`. PageHead con count `no inicializado` tone `warn`.
+- **app.tsx**: `TabId` reducido a 5 ids. KEYS_BY_TAB actualizado por tab con PALETTE_HINT (`^K`).
+
+### Removed
+
+- `src/cli/tui/tabs/update-tab.tsx` (190 líneas). Lógica migrada a Status.
+- `src/cli/tui/tabs/plugins-tab.tsx` (1014 líneas).
+- `tests/unit/tui-update-tab.test.tsx` (referenciaba el tab eliminado).
+- `SectionFrame` helper local en `status-tab.tsx` — reemplazado por `<FrameBox>` compartido.
+
+### Tests
+
+641/641 pass (73 test files). `tui-app-tabs.test.tsx` actualizado para nuevo TAB_ORDER.
+
+### Migration
+
+```bash
+npm install -g @tacuchi/agent-workflow-cli@8.0.0
+agent-workflow self install --target claude --force
+agent-workflow self install --target codex --force
+```
+
+Si tenías scripts/aliases que dependían de los atajos `5 → Plugins` o `6 → Update`, actualizar a la nueva numeración. Para invocar update ahora: presionar `i` en el Status tab (cuando hay update disponible), o desde la palette `⌘K → "Buscar actualización"`.
+
 ## [7.3.1] — 2026-05-22
 
 **Patch — UX polish del TUI**. Refinamientos sobre v7.3.0 en MCP y Skills tras feedback de uso.
