@@ -19,6 +19,8 @@ export interface StatusTabProps {
   onActivateTab?: (tab: "mcp" | "skills") => void;
   onRequestUpdate?: () => void;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
+  /** Emite cambios en el estado de alerta del tab (update outdated). */
+  onAlertChange?: (alert: boolean) => void;
 }
 
 type UpdateStatus = "idle" | "checking" | "uptodate" | "outdated" | "applying" | "error";
@@ -46,6 +48,7 @@ export function StatusTab({
   onActivateTab,
   onRequestUpdate,
   onToast,
+  onAlertChange,
 }: StatusTabProps) {
   const [data, setData] = useState<StatusData>({
     doctor: null,
@@ -111,6 +114,10 @@ export function StatusTab({
     void runUpdateCheck();
   }, [runUpdateCheck]);
 
+  useEffect(() => {
+    onAlertChange?.(update.status === "outdated");
+  }, [update.status, onAlertChange]);
+
   useInput(
     (input, key) => {
       if (!isActive) return;
@@ -165,10 +172,19 @@ export function StatusTab({
     );
   }
 
-  const installedHosts = data.doctor?.skill.targets.filter((t) => t.installed).length ?? 0;
-  const supportedHosts = HOSTS.length;
-  const backedTotal = data.doctor?.skill.targets.length || supportedHosts;
-  const pct = backedTotal > 0 ? Math.round((installedHosts / backedTotal) * 100) : 0;
+  // Cross-reference HOSTS (7) con doctor.skill.targets (4 backed).
+  const installedByTarget = new Map<string, boolean>(
+    (data.doctor?.skill.targets ?? []).map((t) => [t.target, t.installed]),
+  );
+  const hostsInstalled = HOSTS.map((h) => ({
+    host: h,
+    installed: installedByTarget.get(h.id) === true,
+  }));
+  const installedHosts = hostsInstalled.filter((h) => h.installed).length;
+  const supportedHosts = HOSTS.length; // 7
+  const backedHosts = HOSTS.filter((h) => h.backed).length; // 4
+  const pendingHosts = supportedHosts - backedHosts; // 3
+  const pct = supportedHosts > 0 ? Math.round((installedHosts / supportedHosts) * 100) : 0;
 
   return (
     <Box flexDirection="column">
@@ -176,13 +192,14 @@ export function StatusTab({
         title="Status"
         count={{
           label: `${installedHosts}/${supportedHosts}`,
-          tone: installedHosts > 0 ? "ok" : "muted",
+          tone: installedHosts > 0 ? "accent" : "warn",
         }}
+        desc="runtime overview · skill coverage · mcp · update"
       />
 
       {/* Update banner */}
       <FrameBox
-        title="versión"
+        title="update"
         accent={update.status === "outdated"}
         dim={update.status !== "outdated"}
       >
@@ -215,16 +232,23 @@ export function StatusTab({
               <Pill tone="err">error</Pill>
             </Box>
           ) : null}
+          <Box flexGrow={1} />
+          {update.status === "outdated" ? (
+            <Text color={colors.accent} bold inverse>
+              {` i · aplicar v${update.latest} `}
+            </Text>
+          ) : null}
         </Box>
         <Box flexDirection="row">
-          {update.status === "outdated" ? (
-            <Text color={colors.accent} bold>
-              i aplicar v{update.latest}
-            </Text>
-          ) : (
-            <Text color={colors.fgSubtle}>i aplicar</Text>
-          )}
-          <Text color={colors.fgSubtle}> · r recheck · o release notes</Text>
+          <Text color={colors.fgSubtle}>{ctx.runtime.packageName}</Text>
+          <Text color={colors.fgFaint}> · </Text>
+          <Text color={colors.fgSubtle}>registry.npmjs.org</Text>
+          <Box flexGrow={1} />
+          <Text color={colors.fgBright}>r</Text>
+          <Text color={colors.fgSubtle}> recheck </Text>
+          <Text color={colors.fgFaint}>·</Text>
+          <Text color={colors.fgBright}> o</Text>
+          <Text color={colors.fgSubtle}> release notes</Text>
         </Box>
         {update.status === "error" && update.message ? (
           <Text color={colors.error}>
@@ -238,7 +262,7 @@ export function StatusTab({
         <StatTile
           label="cli"
           value={`v${data.doctor?.cli_version ?? version}`}
-          sub={ctx.runtime.packageName}
+          sub={"@tacuchi"}
           accent
           active={tileCursor === "cli"}
         />
@@ -246,7 +270,7 @@ export function StatusTab({
           label="hosts"
           value={`${installedHosts}/${supportedHosts}`}
           sub={`${pct}% coverage`}
-          tone={installedHosts > 0 ? "ok" : "warn"}
+          tone={installedHosts > 0 ? "accent" : "warn"}
           clickable
           active={tileCursor === "hosts"}
         />
@@ -273,16 +297,19 @@ export function StatusTab({
           <Text color={colors.fgBright} bold>
             {installedHosts}
           </Text>
-          <Text color={colors.fgSubtle}>/{backedTotal} hosts</Text>
+          <Text color={colors.fgSubtle}> /{supportedHosts}</Text>
           <Text> </Text>
-          <ProgressLine ratio={backedTotal > 0 ? installedHosts / backedTotal : 0} />
-          <Text color={colors.fgSubtle}> {pct}%</Text>
+          <ProgressLine ratio={supportedHosts > 0 ? installedHosts / supportedHosts : 0} />
+          <Box flexGrow={1} />
+          <Text color={colors.fgSubtle}>
+            {backedHosts} backed · {pendingHosts} pending
+          </Text>
         </Box>
         <Box marginTop={1} flexDirection="row" flexWrap="wrap">
-          {(data.doctor?.skill.targets ?? []).map((t) => (
-            <Box key={t.target} marginRight={1}>
-              <Pill tone={t.installed ? "ok" : "muted"} preserveCase>
-                {t.target}
+          {hostsInstalled.map(({ host, installed }) => (
+            <Box key={host.id} marginRight={1}>
+              <Pill tone={installed ? "ok" : host.backed ? "muted" : "warn"} preserveCase>
+                {host.name}
               </Pill>
             </Box>
           ))}

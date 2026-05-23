@@ -11,6 +11,7 @@ import type { CliContext } from "../../types.js";
 import { FrameBox } from "../components/frame-box.js";
 import { PageHead } from "../components/page-head.js";
 import { Pill } from "../components/pill.js";
+import { StatTile } from "../components/stat-tile.js";
 import { colors, icons } from "../theme.js";
 
 export interface ProjectTabProps {
@@ -116,6 +117,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
 
   return (
     <Initialized
+      ctx={ctx}
       data={data}
       pendingFilter={pendingFilter}
       filteredPending={filteredPending}
@@ -151,10 +153,11 @@ const LANDING_OPTIONS: readonly LandingOption[] = [
 function NotInitialized({ data, cursor }: { data: ProjectTabData; cursor: number }) {
   return (
     <Box flexDirection="column">
-      <PageHead title="Proyecto" count={{ label: "no inicializado", tone: "warn" }} />
-      <Text color={colors.fgSubtle}>
-        No encuentro bloque AW-PROJECT en CLAUDE.md / AGENTS.md de este directorio.
-      </Text>
+      <PageHead
+        title="Proyecto"
+        count={{ label: "no inicializado", tone: "warn" }}
+        desc="no encuentro bloque AW-PROJECT en CLAUDE.md / AGENTS.md"
+      />
 
       <Box marginTop={1}>
         <FrameBox title="elegí cómo inicializar" accent>
@@ -211,11 +214,13 @@ function LandingRow({ option, active }: { option: LandingOption; active: boolean
 // ===== Inicializado — vista completa =====
 
 function Initialized({
+  ctx,
   data,
   pendingFilter,
   filteredPending,
   onFilter,
 }: {
+  ctx: CliContext;
   data: ProjectTabData;
   pendingFilter: string;
   filteredPending: ProjectPendingItem[];
@@ -224,70 +229,70 @@ function Initialized({
   const totalSessions = data.sessions.filter((s) => s.state === "active").length;
   const totalPending = data.pending.length;
   const highPending = data.pending.filter((p) => p.prio === "high").length;
+  const dirty = data.git?.dirty ?? 0;
+  const namespace = ctx.namespace.namespace;
+  const desc = `.${namespace} · ${data.workspaceName}`;
 
   return (
     <Box flexDirection="column">
-      {/* Stat strip */}
-      <Box>
-        <StatCell
-          label="git"
-          value={data.git?.branch ?? "—"}
-          sub={statGitSub(data)}
-          color={colors.fgBright}
+      <PageHead
+        title="Proyecto"
+        count={{
+          label: data.workspaceMode === "hub" ? "hub" : "single-repo",
+          tone: "accent",
+        }}
+        desc={desc}
+      />
+
+      {/* Stat tiles 4-col */}
+      <Box flexDirection="row">
+        <StatTile label="git" value={data.git?.branch ?? "—"} sub={statGitSub(data)} accent />
+        <StatTile
+          label="working tree"
+          value={`${dirty}`}
+          sub={`${data.git?.staged ?? 0} staged · ${data.git?.untracked ?? 0} untracked`}
+          tone={dirty > 0 ? "warn" : "dim"}
         />
-        <Box marginLeft={3}>
-          <StatCell
-            label="working tree"
-            value={`${data.git?.dirty ?? 0}`}
-            sub={`${data.git?.staged ?? 0} staged · ${data.git?.untracked ?? 0} untracked`}
-            color={(data.git?.dirty ?? 0) > 0 ? colors.warning : colors.fgBright}
-          />
-        </Box>
-        <Box marginLeft={3}>
-          <StatCell
-            label="sesiones"
-            value={`${totalSessions}`}
-            sub={`${data.sessions.length} totales`}
-            color={colors.fgBright}
-          />
-        </Box>
-        <Box marginLeft={3}>
-          <StatCell
-            label="pendientes"
-            value={`${totalPending}`}
-            sub={highPending > 0 ? `${highPending} altas` : ""}
-            color={highPending > 0 ? colors.error : colors.fgBright}
-          />
-        </Box>
+        <StatTile
+          label="sesiones"
+          value={`${totalSessions}`}
+          sub={`${data.sessions.length} totales`}
+          tone={totalSessions > 0 ? "accent" : "dim"}
+        />
+        <StatTile
+          label="pendientes"
+          value={`${totalPending}`}
+          sub={highPending > 0 ? `${highPending} altas` : ""}
+          tone={highPending > 0 ? "warn" : "dim"}
+        />
       </Box>
 
+      {/* Sources (hub mode) */}
       {data.workspaceMode === "hub" && data.sources.length > 0 ? (
-        <Box marginTop={1} flexDirection="column">
-          <SectionLabel label="sources" right={`${data.sources.length}`} />
+        <FrameBox title={`sources · ${data.sources.length}`}>
           {data.sources.map((s) => (
             <SourceRow key={s.alias} source={s} />
           ))}
-        </Box>
+        </FrameBox>
       ) : null}
 
-      <Box marginTop={1} flexDirection="column">
-        <SectionLabel
-          label="git workspace"
-          right={
-            data.git?.lastCommit
-              ? `${data.git.lastCommit.sha} · ${data.git.lastCommit.whenRel}`
-              : ""
-          }
-        />
+      {/* Git workspace */}
+      <FrameBox
+        title={
+          data.git?.lastCommit
+            ? `git workspace · ${data.git.lastCommit.sha} · ${data.git.lastCommit.whenRel}`
+            : "git workspace"
+        }
+      >
         {data.git ? (
           <GitWorkspace data={data} />
         ) : (
           <Text color={colors.fgFaint}>(no git repo)</Text>
         )}
-      </Box>
+      </FrameBox>
 
-      <Box marginTop={1} flexDirection="column">
-        <SectionLabel label="sesiones activas" right={`${totalSessions}`} />
+      {/* Sesiones activas */}
+      <FrameBox title={`sesiones activas · ${totalSessions}`}>
         {totalSessions === 0 ? (
           <Text color={colors.fgFaint}>(ninguna)</Text>
         ) : (
@@ -307,75 +312,43 @@ function Initialized({
               </Box>
             ))
         )}
-      </Box>
+      </FrameBox>
 
-      <Box marginTop={1} flexDirection="column">
-        <SectionLabel label="pendientes" right={`${filteredPending.length} de ${totalPending}`} />
-        <PendingFilters
-          current={pendingFilter}
-          options={buildPendingFilters(data.pending)}
-          onChange={onFilter}
-        />
-        {filteredPending.length === 0 ? (
-          <Text color={colors.fgFaint}>(sin pendientes en este filtro)</Text>
+      {/* Pendientes */}
+      <FrameBox title={`pendientes · ${totalPending}`}>
+        {totalPending === 0 ? (
+          <Text color={colors.fgFaint}>(sin pendientes)</Text>
         ) : (
-          filteredPending
-            .slice(0, 8)
-            .map((p) => <PendingRow key={`${p.sessionCode}-${p.text}`} item={p} />)
+          <>
+            <PendingFilters
+              current={pendingFilter}
+              options={buildPendingFilters(data.pending)}
+              onChange={onFilter}
+            />
+            {filteredPending.length === 0 ? (
+              <Text color={colors.fgFaint}>(sin pendientes en este filtro)</Text>
+            ) : (
+              filteredPending
+                .slice(0, 8)
+                .map((p) => <PendingRow key={`${p.sessionCode}-${p.text}`} item={p} />)
+            )}
+          </>
         )}
-      </Box>
+      </FrameBox>
 
-      <Box marginTop={1} flexDirection="column">
-        <SectionLabel label="actividad reciente" right={`${data.activity.length}`} />
-        {data.activity.length === 0 ? (
-          <Text color={colors.fgFaint}>(sin actividad)</Text>
-        ) : (
-          data.activity
-            .slice(0, 6)
-            .map((a) => <ActivityRow key={`${a.whenIso}-${a.type}-${a.text}`} entry={a} />)
-        )}
-      </Box>
-    </Box>
-  );
-}
-
-// ===== sub-components =====
-
-function SectionLabel({ label, right }: { label: string; right?: string }) {
-  return (
-    <Box>
-      <Text color={colors.fgMoreSubtle}>{label.toUpperCase()}</Text>
-      {right ? (
-        <>
-          <Text color={colors.fgFaint}> · </Text>
-          <Text color={colors.fgFaint}>{right}</Text>
-        </>
+      {/* Actividad reciente */}
+      {data.activity.length > 0 ? (
+        <FrameBox title={`actividad reciente · ${data.activity.length}`}>
+          {data.activity.slice(0, 6).map((a) => (
+            <ActivityRow key={`${a.whenIso}-${a.type}-${a.text}`} entry={a} />
+          ))}
+        </FrameBox>
       ) : null}
     </Box>
   );
 }
 
-function StatCell({
-  label,
-  value,
-  sub,
-  color,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  color: string;
-}) {
-  return (
-    <Box flexDirection="column" minWidth={18}>
-      <Text color={colors.fgMoreSubtle}>{label}</Text>
-      <Text color={color} bold>
-        {value}
-      </Text>
-      {sub ? <Text color={colors.fgFaint}>{sub}</Text> : null}
-    </Box>
-  );
-}
+// ===== sub-components =====
 
 function statGitSub(data: ProjectTabData): string {
   if (!data.git) return "—";
@@ -428,7 +401,7 @@ function SourceRow({ source }: { source: ProjectSource }) {
       <Text color={colors.fgSubtle}>{source.branch ?? "(detached)"}</Text>
       {source.dirty ? (
         <Box marginLeft={1}>
-          <Text color={colors.warning}>{source.changedFiles} sin commit</Text>
+          <Pill tone="warn">{`${source.changedFiles} sin commit`}</Pill>
         </Box>
       ) : null}
     </Box>

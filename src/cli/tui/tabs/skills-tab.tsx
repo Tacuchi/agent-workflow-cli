@@ -1,38 +1,36 @@
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { selfCleanLegacy } from "../../../application/self/clean-legacy.js";
-import { selfInstallHooks } from "../../../application/self/install-hooks.js";
-import { type InstallTarget, selfInstallSkill } from "../../../application/self/install-skill.js";
+import {
+  type InstallTarget,
+  TARGET_ROOTS,
+  selfInstallSkill,
+} from "../../../application/self/install-skill.js";
 import { selfClearPluginCache } from "../../../application/self/plugin-cache-clear.js";
-import { selfUninstallSkill } from "../../../application/self/uninstall-skill.js";
 import { selfUninstall } from "../../../application/self/uninstall.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
+import { ActionModal, type ActionModalAction } from "../components/action-modal.js";
 import { FrameBox } from "../components/frame-box.js";
 import { ListRow, type MetaChip } from "../components/list-row.js";
 import { PageHead } from "../components/page-head.js";
-import { Pill } from "../components/pill.js";
+import { WORKFLOW_CONTENT } from "../data/workflow-content.js";
+import { HOSTS, type HostMeta } from "../hosts.js";
 import { useInputLock } from "../input-lock.js";
 import { colors, icons } from "../theme.js";
 
 export interface SkillsTabProps {
   ctx: CliContext;
   isActive: boolean;
+  /** Versión actual del CLI (mostrada en el footer del ActionModal). */
+  version?: string;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
 }
 
-interface TargetSpec {
-  kind: "host";
-  id: InstallTarget;
-  label: string;
-}
-
-interface SkillState {
-  id: InstallTarget;
-  label: string;
+interface HostState {
+  host: HostMeta;
   installed: boolean;
   hooks_installed: boolean;
-  hooks_supported: boolean;
   path: string;
 }
 
@@ -40,42 +38,30 @@ type SkillAction = "install-full" | "uninstall-full" | "clean-cache" | "clean-le
 
 type Mode = { kind: "list" } | { kind: "actions" };
 
-const HOOKS_SUPPORTED_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
-
-interface SkillActionDef {
-  id: "install" | "uninstall";
-  label: (state: "installed" | "missing") => string;
-  danger?: boolean;
-  availableWhen: "always" | "installed";
-}
-
-const ACTION_DEFS: readonly SkillActionDef[] = [
-  {
-    id: "install",
-    label: (state) => (state === "installed" ? "Reinstalar" : "Instalar"),
-    availableWhen: "always",
-  },
-  {
-    id: "uninstall",
-    label: () => "Desinstalar",
-    danger: true,
-    availableWhen: "installed",
-  },
-];
+const HOOKS_SUPPORTED_TARGETS: ReadonlySet<string> = new Set(["claude"]);
+const BACKED_INSTALL_TARGETS: ReadonlySet<string> = new Set(["claude", "codex", "warp", "agents"]);
 
 /**
- * SkillsTab — split view con sub-mode actions.
+ * SkillsTab — single-column list + ActionModal overlay.
  *
- * - `list` mode: cursor en lista de hosts. ↑↓ navega · ⏎ entra a actions.
- * - `actions` mode: cursor en lista de acciones del host activo.
- *   ↑↓ navega · ⏎ aplica · Esc vuelve.
+ * Layout match con handoff (variant-palette.jsx SkillsTab):
+ *   PageHead con count + desc → empty-state banner (si 0 installed) → FrameBox
+ *   "hosts" accent con ListRow por host (7 total) → ActionModal overlay al ⏎.
  *
- * Acciones:
- *  - Instalar/Reinstalar — encadena clean-legacy + clean-cache + install-full.
- *  - Desinstalar — encadena uninstall-full + clean-cache. Solo disponible si instalado.
+ * Hosts no-backed (gemini/opencode/crush) renderizan con chip `pending` warn,
+ * NO se puede invocar install. Backed sin instalar muestran `backed` chip.
+ *
+ * Acciones del modal:
+ *   - Reinstall (steps clean-legacy → clean-cache → install-skill --force +
+ *     hook hint solo para claude).
+ *   - Uninstall (danger) — solo cuando installed.
+ *
+ * Atajos:
+ *   - `i` en list mode con 0 hosts instalados → install directo en Claude.
+ *   - ↑↓ navega · ⏎ abre modal · Esc cierra modal.
  */
-export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
-  const [skills, setSkills] = useState<SkillState[]>([]);
+export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
+  const [skills, setSkills] = useState<HostState[]>([]);
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
@@ -108,32 +94,21 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       }
     }
 
-    const next: SkillState[] = [
-      {
-        id: "claude",
-        label: "Claude Code",
-        installed: await ctx.fs.exists(`${home}/.claude/skills/agent-workflow`),
-        hooks_installed: hooksInstalled,
-        hooks_supported: HOOKS_SUPPORTED_TARGETS.has("claude"),
-        path: "~/.claude/skills/agent-workflow/",
-      },
-      {
-        id: "codex",
-        label: "Codex",
-        installed: await ctx.fs.exists(`${home}/.codex/skills/agent-workflow`),
-        hooks_installed: false,
-        hooks_supported: HOOKS_SUPPORTED_TARGETS.has("codex"),
-        path: "~/.codex/skills/agent-workflow/",
-      },
-      {
-        id: "warp",
-        label: "Warp Terminal",
-        installed: await ctx.fs.exists(`${home}/.warp/skills/agent-workflow`),
-        hooks_installed: false,
-        hooks_supported: HOOKS_SUPPORTED_TARGETS.has("warp"),
-        path: "~/.warp/skills/agent-workflow/",
-      },
-    ];
+    const next: HostState[] = [];
+    for (const host of HOSTS) {
+      const path = pathForHost(host, home);
+      const installed = host.backed && path ? await ctx.fs.exists(path) : false;
+      next.push({
+        host,
+        installed,
+        hooks_installed: host.id === "claude" ? hooksInstalled : false,
+        path: installed
+          ? friendlyPath(host, home)
+          : host.backed
+            ? "no instalado"
+            : "(not wired yet)",
+      });
+    }
     setSkills(next);
     setCursor((c) => Math.min(Math.max(0, c), Math.max(0, next.length - 1)));
   }, [ctx]);
@@ -147,37 +122,69 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const installedCount = skills.filter((s) => s.installed).length;
   const totalCount = skills.length;
 
-  const currentTarget: TargetSpec | null = useMemo(() => {
-    const host = skills[cursor];
-    if (!host) return null;
-    return { kind: "host", id: host.id, label: host.label };
-  }, [cursor, skills]);
+  const focused: HostState | null = skills[cursor] ?? null;
+  const isInstalled = focused?.installed === true;
+  const isBackedFocused = focused ? BACKED_INSTALL_TARGETS.has(focused.host.id) : false;
 
-  const focusedHost: SkillState | null = useMemo(() => {
-    if (!currentTarget) return null;
-    return skills.find((s) => s.id === currentTarget.id) ?? null;
-  }, [currentTarget, skills]);
-
-  const stateOfTarget: "installed" | "missing" = focusedHost?.installed ? "installed" : "missing";
-
-  // Acciones disponibles según el estado.
-  const availableActions = useMemo(
-    () => ACTION_DEFS.filter((a) => a.availableWhen === "always" || stateOfTarget === "installed"),
-    [stateOfTarget],
-  );
+  // Acciones del modal — Reinstall siempre, Uninstall solo si instalado.
+  const modalActions = useMemo<ActionModalAction[]>(() => {
+    if (!focused) return [];
+    const installSteps = ["clean-legacy", "clean-cache", "install-skill --force"];
+    const reinstall: ActionModalAction = {
+      id: "reinstall",
+      icon: icons.refresh,
+      label: isInstalled ? "Reinstall" : "Install",
+      desc: isInstalled
+        ? "Overwrite skill files + commands + hooks (--force, no prompts)."
+        : "Copy SKILL + commands + hooks. Always uses --force (overwrite).",
+      steps: installSteps,
+      ...(HOOKS_SUPPORTED_TARGETS.has(focused.host.id)
+        ? {
+            hint: {
+              tone: "ok" as const,
+              icon: icons.hook,
+              text: `también arma 5 hooks de Claude: ${WORKFLOW_CONTENT.hooks.map((h) => h.name).join(", ")}`,
+            },
+          }
+        : {}),
+    };
+    if (isInstalled) {
+      return [
+        reinstall,
+        {
+          id: "uninstall",
+          icon: icons.cross,
+          label: "Uninstall",
+          desc: "Remove SKILL + commands + hooks. Reversible with Install.",
+          danger: true,
+          steps: ["uninstall --force", "clean-cache"],
+        },
+      ];
+    }
+    return [reinstall];
+  }, [focused, isInstalled]);
 
   const runComposite = useCallback(
-    async (kind: "install" | "uninstall", target: TargetSpec) => {
+    async (kind: "install" | "uninstall", host: HostMeta) => {
+      if (!BACKED_INSTALL_TARGETS.has(host.id)) {
+        onToast?.({
+          tone: "info",
+          title: `Host '${host.name}' no soportado todavía`,
+          body: "Backend del install/uninstall sin path mapping.",
+        });
+        return;
+      }
+      const target = host.id as InstallTarget;
       const steps: SkillAction[] =
         kind === "install"
           ? ["clean-legacy", "clean-cache", "install-full"]
           : ["uninstall-full", "clean-cache"];
       const startLabel =
-        kind === "install" ? `instalando en ${target.label}…` : `desinstalando de ${target.label}…`;
+        kind === "install" ? `instalando en ${host.name}…` : `desinstalando de ${host.name}…`;
       setBusy(startLabel);
       try {
         for (const step of steps) {
-          setBusy(buildBusyLabel(step, target.label));
+          setBusy(buildBusyLabel(step, host.name));
           const result = await dispatchAction(step, target, ctx);
           if (!result.ok) {
             const failMsg = result.error?.message;
@@ -191,7 +198,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
           }
         }
         const finalAction: SkillAction = kind === "install" ? "install-full" : "uninstall-full";
-        onToast?.({ tone: "ok", title: buildSuccessMessage(finalAction, target) });
+        onToast?.({ tone: "ok", title: buildSuccessMessage(finalAction, host.name) });
         await refresh();
       } catch (err) {
         onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
@@ -202,13 +209,14 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     [ctx, refresh, onToast],
   );
 
-  // input — list mode (cursor en la lista de hosts)
+  // input — list mode
   useInput(
     (input, key) => {
       if (!isActive || busy || mode.kind !== "list") return;
       // Empty-state shortcut: `i` instala directo en Claude.
       if ((input === "i" || input === "I") && installedCount === 0) {
-        void runComposite("install", { kind: "host", id: "claude", label: "Claude Code" });
+        const claude = HOSTS.find((h) => h.id === "claude");
+        if (claude) void runComposite("install", claude);
         return;
       }
       if (key.upArrow) {
@@ -221,7 +229,15 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         setActionCursor(0);
         return;
       }
-      if (key.return && currentTarget) {
+      if (key.return && focused) {
+        if (!BACKED_INSTALL_TARGETS.has(focused.host.id)) {
+          onToast?.({
+            tone: "info",
+            title: `Host '${focused.host.name}'`,
+            body: "pending — backend sin path mapping todavía",
+          });
+          return;
+        }
         setActionCursor(0);
         setMode({ kind: "actions" });
       }
@@ -229,7 +245,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     { isActive },
   );
 
-  // input — actions mode (cursor en lista de acciones del detail panel)
+  // input — actions mode (modal overlay)
   useInput(
     (_input, key) => {
       if (!isActive || busy || mode.kind !== "actions") return;
@@ -238,24 +254,25 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         return;
       }
       if (key.downArrow) {
-        setActionCursor((c) => Math.min(availableActions.length - 1, c + 1));
+        setActionCursor((c) => Math.min(modalActions.length - 1, c + 1));
         return;
       }
       if (key.escape) {
         setMode({ kind: "list" });
         return;
       }
-      if (key.return && currentTarget) {
-        const def = availableActions[actionCursor];
+      if (key.return && focused) {
+        const def = modalActions[actionCursor];
         if (!def) return;
-        void runComposite(def.id, currentTarget);
+        const kind = def.id === "uninstall" ? "uninstall" : "install";
+        void runComposite(kind, focused.host);
         setMode({ kind: "list" });
       }
     },
     { isActive },
   );
 
-  const inActionMode = mode.kind === "actions";
+  const inListMode = mode.kind === "list";
 
   return (
     <Box flexDirection="column">
@@ -263,12 +280,13 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         title="Skills"
         count={{
           label: `${installedCount}/${totalCount}`,
-          tone: installedCount === totalCount && totalCount > 0 ? "ok" : "muted",
+          tone: installedCount === 0 ? "warn" : "accent",
         }}
+        desc={`one universal SKILL · ${subSkillsTotal()} sub-skills · ${WORKFLOW_CONTENT.slashCommands.length} commands`}
       />
 
       {/* First-use banner — solo cuando 0 hosts instalados */}
-      {installedCount === 0 && skills.length > 0 ? (
+      {installedCount === 0 && skills.length > 0 && inListMode ? (
         <FrameBox title="primer arranque" accent>
           <Box flexDirection="row">
             <Text color={colors.accent}>{icons.star} </Text>
@@ -277,159 +295,106 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
             </Text>
           </Box>
           <Text color={colors.fgSubtle} wrap="wrap">
-            Claude soporta SKILL + commands + hooks. Codex y Warp soportan solo SKILL.
+            Claude soporta SKILL + slash commands + hooks. Otros hosts copian solo la SKILL.
           </Text>
           <Box marginTop={1} flexDirection="row">
-            <Text color={colors.accent} bold>
-              i {icons.play} Install on Claude
+            <Text color={colors.accent} bold inverse>
+              {` i · ${icons.play} Install on Claude `}
             </Text>
-            <Text color={colors.fgSubtle}> · ⏎ ver acciones</Text>
+            <Text color={colors.fgSubtle}> · ⏎ ver acciones del host activo</Text>
           </Box>
         </FrameBox>
       ) : null}
 
-      <Box>
-        {/* Panel izquierdo: hosts */}
-        <Box
-          flexDirection="column"
-          minWidth={36}
-          marginRight={1}
-          borderStyle="round"
-          borderColor={inActionMode ? colors.borderFaint : colors.borderActive}
-          paddingX={1}
-        >
-          <Text color={colors.fgMoreSubtle}>HOSTS</Text>
+      {/* Single-column hosts list */}
+      {inListMode ? (
+        <FrameBox title="hosts" accent>
           {skills.map((s, i) => {
             const meta: MetaChip[] = [];
-            if (s.hooks_supported) {
+            if (HOOKS_SUPPORTED_TARGETS.has(s.host.id)) {
               meta.push({
                 label: s.hooks_installed ? "hooks active" : "hooks inactive",
                 tone: s.hooks_installed ? "ok" : "dim",
               });
             }
+            meta.push({
+              label: s.host.backed ? "backed" : "pending",
+              tone: s.host.backed ? "dim" : "warn",
+            });
             return (
               <ListRow
-                key={s.id}
-                icon={icons.diamond}
+                key={s.host.id}
+                icon={icons.plug}
                 iconActive={s.installed}
-                title={s.label}
-                subtitle={s.installed ? s.path : "no instalado"}
+                title={s.host.name}
+                subtitle={s.path}
                 meta={meta}
                 state={{
                   label: s.installed ? `${icons.check} installed` : "· missing",
                   tone: s.installed ? "ok" : "dim",
                 }}
                 chevron
-                active={cursor === i && !inActionMode}
+                active={cursor === i}
               />
             );
           })}
+        </FrameBox>
+      ) : null}
+
+      {/* ActionModal overlay */}
+      {mode.kind === "actions" && focused && isBackedFocused ? (
+        <Box marginTop={1}>
+          <ActionModal
+            glyph={focused.host.glyph}
+            title={focused.host.name}
+            subtitle={focused.path}
+            state={{
+              label: isInstalled ? "installed" : "missing",
+              tone: isInstalled ? "ok" : "dim",
+            }}
+            actions={modalActions}
+            cursor={actionCursor}
+            footerRight={version ? `agent-workflow v${version}` : "agent-workflow"}
+          />
         </Box>
+      ) : null}
 
-        {/* Panel derecho: detalle + acciones */}
-        <Box
-          flexDirection="column"
-          flexGrow={1}
-          borderStyle="round"
-          borderColor={inActionMode ? colors.borderActive : colors.borderFaint}
-          paddingX={1}
-        >
-          <Text color={colors.fgMoreSubtle}>DETALLE</Text>
-          {currentTarget && focusedHost ? (
-            <>
-              <Box>
-                <Text color={colors.fgBright} bold>
-                  {currentTarget.label}
-                </Text>
-                <Box marginLeft={1}>
-                  <Pill tone={stateOfTarget === "installed" ? "ok" : "muted"}>
-                    {stateOfTarget === "installed" ? "instalado" : "no instalado"}
-                  </Pill>
-                </Box>
-              </Box>
-
-              <Box marginTop={1} flexDirection="column">
-                <Text color={colors.info}>{focusedHost.path}</Text>
-                {focusedHost.hooks_supported && focusedHost.hooks_installed ? (
-                  <Box marginTop={1}>
-                    <Pill tone="info">hooks activos</Pill>
-                  </Box>
-                ) : null}
-              </Box>
-
-              <Box marginTop={1} flexDirection="column">
-                {availableActions.map((a, i) => (
-                  <ActionRow
-                    key={a.id}
-                    label={a.label(stateOfTarget)}
-                    danger={a.danger === true}
-                    active={inActionMode && i === actionCursor}
-                  />
-                ))}
-              </Box>
-              <Text color={colors.fgFaint}>
-                {stateOfTarget === "installed"
-                  ? "reinstalar encadena clean-legacy + clean-cache + install · desinstalar encadena uninstall + clean-cache"
-                  : "instalar encadena clean-legacy + clean-cache + install"}
-              </Text>
-            </>
-          ) : (
-            <Text color={colors.fgFaint}>(seleccioná un host)</Text>
-          )}
-
-          {busy ? (
-            <Box marginTop={1}>
-              <Text color={colors.warning}>
-                {icons.spinner} {busy}
-              </Text>
-            </Box>
-          ) : null}
+      {busy ? (
+        <Box marginTop={1}>
+          <Text color={colors.warning}>
+            {icons.spinner} {busy}
+          </Text>
         </Box>
-      </Box>
-
-      <Box marginTop={1}>
-        <Text color={colors.fgFaint}>
-          {inActionMode
-            ? "↑↓ navegar acciones · ⏎ aplicar · esc volver"
-            : "↑↓ navegar hosts · ⏎ ver acciones"}
-        </Text>
-      </Box>
+      ) : null}
     </Box>
   );
 }
 
-// ===== sub-components =====
+// ===== helpers =====
 
-function ActionRow({
-  label,
-  danger,
-  active,
-}: {
-  label: string;
-  danger: boolean;
-  active: boolean;
-}) {
-  const cursorColor = active ? (danger ? colors.error : colors.accent) : colors.fgFaint;
-  const labelColor = danger ? colors.error : active ? colors.fgBright : colors.fgSubtle;
-  return (
-    <Box>
-      <Text color={cursorColor} {...(active ? { bold: true } : {})}>
-        {active ? "▸" : " "}
-      </Text>
-      <Text> </Text>
-      <Text color={labelColor} {...(active ? { bold: true, inverse: true } : {})}>
-        {active ? ` ${label} ` : label}
-      </Text>
-    </Box>
-  );
+function subSkillsTotal(): number {
+  return WORKFLOW_CONTENT.commandFamilies.reduce((n, f) => n + f.items.length, 0);
 }
 
-// ===== helpers (preserved) =====
+function pathForHost(host: HostMeta, home: string): string | null {
+  if (!BACKED_INSTALL_TARGETS.has(host.id)) return null;
+  const root = TARGET_ROOTS[host.id as InstallTarget];
+  if (!root) return null;
+  return `${home}/${root.join("/")}/agent-workflow`;
+}
 
-function buildArgsFor(action: SkillAction, target: TargetSpec): ParsedArgs {
+function friendlyPath(host: HostMeta, _home: string): string {
+  if (host.id === "claude") return "~/.claude/skills/agent-workflow/";
+  if (host.id === "codex") return "~/.codex/skills/agent-workflow/";
+  if (host.id === "warp") return "~/.warp/skills/agent-workflow/";
+  if (host.id === "agents") return "~/.agents/skills/agent-workflow/";
+  return "(not wired yet)";
+}
+
+function buildArgsFor(action: SkillAction, target: InstallTarget): ParsedArgs {
   const flags = new Set<string>();
   const values = new Map<string, string>();
-  values.set("target", target.id);
+  values.set("target", target);
   // `--force` aplica a install y uninstall: sobreescribir sin confirm prompt.
   // Decisión de producto (handoff README §Estados, línea ~216).
   if (action === "install-full" || action === "uninstall-full") flags.add("--force");
@@ -456,7 +421,7 @@ function actionToSubcommand(action: SkillAction): string {
   }
 }
 
-async function dispatchAction(action: SkillAction, target: TargetSpec, ctx: CliContext) {
+async function dispatchAction(action: SkillAction, target: InstallTarget, ctx: CliContext) {
   const args = buildArgsFor(action, target);
   switch (action) {
     case "install-full":
@@ -483,20 +448,15 @@ function buildBusyLabel(action: SkillAction, label: string): string {
   }
 }
 
-function buildSuccessMessage(action: SkillAction, target: TargetSpec): string {
-  const t = target.label;
+function buildSuccessMessage(action: SkillAction, label: string): string {
   switch (action) {
     case "install-full":
-      return `Install completa OK en ${t}.`;
+      return `Install completa OK en ${label}.`;
     case "uninstall-full":
-      return `Uninstall completa OK en ${t}.`;
+      return `Uninstall completa OK en ${label}.`;
     case "clean-cache":
-      return `Caché limpiada en ${t}.`;
+      return `Caché limpiada en ${label}.`;
     case "clean-legacy":
-      return `Legacy skills removidos de ${t}.`;
+      return `Legacy skills removidos de ${label}.`;
   }
 }
-
-// Mantenemos imports para uso futuro de hooks/skill-only (no usados hoy).
-void selfInstallHooks;
-void selfUninstallSkill;

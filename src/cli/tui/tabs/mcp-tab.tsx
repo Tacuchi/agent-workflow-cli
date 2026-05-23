@@ -1,6 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { WarpPostInstallHint } from "../../../application/mcp-warp-postinstall-hint.js";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type SelfMcpConfigData,
   type SelfMcpConnectionView,
@@ -18,8 +17,6 @@ import { PageHead } from "../components/page-head.js";
 import { useInputLock } from "../input-lock.js";
 import { colors, icons } from "../theme.js";
 
-type InstalledState = "installed" | "partial" | "missing";
-
 type Mode =
   | { kind: "list" }
   | { kind: "actions" }
@@ -28,7 +25,7 @@ type Mode =
   | { kind: "confirm-delete"; name: string }
   | { kind: "busy"; label: string };
 
-type ActionId = "test" | "install" | "edit" | "remove";
+type ActionId = "test" | "edit" | "remove";
 
 export interface McpTabProps {
   ctx: CliContext;
@@ -47,30 +44,20 @@ function buildArgs(action: string, values: Record<string, string> = {}): ParsedA
 }
 
 /**
- * McpTab — listado MCP + ActionModal + Add wizard inline.
+ * McpTab — listado MCP single-column + ActionModal overlay + Add wizard inline.
  *
- * Layout single-column:
- *   PageHead → action hint → FrameBox "connections" (ListRow per conn) →
- *   ActionModal (cuando mode='actions') | Wizard (cuando mode='wizard-*') |
- *   ConfirmModal (cuando mode='confirm-delete') | Busy banner.
+ * Layout match con handoff (variant-palette.jsx MCPTab):
+ *   PageHead con `+ add connection` action button → FrameBox "connections" accent
+ *   con ListRow por conexión → ActionModal overlay al ⏎ (Test / Edit / Remove).
  *
- * Acciones del modal (depende de installedState):
- *   - Test connection — corre `mcp doctor` (existing backend).
- *   - Install on hosts — encadena install-claude + install-codex + install-warp.
- *   - Edit — re-abre el wizard pre-rellenado para sobreescribir el DSN env var.
- *   - Remove (danger) — abre ConfirmModal y luego corre `mcp remove`.
- *
- * Atajos:
- *   - `a` (en list mode) → abre Add wizard.
- *   - ↑↓ + ⏎ navega y aplica.
- *   - Esc cierra modal/wizard.
+ * Add/Edit wizard inline tras `a` shortcut o acción Edit. ConfirmModal para
+ * remove. Busy label durante ops.
  */
 export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
   const [connections, setConnections] = useState<SelfMcpConnectionView[]>([]);
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
-  const [warpHint, setWarpHint] = useState<WarpPostInstallHint | null>(null);
   const startedRef = useRef(false);
   const { lock, unlock } = useInputLock();
 
@@ -100,25 +87,6 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
 
   const current = connections[cursor] ?? null;
 
-  const installedState = useMemo<InstalledState>(() => {
-    if (!current) return "missing";
-    const states = [current.instalado.claude_code, current.instalado.codex, current.instalado.warp];
-    const someInstalled = states.some((s) => s === "si");
-    const allInstalled = states.every((s) => s === "si");
-    if (allInstalled) return "installed";
-    if (someInstalled) return "partial";
-    return "missing";
-  }, [current]);
-
-  const driftAny = useMemo(() => {
-    if (!current) return false;
-    return (
-      current.instalado.claude_code === "drift" ||
-      current.instalado.codex === "drift" ||
-      current.instalado.warp === "drift"
-    );
-  }, [current]);
-
   const runRawAction = useCallback(
     async (action: string, name: string, label: string): Promise<boolean> => {
       setMode({ kind: "busy", label });
@@ -127,9 +95,6 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           buildArgs(action, { name }),
           ctx,
         );
-        if (result.ok && action === "install-warp" && result.data?.warp_hint) {
-          setWarpHint(result.data.warp_hint);
-        }
         if (!result.ok) {
           const summary = result.error?.message ?? "fallo";
           onToast?.({ tone: "err", title: `Falló paso ${action}`, body: summary });
@@ -144,37 +109,10 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     [ctx, onToast],
   );
 
-  const runInstallComposite = useCallback(
-    async (name: string) => {
-      setWarpHint(null);
-      const steps: { action: string; label: string }[] = [
-        { action: "install-claude", label: "instalando en Claude…" },
-        { action: "install-codex", label: "instalando en Codex…" },
-        { action: "install-warp", label: "instalando en Warp…" },
-      ];
-      for (const step of steps) {
-        const ok = await runRawAction(step.action, name, step.label);
-        if (!ok) {
-          await refresh();
-          setMode({ kind: "list" });
-          return;
-        }
-      }
-      onToast?.({
-        tone: "ok",
-        title: `Instalación OK · ${name}`,
-        body: "claude + codex + warp",
-      });
-      await refresh();
-      setMode({ kind: "list" });
-    },
-    [runRawAction, refresh, onToast],
-  );
-
   const runDoctor = useCallback(
     async (name: string) => {
       const ok = await runRawAction("doctor", name, `pinging ${name}…`);
-      if (ok) onToast?.({ tone: "ok", title: `Test OK · ${name}` });
+      if (ok) onToast?.({ tone: "ok", title: `Test OK · ${name}`, body: "DSN reachable" });
       await refresh();
       setMode({ kind: "list" });
     },
@@ -188,9 +126,6 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
         case "test":
           void runDoctor(current.nombre);
           return;
-        case "install":
-          void runInstallComposite(current.nombre);
-          return;
         case "edit":
           setMode({
             kind: "wizard-name",
@@ -203,46 +138,33 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           return;
       }
     },
-    [current, runDoctor, runInstallComposite],
+    [current, runDoctor],
   );
 
-  // Acciones del ActionModal — siempre las 4 disponibles cuando hay conexión.
-  const modalActions: ActionModalAction[] = useMemo(() => {
-    const installLabel =
-      installedState === "installed"
-        ? "Reinstall on hosts"
-        : installedState === "partial"
-          ? "Complete install"
-          : "Install on hosts";
-    return [
-      {
-        id: "test",
-        icon: icons.refresh,
-        label: "Test connection",
-        desc: "Corre `mcp doctor` y reporta drift / hosts faltantes.",
-      },
-      {
-        id: "install",
-        icon: icons.install,
-        label: installLabel,
-        desc: "Encadena install-claude + install-codex + install-warp.",
-        steps: ["install-claude", "install-codex", "install-warp"],
-      },
-      {
-        id: "edit",
-        icon: icons.edit,
-        label: "Edit connection",
-        desc: "Re-abre el wizard con la DSN env var pre-rellenada.",
-      },
-      {
-        id: "remove",
-        icon: icons.cross,
-        label: "Remove connection",
-        desc: "Quita la entrada del profile.json (no afecta el DSN).",
-        danger: true,
-      },
-    ];
-  }, [installedState]);
+  // 3 acciones: Test / Edit / Remove. Match con MCPActionModal del handoff.
+  const modalActions: ActionModalAction[] = current
+    ? [
+        {
+          id: "test",
+          icon: icons.refresh,
+          label: "Test connection",
+          desc: `Open a socket to ${current.server_name} and run \`SELECT 1\``,
+        },
+        {
+          id: "edit",
+          icon: icons.edit,
+          label: "Edit connection",
+          desc: "Modify alias, host or database in profile.json",
+        },
+        {
+          id: "remove",
+          icon: icons.cross,
+          label: "Remove connection",
+          desc: `Delete from \`mcp_databases[]\` and unexport ${current.dsn_var}`,
+          danger: true,
+        },
+      ]
+    : [];
 
   // input — list mode
   useInput(
@@ -322,100 +244,70 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     { isActive },
   );
 
+  const inListOrActions = mode.kind === "list" || mode.kind === "actions";
+  const addButton = (
+    <Text color={colors.accent} bold inverse>
+      {" a · + add connection "}
+    </Text>
+  );
+
   return (
     <Box flexDirection="column">
-      <PageHead title="MCP" count={{ label: `${connections.length} db`, tone: "info" }} />
+      <PageHead
+        title="MCP"
+        count={{
+          label: `${connections.length} db`,
+          tone: connections.length > 0 ? "accent" : "muted",
+        }}
+        desc="databases for skill consumption · aliases match `mcp_databases[]` in profile.json"
+        action={addButton}
+      />
 
-      {mode.kind === "list" || mode.kind === "actions" ? (
-        <>
-          <Box marginBottom={1} flexDirection="row">
-            <Text color={colors.accent} bold>
-              a {icons.play} + add connection
-            </Text>
-            <Text color={colors.fgSubtle}> · ⏎ acciones · ↑↓ navegar</Text>
-          </Box>
-
-          <FrameBox
-            title={`connections · ${connections.length}`}
-            accent={connections.length > 0}
-            dim={connections.length === 0}
-          >
-            {connections.length === 0 ? (
-              <Box flexDirection="column">
-                <Text color={colors.fgSubtle}>
-                  Sin conexiones registradas todavía. Presioná <Text color={colors.accent}>a</Text>{" "}
-                  para registrar la primera.
-                </Text>
-              </Box>
-            ) : (
-              connections.map((c, i) => {
-                const cInstalled = [c.instalado.claude_code, c.instalado.codex, c.instalado.warp];
-                const cAllInstalled = cInstalled.every((s) => s === "si");
-                const cAnyInstalled = cInstalled.some((s) => s === "si");
-                const cDrift = cInstalled.some((s) => s === "drift");
-                const stateLabel = cAllInstalled
-                  ? "installed"
-                  : cAnyInstalled
-                    ? "partial"
-                    : "missing";
-                const stateTone = cAllInstalled ? "ok" : cAnyInstalled ? "warn" : "dim";
-                return (
-                  <ListRow
-                    key={c.nombre}
-                    icon={icons.db}
-                    iconActive={cAllInstalled}
-                    title={c.nombre}
-                    subtitle={`${c.server_name} · ${c.dsn_var}`}
-                    meta={
-                      cDrift
-                        ? [{ label: "drift", tone: "warn" }]
-                        : [{ label: "registered", tone: "ok" }]
-                    }
-                    state={{ label: stateLabel, tone: stateTone }}
-                    chevron
-                    active={i === cursor && mode.kind !== "actions"}
-                  />
-                );
-              })
-            )}
-          </FrameBox>
-        </>
+      {inListOrActions ? (
+        <FrameBox
+          title={`connections · ${connections.length}`}
+          accent={connections.length > 0}
+          dim={connections.length === 0}
+        >
+          {connections.length === 0 ? (
+            <Box flexDirection="column">
+              <Text color={colors.fgSubtle}>No MCP connections yet.</Text>
+              <Text color={colors.fgSubtle}>
+                Register a DSN to let skills query your DB. Presioná{" "}
+                <Text color={colors.accent} bold>
+                  a
+                </Text>{" "}
+                para empezar.
+              </Text>
+            </Box>
+          ) : (
+            connections.map((c, i) => (
+              <ListRow
+                key={c.nombre}
+                icon={icons.db}
+                iconActive={true}
+                title={c.nombre}
+                subtitle={`${c.server_name} · ${c.dsn_var}`}
+                meta={[{ label: "registered", tone: "ok" }]}
+                chevron
+                active={i === cursor && mode.kind !== "actions"}
+              />
+            ))
+          )}
+        </FrameBox>
       ) : null}
 
-      {/* ActionModal (panel below list) */}
+      {/* ActionModal overlay (renderizado debajo de la lista, pero estilo overlay) */}
       {mode.kind === "actions" && current ? (
         <Box marginTop={1}>
           <ActionModal
             glyph={icons.db}
             title={current.nombre}
-            subtitle={`${current.server_name} · ${current.dsn_var}`}
-            state={{
-              label:
-                installedState === "installed"
-                  ? "installed"
-                  : installedState === "partial"
-                    ? "partial"
-                    : "missing",
-              tone:
-                installedState === "installed"
-                  ? "ok"
-                  : installedState === "partial"
-                    ? "warn"
-                    : "dim",
-            }}
-            actions={
-              driftAny
-                ? modalActions.map((a) =>
-                    a.id === "test"
-                      ? {
-                          ...a,
-                          hint: { tone: "warn", icon: icons.alertDot, text: "drift detectado" },
-                        }
-                      : a,
-                  )
-                : modalActions
-            }
+            subtitle={`${current.dsn_var} · ${current.server_name}`}
+            state={{ label: "registered", tone: "ok" }}
+            actions={modalActions}
             cursor={actionCursor}
+            footerRight={current.nombre}
           />
         </Box>
       ) : null}
@@ -524,8 +416,6 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           </Text>
         </Box>
       ) : null}
-
-      {warpHint ? <WarpHintPanel hint={warpHint} /> : null}
     </Box>
   );
 
@@ -546,29 +436,4 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       setMode({ kind: "list" });
     }
   }
-}
-
-// ===== sub-components =====
-
-function WarpHintPanel({ hint }: { hint: WarpPostInstallHint }) {
-  const steps = hint.lines.slice(1);
-  return (
-    <Box
-      marginTop={1}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={colors.info}
-      paddingX={1}
-    >
-      <Text color={colors.info} bold>
-        {icons.bullet} Para que Warp lo spawnee:
-      </Text>
-      {steps.map((line, idx) => (
-        <Text key={line} color={colors.fg}>
-          {`  ${idx + 1}. ${line}`}
-        </Text>
-      ))}
-      <Text color={colors.fgMoreSubtle}>Doc: {hint.doc_url}</Text>
-    </Box>
-  );
 }

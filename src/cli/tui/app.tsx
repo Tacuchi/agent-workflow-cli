@@ -86,6 +86,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteFilter, setPaletteFilter] = useState("");
   const [paletteCursor, setPaletteCursor] = useState(0);
+  const [statusAlert, setStatusAlert] = useState(false);
   const { exit } = useApp();
   const { locked: inputLocked } = useInputLock();
   const { toasts, push: pushToast } = useToasts();
@@ -315,7 +316,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   );
 
   const tabs: TabDescriptor<TabId>[] = [
-    { id: "status", label: "Status", key: "1" },
+    { id: "status", label: "Status", key: "1", alert: statusAlert },
     { id: "workflow", label: "Workflow", key: "2" },
     { id: "project", label: "Proyecto", key: "3" },
     { id: "mcp", label: "MCP", key: "4" },
@@ -340,6 +341,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
               exit();
             }}
             onToast={pushToast}
+            onAlertChange={setStatusAlert}
           />
         ) : null}
         {activeTab === "workflow" ? <WorkflowTab ctx={ctx} isActive={true} /> : null}
@@ -348,7 +350,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         ) : null}
         {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
         {activeTab === "skills" ? (
-          <SkillsTab ctx={ctx} isActive={true} onToast={pushToast} />
+          <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
         ) : null}
       </Box>
       {paletteOpen ? (

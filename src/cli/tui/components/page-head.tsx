@@ -1,23 +1,32 @@
 import { Box, Text } from "ink";
+import type { ReactNode } from "react";
 import { colors } from "../theme.js";
 import { Pill, type PillTone } from "./pill.js";
 
 export interface PageHeadProps {
   /** Título principal */
   title: string;
-  /** Pill opcional al lado del título (counter, status) */
+  /** Pill opcional al lado del título (counter, status, mode) */
   count?: { label: string; tone?: PillTone };
+  /** Subtítulo descriptivo inline · color fgSubtle. Mismo concepto del TabPage del prototipo. */
+  desc?: string;
+  /** Acción opcional alineada a la derecha (típicamente un botón primario en accent bold). */
+  action?: ReactNode;
 }
 
 /**
- * PageHead minimal — solo título bold + count opcional al lado.
+ * PageHead — header unificado de cada tab.
  *
- * Antes incluía eyebrow + lede; los quitamos porque eran ruido en cada tab.
- * Si un tab quiere prosa adicional, la inline donde aporte.
+ * Layout:
+ *   `<title bold> [count pill] <desc dim>           <action>`
+ *
+ * Match con `TabPage` del handoff (variant-palette.jsx ~líneas 286-314): título +
+ * count + desc en una línea con la acción primaria pegada a la derecha. Mantiene
+ * proporciones del prototipo respetando límites de Ink (flex, sin gap CSS).
  */
-export function PageHead({ title, count }: PageHeadProps) {
+export function PageHead({ title, count, desc, action }: PageHeadProps) {
   return (
-    <Box marginBottom={1}>
+    <Box marginBottom={1} flexDirection="row">
       <Text color={colors.fgBright} bold>
         {title}
       </Text>
@@ -28,6 +37,14 @@ export function PageHead({ title, count }: PageHeadProps) {
           </Pill>
         </Box>
       ) : null}
+      {desc ? (
+        <Box marginLeft={1} flexGrow={1}>
+          <Text color={colors.fgSubtle}>{desc}</Text>
+        </Box>
+      ) : (
+        <Box flexGrow={1} />
+      )}
+      {action ? <Box>{action}</Box> : null}
     </Box>
   );
 }

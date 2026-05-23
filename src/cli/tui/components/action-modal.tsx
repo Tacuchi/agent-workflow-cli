@@ -27,6 +27,8 @@ export interface ActionModalProps {
   actions: ActionModalAction[];
   cursor: number;
   busy?: ActionModalBusy;
+  /** Texto de contexto pegado a la derecha del footer (e.g. nombre conn, bundle version). */
+  footerRight?: string;
 }
 
 function toneColor(tone?: MetaTone): string {
@@ -71,6 +73,7 @@ export function ActionModal({
   actions,
   cursor,
   busy,
+  footerRight,
 }: ActionModalProps) {
   return (
     <Box
@@ -163,8 +166,29 @@ export function ActionModal({
       </Box>
 
       {/* Footer hint */}
-      <Box marginTop={0}>
-        <Text color={colors.fgSubtle}>↑↓ navegar · ⏎ ejecutar · Esc cerrar</Text>
+      <Box marginTop={0} flexDirection="row">
+        <Text color={colors.fgBright} bold>
+          ↑↓
+        </Text>
+        <Text color={colors.fgSubtle}> acción </Text>
+        <Text color={colors.fgFaint}>·</Text>
+        <Text color={colors.fgBright} bold>
+          {" "}
+          ⏎
+        </Text>
+        <Text color={colors.fgSubtle}> aplicar </Text>
+        <Text color={colors.fgFaint}>·</Text>
+        <Text color={colors.fgBright} bold>
+          {" "}
+          esc
+        </Text>
+        <Text color={colors.fgSubtle}> cerrar</Text>
+        {footerRight ? (
+          <>
+            <Box flexGrow={1} />
+            <Text color={colors.fgMoreSubtle}>{footerRight}</Text>
+          </>
+        ) : null}
       </Box>
     </Box>
   );
