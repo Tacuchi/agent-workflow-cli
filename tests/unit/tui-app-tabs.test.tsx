@@ -59,20 +59,25 @@ describe("App (tabs)", () => {
     expect(frame).toContain("v9.9.9");
   });
 
-  it("renderiza header con cwd como ~/...", () => {
+  it("renderiza sidebar con workspace context", () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
-    expect(lastFrame()).toContain("~/project");
+    const frame = lastFrame() ?? "";
+    // post-v9 sidebar: brand + version + 5 tabs + workspace + keymap. Cwd ya
+    // no se renderiza inline (eliminado con Header.tsx); validamos que la
+    // sección WORKSPACE existe y muestra el sessions placeholder.
+    expect(frame).toContain("WORKSPACE");
   });
 
-  it("Tab cambia a la siguiente tab (Workflow)", async () => {
+  it("número 2 va directo a Workflow tab", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
-    stdin.write(TAB);
+    stdin.write("2");
     await new Promise((r) => setTimeout(r, 50));
-    // TAB_ORDER post-T3: status → workflow → project → mcp → skills.
-    expect(lastFrame()).toMatch(/2 +Workflow/);
+    // TAB_BY_KEY post-v9: {1:status, 2:workflow, ...}. La tab Workflow renderiza
+    // SectionHead "SESSION LIFECYCLE" — uniquely identifica el contenido del tab.
+    expect(lastFrame()).toContain("SESSION LIFECYCLE");
   });
 
   it("número 5 va directo a Skills tab", async () => {
@@ -81,8 +86,8 @@ describe("App (tabs)", () => {
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("5");
     await new Promise((r) => setTimeout(r, 50));
-    // TAB_BY_KEY post-T3: {1:status, 2:workflow, 3:project, 4:mcp, 5:skills}.
-    expect(lastFrame()).toMatch(/5 +Skills/);
+    // Skills tab renderiza SectionHead "HOSTS" — uniquely identifica el tab.
+    expect(lastFrame()).toContain("HOSTS");
   });
 
   it("'q' resuelve con kind:exit", async () => {

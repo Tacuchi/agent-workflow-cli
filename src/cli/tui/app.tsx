@@ -3,12 +3,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
+import type { ActivityEvent } from "./components/activity-feed.js";
 import { CommandPalette, type PaletteCommand } from "./components/command-palette.js";
-import { Header } from "./components/header.js";
-import { KeymapBar, type KeymapEntry } from "./components/keymap-bar.js";
 import { ScreenFrame } from "./components/screen-frame.js";
-import { TabBar, type TabDescriptor } from "./components/tab-bar.js";
+import {
+  Sidebar,
+  type SidebarTab,
+  type SidebarTabId,
+  type WorkspaceContext,
+} from "./components/sidebar.js";
 import { ToastStack, useToasts } from "./components/toast-stack.js";
+import { loadActivity } from "./data/activity.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { McpTab } from "./tabs/mcp-tab.js";
 import { ProjectTab } from "./tabs/project-tab.js";
@@ -21,7 +26,7 @@ export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
   | { kind: "exit"; exitCode: ExitCode };
 
-type TabId = "status" | "workflow" | "project" | "mcp" | "skills";
+type TabId = SidebarTabId;
 
 const TAB_ORDER: readonly TabId[] = ["status", "workflow", "project", "mcp", "skills"] as const;
 
@@ -31,39 +36,6 @@ const TAB_BY_KEY: Record<string, TabId> = {
   "3": "project",
   "4": "mcp",
   "5": "skills",
-};
-
-const QUIT_HINT: KeymapEntry = { key: "q", action: "quit" };
-const TAB_HINT: KeymapEntry = { key: "Tab", action: "next" };
-const PALETTE_HINT: KeymapEntry = { key: "^K", action: "palette" };
-
-const KEYS_BY_TAB: Record<TabId, KeymapEntry[]> = {
-  status: [
-    { key: "↑↓", action: "navigate" },
-    { key: "⏎", action: "go to tab", accent: true },
-    { key: "i", action: "apply update" },
-    PALETTE_HINT,
-    QUIT_HINT,
-  ],
-  workflow: [TAB_HINT, PALETTE_HINT, QUIT_HINT],
-  project: [
-    { key: "↑↓", action: "navigate" },
-    { key: "⏎", action: "apply", accent: true },
-    PALETTE_HINT,
-    QUIT_HINT,
-  ],
-  mcp: [
-    { key: "↑↓", action: "navigate" },
-    { key: "⏎", action: "actions", accent: true },
-    PALETTE_HINT,
-    QUIT_HINT,
-  ],
-  skills: [
-    { key: "↑↓", action: "navigate" },
-    { key: "⏎", action: "actions", accent: true },
-    PALETTE_HINT,
-    QUIT_HINT,
-  ],
 };
 
 export interface AppProps {
@@ -87,6 +59,13 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   const [paletteFilter, setPaletteFilter] = useState("");
   const [paletteCursor, setPaletteCursor] = useState(0);
   const [statusAlert, setStatusAlert] = useState(false);
+  const [workspaceCtx, setWorkspaceCtx] = useState<WorkspaceContext>({
+    modeLabel: "agent-workflow",
+    branchLabel: "— · loading",
+    sessionsLabel: "— sessions",
+  });
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [activePhase, setActivePhase] = useState<number>(0);
   const { exit } = useApp();
   const { locked: inputLocked } = useInputLock();
   const { toasts, push: pushToast } = useToasts();
@@ -99,6 +78,17 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       setDensity(prefs.density);
     })();
   }, [prefsSvc]);
+
+  useEffect(() => {
+    void (async () => {
+      const wctx = await loadWorkspaceContext(ctx);
+      setWorkspaceCtx(wctx);
+      const events = await loadActivity(ctx, { cap: 10 });
+      setActivity(events);
+      const phase = await loadActivePhase(ctx);
+      setActivePhase(phase);
+    })();
+  }, [ctx]);
 
   /**
    * Despacha acciones provenientes de las tabs y la palette.
@@ -171,24 +161,19 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     [pushToast, onResult, exit],
   );
 
-  // Catálogo completo de comandos accesibles desde la palette (⌘K / Ctrl+K).
-  // Categorías: tabs · install · mcp · project · self.
   const allCommands: PaletteCommand[] = useMemo(
     () => [
-      // tabs
       { id: "goto:status", category: "tabs", label: "Go to Status", hint: "1" },
       { id: "goto:workflow", category: "tabs", label: "Go to Workflow", hint: "2" },
       { id: "goto:project", category: "tabs", label: "Go to Project", hint: "3" },
       { id: "goto:mcp", category: "tabs", label: "Go to MCP", hint: "4" },
       { id: "goto:skills", category: "tabs", label: "Go to Skills", hint: "5" },
-      // install
       {
         id: "install-skill",
         category: "install",
         label: "Install SKILL (chain claude + codex + warp)",
         hint: "self install",
       },
-      // mcp
       {
         id: "mcp:add",
         category: "mcp",
@@ -201,10 +186,8 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         label: "Open MCP wizard (CLI)",
         hint: "self mcp",
       },
-      // project
       { id: "project-init", category: "project", label: "Initialize as single-repo" },
       { id: "hub-init", category: "project", label: "Initialize as hub (multi-repo)" },
-      // self
       {
         id: "self:doctor",
         category: "self",
@@ -305,78 +288,178 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         exit();
         return;
       }
-      if (key.tab) {
-        setActiveTab((t) => cycleTab(t, key.shift === true));
-        return;
-      }
       const target = TAB_BY_KEY[input];
       if (target) setActiveTab(target);
     },
     { isActive: true },
   );
 
-  const tabs: TabDescriptor<TabId>[] = [
-    { id: "status", label: "Status", key: "1", alert: statusAlert },
-    { id: "workflow", label: "Workflow", key: "2" },
-    { id: "project", label: "Project", key: "3" },
-    { id: "mcp", label: "MCP", key: "4" },
-    { id: "skills", label: "Skills", key: "5" },
+  const tabs: SidebarTab[] = [
+    { id: "status", key: "1", label: "Status", alert: statusAlert },
+    { id: "workflow", key: "2", label: "Workflow" },
+    { id: "project", key: "3", label: "Project" },
+    { id: "mcp", key: "4", label: "MCP" },
+    { id: "skills", key: "5", label: "Skills" },
   ];
 
-  const keymap = paletteOpen ? [] : (KEYS_BY_TAB[activeTab] ?? []);
+  const globalKeys = [
+    { key: "^K", action: "palette" },
+    { key: "⏎", action: "open" },
+    { key: "↑↓", action: "navigate" },
+    { key: "?", action: "help" },
+    { key: "q", action: "quit" },
+  ];
 
   return (
     <ScreenFrame>
-      <Header version={version} cwd={ctx.env.cwd()} homeDir={ctx.env.homeDir()} />
-      <TabBar tabs={tabs} activeId={activeTab} />
-      <Box marginTop={density === "compact" ? 0 : 1} flexDirection="column">
-        {paletteOpen ? (
-          <Box flexDirection="column" alignItems="center" paddingY={2}>
-            <Box width="80%" flexDirection="column">
-              <CommandPalette
-                filter={paletteFilter}
-                commands={filteredCommands}
-                cursor={paletteCursor}
-              />
+      <Box flexDirection="row">
+        <Sidebar
+          activeTab={activeTab}
+          tabs={tabs}
+          workspaceContext={workspaceCtx}
+          cliVersion={version}
+          globalKeys={globalKeys}
+        />
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          marginTop={density === "compact" ? 0 : 1}
+          paddingX={1}
+        >
+          {paletteOpen ? (
+            <Box flexDirection="column" alignItems="center" paddingY={2}>
+              <Box width="80%" flexDirection="column">
+                <CommandPalette
+                  filter={paletteFilter}
+                  commands={filteredCommands}
+                  cursor={paletteCursor}
+                />
+              </Box>
             </Box>
-          </Box>
-        ) : (
-          <>
-            {activeTab === "status" ? (
-              <StatusTab
-                ctx={ctx}
-                version={version}
-                isActive={true}
-                onActivateTab={(t) => setActiveTab(t)}
-                onRequestUpdate={() => {
-                  onResult({ kind: "menu-action", action: "update" });
-                  exit();
-                }}
-                onToast={pushToast}
-                onAlertChange={setStatusAlert}
-              />
-            ) : null}
-            {activeTab === "workflow" ? <WorkflowTab ctx={ctx} isActive={true} /> : null}
-            {activeTab === "project" ? (
-              <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
-            ) : null}
-            {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
-            {activeTab === "skills" ? (
-              <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
-            ) : null}
-          </>
-        )}
+          ) : (
+            <>
+              {activeTab === "status" ? (
+                <StatusTab
+                  ctx={ctx}
+                  version={version}
+                  isActive={true}
+                  onActivateTab={(t) => setActiveTab(t)}
+                  onRequestUpdate={() => {
+                    onResult({ kind: "menu-action", action: "update" });
+                    exit();
+                  }}
+                  onToast={pushToast}
+                  onAlertChange={setStatusAlert}
+                  recentEvents={activity}
+                />
+              ) : null}
+              {activeTab === "workflow" ? (
+                <WorkflowTab ctx={ctx} isActive={true} activePhase={activePhase} />
+              ) : null}
+              {activeTab === "project" ? (
+                <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
+              ) : null}
+              {activeTab === "mcp" ? (
+                <McpTab ctx={ctx} isActive={true} onToast={pushToast} />
+              ) : null}
+              {activeTab === "skills" ? (
+                <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
+              ) : null}
+            </>
+          )}
+        </Box>
       </Box>
       <ToastStack toasts={toasts} />
-      <KeymapBar entries={keymap} />
     </ScreenFrame>
   );
 }
 
-function cycleTab(current: TabId, reverse: boolean): TabId {
-  const idx = TAB_ORDER.indexOf(current);
-  const next = reverse
-    ? (idx - 1 + TAB_ORDER.length) % TAB_ORDER.length
-    : (idx + 1) % TAB_ORDER.length;
-  return TAB_ORDER[next] ?? "status";
+async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> {
+  const cwd = ctx.env.cwd();
+
+  // Mode + name: best-effort detection. Default agent-workflow.
+  let modeLabel = "agent-workflow · single-repo";
+  try {
+    const aw = await ctx.fs.exists(`${cwd}/AW-PROJECT.md`).catch(() => false);
+    if (aw) modeLabel = "agent-workflow · linked";
+  } catch {
+    // ignore
+  }
+
+  // Branch + sync
+  let branchLabel = "— · no git";
+  try {
+    const branchRes = await ctx.process.run("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd,
+    });
+    if (branchRes.code === 0) {
+      const branch = branchRes.stdout.trim();
+      const dirtyRes = await ctx.process
+        .run("git", ["status", "--porcelain"], { cwd })
+        .catch(() => null);
+      const isDirty = (dirtyRes?.stdout.trim() ?? "").length > 0;
+      const aheadRes = await ctx.process
+        .run("git", ["rev-list", "--count", "--left-right", "@{u}...HEAD"], { cwd })
+        .catch(() => null);
+      const aheadBehind = aheadRes?.stdout.trim().split(/\s+/);
+      const behind = aheadBehind?.[0] ?? "0";
+      const ahead = aheadBehind?.[1] ?? "0";
+      const sync =
+        ahead !== "0" || behind !== "0" ? `${ahead}↑ ${behind}↓` : isDirty ? "dirty" : "in sync";
+      branchLabel = `${branch} · ${sync}`;
+    }
+  } catch {
+    // keep default
+  }
+
+  // Sessions count
+  let sessionsLabel = "— sessions";
+  try {
+    const sessRes = await ctx.process.run(ctx.runtime.binName, ["sessions"], { cwd });
+    if (sessRes.code === 0) {
+      const data = JSON.parse(sessRes.stdout) as {
+        active_count?: number;
+        total_count?: number;
+      };
+      const active = data.active_count ?? 0;
+      const total = data.total_count ?? 0;
+      sessionsLabel = `${total} sessions · ${active} active`;
+    }
+  } catch {
+    // keep default
+  }
+
+  return { modeLabel, branchLabel, sessionsLabel };
+}
+
+/**
+ * Mapea fase de sesión activa (planning/execution/validation/closure) al
+ * phase number del workflow tab (Discover=1, Start=2, Plan=3, Work=4, Close=5).
+ * Si no hay sesión activa, retorna 0 (idle).
+ */
+async function loadActivePhase(ctx: CliContext): Promise<number> {
+  try {
+    const sessRes = await ctx.process.run(ctx.runtime.binName, ["sessions"], {
+      cwd: ctx.env.cwd(),
+    });
+    if (sessRes.code !== 0) return 0;
+    const data = JSON.parse(sessRes.stdout) as {
+      sessions?: Array<{ phase?: string; state?: string }>;
+    };
+    const active = (data.sessions ?? []).find((s) => s.state === "active");
+    if (!active) return 0;
+    switch (active.phase) {
+      case "planning":
+        return 3;
+      case "execution":
+      case "validation":
+        return 4;
+      case "closure":
+        return 5;
+      default:
+        return 4;
+    }
+  } catch {
+    return 0;
+  }
 }

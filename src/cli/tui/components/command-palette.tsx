@@ -12,12 +12,12 @@ export interface CommandPaletteProps {
   filter: string;
   commands: PaletteCommand[];
   cursor: number;
-  /** Optional pre-grouped sections. If provided, overrides flat list. */
   groups?: Array<{ category: string; commands: PaletteCommand[] }>;
 }
 
+const PLACEHOLDER = "type to filter…";
+
 export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps) {
-  // Group by category to render section headers.
   const groups: Array<{ category: string; rows: PaletteCommand[] }> = [];
   for (const c of commands) {
     const last = groups[groups.length - 1];
@@ -39,49 +39,53 @@ export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps
       paddingY={1}
     >
       {/* Search input */}
-      <Box>
+      <Box flexDirection="row" marginBottom={1}>
+        <Text color={colors.mute}>search </Text>
         <Text color={colors.accent} bold>
-          {icons.search}{" "}
+          ›{" "}
         </Text>
-        <Text color={colors.fgBright}>{filter}</Text>
-        <Text color={colors.accent}>{icons.promptMark}</Text>
+        {filter ? (
+          <Text color={colors.bright}>{filter}</Text>
+        ) : (
+          <Text color={colors.faint}>{PLACEHOLDER}</Text>
+        )}
+        <Text color={colors.accent}>{icons.caret}</Text>
+        <Box flexGrow={1} />
+        <Text color={colors.mute}>
+          {commands.length} match{commands.length === 1 ? "" : "es"}
+        </Text>
       </Box>
-      <Box
-        borderStyle="single"
-        borderColor={colors.borderFaint}
-        borderTop={false}
-        borderLeft={false}
-        borderRight={false}
-        marginBottom={1}
-      />
+      <Box marginBottom={1}>
+        <Text color={colors.borderFaint}>{"─".repeat(70)}</Text>
+      </Box>
 
       {/* Empty state */}
       {commands.length === 0 ? (
-        <Text color={colors.fgSubtle}>No matches for “{filter || "…"}”.</Text>
+        <Text color={colors.dim}>No matches for "{filter || "…"}".</Text>
       ) : null}
 
       {/* Grouped command list */}
       {groups.map((g) => (
         <Box key={g.category} flexDirection="column" marginBottom={1}>
-          <Text color={colors.fgMoreSubtle}>{g.category.toUpperCase()}</Text>
+          <Text color={colors.mute}>{g.category.toUpperCase()}</Text>
           {g.rows.map((c) => {
             const idx = runningIdx++;
             const active = idx === cursor;
             return (
               <Box key={c.id} flexDirection="row">
                 <Box width={2}>
-                  <Text color={active ? colors.accent : "transparent"} bold>
-                    {active ? icons.play : " "}
+                  <Text color={active ? colors.accent : colors.faint}>
+                    {active ? icons.focusBar : " "}
                   </Text>
                 </Box>
                 <Box flexGrow={1}>
-                  <Text color={active ? colors.accent : colors.fgBright} bold={active}>
+                  <Text color={active ? colors.accent : colors.bright} bold={active}>
                     {c.label}
                   </Text>
                 </Box>
                 {c.hint ? (
                   <Box marginLeft={1}>
-                    <Text color={colors.fgSubtle}>{c.hint}</Text>
+                    <Text color={colors.dim}>{c.hint}</Text>
                   </Box>
                 ) : null}
               </Box>
@@ -92,7 +96,7 @@ export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps
 
       {/* Footer hint */}
       <Box marginTop={0}>
-        <Text color={colors.fgSubtle}>↑↓ navigate · ⏎ run · esc close</Text>
+        <Text color={colors.faint}>↑↓ navigate · ⏎ run · esc close</Text>
       </Box>
     </Box>
   );

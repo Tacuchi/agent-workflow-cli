@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import { colors, icons } from "../theme.js";
 
-export type StatTone = "ok" | "warn" | "accent" | "dim";
+export type StatTone = "ok" | "warn" | "accent" | "dim" | "err";
 
 export interface StatTileProps {
   label: string;
@@ -13,20 +13,24 @@ export interface StatTileProps {
   clickable?: boolean;
   /** Highlights the tile when its index === active cursor in a strip. */
   active?: boolean;
+  /** If true, aligns the tile to the right (used for WORKING TREE). */
+  alignRight?: boolean;
 }
 
 function valueColor(tone?: StatTone, accent?: boolean): string {
   switch (tone) {
     case "ok":
-      return colors.success;
+      return colors.ok;
     case "warn":
-      return colors.warning;
+      return colors.warn;
+    case "err":
+      return colors.err;
     case "accent":
       return colors.accent;
     case "dim":
-      return colors.fgSubtle;
+      return colors.dim;
     default:
-      return accent ? colors.accent : colors.fgBright;
+      return accent ? colors.accent : colors.bright;
   }
 }
 
@@ -38,28 +42,26 @@ export function StatTile({
   accent = false,
   clickable = false,
   active = false,
+  alignRight = false,
 }: StatTileProps) {
-  const borderColor = active ? colors.accent : accent ? colors.borderActive : colors.border;
-
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={borderColor}
-      paddingX={1}
-      marginRight={1}
-      flexGrow={1}
-    >
-      <Box flexDirection="row" justifyContent="space-between">
-        <Text color={colors.fgSubtle}>{label.toUpperCase()}</Text>
-        {clickable ? (
-          <Text color={active ? colors.accent : colors.fgSubtle}>{icons.chevron}</Text>
-        ) : null}
+    <Box flexDirection="row" marginRight={alignRight ? 0 : 2} flexGrow={alignRight ? 0 : 1}>
+      <Text color={active ? colors.accent : colors.faint}>{active ? icons.focusBar : " "}</Text>
+      <Box flexDirection="column" paddingLeft={active ? 1 : 0}>
+        <Box flexDirection="row">
+          <Text color={colors.mute}>{label.toUpperCase()}</Text>
+          {clickable ? (
+            <>
+              <Text> </Text>
+              <Text color={active ? colors.accent : colors.faint}>{icons.chevron}</Text>
+            </>
+          ) : null}
+        </Box>
+        <Text color={valueColor(tone, accent)} bold>
+          {value}
+        </Text>
+        {sub ? <Text color={colors.dim}>{sub}</Text> : null}
       </Box>
-      <Text color={valueColor(tone, accent)} bold>
-        {value}
-      </Text>
-      {sub ? <Text color={colors.fgSubtle}>{sub}</Text> : null}
     </Box>
   );
 }

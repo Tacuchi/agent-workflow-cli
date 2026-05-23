@@ -79,9 +79,9 @@ export interface ToastStackProps {
 /**
  * ToastStack — render inline de los toasts activos.
  *
- * En TTY no podemos posicionar absoluto, así que renderizamos arriba del footer
- * (app.tsx coloca esto entre `<Content/>` y `<KeymapBar/>`). Cada toast es una
- * caja con borde left del color del tone + título bold + body dim.
+ * En TTY no podemos posicionar absoluto, así que renderizamos al pie de la
+ * pantalla (app.tsx coloca esto al final del root). Cada toast es una caja
+ * con borde left del color del tone + título bold + body dim.
  */
 export function ToastStack({ toasts, max = 3 }: ToastStackProps) {
   if (toasts.length === 0) return null;

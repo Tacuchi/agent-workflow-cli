@@ -1,127 +1,120 @@
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
+import { useState } from "react";
 import type { CliContext } from "../../types.js";
 import { FamilyCard } from "../components/family-card.js";
-import { FrameBox } from "../components/frame-box.js";
 import { PageHead } from "../components/page-head.js";
 import { PhaseCard } from "../components/phase-card.js";
+import { QuickActions } from "../components/quick-actions.js";
+import { SectionHead } from "../components/section-head.js";
 import { WORKFLOW_CONTENT } from "../data/workflow-content.js";
-import { colors, icons } from "../theme.js";
+import { colors } from "../theme.js";
 
 export interface WorkflowTabProps {
   ctx: CliContext;
   isActive: boolean;
+  /** Phase activa (1-based) inferida desde la sesión activa. 0 = idle. */
+  activePhase?: number;
 }
 
-function chunk<T>(arr: readonly T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    out.push(arr.slice(i, i + size));
-  }
-  return out;
-}
-
-export function WorkflowTab(_props: WorkflowTabProps) {
+export function WorkflowTab({ isActive, activePhase = 0 }: WorkflowTabProps) {
   const w = WORKFLOW_CONTENT;
-  const totalCmds = w.commandFamilies.reduce((n, f) => n + f.items.length, 0);
+
+  const [cursor, setCursor] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(w.commandFamilies[0]?.id ?? null);
+
+  useInput(
+    (_input, key) => {
+      if (!isActive) return;
+      if (key.upArrow) {
+        setCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setCursor((c) => Math.min(w.commandFamilies.length - 1, c + 1));
+        return;
+      }
+      if (key.return) {
+        const fam = w.commandFamilies[cursor];
+        if (fam) setExpandedId((prev) => (prev === fam.id ? null : fam.id));
+      }
+    },
+    { isActive },
+  );
 
   return (
     <Box flexDirection="column">
       <PageHead
         title="Workflow"
         count={{
-          label: `${totalCmds} cmds · ${w.commandFamilies.length} families`,
-          tone: "muted",
+          label: `${w.slashCommands.length} commands · ${w.commandFamilies.length} families · ${w.hooks.length} hooks`,
+          tone: "accent",
         }}
+        action={<Text color={colors.mute}>universal session-lifecycle harness</Text>}
       />
-      <Text color={colors.fgSubtle}>{w.overview}</Text>
 
-      {/* Lifecycle (5 phases in horizontal row) */}
-      <Box marginTop={1} flexDirection="column">
-        <FrameBox title="session lifecycle" accent>
-          <Text color={colors.fgSubtle}>
-            How the harness is used day-to-day — each phase runs CLI commands and fires hooks.
-          </Text>
-          <Box marginTop={1} flexDirection="row">
+      {/* 2-column body: lifecycle left, families+slash/hooks right */}
+      <Box flexDirection="row">
+        <Box flexDirection="column" flexGrow={1} paddingRight={2}>
+          <SectionHead label="Session lifecycle" rightAction="day-to-day flow" />
+          <Box marginTop={0} flexDirection="column">
             {w.phases.map((p) => (
-              <PhaseCard key={p.id} phase={p} />
+              <PhaseCard key={p.id} phase={p} active={activePhase === p.n} />
             ))}
           </Box>
-        </FrameBox>
-      </Box>
-
-      {/* Command families (3-col grid) */}
-      <FrameBox title={`command families · ${w.commandFamilies.length} · ${totalCmds} subcommands`}>
-        <Text color={colors.fgSubtle}>
-          All callable as <Text color={colors.accent}>agent-workflow &lt;cmd&gt;</Text> · alias{" "}
-          <Text color={colors.accent}>aw</Text>.
-        </Text>
-        <Box flexDirection="column" marginTop={1}>
-          {chunk(w.commandFamilies, 3).map((row) => (
-            <Box key={`fam-row-${row[0]?.id ?? "empty"}`} flexDirection="row">
-              {row.map((f) => (
-                <FamilyCard key={f.id} family={f} />
-              ))}
-            </Box>
-          ))}
         </Box>
-      </FrameBox>
 
-      {/* Slash + Hooks side-by-side */}
-      <Box flexDirection="row">
-        <Box flexDirection="column" flexGrow={1} marginRight={1}>
-          <FrameBox title={`slash commands · ${w.slashCommands.length}`}>
-            <Text color={colors.fgSubtle}>
-              Callable from Claude Code / Codex as{" "}
-              <Text color={colors.accent}>/agent-workflow:&lt;name&gt;</Text>.
-            </Text>
-            <Box marginTop={1} flexDirection="column">
-              {w.slashCommands.map((s) => (
-                <Text key={s} color={colors.fg}>
-                  · {s.replace("/agent-workflow:", "")}
-                </Text>
-              ))}
+        <Box flexDirection="column" flexGrow={1} paddingLeft={1}>
+          <SectionHead
+            label="Command families"
+            count={w.commandFamilies.length}
+            rightAction="↵ to expand"
+          />
+          <Box marginTop={0} flexDirection="column">
+            {w.commandFamilies.map((f, i) => (
+              <FamilyCard
+                key={f.id}
+                family={f}
+                active={i === cursor}
+                expanded={expandedId === f.id}
+              />
+            ))}
+            {w.commandFamilies.length > 8 ? (
+              <Text color={colors.faint}>…+{w.commandFamilies.length - 8} more families</Text>
+            ) : null}
+          </Box>
+
+          <SectionHead label="Slash · Hooks" rightAction="claude · codex" marginTop={1} />
+          <Box marginLeft={2} marginTop={0} flexDirection="column">
+            <Box>
+              <Text color={colors.bright} bold>
+                {w.slashCommands.length}
+              </Text>
+              <Text color={colors.dim}> slash commands · </Text>
+              <Text color={colors.accent}>/agent-workflow:&lt;name&gt;</Text>
             </Box>
-          </FrameBox>
-        </Box>
-        <Box flexDirection="column" flexGrow={1}>
-          <FrameBox title={`hooks · ${w.hooks.length} events`}>
-            <Text color={colors.fgSubtle}>
-              Claude only · JSON merge into{" "}
-              <Text color={colors.accent}>~/.claude/settings.json</Text>.
-            </Text>
-            <Box marginTop={1} flexDirection="column">
-              {w.hooks.map((h) => (
-                <Box key={h.name} flexDirection="column" marginBottom={1}>
-                  <Box flexDirection="row">
-                    <Text color={colors.fgBright} bold>
-                      {h.name}
-                    </Text>
-                    <Text color={colors.fgSubtle}> · matcher: </Text>
-                    <Text color={colors.warning}>{h.matcher}</Text>
-                  </Box>
-                  <Text color={colors.fgSubtle} wrap="wrap">
-                    {icons.hook} {h.fires}
-                  </Text>
+            <Box flexWrap="wrap">
+              <Text color={colors.bright} bold>
+                {w.hooks.length}
+              </Text>
+              <Text color={colors.dim}> hooks · </Text>
+              {w.hooks.map((h, i) => (
+                <Box key={h.name}>
+                  {i > 0 ? <Text color={colors.dim}>, </Text> : null}
+                  <Text color={colors.ok}>{h.name}</Text>
                 </Box>
               ))}
             </Box>
-          </FrameBox>
+          </Box>
         </Box>
       </Box>
 
-      {/* Footer hint */}
-      <Box
-        borderStyle="round"
-        borderColor={colors.borderFaint}
-        paddingX={1}
-        marginBottom={1}
-        flexDirection="row"
-      >
-        <Text color={colors.accent}>{icons.star} </Text>
-        <Text color={colors.fgSubtle}>
-          Quick start: <Text color={colors.accent}>aw self install --target claude</Text> · then
-          from Claude: <Text color={colors.accent}>/agent-workflow:session</Text>
-        </Text>
+      <Box marginTop={1}>
+        <QuickActions
+          actions={[
+            { key: "⏎", label: "expand" },
+            { key: "^K", label: "palette" },
+          ]}
+        />
       </Box>
     </Box>
   );

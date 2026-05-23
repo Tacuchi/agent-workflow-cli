@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type SelfMcpConfigData,
@@ -8,18 +8,20 @@ import {
 import type { CommandResult } from "../../../domain/types.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
-import { ActionModal, type ActionModalAction } from "../components/action-modal.js";
-import { ConfirmModal } from "../components/confirm-modal.js";
-import { FrameBox } from "../components/frame-box.js";
+import { type ActivityEvent, ActivityFeed } from "../components/activity-feed.js";
+import { ConfirmBanner } from "../components/confirm-banner.js";
+import { type DetailAction, DetailPanel } from "../components/detail-panel.js";
 import { InputPrompt } from "../components/input-prompt.js";
 import { ListRow } from "../components/list-row.js";
 import { PageHead } from "../components/page-head.js";
+import { QuickActions } from "../components/quick-actions.js";
+import { SectionHead } from "../components/section-head.js";
 import { useInputLock } from "../input-lock.js";
 import { colors, icons } from "../theme.js";
 
 type Mode =
   | { kind: "list" }
-  | { kind: "actions" }
+  | { kind: "detail" }
   | { kind: "wizard-name"; editingName?: string; prefillDsn?: string }
   | { kind: "wizard-dsn"; name: string; editingExisting?: string }
   | { kind: "confirm-delete"; name: string }
@@ -31,6 +33,26 @@ export interface McpTabProps {
   ctx: CliContext;
   isActive: boolean;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
+  recentEvents?: ActivityEvent[];
+}
+
+/**
+ * Calcula el ancho disponible para un row de la lista, considerando si el
+ * detail panel está abierto.
+ *
+ * Overhead horizontal:
+ * - ScreenFrame border (2) + paddingX (4) = 6
+ * - Sidebar (24)
+ * - Main paddingX (2)
+ * - List paddingRight (2)
+ * - Detail panel + separator (39) cuando está abierto
+ * - Safety margin (2)
+ */
+function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
+  const cols = termCols ?? 100;
+  const baseOverhead = 36; // 6 + 24 + 2 + 2 + 2
+  const detailOverhead = detailOpen ? 39 : 0;
+  return Math.max(16, cols - baseOverhead - detailOverhead);
 }
 
 function buildArgs(action: string, values: Record<string, string> = {}): ParsedArgs {
@@ -43,26 +65,17 @@ function buildArgs(action: string, values: Record<string, string> = {}): ParsedA
   };
 }
 
-/**
- * McpTab — listado MCP single-column + ActionModal overlay + Add wizard inline.
- *
- * Layout match con handoff (variant-palette.jsx MCPTab):
- *   PageHead con `+ add connection` action button → FrameBox "connections" accent
- *   con ListRow por conexión → ActionModal overlay al ⏎ (Test / Edit / Remove).
- *
- * Add/Edit wizard inline tras `a` shortcut o acción Edit. ConfirmModal para
- * remove. Busy label durante ops.
- */
-export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
+export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
   const [connections, setConnections] = useState<SelfMcpConnectionView[]>([]);
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const startedRef = useRef(false);
   const { lock, unlock } = useInputLock();
+  const { stdout } = useStdout();
 
   useEffect(() => {
-    if (mode.kind === "list" || mode.kind === "actions") unlock();
+    if (mode.kind === "list" || mode.kind === "detail") unlock();
     else lock();
   }, [mode, lock, unlock]);
 
@@ -109,22 +122,34 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     [ctx, onToast],
   );
 
-  const runDoctor = useCallback(
+  /**
+   * Sincroniza el MCP entry de la connection en los 3 hosts (Claude/Codex/Warp).
+   * Esto es lo que "activa" la connection — sin install en hosts, los skills no
+   * la pueden consumir. Reemplaza el viejo "doctor" (que solo reportaba drift).
+   */
+  const runSyncToHosts = useCallback(
     async (name: string) => {
-      const ok = await runRawAction("doctor", name, `pinging ${name}…`);
-      if (ok) onToast?.({ tone: "ok", title: `Test OK · ${name}`, body: "DSN reachable" });
+      const hosts = ["claude", "codex", "warp"] as const;
+      let allOk = true;
+      for (const host of hosts) {
+        const ok = await runRawAction(`install-${host}`, name, `syncing ${name} → ${host}…`);
+        if (!ok) allOk = false;
+      }
+      if (allOk) {
+        onToast?.({ tone: "ok", title: `Synced ${name}`, body: "claude · codex · warp" });
+      }
       await refresh();
       setMode({ kind: "list" });
     },
     [runRawAction, refresh, onToast],
   );
 
-  const applyModalAction = useCallback(
+  const triggerAction = useCallback(
     (id: ActionId) => {
       if (!current) return;
       switch (id) {
         case "test":
-          void runDoctor(current.nombre);
+          void runSyncToHosts(current.nombre);
           return;
         case "edit":
           setMode({
@@ -138,35 +163,23 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           return;
       }
     },
-    [current, runDoctor],
+    [current, runSyncToHosts],
   );
 
-  // 3 acciones: Test / Edit / Remove. Match con MCPActionModal del handoff.
-  const modalActions: ActionModalAction[] = current
+  // Detail panel actions (Sync/Edit/Remove).
+  const detailActions: DetailAction[] = current
     ? [
+        { name: "Sync to hosts", description: "Install to Claude/Codex/Warp." },
+        { name: "Edit connection", description: "Alias / host / DSN." },
         {
-          id: "test",
-          icon: icons.refresh,
-          label: "Test connection",
-          desc: `Open a socket to ${current.server_name} and run \`SELECT 1\``,
-        },
-        {
-          id: "edit",
-          icon: icons.edit,
-          label: "Edit connection",
-          desc: "Modify alias, host or database in profile.json",
-        },
-        {
-          id: "remove",
-          icon: icons.cross,
-          label: "Remove connection",
-          desc: `Delete from \`mcp_databases[]\` and unexport ${current.dsn_var}`,
+          name: "Remove connection",
+          description: "Delete entry + DSN export.",
           danger: true,
         },
       ]
     : [];
 
-  // input — list mode
+  // input — list mode (↑↓ navega · ⏎ abre detail · 'a' add wizard)
   useInput(
     (input, key) => {
       if (!isActive || mode.kind !== "list") return;
@@ -176,32 +189,30 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       }
       if (key.upArrow) {
         setCursor((c) => Math.max(0, c - 1));
-        setActionCursor(0);
         return;
       }
       if (key.downArrow) {
         setCursor((c) => (connections.length === 0 ? 0 : Math.min(connections.length - 1, c + 1)));
-        setActionCursor(0);
         return;
       }
       if (key.return && current) {
         setActionCursor(0);
-        setMode({ kind: "actions" });
+        setMode({ kind: "detail" });
       }
     },
     { isActive },
   );
 
-  // input — actions mode (modal)
+  // input — detail mode (↑↓ navega actions · ⏎ ejecuta focused · Esc cierra)
   useInput(
     (_input, key) => {
-      if (!isActive || mode.kind !== "actions") return;
+      if (!isActive || mode.kind !== "detail" || !current) return;
       if (key.upArrow) {
         setActionCursor((c) => Math.max(0, c - 1));
         return;
       }
       if (key.downArrow) {
-        setActionCursor((c) => Math.min(modalActions.length - 1, c + 1));
+        setActionCursor((c) => Math.min(detailActions.length - 1, c + 1));
         return;
       }
       if (key.escape) {
@@ -209,14 +220,21 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
         return;
       }
       if (key.return) {
-        const def = modalActions[actionCursor];
-        if (def) applyModalAction(def.id as ActionId);
+        const action = detailActions[actionCursor];
+        if (!action) return;
+        if (action.danger) {
+          triggerAction("remove");
+        } else if (action.name.startsWith("Edit")) {
+          triggerAction("edit");
+        } else {
+          triggerAction("test");
+        }
       }
     },
     { isActive },
   );
 
-  // input — confirm-delete
+  // input — confirm-delete (y confirma · n/esc vuelve al detail)
   useInput(
     (input, key) => {
       if (!isActive || mode.kind !== "confirm-delete") return;
@@ -227,7 +245,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           setMode({ kind: "list" });
         });
       } else if (key.escape || input === "n" || input === "N") {
-        setMode({ kind: "list" });
+        setMode({ kind: "detail" });
       }
     },
     { isActive },
@@ -244,35 +262,34 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     { isActive },
   );
 
-  const inListMode = mode.kind === "list";
-  const addButton = (
-    <Text color={colors.accent} bold inverse>
-      {" a · + add connection "}
-    </Text>
-  );
-
   return (
     <Box flexDirection="column">
       <PageHead
         title="MCP"
-        count={{
-          label: `${connections.length} db`,
-          tone: connections.length > 0 ? "accent" : "muted",
-        }}
-        desc="databases for skill consumption · aliases match `mcp_databases[]` in profile.json"
-        action={addButton}
+        count={{ label: `${connections.length} databases · profile.json`, tone: "accent" }}
+        action={<Text color={colors.mute}>aliases match mcp_databases[] · consumed by skills</Text>}
       />
 
-      {inListMode ? (
-        <FrameBox
-          title={`connections · ${connections.length}`}
-          accent={connections.length > 0}
-          dim={connections.length === 0}
-        >
-          {connections.length === 0 ? (
-            <Box flexDirection="column">
-              <Text color={colors.fgSubtle}>No MCP connections yet.</Text>
-              <Text color={colors.fgSubtle}>
+      {/* with-detail layout */}
+      <Box flexDirection="row">
+        {/* Left: list */}
+        <Box flexDirection="column" flexGrow={1} paddingRight={2}>
+          <SectionHead
+            label="Connections"
+            count={connections.length}
+            rightAction={
+              mode.kind === "wizard-name" || mode.kind === "wizard-dsn"
+                ? "esc cancel"
+                : mode.kind === "detail" || mode.kind === "confirm-delete"
+                  ? "esc to close detail"
+                  : "⏎ for actions · a · + add"
+            }
+          />
+
+          {connections.length === 0 && mode.kind === "list" ? (
+            <Box marginLeft={2} marginTop={1} flexDirection="column">
+              <Text color={colors.dim}>No MCP connections yet.</Text>
+              <Text color={colors.dim}>
                 Register a DSN to let skills query your DB. Press{" "}
                 <Text color={colors.accent} bold>
                   a
@@ -281,143 +298,181 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
               </Text>
             </Box>
           ) : (
-            connections.map((c, i) => (
-              <ListRow
-                key={c.nombre}
-                icon={icons.diamond}
-                iconActive={true}
-                title={c.nombre}
-                subtitle={`${c.server_name} · ${c.dsn_var}`}
-                state={{ label: "registered", tone: "ok" }}
-                chevron
-                active={i === cursor}
-              />
-            ))
-          )}
-        </FrameBox>
-      ) : null}
-
-      {/* ActionModal overlay — reemplaza la lista, centrado tipo palette */}
-      {mode.kind === "actions" && current ? (
-        <Box flexDirection="column" alignItems="center" paddingY={2}>
-          <Box width="80%" flexDirection="column">
-            <ActionModal
-              glyph={icons.diamond}
-              title={current.nombre}
-              subtitle={`${current.dsn_var} · ${current.server_name}`}
-              state={{ label: "registered", tone: "ok" }}
-              actions={modalActions}
-              cursor={actionCursor}
-              footerRight={current.nombre}
-            />
-          </Box>
-        </Box>
-      ) : null}
-
-      {/* Wizard step 1 — alias / nombre */}
-      {mode.kind === "wizard-name" ? (
-        <Box marginTop={1} flexDirection="column">
-          <FrameBox
-            title={
-              mode.editingName
-                ? `edit MCP connection · ${mode.editingName}`
-                : "register MCP connection"
-            }
-            accent
-          >
-            <Text color={colors.fgSubtle}>
-              Step 1/2 — connection alias (slug-kebab).{" "}
-              {mode.editingName ? `Current: ${mode.editingName}` : ""}
-            </Text>
-            <Box marginTop={1}>
-              <InputPrompt
-                message="alias:"
-                onSubmit={(value) => {
-                  const trimmed = value.trim() || mode.editingName || "";
-                  if (!trimmed) {
-                    onToast?.({ tone: "err", title: "Empty alias" });
-                    setMode({ kind: "list" });
-                    return;
-                  }
-                  setMode({
-                    kind: "wizard-dsn",
-                    name: trimmed,
-                    ...(mode.editingName ? { editingExisting: mode.editingName } : {}),
-                  });
-                }}
-                isActive={isActive}
-              />
+            <Box marginTop={0} flexDirection="column">
+              {connections.map((c, i) => (
+                <ListRow
+                  key={c.nombre}
+                  icon={icons.diamond}
+                  iconActive={true}
+                  title={c.nombre}
+                  subtitle={`${c.dsn_var} · ${c.server_name}`}
+                  state={{ label: "registered", tone: "ok" }}
+                  chevron
+                  active={i === cursor}
+                  dimmed={mode.kind === "wizard-name" || mode.kind === "wizard-dsn"}
+                  widthHint={computeRowWidth(
+                    stdout?.columns,
+                    mode.kind === "detail" ||
+                      mode.kind === "confirm-delete" ||
+                      mode.kind === "wizard-name" ||
+                      mode.kind === "wizard-dsn",
+                  )}
+                />
+              ))}
             </Box>
-            <Text color={colors.fgSubtle}>esc cancel</Text>
-          </FrameBox>
-        </Box>
-      ) : null}
+          )}
 
-      {/* Wizard step 2 — DSN env var + live JSON preview */}
-      {mode.kind === "wizard-dsn" ? (
-        <Box marginTop={1} flexDirection="column">
-          <FrameBox title="register MCP connection · step 2/2" accent>
-            <Box>
-              <Text color={colors.fgSubtle}>alias · </Text>
-              <Text color={colors.fgBright} bold>
-                {mode.name}
+          {/* Wizard inline — solo SectionHead + InputPrompt limpio (sin
+              duplicación con un decorative input box). */}
+          {mode.kind === "wizard-name" ? (
+            <Box flexDirection="column" marginTop={1}>
+              <SectionHead
+                label={
+                  mode.editingName
+                    ? `Edit connection · ${mode.editingName}`
+                    : "Register new connection"
+                }
+                hint="Step 1 of 2 · Alias"
+                rightAction="⏎ next · esc cancel"
+              />
+              <Box marginLeft={2} marginTop={0}>
+                <InputPrompt
+                  message="alias (slug-kebab):"
+                  onSubmit={(value) => {
+                    const trimmed = value.trim() || mode.editingName || "";
+                    if (!trimmed) {
+                      onToast?.({ tone: "err", title: "Empty alias" });
+                      setMode({ kind: "list" });
+                      return;
+                    }
+                    setMode({
+                      kind: "wizard-dsn",
+                      name: trimmed,
+                      ...(mode.editingName ? { editingExisting: mode.editingName } : {}),
+                    });
+                  }}
+                  isActive={isActive}
+                />
+              </Box>
+            </Box>
+          ) : null}
+          {mode.kind === "wizard-dsn" ? (
+            <Box flexDirection="column" marginTop={1}>
+              <SectionHead
+                label={`Register new connection · ${mode.name}`}
+                hint="Step 2 of 2 · DSN env var"
+                rightAction="⏎ register · esc cancel"
+              />
+              <Box marginLeft={2} marginTop={0}>
+                <InputPrompt
+                  message="DSN env var (UPPER_SNAKE_CASE):"
+                  onSubmit={(value) => {
+                    const dsnVar = value.trim();
+                    if (!dsnVar) {
+                      onToast?.({ tone: "err", title: "Empty DSN var" });
+                      setMode({ kind: "list" });
+                      return;
+                    }
+                    void registerConnection(mode.name, dsnVar);
+                  }}
+                  isActive={isActive}
+                />
+              </Box>
+            </Box>
+          ) : null}
+
+          {/* Recent calls */}
+          {mode.kind === "list" ? (
+            <>
+              <SectionHead label="Recent" count={recentEvents?.length ?? 0} marginTop={1} />
+              <Box marginLeft={2}>
+                <ActivityFeed
+                  events={recentEvents ?? []}
+                  cap={4}
+                  emptyHint="  (no recent MCP calls yet)"
+                />
+              </Box>
+            </>
+          ) : null}
+
+          {mode.kind === "busy" ? (
+            <Box marginTop={1}>
+              <Text color={colors.warn}>
+                {icons.spinner} {mode.label}
               </Text>
             </Box>
-            <Box marginTop={1}>
-              <InputPrompt
-                message="DSN env var (UPPER_SNAKE_CASE):"
-                onSubmit={(value) => {
-                  const dsnVar = value.trim();
-                  if (!dsnVar) {
-                    onToast?.({ tone: "err", title: "Empty DSN var" });
-                    setMode({ kind: "list" });
-                    return;
-                  }
-                  void registerConnection(mode.name, dsnVar);
-                }}
-                isActive={isActive}
-              />
-            </Box>
-            <Box marginTop={1} flexDirection="column">
-              <Text color={colors.fgMoreSubtle}>PREVIEW · profile.json</Text>
-              <Text color={colors.fgSubtle}>{"{"}</Text>
-              <Text color={colors.fgSubtle}>{`  "mcp-servers": {`}</Text>
-              <Text color={colors.fg}>{`    "${mode.name}": {`}</Text>
-              <Text color={colors.fg}>{`      "env": "<DSN env var>",`}</Text>
-              <Text color={colors.fg}>{`      "type": "stdio"`}</Text>
-              <Text color={colors.fg}>{"    }"}</Text>
-              <Text color={colors.fgSubtle}>{"  }"}</Text>
-              <Text color={colors.fgSubtle}>{"}"}</Text>
-            </Box>
-            <Text color={colors.fgSubtle}>⏎ register · esc cancel</Text>
-          </FrameBox>
+          ) : null}
         </Box>
-      ) : null}
 
-      {mode.kind === "confirm-delete" ? (
-        <Box marginTop={1}>
-          <ConfirmModal
-            tone="danger"
-            title="Remove connection"
-            body={[
-              `You are about to remove the connection '${mode.name}'.`,
-              "This action cannot be undone.",
-            ]}
-            confirmKey="y"
-            confirmLabel={`Yes, remove ${mode.name}`}
-            cancelKey="n / esc"
-            cancelLabel="Cancel"
-          />
-        </Box>
-      ) : null}
+        {/* Right: detail panel (sólo cuando se seleccionó un row con Enter) */}
+        {current && (mode.kind === "detail" || mode.kind === "confirm-delete") ? (
+          <Box flexDirection="column" borderLeft={false}>
+            <Text color={colors.borderFaint}>{"│"}</Text>
+            <DetailPanel
+              header={{
+                name: current.nombre,
+                meta: `${current.server_name} · ${current.dsn_var}\nlast test: —`,
+              }}
+              statePill={{ label: "registered", tone: "ok" }}
+              actions={detailActions}
+              focusedAction={actionCursor}
+              banner={
+                mode.kind === "confirm-delete" ? (
+                  <ConfirmBanner
+                    title={`× Remove ${mode.name}?`}
+                    body={`This deletes the entry from profile.json and unexports ${current.dsn_var}. Not reversible.`}
+                  />
+                ) : null
+              }
+            />
+          </Box>
+        ) : mode.kind === "wizard-name" || mode.kind === "wizard-dsn" ? (
+          <Box flexDirection="column">
+            <Text color={colors.borderFaint}>{"│"}</Text>
+            <Box flexDirection="column" width={38} paddingLeft={1}>
+              <Box>
+                <Text color={colors.accent} bold>
+                  + New connection
+                </Text>
+              </Box>
+              <Text color={colors.dim} wrap="truncate-end">
+                2-step wizard · profile.json
+              </Text>
 
-      {mode.kind === "busy" ? (
-        <Box marginTop={1}>
-          <Text color={colors.warning}>
-            {icons.spinner} {mode.label}
-          </Text>
-        </Box>
-      ) : null}
+              <Box marginTop={1} flexDirection="column">
+                <Text color={colors.mute}>STEPS</Text>
+                <WizardStep
+                  index={1}
+                  label="Alias"
+                  active={mode.kind === "wizard-name"}
+                  completed={mode.kind === "wizard-dsn"}
+                  value={mode.kind === "wizard-dsn" ? mode.name : undefined}
+                />
+                <WizardStep
+                  index={2}
+                  label="DSN env var"
+                  active={mode.kind === "wizard-dsn"}
+                  completed={false}
+                />
+              </Box>
+
+              <Box marginTop={1} flexDirection="column">
+                <Text color={colors.borderFaint}>{"─".repeat(36)}</Text>
+                <Text color={colors.faint}>⏎ next · esc cancel</Text>
+              </Box>
+            </Box>
+          </Box>
+        ) : null}
+      </Box>
+
+      <Box marginTop={1}>
+        <QuickActions
+          actions={[
+            { key: "a", label: "add connection" },
+            { key: "^K", label: "palette" },
+          ]}
+        />
+      </Box>
     </Box>
   );
 
@@ -438,4 +493,43 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       setMode({ kind: "list" });
     }
   }
+}
+
+function WizardStep({
+  index,
+  label,
+  active,
+  completed,
+  value,
+  hint,
+}: {
+  index: number;
+  label: string;
+  active: boolean;
+  completed: boolean;
+  value?: string | undefined;
+  hint?: string | undefined;
+}) {
+  const glyph = completed ? icons.check : active ? "→" : " ";
+  const color = completed ? colors.ok : active ? colors.accent : colors.dim;
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Box>
+        <Text color={active ? colors.accent : colors.faint}>{active ? icons.focusBar : " "}</Text>
+        <Text color={color} bold={active}>
+          {glyph} {index}. {label}
+        </Text>
+      </Box>
+      {value ? (
+        <Box marginLeft={3}>
+          <Text color={colors.ok}>{value}</Text>
+        </Box>
+      ) : null}
+      {hint ? (
+        <Box marginLeft={3}>
+          <Text color={colors.dim}>{hint}</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
 }

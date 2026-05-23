@@ -4,6 +4,52 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.0.0] — 2026-05-23
+
+**Major — TUI simplified redesign** (session087). Implementa el handoff `docs/referencias/design_handoff_tui_simplified/`: layout sidebar 24ch + detail panel 38ch + patrones inline (wizard, confirm). Paleta migrada a mono violet. Resultado más compacto y minimalista que v8.0.0.
+
+### Breaking changes (UX)
+
+- **Paleta migrada a mono violet** (`#a78bfa` accent, `#0c0a14` bg). Reemplaza la paleta sky/slate de v8.0.0.
+- **Layout sidebar + main**: la antigua barra superior (Header) y barra inferior (KeymapBar) se consolidan en una **sidebar fija de 24ch** a la izquierda. Tab bar horizontal eliminada — la navegación 1–5 ahora vive en el sidebar nav.
+- **FrameBox eliminado**: las secciones ya no van envueltas en cajas con border. Reemplazadas por `SectionHead` hairlines (dot violet + label uppercase + count + hint + right-action) + whitespace.
+- **ActionModal eliminado**: las acciones por row ahora viven en un **DetailPanel** a la derecha (38ch) que refleja en vivo el row focuseado. Sin overlay full-screen.
+- **InlineWizard reemplaza al wizard modal de MCP add**: las conexiones existentes dimean (`dimColor`) y un bloque wizard inline aparece al final de la lista, con stepper del progreso en el detail panel.
+- **ConfirmBanner inline reemplaza ConfirmModal**: la confirmación destructiva (remove connection, uninstall skill) aparece dentro del detail panel como banner border-left 3 err. Sin overlay.
+- **Pill (con brackets `[state]`) eliminado**: estados se muestran como texto coloreado sin brackets.
+
+### Added
+
+- **Sidebar component** (`components/sidebar.tsx`, 24ch): brand glyph + version + nav (5 tabs con badge + alert dot) + divider hairline + workspace context (mode + branch + sync + sessions count) + divider + keymap global (`^K palette`, `⏎ open`, `↑↓ navigate`, `? help`, `q quit`).
+- **SectionHead component** (`components/section-head.tsx`): reemplaza FrameBox para títulos de sección. Slots `{ dotColor, label, count?, hint?, rightAction? }`. Sin border.
+- **DetailPanel component** (`components/detail-panel.tsx`, 38ch): refleja focused row de la lista en vivo. Slots header (glyph + name + meta + state pill) + actions block (focusable rows con `▎⏎ ↻ name`) + footer hints. Variante danger en `err`. Banner override para confirm flow.
+- **InlineWizard component** (`components/inline-wizard.tsx`): wizard inline al final de una lista. Border-left accent + step label uppercase + input field con caret `▍` + preview JSON live. Stepper en detail panel (split-view).
+- **ConfirmBanner component** (`components/confirm-banner.tsx`): banner inline `▎` border-left 3 err + title err bold + body + `y/n esc` actions. Usado en MCP remove y Skills uninstall.
+- **HostCells component** (`components/host-cells.tsx`): Skills coverage visual. 7 cells equi-flex con estado per host (installed accent / backed dim / pending mute dashed warn).
+- **QuickActions component** (`components/quick-actions.tsx`): strip por tab al pie de cada main area. Border-top hairline + chips `<key>` accent bold + `<label>` text.
+- **ActivityFeed component** (`components/activity-feed.tsx`): filas `when (5ch) · dot tone · text · meta` con tone per row. Consumido por Status (Recent), Project (Recent activity) y MCP (Recent calls).
+- **Data layer Activity** (`data/activity.ts`): agregador unificado de eventos. Lee git log + sessions del CLI. Eventos futuros (npm checks, MCP calls, skill installs) deferred — requieren tracking aún no implementado.
+- **Workspace context en sidebar**: lee `git branch`, `git status` y count de sessions vía `agent-workflow sessions` en cada carga del TUI.
+
+### Adapted
+
+- **`stat-tile.tsx`**: sin border. Variante focused con `▎` border-left accent + paddingLeft 1.
+- **`list-row.tsx`**: variante focused con `▎` accent + glyph slot izquierdo + chevron `›` derecho + `dimmed` prop para wizard backdrop.
+- **`phase-card.tsx`**: sin border individual. Layout horizontal flat para consumo por `Session lifecycle` SectionHead con divider vertical `│` entre phases.
+- **`family-card.tsx`**: collapsed por default. Layout `▸ name N item1 · item2…`. Expanded `▾ name N` + children indent 4.
+- **`page-head.tsx`**: count y desc inline sin brackets (era `<Pill>` antes). Right action via `action` prop.
+
+### Removed
+
+- `components/header.tsx` — info migrada a sidebar.
+- `components/tab-bar.tsx` — reemplazado por sidebar nav.
+- `components/keymap-bar.tsx` — atajos globales en sidebar, per-tab en quick-actions.
+- `components/frame-box.tsx` — reemplazado por SectionHead + whitespace.
+- `components/action-modal.tsx` — reemplazado por DetailPanel.
+- `components/pill.tsx` — reemplazado por texto coloreado sin brackets.
+- `components/confirm-modal.tsx` — reemplazado por ConfirmBanner inline.
+- `components/connections-grid.tsx`, `connections-table.tsx`, `sectioned-menu.tsx`, `host-chip.tsx` — sin call sites tras refactor.
+
 ## [8.0.0] — 2026-05-23
 
 **Major — TUI redesign handoff impl** (session085). Implementa el handoff `docs/referencias/design_handoff_aw_tui_redesign/`: single-column layouts, ActionModal compartido, Command Palette ⌘K reintroducida, y un nuevo tab Workflow que mapea el harness completo.

@@ -13,51 +13,70 @@ export interface PhaseCardData {
 
 export interface PhaseCardProps {
   phase: PhaseCardData;
+  active?: boolean;
 }
 
-export function PhaseCard({ phase }: PhaseCardProps) {
-  const visibleCmds = phase.commands.slice(0, 3);
+const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+function circled(n: number): string {
+  return CIRCLED[n - 1] ?? String(n);
+}
+
+export function PhaseCard({ phase, active = false }: PhaseCardProps) {
+  const cmds = phase.commands.slice(0, 3);
+  const cmdsText = cmds.join(" · ") + (phase.commands.length > 3 ? " …" : "");
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={colors.border}
-      paddingX={1}
-      flexGrow={1}
-      marginRight={1}
-    >
-      <Box flexDirection="row">
-        <Text color={colors.accent} bold>
-          {phase.n}.
+    <Box flexDirection="column" marginBottom={1}>
+      <Box>
+        <Text color={active ? colors.accent : colors.faint}>{active ? icons.focusBar : " "}</Text>
+        <Text> </Text>
+        <Text color={active ? colors.accent : colors.mute} bold={active}>
+          {circled(phase.n)}
         </Text>
-        <Text color={colors.fgBright} bold>
-          {" "}
+        <Text> </Text>
+        <Text color={colors.bright} bold>
           {phase.title}
         </Text>
-      </Box>
-      <Text color={colors.fgSubtle} wrap="wrap">
-        {phase.desc}
-      </Text>
-      {visibleCmds.length > 0 ? (
-        <Box flexDirection="column">
-          {visibleCmds.map((c) => (
-            <Text key={c} color={colors.fg}>
-              · {c}
+        {active ? (
+          <>
+            <Text> </Text>
+            <Text color={colors.accent}>●</Text>
+            <Text> </Text>
+            <Text color={colors.accent} bold>
+              ACTIVE
             </Text>
-          ))}
+          </>
+        ) : null}
+      </Box>
+      <Box marginLeft={3}>
+        <Text color={colors.dim} wrap="wrap">
+          {phase.desc}
+        </Text>
+      </Box>
+      {cmds.length > 0 ? (
+        <Box marginLeft={3}>
+          <Text color={colors.dim}>{cmdsText}</Text>
         </Box>
       ) : null}
-      {phase.slash && phase.slash !== "—" ? (
-        <Box>
-          <Text color={colors.fgSubtle}>{icons.chevron} </Text>
-          <Text color={colors.accent}>{phase.slash}</Text>
-        </Box>
-      ) : null}
-      {phase.hook && phase.hook !== "—" ? (
-        <Box>
-          <Text color={colors.fgSubtle}>{icons.hook} </Text>
-          <Text color={colors.success}>{phase.hook}</Text>
+      {/* Slash + hook en MISMA línea (como image #30 referencia). Usamos
+          outer Text con wrap="truncate-end" + nested Text para colores: si la
+          columna es narrow, trunca con `…` en vez de wrapear mid-string. */}
+      {(phase.slash && phase.slash !== "—") || (phase.hook && phase.hook !== "—") ? (
+        <Box marginLeft={3}>
+          <Text wrap="truncate-end">
+            {phase.slash && phase.slash !== "—" ? (
+              <Text color={colors.accent}>{phase.slash}</Text>
+            ) : null}
+            {phase.slash &&
+            phase.slash !== "—" &&
+            phase.hook &&
+            phase.hook !== "—" ? (
+              <Text color={colors.dim}> · </Text>
+            ) : null}
+            {phase.hook && phase.hook !== "—" ? (
+              <Text color={colors.ok}>↪ {phase.hook}</Text>
+            ) : null}
+          </Text>
         </Box>
       ) : null}
     </Box>

@@ -1,40 +1,27 @@
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  type ProjectActivityEntry,
   type ProjectPendingItem,
-  type ProjectSource,
   type ProjectTabData,
   buildProjectTabData,
 } from "../../../application/project-tab-data.js";
 import type { CliContext } from "../../types.js";
-import { FrameBox } from "../components/frame-box.js";
+import { type ActivityEvent, ActivityFeed } from "../components/activity-feed.js";
 import { PageHead } from "../components/page-head.js";
-import { Pill } from "../components/pill.js";
+import { QuickActions } from "../components/quick-actions.js";
+import { SectionHead } from "../components/section-head.js";
 import { StatTile } from "../components/stat-tile.js";
 import { colors, icons } from "../theme.js";
 
 export interface ProjectTabProps {
   ctx: CliContext;
   isActive: boolean;
-  /** Callback opcional para emitir toasts del tab */
   onRunAction?: (id: string, payload?: Record<string, unknown>) => void;
 }
 
-/**
- * ProjectTab — vista agregada del workspace.
- *
- * Dos estados:
- * - **No inicializado** (sin bloque AW-PROJECT en CLAUDE.md/AGENTS.md) →
- *   landing con instrucciones para `project-init` o `hub-init` + info detectada
- *   (cwd, git).
- * - **Inicializado** → stat strip + git workspace + sesiones + pendientes +
- *   actividad. En hub mode, también lista de sources con dirty status.
- */
 export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   const [data, setData] = useState<ProjectTabData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pendingFilter, setPendingFilter] = useState<string>("all");
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -92,21 +79,19 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
         const candidate = data.branches.find((b) => !b.current);
         if (candidate) onRunAction?.("git:checkout", { name: candidate.name });
       }
+      if (input === "s") onRunAction?.("session:start");
+      if (input === "r") {
+        const active = data.sessions.find((s) => s.state === "active");
+        if (active) onRunAction?.("session:resume", { code: active.code });
+      }
     },
     { isActive: isActive && !!data },
   );
 
-  const filteredPending = useMemo(() => {
-    if (!data) return [];
-    if (pendingFilter === "all") return data.pending;
-    if (pendingFilter === "high") return data.pending.filter((p) => p.prio === "high");
-    return data.pending.filter((p) => p.sessionCode === pendingFilter);
-  }, [data, pendingFilter]);
-
   if (loading || !data) {
     return (
       <Box>
-        <Text color={colors.fgSubtle}>{icons.spinner} loading…</Text>
+        <Text color={colors.dim}>{icons.spinner} loading…</Text>
       </Box>
     );
   }
@@ -115,15 +100,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
     return <NotInitialized data={data} cursor={landingCursor} />;
   }
 
-  return (
-    <Initialized
-      ctx={ctx}
-      data={data}
-      pendingFilter={pendingFilter}
-      filteredPending={filteredPending}
-      onFilter={setPendingFilter}
-    />
-  );
+  return <Initialized ctx={ctx} data={data} />;
 }
 
 // ===== Landing — workspace no inicializado =====
@@ -156,35 +133,35 @@ function NotInitialized({ data, cursor }: { data: ProjectTabData; cursor: number
       <PageHead
         title="Project"
         count={{ label: "not initialized", tone: "warn" }}
-        desc="AW-PROJECT block not found in CLAUDE.md / AGENTS.md"
+        action={<Text color={colors.mute}>AW-PROJECT not found in CLAUDE.md / AGENTS.md</Text>}
       />
 
-      <Box marginTop={1}>
-        <FrameBox title="choose initialization" accent>
-          {LANDING_OPTIONS.map((opt, i) => (
-            <LandingRow key={opt.actionId} option={opt} active={i === cursor} />
-          ))}
-          <Text color={colors.fgSubtle}>↑↓ navigate · ⏎ apply</Text>
-        </FrameBox>
+      <SectionHead label="Choose initialization" marginTop={0} />
+      <Box marginLeft={2} marginTop={0} flexDirection="column">
+        {LANDING_OPTIONS.map((opt, i) => (
+          <LandingRow key={opt.actionId} option={opt} active={i === cursor} />
+        ))}
+        <Text color={colors.dim}>↑↓ navigate · ⏎ apply</Text>
       </Box>
 
       <Box marginTop={1} flexDirection="column">
-        <Text color={colors.fgFaint}>
+        <Text color={colors.faint}>
           {icons.pin} {data.workspacePath}
         </Text>
         {data.git ? (
           <Box>
-            <Text color={colors.fgFaint}>
+            <Text color={colors.faint}>
               {icons.branch} {data.git.branch} (base {data.git.base})
             </Text>
             {data.git.dirty > 0 ? (
-              <Box marginLeft={1}>
-                <Pill tone="warn">{`${data.git.dirty} uncommitted`}</Pill>
-              </Box>
+              <>
+                <Text> </Text>
+                <Text color={colors.warn}>{data.git.dirty} uncommitted</Text>
+              </>
             ) : null}
           </Box>
         ) : (
-          <Text color={colors.fgFaint}>(not a git repo)</Text>
+          <Text color={colors.faint}>(not a git repo)</Text>
         )}
       </Box>
     </Box>
@@ -195,16 +172,14 @@ function LandingRow({ option, active }: { option: LandingOption; active: boolean
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text color={active ? colors.accent : colors.fgFaint} {...(active ? { bold: true } : {})}>
-          {active ? "▸" : " "}
-        </Text>
+        <Text color={active ? colors.accent : colors.faint}>{active ? icons.focusBar : " "}</Text>
         <Text> </Text>
-        <Text color={active ? colors.accent : colors.fgBright} {...(active ? { bold: true } : {})}>
+        <Text color={active ? colors.accent : colors.bright} bold={active}>
           {option.title}
         </Text>
       </Box>
       <Box marginLeft={2} flexDirection="column">
-        <Text color={colors.fgSubtle}>{option.desc}</Text>
+        <Text color={colors.dim}>{option.desc}</Text>
         <Text color={active ? colors.accent : colors.info}>{option.cli}</Text>
       </Box>
     </Box>
@@ -213,142 +188,127 @@ function LandingRow({ option, active }: { option: LandingOption; active: boolean
 
 // ===== Inicializado — vista completa =====
 
-function Initialized({
-  ctx,
-  data,
-  pendingFilter,
-  filteredPending,
-  onFilter,
-}: {
-  ctx: CliContext;
-  data: ProjectTabData;
-  pendingFilter: string;
-  filteredPending: ProjectPendingItem[];
-  onFilter: (id: string) => void;
-}) {
-  const totalSessions = data.sessions.filter((s) => s.state === "active").length;
+function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
+  const totalActiveSessions = data.sessions.filter((s) => s.state === "active").length;
+  const totalSessions = data.sessions.length;
   const totalPending = data.pending.length;
   const highPending = data.pending.filter((p) => p.prio === "high").length;
+  const medPending = data.pending.filter((p) => p.prio === "med").length;
+  const lowPending = data.pending.filter((p) => p.prio === "low").length;
   const dirty = data.git?.dirty ?? 0;
   const namespace = ctx.namespace.namespace;
-  const desc = `.${namespace} · ${data.workspaceName}`;
+  const desc = `.${namespace} · workspace mode auto-detected`;
+
+  const events: ActivityEvent[] = data.activity.slice(0, 7).map((a, i) => ({
+    id: `${a.whenIso}-${i}`,
+    when: a.whenRel,
+    dotColor: a.type === "commit" ? "info" : a.type === "session" ? "accent" : "purple",
+    text: a.text,
+    metaTone: "dim",
+  }));
 
   return (
     <Box flexDirection="column">
       <PageHead
-        title="Project"
-        count={{
-          label: data.workspaceMode === "hub" ? "hub" : "single-repo",
-          tone: "accent",
-        }}
-        desc={desc}
+        title={`Project · ${data.workspaceMode === "hub" ? "hub" : "single-repo"} · ${data.workspaceName}`}
+        action={<Text color={colors.mute}>{desc}</Text>}
       />
 
-      {/* Stat tiles 4-col */}
-      <Box flexDirection="row">
+      {/* Health cards 2x2 (rendered as 4 tiles in a row) */}
+      <Box flexDirection="row" marginBottom={1}>
         <StatTile label="git" value={data.git?.branch ?? "—"} sub={statGitSub(data)} accent />
         <StatTile
           label="working tree"
-          value={`${dirty}`}
+          value={`${dirty} dirty`}
           sub={`${data.git?.staged ?? 0} staged · ${data.git?.untracked ?? 0} untracked`}
           tone={dirty > 0 ? "warn" : "dim"}
         />
         <StatTile
           label="sessions"
-          value={`${totalSessions}`}
-          sub={`${data.sessions.length} total`}
-          tone={totalSessions > 0 ? "accent" : "dim"}
+          value={`${totalActiveSessions} active`}
+          sub={`${totalSessions} total`}
+          tone={totalActiveSessions > 0 ? "accent" : "dim"}
         />
         <StatTile
           label="pending"
-          value={`${totalPending}`}
-          sub={highPending > 0 ? `${highPending} high` : ""}
+          value={`${totalPending} tasks`}
+          sub={`${highPending} high · ${medPending} med · ${lowPending} low`}
           tone={highPending > 0 ? "warn" : "dim"}
         />
       </Box>
 
-      {/* Sources (hub mode) */}
-      {data.workspaceMode === "hub" && data.sources.length > 0 ? (
-        <FrameBox title={`sources · ${data.sources.length}`}>
-          {data.sources.map((s) => (
-            <SourceRow key={s.alias} source={s} />
-          ))}
-        </FrameBox>
-      ) : null}
+      <Text color={colors.borderFaint}>{"─".repeat(60)}</Text>
 
-      {/* Git workspace */}
-      <FrameBox
-        title={
-          data.git?.lastCommit
-            ? `git workspace · ${data.git.lastCommit.sha} · ${data.git.lastCommit.whenRel}`
-            : "git workspace"
-        }
-      >
-        {data.git ? (
-          <GitWorkspace data={data} />
-        ) : (
-          <Text color={colors.fgFaint}>(no git repo)</Text>
-        )}
-      </FrameBox>
+      {/* Two columns: Active sessions + Pending */}
+      <Box flexDirection="row" marginTop={1}>
+        <Box flexDirection="column" flexGrow={1} paddingRight={2}>
+          <SectionHead label="Active sessions" count={totalActiveSessions} rightAction="⏎ resume" />
+          {totalActiveSessions === 0 ? (
+            <Box marginLeft={2}>
+              <Text color={colors.faint}>(none)</Text>
+            </Box>
+          ) : (
+            <Box marginLeft={0} flexDirection="column">
+              {data.sessions
+                .filter((s) => s.state === "active")
+                .slice(0, 6)
+                .map((s) => (
+                  <Box key={s.code}>
+                    <Text color={colors.accent}>{icons.focusBar}</Text>
+                    <Text color={colors.accent}> {icons.expandCollapsed} </Text>
+                    <Text color={colors.bright}>session{s.code}</Text>
+                    <Text color={colors.dim}> · </Text>
+                    <Text color={colors.dim}>{s.name}</Text>
+                    <Text color={colors.dim}> · phase </Text>
+                    <Text color={colors.accent}>{s.phase}</Text>
+                    <Text> </Text>
+                    <Text color={colors.purple}>[{s.flow}]</Text>
+                  </Box>
+                ))}
+            </Box>
+          )}
+        </Box>
 
-      {/* Active sessions */}
-      <FrameBox title={`active sessions · ${totalSessions}`}>
-        {totalSessions === 0 ? (
-          <Text color={colors.fgFaint}>(none)</Text>
-        ) : (
-          data.sessions
-            .filter((s) => s.state === "active")
-            .slice(0, 6)
-            .map((s) => (
-              <Box key={s.code}>
-                <Text color={colors.accent}>{icons.chevron}</Text>
-                <Text> </Text>
-                <Text color={colors.fgBright}>session{s.code}</Text>
-                <Text color={colors.fgFaint}> · </Text>
-                <Text color={colors.info}>{s.flow}</Text>
-                <Text color={colors.fgFaint}> · </Text>
-                <Text color={colors.fgSubtle}>{s.name}</Text>
-                <Text color={colors.fgFaint}> ({s.phase})</Text>
-              </Box>
-            ))
-        )}
-      </FrameBox>
+        <Box flexDirection="column" flexGrow={1} paddingLeft={2}>
+          <SectionHead
+            label="Pending"
+            count={totalPending}
+            hint={`${highPending} high · ${medPending} med · ${lowPending} low`}
+          />
+          {totalPending === 0 ? (
+            <Box marginLeft={2}>
+              <Text color={colors.faint}>(no pending)</Text>
+            </Box>
+          ) : (
+            <Box marginLeft={0} flexDirection="column">
+              {data.pending.slice(0, 7).map((p) => (
+                <PendingRow key={`${p.sessionCode}-${p.text}`} item={p} />
+              ))}
+              {totalPending > 7 ? (
+                <Text color={colors.faint}>…+{totalPending - 7} more</Text>
+              ) : null}
+            </Box>
+          )}
+        </Box>
+      </Box>
 
-      {/* Pending */}
-      <FrameBox title={`pending · ${totalPending}`}>
-        {totalPending === 0 ? (
-          <Text color={colors.fgFaint}>(no pending)</Text>
-        ) : (
-          <>
-            <PendingFilters
-              current={pendingFilter}
-              options={buildPendingFilters(data.pending)}
-              onChange={onFilter}
-            />
-            {filteredPending.length === 0 ? (
-              <Text color={colors.fgFaint}>(no pending for this filter)</Text>
-            ) : (
-              filteredPending
-                .slice(0, 8)
-                .map((p) => <PendingRow key={`${p.sessionCode}-${p.text}`} item={p} />)
-            )}
-          </>
-        )}
-      </FrameBox>
+      {/* Recent activity full-width */}
+      <SectionHead label="Recent activity" count={events.length} marginTop={1} />
+      <Box marginLeft={2}>
+        <ActivityFeed events={events} cap={7} emptyHint="  (no recent activity yet)" />
+      </Box>
 
-      {/* Recent activity */}
-      {data.activity.length > 0 ? (
-        <FrameBox title={`recent activity · ${data.activity.length}`}>
-          {data.activity.slice(0, 6).map((a) => (
-            <ActivityRow key={`${a.whenIso}-${a.type}-${a.text}`} entry={a} />
-          ))}
-        </FrameBox>
-      ) : null}
+      <Box marginTop={1}>
+        <QuickActions
+          actions={[
+            { key: "s", label: "start session" },
+            { key: "^K", label: "palette" },
+          ]}
+        />
+      </Box>
     </Box>
   );
 }
-
-// ===== sub-components =====
 
 function statGitSub(data: ProjectTabData): string {
   if (!data.git) return "—";
@@ -356,125 +316,18 @@ function statGitSub(data: ProjectTabData): string {
   if (data.git.ahead > 0) parts.push(`↑${data.git.ahead}`);
   if (data.git.behind > 0) parts.push(`↓${data.git.behind}`);
   if (parts.length === 0) return `in sync with ${data.git.base}`;
-  return parts.join(" / ");
-}
-
-function GitWorkspace({ data }: { data: ProjectTabData }) {
-  if (!data.git) return null;
-  return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color={colors.fgBright}>{data.git.branch}</Text>
-        <Text color={colors.fgFaint}> ← </Text>
-        <Text color={colors.fgSubtle}>{data.git.base}</Text>
-        {data.git.ahead > 0 ? (
-          <Box marginLeft={1}>
-            <Text color={colors.info}>↑{data.git.ahead}</Text>
-          </Box>
-        ) : null}
-        {data.git.behind > 0 ? (
-          <Box marginLeft={1}>
-            <Text color={colors.warning}>↓{data.git.behind}</Text>
-          </Box>
-        ) : null}
-      </Box>
-      {data.git.lastCommit ? (
-        <Box>
-          <Text color={colors.info}>{data.git.lastCommit.sha}</Text>
-          <Text> </Text>
-          <Text color={colors.fgBright}>{data.git.lastCommit.title}</Text>
-          <Text color={colors.fgFaint}> · </Text>
-          <Text color={colors.fgMoreSubtle}>{data.git.lastCommit.author}</Text>
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
-function SourceRow({ source }: { source: ProjectSource }) {
-  return (
-    <Box>
-      <Text color={colors.fgFaint}>·</Text>
-      <Text> </Text>
-      <Text color={colors.fgBright}>{source.alias}</Text>
-      <Text color={colors.fgFaint}> · </Text>
-      <Text color={colors.fgSubtle}>{source.branch ?? "(detached)"}</Text>
-      {source.dirty ? (
-        <Box marginLeft={1}>
-          <Pill tone="warn">{`${source.changedFiles} uncommitted`}</Pill>
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
-function buildPendingFilters(items: ProjectPendingItem[]): { id: string; label: string }[] {
-  const seen = new Set<string>();
-  const opts: { id: string; label: string }[] = [
-    { id: "all", label: "all" },
-    { id: "high", label: "high" },
-  ];
-  for (const it of items) {
-    if (!seen.has(it.sessionCode)) {
-      seen.add(it.sessionCode);
-      opts.push({ id: it.sessionCode, label: `s${it.sessionCode}` });
-    }
-  }
-  return opts;
-}
-
-function PendingFilters({
-  current,
-  options,
-}: {
-  current: string;
-  options: { id: string; label: string }[];
-  onChange: (id: string) => void;
-}) {
-  return (
-    <Box>
-      {options.map((o, idx) => (
-        <Box key={o.id} marginLeft={idx === 0 ? 0 : 2}>
-          <Text
-            color={current === o.id ? colors.accent : colors.fgFaint}
-            {...(current === o.id ? { bold: true } : {})}
-          >
-            {o.label}
-          </Text>
-        </Box>
-      ))}
-    </Box>
-  );
+  return `${parts.join(" / ")} · base ${data.git.base}`;
 }
 
 function PendingRow({ item }: { item: ProjectPendingItem }) {
   const prioColor =
-    item.prio === "high" ? colors.error : item.prio === "med" ? colors.warning : colors.fgFaint;
+    item.prio === "high" ? colors.err : item.prio === "med" ? colors.warn : colors.mute;
   return (
     <Box>
-      <Text color={prioColor}>·</Text>
-      <Text> </Text>
-      <Text color={colors.fgBright}>{item.text}</Text>
-      <Text color={colors.fgFaint}> · </Text>
-      <Text color={colors.fgMoreSubtle}>{item.sessionLabel}</Text>
-    </Box>
-  );
-}
-
-function ActivityRow({ entry }: { entry: ProjectActivityEntry }) {
-  const typeColor =
-    entry.type === "commit"
-      ? colors.info
-      : entry.type === "session"
-        ? colors.accent
-        : colors.fgSubtle;
-  return (
-    <Box>
-      <Text color={typeColor}>{entry.type}</Text>
-      <Text color={colors.fgFaint}> · </Text>
-      <Text color={colors.fgBright}>{entry.text}</Text>
-      <Text color={colors.fgFaint}> · </Text>
-      <Text color={colors.fgMoreSubtle}>{entry.whenRel}</Text>
+      <Text color={prioColor}>● </Text>
+      <Text color={colors.text}>{item.text}</Text>
+      <Box flexGrow={1} />
+      <Text color={colors.dim}>{item.sessionLabel}</Text>
     </Box>
   );
 }

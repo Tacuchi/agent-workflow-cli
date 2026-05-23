@@ -5,9 +5,10 @@ import type { SelfMcpConnectionView } from "../../../application/self/mcp-config
 import { selfMcpConfig } from "../../../application/self/mcp-config.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
-import { FrameBox } from "../components/frame-box.js";
+import { type ActivityEvent, ActivityFeed } from "../components/activity-feed.js";
 import { PageHead } from "../components/page-head.js";
-import { Pill } from "../components/pill.js";
+import { QuickActions } from "../components/quick-actions.js";
+import { SectionHead } from "../components/section-head.js";
 import { StatTile } from "../components/stat-tile.js";
 import { HOSTS } from "../hosts.js";
 import { colors, icons } from "../theme.js";
@@ -21,6 +22,8 @@ export interface StatusTabProps {
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
   /** Emite cambios en el estado de alerta del tab (update outdated). */
   onAlertChange?: (alert: boolean) => void;
+  /** Eventos recientes (activity feed). Si vacío, se renderiza empty-state. */
+  recentEvents?: ActivityEvent[];
 }
 
 type UpdateStatus = "idle" | "checking" | "uptodate" | "outdated" | "applying" | "error";
@@ -49,6 +52,7 @@ export function StatusTab({
   onRequestUpdate,
   onToast,
   onAlertChange,
+  recentEvents,
 }: StatusTabProps) {
   const [data, setData] = useState<StatusData>({
     doctor: null,
@@ -60,6 +64,8 @@ export function StatusTab({
   const [tileCursor, setTileCursor] = useState<TileId>("cli");
   const dataStartedRef = useRef(false);
   const updateStartedRef = useRef(false);
+  const lastCheckedAtRef = useRef<number | null>(null);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
 
   useEffect(() => {
     if (dataStartedRef.current) return;
@@ -93,6 +99,8 @@ export function StatusTab({
         setUpdate({ status: "error", message: "npm view returned empty output." });
         return;
       }
+      lastCheckedAtRef.current = Date.now();
+      setLastCheckedAt(Date.now());
       if (latest === version) {
         setUpdate({ status: "uptodate", latest });
       } else {
@@ -167,7 +175,7 @@ export function StatusTab({
   if (data.loading) {
     return (
       <Box>
-        <Text color={colors.fgSubtle}>{icons.spinner} loading status…</Text>
+        <Text color={colors.dim}>{icons.spinner} loading status…</Text>
       </Box>
     );
   }
@@ -181,88 +189,41 @@ export function StatusTab({
     installed: installedByTarget.get(h.id) === true,
   }));
   const installedHosts = hostsInstalled.filter((h) => h.installed).length;
-  const supportedHosts = HOSTS.length; // 7
-  const backedHosts = HOSTS.filter((h) => h.backed).length; // 4
-  const pendingHosts = supportedHosts - backedHosts; // 3
+  const supportedHosts = HOSTS.length;
+  const backedHosts = HOSTS.filter((h) => h.backed).length;
+  const pendingHosts = supportedHosts - backedHosts;
   const pct = supportedHosts > 0 ? Math.round((installedHosts / supportedHosts) * 100) : 0;
+
+  const checkedAgo = lastCheckedAt ? humanizeAgo(lastCheckedAt) : "—";
+  const showUpdateStrip = update.status === "outdated";
+
+  const events: ActivityEvent[] = recentEvents ?? [];
 
   return (
     <Box flexDirection="column">
       <PageHead
         title="Status"
         count={{
-          label: `${installedHosts}/${supportedHosts}`,
+          label: `${installedHosts}/${supportedHosts} hosts covered`,
           tone: installedHosts > 0 ? "accent" : "warn",
         }}
-        desc="runtime overview · skill coverage · mcp · update"
+        action={
+          <Text color={colors.mute}>
+            checked {checkedAgo} · <Text color={colors.accent}>r</Text> recheck
+          </Text>
+        }
       />
 
-      {/* Update banner */}
-      <FrameBox
-        title="update"
-        accent={update.status === "outdated"}
-        dim={update.status !== "outdated"}
-      >
-        <Box flexDirection="row">
-          <Text color={colors.fgSubtle}>current </Text>
-          <Text color={colors.fgBright} bold>
-            v{version}
-          </Text>
-          <Text color={colors.fgSubtle}> → latest </Text>
-          <Text
-            color={update.status === "outdated" ? colors.accent : colors.fgBright}
-            bold={update.status === "outdated"}
-          >
-            v{update.latest ?? "?"}
-          </Text>
-          {update.status === "outdated" ? (
-            <Box marginLeft={1}>
-              <Pill tone="accent">available</Pill>
-            </Box>
-          ) : update.status === "uptodate" ? (
-            <Box marginLeft={1}>
-              <Pill tone="ok">up to date</Pill>
-            </Box>
-          ) : update.status === "checking" ? (
-            <Box marginLeft={1}>
-              <Text color={colors.fgSubtle}>{icons.spinner} checking…</Text>
-            </Box>
-          ) : update.status === "error" ? (
-            <Box marginLeft={1}>
-              <Pill tone="err">error</Pill>
-            </Box>
-          ) : null}
-          <Box flexGrow={1} />
-          {update.status === "outdated" ? (
-            <Text color={colors.accent} bold inverse>
-              {` i · apply v${update.latest} `}
-            </Text>
-          ) : null}
-        </Box>
-        <Box flexDirection="row">
-          <Text color={colors.fgSubtle}>{ctx.runtime.packageName}</Text>
-          <Text color={colors.fgFaint}> · </Text>
-          <Text color={colors.fgSubtle}>registry.npmjs.org</Text>
-          <Box flexGrow={1} />
-          <Text color={colors.fgBright}>r</Text>
-          <Text color={colors.fgSubtle}> recheck </Text>
-          <Text color={colors.fgFaint}>·</Text>
-          <Text color={colors.fgBright}> o</Text>
-          <Text color={colors.fgSubtle}> release notes</Text>
-        </Box>
-        {update.status === "error" && update.message ? (
-          <Text color={colors.error}>
-            {icons.cross} {update.message}
-          </Text>
-        ) : null}
-      </FrameBox>
+      {showUpdateStrip ? (
+        <UpdateStrip update={update} packageName={ctx.runtime.packageName} />
+      ) : null}
 
-      {/* Stat tiles 4-col */}
-      <Box flexDirection="row">
+      {/* Stat strip 4 tiles + WORKING TREE right */}
+      <Box flexDirection="row" marginBottom={1}>
         <StatTile
           label="cli"
           value={`v${data.doctor?.cli_version ?? version}`}
-          sub={"@tacuchi"}
+          sub="@tacuchi"
           accent
           active={tileCursor === "cli"}
         />
@@ -291,30 +252,100 @@ export function StatusTab({
         />
       </Box>
 
-      {/* Skill coverage */}
-      <FrameBox title="skill coverage">
-        <Box flexDirection="row">
-          <Text color={colors.fgBright} bold>
-            {installedHosts}
-          </Text>
-          <Text color={colors.fgSubtle}> /{supportedHosts}</Text>
-          <Text> </Text>
-          <ProgressLine ratio={supportedHosts > 0 ? installedHosts / supportedHosts : 0} />
-          <Box flexGrow={1} />
-          <Text color={colors.fgSubtle}>
-            {backedHosts} backed · {pendingHosts} pending
-          </Text>
-        </Box>
-        <Box marginTop={1} flexDirection="row" flexWrap="wrap">
-          {hostsInstalled.map(({ host, installed }) => (
-            <Box key={host.id} marginRight={1}>
-              <Pill tone={installed ? "ok" : host.backed ? "muted" : "warn"} preserveCase>
-                {host.name}
-              </Pill>
-            </Box>
-          ))}
-        </Box>
-      </FrameBox>
+      <Text color={colors.borderFaint}>{"─".repeat(60)}</Text>
+
+      <SectionHead
+        label="Skill coverage"
+        count={`${installedHosts}/${supportedHosts}`}
+        hint={`${backedHosts} backed · ${pendingHosts} pending`}
+        rightAction="⏎ open · ↑↓ select"
+        marginTop={1}
+      />
+      <Box marginLeft={2} marginTop={0} flexDirection="row">
+        <ProgressLine ratio={supportedHosts > 0 ? installedHosts / supportedHosts : 0} />
+        <Text> </Text>
+        <Text color={colors.accent} bold>
+          {pct}%
+        </Text>
+      </Box>
+      <Box marginLeft={2} marginTop={0} flexDirection="row" flexWrap="wrap">
+        {hostsInstalled.map(({ host, installed }) => (
+          <HostChip key={host.id} name={host.name} installed={installed} backed={host.backed} />
+        ))}
+      </Box>
+
+      <SectionHead label="Recent" count={events.length} marginTop={1} />
+      <Box marginLeft={2}>
+        <ActivityFeed events={events} cap={4} emptyHint="  (no recent activity yet)" />
+      </Box>
+
+      <Box marginTop={1}>
+        <QuickActions
+          actions={[
+            ...(showUpdateStrip ? [{ key: "i", label: `apply v${update.latest ?? ""}` }] : []),
+            { key: "r", label: "recheck" },
+            { key: "^K", label: "palette" },
+          ]}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function UpdateStrip({
+  update,
+  packageName,
+}: {
+  update: UpdateState;
+  packageName: string;
+}) {
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Box>
+        <Text color={colors.warn}>{icons.focusBar}</Text>
+        <Text> </Text>
+        <Text color={colors.warn}>↻ </Text>
+        <Text color={colors.bright} bold>
+          v{packageName.split("/").pop()}
+        </Text>
+        <Text color={colors.dim}> → </Text>
+        <Text color={colors.bright} bold>
+          v{update.latest ?? "?"}
+        </Text>
+        <Text color={colors.dim}> available</Text>
+        <Box flexGrow={1} />
+        <Text color={colors.accent} bold inverse>
+          {" i · apply "}
+        </Text>
+        <Text> </Text>
+        <Text color={colors.mute}>r recheck · o notes · x dismiss</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function HostChip({
+  name,
+  installed,
+  backed,
+}: {
+  name: string;
+  installed: boolean;
+  backed: boolean;
+}) {
+  let color: string = colors.dim;
+  let glyph = " ";
+  if (installed) {
+    color = colors.ok;
+    glyph = "✓";
+  } else if (!backed) {
+    color = colors.warn;
+  }
+  return (
+    <Box marginRight={2}>
+      <Text color={color}>{glyph}</Text>
+      <Text> </Text>
+      <Text color={installed ? colors.text : colors.dim}>{name}</Text>
     </Box>
   );
 }
@@ -331,13 +362,23 @@ async function detectHooksArmed(ctx: CliContext): Promise<boolean> {
   }
 }
 
+function humanizeAgo(t: number): string {
+  const diffSec = Math.max(1, Math.floor((Date.now() - t) / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const m = Math.floor(diffSec / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 function ProgressLine({ ratio }: { ratio: number }) {
-  const width = 14;
+  const width = 18;
   const filled = Math.round(Math.max(0, Math.min(1, ratio)) * width);
   return (
     <Box>
       <Text color={colors.accent}>{"█".repeat(filled)}</Text>
-      <Text color={colors.fgFaint}>{"░".repeat(width - filled)}</Text>
+      <Text color={colors.faint}>{"░".repeat(width - filled)}</Text>
     </Box>
   );
 }

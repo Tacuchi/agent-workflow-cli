@@ -1,59 +1,68 @@
-// Paleta moderna azul/celeste inspirada en Tailwind sky/slate.
+// Paleta mono violet — handoff design_handoff_tui_simplified (v9.0.0).
 // Hex strings — Ink 5 acepta `Text color="#xxx"`.
 //
 // Convención:
-// - `accent` / `accentSoft` — único acento (sky/cyan). Usar SOLO en lo activo.
-// - `text-*` — 5 niveles (bright/normal/dim/mute/faint).
-// - `border-*` — 4 niveles.
-// - `bg-*` — 4 elevaciones + hover/selected.
-// - Semánticos: `ok / warn / err / info`.
+// - `accent` — único acento de marca (violet). Focus, selección, brand glyph.
+// - `accentSoft` — hover state, sub-accent.
+// - Texto: 5 niveles (bright/text/dim/mute/faint).
+// - Border: 2 niveles (border/borderFaint).
+// - Semánticos: `ok / warn / err / info / purple`.
 
 export const palette = {
-  // surfaces — slate base con tinte azulado
-  bg: "#0a0e1a",
-  bgElev1: "#0f1729",
-  bgElev2: "#152040",
-  bgElev3: "#1e2a52",
-  bgHover: "#1d2e5a",
-  bgSelected: "#1e3a8a",
+  // surfaces
+  bg: "#0c0a14",
+  bgElev1: "#0c0a14",
+  bgElev2: "#0c0a14",
+  bgElev3: "#0c0a14",
+  bgHover: "#1a172a",
+  bgSelected: "#3a2f5c",
+  // Highlight para filas focused — fondo violet visible tipo marker.
+  bgHighlight: "#3a2f5c",
 
-  // borders — slate
-  borderFaint: "#1e293b",
-  border: "#334155",
-  borderStrong: "#475569",
-  borderAccent: "#0284c7",
+  // borders
+  borderFaint: "#1a172a",
+  border: "#2a2540",
+  borderStrong: "#4a4368",
+  borderAccent: "#a78bfa",
 
-  // text — slate
-  text: "#e2e8f0",
-  textBright: "#f8fafc",
-  textDim: "#94a3b8",
-  textMute: "#64748b",
-  textFaint: "#475569",
+  // text (5 niveles)
+  bright: "#f4f1fc",
+  text: "#d4d0e2",
+  dim: "#9b94b8",
+  mute: "#6e6588",
+  faint: "#4a4368",
 
-  // accent — sky (celeste moderno)
-  accent: "#0ea5e9",
-  accentSoft: "#38bdf8",
+  // text legacy aliases
+  textBright: "#f4f1fc",
+  textDim: "#9b94b8",
+  textMute: "#6e6588",
+  textFaint: "#4a4368",
 
-  // soportes
-  purple: "#8b5cf6",
-  purpleSoft: "#a78bfa",
-  blue: "#3b82f6",
-  cyan: "#06b6d4",
-  green: "#10b981",
-  greenDim: "#059669",
-  yellow: "#f59e0b",
-  orange: "#f97316",
-  red: "#ef4444",
+  // accent
+  accent: "#a78bfa",
+  accentSoft: "#c4b5fd",
+
+  // soportes (mantenidos para compat con codebase)
+  purple: "#a78bfa",
+  purpleSoft: "#c4b5fd",
+  blue: "#93c5fd",
+  cyan: "#93c5fd",
+  green: "#6ee7b7",
+  greenDim: "#34d399",
+  yellow: "#fbbf24",
+  orange: "#fbbf24",
+  red: "#fb7185",
 
   // semánticos
-  ok: "#10b981",
-  warn: "#f59e0b",
-  err: "#ef4444",
-  info: "#06b6d4",
+  ok: "#6ee7b7",
+  warn: "#fbbf24",
+  err: "#fb7185",
+  info: "#93c5fd",
 } as const;
 
-// Map legacy `colors.*` names a hex de la paleta nueva.
+// `colors.*` con nombres legacy + nombres canónicos del handoff.
 export const colors = {
+  // legacy aliases (preservados para compat con tabs v8)
   primary: palette.accent,
   accent: palette.accent,
   accentSoft: palette.accentSoft,
@@ -63,12 +72,13 @@ export const colors = {
   warning: palette.warn,
   error: palette.err,
   info: palette.info,
+  purple: palette.purple,
 
   fg: palette.text,
-  fgBright: palette.textBright,
-  fgSubtle: palette.textDim,
-  fgMoreSubtle: palette.textMute,
-  fgFaint: palette.textFaint,
+  fgBright: palette.bright,
+  fgSubtle: palette.dim,
+  fgMoreSubtle: palette.mute,
+  fgFaint: palette.faint,
 
   border: palette.border,
   borderFaint: palette.borderFaint,
@@ -79,6 +89,17 @@ export const colors = {
   bgElev: palette.bgElev2,
   bgHover: palette.bgHover,
   bgSelected: palette.bgSelected,
+  bgHighlight: palette.bgHighlight,
+
+  // canónicos del handoff (nuevos componentes)
+  bright: palette.bright,
+  text: palette.text,
+  dim: palette.dim,
+  mute: palette.mute,
+  faint: palette.faint,
+  ok: palette.ok,
+  warn: palette.warn,
+  err: palette.err,
 } as const;
 
 export const icons = {
@@ -88,14 +109,14 @@ export const icons = {
   spinner: "⋯",
   arrow: "→",
   section: "─",
-  focusBullet: "❯",
+  focusBullet: "▎",
   dimBullet: " ",
-  bullet: "•",
+  bullet: "·",
   diamond: "◆",
   brand: "◆",
   promptMark: "›",
-  tabActiveLeft: "[",
-  tabActiveRight: "]",
+  tabActiveLeft: "",
+  tabActiveRight: "",
   tabSeparator: "  ",
   divider: "─",
   chevron: "›",
@@ -129,6 +150,12 @@ export const icons = {
   alertDot: "●",
   ring: "●",
   pin: "⌖",
+  // canónicos del handoff
+  focusBar: "▎",
+  caret: "▍",
+  expandCollapsed: "▸",
+  expandExpanded: "▾",
+  sectionDot: "·",
 } as const;
 
 export type ColorName = (typeof colors)[keyof typeof colors];
