@@ -27,7 +27,7 @@ export interface WorkflowContent {
 }
 
 export const WORKFLOW_CONTENT: WorkflowContent = {
-  overview: "Universal session-lifecycle harness — 11 familias, 17 slash commands, 5 hooks.",
+  overview: "Universal session-lifecycle harness — 11 families, 17 slash commands, 5 hooks.",
 
   // 5-phase user-facing lifecycle.
   phases: [
@@ -35,7 +35,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "discover",
       n: 1,
       title: "Discover",
-      desc: "Detectar estado del workspace — sources, branches, modo, stack.",
+      desc: "Detect workspace state — sources, branches, mode, stack.",
       commands: ["sources", "workspace-mode", "sessions"],
       slash: "—",
       hook: "—",
@@ -44,7 +44,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "start",
       n: 2,
       title: "Start",
-      desc: "Abrir una sesión tracked con OBJETIVO + flow (core/dev/design).",
+      desc: "Open a tracked session with OBJECTIVE + flow (core/dev/design).",
       commands: ["session-create", "session-resume"],
       slash: "/agent-workflow:session",
       hook: "SessionStart",
@@ -53,7 +53,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "plan",
       n: 3,
       title: "Plan",
-      desc: "Elegir profundidad de planning + detectar fase.",
+      desc: "Choose planning depth + detect phase.",
       commands: ["auto-plan-decide", "phase-detect", "specialty-choose"],
       slash: "/agent-workflow:rules",
       hook: "—",
@@ -62,7 +62,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "work",
       n: 4,
       title: "Work",
-      desc: "Persistir progreso en CHECKPOINT.md. Drift guardado por topic-change.",
+      desc: "Persist progress in CHECKPOINT.md. Drift caught by topic-change.",
       commands: ["checkpoint-write", "topic-change-check", "tasks-data"],
       slash: "/agent-workflow:compact",
       hook: "PreToolUse · PreCompact · PostCompact",
@@ -71,14 +71,14 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "close",
       n: 5,
       title: "Close / Graduate",
-      desc: "Cerrar la sesión + exportar artefactos. Handoff o release.",
+      desc: "Close session + export artifacts. Handoff or release.",
       commands: ["session-close", "release-data", "graduate"],
       slash: "/agent-workflow:resume",
       hook: "SessionEnd",
     },
   ],
 
-  // 11 command families verificadas contra `aw --help`.
+  // 11 command families verified against `aw --help`.
   commandFamilies: [
     {
       id: "session",
@@ -87,7 +87,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     },
     {
       id: "objetivo",
-      title: "Objetivo / Tasks",
+      title: "Objective / Tasks",
       items: ["objetivo-data", "tasks-data", "decisiones-list", "dependencias-list"],
     },
     {
@@ -197,7 +197,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     {
       name: "SessionStart",
       matcher: "startup|resume|clear",
-      fires: "Inject namespace en ~/.config/agent-workflow/namespace",
+      fires: "Inject namespace into ~/.config/agent-workflow/namespace",
     },
     {
       name: "PreToolUse",
@@ -212,12 +212,12 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     {
       name: "PreCompact",
       matcher: "(any)",
-      fires: "checkpoint-write — preserva OBJETIVO antes de compactar",
+      fires: "checkpoint-write — preserves OBJECTIVE before compacting",
     },
     {
       name: "PostCompact",
       matcher: "(any)",
-      fires: "resume-summary + prompt para re-cargar CHECKPOINT.md",
+      fires: "resume-summary + prompt to reload CHECKPOINT.md",
     },
   ],
 };

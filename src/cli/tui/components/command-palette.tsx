@@ -57,7 +57,7 @@ export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps
 
       {/* Empty state */}
       {commands.length === 0 ? (
-        <Text color={colors.fgSubtle}>Sin coincidencias para “{filter || "…"}”.</Text>
+        <Text color={colors.fgSubtle}>No matches for “{filter || "…"}”.</Text>
       ) : null}
 
       {/* Grouped command list */}
@@ -92,7 +92,7 @@ export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps
 
       {/* Footer hint */}
       <Box marginTop={0}>
-        <Text color={colors.fgSubtle}>↑↓ navegar · ⏎ ejecutar · Esc cerrar</Text>
+        <Text color={colors.fgSubtle}>↑↓ navigate · ⏎ run · esc close</Text>
       </Box>
     </Box>
   );

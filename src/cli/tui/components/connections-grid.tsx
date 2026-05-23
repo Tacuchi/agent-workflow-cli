@@ -25,11 +25,11 @@ export function ConnectionsGrid({ connections, cursor, isActive }: ConnectionsGr
     return (
       <Box>
         <Text color={colors.fgMoreSubtle} italic>
-          (sin conexiones registradas — pulsa{" "}
+          (no registered connections — press{" "}
           <Text color={colors.accent} bold>
             n
           </Text>{" "}
-          para crear una)
+          to create one)
         </Text>
       </Box>
     );
@@ -41,7 +41,7 @@ export function ConnectionsGrid({ connections, cursor, isActive }: ConnectionsGr
       {/* header */}
       <Box>
         <Text color={colors.fgMoreSubtle}> </Text>
-        <ColumnHeader text="nombre" width={widths.name} />
+        <ColumnHeader text="name" width={widths.name} />
         <Spacer />
         <ColumnHeader text="DSN var" width={widths.dsn} />
         <Spacer />
@@ -134,7 +134,7 @@ function computeColumnWidths(connections: SelfMcpConnectionView[]): {
   codex: number;
   warp: number;
 } {
-  const name = Math.max("nombre".length, ...connections.map((c) => c.nombre.length));
+  const name = Math.max("name".length, ...connections.map((c) => c.nombre.length));
   const dsn = Math.max("DSN var".length, ...connections.map((c) => c.dsn_var.length));
   return { name, dsn, claude: "Claude".length, codex: "Codex".length, warp: "Warp".length };
 }

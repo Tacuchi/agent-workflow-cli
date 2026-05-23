@@ -105,7 +105,7 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
         path: installed
           ? friendlyPath(host, home)
           : host.backed
-            ? "no instalado"
+            ? "not installed"
             : "(not wired yet)",
       });
     }
@@ -143,7 +143,7 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
             hint: {
               tone: "ok" as const,
               icon: icons.hook,
-              text: `también arma 5 hooks de Claude: ${WORKFLOW_CONTENT.hooks.map((h) => h.name).join(", ")}`,
+              text: `also wires 5 Claude hooks: ${WORKFLOW_CONTENT.hooks.map((h) => h.name).join(", ")}`,
             },
           }
         : {}),
@@ -169,8 +169,8 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
       if (!BACKED_INSTALL_TARGETS.has(host.id)) {
         onToast?.({
           tone: "info",
-          title: `Host '${host.name}' no soportado todavía`,
-          body: "Backend del install/uninstall sin path mapping.",
+          title: `Host '${host.name}' not supported yet`,
+          body: "Install/uninstall backend without path mapping.",
         });
         return;
       }
@@ -180,7 +180,7 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
           ? ["clean-legacy", "clean-cache", "install-full"]
           : ["uninstall-full", "clean-cache"];
       const startLabel =
-        kind === "install" ? `instalando en ${host.name}…` : `desinstalando de ${host.name}…`;
+        kind === "install" ? `installing on ${host.name}…` : `uninstalling from ${host.name}…`;
       setBusy(startLabel);
       try {
         for (const step of steps) {
@@ -190,8 +190,8 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
             const failMsg = result.error?.message;
             onToast?.(
               failMsg !== undefined
-                ? { tone: "err", title: `Falló en paso ${step}`, body: failMsg }
-                : { tone: "err", title: `Falló en paso ${step}` },
+                ? { tone: "err", title: `Step ${step} failed`, body: failMsg }
+                : { tone: "err", title: `Step ${step} failed` },
             );
             await refresh();
             return;
@@ -234,7 +234,7 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
           onToast?.({
             tone: "info",
             title: `Host '${focused.host.name}'`,
-            body: "pending — backend sin path mapping todavía",
+            body: "pending — backend without path mapping yet",
           });
           return;
         }
@@ -287,26 +287,26 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
 
       {/* First-use banner — solo cuando 0 hosts instalados */}
       {installedCount === 0 && skills.length > 0 && inListMode ? (
-        <FrameBox title="primer arranque" accent>
+        <FrameBox title="first run" accent>
           <Box flexDirection="row">
             <Text color={colors.accent}>{icons.star} </Text>
             <Text color={colors.fgBright} bold>
-              Nada instalado todavía — empezá por Claude Code.
+              Nothing installed yet — start with Claude Code.
             </Text>
           </Box>
           <Text color={colors.fgSubtle} wrap="wrap">
-            Claude soporta SKILL + slash commands + hooks. Otros hosts copian solo la SKILL.
+            Claude supports SKILL + slash commands + hooks. Other hosts copy only the SKILL.
           </Text>
           <Box marginTop={1} flexDirection="row">
             <Text color={colors.accent} bold inverse>
               {` i · ${icons.play} Install on Claude `}
             </Text>
-            <Text color={colors.fgSubtle}> · ⏎ ver acciones del host activo</Text>
+            <Text color={colors.fgSubtle}> · ⏎ view actions on active host</Text>
           </Box>
         </FrameBox>
       ) : null}
 
-      {/* Single-column hosts list */}
+      {/* Single-column hosts list — solo en list mode; el modal lo reemplaza como overlay */}
       {inListMode ? (
         <FrameBox title="hosts" accent>
           {skills.map((s, i) => {
@@ -324,13 +324,13 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
             return (
               <ListRow
                 key={s.host.id}
-                icon={icons.plug}
+                icon={icons.diamond}
                 iconActive={s.installed}
                 title={s.host.name}
                 subtitle={s.path}
                 meta={meta}
                 state={{
-                  label: s.installed ? `${icons.check} installed` : "· missing",
+                  label: s.installed ? "installed" : "missing",
                   tone: s.installed ? "ok" : "dim",
                 }}
                 chevron
@@ -341,21 +341,23 @@ export function SkillsTab({ ctx, isActive, version, onToast }: SkillsTabProps) {
         </FrameBox>
       ) : null}
 
-      {/* ActionModal overlay */}
+      {/* ActionModal overlay — reemplaza la lista, centrado tipo palette */}
       {mode.kind === "actions" && focused && isBackedFocused ? (
-        <Box marginTop={1}>
-          <ActionModal
-            glyph={focused.host.glyph}
-            title={focused.host.name}
-            subtitle={focused.path}
-            state={{
-              label: isInstalled ? "installed" : "missing",
-              tone: isInstalled ? "ok" : "dim",
-            }}
-            actions={modalActions}
-            cursor={actionCursor}
-            footerRight={version ? `agent-workflow v${version}` : "agent-workflow"}
-          />
+        <Box flexDirection="column" alignItems="center" paddingY={2}>
+          <Box width="80%" flexDirection="column">
+            <ActionModal
+              glyph={focused.host.glyph}
+              title={focused.host.name}
+              subtitle={focused.path}
+              state={{
+                label: isInstalled ? "installed" : "missing",
+                tone: isInstalled ? "ok" : "dim",
+              }}
+              actions={modalActions}
+              cursor={actionCursor}
+              footerRight={version ? `agent-workflow v${version}` : "agent-workflow"}
+            />
+          </Box>
         </Box>
       ) : null}
 
@@ -438,25 +440,25 @@ async function dispatchAction(action: SkillAction, target: InstallTarget, ctx: C
 function buildBusyLabel(action: SkillAction, label: string): string {
   switch (action) {
     case "install-full":
-      return `install completa en ${label}…`;
+      return `installing on ${label}…`;
     case "uninstall-full":
-      return `uninstall completa en ${label}…`;
+      return `uninstalling from ${label}…`;
     case "clean-cache":
-      return `limpiando caché en ${label}…`;
+      return `cleaning cache on ${label}…`;
     case "clean-legacy":
-      return `removiendo legacy skills en ${label}…`;
+      return `removing legacy skills from ${label}…`;
   }
 }
 
 function buildSuccessMessage(action: SkillAction, label: string): string {
   switch (action) {
     case "install-full":
-      return `Install completa OK en ${label}.`;
+      return `Install complete OK on ${label}.`;
     case "uninstall-full":
-      return `Uninstall completa OK en ${label}.`;
+      return `Uninstall complete OK on ${label}.`;
     case "clean-cache":
-      return `Caché limpiada en ${label}.`;
+      return `Cache cleaned on ${label}.`;
     case "clean-legacy":
-      return `Legacy skills removidos de ${label}.`;
+      return `Legacy skills removed from ${label}.`;
   }
 }

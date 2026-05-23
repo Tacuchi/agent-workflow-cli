@@ -170,19 +170,19 @@ export function ActionModal({
         <Text color={colors.fgBright} bold>
           ↑↓
         </Text>
-        <Text color={colors.fgSubtle}> acción </Text>
+        <Text color={colors.fgSubtle}> action </Text>
         <Text color={colors.fgFaint}>·</Text>
         <Text color={colors.fgBright} bold>
           {" "}
           ⏎
         </Text>
-        <Text color={colors.fgSubtle}> aplicar </Text>
+        <Text color={colors.fgSubtle}> apply </Text>
         <Text color={colors.fgFaint}>·</Text>
         <Text color={colors.fgBright} bold>
           {" "}
           esc
         </Text>
-        <Text color={colors.fgSubtle}> cerrar</Text>
+        <Text color={colors.fgSubtle}> close</Text>
         {footerRight ? (
           <>
             <Box flexGrow={1} />

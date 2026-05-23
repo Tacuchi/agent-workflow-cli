@@ -75,7 +75,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       setConnections(next);
       setCursor((c) => Math.min(Math.max(0, c), Math.max(0, next.length - 1)));
     } catch (err) {
-      onToast?.({ tone: "err", title: "Error cargando MCP", body: (err as Error).message });
+      onToast?.({ tone: "err", title: "Error loading MCP", body: (err as Error).message });
     }
   }, [ctx, onToast]);
 
@@ -96,8 +96,8 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           ctx,
         );
         if (!result.ok) {
-          const summary = result.error?.message ?? "fallo";
-          onToast?.({ tone: "err", title: `Falló paso ${action}`, body: summary });
+          const summary = result.error?.message ?? "failed";
+          onToast?.({ tone: "err", title: `Step ${action} failed`, body: summary });
           return false;
         }
         return true;
@@ -221,8 +221,8 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     (input, key) => {
       if (!isActive || mode.kind !== "confirm-delete") return;
       if (input === "y" || input === "Y") {
-        void runRawAction("remove", mode.name, `eliminando ${mode.name}…`).then(async (ok) => {
-          if (ok) onToast?.({ tone: "ok", title: `Conexión '${mode.name}' eliminada` });
+        void runRawAction("remove", mode.name, `removing ${mode.name}…`).then(async (ok) => {
+          if (ok) onToast?.({ tone: "ok", title: `Connection '${mode.name}' removed` });
           await refresh();
           setMode({ kind: "list" });
         });
@@ -244,7 +244,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     { isActive },
   );
 
-  const inListOrActions = mode.kind === "list" || mode.kind === "actions";
+  const inListMode = mode.kind === "list";
   const addButton = (
     <Text color={colors.accent} bold inverse>
       {" a · + add connection "}
@@ -263,7 +263,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
         action={addButton}
       />
 
-      {inListOrActions ? (
+      {inListMode ? (
         <FrameBox
           title={`connections · ${connections.length}`}
           accent={connections.length > 0}
@@ -273,42 +273,44 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
             <Box flexDirection="column">
               <Text color={colors.fgSubtle}>No MCP connections yet.</Text>
               <Text color={colors.fgSubtle}>
-                Register a DSN to let skills query your DB. Presioná{" "}
+                Register a DSN to let skills query your DB. Press{" "}
                 <Text color={colors.accent} bold>
                   a
                 </Text>{" "}
-                para empezar.
+                to start.
               </Text>
             </Box>
           ) : (
             connections.map((c, i) => (
               <ListRow
                 key={c.nombre}
-                icon={icons.db}
+                icon={icons.diamond}
                 iconActive={true}
                 title={c.nombre}
                 subtitle={`${c.server_name} · ${c.dsn_var}`}
-                meta={[{ label: "registered", tone: "ok" }]}
+                state={{ label: "registered", tone: "ok" }}
                 chevron
-                active={i === cursor && mode.kind !== "actions"}
+                active={i === cursor}
               />
             ))
           )}
         </FrameBox>
       ) : null}
 
-      {/* ActionModal overlay (renderizado debajo de la lista, pero estilo overlay) */}
+      {/* ActionModal overlay — reemplaza la lista, centrado tipo palette */}
       {mode.kind === "actions" && current ? (
-        <Box marginTop={1}>
-          <ActionModal
-            glyph={icons.db}
-            title={current.nombre}
-            subtitle={`${current.dsn_var} · ${current.server_name}`}
-            state={{ label: "registered", tone: "ok" }}
-            actions={modalActions}
-            cursor={actionCursor}
-            footerRight={current.nombre}
-          />
+        <Box flexDirection="column" alignItems="center" paddingY={2}>
+          <Box width="80%" flexDirection="column">
+            <ActionModal
+              glyph={icons.diamond}
+              title={current.nombre}
+              subtitle={`${current.dsn_var} · ${current.server_name}`}
+              state={{ label: "registered", tone: "ok" }}
+              actions={modalActions}
+              cursor={actionCursor}
+              footerRight={current.nombre}
+            />
+          </Box>
         </Box>
       ) : null}
 
@@ -324,8 +326,8 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
             accent
           >
             <Text color={colors.fgSubtle}>
-              Paso 1/2 — alias de la conexión (slug-kebab).{" "}
-              {mode.editingName ? `Actual: ${mode.editingName}` : ""}
+              Step 1/2 — connection alias (slug-kebab).{" "}
+              {mode.editingName ? `Current: ${mode.editingName}` : ""}
             </Text>
             <Box marginTop={1}>
               <InputPrompt
@@ -333,7 +335,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
                 onSubmit={(value) => {
                   const trimmed = value.trim() || mode.editingName || "";
                   if (!trimmed) {
-                    onToast?.({ tone: "err", title: "Alias vacío" });
+                    onToast?.({ tone: "err", title: "Empty alias" });
                     setMode({ kind: "list" });
                     return;
                   }
@@ -346,7 +348,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
                 isActive={isActive}
               />
             </Box>
-            <Text color={colors.fgSubtle}>Esc cancelar</Text>
+            <Text color={colors.fgSubtle}>esc cancel</Text>
           </FrameBox>
         </Box>
       ) : null}
@@ -354,7 +356,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       {/* Wizard step 2 — DSN env var + live JSON preview */}
       {mode.kind === "wizard-dsn" ? (
         <Box marginTop={1} flexDirection="column">
-          <FrameBox title="register MCP connection · paso 2/2" accent>
+          <FrameBox title="register MCP connection · step 2/2" accent>
             <Box>
               <Text color={colors.fgSubtle}>alias · </Text>
               <Text color={colors.fgBright} bold>
@@ -367,7 +369,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
                 onSubmit={(value) => {
                   const dsnVar = value.trim();
                   if (!dsnVar) {
-                    onToast?.({ tone: "err", title: "DSN var vacía" });
+                    onToast?.({ tone: "err", title: "Empty DSN var" });
                     setMode({ kind: "list" });
                     return;
                   }
@@ -387,7 +389,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
               <Text color={colors.fgSubtle}>{"  }"}</Text>
               <Text color={colors.fgSubtle}>{"}"}</Text>
             </Box>
-            <Text color={colors.fgSubtle}>⏎ registrar · Esc cancelar</Text>
+            <Text color={colors.fgSubtle}>⏎ register · esc cancel</Text>
           </FrameBox>
         </Box>
       ) : null}
@@ -396,15 +398,15 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
         <Box marginTop={1}>
           <ConfirmModal
             tone="danger"
-            title="Eliminar conexión"
+            title="Remove connection"
             body={[
-              `Vas a eliminar la conexión '${mode.name}'.`,
-              "Esta acción no se puede deshacer.",
+              `You are about to remove the connection '${mode.name}'.`,
+              "This action cannot be undone.",
             ]}
             confirmKey="y"
-            confirmLabel={`Sí, eliminar ${mode.name}`}
-            cancelKey="n / Esc"
-            cancelLabel="Cancelar"
+            confirmLabel={`Yes, remove ${mode.name}`}
+            cancelKey="n / esc"
+            cancelLabel="Cancel"
           />
         </Box>
       ) : null}
@@ -420,13 +422,13 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
   );
 
   async function registerConnection(name: string, dsnVar: string) {
-    setMode({ kind: "busy", label: `registrando ${name}…` });
+    setMode({ kind: "busy", label: `registering ${name}…` });
     try {
       const result = await selfMcpConfig(buildArgs("use-env", { name, "dsn-var": dsnVar }), ctx);
       const summary = result.data?.summary ?? result.error?.message ?? "";
       onToast?.({
         tone: result.ok ? "ok" : "err",
-        title: result.ok ? "Conexión registrada" : "Falló",
+        title: result.ok ? "Connection registered" : "Failed",
         body: summary,
       });
       await refresh();

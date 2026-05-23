@@ -10,7 +10,7 @@ export function ConnectionsTable({ connections }: { connections: SelfMcpConnecti
     return (
       <Box>
         <Text color={colors.fgMoreSubtle} italic>
-          (sin conexiones registradas)
+          (no registered connections)
         </Text>
       </Box>
     );

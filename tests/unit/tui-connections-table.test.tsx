@@ -14,9 +14,9 @@ function view(nombre: string, dsnVar: string): SelfMcpConnectionView {
 }
 
 describe("ConnectionsTable (TUI)", () => {
-  it("muestra placeholder cuando no hay conexiones", () => {
+  it("shows placeholder when there are no connections", () => {
     const { lastFrame } = render(<ConnectionsTable connections={[]} />);
-    expect(lastFrame()).toContain("(sin conexiones registradas)");
+    expect(lastFrame()).toContain("(no registered connections)");
   });
 
   it("renderiza tabla con conexiones", () => {

@@ -106,7 +106,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   if (loading || !data) {
     return (
       <Box>
-        <Text color={colors.fgSubtle}>{icons.spinner} cargando…</Text>
+        <Text color={colors.fgSubtle}>{icons.spinner} loading…</Text>
       </Box>
     );
   }
@@ -139,14 +139,14 @@ const LANDING_OPTIONS: readonly LandingOption[] = [
   {
     actionId: "project-init",
     cli: "agent-workflow project-md-upsert --init",
-    title: "Inicializar como single-repo",
-    desc: "Genera el bloque AW-PROJECT con git origin + main branch detectado.",
+    title: "Initialize as single-repo",
+    desc: "Generate AW-PROJECT block with detected git origin + main branch.",
   },
   {
     actionId: "hub-init",
     cli: "agent-workflow hub-init",
-    title: "Inicializar como hub (multi-repo)",
-    desc: "Workspace orquesta 2+ fuentes con sus paths y main branches.",
+    title: "Initialize as hub (multi-repo)",
+    desc: "Workspace orchestrates 2+ sources with their paths and main branches.",
   },
 ];
 
@@ -154,17 +154,17 @@ function NotInitialized({ data, cursor }: { data: ProjectTabData; cursor: number
   return (
     <Box flexDirection="column">
       <PageHead
-        title="Proyecto"
-        count={{ label: "no inicializado", tone: "warn" }}
-        desc="no encuentro bloque AW-PROJECT en CLAUDE.md / AGENTS.md"
+        title="Project"
+        count={{ label: "not initialized", tone: "warn" }}
+        desc="AW-PROJECT block not found in CLAUDE.md / AGENTS.md"
       />
 
       <Box marginTop={1}>
-        <FrameBox title="elegí cómo inicializar" accent>
+        <FrameBox title="choose initialization" accent>
           {LANDING_OPTIONS.map((opt, i) => (
             <LandingRow key={opt.actionId} option={opt} active={i === cursor} />
           ))}
-          <Text color={colors.fgSubtle}>↑↓ navegar · ⏎ aplicar</Text>
+          <Text color={colors.fgSubtle}>↑↓ navigate · ⏎ apply</Text>
         </FrameBox>
       </Box>
 
@@ -179,12 +179,12 @@ function NotInitialized({ data, cursor }: { data: ProjectTabData; cursor: number
             </Text>
             {data.git.dirty > 0 ? (
               <Box marginLeft={1}>
-                <Pill tone="warn">{`${data.git.dirty} sin commit`}</Pill>
+                <Pill tone="warn">{`${data.git.dirty} uncommitted`}</Pill>
               </Box>
             ) : null}
           </Box>
         ) : (
-          <Text color={colors.fgFaint}>(no es un repo git)</Text>
+          <Text color={colors.fgFaint}>(not a git repo)</Text>
         )}
       </Box>
     </Box>
@@ -236,7 +236,7 @@ function Initialized({
   return (
     <Box flexDirection="column">
       <PageHead
-        title="Proyecto"
+        title="Project"
         count={{
           label: data.workspaceMode === "hub" ? "hub" : "single-repo",
           tone: "accent",
@@ -254,15 +254,15 @@ function Initialized({
           tone={dirty > 0 ? "warn" : "dim"}
         />
         <StatTile
-          label="sesiones"
+          label="sessions"
           value={`${totalSessions}`}
-          sub={`${data.sessions.length} totales`}
+          sub={`${data.sessions.length} total`}
           tone={totalSessions > 0 ? "accent" : "dim"}
         />
         <StatTile
-          label="pendientes"
+          label="pending"
           value={`${totalPending}`}
-          sub={highPending > 0 ? `${highPending} altas` : ""}
+          sub={highPending > 0 ? `${highPending} high` : ""}
           tone={highPending > 0 ? "warn" : "dim"}
         />
       </Box>
@@ -291,10 +291,10 @@ function Initialized({
         )}
       </FrameBox>
 
-      {/* Sesiones activas */}
-      <FrameBox title={`sesiones activas · ${totalSessions}`}>
+      {/* Active sessions */}
+      <FrameBox title={`active sessions · ${totalSessions}`}>
         {totalSessions === 0 ? (
-          <Text color={colors.fgFaint}>(ninguna)</Text>
+          <Text color={colors.fgFaint}>(none)</Text>
         ) : (
           data.sessions
             .filter((s) => s.state === "active")
@@ -314,10 +314,10 @@ function Initialized({
         )}
       </FrameBox>
 
-      {/* Pendientes */}
-      <FrameBox title={`pendientes · ${totalPending}`}>
+      {/* Pending */}
+      <FrameBox title={`pending · ${totalPending}`}>
         {totalPending === 0 ? (
-          <Text color={colors.fgFaint}>(sin pendientes)</Text>
+          <Text color={colors.fgFaint}>(no pending)</Text>
         ) : (
           <>
             <PendingFilters
@@ -326,7 +326,7 @@ function Initialized({
               onChange={onFilter}
             />
             {filteredPending.length === 0 ? (
-              <Text color={colors.fgFaint}>(sin pendientes en este filtro)</Text>
+              <Text color={colors.fgFaint}>(no pending for this filter)</Text>
             ) : (
               filteredPending
                 .slice(0, 8)
@@ -336,9 +336,9 @@ function Initialized({
         )}
       </FrameBox>
 
-      {/* Actividad reciente */}
+      {/* Recent activity */}
       {data.activity.length > 0 ? (
-        <FrameBox title={`actividad reciente · ${data.activity.length}`}>
+        <FrameBox title={`recent activity · ${data.activity.length}`}>
           {data.activity.slice(0, 6).map((a) => (
             <ActivityRow key={`${a.whenIso}-${a.type}-${a.text}`} entry={a} />
           ))}
@@ -355,7 +355,7 @@ function statGitSub(data: ProjectTabData): string {
   const parts: string[] = [];
   if (data.git.ahead > 0) parts.push(`↑${data.git.ahead}`);
   if (data.git.behind > 0) parts.push(`↓${data.git.behind}`);
-  if (parts.length === 0) return `en sync con ${data.git.base}`;
+  if (parts.length === 0) return `in sync with ${data.git.base}`;
   return parts.join(" / ");
 }
 
@@ -401,7 +401,7 @@ function SourceRow({ source }: { source: ProjectSource }) {
       <Text color={colors.fgSubtle}>{source.branch ?? "(detached)"}</Text>
       {source.dirty ? (
         <Box marginLeft={1}>
-          <Pill tone="warn">{`${source.changedFiles} sin commit`}</Pill>
+          <Pill tone="warn">{`${source.changedFiles} uncommitted`}</Pill>
         </Box>
       ) : null}
     </Box>
@@ -411,8 +411,8 @@ function SourceRow({ source }: { source: ProjectSource }) {
 function buildPendingFilters(items: ProjectPendingItem[]): { id: string; label: string }[] {
   const seen = new Set<string>();
   const opts: { id: string; label: string }[] = [
-    { id: "all", label: "todos" },
-    { id: "high", label: "altas" },
+    { id: "all", label: "all" },
+    { id: "high", label: "high" },
   ];
   for (const it of items) {
     if (!seen.has(it.sessionCode)) {

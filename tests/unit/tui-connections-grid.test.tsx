@@ -20,14 +20,14 @@ function view(
 }
 
 describe("ConnectionsGrid (TUI)", () => {
-  it("placeholder cuando vacío menciona la hotkey n", () => {
+  it("empty placeholder mentions hotkey n", () => {
     const { lastFrame } = render(<ConnectionsGrid connections={[]} cursor={0} isActive={true} />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("sin conexiones");
+    expect(frame).toContain("no registered connections");
     expect(frame).toContain("n");
   });
 
-  it("muestra header columnar (nombre / DSN var / Claude / Codex / Warp)", () => {
+  it("renders column header (name / DSN var / Claude / Codex / Warp)", () => {
     const { lastFrame } = render(
       <ConnectionsGrid
         connections={[view("cert", "DB_CERT_DSN", "si", "no")]}
@@ -36,7 +36,7 @@ describe("ConnectionsGrid (TUI)", () => {
       />,
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("nombre");
+    expect(frame).toContain("name");
     expect(frame).toContain("DSN var");
     expect(frame).toContain("Claude");
     expect(frame).toContain("Codex");

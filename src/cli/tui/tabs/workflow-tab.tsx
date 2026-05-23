@@ -39,7 +39,7 @@ export function WorkflowTab(_props: WorkflowTabProps) {
       <Box marginTop={1} flexDirection="column">
         <FrameBox title="session lifecycle" accent>
           <Text color={colors.fgSubtle}>
-            Cómo se usa el harness día a día — cada fase ejecuta comandos del CLI y dispara hooks.
+            How the harness is used day-to-day — each phase runs CLI commands and fires hooks.
           </Text>
           <Box marginTop={1} flexDirection="row">
             {w.phases.map((p) => (
@@ -52,8 +52,8 @@ export function WorkflowTab(_props: WorkflowTabProps) {
       {/* Command families (3-col grid) */}
       <FrameBox title={`command families · ${w.commandFamilies.length} · ${totalCmds} subcommands`}>
         <Text color={colors.fgSubtle}>
-          Todos invocables como <Text color={colors.accent}>agent-workflow &lt;cmd&gt;</Text> ·
-          alias <Text color={colors.accent}>aw</Text>.
+          All callable as <Text color={colors.accent}>agent-workflow &lt;cmd&gt;</Text> · alias{" "}
+          <Text color={colors.accent}>aw</Text>.
         </Text>
         <Box flexDirection="column" marginTop={1}>
           {chunk(w.commandFamilies, 3).map((row) => (
@@ -71,8 +71,8 @@ export function WorkflowTab(_props: WorkflowTabProps) {
         <Box flexDirection="column" flexGrow={1} marginRight={1}>
           <FrameBox title={`slash commands · ${w.slashCommands.length}`}>
             <Text color={colors.fgSubtle}>
-              Invocables desde Claude Code / Codex como{" "}
-              <Text color={colors.accent}>/agent-workflow:&lt;nombre&gt;</Text>.
+              Callable from Claude Code / Codex as{" "}
+              <Text color={colors.accent}>/agent-workflow:&lt;name&gt;</Text>.
             </Text>
             <Box marginTop={1} flexDirection="column">
               {w.slashCommands.map((s) => (
@@ -86,8 +86,8 @@ export function WorkflowTab(_props: WorkflowTabProps) {
         <Box flexDirection="column" flexGrow={1}>
           <FrameBox title={`hooks · ${w.hooks.length} events`}>
             <Text color={colors.fgSubtle}>
-              Solo Claude · JSON merge en <Text color={colors.accent}>~/.claude/settings.json</Text>
-              .
+              Claude only · JSON merge into{" "}
+              <Text color={colors.accent}>~/.claude/settings.json</Text>.
             </Text>
             <Box marginTop={1} flexDirection="column">
               {w.hooks.map((h) => (
@@ -119,8 +119,8 @@ export function WorkflowTab(_props: WorkflowTabProps) {
       >
         <Text color={colors.accent}>{icons.star} </Text>
         <Text color={colors.fgSubtle}>
-          Quick start: <Text color={colors.accent}>aw self install --target claude</Text> · luego
-          desde Claude: <Text color={colors.accent}>/agent-workflow:session</Text>
+          Quick start: <Text color={colors.accent}>aw self install --target claude</Text> · then
+          from Claude: <Text color={colors.accent}>/agent-workflow:session</Text>
         </Text>
       </Box>
     </Box>

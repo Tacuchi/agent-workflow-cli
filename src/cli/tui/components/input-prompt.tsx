@@ -23,7 +23,7 @@ export function InputPrompt(props: InputPromptProps) {
         onSubmit(value);
         return;
       }
-      setError(typeof result === "string" ? result : "Valor inválido");
+      setError(typeof result === "string" ? result : "Invalid value");
       return;
     }
     setError(undefined);

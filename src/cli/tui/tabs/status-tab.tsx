@@ -83,14 +83,14 @@ export function StatusTab({
     try {
       const result = await ctx.process.run("npm", ["view", ctx.runtime.packageName, "version"], {});
       if (result.code !== 0) {
-        const msg = `npm view falló: ${result.stderr.trim() || "sin detalle"}`;
+        const msg = `npm view failed: ${result.stderr.trim() || "no detail"}`;
         setUpdate({ status: "error", message: msg });
-        onToast?.({ tone: "err", title: "Buscar actualización falló", body: msg });
+        onToast?.({ tone: "err", title: "Update check failed", body: msg });
         return;
       }
       const latest = result.stdout.trim();
       if (!latest) {
-        setUpdate({ status: "error", message: "npm view devolvió output vacío." });
+        setUpdate({ status: "error", message: "npm view returned empty output." });
         return;
       }
       if (latest === version) {
@@ -99,7 +99,7 @@ export function StatusTab({
         setUpdate({ status: "outdated", latest });
         onToast?.({
           tone: "info",
-          title: "Hay una actualización disponible",
+          title: "Update available",
           body: `v${version} → v${latest}`,
         });
       }
@@ -167,7 +167,7 @@ export function StatusTab({
   if (data.loading) {
     return (
       <Box>
-        <Text color={colors.fgSubtle}>{icons.spinner} cargando estado…</Text>
+        <Text color={colors.fgSubtle}>{icons.spinner} loading status…</Text>
       </Box>
     );
   }
@@ -204,11 +204,11 @@ export function StatusTab({
         dim={update.status !== "outdated"}
       >
         <Box flexDirection="row">
-          <Text color={colors.fgSubtle}>actual </Text>
+          <Text color={colors.fgSubtle}>current </Text>
           <Text color={colors.fgBright} bold>
             v{version}
           </Text>
-          <Text color={colors.fgSubtle}> → última </Text>
+          <Text color={colors.fgSubtle}> → latest </Text>
           <Text
             color={update.status === "outdated" ? colors.accent : colors.fgBright}
             bold={update.status === "outdated"}
@@ -217,15 +217,15 @@ export function StatusTab({
           </Text>
           {update.status === "outdated" ? (
             <Box marginLeft={1}>
-              <Pill tone="accent">disponible</Pill>
+              <Pill tone="accent">available</Pill>
             </Box>
           ) : update.status === "uptodate" ? (
             <Box marginLeft={1}>
-              <Pill tone="ok">al día</Pill>
+              <Pill tone="ok">up to date</Pill>
             </Box>
           ) : update.status === "checking" ? (
             <Box marginLeft={1}>
-              <Text color={colors.fgSubtle}>{icons.spinner} consultando…</Text>
+              <Text color={colors.fgSubtle}>{icons.spinner} checking…</Text>
             </Box>
           ) : update.status === "error" ? (
             <Box marginLeft={1}>
@@ -235,7 +235,7 @@ export function StatusTab({
           <Box flexGrow={1} />
           {update.status === "outdated" ? (
             <Text color={colors.accent} bold inverse>
-              {` i · aplicar v${update.latest} `}
+              {` i · apply v${update.latest} `}
             </Text>
           ) : null}
         </Box>

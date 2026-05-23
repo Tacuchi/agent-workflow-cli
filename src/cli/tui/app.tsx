@@ -33,34 +33,34 @@ const TAB_BY_KEY: Record<string, TabId> = {
   "5": "skills",
 };
 
-const QUIT_HINT: KeymapEntry = { key: "q", action: "salir" };
-const TAB_HINT: KeymapEntry = { key: "Tab", action: "siguiente" };
+const QUIT_HINT: KeymapEntry = { key: "q", action: "quit" };
+const TAB_HINT: KeymapEntry = { key: "Tab", action: "next" };
 const PALETTE_HINT: KeymapEntry = { key: "^K", action: "palette" };
 
 const KEYS_BY_TAB: Record<TabId, KeymapEntry[]> = {
   status: [
-    { key: "↑↓", action: "navegar" },
-    { key: "⏎", action: "ir a tab", accent: true },
-    { key: "i", action: "aplicar update" },
+    { key: "↑↓", action: "navigate" },
+    { key: "⏎", action: "go to tab", accent: true },
+    { key: "i", action: "apply update" },
     PALETTE_HINT,
     QUIT_HINT,
   ],
   workflow: [TAB_HINT, PALETTE_HINT, QUIT_HINT],
   project: [
-    { key: "↑↓", action: "navegar" },
-    { key: "⏎", action: "aplicar", accent: true },
+    { key: "↑↓", action: "navigate" },
+    { key: "⏎", action: "apply", accent: true },
     PALETTE_HINT,
     QUIT_HINT,
   ],
   mcp: [
-    { key: "↑↓", action: "navegar" },
-    { key: "⏎", action: "acciones", accent: true },
+    { key: "↑↓", action: "navigate" },
+    { key: "⏎", action: "actions", accent: true },
     PALETTE_HINT,
     QUIT_HINT,
   ],
   skills: [
-    { key: "↑↓", action: "navegar" },
-    { key: "⏎", action: "acciones", accent: true },
+    { key: "↑↓", action: "navigate" },
+    { key: "⏎", action: "actions", accent: true },
     PALETTE_HINT,
     QUIT_HINT,
   ],
@@ -153,8 +153,8 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         setActiveTab("mcp");
         pushToast({
           tone: "info",
-          title: "MCP · nueva conexión",
-          body: "Presioná `a` para abrir el wizard.",
+          title: "MCP · new connection",
+          body: "Press `a` to open the wizard.",
         });
         return;
       }
@@ -162,7 +162,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         pushToast({
           tone: "info",
           title: "git status",
-          body: "Abrí tu terminal para ver el detalle.",
+          body: "Open your terminal to see details.",
         });
         return;
       }
@@ -176,54 +176,54 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   const allCommands: PaletteCommand[] = useMemo(
     () => [
       // tabs
-      { id: "goto:status", category: "tabs", label: "Ir a Status", hint: "1" },
-      { id: "goto:workflow", category: "tabs", label: "Ir a Workflow", hint: "2" },
-      { id: "goto:project", category: "tabs", label: "Ir a Proyecto", hint: "3" },
-      { id: "goto:mcp", category: "tabs", label: "Ir a MCP", hint: "4" },
-      { id: "goto:skills", category: "tabs", label: "Ir a Skills", hint: "5" },
+      { id: "goto:status", category: "tabs", label: "Go to Status", hint: "1" },
+      { id: "goto:workflow", category: "tabs", label: "Go to Workflow", hint: "2" },
+      { id: "goto:project", category: "tabs", label: "Go to Project", hint: "3" },
+      { id: "goto:mcp", category: "tabs", label: "Go to MCP", hint: "4" },
+      { id: "goto:skills", category: "tabs", label: "Go to Skills", hint: "5" },
       // install
       {
         id: "install-skill",
         category: "install",
-        label: "Instalar SKILL (chain claude + codex + warp)",
+        label: "Install SKILL (chain claude + codex + warp)",
         hint: "self install",
       },
       // mcp
       {
         id: "mcp:add",
         category: "mcp",
-        label: "Registrar nueva conexión MCP",
-        hint: "a en MCP tab",
+        label: "Register new MCP connection",
+        hint: "a in MCP tab",
       },
       {
         id: "self:mcp-cli",
         category: "mcp",
-        label: "Abrir wizard MCP (CLI)",
+        label: "Open MCP wizard (CLI)",
         hint: "self mcp",
       },
       // project
-      { id: "project-init", category: "project", label: "Inicializar como single-repo" },
-      { id: "hub-init", category: "project", label: "Inicializar como hub (multi-repo)" },
+      { id: "project-init", category: "project", label: "Initialize as single-repo" },
+      { id: "hub-init", category: "project", label: "Initialize as hub (multi-repo)" },
       // self
       {
         id: "self:doctor",
         category: "self",
-        label: "Diagnosticar runtime (doctor)",
+        label: "Diagnose runtime (doctor)",
         hint: "self doctor",
       },
       {
         id: "self:update",
         category: "self",
-        label: "Buscar actualización",
+        label: "Check for update",
         hint: "self update",
       },
       {
         id: "self:help",
         category: "self",
-        label: "Ver help completo del CLI",
+        label: "View full CLI help",
         hint: "--help",
       },
-      { id: "quit", category: "self", label: "Salir", hint: "q" },
+      { id: "quit", category: "self", label: "Quit", hint: "q" },
     ],
     [],
   );
@@ -318,7 +318,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   const tabs: TabDescriptor<TabId>[] = [
     { id: "status", label: "Status", key: "1", alert: statusAlert },
     { id: "workflow", label: "Workflow", key: "2" },
-    { id: "project", label: "Proyecto", key: "3" },
+    { id: "project", label: "Project", key: "3" },
     { id: "mcp", label: "MCP", key: "4" },
     { id: "skills", label: "Skills", key: "5" },
   ];
@@ -330,32 +330,43 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       <Header version={version} cwd={ctx.env.cwd()} homeDir={ctx.env.homeDir()} />
       <TabBar tabs={tabs} activeId={activeTab} />
       <Box marginTop={density === "compact" ? 0 : 1} flexDirection="column">
-        {activeTab === "status" ? (
-          <StatusTab
-            ctx={ctx}
-            version={version}
-            isActive={true}
-            onActivateTab={(t) => setActiveTab(t)}
-            onRequestUpdate={() => {
-              onResult({ kind: "menu-action", action: "update" });
-              exit();
-            }}
-            onToast={pushToast}
-            onAlertChange={setStatusAlert}
-          />
-        ) : null}
-        {activeTab === "workflow" ? <WorkflowTab ctx={ctx} isActive={true} /> : null}
-        {activeTab === "project" ? (
-          <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
-        ) : null}
-        {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
-        {activeTab === "skills" ? (
-          <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
-        ) : null}
+        {paletteOpen ? (
+          <Box flexDirection="column" alignItems="center" paddingY={2}>
+            <Box width="80%" flexDirection="column">
+              <CommandPalette
+                filter={paletteFilter}
+                commands={filteredCommands}
+                cursor={paletteCursor}
+              />
+            </Box>
+          </Box>
+        ) : (
+          <>
+            {activeTab === "status" ? (
+              <StatusTab
+                ctx={ctx}
+                version={version}
+                isActive={true}
+                onActivateTab={(t) => setActiveTab(t)}
+                onRequestUpdate={() => {
+                  onResult({ kind: "menu-action", action: "update" });
+                  exit();
+                }}
+                onToast={pushToast}
+                onAlertChange={setStatusAlert}
+              />
+            ) : null}
+            {activeTab === "workflow" ? <WorkflowTab ctx={ctx} isActive={true} /> : null}
+            {activeTab === "project" ? (
+              <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
+            ) : null}
+            {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
+            {activeTab === "skills" ? (
+              <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
+            ) : null}
+          </>
+        )}
       </Box>
-      {paletteOpen ? (
-        <CommandPalette filter={paletteFilter} commands={filteredCommands} cursor={paletteCursor} />
-      ) : null}
       <ToastStack toasts={toasts} />
       <KeymapBar entries={keymap} />
     </ScreenFrame>
