@@ -36,6 +36,8 @@ export interface SelfInstallTargetResult {
   user_commands_warning?: string;
   hooks_status?: string;
   hooks_warning?: string;
+  flattened_subskills?: number;
+  flattened_warnings?: string[];
   error?: string;
 }
 
@@ -64,10 +66,30 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
   "agents",
 ]);
 
+// Hosts que listan slash commands solo desde directorios top-level de
+// ~/<host>/skills/. Para estos hosts, los sub-skills anidados del SKILL
+// universal (doctrine/*, specialties/*, etc.) NO son visibles por default —
+// el flatten copia cada sub-skill a su propio directorio top-level con
+// prefix `agent-workflow-` para evitar colisiones con otros plugins.
+// Hosts no incluidos (claude, codex) cargan sub-skills via su propia
+// resolución (Skill tool / SKILL.md frontmatter recursivo).
+const FLATTEN_SUBSKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["warp", "oz"]);
+const FLATTEN_PARENT_DIRS = [
+  "doctrine",
+  "specialties",
+  "workflows",
+  "exports",
+  "standards",
+] as const;
+const FLATTEN_DEST_PREFIX = "agent-workflow-";
+
 // Per-target user-level commands directory (subdir = namespace).
 // File `<base>/<filename>.md` is invoked as `/agent-workflow:<filename>`.
-// Claude Code + Codex follow the same convention. Warp/OZ use rules/notebooks
-// instead of file-based slash commands (DEC-W3/W4) so they get null.
+// Claude Code + Codex follow the same convention. Warp/Oz do not use a
+// file-based user-commands dir — they list slash commands from the `name:`
+// frontmatter of each SKILL.md found in top-level subdirs of ~/<host>/skills/.
+// The installer applies flattenSubSkillsForHost() below to expose nested
+// sub-skills (doctrine/*, specialties/*, etc.) at the level Warp/Oz can see.
 const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
   claude: ".claude/commands/agent-workflow",
   codex: ".codex/commands/agent-workflow",
@@ -84,7 +106,7 @@ const HOOKS_AUTOINSTALL_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]
 function explainSkipReason(target: InstallTarget, kind: "commands" | "hooks"): string {
   if (kind === "commands") {
     if (target === "warp" || target === "oz") {
-      return `${target}: file-based slash commands not part of this host's model (uses rules/notebooks). SKILL alone is sufficient.`;
+      return `${target}: file-based user-commands dir is not used by this host. Slash commands derive from each SKILL.md frontmatter (top-level dirs under ~/${target === "warp" ? ".warp" : ".agents"}/skills/); sub-skills are exposed via flatten at install time.`;
     }
     return `${target}: user-level commands install not implemented yet. SKILL is installed; CLI invocations work from within the host.`;
   }
@@ -378,6 +400,11 @@ async function installOneTarget(
     cache_cleared: cacheOutcome.cleared,
   };
   if (cacheOutcome.warning !== undefined) entry.cache_clear_warning = cacheOutcome.warning;
+  if (FLATTEN_SUBSKILLS_HOSTS.has(t.target)) {
+    const flatten = await flattenSubSkillsForHost(t.target, dest, sourceArg, flags.force);
+    entry.flattened_subskills = flatten.count;
+    if (flatten.warnings.length > 0) entry.flattened_warnings = flatten.warnings;
+  }
   if (!flags.skipCommands) {
     const cmdResult = await installUserCommands(t.target, sourceArg, ctx);
     if (cmdResult.dest !== null) entry.user_commands_dest = cmdResult.dest;
@@ -390,6 +417,54 @@ async function installOneTarget(
     if (hookResult.warning !== undefined) entry.hooks_warning = hookResult.warning;
   }
   return entry;
+}
+
+// Para hosts que solo listan top-level (Warp/Oz): copia cada sub-skill
+// (`<src>/doctrine/<X>/`, `<src>/specialties/<X>/`, …) a un directorio
+// hermano top-level del SKILL universal, namespaced con `agent-workflow-`.
+// El frontmatter `name:` del SKILL.md interno define el slash command que
+// el host lista (ej. `name: doctor` → `/doctor`); el directorio solo
+// resuelve la unicidad en filesystem.
+async function flattenSubSkillsForHost(
+  target: InstallTarget,
+  skillDest: string,
+  sourceSkillPath: string,
+  force: boolean,
+): Promise<{ count: number; warnings: string[] }> {
+  if (!FLATTEN_SUBSKILLS_HOSTS.has(target)) return { count: 0, warnings: [] };
+  const targetRoot = dirname(skillDest);
+  let count = 0;
+  const warnings: string[] = [];
+  for (const parentDir of FLATTEN_PARENT_DIRS) {
+    const parentPath = join(sourceSkillPath, parentDir);
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await readdir(parentPath, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const subSkillPath = join(parentPath, entry.name);
+      const skillMdPath = join(subSkillPath, "SKILL.md");
+      try {
+        await stat(skillMdPath);
+      } catch {
+        continue;
+      }
+      const destDir = join(targetRoot, `${FLATTEN_DEST_PREFIX}${entry.name}`);
+      try {
+        await rm(destDir, { recursive: true, force: true });
+        await copyTree(subSkillPath, destDir);
+        count += 1;
+      } catch (err) {
+        if (!force) {
+          warnings.push(`flatten failed for ${entry.name}: ${(err as Error).message}`);
+        }
+      }
+    }
+  }
+  return { count, warnings };
 }
 
 async function installUserCommands(

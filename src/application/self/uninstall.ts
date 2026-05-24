@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
@@ -10,6 +10,11 @@ import {
   SKILL_DIR_NAME,
   TARGET_ROOTS,
 } from "./install-skill.js";
+
+// Hosts que reciben sub-skills flattened en install (ver install-skill.ts).
+// El uninstall debe limpiarlos por prefix para dejar el filesystem limpio.
+const FLATTEN_HOSTS: ReadonlySet<InstallTarget> = new Set(["warp", "oz"]);
+const FLATTEN_DEST_PREFIX = "agent-workflow-";
 
 export type UninstallTargetChoice = InstallTarget | "all";
 
@@ -126,6 +131,7 @@ async function uninstallOneTarget(
 ): Promise<UninstallStep[]> {
   const steps: UninstallStep[] = [];
   steps.push(...(await removeSkill(ctx, home, target, flags.includeLegacy, flags.dryRun)));
+  steps.push(...(await removeFlattenedSubSkills(ctx, home, target, flags.dryRun)));
   if (!flags.skipCommands) {
     const cmdStep = await removeUserCommands(ctx, home, target, flags.dryRun);
     if (cmdStep !== null) steps.push(cmdStep);
@@ -133,6 +139,37 @@ async function uninstallOneTarget(
   if (flags.withHooks && !flags.skillOnly) {
     const hookStep = await removeHooks(ctx, home, target, flags.dryRun);
     if (hookStep !== null) steps.push(hookStep);
+  }
+  return steps;
+}
+
+async function removeFlattenedSubSkills(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep[]> {
+  if (!FLATTEN_HOSTS.has(target)) return [];
+  const targetRoot = join(home, ...TARGET_ROOTS[target]);
+  if (!(await ctx.fs.exists(targetRoot))) return [];
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await readdir(targetRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const steps: UninstallStep[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (!entry.name.startsWith(FLATTEN_DEST_PREFIX)) continue;
+    const path = join(targetRoot, entry.name);
+    if (!dryRun) await rm(path, { recursive: true, force: true });
+    steps.push({
+      target,
+      kind: "skill",
+      path,
+      status: dryRun ? "dry-run" : "removed",
+    });
   }
   return steps;
 }
