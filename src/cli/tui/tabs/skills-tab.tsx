@@ -269,7 +269,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         label="Hosts"
         count={totalCount}
         hint={`backed ${backedHosts} · pending ${pendingHosts}`}
-        rightAction={detailVisible ? "esc to close detail" : "⏎ for actions · ↑↓ navigate"}
+        {...(detailVisible ? { rightAction: "esc to close detail" } : {})}
         marginTop={0}
       />
 
@@ -337,21 +337,19 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         </Box>
       ) : null}
 
-      <Box marginTop={1}>
-        <QuickActions
-          actions={[
-            ...(installedCount === 0 ? [{ key: "i", label: "install on Claude" }] : []),
-            { key: "^K", label: "palette" },
-          ]}
-        />
-      </Box>
+      {installedCount === 0 ? (
+        <Box marginTop={1}>
+          <QuickActions actions={[{ key: "i", label: "install on Claude" }]} />
+        </Box>
+      ) : null}
     </Box>
   );
 }
 
 function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
   const cols = termCols ?? 100;
-  const baseOverhead = 36;
+  // ScreenFrame (border 2 + paddingX 4 = 6) + list paddingRight (2) = 8 cols.
+  const baseOverhead = 8;
   const detailOverhead = detailOpen ? 39 : 0;
   return Math.max(16, cols - baseOverhead - detailOverhead);
 }

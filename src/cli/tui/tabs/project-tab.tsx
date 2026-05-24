@@ -299,12 +299,7 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
       </Box>
 
       <Box marginTop={1}>
-        <QuickActions
-          actions={[
-            { key: "s", label: "start session" },
-            { key: "^K", label: "palette" },
-          ]}
-        />
+        <QuickActions actions={[{ key: "s", label: "start session" }]} />
       </Box>
     </Box>
   );

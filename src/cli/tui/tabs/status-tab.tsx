@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type SelfDoctorReport, selfDoctor } from "../../../application/self/doctor-self.js";
 import type { SelfMcpConnectionView } from "../../../application/self/mcp-config.js";
 import { selfMcpConfig } from "../../../application/self/mcp-config.js";
@@ -7,7 +7,6 @@ import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
 import { type ActivityEvent, ActivityFeed } from "../components/activity-feed.js";
 import { PageHead } from "../components/page-head.js";
-import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { StatTile } from "../components/stat-tile.js";
 import { HOSTS } from "../hosts.js";
@@ -18,15 +17,10 @@ export interface StatusTabProps {
   version: string;
   isActive: boolean;
   onActivateTab?: (tab: "mcp" | "skills") => void;
-  onRequestUpdate?: () => void;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
-  /** Emite cambios en el estado de alerta del tab (update outdated). */
-  onAlertChange?: (alert: boolean) => void;
   /** Eventos recientes (activity feed). Si vacío, se renderiza empty-state. */
   recentEvents?: ActivityEvent[];
 }
-
-type UpdateStatus = "idle" | "checking" | "uptodate" | "outdated" | "applying" | "error";
 
 interface StatusData {
   doctor: SelfDoctorReport | null;
@@ -35,37 +29,18 @@ interface StatusData {
   loading: boolean;
 }
 
-interface UpdateState {
-  status: UpdateStatus;
-  latest?: string;
-  message?: string;
-}
-
 const TILE_IDS = ["cli", "hosts", "hooks", "mcp"] as const;
 type TileId = (typeof TILE_IDS)[number];
 
-export function StatusTab({
-  ctx,
-  version,
-  isActive,
-  onActivateTab,
-  onRequestUpdate,
-  onToast,
-  onAlertChange,
-  recentEvents,
-}: StatusTabProps) {
+export function StatusTab({ ctx, version, isActive, onActivateTab, recentEvents }: StatusTabProps) {
   const [data, setData] = useState<StatusData>({
     doctor: null,
     mcp: [],
     hooksArmed: false,
     loading: true,
   });
-  const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
   const [tileCursor, setTileCursor] = useState<TileId>("cli");
   const dataStartedRef = useRef(false);
-  const updateStartedRef = useRef(false);
-  const lastCheckedAtRef = useRef<number | null>(null);
-  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
 
   useEffect(() => {
     if (dataStartedRef.current) return;
@@ -84,72 +59,11 @@ export function StatusTab({
     })();
   }, [ctx]);
 
-  const runUpdateCheck = useCallback(async () => {
-    setUpdate({ status: "checking" });
-    try {
-      const result = await ctx.process.run("npm", ["view", ctx.runtime.packageName, "version"], {});
-      if (result.code !== 0) {
-        const msg = `npm view failed: ${result.stderr.trim() || "no detail"}`;
-        setUpdate({ status: "error", message: msg });
-        onToast?.({ tone: "err", title: "Update check failed", body: msg });
-        return;
-      }
-      const latest = result.stdout.trim();
-      if (!latest) {
-        setUpdate({ status: "error", message: "npm view returned empty output." });
-        return;
-      }
-      lastCheckedAtRef.current = Date.now();
-      setLastCheckedAt(Date.now());
-      if (latest === version) {
-        setUpdate({ status: "uptodate", latest });
-      } else {
-        setUpdate({ status: "outdated", latest });
-        onToast?.({
-          tone: "info",
-          title: "Update available",
-          body: `v${version} → v${latest}`,
-        });
-      }
-    } catch (err) {
-      setUpdate({ status: "error", message: (err as Error).message });
-    }
-  }, [ctx, version, onToast]);
-
-  useEffect(() => {
-    if (updateStartedRef.current) return;
-    updateStartedRef.current = true;
-    void runUpdateCheck();
-  }, [runUpdateCheck]);
-
-  useEffect(() => {
-    onAlertChange?.(update.status === "outdated");
-  }, [update.status, onAlertChange]);
-
+  // El update-check + banner ahora viven en el AppShell vía NotificationCenter.
+  // Esta tab sólo navega tiles y delega `⏎` en hosts/mcp para cambiar de tab.
   useInput(
-    (input, key) => {
+    (_input, key) => {
       if (!isActive) return;
-      if (update.status === "checking" || update.status === "applying") {
-        // Solo bloquear teclas del update banner; navegación sigue.
-      } else {
-        if (input === "r" || input === "R") {
-          void runUpdateCheck();
-          return;
-        }
-        if ((input === "i" || input === "I") && update.status === "outdated") {
-          setUpdate({ ...update, status: "applying" });
-          onRequestUpdate?.();
-          return;
-        }
-        if (input === "o" || input === "O") {
-          onToast?.({
-            tone: "info",
-            title: "Release notes",
-            body: `https://www.npmjs.com/package/${ctx.runtime.packageName}`,
-          });
-          return;
-        }
-      }
       if (key.upArrow || key.leftArrow) {
         setTileCursor((c) => {
           const idx = TILE_IDS.indexOf(c);
@@ -194,9 +108,6 @@ export function StatusTab({
   const pendingHosts = supportedHosts - backedHosts;
   const pct = supportedHosts > 0 ? Math.round((installedHosts / supportedHosts) * 100) : 0;
 
-  const checkedAgo = lastCheckedAt ? humanizeAgo(lastCheckedAt) : "—";
-  const showUpdateStrip = update.status === "outdated";
-
   const events: ActivityEvent[] = recentEvents ?? [];
 
   return (
@@ -207,16 +118,7 @@ export function StatusTab({
           label: `${installedHosts}/${supportedHosts} hosts covered`,
           tone: installedHosts > 0 ? "accent" : "warn",
         }}
-        action={
-          <Text color={colors.mute}>
-            checked {checkedAgo} · <Text color={colors.accent}>r</Text> recheck
-          </Text>
-        }
       />
-
-      {showUpdateStrip ? (
-        <UpdateStrip update={update} packageName={ctx.runtime.packageName} />
-      ) : null}
 
       {/* Stat strip 4 tiles + WORKING TREE right */}
       <Box flexDirection="row" marginBottom={1}>
@@ -258,7 +160,6 @@ export function StatusTab({
         label="Skill coverage"
         count={`${installedHosts}/${supportedHosts}`}
         hint={`${backedHosts} backed · ${pendingHosts} pending`}
-        rightAction="⏎ open · ↑↓ select"
         marginTop={1}
       />
       <Box marginLeft={2} marginTop={0} flexDirection="row">
@@ -277,48 +178,6 @@ export function StatusTab({
       <SectionHead label="Recent" count={events.length} marginTop={1} />
       <Box marginLeft={2}>
         <ActivityFeed events={events} cap={4} emptyHint="  (no recent activity yet)" />
-      </Box>
-
-      <Box marginTop={1}>
-        <QuickActions
-          actions={[
-            ...(showUpdateStrip ? [{ key: "i", label: `apply v${update.latest ?? ""}` }] : []),
-            { key: "r", label: "recheck" },
-            { key: "^K", label: "palette" },
-          ]}
-        />
-      </Box>
-    </Box>
-  );
-}
-
-function UpdateStrip({
-  update,
-  packageName,
-}: {
-  update: UpdateState;
-  packageName: string;
-}) {
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text color={colors.warn}>{icons.focusBar}</Text>
-        <Text> </Text>
-        <Text color={colors.warn}>↻ </Text>
-        <Text color={colors.bright} bold>
-          v{packageName.split("/").pop()}
-        </Text>
-        <Text color={colors.dim}> → </Text>
-        <Text color={colors.bright} bold>
-          v{update.latest ?? "?"}
-        </Text>
-        <Text color={colors.dim}> available</Text>
-        <Box flexGrow={1} />
-        <Text color={colors.accent} bold inverse>
-          {" i · apply "}
-        </Text>
-        <Text> </Text>
-        <Text color={colors.mute}>r recheck · o notes · x dismiss</Text>
       </Box>
     </Box>
   );
@@ -360,16 +219,6 @@ async function detectHooksArmed(ctx: CliContext): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function humanizeAgo(t: number): string {
-  const diffSec = Math.max(1, Math.floor((Date.now() - t) / 1000));
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const m = Math.floor(diffSec / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 function ProgressLine({ ratio }: { ratio: number }) {

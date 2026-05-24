@@ -136,59 +136,57 @@ export function ListRow({
   const innerPad = " ".repeat(INNER_PAD);
 
   return (
-    <Box flexDirection="column">
-      <Box flexDirection="row" paddingX={0}>
-        {/* Focus bar AFUERA del bg — barrita independiente como indicador */}
-        <Text color={focusBarColor} bold={focused}>
-          {focused ? icons.focusBar : " "}
-        </Text>
-        {/* Gap entre la barrita y el bg highlight */}
-        <Text> </Text>
-        {/* bg highlight empieza acá */}
-        <Text {...bgProp}>{innerPad}</Text>
-        <Text {...bgProp} color={iconColor} bold={focused}>
-          {icon}
-        </Text>
-        <Text {...bgProp}> </Text>
-        <Text {...bgProp} color={titleColor} bold={focused}>
-          {title}
-        </Text>
-        {displaySubtitle ? (
-          <>
-            <Text {...bgProp}> </Text>
-            <Text {...bgProp} color={subColor} bold={focused} wrap="truncate-end">
-              {displaySubtitle}
-            </Text>
-          </>
-        ) : null}
-        <Text {...bgProp} wrap="truncate-end">
-          {spacer}
-        </Text>
-        {meta.length > 0
-          ? meta.map((m, i) => (
-              <Box key={`${m.label}-${i}`}>
-                <Text {...bgProp} color={metaBaseColor ?? toneColor(m.tone)} bold={focused}>
-                  {m.label}
-                </Text>
-                <Text {...bgProp}> </Text>
-              </Box>
-            ))
-          : null}
-        {state ? (
-          <Text {...bgProp} color={stateColor} bold={focused || !dimmed}>
-            {state.label}
+    <Box flexDirection="row" paddingX={0}>
+      {/* Focus bar AFUERA del bg — barrita independiente como indicador */}
+      <Text color={focusBarColor} bold={focused}>
+        {focused ? icons.focusBar : " "}
+      </Text>
+      {/* Gap entre la barrita y el bg highlight */}
+      <Text> </Text>
+      {/* bg highlight empieza acá */}
+      <Text {...bgProp}>{innerPad}</Text>
+      <Text {...bgProp} color={iconColor} bold={focused}>
+        {icon}
+      </Text>
+      <Text {...bgProp}> </Text>
+      <Text {...bgProp} color={titleColor} bold={focused}>
+        {title}
+      </Text>
+      {displaySubtitle ? (
+        <>
+          <Text {...bgProp}> </Text>
+          <Text {...bgProp} color={subColor} bold={focused} wrap="truncate-end">
+            {displaySubtitle}
           </Text>
-        ) : null}
-        {chevron ? (
-          <>
-            <Text {...bgProp}> </Text>
-            <Text {...bgProp} color={chevronColor} bold={focused}>
-              {icons.chevron}
-            </Text>
-          </>
-        ) : null}
-        <Text {...bgProp}>{innerPad}</Text>
-      </Box>
+        </>
+      ) : null}
+      <Text {...bgProp} wrap="truncate-end">
+        {spacer}
+      </Text>
+      {meta.length > 0
+        ? meta.map((m, i) => (
+            <Box key={`${m.label}-${i}`}>
+              <Text {...bgProp} color={metaBaseColor ?? toneColor(m.tone)} bold={focused}>
+                {m.label}
+              </Text>
+              <Text {...bgProp}> </Text>
+            </Box>
+          ))
+        : null}
+      {state ? (
+        <Text {...bgProp} color={stateColor} bold={focused || !dimmed}>
+          {state.label}
+        </Text>
+      ) : null}
+      {chevron ? (
+        <>
+          <Text {...bgProp}> </Text>
+          <Text {...bgProp} color={chevronColor} bold={focused}>
+            {icons.chevron}
+          </Text>
+        </>
+      ) : null}
+      <Text {...bgProp}>{innerPad}</Text>
     </Box>
   );
 }

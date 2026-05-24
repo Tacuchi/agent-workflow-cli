@@ -48,17 +48,19 @@ function buildCtx() {
   };
 }
 
-describe("App (palette-home)", () => {
-  it("boot abre la palette como pantalla principal", () => {
+describe("App (tab-home)", () => {
+  it("boot muestra la Status tab por default (sin palette)", () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     const frame = lastFrame() ?? "";
-    // post-v9.1.0: palette es el home — el frame muestra search input + categorías + go-to commands.
-    expect(frame).toContain("search");
-    expect(frame).toContain("type to filter");
-    expect(frame).toContain("Go to Status");
+    // post-v9.2.0: la palette es overlay opt-in (^K). El boot renderiza la
+    // TabBar + StatusTab directamente — no search input ni "Go to <Tab>".
+    expect(frame).not.toContain("type to filter");
+    expect(frame).not.toContain("Go to Status");
     expect(frame).toContain("agent-workflow");
     expect(frame).toContain("v9.9.9");
+    expect(frame).toContain("Status");
+    expect(frame).toContain("Workflow");
   });
 
   it("HomeHeader expone workspace context", () => {
@@ -72,7 +74,7 @@ describe("App (palette-home)", () => {
     expect(frame).toMatch(/sessions/);
   });
 
-  it("número 2 desde palette va directo a Workflow tab", async () => {
+  it("número 2 desde la Status tab salta a Workflow tab", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
@@ -82,7 +84,7 @@ describe("App (palette-home)", () => {
     expect(lastFrame()).toContain("SESSION LIFECYCLE");
   });
 
-  it("número 5 desde palette va directo a Skills tab", async () => {
+  it("número 5 desde la Status tab salta a Skills tab", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
@@ -92,7 +94,7 @@ describe("App (palette-home)", () => {
     expect(lastFrame()).toContain("HOSTS");
   });
 
-  it("'q' desde palette home (sin filter) resuelve con kind:exit", async () => {
+  it("'q' desde la Status tab resuelve con kind:exit", async () => {
     const ctx = buildCtx();
     const onResult = vi.fn();
     const { stdin } = render(<App version="9.9.9" ctx={ctx} onResult={onResult} />);

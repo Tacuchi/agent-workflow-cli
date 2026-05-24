@@ -1,5 +1,6 @@
-import { Box, useApp, useInput } from "ink";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, Text, useApp, useInput } from "ink";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { selfDoctor } from "../../application/self/doctor-self.js";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
@@ -7,17 +8,20 @@ import type { ActivityEvent } from "./components/activity-feed.js";
 import { CommandPalette, type PaletteCommand } from "./components/command-palette.js";
 import { HomeFooter } from "./components/home-footer.js";
 import { HomeHeader } from "./components/home-header.js";
+import { NotificationStack } from "./components/notification-stack.js";
 import { ScreenFrame } from "./components/screen-frame.js";
+import { TabBar } from "./components/tab-bar.js";
 import type { TabId, WorkspaceContext } from "./components/tabs-config.js";
-import { ToastStack, useToasts } from "./components/toast-stack.js";
 import { loadActivity } from "./data/activity.js";
+import { HOSTS } from "./hosts.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
+import { NotificationCenterProvider, useNotifications } from "./notification-center.js";
 import { McpTab } from "./tabs/mcp-tab.js";
 import { ProjectTab } from "./tabs/project-tab.js";
 import { SkillsTab } from "./tabs/skills-tab.js";
 import { StatusTab } from "./tabs/status-tab.js";
 import { WorkflowTab } from "./tabs/workflow-tab.js";
-import { type Density, TuiPrefsService } from "./tui-prefs.js";
+import { colors } from "./theme.js";
 
 export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
@@ -42,21 +46,21 @@ export interface AppProps {
 export function App(props: AppProps) {
   return (
     <InputLockProvider>
-      <AppShell {...props} />
+      <NotificationCenterProvider>
+        <AppShell {...props} />
+      </NotificationCenterProvider>
     </InputLockProvider>
   );
 }
 
 function AppShell({ version, ctx, onResult }: AppProps) {
-  // activeTab=null modela "estoy en el home (palette)". Cuando el usuario navega
-  // a un tab queda guardado para que `esc` en palette pueda volver al último tab.
-  const [activeTab, setActiveTab] = useState<TabId | null>(null);
-  const [density, setDensity] = useState<Density>("comfortable");
-  // Palette es la pantalla principal — abierta por default al boot.
-  const [paletteOpen, setPaletteOpen] = useState(true);
+  // activeTab refleja la pestaña actual incluso con la palette abierta como
+  // overlay. Por default Status — alineado con el screenshot de diseño.
+  const [activeTab, setActiveTab] = useState<TabId>("status");
+  // Palette es overlay opt-in (^K para abrir). Boot va directo a la Status tab.
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteFilter, setPaletteFilter] = useState("");
   const [paletteCursor, setPaletteCursor] = useState(0);
-  const [statusAlert, setStatusAlert] = useState(false);
   const [workspaceCtx, setWorkspaceCtx] = useState<WorkspaceContext>({
     modeLabel: "agent-workflow",
     branchLabel: "— · loading",
@@ -66,16 +70,16 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   const [activePhase, setActivePhase] = useState<number>(0);
   const { exit } = useApp();
   const { locked: inputLocked } = useInputLock();
-  const { toasts, push: pushToast } = useToasts();
-
-  const prefsSvc = useMemo(() => new TuiPrefsService(ctx.fs, ctx.paths), [ctx.fs, ctx.paths]);
-
-  useEffect(() => {
-    void (async () => {
-      const prefs = await prefsSvc.load();
-      setDensity(prefs.density);
-    })();
-  }, [prefsSvc]);
+  const {
+    items: notifications,
+    push: pushNotification,
+    pushToast,
+    dismiss,
+    dismissTop,
+    triggerAction,
+  } = useNotifications();
+  const updateCheckStartedRef = useRef(false);
+  const doctorCheckStartedRef = useRef(false);
 
   useEffect(() => {
     void (async () => {
@@ -87,6 +91,157 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       setActivePhase(phase);
     })();
   }, [ctx]);
+
+  // Update-available banner. Antes vivía dentro de StatusTab — ahora es
+  // responsabilidad del shell para que aparezca sin importar la tab activa.
+  //
+  // `manual` distingue el boot-check (silencioso) del recheck disparado por
+  // el usuario vía `r` action (feedback explícito "Checking…" / "Up to date").
+  const runUpdateCheck = useCallback(
+    async (opts?: { manual?: boolean }) => {
+      const manual = opts?.manual === true;
+      if (manual) {
+        pushToast({ tone: "info", title: "Checking npm registry…" });
+      }
+      try {
+        const result = await ctx.process.run(
+          "npm",
+          ["view", ctx.runtime.packageName, "version"],
+          {},
+        );
+        if (result.code !== 0) {
+          pushToast({
+            tone: "err",
+            title: "Update check failed",
+            body: result.stderr.trim() || "npm view returned non-zero exit.",
+          });
+          return;
+        }
+        const latest = result.stdout.trim();
+        if (!latest) return;
+        if (latest === version) {
+          dismiss("update-available");
+          if (manual) {
+            pushToast({ tone: "ok", title: "Up to date", body: `v${version}` });
+          }
+          return;
+        }
+        pushNotification({
+          id: "update-available",
+          tone: "warn",
+          title: (
+            <Text>
+              <Text color={colors.warn}>↻ </Text>
+              <Text color={colors.bright} bold>
+                v{version}
+              </Text>
+              <Text color={colors.dim}> → </Text>
+              <Text color={colors.bright} bold>
+                v{latest}
+              </Text>
+              <Text color={colors.dim}> available</Text>
+            </Text>
+          ),
+          actions: [
+            {
+              key: "i",
+              label: "apply",
+              emphasis: true,
+              run: () => {
+                onResult({ kind: "menu-action", action: "update" });
+                exit();
+              },
+            },
+            { key: "r", label: "recheck", run: () => void runUpdateCheck({ manual: true }) },
+            {
+              key: "o",
+              label: "notes",
+              run: () =>
+                pushToast({
+                  tone: "info",
+                  title: "Release notes",
+                  body: `https://www.npmjs.com/package/${ctx.runtime.packageName}`,
+                }),
+            },
+          ],
+        });
+      } catch (err) {
+        pushToast({
+          tone: "err",
+          title: "Update check failed",
+          body: (err as Error).message,
+        });
+      }
+    },
+    [ctx, version, pushNotification, pushToast, dismiss, onResult, exit],
+  );
+
+  useEffect(() => {
+    if (updateCheckStartedRef.current) return;
+    updateCheckStartedRef.current = true;
+    void runUpdateCheck();
+  }, [runUpdateCheck]);
+
+  // Doctor-check banner. Se evalúa una vez al boot: hosts cubiertos vs total +
+  // hooks armed para claude. Cualquier deficiencia gatilla la notif.
+  useEffect(() => {
+    if (doctorCheckStartedRef.current) return;
+    doctorCheckStartedRef.current = true;
+    void (async () => {
+      const doc = await selfDoctor(ctx).catch(() => null);
+      if (!doc?.ok || !doc.data) return;
+      const installedByTarget = new Map<string, boolean>(
+        doc.data.skill.targets.map((t) => [t.target, t.installed]),
+      );
+      const supportedHosts = HOSTS.length;
+      const installedHosts = HOSTS.filter((h) => installedByTarget.get(h.id) === true).length;
+      const missing = Math.max(0, supportedHosts - installedHosts);
+      const hooksArmed = await detectHooksArmed(ctx);
+      const hasIssue = missing > 0 || !hooksArmed;
+      if (!hasIssue) return;
+      const segments: string[] = [];
+      if (missing > 0) segments.push(`${missing} hosts missing skill`);
+      if (!hooksArmed) segments.push("claude hooks not armed");
+      // Lista de hosts instalados para usar en el summary on-demand (`s`).
+      const installedNames = HOSTS.filter((h) => installedByTarget.get(h.id) === true)
+        .map((h) => h.short)
+        .join(", ");
+      pushNotification({
+        id: "doctor-check",
+        tone: "warn",
+        title: `Doctor check · ${segments.join(" · ")}`,
+        actions: [
+          {
+            key: "d",
+            label: "run doctor",
+            emphasis: true,
+            run: () => {
+              onResult({ kind: "menu-action", action: "doctor" });
+              exit();
+            },
+          },
+          {
+            // `s summary` reemplaza al viejo `o open report` para evitar la
+            // colisión con el `o notes` del update-available banner.
+            key: "s",
+            label: "summary",
+            run: () =>
+              pushToast({
+                tone: "info",
+                title: `${installedHosts}/${supportedHosts} hosts installed`,
+                body: `${installedNames || "none"} · claude hooks: ${hooksArmed ? "armed" : "off"}`,
+              }),
+          },
+        ],
+      });
+    })();
+  }, [ctx, pushNotification, pushToast, onResult, exit]);
+
+  // Derivar alert dot del tab Status: · hay update outdated? · hay doctor warning?
+  const statusAlert = useMemo(
+    () => notifications.some((n) => n.id === "update-available" || n.id === "doctor-check"),
+    [notifications],
+  );
 
   /**
    * Despacha acciones provenientes de las tabs y la palette.
@@ -160,19 +315,11 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     [pushToast, onResult, exit],
   );
 
+  // La palette ya no incluye entries `Go to <Tab>` — la TabBar visible cubre
+  // esa navegación. Aquí solo viven acciones que disparan comandos o salidas
+  // a CLI.
   const allCommands: PaletteCommand[] = useMemo(
     () => [
-      {
-        id: "goto:status",
-        category: "tabs",
-        label: "Go to Status",
-        hint: "1",
-        alert: statusAlert,
-      },
-      { id: "goto:workflow", category: "tabs", label: "Go to Workflow", hint: "2" },
-      { id: "goto:project", category: "tabs", label: "Go to Project", hint: "3" },
-      { id: "goto:mcp", category: "tabs", label: "Go to MCP", hint: "4" },
-      { id: "goto:skills", category: "tabs", label: "Go to Skills", hint: "5" },
       {
         id: "install-skill",
         category: "install",
@@ -213,7 +360,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       },
       { id: "quit", category: "self", label: "Quit", hint: "q" },
     ],
-    [statusAlert],
+    [],
   );
 
   const filteredCommands = useMemo(() => {
@@ -240,32 +387,52 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     setPaletteCursor(0);
   }, []);
 
+  const rotateTab = useCallback((direction: 1 | -1) => {
+    setActiveTab((current) => {
+      const idx = TAB_ORDER.indexOf(current);
+      const next = (idx + direction + TAB_ORDER.length) % TAB_ORDER.length;
+      return TAB_ORDER[next] ?? current;
+    });
+  }, []);
+
   const executeCommand = useCallback(
     (cmd: PaletteCommand) => {
-      if (cmd.id.startsWith("goto:")) {
-        const target = cmd.id.slice("goto:".length) as TabId;
-        if (TAB_ORDER.includes(target)) goToTab(target);
-        return;
-      }
       runAction(cmd.id);
     },
-    [goToTab, runAction],
+    [runAction],
   );
 
   useInput(
     (input, key) => {
       if (inputLocked) return;
 
+      // Notif keys tienen prioridad: si hay notifs activas, `x` dismiss el top
+      // y las teclas de action (i/r/o/d/…) disparan la acción del item más
+      // nuevo que las tenga. Así `i` no se inserta al filter de palette cuando
+      // hay update notif activa.
+      if (notifications.length > 0 && !key.ctrl && !key.meta) {
+        if (input === "x" || input === "X") {
+          if (dismissTop()) return;
+        } else if (input) {
+          if (triggerAction(input)) return;
+        }
+      }
+
       if (paletteOpen) {
+        // Tab / Shift+Tab rotan la tab activa de fondo sin cerrar la palette.
+        // El TabBar refleja el cambio al instante; al cerrar palette (esc o
+        // selección), el tab destino ya queda elegido.
+        if (key.tab) {
+          rotateTab(key.shift ? -1 : 1);
+          return;
+        }
         if (key.escape) {
           if (paletteFilter !== "") {
             setPaletteFilter("");
             setPaletteCursor(0);
             return;
           }
-          if (activeTab !== null) {
-            setPaletteOpen(false);
-          }
+          setPaletteOpen(false);
           return;
         }
         if (key.return) {
@@ -310,6 +477,10 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         openPalette();
         return;
       }
+      if (key.tab) {
+        rotateTab(key.shift ? -1 : 1);
+        return;
+      }
       if (input === "q" || input === "Q") {
         onResult({ kind: "exit", exitCode: 0 });
         exit();
@@ -321,36 +492,32 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     { isActive: true },
   );
 
+  const hasNotifs = notifications.length > 0;
+
   return (
     <ScreenFrame>
       <Box flexDirection="column" flexGrow={1}>
         <HomeHeader brand="agent-workflow" version={version} workspaceContext={workspaceCtx} />
-        <Box
-          flexDirection="column"
-          flexGrow={1}
-          marginTop={density === "compact" ? 0 : 1}
-          paddingX={1}
-        >
-          {paletteOpen ? (
+        <NotificationStack items={notifications} />
+        {paletteOpen ? (
+          <Box flexDirection="column" flexGrow={1}>
             <CommandPalette
               filter={paletteFilter}
               commands={filteredCommands}
               cursor={paletteCursor}
             />
-          ) : (
-            <>
+          </Box>
+        ) : (
+          <>
+            <TabBar activeTabId={activeTab} alertsByTab={{ status: statusAlert }} />
+            <Box flexDirection="column" flexGrow={1}>
               {activeTab === "status" ? (
                 <StatusTab
                   ctx={ctx}
                   version={version}
                   isActive={true}
                   onActivateTab={(t) => setActiveTab(t)}
-                  onRequestUpdate={() => {
-                    onResult({ kind: "menu-action", action: "update" });
-                    exit();
-                  }}
                   onToast={pushToast}
-                  onAlertChange={setStatusAlert}
                   recentEvents={activity}
                 />
               ) : null}
@@ -366,14 +533,25 @@ function AppShell({ version, ctx, onResult }: AppProps) {
               {activeTab === "skills" ? (
                 <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
               ) : null}
-            </>
-          )}
-        </Box>
-        <HomeFooter context={paletteOpen ? "palette" : "tab"} />
+            </Box>
+          </>
+        )}
+        <HomeFooter context={paletteOpen ? "palette" : "tab"} showDismiss={hasNotifs} />
       </Box>
-      <ToastStack toasts={toasts} />
     </ScreenFrame>
   );
+}
+
+async function detectHooksArmed(ctx: CliContext): Promise<boolean> {
+  const settingsPath = `${ctx.env.homeDir()}/.claude/settings.json`;
+  if (!(await ctx.fs.exists(settingsPath))) return false;
+  try {
+    const raw = await ctx.fs.readText(settingsPath);
+    const parsed = JSON.parse(raw) as { hooks?: Record<string, unknown> };
+    return Boolean(parsed.hooks && Object.keys(parsed.hooks).length > 0);
+  } catch {
+    return false;
+  }
 }
 
 async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> {

@@ -4,7 +4,6 @@ import type { CliContext } from "../../types.js";
 import { FamilyCard } from "../components/family-card.js";
 import { PageHead } from "../components/page-head.js";
 import { PhaseCard } from "../components/phase-card.js";
-import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { WORKFLOW_CONTENT } from "../data/workflow-content.js";
 import { colors } from "../theme.js";
@@ -106,15 +105,6 @@ export function WorkflowTab({ isActive, activePhase = 0 }: WorkflowTabProps) {
             </Box>
           </Box>
         </Box>
-      </Box>
-
-      <Box marginTop={1}>
-        <QuickActions
-          actions={[
-            { key: "⏎", label: "expand" },
-            { key: "^K", label: "palette" },
-          ]}
-        />
       </Box>
     </Box>
   );

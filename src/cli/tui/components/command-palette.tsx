@@ -32,7 +32,7 @@ export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps
   let runningIdx = 0;
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column">
       {/* Search input */}
       <Box flexDirection="row" marginBottom={1}>
         <Text color={colors.mute}>search </Text>
@@ -93,11 +93,6 @@ export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps
           })}
         </Box>
       ))}
-
-      {/* Footer hint */}
-      <Box marginTop={0}>
-        <Text color={colors.faint}>↑↓ navigate · ⏎ run · esc close</Text>
-      </Box>
     </Box>
   );
 }

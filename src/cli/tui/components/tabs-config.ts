@@ -14,6 +14,15 @@ export interface TabConfig {
   alert?: boolean;
 }
 
+/** Lista canónica de tabs en orden de presentación + atajo numérico. */
+export const TABS_LIST: readonly TabConfig[] = [
+  { id: "status", key: "1", label: "Status" },
+  { id: "workflow", key: "2", label: "Workflow" },
+  { id: "project", key: "3", label: "Project" },
+  { id: "mcp", key: "4", label: "MCP" },
+  { id: "skills", key: "5", label: "Skills" },
+] as const;
+
 export interface WorkspaceContext {
   modeLabel: string;
   branchLabel: string;

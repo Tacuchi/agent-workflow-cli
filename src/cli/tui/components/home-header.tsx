@@ -19,7 +19,7 @@ export function HomeHeader({
   workspaceContext,
 }: HomeHeaderProps) {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" marginBottom={1}>
       <Text wrap="truncate-end">
         <Text color={colors.accent} bold>
           {icons.brand}

@@ -40,16 +40,14 @@ export interface McpTabProps {
  * Calcula el ancho disponible para un row de la lista, considerando si el
  * detail panel está abierto.
  *
- * Overhead horizontal (sin sidebar — v9.1.0 palette-home):
+ * Overhead horizontal (post v9.2.0, sin wrapper paddingX):
  * - ScreenFrame border (2) + paddingX (4) = 6
- * - Main paddingX (2)
  * - List paddingRight (2)
  * - Detail panel + separator (39) cuando está abierto
- * - Safety margin (2)
  */
 function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
   const cols = termCols ?? 100;
-  const baseOverhead = 12; // 6 + 2 + 2 + 2
+  const baseOverhead = 8; // 6 + 2
   const detailOverhead = detailOpen ? 39 : 0;
   return Math.max(16, cols - baseOverhead - detailOverhead);
 }
@@ -276,13 +274,11 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
           <SectionHead
             label="Connections"
             count={connections.length}
-            rightAction={
-              mode.kind === "wizard-name" || mode.kind === "wizard-dsn"
-                ? "esc cancel"
-                : mode.kind === "detail" || mode.kind === "confirm-delete"
-                  ? "esc to close detail"
-                  : "⏎ for actions · a · + add"
-            }
+            {...(mode.kind === "wizard-name" || mode.kind === "wizard-dsn"
+              ? { rightAction: "esc cancel" }
+              : mode.kind === "detail" || mode.kind === "confirm-delete"
+                ? { rightAction: "esc to close detail" }
+                : {})}
           />
 
           {connections.length === 0 && mode.kind === "list" ? (
@@ -465,12 +461,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
       </Box>
 
       <Box marginTop={1}>
-        <QuickActions
-          actions={[
-            { key: "a", label: "add connection" },
-            { key: "^K", label: "palette" },
-          ]}
-        />
+        <QuickActions actions={[{ key: "a", label: "add connection" }]} />
       </Box>
     </Box>
   );
