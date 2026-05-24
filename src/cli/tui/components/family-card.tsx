@@ -39,10 +39,11 @@ export function FamilyCard({
   const used = FOCUS_OUTER + INNER_PAD * 2 + 1 + 1 + titleLen + 1 + countLen;
 
   const termCols = stdout?.columns ?? 100;
-  // Overhead aproximado: ScreenFrame (6) + Sidebar (24) + Main paddingX (2) +
-  // right column paddingLeft (1) = 33. Restamos solo 33 (en vez de 35) para
-  // que el spacer sea generoso; truncate-end recorta si pasa el borde real.
-  const fallbackColWidth = Math.max(20, Math.floor((termCols - 33) / 2));
+  // Overhead aproximado (sin sidebar — v9.1.0 palette-home):
+  // ScreenFrame (6) + Main paddingX (2) + right column paddingLeft (1) = 9.
+  // Restamos 9 para que el spacer sea generoso; truncate-end recorta si pasa
+  // el borde real.
+  const fallbackColWidth = Math.max(20, Math.floor((termCols - 9) / 2));
   const colWidth = widthHint ?? fallbackColWidth;
   const spacerLen = Math.max(1, colWidth - used);
   const spacer = " ".repeat(spacerLen);

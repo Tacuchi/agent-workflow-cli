@@ -48,49 +48,51 @@ function buildCtx() {
   };
 }
 
-describe("App (tabs)", () => {
-  it("monta con Status como tab activa por defecto", () => {
+describe("App (palette-home)", () => {
+  it("boot abre la palette como pantalla principal", () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     const frame = lastFrame() ?? "";
-    // Active tab tiene el label envuelto en espacios para el inverse highlight.
-    expect(frame).toMatch(/1 +Status/);
+    // post-v9.1.0: palette es el home — el frame muestra search input + categorías + go-to commands.
+    expect(frame).toContain("search");
+    expect(frame).toContain("type to filter");
+    expect(frame).toContain("Go to Status");
     expect(frame).toContain("agent-workflow");
     expect(frame).toContain("v9.9.9");
   });
 
-  it("renderiza sidebar con workspace context", () => {
+  it("HomeHeader expone workspace context", () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     const frame = lastFrame() ?? "";
-    // post-v9 sidebar: brand + version + 5 tabs + workspace + keymap. Cwd ya
-    // no se renderiza inline (eliminado con Header.tsx); validamos que la
-    // sección WORKSPACE existe y muestra el sessions placeholder.
-    expect(frame).toContain("WORKSPACE");
+    // HomeHeader renderiza modeLabel (default agent-workflow · single-repo) + branch placeholder
+    // mientras hidrata el workspace context async.
+    expect(frame).toContain("agent-workflow");
+    // sessions placeholder visible mientras carga.
+    expect(frame).toMatch(/sessions/);
   });
 
-  it("número 2 va directo a Workflow tab", async () => {
+  it("número 2 desde palette va directo a Workflow tab", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("2");
     await new Promise((r) => setTimeout(r, 50));
-    // TAB_BY_KEY post-v9: {1:status, 2:workflow, ...}. La tab Workflow renderiza
-    // SectionHead "SESSION LIFECYCLE" — uniquely identifica el contenido del tab.
+    // Workflow tab renderiza SectionHead "SESSION LIFECYCLE".
     expect(lastFrame()).toContain("SESSION LIFECYCLE");
   });
 
-  it("número 5 va directo a Skills tab", async () => {
+  it("número 5 desde palette va directo a Skills tab", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("5");
     await new Promise((r) => setTimeout(r, 50));
-    // Skills tab renderiza SectionHead "HOSTS" — uniquely identifica el tab.
+    // Skills tab renderiza SectionHead "HOSTS".
     expect(lastFrame()).toContain("HOSTS");
   });
 
-  it("'q' resuelve con kind:exit", async () => {
+  it("'q' desde palette home (sin filter) resuelve con kind:exit", async () => {
     const ctx = buildCtx();
     const onResult = vi.fn();
     const { stdin } = render(<App version="9.9.9" ctx={ctx} onResult={onResult} />);

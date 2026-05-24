@@ -40,9 +40,8 @@ export interface McpTabProps {
  * Calcula el ancho disponible para un row de la lista, considerando si el
  * detail panel está abierto.
  *
- * Overhead horizontal:
+ * Overhead horizontal (sin sidebar — v9.1.0 palette-home):
  * - ScreenFrame border (2) + paddingX (4) = 6
- * - Sidebar (24)
  * - Main paddingX (2)
  * - List paddingRight (2)
  * - Detail panel + separator (39) cuando está abierto
@@ -50,7 +49,7 @@ export interface McpTabProps {
  */
 function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
   const cols = termCols ?? 100;
-  const baseOverhead = 36; // 6 + 24 + 2 + 2 + 2
+  const baseOverhead = 12; // 6 + 2 + 2 + 2
   const detailOverhead = detailOpen ? 39 : 0;
   return Math.max(16, cols - baseOverhead - detailOverhead);
 }

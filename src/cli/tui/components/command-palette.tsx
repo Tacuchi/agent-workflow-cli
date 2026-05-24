@@ -6,6 +6,7 @@ export interface PaletteCommand {
   label: string;
   category: string;
   hint?: string;
+  alert?: boolean;
 }
 
 export interface CommandPaletteProps {
@@ -31,13 +32,7 @@ export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps
   let runningIdx = 0;
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={colors.accent}
-      paddingX={2}
-      paddingY={1}
-    >
+    <Box flexDirection="column" paddingX={2} paddingY={1}>
       {/* Search input */}
       <Box flexDirection="row" marginBottom={1}>
         <Text color={colors.mute}>search </Text>
@@ -86,6 +81,11 @@ export function CommandPalette({ filter, commands, cursor }: CommandPaletteProps
                 {c.hint ? (
                   <Box marginLeft={1}>
                     <Text color={colors.dim}>{c.hint}</Text>
+                  </Box>
+                ) : null}
+                {c.alert ? (
+                  <Box marginLeft={1}>
+                    <Text color={colors.err}>●</Text>
                   </Box>
                 ) : null}
               </Box>

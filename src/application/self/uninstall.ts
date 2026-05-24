@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";

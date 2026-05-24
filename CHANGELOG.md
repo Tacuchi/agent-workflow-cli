@@ -4,6 +4,35 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.1.0] — 2026-05-24
+
+**Minor — palette como pantalla principal** (session089). Elimina la sidebar fija introducida en v9.0.0 y convierte el command palette en la pantalla principal por defecto al iniciar. La navegación queda unificada en la palette (búsqueda + filter + comandos `Go to X`); las tabs siguen accesibles vía `1`–`5` y `Go to X`.
+
+### Changed (UX)
+
+- **Palette es el home**: al boot la palette aparece left-aligned ocupando el main area (ya no es overlay centrado con border round).
+- **Sidebar eliminada**: el panel izquierdo de 24ch (brand + nav + workspace + keymap) se va por completo. Brand + version + workspace context migran a un `HomeHeader` 2-líneas full-width arriba. Keymap global migra a un `HomeFooter` 1-línea abajo, con texto que cambia según contexto (`palette` vs `tab`).
+- **`^K` desde un tab vuelve al home palette** (no overlay sobre el tab). `esc` desde palette con filter vacío vuelve al último tab visitado; con filter no-vacío lo limpia.
+- **`1`–`5` desde palette navegan directo** al tab correspondiente sin necesidad de filtrar y `⏎`.
+- **Alert de update**: el ● rojo que en v9.0.0 vivía junto al label `Status` en la sidebar ahora aparece al lado del comando `Go to Status` en la palette (vía nueva prop `alert?: boolean` en `PaletteCommand`). El alert se computa cuando el usuario visita Status por primera vez — el check `npm view` corre dentro de `StatusTab`, no en el boot global.
+
+### Added
+
+- `src/cli/tui/components/home-header.tsx` — brand + version + workspace context en 2 líneas compactas.
+- `src/cli/tui/components/home-footer.tsx` — keymap global contextual (palette vs tab).
+- `src/cli/tui/components/tabs-config.ts` — tipos `TabId`, `TabConfig`, `WorkspaceContext`, `KeymapEntry` (origen único, neutros).
+
+### Removed
+
+- `src/cli/tui/components/sidebar.tsx` — eliminado por completo.
+
+### Internal
+
+- `app.tsx` refactor: `activeTab: TabId | null` (default `null`), `paletteOpen: boolean` (default `true`). Layout `flexDirection="column"` con HomeHeader/main/HomeFooter; sin sidebar.
+- `mcp-tab.tsx` y `family-card.tsx`: comentarios y constantes de width recalculados (`baseOverhead 36 → 12`, `fallbackColWidth (termCols - 33) → (termCols - 9)`) tras quitar los 24ch de la sidebar.
+- `command-palette.tsx`: `borderStyle="round"` + `borderColor` removidos del root Box; `PaletteCommand.alert?: boolean` añadido.
+- `tests/unit/tui-app-tabs.test.tsx`: tests actualizados (boot abre palette home; valida `search` + `Go to Status` + brand + version; navegación `2` y `5` valida tabs renderizadas).
+
 ## [9.0.0] — 2026-05-23
 
 **Major — TUI simplified redesign** (session087). Implementa el handoff `docs/referencias/design_handoff_tui_simplified/`: layout sidebar 24ch + detail panel 38ch + patrones inline (wizard, confirm). Paleta migrada a mono violet. Resultado más compacto y minimalista que v8.0.0.

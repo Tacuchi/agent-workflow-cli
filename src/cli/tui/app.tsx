@@ -5,13 +5,10 @@ import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
 import type { ActivityEvent } from "./components/activity-feed.js";
 import { CommandPalette, type PaletteCommand } from "./components/command-palette.js";
+import { HomeFooter } from "./components/home-footer.js";
+import { HomeHeader } from "./components/home-header.js";
 import { ScreenFrame } from "./components/screen-frame.js";
-import {
-  Sidebar,
-  type SidebarTab,
-  type SidebarTabId,
-  type WorkspaceContext,
-} from "./components/sidebar.js";
+import type { TabId, WorkspaceContext } from "./components/tabs-config.js";
 import { ToastStack, useToasts } from "./components/toast-stack.js";
 import { loadActivity } from "./data/activity.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
@@ -25,8 +22,6 @@ import { type Density, TuiPrefsService } from "./tui-prefs.js";
 export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
   | { kind: "exit"; exitCode: ExitCode };
-
-type TabId = SidebarTabId;
 
 const TAB_ORDER: readonly TabId[] = ["status", "workflow", "project", "mcp", "skills"] as const;
 
@@ -53,9 +48,12 @@ export function App(props: AppProps) {
 }
 
 function AppShell({ version, ctx, onResult }: AppProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("status");
+  // activeTab=null modela "estoy en el home (palette)". Cuando el usuario navega
+  // a un tab queda guardado para que `esc` en palette pueda volver al último tab.
+  const [activeTab, setActiveTab] = useState<TabId | null>(null);
   const [density, setDensity] = useState<Density>("comfortable");
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Palette es la pantalla principal — abierta por default al boot.
+  const [paletteOpen, setPaletteOpen] = useState(true);
   const [paletteFilter, setPaletteFilter] = useState("");
   const [paletteCursor, setPaletteCursor] = useState(0);
   const [statusAlert, setStatusAlert] = useState(false);
@@ -141,6 +139,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       // Hints in-app (navegación + toasts).
       if (id === "mcp:add") {
         setActiveTab("mcp");
+        setPaletteOpen(false);
         pushToast({
           tone: "info",
           title: "MCP · new connection",
@@ -163,7 +162,13 @@ function AppShell({ version, ctx, onResult }: AppProps) {
 
   const allCommands: PaletteCommand[] = useMemo(
     () => [
-      { id: "goto:status", category: "tabs", label: "Go to Status", hint: "1" },
+      {
+        id: "goto:status",
+        category: "tabs",
+        label: "Go to Status",
+        hint: "1",
+        alert: statusAlert,
+      },
       { id: "goto:workflow", category: "tabs", label: "Go to Workflow", hint: "2" },
       { id: "goto:project", category: "tabs", label: "Go to Project", hint: "3" },
       { id: "goto:mcp", category: "tabs", label: "Go to MCP", hint: "4" },
@@ -208,7 +213,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       },
       { id: "quit", category: "self", label: "Quit", hint: "q" },
     ],
-    [],
+    [statusAlert],
   );
 
   const filteredCommands = useMemo(() => {
@@ -228,21 +233,23 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     setPaletteOpen(true);
   }, []);
 
-  const closePalette = useCallback(() => {
+  const goToTab = useCallback((target: TabId) => {
+    setActiveTab(target);
     setPaletteOpen(false);
+    setPaletteFilter("");
+    setPaletteCursor(0);
   }, []);
 
   const executeCommand = useCallback(
     (cmd: PaletteCommand) => {
-      closePalette();
       if (cmd.id.startsWith("goto:")) {
         const target = cmd.id.slice("goto:".length) as TabId;
-        if (TAB_ORDER.includes(target)) setActiveTab(target);
+        if (TAB_ORDER.includes(target)) goToTab(target);
         return;
       }
       runAction(cmd.id);
     },
-    [closePalette, runAction],
+    [goToTab, runAction],
   );
 
   useInput(
@@ -251,7 +258,14 @@ function AppShell({ version, ctx, onResult }: AppProps) {
 
       if (paletteOpen) {
         if (key.escape) {
-          closePalette();
+          if (paletteFilter !== "") {
+            setPaletteFilter("");
+            setPaletteCursor(0);
+            return;
+          }
+          if (activeTab !== null) {
+            setPaletteOpen(false);
+          }
           return;
         }
         if (key.return) {
@@ -272,6 +286,18 @@ function AppShell({ version, ctx, onResult }: AppProps) {
           setPaletteCursor(0);
           return;
         }
+        // Shortcuts directos `1`–`5` desde la palette sin necesidad de filtrar
+        // y `⏎`. Conveniencia para users que ya saben los atajos.
+        const directTarget = TAB_BY_KEY[input];
+        if (directTarget && !key.ctrl && !key.meta) {
+          goToTab(directTarget);
+          return;
+        }
+        if (input === "q" && !key.ctrl && !key.meta && paletteFilter === "") {
+          onResult({ kind: "exit", exitCode: 0 });
+          exit();
+          return;
+        }
         if (input && !key.ctrl && !key.meta) {
           setPaletteFilter((s) => s + input);
           setPaletteCursor(0);
@@ -279,6 +305,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         return;
       }
 
+      // Estamos en un tab.
       if ((key.ctrl || key.meta) && (input === "k" || input === "K")) {
         openPalette();
         return;
@@ -294,32 +321,10 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     { isActive: true },
   );
 
-  const tabs: SidebarTab[] = [
-    { id: "status", key: "1", label: "Status", alert: statusAlert },
-    { id: "workflow", key: "2", label: "Workflow" },
-    { id: "project", key: "3", label: "Project" },
-    { id: "mcp", key: "4", label: "MCP" },
-    { id: "skills", key: "5", label: "Skills" },
-  ];
-
-  const globalKeys = [
-    { key: "^K", action: "palette" },
-    { key: "⏎", action: "open" },
-    { key: "↑↓", action: "navigate" },
-    { key: "?", action: "help" },
-    { key: "q", action: "quit" },
-  ];
-
   return (
     <ScreenFrame>
-      <Box flexDirection="row">
-        <Sidebar
-          activeTab={activeTab}
-          tabs={tabs}
-          workspaceContext={workspaceCtx}
-          cliVersion={version}
-          globalKeys={globalKeys}
-        />
+      <Box flexDirection="column" flexGrow={1}>
+        <HomeHeader brand="agent-workflow" version={version} workspaceContext={workspaceCtx} />
         <Box
           flexDirection="column"
           flexGrow={1}
@@ -327,15 +332,11 @@ function AppShell({ version, ctx, onResult }: AppProps) {
           paddingX={1}
         >
           {paletteOpen ? (
-            <Box flexDirection="column" alignItems="center" paddingY={2}>
-              <Box width="80%" flexDirection="column">
-                <CommandPalette
-                  filter={paletteFilter}
-                  commands={filteredCommands}
-                  cursor={paletteCursor}
-                />
-              </Box>
-            </Box>
+            <CommandPalette
+              filter={paletteFilter}
+              commands={filteredCommands}
+              cursor={paletteCursor}
+            />
           ) : (
             <>
               {activeTab === "status" ? (
@@ -368,6 +369,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
             </>
           )}
         </Box>
+        <HomeFooter context={paletteOpen ? "palette" : "tab"} />
       </Box>
       <ToastStack toasts={toasts} />
     </ScreenFrame>
