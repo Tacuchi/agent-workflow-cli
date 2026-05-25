@@ -1,6 +1,6 @@
 {
   "name": "@tacuchi/agent-workflow-cli",
-  "version": "9.2.0",
+  "version": "9.3.0",
   "description": "Agnostic runtime CLI for session-lifecycle workflows. Auto-detects namespace from any `.<ns>/sessions/` dir in CWD; falls back to 'agent-workflow'. Bundles the universal `agent-workflow` skill (35 skills + 17 commands + 7 hooks template) in the tarball — `self install-skill --target <host>` (obligatory) copies it to the host's skill directory. Multi-empresa parametrization via `profile.json` cascade (flag → AW_PROFILE env → ~/.config/agent-workflow/profile.json → workspace → defaults). Hooks for Claude Code via `self install-hooks --target claude` (JSON merge into ~/.claude/settings.json with backup).",
   "type": "module",
   "bin": {

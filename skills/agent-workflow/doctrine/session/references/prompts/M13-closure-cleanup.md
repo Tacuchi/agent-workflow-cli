@@ -11,7 +11,7 @@ Spec literal del prompt M13. Index: [`../prompts-catalog.md#m13--closure-cleanup
   - Plan mode activo (el gate describe hallazgos en el plan file sin disparar prompt).
 - **Forma**: 1 invocación `AskUserQuestion` con **N questions tab-por-fuente** (max 4 simultáneas; tandas si N>4).
   - Por cada fuente dirty con hallazgos:
-    - `header`: `<alias>` (ej. `agent-workflow`, `qtc-workflow-plugin`).
+    - `header`: `<alias>` (ej. `core`, `dev`, `design`, `analyze`).
     - `question`: "Cleanup en `<alias>` — `<N>` hallazgos (`<categorías>`). ¿Aplico?"
     - `multiSelect`: false.
     - `options`:

@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.3.0] — 2026-05-25
+
+**Minor — closure cleanup gate + 8º anchor en /rules** (session090). Agrega un gate canónico de calidad pre-commit en la fase closure del lifecycle: entre `graduate` (paso 1) y `propose commits` (M1 / paso 2). El gate inspecciona el diff working-tree por fuente dirty y categoriza hallazgos en 5 grupos (comentarios redundantes, complejidad cognitiva, antipatrones, code smells, código muerto). El bundle `agent-workflow:rules` pasa de 7 a 8 anchors.
+
+### Added (doctrine)
+
+- `skills/agent-workflow/doctrine/session/SKILL.md` §1.5 — sección "Inspección y limpieza pre-commit (closure cleanup gate)". 7 pasos: refresh sources → leer diff → componer `coding-standards` → categorizar → reportar → disparar M13 → aplicar fixes aprobados → re-refresh.
+- `skills/agent-workflow/doctrine/rules/SKILL.md` §8 — nuevo anchor `agent-workflow:closure-cleanup`. Frontmatter `description` actualizada (8 anchors); versión 0.2.0 → 0.3.0.
+- `skills/agent-workflow/doctrine/session/references/prompts/M13-closure-cleanup.md` — spec literal del prompt M13: N questions tab-por-fuente, 3 opciones (aprobar fixes / sólo reportar / saltar) + Other auto = nota custom.
+
+### Changed
+
+- `skills/agent-workflow/doctrine/session/references/prompts-catalog.md` — Q-must count 11 → 12 (M1..M11 + M13; M12 sigue eliminado por DEC-002). Apéndice C actualizado (último Q-must activo = M13, último Q-should = S8).
+- `skills/agent-workflow/commands/rules.md` — descripción y body actualizados a 8 anchors; bullet #8 agregado.
+- `skills/agent-workflow/doctrine/migrate/SKILL.md` — detectores y plantilla del upgrade transversal-rules block extendidos a 8 anchors (post-session090).
+
+### Non-goals (no incluido)
+
+- **Sin nuevo subcomando CLI**: el gate es 100% doctrina + composición de `coding-standards` + `redaccion-simple`. No se agrega `agent-workflow code-cleanup` ni equivalente (DESIGN.md DD-2).
+- **Sin reemplazo de linters**: el gate complementa ESLint/Spotless/Prettier/Checkstyle; no los suple.
+- **Sin refactors estructurales**: mover archivos o renombrar packages queda fuera del gate; aplazar a sesión `## Type: refactor` con Strangler Fig.
+
+### Self-test
+
+El gate corrió en su propio diff antes del commit de release y detectó 2 DRY violations (lista linter/formatter duplicada entre `session` y `rules`; regla "refactor estructural mayor" repetida dentro de `session` §1.5). Ambas corregidas. Validación: el gate identifica issues reales sobre artefactos doctrinarios sin falsos positivos.
+
 ## [9.1.0] — 2026-05-24
 
 **Minor — palette como pantalla principal** (session089). Elimina la sidebar fija introducida en v9.0.0 y convierte el command palette en la pantalla principal por defecto al iniciar. La navegación queda unificada en la palette (búsqueda + filter + comandos `Go to X`); las tabs siguen accesibles vía `1`–`5` y `Go to X`.
