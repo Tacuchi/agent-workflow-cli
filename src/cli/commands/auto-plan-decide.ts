@@ -1,5 +1,5 @@
-import { runProjectMdRead } from "../../application/project-md-service.js";
 import { type AutoPlanOptions, shouldSkipFullPlan } from "../../application/auto-plan.js";
+import { runProjectMdRead } from "../../application/project-md-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readObjetivoIfPresent } from "../helpers/objetivo-loader.js";
 import type { ParsedArgs } from "../parser.js";
@@ -11,7 +11,8 @@ const VALID_FLOWS = new Set(["dev", "design", "analyze"]);
 
 export const autoPlanDecideCommand: QtcCommand = {
   name: "auto-plan-decide",
-  describe: "Decide plan scope (skip|lite|full) for an OBJETIVO. Optional --code|--flow honors doctrina analyze=skip.",
+  describe:
+    "Decide plan scope (skip|lite|full) for an OBJETIVO. Optional --code|--flow honors doctrina analyze=skip.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const objetivo = await readObjetivoIfPresent(args);
     const options = await resolveOptions(args, ctx);

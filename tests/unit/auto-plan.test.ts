@@ -211,14 +211,16 @@ Mentions \`claude-code-warp\`, \`docs/referencias/x.md\`, \`auto-plan-decide\`, 
   });
 
   it("legacy path (no declaredAliases) raises threshold to 10 to mitigate false positives", () => {
-    const text = `Menciona muchas cosas: \`a-b-c\`, \`d-e-f\`, \`g-h-i\`, \`j-k-l\`. Pero solo es 1 fuente real.`;
+    const text =
+      "Menciona muchas cosas: `a-b-c`, `d-e-f`, `g-h-i`, `j-k-l`. Pero solo es 1 fuente real.";
     const r = shouldSkipFullPlan(text, { flow: "dev" });
     // 4 matches < 10 → no signal of cross-source
     expect(r.signals.some((s) => s.startsWith(">=3 fuentes"))).toBe(false);
   });
 
   it("legacy path still flags when matches >= 10 (very large OBJECTIVEs)", () => {
-    const text = `\`a-b-c\` \`d-e-f\` \`g-h-i\` \`j-k-l\` \`m-n-o\` \`p-q-r\` \`s-t-u\` \`v-w-x\` \`y-z-aa\` \`bb-cc-dd\` \`ee-ff-gg\``;
+    const text =
+      "`a-b-c` `d-e-f` `g-h-i` `j-k-l` `m-n-o` `p-q-r` `s-t-u` `v-w-x` `y-z-aa` `bb-cc-dd` `ee-ff-gg`";
     const r = shouldSkipFullPlan(text, { flow: "dev" });
     expect(r.signals.some((s) => s.startsWith(">=10 fuentes"))).toBe(true);
   });

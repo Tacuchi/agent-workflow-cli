@@ -69,7 +69,9 @@ function buildScenario(opts: {
     const mpPath = `${marketplacesRoot}/${p.marketplace}`;
     marketplaceEntries.push({ name: p.marketplace, path: mpPath, type: "dir" });
     const pluginsDir = `${mpPath}/plugins`;
-    dirs.set(pluginsDir, [{ name: p.pluginDir, path: `${pluginsDir}/${p.pluginDir}`, type: "dir" }]);
+    dirs.set(pluginsDir, [
+      { name: p.pluginDir, path: `${pluginsDir}/${p.pluginDir}`, type: "dir" },
+    ]);
     const pluginJson = `${pluginsDir}/${p.pluginDir}/.claude-plugin/plugin.json`;
     files.set(pluginJson, JSON.stringify({ name: p.name }));
   }
@@ -98,7 +100,8 @@ describe("runHostDoctor", () => {
     const r = await runHostDoctor(fs, env, proc);
     expect(r.status).toBe("warn");
     expect(r.findings).toHaveLength(1);
-    const f = r.findings[0]!;
+    const f = r.findings[0];
+    if (!f) throw new Error("expected one finding");
     expect(f.severity).toBe("warn");
     expect(f.dependency).toBe("jq");
     expect(f.required_by).toContain("warp");
@@ -115,20 +118,18 @@ describe("runHostDoctor", () => {
     const r = await runHostDoctor(fs, env, proc);
     expect(r.status).toBe("ok");
     expect(r.findings).toHaveLength(1);
-    expect(r.findings[0]!.severity).toBe("ok");
+    expect(r.findings[0]?.severity).toBe("ok");
   });
 
   it("matches by marketplace name when plugin name is uncommon", async () => {
     // plugin.json has name="something-else", but marketplace dir is claude-code-warp
     const { fs, env, proc } = buildScenario({
       jqInPath: false,
-      plugins: [
-        { marketplace: "claude-code-warp", pluginDir: "warp", name: "something-else" },
-      ],
+      plugins: [{ marketplace: "claude-code-warp", pluginDir: "warp", name: "something-else" }],
     });
     const r = await runHostDoctor(fs, env, proc);
     expect(r.status).toBe("warn");
-    expect(r.findings[0]!.required_by).toContain("something-else");
+    expect(r.findings[0]?.required_by).toContain("something-else");
   });
 
   it("does not flag unrelated plugins", async () => {

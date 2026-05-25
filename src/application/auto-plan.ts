@@ -99,7 +99,8 @@ export function shouldSkipFullPlan(
     if (modalidad === "incident") {
       return {
         decision: "lite",
-        reason: "flow=analyze modalidad=incident → lite per doctrina (post-mortem requiere ordering)",
+        reason:
+          "flow=analyze modalidad=incident → lite per doctrina (post-mortem requiere ordering)",
         signals: ["analyze-incident"],
       };
     }
@@ -116,7 +117,8 @@ export function shouldSkipFullPlan(
     ? countDeclaredSourcesMentioned(objetivoText, options.declaredAliases ?? [])
     : countSourcesMentioned(objetivoText);
   const sourcesThreshold = semanticMode ? 3 : 10;
-  const sourcesLabel = sourcesThreshold === 3 ? ">=3 fuentes mencionadas" : ">=10 fuentes mencionadas";
+  const sourcesLabel =
+    sourcesThreshold === 3 ? ">=3 fuentes mencionadas" : ">=10 fuentes mencionadas";
   const hasDesign = mentionsAny(objetivoText, DESIGN_KEYWORDS);
   const hasAnalyze = mentionsAny(objetivoText, ANALYZE_KEYWORDS);
   const hasPropuesta = mentionsAny(objetivoText, PROPUESTA_KEYWORDS);
