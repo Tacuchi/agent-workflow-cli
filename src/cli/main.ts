@@ -36,6 +36,7 @@ import { objetivoDataCommand } from "./commands/objetivo-data.js";
 import { phaseDetectCommand } from "./commands/phase-detect.js";
 import { phaseNextCommand } from "./commands/phase-next.js";
 import { pluginCacheCommand } from "./commands/plugin-cache.js";
+import { hostDoctorCommand } from "./commands/host-doctor.js";
 import { pluginDoctorCommand } from "./commands/plugin-doctor.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
 import { releaseDataCommand } from "./commands/release-data.js";
@@ -118,6 +119,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(codeScanCommand);
   registry.register(pluginCacheCommand);
   registry.register(pluginDoctorCommand);
+  registry.register(hostDoctorCommand);
   registry.register(releaseDataCommand);
   registry.register(attachMultirootCommand);
   registry.register(detachMultirootCommand);
