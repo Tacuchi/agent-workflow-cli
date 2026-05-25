@@ -1,6 +1,8 @@
-# Rollback global de release y por tema
+# Rollback global de release y por tema (LEGACY — deprecation Fase 1)
 
-Algoritmos detallados para rollbacks consolidados en modo release. El SKILL.md tiene el resumen; este archivo tiene el procedimiento completo paso a paso.
+> **Estado**: legacy. Aplica solo a `release` / `release-scripts` legacy (deprecation Fase 1). El reemplazo canónico es `/agent-workflow:export-scripts` v4.0.0+, que produce un único `00-ROLLBACK.sql` cross-session al root del bundle (algoritmo en `SKILL.md` v2.0.0).
+
+Algoritmos detallados para rollbacks consolidados en modo release legacy. El SKILL.md tiene el resumen; este archivo tiene el procedimiento completo paso a paso.
 
 ## Rollback global de release (cross-session)
 

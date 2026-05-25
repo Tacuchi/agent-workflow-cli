@@ -1,10 +1,10 @@
-# Léxico técnico — limpieza mínima de noise para export-scripts
+# Léxico técnico — limpieza mínima de noise para export-scripts (v4.0.0)
 
-A diferencia de `export-report/references/lexico.md` (que traduce técnico→ejecutivo para audiencia gerencial), este léxico es **mínimo**: la audiencia de `export-scripts` es técnica (devs / DBAs / release managers) y los términos técnicos son bienvenidos. Sólo se veta el noise interno: placeholders sin reemplazar, paths del developer, restos de plantilla.
+A diferencia de `export-report/references/lexico.md` (que traduce técnico→ejecutivo para audiencia gerencial), este léxico es **mínimo**: la audiencia de `export-scripts` es técnica (devs / DBAs / release managers) y los términos técnicos son bienvenidos. Sólo se veta el noise interno: placeholders sin reemplazar, paths del developer, restos de plantilla, y referencias residuales al layout v3.x (`por-sesion/`, `manifest.md` separado, `ORDER.md`, `rollback-global.sql`).
 
 ## Lista vetada (V2 — para grep determinista)
 
-Términos / patrones que **no deben aparecer** en el cuerpo del `manifest.md` rendered (excepto en `## 10. Metadata`):
+Términos / patrones que **no deben aparecer** en el cuerpo del `README.md` rendered (excepto en `## 10. Metadata`):
 
 ```
 {{
@@ -70,11 +70,25 @@ El validator de V2 (descrito en `validations.md` §V2) procesa este `.md` extray
 
 ```bash
 awk '/^```$/{flag=!flag; next} flag' lexico-tecnico.md > /tmp/lexico-vetado.txt
-grep -n -F -f /tmp/lexico-vetado.txt /tmp/manifest-body.md
+grep -n -F -f /tmp/lexico-vetado.txt /tmp/readme-body.md
 ```
 
 El primer awk toggle-extrae las líneas entre triple-backticks (alterna `flag` cada `\`\`\`` solitario); el segundo grep matchea como fixed strings.
 
-## Total ≈ 50 términos vetados
+## Anti-redundancia v4.0.0 (regex aparte)
 
-Mantenimiento: revisar tras cada change major del template; los términos derivan 1:1 de los placeholders activos en `manifest-template.md`.
+Patrones del layout v3.x que NO deben aparecer en prosa del README (V2 los rechaza vía regex, no fixed-string):
+
+```regex
+por-sesion/
+manifest\.md
+ORDER\.md
+rollback-global\.sql
+\.rollback\.sql
+```
+
+Estos patrones son válidos sólo dentro de bloques que declaran explícitamente "v3.x histórico" / "DEPRECATED" / "eliminado". V2 valida el contexto (presencia de palabra "deprecated"/"histórico" cercana).
+
+## Total ≈ 50 términos vetados (fixed-string) + 5 patrones v3.x (regex)
+
+Mantenimiento: revisar tras cada change major del `readme-template.md`; los términos derivan 1:1 de los placeholders activos en la plantilla.

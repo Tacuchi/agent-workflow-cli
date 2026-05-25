@@ -68,9 +68,11 @@ Para minimizar la necesidad de rollback:
 
 Los rollbacks de código (git) descritos arriba **no revierten cambios en base de datos**. Para revertir scripts SQL ejecutados en producción, usar el skill `sql-rollback-generator`.
 
-El skill produce:
-- **Rollback acoplado** por script: `NNN-script.rollback.sql` al lado del forward.
-- **Bundle global**: `rollback/00-rollback-global.sql` que deshace toda la sesión en orden inverso.
+El skill (v2.0.0+) produce:
+- **Un único `00-ROLLBACK.sql`** al root del bundle generado por `/agent-workflow:export-scripts` v4.0.0+. Encadena rollbacks cross-session en orden inverso (última sesión → primera, 04→01 dentro de cada una) dentro de un `BEGIN; ... COMMIT;` único.
+- **Bloque "Fase 5 — Cleanup irreversible"** al final del archivo, fuera de la transacción, listando irreversibles para revisión manual.
+
+> Comportamiento v1.0.0 (companions `.rollback.sql` por sentencia + per-sesión `rollback/`) eliminado en v2.0.0. Bundles ya generados con v1.0.0 quedan como histórico.
 
 Para operaciones irreversibles (TRUNCATE, DROP COLUMN, DROP TABLE sin backup), ver `skills/sql-rollback-generator/references/irreversible-checklist.md`.
 

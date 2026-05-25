@@ -210,11 +210,13 @@ COMMIT;
 
 ---
 
-## Bundle global (`00-rollback-global.sql`)
+## Bloque rollback de una sesión dentro de `00-ROLLBACK.sql`
 
 ```sql
--- ROLLBACK GLOBAL — sessionXXX-[nombre]
--- Revierte TODOS los cambios en orden inverso. Ejecutar sólo para deshacer la sesión completa.
+-- ----------------------------------------------------------------------------
+-- ROLLBACK de sessionXXX-[nombre] — revierte los cambios en orden inverso.
+-- Forma parte del 00-ROLLBACK.sql cross-session del bundle.
+-- ----------------------------------------------------------------------------
 BEGIN;
 
 -- Paso 4 invertido: deshacer inserts

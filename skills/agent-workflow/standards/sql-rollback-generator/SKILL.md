@@ -1,14 +1,14 @@
 ---
 name: sql-rollback-generator
-description: "Genera rollback **post-hoc** desde SCRIPTS.sql consolidado (v1.0.0 BREAKING — F-D session062): cuando /agent-workflow:export-scripts separa el bundle, este skill produce `.rollback.sql` por sentencia forward + `rollback-global.sql` encadenado en orden inverso (04→03→02→01). Cubre DDL (DROP IF EXISTS), migraciones con backup en esq_audit, e inserts. Marca operaciones irreversibles (DROP COLUMN, TRUNCATE, DROP CASCADE) con header WARNING. BREAKING desde v1.0.0: deja de generar rollbacks durante exec por archivo; la generación ocurre exclusivamente al exportar."
-version: 1.0.0
+description: "Genera rollback **post-hoc** desde SCRIPTS.sql consolidado (v2.0.0 BREAKING — session093): cuando /agent-workflow:export-scripts produce el bundle, este skill emite un único archivo `00-ROLLBACK.sql` al root del bundle, encadenado cross-session en orden inverso (última sesión → primera, 04→03→02→01 dentro de cada una). NO genera `.rollback.sql` companions por sentencia ni `<session>/rollback/` per-sesión (ambos eliminados desde v2.0.0). Cubre DDL (DROP IF EXISTS), migraciones con backup en esq_audit, e inserts. Marca operaciones irreversibles (DROP COLUMN, TRUNCATE, DROP CASCADE) con header WARNING en bloque separado al final del archivo, después del `COMMIT;`."
+version: 2.0.0
 ---
 
-# SQL Rollback Generator (v1.0.0 — on-export)
+# SQL Rollback Generator (v2.0.0 — `00-ROLLBACK.sql` único cross-session)
 
-Generación de rollbacks **post-hoc** desde el archivo único `SCRIPTS.sql` de cada sesión. Disparado por `/agent-workflow:export-scripts` v3.0.0+ al producir el bundle de release.
+Generación de rollback **post-hoc** desde los archivos `SCRIPTS.sql` de las sesiones incluidas en el bundle de export. Disparado por `/agent-workflow:export-scripts` v4.0.0+ al consolidar el bundle.
 
-> **BREAKING desde v1.0.0**: este skill ya NO genera `.rollback.sql` durante la sesión. La política previa "on-write per archivo" (v0.x) generaba un rollback acoplado por cada forward; la política nueva "on-export" agrupa la generación al consolidar el bundle. Razón: el flujo SQL durante exec ahora es un único `SCRIPTS.sql` (ver `sql-script-organizer` v1.0.0); no hay archivos individuales que parear con rollbacks. Layouts legacy se migran con `/agent-workflow:migrate --upgrade-topology`.
+> **BREAKING desde v2.0.0**: este skill ya NO produce companions `.rollback.sql` por sentencia ni sub-carpetas `<session>/rollback/` per-sesión (comportamiento v1.0.0 eliminado). El output canónico es un único `00-ROLLBACK.sql` al root del bundle. Razón: el bundle se ejecuta atomic (todo o nada) — múltiples archivos rollback agregaban ruido sin valor operacional. Layouts v1.0.0 quedan como histórico; bundles generados con export-scripts v3.x no se reescriben.
 
 ## When to use
 
@@ -20,45 +20,66 @@ Generación de rollbacks **post-hoc** desde el archivo único `SCRIPTS.sql` de c
 
 Reglas en `../session/references/sandbox-readonly-rules.md`. En plan mode describir estrategia por sentencia forward (sin crear `.rollback.sql`); irreversibles se anotan para revisión.
 
-## Principios (v1.0.0)
+## Principios (v2.0.0)
 
 - **Input**: `SCRIPTS.sql` de cada sesión incluida en el corpus de export, parseado vía markers `@category`/`@stmt` (ver `sql-script-organizer/references/scripts-sql-format.md`).
-- **Output**: archivos `.rollback.sql` ubicados junto al forward separado en el bundle export (`por-sesion/sessionXXX/<categoria>/NNN-*.rollback.sql`).
-- **Global**: `por-sesion/sessionXXX/rollback/00-rollback-global.sql` encadena los rollbacks en orden inverso (04 → 03 → 02 → 01), todo en `BEGIN; ... COMMIT;` único.
+- **Output único**: `<bundle-root>/00-ROLLBACK.sql` — un solo archivo cross-session al root del bundle.
+- **NO se generan** companions `.rollback.sql` por sentencia (eliminado en v2.0.0).
+- **NO se genera** sub-carpeta `<session>/rollback/` per-sesión (eliminado en v2.0.0).
+- **NO se genera** `rollback-global.sql` separado del root (eliminado en v2.0.0).
+- **Orden interno**: encadenado en orden inverso global — última sesión → primera; dentro de cada sesión 04 → 03 → 02 → 01.
+- **Estructura del archivo**:
+  - Header del archivo: corpus + fecha + sesiones cubiertas + versión del CLI.
+  - Bloque transaccional único `BEGIN; ... COMMIT;` con sub-bloques por sesión.
+  - Cada sub-bloque preserva header canónico del rollback de su sentencia (Script / Sesion / Objeto / Alcance) como comentario.
+  - Bloque final **fuera de la transacción**: "Fase 5 — Cleanup irreversible" con header `-- WARNING: IRREVERSIBLE` listando operaciones que no son revertibles automáticamente (decisión manual del operador).
 - **Idempotencia obligatoria**: `DROP ... IF EXISTS`, `CREATE OR REPLACE`, `ON CONFLICT DO NOTHING`.
-- **Transacción obligatoria** en cada rollback individual.
-- **Header del rollback** reusa el del forward (4 líneas Script/Sesion/Objeto/Alcance) con `Objeto:` describiendo la reversa.
-- **Irreversibles** (DROP COLUMN, TRUNCATE, DROP CASCADE, datos sin backup) marcados con `-- WARNING: IRREVERSIBLE` debajo del header.
-- **Datos**: si el forward es UPDATE/DELETE masivo sin backup, generar un `000-backup-*.sql` previo en el bundle (Categoría 03-migracion) + rollback que restaure desde `esq_audit.tb_bkp_<x>_sNNN`.
+- **Datos**: si el forward es UPDATE/DELETE masivo sin backup, generar un `000-backup-*.sql` previo en `03-DML.sql` del bundle + el rollback que restaura desde `esq_audit.tb_bkp_<x>_sNNN` vive dentro de `00-ROLLBACK.sql`.
 
-## Header del rollback
+## Estructura del `00-ROLLBACK.sql`
 
-El `.rollback.sql` reusa el mismo formato canónico definido en `sql-script-organizer/SKILL.md#header-canónico`:
+Header global del archivo:
 
 ```sql
 -- ============================================================================
--- Script:  NNN-tipo-objetivo.rollback.sql
--- Sesion:  sNNN
--- Objeto:  Revierte los cambios de NNN-tipo-objetivo.sql (<resumen de la reversa>).
--- Alcance: <mismo alcance que el forward>
+-- Script:  00-ROLLBACK.sql
+-- Bundle:  NNN-export-scripts-YYYY-MM-DD
+-- Sesiones: sNNN, sNNN, ...
+-- Objeto:  Revierte el bundle completo en orden inverso (última sesión → primera, 04→01).
+-- Alcance: <enumeración cross-session>
 -- ============================================================================
 ```
 
-- `Objeto:` describe la reversa, no el forward (ej. "Repone tb_x.cod_usuario al valor de esq_audit.tb_bkp_x_sNNN").
-- `Alcance:` repite literal el del forward para que quede explícito que la reversa cubre exactamente el mismo set.
-- Si el forward es irreversible, agregar **debajo del header** una línea suelta:
+Sub-bloque por sentencia (dentro del `BEGIN; ... COMMIT;` único):
 
-  ```sql
-  -- ============================================================================
-  -- Script:  ...
-  -- Sesion:  ...
-  -- Objeto:  ...
-  -- Alcance: ...
-  -- ============================================================================
-  -- WARNING: IRREVERSIBLE — best-effort, ver DECISIONS.md DEC-NNN (legacy: DECISIONES.md).
-  ```
+```sql
+-- ----------------------------------------------------------------------------
+-- Rollback de sesion sNNN — <categoria>: NNN-tipo-objetivo
+-- Objeto:  <resumen de la reversa>
+-- Alcance: <mismo alcance que el forward>
+-- ----------------------------------------------------------------------------
+DROP TABLE IF EXISTS esq_.tb_x;
+-- ...
+```
 
-  El bloque WARNING explica qué no se puede recuperar y referencia la decisión.
+- `Objeto:` del sub-bloque describe la reversa (ej. "Repone tb_x.cod_usuario al valor de esq_audit.tb_bkp_x_sNNN").
+- `Alcance:` repite literal el del forward.
+
+Bloque irreversibles al final del archivo (después del `COMMIT;`, **fuera de la transacción**):
+
+```sql
+COMMIT;
+
+-- ============================================================================
+-- Fase 5 — Cleanup irreversible (manual)
+-- WARNING: IRREVERSIBLE — best-effort. Ver DECISIONS.md de la sesión origen.
+-- ============================================================================
+-- sesion sNNN — DROP COLUMN esq_.tb_x.col_y (no hay backup automático)
+-- sesion sMMM — TRUNCATE esq_.tb_z
+-- ...
+```
+
+El bloque WARNING explica qué no se puede recuperar y referencia la decisión de la sesión donde se introdujo.
 
 ## Estrategias por tipo de operación
 
@@ -129,39 +150,33 @@ Protocolo:
 
 Lista completa en `references/irreversible-checklist.md`.
 
-## Layout (post-export-scripts v3.0.0)
+## Layout (post-export-scripts v4.0.0)
 
-### Par acoplado
-
-`export-scripts` produce los archivos separados desde SCRIPTS.sql y este skill genera el rollback junto a cada forward:
+Output canónico — un solo archivo al root del bundle:
 
 ```
-<docs>/scripts/NNN-export-scripts-YYYY-MM-DD/por-sesion/sessionXXX/01-ddl-tablas/
-├── 001-crea-tb-x.sql              (forward, derivado de @stmt en SCRIPTS.sql)
-└── 001-crea-tb-x.rollback.sql     (rollback, generado por este skill)
+<docs>/scripts/NNN-export-scripts-YYYY-MM-DD/
+└── 00-ROLLBACK.sql                # único rollback cross-session (este skill lo genera)
 ```
 
-### Bundle global
+Para context: el bundle plano del export incluye además `01-DDL-TABLES.sql`, `02-DDL-FUNCTIONS.sql`, `03-DML.sql`, `04-INSERTS.sql`, `README.md` — todos al root, generados por `export-scripts` (no por este skill).
 
-```
-<docs>/scripts/NNN-export-scripts-YYYY-MM-DD/por-sesion/sessionXXX/rollback/
-├── 00-rollback-global.sql      (encadena todos 04→01 con BEGIN/COMMIT único)
-├── 04-inserts-rollback.sql
-├── 03-migracion-rollback.sql
-├── 02-ddl-funciones-rollback.sql
-└── 01-ddl-tablas-rollback.sql
-```
+**No se generan** (eliminados desde v2.0.0):
+- Companions `.rollback.sql` por sentencia.
+- Sub-carpeta `<session>/rollback/` per-sesión.
+- Archivo `rollback-global.sql` separado.
+- Archivos `04-inserts-rollback.sql`, `03-migracion-rollback.sql`, etc. (categorías por separado).
 
-Layout pre-v1.0.0 (`scripts/bundle/...` dentro de la sesión durante exec) ya no se genera. Layouts legacy se migran con `/agent-workflow:migrate --upgrade-topology`.
+Layouts v1.0.0 quedan como histórico en bundles ya generados (`docs/scripts/00X-export-scripts-*` previos). No se migran retroactivamente. Layouts legacy v0.x se migran con `/agent-workflow:migrate --upgrade-topology`.
 
-## Proceso
+## Proceso (v2.0.0)
 
-1. Leer el forward — identificar tipo.
-2. Clasificar — seleccionar estrategia.
-3. Generar rollback acoplado.
-4. Verificar irreversibilidades — warning + DECISIÓN + confirmación si aplica.
-5. Actualizar bundle global.
-6. Verificar cobertura antes de graduar.
+1. Parsear todos los `SCRIPTS.sql` del corpus de export (markers `@category`/`@stmt`).
+2. Para cada sentencia forward, clasificar el tipo y seleccionar estrategia (DDL / migración / inserts / irreversible).
+3. Generar el bloque rollback correspondiente — sin escribir todavía a disco.
+4. Identificar irreversibles → moverlos al bloque "Fase 5" final.
+5. Componer el `00-ROLLBACK.sql` único con orden inverso global (última sesión → primera, 04→01) + bloque "Fase 5" al final.
+6. Escribir el archivo único al root del bundle.
 
 ## Notas de portabilidad (PostgreSQL como motor primario)
 
@@ -176,19 +191,19 @@ Si el destino no es Postgres, indicarlo en `Objeto:` o como nota libre debajo de
 
 ## Graduación al cierre
 
-`rollback/` viaja junto al bundle forward bajo `docs/scripts/NNN-sessionXXX-nombre/rollback/`.
+Este skill **NO se invoca al cerrar una sesión**. La graduación de scripts de una sesión individual produce `docs/scripts/NNN-sessionXXX-nombre/` con el `SCRIPTS.sql` curado; el rollback consolidado vive **exclusivamente en el bundle de export** (`docs/scripts/NNN-export-scripts-YYYY-MM-DD/00-ROLLBACK.sql`).
 
-## Modo release (cross-session + por tema)
+## Modo release (LEGACY — deprecation Fase 1)
 
-`release` y `release-scripts` invocan este skill para producir rollback global del release y rollback por tema. Algoritmo detallado (3 niveles, principios, qué NO hacer, verificación) en **`references/release-rollback.md`**.
+`release` y `release-scripts` (legacy en deprecation Fase 1) consumían el algoritmo v1.0.0 (companions `.rollback.sql` + per-sesión rollback + global). Ese código y output **no se actualizan a v2.0.0**: se conserva como histórico en `references/release-rollback.md` mientras los workspaces dejan de invocarlos. El reemplazo canónico es `/agent-workflow:export-scripts` v4.0.0+ que invoca este skill en v2.0.0.
 
 ## Integración con otros skills
 
-- **`sql-script-organizer`** — companion: organiza el bundle forward y coordina rollbacks. En modo release, provee bundle consolidado.
-- **`release`** — consume rollback global de release.
-- **`release-scripts`** — consume rollback por tema.
+- **`sql-script-organizer`** — companion: organiza el `SCRIPTS.sql` por sesión que este skill consume al exportar.
+- **`export-scripts`** v4.0.0+ — único invocador activo de este skill (genera `00-ROLLBACK.sql` único).
+- **`release`** / **`release-scripts`** — legacy en deprecation Fase 1; consumen `references/release-rollback.md` (no se actualiza).
 - **`coding-standards`** — reglas de estilo SQL en `database-conventions.md#estilo-de-scripts-sql`.
-- **`session`** — Fase 3 invoca este skill junto a `sql-script-organizer` al escribir el primer `.sql`.
+- **`session`** — este skill NO se invoca al cerrar una sesión individual; sólo desde export-scripts.
 
 ## Recursos adicionales
 

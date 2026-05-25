@@ -143,27 +143,27 @@ Cada sección del cuerpo se introduce con una línea de comentario corta envuelt
 
 El usuario revisa el SCRIPTS.sql periódicamente; la separación 01-04 final y la verificación de dependencias cruzadas la hace `/agent-workflow:export-scripts` post-hoc.
 
-## Layout del bundle (post-export-scripts v3.0.0)
+## Layout del bundle (post-export-scripts v4.0.0)
 
-`/agent-workflow:export-scripts` produce el bundle al ejecutarse, no este skill:
+`/agent-workflow:export-scripts` v4.0.0+ produce el bundle al ejecutarse, no este skill. Layout plano cross-session al root:
 
 ```
-<docs>/scripts/NNN-export-scripts-YYYY-MM-DD/por-sesion/sessionXXX-nombre/
-├── README.md                                  (generado por export-scripts)
-├── 01-ddl-tablas/
-│   ├── 001-crea-tb-x.sql                      (derivado de @stmt: 001-crea-tb-x)
-│   └── ...
-├── 02-ddl-funciones/
-├── 03-migracion/
-│   ├── 000-backup-tb-x.sql                    (auto-generado por sql-rollback-generator si UPDATE/DELETE masivo)
-│   └── ...
-├── 04-inserts/
-└── rollback/
-    ├── 00-rollback-global.sql                 (encadenado 04→03→02→01)
-    └── NNN-*.rollback.sql                     (1 por @stmt forward)
+<docs>/scripts/NNN-export-scripts-YYYY-MM-DD/
+├── 00-ROLLBACK.sql                            (único rollback cross-session — sql-rollback-generator v2.0.0)
+├── 01-DDL-TABLES.sql                          (consolidado cross-session, skip si vacío)
+├── 02-DDL-FUNCTIONS.sql                       (idem)
+├── 03-DML.sql                                 (UPDATE/DELETE/migración + backup en esq_audit cuando aplica)
+├── 04-INSERTS.sql                             (idem)
+├── README.md                                  (único informe + índice + how-to-execute)
+└── por-tema/                                  (opt-in — capa adicional encima del root)
+    └── tema-<slug>/01-04-*.sql
 ```
 
-Layout **legacy** pre-v1.0.0 (`scripts/01-04/*.sql + .rollback.sql` directo en sesión) ya **no se genera**; sesiones nuevas usan SCRIPTS.sql. Layouts legacy en sesiones cerradas se migran con `/agent-workflow:migrate --upgrade-topology`.
+Sentencias individuales del `SCRIPTS.sql` per-sesión se consolidan **cross-session** al archivo de su categoría — no se crea sub-carpeta por sesión.
+
+Layout **v3.x** (`por-sesion/<sessionXXX>/01-04/*.sql + .rollback.sql` companions + per-sesión `rollback/`) ya **no se genera** desde v4.0.0. Bundles ya escritos con v3.x quedan como histórico.
+
+Layout **legacy** pre-SCRIPTS.sql (`scripts/01-04/*.sql + .rollback.sql` directo en sesión) tampoco se genera; sesiones nuevas usan SCRIPTS.sql. Layouts legacy en sesiones cerradas se migran con `/agent-workflow:migrate --upgrade-topology`.
 
 ## Graduación al cierre (vía `/agent-workflow:release`)
 

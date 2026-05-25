@@ -1,6 +1,18 @@
 # Plantilla — Informe del bundle export-scripts
 
-Plantilla exacta que usa el skill `export-scripts` para generar `manifest.md` dentro del output dir. Reemplazar los placeholders `[entre corchetes]` con valores reales al momento de generar.
+## Status: DEPRECATED (desde v4.0.0 — session093)
+
+Este template ya **no se usa** para bundles nuevos. Desde `export-scripts` v4.0.0 el informe consolidado vive en `README.md` único al root del bundle (ver `readme-template.md`). El layout plano cross-session reemplazó `manifest.md` + `ORDER.md` + `rollback-global.sql` separados.
+
+**Si estás generando un bundle nuevo**: usar `references/readme-template.md` (plantilla canónica).
+
+**Si estás leyendo un bundle histórico** (`docs/scripts/001-002-003-export-scripts-*` generado por v3.x): este template describe el formato que tenía. No se reescriben los bundles ya generados.
+
+---
+
+## Plantilla original (export-scripts v3.x — histórico)
+
+Plantilla exacta que usaba el skill `export-scripts` v3.x para generar `manifest.md` dentro del output dir. Reemplazar los placeholders `[entre corchetes]` con valores reales al momento de generar.
 
 > **Heredada de `release/references/report-template.md` v2.0.0**. Cambios respecto al original: (1) paths actualizados al nuevo output dir único; (2) sección 4.4 "Vista por tema" condicional (V4.a); (3) header con readiness color emoji; (4) sección 10 cita `export-scripts v1.0.0`.
 

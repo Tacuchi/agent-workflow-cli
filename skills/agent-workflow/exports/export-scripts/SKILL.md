@@ -1,7 +1,7 @@
 ---
 name: export-scripts
-description: "Consolida N sesiones del workspace + `docs/scripts/` ya graduados en un paquete de paso a producción bajo `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`. v3.0.0 BREAKING (F-D session062): lee `SCRIPTS.sql` único per sesión (uppercase EN, G1), parsea markers `@category`/`@stmt` y separa post-hoc en `por-sesion/sessionXXX/01-04/`. Delega `sql-rollback-generator` v1.0.0+ on-export para generar rollbacks per archivo + global encadenado 04→01. Aborta con sugerencia de `/agent-workflow:migrate --upgrade-topology` si detecta layout legacy `scripts/01-04/*.sql` (G2). Sigue produciendo `manifest.md`, `por-tema/` opt-in, `rollback-global.sql`, `ORDER.md`. Read-only / reporte — no ejecuta commits ni SQL. Invocado sólo vía `/agent-workflow:export-scripts`. v3.1 (session081): corpus extendido a `docs/` además de sesiones (DEC-002) — ver `docs/shared-contract/export-corpus-sources.md`."
-version: 3.1.0
+description: "Consolida N sesiones del workspace + `docs/scripts/` ya graduados en un paquete de paso a producción bajo `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`. v4.0.0 BREAKING (session093): layout plano cross-session al root del bundle — `00-ROLLBACK.sql`, `01-DDL-TABLES.sql`, `02-DDL-FUNCTIONS.sql`, `03-DML.sql`, `04-INSERTS.sql`, `README.md` único. Sin `por-sesion/`, sin `<file>.rollback.sql` companions, sin per-sesión `rollback/`, sin `manifest.md`/`ORDER.md` separados (absorbidos por `README.md`). Lee `SCRIPTS.sql` único per sesión (uppercase EN, G1), parsea markers `@category`/`@stmt` y consolida cross-session. Delega `sql-rollback-generator` v2.0.0+ on-export para generar `00-ROLLBACK.sql` único encadenado 04→01. Aborta con sugerencia de `/agent-workflow:migrate --upgrade-topology` si detecta layout legacy `scripts/01-04/*.sql` (G2). `--themes` opt-in: capa adicional `por-tema/<slug>/` encima del root plano. Read-only / reporte — no ejecuta commits ni SQL. Invocado sólo vía `/agent-workflow:export-scripts`."
+version: 4.0.0
 ---
 
 # Export Scripts — Bundle SQL + informe consolidado desde N sesiones
@@ -31,16 +31,17 @@ Como `release` y `release-scripts` legacy, este skill requiere conocimiento del 
 - Re-generar tras agregar nuevas sesiones desde el último export.
 - Antes de go/no-go meeting.
 
-## Qué hace este skill
+## Qué hace este skill (v4.0.0)
 
-1. Lee sesiones (`.workflow/sessions/`) recolectando `scripts/` y `queries/` de **todas** las sesiones del workspace (filtrables por `--since` y `--source`).
+1. Lee sesiones (`.workflow/sessions/`) recolectando `SCRIPTS.sql` (uppercase EN canónico) de **todas** las sesiones del workspace (filtrables por `--since` y `--source`).
 2. Escanea código fuente buscando patrones que no deben llegar a producción.
 3. Consulta git (rama vs `certificacion`, commits pendientes, archivos sin commit).
-4. Delega a `sql-script-organizer` (clasificación 01→04 cross-session) y `sql-rollback-generator` (rollback acoplado + global).
-5. Detecta acciones manuales requeridas (matriz heredada de `release`).
-6. **Theme detection (opt-in)**: si hay `## Temas` en algún OBJECTIVE o `--themes slug1,slug2` declarado, genera vista `por-tema/` consolidada por categoría.
-7. Aplica validations V1-V6 (`references/validations.md`).
-8. Si pasa: escribe el dossier completo bajo `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`.
+4. **Consolida cross-session por categoría al root** del bundle: `01-DDL-TABLES.sql`, `02-DDL-FUNCTIONS.sql`, `03-DML.sql`, `04-INSERTS.sql` (skip silencioso si la categoría está vacía).
+5. Delega a `sql-rollback-generator` v2.0.0+ para generar **`00-ROLLBACK.sql` único** cross-session (encadenado 04→01).
+6. Detecta acciones manuales requeridas (matriz heredada de `release`).
+7. **Theme detection (opt-in)**: si hay `## Temas` en algún OBJECTIVE o `--themes slug1,slug2` declarado, genera `por-tema/<slug>/` como capa adicional encima del root plano (NO duplica rollback).
+8. Aplica validations V1-V6 (`references/validations.md`).
+9. Si pasa: escribe el bundle completo bajo `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` con el layout plano + `README.md` único.
 
 ## Qué NO hace
 
@@ -49,11 +50,17 @@ Como `release` y `release-scripts` legacy, este skill requiere conocimiento del 
 - Enviar correos ni crear PRs.
 - Modificar código fuente (los hallazgos del escaneo son recomendaciones).
 - Tocar `.workflow/sessions/` ni artefactos individuales.
-- Migrar histórico de `docs/release/` (workspaces que ya invocaron `release` legacy mantienen ese dir como histórico).
+- Migrar histórico de `docs/release/` ni bundles `docs/scripts/00X-*` generados por export-scripts v3.x (layout previo, no se reescribe).
+- **Escribir `por-sesion/`** (eliminado en v4.0.0): la consolidación es cross-session al root.
+- **Escribir `<file>.rollback.sql` companions** (eliminado en v4.0.0): el rollback canónico es `00-ROLLBACK.sql` único.
+- **Escribir `<session>/rollback/`** (eliminado en v4.0.0): no hay per-sesión rollback.
+- **Escribir `manifest.md` separado** (eliminado en v4.0.0): absorbido por `README.md`.
+- **Escribir `ORDER.md` separado** (eliminado en v4.0.0): absorbido por §4 del `README.md`.
+- **Escribir `rollback-global.sql` separado** (eliminado en v4.0.0): el rollback es `00-ROLLBACK.sql` único.
 
 ## Sandbox read-only
 
-`../session/references/sandbox-readonly-rules.md`. Plan describe NNN, sesiones incluidas, secciones del manifest, hallazgos esperados, contenido del bundle por sesión y (opcionalmente) por tema.
+`../session/references/sandbox-readonly-rules.md`. Plan describe NNN, sesiones incluidas, secciones del `README.md`, hallazgos esperados, contenido del bundle plano cross-session y (opcionalmente) capa `por-tema/`.
 
 ## Estilo de comunicación
 
@@ -97,7 +104,7 @@ Output: `{workspace_mode, is_hub, source_alias, docs_root, sessions, sessions_co
 > Sesiones en formato legacy detectadas: sessionXXX, sessionYYY.
 > Migrar primero con `/agent-workflow:migrate --upgrade-topology`, luego re-correr export-scripts.
 
-### Paso 1.5 — Gate de layout SQL (v3.0.0, G2)
+### Paso 1.5 — Gate de layout SQL (v4.0.0, G2)
 
 Por cada sesión del corpus, verificar el layout SQL:
 
@@ -134,7 +141,7 @@ Built-in patterns: localhost, IP literal, TODO/FIXME/XXX/HACK, hardcoded-secret,
 
 Output: `{matches: [{pattern_id, severity, file, line, snippet, recommendation}], counts, by_severity, total_matches}`.
 
-Si `--skip-code-scan`: marcar la sección 5 del manifest como "escaneo omitido".
+Si `--skip-code-scan`: marcar la sección 6 del `README.md` como "escaneo omitido".
 
 Catálogo extendido (alta/media/baja con recomendaciones detalladas) en `references/code-scan-recommendations.md`.
 
@@ -163,47 +170,63 @@ Output dir resuelto:
 
 Si `docs/scripts/` no existe, crearlo.
 
-### Paso 5 — `por-sesion/` (bundle por sesión, v3.0.0)
+### Paso 5 — Consolidación cross-session por categoría (v4.0.0)
 
-Para cada sesión del corpus que tenga `SCRIPTS.sql` (verificado en Paso 1.5):
+Recolectar markers de todos los `SCRIPTS.sql` del corpus y consolidar al root del bundle:
 
-1. Crear `por-sesion/sessionXXX-<slug>/`.
-2. **Leer y parsear `SCRIPTS.sql`** de la sesión:
+1. **Para cada sesión** con `SCRIPTS.sql` (verificado en Paso 1.5):
+   - Leer y parsear el archivo.
    - Detectar markers `-- @category: <01-04>` + `-- @stmt: NNN-verbo-objetivo`.
-   - Detectar opcionales `@objeto` y `@alcance` para el header canónico de cada archivo separado.
-   - Validar idempotencia básica (presencia de `IF EXISTS`, `OR REPLACE`, `ON CONFLICT`); advertir en manifest si falta.
-3. **Separar en 01-04**:
-   - Por cada par marker → escribir archivo `por-sesion/sessionXXX-<slug>/<categoria>/<stmt>.sql` con header canónico re-derivado (Script / Sesion / Objeto / Alcance) + BEGIN/COMMIT propios.
-   - Orden dentro de cada categoría: cronológico según aparición en SCRIPTS.sql.
+   - Detectar opcionales `@objeto` y `@alcance` para header de cada sentencia.
+   - Validar idempotencia básica (presencia de `IF EXISTS`, `OR REPLACE`, `ON CONFLICT`); advertir en `README.md` §Hallazgos si falta.
    - Spec del SCRIPTS.sql: `agent-workflow/skills/sql-script-organizer/references/scripts-sql-format.md`.
-4. **Delegar a `sql-rollback-generator` v1.0.0** (on-export): genera `<stmt>.rollback.sql` por cada forward separado + `rollback/00-rollback-global.sql` encadenado 04→01.
-5. Copiar `queries/` tal cual si existe (canal aparte para queries de soporte; no se separa).
-6. Si la sesión tenía layout legacy `scripts/01-04/*.sql` (sub-carpetas), el Paso 1.5 ya abortó antes — nunca llegamos acá con layout mixto.
 
-### Paso 6 — `por-tema/` (opt-in)
+2. **Consolidar por categoría al root** — un archivo por categoría con todas las sentencias cross-session. Mapping marker → filename:
+   - `01-DDL-TABLES.sql` ← `@category: 01-ddl-tablas` (CREATE/ALTER TABLE, INDEX, SEQUENCE).
+   - `02-DDL-FUNCTIONS.sql` ← `@category: 02-ddl-funciones` (CREATE OR REPLACE FUNCTION/PROCEDURE).
+   - `03-DML.sql` ← `@category: 03-migracion` (UPDATE/DELETE/INSERT...SELECT sobre datos existentes).
+   - `04-INSERTS.sql` ← `@category: 04-inserts` (INSERT INTO ... VALUES, seeds).
+   - Orden cross-session: sessionXXX cronológica → stmt cronológica dentro de cada una.
+   - Header de cada archivo: bloque inicial con metadata del bundle (corpus + fecha + versión CLI) + tabla de contenidos (sentencias en orden).
+   - Cada bloque de sentencia preserva su header canónico (`Script` / `Sesion` / `Objeto` / `Alcance`) + bloque transaccional `BEGIN; ... COMMIT;` propio.
+   - **Categorías vacías → skip silencioso**: no se escribe el archivo si no hay sentencias del corpus en esa categoría.
+
+3. **Delegar a `sql-rollback-generator` v2.0.0** (on-export): genera `00-ROLLBACK.sql` único cross-session encadenado 04→01 (ver Paso 7).
+
+4. **Queries de soporte**: si alguna sesión tiene `queries/`, copiarlas a `_queries/<sessionXXX>/` (sub-dir aparte; canal de consulta, no de ejecución).
+
+5. Si la sesión tenía layout legacy `scripts/01-04/*.sql` (sub-carpetas), el Paso 1.5 ya abortó — nunca llegamos acá con layout mixto.
+
+**Nota explícita**: NO se crea `por-sesion/`. NO se crea `<file>.rollback.sql` companion por sentencia. NO se crea sub-carpeta `rollback/` per-sesión. Esos artefactos del v3.x quedan eliminados del default.
+
+### Paso 6 — `por-tema/` (opt-in, capa adicional encima del root plano)
 
 Activación:
 - `--themes slug1,slug2` declarado, **o**
 - Al menos una sesión tiene `## Temas` en su OBJECTIVE, **o**
 - `--themes infer` declarado (inferencia LLM).
 
-Si activado, aplicar `references/theme-handling.md` (port adaptado de release-scripts legacy):
+Si activado, generar `por-tema/<slug>/` como **capa adicional** encima del root plano — NO reemplaza los archivos `0X-*.sql` del root. Aplicar `references/theme-handling.md`:
 
 1. Resolver temas por sesión (lectura declarativa + inferencia + confirmación).
-2. Asignar cada script a su tema (header `-- Temas:`, nombre, contenido, fallback `tema-general`).
-3. Consolidar por categoría dentro de cada tema en un único `.sql` ejecutable (4 forwards + 4 rollbacks + 1 rollback de tema = ~9 archivos/tema).
-4. Generar `ORDER.md` cross-tema con secuencia fase 1→4.
-5. Si `--keep-parts`: preservar `por-tema/<slug>/parts/<categoria>/*.sql`.
+2. Asignar cada sentencia a su tema (header `-- Temas:`, nombre, contenido, fallback `tema-general`).
+3. Consolidar por categoría dentro de cada tema en un único `.sql` ejecutable: `por-tema/<slug>/01-DDL-TABLES.sql`, `02-DDL-FUNCTIONS.sql`, `03-DML.sql`, `04-INSERTS.sql`.
+4. **Rollback per-tema**: NO se genera. El rollback canónico es siempre `00-ROLLBACK.sql` al root — un solo punto de verdad para reversa. Esto evita estado inconsistente si el operador ejecuta rollback de un tema y deja otros aplicados.
+5. Si `--keep-parts`: preservar `por-tema/<slug>/parts/<categoria>/*.sql` con sentencias individuales.
+6. README §Mapping: agregar tabla "Sesión ↔ Tema ↔ Scripts" cuando `por-tema/` activado.
 
 Si no activado, **skip** este paso completo (sin sub-carpeta `por-tema/` vacía).
 
-### Paso 7 — `rollback-global.sql` + `ORDER.md`
+### Paso 7 — `00-ROLLBACK.sql` cross-session (rollback único)
 
-**`rollback-global.sql`**: encadena rollbacks en orden inverso al `ORDER.md`. Si `por-tema/` existe, el global encadena rollbacks por-tema; si no, encadena rollbacks por-sesion. Operaciones irreversibles → "Fase 5 — Cleanup irreversible" al final con header WARNING.
+Delegar a **`sql-rollback-generator` v2.0.0** para generar un único archivo `00-ROLLBACK.sql` al root del bundle:
 
-**`ORDER.md`**: secuencia ejecutable cross-bundle:
-- Sin `por-tema/`: orden por sesión cronológica, dentro de cada una 01→04.
-- Con `por-tema/`: intercalado por fase (Fase 1 DDL tablas cross-tema, Fase 2 DDL funciones cross-tema, etc.) — algoritmo en `references/theme-handling.md`.
+- Encadena rollbacks en orden inverso: última sesión → primera, dentro de cada una 04→03→02→01.
+- Header del archivo lista las sesiones cubiertas + corpus + fecha de generación.
+- Cuerpo: `BEGIN; ... COMMIT;` único con bloques agrupados por sesión + categoría inversa.
+- **Irreversibles**: bloque "Fase 5 — Cleanup irreversible" **después** del `COMMIT;` con header `-- WARNING: IRREVERSIBLE` y referencia a `DECISIONS.md` de la sesión origen. El operador decide ejecutar este bloque manualmente.
+
+**No se genera** `ORDER.md`: la secuencia ejecutable vive en §4 del `README.md` (única fuente de verdad).
 
 ### Paso 8 — Detección de acciones manuales
 
@@ -212,37 +235,38 @@ Cruzar contra `release/references/manual-actions-catalog.md` (reference cruzada 
 | Condición | Acción manual |
 |---|---|
 | Tokens/api-key/credenciales mencionados sin valor | Solicitar a admin de prod (plantilla de correo) |
-| Scripts en `03-migracion/` | Respaldar tablas afectadas |
+| Sentencias categorizadas `03-migracion` (consolidadas en `03-DML.sql`) | Respaldar tablas afectadas |
 | `ALTER TABLE ... DROP` o `DROP TABLE` | Validar ventana de downtime |
 | Escaneo: `localhost` / staging URL | Reemplazar por env var |
 | Escaneo: credenciales hardcodeadas (alta) | Rotar + gestor de secretos |
 | Rama distinta de `certificacion` con commits | Crear PR a `certificacion` |
 | Sesión activa con `.sql` sin bundle | Cerrar o aislar antes del export |
 
-Cada acción incluye `id` (ACT-001, …) para referenciar desde el checklist final del manifest.
+Cada acción incluye `id` (ACT-001, …) para referenciar desde el checklist final del `README.md` (§9).
 
-### Paso 9 — `manifest.md` + `README.md` + validaciones
+### Paso 9 — `README.md` único + validaciones
 
-**`manifest.md`** (informe consolidado): usar `references/manifest-template.md`. Secciones canónicas:
+**`README.md`** (único informe + índice + how-to-execute): usar `references/readme-template.md`. Secciones canónicas v4.0.0:
+
 1. Resumen ejecutivo + readiness.
 2. Sesiones incluidas.
 3. Acciones manuales (ACT-NNN).
-4. Base de datos (secuencia, rollback, impacto, vista por-tema si aplica).
-5. Hallazgos del code-scan.
-6. Git y ramas.
-7. Documentación graduada.
-8. Checklist final de producción.
-9. Advertencias.
-10. Metadata.
+4. Secuencia de ejecución 01→04 + invocaciones psql.
+5. Rollback (`00-ROLLBACK.sql` — cómo, cuándo, irreversibles).
+6. Hallazgos del code-scan.
+7. Git y ramas.
+8. Documentación graduada (decisiones / manuales / etc.).
+9. Checklist final de producción.
+10. Metadata (corpus + fecha + versión CLI).
 
-**`README.md`**: índice del directorio + mapeo sesión↔tema↔scripts + how-to-execute. Usar `references/readme-template.md`.
+**NO se genera `manifest.md`** (absorbido por README §1-§10). **NO se genera `ORDER.md`** (absorbido por §4 del README). El template `manifest-template.md` queda marcado `## Status: DEPRECATED` como histórico.
 
 **Validaciones V1-V6** (`references/validations.md`):
-- V1 estructura del manifest.
-- V2 noise vetado (placeholders, paths absolutos, `NNN` sin reemplazar).
-- V3 secciones obligatorias del manifest.
-- V4 conditionals (vista por-tema honored, dry-run, código scan skip).
-- V5 header del manifest bien formado.
+- V1 estructura del bundle: archivos `00-ROLLBACK.sql`, `01..04-*.sql`, `README.md` al root. Falla si aparece `por-sesion/`, `<file>.rollback.sql`, `<session>/rollback/`, `manifest.md`, `ORDER.md` o `rollback-global.sql`.
+- V2 noise vetado (placeholders, paths absolutos, `NNN` sin reemplazar) + anti-redundancia (sin patrones del layout v3.x).
+- V3 secciones obligatorias del README único (las 10).
+- V4 conditionals (`por-tema/` honored si activo, dry-run, code-scan skip).
+- V5 header del README bien formado.
 - V6 referencias resolubles (paths a `docs/`).
 
 Si V1, V3 o V4 fallan → abortar con error report. V2, V5, V6 → warning.
@@ -251,32 +275,29 @@ Si V1, V3 o V4 fallan → abortar con error report. V2, V5, V6 → warning.
 
 Si `--dry-run`: imprimir reporte (count sesiones incluidas, hallazgos por severidad, acciones manuales, V4 outcome). No escribir.
 
-Si pasa: escribir directorio completo:
+Si pasa: escribir directorio completo (layout plano cross-session):
 
 ```
 docs/scripts/NNN-export-scripts-YYYY-MM-DD/
-├── manifest.md                 # informe consolidado
-├── README.md                   # índice + mapeo
-├── ORDER.md                    # secuencia ejecutable
-├── rollback-global.sql         # rollback encadenado inverso
-├── por-sesion/
-│   ├── sessionXXX-<slug>/
-│   │   ├── 01-ddl-tablas/
-│   │   ├── 02-ddl-funciones/
-│   │   ├── 03-migracion/
-│   │   ├── 04-inserts/
-│   │   └── rollback/
-│   └── ...
-└── por-tema/                   # opt-in
+├── 00-ROLLBACK.sql              # único rollback cross-session (encadenado 04→01)
+├── 01-DDL-TABLES.sql            # CREATE/ALTER TABLE cross-session (skip si vacío)
+├── 02-DDL-FUNCTIONS.sql         # CREATE OR REPLACE FUNCTION cross-session (skip si vacío)
+├── 03-DML.sql                   # UPDATE/DELETE/migración cross-session (skip si vacío)
+├── 04-INSERTS.sql               # INSERT/seed cross-session (skip si vacío)
+├── README.md                    # único informe + índice + how-to-execute
+├── _queries/                    # opcional: queries de soporte por sesión (canal de consulta)
+│   └── sessionXXX/...
+└── por-tema/                    # opt-in (capa adicional encima del root plano)
     ├── tema-<slug>/
-    │   ├── 01-ddl-tablas.sql   # consolidado cross-session
-    │   ├── 02-ddl-funciones.sql
-    │   ├── 03-migracion.sql
-    │   ├── 04-inserts.sql
-    │   ├── rollback-tema-<slug>.sql
-    │   └── parts/              # si --keep-parts
+    │   ├── 01-DDL-TABLES.sql    # consolidado cross-session del tema
+    │   ├── 02-DDL-FUNCTIONS.sql
+    │   ├── 03-DML.sql
+    │   ├── 04-INSERTS.sql
+    │   └── parts/               # si --keep-parts (sentencias individuales por categoría)
     └── tema-<otro>/...
 ```
+
+**No se escriben** (eliminados desde v4.0.0): `por-sesion/`, `<file>.rollback.sql` companions, `<session>/rollback/`, `rollback-global.sql` separado, `manifest.md` separado, `ORDER.md`. El histórico (`docs/scripts/001-002-003-*` generados por v3.x) queda como histórico — no se migra.
 
 ### Paso 11 — Resumen al usuario
 
@@ -288,10 +309,10 @@ docs/scripts/NNN-export-scripts-YYYY-MM-DD/
 ## Composición con otras skills
 
 - **`sql-script-organizer`** — clasificación 01→04 cross-session (paso 5 y consolidación por tema paso 6).
-- **`sql-rollback-generator`** — rollback acoplado por archivo y rollback global encadenado.
+- **`sql-rollback-generator`** v2.0.0+ — `00-ROLLBACK.sql` único cross-session (sin companions ni per-sesión).
 - **`session`** — este skill NO invoca graduación ni cierre.
 - **`coding-standards`** — patrones de escaneo derivan de reglas de seguridad.
-- **`agent-workflow:redaccion-simple`** — preset default aplicado en prosa del manifest.
+- **`agent-workflow:redaccion-simple`** — preset default aplicado en prosa del `README.md`.
 
 ## Re-ejecución
 
@@ -312,7 +333,7 @@ Detalle completo: `references/deprecation-plan.md`.
 
 ## Recursos adicionales
 
-- **`references/manifest-template.md`** — plantilla canónica del informe consolidado (port adaptado de `release/references/report-template.md` con nuevos paths).
+- **`references/manifest-template.md`** — **DEPRECATED** desde v4.0.0. El informe consolidado se redacta directamente en `README.md` siguiendo `references/readme-template.md`. Archivo se conserva como histórico — no usar para bundles nuevos.
 - **`references/readme-template.md`** — plantilla del README del bundle.
 - **`references/lexico-tecnico.md`** — lista mínima de noise vetado para V2.
 - **`references/validations.md`** — V1-V6 con condiciones de hard-fail.
