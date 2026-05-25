@@ -1,5 +1,6 @@
 import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { testMcpConnection } from "../../../application/mcp-test-connection-service.js";
 import {
   type SelfMcpConfigData,
   type SelfMcpConnectionView,
@@ -121,25 +122,41 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
   );
 
   /**
-   * Sincroniza el MCP entry de la connection en los 3 hosts (Claude/Codex/Warp).
-   * Esto es lo que "activa" la connection — sin install en hosts, los skills no
-   * la pueden consumir. Reemplaza el viejo "doctor" (que solo reportaba drift).
+   * Test connection — ejecuta `npx -y @bytebase/dbhub` con el DSN resuelto.
+   * Si dbhub arranca sin errores fatales en menos de 5s, asumimos que la
+   * conexión al motor de datos está OK. Si dbhub falla rápidamente (DSN
+   * inválido, host inalcanzable, credenciales malas), reportamos el stderr.
    */
-  const runSyncToHosts = useCallback(
-    async (name: string) => {
-      const hosts = ["claude", "codex", "warp"] as const;
-      let allOk = true;
-      for (const host of hosts) {
-        const ok = await runRawAction(`install-${host}`, name, `syncing ${name} → ${host}…`);
-        if (!ok) allOk = false;
-      }
-      if (allOk) {
-        onToast?.({ tone: "ok", title: `Synced ${name}`, body: "claude · codex · warp" });
+  const runTestConnection = useCallback(
+    async (name: string, dsnVar: string) => {
+      setMode({ kind: "busy", label: `testing ${name} → dbhub…` });
+      try {
+        const result = await testMcpConnection({
+          dsnVar,
+          env: process.env,
+          paths: ctx.paths,
+          platform: process.platform,
+        });
+        if (result.ok) {
+          onToast?.({
+            tone: "ok",
+            title: `Connection OK · ${name}`,
+            body: `dbhub conectó usando ${dsnVar} (${result.source ?? "unknown"})`,
+          });
+        } else {
+          onToast?.({
+            tone: "err",
+            title: `Test failed · ${name}`,
+            body: result.error ?? "dbhub no pudo conectar",
+          });
+        }
+      } catch (err) {
+        onToast?.({ tone: "err", title: "Test failed", body: (err as Error).message });
       }
       await refresh();
       setMode({ kind: "list" });
     },
-    [runRawAction, refresh, onToast],
+    [ctx, onToast, refresh],
   );
 
   const triggerAction = useCallback(
@@ -147,7 +164,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
       if (!current) return;
       switch (id) {
         case "test":
-          void runSyncToHosts(current.nombre);
+          void runTestConnection(current.nombre, current.dsn_var);
           return;
         case "edit":
           setMode({
@@ -161,13 +178,13 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
           return;
       }
     },
-    [current, runSyncToHosts],
+    [current, runTestConnection],
   );
 
-  // Detail panel actions (Sync/Edit/Remove).
+  // Detail panel actions (Test/Edit/Remove).
   const detailActions: DetailAction[] = current
     ? [
-        { name: "Sync to hosts", description: "Install to Claude/Codex/Warp." },
+        { name: "Test connection", description: "Run dbhub with DSN (SELECT 1 smoke test)." },
         { name: "Edit connection", description: "Alias / host / DSN." },
         {
           name: "Remove connection",

@@ -18,7 +18,7 @@ export interface ActivityFeedProps {
   emptyHint?: string;
 }
 
-const MAX_TEXT_LENGTH = 48;
+const MAX_TEXT_LENGTH = 80;
 
 function tone(t: ActivityTone): string {
   switch (t) {
@@ -53,8 +53,10 @@ export function ActivityFeed({ events, cap, emptyHint }: ActivityFeedProps) {
     <Box flexDirection="column">
       {list.map((e) => (
         <Box key={e.id}>
-          <Box width={5}>
-            <Text color={colors.dim}>{e.when}</Text>
+          <Box width={10} flexShrink={0}>
+            <Text color={colors.dim} wrap="truncate-end">
+              {e.when}
+            </Text>
           </Box>
           <Text color={tone(e.dotColor)}>● </Text>
           <Text color={colors.text}>{truncate(e.text, MAX_TEXT_LENGTH)}</Text>

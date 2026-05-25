@@ -1,7 +1,6 @@
 import { basename } from "node:path";
 import { Box, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { selfDoctor } from "../../application/self/doctor-self.js";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
@@ -13,7 +12,6 @@ import { ScreenFrame } from "./components/screen-frame.js";
 import { TabBar } from "./components/tab-bar.js";
 import type { TabId, WorkspaceContext } from "./components/tabs-config.js";
 import { loadActivity } from "./data/activity.js";
-import { HOSTS } from "./hosts.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { NotificationCenterProvider, useNotifications } from "./notification-center.js";
 import { McpTab } from "./tabs/mcp-tab.js";
@@ -76,7 +74,6 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     triggerAction,
   } = useNotifications();
   const updateCheckStartedRef = useRef(false);
-  const doctorCheckStartedRef = useRef(false);
 
   useEffect(() => {
     void (async () => {
@@ -180,61 +177,6 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     updateCheckStartedRef.current = true;
     void runUpdateCheck();
   }, [runUpdateCheck]);
-
-  // Doctor-check banner. Se evalúa una vez al boot: hosts cubiertos vs total +
-  // hooks armed para claude. Cualquier deficiencia gatilla la notif.
-  useEffect(() => {
-    if (doctorCheckStartedRef.current) return;
-    doctorCheckStartedRef.current = true;
-    void (async () => {
-      const doc = await selfDoctor(ctx).catch(() => null);
-      if (!doc?.ok || !doc.data) return;
-      const installedByTarget = new Map<string, boolean>(
-        doc.data.skill.targets.map((t) => [t.target, t.installed]),
-      );
-      const supportedHosts = HOSTS.length;
-      const installedHosts = HOSTS.filter((h) => installedByTarget.get(h.id) === true).length;
-      const missing = Math.max(0, supportedHosts - installedHosts);
-      const hooksArmed = await detectHooksArmed(ctx);
-      const hasIssue = missing > 0 || !hooksArmed;
-      if (!hasIssue) return;
-      const segments: string[] = [];
-      if (missing > 0) segments.push(`${missing} hosts missing skill`);
-      if (!hooksArmed) segments.push("claude hooks not armed");
-      // Lista de hosts instalados para usar en el summary on-demand (`s`).
-      const installedNames = HOSTS.filter((h) => installedByTarget.get(h.id) === true)
-        .map((h) => h.short)
-        .join(", ");
-      pushNotification({
-        id: "doctor-check",
-        tone: "warn",
-        title: `Doctor check · ${segments.join(" · ")}`,
-        actions: [
-          {
-            key: "d",
-            label: "run doctor",
-            emphasis: true,
-            run: () => {
-              onResult({ kind: "menu-action", action: "doctor" });
-              exit();
-            },
-          },
-          {
-            // `s summary` reemplaza al viejo `o open report` para evitar la
-            // colisión con el `o notes` del update-available banner.
-            key: "s",
-            label: "summary",
-            run: () =>
-              pushToast({
-                tone: "info",
-                title: `${installedHosts}/${supportedHosts} hosts installed`,
-                body: `${installedNames || "none"} · claude hooks: ${hooksArmed ? "armed" : "off"}`,
-              }),
-          },
-        ],
-      });
-    })();
-  }, [ctx, pushNotification, pushToast, onResult, exit]);
 
   /**
    * Despacha acciones provenientes de las tabs y la palette.
@@ -386,18 +328,6 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       </Box>
     </ScreenFrame>
   );
-}
-
-async function detectHooksArmed(ctx: CliContext): Promise<boolean> {
-  const settingsPath = `${ctx.env.homeDir()}/.claude/settings.json`;
-  if (!(await ctx.fs.exists(settingsPath))) return false;
-  try {
-    const raw = await ctx.fs.readText(settingsPath);
-    const parsed = JSON.parse(raw) as { hooks?: Record<string, unknown> };
-    return Boolean(parsed.hooks && Object.keys(parsed.hooks).length > 0);
-  } catch {
-    return false;
-  }
 }
 
 /**

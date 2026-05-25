@@ -1,7 +1,9 @@
+import { basename, relative } from "node:path";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type ProjectPendingItem,
+  type ProjectSource,
   type ProjectTabData,
   buildProjectTabData,
 } from "../../../application/project-tab-data.js";
@@ -103,6 +105,57 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   return <Initialized ctx={ctx} data={data} />;
 }
 
+// ===== Helpers de presentación =====
+
+/**
+ * Deriva un nombre corto del `block.proyecto`, que puede contener un párrafo
+ * largo de descripción. Toma la primera línea no vacía, corta al primer
+ * separador estructural (`·` / `:` / `.`) y trunca a ~40 chars.
+ */
+function deriveShortName(raw: string, fallback: string): string {
+  const firstLine = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!firstLine) return fallback;
+  const cut = firstLine.split(/[·:.]/)[0]?.trim() ?? firstLine;
+  if (!cut) return fallback;
+  return cut.length > 40 ? `${cut.slice(0, 39)}…` : cut;
+}
+
+/** Colapsa el `block.proyecto` multilínea en una sola línea, truncada a 80 chars. */
+function deriveDescription(raw: string): string {
+  const flat = raw.replace(/\s+/g, " ").trim();
+  if (flat.length === 0) return "";
+  return flat.length > 80 ? `${flat.slice(0, 79)}…` : flat;
+}
+
+/** `~/Git/foo` en lugar del path absoluto. */
+function tildePath(path: string, home: string): string {
+  if (path === home) return "~";
+  if (path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
+  return path;
+}
+
+const ACTIVITY_UNIT_SHORT: Record<string, string> = {
+  second: "s",
+  minute: "m",
+  hour: "h",
+  day: "d",
+  week: "w",
+  month: "mo",
+  year: "y",
+};
+
+/** `21 minutes ago` → `21m ago`, `2 hours ago` → `2h ago`, etc. */
+function formatActivityWhen(whenRel: string): string {
+  const m = whenRel.match(/^(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago$/i);
+  if (!m) return whenRel;
+  const unit = m[2]?.toLowerCase() ?? "";
+  const short = ACTIVITY_UNIT_SHORT[unit] ?? unit;
+  return `${m[1]}${short} ago`;
+}
+
 // ===== Landing — workspace no inicializado =====
 
 interface LandingOption {
@@ -196,23 +249,37 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
   const medPending = data.pending.filter((p) => p.prio === "med").length;
   const lowPending = data.pending.filter((p) => p.prio === "low").length;
   const dirty = data.git?.dirty ?? 0;
-  const namespace = ctx.namespace.namespace;
-  const desc = `.${namespace} · workspace mode auto-detected`;
+
+  const home = ctx.env.homeDir();
+  const shortName = deriveShortName(data.workspaceName, basename(data.workspacePath));
+  const description = deriveDescription(data.workspaceName);
+  const wsPath = tildePath(data.workspacePath, home);
 
   const events: ActivityEvent[] = data.activity.slice(0, 7).map((a, i) => ({
     id: `${a.whenIso}-${i}`,
-    when: a.whenRel,
+    when: formatActivityWhen(a.whenRel),
     dotColor: a.type === "commit" ? "info" : a.type === "session" ? "accent" : "purple",
     text: a.text,
     metaTone: "dim",
   }));
 
+  const isHub = data.workspaceMode === "hub";
+  const showSources = isHub && data.sources.length > 0;
+  const activeSessions = data.sessions.filter((s) => s.state === "active").slice(0, 6);
+
   return (
     <Box flexDirection="column">
       <PageHead
-        title={`Project · ${data.workspaceMode === "hub" ? "hub" : "single-repo"} · ${data.workspaceName}`}
-        action={<Text color={colors.mute}>{desc}</Text>}
+        title={`Project · ${isHub ? "hub" : "single-repo"} · ${shortName}`}
+        action={<Text color={colors.faint}>{wsPath}</Text>}
       />
+      {description ? (
+        <Box marginBottom={1}>
+          <Text color={colors.dim} wrap="truncate-end">
+            {description}
+          </Text>
+        </Box>
+      ) : null}
 
       {/* Health cards 2x2 (rendered as 4 tiles in a row) */}
       <Box flexDirection="row" marginBottom={1}>
@@ -237,60 +304,58 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
         />
       </Box>
 
-      <Text color={colors.borderFaint}>{"─".repeat(60)}</Text>
+      {showSources ? (
+        <>
+          <SectionHead label="Sources" count={data.sources.length} marginTop={1} />
+          <Box marginLeft={2} flexDirection="column">
+            {data.sources.map((s) => (
+              <SourceRow key={s.alias} source={s} workspacePath={data.workspacePath} />
+            ))}
+          </Box>
+        </>
+      ) : null}
 
-      {/* Two columns: Active sessions + Pending */}
-      <Box flexDirection="row" marginTop={1}>
-        <Box flexDirection="column" flexGrow={1} paddingRight={2}>
-          <SectionHead label="Active sessions" count={totalActiveSessions} rightAction="⏎ resume" />
-          {totalActiveSessions === 0 ? (
-            <Box marginLeft={2}>
-              <Text color={colors.faint}>(none)</Text>
-            </Box>
-          ) : (
-            <Box marginLeft={0} flexDirection="column">
-              {data.sessions
-                .filter((s) => s.state === "active")
-                .slice(0, 6)
-                .map((s) => (
-                  <Box key={s.code}>
-                    <Text color={colors.accent}>{icons.focusBar}</Text>
-                    <Text color={colors.accent}> {icons.expandCollapsed} </Text>
-                    <Text color={colors.bright}>session{s.code}</Text>
-                    <Text color={colors.dim}> · </Text>
-                    <Text color={colors.dim}>{s.name}</Text>
-                    <Text color={colors.dim}> · phase </Text>
-                    <Text color={colors.accent}>{s.phase}</Text>
-                    <Text> </Text>
-                    <Text color={colors.purple}>[{s.flow}]</Text>
-                  </Box>
-                ))}
-            </Box>
-          )}
-        </Box>
+      {totalActiveSessions > 0 ? (
+        <>
+          <SectionHead
+            label="Active sessions"
+            count={totalActiveSessions}
+            rightAction="⏎ resume"
+            marginTop={1}
+          />
+          <Box marginLeft={2} flexDirection="column">
+            {activeSessions.map((s) => (
+              <Box key={s.code}>
+                <Text color={colors.accent}>{icons.expandCollapsed} </Text>
+                <Text color={colors.bright}>session{s.code}</Text>
+                <Text color={colors.dim}> · </Text>
+                <Text color={colors.dim}>{s.name}</Text>
+                <Text color={colors.dim}> · phase </Text>
+                <Text color={colors.accent}>{s.phase}</Text>
+                <Text> </Text>
+                <Text color={colors.purple}>[{s.flow}]</Text>
+              </Box>
+            ))}
+          </Box>
+        </>
+      ) : null}
 
-        <Box flexDirection="column" flexGrow={1} paddingLeft={2}>
+      {totalPending > 0 ? (
+        <>
           <SectionHead
             label="Pending"
             count={totalPending}
             hint={`${highPending} high · ${medPending} med · ${lowPending} low`}
+            marginTop={1}
           />
-          {totalPending === 0 ? (
-            <Box marginLeft={2}>
-              <Text color={colors.faint}>(no pending)</Text>
-            </Box>
-          ) : (
-            <Box marginLeft={0} flexDirection="column">
-              {data.pending.slice(0, 7).map((p) => (
-                <PendingRow key={`${p.sessionCode}-${p.text}`} item={p} />
-              ))}
-              {totalPending > 7 ? (
-                <Text color={colors.faint}>…+{totalPending - 7} more</Text>
-              ) : null}
-            </Box>
-          )}
-        </Box>
-      </Box>
+          <Box marginLeft={2} flexDirection="column">
+            {data.pending.slice(0, 7).map((p) => (
+              <PendingRow key={`${p.sessionCode}-${p.text}`} item={p} />
+            ))}
+            {totalPending > 7 ? <Text color={colors.faint}>…+{totalPending - 7} more</Text> : null}
+          </Box>
+        </>
+      ) : null}
 
       {/* Recent activity full-width */}
       <SectionHead label="Recent activity" count={events.length} marginTop={1} />
@@ -301,6 +366,28 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
       <Box marginTop={1}>
         <QuickActions actions={[{ key: "s", label: "start session" }]} />
       </Box>
+    </Box>
+  );
+}
+
+function SourceRow({ source, workspacePath }: { source: ProjectSource; workspacePath: string }) {
+  const rel = relative(workspacePath, source.path) || ".";
+  const status = source.dirty ? `${source.changedFiles} dirty` : "in sync";
+  const statusColor = source.dirty ? colors.warn : colors.ok;
+  return (
+    <Box>
+      <Text color={colors.accent}>{icons.diamond} </Text>
+      <Text color={colors.bright} bold>
+        {source.alias}
+      </Text>
+      <Text color={colors.dim}> → </Text>
+      <Text color={colors.dim}>{rel}</Text>
+      <Text color={colors.faint}> · </Text>
+      <Text color={colors.dim}>
+        {icons.branch} {source.branch ?? source.mainBranch}
+      </Text>
+      <Text color={colors.faint}> · </Text>
+      <Text color={statusColor}>{status}</Text>
     </Box>
   );
 }
