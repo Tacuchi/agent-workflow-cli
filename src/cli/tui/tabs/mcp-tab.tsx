@@ -40,14 +40,15 @@ export interface McpTabProps {
  * Calcula el ancho disponible para un row de la lista, considerando si el
  * detail panel está abierto.
  *
- * Overhead horizontal (post v9.2.0, sin wrapper paddingX):
+ * Overhead horizontal:
  * - ScreenFrame border (2) + paddingX (4) = 6
+ * - Tab content Box border (2) + paddingX (4) = 6
  * - List paddingRight (2)
  * - Detail panel + separator (39) cuando está abierto
  */
 function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
   const cols = termCols ?? 100;
-  const baseOverhead = 8; // 6 + 2
+  const baseOverhead = 14; // 6 + 6 + 2
   const detailOverhead = detailOpen ? 39 : 0;
   return Math.max(16, cols - baseOverhead - detailOverhead);
 }

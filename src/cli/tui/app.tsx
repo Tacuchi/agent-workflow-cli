@@ -1,12 +1,11 @@
 import { basename } from "node:path";
 import { Box, Text, useApp, useInput } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { selfDoctor } from "../../application/self/doctor-self.js";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
 import type { ActivityEvent } from "./components/activity-feed.js";
-import { CommandPalette, type PaletteCommand } from "./components/command-palette.js";
 import { HomeFooter } from "./components/home-footer.js";
 import { HomeHeader } from "./components/home-header.js";
 import { NotificationStack } from "./components/notification-stack.js";
@@ -55,13 +54,8 @@ export function App(props: AppProps) {
 }
 
 function AppShell({ version, ctx, onResult }: AppProps) {
-  // activeTab refleja la pestaña actual incluso con la palette abierta como
-  // overlay. Por default Status — alineado con el screenshot de diseño.
+  // Pestaña actual. Por default Status — alineado con el screenshot de diseño.
   const [activeTab, setActiveTab] = useState<TabId>("status");
-  // Palette es overlay opt-in (^K para abrir). Boot va directo a la Status tab.
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [paletteFilter, setPaletteFilter] = useState("");
-  const [paletteCursor, setPaletteCursor] = useState(0);
   // projectName se hidrata async desde el cwd (package.json#name o basename).
   // Placeholder vacío para no parpadear con un brand incorrecto al boot.
   const [projectName, setProjectName] = useState<string>("");
@@ -242,12 +236,6 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     })();
   }, [ctx, pushNotification, pushToast, onResult, exit]);
 
-  // Derivar alert dot del tab Status: · hay update outdated? · hay doctor warning?
-  const statusAlert = useMemo(
-    () => notifications.some((n) => n.id === "update-available" || n.id === "doctor-check"),
-    [notifications],
-  );
-
   /**
    * Despacha acciones provenientes de las tabs y la palette.
    * Las acciones que requieren ejecutar un comando CLI con stdin (init, doctor,
@@ -299,7 +287,6 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       // Hints in-app (navegación + toasts).
       if (id === "mcp:add") {
         setActiveTab("mcp");
-        setPaletteOpen(false);
         pushToast({
           tone: "info",
           title: "MCP · new connection",
@@ -320,78 +307,6 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     [pushToast, onResult, exit],
   );
 
-  // La palette ya no incluye entries `Go to <Tab>` — la TabBar visible cubre
-  // esa navegación. Aquí solo viven acciones que disparan comandos o salidas
-  // a CLI.
-  const allCommands: PaletteCommand[] = useMemo(
-    () => [
-      {
-        id: "install-skill",
-        category: "install",
-        label: "Install SKILL (chain claude + codex + warp)",
-        hint: "self install",
-      },
-      {
-        id: "mcp:add",
-        category: "mcp",
-        label: "Register new MCP connection",
-        hint: "a in MCP tab",
-      },
-      {
-        id: "self:mcp-cli",
-        category: "mcp",
-        label: "Open MCP wizard (CLI)",
-        hint: "self mcp",
-      },
-      { id: "project-init", category: "project", label: "Initialize as single-repo" },
-      { id: "hub-init", category: "project", label: "Initialize as hub (multi-repo)" },
-      {
-        id: "self:doctor",
-        category: "self",
-        label: "Diagnose runtime (doctor)",
-        hint: "self doctor",
-      },
-      {
-        id: "self:update",
-        category: "self",
-        label: "Check for update",
-        hint: "self update",
-      },
-      {
-        id: "self:help",
-        category: "self",
-        label: "View full CLI help",
-        hint: "--help",
-      },
-      { id: "quit", category: "self", label: "Quit", hint: "q" },
-    ],
-    [],
-  );
-
-  const filteredCommands = useMemo(() => {
-    const q = paletteFilter.trim().toLowerCase();
-    if (!q) return allCommands;
-    return allCommands.filter(
-      (c) =>
-        c.label.toLowerCase().includes(q) ||
-        c.id.toLowerCase().includes(q) ||
-        c.category.toLowerCase().includes(q),
-    );
-  }, [allCommands, paletteFilter]);
-
-  const openPalette = useCallback(() => {
-    setPaletteFilter("");
-    setPaletteCursor(0);
-    setPaletteOpen(true);
-  }, []);
-
-  const goToTab = useCallback((target: TabId) => {
-    setActiveTab(target);
-    setPaletteOpen(false);
-    setPaletteFilter("");
-    setPaletteCursor(0);
-  }, []);
-
   const rotateTab = useCallback((direction: 1 | -1) => {
     setActiveTab((current) => {
       const idx = TAB_ORDER.indexOf(current);
@@ -400,21 +315,13 @@ function AppShell({ version, ctx, onResult }: AppProps) {
     });
   }, []);
 
-  const executeCommand = useCallback(
-    (cmd: PaletteCommand) => {
-      runAction(cmd.id);
-    },
-    [runAction],
-  );
-
   useInput(
     (input, key) => {
       if (inputLocked) return;
 
       // Notif keys tienen prioridad: si hay notifs activas, `x` dismiss el top
       // y las teclas de action (i/r/o/d/…) disparan la acción del item más
-      // nuevo que las tenga. Así `i` no se inserta al filter de palette cuando
-      // hay update notif activa.
+      // nuevo que las tenga.
       if (notifications.length > 0 && !key.ctrl && !key.meta) {
         if (input === "x" || input === "X") {
           if (dismissTop()) return;
@@ -423,65 +330,6 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         }
       }
 
-      if (paletteOpen) {
-        // Tab / Shift+Tab rotan la tab activa de fondo sin cerrar la palette.
-        // El TabBar refleja el cambio al instante; al cerrar palette (esc o
-        // selección), el tab destino ya queda elegido.
-        if (key.tab) {
-          rotateTab(key.shift ? -1 : 1);
-          return;
-        }
-        if (key.escape) {
-          if (paletteFilter !== "") {
-            setPaletteFilter("");
-            setPaletteCursor(0);
-            return;
-          }
-          setPaletteOpen(false);
-          return;
-        }
-        if (key.return) {
-          const cmd = filteredCommands[paletteCursor];
-          if (cmd) executeCommand(cmd);
-          return;
-        }
-        if (key.upArrow) {
-          setPaletteCursor((c) => Math.max(0, c - 1));
-          return;
-        }
-        if (key.downArrow) {
-          setPaletteCursor((c) => Math.min(Math.max(0, filteredCommands.length - 1), c + 1));
-          return;
-        }
-        if (key.backspace || key.delete) {
-          setPaletteFilter((s) => s.slice(0, -1));
-          setPaletteCursor(0);
-          return;
-        }
-        // Shortcuts directos `1`–`5` desde la palette sin necesidad de filtrar
-        // y `⏎`. Conveniencia para users que ya saben los atajos.
-        const directTarget = TAB_BY_KEY[input];
-        if (directTarget && !key.ctrl && !key.meta) {
-          goToTab(directTarget);
-          return;
-        }
-        if (input === "q" && !key.ctrl && !key.meta && paletteFilter === "") {
-          onResult({ kind: "exit", exitCode: 0 });
-          exit();
-          return;
-        }
-        if (input && !key.ctrl && !key.meta) {
-          setPaletteFilter((s) => s + input);
-          setPaletteCursor(0);
-        }
-        return;
-      }
-
-      // Estamos en un tab.
-      if ((key.ctrl || key.meta) && (input === "k" || input === "K")) {
-        openPalette();
-        return;
-      }
       if (key.tab) {
         rotateTab(key.shift ? -1 : 1);
         return;
@@ -504,44 +352,37 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       <Box flexDirection="column" flexGrow={1}>
         <HomeHeader brand={projectName} version={version} workspaceContext={workspaceCtx} />
         <NotificationStack items={notifications} />
-        {paletteOpen ? (
-          <Box flexDirection="column" flexGrow={1}>
-            <CommandPalette
-              filter={paletteFilter}
-              commands={filteredCommands}
-              cursor={paletteCursor}
+        <TabBar activeTabId={activeTab} />
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          borderStyle="single"
+          borderColor={colors.accent}
+          paddingX={2}
+          paddingY={1}
+        >
+          {activeTab === "status" ? (
+            <StatusTab
+              ctx={ctx}
+              version={version}
+              isActive={true}
+              onActivateTab={(t) => setActiveTab(t)}
+              onToast={pushToast}
+              recentEvents={activity}
             />
-          </Box>
-        ) : (
-          <>
-            <TabBar activeTabId={activeTab} alertsByTab={{ status: statusAlert }} />
-            <Box flexDirection="column" flexGrow={1}>
-              {activeTab === "status" ? (
-                <StatusTab
-                  ctx={ctx}
-                  version={version}
-                  isActive={true}
-                  onActivateTab={(t) => setActiveTab(t)}
-                  onToast={pushToast}
-                  recentEvents={activity}
-                />
-              ) : null}
-              {activeTab === "workflow" ? (
-                <WorkflowTab ctx={ctx} isActive={true} activePhase={activePhase} />
-              ) : null}
-              {activeTab === "project" ? (
-                <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
-              ) : null}
-              {activeTab === "mcp" ? (
-                <McpTab ctx={ctx} isActive={true} onToast={pushToast} />
-              ) : null}
-              {activeTab === "skills" ? (
-                <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
-              ) : null}
-            </Box>
-          </>
-        )}
-        <HomeFooter context={paletteOpen ? "palette" : "tab"} showDismiss={hasNotifs} />
+          ) : null}
+          {activeTab === "workflow" ? (
+            <WorkflowTab ctx={ctx} isActive={true} activePhase={activePhase} />
+          ) : null}
+          {activeTab === "project" ? (
+            <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
+          ) : null}
+          {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
+          {activeTab === "skills" ? (
+            <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
+          ) : null}
+        </Box>
+        <HomeFooter showDismiss={hasNotifs} />
       </Box>
     </ScreenFrame>
   );

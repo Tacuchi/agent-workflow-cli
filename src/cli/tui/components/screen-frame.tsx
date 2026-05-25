@@ -10,8 +10,8 @@ export function ScreenFrame({ children }: ScreenFrameProps) {
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor={colors.border}
+      borderStyle="bold"
+      borderColor={colors.accent}
       paddingX={2}
       paddingY={1}
     >

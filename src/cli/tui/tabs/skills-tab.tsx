@@ -348,8 +348,8 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
 
 function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
   const cols = termCols ?? 100;
-  // ScreenFrame (border 2 + paddingX 4 = 6) + list paddingRight (2) = 8 cols.
-  const baseOverhead = 8;
+  // ScreenFrame (6) + tab content border+padding (6) + list paddingRight (2) = 14 cols.
+  const baseOverhead = 14;
   const detailOverhead = detailOpen ? 39 : 0;
   return Math.max(16, cols - baseOverhead - detailOverhead);
 }
