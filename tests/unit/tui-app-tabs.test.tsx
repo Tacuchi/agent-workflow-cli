@@ -49,28 +49,32 @@ function buildCtx() {
 }
 
 describe("App (tab-home)", () => {
-  it("boot muestra la Status tab por default (sin palette)", () => {
+  it("boot muestra la Status tab por default (sin palette)", async () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
+    // Esperar a que el effect de boot resuelva projectName (basename del cwd mock).
+    await new Promise((r) => setTimeout(r, 50));
     const frame = lastFrame() ?? "";
     // post-v9.2.0: la palette es overlay opt-in (^K). El boot renderiza la
     // TabBar + StatusTab directamente — no search input ni "Go to <Tab>".
     expect(frame).not.toContain("type to filter");
     expect(frame).not.toContain("Go to Status");
-    expect(frame).toContain("agent-workflow");
+    // Brand dinámico: en el mock cwd="/home/test/project" y fs.exists=false,
+    // por lo que resolveProjectName cae al basename "project".
+    expect(frame).toContain("project");
     expect(frame).toContain("v9.9.9");
     expect(frame).toContain("Status");
     expect(frame).toContain("Workflow");
   });
 
-  it("HomeHeader expone workspace context", () => {
+  it("HomeHeader expone workspace context", async () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
+    await new Promise((r) => setTimeout(r, 50));
     const frame = lastFrame() ?? "";
-    // HomeHeader renderiza modeLabel (default agent-workflow · single-repo) + branch placeholder
-    // mientras hidrata el workspace context async.
-    expect(frame).toContain("agent-workflow");
-    // sessions placeholder visible mientras carga.
+    // HomeHeader renderiza brand dinámico (basename del cwd mock = "project")
+    // en línea 1 y branch + sessions placeholders en línea 2 mientras hidrata.
+    expect(frame).toContain("project");
     expect(frame).toMatch(/sessions/);
   });
 

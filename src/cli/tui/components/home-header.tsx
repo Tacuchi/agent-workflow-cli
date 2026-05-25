@@ -12,39 +12,68 @@ export interface HomeHeaderProps {
 const DEFAULT_HANDLE = "@tacuchi";
 const DOT = "·";
 
+/**
+ * Sync coloreado según estado:
+ * - "in sync" → ok (verde)
+ * - "dirty"   → warn (ámbar)
+ * - "N↑ M↓"   → info (azul) — divergencia con upstream
+ * - fallback  → dim
+ */
+function syncColor(sync: string): string {
+  if (sync === "in sync") return colors.ok;
+  if (sync === "dirty") return colors.warn;
+  if (/[↑↓]/.test(sync)) return colors.info;
+  return colors.dim;
+}
+
+function parseBranchLabel(branchLabel: string): { branch: string; sync: string } {
+  const idx = branchLabel.indexOf(" · ");
+  if (idx < 0) return { branch: branchLabel, sync: "" };
+  return { branch: branchLabel.slice(0, idx), sync: branchLabel.slice(idx + 3) };
+}
+
 export function HomeHeader({
   brand,
   version,
   handle = DEFAULT_HANDLE,
   workspaceContext,
 }: HomeHeaderProps) {
+  const { branch, sync } = parseBranchLabel(workspaceContext.branchLabel);
   return (
     <Box flexDirection="column" marginBottom={1}>
+      {/* Línea 1: brand + versión */}
       <Text wrap="truncate-end">
         <Text color={colors.accent} bold>
           {icons.brand}
         </Text>
         <Text color={colors.bright} bold>
           {" "}
-          {brand}
+          AGENT WORKFLOW
         </Text>
         <Text color={colors.faint}>
-          {"  "}v{version} {DOT} {handle}
+          {"  "}v{version}
         </Text>
       </Text>
+      {/* Línea 2: project · handle · branch · sync · sessions */}
       <Text wrap="truncate-end">
-        <Text color={colors.text}>{workspaceContext.modeLabel}</Text>
-        <Text color={colors.faint}>
-          {"  "}
-          {DOT}
-          {"  "}
-        </Text>
-        <Text color={colors.dim}>{workspaceContext.branchLabel}</Text>
-        <Text color={colors.faint}>
-          {"  "}
-          {DOT}
-          {"  "}
-        </Text>
+        <Text color={colors.dim}>{brand || "—"}</Text>
+        <Text color={colors.faint}>{`  ${DOT}  `}</Text>
+        <Text color={colors.dim}>{handle}</Text>
+        {branch ? (
+          <>
+            <Text color={colors.faint}>{`  ${DOT}  `}</Text>
+            <Text color={colors.dim}>
+              {icons.branch} {branch}
+            </Text>
+            {sync ? (
+              <>
+                <Text color={colors.faint}> </Text>
+                <Text color={syncColor(sync)}>{sync}</Text>
+              </>
+            ) : null}
+          </>
+        ) : null}
+        <Text color={colors.faint}>{`  ${DOT}  `}</Text>
         <Text color={colors.dim}>{workspaceContext.sessionsLabel}</Text>
       </Text>
     </Box>

@@ -24,7 +24,6 @@ export const TABS_LIST: readonly TabConfig[] = [
 ] as const;
 
 export interface WorkspaceContext {
-  modeLabel: string;
   branchLabel: string;
   sessionsLabel: string;
 }

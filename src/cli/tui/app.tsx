@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { Box, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { selfDoctor } from "../../application/self/doctor-self.js";
@@ -61,8 +62,10 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteFilter, setPaletteFilter] = useState("");
   const [paletteCursor, setPaletteCursor] = useState(0);
+  // projectName se hidrata async desde el cwd (package.json#name o basename).
+  // Placeholder vacío para no parpadear con un brand incorrecto al boot.
+  const [projectName, setProjectName] = useState<string>("");
   const [workspaceCtx, setWorkspaceCtx] = useState<WorkspaceContext>({
-    modeLabel: "agent-workflow",
     branchLabel: "— · loading",
     sessionsLabel: "— sessions",
   });
@@ -83,6 +86,8 @@ function AppShell({ version, ctx, onResult }: AppProps) {
 
   useEffect(() => {
     void (async () => {
+      const name = await resolveProjectName(ctx);
+      setProjectName(name);
       const wctx = await loadWorkspaceContext(ctx);
       setWorkspaceCtx(wctx);
       const events = await loadActivity(ctx, { cap: 10 });
@@ -497,7 +502,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   return (
     <ScreenFrame>
       <Box flexDirection="column" flexGrow={1}>
-        <HomeHeader brand="agent-workflow" version={version} workspaceContext={workspaceCtx} />
+        <HomeHeader brand={projectName} version={version} workspaceContext={workspaceCtx} />
         <NotificationStack items={notifications} />
         {paletteOpen ? (
           <Box flexDirection="column" flexGrow={1}>
@@ -554,17 +559,32 @@ async function detectHooksArmed(ctx: CliContext): Promise<boolean> {
   }
 }
 
+/**
+ * Resuelve el nombre del proyecto a mostrar en el header.
+ * Prioridad: `package.json#name` (sin scope `@org/`) → `basename(cwd)`.
+ * Cualquier error de lectura/parsing cae al fallback de basename.
+ */
+async function resolveProjectName(ctx: CliContext): Promise<string> {
+  const cwd = ctx.env.cwd();
+  try {
+    const pkgPath = `${cwd}/package.json`;
+    if (await ctx.fs.exists(pkgPath)) {
+      const raw = await ctx.fs.readText(pkgPath);
+      const pkg = JSON.parse(raw) as { name?: string };
+      const name = (pkg.name ?? "").trim();
+      if (name) {
+        const slash = name.lastIndexOf("/");
+        return slash >= 0 ? name.slice(slash + 1) : name;
+      }
+    }
+  } catch {
+    // fallback abajo
+  }
+  return basename(cwd) || "workspace";
+}
+
 async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> {
   const cwd = ctx.env.cwd();
-
-  // Mode + name: best-effort detection. Default agent-workflow.
-  let modeLabel = "agent-workflow · single-repo";
-  try {
-    const aw = await ctx.fs.exists(`${cwd}/AW-PROJECT.md`).catch(() => false);
-    if (aw) modeLabel = "agent-workflow · linked";
-  } catch {
-    // ignore
-  }
 
   // Branch + sync
   let branchLabel = "— · no git";
@@ -609,7 +629,7 @@ async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> 
     // keep default
   }
 
-  return { modeLabel, branchLabel, sessionsLabel };
+  return { branchLabel, sessionsLabel };
 }
 
 /**
