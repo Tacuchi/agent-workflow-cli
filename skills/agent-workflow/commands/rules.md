@@ -1,5 +1,5 @@
 ---
-description: Bundle invokable de reglas transversales agent-workflow-* — carga los 7 anchors canónicos (commits, sandbox plan-mode, MCP read-only, redacción, coding-standards, graduación, branch verification) en un solo entry point. No requiere sesión activa.
+description: Bundle invokable de reglas transversales agent-workflow-* — carga los 8 anchors canónicos (commits, sandbox plan-mode, MCP read-only, redacción, coding-standards, graduación, branch verification, closure cleanup) en un solo entry point. No requiere sesión activa.
 argument-hint: (sin args)
 allowed-tools:
   [
@@ -21,7 +21,7 @@ Invoca el skill `rules` (canónico de agent-workflow).
 
 ## Qué carga
 
-Los 7 anchors canónicos del runtime agent-workflow-*:
+Los 8 anchors canónicos del runtime agent-workflow-*:
 
 1. `agent-workflow:commits-policy` — formato y prohibiciones de commits.
 2. `agent-workflow:sandbox-readonly` — comportamiento en plan mode.
@@ -30,6 +30,7 @@ Los 7 anchors canónicos del runtime agent-workflow-*:
 5. `agent-workflow:coding-standards` — estándares por stack + FE-BE R1-R6 + seguridad.
 6. `agent-workflow:graduacion-routing` — 6 kinds graduables + routing hub vs project.
 7. `agent-workflow:branch-verification` — gate de rama por fuente + hard gate cross-fuente.
+8. `agent-workflow:closure-cleanup` — gate de calidad pre-commit en closure (5 categorías: comentarios, complejidad, antipatrones, smells, código muerto).
 
 ## Plan mode
 

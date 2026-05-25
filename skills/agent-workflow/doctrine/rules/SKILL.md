@@ -1,7 +1,7 @@
 ---
 name: rules
-description: "Bundle invokable de reglas transversales agent-workflow — carga los 7 anchors canónicos (commits, sandbox plan-mode, MCP read-only, redacción, coding-standards, graduación, branch verification) en un solo lugar. Invocar antes de un commit ad-hoc fuera de `/agent-workflow:session`, antes de editar código sin sesión activa, durante onboarding de usuario nuevo a agent-workflow, o cuando se quiera refrescar el contrato agent-workflow en una conversación larga. No requiere sesión activa. v0.2.0: el anchor `agent-workflow:commits-policy` ahora documenta el propose-then-execute universal con AskUserQuestion M1 (cualquier solicitud o mención de commit, en/fuera de sesión, hub/project) + el bypass por mensaje literal."
-version: 0.2.0
+description: "Bundle invokable de reglas transversales agent-workflow — carga los 8 anchors canónicos (commits, sandbox plan-mode, MCP read-only, redacción, coding-standards, graduación, branch verification, closure cleanup) en un solo lugar. Invocar antes de un commit ad-hoc fuera de `/agent-workflow:session`, antes de editar código sin sesión activa, durante onboarding de usuario nuevo a agent-workflow, o cuando se quiera refrescar el contrato agent-workflow en una conversación larga. No requiere sesión activa. v0.3.0: agrega anchor #8 `agent-workflow:closure-cleanup` (gate de calidad pre-commit en closure)."
+version: 0.3.0
 ---
 
 > **Profile parametrization**: lee `custom_anchors[]` de `profile.json` (resuelto vía cascade 5 capas). Ver [`references/profile-parametrization.md`](../../references/profile-parametrization.md) para el contrato completo y comportamiento por defecto cuando el profile está vacío.
@@ -177,6 +177,31 @@ Reglas operativas:
 
 ---
 
+### 8. Closure cleanup — `agent-workflow:closure-cleanup`
+
+**Canon**: `agent-workflow/skills/session/SKILL.md` §1.5 "Inspección y limpieza pre-commit (closure cleanup gate)".
+
+Resumen:
+- Gate de calidad pre-commit que corre en la fase closure entre paso 1 (graduate) y paso 2 (propose commits — M1).
+- Inspecciona el diff working-tree vs `main_branch` por fuente dirty. 5 categorías: **comentarios redundantes**, **complejidad cognitiva**, **antipatrones**, **code smells**, **código muerto**.
+- Compone `agent-workflow:coding-standards` (fuente de verdad de qué es "bien") y `agent-workflow:redaccion-simple` (formato del reporte breve).
+- Default = propose-then-execute (M13). Auto-correct opt-in vía opción 1 del prompt. Cada edit es local y reversible.
+- Skip silencioso si todas las fuentes tienen `dirty=false`, o si el sumario de hallazgos es 0.
+
+Reglas operativas:
+- M13 dispara N questions tab-por-fuente (alias). Header `<alias>`, 3 opciones (aprobar fixes / sólo reportar / saltar) + Other auto = nota custom o fix manual.
+- "Sólo reportar" deja hallazgos en `CHECKPOINT.md` como "Hallazgos pendientes" sin modificar working tree.
+- Refactors estructurales mayores (mover archivos, renombrar packages) NO entran al gate; aplazar a sesión `## Type: refactor` con Strangler Fig.
+- NO ejecuta tests ni reemplaza linter/formatter del stack — el gate complementa (lista canónica de linters en `session/SKILL.md` §1.5).
+- En plan mode: describir hallazgos en plan file por categoría + paths. NO ejecuta `Edit`/`Write`/`Bash` mutante; M13 no se dispara.
+
+**Cómo aplicar fuera de sesión**:
+- El gate canónico es per-session-closure. Sin sesión activa no se auto-dispara.
+- El AI puede invocar las reglas manualmente (`agent-workflow:coding-standards` + diff con `agent-workflow sources` ad-hoc) si el usuario lo pide ("revisemos lo que tengo sin commitear"). Sigue las 5 categorías como guía.
+- Workaround formal: crear sesión retroactiva con `## Type: chore` y cerrar para disparar el gate sobre los cambios working-tree. No documentado como flujo canónico.
+
+---
+
 ## Relación con AGENTS.md/CLAUDE.md por fuente
 
 Esta skill es la capa **active (on-demand)** del modelo de aplicación de reglas. Coexiste con la capa **passive (system-prompt)**:
@@ -205,6 +230,7 @@ Tabla rápida para situaciones comunes sin sesión activa:
 | Escribís prosa agent-workflow (PR description, README) | redaccion-simple | 6 reglas (frases cortas, listas, sin jerga). |
 | Producís artefacto curable (decisión, manual) | graduacion-routing | Crear sesión retroactiva o documentar como fuera de scope graduable. |
 | Host en plan mode | sandbox-readonly | Describir en plan file, no ejecutar mutaciones. |
+| Revisás cambios pendientes ad-hoc fuera de closure | closure-cleanup | Aplicar las 5 categorías como guía (`coding-standards` + diff). Sin M13 auto-disparado: el AI sugiere, el usuario decide. |
 
 ## Sandbox read-only
 
@@ -220,5 +246,5 @@ Compatible con plan mode sin restricciones adicionales.
 - **shared-contract** (`../../docs/shared-contract.md`) — contrato cross-plugin de la familia agent-workflow.
 - **Recomendación de uso conjunto con AGENTS.md/CLAUDE.md**:
   - El AGENTS.md/CLAUDE.md por fuente (o el bloque transversal en hub) lista 1 línea por anchor con su path canon. Sirve como "tabla de contenidos" siempre cargada.
-  - Esta skill `agent-workflow:rules` carga los 7 anchors expandidos. Sirve cuando se necesita refrescar el contrato o cuando el AGENTS.md no está disponible.
+  - Esta skill `agent-workflow:rules` carga los 8 anchors expandidos. Sirve cuando se necesita refrescar el contrato o cuando el AGENTS.md no está disponible.
 - **Origen**: session051-analyze-reglas-transversales-fuera-sesion → CONCLUSIONS C7/R7/QW6. Graduado a `docs/conclusiones/006-reglas-transversales-fuera-sesion.md`.

@@ -50,7 +50,7 @@ DEC-006 — mixta según contexto. Cada header debe ser inmediatamente legible e
 
 ## Catálogo
 
-### Q-must (11 puntos — M1..M11; M12 eliminado por DEC-002)
+### Q-must (12 puntos — M1..M11 + M13; M12 eliminado por DEC-002)
 
 #### M1 — commit-prompt (universal — CASO ANCLA)
 Spec: [`prompts/M1-closure-commit-prompt.md`](prompts/M1-closure-commit-prompt.md) (archivo no renombrado; preserva anchor `#m1`). Cuándo: **cualquier** solicitud o mención de commit como acción a ejecutar — closure auto-disparado, solicitud explícita en planning/execution con sesión activa, solicitud explícita sin sesión activa, hub o project. Forma: 1 invocación con N questions tab-por-fuente (max 4); en project mode N=1. Canon del alcance: `commits-policy.md` Regla 3 + Regla 5 (bypass por mensaje literal).
@@ -85,6 +85,9 @@ Spec: [`prompts/M10-next-step.md`](prompts/M10-next-step.md). Cuándo: cierre de
 Spec: [`prompts/M11-context.md`](prompts/M11-context.md). Cuándo: AI estima carga >75%. Forma: 1 question, 3 opciones (compact ahora / seguir / cerrar). Skip si sesión ya en `closure`.
 
 > **M12 — graduacion-destino**: ELIMINADO (DEC-002). El destino de graduación se decide automáticamente por `workspace_mode` sin prompt por sesión. Hub mode → hub root; project mode → cwd. Ver `references/graduacion-routing.md`.
+
+#### M13 — closure-cleanup (gate de calidad pre-commit en closure)
+Spec: [`prompts/M13-closure-cleanup.md`](prompts/M13-closure-cleanup.md). Cuándo: en `skills/session/SKILL.md` §1.5 "Inspección y limpieza pre-commit", tras graduate (paso 1) y antes de propose commits (M1 / paso 2). Sólo dispara si ≥1 fuente tiene `dirty=true` Y la inspección produce ≥1 hallazgo. Forma: N questions tab-por-fuente (max 4), header `<alias>`, 3 opciones (aprobar fixes / sólo reportar / saltar) + Other auto. Aplicación del anchor `agent-workflow:closure-cleanup` (ver `doctrine/rules/SKILL.md` §8).
 
 ### Q-should (7 puntos — frecuencia media, ROI claro)
 
@@ -184,7 +187,7 @@ Las 4 formas son **sinónimos sin diferencia funcional**. Mezclar formas en un m
 
 Para extender este catálogo sin romper la convención:
 
-1. **Numeración secuencial estricta** — siguiente Q-must = M`<N+1>` (último activo: M11; M12 eliminado y no reusable). Igual para Q-should (último: S6) y Q-could (último: C2). No saltar números, no reusar.
+1. **Numeración secuencial estricta** — siguiente Q-must = M`<N+1>` (último activo: M13; M12 eliminado y no reusable, M13 agregado tras M11). Igual para Q-should (último: S8) y Q-could (último: C2). No saltar números, no reusar.
 2. **Categoría según frecuencia**: M (must, alto tránsito), S (should, frecuencia media), C (could, parking opcional). Si dudás, empezá en C — promovés a S/M cuando se valida ROI.
 3. **Header descriptivo** ≤12 chars (`next-step`, `context`, `scope`), salvo alias-puro inequívoco (M1 con `core`, `dev`, etc.).
 4. **Recomendación dinámica**: si `(Recomendado)` depende del contexto (ej. M10 según `tasks_count`, S5 según `tasks_open`), documentarlo en sub-sección `**Recomendación dinámica**` debajo de `options`. No hardcodear la marca en una opción si el AI debe elegir en runtime.

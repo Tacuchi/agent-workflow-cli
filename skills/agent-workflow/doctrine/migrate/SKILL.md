@@ -32,7 +32,7 @@ Migrar artefactos del workspace desde rutas y formatos legacy hacia la topologí
 5. **Actualización/rebuild de HISTORY.md**.
 6. **Upgrade v3.x → v4.0 (lifecycle universal)**: mapea fases en AW-PROJECT (`requerimiento|plan|implementacion|validacion|cierre` → `planning|execution|validation|closure`) y escribe `CHECKPOINT.md` inicial para sesiones activas.
 7. **Upgrade hub-mode (v3.0+)**: detecta workspaces con ≥2 fuentes sin marcador `Mode:` declarado y promueve a `Mode: hub`. Idempotente. Delega a `agent-workflow upgrade-hub-mode`.
-8. **Upgrade transversal-rules block (post-session052)**: detecta workspaces sin la sección `## Reglas transversales qtc-*` en CLAUDE.md/AGENTS.md y propone agregarla (7 anchors canónicos + puntero a `Skill(agent-workflow:rules)`). Aplica a hub workspaces principalmente; también a project workspaces qtc-* que usen el lifecycle qtc-*.
+8. **Upgrade transversal-rules block (post-session052, extendido post-session090)**: detecta workspaces sin la sección `## Reglas transversales qtc-*` en CLAUDE.md/AGENTS.md y propone agregarla (8 anchors canónicos + puntero a `Skill(agent-workflow:rules)`). Aplica a hub workspaces principalmente; también a project workspaces qtc-* que usen el lifecycle qtc-*.
 9. **Upgrade per-fuente anchors (post-session053)**: detecta repos qtc-* fuente (declarados en AW-PROJECT.Fuentes) que no tienen `AGENTS.md` o `CLAUDE.md` en su raíz y propone crearlos con preludio repo-específico ≤2 líneas + bloque transversal.
 10. **Upgrade hooks PreToolUse post-v5.18 (agent-workflow como workspace)**: aplica solo si el workspace ES el repo `agent-workflow` (workspace de desarrollo del plugin). Detecta `hooks/hooks.json` y `codex-hooks/hooks.json` sin matchers `mcp__.*__execute_sql` ni `Bash` en `PreToolUse[]` y propone agregarlos.
 
@@ -130,7 +130,7 @@ Migrar artefactos del workspace desde rutas y formatos legacy hacia la topologí
 
 - `CLAUDE.md` y/o `AGENTS.md` del workspace tiene `<!-- WORKFLOW-PROJECT-START -->` pero NO tiene la sección `## Reglas transversales qtc-*` después del `<!-- WORKFLOW-PROJECT-END -->`.
 - Detector específico (regex): el archivo NO contiene la string `## Reglas transversales qtc-*` después del marker de cierre.
-- Si la sección existe pero con menos de 7 anchors canónicos (lista esperada: `agent-workflow:commits-policy`, `agent-workflow:sandbox-readonly`, `agent-workflow:mcp-readonly`, `agent-workflow:redaccion-simple`, `agent-workflow:coding-standards`, `agent-workflow:graduacion-routing`, `agent-workflow:branch-verification`), se considera incompleta y se ofrece actualización.
+- Si la sección existe pero con menos de 8 anchors canónicos (lista esperada: `agent-workflow:commits-policy`, `agent-workflow:sandbox-readonly`, `agent-workflow:mcp-readonly`, `agent-workflow:redaccion-simple`, `agent-workflow:coding-standards`, `agent-workflow:graduacion-routing`, `agent-workflow:branch-verification`, `agent-workflow:closure-cleanup`), se considera incompleta y se ofrece actualización.
 
 ### Pre-session053 (repos qtc-* fuente sin anchors)
 
@@ -161,10 +161,10 @@ agent-workflow upgrade-hub-mode [--dry-run]
 
 ### Upgrade transversal-rules block (post-session052, manual guidado por AI)
 
-1. Detector: leer `CLAUDE.md` y `AGENTS.md` del workspace; verificar ausencia de la sección `## Reglas transversales qtc-*` o presencia incompleta (menos de 7 anchors canónicos).
-2. Si falta o está incompleto, el AI propone al usuario agregar/completar el bloque con la plantilla canónica (7 anchors + puntero a `Skill(agent-workflow:rules)`).
+1. Detector: leer `CLAUDE.md` y `AGENTS.md` del workspace; verificar ausencia de la sección `## Reglas transversales qtc-*` o presencia incompleta (menos de 8 anchors canónicos).
+2. Si falta o está incompleto, el AI propone al usuario agregar/completar el bloque con la plantilla canónica (8 anchors + puntero a `Skill(agent-workflow:rules)`).
 3. Mutación: edit incremental en ambos archivos (`CLAUDE.md` y `AGENTS.md`) insertando el bloque después del `<!-- WORKFLOW-PROJECT-END -->`.
-4. Idempotencia: si la sección ya existe completa (7 anchors), skip silent. Si está incompleta, ofrece reemplazo con confirmación.
+4. Idempotencia: si la sección ya existe completa (8 anchors), skip silent. Si está incompleta, ofrece reemplazo con confirmación.
 5. **Sin CLI delegation hoy** (TODO: futuro `agent-workflow upgrade-transversal-rules`).
 
 ### Upgrade per-fuente anchors (post-session053, manual guidado por AI)
@@ -276,6 +276,6 @@ NO ejecutar mutaciones. NO invocar `agent-workflow upgrade-hub-mode` sin `--dry-
 - `../session/references/sandbox-readonly-rules.md` — canon plan mode.
 - `../session/references/commits-policy.md` — política de commits del closure (aplicable también fuera de sesión vía bloque transversal).
 - `../session/SKILL.md` §"Graduar artefactos (6 kinds — DEC-003)" — kinds + routing hub-vs-fuente.
-- `../rules/SKILL.md` (skill agregadora `agent-workflow:rules`, post-session052) — bundle invokable de las 7 reglas transversales.
+- `../rules/SKILL.md` (skill agregadora `agent-workflow:rules`, post-session052; 8º anchor agregado post-session090) — bundle invokable de las 8 reglas transversales.
 - CLI runtime `@tacuchi/agent-workflow-cli` ≥5.18.0 — subcomandos relevantes: `upgrade-hub-mode`, `project-md-upsert`, `sources`, `hook git-commit-advisor`, `hook sql-mutation-guard`, `hook branch-check`.
 - Histórico: session051 (analyze reglas transversales) → session052 (quick-wins) → session053 (anchors por fuente + Bash hook) → session054 (este migrate update).

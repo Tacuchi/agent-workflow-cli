@@ -290,6 +290,46 @@ Material de referencia del usuario (mockups, especificaciones, exports, glosario
 
 **Histórico DEC-004**: v1 (sesiones previas): `.workflow/sessions/<folder>/referencias/` por sesión. v2 (session080-dev-referencias-globales): mover a `docs/referencias/` transversal y eliminar lectura legacy.
 
+### 1.5. Inspección y limpieza pre-commit (closure cleanup gate)
+
+Gate canónico de calidad. Corre entre paso 1 (graduate) y paso 2 (propose commits). Inspecciona el diff working-tree por fuente dirty, categoriza hallazgos y propone correcciones antes de M1. Aplicación del anchor universal `agent-workflow:closure-cleanup` (ver `doctrine/rules/SKILL.md`).
+
+**Skip silencioso**:
+- Si todas las fuentes tienen `dirty=false` (nada que limpiar).
+- Si el sumario de hallazgos es 0 tras inspección (working tree ya limpio).
+
+**Pasos**:
+
+1. Ejecutar `agent-workflow sources --session <CODE>` para refrescar `dirty` por fuente.
+2. Para cada fuente con `dirty=true`:
+   - Leer diff: `git -C <path> diff <main_branch>...HEAD` (limitar a archivos cambiados; usar `--stat` primero para tamaño).
+   - Componer `agent-workflow:coding-standards` (anchor #5 del bundle `/rules`) para reglas por stack del path.
+   - Categorizar hallazgos:
+     - **Comentarios redundantes** — qué obvio, código muerto comentado, TODO sin owner/fecha, headers decorativos.
+     - **Complejidad cognitiva** — métodos largos (>50 líneas), nesting profundo (>3), early-return ausente, condicionales anidados.
+     - **Antipatrones** — `catchError(() => of([]))`, magic numbers, side effects no declarados, god class/method, lógica replicada FE+BE.
+     - **Code smells** — DRY violado, naming oscuro, duplicación con `shared/`/`common/`, validación post-uso, mutación de parámetros.
+     - **Código muerto** — imports sin usar, branches inalcanzables, variables huérfanas, funciones no llamadas.
+   - Producir reporte breve: máximo 1 página por fuente, agrupado por categoría, cada hallazgo con `file:line` + 1 línea de fix sugerido.
+3. Si la suma de hallazgos es 0 en todas las fuentes → skip silencioso al paso 2 (propose commits).
+4. Disparar `AskUserQuestion` con spec de M13 (`references/prompts-catalog.md#M13`). N questions tab-por-fuente, header `<alias>`, opciones: "Aprobar fixes sugeridos (Recomendado)" / "Sólo reportar (no tocar)" / "Saltar esta fuente". Other = nota custom o fix manual del usuario. NO narrar la pregunta en texto plano.
+5. Por cada fuente con opción 1 aprobada: aplicar edits acotados (`Edit`/`MultiEdit` por archivo, mostrar diff antes/después). Sin auto-rewrite masivo; cada edit local y reversible.
+6. Por cada fuente con opción 2: dejar el reporte en `CHECKPOINT.md` como "Hallazgos pendientes" sin modificar working tree.
+7. Re-ejecutar `agent-workflow sources --session <CODE>` para refrescar `dirty` tras edits aprobados.
+
+**Sandbox plan-mode**: describir hallazgos por categoría en el plan file (paths + razones agrupadas). NO ejecuta `Edit`/`Write`/`Bash` mutante. M13 no se dispara.
+
+**Composición** (SRP — el gate no duplica reglas):
+- `agent-workflow:coding-standards` — fuente de verdad de qué es "bien".
+- `agent-workflow:redaccion-simple` — formato del reporte (frases cortas, listas, sin jerga).
+- `agent-workflow:branch-verification` — implícita; las fuentes ya vienen verificadas desde execution.
+
+**No alcances**:
+- NO reemplaza linter/formatter del stack (ESLint, Spotless, Prettier, Checkstyle, etc.) — el gate complementa.
+- NO refactors estructurales mayores. Esos van a sesiones `## Type: refactor` con Strangler Fig.
+- NO ejecuta tests — inspección estática del diff.
+- NO modifica artefactos ya graduados en paso 1 (vivien en `docs/<categoria>/`, fuera del scope del gate).
+
 ### 2. Proponer commits por fuente afectada (propose-then-execute)
 
 Aplicación canónica del patrón **universal** definido en `references/commits-policy.md` (Regla 3) — closure es uno de 3 disparadores del prompt M1 (los otros 2: solicitud explícita con/sin sesión activa). El flujo siguiente describe la variante auto-disparada por closure; el patrón completo (bypass por mensaje literal, fuera de sesión, etc.) vive en el canon.
