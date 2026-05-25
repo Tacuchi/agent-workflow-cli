@@ -4,6 +4,54 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.0.0] — 2026-05-25
+
+**Major BREAKING — export-scripts layout plano + sql-rollback-generator único** (session092 + session093). Dos refactors agrupados en un único release. (a) auto-plan flow-aware + semantic source counting + host-doctor para `jq` (session092, additive). (b) export-scripts pasa a layout plano cross-session al root del bundle y sql-rollback-generator pasa a un único `00-ROLLBACK.sql` (session093, BREAKING en doctrina). Bundles ya generados con v9.x quedan como histórico.
+
+### Added (session092)
+
+- `src/application/host-doctor-service.ts` + `src/cli/commands/host-doctor.ts` — comando `agent-workflow host-doctor` detecta plugins compatibles instalados (hoy `claude-code-warp`) y warna si falta `jq` en PATH con `install_hint` por OS (`darwin`/`linux`/`win32`). Severidad `warn`, no bloqueante.
+- `src/application/auto-plan.ts`:
+  - Nueva `countDeclaredSourcesMentioned(text, aliases)` — intersect semántico contra `AW-PROJECT.Fuentes` (corrige falso positivo "22 fuentes mencionadas").
+  - Nuevo `AutoPlanOptions { flow, modalidad, declaredAliases }`. `shouldSkipFullPlan` con `flow=analyze → skip` per doctrina (`auto-plan-rules.md:21,49`); `analyze + modalidad=incident → lite`.
+  - Nuevo `parseModality` helper.
+  - `estimateEtaHours(text, { declaredAliases })` recalibrado: `srcFactor = 1 + 0.25*max(0, min(sources,4) - 1)` con cap (ETA ~8× menos inflada sobre OBJECTIVEs con muchas menciones).
+- `src/cli/commands/auto-plan-decide.ts` acepta `--code <NNN>` (deriva flow desde AW-PROJECT.Status) y `--flow <dev|design|analyze>` (override explícito); lee `AW-PROJECT.Fuentes` y pasa `declaredAliases` automáticamente. Retro-compatible: sin flags se comporta como antes (con threshold legacy 3→10 para mitigar el falso positivo histórico).
+- `countAcceptanceCriteria` regex bilingüe: acepta `Success criteria` / `Criterios de éxito` además de los headers canónicos previos.
+- Tests: `tests/unit/auto-plan.test.ts` +32 cases (bilingual + flow short-circuit + semantic intersect + srcFactor recalibrate). `tests/unit/host-doctor-service.test.ts` +6 cases (jq presente/ausente, marketplace match, fresh install).
+
+### Changed BREAKING (session093)
+
+- `skills/agent-workflow/exports/export-scripts/SKILL.md` v3.1.0 → **v4.0.0**:
+  - Layout plano cross-session al root del bundle: `00-ROLLBACK.sql`, `01-DDL-TABLES.sql`, `02-DDL-FUNCTIONS.sql`, `03-DML.sql`, `04-INSERTS.sql`, `README.md`. Categorías vacías se omiten (no archivo vacío).
+  - Mapping marker→filename explícito: `@category: 01-ddl-tablas → 01-DDL-TABLES.sql`, `02-ddl-funciones → 02-DDL-FUNCTIONS.sql`, `03-migracion → 03-DML.sql`, `04-inserts → 04-INSERTS.sql`.
+  - **Eliminados** (v3.x): `por-sesion/sessionXXX/01-04/forward.sql + .rollback.sql` companions, `por-sesion/<session>/rollback/00-rollback-global.sql` per sesión, `rollback-global.sql` separado al root, `manifest.md` separado (absorbido por `README.md`), `ORDER.md` separado (absorbido por §4 del `README.md`).
+  - `--themes` opt-in se mantiene como capa adicional encima del root plano (sin rollback per-tema).
+- `skills/agent-workflow/standards/sql-rollback-generator/SKILL.md` v1.0.0 → **v2.0.0**:
+  - Output único: `<bundle-root>/00-ROLLBACK.sql` con encadenamiento cross-session orden inverso 04→01 dentro de un `BEGIN; ... COMMIT;` único.
+  - Bloque "Fase 5 — Cleanup irreversible" al final, fuera de la transacción, con header `-- WARNING: IRREVERSIBLE`.
+  - **Eliminados** (v1.0.0): companions `.rollback.sql` por sentencia, sub-carpeta `<session>/rollback/` per-sesión, archivo `rollback-global.sql` separado.
+- `references/readme-template.md` re-escrito: 10 secciones canónicas consolidan informe + índice + how-to-execute en una sola plantilla.
+- `references/manifest-template.md` marcado `## Status: DEPRECATED` con puntero a `readme-template.md`; cuerpo histórico conservado para bundles v3.x ya generados.
+- `references/validations.md` V1-V6 actualizadas: V1 rechaza artefactos del layout v3.x (`por-sesion/`, `.rollback.sql` companions, `manifest.md`, `ORDER.md`, `rollback-global.sql`); V3 valida las 10 secciones del README único; V4 agrega V4.d (categorías SQL vacías sin referencia).
+- `references/theme-handling.md` actualizado: `por-tema/` no duplica rollback ni emite ORDER per-tema; el `00-ROLLBACK.sql` del root es el único punto de verdad.
+- `references/lexico-tecnico.md` agrega bloque regex para anti-redundancia v3.x.
+- `skills/agent-workflow/standards/sql-script-organizer/SKILL.md` — sección "Layout del bundle" actualizada a v4.0.0 (markers de input siguen siendo `01-ddl-tablas` etc; output canonical UPPERCASE EN).
+- `skills/agent-workflow/doctrine/implement/references/rollback-guide.md` — descripción del rollback BD actualizada a v2.0.0 (un solo `00-ROLLBACK.sql`).
+- `skills/agent-workflow/commands/export-scripts.md` — argument-hint + ejemplos de output + recursos actualizados.
+
+### Migration notes
+
+- **Bundles v3.x ya escritos** (`docs/scripts/00X-export-scripts-*` con `por-sesion/`, `manifest.md`, `ORDER.md`, `rollback-global.sql`): quedan como histórico. NO se reescriben automáticamente. Si el operador necesita el layout plano para un bundle histórico, regenerar manualmente con `/agent-workflow:export-scripts --sessions <NNN[,NNN]>` (toma siguiente NNN; no sobrescribe el viejo).
+- **Sesiones cerradas**: el `SCRIPTS.sql` per-sesión no cambia. El refactor sólo cambia cómo se consolidan en el bundle final.
+- **Callers legacy** (`release`, `release-scripts` en deprecation Fase 1): freezan el algoritmo v1.0.0 de sql-rollback-generator. `references/release-rollback.md` marcado LEGACY con tag DEPRECATED.
+
+### Non-goals (no incluido)
+
+- **Sin migración del histórico**: bundles `001-002-003-export-scripts-*` quedan en el repo como histórico. No se reescriben.
+- **Sin TS code changes en export-scripts**: el comando es skill-driven (sin módulo TS dedicado). Los cambios son 100% doctrina + templates + sub-skill behavior + adyacentes.
+- **Sin cambios en `release`/`release-scripts` legacy**: continúan en deprecation Fase 1; algoritmo congelado en v1.0.0 hasta Fase 2.
+
 ## [9.3.0] — 2026-05-25
 
 **Minor — closure cleanup gate + 8º anchor en /rules** (session090). Agrega un gate canónico de calidad pre-commit en la fase closure del lifecycle: entre `graduate` (paso 1) y `propose commits` (M1 / paso 2). El gate inspecciona el diff working-tree por fuente dirty y categoriza hallazgos en 5 grupos (comentarios redundantes, complejidad cognitiva, antipatrones, code smells, código muerto). El bundle `agent-workflow:rules` pasa de 7 a 8 anchors.
