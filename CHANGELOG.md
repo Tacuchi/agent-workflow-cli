@@ -4,6 +4,36 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.1.0] — 2026-05-27
+
+**TUI Project/Status tweaks + global refresh + notif fix** (session094). Ajustes visuales y de datos al home TUI; expone `type` de sesión como metadata de primera clase.
+
+### Added
+
+- `r` refresh global: re-monta el tab activo (re-fetch de sus datos) y recarga el shell (header + activity feed). Footer muestra `r refresh`; toast "Refreshing…". Convive con `r`=recheck del banner update (la notif tiene prioridad mientras está visible).
+- `SessionEntry.type` (`src/application/session-resolver.ts`): parsea `## Type` (Type/Tipo) del OBJECTIVE. Se serializa en el output de `sessions` (omitido si ausente). Alimenta el meta `tipo · flujo · estado` de los feeds de sesiones.
+- Project tab — sección "Recent sessions": lista las sesiones más recientes (por código desc, cap 7) con `tipo · flujo · estado`, reemplazando el feed de commits.
+
+### Changed
+
+- Status tab — "Recent": muestra las últimas 5 sesiones (más reciente primero) con `tipo · flujo · estado`, en vez de commits + 3 activas con timestamps sintéticos.
+- Project tab — `SourceRow`: sin la ruta de la fuente; el estado (`in sync`/`N dirty`) va a la izquierda de la rama y el conjunto se alinea a la derecha.
+- Project tab — GIT tile: `value` = rama de trabajo, `sub` = rama principal (`base <branch>`) con ahead/behind como sufijo compacto sólo si difiere.
+- Project tab — resume migra de `r` a `⏎` (la sección ya anunciaba "⏎ resume"); `r` queda libre para el refresh global.
+
+### Fixed
+
+- Project tab — tile `sessions`: el `total` mostraba sólo las activas (`list({})` filtra a activas por default). Ahora `buildProjectTabData` usa `list({ state: "all" })` → total real (ej. 94) + active correcto.
+- Notif update-available: doble ícono ↻ amarillo (el título embebía `↻` y el banner ya antepone el tone-icon `warn`). Removido el embebido → un solo ícono.
+
+### Removed
+
+- `buildActivity` + `ProjectActivityEntry`/`ProjectActivityType` + campo `ProjectTabData.activity` + `activityLimit` (feed commit/HISTORY sin consumidores tras el cambio a recent-sessions). Helpers `formatActivityWhen`/`ACTIVITY_UNIT_SHORT` removidos.
+
+### Tests
+
+- Goldens `sessions-{default,all,closed}.json` + `history-data.json`: agregado `type` para sesiones con `## Type`. Suite completa verde (661 tests).
+
 ## [10.0.0] — 2026-05-25
 
 **Major BREAKING — export-scripts layout plano + sql-rollback-generator único** (session092 + session093). Dos refactors agrupados en un único release. (a) auto-plan flow-aware + semantic source counting + host-doctor para `jq` (session092, additive). (b) export-scripts pasa a layout plano cross-session al root del bundle y sql-rollback-generator pasa a un único `00-ROLLBACK.sql` (session093, BREAKING en doctrina). Bundles ya generados con v9.x quedan como histórico.
