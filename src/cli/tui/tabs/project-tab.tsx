@@ -1,8 +1,9 @@
-import { basename, relative } from "node:path";
+import { basename } from "node:path";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type ProjectPendingItem,
+  type ProjectSessionSummary,
   type ProjectSource,
   type ProjectTabData,
   buildProjectTabData,
@@ -82,7 +83,9 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
         if (candidate) onRunAction?.("git:checkout", { name: candidate.name });
       }
       if (input === "s") onRunAction?.("session:start");
-      if (input === "r") {
+      // Resume con ⏎ (la sección "Active sessions" ya anuncia "⏎ resume").
+      // `r` queda libre para el refresh global del shell.
+      if (key.return) {
         const active = data.sessions.find((s) => s.state === "active");
         if (active) onRunAction?.("session:resume", { code: active.code });
       }
@@ -137,23 +140,14 @@ function tildePath(path: string, home: string): string {
   return path;
 }
 
-const ACTIVITY_UNIT_SHORT: Record<string, string> = {
-  second: "s",
-  minute: "m",
-  hour: "h",
-  day: "d",
-  week: "w",
-  month: "mo",
-  year: "y",
-};
+/** Orden de sesiones más reciente primero: por código (zero-padded) desc. */
+function byCodeDesc(a: ProjectSessionSummary, b: ProjectSessionSummary): number {
+  return b.code.localeCompare(a.code);
+}
 
-/** `21 minutes ago` → `21m ago`, `2 hours ago` → `2h ago`, etc. */
-function formatActivityWhen(whenRel: string): string {
-  const m = whenRel.match(/^(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago$/i);
-  if (!m) return whenRel;
-  const unit = m[2]?.toLowerCase() ?? "";
-  const short = ACTIVITY_UNIT_SHORT[unit] ?? unit;
-  return `${m[1]}${short} ago`;
+/** Meta compacta de una sesión para el feed: `tipo · flujo · estado`. */
+function sessionMeta(s: ProjectSessionSummary): string {
+  return [s.type, s.flow, s.state].filter((v): v is string => Boolean(v)).join(" · ");
 }
 
 // ===== Landing — workspace no inicializado =====
@@ -255,13 +249,18 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
   const description = deriveDescription(data.workspaceName);
   const wsPath = tildePath(data.workspacePath, home);
 
-  const events: ActivityEvent[] = data.activity.slice(0, 7).map((a, i) => ({
-    id: `${a.whenIso}-${i}`,
-    when: formatActivityWhen(a.whenRel),
-    dotColor: a.type === "commit" ? "info" : a.type === "session" ? "accent" : "purple",
-    text: a.text,
-    metaTone: "dim",
-  }));
+  // Recent sessions: las más recientes primero (por código), con tipo/flujo/estado.
+  const events: ActivityEvent[] = [...data.sessions]
+    .sort(byCodeDesc)
+    .slice(0, 7)
+    .map((s) => ({
+      id: `session-${s.code}`,
+      when: s.date ?? "",
+      dotColor: s.state === "active" ? "accent" : "dim",
+      text: `session${s.code} · ${s.name}`,
+      meta: sessionMeta(s),
+      metaTone: "dim",
+    }));
 
   const isHub = data.workspaceMode === "hub";
   const showSources = isHub && data.sources.length > 0;
@@ -309,7 +308,7 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
           <SectionHead label="Sources" count={data.sources.length} marginTop={1} />
           <Box marginLeft={2} flexDirection="column">
             {data.sources.map((s) => (
-              <SourceRow key={s.alias} source={s} workspacePath={data.workspacePath} />
+              <SourceRow key={s.alias} source={s} />
             ))}
           </Box>
         </>
@@ -357,10 +356,10 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
         </>
       ) : null}
 
-      {/* Recent activity full-width */}
-      <SectionHead label="Recent activity" count={events.length} marginTop={1} />
+      {/* Recent sessions full-width */}
+      <SectionHead label="Recent sessions" count={events.length} marginTop={1} />
       <Box marginLeft={2}>
-        <ActivityFeed events={events} cap={7} emptyHint="  (no recent activity yet)" />
+        <ActivityFeed events={events} cap={7} emptyHint="  (no sessions yet)" />
       </Box>
 
       <Box marginTop={1}>
@@ -370,35 +369,36 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
   );
 }
 
-function SourceRow({ source, workspacePath }: { source: ProjectSource; workspacePath: string }) {
-  const rel = relative(workspacePath, source.path) || ".";
+function SourceRow({ source }: { source: ProjectSource }) {
   const status = source.dirty ? `${source.changedFiles} dirty` : "in sync";
   const statusColor = source.dirty ? colors.warn : colors.ok;
+  const branch = source.branch ?? source.mainBranch;
   return (
     <Box>
       <Text color={colors.accent}>{icons.diamond} </Text>
       <Text color={colors.bright} bold>
         {source.alias}
       </Text>
-      <Text color={colors.dim}> → </Text>
-      <Text color={colors.dim}>{rel}</Text>
+      {/* Cluster derecho: estado a la izquierda de la rama, todo alineado a la derecha. */}
+      <Box flexGrow={1} />
+      <Text color={statusColor}>{status}</Text>
       <Text color={colors.faint}> · </Text>
       <Text color={colors.dim}>
-        {icons.branch} {source.branch ?? source.mainBranch}
+        {icons.branch} {branch}
       </Text>
-      <Text color={colors.faint}> · </Text>
-      <Text color={statusColor}>{status}</Text>
     </Box>
   );
 }
 
 function statGitSub(data: ProjectTabData): string {
   if (!data.git) return "—";
-  const parts: string[] = [];
-  if (data.git.ahead > 0) parts.push(`↑${data.git.ahead}`);
-  if (data.git.behind > 0) parts.push(`↓${data.git.behind}`);
-  if (parts.length === 0) return `in sync with ${data.git.base}`;
-  return `${parts.join(" / ")} · base ${data.git.base}`;
+  // Tile GIT: el `value` es la rama de trabajo; este `sub` es la rama principal
+  // (debajo). ahead/behind van como sufijo compacto sólo si difiere.
+  const base = `base ${data.git.base}`;
+  const sync: string[] = [];
+  if (data.git.ahead > 0) sync.push(`↑${data.git.ahead}`);
+  if (data.git.behind > 0) sync.push(`↓${data.git.behind}`);
+  return sync.length > 0 ? `${base} · ${sync.join(" ")}` : base;
 }
 
 function PendingRow({ item }: { item: ProjectPendingItem }) {

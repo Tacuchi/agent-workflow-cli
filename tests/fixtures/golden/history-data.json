@@ -8,6 +8,7 @@
       "path": ".workflow/sessions/session001-dev-foo",
       "state": "active",
       "phase": "requirement",
+      "type": "feature",
       "date": "2026-01-01",
       "summary": "Implementar el feature foo de prueba para validar el lifecycle de sesiones."
     },
@@ -30,6 +31,7 @@
       "path": ".workflow/sessions/session003-dev-baz",
       "state": "closed",
       "phase": "closure",
+      "type": "feature",
       "date": "2026-01-03",
       "summary": "Tarea cerrada baz: ya fue completada y graduada."
     }

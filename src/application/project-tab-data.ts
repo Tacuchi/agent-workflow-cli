@@ -7,7 +7,6 @@
 // - sources del bloque PROJECT (hub mode → varias filas)
 // - sesiones activas (code, flow, name, phase, summary)
 // - pendientes (items `- [ ]` agregados desde TASKS.md de cada sesión activa)
-// - actividad reciente (git log + HISTORY.md tail)
 //
 // Read-only puro: ningún side-effect en disco ni en remoto.
 
@@ -64,6 +63,10 @@ export interface ProjectSessionSummary {
   name: string;
   phase: string;
   state: "active" | "closed" | "requirement";
+  /** `## Type` del OBJECTIVE (feature/bugfix/…). Ausente si no declarado. */
+  type?: string;
+  /** Fecha de inicio (o mtime) de la sesión, para ordenar/mostrar recencia. */
+  date?: string;
   summary?: string;
 }
 
@@ -76,17 +79,6 @@ export interface ProjectPendingItem {
   text: string;
   /** Prioridad heurística por keywords (high/med/low) */
   prio: "high" | "med" | "low";
-}
-
-export type ProjectActivityType = "commit" | "session" | "edit";
-
-export interface ProjectActivityEntry {
-  whenRel: string;
-  whenIso: string;
-  type: ProjectActivityType;
-  text: string;
-  /** Texto pequeño debajo del entry */
-  detail?: string;
 }
 
 export interface ProjectTabData {
@@ -112,8 +104,6 @@ export interface ProjectTabData {
   sessions: ProjectSessionSummary[];
   /** Pendientes agregados de TASKS.md de sesiones activas */
   pending: ProjectPendingItem[];
-  /** Activity feed (git + history) */
-  activity: ProjectActivityEntry[];
   /** Si hubo error parcial fetcheando data */
   warnings: string[];
 }
@@ -121,8 +111,6 @@ export interface ProjectTabData {
 interface BuildOptions {
   /** Máximo de ramas a listar (default 5) */
   branchLimit?: number;
-  /** Máximo de entradas de actividad (default 8) */
-  activityLimit?: number;
   /** Máximo de pendientes a listar (default 10) */
   pendingLimit?: number;
 }
@@ -222,10 +210,18 @@ export async function buildProjectTabData(
   }
 
   // ===== Sessions =====
+  // `state: "all"` es deliberado: necesitamos TODAS las sesiones para que el
+  // tile `sessions` muestre el total real (no sólo activas) y para alimentar la
+  // sección de sesiones recientes. `list({})` filtra a activas por default.
   const sessionsSvc = new SessionsService(fs, env, paths);
-  const sessionsList = await safeRun("sessions", () => sessionsSvc.list({}), warnings, {
-    sessions: [] as SessionEntry[],
-  } as Awaited<ReturnType<SessionsService["list"]>>);
+  const sessionsList = await safeRun(
+    "sessions",
+    () => sessionsSvc.list({ state: "all" }),
+    warnings,
+    {
+      sessions: [] as SessionEntry[],
+    } as Awaited<ReturnType<SessionsService["list"]>>,
+  );
   const sessions: ProjectSessionSummary[] = sessionsList.sessions
     .filter(
       (s): s is SessionEntry & { code: string; flow: string } => s.code !== null && s.flow !== null,
@@ -238,6 +234,8 @@ export async function buildProjectTabData(
         phase: s.phase,
         state: s.state,
       };
+      if (s.type !== undefined) item.type = s.type;
+      if (s.date !== undefined) item.date = s.date;
       if (s.summary !== undefined) item.summary = s.summary;
       return item;
     });
@@ -251,15 +249,6 @@ export async function buildProjectTabData(
     [] as ProjectPendingItem[],
   );
 
-  // ===== Activity: git log + HISTORY.md tail =====
-  const activity = await safeRun(
-    "activity",
-    () =>
-      buildActivity(proc, fs, primaryRepoPath, paths.cwdHistoryFile(), options.activityLimit ?? 8),
-    warnings,
-    [] as ProjectActivityEntry[],
-  );
-
   return {
     workspaceName,
     workspaceMode,
@@ -270,7 +259,6 @@ export async function buildProjectTabData(
     sources,
     sessions,
     pending,
-    activity,
     warnings,
   };
 }
@@ -432,75 +420,6 @@ function derivePrio(text: string): "high" | "med" | "low" {
   if (/(bloque|blocker|crit|urgente|hotfix|seguridad|prod)/.test(t)) return "high";
   if (/(test|doc|cleanup|chore|nit|typo|opcional)/.test(t)) return "low";
   return "med";
-}
-
-async function buildActivity(
-  proc: ProcessPort,
-  fs: FileSystemPort,
-  repoPath: string,
-  historyPath: string,
-  limit: number,
-): Promise<ProjectActivityEntry[]> {
-  const out: ProjectActivityEntry[] = [];
-
-  // git log entries (commits)
-  const log = await runProc(
-    proc,
-    "git",
-    ["log", "-10", "--pretty=%H%x09%s%x09%an%x09%aI%x09%ar"],
-    repoPath,
-  );
-  if (log.ok && log.stdout) {
-    for (const line of log.stdout.split("\n")) {
-      if (!line) continue;
-      const parts = line.split("\t");
-      if (parts.length < 5) continue;
-      const sha = parts[0]?.slice(0, 7) ?? "";
-      const title = parts[1] ?? "";
-      const author = parts[2] ?? "";
-      const iso = parts[3] ?? "";
-      const rel = parts[4] ?? "";
-      out.push({
-        type: "commit",
-        text: title,
-        detail: `${sha} · ${author}`,
-        whenIso: iso,
-        whenRel: rel,
-      });
-      if (out.length >= limit) break;
-    }
-  }
-
-  // HISTORY.md tail (last 5 rows)
-  if (await fs.exists(historyPath)) {
-    const content = await fs.readText(historyPath).catch(() => "");
-    if (content) {
-      const lines = content.split("\n").filter((l) => l.trim().startsWith("|"));
-      // Drop header + separator
-      const data = lines.slice(2).reverse();
-      for (const row of data.slice(0, Math.max(0, limit - out.length))) {
-        const cols = row
-          .split("|")
-          .map((c) => c.trim())
-          .filter((c) => c.length > 0);
-        if (cols.length < 3) continue;
-        const date = cols[0] ?? "";
-        const session = cols[1] ?? "";
-        const summary = cols[cols.length - 1] ?? "";
-        out.push({
-          type: "session",
-          text: summary,
-          detail: session,
-          whenIso: date,
-          whenRel: date,
-        });
-        if (out.length >= limit) break;
-      }
-    }
-  }
-
-  // Ordenar por whenIso desc, mejor esfuerzo (commits ya ordenados, history queda al final)
-  return out.slice(0, limit);
 }
 
 // ---------- utils ----------

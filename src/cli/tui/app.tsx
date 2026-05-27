@@ -63,6 +63,9 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [activePhase, setActivePhase] = useState<number>(0);
+  // Bumpeado por `r`: re-monta el tab activo (re-fetch de sus effects) y recarga
+  // los datos del shell (header + activity feed).
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const { exit } = useApp();
   const { locked: inputLocked } = useInputLock();
   const {
@@ -75,18 +78,20 @@ function AppShell({ version, ctx, onResult }: AppProps) {
   } = useNotifications();
   const updateCheckStartedRef = useRef(false);
 
-  useEffect(() => {
-    void (async () => {
-      const name = await resolveProjectName(ctx);
-      setProjectName(name);
-      const wctx = await loadWorkspaceContext(ctx);
-      setWorkspaceCtx(wctx);
-      const events = await loadActivity(ctx, { cap: 10 });
-      setActivity(events);
-      const phase = await loadActivePhase(ctx);
-      setActivePhase(phase);
-    })();
+  const loadShellData = useCallback(async () => {
+    const name = await resolveProjectName(ctx);
+    setProjectName(name);
+    const wctx = await loadWorkspaceContext(ctx);
+    setWorkspaceCtx(wctx);
+    const events = await loadActivity(ctx, { cap: 5 });
+    setActivity(events);
+    const phase = await loadActivePhase(ctx);
+    setActivePhase(phase);
   }, [ctx]);
+
+  useEffect(() => {
+    void loadShellData();
+  }, [loadShellData]);
 
   // Update-available banner. Antes vivía dentro de StatusTab — ahora es
   // responsabilidad del shell para que aparezca sin importar la tab activa.
@@ -127,7 +132,6 @@ function AppShell({ version, ctx, onResult }: AppProps) {
           tone: "warn",
           title: (
             <Text>
-              <Text color={colors.warn}>↻ </Text>
               <Text color={colors.bright} bold>
                 v{version}
               </Text>
@@ -281,6 +285,14 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         exit();
         return;
       }
+      // Refresh: re-monta el tab activo (vía refreshNonce) y recarga el shell.
+      // Si una notif reclama `r` (recheck del update banner), gana arriba.
+      if (input === "r" || input === "R") {
+        setRefreshNonce((n) => n + 1);
+        void loadShellData();
+        pushToast({ tone: "info", title: "Refreshing…", duration: 1200 });
+        return;
+      }
       const target = TAB_BY_KEY[input];
       if (target) setActiveTab(target);
     },
@@ -296,6 +308,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
         <NotificationStack items={notifications} />
         <TabBar activeTabId={activeTab} />
         <Box
+          key={refreshNonce}
           flexDirection="column"
           flexGrow={1}
           borderStyle="single"

@@ -24,6 +24,8 @@ export interface SessionEntry {
   path: string;
   state: SessionState;
   phase: Phase | "requirement";
+  /** `## Type` del OBJECTIVE (feature/bugfix/refactor/chore). Ausente si no declarado. */
+  type?: string;
   date?: string;
   summary?: string;
   branch?: string;
@@ -108,6 +110,7 @@ export async function buildSessionEntry(
     path: sessionPath,
     state,
     phase,
+    ...(requirement.type ? { type: requirement.type } : {}),
     ...(date ? { date } : {}),
     summary,
     ...(requirement.branch ? { branch: requirement.branch } : {}),
@@ -280,7 +283,7 @@ export async function readHistoryStateMap(
 async function readRequirement(
   fs: FileSystemPort,
   sessionPath: string,
-): Promise<{ date?: string; summary?: string; branch?: string }> {
+): Promise<{ date?: string; summary?: string; branch?: string; type?: string }> {
   const path =
     (await findArtifact(sessionPath, "objective", fs)) ??
     (await findArtifact(sessionPath, "requirements", fs));
@@ -289,6 +292,8 @@ async function readRequirement(
   const text = await fs.readText(path);
   const date = parseMdValueBilingual(text, "Fecha de inicio");
   const branch = parseMdValueBilingual(text, "Rama");
+  const typeSection = parseMdSectionBilingual(text, "Type");
+  const type = typeSection ? firstNonEmptyLine(typeSection)?.toLowerCase() : undefined;
   const section =
     parseMdSectionBilingual(text, "Requerimiento") ??
     parseMdSectionBilingual(text, "Brief") ??
@@ -300,6 +305,7 @@ async function readRequirement(
     ...(date ? { date } : {}),
     ...(summary ? { summary } : {}),
     ...(branch ? { branch } : {}),
+    ...(type ? { type } : {}),
   };
 }
 

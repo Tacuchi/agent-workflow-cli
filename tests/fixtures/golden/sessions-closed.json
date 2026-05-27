@@ -8,6 +8,7 @@
       "path": ".workflow/sessions/session003-dev-baz",
       "state": "closed",
       "phase": "closure",
+      "type": "feature",
       "date": "2026-01-03",
       "summary": "Tarea cerrada baz: ya fue completada y graduada."
     }

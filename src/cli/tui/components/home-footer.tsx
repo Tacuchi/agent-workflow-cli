@@ -10,6 +10,7 @@ export interface HomeFooterProps {
 const TAB_KEYS: KeymapEntry[] = [
   { key: "tab", action: "next" },
   { key: "⇧tab", action: "prev" },
+  { key: "r", action: "refresh" },
   { key: "q", action: "quit" },
 ];
 

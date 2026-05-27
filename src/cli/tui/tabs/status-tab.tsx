@@ -177,7 +177,7 @@ export function StatusTab({ ctx, version, isActive, onActivateTab, recentEvents 
 
       <SectionHead label="Recent" count={events.length} marginTop={1} />
       <Box marginLeft={2}>
-        <ActivityFeed events={events} cap={4} emptyHint="  (no recent activity yet)" />
+        <ActivityFeed events={events} cap={5} emptyHint="  (no sessions yet)" />
       </Box>
     </Box>
   );
