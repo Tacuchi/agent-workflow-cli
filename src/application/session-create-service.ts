@@ -59,6 +59,7 @@ export interface SessionCreateInput {
   tipo?: string;
   modalidad?: string;
   fromPlanRaw?: string;
+  lite?: boolean;
 }
 
 export interface SessionCreateRecordOutput {
@@ -73,6 +74,7 @@ export interface SessionCreateRecordOutput {
   flow: string;
   tipo?: string;
   modalidad?: string;
+  kind?: string;
   plan_transition?: { plan: string; from: string; to: string };
 }
 
@@ -182,6 +184,9 @@ function validateInput(input: SessionCreateInput): ValidatedInput | SessionCreat
   if (flow !== "dev" && flow !== "design" && flow !== "analyze") {
     return { error: `flow inválido '${flow}'; esperado dev|design|analyze` };
   }
+  if (input.lite && flow !== "dev") {
+    return { error: "--lite sólo aplica a flow=dev" };
+  }
   const flowGuard = validateFlowSpecifics(flow, input);
   if (flowGuard) return flowGuard;
   if (!input.name) return { error: "--name es obligatorio (slug-kebab)" };
@@ -246,7 +251,7 @@ async function writeObjetivo(
   input: SessionCreateInput,
   origen: ResolvedOrigen | null,
 ): Promise<void> {
-  const template = getObjetivoTemplate(flow);
+  const template = getObjetivoTemplate(flow, input.lite ?? false);
   const values: Record<string, string> = {
     folder: folderInfo.folder,
     objetivo: input.objetivo ?? "",
@@ -274,6 +279,7 @@ async function writeHistoryRow(
   const summary = objetivo.length <= 100 ? objetivo : `${objetivo.slice(0, 97)}...`;
   const refsParts: string[] = [];
   if (origen) refsParts.push(`origen:${origen.flow}-${origen.code}`);
+  if (input.lite) refsParts.push("kind:patch");
   const initialRefs = refsParts.length > 0 ? renderRefs(refsParts.join(",")) : "—";
 
   await upsertRow(fs, paths.cwdHistoryFile(), code, (hasFlow) =>
@@ -326,6 +332,7 @@ function composeRecord(
     ...(flow === "design" && input.tipo ? { tipo: input.tipo } : {}),
     ...(flow === "dev" && input.tipo ? { tipo: input.tipo } : {}),
     ...(flow === "analyze" && input.modalidad ? { modalidad: input.modalidad } : {}),
+    ...(input.lite ? { kind: "patch" } : {}),
     flow,
   };
 }
@@ -393,11 +400,25 @@ function validateDevArgs(input: SessionCreateInput): SessionCreateError | null {
         expected: [...VALID_DEV_TYPES],
       };
     }
+    // Modo lite (micro-lifecycle flat): solo admite bugfix|chore. feature/refactor
+    // requieren la sesión completa (phased + DESIGN/S7) — usar upgrade in-place si crece.
+    if (input.lite && candidate !== "bugfix" && candidate !== "chore") {
+      return {
+        error: `--lite no admite --type '${candidate}'; el micro-lifecycle es flat. Usá bugfix|chore u omití --lite.`,
+        expected: ["bugfix", "chore"],
+      };
+    }
     input.tipo = candidate;
     return null;
   }
   // Sin --type → inferir desde --objetivo (Mit-C).
   const inferred = inferType(input.objetivo ?? "");
+  // Modo lite: restringir a bugfix|chore. Si la heurística no da chore, usar bugfix
+  // (una tarea pequeña no es feature/refactor; si crece, el upgrade in-place la promueve).
+  if (input.lite) {
+    input.tipo = inferred.type === "chore" ? "chore" : "bugfix";
+    return null;
+  }
   input.tipo = inferred.type;
   if (inferred.confidence === "fallback") {
     // Log canónico (Mit-C fallback). Va a stderr para no contaminar el JSON de stdout.

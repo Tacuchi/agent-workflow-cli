@@ -32,32 +32,9 @@ Workflow declarativo del flow=dev. Define cómo se comporta la especialidad en d
 
 **Política sin fallback al CLI (transversal al flow=dev)**: si `agent-workflow <subcmd>` falla (no está en PATH, comando no reconocido, exit code != 0), **cortá la acción y reportá al usuario**: pedile que verifique `npm install -g @tacuchi/agent-workflow-cli`. No hay flujo alternativo Python.
 
-## Standalone (use)
+## Standalone (use) — DEPRECADO (session096)
 
-Cuando el usuario invoca `/agent-workflow:use` (sin sesión activa):
-
-1. **Presentarse**: mostrar este Brief al usuario.
-2. **Preguntar intención** (lista corta de actividades dev típicas):
-   - "Editar código siguiendo coding-standards (fix, feature, refactor)"
-   - "Producir/organizar scripts SQL (DDL, migración, inserts)"
-   - "Generar rollback de un script existente"
-   - "Definir testing strategy para un cambio"
-   - "Generar release o release-scripts (requiere sesiones cerradas en `.workflow/sessions/`)"
-3. **Detectar contexto**:
-   - Stack del CWD vía `agent-workflow stack` (Maven/Gradle/Angular/Node).
-   - Si hay bloque AW-PROJECT, mostrar fuentes y modo (project/hub).
-   - Si no hay AW-PROJECT, operar sobre el CWD sin pedir bootstrap.
-4. **Cargar skills relevantes** según intención (ej. coding-standards + implement para edits).
-5. **Preguntar paths para artefactos** (opt-in):
-   - Si el usuario quiere persistir DECISIONS/ANALYSIS/etc. (legacy: DECISIONES), preguntar dónde guardarlas (default sugerido: `docs/dev/<slug>.md` o equivalente).
-   - Si solo quiere asistencia ad-hoc (no artefactos), proceder sin escribir nada.
-6. **Trabajar** con composición de skills según necesidad.
-
-**Reglas standalone**:
-- **NO crear sesión** (`.workflow/sessions/`, HISTORY.md, AW-PROJECT.Status quedan intocados).
-- **NO requiere AW-PROJECT** (si existe, se enriquece; si no, opera sobre CWD).
-- **No bloquear por falta de bootstrap**: el modo standalone no asume estructura del workspace.
-- **Sugerir sesión solo si**: el usuario menciona "trabajo largo", "feature completa", "varios commits", o pide explícitamente persistir contexto entre invocaciones. En ese caso recomendar `/agent-workflow:session create`.
+> `/agent-workflow:use` nunca se materializó como comando (no está en los commands canónicos ni en el marketplace). Para una tarea dev pequeña con trazabilidad mínima usá **`/agent-workflow:patch`** (micro-lifecycle, modo `--lite` de flow=dev — ver `session/SKILL.md` §"Modo lite (/patch)"). Para trabajo largo, `/agent-workflow:session`. Esta sección queda como histórico read-only; no describe un comando activo.
 
 ## Excepciones session-aware (v2.1+)
 

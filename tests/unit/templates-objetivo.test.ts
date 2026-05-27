@@ -43,6 +43,26 @@ describe("getObjetivoTemplate", () => {
     expect(tpl).toContain("# Objective —");
     expect(getObjetivoTemplate(undefined)).toBe(tpl);
   });
+
+  it("returns condensed PATCH template for flow=dev + lite", () => {
+    const tpl = getObjetivoTemplate("dev", true);
+    expect(tpl).toContain("# Objective — {folder}");
+    expect(tpl).toContain("## Type");
+    expect(tpl).toContain("## Requirement");
+    expect(tpl).not.toContain("## Context");
+    expect(tpl).not.toContain("## Acceptance criteria");
+    expect(tpl).not.toContain("## Topics");
+  });
+
+  it("lite only applies to flow=dev (analyze/design ignore it)", () => {
+    expect(getObjetivoTemplate("analyze", true)).toBe(getObjetivoTemplate("analyze"));
+    expect(getObjetivoTemplate("design", true)).toBe(getObjetivoTemplate("design"));
+  });
+
+  it("lite=false keeps the full DEV template", () => {
+    expect(getObjetivoTemplate("dev", false)).toBe(getObjetivoTemplate("dev"));
+    expect(getObjetivoTemplate("dev", false)).toContain("## Acceptance criteria");
+  });
 });
 
 describe("renderTemplate", () => {

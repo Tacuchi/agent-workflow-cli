@@ -241,6 +241,53 @@ Artefacto opcional por sesión que captura "lo que queda para otras sesiones": d
 - Append-only en práctica (no borrar entries previas; mover items a `Discarded` con razón).
 - Si el usuario explícitamente dice "no hay backlog para esta sesión", NO crear el archivo.
 
+## Modo lite (/patch) — micro-lifecycle
+
+Perfil de ceremonia reducida sobre el lifecycle, para tareas pequeñas y directas (fixes, ajustes, chores acotados). Expuesto como `/agent-workflow:patch` (azúcar) y activado por el flag `--lite` de `session-create`. **No es un flow nuevo**: es un modo de `flow=dev`. Origen: `docs/conclusiones/010` (session095).
+
+### Cuándo usarlo
+
+- Tarea acotada que no justifica la ceremonia completa (1-3 archivos, sin decisión de arquitectura, sin contrato FE-BE nuevo).
+- Pero sí merece trazabilidad mínima (HISTORY + DECISIONS lazy + commit M1), a diferencia del trabajo ad-hoc sin rastro.
+- Si la tarea es feature/refactor → NO usar lite; abrir sesión completa.
+
+### Crear (qué cambia vs sesión normal)
+
+```
+agent-workflow session-create --lite --flow dev --name <slug> --objetivo "<texto>"
+```
+
+- OBJECTIVE condensado: solo `## Type` + `## Requirement` (template `PATCH_TEMPLATE`).
+- `## Type` default `bugfix`; `chore` si la heurística lo detecta. `--lite` rechaza `feature|refactor`.
+- Tag `kind:patch` en la columna `refs` de la fila HISTORY.
+
+### Las 4 fases en modo lite
+
+- **planning**: SKIP de la ceremonia. Sin auto-plan prompt, sin TASKS.md, sin DESIGN.md/S7, sin M10. El `## Requirement` es la única tarea.
+- **execution**: loop directo. Verificar rama, cambio mínimo, diff, DECISIONS sólo si no es obvio (igual que `implement` flat). La doctrina bugfix (3 pasos) aplica si el cambio lo amerita; para un fix trivial el paso 1 (root-cause) se salta con justificación inline.
+- **validation**: la que aporte el cambio (test puntual si aplica). No formal.
+- **closure**: condensado. Inspección mínima del diff (sin el cleanup-gate elaborado de §1.5). Commit M1 (propose-then-execute) directo. **No gradúa** por default; si surge una decisión que merece persistir → `decision` como en cualquier sesión.
+
+### Escalado
+
+**Upgrade in-place** (lite → completo) — caso principal. Señales de que la tarea creció:
+- Toca >3 archivos o ≥2 fuentes.
+- Requiere scripts SQL / cambios de BD.
+- El cambio resulta ser feature/refactor (no un fix acotado).
+
+Cuando el AI detecta una señal: **proponer** (no auto-escalar) vía `AskUserQuestion` (estilo S2): "Esto creció. ¿Promovemos a sesión dev completa?". Si el usuario acepta, promover **en la misma sesión**:
+1. Quitar el tag `kind:patch` de la fila HISTORY.
+2. Generar TASKS.md (auto-plan).
+3. Si el Type sube a feature/refactor → disparar DESIGN.md + S7 antes de seguir.
+
+No fragmenta (a diferencia de `--from`, que queda como alternativa manual si el usuario prefiere separar en dos sesiones).
+
+**Downgrade** (completo → lite) — preventivo, no a mitad. El valor está en sugerir `--lite` al inicio (heurística / auto-plan) antes de invertir en TASKS/DESIGN, no en des-escalar una sesión ya armada.
+
+### Exports
+
+Los exports (`release-data`) colapsan las sesiones `kind:patch`: se agrupan/resumen (no una entrada completa por patch) para no inflar informes.
+
 ## Cerrar sesión
 
 ### 0. Detección de items abiertos → sugerir BACKLOG.md (F-F)

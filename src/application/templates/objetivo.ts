@@ -65,6 +65,17 @@ const ANALYZE_TEMPLATE = `# Objective — {folder}
 - [ ] <criterion 2>
 `;
 
+// Modo --lite (flow=dev): OBJECTIVE condensado para el micro-lifecycle /patch.
+// Solo Type + Requirement; sin Context/Acceptance/Topics (una tarea pequeña no los necesita).
+const PATCH_TEMPLATE = `# Objective — {folder}
+{origen_block}
+## Type
+{tipo}
+
+## Requirement
+{objetivo}
+`;
+
 const TEMPLATES_BY_FLOW: Record<string, string> = {
   dev: DEV_TEMPLATE,
   design: DESIGN_TEMPLATE,
@@ -72,8 +83,9 @@ const TEMPLATES_BY_FLOW: Record<string, string> = {
   default: DEFAULT_TEMPLATE,
 };
 
-export function getObjetivoTemplate(flow: string | null | undefined): string {
+export function getObjetivoTemplate(flow: string | null | undefined, lite = false): string {
   const key = (flow ?? "").trim().toLowerCase();
+  if (lite && key === "dev") return PATCH_TEMPLATE;
   return TEMPLATES_BY_FLOW[key] ?? DEFAULT_TEMPLATE;
 }
 

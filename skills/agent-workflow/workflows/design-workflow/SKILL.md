@@ -34,30 +34,9 @@ Diferencia clave de **type** (metadato interno del documento — la carpeta dest
 
 **Ambos types gradúan a `docs/especificaciones/NNN-<slug>/`** (kind=`especificacion`, modelo nuevo DEC-003). El `## Type` queda como metadato dentro del archivo, no afecta el routing.
 
-## Standalone (use)
+## Standalone (use) — DEPRECADO (session096)
 
-Cuando el usuario invoca `/agent-workflow:use`:
-
-1. **Presentarse**: mostrar este Brief.
-2. **Preguntar type**: project o system (legacy ES `proyecto`/`sistema` aceptado). Esto determina el destino sugerido.
-3. **Preguntar intención**:
-   - "Brief inicial (capturar contexto, restricciones)"
-   - "Discovery visual (research, referencias, exploración)"
-   - "Develop (iterar propuestas)"
-   - "Deliver (spec final DELIVERY.md)"
-   - "Aplicar frontend-design (patterns UX a una pantalla concreta)"
-4. **Detectar contexto**: si hay AW-PROJECT con fuentes de framework (Angular/React/Vue), informar al usuario que el spec se diseñará agnóstico pero se considerará el stack target.
-5. **Preguntar paths para artefactos**:
-   - Path durante sesión: `.workflow/sessions/<folder>/DELIVERY.md` + opcional `<workspace-root>/docs/referencias/` (carpeta transversal manual del usuario, DEC-004 v2; el AI no escribe ahí salvo que lo pida).
-   - Default al graduar: `docs/especificaciones/<slug>/DELIVERY.md` (kind=`especificacion`) — sin importar `## Type: project|system`.
-   - Si el usuario solo quiere asistencia ad-hoc, proceder sin escribir.
-6. **Cargar skills relevantes** según intención.
-
-**Reglas standalone**:
-- **NO crear sesión** ni escribir en `.workflow/sessions/`.
-- **NO requiere AW-PROJECT**.
-- **Spec-only**: no editar código de framework directamente, ni en standalone ni orchestrated.
-- **Sugerir sesión** si el trabajo de diseño es multi-iteración (brief + discovery + develop + deliver) — tiene más sentido como sesión.
+> `/agent-workflow:use` nunca se materializó como comando. Para diseño con trazabilidad usá `/agent-workflow:session --flow design`. El micro-lifecycle `/agent-workflow:patch` es para tareas dev con cambio (no aplica a diseño). Esta sección queda como histórico read-only; no describe un comando activo.
 
 ## Session integration
 

@@ -29,6 +29,7 @@ export const sessionCreateCommand: QtcCommand = {
     if (modalidad !== undefined) input.modalidad = modalidad;
     const fromPlan = args.values.get("from-plan");
     if (fromPlan !== undefined) input.fromPlanRaw = fromPlan;
+    if (args.flags.has("--lite")) input.lite = true;
 
     const data = await runSessionCreate(ctx.fs, ctx.env, ctx.paths, input);
     if ("error" in data) {

@@ -280,6 +280,30 @@ export async function readHistoryStateMap(
   return map;
 }
 
+/**
+ * Parse HISTORY.md once and return the set of session codes tagged `kind:patch`
+ * in their refs column (micro-lifecycle /patch). Used to collapse patches in exports.
+ * The refs column is the last data cell — robust to the optional `flow` column.
+ */
+export async function readPatchCodesFromHistory(
+  fs: FileSystemPort,
+  historyPath: string,
+): Promise<Set<string>> {
+  const codes = new Set<string>();
+  if (!(await fs.exists(historyPath))) return codes;
+  const text = await fs.readText(historyPath);
+  for (const line of text.split("\n")) {
+    if (!line.startsWith("|")) continue;
+    const cells = line.split("|").map((c) => c.trim());
+    if (cells.length < 7) continue;
+    const code = cells[1];
+    const refs = cells[cells.length - 2] ?? "";
+    if (!code || !/^\d{3}$/.test(code)) continue;
+    if (refs.includes("kind:patch")) codes.add(code);
+  }
+  return codes;
+}
+
 async function readRequirement(
   fs: FileSystemPort,
   sessionPath: string,

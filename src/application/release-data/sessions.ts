@@ -4,13 +4,19 @@ import { validateSessionsExist } from "../parsers/sessions-csv.js";
 import type { PathsService } from "../paths-service.js";
 import { relpath } from "../paths.js";
 import { listExistingArtifacts } from "../session-artifacts.js";
-import { type SessionEntry, buildSessionEntry } from "../session-resolver.js";
+import {
+  type SessionEntry,
+  buildSessionEntry,
+  readPatchCodesFromHistory,
+} from "../session-resolver.js";
 import { sessionCodeInt } from "./common.js";
 
 export interface ReleaseSession extends SessionEntry {
   is_legacy_format?: boolean;
   release_eligible?: boolean;
   legacy_warning?: string;
+  /** True cuando la sesión es un /patch (kind:patch en HISTORY). Los exports las colapsan. */
+  is_patch?: boolean;
 }
 
 export async function listSessionsForRelease(
@@ -30,6 +36,7 @@ export async function listSessionsForRelease(
   const sessionsDir = paths.cwdSessionsDir();
   if (!(await fs.exists(sessionsDir))) return [];
 
+  const patchCodes = await readPatchCodesFromHistory(fs, paths.cwdHistoryFile());
   const sessionsFilter = options.sessions;
   const useDiscrete = sessionsFilter !== undefined && sessionsFilter.length > 0;
   if (useDiscrete) {
@@ -58,6 +65,7 @@ export async function listSessionsForRelease(
     const hasRequirements = present.requirements !== null;
     entry.is_legacy_format = hasRequirements && !hasObjetivo;
     entry.release_eligible = !entry.is_legacy_format;
+    if (entry.code !== null && patchCodes.has(entry.code)) entry.is_patch = true;
     result.push(entry);
   }
   return result;

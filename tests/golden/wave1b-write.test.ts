@@ -296,6 +296,79 @@ describe("Wave 1B write commands — golden parity (legacy ES fixture)", () => {
       normalizeLastActivity(loadGoldenFile("session-create-dev", "CLAUDE.md")),
     );
   });
+
+  it("session-create --lite: micro-sesión con OBJECTIVE condensado + Type bugfix + kind:patch", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionCreate(fs, env, paths, {
+      flow: "dev",
+      name: "fix-typo",
+      objetivo: "Arreglar typo en el validador",
+      lite: true,
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    // Type default bugfix (lite no cae a feature) + kind patch en el record.
+    expect(result.sessionCreate.tipo).toBe("bugfix");
+    expect(result.sessionCreate.kind).toBe("patch");
+
+    const folder = result.sessionCreate.folder;
+    const obj = readFile(join(clone.cwd, ".workflow", "sessions", folder, "OBJECTIVE.md"));
+    expect(obj).toContain("## Type\nbugfix");
+    expect(obj).toContain("## Requirement\nArreglar typo en el validador");
+    expect(obj).not.toContain("## Context");
+    expect(obj).not.toContain("## Acceptance criteria");
+    expect(obj).not.toContain("## Topics");
+
+    // Tag kind:patch literal en HISTORY (no renderizado como link).
+    expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toContain("kind:patch");
+  });
+
+  it("session-create --lite --type chore respeta chore", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionCreate(fs, env, paths, {
+      flow: "dev",
+      name: "limpieza",
+      objetivo: "Limpiar imports",
+      tipo: "chore",
+      lite: true,
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionCreate.tipo).toBe("chore");
+    expect(result.sessionCreate.kind).toBe("patch");
+  });
+
+  it("session-create --lite rechaza --type feature", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionCreate(fs, env, paths, {
+      flow: "dev",
+      name: "x",
+      objetivo: "y",
+      tipo: "feature",
+      lite: true,
+    });
+    if (!("error" in result)) throw new Error("expected error");
+    expect(result.error).toMatch(/--lite no admite --type/);
+  });
+
+  it("session-create --lite sólo aplica a flow=dev (analyze rechaza)", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    const result = await runSessionCreate(fs, env, paths, {
+      flow: "analyze",
+      name: "x",
+      objetivo: "y",
+      modalidad: "technical",
+      lite: true,
+    });
+    if (!("error" in result)) throw new Error("expected error");
+    expect(result.error).toMatch(/--lite sólo aplica a flow=dev/);
+  });
 });
 
 /**

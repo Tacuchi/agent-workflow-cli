@@ -41,32 +41,9 @@ Diferencia clave de **modalidad** (embebida como `## Modality` en CONCLUSIONS.md
 
 CONCLUSIONS.md vive en la sesión por default. Gradúa opt-in con `kind=conclusion` a `docs/conclusiones/`.
 
-## Standalone (use)
+## Standalone (use) — DEPRECADO (session096)
 
-Cuando el usuario invoca `/agent-workflow:use`:
-
-1. **Presentarse**: mostrar este Brief + warning read-only.
-2. **Preguntar modalidad** vía `AskUserQuestion`. Spec literal (header `modality`, 3 opciones technical/data/incident con descripción) → `agent-workflow:prompts-catalog#M5`. La modalidad determina la modulación del cuerpo del CONCLUSIONS.md (estructura única, contenido modulado):
-   - **Technical** → cuerpo modulado como propuesta.
-   - **Data** → cuerpo modulado como informe de análisis.
-   - **Incident** → cuerpo modulado como post-mortem.
-3. **Preguntar scope**:
-   - "¿Sobre qué código/sistema/datos investigar?"
-   - "¿Hay un incidente concreto a clasificar?"
-   - "¿Hay datos previos o BD a consultar?"
-4. **Detectar contexto**:
-   - AW-PROJECT con fuentes (read-only sobre los repos declarados).
-   - MCP servers `<mcp-cert>`/`<mcp-prod>` disponibles para consultas BD (read-only).
-   - Cost guard activo para consultas pesadas.
-5. **Path del artefacto**: `.workflow/sessions/<folder>/CONCLUSIONS.md`. Si el usuario decide graduar al cierre, destino = `docs/conclusiones/NNN-<slug>.md` (kind=`conclusion`, opt-in).
-6. **Cargar skill `analyze-conclude`** independientemente de la modalidad (el skill es único y modula por contenido).
-
-**Reglas standalone**:
-- **Read-only estricto**: no editar código del repo, no mutar BD, no escribir scripts SQL.
-- **NO crear sesión** ni escribir en `.workflow/sessions/`.
-- **NO requiere AW-PROJECT** (si existe, enriquece con fuentes para investigar).
-- **Cost guard**: si el usuario quiere queries pesadas o investigación cross-repo extensa, advertir antes de proceder.
-- **Sugerir sesión** si la investigación es multi-fase (investigate + synthesize + recomendar) — más coherente como sesión.
+> `/agent-workflow:use` nunca se materializó como comando. Para investigación read-only con trazabilidad usá `/agent-workflow:session --flow analyze`. El micro-lifecycle `/agent-workflow:patch` es para tareas dev con cambio (no aplica a investigación). Esta sección queda como histórico read-only; no describe un comando activo.
 
 ## Session integration
 

@@ -12,6 +12,9 @@ const BUILTIN_RENDERERS: Record<string, (val: string) => string> = {
   especificacion: (val) => `[ESPECIFICACION](../docs/especificaciones/${val}/)`,
   especificaciones: (val) => `[ESPECIFICACION](../docs/especificaciones/${val}/)`,
   release: (val) => `[RELEASE](../docs/release/${val}.md)`,
+  // Tag de clasificación (no es un link a doc): se preserva como literal `kind:<val>`.
+  // Consumido por readPatchCodesFromHistory para colapsar /patch (kind:patch) en exports.
+  kind: (val) => `kind:${val}`,
 };
 
 export interface OrigenLookup {
