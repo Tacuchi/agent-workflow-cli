@@ -37,7 +37,7 @@ describe("runHubInit", () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("crea CLAUDE.md/AGENTS.md con QTC-PROJECT mode=hub Y .claude/settings.json con paths", async () => {
+  it("con --attach crea CLAUDE.md/AGENTS.md (mode=hub) + .claude/settings.json con paths", async () => {
     const result = await runHubInit(fs, env, paths, {
       proyecto: "Test workspace",
       fuentes: [
@@ -46,6 +46,7 @@ describe("runHubInit", () => {
       ],
       workingBranches: { a: "dev", b: "dev" },
       workspace,
+      attach: true,
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.ok).toBe(true);
@@ -61,7 +62,7 @@ describe("runHubInit", () => {
     expect(claudeMd).toContain("/tmp/a-fake");
   });
 
-  it("--skip-attach solo persiste QTC-PROJECT, sin tocar .claude/settings.json", async () => {
+  it("default (sin --attach) solo persiste el bloque, sin tocar .claude/settings.json", async () => {
     const result = await runHubInit(fs, env, paths, {
       proyecto: "Test",
       fuentes: [
@@ -70,13 +71,12 @@ describe("runHubInit", () => {
       ],
       workingBranches: {},
       workspace,
-      skipAttach: true,
     });
     if ("error" in result) throw new Error("unexpected error");
     expect(result.ok).toBe(true);
     expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(true);
     expect(existsSync(join(workspace, ".claude", "settings.json"))).toBe(false);
-    expect(result.attach_multiroot).toEqual({ skipped: true, reason: "skip-attach flag" });
+    expect(result.attach_multiroot).toEqual({ skipped: true, reason: "attach is opt-in" });
   });
 
   it("--dry-run no escribe ningún archivo y devuelve preview", async () => {
@@ -88,6 +88,7 @@ describe("runHubInit", () => {
       ],
       workingBranches: {},
       workspace,
+      attach: true,
       dryRun: true,
     });
     if ("error" in result) throw new Error("unexpected error");
@@ -110,6 +111,7 @@ describe("runHubInit", () => {
       ],
       workingBranches: {},
       workspace,
+      attach: true,
     });
     const second = await runHubInit(fs, env, paths, {
       proyecto: "Test",
@@ -119,6 +121,7 @@ describe("runHubInit", () => {
       ],
       workingBranches: {},
       workspace,
+      attach: true,
     });
     if ("error" in second) throw new Error("unexpected error");
     if ("dry_run_preview" in second.attach_multiroot) throw new Error("not preview");
@@ -171,6 +174,7 @@ describe("runHubInit", () => {
         ],
         workingBranches: {},
         workspace: targetWorkspace,
+        attach: true,
       });
       if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
       expect(result.ok).toBe(true);

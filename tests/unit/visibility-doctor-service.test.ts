@@ -107,6 +107,23 @@ describe("runVisibilityDoctor", () => {
     for (const r of result.reports) expect(r.status).toBe("ok");
   });
 
+  it("claude status=ok cuando las fuentes viven sólo en settings.local.json", async () => {
+    writeProjectBlock(workspace, [
+      { alias: "a", path: "/tmp/a" },
+      { alias: "b", path: "/tmp/b" },
+    ]);
+    // Convención por-máquina: settings.local.json (gitignored), sin settings.json.
+    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    writeFileSync(
+      join(workspace, ".claude", "settings.local.json"),
+      JSON.stringify({ permissions: { additionalDirectories: ["/tmp/a", "/tmp/b"] } }),
+    );
+    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const claude = result.reports.find((r) => r.host === "claude");
+    expect(claude?.status).toBe("ok");
+    expect(claude?.missing).toHaveLength(0);
+  });
+
   it("status=missing-paths si settings tiene menos de los declarados", async () => {
     writeProjectBlock(workspace, [
       { alias: "a", path: "/tmp/a" },

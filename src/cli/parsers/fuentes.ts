@@ -16,10 +16,15 @@ export function parseFuentesSpecs(specs: string[]): { fuentes: FuenteSpec[] } | 
     }
     const alias = trimmed.slice(0, firstColon).trim();
     const rest = trimmed.slice(firstColon + 1);
+    // En Windows el path arranca con un prefijo de unidad (`C:\`, `\\?\C:\`). Ese
+    // colon de unidad NO es el separador de rama: hay que ignorarlo al buscar el
+    // colon que parte `path:rama`, si no `C:\Source\foo` colapsa a path="C".
+    const driveMatch = rest.match(/^(?:\\\\\?\\)?[A-Za-z]:[\\/]/);
+    const driveColon = driveMatch ? driveMatch[0].indexOf(":") : -1;
     const lastColon = rest.lastIndexOf(":");
     let path: string;
     let rama: string | undefined;
-    if (lastColon < 0) {
+    if (lastColon < 0 || lastColon === driveColon) {
       path = rest.trim();
     } else {
       path = rest.slice(0, lastColon).trim();

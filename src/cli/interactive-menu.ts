@@ -15,5 +15,4 @@ export type MenuAction =
   | "update"
   | "help"
   | "exit"
-  | "project-init"
-  | "hub-init";
+  | "project-init";

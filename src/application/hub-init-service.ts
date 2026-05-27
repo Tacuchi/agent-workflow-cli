@@ -20,7 +20,8 @@ export interface HubInitInput {
   workingBranches: Record<string, string>;
   mainBranch?: string;
   workspace?: string;
-  skipAttach?: boolean;
+  /** Opt-in: además del bloque, configura la visibilidad multi-root (attach a hosts). Default = solo scaffold. */
+  attach?: boolean;
   dryRun?: boolean;
 }
 
@@ -67,11 +68,11 @@ export async function runHubInit(
       dry_run: true,
       workspace,
       project_md: { dry_run_preview: { fuentes: input.fuentes.length, mode: "hub" } },
-      attach_multiroot: input.skipAttach
-        ? { skipped: true, reason: "skip-attach flag" }
-        : {
+      attach_multiroot: input.attach
+        ? {
             dry_run_preview: { paths: input.fuentes.map((f) => f.path), workspace },
-          },
+          }
+        : { skipped: true, reason: "attach is opt-in" },
     };
   }
 
@@ -96,13 +97,13 @@ export async function runHubInit(
     };
   }
 
-  if (input.skipAttach) {
+  if (!input.attach) {
     return {
       ok: projectMd.ok,
       dry_run: false,
       workspace,
       project_md: projectMd,
-      attach_multiroot: { skipped: true, reason: "skip-attach flag" },
+      attach_multiroot: { skipped: true, reason: "attach is opt-in" },
     };
   }
 

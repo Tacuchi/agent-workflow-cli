@@ -111,7 +111,7 @@ function updateWritableRoots(
       }
     }
     if (added.length > 0) {
-      const formatted = merged.map((p) => `  "${p}"`).join(",\n");
+      const formatted = merged.map((p) => `  '${p}'`).join(",\n");
       const replacement = `additional_writable_roots = [\n${formatted}\n]`;
       const newContent =
         content.slice(0, match.index) + replacement + content.slice(match.index + match[0].length);
@@ -119,7 +119,7 @@ function updateWritableRoots(
     }
     return { content, added, already };
   }
-  const formatted = pathsCodex.map((p) => `  "${p}"`).join(",\n");
+  const formatted = pathsCodex.map((p) => `  '${p}'`).join(",\n");
   const insertion = `additional_writable_roots = [\n${formatted}\n]\n\n`;
   const firstSection = content.match(/^\[/m);
   let newContent: string;
@@ -195,7 +195,7 @@ function removeFromWritableRoots(
 
   let replacement: string;
   if (kept.length > 0) {
-    const formatted = kept.map((p) => `  "${p}"`).join(",\n");
+    const formatted = kept.map((p) => `  '${p}'`).join(",\n");
     replacement = `additional_writable_roots = [\n${formatted}\n]`;
   } else {
     replacement = "";

@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   type ProjectPendingItem,
   type ProjectSessionSummary,
@@ -10,10 +10,12 @@ import {
 } from "../../../application/project-tab-data.js";
 import type { CliContext } from "../../types.js";
 import { type ActivityEvent, ActivityFeed } from "../components/activity-feed.js";
+import { HubInitForm } from "../components/hub-init-form.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { StatTile } from "../components/stat-tile.js";
+import { useInputLock } from "../input-lock.js";
 import { colors, icons } from "../theme.js";
 
 export interface ProjectTabProps {
@@ -25,28 +27,44 @@ export interface ProjectTabProps {
 export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   const [data, setData] = useState<ProjectTabData | null>(null);
   const [loading, setLoading] = useState(true);
-  const startedRef = useRef(false);
+  const [hubForm, setHubForm] = useState(false);
+  const [landingCursor, setLandingCursor] = useState(0);
+  const { lock, unlock } = useInputLock();
 
-  useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    void (async () => {
-      try {
-        const out = await buildProjectTabData({
-          fs: ctx.fs,
-          env: ctx.env,
-          git: ctx.git,
-          process: ctx.process,
-          paths: ctx.paths,
-        });
-        setData(out);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const loadData = useCallback(async () => {
+    try {
+      const out = await buildProjectTabData({
+        fs: ctx.fs,
+        env: ctx.env,
+        git: ctx.git,
+        process: ctx.process,
+        paths: ctx.paths,
+      });
+      setData(out);
+    } finally {
+      setLoading(false);
+    }
   }, [ctx]);
 
-  const [landingCursor, setLandingCursor] = useState(0);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  // Mientras el form de hub está abierto, bloquea las teclas globales del shell.
+  useEffect(() => {
+    if (hubForm) lock();
+    else unlock();
+  }, [hubForm, lock, unlock]);
+  useEffect(() => () => unlock(), [unlock]);
+
+  // hub-init se resuelve con un form nativo en ink (no exit-to-CLI); el resto de
+  // las opciones del landing salen al CLI vía onRunAction.
+  const applyLandingChoice = useCallback(() => {
+    const opt = LANDING_OPTIONS[landingCursor];
+    if (!opt) return;
+    if (opt.actionId === "hub-init") setHubForm(true);
+    else onRunAction?.(opt.actionId);
+  }, [landingCursor, onRunAction]);
 
   const handleInitKey = useCallback(
     (input: string, key: { upArrow?: boolean; downArrow?: boolean; return?: boolean }) => {
@@ -60,8 +78,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
         return true;
       }
       if (key.return) {
-        const opt = LANDING_OPTIONS[landingCursor];
-        if (opt) onRunAction?.(opt.actionId);
+        applyLandingChoice();
         return true;
       }
       if (input === "g") {
@@ -70,7 +87,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
       }
       return false;
     },
-    [data, landingCursor, onRunAction],
+    [data, applyLandingChoice, onRunAction],
   );
 
   useInput(
@@ -90,7 +107,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
         if (active) onRunAction?.("session:resume", { code: active.code });
       }
     },
-    { isActive: isActive && !!data },
+    { isActive: isActive && !!data && !hubForm },
   );
 
   if (loading || !data) {
@@ -102,6 +119,20 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   }
 
   if (!data.initialized) {
+    if (hubForm) {
+      return (
+        <HubInitForm
+          ctx={ctx}
+          defaultProyecto={basename(data.workspacePath)}
+          isActive={isActive}
+          onCancel={() => setHubForm(false)}
+          onDone={({ ok }) => {
+            setHubForm(false);
+            if (ok) void loadData();
+          }}
+        />
+      );
+    }
     return <NotInitialized data={data} cursor={landingCursor} />;
   }
 

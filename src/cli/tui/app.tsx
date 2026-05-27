@@ -222,11 +222,6 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
         exit();
         return;
       }
-      if (id === "hub-init") {
-        onResult({ kind: "menu-action", action: "hub-init" });
-        exit();
-        return;
-      }
       if (id === "install-skill") {
         onResult({ kind: "menu-action", action: "install-skill" });
         exit();

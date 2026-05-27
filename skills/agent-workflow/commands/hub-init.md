@@ -1,6 +1,6 @@
 ---
-description: Inicializa un workspace en modo Hub (multi-repo) — bloque AW-PROJECT con Mode hub, captura ≥2 fuentes con sus rutas y ramas de trabajo. La rama principal default es `certificacion` (constante interna del CLI).
-argument-hint: (opcional) --proyecto "descripción" | --fuente alias:path | --working-branch alias:rama | --main-branch <rama>
+description: Inicializa un workspace en modo Hub (multi-repo) — escribe el bloque AW-PROJECT con Mode hub y ≥2 fuentes (rutas + ramas). Solo scaffold; la visibilidad multi-root es opt-in (--attach). La forma interactiva vive en el TUI.
+argument-hint: (opcional) --proyecto "descripción" | --fuente alias:path | --working-branch alias:rama | --main-branch <rama> | --attach
 allowed-tools:
   [
     "Read",
@@ -12,71 +12,48 @@ allowed-tools:
 
 # Hub Init (agent-workflow)
 
-Inicializa un **hub workspace** — un directorio que coordina ≥2 repos pares. Escribe el bloque `<!-- AW-PROJECT-START -->` en `CLAUDE.md` y `AGENTS.md` del directorio actual con el marcador `Mode: hub` y la lista de fuentes (alias / path / rama principal) + ramas de trabajo actuales por fuente.
+Inicializa un **hub workspace** — un directorio que coordina ≥2 repos pares. Escribe el bloque `<!-- AW-PROJECT-START -->` en `CLAUDE.md` y `AGENTS.md` del CWD con `Mode: hub` + la lista de fuentes (alias / path / rama) + ramas de trabajo. **Es solo scaffold**: no toca la visibilidad de hosts salvo `--attach`.
 
-> Distinto de `/agent-workflow:project-init` (single-repo). Hub mode activa heurísticas en el resto de la familia agent-workflow-*: `session` itera ramas por fuente, `implement` valida paths cross-repo, `release` agrupa por alias, etc.
+> Distinto de `/agent-workflow:project-init` (single-repo). Hub mode activa heurísticas en el resto de la familia: `session` itera ramas por fuente, `implement` valida cross-repo, `release` agrupa por alias.
 
-## Cuándo usar
+## La vía más simple: el TUI
 
-- Workspace que coordina ≥2 repos pares (ej. `qtc-plugin-marketplace` con 4 plugins, microservicios que cambian juntos, monorepo distribuido).
-- Sesiones cross-cutting que tocan múltiples repos a la vez.
+`agent-workflow` → tab **Project** → **Initialize as hub**. Form interactivo (nombre + paths + rama base, alias inferido de la carpeta) dentro del TUI. Sin flags ni comandos a mano.
 
-## Flujo
+## Flujo (host) — mínimo
 
-1. **Detectar bloque existente** vía `agent-workflow workspace-mode`.
-   - Si `mode=hub` → mostrar fuentes actuales y preguntar si **agregar fuentes** o **reiniciar**.
-   - Si `mode=project` (o sin `Mode:`) **y ≥1 fuente declarada** → preguntar si **promover a hub** preservando la fuente original.
-   - Si no hay bloque → flujo limpio.
-
-2. **Capturar descripción** (1-3 líneas, debe mencionar que coordina N repos).
-
-3. **Capturar fuentes** (mínimo 2 en flujo limpio; ≥1 nueva en flujo "agregar"). Por cada una pedir solo:
-   - **Alias** kebab-case (único).
-   - **Path absoluto** al repo (validado: existe + es repo git).
-   - **Rama de trabajo actual** (default sugerido: `git -C <path> rev-parse --abbrev-ref HEAD`).
-   - **NO se pregunta la rama principal**: el CLI usa `certificacion` como default interno. Override con `--main-branch`.
-
-4. **Validaciones cross-fuente**:
-   - Aliases únicos.
-   - Paths absolutos y existentes (`os.path.isdir`).
-   - Cada path es repo git (`<path>/.git/` o `git -C <path> rev-parse`).
-   - Si la rama de trabajo declarada no coincide con la rama actual del repo → advertir (no bloquear).
-
-5. **Auto-detectar stack del CWD** (probablemente workspace base sin stack propio). Si no hay stack detectable, escribir `_Workspace base — stack heterogéneo (ver fuentes individuales)._`.
-
-6. **Persistir** vía:
+1. **Detectar** vía `agent-workflow workspace-mode`. Si ya es hub → agregar/reiniciar. Si es `project` con fuentes → ofrecer promover. Bloque de una topología legacy → delegar a `/agent-workflow:migrate`.
+2. **Reunir**: descripción (1 línea), ≥2 fuentes (alias + path), rama base (default `certificacion`). El alias se infiere de la carpeta si no se da.
+3. **Escribir el bloque**:
    ```
-   agent-workflow project-md-upsert --init \
-       --mode hub \
+   agent-workflow hub-init \
        --proyecto "<descripción>" \
-       --fuente "alias1:path1" \
-       --fuente "alias2:path2" \
-       --working-branch "alias1:rama1" \
-       --working-branch "alias2:rama2"
+       --fuente "alias1:path1" --fuente "alias2:path2" \
+       [--working-branch "alias1:rama1" ...] [--main-branch <rama>]
    ```
+   Rutas Windows (`C:\Source\...`) van directo. Escribe `CLAUDE.md` + `AGENTS.md`. **No toca `settings.json` / `config.toml`.**
+4. **Reportar** fuentes registradas + próximo paso (`/agent-workflow:session "<objetivo>"`).
 
-7. **Reportar** archivos modificados, fuentes registradas, ramas de trabajo capturadas. Sugerir próximos pasos (`/agent-workflow:session "<objetivo>"` o configurar visibilidad multi-root del cliente — ver README de agent-workflow).
+## Visibilidad multi-root (opt-in, aparte)
 
-## Visibilidad multi-root del cliente
+Solo si el usuario quiere que los hosts escriban en los repos fuente:
 
-`/agent-workflow:hub-init` solo captura los datos en el bloque AW-PROJECT. Para que Claude Code o Codex CLI vean los paths de las fuentes como writable, configurarlos manualmente:
-
-- **Claude Code**: editar `~/.claude/settings.json` y agregar paths a `permissions.additionalDirectories`. Alternativa por sesión: `/add-dir <path>` por fuente.
-- **Codex CLI**: editar `~/.codex/config.toml` con `additional_writable_roots = [...]` y entradas `[projects."<path>"]` con `trust_level = "trusted"`.
-
-Snippets completos en el README de agent-workflow. Iteración futura podrá automatizarlo vía `/agent-workflow:hub-attach`.
+- `agent-workflow hub-init ... --attach`, o `agent-workflow attach-multiroot --from-sources` después.
+- Per-workspace (gitignored, recomendado): `<hub>/.claude/settings.local.json` (`permissions.additionalDirectories`) + `<hub>/.codex/config.toml` (`additional_writable_roots` + `[projects.'<path>'] trust_level`).
+- Diagnóstico: `agent-workflow visibility doctor --workspace .` (lee `settings.json` y `settings.local.json`).
 
 ## Argumentos
 
-Sin argumentos: flujo interactivo.
+Sin argumentos: el host arma el flujo mínimo de arriba (o usá el TUI).
 
 - `--proyecto "<texto>"`
-- `--fuente "alias:path[:rama]"` — repetible.
+- `--fuente "alias:path[:rama]"` — repetible (mín 2).
 - `--working-branch "alias:rama"` — repetible.
 - `--main-branch <rama>` — override del default `certificacion`.
+- `--attach` — además del bloque, configura la visibilidad multi-root.
 
 **Argumentos:** $ARGUMENTS
 
 ## Skill asociada
 
-Ver `skills/hub-init/SKILL.md` para el detalle del flujo, validaciones cross-fuente y promoción project→hub.
+Ver `doctrine/hub-init/SKILL.md` para el flujo, la promoción project→hub y la visibilidad multi-root.

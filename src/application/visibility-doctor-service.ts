@@ -96,11 +96,16 @@ function inspectClaude(
   declared: string[] | null,
   scope: "workspace" | "global",
 ): VisibilityHostReport {
-  const target = join(scopeDir, ".claude", "settings.json");
+  const claudeDir = join(scopeDir, ".claude");
+  const target = join(claudeDir, "settings.json");
+  const localTarget = join(claudeDir, "settings.local.json");
   if (declared === null) {
     return baseNoBlock("claude", scope, target);
   }
-  if (!existsSync(target)) {
+  // Claude Code lee settings.json y settings.local.json (local con precedencia);
+  // el doctor une additionalDirectories de ambos para no marcar falsos negativos
+  // cuando las rutas viven en el .local (la convención por-máquina, gitignored).
+  if (!existsSync(target) && !existsSync(localTarget)) {
     return {
       host: "claude",
       scope,
@@ -110,10 +115,10 @@ function inspectClaude(
       missing: [...declared],
       extra: [],
       status: declared.length === 0 ? "ok" : "no-settings",
-      ...(declared.length > 0 ? { detail: `Falta ${target}` } : {}),
+      ...(declared.length > 0 ? { detail: `Falta ${target} o settings.local.json` } : {}),
     };
   }
-  const registered = readClaudeAdditionalDirs(target);
+  const registered = readClaudeAdditionalDirsMerged(claudeDir);
   return diffReport("claude", scope, target, declared, registered);
 }
 
@@ -144,8 +149,9 @@ function inspectCodex(
 }
 
 function inspectClaudeGlobal(home: string, declared: string[] | null): VisibilityHostReport {
-  const target = join(home, ".claude", "settings.json");
-  const registered = existsSync(target) ? readClaudeAdditionalDirs(target) : [];
+  const claudeDir = join(home, ".claude");
+  const target = join(claudeDir, "settings.json");
+  const registered = readClaudeAdditionalDirsMerged(claudeDir);
   return globalPollutionReport("claude", target, declared ?? [], registered);
 }
 
@@ -252,6 +258,16 @@ function baseNoBlock(
     status: "no-project-block",
     detail: "<NS>-PROJECT no encontrado o sin fuentes en CLAUDE.md/AGENTS.md",
   };
+}
+
+/** Une additionalDirectories de settings.json + settings.local.json (ambos los lee Claude Code). */
+function readClaudeAdditionalDirsMerged(claudeDir: string): string[] {
+  const out: string[] = [];
+  for (const fname of ["settings.json", "settings.local.json"]) {
+    const file = join(claudeDir, fname);
+    if (existsSync(file)) out.push(...readClaudeAdditionalDirs(file));
+  }
+  return out;
 }
 
 function readClaudeAdditionalDirs(file: string): string[] {
