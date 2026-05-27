@@ -4,7 +4,7 @@
 // Antes vivían en `components/sidebar.tsx`. Con la migración a "palette como
 // home" (session089) la sidebar fue eliminada y los tipos quedan acá, neutros.
 
-export type TabId = "status" | "workflow" | "project" | "mcp" | "skills";
+export type TabId = "status" | "workflow" | "project" | "mcp" | "skills" | "config";
 
 export interface TabConfig {
   id: TabId;
@@ -21,6 +21,7 @@ export const TABS_LIST: readonly TabConfig[] = [
   { id: "project", key: "3", label: "Project" },
   { id: "mcp", key: "4", label: "MCP" },
   { id: "skills", key: "5", label: "Skills" },
+  { id: "config", key: "6", label: "Config" },
 ] as const;
 
 export interface WorkspaceContext {

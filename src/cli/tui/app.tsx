@@ -1,6 +1,6 @@
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { Box, Text, useApp, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
@@ -10,35 +10,35 @@ import { HomeHeader } from "./components/home-header.js";
 import { NotificationStack } from "./components/notification-stack.js";
 import { ScreenFrame } from "./components/screen-frame.js";
 import { TabBar } from "./components/tab-bar.js";
-import type { TabId, WorkspaceContext } from "./components/tabs-config.js";
+import { TABS_LIST, type TabId, type WorkspaceContext } from "./components/tabs-config.js";
 import { loadActivity } from "./data/activity.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { NotificationCenterProvider, useNotifications } from "./notification-center.js";
+import { ConfigTab } from "./tabs/config-tab.js";
 import { McpTab } from "./tabs/mcp-tab.js";
 import { ProjectTab } from "./tabs/project-tab.js";
 import { SkillsTab } from "./tabs/skills-tab.js";
 import { StatusTab } from "./tabs/status-tab.js";
 import { WorkflowTab } from "./tabs/workflow-tab.js";
-import { colors } from "./theme.js";
+import { applyAccent, colors } from "./theme.js";
+import { DEFAULT_TUI_PREFS, type TuiPrefs, TuiPrefsService } from "./tui-prefs.js";
 
 export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
   | { kind: "exit"; exitCode: ExitCode };
 
-const TAB_ORDER: readonly TabId[] = ["status", "workflow", "project", "mcp", "skills"] as const;
+// Orden y keymap derivados de TABS_LIST (única fuente). Agregar un tab allá lo
+// propaga acá sin tocar este archivo.
+const TAB_ORDER: readonly TabId[] = TABS_LIST.map((t) => t.id);
 
-const TAB_BY_KEY: Record<string, TabId> = {
-  "1": "status",
-  "2": "workflow",
-  "3": "project",
-  "4": "mcp",
-  "5": "skills",
-};
+const TAB_BY_KEY: Record<string, TabId> = Object.fromEntries(TABS_LIST.map((t) => [t.key, t.id]));
 
 export interface AppProps {
   version: string;
   ctx: CliContext;
   onResult: (result: TuiResult) => void;
+  /** Prefs cargadas en boot (run.tsx). Opcional para tests → defaults. */
+  initialPrefs?: TuiPrefs;
 }
 
 export function App(props: AppProps) {
@@ -51,9 +51,36 @@ export function App(props: AppProps) {
   );
 }
 
-function AppShell({ version, ctx, onResult }: AppProps) {
-  // Pestaña actual. Por default Status — alineado con el screenshot de diseño.
-  const [activeTab, setActiveTab] = useState<TabId>("status");
+function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
+  const prefs0 = initialPrefs ?? DEFAULT_TUI_PREFS;
+  // Pestaña actual. Default = initialScreen de las prefs (antes hardcoded Status).
+  const [activeTab, setActiveTab] = useState<TabId>(prefs0.initialScreen);
+  const [prefs, setPrefs] = useState<TuiPrefs>(prefs0);
+  const prefsSvc = useMemo(() => new TuiPrefsService(ctx.fs, ctx.paths), [ctx]);
+
+  // Cambio de pref desde el tab Config. Persiste + aplica vivo. El re-render por
+  // setPrefs hace que los hijos re-lean el `colors` ya mutado por applyAccent
+  // (sin memoización de por medio → propaga a todo el árbol).
+  const onChangePrefs = useCallback(
+    (patch: Partial<TuiPrefs>) => {
+      if (patch.accentColor) applyAccent(patch.accentColor);
+      setPrefs((prev) => ({ ...prev, ...patch }));
+      void prefsSvc.save(patch);
+    },
+    [prefsSvc],
+  );
+  // Persiste el namespace en el config file que lee NamespaceResolver
+  // (~/.config/agent-workflow/namespace). Aplica al próximo arranque.
+  const onSaveNamespace = useCallback(
+    (ns: string) => {
+      void (async () => {
+        const dir = join(ctx.env.homeDir(), ".config", "agent-workflow");
+        await ctx.fs.mkdirp(dir);
+        await ctx.fs.writeText(join(dir, "namespace"), `${ns}\n`);
+      })();
+    },
+    [ctx],
+  );
   // projectName se hidrata async desde el cwd (package.json#name o basename).
   // Placeholder vacío para no parpadear con un brand incorrecto al boot.
   const [projectName, setProjectName] = useState<string>("");
@@ -287,7 +314,8 @@ function AppShell({ version, ctx, onResult }: AppProps) {
       }
       // Refresh: re-monta el tab activo (vía refreshNonce) y recarga el shell.
       // Si una notif reclama `r` (recheck del update banner), gana arriba.
-      if (input === "r" || input === "R") {
+      // En el tab Config, `r` lo consume ese tab (reset all) → no refrescar acá.
+      if ((input === "r" || input === "R") && activeTab !== "config") {
         setRefreshNonce((n) => n + 1);
         void loadShellData();
         pushToast({ tone: "info", title: "Refreshing…", duration: 1200 });
@@ -303,14 +331,20 @@ function AppShell({ version, ctx, onResult }: AppProps) {
 
   return (
     <ScreenFrame>
-      <Box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1} minHeight={0}>
         <HomeHeader brand={projectName} version={version} workspaceContext={workspaceCtx} />
         <NotificationStack items={notifications} />
         <TabBar activeTabId={activeTab} />
+        {/* flexShrink + minHeight=0 + overflowY=hidden: el contenido del tab
+            activo clipea dentro de su región (no empuja el footer fuera de
+            pantalla). El scroll interno para tabs altos llega en T2. */}
         <Box
           key={refreshNonce}
           flexDirection="column"
           flexGrow={1}
+          flexShrink={1}
+          minHeight={0}
+          overflowY="hidden"
           borderStyle="single"
           borderColor={colors.accent}
           paddingX={2}
@@ -324,6 +358,7 @@ function AppShell({ version, ctx, onResult }: AppProps) {
               onActivateTab={(t) => setActiveTab(t)}
               onToast={pushToast}
               recentEvents={activity}
+              disabledHosts={prefs.disabledHosts}
             />
           ) : null}
           {activeTab === "workflow" ? (
@@ -335,6 +370,15 @@ function AppShell({ version, ctx, onResult }: AppProps) {
           {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
           {activeTab === "skills" ? (
             <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
+          ) : null}
+          {activeTab === "config" ? (
+            <ConfigTab
+              ctx={ctx}
+              isActive={true}
+              prefs={prefs}
+              onChange={onChangePrefs}
+              onSaveNamespace={onSaveNamespace}
+            />
           ) : null}
         </Box>
         <HomeFooter showDismiss={hasNotifs} />

@@ -20,6 +20,8 @@ export interface StatusTabProps {
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
   /** Eventos recientes (activity feed). Si vacío, se renderiza empty-state. */
   recentEvents?: ActivityEvent[];
+  /** Hosts deshabilitados en Config: se excluyen del cómputo de cobertura. */
+  disabledHosts?: string[];
 }
 
 interface StatusData {
@@ -32,7 +34,14 @@ interface StatusData {
 const TILE_IDS = ["cli", "hosts", "hooks", "mcp"] as const;
 type TileId = (typeof TILE_IDS)[number];
 
-export function StatusTab({ ctx, version, isActive, onActivateTab, recentEvents }: StatusTabProps) {
+export function StatusTab({
+  ctx,
+  version,
+  isActive,
+  onActivateTab,
+  recentEvents,
+  disabledHosts = [],
+}: StatusTabProps) {
   const [data, setData] = useState<StatusData>({
     doctor: null,
     mcp: [],
@@ -94,17 +103,20 @@ export function StatusTab({ ctx, version, isActive, onActivateTab, recentEvents 
     );
   }
 
-  // Cross-reference HOSTS (7) con doctor.skill.targets (4 backed).
+  // Cross-reference HOSTS con doctor.skill.targets. Los hosts deshabilitados en
+  // Config salen del cómputo de cobertura y de los chips (opt-out de targeting).
+  const disabled = new Set(disabledHosts);
+  const activeHosts = HOSTS.filter((h) => !disabled.has(h.id));
   const installedByTarget = new Map<string, boolean>(
     (data.doctor?.skill.targets ?? []).map((t) => [t.target, t.installed]),
   );
-  const hostsInstalled = HOSTS.map((h) => ({
+  const hostsInstalled = activeHosts.map((h) => ({
     host: h,
     installed: installedByTarget.get(h.id) === true,
   }));
   const installedHosts = hostsInstalled.filter((h) => h.installed).length;
-  const supportedHosts = HOSTS.length;
-  const backedHosts = HOSTS.filter((h) => h.backed).length;
+  const supportedHosts = activeHosts.length;
+  const backedHosts = activeHosts.filter((h) => h.backed).length;
   const pendingHosts = supportedHosts - backedHosts;
   const pct = supportedHosts > 0 ? Math.round((installedHosts / supportedHosts) * 100) : 0;
 

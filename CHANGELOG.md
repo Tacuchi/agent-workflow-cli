@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.2.0] — 2026-05-27
+
+**TUI Config tab + alt-screen render model** (session098). Nuevo tab Config para ajustar el comportamiento del TUI, y cambio del modelo de render a buffer alternativo que corrige las líneas huérfanas al cambiar de tab.
+
+### Added
+
+- **Tab Config** (`src/cli/tui/tabs/config-tab.tsx`, tecla `6`): APPEARANCE (accent color) · ON OPEN (initial screen) · WORKSPACE (namespace editable, profile read-only, hosts on/off). Cambios aplican en vivo; `r` resetea todo.
+- **Accent configurable** (`src/cli/tui/theme.ts`): `applyAccent()` recolorea el theme in-place (violet/cyan/green/yellow/red) sin tocar los consumidores de `colors`. Persistido en prefs, aplicado en boot y en vivo.
+- **Namespace configurable** desde el TUI: edición inline validada (`isValidNamespace`), persistida en `~/.config/agent-workflow/namespace` (el config file que lee `NamespaceResolver`); default `workflow`.
+- **Hosts targeting**: toggle on/off por host (pref `disabledHosts`); los deshabilitados salen del cómputo "X/Y hosts covered" del tab Status.
+- `TuiPrefsService` ampliado (`accentColor`, `initialScreen`, `disabledHosts`) con validación por campo; cableado al boot del TUI (antes estaba dormido).
+- **Componentes reutilizables**: `FocusRow` (`components/focus-row.tsx`) — fila con barra de focus + bg highlight full-width; `useListCursor` (`use-list-cursor.ts`) — navegación ↑↓ clampeada; `useTerminalSize` (`use-terminal-size.ts`) — dimensiones con listener de resize.
+
+### Changed
+
+- **Modelo de render a alt-screen** (`src/cli/tui/run.tsx`): el TUI entra al buffer alternativo (`?1049h`) y lo restaura al salir, con cleanup en `exit`/`SIGTERM`. El frame se acota al alto del viewport (`ScreenFrame` + clip del content box) sólo en TTY real.
+- Tab order/keymap derivados de `TABS_LIST` (única fuente) en `app.tsx`; `initialScreen` define el tab inicial (antes hardcoded Status).
+
+### Fixed
+
+- **Líneas huérfanas al cambiar de tab**: un tab alto (Workflow) empujaba líneas al scrollback que Ink ya no podía borrar; al volver a un tab corto quedaban cortadas. El alt-screen + viewport acotado lo elimina.
+
+### Tests
+
+- `config-tab.test.tsx` (render + accent/host/namespace/reset), `focus-row.test.tsx`, `use-list-cursor.test.tsx`. Suite completa verde (677 tests). Scroll interno de tabs altos diferido a backlog (medición de alto natural inviable con `measureElement` bajo clip).
+
 ## [10.1.0] — 2026-05-27
 
 **TUI Project/Status tweaks + global refresh + notif fix** (session094). Ajustes visuales y de datos al home TUI; expone `type` de sesión como metadata de primera clase.

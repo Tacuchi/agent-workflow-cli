@@ -1,22 +1,37 @@
-// Preferencias persistidas del TUI (density, layout, etc).
+// Preferencias persistidas del TUI (accent, initial screen, hosts).
 //
 // Vive en `~/.config/agent-workflow/lib/config/tui-prefs.json` (relativo al
 // userRoot del namespace activo). Si no existe se devuelven defaults. Las
-// escrituras son atómicas: lee, mergea, escribe.
+// escrituras son atómicas: lee, mergea, escribe. Cada campo se valida al cargar
+// (un valor inválido cae a su default, no rompe el TUI).
 
 import { dirname, join } from "node:path";
 import type { PathsService } from "../../application/paths-service.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-
-export type Density = "comfortable" | "compact";
+import { TABS_LIST, type TabId } from "./components/tabs-config.js";
+import { ACCENTS, type AccentColor, DEFAULT_ACCENT } from "./theme.js";
 
 export interface TuiPrefs {
-  density: Density;
+  accentColor: AccentColor;
+  /** Tab donde aterriza `aw` al arrancar. */
+  initialScreen: TabId;
+  /** Hosts excluidos del targeting (opt-out). Vacío = todos habilitados. */
+  disabledHosts: string[];
 }
 
-const DEFAULTS: TuiPrefs = {
-  density: "comfortable",
+export const DEFAULT_TUI_PREFS: TuiPrefs = {
+  accentColor: DEFAULT_ACCENT,
+  initialScreen: "status",
+  disabledHosts: [],
 };
+
+function isAccent(v: unknown): v is AccentColor {
+  return typeof v === "string" && v in ACCENTS;
+}
+
+function isTabId(v: unknown): v is TabId {
+  return typeof v === "string" && TABS_LIST.some((t) => t.id === v);
+}
 
 export class TuiPrefsService {
   constructor(
@@ -30,18 +45,23 @@ export class TuiPrefsService {
 
   async load(): Promise<TuiPrefs> {
     const path = this.filePath();
-    if (!(await this.fs.exists(path))) return { ...DEFAULTS };
+    if (!(await this.fs.exists(path))) return { ...DEFAULT_TUI_PREFS };
     try {
       const raw = await this.fs.readText(path);
       const parsed = JSON.parse(raw) as Partial<TuiPrefs>;
       return {
-        density:
-          parsed.density === "compact" || parsed.density === "comfortable"
-            ? parsed.density
-            : DEFAULTS.density,
+        accentColor: isAccent(parsed.accentColor)
+          ? parsed.accentColor
+          : DEFAULT_TUI_PREFS.accentColor,
+        initialScreen: isTabId(parsed.initialScreen)
+          ? parsed.initialScreen
+          : DEFAULT_TUI_PREFS.initialScreen,
+        disabledHosts: Array.isArray(parsed.disabledHosts)
+          ? parsed.disabledHosts.filter((h): h is string => typeof h === "string")
+          : DEFAULT_TUI_PREFS.disabledHosts,
       };
     } catch {
-      return { ...DEFAULTS };
+      return { ...DEFAULT_TUI_PREFS };
     }
   }
 

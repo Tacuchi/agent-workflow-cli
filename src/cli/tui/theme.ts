@@ -58,7 +58,7 @@ export const palette = {
   warn: "#fbbf24",
   err: "#fb7185",
   info: "#93c5fd",
-} as const;
+};
 
 // `colors.*` con nombres legacy + nombres canónicos del handoff.
 export const colors = {
@@ -100,7 +100,7 @@ export const colors = {
   ok: palette.ok,
   warn: palette.warn,
   err: palette.err,
-} as const;
+};
 
 export const icons = {
   check: "✓",
@@ -159,3 +159,62 @@ export const icons = {
 } as const;
 
 export type ColorName = (typeof colors)[keyof typeof colors];
+
+// ─── Accent configurable ────────────────────────────────────────────────────
+// El accent es el único color de marca (focus, selección, bordes activos, brand
+// glyph). `applyAccent` lo recolorea mutando `palette`/`colors` in-place: los 22
+// archivos que importan `colors` siguen igual; el re-render lo dispara el
+// `themeNonce` del shell (app.tsx). Default = violet (los literales de arriba).
+
+export type AccentColor = "violet" | "cyan" | "green" | "yellow" | "red";
+
+export const DEFAULT_ACCENT: AccentColor = "violet";
+
+interface AccentDef {
+  main: string; // acento principal
+  soft: string; // hover / sub-acento
+  selBg: string; // fondo de fila seleccionada (tinte oscuro del acento)
+}
+
+// Orden = orden de swatches en el tab Config.
+export const ACCENTS: Record<AccentColor, AccentDef> = {
+  violet: { main: "#a78bfa", soft: "#c4b5fd", selBg: "#3a2f5c" },
+  cyan: { main: "#93c5fd", soft: "#bfdbfe", selBg: "#1e3a5c" },
+  green: { main: "#6ee7b7", soft: "#a7f3d0", selBg: "#1e4d3a" },
+  yellow: { main: "#fbbf24", soft: "#fcd34d", selBg: "#4d3f1e" },
+  red: { main: "#fb7185", soft: "#fda4af", selBg: "#4d1e2a" },
+};
+
+export const ACCENT_ORDER: readonly AccentColor[] = ["violet", "cyan", "green", "yellow", "red"];
+
+let currentAccent: AccentColor = DEFAULT_ACCENT;
+
+export function getAccent(): AccentColor {
+  return currentAccent;
+}
+
+/**
+ * Recolorea el theme in-place al accent dado. Idempotente. Tolera valores
+ * inválidos (cae a violet). Llamar en boot (run.tsx) y on-change (Config tab).
+ */
+export function applyAccent(accent: AccentColor): void {
+  const def = ACCENTS[accent] ?? ACCENTS[DEFAULT_ACCENT];
+  currentAccent = ACCENTS[accent] ? accent : DEFAULT_ACCENT;
+
+  palette.accent = def.main;
+  palette.accentSoft = def.soft;
+  palette.borderAccent = def.main;
+  palette.purple = def.main;
+  palette.purpleSoft = def.soft;
+  palette.bgSelected = def.selBg;
+  palette.bgHighlight = def.selBg;
+
+  colors.primary = def.main;
+  colors.accent = def.main;
+  colors.accentSoft = def.soft;
+  colors.secondary = def.soft;
+  colors.purple = def.main;
+  colors.borderActive = def.main;
+  colors.bgSelected = def.selBg;
+  colors.bgHighlight = def.selBg;
+}

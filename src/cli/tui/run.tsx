@@ -1,6 +1,42 @@
 import { render } from "ink";
 import type { CliContext } from "../types.js";
 import { App, type TuiResult } from "./app.js";
+import { applyAccent } from "./theme.js";
+import { TuiPrefsService } from "./tui-prefs.js";
+
+// Secuencias ANSI del buffer alternativo de pantalla (alt-screen).
+// `?1049h` entra (guarda la pantalla actual), `?1049l` sale (la restaura). Es lo
+// que usan vim/htop/lazygit: el TUI vive en un lienzo aislado y al salir no deja
+// rastro en el scrollback — la causa raíz de las líneas huérfanas (image #1).
+const ALT_SCREEN_ENTER = "\x1b[?1049h";
+const ALT_SCREEN_LEAVE = "\x1b[?1049l";
+const CLEAR_HOME = "\x1b[2J\x1b[H";
+
+/**
+ * Entra al alt-screen y devuelve un `restore()` idempotente. No-op si stdout no
+ * es TTY (CI, pipes). Registra una red de seguridad en `exit`/`SIGTERM` para no
+ * dejar la terminal atrapada en el buffer alternativo si el proceso muere.
+ */
+function enterAltScreen(stdout: NodeJS.WriteStream): () => void {
+  if (!stdout.isTTY) return () => {};
+  stdout.write(ALT_SCREEN_ENTER + CLEAR_HOME);
+
+  let restored = false;
+  function restore() {
+    if (restored) return;
+    restored = true;
+    stdout.write(ALT_SCREEN_LEAVE);
+    process.off("exit", restore);
+    process.off("SIGTERM", onSigterm);
+  }
+  function onSigterm() {
+    restore();
+    process.exit(143);
+  }
+  process.once("exit", restore);
+  process.once("SIGTERM", onSigterm);
+  return restore;
+}
 
 export async function runTui(version: string, ctx: CliContext): Promise<TuiResult> {
   let resolveResult!: (result: TuiResult) => void;
@@ -15,9 +51,16 @@ export async function runTui(version: string, ctx: CliContext): Promise<TuiResul
     resolveResult(result);
   };
 
-  const instance = render(<App version={version} ctx={ctx} onResult={settle} />, {
-    exitOnCtrlC: true,
-  });
+  // Carga prefs y aplica el accent ANTES del primer render (sin flash de color).
+  const prefs = await new TuiPrefsService(ctx.fs, ctx.paths).load();
+  applyAccent(prefs.accentColor);
+
+  const restoreScreen = enterAltScreen(process.stdout);
+
+  const instance = render(
+    <App version={version} ctx={ctx} onResult={settle} initialPrefs={prefs} />,
+    { exitOnCtrlC: true },
+  );
 
   instance
     .waitUntilExit()
@@ -39,6 +82,12 @@ export async function runTui(version: string, ctx: CliContext): Promise<TuiResul
   } catch {
     // already logged above
   }
+
+  // Sale del alt-screen recién cuando Ink desmontó del todo: su último erase
+  // ocurre sobre el buffer alternativo y la pantalla del usuario vuelve limpia.
+  // Debe pasar antes de devolver para que acciones post-TUI (p.ej. `self update`
+  // con inquirer) corran sobre la pantalla principal.
+  restoreScreen();
 
   return result;
 }
