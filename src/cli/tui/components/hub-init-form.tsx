@@ -20,6 +20,7 @@ type Step =
   | { kind: "proyecto" }
   | { kind: "fuente"; proyecto: string; fuentes: HubInitFuente[] }
   | { kind: "rama"; proyecto: string; fuentes: HubInitFuente[] }
+  | { kind: "working"; proyecto: string; fuentes: HubInitFuente[]; mainBranch: string }
   | { kind: "busy"; label: string };
 
 export interface HubInitFormProps {
@@ -48,13 +49,23 @@ export function HubInitForm({
   );
 
   const create = useCallback(
-    async (proyecto: string, fuentes: HubInitFuente[], mainBranch: string) => {
+    async (
+      proyecto: string,
+      fuentes: HubInitFuente[],
+      mainBranch: string,
+      workingBranch: string,
+    ) => {
       setStep({ kind: "busy", label: `creando hub · ${fuentes.length} fuentes…` });
       try {
+        // La rama de trabajo se aplica a TODAS las fuentes (patrón común: una feature
+        // branch compartida). Vacía = sin rama de trabajo (queda solo la rama base).
+        const workingBranches = workingBranch
+          ? Object.fromEntries(fuentes.map((f) => [f.alias, workingBranch]))
+          : {};
         const result = await runHubInit(ctx.fs, ctx.env, ctx.paths, {
           proyecto,
           fuentes,
-          workingBranches: {},
+          workingBranches,
           mainBranch,
         });
         if ("error" in result) {
@@ -146,21 +157,49 @@ export function HubInitForm({
     );
   }
 
+  if (step.kind === "rama") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead
+          label="Initialize as hub"
+          hint="Paso 3 · rama base"
+          rightAction="⏎ siguiente · esc cancela"
+        />
+        <FuenteList fuentes={step.fuentes} />
+        <Box marginLeft={2} marginTop={1}>
+          <InputPrompt
+            key="rama"
+            message="Rama base:"
+            defaultValue={DEFAULT_MAIN_BRANCH}
+            validate={(v) => v.trim().length > 0 || "La rama no puede estar vacía"}
+            onSubmit={(v) =>
+              setStep({
+                kind: "working",
+                proyecto: step.proyecto,
+                fuentes: step.fuentes,
+                mainBranch: v.trim(),
+              })
+            }
+            isActive={isActive}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       <SectionHead
         label="Initialize as hub"
-        hint="Paso 3 · rama base"
-        rightAction="⏎ crear · esc cancela"
+        hint="Paso 4 · rama de trabajo"
+        rightAction="⏎ crear · vacío = sin rama · esc cancela"
       />
       <FuenteList fuentes={step.fuentes} />
       <Box marginLeft={2} marginTop={1}>
         <InputPrompt
-          key="rama"
-          message="Rama base:"
-          defaultValue={DEFAULT_MAIN_BRANCH}
-          validate={(v) => v.trim().length > 0 || "La rama no puede estar vacía"}
-          onSubmit={(v) => void create(step.proyecto, step.fuentes, v.trim())}
+          key="working"
+          message="Rama de trabajo (vacío = sin rama):"
+          onSubmit={(v) => void create(step.proyecto, step.fuentes, step.mainBranch, v.trim())}
           isActive={isActive}
         />
       </Box>

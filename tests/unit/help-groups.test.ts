@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { groupCommands, renderGroupedCommandLines } from "../../src/cli/help-groups.js";
+import {
+  commandHelpText,
+  groupCommands,
+  renderGroupedCommandLines,
+} from "../../src/cli/help-groups.js";
 
 describe("groupCommands", () => {
   it("groups known commands into their family with declared order", () => {
@@ -70,5 +74,24 @@ describe("renderGroupedCommandLines", () => {
   it("handles a single group cleanly", () => {
     const lines = renderGroupedCommandLines(["self"]);
     expect(lines).toEqual(["Self:", "  self"]);
+  });
+});
+
+describe("commandHelpText", () => {
+  it("renders the command name and its describe (per-subcommand help, not the global list)", () => {
+    const out = commandHelpText({
+      name: "hub-init",
+      describe: "Escribe el bloque. Flags: --proyecto, --fuente, --working-branch.",
+    });
+    expect(out).toContain("agent-workflow hub-init");
+    expect(out).toContain("Flags: --proyecto, --fuente, --working-branch.");
+    // Must NOT spill the global command list (the bug it replaces).
+    expect(out).not.toContain("Session lifecycle:");
+  });
+
+  it("falls back to a placeholder when describe is missing", () => {
+    const out = commandHelpText({ name: "foo" });
+    expect(out).toContain("agent-workflow foo");
+    expect(out).toContain("(sin descripción)");
   });
 });

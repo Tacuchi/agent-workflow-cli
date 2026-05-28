@@ -25,7 +25,7 @@ Lo más simple es el form interactivo: `agent-workflow` → tab **Project** → 
 No sobre-validar ni preguntar de más. El comando persiste lo declarado y sincroniza la visibilidad solo.
 
 1. **Detectar bloque** (rápido): `agent-workflow workspace-mode` → `{mode, is_hub, ...}`. Si ya es hub → preguntar si agregar/reiniciar. Si es `project` con fuentes → ofrecer promover. Bloque legacy `<!-- QTC-WORKFLOW-START -->` → delegar a `/agent-workflow:migrate`.
-2. **Reunir datos**: descripción (1 línea), ≥2 fuentes (alias + path), rama base (default `certificacion`). El alias se infiere del nombre de la carpeta si no se da.
+2. **Reunir datos**: descripción (1 línea), ≥2 fuentes (alias + path), rama base (default `certificacion`) y **rama de trabajo** (la feature branch donde se trabajará). El alias se infiere del nombre de la carpeta si no se da. La rama de trabajo **siempre se solicita**: si el usuario no la declaró en el mensaje, preguntala vía `AskUserQuestion` antes de ejecutar — no la asumas ni la omitas en silencio.
 3. **Escribir + sincronizar** (un solo comando):
 
    ```
@@ -49,6 +49,7 @@ No sobre-validar ni preguntar de más. El comando persiste lo declarado y sincro
 
 ## Flags
 
+- `--working-branch <alias:rama>` — rama de trabajo por fuente (repetible). Solicitala siempre (ver Reglas).
 - `--main-branch <rama>` — override del default `certificacion`.
 - `--workspace <DIR>` — override si el CWD no es la raíz del hub.
 - `--dry-run` — previsualizar sin escribir (bloque + paths que se attachearían).
@@ -56,6 +57,7 @@ No sobre-validar ni preguntar de más. El comando persiste lo declarado y sincro
 ## Reglas
 
 - **Mínimo 2 fuentes**. Si quiere 1 → `/agent-workflow:project-init`.
+- **Rama de trabajo siempre solicitada**: el flujo debe pedir la rama de trabajo (la feature branch) tanto al iniciar como al modificar fuentes. Si no viene en el mensaje, preguntala (`AskUserQuestion`); nunca la omitas en silencio. Se pasa con `--working-branch alias:rama` (repetible; aplicá la misma rama a todas las fuentes si el usuario así lo indica). Si explícitamente no quiere una, queda solo la rama base.
 - **Set autoritativo**: el `--fuente` declarado **reemplaza** el bloque (no merge). Para agregar/remover fuentes, pasá el set completo deseado (el form del TUI ya lo hace; por CLI, leé las fuentes actuales con `workspace-mode` y pasá el set final). `hub-init` reconcilia la visibilidad: detacha las removidas, attacha las actuales.
 - **Visibilidad siempre**: se configura sola, sin preguntar, en init y en cualquier cambio de fuentes. No hay opt-out (salvo `--dry-run`, que no escribe nada).
 - **Idempotente**: re-ejecución con datos idénticos es no-op (attach ya presente, sin cambios).

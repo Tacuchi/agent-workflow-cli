@@ -102,3 +102,14 @@ export function renderGroupedCommandLines(allCommands: string[]): string[] {
   }
   return lines;
 }
+
+/**
+ * Help body for `<command> --help`: the command name + its `describe`. Kept here
+ * (pure, tested) so `main.ts` only does the I/O. The `describe` already carries the
+ * flag summary, so this is the per-subcommand help — not the global command list.
+ */
+export function commandHelpText(command: { name: string; describe?: string }): string {
+  return [`agent-workflow ${command.name}`, "", command.describe ?? "(sin descripción)", ""].join(
+    "\n",
+  );
+}

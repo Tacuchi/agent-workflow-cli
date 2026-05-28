@@ -23,7 +23,7 @@ Inicializa un **hub workspace** — un directorio que coordina ≥2 repos pares.
 ## Flujo (host) — mínimo
 
 1. **Detectar** vía `agent-workflow workspace-mode`. Si ya es hub → agregar/reiniciar. Si es `project` con fuentes → ofrecer promover. Bloque de una topología legacy → delegar a `/agent-workflow:migrate`.
-2. **Reunir**: descripción (1 línea), ≥2 fuentes (alias + path) — el **set completo** que querés, porque `hub-init` reemplaza el bloque (para agregar/remover, leé las actuales con `workspace-mode` y pasá el set final) — y rama base (default `certificacion`). El alias se infiere de la carpeta si no se da.
+2. **Reunir**: descripción (1 línea), ≥2 fuentes (alias + path) — el **set completo** que querés, porque `hub-init` reemplaza el bloque (para agregar/remover, leé las actuales con `workspace-mode` y pasá el set final) —, rama base (default `certificacion`) y **rama de trabajo** (la feature branch). El alias se infiere de la carpeta si no se da. La rama de trabajo **siempre se solicita**: si no viene en el mensaje, preguntala (`AskUserQuestion`) antes de ejecutar — no la asumas.
 3. **Escribir + sincronizar** (un solo comando):
    ```
    agent-workflow hub-init \

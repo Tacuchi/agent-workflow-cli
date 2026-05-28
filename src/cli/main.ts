@@ -57,10 +57,10 @@ import { upgradeHubModeCommand } from "./commands/upgrade-hub-mode.js";
 import { visibilityCommand } from "./commands/visibility.js";
 import { workflowsCommand } from "./commands/workflows.js";
 import { workspaceModeCommand } from "./commands/workspace-mode.js";
-import { renderGroupedCommandLines } from "./help-groups.js";
+import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
 import { type MenuAction, shouldShowInteractiveMenu } from "./interactive-menu.js";
 import { parseArgv } from "./parser.js";
-import { CommandRegistry } from "./registry.js";
+import { CommandRegistry, type QtcCommand } from "./registry.js";
 import {
   emitError,
   formatArgvError,
@@ -173,7 +173,7 @@ async function run(argv: string[]): Promise<ExitCode> {
     return tuiResult.exitCode;
   }
 
-  if (parsed.command === undefined || hasHelp) {
+  if (parsed.command === undefined) {
     printHelp(registry.list());
     return 0;
   }
@@ -182,6 +182,12 @@ async function run(argv: string[]): Promise<ExitCode> {
   if (!command) {
     emitError(formatUnknownCommand(parsed.command, registry.list()));
     return 1;
+  }
+
+  // `<command> --help` muestra la ayuda del subcomando (su describe), no la global.
+  if (hasHelp) {
+    printCommandHelp(command);
+    return 0;
   }
 
   try {
@@ -271,6 +277,10 @@ function printHelp(commands: string[]): void {
     "",
   ];
   writeStdout(`${lines.join("\n")}\n`);
+}
+
+function printCommandHelp(command: QtcCommand): void {
+  writeStdout(`${commandHelpText(command)}\n`);
 }
 
 function resolveCoreConfigPath(env: NodeEnv, paths: PathsService): string | undefined {
