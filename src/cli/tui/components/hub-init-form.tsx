@@ -13,8 +13,8 @@ const DEFAULT_MAIN_BRANCH = "certificacion";
  * Form nativo en ink para inicializar un hub. Recolecta proyecto + fuentes (≥2)
  * + rama base DENTRO del TUI y corre `runHubInit` in-process. No hace handoff a
  * inquirer (la causa del crash en Windows post-teardown de ink). El alias de
- * cada fuente se infiere del nombre de su carpeta. Solo escribe el bloque; la
- * visibilidad multi-root queda como paso aparte (`attach-multiroot`).
+ * cada fuente se infiere del nombre de su carpeta. Escribe el bloque y SIEMPRE
+ * configura la visibilidad multi-root (settings.local.json + config.toml, gitignored).
  */
 type Step =
   | { kind: "proyecto" }
@@ -64,7 +64,7 @@ export function HubInitForm({
         onDone({
           ok: result.ok,
           summary: result.ok
-            ? `Hub creado · ${fuentes.length} fuentes · mode=hub`
+            ? `Hub creado · ${fuentes.length} fuentes · visibilidad configurada`
             : "hub-init no completó",
         });
       } catch (err) {

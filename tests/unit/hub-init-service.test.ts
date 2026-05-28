@@ -21,6 +21,13 @@ class FakeEnv implements EnvPort {
   }
 }
 
+function claudeDirs(workspace: string): string[] {
+  const settings = JSON.parse(
+    readFileSync(join(workspace, ".claude", "settings.local.json"), "utf-8"),
+  );
+  return settings.permissions.additionalDirectories;
+}
+
 describe("runHubInit", () => {
   let workspace: string;
   let env: FakeEnv;
@@ -37,7 +44,7 @@ describe("runHubInit", () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("con --attach crea CLAUDE.md/AGENTS.md (mode=hub) + .claude/settings.json con paths", async () => {
+  it("siempre crea CLAUDE.md/AGENTS.md (mode=hub) + .claude/settings.local.json con paths", async () => {
     const result = await runHubInit(fs, env, paths, {
       proyecto: "Test workspace",
       fuentes: [
@@ -46,24 +53,21 @@ describe("runHubInit", () => {
       ],
       workingBranches: { a: "dev", b: "dev" },
       workspace,
-      attach: true,
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.ok).toBe(true);
     expect(result.dry_run).toBe(false);
     expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(true);
     expect(existsSync(join(workspace, "AGENTS.md"))).toBe(true);
-    expect(existsSync(join(workspace, ".claude", "settings.json"))).toBe(true);
-    const settings = JSON.parse(readFileSync(join(workspace, ".claude", "settings.json"), "utf-8"));
-    expect(settings.permissions.additionalDirectories).toContain("/tmp/a-fake");
-    expect(settings.permissions.additionalDirectories).toContain("/tmp/b-fake");
-    const claudeMd = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
-    expect(claudeMd).toContain("Mode: hub");
-    expect(claudeMd).toContain("/tmp/a-fake");
+    // Visibilidad siempre, en settings.local.json (no settings.json).
+    expect(existsSync(join(workspace, ".claude", "settings.local.json"))).toBe(true);
+    expect(existsSync(join(workspace, ".claude", "settings.json"))).toBe(false);
+    expect(claudeDirs(workspace)).toEqual(expect.arrayContaining(["/tmp/a-fake", "/tmp/b-fake"]));
+    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf-8")).toContain("Mode: hub");
   });
 
-  it("default (sin --attach) solo persiste el bloque, sin tocar .claude/settings.json", async () => {
-    const result = await runHubInit(fs, env, paths, {
+  it("asegura .gitignore con los archivos de visibilidad", async () => {
+    await runHubInit(fs, env, paths, {
       proyecto: "Test",
       fuentes: [
         { alias: "a", path: "/tmp/a" },
@@ -72,11 +76,37 @@ describe("runHubInit", () => {
       workingBranches: {},
       workspace,
     });
-    if ("error" in result) throw new Error("unexpected error");
-    expect(result.ok).toBe(true);
-    expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(true);
-    expect(existsSync(join(workspace, ".claude", "settings.json"))).toBe(false);
-    expect(result.attach_multiroot).toEqual({ skipped: true, reason: "attach is opt-in" });
+    const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
+    expect(gitignore).toContain(".claude/settings.local.json");
+    expect(gitignore).toContain(".codex/config.toml");
+  });
+
+  it("reconcile: al re-correr con una fuente removida, la detachea de settings.local.json", async () => {
+    await runHubInit(fs, env, paths, {
+      proyecto: "Test",
+      fuentes: [
+        { alias: "a", path: "/tmp/a" },
+        { alias: "b", path: "/tmp/b" },
+      ],
+      workingBranches: {},
+      workspace,
+    });
+    // Re-init: b removida, c agregada.
+    const second = await runHubInit(fs, env, paths, {
+      proyecto: "Test",
+      fuentes: [
+        { alias: "a", path: "/tmp/a" },
+        { alias: "c", path: "/tmp/c" },
+      ],
+      workingBranches: {},
+      workspace,
+    });
+    if ("error" in second) throw new Error("unexpected error");
+    const dirs = claudeDirs(workspace);
+    expect(dirs).toContain("/tmp/a");
+    expect(dirs).toContain("/tmp/c");
+    expect(dirs).not.toContain("/tmp/b");
+    expect(second.detached_removed).toBeDefined();
   });
 
   it("--dry-run no escribe ningún archivo y devuelve preview", async () => {
@@ -88,7 +118,6 @@ describe("runHubInit", () => {
       ],
       workingBranches: {},
       workspace,
-      attach: true,
       dryRun: true,
     });
     if ("error" in result) throw new Error("unexpected error");
@@ -111,7 +140,6 @@ describe("runHubInit", () => {
       ],
       workingBranches: {},
       workspace,
-      attach: true,
     });
     const second = await runHubInit(fs, env, paths, {
       proyecto: "Test",
@@ -121,7 +149,6 @@ describe("runHubInit", () => {
       ],
       workingBranches: {},
       workspace,
-      attach: true,
     });
     if ("error" in second) throw new Error("unexpected error");
     if ("dry_run_preview" in second.attach_multiroot) throw new Error("not preview");
@@ -174,12 +201,11 @@ describe("runHubInit", () => {
         ],
         workingBranches: {},
         workspace: targetWorkspace,
-        attach: true,
       });
       if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
       expect(result.ok).toBe(true);
       expect(existsSync(join(targetWorkspace, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(targetWorkspace, ".claude", "settings.json"))).toBe(true);
+      expect(existsSync(join(targetWorkspace, ".claude", "settings.local.json"))).toBe(true);
       expect(existsSync(join(callerCwd, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(callerCwd, ".claude"))).toBe(false);
     } finally {

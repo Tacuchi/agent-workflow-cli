@@ -34,6 +34,8 @@ export interface ProjectMdUpsertInput {
   branches?: string[];
   /** Hub-mode `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repetible). */
   fuentes?: ProjectMdUpsertFuente[];
+  /** Si true, las `fuentes` declaradas REEMPLAZAN a las existentes (no merge). hub-init lo usa para ser autoritativo y soportar remover fuentes. */
+  replaceFuentes?: boolean;
   /** Default rama principal applied to fuentes that do not declare one. */
   mainBranch?: string;
   verbose?: boolean;
@@ -203,7 +205,10 @@ function mergeFuentes(existing: ProjectFuente[], input: ProjectMdUpsertInput): P
   if (!input.fuentes || input.fuentes.length === 0) return existing;
   const defaultRama = input.mainBranch ?? "certificacion";
   const byAlias = new Map<string, ProjectFuente>();
-  for (const f of existing) byAlias.set(f.alias, f);
+  // replaceFuentes: el set declarado es autoritativo; no se preservan las existentes.
+  if (!input.replaceFuentes) {
+    for (const f of existing) byAlias.set(f.alias, f);
+  }
   for (const f of input.fuentes) {
     byAlias.set(f.alias, {
       alias: f.alias,

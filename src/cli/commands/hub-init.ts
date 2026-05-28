@@ -9,7 +9,7 @@ import type { CliContext } from "../types.js";
 export const hubInitCommand: QtcCommand = {
   name: "hub-init",
   describe:
-    "Escribe el bloque <NS>-PROJECT (mode=hub) con N fuentes. Solo scaffold: NO toca la visibilidad de hosts salvo --attach. Flags: --proyecto, --fuente alias:path (repetible, mín 2), --working-branch alias:rama (repetible), [--main-branch], [--workspace], [--attach], [--dry-run]. La forma interactiva vive en el TUI (tab Project → Initialize as hub).",
+    "Escribe el bloque <NS>-PROJECT (mode=hub) con N fuentes y SIEMPRE configura la visibilidad multi-root (settings.local.json + config.toml, gitignored), reconciliando fuentes agregadas/removidas. Flags: --proyecto, --fuente alias:path (repetible, mín 2), --working-branch alias:rama (repetible), [--main-branch], [--workspace], [--dry-run]. La forma interactiva vive en el TUI (tab Project → Initialize as hub).",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const proyecto = args.values.get("proyecto");
     if (proyecto === undefined || proyecto.trim().length === 0) {
@@ -35,7 +35,6 @@ export const hubInitCommand: QtcCommand = {
       workingBranches,
       ...(mainBranch !== undefined ? { mainBranch } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
-      attach: args.flags.has("--attach"),
       dryRun: args.flags.has("--dry-run"),
     });
 
