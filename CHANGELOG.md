@@ -4,6 +4,31 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.5.0] — 2026-05-28
+
+**Simplificación de `export-scripts` (skill v4.0.0 → v5.0.0)** y de `sql-rollback-generator` (v2.0.0 → v3.0.0). Session103.
+
+### Changed
+
+- **`exports/export-scripts/SKILL.md` v5.0.0**: numeración continua tras `00-ROLLBACK.sql` (sin gaps por categoría vacía); búsqueda extendida a `docs/scripts/*.sql` standalone (excluye bundles previos `docs/scripts/NNN-export-scripts-*/`); rollback derivado leyendo los forwards ya escritos en vez de `SCRIPTS.sql` original; headers SQL mínimos (1 línea de archivo + 1 línea por sentencia); README de 3 secciones (`Archivos` / `Aplicar` / `Revertir`) — sin resumen ejecutivo, sesiones incluidas, ACT-NNN, plantillas de correo, ni checklist de producción.
+- **`standards/sql-rollback-generator/SKILL.md` v3.0.0**: lee los forwards consolidados del bundle en vez de los `SCRIPTS.sql` originales; headers del archivo (2 líneas) y per-sentencia (1 línea); bloque `Fase 5 — Cleanup irreversible` minimal (sin templates `BEGIN; UPDATE … COMMIT;` comentados, sólo una línea por irreversible).
+- **`exports/export-scripts/references/readme-template.md`**: de 290 líneas a ~30; sólo 3 secciones canónicas + nota para el AI generador.
+- **`exports/export-scripts/references/validations.md`**: de V1-V6 (~280 líneas) a V1 (estructura + numeración continua) + V2 (placeholders), ~50 líneas. V3 (10 secciones obligatorias), V5 (header format), V6 (referencias resolubles) removidas.
+- **`exports/export-scripts/references/lexico-tecnico.md`**: lista podada de placeholders vetados.
+- **`standards/sql-script-organizer/SKILL.md`**: refs a v5.0.0 + numeración continua; actualizada la sección "Layout del bundle".
+- **`commands/export-scripts.md`**: descripción + argumentos alineados a v5.0.0; nuevos flags `--skip-standalone`, `--dry-run`; removidos `--themes`, `--keep-parts`, `--skip-code-scan` (theme-handling y code-scan removidos del default v5).
+
+### Removed (default)
+
+- Capa `por-tema/` por default (la doc legacy queda en `references/theme-handling.md` marcada DEPRECATED).
+- Code-scan por default (`references/code-scan-recommendations.md` queda como catálogo opt-in para uso ad-hoc).
+- 7 de las 10 secciones del README v4 (resumen ejecutivo, sesiones incluidas, acciones manuales narradas, code-scan, git+ramas, documentación graduada, checklist final).
+
+### Notes
+
+- Bundles generados con export-scripts v3.x/v4.x quedan como histórico — no se migran. Próximas invocaciones producen layout v5.
+- BREAKING dentro del comportamiento de skills (no en API del CLI npm): bundles nuevos cambian de layout. Si tooling externo consume la estructura previa, requiere ajuste.
+
 ## [10.2.0] — 2026-05-27
 
 **TUI Config tab + alt-screen render model** (session098). Nuevo tab Config para ajustar el comportamiento del TUI, y cambio del modelo de render a buffer alternativo que corrige las líneas huérfanas al cambiar de tab.
