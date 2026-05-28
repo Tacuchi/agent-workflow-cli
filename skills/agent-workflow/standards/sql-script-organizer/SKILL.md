@@ -143,25 +143,24 @@ Cada sección del cuerpo se introduce con una línea de comentario corta envuelt
 
 El usuario revisa el SCRIPTS.sql periódicamente; la separación 01-04 final y la verificación de dependencias cruzadas la hace `/agent-workflow:export-scripts` post-hoc.
 
-## Layout del bundle (post-export-scripts v4.0.0)
+## Layout del bundle (post-export-scripts v5.0.0)
 
-`/agent-workflow:export-scripts` v4.0.0+ produce el bundle al ejecutarse, no este skill. Layout plano cross-session al root:
+`/agent-workflow:export-scripts` v5.0.0+ produce el bundle al ejecutarse, no este skill. Layout plano con **numeración continua** tras `00-ROLLBACK.sql`:
 
 ```
 <docs>/scripts/NNN-export-scripts-YYYY-MM-DD/
-├── 00-ROLLBACK.sql                            (único rollback cross-session — sql-rollback-generator v2.0.0)
-├── 01-DDL-TABLES.sql                          (consolidado cross-session, skip si vacío)
-├── 02-DDL-FUNCTIONS.sql                       (idem)
-├── 03-DML.sql                                 (UPDATE/DELETE/migración + backup en esq_audit cuando aplica)
-├── 04-INSERTS.sql                             (idem)
-├── README.md                                  (único informe + índice + how-to-execute)
-└── por-tema/                                  (opt-in — capa adicional encima del root)
-    └── tema-<slug>/01-04-*.sql
+├── 00-ROLLBACK.sql                            (único rollback cross-session — sql-rollback-generator v3.0.0)
+├── 01-<CATEGORIA>.sql                         (primera categoría con contenido)
+├── 02-<CATEGORIA>.sql                         (segunda categoría con contenido, si aplica)
+├── ...                                        (numeración continua, sin gaps por categoría vacía)
+└── README.md                                  (índice + cómo aplicar + cómo revertir)
 ```
+
+Orden canónico de las categorías (para asignar número): `DDL-TABLES` → `DDL-FUNCTIONS` → `DML` → `INSERTS`. Las vacías no ocupan número. Si sólo hay DML, el archivo se llama `01-DML.sql`.
 
 Sentencias individuales del `SCRIPTS.sql` per-sesión se consolidan **cross-session** al archivo de su categoría — no se crea sub-carpeta por sesión.
 
-Layout **v3.x** (`por-sesion/<sessionXXX>/01-04/*.sql + .rollback.sql` companions + per-sesión `rollback/`) ya **no se genera** desde v4.0.0. Bundles ya escritos con v3.x quedan como histórico.
+Layout **v3.x** (`por-sesion/<sessionXXX>/01-04/*.sql + .rollback.sql` companions + per-sesión `rollback/`) ya **no se genera** desde v4.0.0. Layout **v4.0.0** (números fijos 01-04 con gaps) reemplazado por numeración continua en v5.0.0. Bundles ya escritos con layouts previos quedan como histórico.
 
 Layout **legacy** pre-SCRIPTS.sql (`scripts/01-04/*.sql + .rollback.sql` directo en sesión) tampoco se genera; sesiones nuevas usan SCRIPTS.sql. Layouts legacy en sesiones cerradas se migran con `/agent-workflow:migrate --upgrade-topology`.
 
@@ -183,8 +182,8 @@ Procedimiento completo (entrada, proceso paso a paso, layout destino, formato de
 
 ## Integración con otros skills
 
-- **`sql-rollback-generator`** v1.0.0+ — **on-export**: ya NO genera rollbacks durante exec. La generación ocurre cuando `export-scripts` corre.
-- **`export-scripts`** v3.0.0+ — consume `SCRIPTS.sql` per sesión, separa en 01-04 y delega a `sql-rollback-generator` para los rollbacks. Aborta si detecta layout legacy.
+- **`sql-rollback-generator`** v3.0.0+ — **on-export**: lee los forwards ya consolidados por `export-scripts` (no `SCRIPTS.sql` original) y genera `00-ROLLBACK.sql` único.
+- **`export-scripts`** v5.0.0+ — consume `SCRIPTS.sql` per sesión + `docs/scripts/*.sql` standalone, clasifica por categoría y asigna numeración continua tras `00-ROLLBACK.sql`. Aborta si detecta layout legacy.
 - **`migrate`** v1.3.0+ — capability 11: convierte layouts legacy `scripts/01-04/*.sql` → `SCRIPTS.sql` consolidado.
 - **`coding-standards`** — fuente de las reglas de estilo (`database-conventions.md`).
 - **`session`** — Fase execution invoca este skill al primer change SQL; Fase closure no necesita acción adicional.
