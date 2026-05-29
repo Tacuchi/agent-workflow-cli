@@ -1,76 +1,46 @@
-# agent-workflow-cli
+# CLAUDE.md
 
-Agnostic runtime CLI + universal `agent-workflow` SKILL for session-lifecycle workflows across AI coding hosts (Claude Code, Codex, Warp, OZ).
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Published as [`@tacuchi/agent-workflow-cli`](https://www.npmjs.com/package/@tacuchi/agent-workflow-cli). Bundles the full `agent-workflow` SKILL in the npm tarball: `self install --target <host>` copies skills + commands + hooks to the host's config directory.
+## What this is
 
-## Layout
-
-```
-src/
-  application/      services (hex core; pure functions, no I/O)
-    profile/        profile.json cascade resolver (DEFAULT → env → ~/.config → workspace → flag)
-    self/           install / uninstall / clean-cache / clean-legacy / detect-hosts
-  cli/              CLI entry + commands + TUI (Ink)
-  infrastructure/   adapters (FileSystem, Env)
-skills/agent-workflow/   universal SKILL (35 skills + 17 commands + 7 hooks template)
-tests/unit/         Vitest unit suite (645+ tests)
-tests/golden/       Snapshot tests for SKILL parametrization + TUI
-tests/fixtures/     Sample workspaces (EN + ES legacy)
-```
+`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus a bundled universal `agent-workflow` SKILL that drives AI session-lifecycle workflows. Published to npm; the tarball ships `dist/` + `skills/`. `self install-skill` / `self install-hooks` copy the SKILL, slash commands, and hooks into host agent dirs (Claude/Codex/Warp/OZ).
 
 ## Commands
 
-```bash
-npm install          # install dependencies
-npm run build        # tsc → dist/
-npm run typecheck    # tsc --noEmit
-npm run lint         # biome check (lint + format)
-npm run test         # vitest run (full suite)
-npm run test:watch   # vitest watch mode
-npm run test:golden  # snapshot tests only
-```
+- `npm run build` — `tsc` → `dist/` (compiles `src/` only; tests and `skills/` are not compiled).
+- `npm test` — `vitest run` (full suite). Single test by name: `npx vitest run -t "name"`; one file: `npx vitest run tests/x.test.ts`.
+- `npm run test:golden` — snapshot tests under `tests/golden/` only.
+- `npm run typecheck` — `tsc --noEmit`.
+- `npm run lint` — `biome check .` (lint **and** format check — this is Biome, not ESLint/Prettier). Apply fixes: `npm run lint:fix`. Format only: `npm run format`.
+- `prepublishOnly` runs lint → typecheck → test → build. Never bypass it.
 
-`prepublishOnly` chains lint + typecheck + test + build. Never bypass.
+## Code style (Biome-enforced — see `biome.json`)
 
-## Conventions
+- 2-space indent, line width 100, LF endings, double quotes, semicolons always, trailing commas everywhere, always-parenthesized arrow params.
+- Use `import type` / `export type` for type-only imports/exports — required (`verbatimModuleSyntax` is on); plain `import` for them is an error.
+- Non-null assertions (`!`) are forbidden. Keep cognitive complexity per function ≤ 15 — extract helpers when over.
+- No unused imports or variables (errors). Imports are auto-organized.
 
-- **Architecture**: hexagonal. `application/` is pure; ports + adapters in `infrastructure/`. Side effects (fs, env) flow through ports.
-- **Schema validation**: manual (no Zod). DEC-001 per consistency with existing codebase. Throw typed errors with `code` keys (`TARGET_REQUIRED`, `INVALID_TARGET`, etc.).
-- **Cyclomatic complexity**: max 15 per function (Biome enforced). Extract sub-functions when over.
-- **TypeScript strict + ESM**: `exactOptionalPropertyTypes: true`. Use `{ ...(x !== undefined ? { x } : {}) }` for optional spreads.
-- **Error model**: throw `Error` with `code: string` + `message`. CLI layer catches and prints JSON `{ ok: false, error: { code, message } }`.
-- **No external deps for the runtime SKILL**: the SKILL.md files in `skills/agent-workflow/` are pure markdown + JSON; no compilation. `tsc` only compiles `src/`.
+## TypeScript / ESM gotchas
 
-## Multi-empresa (`profile.json`)
+- `module: NodeNext` — relative imports must include the explicit `.js` extension (e.g. `import { x } from "./foo.js"`), even from `.ts` source.
+- The `@` → `src` alias exists ONLY in `vitest.config.ts`. Do NOT use `@/...` imports in `src/` — `tsconfig.json` has no `paths` and `tsc` will fail. Use relative paths in source.
+- `exactOptionalPropertyTypes` is on — set optional properties with the spread idiom: `{ ...(x !== undefined ? { x } : {}) }`.
 
-The CLI is agnostic. Empresas (e.g. QTC) extend behavior via a companion plugin that ships a `profile.json` with:
+## Architecture
 
-```json
-{
-  "namespace": "acme",
-  "company": "Acme Corp",
-  "claude_md_block": "ACME-PROJECT",
-  "mcp_databases": [
-    { "alias": "acme-stage", "host": "...", "port": 5432, "database": "..." }
-  ],
-  "lexicon_path": "profiles/lexico-acme.md",
-  "examples_path": "profiles/examples-acme.md",
-  "migrate_legacy_rules": [],
-  "custom_anchors": []
-}
-```
+- Hexagonal: `domain/` (pure types, no I/O) → `ports/` (interfaces) → `adapters/` (Node implementations). Business logic lives in `application/*-service.ts` and must be I/O-free — all fs/env/git/process access goes through ports injected via `CliContext`.
+- CLI: every subcommand is a `QtcCommand` in `src/cli/commands/`, registered in `src/cli/main.ts` and slotted into a family in `src/cli/help-groups.ts`. Adding a command means doing both.
+- Namespace abstraction: all workspace artifacts live under `.<namespace>/` (default `agent-workflow` → `.agent-workflow/`; fixtures use `.workflow/`). Resolved via `--namespace` flag → `AW_NAMESPACE` → user config → workspace auto-detect → default.
+- `skills/agent-workflow/` is pure markdown + JSON — NOT compiled by `tsc` (which builds `src/` only). It ships in the npm tarball.
 
-Cascade resolution: `--profile <path>` flag → `AW_PROFILE` env → `~/.config/agent-workflow/profile.json` → `<workspace>/.agent-workflow/profile.json` → embedded defaults.
+## Conventions / decisions
 
-The companion plugin (`qtc-workflow-plugin`, etc.) auto-copies its `profile.json` via a SessionStart hook on first install. Not required for the agnostic install path — the CLI alone is functional.
+- Manual schema validation — NO Zod (DEC-001). Throw `Error` with a `code` string + `message`; the CLI layer catches and emits `{ ok: false, error: { code, message } }`.
+- Commits: Conventional Commits `type(scope): subject`. Subject prose in **Spanish**; `type`/`scope` tokens in English. Append a trailing ` sessionNNN` tag (e.g. `fix(cli): corrige parser session104`). Releases: `chore: release vX.Y.Z sessionNNN`.
+- Branches: `feature/<name>`, integrated into `main`. Code/comments in English; commit messages and `CHANGELOG.md` in Spanish (Keep a Changelog + SemVer).
 
-## Slash commands
+## Tooling note
 
-User-level commands installed under `~/.<host>/commands/agent-workflow/` (Claude/Codex). Invoked as `/agent-workflow:<name>` (e.g. `/agent-workflow:session`, `/agent-workflow:compact`).
-
-For Warp/OZ, only the SKILL is copied (no slash commands or hooks).
-
-## Hooks
-
-Claude-only. `self install --target claude` JSON-merges 5 events into `~/.claude/settings.json` (with backup): SessionStart, PreToolUse, SessionEnd, PreCompact, PostCompact. Other hosts skip with a warning.
+The `AW-PROJECT` block (sections Proyecto/Fuentes/Stack/Status) is a managed block written into CLAUDE.md/AGENTS.md by `/agent-workflow:project-init`. If it appears, treat it as tool-owned — keep hand-authored guidance outside it.
