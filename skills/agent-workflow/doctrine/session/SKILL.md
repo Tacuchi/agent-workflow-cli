@@ -455,6 +455,7 @@ agent-workflow sessions [--include-legacy]
 - **AW-PROJECT obligatorio**: si falta, proponer project-init/hub-init.
 - **Fuentes globales**: el proyecto las declara una vez; las sesiones sólo indican ramas.
 - **BD: scripts versionados, no ejecución directa**. MCP `<mcp-cert>`/`<mcp-prod>` son read-only por contrato (SELECT, EXPLAIN, `\d`). Cualquier mutación (INSERT/UPDATE/DELETE/DDL) se materializa como script en `docs/scripts/` del workspace de la fuente; el AI nunca ejecuta el script — el usuario lo aplica manualmente y confirma post-ejecución antes de cerrar la tarea. Excepción única: el usuario explícitamente delega ejecución por bloque.
+- **Moderación en analyze (anti sobre-análisis)**: en flow=analyze el output escala con el scope que el stakeholder pidió, no con la madurez del hub. No inventar decisiones/riesgos no planteados, asumir la infra existente como disponible, y proponer máx 1 sesión dev derivada por default. Canon: `analyze-workflow` §"Moderación" + `analyze-conclude` (modality=technical).
 - **No tocar sesiones de otro flow** sin pedir cambio de plugin/comando.
 
 ## Recursos adicionales

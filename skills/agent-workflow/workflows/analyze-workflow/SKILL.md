@@ -35,11 +35,21 @@ Skills disponibles:
 - **analyze-conclude**: cierre del análisis con `CONCLUSIONS.md` modulado por `## Modality` (technical/incident/data). Una sola skill, una sola estructura.
 
 Diferencia clave de **modalidad** (embebida como `## Modality` en CONCLUSIONS.md):
-- `technical` (legacy: `tecnica`): pregunta arquitectónica/diseño → cuerpo modulado como propuesta (opciones consideradas + decisión recomendada).
+- `technical` (legacy: `tecnica`): pregunta arquitectónica/diseño → cuerpo modulado como propuesta (opciones consideradas + decisión recomendada). **Solo cuando hay una decisión genuina que el stakeholder planteó**; si el scope es claro sobre un stack maduro, una recomendación acotada basta (ver "Moderación" abajo).
 - `data` (legacy: `datos`): análisis cuantitativo → cuerpo modulado como informe (hallazgos numéricos + interpretación + acciones sugeridas).
 - `incident` (legacy: `incidente`): post-mortem retrospectivo → cuerpo modulado con timeline + causa raíz + impacto + acciones preventivas.
 
 CONCLUSIONS.md vive en la sesión por default. Gradúa opt-in con `kind=conclusion` a `docs/conclusiones/`.
+
+## Moderación — anti sobre-análisis (hub maduro / requerimiento simple)
+
+Regla transversal del flow=analyze, crítica en `modality=technical` sobre hubs con stack ya provisionado (GCP, colas, motores de decisión, generación/envío de documentos, auth). Un análisis de calidad **no** equivale a un documento extenso: equivale a uno **proporcional al scope que el stakeholder pidió**. El output debe escalar con el requerimiento, no con la madurez del hub.
+
+- **No inventes decisiones ni riesgos**. Antes de listar una "decisión a tomar" o un "riesgo cross-repo", validá contra `OBJECTIVE.question` literal y el material adjunto. Si el stakeholder no lo planteó y no bloquea el dev, **omitilo**. Detalle operativo en `analyze-conclude` (modality=technical → "Moderación primero").
+- **Hub maduro ≠ greenfield**. Si la infraestructura ya existe en el repo, asumila disponible y describí cómo el dev **compone** sobre lo existente. No re-decidas piezas ya provistas como si arrancaran de cero.
+- **Agencia ≠ completitud**. Cuando el usuario delega ("según lo veas conveniente"), eso habilita pasar **directo** a una sesión dev si el scope es claro — no obliga a producir un análisis robusto. La opción más liviana que cubre el requerimiento gana.
+- **Máximo 1 sesión dev derivada** por default. Proponé varias solo si el stakeholder lo pidió explícitamente o hay una dependencia técnica dura que las separa (declarala).
+- **Artefactos canónicos únicos**: el flow=analyze produce `EVIDENCE.md` → `FINDINGS.md` → `CONCLUSIONS.md` (+ `queries/` si aplica). Los mapeos por-repo (despacho de subagentes en hub mode) son **evidencia** y viven como tal. No eleves un `CONSOLIDADO.md`/`MAPEO-*.md` inventado al rango de artefacto canónico ni dupliques en él lo que ya va en FINDINGS/CONCLUSIONS. La consolidación cross-repo vive en `FINDINGS.md` (Patterns) y cierra en una `CONCLUSIONS.md` acotada (≤1 página si el scope es simple).
 
 ## Standalone (use) — DEPRECADO (session096)
 

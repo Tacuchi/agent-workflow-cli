@@ -65,6 +65,6 @@ The `AW-PROJECT` block (sections Proyecto/Fuentes/Stack/Status) is a managed blo
 ## Status
 
 - Sesiones activas: _ninguna_
-- Última actividad: 2026-05-28 22:21
+- Última actividad: 2026-05-28 22:44
 - Histórico: `.workflow/HISTORY.md`
 <!-- WORKFLOW-PROJECT-END -->

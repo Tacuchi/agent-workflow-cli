@@ -77,10 +77,16 @@ La estructura es única. Lo que cambia es el peso y el contenido de cada secció
 - **Open**: dependencias externas, decisiones que dependen de otra sesión.
 
 Reglas específicas:
-- **3 opciones es óptimo**: si el espacio es claro, 2 alcanza. Si hay ambigüedad alta, hasta 4. Más es ruido.
+- **Moderación primero (anti sobre-análisis)**: antes de enumerar opciones, decisiones o riesgos, validá contra el OBJECTIVE literal y el material adjunto:
+  - ¿El stakeholder pidió esta decisión? Si no aparece en `OBJECTIVE.question` ni en las referencias, **no la inventes** — omitila.
+  - ¿La infraestructura ya existe en el repo (GCP, colas, motor de decisiones, generación/envío de documentos, auth, etc.)? **Asumila disponible** y no la rediscutas como si fuera greenfield. El análisis compone sobre lo existente; no re-decide lo ya provisto.
+  - ¿El "riesgo" bloquea realmente el dev, o es especulación (vector OSINT teórico, duplicidad hipotética)? Si no bloquea, **omitilo**.
+  - Si el scope es claro sobre un stack maduro: una CONCLUSIONS de **≤1 página con 1 recomendación** basta. No fuerces secciones cuando no hay una decisión real que tomar.
+- **Opciones solo si hay decisión genuina**: cuando el stakeholder sí planteó una decisión abierta, 3 opciones es óptimo (2 si el espacio es claro, hasta 4 si la ambigüedad es alta; más es ruido). Si **no** hay decisión pedida, no fabriques un set de opciones — describí la composición sobre lo existente y pasá directo a la recomendación.
 - **Tradeoffs explícitos**: nunca "ventaja: bueno". Cada Pro/Con específico.
 - **Costo estimado obligatorio**: S/M/L de implementación.
 - **Decisión recomendada con justificación**: no presentar opciones sin elegir. Si genuinamente no hay una mejor, declararlo y describir cómo decidir (ej. "depende de tolerancia a downtime: A si 0, B si <1h").
+- **Máximo 1 sesión dev derivada**: la recomendación propone **una** sesión dev de handoff por default. Solo proponé múltiples si el stakeholder lo pidió explícitamente o si hay una dependencia técnica dura que las separa (declarala).
 
 ### Modality: incident (post-mortem tradicional)
 
