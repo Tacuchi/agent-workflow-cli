@@ -8,7 +8,7 @@
   },
   "homepage": "https://github.com/Tacuchi/agent-workflow-cli",
   "repository": "https://github.com/Tacuchi/agent-workflow-cli",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "keywords": ["agent-workflow", "lifecycle", "session", "claude-code", "universal"],
   "commands": "./skills/agent-workflow/commands/",
   "skills": "./skills/"

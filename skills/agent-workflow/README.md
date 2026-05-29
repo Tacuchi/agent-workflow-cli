@@ -36,7 +36,7 @@ agent-workflow self install-skill --from /path/to/agent-workflow-cli/skills/agen
 skills/agent-workflow/
 ├── SKILL.md              # Skill entry point with frontmatter
 ├── README.md             # This file
-├── LICENSE               # MIT
+├── LICENSE               # AGPL-3.0-or-later
 └── references/           # Per-family command documentation
     ├── session-mgmt.md   # sessions, session-create, session-resume, session-close, session-artifacts
     ├── objetivo-tasks.md # objetivo-data, tasks-data, decisiones-list, dependencias-list
@@ -71,4 +71,4 @@ rm -rf ~/.claude/skills/agent-workflow
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+Copyright © 2026 Jesús Loayza (Tacuchi). Licensed under **AGPL-3.0-or-later** — see [LICENSE](./LICENSE).

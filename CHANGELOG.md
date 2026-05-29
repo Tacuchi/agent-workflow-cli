@@ -4,6 +4,21 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.0.0] — 2026-05-28
+
+**Relicencia de MIT a AGPL-3.0-or-later.** El proyecto pasa a copyleft fuerte: sigue siendo libre y gratuito para cualquiera —incluidas empresas— pero todo derivado que se distribuya, o que se ofrezca como servicio de red, debe permanecer abierto bajo la misma licencia. Impide cerrar el código y revenderlo como propietario.
+
+### Changed
+
+- **Licencia `MIT` → `AGPL-3.0-or-later`.** Nuevo `LICENSE` en la raíz con el texto oficial GNU AGPL v3 (antes faltaba pese a estar declarado en `files`); `skills/agent-workflow/LICENSE` actualizado al mismo texto. Campo `license` actualizado en `package.json` y `.claude-plugin/plugin.json`. Secciones de licencia de `README.md` y `skills/agent-workflow/README.md` reescritas con copyright + resumen en lenguaje claro.
+
+### Notes
+
+- **BREAKING (términos legales):** quien dependa del paquete bajo MIT debe revisar la compatibilidad de AGPL antes de actualizar. Las versiones ≤ 10.5.0 ya publicadas en npm permanecen bajo MIT; el cambio rige solo de 11.0.0 en adelante.
+- Usar o ejecutar la CLI no impone obligaciones. El copyleft aplica al distribuir un derivado o exponer una versión modificada como servicio de red; importar el paquete como librería dentro de software propietario sí queda alcanzado por AGPL.
+- Único titular del copyright (Jesús Loayza / Tacuchi): relicencia legalmente limpia.
+- `.claude-plugin/plugin.json` conserva su versión independiente (7.0.1); solo cambió su campo `license`.
+
 ## [10.5.0] — 2026-05-28
 
 **Simplificación de `export-scripts` (skill v4.0.0 → v5.0.0)** y de `sql-rollback-generator` (v2.0.0 → v3.0.0). Session103.

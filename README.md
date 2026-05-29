@@ -140,4 +140,8 @@ Semantic Versioning. Major bumps are reserved for breaking changes to commands, 
 
 ## License
 
-MIT — see `LICENSE`.
+Copyright © 2026 Jesús Loayza (Tacuchi)
+
+Licensed under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`) — see [`LICENSE`](LICENSE).
+
+In plain terms: anyone — including companies — may use, study, modify, and share this software for free, even commercially. But any copy you distribute, and any modified version you run as a network service, must stay open under this same license. It can never be turned into a closed-source/proprietary product.
