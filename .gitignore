@@ -8,3 +8,23 @@ coverage/
 .vscode/
 .idea/
 *.tsbuildinfo
+
+# === agent-workflow ===
+# Visibilidad multi-root: rutas absolutas machine-specific (las gestiona hub-init).
+# Mismas entradas que VISIBILITY_GITIGNORE, para que hub-init las deduplique sin re-escribir.
+.claude/settings.local.json
+.codex/config.toml
+# Backups .bak.<timestamp> que la visibility deja junto a esos archivos.
+.claude/settings.local.json.bak.*
+.codex/config.toml.bak.*
+.warp/.mcp.json.bak.*
+# Artefactos transitorios de sesión: lock (PID/TTL), logs y temporales de escritura atómica.
+# OJO: sessions/, HISTORY.md y profile.json SÍ se versionan (memoria del proyecto) — solo se ignora lo efímero.
+.workflow/.lock
+.workflow/logs/
+.workflow/**/*.tmp
+.agent-workflow/.lock
+.agent-workflow/logs/
+.agent-workflow/**/*.tmp
+# Override local de Claude Code (personal, no compartido).
+CLAUDE.local.md
