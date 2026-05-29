@@ -1,7 +1,7 @@
 ---
 name: session
 description: Lifecycle universal de sesiones agent-workflow en 4 fases (planning/execution/validation/closure). Crea, retoma, lista o cierra sesiones componiendo skills de especialidad según el flow elegido (dev/design/analyze). Auto-plan antes de editar código. Topic-change detection en execution. Closure propone commits por fuente afectada (propose-then-execute). Invocado solo vía /agent-workflow:session.
-version: 4.3.0
+version: 4.4.0
 ---
 
 # Session — Lifecycle universal agent-workflow v3.0

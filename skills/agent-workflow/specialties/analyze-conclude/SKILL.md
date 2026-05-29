@@ -1,7 +1,7 @@
 ---
 name: analyze-conclude
 description: "Produce CONCLUSIONS.md como cierre del análisis para las 3 modalidades (technical/incident/data). Una sola estructura: summary + conclusions con evidencia + recommendations con responsable + traceability. Vive en la sesión, no se gradúa por defecto. Invocado al final de execution en sesiones analyze cuando ya existe FINDINGS.md. Reemplaza a analyze-rfc, analyze-data y analyze-postmortem."
-version: 2.1.0
+version: 2.2.0
 ---
 
 # analyze-conclude — qtc v2.1+

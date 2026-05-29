@@ -1,7 +1,7 @@
 ---
 name: analyze-workflow
 description: Workflow especializado analyze (especialidad investigación read-only), antes en qtc-analyze. Consumido por /agent-workflow:session cuando flow=analyze para orquestar el lifecycle universal con composición analyze-específica según modalidad.
-version: 2.1.0
+version: 2.2.0
 flow: analyze
 workflow_schema: 1.0
 ---

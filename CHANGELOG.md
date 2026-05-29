@@ -4,6 +4,21 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.0.1] — 2026-05-28
+
+**Reglas de moderación anti sobre-análisis en `flow=analyze`** (session002). Frena el `CONCLUSIONS.md` técnico inflado sobre hubs maduros: el output ahora escala con el scope que el stakeholder pidió, no con la madurez del stack. Resuelve el issue `docs/referencias/001`.
+
+### Fixed
+
+- **`specialties/analyze-conclude/SKILL.md` v2.2.0 (modality=technical)**: nueva regla "Moderación primero" — validar contra `OBJECTIVE.question` literal antes de enumerar opciones/decisiones/riesgos; no inventar lo que el stakeholder no planteó; asumir la infraestructura existente como disponible (no rediscutirla como greenfield); opciones solo si hay una decisión genuina pedida; máximo 1 sesión dev derivada por default.
+- **`workflows/analyze-workflow/SKILL.md` v2.2.0**: nueva sección "Moderación" (hub maduro ≠ greenfield, agencia ≠ completitud, artefactos canónicos `EVIDENCE`/`FINDINGS`/`CONCLUSIONS` — no inventar `CONSOLIDADO`/`MAPEO`) + caveat en la definición de `modality=technical`.
+- **`doctrine/session/SKILL.md` v4.4.0**: bullet transversal en "Reglas generales" apuntando al canon de moderación.
+
+### Notes
+
+- Solo doctrina (markdown en `skills/`); sin cambios en el código del CLI ni en su API pública. Llega a los hosts vía `self install-skill` tras actualizar el paquete.
+- Cubre los criterios de aceptación del issue 001 a nivel doctrina (Nivel 1). Niveles 2 (`analyze:lite` en el CLI) y 3 (detección automática de hub maduro) quedan diferidos.
+
 ## [11.0.0] — 2026-05-28
 
 **Relicencia de MIT a AGPL-3.0-or-later.** El proyecto pasa a copyleft fuerte: sigue siendo libre y gratuito para cualquiera —incluidas empresas— pero todo derivado que se distribuya, o que se ofrezca como servicio de red, debe permanecer abierto bajo la misma licencia. Impide cerrar el código y revenderlo como propietario.
