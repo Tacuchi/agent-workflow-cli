@@ -157,11 +157,14 @@ export async function buildProjectTabData(
     workspaceMode === "hub" && block && block.fuentes.length > 0
       ? (block.fuentes[0]?.main_branch ?? "main")
       : "main";
+  // En hub mode el tile GIT debe mostrar la rama de trabajo DEFINIDA en el hub,
+  // no la que el source primario tenga checked out (puede estar en cualquier rama).
+  const definedWorkingBranch = resolveDefinedWorkingBranch(block, workspaceMode);
 
   // ===== Git data del repo primario =====
   const gitData = await safeRun(
     "git",
-    () => buildGitData(git, proc, primaryRepoPath, primaryMainBranch),
+    () => buildGitData(git, proc, primaryRepoPath, primaryMainBranch, definedWorkingBranch),
     warnings,
     null,
   );
@@ -270,10 +273,14 @@ async function buildGitData(
   proc: ProcessPort,
   repoPath: string,
   mainBranch: string,
+  workBranch?: string,
 ): Promise<ProjectGitData | null> {
   const isRepo = await git.isGitRepo(repoPath);
   if (!isRepo) return null;
-  const branch = (await git.currentBranch(repoPath)) ?? "(detached)";
+  // `workBranch` (rama de trabajo definida en el hub) tiene prioridad sobre la
+  // rama checked out: el tile GIT representa el trabajo del hub, no el HEAD
+  // accidental del source. ahead/behind se calcula contra la rama mostrada.
+  const branch = workBranch ?? (await git.currentBranch(repoPath)) ?? "(detached)";
 
   // ahead/behind vs `origin/<mainBranch>` — fallback a 0/0 si fail
   const aheadBehind = await runProc(
@@ -446,6 +453,28 @@ async function runProc(
 ): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   const res = await proc.run(cmd, args, { cwd });
   return { ok: res.code === 0, stdout: res.stdout, stderr: res.stderr };
+}
+
+/**
+ * Rama de trabajo a mostrar en el tile GIT.
+ *
+ * En hub mode el tile representa el repo primario (`fuentes[0]`), pero su label
+ * debe ser la rama de trabajo DEFINIDA en el hub (sección `## Status > Ramas de
+ * trabajo actuales`), no la rama que la fuente tenga checked out. Así el tile no
+ * cambia según en qué rama estén las fuentes.
+ *
+ * Devuelve `undefined` cuando no hay rama de trabajo declarada para el source
+ * primario (project mode, o hub sin ramas declaradas) → el caller cae a la rama
+ * actual del repo.
+ */
+export function resolveDefinedWorkingBranch(
+  block: ParsedProjectBlock | null,
+  mode: "project" | "hub",
+): string | undefined {
+  if (mode !== "hub" || !block) return undefined;
+  const primaryAlias = block.fuentes[0]?.alias;
+  if (primaryAlias === undefined) return undefined;
+  return block.working_branches[primaryAlias];
 }
 
 // Helper local — refleja `readProjectBlock` privado de sources-service.ts.

@@ -44,3 +44,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Tooling note
 
 The `AW-PROJECT` block (sections Proyecto/Fuentes/Stack/Status) is a managed block written into CLAUDE.md/AGENTS.md by `/agent-workflow:project-init`. If it appears, treat it as tool-owned — keep hand-authored guidance outside it.
+
+<!-- WORKFLOW-PROJECT-START -->
+## Proyecto
+
+`@tacuchi/agent-workflow-cli` (bins agent-workflow/aw) — CLI agnóstico + SKILL universal que conduce workflows de ciclo de vida de sesiones de IA (planning → execution → validation → closure). Publicado en npm; instala SKILL/comandos/hooks en agentes host (Claude/Codex/Warp/OZ).
+
+## Fuentes
+
+| Alias | Path | Rama principal |
+|---|---|---|
+| agent-workflow-cli | /Users/tacuchi/Git/agent-workflow-cli | main |
+
+## Stack
+
+- Lenguaje: TypeScript
+- Framework: React
+- Build: npm
+
+## Status
+
+- Sesiones activas: _ninguna_
+- Última actividad: 2026-05-28 22:21
+- Histórico: `.workflow/HISTORY.md`
+<!-- WORKFLOW-PROJECT-END -->
