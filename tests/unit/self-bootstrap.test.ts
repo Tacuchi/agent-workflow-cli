@@ -124,8 +124,8 @@ describe("selfBootstrap", () => {
       expect(result.data.next_steps.map((n) => n.harness)).toEqual(["claude-code", "codex"]);
     }
 
-    expect(await fs.exists(join(home, ".claude/skills/agent-workflow"))).toBe(true);
-    expect(await fs.exists(join(home, ".codex/skills/agent-workflow"))).toBe(true);
+    expect(await fs.exists(join(home, ".claude/skills/w"))).toBe(true);
+    expect(await fs.exists(join(home, ".codex/skills/w"))).toBe(true);
   });
 
   it("dirty machine with legacy: doctor → uninstall-legacy ok → install ok", async () => {
@@ -153,7 +153,7 @@ describe("selfBootstrap", () => {
 
     // Legacy gone, canonical present
     expect(await fs.exists(legacyPath)).toBe(false);
-    expect(await fs.exists(join(home, ".claude/skills/agent-workflow"))).toBe(true);
+    expect(await fs.exists(join(home, ".claude/skills/w"))).toBe(true);
   });
 
   it("--dry-run preserves filesystem and reports dry-run sub-steps", async () => {
@@ -173,7 +173,7 @@ describe("selfBootstrap", () => {
     expect(result.ok).toBe(true);
     // Legacy preserved (no actual fs writes)
     expect(await fs.exists(legacyPath)).toBe(true);
-    expect(await fs.exists(join(home, ".claude/skills/agent-workflow"))).toBe(false);
+    expect(await fs.exists(join(home, ".claude/skills/w"))).toBe(false);
     if (result.ok && result.data) {
       const installStep = result.data.steps.find((s) => s.name === "install-skill");
       expect(installStep?.status).toBe("ok");

@@ -7,7 +7,7 @@ import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 
-export const SKILL_DIR_NAME = "agent-workflow";
+export const SKILL_DIR_NAME = "w";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
 
 export type InstallTarget = "claude" | "codex" | "agents" | "warp" | "oz";
@@ -68,31 +68,25 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
 
 // Hosts que listan slash commands solo desde directorios top-level de
 // ~/<host>/skills/. Para estos hosts, los sub-skills anidados del SKILL
-// universal (doctrine/*, specialties/*, etc.) NO son visibles por default —
+// universal (loops/*, exports/*, roles/*) NO son visibles por default —
 // el flatten copia cada sub-skill a su propio directorio top-level con
-// prefix `agent-workflow-` para evitar colisiones con otros plugins.
+// prefix `w-` para evitar colisiones con otros plugins.
 // Hosts no incluidos (claude, codex) cargan sub-skills via su propia
 // resolución (Skill tool / SKILL.md frontmatter recursivo).
 const FLATTEN_SUBSKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["warp", "oz"]);
-const FLATTEN_PARENT_DIRS = [
-  "doctrine",
-  "specialties",
-  "workflows",
-  "exports",
-  "standards",
-] as const;
-const FLATTEN_DEST_PREFIX = "agent-workflow-";
+const FLATTEN_PARENT_DIRS = ["loops", "exports", "roles"] as const;
+const FLATTEN_DEST_PREFIX = "w-";
 
 // Per-target user-level commands directory (subdir = namespace).
-// File `<base>/<filename>.md` is invoked as `/agent-workflow:<filename>`.
+// File `<base>/<filename>.md` is invoked as `/w:<filename>`.
 // Claude Code + Codex follow the same convention. Warp/Oz do not use a
 // file-based user-commands dir — they list slash commands from the `name:`
 // frontmatter of each SKILL.md found in top-level subdirs of ~/<host>/skills/.
 // The installer applies flattenSubSkillsForHost() below to expose nested
-// sub-skills (doctrine/*, specialties/*, etc.) at the level Warp/Oz can see.
+// sub-skills (loops/*, exports/*, roles/*) at the level Warp/Oz can see.
 const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
-  claude: ".claude/commands/agent-workflow",
-  codex: ".codex/commands/agent-workflow",
+  claude: ".claude/commands/w",
+  codex: ".codex/commands/w",
   warp: null,
   oz: null,
   agents: null,

@@ -5,6 +5,7 @@ export type {
   Phase,
   QtcError,
   SessionState,
+  SessionType,
 } from "./domain/types.js";
 export type { Harness, PluginContext, WorkflowDescriptor } from "./domain/plugin.js";
 export type { ProjectBlock, SessionStatus, SourceRef, WorkspaceMode } from "./domain/project.js";

@@ -71,6 +71,14 @@ export class PathsService {
     return join(this.cwdRoot(), ".lock");
   }
 
+  // skills.toml — capability role → skill bindings (cascade: global then workspace)
+  userSkillsToml(): string {
+    return join(this.userRoot(), "skills.toml");
+  }
+  cwdSkillsToml(): string {
+    return join(this.cwdRoot(), "skills.toml");
+  }
+
   // CLAUDE.md / AGENTS.md project block markers
   blockMarkers(): ProjectBlockMarkers {
     const upper = this.ns.toUpperCase();

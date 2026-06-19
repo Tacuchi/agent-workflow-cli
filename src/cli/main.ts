@@ -6,10 +6,10 @@ import { NodeEnv } from "../adapters/node-env.js";
 import { NodeFileSystem } from "../adapters/node-file-system.js";
 import { NodeProcess } from "../adapters/node-process.js";
 import { PathsService } from "../application/paths-service.js";
+import { resolveSkills } from "../application/skills-resolver-service.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
 import { NamespaceResolver } from "../runtime/namespace-resolver.js";
-import { autoPlanDecideCommand } from "./commands/auto-plan-decide.js";
 import { bootstrapDsnCommand } from "./commands/bootstrap-dsn.js";
 import { checkBranchCommand } from "./commands/check-branch.js";
 import { checkpointReadCommand } from "./commands/checkpoint-read.js";
@@ -24,8 +24,6 @@ import {
   nextNumberCommand,
   profilesCommand,
 } from "./commands/dev-only.js";
-import { graduateCommand } from "./commands/graduate.js";
-import { graduationCheckCommand } from "./commands/graduation-check.js";
 import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
@@ -34,8 +32,6 @@ import { hubInitCommand } from "./commands/hub-init.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./commands/multiroot.js";
 import { objetivoDataCommand } from "./commands/objetivo-data.js";
-import { phaseDetectCommand } from "./commands/phase-detect.js";
-import { phaseNextCommand } from "./commands/phase-next.js";
 import { pluginCacheCommand } from "./commands/plugin-cache.js";
 import { pluginDoctorCommand } from "./commands/plugin-doctor.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
@@ -48,14 +44,13 @@ import { sessionCreateCommand } from "./commands/session-create.js";
 import { sessionResumeCommand } from "./commands/session-resume.js";
 import { sessionsCommand } from "./commands/sessions.js";
 import { skillIndexCommand } from "./commands/skill-index.js";
+import { skillsCommand } from "./commands/skills.js";
 import { sourcesCommand } from "./commands/sources.js";
-import { specialtyChooseCommand } from "./commands/specialty-choose.js";
 import { stackCommand } from "./commands/stack.js";
 import { tasksDataCommand } from "./commands/tasks-data.js";
-import { topicChangeCheckCommand } from "./commands/topic-change-check.js";
 import { upgradeHubModeCommand } from "./commands/upgrade-hub-mode.js";
 import { visibilityCommand } from "./commands/visibility.js";
-import { workflowsCommand } from "./commands/workflows.js";
+import { workspaceInitCommand } from "./commands/workspace-init.js";
 import { workspaceModeCommand } from "./commands/workspace-mode.js";
 import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
 import { type MenuAction, shouldShowInteractiveMenu } from "./interactive-menu.js";
@@ -88,25 +83,20 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(sessionArtifactsCommand);
   registry.register(sessionCloseCommand);
   registry.register(sessionCreateCommand);
-  registry.register(autoPlanDecideCommand);
-  registry.register(topicChangeCheckCommand);
-  registry.register(specialtyChooseCommand);
   registry.register(stackCommand);
   registry.register(workspaceModeCommand);
+  registry.register(workspaceInitCommand);
   registry.register(skillIndexCommand);
-  registry.register(phaseDetectCommand);
-  registry.register(workflowsCommand);
+  registry.register(skillsCommand);
   registry.register(sourcesCommand);
   registry.register(checkpointReadCommand);
   registry.register(resumeSummaryCommand);
   registry.register(compressCheckpointCommand);
-  registry.register(phaseNextCommand);
   registry.register(checkBranchCommand);
   registry.register(checkpointWriteCommand);
   registry.register(autoCompactOnCloseCommand);
   registry.register(hookCommand);
   registry.register(hubInitCommand);
-  registry.register(graduationCheckCommand);
   registry.register(mcpCommand);
   registry.register(visibilityCommand);
   registry.register(harnessCommand);
@@ -114,7 +104,6 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(logsCommand);
   registry.register(nextNumberCommand);
   registry.register(bootstrapDsnCommand);
-  registry.register(graduateCommand);
   registry.register(upgradeHubModeCommand);
   registry.register(codeScanCommand);
   registry.register(pluginCacheCommand);
@@ -157,7 +146,17 @@ async function run(argv: string[]): Promise<ExitCode> {
   );
   const runtime = await runtimeService.resolveRuntime();
 
-  const ctx: CliContext = { fs, env, git, process: proc, runtime, namespace, paths };
+  const skillsResolution = await resolveSkills(fs, paths);
+  const ctx: CliContext = {
+    fs,
+    env,
+    git,
+    process: proc,
+    runtime,
+    namespace,
+    paths,
+    skills: skillsResolution.skills,
+  };
 
   if (
     shouldShowInteractiveMenu({

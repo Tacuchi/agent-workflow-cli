@@ -1,4 +1,5 @@
 import type { PathsService } from "../application/paths-service.js";
+import type { ResolvedSkills } from "../domain/skills.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -14,4 +15,6 @@ export interface CliContext {
   runtime: ResolvedRuntime;
   namespace: ResolvedNamespace;
   paths: PathsService;
+  /** Resolved capability role → skill bindings (skills.toml cascade). */
+  skills: ResolvedSkills;
 }

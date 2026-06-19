@@ -131,8 +131,8 @@ describe("selfUninstallSkill", () => {
   it("--target=all (default) removes canonical from claude+codex (no legacy unless --legacy)", async () => {
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
-    const claudeCanonical = await seedTarget(home, "claude", "agent-workflow");
-    const codexCanonical = await seedTarget(home, "codex", "agent-workflow");
+    const claudeCanonical = await seedTarget(home, "claude", "w");
+    const codexCanonical = await seedTarget(home, "codex", "w");
     const claudeLegacy = await seedTarget(home, "claude", "agent-workflow-manager");
 
     const result = await selfUninstallSkill(buildArgs({}, []), ctx);
@@ -153,9 +153,9 @@ describe("selfUninstallSkill", () => {
   it("--target=claude --legacy removes both canonical and legacy in claude only", async () => {
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
-    const claudeCanonical = await seedTarget(home, "claude", "agent-workflow");
+    const claudeCanonical = await seedTarget(home, "claude", "w");
     const claudeLegacy = await seedTarget(home, "claude", "agent-workflow-manager");
-    const codexCanonical = await seedTarget(home, "codex", "agent-workflow");
+    const codexCanonical = await seedTarget(home, "codex", "w");
 
     const result = await selfUninstallSkill(buildArgs({ target: "claude" }, ["--legacy"]), ctx);
 
@@ -174,10 +174,10 @@ describe("selfUninstallSkill", () => {
   it("--target=agents --legacy updates .skill-lock.json removing both entries", async () => {
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
-    const agentsCanonical = await seedTarget(home, "agents", "agent-workflow");
+    const agentsCanonical = await seedTarget(home, "agents", "w");
     const agentsLegacy = await seedTarget(home, "agents", "agent-workflow-manager");
     const lockPath = await seedAgentsLock(home, {
-      "agent-workflow": { source: "x", sourceUrl: "y" },
+      w: { source: "x", sourceUrl: "y" },
       "agent-workflow-manager": { source: "z", sourceUrl: "w" },
     });
 
@@ -201,9 +201,9 @@ describe("selfUninstallSkill", () => {
   it("--dry-run reports what would be removed but doesn't touch fs or lock", async () => {
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
-    const claudeCanonical = await seedTarget(home, "claude", "agent-workflow");
+    const claudeCanonical = await seedTarget(home, "claude", "w");
     const lockPath = await seedAgentsLock(home, {
-      "agent-workflow": { source: "x", sourceUrl: "y" },
+      w: { source: "x", sourceUrl: "y" },
     });
 
     const result = await selfUninstallSkill(buildArgs({}, ["--dry-run"]), ctx);
@@ -215,7 +215,7 @@ describe("selfUninstallSkill", () => {
     }
     expect(await fs.exists(claudeCanonical)).toBe(true); // preserved
     const lockAfter = JSON.parse(await fs.readText(lockPath));
-    expect(lockAfter.skills["agent-workflow"]).toBeDefined(); // preserved
+    expect(lockAfter.skills.w).toBeDefined(); // preserved
   });
 
   it("--target=invalid is rejected with INVALID_TARGET", async () => {

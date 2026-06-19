@@ -455,7 +455,7 @@ describe("selfInstallSkill", () => {
   });
 
   it("SKILL_DIR_NAME points to the bundled skill name", () => {
-    expect(SKILL_DIR_NAME).toBe("agent-workflow");
+    expect(SKILL_DIR_NAME).toBe("w");
   });
 
   it("--target missing → TARGET_REQUIRED", async () => {

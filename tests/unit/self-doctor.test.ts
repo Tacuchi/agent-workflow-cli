@@ -52,7 +52,7 @@ const runtime: ResolvedRuntime = {
 
 describe("selfDoctor", () => {
   it("reports skill installed when ~/.claude/skills/agent-workflow exists (codex absent)", async () => {
-    const fs = new FakeFs(new Set(["/home/u/.claude/skills/agent-workflow"]));
+    const fs = new FakeFs(new Set(["/home/u/.claude/skills/w"]));
     const ctx = {
       fs,
       env: new FakeEnv(),
@@ -66,9 +66,9 @@ describe("selfDoctor", () => {
       expect(result.data.skill.installed).toBe(true);
       const claude = result.data.skill.targets.find((t) => t.target === "claude");
       const codex = result.data.skill.targets.find((t) => t.target === "codex");
-      expect(claude?.path).toBe("/home/u/.claude/skills/agent-workflow");
+      expect(claude?.path).toBe("/home/u/.claude/skills/w");
       expect(claude?.installed).toBe(true);
-      expect(codex?.path).toBe("/home/u/.codex/skills/agent-workflow");
+      expect(codex?.path).toBe("/home/u/.codex/skills/w");
       expect(codex?.installed).toBe(false);
       expect(result.data.namespace.value).toBe("workflow");
       expect(result.data.paths.user_root).toBe("/home/u/.workflow");
@@ -77,11 +77,7 @@ describe("selfDoctor", () => {
 
   it("reports all 3 file-hosting targets when claude, codex and warp have it", async () => {
     const fs = new FakeFs(
-      new Set([
-        "/home/u/.claude/skills/agent-workflow",
-        "/home/u/.codex/skills/agent-workflow",
-        "/home/u/.warp/skills/agent-workflow",
-      ]),
+      new Set(["/home/u/.claude/skills/w", "/home/u/.codex/skills/w", "/home/u/.warp/skills/w"]),
     );
     const ctx = {
       fs,
@@ -118,10 +114,7 @@ describe("selfDoctor", () => {
 
   it("flags legacy skill leftover in claude target", async () => {
     const fs = new FakeFs(
-      new Set([
-        "/home/u/.claude/skills/agent-workflow",
-        "/home/u/.claude/skills/agent-workflow-manager",
-      ]),
+      new Set(["/home/u/.claude/skills/w", "/home/u/.claude/skills/agent-workflow-manager"]),
     );
     const ctx = {
       fs,
@@ -163,7 +156,7 @@ describe("selfDoctor", () => {
   });
 
   it("omits agents target when ~/.agents/ does not exist", async () => {
-    const fs = new FakeFs(new Set(["/home/u/.claude/skills/agent-workflow"]));
+    const fs = new FakeFs(new Set(["/home/u/.claude/skills/w"]));
     const ctx = {
       fs,
       env: new FakeEnv(),
@@ -182,17 +175,13 @@ describe("selfDoctor", () => {
 
   it("includes agents target when ~/.agents/ exists; parses lock for canonical entry", async () => {
     const fs = new FakeFs(
-      new Set([
-        "/home/u/.agents",
-        "/home/u/.agents/skills/agent-workflow",
-        "/home/u/.agents/.skill-lock.json",
-      ]),
+      new Set(["/home/u/.agents", "/home/u/.agents/skills/w", "/home/u/.agents/.skill-lock.json"]),
       new Map([
         [
           "/home/u/.agents/.skill-lock.json",
           JSON.stringify({
             version: 3,
-            skills: { "agent-workflow": { source: "x" } },
+            skills: { w: { source: "x" } },
             dismissed: {},
             lastSelectedAgents: ["codex"],
           }),
@@ -278,7 +267,7 @@ describe("selfDoctor", () => {
   });
 
   it("does not flag leftover when only the new skill is present", async () => {
-    const fs = new FakeFs(new Set(["/home/u/.claude/skills/agent-workflow"]));
+    const fs = new FakeFs(new Set(["/home/u/.claude/skills/w"]));
     const ctx = {
       fs,
       env: new FakeEnv(),

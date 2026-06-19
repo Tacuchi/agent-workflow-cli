@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import type { InstallTarget } from "./install-skill.js";
+import { type InstallTarget, SKILL_DIR_NAME } from "./install-skill.js";
 
 export interface HookEntry {
   matcher?: string;
@@ -278,13 +278,13 @@ function objectEqual(a: unknown, b: unknown): boolean {
 }
 
 export async function resolveBundledHookTemplate(): Promise<string | null> {
-  // Walk up from current module to find skills/agent-workflow/hooks/hooks.template.json
+  // Walk up from current module to find skills/w/hooks/hooks.template.json
   const { fileURLToPath } = await import("node:url");
   const { stat } = await import("node:fs/promises");
   const here = dirname(fileURLToPath(import.meta.url));
   let current = here;
   for (let i = 0; i < 8; i += 1) {
-    const candidate = join(current, "skills", "agent-workflow", "hooks", "hooks.template.json");
+    const candidate = join(current, "skills", SKILL_DIR_NAME, "hooks", "hooks.template.json");
     try {
       await stat(candidate);
       return candidate;

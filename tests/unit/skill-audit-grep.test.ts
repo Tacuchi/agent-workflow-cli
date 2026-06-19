@@ -2,25 +2,15 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "agent-workflow");
+// The `w` bundle (new stages+loops model). This audit asserts the bundle carries
+// NO hard-coded legacy QTC references (R2 mitigation, carried over from the old
+// bundle audit — the new bundle must be clean from the start).
+const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
 
-const SCANNED_SUBFOLDERS = [
-  "doctrine",
-  "workflows",
-  "specialties",
-  "exports",
-  "standards",
-  "commands",
-  "hooks",
-];
+const SCANNED_SUBFOLDERS = ["commands", "loops", "exports", "roles", "artifacts", "hooks"];
 
-// Files exempted from the audit (legitimate documentation that mentions legacy
-// names for back-compat purposes; explained in T2.3 of session083).
-const EXEMPT_FILES = new Set([
-  "commands/README.md", // legacy alias example
-  "references/legacy-anchors.md", // qtc:* alias table (not scanned anyway — references/ excluded)
-  "references/profile-parametrization.md", // documents QTC profile behavior
-]);
+// No exemptions: the new bundle must be entirely free of legacy QTC refs.
+const EXEMPT_FILES = new Set<string>();
 
 async function listFiles(dir: string): Promise<string[]> {
   const out: string[] = [];
@@ -34,7 +24,11 @@ async function listFiles(dir: string): Promise<string[]> {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
       out.push(...(await listFiles(full)));
-    } else if (entry.name.endsWith(".md") || entry.name.endsWith(".json")) {
+    } else if (
+      entry.name.endsWith(".md") ||
+      entry.name.endsWith(".json") ||
+      entry.name.endsWith(".sql")
+    ) {
       out.push(full);
     }
   }
@@ -65,47 +59,37 @@ async function gatherHits(pattern: RegExp): Promise<{ relpath: string; line: num
   return hits;
 }
 
-describe("SKILL audit grep — hard-coded QTC refs (R2 mitigation)", () => {
-  it("skills/agent-workflow/ folder exists", async () => {
+describe("SKILL audit grep — hard-coded legacy refs (R2 mitigation)", () => {
+  it("skills/w/ folder exists", async () => {
     const stats = await stat(SKILL_ROOT);
     expect(stats.isDirectory()).toBe(true);
   });
 
-  it("zero hits of `QTC-PROJECT` (use profile.claude_md_block)", async () => {
-    const hits = await gatherHits(/QTC-PROJECT/);
-    expect(hits).toEqual([]);
+  it("zero hits of `QTC-PROJECT` (use the namespaced project block)", async () => {
+    expect(await gatherHits(/QTC-PROJECT/)).toEqual([]);
   });
 
-  it("zero hits of `qtc-cert` or `qtc-prod` (use profile.mcp_databases)", async () => {
-    const hits = await gatherHits(/qtc-(cert|prod)/);
-    expect(hits).toEqual([]);
+  it("zero hits of `qtc-cert` or `qtc-prod` (use generic MCP names)", async () => {
+    expect(await gatherHits(/qtc-(cert|prod)/)).toEqual([]);
   });
 
-  it("zero hits of `qtc:<anchor>` (use agent-workflow:<anchor>)", async () => {
-    const hits = await gatherHits(/qtc:[a-z]/);
-    expect(hits).toEqual([]);
+  it("zero hits of `qtc:<anchor>`", async () => {
+    expect(await gatherHits(/qtc:[a-z]/)).toEqual([]);
   });
 
-  it("zero hits of `/qtc:<slash-command>` (use /agent-workflow:<cmd>)", async () => {
-    const hits = await gatherHits(/\/qtc:/);
-    expect(hits).toEqual([]);
+  it("zero hits of `/qtc:<slash-command>` (use /w:<cmd>)", async () => {
+    expect(await gatherHits(/\/qtc:/)).toEqual([]);
   });
 
   it("zero hits of `MCP_QTC_*_URL` env var (use generic MCP_*_URL)", async () => {
-    const hits = await gatherHits(/MCP_QTC/);
-    expect(hits).toEqual([]);
+    expect(await gatherHits(/MCP_QTC/)).toEqual([]);
   });
 
-  it("zero hits of `qtc-workflow-plugin` path (use agent-workflow)", async () => {
-    const hits = await gatherHits(/qtc-workflow-plugin/);
-    expect(hits).toEqual([]);
+  it("zero hits of `QTC-WORKFLOW` legacy detector (clean bundle)", async () => {
+    expect(await gatherHits(/QTC-WORKFLOW/)).toEqual([]);
   });
 
-  it("residuales esperados (QTC-WORKFLOW legacy detector) están presentes", async () => {
-    // Sanity: these legitimate references SHOULD still be present in migrate/hub-init/project-init
-    const hits = await gatherHits(/QTC-WORKFLOW/);
-    expect(hits.length).toBeGreaterThan(0);
-    // Locked-in count: 10 hits per audit T2.3.
-    expect(hits.length).toBe(10);
+  it("zero hits of the legacy `/agent-workflow:` slash namespace (use /w:)", async () => {
+    expect(await gatherHits(/\/agent-workflow:/)).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 {
-  "name": "agent-workflow",
-  "version": "7.0.1",
-  "description": "Universal slash commands `/agent-workflow:*` para el runtime `@tacuchi/agent-workflow-cli@^7.0.0`. Hosta los 17 commands canónicos (session, resume, compact, project-init, hub-init, doctor, migrate, rules, 9 export-*) que invocan al CLI npm + leen la SKILL bundleada en `skills/agent-workflow/`. Instalación: `/plugin marketplace add ...` + `/plugin install agent-workflow@<marketplace>`. peerDependency: `@tacuchi/agent-workflow-cli@^7.0.0`.",
+  "name": "w",
+  "version": "8.0.0",
+  "description": "Universal slash commands `/w:*` (w = workflow) for the `@tacuchi/agent-workflow-cli` runtime. Stages + loops + artifacts model: SPEC (spec-new · spec-refine), PLANIFICATION (plan-new · plan-exec), QUICK (quick), workspace-init bootstrap, and the export-* family (the only artifact→docs/ promotion path). Commands start AI-run loops that manage sessions/artifacts under `.workflow/sessions/`; pluggable capability skills bind via `.workflow/skills.toml`. Install: `/plugin marketplace add ...` + `/plugin install w@<marketplace>`. peerDependency: `@tacuchi/agent-workflow-cli`.",
   "author": {
     "name": "Tacuchi",
     "email": "jesus.loayza@quetalcompra.com"
@@ -9,7 +9,7 @@
   "homepage": "https://github.com/Tacuchi/agent-workflow-cli",
   "repository": "https://github.com/Tacuchi/agent-workflow-cli",
   "license": "AGPL-3.0-or-later",
-  "keywords": ["agent-workflow", "lifecycle", "session", "claude-code", "universal"],
-  "commands": "./skills/agent-workflow/commands/",
+  "keywords": ["agent-workflow", "workflow", "spec", "plan", "quick", "claude-code", "universal"],
+  "commands": "./skills/w/commands/",
   "skills": "./skills/"
 }

@@ -7,6 +7,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
  * touching call-sites.
  */
 export type ArtifactKind =
+  | "session"
   | "objective"
   | "findings"
   | "decisions"
@@ -22,7 +23,9 @@ export type ArtifactKind =
   | "status"
   | "requirements"
   | "backlog"
-  | "scripts_sql";
+  | "scripts_sql"
+  | "analysis_file"
+  | "technical_note";
 
 /**
  * Filename candidates per kind. Order matters: EN UPPERCASE first (canonical
@@ -33,6 +36,7 @@ export type ArtifactKind =
  * Spanish predecessor — they keep a single entry.
  */
 export const ARTIFACT_FILENAMES: Record<ArtifactKind, readonly string[]> = {
+  session: ["SESSION.md"],
   objective: ["OBJECTIVE.md", "OBJETIVO.md"],
   findings: ["FINDINGS.md", "HALLAZGOS.md"],
   decisions: ["DECISIONS.md", "DECISIONES.md"],
@@ -49,6 +53,8 @@ export const ARTIFACT_FILENAMES: Record<ArtifactKind, readonly string[]> = {
   requirements: ["REQUIREMENTS.md"],
   backlog: ["BACKLOG.md"],
   scripts_sql: ["SCRIPTS.sql"],
+  analysis_file: ["ANALYSIS-FILE.md"],
+  technical_note: ["TECHNICAL-NOTE.md"],
 };
 
 /** Canonical EN UPPERCASE filename for `kind`. Use when writing a new artifact. */

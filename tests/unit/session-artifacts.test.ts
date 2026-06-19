@@ -88,6 +88,13 @@ describe("ARTIFACT_FILENAMES", () => {
     expect(ARTIFACT_FILENAMES.requirements).toEqual(["REQUIREMENTS.md"]);
     expect(ARTIFACT_FILENAMES.discovery).toEqual(["DISCOVERY.md"]);
   });
+
+  it("includes the new-model artifact kinds (P2.3)", () => {
+    expect(ARTIFACT_FILENAMES.session).toEqual(["SESSION.md"]);
+    expect(ARTIFACT_FILENAMES.analysis_file).toEqual(["ANALYSIS-FILE.md"]);
+    expect(ARTIFACT_FILENAMES.technical_note).toEqual(["TECHNICAL-NOTE.md"]);
+    expect(canonicalArtifactFilename("session")).toBe("SESSION.md");
+  });
 });
 
 describe("canonicalArtifactFilename / canonicalArtifactPath", () => {
