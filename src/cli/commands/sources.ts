@@ -11,7 +11,6 @@ export const sourcesCommand: QtcCommand = {
     const session = args.values.get("session");
     const scopeRaw = args.values.get("scope");
     const skipGit = args.flags.has("--no-git");
-    const flow = args.values.get("flow");
     const verbose = args.flags.has("--verbose");
     const input: Parameters<typeof runSources>[4] = {};
     if (session !== undefined) input.sessionCode = session;
@@ -22,7 +21,6 @@ export const sourcesCommand: QtcCommand = {
         .filter((s) => s.length > 0);
     }
     if (skipGit) input.skipGit = true;
-    if (flow !== undefined) input.flowOverride = flow;
     if (verbose) input.verbose = true;
     const data = await runSources(ctx.fs, ctx.env, ctx.git, ctx.paths, input);
     return { ok: true, data, exitCode: 0 };

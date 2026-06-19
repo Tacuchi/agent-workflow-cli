@@ -21,7 +21,13 @@ export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
 };
 
 export const AGENTS_LOCK_REL = [".agents", ".skill-lock.json"] as const;
-export const LEGACY_SKILL_NAME = "agent-workflow-manager";
+/**
+ * Skill dir names from prior releases, cleaned up by `--legacy`. Oldest first.
+ * `agent-workflow` was the canonical bundle dir before the `w` rename (P1), so an
+ * upgrade from the old plugin leaves it behind alongside the even-older
+ * `agent-workflow-manager`.
+ */
+export const LEGACY_SKILL_NAMES = ["agent-workflow-manager", "agent-workflow"] as const;
 
 export interface SelfInstallTargetResult {
   target: InstallTarget;

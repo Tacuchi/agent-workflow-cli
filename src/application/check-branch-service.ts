@@ -11,7 +11,6 @@ export interface CheckBranchInput {
   pathArg?: string;
   fileArg?: string;
   sessionCode?: string;
-  flowOverride?: string;
   strict?: boolean;
 }
 
@@ -20,7 +19,6 @@ export interface CheckBranchOutput {
   reason?: string;
   alias?: string;
   path?: string;
-  flow?: string | null;
   current_branch?: string | null;
   expected_work_branch?: string | null;
   dirty?: boolean | null;
@@ -54,7 +52,6 @@ export async function runCheckBranch(
 
   // Expected work branch comes from the WORKSPACE block working_branches for the
   // owning source. Decoupled from sessions/flow.
-  const flow = null;
   const expected = expectedWorkBranch(target, block?.working_branches ?? {});
 
   if (expected === null) {
@@ -63,7 +60,6 @@ export async function runCheckBranch(
       reason: "no_expected_branch_declared",
       alias: target.alias,
       path: target.path,
-      flow,
     };
   }
 
@@ -79,7 +75,6 @@ export async function runCheckBranch(
       is_repo: false,
       error: `Path does not exist: ${target.path}`,
       session_code: input.sessionCode ?? null,
-      flow,
       work_branch: expected,
     };
   }
@@ -94,7 +89,6 @@ export async function runCheckBranch(
       is_repo: false,
       error: "Not a git repository",
       session_code: input.sessionCode ?? null,
-      flow,
       work_branch: expected,
     };
   }
@@ -117,7 +111,6 @@ export async function runCheckBranch(
     is_repo: true,
     error: null,
     session_code: input.sessionCode ?? null,
-    flow,
     work_branch: expected,
   };
 }

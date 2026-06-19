@@ -6,7 +6,7 @@ import type { CommandResult } from "../../domain/types.js";
 import {
   AGENTS_LOCK_REL,
   type InstallTarget,
-  LEGACY_SKILL_NAME,
+  LEGACY_SKILL_NAMES,
   SKILL_DIR_NAME,
   TARGET_ROOTS,
 } from "./install-skill.js";
@@ -97,15 +97,17 @@ async function removeFromTarget(
   }
 
   if (includeLegacy) {
-    const legacy = join(home, ...TARGET_ROOTS[target], LEGACY_SKILL_NAME);
-    if (await ctx.fs.exists(legacy)) {
-      if (!dryRun) await rm(legacy, { recursive: true, force: true });
-      out.push({
-        target,
-        path: legacy,
-        kind: "legacy",
-        status: dryRun ? "dry-run" : "removed",
-      });
+    for (const legacyName of LEGACY_SKILL_NAMES) {
+      const legacy = join(home, ...TARGET_ROOTS[target], legacyName);
+      if (await ctx.fs.exists(legacy)) {
+        if (!dryRun) await rm(legacy, { recursive: true, force: true });
+        out.push({
+          target,
+          path: legacy,
+          kind: "legacy",
+          status: dryRun ? "dry-run" : "removed",
+        });
+      }
     }
   }
   return out;
@@ -138,7 +140,7 @@ async function updateAgentsLock(
 
   const skills = (parsed.skills ?? {}) as Record<string, unknown>;
   const before = Object.keys(skills);
-  const namesToRemove = [SKILL_DIR_NAME, ...(includeLegacy ? [LEGACY_SKILL_NAME] : [])];
+  const namesToRemove = [SKILL_DIR_NAME, ...(includeLegacy ? LEGACY_SKILL_NAMES : [])];
   for (const name of namesToRemove) {
     delete skills[name];
   }

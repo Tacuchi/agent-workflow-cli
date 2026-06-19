@@ -12,7 +12,6 @@ export interface SourcesInput {
   sessionCode?: string;
   scope?: string[];
   skipGit?: boolean;
-  flowOverride?: string;
   verbose?: boolean;
 }
 
@@ -34,9 +33,7 @@ export interface DivergentSource {
 
 export interface SourcesOutput {
   workspace_mode: "project" | "hub";
-  flow: string | null;
   sources: Array<Partial<EnrichedSource>>;
-  session_branches: string[];
   working_branches_from_status: Record<string, string>;
   cross_source_consistent: boolean;
   divergent_sources: DivergentSource[];
@@ -60,9 +57,7 @@ export async function runSources(
   if (!block || block.fuentes.length === 0) {
     const empty: SourcesOutput = {
       workspace_mode: block?.mode ?? "project",
-      flow: null,
       sources: [],
-      session_branches: [],
       working_branches_from_status: {},
       cross_source_consistent: true,
       divergent_sources: [],
@@ -76,8 +71,6 @@ export async function runSources(
     : block.fuentes;
   // Expected work branch comes from WORKSPACE block working_branches per source;
   // decoupled from sessions/flow.
-  const flow = null;
-  const sessionBranches: string[] = [];
   const workingBranches = block.working_branches;
 
   const enriched: EnrichedSource[] = [];
@@ -100,11 +93,9 @@ export async function runSources(
 
   const payload: SourcesOutput = {
     workspace_mode: block.mode,
-    flow,
     sources: enriched.map((e) => compactSourceEntry(e, cwd, verbose)) as Array<
       Partial<EnrichedSource>
     >,
-    session_branches: sessionBranches,
     working_branches_from_status: workingBranches,
     cross_source_consistent: consistent,
     divergent_sources: divergent,

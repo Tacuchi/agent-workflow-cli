@@ -171,6 +171,19 @@ describe("selfUninstallSkill", () => {
     expect(await fs.exists(codexCanonical)).toBe(true); // codex untouched
   });
 
+  it("--legacy also removes the pre-rename `agent-workflow` dir (w migration)", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    const canonical = await seedTarget(home, "claude", "w");
+    const oldCanonical = await seedTarget(home, "claude", "agent-workflow");
+
+    const result = await selfUninstallSkill(buildArgs({ target: "claude" }, ["--legacy"]), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(canonical)).toBe(false);
+    expect(await fs.exists(oldCanonical)).toBe(false); // legacy agent-workflow cleaned
+  });
+
   it("--target=agents --legacy updates .skill-lock.json removing both entries", async () => {
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());

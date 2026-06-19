@@ -5,7 +5,7 @@ import { validateSessionsExist } from "../parsers/sessions-csv.js";
 import type { PathsService } from "../paths-service.js";
 import { relpath } from "../paths.js";
 import { listExistingArtifacts } from "../session-artifacts.js";
-import { type SessionEntry, buildSessionEntry } from "../session-resolver.js";
+import { type SessionEntry, buildSessionEntry, listSessionFolders } from "../session-resolver.js";
 import { sessionCodeInt } from "./common.js";
 
 /**
@@ -65,34 +65,56 @@ export async function listSessionsForRelease(
   if (useDiscrete) {
     await validateSessionsExist(fs, sessionsDir, sessionsFilter);
   }
-  const wanted = useDiscrete ? new Set(sessionsFilter) : null;
-  const sinceInt = useDiscrete ? null : sessionCodeInt(options.since);
-  const entries = (await fs.list(sessionsDir))
-    .filter((e) => e.type === "dir" && /^session\d{3}-/.test(e.name))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const filter: ReleaseFilter = {
+    wanted: useDiscrete ? new Set(sessionsFilter) : null,
+    sinceInt: useDiscrete ? null : sessionCodeInt(options.since),
+    includeOpen,
+    includeClosed,
+  };
 
+  // New model: enumerate every session folder (slug-named), not just legacy session###-.
   const result: ReleaseSession[] = [];
-  for (const folder of entries) {
+  for (const folder of await listSessionFolders(fs, sessionsDir)) {
     const entry = (await buildSessionEntry(fs, folder.path, folder.name)) as ReleaseSession;
-    if (wanted !== null) {
-      if (entry.code === null || !wanted.has(entry.code)) continue;
-    } else {
-      const codeInt = sessionCodeInt(entry.code);
-      if (sinceInt !== null && codeInt !== null && codeInt <= sinceInt) continue;
-    }
-    if (entry.state === "active" && !includeOpen) continue;
-    if (entry.state === "closed" && !includeClosed) continue;
-
-    const present = await listExistingArtifacts(folder.path, fs);
-    const hasObjetivo = present.session !== null || present.objective !== null;
-    // REQUIREMENTS.md is a pre-0.9 marker (no longer a tracked kind): probe directly.
-    const hasRequirements = await fs.exists(join(folder.path, "REQUIREMENTS.md"));
-    entry.is_legacy_format = hasRequirements && !hasObjetivo;
-    entry.release_eligible = !entry.is_legacy_format;
-    if (entry.code !== null && patchCodes.has(entry.code)) entry.is_patch = true;
+    if (!includeReleaseEntry(entry, filter)) continue;
+    await annotateReleaseEntry(entry, folder.path, fs, patchCodes);
     result.push(entry);
   }
   return result;
+}
+
+interface ReleaseFilter {
+  wanted: Set<string> | null;
+  sinceInt: number | null;
+  includeOpen: boolean;
+  includeClosed: boolean;
+}
+
+function includeReleaseEntry(entry: ReleaseSession, filter: ReleaseFilter): boolean {
+  if (filter.wanted !== null) {
+    if (entry.code === null || !filter.wanted.has(entry.code)) return false;
+  } else {
+    const codeInt = sessionCodeInt(entry.code);
+    if (filter.sinceInt !== null && codeInt !== null && codeInt <= filter.sinceInt) return false;
+  }
+  if (entry.state === "active" && !filter.includeOpen) return false;
+  if (entry.state === "closed" && !filter.includeClosed) return false;
+  return true;
+}
+
+async function annotateReleaseEntry(
+  entry: ReleaseSession,
+  folderPath: string,
+  fs: FileSystemPort,
+  patchCodes: Set<string>,
+): Promise<void> {
+  const present = await listExistingArtifacts(folderPath, fs);
+  const hasObjetivo = present.session !== null || present.objective !== null;
+  // REQUIREMENTS.md is a pre-0.9 marker (no longer a tracked kind): probe directly.
+  const hasRequirements = await fs.exists(join(folderPath, "REQUIREMENTS.md"));
+  entry.is_legacy_format = hasRequirements && !hasObjetivo;
+  entry.release_eligible = !entry.is_legacy_format;
+  if (entry.code !== null && patchCodes.has(entry.code)) entry.is_patch = true;
 }
 
 export function enrichSessionsWithLegacyMeta(

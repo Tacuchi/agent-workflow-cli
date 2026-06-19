@@ -6,10 +6,23 @@ import type { CommandResult } from "../../domain/types.js";
 import {
   AGENTS_LOCK_REL,
   type InstallTarget,
-  LEGACY_SKILL_NAME,
+  LEGACY_SKILL_NAMES,
   SKILL_DIR_NAME,
   TARGET_ROOTS,
 } from "./install-skill.js";
+
+/** First existing legacy skill dir among LEGACY_SKILL_NAMES under `roots`, or null. */
+async function firstExistingLegacy(
+  ctx: CliContext,
+  home: string,
+  roots: readonly string[],
+): Promise<string | null> {
+  for (const name of LEGACY_SKILL_NAMES) {
+    const p = join(home, ...roots, name);
+    if (await ctx.fs.exists(p)) return p;
+  }
+  return null;
+}
 
 export interface SkillTargetReport {
   target: InstallTarget;
@@ -94,15 +107,14 @@ async function reportFsTarget(
   target: InstallTarget,
 ): Promise<SkillTargetReport> {
   const skillPath = join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
-  const legacyPath = join(home, ...TARGET_ROOTS[target], LEGACY_SKILL_NAME);
   const installed = await ctx.fs.exists(skillPath);
-  const legacyLeftover = await ctx.fs.exists(legacyPath);
+  const legacyPath = await firstExistingLegacy(ctx, home, TARGET_ROOTS[target]);
 
   return {
     target,
     path: skillPath,
     installed,
-    ...(legacyLeftover
+    ...(legacyPath
       ? {
           legacy_leftover: true,
           legacy_leftover_path: legacyPath,
@@ -120,9 +132,8 @@ async function reportAgentsTarget(
   if (!(await ctx.fs.exists(agentsRoot))) return null;
 
   const skillPath = join(home, ...TARGET_ROOTS.agents, SKILL_DIR_NAME);
-  const legacyPath = join(home, ...TARGET_ROOTS.agents, LEGACY_SKILL_NAME);
   const installed = await ctx.fs.exists(skillPath);
-  const legacyLeftover = await ctx.fs.exists(legacyPath);
+  const legacyPath = await firstExistingLegacy(ctx, home, TARGET_ROOTS.agents);
 
   const lockPath = join(home, ...AGENTS_LOCK_REL);
   const lockPresent = await ctx.fs.exists(lockPath);
@@ -136,7 +147,7 @@ async function reportAgentsTarget(
       const parsed = JSON.parse(raw) as { skills?: Record<string, unknown> };
       const skills = parsed.skills ?? {};
       lockCanonical = Object.hasOwn(skills, SKILL_DIR_NAME);
-      lockLegacy = Object.hasOwn(skills, LEGACY_SKILL_NAME);
+      lockLegacy = LEGACY_SKILL_NAMES.some((n) => Object.hasOwn(skills, n));
     } catch (err) {
       lockWarning = `Could not parse ${lockPath}: ${(err as Error).message}. Skipping lock-based detection — filesystem scan still reliable.`;
     }
@@ -146,7 +157,7 @@ async function reportAgentsTarget(
     target: "agents",
     path: skillPath,
     installed,
-    ...(legacyLeftover
+    ...(legacyPath
       ? {
           legacy_leftover: true,
           legacy_leftover_path: legacyPath,

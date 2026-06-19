@@ -136,6 +136,27 @@ describe("selfDoctor", () => {
     }
   });
 
+  it("flags the pre-rename `agent-workflow` dir as a legacy leftover (w migration)", async () => {
+    const fs = new FakeFs(
+      new Set(["/home/u/.claude/skills/w", "/home/u/.claude/skills/agent-workflow"]),
+    );
+    const ctx = {
+      fs,
+      env: new FakeEnv(),
+      paths,
+      namespace: { namespace: ns, source: "config" },
+      runtime,
+    } as unknown as CliContext;
+    const result = await selfDoctor(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const claude = result.data.skill.targets.find((t) => t.target === "claude");
+      expect(claude?.installed).toBe(true);
+      expect(claude?.legacy_leftover).toBe(true);
+      expect(claude?.legacy_leftover_path).toBe("/home/u/.claude/skills/agent-workflow");
+    }
+  });
+
   it("flags legacy skill leftover in codex target independently", async () => {
     const fs = new FakeFs(new Set(["/home/u/.codex/skills/agent-workflow-manager"]));
     const ctx = {

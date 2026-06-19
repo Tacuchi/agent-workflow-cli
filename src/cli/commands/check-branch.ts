@@ -12,7 +12,6 @@ export const checkBranchCommand: QtcCommand = {
     const pathArg = args.values.get("path");
     const fileArg = args.values.get("file");
     const session = args.values.get("session");
-    const flow = args.values.get("flow");
     const strict = args.flags.has("--strict");
 
     const input: Parameters<typeof runCheckBranch>[4] = {};
@@ -20,7 +19,6 @@ export const checkBranchCommand: QtcCommand = {
     if (pathArg !== undefined) input.pathArg = pathArg;
     if (fileArg !== undefined) input.fileArg = fileArg;
     if (session !== undefined) input.sessionCode = session;
-    if (flow !== undefined) input.flowOverride = flow;
     if (strict) input.strict = true;
 
     const data = await runCheckBranch(ctx.fs, ctx.env, ctx.git, ctx.paths, input);

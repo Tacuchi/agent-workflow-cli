@@ -228,29 +228,30 @@ describe("listSessionsForRelease", () => {
     expect(result[0]?.state).toBe("closed");
   });
 
-  it("ignores entries that don't match sessionNNN- pattern", async () => {
+  it("lists every session folder (slug-named), skipping files", async () => {
+    // New model: any directory under .workflow/sessions/ is a session (slug-named);
+    // only files (and dotfile dirs) are skipped.
     const baseSessionsDir = "/cwd/.workflow/sessions";
     const fs = new FakeFs(
-      new Map([[`${baseSessionsDir}/session001-dev-ok/OBJETIVO.md`, "# ok"]]),
+      new Map([[`${baseSessionsDir}/003-spec-spec-refine/SESSION.md`, "# ok"]]),
       new Map([
         [
           baseSessionsDir,
           [
             {
-              name: "session001-dev-ok",
-              path: `${baseSessionsDir}/session001-dev-ok`,
+              name: "003-spec-spec-refine",
+              path: `${baseSessionsDir}/003-spec-spec-refine`,
               type: "dir",
             },
-            { name: "stray-folder", path: `${baseSessionsDir}/stray-folder`, type: "dir" },
             { name: "README.md", path: `${baseSessionsDir}/README.md`, type: "file" },
           ],
         ],
-        [`${baseSessionsDir}/session001-dev-ok`, []],
+        [`${baseSessionsDir}/003-spec-spec-refine`, []],
       ]),
     );
     const result = await listSessionsForRelease(fs, "/cwd", paths);
     expect(result).toHaveLength(1);
-    expect(result[0]?.code).toBe("001");
+    expect(result[0]?.code).toBe("003-spec-spec-refine");
   });
 
   describe("--sessions discrete filter", () => {
