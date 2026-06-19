@@ -55,7 +55,6 @@ describe("bilingualAliases", () => {
 
   it("covers design-discover DISCOVERY headings", () => {
     expect(bilingualAliases("Usuarios")).toContain("Users");
-    expect(bilingualAliases("Current flow")).toContain("Flow actual");
     expect(bilingualAliases("Applicable design system")).toContain("Design system aplicable");
     expect(bilingualAliases("Hallazgos clave")).toContain("Key findings");
   });

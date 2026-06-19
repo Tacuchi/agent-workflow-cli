@@ -1,7 +1,6 @@
 import { runProjectMdRead } from "../../application/project-md-service.js";
 import {
   type ProjectMdUpsertInput,
-  type UpsertOp,
   runProjectMdUpsertWrite,
 } from "../../application/project-md-upsert-service.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -21,20 +20,18 @@ export const projectMdUpsertCommand: QtcCommand = {
       return { ok: true, data, exitCode: 0 };
     }
 
-    const opAndFolder = pickOperation(args);
-    if (!opAndFolder) {
+    if (!args.flags.has("--init")) {
       return {
         ok: false,
         error: {
           code: "INVALID_INPUT",
-          message:
-            "Especifica una operación: --init | --add-session | --remove-session | --update-phase | --read",
+          message: "Especifica una operación: --init | --read",
         },
         exitCode: 1,
       };
     }
 
-    const inputResult = buildUpsertInput(args, opAndFolder, verbose);
+    const inputResult = buildUpsertInput(args, verbose);
     if ("error" in inputResult) {
       return {
         ok: false,
@@ -58,22 +55,9 @@ export const projectMdUpsertCommand: QtcCommand = {
 
 function buildUpsertInput(
   args: ParsedArgs,
-  opAndFolder: { op: UpsertOp; folder?: string },
   verbose: boolean,
 ): { input: ProjectMdUpsertInput } | { error: string } {
-  const input: ProjectMdUpsertInput = { op: opAndFolder.op, verbose };
-  if (opAndFolder.folder !== undefined) input.sessionFolder = opAndFolder.folder;
-
-  const phase = args.values.get("phase");
-  if (phase !== undefined) input.phase = phase;
-
-  const branchesRaw = args.values.get("branches");
-  if (branchesRaw !== undefined) {
-    input.branches = branchesRaw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-  }
+  const input: ProjectMdUpsertInput = { op: "init", verbose };
 
   const proyecto = args.values.get("proyecto");
   if (proyecto !== undefined) input.proyecto = proyecto;
@@ -92,13 +76,4 @@ function buildUpsertInput(
   if (mainBranch !== undefined && mainBranch.length > 0) input.mainBranch = mainBranch;
 
   return { input };
-}
-
-function pickOperation(args: ParsedArgs): { op: UpsertOp; folder?: string } | null {
-  if (args.flags.has("--init")) return { op: "init" };
-  for (const op of ["add-session", "remove-session", "update-phase"] as const) {
-    const folder = args.values.get(op);
-    if (folder !== undefined) return { op, folder };
-  }
-  return null;
 }

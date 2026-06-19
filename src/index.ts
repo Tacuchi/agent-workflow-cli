@@ -1,23 +1,13 @@
 export type {
   CommandResult,
   ExitCode,
-  Flow,
-  Phase,
   QtcError,
   SessionState,
   SessionType,
 } from "./domain/types.js";
-export type { Harness, PluginContext, WorkflowDescriptor } from "./domain/plugin.js";
-export type { ProjectBlock, SessionStatus, SourceRef, WorkspaceMode } from "./domain/project.js";
-export type {
-  HandoffRef,
-  Modalidad,
-  ObjectiveData,
-  SessionRef,
-  TaskItem,
-  TaskStatus,
-  Tipo,
-} from "./domain/session.js";
+export type { Harness, PluginContext } from "./domain/plugin.js";
+export type { ProjectBlock, SourceRef, WorkspaceMode } from "./domain/project.js";
+export type { SessionRef, TaskItem, TaskStatus } from "./domain/session.js";
 export type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "./ports/file-system.js";
 export type { GitPort } from "./ports/git.js";
 export type { ProcessPort, RunOptions, RunResult } from "./ports/process.js";

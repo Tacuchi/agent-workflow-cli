@@ -1,6 +1,4 @@
-import { join } from "node:path";
-import { HARNESSES } from "../domain/harnesses.js";
-import type { Phase, SessionState } from "../domain/types.js";
+import type { SessionState } from "../domain/types.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { PathsService } from "./paths-service.js";
@@ -8,7 +6,6 @@ import {
   type SessionEntry,
   buildSessionEntry,
   listSessionFolders,
-  readHistoryStateMap,
   serializeSessionEntry,
 } from "./session-resolver.js";
 
@@ -40,38 +37,12 @@ export class SessionsService {
   async list(input: ListSessionsInput = {}): Promise<ListSessionsOutput> {
     const cwd = this.env.cwd();
     const sessionsDir = this.paths.cwdSessionsDir();
-    const historyStateByCode = await readHistoryStateMap(this.fs, this.paths.cwdHistoryFile());
-    const sessions = await this.scanFolder(
-      sessionsDir,
-      undefined,
-      cwd,
-      input.verbose === true,
-      historyStateByCode,
-    );
+    const sessions = await this.scanFolder(sessionsDir, cwd, input.verbose === true);
 
-    const legacyEntries: SessionEntry[] = [];
-    if (input.includeLegacy === true) {
-      // Only scan legacy session dirs for harnesses with file-based plugins (claude/codex)
-      const legacyPrefixes = HARNESSES.filter((h) => h.pluginManifest !== null)
-        .map((h) => h.skillsDirs[0]?.split("/")[0])
-        .filter((p): p is string => p !== undefined);
-      for (const prefix of legacyPrefixes) {
-        const dir = join(cwd, prefix, "sessions");
-        const entries = await this.scanFolder(
-          dir,
-          prefix,
-          cwd,
-          input.verbose === true,
-          historyStateByCode,
-        );
-        legacyEntries.push(...entries);
-      }
-    }
-
-    const sessionCodes = new Set(
-      sessions.map((s) => s.code).filter((c): c is string => c !== null),
-    );
-    const legacy = legacyEntries.filter((l) => l.code === null || !sessionCodes.has(l.code));
+    // Legacy .claude/.codex session scan removed: sessions live only under
+    // .workflow/sessions now. `legacy` retained as an always-empty field for
+    // output-shape compatibility until callers are reworked.
+    const legacy: SessionEntry[] = [];
 
     const numericCodes = sessions
       .map((s) => s.code)
@@ -103,25 +74,11 @@ export class SessionsService {
     return payload;
   }
 
-  private async scanFolder(
-    dir: string,
-    legacySource: string | undefined,
-    cwd: string,
-    verbose: boolean,
-    historyStateByCode: Map<string, SessionState>,
-  ): Promise<SessionEntry[]> {
+  private async scanFolder(dir: string, cwd: string, verbose: boolean): Promise<SessionEntry[]> {
     const folders = await listSessionFolders(this.fs, dir);
     const result: SessionEntry[] = [];
     for (const folder of folders) {
-      const opts: {
-        verbose: boolean;
-        legacySource?: string;
-        historyStateByCode?: Map<string, SessionState>;
-      } = { verbose, historyStateByCode };
-      if (legacySource !== undefined) {
-        opts.legacySource = legacySource;
-      }
-      const built = await buildSessionEntry(this.fs, folder.path, folder.name, opts);
+      const built = await buildSessionEntry(this.fs, folder.path, folder.name, { verbose });
       result.push(serializeSessionEntry(built, cwd, { verbose }));
     }
     return result;
@@ -140,6 +97,3 @@ function applyFilter(sessions: SessionEntry[], input: ListSessionsInput): Sessio
 
 // Backwards-compat re-export. Other modules may import { parseSessionFolder } from this file.
 export { parseSessionFolder, KNOWN_FLOWS } from "./session-resolver.js";
-
-// Suppress unused-import warning for type Phase used elsewhere historically.
-export type { Phase };

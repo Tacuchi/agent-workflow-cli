@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import type { DirEntry, FileSystemPort } from "../../ports/file-system.js";
 import type { DiffNumstatEntry, GitPort } from "../../ports/git.js";
-import { parseProjectBlock } from "../parsers/project-block.js";
 import type { PathsService } from "../paths-service.js";
 import { findArtifact, listExistingArtifacts } from "../session-artifacts.js";
 
@@ -26,12 +25,15 @@ export async function extractSessionState(
   fs: FileSystemPort,
   git: GitPort,
   cwd: string,
-  paths: PathsService,
+  _paths: PathsService,
   sessionPath: string,
 ): Promise<SessionState> {
   const folder = sessionPath.split(/[\\/]/).pop() ?? "";
   const parsed = parseSessionFolder(folder);
-  const { phase, branches } = await readPhaseFromBlock(fs, cwd, paths, folder);
+  // Sessions are no longer registered in the project block; phase derives from
+  // the session-local CHECKPOINT.md and branches are no longer tracked here.
+  const phase = await readPhaseFromCheckpoint(fs, sessionPath);
+  const branches: string[] = [];
 
   const tasks = await countTasks(fs, sessionPath);
   const progressPct = tasks.total > 0 ? Math.round((100 * tasks.closed) / tasks.total) : null;
@@ -73,21 +75,18 @@ function parseSessionFolder(folder: string): {
   return { code: m[1], flow: null, name: m[2] };
 }
 
-async function readPhaseFromBlock(
+async function readPhaseFromCheckpoint(
   fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-  folder: string,
-): Promise<{ phase: string | null; branches: string[] }> {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (!block) continue;
-    for (const s of block.sessions) {
-      if (s.folder === folder) return { phase: s.phase, branches: s.branches };
-    }
-  }
-  return { phase: null, branches: [] };
+  sessionPath: string,
+): Promise<string | null> {
+  const path = join(sessionPath, "CHECKPOINT.md");
+  if (!(await fs.exists(path))) return null;
+  const text = await fs.readText(path);
+  const m =
+    text.match(/^[-*]\s+Current phase:\s*(.+)$/im) ?? text.match(/^[-*]\s+Fase actual:\s*(.+)$/im);
+  const raw = m?.[1]?.trim();
+  if (!raw) return null;
+  return raw.split(/\s+/)[0] ?? null;
 }
 
 async function countTasks(
@@ -142,14 +141,11 @@ async function listArtefacts(
     ? (await listSqlFiles(fs, scriptsDir)).length
     : 0;
   return {
-    objetivo: present.objective !== null,
+    session: present.session !== null || present.objective !== null,
     tasks: present.tasks !== null,
     decisiones: present.decisions !== null,
-    dependencias: present.dependencies !== null,
-    entrega: present.delivery !== null,
-    evidencia: present.evidence !== null,
-    hallazgos: present.findings !== null,
     conclusiones: present.conclusions !== null,
+    analysis_file: present.analysis_file !== null,
     scripts_count: scriptsCount,
   };
 }
@@ -166,7 +162,9 @@ async function listSqlFiles(fs: FileSystemPort, dir: string): Promise<string[]> 
 }
 
 async function readOrigen(fs: FileSystemPort, sessionPath: string): Promise<string | null> {
-  const path = await findArtifact(sessionPath, "objective", fs);
+  const path =
+    (await findArtifact(sessionPath, "session", fs)) ??
+    (await findArtifact(sessionPath, "objective", fs));
   if (!path) return null;
   const text = await fs.readText(path);
   const lines = text.split("\n");

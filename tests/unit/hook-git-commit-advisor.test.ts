@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -70,6 +70,12 @@ describe("runGitCommitAdvisor", () => {
   let paths: PathsService;
   let fs: NodeFileSystem;
 
+  // Sessions are discovered by scanning .workflow/sessions for non-`.closed`
+  // folders (no longer registered in the project block).
+  function mkActiveSession(folder: string): void {
+    mkdirSync(join(workspace, ".workflow", "sessions", folder), { recursive: true });
+  }
+
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "git-commit-advisor-"));
     env = new FakeEnv(workspace);
@@ -126,7 +132,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso C: sesión activa, mensaje sin tag → advisor stderr + exit 0", async () => {
-    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
+    mkActiveSession("session053-dev-foo");
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "fix algo"' },
@@ -140,7 +146,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso D: sesión activa, mensaje con tag → exit 0 silent", async () => {
-    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
+    mkActiveSession("session053-dev-foo");
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "fix algo (session053)"' },
@@ -151,7 +157,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso D.2: tag con código diferente también es aceptado (regex laxo session\\d{3})", async () => {
-    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
+    mkActiveSession("session053-dev-foo");
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "[session999] hotfix de emergencia"' },
@@ -162,7 +168,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso E: AW_COMMIT_ADVISOR=off bypass → exit 0 silent aunque haya sesión sin tag", async () => {
-    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
+    mkActiveSession("session053-dev-foo");
     const envOff = new FakeEnv(workspace, { AW_COMMIT_ADVISOR: "off" });
     const stdin = JSON.stringify({
       tool_name: "Bash",
@@ -174,7 +180,7 @@ describe("runGitCommitAdvisor", () => {
   });
 
   it("caso F: comillas simples también se parsean correctamente", async () => {
-    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: ["session053-dev-foo"] }));
+    mkActiveSession("session053-dev-foo");
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: "git commit -m 'fix sin tag'" },
@@ -191,8 +197,8 @@ describe("runGitCommitAdvisor", () => {
     expect(r.stderr).toBeUndefined();
   });
 
-  it("caso H: AGENTS.md fallback cuando no hay CLAUDE.md", async () => {
-    writeFileSync(join(workspace, "AGENTS.md"), buildBlock({ sessions: ["session077-dev-bar"] }));
+  it("caso H: sesión activa descubierta por scan del folder de sesiones", async () => {
+    mkActiveSession("session077-dev-bar");
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "fix sin tag"' },
@@ -201,5 +207,17 @@ describe("runGitCommitAdvisor", () => {
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toBeDefined();
     expect(r.stderr).toContain("session077");
+  });
+
+  it("caso I: múltiples sesiones activas → no-op (no hay sesión única)", async () => {
+    mkActiveSession("session053-dev-foo");
+    mkActiveSession("session054-dev-bar");
+    const stdin = JSON.stringify({
+      tool_name: "Bash",
+      tool_input: { command: 'git commit -m "fix sin tag"' },
+    });
+    const r = await runGitCommitAdvisor({ stdin, fs, env, paths });
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBeUndefined();
   });
 });

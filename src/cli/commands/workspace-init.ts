@@ -5,13 +5,14 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import { type FuenteSpec, parseFuentesSpecs } from "../parsers/fuentes.js";
+import { parseWorkingBranches } from "../parsers/working-branches.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
 export const workspaceInitCommand: QtcCommand = {
   name: "workspace-init",
   describe:
-    "Initialize the current directory as an agent-workflow workspace (unifies the legacy hub-init + project-init; no project/hub distinction). Scaffolds .workflow/sessions + docs/ taxonomy, seeds .workflow/skills.toml, and writes the WORKSPACE block. With 2+ sources it also configures multi-root visibility. Idempotent. Flags: --source alias:path[:rama] (repeatable, 1+), [--proyecto], [--main-branch], [--workspace], [--dry-run].",
+    "Initialize the current directory as an agent-workflow workspace (unifies the legacy hub-init + project-init; no project/hub distinction). Scaffolds .workflow/sessions + docs/ taxonomy, seeds .workflow/skills.toml, and writes the WORKSPACE block. With 2+ sources it also configures multi-root visibility. Idempotent. Flags: --source alias:path[:rama] (repeatable, 1+), [--working-branch alias:rama (repeatable)], [--proyecto], [--main-branch], [--workspace], [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     // Canonical flag is --source; --fuente kept as a back-compat alias.
     const sourcesRaw = [
@@ -28,12 +29,14 @@ export const workspaceInitCommand: QtcCommand = {
     const proyecto = args.values.get("proyecto");
     const mainBranch = args.values.get("main-branch");
     const workspace = args.values.get("workspace");
+    const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []);
 
     const data = await runWorkspaceInit(ctx.fs, ctx.env, ctx.paths, {
       sources,
       ...(proyecto !== undefined ? { proyecto } : {}),
       ...(mainBranch !== undefined ? { mainBranch } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
+      ...(workingBranches !== undefined ? { workingBranches } : {}),
       dryRun: args.flags.has("--dry-run"),
     });
 

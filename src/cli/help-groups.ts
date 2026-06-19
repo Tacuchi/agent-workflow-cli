@@ -23,10 +23,6 @@ const GROUPS: readonly CommandGroup[] = [
     ],
   },
   {
-    name: "Objetivo / Tasks",
-    commands: ["objetivo-data", "tasks-data", "decisiones-list", "dependencias-list"],
-  },
-  {
     name: "Checkpoint",
     commands: [
       "checkpoint-read",
@@ -37,16 +33,17 @@ const GROUPS: readonly CommandGroup[] = [
   },
   {
     name: "Sources / Branches",
-    commands: ["sources", "attach-multiroot", "detach-multiroot", "check-branch"],
+    commands: [
+      "sources",
+      "set-working-branch",
+      "attach-multiroot",
+      "detach-multiroot",
+      "check-branch",
+    ],
   },
   {
     name: "Orchestration",
-    commands: [
-      "workspace-mode",
-      "stack",
-      "skill-index",
-      "resume-summary",
-    ],
+    commands: ["workspace-mode", "stack", "skill-index", "resume-summary"],
   },
   {
     name: "Doctor / Data",

@@ -1,39 +1,20 @@
-import type { Flow, Phase, SessionState } from "./types.js";
+import type { SessionState, SessionType } from "./types.js";
 
-export type Modalidad = "technical" | "data" | "incident" | "tecnica" | "datos" | "incidente";
-export type Tipo = "project" | "system" | "proyecto" | "sistema" | "feature" | "refactor" | "chore";
 export type TaskStatus = "open" | "closed";
 
+/**
+ * Lightweight descriptor of an internal session in the redesigned model.
+ * Sessions are created by loops (Layer 2) and carry a {@link SessionType}
+ * (research|refine|exec|quick) instead of the old Flow/Phase ceremony.
+ */
 export interface SessionRef {
-  code: string;
-  flow: Flow;
   name: string;
   folder: string;
   path: string;
+  type?: SessionType;
   state: SessionState;
-  phase: Phase;
   date?: string;
   summary?: string;
-}
-
-export interface HandoffRef {
-  flow: Flow;
-  code: string;
-  folder?: string;
-  deliverableName?: string;
-  deliverableExists?: boolean;
-}
-
-export interface ObjectiveData {
-  session: string;
-  code: string;
-  flow: Flow;
-  modalidad?: Modalidad;
-  tipo?: Tipo;
-  brief: string;
-  criteriosAceptacion: string[];
-  fuentesMencionadas: string[];
-  origen?: HandoffRef;
 }
 
 export interface TaskItem {

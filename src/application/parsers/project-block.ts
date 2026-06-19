@@ -6,12 +6,6 @@ export interface ProjectFuente {
   main_branch: string;
 }
 
-export interface ProjectSession {
-  folder: string;
-  phase: string;
-  branches: string[];
-}
-
 export interface ProjectStack {
   language?: string;
   framework?: string;
@@ -26,7 +20,6 @@ export interface ParsedProjectBlock {
   mode: ProjectMode;
   fuentes: ProjectFuente[];
   stack: ProjectStack;
-  sessions: ProjectSession[];
   working_branches: Record<string, string>;
   last_activity: string | null;
 }
@@ -84,7 +77,6 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
     mode: proyectoData.mode,
     fuentes,
     stack,
-    sessions: status.sessions,
     working_branches: status.workingBranches,
     last_activity: status.lastActivity,
   };
@@ -138,16 +130,13 @@ function parseStackList(text: string): ProjectStack {
 }
 
 interface StatusBlock {
-  sessions: ProjectSession[];
   workingBranches: Record<string, string>;
   lastActivity: string | null;
 }
 
-type StatusSection = "none" | "sessions" | "working";
-const NULL_SESSION_TOKENS = new Set(["_ninguna_", "ninguna", "_none_", "none"]);
+type StatusSection = "none" | "working";
 
 function parseStatusBlock(text: string): StatusBlock {
-  const sessions: ProjectSession[] = [];
   const workingBranches: Record<string, string> = {};
   let lastActivity: string | null = null;
   let section: StatusSection = "none";
@@ -166,12 +155,10 @@ function parseStatusBlock(text: string): StatusBlock {
     const entry = stripped.slice(2).trim();
     if (section === "working") {
       addWorkingBranch(workingBranches, entry);
-    } else if (section === "sessions") {
-      addSessionEntry(sessions, entry);
     }
   }
 
-  return { sessions, workingBranches, lastActivity };
+  return { workingBranches, lastActivity };
 }
 
 function transitionSection(stripped: string): {
@@ -179,7 +166,6 @@ function transitionSection(stripped: string): {
   next: StatusSection;
   lastActivity?: string | null;
 } {
-  if (stripped.startsWith("- Sesiones activas:")) return { handled: true, next: "sessions" };
   if (stripped.startsWith("- Ramas de trabajo actuales:"))
     return { handled: true, next: "working" };
   if (stripped.startsWith("- Última actividad:")) {
@@ -204,30 +190,6 @@ function addWorkingBranch(out: Record<string, string>, entry: string): void {
   if (alias && branch) {
     out[alias] = branch;
   }
-}
-
-function addSessionEntry(out: ProjectSession[], entry: string): void {
-  if (NULL_SESSION_TOKENS.has(entry.toLowerCase())) return;
-  const parts = entry.split("·").map((p) => p.trim());
-  const folder = parts[0] ?? "";
-  let phase: string | null = null;
-  let branches: string[] = [];
-  for (const part of parts.slice(1)) {
-    if (part.startsWith("fase:")) {
-      phase = part.slice(5).trim();
-    } else if (part.startsWith("ramas:")) {
-      branches = part
-        .slice(6)
-        .split(",")
-        .map((b) => b.trim())
-        .filter((b) => b.length > 0);
-    }
-  }
-  out.push({
-    folder,
-    phase: phase ?? "requerimiento",
-    branches,
-  });
 }
 
 interface ProyectoData {

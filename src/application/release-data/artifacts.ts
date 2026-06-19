@@ -7,12 +7,16 @@ import { type ArtifactKind, findArtifact } from "../session-artifacts.js";
 import { buildSessionEntry, parseSessionFolder } from "../session-resolver.js";
 import { collectFilesByExt, sessionCodeInt } from "./common.js";
 
-const KIND_TO_ARTIFACT: Record<string, ArtifactKind> = {
-  objetivo: "objective",
-  decisiones: "decisions",
-  tasks: "tasks",
-  dependencias: "dependencies",
-  checkpoint: "checkpoint",
+// Each request-kind maps to an ordered list of on-disk ArtifactKinds tried in
+// turn (first match wins). The descriptor request-kind `objetivo` reads the new
+// SESSION.md, then the legacy OBJECTIVE.md/OBJETIVO.md. The result key stays
+// `objetivo` so it does NOT collide with the top-level `session` folder-name
+// field on the result object.
+const KIND_TO_ARTIFACT: Record<string, readonly ArtifactKind[]> = {
+  objetivo: ["session", "objective"],
+  decisiones: ["decisions"],
+  tasks: ["tasks"],
+  checkpoint: ["checkpoint"],
 };
 const SCRIPTS_SUBDIR = "scripts";
 
@@ -93,8 +97,12 @@ async function detectLegacyFormat(
   folderName: string,
   runtime: ResolvedRuntime | undefined,
 ): Promise<SessionArtifactsResult | null> {
-  const hasReq = (await findArtifact(sessionPath, "requirements", fs)) !== null;
-  const hasObj = (await findArtifact(sessionPath, "objective", fs)) !== null;
+  // REQUIREMENTS.md is a pre-0.9 format marker (no longer a tracked kind):
+  // probe the filename directly. SESSION.md / OBJECTIVE.md mark the current format.
+  const hasReq = await fs.exists(join(sessionPath, "REQUIREMENTS.md"));
+  const hasObj =
+    (await findArtifact(sessionPath, "session", fs)) !== null ||
+    (await findArtifact(sessionPath, "objective", fs)) !== null;
   if (!hasReq || hasObj) return null;
   const migrateCmd = runtime?.slashCommands?.migrate ?? "(run namespace-specific migrate command)";
   return {
@@ -136,9 +144,13 @@ async function readArtifactKind(
   sessionPath: string,
   kind: string,
 ): Promise<unknown> {
-  const artifactKind = KIND_TO_ARTIFACT[kind];
-  if (!artifactKind) return { error: `unknown_kind:${kind}` };
-  const artifactPath = await findArtifact(sessionPath, artifactKind, fs);
+  const artifactKinds = KIND_TO_ARTIFACT[kind];
+  if (!artifactKinds) return { error: `unknown_kind:${kind}` };
+  let artifactPath: string | null = null;
+  for (const artifactKind of artifactKinds) {
+    artifactPath = await findArtifact(sessionPath, artifactKind, fs);
+    if (artifactPath) break;
+  }
   if (!artifactPath) return null;
   try {
     const content = await fs.readText(artifactPath);

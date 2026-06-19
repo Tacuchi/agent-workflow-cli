@@ -86,11 +86,6 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       items: ["sessions", "session-create", "session-resume", "session-close", "session-artifacts"],
     },
     {
-      id: "objetivo",
-      title: "Objective / Tasks",
-      items: ["objetivo-data", "tasks-data", "decisiones-list", "dependencias-list"],
-    },
-    {
       id: "checkpoint",
       title: "Checkpoint",
       items: [

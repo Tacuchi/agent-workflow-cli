@@ -1,7 +1,6 @@
-import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { parseProjectBlock } from "./parsers/project-block.js";
+import { type CheckpointFields, readLatestCheckpoint } from "./checkpoint-service.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact } from "./session-artifacts.js";
@@ -15,12 +14,10 @@ export interface SessionResumeOutput {
   code: string | null;
   folder: string;
   path: string;
-  flow: string | null;
-  state_from_aw_project: string;
-  phase_from_aw_project: string;
-  branches_from_aw_project: string[];
+  state: string;
   objetivo: string | null;
   objetivo_text: string | null;
+  checkpoint: CheckpointFields | null;
 }
 
 export interface SessionResumeError {
@@ -39,42 +36,22 @@ export async function runSessionResume(
     return { error: "session_not_found", code: input.code ?? null };
   }
   const cwd = env.cwd();
-  const objetivoPath = await findArtifact(session.path, "objective", fs);
+  // Dual-read: new-model SESSION.md first, legacy OBJECTIVE.md as fallback.
+  const objetivoPath =
+    (await findArtifact(session.path, "session", fs)) ??
+    (await findArtifact(session.path, "objective", fs));
   const objetivoText = objetivoPath ? await fs.readText(objetivoPath) : null;
 
-  const fromBlock = await phaseFromProjectBlock(fs, cwd, paths, session.folder);
-  const phase = fromBlock.phase ?? "requerimiento";
-  const state = fromBlock.phase ? "active" : "closed_or_missing";
+  // Resume context comes from the folder-local CHECKPOINT.md, not the project block.
+  const checkpoint = await readLatestCheckpoint(fs, session.path);
 
   return {
     code: session.code,
     folder: session.folder,
     path: relpath(session.path, cwd),
-    flow: session.flow,
-    state_from_aw_project: state,
-    phase_from_aw_project: phase,
-    branches_from_aw_project: fromBlock.branches,
+    state: session.state,
     objetivo: objetivoText,
     objetivo_text: objetivoText,
+    checkpoint,
   };
-}
-
-async function phaseFromProjectBlock(
-  fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-  folder: string,
-): Promise<{ phase: string | null; branches: string[] }> {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const text = await fs.readText(file);
-    const block = parseProjectBlock(text, paths.blockMarkers());
-    if (!block) continue;
-    for (const s of block.sessions) {
-      if (s.folder === folder) {
-        return { phase: s.phase, branches: s.branches };
-      }
-    }
-  }
-  return { phase: null, branches: [] };
 }

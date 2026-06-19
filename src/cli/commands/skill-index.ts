@@ -9,7 +9,7 @@ export const skillIndexCommand: QtcCommand = {
   describe: "Lazy-load skill index (frontmatter only).",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const pluginRoot = args.plugin.pluginRoot ?? args.values.get("plugin-root");
-    const flow = args.plugin.flow ?? args.values.get("flow");
+    const flow = args.values.get("flow");
     const exportedOnly = args.flags.has("--exported-only");
     const input: Parameters<typeof runSkillIndex>[2] = {};
     if (pluginRoot !== undefined) input.pluginRoot = pluginRoot;

@@ -4,16 +4,17 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runArtifactsCommand } from "../../src/application/artifacts-service.js";
-import { runDecisionesCommand } from "../../src/application/decisiones-service.js";
-import { runDependenciasCommand } from "../../src/application/dependencias-service.js";
-import { runHistoryDataCommand } from "../../src/application/history-data-service.js";
-import { runObjetivoCommand } from "../../src/application/objetivo-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runProjectMdRead } from "../../src/application/project-md-service.js";
 import { runSessionResume } from "../../src/application/session-resume-service.js";
-import { runTasksCommand } from "../../src/application/tasks-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+
+// Read-command golden parity, post-P2.3. The old-model per-artifact readers
+// (objetivo-data / tasks-data / decisiones-list / dependencias-list) were
+// removed with the Flow/Phase model; this file now exercises only the
+// surviving, still-wired read services against the shared sample-workspace
+// fixture: session-artifacts, project-md --read, and session-resume.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = join(HERE, "..", "fixtures", "sample-workspace");
@@ -39,42 +40,7 @@ const fs = new NodeFileSystem();
 const env = new FixtureEnv();
 const paths = new PathsService(normalizeNamespace("workflow"), env.homeDir(), env.cwd());
 
-describe("Wave 1 read commands — golden parity (legacy ES fixture)", () => {
-  it("objetivo-data --code 001", async () => {
-    const result = await runObjetivoCommand(fs, env, paths, { code: "001" });
-    expect(result).toEqual(loadGolden("objetivo-001.json"));
-  });
-
-  it("tasks-data --code 001", async () => {
-    const result = await runTasksCommand(fs, env, paths, { code: "001" });
-    expect(result).toEqual(loadGolden("tasks-001.json"));
-  });
-
-  it("tasks-data --code 001 --only-open", async () => {
-    const result = await runTasksCommand(fs, env, paths, { code: "001", onlyOpen: true });
-    expect(result).toEqual(loadGolden("tasks-001-open.json"));
-  });
-
-  it("tasks-data --code 002 (empty fixture)", async () => {
-    const result = await runTasksCommand(fs, env, paths, { code: "002" });
-    expect(result).toEqual(loadGolden("tasks-002.json"));
-  });
-
-  it("decisiones-list --code 001", async () => {
-    const result = await runDecisionesCommand(fs, env, paths, { code: "001" });
-    expect(result).toEqual(loadGolden("decisiones-001.json"));
-  });
-
-  it("dependencias-list --code 001", async () => {
-    const result = await runDependenciasCommand(fs, env, paths, { code: "001" });
-    expect(result).toEqual(loadGolden("dependencias-001.json"));
-  });
-
-  it("history-data", async () => {
-    const result = await runHistoryDataCommand(fs, env, paths, {});
-    expect(result).toEqual(loadGolden("history-data.json"));
-  });
-
+describe("Wave 1 read commands — golden parity (new model)", () => {
   it("session-artifacts --code 001", async () => {
     const result = await runArtifactsCommand(fs, env, paths, { code: "001" });
     expect(result).toEqual(loadGolden("artifacts-001.json"));

@@ -188,9 +188,9 @@ describe("listSessionsForRelease", () => {
     const baseSessionsDir = "/cwd/.workflow/sessions";
     const fs = new FakeFs(
       new Map([
-        [`${baseSessionsDir}/session001-dev-active/STATUS.md`, statusMd("active", "execution")],
         [`${baseSessionsDir}/session001-dev-active/OBJETIVO.md`, "# active"],
-        [`${baseSessionsDir}/session002-dev-closed/STATUS.md`, statusMd("closed", "closure")],
+        // Closed state is derived from the folder-local `.closed` sentinel.
+        [`${baseSessionsDir}/session002-dev-closed/.closed`, ""],
         [`${baseSessionsDir}/session002-dev-closed/OBJETIVO.md`, "# closed"],
       ]),
       new Map([
@@ -210,7 +210,16 @@ describe("listSessionsForRelease", () => {
           ],
         ],
         [`${baseSessionsDir}/session001-dev-active`, []],
-        [`${baseSessionsDir}/session002-dev-closed`, []],
+        [
+          `${baseSessionsDir}/session002-dev-closed`,
+          [
+            {
+              name: ".closed",
+              path: `${baseSessionsDir}/session002-dev-closed/.closed`,
+              type: "file",
+            },
+          ],
+        ],
       ]),
     );
     const result = await listSessionsForRelease(fs, "/cwd", paths, { includeOpen: false });

@@ -2,11 +2,8 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import {
-  type ProjectFuente,
-  type ProjectSession,
-  parseProjectBlock,
-} from "./parsers/project-block.js";
+import { expectedWorkBranch } from "./branch-resolver.js";
+import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface CheckBranchInput {
@@ -55,10 +52,10 @@ export async function runCheckBranch(
     return { match: true, reason: "file_not_in_managed_source" };
   }
 
-  const sessionEntry = resolveSessionEntry(block?.sessions ?? [], input.sessionCode);
-  const sessionBranches = sessionEntry?.branches ?? [];
-  const flow = input.flowOverride ?? resolveFlow(sessionEntry);
-  const expected = expectedWorkBranch(target, block?.working_branches ?? {}, sessionBranches, flow);
+  // Expected work branch comes from the WORKSPACE block working_branches for the
+  // owning source. Decoupled from sessions/flow.
+  const flow = null;
+  const expected = expectedWorkBranch(target, block?.working_branches ?? {});
 
   if (expected === null) {
     return {
@@ -153,39 +150,5 @@ async function resolveTarget(
     }
     return null;
   }
-  return null;
-}
-
-function resolveSessionEntry(
-  sessions: ProjectSession[],
-  sessionCode: string | undefined,
-): ProjectSession | null {
-  if (!sessionCode) return sessions[0] ?? null;
-  for (const s of sessions) {
-    if (s.folder.startsWith(`session${sessionCode}`)) return s;
-  }
-  return null;
-}
-
-function resolveFlow(session: ProjectSession | null): string | null {
-  if (!session) return null;
-  const m = session.folder.match(/^session(\d{3})-([a-z]+)-/);
-  if (!m || !m[2]) return null;
-  return ["dev", "design", "analyze"].includes(m[2]) ? m[2] : null;
-}
-
-function expectedWorkBranch(
-  source: ProjectFuente,
-  workingBranches: Record<string, string>,
-  sessionBranches: string[],
-  flow: string | null,
-): string | null {
-  for (const entry of sessionBranches) {
-    if (!entry.includes(":")) continue;
-    const [a, b] = entry.split(":", 2);
-    if (a?.trim() === source.alias && b?.trim()) return b.trim();
-  }
-  if (flow === "analyze") return source.main_branch;
-  if (workingBranches[source.alias]) return workingBranches[source.alias] ?? null;
   return null;
 }

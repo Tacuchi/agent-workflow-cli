@@ -15,7 +15,5 @@ _Stack sin detectar._
 
 ## Status
 
-- Sesiones activas:
-  - session002-analyze-bar · fase: execution · ramas: repo:main
 - Histórico: `.workflow/HISTORY.md`
 <!-- WORKFLOW-PROJECT-END -->

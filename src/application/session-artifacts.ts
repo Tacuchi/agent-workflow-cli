@@ -9,48 +9,31 @@ import type { FileSystemPort } from "../ports/file-system.js";
 export type ArtifactKind =
   | "session"
   | "objective"
-  | "findings"
   | "decisions"
-  | "evidence"
   | "conclusions"
-  | "recommendation"
-  | "delivery"
-  | "dependencies"
-  | "discovery"
-  | "problem"
   | "tasks"
   | "checkpoint"
-  | "status"
-  | "requirements"
   | "backlog"
   | "scripts_sql"
   | "analysis_file"
   | "technical_note";
 
 /**
- * Filename candidates per kind. Order matters: EN UPPERCASE first (canonical
- * for new writes), ES UPPERCASE second (legacy fallback for sessions created
- * before R3 Sprint 1). Lookup in {@link findArtifact} is case-insensitive.
+ * Filename candidates per kind. Order matters: EN UPPERCASE canonical first,
+ * legacy variants after (fallback for sessions created before the redesign).
+ * Lookup in {@link findArtifact} is case-insensitive.
  *
- * `tasks`/`checkpoint`/`status`/`requirements` are already English and have no
- * Spanish predecessor — they keep a single entry.
+ * `objective` is retained ONLY as a legacy read fallback (new sessions write
+ * `session` → SESSION.md). `decisions` canonical is DECISION.md (singular) with
+ * DECISIONS.md / DECISIONES.md kept as legacy fallbacks.
  */
 export const ARTIFACT_FILENAMES: Record<ArtifactKind, readonly string[]> = {
   session: ["SESSION.md"],
   objective: ["OBJECTIVE.md", "OBJETIVO.md"],
-  findings: ["FINDINGS.md", "HALLAZGOS.md"],
-  decisions: ["DECISIONS.md", "DECISIONES.md"],
-  evidence: ["EVIDENCE.md", "EVIDENCIA.md"],
+  decisions: ["DECISION.md", "DECISIONS.md", "DECISIONES.md"],
   conclusions: ["CONCLUSIONS.md", "CONCLUSIONES.md"],
-  recommendation: ["RECOMMENDATION.md", "RECOMENDACION.md"],
-  delivery: ["DELIVERY.md", "ENTREGA.md"],
-  dependencies: ["DEPENDENCIES.md", "DEPENDENCIAS.md"],
-  discovery: ["DISCOVERY.md"],
-  problem: ["PROBLEM.md", "PROBLEMA.md"],
   tasks: ["TASKS.md"],
   checkpoint: ["CHECKPOINT.md"],
-  status: ["STATUS.md"],
-  requirements: ["REQUIREMENTS.md"],
   backlog: ["BACKLOG.md"],
   scripts_sql: ["SCRIPTS.sql"],
   analysis_file: ["ANALYSIS-FILE.md"],

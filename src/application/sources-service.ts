@@ -3,11 +3,8 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
-import {
-  type ProjectFuente,
-  type ProjectSession,
-  parseProjectBlock,
-} from "./parsers/project-block.js";
+import { expectedWorkBranch } from "./branch-resolver.js";
+import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
@@ -77,14 +74,15 @@ export async function runSources(
   const sources = input.scope
     ? block.fuentes.filter((s) => input.scope?.includes(s.alias))
     : block.fuentes;
-  const sessionEntry = resolveSessionEntry(block.sessions, input.sessionCode);
-  const sessionBranches = sessionEntry?.branches ?? [];
-  const flow = input.flowOverride ?? resolveSessionFlow(sessionEntry);
+  // Expected work branch comes from WORKSPACE block working_branches per source;
+  // decoupled from sessions/flow.
+  const flow = null;
+  const sessionBranches: string[] = [];
   const workingBranches = block.working_branches;
 
   const enriched: EnrichedSource[] = [];
   for (const src of sources) {
-    const expected = expectedWorkBranch(src, workingBranches, sessionBranches, flow);
+    const expected = expectedWorkBranch(src, workingBranches);
     if (input.skipGit === true) {
       // Mirror Python: skip_git produces only alias/path/main_branch/expected_work_branch.
       enriched.push({
@@ -128,42 +126,6 @@ async function readProjectBlock(fs: FileSystemPort, cwd: string, paths: PathsSer
     const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (block) return block;
   }
-  return null;
-}
-
-function resolveSessionEntry(
-  sessions: ProjectSession[],
-  sessionCode: string | undefined,
-): ProjectSession | null {
-  if (!sessionCode) return sessions[0] ?? null;
-  for (const s of sessions) {
-    if (s.folder.startsWith(`session${sessionCode}`) || s.folder.includes(sessionCode)) {
-      return s;
-    }
-  }
-  return null;
-}
-
-function resolveSessionFlow(session: ProjectSession | null): string | null {
-  if (!session) return null;
-  const m = session.folder.match(/^session(\d{3})-([a-z]+)-/);
-  if (!m || !m[2]) return null;
-  return ["dev", "design", "analyze"].includes(m[2]) ? m[2] : null;
-}
-
-function expectedWorkBranch(
-  source: ProjectFuente,
-  workingBranches: Record<string, string>,
-  sessionBranches: string[],
-  flow: string | null,
-): string | null {
-  for (const entry of sessionBranches) {
-    if (!entry.includes(":")) continue;
-    const [a, b] = entry.split(":", 2);
-    if (a?.trim() === source.alias && b?.trim()) return b.trim();
-  }
-  if (flow === "analyze") return source.main_branch;
-  if (workingBranches[source.alias]) return workingBranches[source.alias] ?? null;
   return null;
 }
 

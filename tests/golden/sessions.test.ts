@@ -28,22 +28,22 @@ function loadGolden(name: string): unknown {
   return JSON.parse(readFileSync(join(GOLDEN_DIR, name), "utf8"));
 }
 
-describe("SessionsService — golden parity (legacy ES fixture)", () => {
+describe("SessionsService — golden parity (new model, folder-marker state)", () => {
   const env = new FixtureEnv();
   const paths = new PathsService(normalizeNamespace("workflow"), env.homeDir(), env.cwd());
   const service = new SessionsService(new NodeFileSystem(), env, paths);
 
-  it("default mode (active filter) matches python sessions-default.json", async () => {
+  it("default mode (active filter) matches sessions-default.json", async () => {
     const result = await service.list();
     expect(result).toEqual(loadGolden("sessions-default.json"));
   });
 
-  it("--all mode matches python sessions-all.json", async () => {
+  it("--all mode matches sessions-all.json", async () => {
     const result = await service.list({ state: "all" });
     expect(result).toEqual(loadGolden("sessions-all.json"));
   });
 
-  it("--state closed matches python sessions-closed.json", async () => {
+  it("--state closed (derived from the .closed sentinel) matches sessions-closed.json", async () => {
     const result = await service.list({ state: "closed" });
     expect(result).toEqual(loadGolden("sessions-closed.json"));
   });

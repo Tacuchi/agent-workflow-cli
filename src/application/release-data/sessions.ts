@@ -1,15 +1,38 @@
+import { join } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
 import { validateSessionsExist } from "../parsers/sessions-csv.js";
 import type { PathsService } from "../paths-service.js";
 import { relpath } from "../paths.js";
 import { listExistingArtifacts } from "../session-artifacts.js";
-import {
-  type SessionEntry,
-  buildSessionEntry,
-  readPatchCodesFromHistory,
-} from "../session-resolver.js";
+import { type SessionEntry, buildSessionEntry } from "../session-resolver.js";
 import { sessionCodeInt } from "./common.js";
+
+/**
+ * Parse HISTORY.md once and return the set of session codes tagged `kind:patch`
+ * in their refs column (micro-lifecycle /patch). Used to collapse patches in
+ * release exports. The refs column is the last data cell — robust to the
+ * optional `flow` column. (Release bookkeeping reads HISTORY.md; per-session
+ * state is now derived from the folder-local `.closed` marker, not HISTORY.)
+ */
+async function readPatchCodesFromHistory(
+  fs: FileSystemPort,
+  historyPath: string,
+): Promise<Set<string>> {
+  const codes = new Set<string>();
+  if (!(await fs.exists(historyPath))) return codes;
+  const text = await fs.readText(historyPath);
+  for (const line of text.split("\n")) {
+    if (!line.startsWith("|")) continue;
+    const cells = line.split("|").map((c) => c.trim());
+    if (cells.length < 7) continue;
+    const code = cells[1];
+    const refs = cells[cells.length - 2] ?? "";
+    if (!code || !/^\d{3}$/.test(code)) continue;
+    if (refs.includes("kind:patch")) codes.add(code);
+  }
+  return codes;
+}
 
 export interface ReleaseSession extends SessionEntry {
   is_legacy_format?: boolean;
@@ -61,8 +84,9 @@ export async function listSessionsForRelease(
     if (entry.state === "closed" && !includeClosed) continue;
 
     const present = await listExistingArtifacts(folder.path, fs);
-    const hasObjetivo = present.objective !== null;
-    const hasRequirements = present.requirements !== null;
+    const hasObjetivo = present.session !== null || present.objective !== null;
+    // REQUIREMENTS.md is a pre-0.9 marker (no longer a tracked kind): probe directly.
+    const hasRequirements = await fs.exists(join(folder.path, "REQUIREMENTS.md"));
     entry.is_legacy_format = hasRequirements && !hasObjetivo;
     entry.release_eligible = !entry.is_legacy_format;
     if (entry.code !== null && patchCodes.has(entry.code)) entry.is_patch = true;

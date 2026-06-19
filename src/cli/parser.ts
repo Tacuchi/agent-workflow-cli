@@ -1,7 +1,4 @@
-import type { Flow } from "../domain/types.js";
-
 export interface PluginArgs {
-  flow?: Flow;
   pluginRoot?: string;
   pluginVersion?: string;
   compat?: string;
@@ -16,8 +13,6 @@ export interface ParsedArgs {
   valuesMulti: Map<string, string[]>;
 }
 
-const KNOWN_FLOWS: ReadonlySet<string> = new Set(["core", "dev", "design", "analyze"]);
-
 // Flag names (without leading `--`) that accept repetition. Each occurrence
 // pushes onto `valuesMulti`; non-multi flags continue to use `values` (last
 // occurrence wins) for back-compat.
@@ -30,17 +25,6 @@ interface PluginFlagSpec {
 }
 
 const PLUGIN_FLAG_SPECS: readonly PluginFlagSpec[] = [
-  {
-    flag: "--flow",
-    apply: (p, v) => {
-      p.flow = v as Flow;
-    },
-    validate: (v) => {
-      if (!KNOWN_FLOWS.has(v)) {
-        throw new Error(`--flow requires one of core|dev|design|analyze (got '${v}')`);
-      }
-    },
-  },
   {
     flag: "--plugin-root",
     apply: (p, v) => {

@@ -85,7 +85,6 @@ export async function runUpgradeHubMode(
     proyecto: block.proyecto,
     fuentes: block.fuentes,
     stack: block.stack,
-    sessions: block.sessions,
     ...(block.last_activity !== null ? { lastActivity: block.last_activity } : {}),
     mode: "hub",
     workingBranches: block.working_branches,

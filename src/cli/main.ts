@@ -16,8 +16,6 @@ import { checkpointReadCommand } from "./commands/checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./commands/checkpoint-write.js";
 import { codeScanCommand } from "./commands/code-scan.js";
 import { compressCheckpointCommand } from "./commands/compress-checkpoint.js";
-import { decisionesListCommand } from "./commands/decisiones-list.js";
-import { dependenciasListCommand } from "./commands/dependencias-list.js";
 import {
   harnessCommand,
   logsCommand,
@@ -31,7 +29,6 @@ import { hostDoctorCommand } from "./commands/host-doctor.js";
 import { hubInitCommand } from "./commands/hub-init.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./commands/multiroot.js";
-import { objetivoDataCommand } from "./commands/objetivo-data.js";
 import { pluginCacheCommand } from "./commands/plugin-cache.js";
 import { pluginDoctorCommand } from "./commands/plugin-doctor.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
@@ -43,11 +40,11 @@ import { sessionCloseCommand } from "./commands/session-close.js";
 import { sessionCreateCommand } from "./commands/session-create.js";
 import { sessionResumeCommand } from "./commands/session-resume.js";
 import { sessionsCommand } from "./commands/sessions.js";
+import { setWorkingBranchCommand } from "./commands/set-working-branch.js";
 import { skillIndexCommand } from "./commands/skill-index.js";
 import { skillsCommand } from "./commands/skills.js";
 import { sourcesCommand } from "./commands/sources.js";
 import { stackCommand } from "./commands/stack.js";
-import { tasksDataCommand } from "./commands/tasks-data.js";
 import { upgradeHubModeCommand } from "./commands/upgrade-hub-mode.js";
 import { visibilityCommand } from "./commands/visibility.js";
 import { workspaceInitCommand } from "./commands/workspace-init.js";
@@ -74,10 +71,6 @@ async function run(argv: string[]): Promise<ExitCode> {
 
   const registry = new CommandRegistry();
   registry.register(sessionsCommand);
-  registry.register(objetivoDataCommand);
-  registry.register(tasksDataCommand);
-  registry.register(decisionesListCommand);
-  registry.register(dependenciasListCommand);
   registry.register(historyDataCommand);
   registry.register(historyUpdateCommand);
   registry.register(sessionArtifactsCommand);
@@ -89,6 +82,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(skillIndexCommand);
   registry.register(skillsCommand);
   registry.register(sourcesCommand);
+  registry.register(setWorkingBranchCommand);
   registry.register(checkpointReadCommand);
   registry.register(resumeSummaryCommand);
   registry.register(compressCheckpointCommand);
@@ -258,7 +252,7 @@ function printHelp(commands: string[]): void {
     "agent-workflow — generic session-lifecycle CLI",
     "",
     "Usage:",
-    "  agent-workflow [--namespace <name>] [--flow <core|dev|design|analyze>]",
+    "  agent-workflow [--namespace <name>]",
     "                 [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
     "                 <command> [args...]",
     "",

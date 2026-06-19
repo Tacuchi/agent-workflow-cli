@@ -38,9 +38,9 @@ export async function runCheckpointWrite(
   const cwd = env.cwd();
   const folder = await resolveTargetFolder(fs, env, paths, options.code);
   if (!folder) {
-    const actives = await findActiveSessions(fs, cwd, paths.blockMarkers());
+    const actives = await findActiveSessions(fs, paths);
     if (actives.length === 0) {
-      return { skipped: true, reason: "no hay sesiones activas en <NS>-PROJECT.Status" };
+      return { skipped: true, reason: "no hay sesiones activas en .workflow/sessions" };
     }
     return {
       skipped: true,
@@ -103,7 +103,8 @@ async function resolveTargetFolder(
     }
     return null;
   }
-  const actives = await findActiveSessions(fs, env.cwd(), paths.blockMarkers());
+  void env;
+  const actives = await findActiveSessions(fs, paths);
   return actives.length === 1 ? (actives[0]?.folder ?? null) : null;
 }
 
@@ -131,7 +132,7 @@ export async function runAutoCompactOnClose(
   paths: PathsService,
 ): Promise<AutoCompactOnCloseOutput | AutoCompactOnCloseSkipped> {
   const cwd = env.cwd();
-  const actives = await findActiveSessions(fs, cwd, paths.blockMarkers());
+  const actives = await findActiveSessions(fs, paths);
   if (actives.length === 0) {
     return { skipped: true, reason: "no hay sesiones activas" };
   }

@@ -5,31 +5,22 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
-import { writeStdout } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const sessionCreateCommand: QtcCommand = {
   name: "session-create",
-  describe: "Create a new session: folder + OBJETIVO + HISTORY row + <NS>-PROJECT entry.",
+  describe:
+    "Create an internal session folder + SESSION.md. Flags: --type {research|refine|exec|quick} --name <folder> --objetivo <text> [--from <origin>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionCreateInput = {};
-    const flow = args.values.get("flow") ?? args.plugin.flow;
-    if (flow !== undefined) input.flow = flow;
+    const type = args.values.get("type");
+    if (type !== undefined) input.type = type;
     const name = args.values.get("name");
     if (name !== undefined) input.name = name;
     const objetivo = args.values.get("objetivo");
     if (objetivo !== undefined) input.objetivo = objetivo;
-    const branches = args.values.get("branches");
-    if (branches !== undefined) input.branchesRaw = branches;
     const from = args.values.get("from");
-    if (from !== undefined) input.origenRaw = from;
-    const tipo = args.values.get("tipo") ?? args.values.get("type");
-    if (tipo !== undefined) input.tipo = tipo;
-    const modalidad = args.values.get("modalidad") ?? args.values.get("modality");
-    if (modalidad !== undefined) input.modalidad = modalidad;
-    const fromPlan = args.values.get("from-plan");
-    if (fromPlan !== undefined) input.fromPlanRaw = fromPlan;
-    if (args.flags.has("--lite")) input.lite = true;
+    if (from !== undefined) input.originRaw = from;
 
     const data = await runSessionCreate(ctx.fs, ctx.env, ctx.paths, input);
     if ("error" in data) {
@@ -40,7 +31,6 @@ export const sessionCreateCommand: QtcCommand = {
         exitCode: 1,
       };
     }
-    writeStdout(`${JSON.stringify(data.projectMd, null, 2)}\n`);
     return { ok: true, data: data.sessionCreate, exitCode: 0 };
   },
 };

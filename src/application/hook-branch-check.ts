@@ -2,11 +2,8 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import {
-  type ProjectFuente,
-  type ProjectSession,
-  parseProjectBlock,
-} from "./parsers/project-block.js";
+import { expectedWorkBranch, findOwningSource } from "./branch-resolver.js";
+import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 const TOOLS_OF_INTEREST = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -55,10 +52,9 @@ async function resolveBranchCheckTarget(input: BranchCheckInput): Promise<Resolv
   const source = findOwningSource(block.fuentes, filePath);
   if (!source) return null;
 
-  const sessionEntry = block.sessions[0] ?? null;
-  const sessionBranches = sessionEntry?.branches ?? [];
-  const flow = resolveFlow(sessionEntry);
-  const expected = expectedWorkBranch(source, block.working_branches, sessionBranches, flow);
+  // Expected = the source's declared WORKING branch (from the WORKSPACE block).
+  // No declared working branch → no expectation → no-op (allow).
+  const expected = expectedWorkBranch(source, block.working_branches);
   if (expected === null) return null;
   return { source, expected };
 }
@@ -121,36 +117,6 @@ async function readBlock(fs: FileSystemPort, cwd: string, paths: PathsService) {
     const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (block) return block;
   }
-  return null;
-}
-
-function findOwningSource(sources: ProjectFuente[], filePath: string): ProjectFuente | null {
-  for (const s of sources) {
-    if (filePath.startsWith(s.path)) return s;
-  }
-  return null;
-}
-
-function resolveFlow(session: ProjectSession | null): string | null {
-  if (!session) return null;
-  const m = session.folder.match(/^session(\d{3})-([a-z]+)-/);
-  if (!m || !m[2]) return null;
-  return ["dev", "design", "analyze"].includes(m[2]) ? m[2] : null;
-}
-
-function expectedWorkBranch(
-  source: ProjectFuente,
-  workingBranches: Record<string, string>,
-  sessionBranches: string[],
-  flow: string | null,
-): string | null {
-  for (const entry of sessionBranches) {
-    if (!entry.includes(":")) continue;
-    const [a, b] = entry.split(":", 2);
-    if (a?.trim() === source.alias && b?.trim()) return b.trim();
-  }
-  if (flow === "analyze") return source.main_branch;
-  if (workingBranches[source.alias]) return workingBranches[source.alias] ?? null;
   return null;
 }
 

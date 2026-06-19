@@ -1,14 +1,13 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
+import { CLOSED_MARKER, listSessionFolders, parseSessionFolder } from "./session-resolver.js";
 
 const REFERENCE_DOC = "skills/session/references/commits-policy.md";
 const GIT_COMMIT_RE = /\bgit\s+commit\b/;
 const COMMIT_MSG_RE = /\s-m\s+(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/;
 const SESSION_TAG_RE = /session\d{3}/i;
-const SESSION_CODE_FROM_FOLDER_RE = /^session(\d{3})/;
 
 export interface GitCommitAdvisorResult {
   exitCode: 0;
@@ -43,13 +42,13 @@ export async function runGitCommitAdvisor(
   const message = extractCommitMessage(command);
   if (message === null) return { exitCode: 0 };
 
-  const block = await readProjectBlock(input.fs, input.env.cwd(), input.paths);
-  if (!block) return { exitCode: 0 };
+  // Discover the active session from the sessions dir (non-`.closed` folder).
+  // Sessions are no longer registered in the project block. Single unique active
+  // session → advise; otherwise no-op.
+  const activeFolder = await findUniqueActiveSession(input.fs, input.paths);
+  if (!activeFolder) return { exitCode: 0 };
 
-  const activeSession = block.sessions[0];
-  if (!activeSession) return { exitCode: 0 };
-
-  const sessionCode = extractSessionCode(activeSession.folder);
+  const { code: sessionCode } = parseSessionFolder(activeFolder);
   if (!sessionCode) return { exitCode: 0 };
 
   if (SESSION_TAG_RE.test(message)) return { exitCode: 0 };
@@ -61,9 +60,22 @@ export async function runGitCommitAdvisor(
       display,
       sessionCode,
       message,
-      sessionFolder: activeSession.folder,
+      sessionFolder: activeFolder,
     }),
   };
+}
+
+async function findUniqueActiveSession(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<string | null> {
+  const folders = await listSessionFolders(fs, paths.cwdSessionsDir());
+  const active: string[] = [];
+  for (const folder of folders) {
+    if (await fs.exists(join(folder.path, CLOSED_MARKER))) continue;
+    active.push(folder.name);
+  }
+  return active.length === 1 ? (active[0] ?? null) : null;
 }
 
 function parsePayload(stdin: string): Record<string, unknown> | null {
@@ -92,20 +104,6 @@ function extractCommitMessage(command: string): string | null {
   const msg = m[1] ?? m[2];
   if (msg === undefined) return null;
   return msg.replace(/\\(.)/g, "$1");
-}
-
-async function readProjectBlock(fs: FileSystemPort, cwd: string, paths: PathsService) {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block;
-  }
-  return null;
-}
-
-function extractSessionCode(folder: string): string | null {
-  const m = folder.match(SESSION_CODE_FROM_FOLDER_RE);
-  return m?.[1] ?? null;
 }
 
 interface AdvisorInfo {

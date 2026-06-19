@@ -14,8 +14,6 @@ export const pluginDoctorCommand: QtcCommand = {
     const input: PluginDoctorInput = {};
     const root = args.values.get("plugin-root") ?? args.plugin.pluginRoot;
     if (root !== undefined) input.pluginRoot = root;
-    const flow = args.plugin.flow;
-    if (flow !== undefined) input.flow = flow;
     const pluginVersion = args.plugin.pluginVersion ?? args.values.get("plugin-version");
     if (pluginVersion !== undefined) input.pluginVersion = pluginVersion;
     const pluginName = args.values.get("plugin-name");

@@ -41,6 +41,8 @@ export interface WorkspaceInitInput {
   sources: WorkspaceSource[];
   /** Default main branch for sources that do not declare one. Defaults to "main". */
   mainBranch?: string;
+  /** Working branches per source alias (rendered in the WORKSPACE Status block). */
+  workingBranches?: Record<string, string>;
   /** Override the target directory (defaults to cwd). */
   workspace?: string;
   dryRun?: boolean;
@@ -78,9 +80,10 @@ export interface WorkspaceInitResult {
  * workspace simply has 1+ sources. Idempotent: re-running reconciles in place.
  *
  * Note: the on-disk block is rendered with mode "project" so it carries NO `Mode:`
- * line and no working-branches section (the new "WORKSPACE" shape). Source branches
- * live in the Fuentes table. The legacy ProjectMode enum is kept for back-compat
- * parsing only and is slated for removal in a later cleanup.
+ * line (the new "WORKSPACE" shape). Source BASE branches live in the Fuentes table;
+ * WORKING branches (optional, via --working-branch) render in the Status block
+ * MODE-INDEPENDENTLY. The legacy ProjectMode enum is kept for back-compat parsing
+ * only and is slated for removal in a later cleanup.
  */
 export async function runWorkspaceInit(
   fs: FileSystemPort,
@@ -127,6 +130,7 @@ export async function runWorkspaceInit(
   const projectMd = await runProjectMdUpsertWrite(fs, targetEnv, wsPaths, {
     op: "init",
     // mode "project" → block without `Mode:` line; Fuentes table holds N sources.
+    // Working branches render MODE-INDEPENDENTLY (a kept workspace property).
     mode: "project",
     proyecto,
     fuentes: input.sources.map((s) => ({
@@ -137,6 +141,7 @@ export async function runWorkspaceInit(
     // Declared set is authoritative (supports removing a source by re-running).
     replaceFuentes: true,
     mainBranch,
+    ...(input.workingBranches !== undefined ? { workingBranches: input.workingBranches } : {}),
     verbose: true,
     ...(input.lastActivity !== undefined ? { lastActivity: input.lastActivity } : {}),
   });

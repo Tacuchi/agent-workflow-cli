@@ -8,15 +8,9 @@ import {
   parseMdValue,
   parseMdValueBilingual,
 } from "./markdown.js";
-import {
-  type ProjectBlockMarkers,
-  type ProjectSession,
-  parseProjectBlock,
-} from "./parsers/project-block.js";
-import { parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { type ArtifactKind, findArtifact, listExistingArtifacts } from "./session-artifacts.js";
-import { listSessionFolders, parseSessionFolder } from "./session-resolver.js";
+import { CLOSED_MARKER, listSessionFolders, parseSessionFolder } from "./session-resolver.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
 const DEFAULT_STALE_THRESHOLD_SECONDS = 300;
@@ -211,17 +205,26 @@ export async function runCheckpointRead(
   return { session: folder, checkpoint: cp };
 }
 
+export interface ActiveSession {
+  folder: string;
+}
+
+/**
+ * Active sessions are non-`.closed` folders under `.workflow/sessions/`.
+ * Sessions are no longer registered in the project block; state derives solely
+ * from the folder-local `.closed` sentinel (type-agnostic).
+ */
 export async function findActiveSessions(
   fs: FileSystemPort,
-  cwd: string,
-  markers?: ProjectBlockMarkers,
-): Promise<ProjectSession[]> {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), markers);
-    if (block) return block.sessions;
+  paths: PathsService,
+): Promise<ActiveSession[]> {
+  const folders = await listSessionFolders(fs, paths.cwdSessionsDir());
+  const active: ActiveSession[] = [];
+  for (const folder of folders) {
+    if (await fs.exists(join(folder.path, CLOSED_MARKER))) continue;
+    active.push({ folder: folder.name });
   }
-  return [];
+  return active;
 }
 
 async function resolveTargetSession(
@@ -243,7 +246,8 @@ async function resolveTargetSession(
     }
     return null;
   }
-  const actives = await findActiveSessions(fs, env.cwd(), paths.blockMarkers());
+  void env;
+  const actives = await findActiveSessions(fs, paths);
   return actives.length === 1 ? (actives[0]?.folder ?? null) : null;
 }
 
@@ -260,8 +264,6 @@ export interface ResumeSummaryOutput {
   active_sessions: string[];
   primary_session: string | null;
   primary_session_code?: string | null;
-  phase_from_aw_project?: string | null;
-  branches_from_aw_project?: string[];
   checkpoint_present: boolean;
   checkpoint_path?: string | null;
   checkpoint_status: CheckpointStatus["status"];
@@ -290,8 +292,8 @@ export async function runResumeSummary(
   paths: PathsService,
   options: ResumeSummaryOptions = {},
 ): Promise<ResumeSummaryOutput> {
-  const cwd = env.cwd();
-  const actives = await findActiveSessions(fs, cwd, paths.blockMarkers());
+  void env;
+  const actives = await findActiveSessions(fs, paths);
   if (actives.length === 0) {
     const baseEmpty: ResumeSummaryOutput = {
       active_sessions: [],
@@ -334,8 +336,6 @@ export async function runResumeSummary(
     active_sessions: actives.map((a) => a.folder),
     primary_session: target.folder,
     primary_session_code: codeMatch && codeMatch.length > 0 ? codeMatch : null,
-    phase_from_aw_project: target.phase,
-    branches_from_aw_project: target.branches,
     checkpoint_present: cp !== null,
     checkpoint_path: cpStatus.checkpoint_path,
     checkpoint_status: cpStatus.status,
@@ -359,6 +359,15 @@ export async function runResumeSummary(
     };
   }
 
+  if (options.includeRecentClosed === true) {
+    summary.recent_closed_with_artifacts = await findRecentClosedWithArtifacts(
+      fs,
+      paths,
+      actives.map((a) => a.folder),
+      options.recentDays ?? DEFAULT_RECENT_DAYS,
+    );
+  }
+
   return summary;
 }
 
@@ -377,7 +386,7 @@ export interface CompressCheckpointError {
   error: string;
 }
 
-const COMPRESS_KINDS: ArtifactKind[] = ["findings", "evidence", "discovery", "problem"];
+const COMPRESS_KINDS: ArtifactKind[] = ["analysis_file", "conclusions"];
 const DEFAULT_COMPRESS_THRESHOLD = 200;
 
 export async function runCompressCheckpoint(
@@ -410,13 +419,9 @@ export async function runCompressCheckpoint(
 }
 
 /**
- * Encuentra sesiones cerradas (no aparecen en QTC-PROJECT.Status.Sesiones activas)
- * dentro de la ventana `recentDays` (mtime del folder) que tengan artefactos
- * "completos" según la heurística por flow (G5 de session062):
- *
- * - analyze: EVIDENCE + FINDINGS + CONCLUSIONS presentes.
- * - dev: TASKS con >=50% closed + DECISIONS presente.
- * - design: DELIVERY presente.
+ * Encuentra sesiones cerradas (sentinel `.closed` presente) dentro de la ventana
+ * `recentDays` (mtime del folder) que tengan artefactos de cierre del nuevo modelo
+ * (CONCLUSIONS.md o ANALYSIS-FILE.md). Type-agnóstico: ya no depende del flow.
  *
  * Ordenado por código descendente (más reciente primero).
  */
@@ -439,6 +444,8 @@ export async function findRecentClosedWithArtifacts(
     if (activeSet.has(folder.name)) continue;
     const { code, flow } = parseSessionFolder(folder.name);
     if (code === null) continue;
+    // Closed = folder-local `.closed` sentinel present.
+    if (!(await fs.exists(join(folder.path, CLOSED_MARKER)))) continue;
     let mtimeMs: number;
     try {
       const st = await fs.stat(folder.path);
@@ -450,7 +457,7 @@ export async function findRecentClosedWithArtifacts(
     if (ageMs < 0 || ageMs > windowMs) continue;
 
     const present = await listExistingArtifacts(folder.path, fs);
-    const { complete, signal } = await evaluateArtifactCompleteness(fs, folder.path, flow, present);
+    const { complete, signal } = evaluateArtifactCompleteness(present);
     if (!complete) continue;
 
     out.push({
@@ -467,41 +474,11 @@ export async function findRecentClosedWithArtifacts(
   return out;
 }
 
-async function evaluateArtifactCompleteness(
-  fs: FileSystemPort,
-  _sessionPath: string,
-  flow: string | null,
-  present: Record<ArtifactKind, string | null>,
-): Promise<{ complete: boolean; signal: string }> {
-  if (flow === "analyze") {
-    const ok =
-      present.evidence !== null && present.findings !== null && present.conclusions !== null;
-    return {
-      complete: ok,
-      signal: ok ? "EVIDENCE+FINDINGS+CONCLUSIONS" : "analyze-incomplete",
-    };
-  }
-  if (flow === "design") {
-    const ok = present.delivery !== null;
-    return { complete: ok, signal: ok ? "DELIVERY" : "design-incomplete" };
-  }
-  if (flow === "dev") {
-    if (present.tasks === null || present.decisions === null) {
-      return { complete: false, signal: "dev-incomplete" };
-    }
-    try {
-      const text = await fs.readText(present.tasks);
-      const parsed = parseTasks(text, false);
-      if (parsed.total === 0) {
-        return { complete: false, signal: "dev-no-tasks" };
-      }
-      const ratio = parsed.closed / parsed.total;
-      return ratio >= 0.5
-        ? { complete: true, signal: `TASKS>=50%+DECISIONS (${parsed.closed}/${parsed.total})` }
-        : { complete: false, signal: `dev-tasks-${parsed.closed}/${parsed.total}` };
-    } catch {
-      return { complete: false, signal: "dev-tasks-read-error" };
-    }
-  }
-  return { complete: false, signal: "flow-unknown" };
+function evaluateArtifactCompleteness(present: Record<ArtifactKind, string | null>): {
+  complete: boolean;
+  signal: string;
+} {
+  if (present.conclusions !== null) return { complete: true, signal: "CONCLUSIONS" };
+  if (present.analysis_file !== null) return { complete: true, signal: "ANALYSIS-FILE" };
+  return { complete: false, signal: "no-closure-artifact" };
 }

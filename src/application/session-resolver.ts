@@ -1,30 +1,34 @@
 import { join } from "node:path";
-import type { Flow, Phase, SessionState } from "../domain/types.js";
+import type { SessionState } from "../domain/types.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import {
-  firstNonEmptyLine,
-  parseMdSectionBilingual,
-  parseMdValue,
-  parseMdValueBilingual,
-} from "./markdown.js";
+import { firstNonEmptyLine, parseMdSectionBilingual, parseMdValueBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact } from "./session-artifacts.js";
 
-export const KNOWN_FLOWS: ReadonlyArray<Flow> = ["core", "dev", "design", "analyze"];
+/**
+ * Legacy folder-name segments preserved only to split a leading segment off the
+ * session name for backwards-compatible folder parsing. The value is informational
+ * (no longer a typed Flow) and is ignored by state derivation.
+ */
+export const KNOWN_FLOWS: ReadonlyArray<string> = ["core", "dev", "design", "analyze"];
 const SESSION_FOLDER_RE = /^session(\d{3})-(.+)$/;
+
+/** Folder-local sentinel file marking a session as closed. */
+export const CLOSED_MARKER = ".closed";
 
 export interface SessionEntry {
   code: string | null;
-  flow: Flow | null;
+  flow: string | null;
   name: string;
   folder: string;
   /** Absolute path to the session directory. */
   path: string;
   state: SessionState;
-  phase: Phase | "requirement";
-  /** `## Type` del OBJECTIVE (feature/bugfix/refactor/chore). Ausente si no declarado. */
+  /** Best-effort lifecycle phase from CHECKPOINT/STATUS; `requirement` when none. */
+  phase: string;
+  /** `## Type` del SESSION/OBJECTIVE. Ausente si no declarado. */
   type?: string;
   date?: string;
   summary?: string;
@@ -35,23 +39,21 @@ export interface SessionEntry {
 
 export function parseSessionFolder(folder: string): {
   code: string | null;
-  flow: Flow | null;
+  flow: string | null;
   name: string;
 } {
   const m = folder.match(SESSION_FOLDER_RE);
   if (!m || !m[1] || !m[2]) {
-    return { code: null, flow: null, name: folder };
+    // New-model slug folder (e.g. `003-spec-spec-refine`, `phase1-exec`): the folder
+    // name IS the session identity. No numeric code / flow segment.
+    return { code: folder, flow: null, name: folder };
   }
   const code = m[1];
   const rest = m[2];
   const parts = rest.split("-");
   const candidate = parts[0];
-  if (
-    parts.length >= 2 &&
-    candidate &&
-    (KNOWN_FLOWS as ReadonlyArray<string>).includes(candidate)
-  ) {
-    return { code, flow: candidate as Flow, name: parts.slice(1).join("-") };
+  if (parts.length >= 2 && candidate && KNOWN_FLOWS.includes(candidate)) {
+    return { code, flow: candidate, name: parts.slice(1).join("-") };
   }
   return { code, flow: null, name: rest };
 }
@@ -59,12 +61,6 @@ export function parseSessionFolder(folder: string): {
 export interface BuildEntryOptions {
   legacySource?: string;
   verbose?: boolean;
-  /**
-   * Map of code → SessionState parsed from HISTORY.md. When provided, takes
-   * precedence over STATUS.md and the legacy heuristic. Pass via the caller
-   * (SessionsService) so HISTORY.md is read once per scan.
-   */
-  historyStateByCode?: Map<string, SessionState>;
 }
 
 export async function buildSessionEntry(
@@ -78,18 +74,12 @@ export async function buildSessionEntry(
   const status = await readStatus(fs, sessionPath);
   const hasStatus = status !== null;
   const checkpointPhase = await readPhaseFromCheckpoint(fs, sessionPath);
-  const historyState = code !== null ? (options.historyStateByCode?.get(code) ?? null) : null;
 
-  let state: SessionState;
-  if (historyState !== null) {
-    state = historyState;
-  } else if (status) {
-    state = status.state;
-  } else {
-    state = await stateFromLegacyHeuristic(fs, sessionPath);
-  }
+  // Session state is derived solely from a folder-local `.closed` sentinel file
+  // (locked decision): present = closed, absent = active. Type-agnostic.
+  const state: SessionState = await stateFromClosedMarker(fs, sessionPath);
 
-  let phase: Phase | "requirement";
+  let phase: string;
   if (checkpointPhase !== null) {
     phase = checkpointPhase;
   } else if (status) {
@@ -149,8 +139,10 @@ export async function listSessionFolders(
     return [];
   }
   const entries = await fs.list(dir);
+  // New model: sessions are arbitrary slug folders under .workflow/sessions/.
+  // List every directory (skipping dotfiles); identity is the folder name.
   return entries
-    .filter((e) => e.type === "dir" && SESSION_FOLDER_RE.test(e.name))
+    .filter((e) => e.type === "dir" && !e.name.startsWith("."))
     .map((e) => ({ name: e.name, path: e.path }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -199,48 +191,46 @@ export async function resolveSession(
 }
 
 function normalizeCode(input: string): string {
+  // Legacy numeric codes pad to 3 digits; legacy `sessionNNN-...` strips the prefix.
+  // New-model slugs are used verbatim (the folder name is the identity).
   if (/^\d+$/.test(input)) {
     return input.padStart(3, "0");
   }
-  return input.replace("session", "").split("-")[0] ?? "";
+  if (/^session\d/.test(input)) {
+    return input.replace("session", "").split("-")[0] ?? "";
+  }
+  return input;
 }
 
-async function stateFromLegacyHeuristic(
+/**
+ * Derive session state from the folder-local `.closed` sentinel file:
+ * present = closed, absent = active. Single canonical source of truth across
+ * resolver / sessions-service / checkpoint-service. Type-agnostic.
+ */
+async function stateFromClosedMarker(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<SessionState> {
-  if (!(await fs.exists(sessionPath))) return "active";
-  const entries = await fs.list(sessionPath);
-  let hasMt = false;
-  let hasMf = false;
-  for (const e of entries) {
-    if (e.type !== "file") continue;
-    if (e.name.startsWith("MT-") && e.name.endsWith(".md")) hasMt = true;
-    if (e.name.startsWith("MF-") && e.name.endsWith(".md")) hasMf = true;
-  }
-  return hasMt && hasMf ? "closed" : "active";
+  return (await fs.exists(join(sessionPath, CLOSED_MARKER))) ? "closed" : "active";
 }
 
 async function readStatus(
   fs: FileSystemPort,
   sessionPath: string,
-): Promise<{ state: SessionState; phase: Phase } | null> {
+): Promise<{ phase: string } | null> {
   const path = join(sessionPath, "STATUS.md");
   if (!(await fs.exists(path))) {
     return null;
   }
   const text = await fs.readText(path);
-  const stateRaw = parseMdValue(text, "State")?.toLowerCase();
-  const phaseRaw = parseMdValue(text, "Phase")?.toLowerCase();
-  const state: SessionState = stateRaw === "closed" ? "closed" : "active";
-  const phase: Phase = isPhase(phaseRaw) ? phaseRaw : "planning";
-  return { state, phase };
+  const phaseRaw = parseMdValueBilingual(text, "Phase")?.toLowerCase();
+  return { phase: phaseRaw && phaseRaw.length > 0 ? phaseRaw : "planning" };
 }
 
 async function readPhaseFromCheckpoint(
   fs: FileSystemPort,
   sessionPath: string,
-): Promise<Phase | null> {
+): Promise<string | null> {
   const path = join(sessionPath, "CHECKPOINT.md");
   if (!(await fs.exists(path))) return null;
   const text = await fs.readText(path);
@@ -250,67 +240,20 @@ async function readPhaseFromCheckpoint(
     parseMdValueBilingual(text, "Current phase") ?? parseMdValueBilingual(text, "Fase actual");
   if (!raw) return null;
   const first = raw.trim().toLowerCase().split(/\s+/)[0];
-  return isPhase(first) ? first : null;
-}
-
-/**
- * Parse HISTORY.md table once per scan and return Map<code, SessionState>.
- * Format: `| 001 | dev | name | date | active|closed | summary | refs |`.
- * Returns empty Map if HISTORY.md is missing or unparseable.
- */
-export async function readHistoryStateMap(
-  fs: FileSystemPort,
-  historyPath: string,
-): Promise<Map<string, SessionState>> {
-  const map = new Map<string, SessionState>();
-  if (!(await fs.exists(historyPath))) return map;
-  const text = await fs.readText(historyPath);
-  for (const line of text.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split("|").map((c) => c.trim());
-    // Expected: ["", code, flow, name, date, state, summary, refs, ""]
-    if (cells.length < 7) continue;
-    const code = cells[1];
-    const stateCell = cells[5]?.toLowerCase();
-    if (!code || !/^\d{3}$/.test(code)) continue;
-    if (stateCell === "active" || stateCell === "closed") {
-      map.set(code, stateCell);
-    }
-  }
-  return map;
-}
-
-/**
- * Parse HISTORY.md once and return the set of session codes tagged `kind:patch`
- * in their refs column (micro-lifecycle /patch). Used to collapse patches in exports.
- * The refs column is the last data cell — robust to the optional `flow` column.
- */
-export async function readPatchCodesFromHistory(
-  fs: FileSystemPort,
-  historyPath: string,
-): Promise<Set<string>> {
-  const codes = new Set<string>();
-  if (!(await fs.exists(historyPath))) return codes;
-  const text = await fs.readText(historyPath);
-  for (const line of text.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split("|").map((c) => c.trim());
-    if (cells.length < 7) continue;
-    const code = cells[1];
-    const refs = cells[cells.length - 2] ?? "";
-    if (!code || !/^\d{3}$/.test(code)) continue;
-    if (refs.includes("kind:patch")) codes.add(code);
-  }
-  return codes;
+  return first && first.length > 0 ? first : null;
 }
 
 async function readRequirement(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<{ date?: string; summary?: string; branch?: string; type?: string }> {
+  // Dual-read: new-model SESSION.md first, then legacy OBJECTIVE.md, then a
+  // direct REQUIREMENTS.md probe (pre-0.9 sessions; no longer a tracked kind).
+  const legacyRequirements = join(sessionPath, "REQUIREMENTS.md");
   const path =
+    (await findArtifact(sessionPath, "session", fs)) ??
     (await findArtifact(sessionPath, "objective", fs)) ??
-    (await findArtifact(sessionPath, "requirements", fs));
+    ((await fs.exists(legacyRequirements)) ? legacyRequirements : null);
   if (path === null) return {};
 
   const text = await fs.readText(path);
@@ -340,12 +283,6 @@ async function mtimeAsDate(fs: FileSystemPort, path: string): Promise<string | u
   } catch {
     return undefined;
   }
-}
-
-function isPhase(value: string | undefined): value is Phase {
-  return (
-    value === "planning" || value === "execution" || value === "validation" || value === "closure"
-  );
 }
 
 function formatDateOnly(date: Date): string {

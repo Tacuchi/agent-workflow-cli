@@ -3,7 +3,6 @@ import type {
   ProjectBlockMarkers,
   ProjectFuente,
   ProjectMode,
-  ProjectSession,
   ProjectStack,
 } from "../parsers/project-block.js";
 import { LEGACY_QTC_MARKERS } from "../parsers/project-block.js";
@@ -12,7 +11,6 @@ export interface RenderProjectBlockInput {
   proyecto: string;
   fuentes: ProjectFuente[];
   stack: ProjectStack;
-  sessions: ProjectSession[];
   lastActivity?: string;
   mode?: ProjectMode;
   workingBranches?: Record<string, string>;
@@ -34,11 +32,9 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const proyectoSection = input.mode === "hub" ? `${proyectoText}\n\nMode: hub` : proyectoText;
 
   const statusLines: string[] = [];
-  if (input.mode === "hub") {
-    const wb = formatWorkingBranches(input.workingBranches);
-    if (wb !== null) statusLines.push(wb);
-  }
-  statusLines.push(formatActiveSessions(input.sessions));
+  // Working branches render MODE-INDEPENDENTLY (a kept workspace property).
+  const wb = formatWorkingBranches(input.workingBranches);
+  if (wb !== null) statusLines.push(wb);
   statusLines.push(`- Última actividad: ${last}`);
   statusLines.push(`- Histórico: \`${historicoPath}\``);
 
@@ -71,7 +67,6 @@ export function blockFromParsed(
     proyecto: overrides.proyecto ?? parsed.proyecto,
     fuentes: overrides.fuentes ?? parsed.fuentes,
     stack: overrides.stack ?? parsed.stack,
-    sessions: overrides.sessions ?? parsed.sessions,
     mode: overrides.mode ?? parsed.mode,
     workingBranches: overrides.workingBranches ?? parsed.working_branches,
   };
@@ -113,23 +108,6 @@ function formatStackList(stack: ProjectStack): string {
   if (stack.build) lines.push(`- Build: ${stack.build}`);
   if (lines.length === 0) {
     return "_Stack sin detectar._";
-  }
-  return lines.join("\n");
-}
-
-function formatActiveSessions(sessions: ProjectSession[]): string {
-  if (sessions.length === 0) {
-    return "- Sesiones activas: _ninguna_";
-  }
-  const lines = ["- Sesiones activas:"];
-  for (const s of sessions) {
-    const folder = s.folder;
-    const phase = s.phase || "requerimiento";
-    if (s.branches.length > 0) {
-      lines.push(`  - ${folder} · fase: ${phase} · ramas: ${s.branches.join(", ")}`);
-    } else {
-      lines.push(`  - ${folder} · fase: ${phase}`);
-    }
   }
   return lines.join("\n");
 }

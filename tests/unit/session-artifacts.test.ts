@@ -68,70 +68,104 @@ function baseOf(p: string): string {
 
 const FOLDER = "/cwd/.workflow/sessions/session042-dev-foo";
 
-describe("ARTIFACT_FILENAMES", () => {
-  it("includes EN and ES variants for migrated artifacts", () => {
-    expect(ARTIFACT_FILENAMES.objective).toEqual(["OBJECTIVE.md", "OBJETIVO.md"]);
-    expect(ARTIFACT_FILENAMES.findings).toEqual(["FINDINGS.md", "HALLAZGOS.md"]);
-    expect(ARTIFACT_FILENAMES.decisions).toEqual(["DECISIONS.md", "DECISIONES.md"]);
-    expect(ARTIFACT_FILENAMES.evidence).toEqual(["EVIDENCE.md", "EVIDENCIA.md"]);
-    expect(ARTIFACT_FILENAMES.conclusions).toEqual(["CONCLUSIONS.md", "CONCLUSIONES.md"]);
-    expect(ARTIFACT_FILENAMES.recommendation).toEqual(["RECOMMENDATION.md", "RECOMENDACION.md"]);
-    expect(ARTIFACT_FILENAMES.delivery).toEqual(["DELIVERY.md", "ENTREGA.md"]);
-    expect(ARTIFACT_FILENAMES.dependencies).toEqual(["DEPENDENCIES.md", "DEPENDENCIAS.md"]);
-    expect(ARTIFACT_FILENAMES.problem).toEqual(["PROBLEM.md", "PROBLEMA.md"]);
+describe("ARTIFACT_FILENAMES (new model)", () => {
+  it("exposes exactly the final kind set", () => {
+    expect(new Set(Object.keys(ARTIFACT_FILENAMES))).toEqual(
+      new Set([
+        "session",
+        "objective",
+        "decisions",
+        "conclusions",
+        "tasks",
+        "checkpoint",
+        "backlog",
+        "scripts_sql",
+        "analysis_file",
+        "technical_note",
+      ]),
+    );
   });
 
-  it("uses single EN entry for already-English artifacts", () => {
-    expect(ARTIFACT_FILENAMES.tasks).toEqual(["TASKS.md"]);
-    expect(ARTIFACT_FILENAMES.checkpoint).toEqual(["CHECKPOINT.md"]);
-    expect(ARTIFACT_FILENAMES.status).toEqual(["STATUS.md"]);
-    expect(ARTIFACT_FILENAMES.requirements).toEqual(["REQUIREMENTS.md"]);
-    expect(ARTIFACT_FILENAMES.discovery).toEqual(["DISCOVERY.md"]);
+  it("does NOT carry the pruned old-model kinds", () => {
+    for (const removed of [
+      "findings",
+      "evidence",
+      "recommendation",
+      "delivery",
+      "dependencies",
+      "discovery",
+      "problem",
+      "status",
+      "requirements",
+    ]) {
+      expect(ARTIFACT_FILENAMES).not.toHaveProperty(removed);
+    }
   });
 
-  it("includes the new-model artifact kinds (P2.3)", () => {
+  it("session writes SESSION.md (replaces the legacy objective kind)", () => {
     expect(ARTIFACT_FILENAMES.session).toEqual(["SESSION.md"]);
+    expect(canonicalArtifactFilename("session")).toBe("SESSION.md");
+  });
+
+  it("keeps objective only as a legacy read fallback (EN + ES)", () => {
+    expect(ARTIFACT_FILENAMES.objective).toEqual(["OBJECTIVE.md", "OBJETIVO.md"]);
+  });
+
+  it("decisions canonical is DECISION.md with DECISIONS/DECISIONES legacy fallbacks", () => {
+    expect(ARTIFACT_FILENAMES.decisions).toEqual(["DECISION.md", "DECISIONS.md", "DECISIONES.md"]);
+    expect(canonicalArtifactFilename("decisions")).toBe("DECISION.md");
+  });
+
+  it("carries the new-model research / quick kinds", () => {
     expect(ARTIFACT_FILENAMES.analysis_file).toEqual(["ANALYSIS-FILE.md"]);
     expect(ARTIFACT_FILENAMES.technical_note).toEqual(["TECHNICAL-NOTE.md"]);
-    expect(canonicalArtifactFilename("session")).toBe("SESSION.md");
+  });
+
+  it("uses single EN entry for the already-English kinds", () => {
+    expect(ARTIFACT_FILENAMES.tasks).toEqual(["TASKS.md"]);
+    expect(ARTIFACT_FILENAMES.checkpoint).toEqual(["CHECKPOINT.md"]);
+    expect(ARTIFACT_FILENAMES.backlog).toEqual(["BACKLOG.md"]);
+    expect(ARTIFACT_FILENAMES.scripts_sql).toEqual(["SCRIPTS.sql"]);
+    expect(ARTIFACT_FILENAMES.conclusions).toEqual(["CONCLUSIONS.md", "CONCLUSIONES.md"]);
   });
 });
 
 describe("canonicalArtifactFilename / canonicalArtifactPath", () => {
-  it("returns EN UPPERCASE filename for new writes", () => {
-    expect(canonicalArtifactFilename("objective")).toBe("OBJECTIVE.md");
-    expect(canonicalArtifactFilename("findings")).toBe("FINDINGS.md");
+  it("returns the EN UPPERCASE filename for new writes", () => {
+    expect(canonicalArtifactFilename("session")).toBe("SESSION.md");
+    expect(canonicalArtifactFilename("decisions")).toBe("DECISION.md");
     expect(canonicalArtifactFilename("tasks")).toBe("TASKS.md");
+    expect(canonicalArtifactFilename("analysis_file")).toBe("ANALYSIS-FILE.md");
   });
 
   it("joins folder with canonical filename", () => {
-    expect(canonicalArtifactPath(FOLDER, "objective")).toBe(`${FOLDER}/OBJECTIVE.md`);
-    expect(canonicalArtifactPath(FOLDER, "decisions")).toBe(`${FOLDER}/DECISIONS.md`);
+    expect(canonicalArtifactPath(FOLDER, "session")).toBe(`${FOLDER}/SESSION.md`);
+    expect(canonicalArtifactPath(FOLDER, "decisions")).toBe(`${FOLDER}/DECISION.md`);
   });
 });
 
 describe("findArtifact", () => {
   it("returns null when folder doesn't exist", async () => {
     const fs = new FakeFs();
-    expect(await findArtifact(FOLDER, "objective", fs)).toBeNull();
+    expect(await findArtifact(FOLDER, "session", fs)).toBeNull();
   });
 
   it("returns null when no candidate is present", async () => {
     const fs = new FakeFs({ [`${FOLDER}/SOMETHING_ELSE.md`]: "x" });
-    expect(await findArtifact(FOLDER, "objective", fs)).toBeNull();
+    expect(await findArtifact(FOLDER, "session", fs)).toBeNull();
   });
 
-  it("resolves legacy ES filename when only ES exists", async () => {
+  it("resolves SESSION.md for the session kind", async () => {
+    const fs = new FakeFs({ [`${FOLDER}/SESSION.md`]: "# SESSION\n" });
+    expect(await findArtifact(FOLDER, "session", fs)).toBe(`${FOLDER}/SESSION.md`);
+  });
+
+  it("resolves legacy ES filename when only ES exists (objective fallback)", async () => {
     const fs = new FakeFs({ [`${FOLDER}/OBJETIVO.md`]: "# Objetivo\n" });
     expect(await findArtifact(FOLDER, "objective", fs)).toBe(`${FOLDER}/OBJETIVO.md`);
   });
 
-  it("resolves canonical EN filename when only EN exists", async () => {
-    const fs = new FakeFs({ [`${FOLDER}/OBJECTIVE.md`]: "# Objective\n" });
-    expect(await findArtifact(FOLDER, "objective", fs)).toBe(`${FOLDER}/OBJECTIVE.md`);
-  });
-
-  it("prefers EN over ES when both exist", async () => {
+  it("prefers EN over ES when both exist (objective fallback)", async () => {
     const fs = new FakeFs({
       [`${FOLDER}/OBJECTIVE.md`]: "# Objective\n",
       [`${FOLDER}/OBJETIVO.md`]: "# Objetivo\n",
@@ -144,6 +178,14 @@ describe("findArtifact", () => {
     expect(await findArtifact(FOLDER, "objective", fs)).toBe(`${FOLDER}/objetivo.md`);
   });
 
+  it("prefers DECISION.md over the legacy ES filename", async () => {
+    const fs = new FakeFs({
+      [`${FOLDER}/DECISION.md`]: "# Decision\n",
+      [`${FOLDER}/DECISIONES.md`]: "# Decisiones\n",
+    });
+    expect(await findArtifact(FOLDER, "decisions", fs)).toBe(`${FOLDER}/DECISION.md`);
+  });
+
   it("falls back to fs.exists when fs.list does not register the file", async () => {
     // Simulate a partial fake fs (files set, dirs map empty) — list throws for the folder.
     const fs = new FakeFs(
@@ -151,16 +193,6 @@ describe("findArtifact", () => {
       { registerDir: false },
     );
     expect(await findArtifact(FOLDER, "decisions", fs)).toBe(`${FOLDER}/DECISIONES.md`);
-  });
-
-  it("resolves discovery as already-English", async () => {
-    const fs = new FakeFs({ [`${FOLDER}/DISCOVERY.md`]: "x" });
-    expect(await findArtifact(FOLDER, "discovery", fs)).toBe(`${FOLDER}/DISCOVERY.md`);
-  });
-
-  it("resolves problem with bilingual fallback", async () => {
-    const fs = new FakeFs({ [`${FOLDER}/PROBLEMA.md`]: "x" });
-    expect(await findArtifact(FOLDER, "problem", fs)).toBe(`${FOLDER}/PROBLEMA.md`);
   });
 });
 
@@ -173,27 +205,40 @@ describe("listExistingArtifacts", () => {
     }
   });
 
-  it("returns paths for present artifacts mixing ES and EN", async () => {
+  it("returns paths for present artifacts (new model)", async () => {
+    const fs = new FakeFs({
+      [`${FOLDER}/SESSION.md`]: "# SESSION\n",
+      [`${FOLDER}/TASKS.md`]: "- [ ] foo\n",
+      [`${FOLDER}/CHECKPOINT.md`]: "# Checkpoint\n",
+      [`${FOLDER}/BACKLOG.md`]: "# Backlog\n",
+    });
+    const result = await listExistingArtifacts(FOLDER, fs);
+    expect(result.session).toBe(`${FOLDER}/SESSION.md`);
+    expect(result.tasks).toBe(`${FOLDER}/TASKS.md`);
+    expect(result.checkpoint).toBe(`${FOLDER}/CHECKPOINT.md`);
+    expect(result.backlog).toBe(`${FOLDER}/BACKLOG.md`);
+    expect(result.decisions).toBeNull();
+    expect(result.analysis_file).toBeNull();
+  });
+
+  it("resolves the objective legacy fallback alongside new artifacts", async () => {
     const fs = new FakeFs({
       [`${FOLDER}/OBJETIVO.md`]: "# Objetivo\n",
-      [`${FOLDER}/FINDINGS.md`]: "# Findings\n",
       [`${FOLDER}/TASKS.md`]: "- [ ] foo\n",
     });
     const result = await listExistingArtifacts(FOLDER, fs);
     expect(result.objective).toBe(`${FOLDER}/OBJETIVO.md`);
-    expect(result.findings).toBe(`${FOLDER}/FINDINGS.md`);
     expect(result.tasks).toBe(`${FOLDER}/TASKS.md`);
-    expect(result.decisions).toBeNull();
-    expect(result.checkpoint).toBeNull();
+    expect(result.session).toBeNull();
   });
 
   it("uses fs.exists fallback when listing is incomplete", async () => {
     const fs = new FakeFs(
-      { [`${FOLDER}/OBJETIVO.md`]: "x", [`${FOLDER}/CHECKPOINT.md`]: "y" },
+      { [`${FOLDER}/SESSION.md`]: "x", [`${FOLDER}/CHECKPOINT.md`]: "y" },
       { registerDir: false },
     );
     const result = await listExistingArtifacts(FOLDER, fs);
-    expect(result.objective).toBe(`${FOLDER}/OBJETIVO.md`);
+    expect(result.session).toBe(`${FOLDER}/SESSION.md`);
     expect(result.checkpoint).toBe(`${FOLDER}/CHECKPOINT.md`);
   });
 });

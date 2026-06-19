@@ -1,7 +1,3 @@
-export type Flow = "core" | "dev" | "design" | "analyze";
-
-export type Phase = "planning" | "execution" | "validation" | "closure";
-
 /**
  * Session type in the redesigned model — sessions are internal/ephemeral process
  * state created by loops (Layer 2), never by the user. Replaces the old `Flow`.

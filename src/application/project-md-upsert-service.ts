@@ -7,7 +7,6 @@ import {
   type ProjectBlockMarkers,
   type ProjectFuente,
   type ProjectMode,
-  type ProjectSession,
   parseProjectBlock,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
@@ -15,7 +14,7 @@ import { relpath } from "./paths.js";
 import { type RenderProjectBlockInput, renderProjectBlock } from "./render/project-block.js";
 import { detectStackDict } from "./stack-detect.js";
 
-export type UpsertOp = "init" | "add-session" | "remove-session" | "update-phase";
+export type UpsertOp = "init";
 
 export interface ProjectMdUpsertFuente {
   alias: string;
@@ -26,12 +25,9 @@ export interface ProjectMdUpsertFuente {
 
 export interface ProjectMdUpsertInput {
   op: UpsertOp;
-  sessionFolder?: string;
   proyecto?: string;
   mode?: ProjectMode;
   workingBranches?: Record<string, string>;
-  phase?: string;
-  branches?: string[];
   /** Hub-mode `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repetible). */
   fuentes?: ProjectMdUpsertFuente[];
   /** Si true, las `fuentes` declaradas REEMPLAZAN a las existentes (no merge). hub-init lo usa para ser autoritativo y soportar remover fuentes. */
@@ -53,11 +49,9 @@ export interface UpsertFileResult {
 export interface ProjectMdUpsertOutput {
   ok: boolean;
   action: UpsertOp;
-  session?: string;
   results?: UpsertFileResult[];
   mode?: UpsertOp;
   workspace_mode?: ProjectMode;
-  sessions_in_block?: string[];
   working_branches?: Record<string, string>;
 }
 
@@ -76,11 +70,7 @@ export async function runProjectMdUpsertWrite(
   const markers = paths.blockMarkers();
   const existing = await readExistingBlock(fs, files, markers);
 
-  const baseSessions = existing ? [...existing.sessions] : [];
-  const opResult = applyOperation(input, baseSessions);
-  if ("error" in opResult) return opResult;
-
-  const renderInput = await buildRenderInput(fs, cwd, input, existing, opResult.sessions);
+  const renderInput = await buildRenderInput(fs, cwd, input, existing);
   renderInput.markers = markers;
   if (input.lastActivity !== undefined) {
     renderInput.lastActivity = input.lastActivity;
@@ -101,7 +91,7 @@ export async function runProjectMdUpsertWrite(
 
   try {
     const writeResults = await writeAllFiles(fs, files, cwd, block, markers);
-    return composePayload(input, writeResults, opResult.sessions, renderInput);
+    return composePayload(input, writeResults, renderInput);
   } finally {
     await lock.release();
   }
@@ -120,66 +110,11 @@ async function readExistingBlock(
   return null;
 }
 
-interface OperationResult {
-  sessions: ProjectSession[];
-}
-
-function applyOperation(
-  input: ProjectMdUpsertInput,
-  sessions: ProjectSession[],
-): OperationResult | ProjectMdUpsertError {
-  switch (input.op) {
-    case "init":
-      return { sessions };
-    case "add-session":
-      return applyAddSession(input, sessions);
-    case "remove-session":
-      return applyRemoveSession(input, sessions);
-    case "update-phase":
-      return applyUpdatePhase(input, sessions);
-  }
-}
-
-function applyAddSession(
-  input: ProjectMdUpsertInput,
-  sessions: ProjectSession[],
-): OperationResult | ProjectMdUpsertError {
-  if (!input.sessionFolder) return { error: "--add-session requiere el código de sesión" };
-  const filtered = sessions.filter((s) => s.folder !== input.sessionFolder);
-  filtered.push({
-    folder: input.sessionFolder,
-    phase: input.phase ?? "requerimiento",
-    branches: input.branches ?? [],
-  });
-  return { sessions: filtered };
-}
-
-function applyRemoveSession(
-  input: ProjectMdUpsertInput,
-  sessions: ProjectSession[],
-): OperationResult | ProjectMdUpsertError {
-  if (!input.sessionFolder) return { error: "--remove-session requiere el código de sesión" };
-  return { sessions: sessions.filter((s) => s.folder !== input.sessionFolder) };
-}
-
-function applyUpdatePhase(
-  input: ProjectMdUpsertInput,
-  sessions: ProjectSession[],
-): OperationResult | ProjectMdUpsertError {
-  if (!input.sessionFolder) return { error: "--update-phase requiere el código de sesión" };
-  const target = sessions.find((s) => s.folder === input.sessionFolder);
-  if (!target) return { error: `Sesión no encontrada en Status: ${input.sessionFolder}` };
-  if (input.phase !== undefined) target.phase = input.phase;
-  if (input.branches !== undefined) target.branches = input.branches;
-  return { sessions };
-}
-
 async function buildRenderInput(
   fs: FileSystemPort,
   cwd: string,
   input: ProjectMdUpsertInput,
   existing: ParsedProjectBlock | null,
-  sessions: ProjectSession[],
 ): Promise<RenderProjectBlockInput> {
   const proyecto = input.proyecto ?? existing?.proyecto ?? "";
   const fuentes = mergeFuentes(existing?.fuentes ?? [], input);
@@ -192,7 +127,7 @@ async function buildRenderInput(
     ...(existing?.working_branches ?? {}),
     ...(input.workingBranches ?? {}),
   };
-  return { proyecto, fuentes, stack, sessions, mode, workingBranches };
+  return { proyecto, fuentes, stack, mode, workingBranches };
 }
 
 /**
@@ -252,7 +187,6 @@ async function writeAllFiles(
 function composePayload(
   input: ProjectMdUpsertInput,
   write: WriteSummary,
-  sessions: ProjectSession[],
   renderInput: RenderProjectBlockInput,
 ): ProjectMdUpsertOutput {
   if (input.verbose === true) {
@@ -261,14 +195,11 @@ function composePayload(
       action: input.op,
       mode: input.op,
       workspace_mode: renderInput.mode ?? "project",
-      ...(input.sessionFolder ? { session: input.sessionFolder } : {}),
-      sessions_in_block: sessions.map((s) => s.folder),
-      working_branches: renderInput.mode === "hub" ? (renderInput.workingBranches ?? {}) : {},
+      working_branches: renderInput.workingBranches ?? {},
       results: write.results,
     };
   }
   const compact: ProjectMdUpsertOutput = { ok: !write.hasError, action: input.op };
-  if (input.sessionFolder) compact.session = input.sessionFolder;
   if (write.hasError) {
     compact.results = write.results.filter((r) => r.error !== undefined);
   }

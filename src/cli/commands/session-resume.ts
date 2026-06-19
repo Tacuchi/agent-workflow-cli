@@ -6,7 +6,7 @@ import type { CliContext } from "../types.js";
 
 export const sessionResumeCommand: QtcCommand = {
   name: "session-resume",
-  describe: "Load resume payload for a session (objetivo + phase from <NS>-PROJECT).",
+  describe: "Load resume payload for a session (objetivo + checkpoint from session folder).",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const data = await runSessionResume(

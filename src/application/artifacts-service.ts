@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
 import { parseDecisiones } from "./parsers/decisiones.js";
-import { parseObjetivo } from "./parsers/objetivo.js";
 import { type TaskItem, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
@@ -14,12 +14,9 @@ export interface ArtifactsInput {
   verbose?: boolean;
 }
 
-interface ObjetivoSummary {
+interface SessionSummary {
   titulo: string | null;
-  tipo: string | null;
-  modalidad: string | null;
   criterios_count: number;
-  fuentes_mencionadas: string[];
   has_origen: boolean;
 }
 
@@ -32,16 +29,12 @@ interface TasksSummary {
 }
 
 interface ArtifactsBlock {
-  objetivo: ObjetivoSummary | null;
+  session: SessionSummary | null;
   tasks: TasksSummary | null;
   decisiones_count: number;
-  dependencias_present?: boolean;
   checkpoint_present?: boolean;
-  entrega_present?: boolean;
   conclusiones_present?: boolean;
-  discovery_present?: boolean;
-  evidencia_present?: boolean;
-  hallazgos_present?: boolean;
+  analysis_file_present?: boolean;
   backlog_present?: boolean;
   scripts_sql_present?: boolean;
   scripts?: { total: number; forward: number; rollback: number; has_bundle: boolean };
@@ -51,9 +44,7 @@ export interface ArtifactsOutput {
   session: string;
   path: string;
   code: string | null;
-  flow: string | null;
   state: string;
-  phase: string;
   artifacts: ArtifactsBlock;
   branch?: string;
 }
@@ -76,7 +67,7 @@ export async function runArtifactsCommand(
   const cwd = env.cwd();
   const verbose = input.verbose === true;
 
-  const objetivoSummary = await summarizeObjetivo(fs, session.path);
+  const sessionSummary = await summarizeSession(fs, session.path);
   const tasksSummary = await summarizeTasks(fs, session.path);
   const decisionesCount = await countDecisiones(fs, session.path);
 
@@ -84,7 +75,7 @@ export async function runArtifactsCommand(
   const scripts = await readScripts(fs, session.path);
 
   const artifacts: ArtifactsBlock = {
-    objetivo: objetivoSummary,
+    session: sessionSummary,
     tasks: tasksSummary,
     decisiones_count: decisionesCount,
   };
@@ -105,9 +96,7 @@ export async function runArtifactsCommand(
     session: session.folder,
     path: verbose ? session.path : relpath(session.path, cwd),
     code: session.code,
-    flow: session.flow,
     state: session.state,
-    phase: session.phase,
     artifacts,
   };
   if (session.branch !== undefined || verbose) {
@@ -116,21 +105,29 @@ export async function runArtifactsCommand(
   return result;
 }
 
-async function summarizeObjetivo(
+async function summarizeSession(
   fs: FileSystemPort,
   sessionPath: string,
-): Promise<ObjetivoSummary | null> {
-  const path = await findArtifact(sessionPath, "objective", fs);
+): Promise<SessionSummary | null> {
+  // New-model SESSION.md first; legacy OBJECTIVE.md as fallback.
+  const path =
+    (await findArtifact(sessionPath, "session", fs)) ??
+    (await findArtifact(sessionPath, "objective", fs));
   if (!path) return null;
   const text = await fs.readText(path);
-  const parsed = parseObjetivo(text);
+  const titleMatch = text.match(/^#\s+(.+)/m);
+  const successSection =
+    parseMdSectionBilingual(text, "Success criteria") ??
+    parseMdSectionBilingual(text, "Criterios de aceptación") ??
+    "";
+  const criteriaCount = (successSection.match(/^\s*[-*]\s+\[[ xX]?\]/gm) ?? []).length;
+  const originSection = parseMdSectionBilingual(text, "Origin");
+  const hasOrigen =
+    originSection !== undefined && (firstNonEmptyLine(originSection)?.length ?? 0) > 0;
   return {
-    titulo: parsed.titulo,
-    tipo: parsed.tipo,
-    modalidad: parsed.modalidad,
-    criterios_count: parsed.criterios_aceptacion.length,
-    fuentes_mencionadas: parsed.fuentes_mencionadas,
-    has_origen: parsed.origen !== null,
+    titulo: titleMatch?.[1]?.trim() ?? null,
+    criterios_count: criteriaCount,
+    has_origen: hasOrigen,
   };
 }
 
@@ -159,13 +156,9 @@ async function countDecisiones(fs: FileSystemPort, sessionPath: string): Promise
 }
 
 interface PresenceFlags {
-  dependencias_present: boolean;
   checkpoint_present: boolean;
-  entrega_present: boolean;
   conclusiones_present: boolean;
-  discovery_present: boolean;
-  evidencia_present: boolean;
-  hallazgos_present: boolean;
+  analysis_file_present: boolean;
   backlog_present: boolean;
   scripts_sql_present: boolean;
 }
@@ -173,13 +166,9 @@ interface PresenceFlags {
 async function readPresenceFlags(fs: FileSystemPort, sessionPath: string): Promise<PresenceFlags> {
   const present = await listExistingArtifacts(sessionPath, fs);
   return {
-    dependencias_present: present.dependencies !== null,
     checkpoint_present: present.checkpoint !== null,
-    entrega_present: present.delivery !== null,
     conclusiones_present: present.conclusions !== null,
-    discovery_present: present.discovery !== null,
-    evidencia_present: present.evidence !== null,
-    hallazgos_present: present.findings !== null,
+    analysis_file_present: present.analysis_file !== null,
     backlog_present: present.backlog !== null,
     scripts_sql_present: present.scripts_sql !== null,
   };

@@ -66,18 +66,4 @@ describe("renderRefs — BUILTIN_RENDERERS (post R5)", () => {
       "[DEC](../docs/decisiones/001-stack.md), [MANUAL](../docs/manuales/002-mcp.md), [CONCLUSION](../docs/conclusiones/003-audit.md)",
     );
   });
-
-  it("origen sin lookup cae a string literal", () => {
-    expect(renderRefs("origen:design-056")).toBe("origen:design-056");
-  });
-
-  it("origen con lookup resuelve a link a sessions/", () => {
-    const lookup = {
-      resolveFolder: (flow: string, code: string) =>
-        flow === "design" && code === "056" ? "session056-design-foo" : undefined,
-    };
-    expect(renderRefs("origen:design-056", lookup)).toBe(
-      "[origen:design-056](sessions/session056-design-foo/)",
-    );
-  });
 });

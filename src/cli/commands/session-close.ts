@@ -5,35 +5,15 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
-import { writeStdout } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const sessionCloseCommand: QtcCommand = {
   name: "session-close",
-  describe: "Close a session: mark HISTORY as closed and remove from <NS>-PROJECT.",
+  describe: "Close a session: write the .closed marker in the session folder.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionCloseInput = {};
     const code = args.values.get("code");
     if (code !== undefined) input.code = code;
-    const dec = args.values.get("graduated-decisions");
-    if (dec !== undefined) input.graduatedDecisions = dec;
-    const plan = args.values.get("graduated-plan");
-    if (plan !== undefined) input.graduatedPlan = plan;
-    const scripts = args.values.get("graduated-scripts");
-    if (scripts !== undefined) input.graduatedScripts = scripts;
-    const design = args.values.get("graduated-design");
-    if (design !== undefined) input.graduatedDesign = design;
-    const propuesta = args.values.get("graduated-propuesta");
-    if (propuesta !== undefined) input.graduatedPropuesta = propuesta;
-    const conclusions = args.values.get("graduated-conclusions");
-    if (conclusions !== undefined) input.graduatedConclusions = conclusions;
-    const manuales = args.values.get("graduated-manuales");
-    if (manuales !== undefined) input.graduatedManuales = manuales;
-    const especificaciones = args.values.get("graduated-especificaciones");
-    if (especificaciones !== undefined) input.graduatedEspecificaciones = especificaciones;
-    const release = args.values.get("graduated-release");
-    if (release !== undefined) input.graduatedRelease = release;
-    if (args.flags.has("allow-loose-slugs")) input.allowLooseSlugs = true;
     const refs = args.values.get("refs");
     if (refs !== undefined) input.refs = refs;
 
@@ -46,8 +26,6 @@ export const sessionCloseCommand: QtcCommand = {
         exitCode: 1,
       };
     }
-    // Mirror Python: cmd_project_md_upsert prints first, then cmd_session_close prints.
-    writeStdout(`${JSON.stringify(data.projectMd, null, 2)}\n`);
     return { ok: true, data: data.sessionClose, exitCode: 0 };
   },
 };

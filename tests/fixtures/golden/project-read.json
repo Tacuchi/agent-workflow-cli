@@ -10,13 +10,6 @@
       }
     ],
     "stack": {},
-    "sessions": [
-      {
-        "folder": "session001-dev-foo",
-        "phase": "requerimiento",
-        "branches": []
-      }
-    ],
     "working_branches": {
       "sample": "main"
     },
