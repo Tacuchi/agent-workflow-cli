@@ -15,4 +15,4 @@ export type MenuAction =
   | "update"
   | "help"
   | "exit"
-  | "project-init";
+  | "workspace-init";

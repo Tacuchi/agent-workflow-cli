@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { GitCliAdapter } from "../adapters/git-cli.js";
 import { NodeEnv } from "../adapters/node-env.js";
 import { NodeFileSystem } from "../adapters/node-file-system.js";
@@ -198,7 +198,7 @@ function emit<T>(result: CommandResult<T>): void {
   if (result.ok && result.data !== undefined) {
     writeStdout(renderRaw(result.data));
   } else if (result.ok && result.data === undefined) {
-    // Command already wrote stdout itself (e.g., auto-plan-decide with custom float repr).
+    // Command already wrote stdout itself (custom rendering); nothing more to emit.
     return;
   } else {
     const payload: { ok: boolean; error: typeof result.error; data?: unknown } = {
@@ -226,9 +226,14 @@ async function dispatchMenuAction(
       // suppresses the redundant inquirer prompt (which also races with
       // ink's stdin teardown and can phantom-cancel).
       return await run(["self", "update", "--yes"]);
-    case "project-init":
-      // Dispara el flujo de inicialización single-repo. Vive como `project-md-upsert --init`.
-      return await run(["project-md-upsert", "--init"]);
+    case "workspace-init": {
+      // Inicializa el directorio como workspace (1+ fuentes). Sin distinción
+      // project/hub. La forma interactiva con recolección de fuentes vive en el
+      // TUI (project-tab → HubInitForm); este path es el fallback CLI con la
+      // cwd como única fuente.
+      const cwd = process.cwd();
+      return await run(["workspace-init", "--source", `${basename(cwd)}:${cwd}`]);
+    }
     case "help":
       printHelp(registry.list());
       return 0;

@@ -1,13 +1,14 @@
-// Data layer del nuevo "Proyecto" tab del TUI.
+// Data layer del tab WORKSPACE del TUI.
 //
-// Agrega información que el usuario necesita sin abrir ningún host de IA:
+// Agrega la información del workspace que el usuario necesita sin abrir ningún
+// host de IA:
 //
-// - git status del workspace (branch, ahead/behind, dirty/staged/untracked, último commit)
+// - git status del repo primario (branch, ahead/behind, dirty/staged/untracked, último commit)
 // - ramas recientes (con flag `current`)
-// - sources del bloque PROJECT (hub mode → varias filas)
-// - sesiones activas (code, flow, name, phase, summary)
-// - pendientes (items `- [ ]` agregados desde TASKS.md de cada sesión activa)
+// - sources declaradas (alias / path / rama principal)
+// - ramas de trabajo actuales (working_branches por alias del bloque WORKSPACE)
 //
+// No hay distinción project/hub: un workspace simplemente tiene 1+ fuentes.
 // Read-only puro: ningún side-effect en disco ni en remoto.
 
 import { basename, join } from "node:path";
@@ -17,7 +18,6 @@ import type { GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
 import { type ParsedProjectBlock, parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
-import { type SessionEntry, SessionsService } from "./sessions-service.js";
 
 export interface ProjectGitData {
   branch: string;
@@ -57,53 +57,26 @@ export interface ProjectSource {
   changedFiles: number;
 }
 
-export interface ProjectSessionSummary {
-  code: string;
-  flow: string;
-  name: string;
-  phase: string;
-  state: "active" | "closed" | "requirement";
-  /** `## Type` del OBJECTIVE (feature/bugfix/…). Ausente si no declarado. */
-  type?: string;
-  /** Fecha de inicio (o mtime) de la sesión, para ordenar/mostrar recencia. */
-  date?: string;
-  summary?: string;
-}
-
-export interface ProjectPendingItem {
-  /** Code de la sesión que lo origina */
-  sessionCode: string;
-  /** Slug + flow (ej. `dev/tui-redesign-crush`) */
-  sessionLabel: string;
-  /** Texto del item (sin el `- [ ]`) */
-  text: string;
-  /** Prioridad heurística por keywords (high/med/low) */
-  prio: "high" | "med" | "low";
-}
-
 export interface ProjectTabData {
   workspaceName: string;
-  workspaceMode: "project" | "hub";
   /** Path absoluto del workspace (cwd) */
   workspacePath: string;
   /**
-   * True si el workspace tiene bloque AW-PROJECT en CLAUDE.md/AGENTS.md
-   * (es decir, fue inicializado con project-init o hub-init).
+   * True si el workspace tiene bloque WORKSPACE en CLAUDE.md/AGENTS.md
+   * (es decir, fue inicializado con workspace-init).
    *
-   * Cuando es false, el tab renderiza una landing con las opciones de init
+   * Cuando es false, el tab renderiza una landing con la opción de init
    * en lugar del contenido completo.
    */
   initialized: boolean;
-  /** Git data del repo primario (cwd en project mode, primera fuente en hub mode) */
+  /** Git data del repo primario (cwd, o la primera fuente declarada) */
   git: ProjectGitData | null;
   /** Ramas recientes ordenadas por last-commit-date desc */
   branches: ProjectBranch[];
-  /** Sources declaradas (hub mode); vacío en project mode */
+  /** Sources declaradas (alias / path / rama principal) */
   sources: ProjectSource[];
-  /** Sesiones (active + closed recientes) */
-  sessions: ProjectSessionSummary[];
-  /** Pendientes agregados de TASKS.md de sesiones activas */
-  pending: ProjectPendingItem[];
+  /** Ramas de trabajo actuales por alias de fuente (bloque WORKSPACE > Status) */
+  workingBranches: Record<string, string>;
   /** Si hubo error parcial fetcheando data */
   warnings: string[];
 }
@@ -111,8 +84,6 @@ export interface ProjectTabData {
 interface BuildOptions {
   /** Máximo de ramas a listar (default 5) */
   branchLimit?: number;
-  /** Máximo de pendientes a listar (default 10) */
-  pendingLimit?: number;
 }
 
 export interface ProjectTabDataDeps {
@@ -146,20 +117,14 @@ export async function buildProjectTabData(
   );
 
   const workspaceName = block?.proyecto || basename(cwd);
-  const workspaceMode = block?.mode ?? "project";
 
-  // Primary repo: en hub mode, primera source. En project mode, cwd.
-  const primaryRepoPath =
-    workspaceMode === "hub" && block && block.fuentes.length > 0
-      ? (block.fuentes[0]?.path ?? cwd)
-      : cwd;
+  // Repo primario: la primera fuente declarada (si hay), si no el cwd.
+  const primaryRepoPath = block && block.fuentes.length > 0 ? (block.fuentes[0]?.path ?? cwd) : cwd;
   const primaryMainBranch =
-    workspaceMode === "hub" && block && block.fuentes.length > 0
-      ? (block.fuentes[0]?.main_branch ?? "main")
-      : "main";
-  // En hub mode el tile GIT debe mostrar la rama de trabajo DEFINIDA en el hub,
-  // no la que el source primario tenga checked out (puede estar en cualquier rama).
-  const definedWorkingBranch = resolveDefinedWorkingBranch(block, workspaceMode);
+    block && block.fuentes.length > 0 ? (block.fuentes[0]?.main_branch ?? "main") : "main";
+  // El tile GIT debe mostrar la rama de trabajo DEFINIDA en el workspace para la
+  // fuente primaria, no la que el repo tenga checked out (puede ser cualquiera).
+  const definedWorkingBranch = resolveDefinedWorkingBranch(block);
 
   // ===== Git data del repo primario =====
   const gitData = await safeRun(
@@ -177,9 +142,9 @@ export async function buildProjectTabData(
     [] as ProjectBranch[],
   );
 
-  // ===== Sources (hub mode) =====
+  // ===== Sources (todas las fuentes declaradas) =====
   const sources: ProjectSource[] = [];
-  if (workspaceMode === "hub" && block) {
+  if (block) {
     for (const f of block.fuentes) {
       const repoPath = f.path;
       const isRepo = await safeRun(
@@ -212,56 +177,14 @@ export async function buildProjectTabData(
     }
   }
 
-  // ===== Sessions =====
-  // `state: "all"` es deliberado: necesitamos TODAS las sesiones para que el
-  // tile `sessions` muestre el total real (no sólo activas) y para alimentar la
-  // sección de sesiones recientes. `list({})` filtra a activas por default.
-  const sessionsSvc = new SessionsService(fs, env, paths);
-  const sessionsList = await safeRun(
-    "sessions",
-    () => sessionsSvc.list({ state: "all" }),
-    warnings,
-    {
-      sessions: [] as SessionEntry[],
-    } as Awaited<ReturnType<SessionsService["list"]>>,
-  );
-  const sessions: ProjectSessionSummary[] = sessionsList.sessions
-    .filter(
-      (s): s is SessionEntry & { code: string; flow: string } => s.code !== null && s.flow !== null,
-    )
-    .map((s) => {
-      const item: ProjectSessionSummary = {
-        code: s.code,
-        flow: s.flow,
-        name: s.name,
-        phase: s.phase,
-        state: s.state,
-      };
-      if (s.type !== undefined) item.type = s.type;
-      if (s.date !== undefined) item.date = s.date;
-      if (s.summary !== undefined) item.summary = s.summary;
-      return item;
-    });
-
-  // ===== Pendings: parse `- [ ]` de TASKS.md en sesiones activas =====
-  const pending = await safeRun(
-    "pending",
-    () =>
-      buildPending(fs, paths.cwdSessionsDir(), sessionsList.sessions, options.pendingLimit ?? 10),
-    warnings,
-    [] as ProjectPendingItem[],
-  );
-
   return {
     workspaceName,
-    workspaceMode,
     workspacePath: cwd,
     initialized: block !== null,
     git: gitData,
     branches,
     sources,
-    sessions,
-    pending,
+    workingBranches: block?.working_branches ?? {},
     warnings,
   };
 }
@@ -380,55 +303,6 @@ async function buildBranches(
   return branches;
 }
 
-async function buildPending(
-  fs: FileSystemPort,
-  sessionsDir: string,
-  sessions: SessionEntry[],
-  limit: number,
-): Promise<ProjectPendingItem[]> {
-  const items: ProjectPendingItem[] = [];
-  const active = sessions.filter((s) => s.state === "active" && s.code !== null);
-  for (const s of active) {
-    const tasksPath = join(sessionsDir, s.folder, "TASKS.md");
-    if (!(await fs.exists(tasksPath))) continue;
-    const content = await fs.readText(tasksPath).catch(() => null);
-    if (!content) continue;
-    const lines = content.split("\n");
-    for (const raw of lines) {
-      const line = raw.trim();
-      // `- [ ] foo` o `| Tx | open | … | <texto> |`
-      let text: string | null = null;
-      const ck = line.match(/^[-*]\s+\[\s\]\s+(.+)$/);
-      if (ck) {
-        text = ck[1] ?? null;
-      } else if (line.startsWith("|") && /\|\s*open\s*\|/i.test(line)) {
-        const cols = line
-          .split("|")
-          .map((c) => c.trim())
-          .filter((c) => c.length > 0);
-        text = cols[cols.length - 1] ?? null; // last cell
-        if (text && (text.startsWith("---") || text.toLowerCase() === "tarea")) text = null;
-      }
-      if (!text) continue;
-      items.push({
-        sessionCode: s.code ?? "?",
-        sessionLabel: `${s.flow ?? "?"}/${s.name}`,
-        text,
-        prio: derivePrio(text),
-      });
-      if (items.length >= limit) return items;
-    }
-  }
-  return items;
-}
-
-function derivePrio(text: string): "high" | "med" | "low" {
-  const t = text.toLowerCase();
-  if (/(bloque|blocker|crit|urgente|hotfix|seguridad|prod)/.test(t)) return "high";
-  if (/(test|doc|cleanup|chore|nit|typo|opcional)/.test(t)) return "low";
-  return "med";
-}
-
 // ---------- utils ----------
 
 async function safeRun<T>(
@@ -458,20 +332,16 @@ async function runProc(
 /**
  * Rama de trabajo a mostrar en el tile GIT.
  *
- * En hub mode el tile representa el repo primario (`fuentes[0]`), pero su label
- * debe ser la rama de trabajo DEFINIDA en el hub (sección `## Status > Ramas de
- * trabajo actuales`), no la rama que la fuente tenga checked out. Así el tile no
- * cambia según en qué rama estén las fuentes.
+ * El tile representa el repo primario (`fuentes[0]`), pero su label debe ser la
+ * rama de trabajo DEFINIDA en el workspace (sección `## Status > Ramas de trabajo
+ * actuales`), no la rama que la fuente tenga checked out. Así el tile no cambia
+ * según en qué rama estén las fuentes.
  *
- * Devuelve `undefined` cuando no hay rama de trabajo declarada para el source
- * primario (project mode, o hub sin ramas declaradas) → el caller cae a la rama
- * actual del repo.
+ * Devuelve `undefined` cuando no hay rama de trabajo declarada para la fuente
+ * primaria → el caller cae a la rama actual del repo.
  */
-export function resolveDefinedWorkingBranch(
-  block: ParsedProjectBlock | null,
-  mode: "project" | "hub",
-): string | undefined {
-  if (mode !== "hub" || !block) return undefined;
+export function resolveDefinedWorkingBranch(block: ParsedProjectBlock | null): string | undefined {
+  if (!block) return undefined;
   const primaryAlias = block.fuentes[0]?.alias;
   if (primaryAlias === undefined) return undefined;
   return block.working_branches[primaryAlias];

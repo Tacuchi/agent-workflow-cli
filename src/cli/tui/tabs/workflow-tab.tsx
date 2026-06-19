@@ -11,7 +11,7 @@ import { colors } from "../theme.js";
 export interface WorkflowTabProps {
   ctx: CliContext;
   isActive: boolean;
-  /** Phase activa (1-based) inferida desde la sesión activa. 0 = idle. */
+  /** Flow activo (1-based) inferido desde la sesión activa. 0 = idle. */
   activePhase?: number;
 }
 
@@ -48,13 +48,13 @@ export function WorkflowTab({ isActive, activePhase = 0 }: WorkflowTabProps) {
           label: `${w.slashCommands.length} commands · ${w.commandFamilies.length} families · ${w.hooks.length} hooks`,
           tone: "accent",
         }}
-        action={<Text color={colors.mute}>universal session-lifecycle harness</Text>}
+        action={<Text color={colors.mute}>stages + loops + artifacts harness</Text>}
       />
 
       {/* 2-column body: lifecycle left, families+slash/hooks right */}
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
-          <SectionHead label="Session lifecycle" rightAction="day-to-day flow" />
+          <SectionHead label="Flows" rightAction="spec · plan · quick" />
           <Box marginTop={0} flexDirection="column">
             {w.phases.map((p) => (
               <PhaseCard key={p.id} phase={p} active={activePhase === p.n} />
@@ -89,7 +89,7 @@ export function WorkflowTab({ isActive, activePhase = 0 }: WorkflowTabProps) {
                 {w.slashCommands.length}
               </Text>
               <Text color={colors.dim}> slash commands · </Text>
-              <Text color={colors.accent}>/agent-workflow:&lt;name&gt;</Text>
+              <Text color={colors.accent}>/w:&lt;name&gt;</Text>
             </Box>
             <Box flexWrap="wrap">
               <Text color={colors.bright} bold>

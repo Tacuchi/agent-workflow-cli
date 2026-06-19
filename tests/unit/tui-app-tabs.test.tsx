@@ -84,8 +84,8 @@ describe("App (tab-home)", () => {
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("2");
     await new Promise((r) => setTimeout(r, 50));
-    // Workflow tab renderiza SectionHead "SESSION LIFECYCLE".
-    expect(lastFrame()).toContain("SESSION LIFECYCLE");
+    // Workflow tab renderiza SectionHead "FLOWS" (modelo stages+loops).
+    expect(lastFrame()).toContain("FLOWS");
   });
 
   it("número 5 desde la Status tab salta a Skills tab", async () => {

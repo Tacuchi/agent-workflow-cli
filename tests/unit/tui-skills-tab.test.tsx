@@ -107,6 +107,15 @@ describe("SkillsTab (TUI) — hooks integration (T2.8)", () => {
     unmount();
   });
 
+  it("uses the ~/.<host>/skills/w/ path (no legacy agent-workflow dir)", async () => {
+    const { lastFrame, unmount } = render(<SkillsTab ctx={buildCtx(home)} isActive={true} />);
+    await new Promise((r) => setTimeout(r, 50));
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("skills/w/");
+    expect(frame).not.toContain("skills/agent-workflow/");
+    unmount();
+  });
+
   it("shows hooks ✓ when ~/.claude/settings.json has hooks key", async () => {
     await mkdir(join(home, ".claude"), { recursive: true });
     await writeFile(

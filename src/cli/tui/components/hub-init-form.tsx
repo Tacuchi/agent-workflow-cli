@@ -1,26 +1,32 @@
 import { Box, Text, useInput } from "ink";
 import { useCallback, useState } from "react";
-import { type HubInitFuente, runHubInit } from "../../../application/hub-init-service.js";
+import {
+  type WorkspaceSource,
+  runWorkspaceInit,
+} from "../../../application/workspace-init-service.js";
 import type { CliContext } from "../../types.js";
 import { colors, icons } from "../theme.js";
 import { dedupeAlias, deriveAlias } from "./hub-init-alias.js";
 import { InputPrompt } from "./input-prompt.js";
 import { SectionHead } from "./section-head.js";
 
-const DEFAULT_MAIN_BRANCH = "certificacion";
+const DEFAULT_MAIN_BRANCH = "main";
 
 /**
- * Form nativo en ink para inicializar un hub. Recolecta proyecto + fuentes (≥2)
- * + rama base DENTRO del TUI y corre `runHubInit` in-process. No hace handoff a
- * inquirer (la causa del crash en Windows post-teardown de ink). El alias de
- * cada fuente se infiere del nombre de su carpeta. Escribe el bloque y SIEMPRE
- * configura la visibilidad multi-root (settings.local.json + config.toml, gitignored).
+ * Form nativo en ink para inicializar un WORKSPACE. Recolecta proyecto + fuentes
+ * (≥1) + rama base + rama de trabajo DENTRO del TUI y corre `runWorkspaceInit`
+ * in-process. No hace handoff a inquirer (la causa del crash en Windows
+ * post-teardown de ink). El alias de cada fuente se infiere del nombre de su
+ * carpeta. Escribe el bloque WORKSPACE y, con 2+ fuentes, configura la
+ * visibilidad multi-root (settings.local.json + config.toml, gitignored).
+ *
+ * No hay distinción project/hub: un workspace simplemente tiene 1+ fuentes.
  */
 type Step =
   | { kind: "proyecto" }
-  | { kind: "fuente"; proyecto: string; fuentes: HubInitFuente[] }
-  | { kind: "rama"; proyecto: string; fuentes: HubInitFuente[] }
-  | { kind: "working"; proyecto: string; fuentes: HubInitFuente[]; mainBranch: string }
+  | { kind: "fuente"; proyecto: string; fuentes: WorkspaceSource[] }
+  | { kind: "rama"; proyecto: string; fuentes: WorkspaceSource[] }
+  | { kind: "working"; proyecto: string; fuentes: WorkspaceSource[]; mainBranch: string }
   | { kind: "busy"; label: string };
 
 export interface HubInitFormProps {
@@ -51,20 +57,20 @@ export function HubInitForm({
   const create = useCallback(
     async (
       proyecto: string,
-      fuentes: HubInitFuente[],
+      fuentes: WorkspaceSource[],
       mainBranch: string,
       workingBranch: string,
     ) => {
-      setStep({ kind: "busy", label: `creando hub · ${fuentes.length} fuentes…` });
+      setStep({ kind: "busy", label: `creando workspace · ${fuentes.length} fuentes…` });
       try {
         // La rama de trabajo se aplica a TODAS las fuentes (patrón común: una feature
         // branch compartida). Vacía = sin rama de trabajo (queda solo la rama base).
         const workingBranches = workingBranch
           ? Object.fromEntries(fuentes.map((f) => [f.alias, workingBranch]))
           : {};
-        const result = await runHubInit(ctx.fs, ctx.env, ctx.paths, {
+        const result = await runWorkspaceInit(ctx.fs, ctx.env, ctx.paths, {
           proyecto,
-          fuentes,
+          sources: fuentes,
           workingBranches,
           mainBranch,
         });
@@ -72,11 +78,12 @@ export function HubInitForm({
           onDone({ ok: false, summary: result.hint ?? result.error });
           return;
         }
+        const multiroot = fuentes.length > 1 ? " · visibilidad configurada" : "";
         onDone({
           ok: result.ok,
           summary: result.ok
-            ? `Hub creado · ${fuentes.length} fuentes · visibilidad configurada`
-            : "hub-init no completó",
+            ? `Workspace creado · ${fuentes.length} fuentes${multiroot}`
+            : "workspace-init no completó",
         });
       } catch (err) {
         onDone({ ok: false, summary: (err as Error).message });
@@ -99,14 +106,14 @@ export function HubInitForm({
     return (
       <Box flexDirection="column">
         <SectionHead
-          label="Initialize as hub"
+          label="Initialize workspace"
           hint="Paso 1 · nombre"
           rightAction="⏎ siguiente · esc cancela"
         />
         <Box marginLeft={2} marginTop={1}>
           <InputPrompt
             key="proyecto"
-            message="Nombre del proyecto:"
+            message="Nombre del workspace:"
             defaultValue={defaultProyecto}
             validate={(v) => v.trim().length > 0 || "El nombre no puede estar vacío"}
             onSubmit={(v) => setStep({ kind: "fuente", proyecto: v.trim(), fuentes: [] })}
@@ -122,8 +129,8 @@ export function HubInitForm({
     return (
       <Box flexDirection="column">
         <SectionHead
-          label="Initialize as hub"
-          hint={`Paso 2 · fuente #${n} (mín 2)`}
+          label="Initialize workspace"
+          hint={`Paso 2 · fuente #${n} (mín 1)`}
           rightAction="⏎ agrega · vacío = terminar · esc cancela"
         />
         <FuenteList fuentes={step.fuentes} />
@@ -132,18 +139,18 @@ export function HubInitForm({
             key={`fuente-${step.fuentes.length}`}
             message={`Fuente #${n} · path (vacío = terminar):`}
             validate={(v) =>
-              v.trim().length > 0 || step.fuentes.length >= 2 || "Necesitás al menos 2 fuentes"
+              v.trim().length > 0 || step.fuentes.length >= 1 || "Necesitás al menos 1 fuente"
             }
             onSubmit={(v) => {
               const path = v.trim();
               if (path === "") {
-                if (step.fuentes.length >= 2) {
+                if (step.fuentes.length >= 1) {
                   setStep({ kind: "rama", proyecto: step.proyecto, fuentes: step.fuentes });
                 }
                 return;
               }
               const seen = new Set(step.fuentes.map((f) => f.alias));
-              const fuente: HubInitFuente = { alias: dedupeAlias(deriveAlias(path), seen), path };
+              const fuente: WorkspaceSource = { alias: dedupeAlias(deriveAlias(path), seen), path };
               setStep({
                 kind: "fuente",
                 proyecto: step.proyecto,
@@ -161,15 +168,15 @@ export function HubInitForm({
     return (
       <Box flexDirection="column">
         <SectionHead
-          label="Initialize as hub"
-          hint="Paso 3 · rama base"
+          label="Initialize workspace"
+          hint="Paso 3 · rama principal"
           rightAction="⏎ siguiente · esc cancela"
         />
         <FuenteList fuentes={step.fuentes} />
         <Box marginLeft={2} marginTop={1}>
           <InputPrompt
             key="rama"
-            message="Rama base:"
+            message="Rama principal:"
             defaultValue={DEFAULT_MAIN_BRANCH}
             validate={(v) => v.trim().length > 0 || "La rama no puede estar vacía"}
             onSubmit={(v) =>
@@ -190,7 +197,7 @@ export function HubInitForm({
   return (
     <Box flexDirection="column">
       <SectionHead
-        label="Initialize as hub"
+        label="Initialize workspace"
         hint="Paso 4 · rama de trabajo"
         rightAction="⏎ crear · vacío = sin rama · esc cancela"
       />
@@ -207,7 +214,7 @@ export function HubInitForm({
   );
 }
 
-function FuenteList({ fuentes }: { fuentes: HubInitFuente[] }) {
+function FuenteList({ fuentes }: { fuentes: WorkspaceSource[] }) {
   if (fuentes.length === 0) return null;
   return (
     <Box marginLeft={2} marginTop={1} flexDirection="column">

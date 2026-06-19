@@ -1,12 +1,12 @@
 // Datos del Workflow tab — hardcoded para evitar I/O en render.
-// Sincronizado con (verificado en T4):
-//   - skills/agent-workflow/SKILL.md (familias de comandos)
-//   - skills/agent-workflow/commands/   (17 slash commands)
-//   - skills/agent-workflow/hooks/hooks.template.json (5 eventos)
-//   - aw --help (familias del CLI real)
+// Sincronizado con el modelo rediseñado (stages + loops + artifacts):
+//   - skills/w/commands/   (/w: slash commands — 1 por archivo .md)
+//   - skills/w/README.md   (3 layers + 3 flows: SPEC / PLANIFICATION / QUICK)
+//   - src/cli/help-groups.ts (familias del CLI real, post-cleanup)
+//   - skills/w/hooks/hooks.template.json (5 eventos)
 //
-// Puntos de drift: si se agregan/quitan slash commands en `commands/` o se
-// renombran familias en SKILL.md, actualizar este archivo. Los totales se
+// Puntos de drift: si se agregan/quitan /w: commands en `commands/`, o se
+// renombran familias en help-groups.ts, actualizar este archivo. Los totales se
 // derivan con `.length` en runtime — NO hardcodear cantidades en strings.
 
 import type { FamilyCardData } from "../components/family-card.js";
@@ -27,62 +27,66 @@ export interface WorkflowContent {
 }
 
 export const WORKFLOW_CONTENT: WorkflowContent = {
-  overview: "Universal session-lifecycle harness — 11 families, 17 slash commands, 5 hooks.",
+  overview:
+    "Stages + loops + artifacts — 3 flows (SPEC · PLANIFICATION · QUICK) drive convergent loops over session artifacts; export-* promotes to docs/.",
 
-  // 5-phase user-facing lifecycle.
+  // Las 3 FLOWS del modelo + bootstrap (workspace-init) + familia export-*.
+  // Reusa PhaseCardData genérico (id/n/title/desc/commands/slash/hook).
   phases: [
     {
-      id: "discover",
+      id: "workspace-init",
       n: 1,
-      title: "Discover",
-      desc: "Detect workspace state — sources, branches, mode, stack.",
-      commands: ["sources", "workspace-mode", "sessions"],
-      slash: "—",
-      hook: "—",
-    },
-    {
-      id: "start",
-      n: 2,
-      title: "Start",
-      desc: "Open a tracked session with OBJECTIVE + flow (core/dev/design).",
-      commands: ["session-create", "session-resume"],
-      slash: "/agent-workflow:session",
+      title: "Workspace init",
+      desc: "Bootstrap a folder into a workspace — .workflow/ + docs/ taxonomy + WORKSPACE block. Single-pass.",
+      commands: ["workspace-init"],
+      slash: "/w:workspace-init",
       hook: "SessionStart",
     },
     {
-      id: "plan",
-      n: 3,
-      title: "Plan",
-      desc: "Choose planning depth + detect phase.",
-      commands: ["auto-plan-decide", "phase-detect", "specialty-choose"],
-      slash: "/agent-workflow:rules",
+      id: "spec",
+      n: 2,
+      title: "SPEC — the what",
+      desc: "Define the spec. spec-new is single-pass; spec-refine drives the refine loop → docs/specs.",
+      commands: ["spec-new", "spec-refine"],
+      slash: "/w:spec-new · /w:spec-refine",
       hook: "—",
     },
     {
-      id: "work",
-      n: 4,
-      title: "Work",
-      desc: "Persist progress in CHECKPOINT.md. Drift caught by topic-change.",
-      commands: ["checkpoint-write", "topic-change-check", "tasks-data"],
-      slash: "/agent-workflow:compact",
-      hook: "PreToolUse · PreCompact · PostCompact",
+      id: "planification",
+      n: 3,
+      title: "PLANIFICATION — the how",
+      desc: "Plan and execute. plan-new + plan-exec each drive loops → docs/plans · docs/tools.",
+      commands: ["plan-new", "plan-exec"],
+      slash: "/w:plan-new · /w:plan-exec",
+      hook: "PreCompact · PostCompact",
     },
     {
-      id: "close",
-      n: 5,
-      title: "Close / Graduate",
-      desc: "Close session + export artifacts. Handoff or release.",
-      commands: ["session-close", "release-data", "graduate"],
-      slash: "/agent-workflow:resume",
+      id: "quick",
+      n: 4,
+      title: "QUICK — the shortcut",
+      desc: "Lightweight one-command loop for small tasks. Owns no docs/ folder.",
+      commands: ["quick"],
+      slash: "/w:quick",
       hook: "SessionEnd",
+    },
+    {
+      id: "export",
+      n: 5,
+      title: "Export — promote to docs/",
+      desc: "The only artifact→docs/ promotion path. Read-only consolidation of session artifacts.",
+      commands: ["export-scripts", "export-manuals", "export-diagrams", "export-reports"],
+      slash: "/w:export-scripts …",
+      hook: "—",
     },
   ],
 
-  // 11 command families verified against `aw --help`.
+  // Command families — espejo EXACTO de help-groups.ts (post-cleanup), con
+  // los nombres de comandos realmente registrados en main.ts. `workspace-init`
+  // y `set-working-branch` viven bajo Sources / Branches.
   commandFamilies: [
     {
       id: "session",
-      title: "Session mgmt",
+      title: "Session lifecycle",
       items: ["sessions", "session-create", "session-resume", "session-close", "session-artifacts"],
     },
     {
@@ -97,24 +101,20 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     },
     {
       id: "sources",
-      title: "Sources / branches",
-      items: ["sources", "attach-multiroot", "detach-multiroot", "check-branch"],
+      title: "Sources / Branches",
+      items: [
+        "sources",
+        "set-working-branch",
+        "workspace-init",
+        "attach-multiroot",
+        "detach-multiroot",
+        "check-branch",
+      ],
     },
     {
       id: "orchestration",
       title: "Orchestration",
-      items: [
-        "phase-detect",
-        "phase-next",
-        "workflows",
-        "workspace-mode",
-        "stack",
-        "skill-index",
-        "auto-plan-decide",
-        "topic-change-check",
-        "specialty-choose",
-        "resume-summary",
-      ],
+      items: ["workspace-mode", "stack", "skill-index", "resume-summary"],
     },
     {
       id: "doctor",
@@ -128,18 +128,17 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
         "code-scan",
         "project-md-upsert",
         "bootstrap-dsn",
-        "graduate",
         "upgrade-hub-mode",
       ],
     },
     {
       id: "hooks",
-      title: "Hooks (cli)",
+      title: "Hooks",
       items: ["hook branch-check", "hook sql-mutation-guard", "hook git-commit-advisor"],
     },
     {
       id: "mcp",
-      title: "MCP / DSN",
+      title: "MCP",
       items: ["mcp dbhub", "mcp setup", "mcp remove", "mcp doctor", "mcp warp-status"],
     },
     {
@@ -159,32 +158,20 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
         "self bootstrap",
       ],
     },
-    {
-      id: "other",
-      title: "Other",
-      items: ["graduation-check", "hub-init", "visibility"],
-    },
   ],
 
-  // 17 slash commands — `ls skills/agent-workflow/commands/*.md`.
+  // /w: slash commands — `ls skills/w/commands/*.md` (excl. README).
   slashCommands: [
-    "/agent-workflow:session",
-    "/agent-workflow:resume",
-    "/agent-workflow:compact",
-    "/agent-workflow:doctor",
-    "/agent-workflow:rules",
-    "/agent-workflow:migrate",
-    "/agent-workflow:project-init",
-    "/agent-workflow:hub-init",
-    "/agent-workflow:export-plan",
-    "/agent-workflow:export-arq",
-    "/agent-workflow:export-report",
-    "/agent-workflow:export-conclusions",
-    "/agent-workflow:export-scripts",
-    "/agent-workflow:export-requirement",
-    "/agent-workflow:export-qa-note",
-    "/agent-workflow:export-tech-note",
-    "/agent-workflow:export-tech-manuals",
+    "/w:workspace-init",
+    "/w:spec-new",
+    "/w:spec-refine",
+    "/w:plan-new",
+    "/w:plan-exec",
+    "/w:quick",
+    "/w:export-scripts",
+    "/w:export-manuals",
+    "/w:export-diagrams",
+    "/w:export-reports",
   ],
 
   // 5 hooks de hooks.template.json — matcher real + qué disparan.

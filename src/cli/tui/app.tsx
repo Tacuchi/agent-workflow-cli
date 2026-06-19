@@ -217,8 +217,8 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   const runAction = useCallback(
     (id: string, _payload?: Record<string, unknown>) => {
       // Exits-to-CLI vía MenuAction.
-      if (id === "project-init") {
-        onResult({ kind: "menu-action", action: "project-init" });
+      if (id === "workspace-init") {
+        onResult({ kind: "menu-action", action: "workspace-init" });
         exit();
         return;
       }

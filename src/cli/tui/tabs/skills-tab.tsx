@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { selfCleanLegacy } from "../../../application/self/clean-legacy.js";
 import {
   type InstallTarget,
+  SKILL_DIR_NAME,
   TARGET_ROOTS,
   selfInstallSkill,
 } from "../../../application/self/install-skill.js";
@@ -362,14 +363,14 @@ function pathForHost(host: HostMeta, home: string): string | null {
   if (!BACKED_INSTALL_TARGETS.has(host.id)) return null;
   const root = TARGET_ROOTS[host.id as InstallTarget];
   if (!root) return null;
-  return `${home}/${root.join("/")}/agent-workflow`;
+  return `${home}/${root.join("/")}/${SKILL_DIR_NAME}`;
 }
 
 function friendlyPath(host: HostMeta, _home: string): string {
-  if (host.id === "claude") return "~/.claude/skills/agent-workflow/";
-  if (host.id === "codex") return "~/.codex/skills/agent-workflow/";
-  if (host.id === "warp") return "~/.warp/skills/agent-workflow/";
-  if (host.id === "agents") return "~/.agents/skills/agent-workflow/";
+  if (host.id === "claude") return `~/.claude/skills/${SKILL_DIR_NAME}/`;
+  if (host.id === "codex") return `~/.codex/skills/${SKILL_DIR_NAME}/`;
+  if (host.id === "warp") return `~/.warp/skills/${SKILL_DIR_NAME}/`;
+  if (host.id === "agents") return `~/.agents/skills/${SKILL_DIR_NAME}/`;
   return "(not wired yet)";
 }
 
@@ -378,7 +379,7 @@ function buildArgsFor(action: SkillAction, target: InstallTarget): ParsedArgs {
   const values = new Map<string, string>();
   values.set("target", target);
   if (action === "install-full" || action === "uninstall-full") flags.add("--force");
-  if (action === "clean-cache") values.set("plugin", "agent-workflow");
+  if (action === "clean-cache") values.set("plugin", SKILL_DIR_NAME);
   return {
     rest: [actionToSubcommand(action)],
     plugin: {},
