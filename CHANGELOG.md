@@ -4,6 +4,15 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.2.1] — 2026-06-19
+
+**Fix de `workspace-init` para fuentes externas.** En el modelo hub la carpeta del workspace ≠ la ruta de la fuente, pero el init asumía "fuente única = la fuente ES el workspace". Eso rompía dos cosas con una sola fuente externa (el caso común).
+
+### Fixed
+
+- **Visibilidad por "externa al workspace", no por conteo de fuentes**: una sola fuente externa ahora sí configura `additionalDirectories` (Claude) / `additional_writable_roots` (Codex) + `.gitignore`. Antes se omitía con `sources.length <= 1`. Nuevo predicado `isExternalToWorkspace`; la razón de skip `single_source` pasó a `no_external_sources` (sólo cuando todas las fuentes están dentro del workspace). Beneficio lateral: ir de 2→1 fuente ahora detachea la removida.
+- **Detección de stack desde las rutas de las fuentes**, no desde la carpeta del workspace (que es scaffolding vacío). `project-md-upsert` escanea cada fuente y usa la primera detección no vacía; cae al workspace sólo si no hay fuentes/ninguna detectable. Antes siempre rendía "Stack sin detectar" en un workspace hub.
+
 ## [12.2.0] — 2026-06-19
 
 **Acciones git-flow por fuente.** Flujos de ramas rutinarios por fuente (sincronizar la rama de trabajo desde la base, promover a QA, promover a prod) — en el Project tab del TUI y como comando CLI, ejecutando git real con pausa en conflicto.

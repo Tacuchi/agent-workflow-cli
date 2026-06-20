@@ -23,7 +23,7 @@ const DOCS_FOLDERS = [
   "reports",
 ] as const;
 
-/** Visibility files (machine-specific absolute roots) — gitignored, multi-source only. */
+/** Visibility files (machine-specific absolute roots) — gitignored when external sources exist. */
 const VISIBILITY_GITIGNORE = [".claude/settings.local.json", ".codex/config.toml"];
 
 const DEFAULT_MAIN_BRANCH = "main";
@@ -102,6 +102,7 @@ export async function runWorkspaceInit(
   const mainBranch = input.mainBranch ?? DEFAULT_MAIN_BRANCH;
 
   if (input.dryRun) {
+    const anyExternal = input.sources.some((s) => isExternalToWorkspace(s.path, workspace));
     return {
       ok: true,
       dry_run: true,
@@ -110,10 +111,9 @@ export async function runWorkspaceInit(
       scaffold: { created: plannedScaffold(workspace, paths.namespace), existing: [] },
       skills_toml: "created",
       project_md: { ok: true, action: "init" },
-      attach_multiroot:
-        input.sources.length > 1
-          ? { skipped: true, reason: "dry_run" }
-          : { skipped: true, reason: "single_source" },
+      attach_multiroot: anyExternal
+        ? { skipped: true, reason: "dry_run" }
+        : { skipped: true, reason: "no_external_sources" },
     };
   }
 
@@ -256,10 +256,18 @@ async function reconcileVisibility(
   sources: WorkspaceSource[],
   previousPaths: string[],
 ): Promise<VisibilityOutcome> {
-  if (sources.length <= 1) {
-    return { ok: true, attach: { skipped: true, reason: "single_source" } };
-  }
+  // Visibility must be configured for every source whose path lives OUTSIDE the
+  // workspace folder: the host (Claude/Codex) opened the workspace dir, so an
+  // external repo is invisible until added to additionalDirectories /
+  // additional_writable_roots. This is independent of the source COUNT — a single
+  // external source (the common hub case) still needs it; a source that IS the
+  // workspace (init in-place) needs nothing.
+  const external = sources
+    .filter((s) => isExternalToWorkspace(s.path, workspace))
+    .map((s) => s.path);
 
+  // Detach sources that were in the previous block and no longer are (reconcile),
+  // regardless of whether any external source remains.
   const currentNorm = new Set(sources.map((s) => normalizePath(s.path)));
   const removed = previousPaths.filter((p) => !currentNorm.has(normalizePath(p)));
   const detached =
@@ -267,7 +275,15 @@ async function reconcileVisibility(
       ? await runMultiroot(fs, env, wsPaths, "detach", { paths: removed, workspace })
       : undefined;
 
-  const attach = await runMultiroot(fs, env, wsPaths, "attach", { fromSources: true, workspace });
+  if (external.length === 0) {
+    return {
+      ok: true,
+      attach: { skipped: true, reason: "no_external_sources" },
+      ...(detached !== undefined ? { detached } : {}),
+    };
+  }
+
+  const attach = await runMultiroot(fs, env, wsPaths, "attach", { paths: external, workspace });
   await ensureVisibilityGitignore(fs, workspace);
 
   return {
@@ -275,6 +291,13 @@ async function reconcileVisibility(
     attach,
     ...(detached !== undefined ? { detached } : {}),
   };
+}
+
+/** A source path that lives outside the workspace folder needs host visibility config. */
+function isExternalToWorkspace(sourcePath: string, workspace: string): boolean {
+  const src = normalizePath(resolve(sourcePath));
+  const ws = normalizePath(resolve(workspace));
+  return src !== ws && !src.startsWith(`${ws}/`);
 }
 
 function overrideCwd(env: EnvPort, cwd: string): EnvPort {

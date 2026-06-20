@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ describe("runWorkspaceInit", () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("single source: scaffold + skills.toml + bloque SIN Mode, sin visibilidad multi-root", async () => {
+  it("single source EXTERNA: scaffold + skills.toml + bloque SIN Mode + visibilidad", async () => {
     const result = await runWorkspaceInit(fs, env, paths, {
       proyecto: "Solo",
       sources: [{ alias: "app", path: "/tmp/app-fake" }],
@@ -72,9 +72,48 @@ describe("runWorkspaceInit", () => {
     expect(claude).not.toContain("Mode: hub");
     expect(claude).not.toMatch(/^Mode:/m);
 
-    // single source → no multi-root visibility
-    expect(result.attach_multiroot).toEqual({ skipped: true, reason: "single_source" });
+    // fuente externa (la carpeta del workspace ≠ la fuente) → SÍ configura visibilidad
+    expect(existsSync(join(workspace, ".claude", "settings.local.json"))).toBe(true);
+    const settings = JSON.parse(
+      readFileSync(join(workspace, ".claude", "settings.local.json"), "utf-8"),
+    );
+    expect(settings.permissions.additionalDirectories).toContain("/tmp/app-fake");
+    const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
+    expect(gitignore).toContain(".claude/settings.local.json");
+  });
+
+  it("fuente única DENTRO del workspace: omite visibilidad (la fuente ES el workspace)", async () => {
+    const result = await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "self", path: workspace }],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.attach_multiroot).toEqual({ skipped: true, reason: "no_external_sources" });
     expect(existsSync(join(workspace, ".claude"))).toBe(false);
+  });
+
+  it("detecta el stack desde la ruta de la fuente, no desde la carpeta del workspace", async () => {
+    const source = mkdtempSync(join(tmpdir(), "ws-init-src-"));
+    try {
+      writeFileSync(
+        join(source, "package.json"),
+        JSON.stringify({ dependencies: { react: "^18" }, devDependencies: { typescript: "^5" } }),
+      );
+      const result = await runWorkspaceInit(fs, env, paths, {
+        sources: [{ alias: "app", path: source }],
+        workspace,
+        lastActivity: "2026-01-01 00:00",
+      });
+      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+      const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
+      expect(claude).toContain("## Stack");
+      expect(claude).toContain("Lenguaje: TypeScript");
+      expect(claude).toContain("Framework: React");
+      expect(claude).not.toContain("Stack sin detectar");
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
   });
 
   it("qaBranches: renderiza la sección 'Ramas QA actuales' en el bloque", async () => {

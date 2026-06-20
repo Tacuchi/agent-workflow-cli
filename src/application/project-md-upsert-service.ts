@@ -6,6 +6,7 @@ import {
   type ParsedProjectBlock,
   type ProjectBlockMarkers,
   type ProjectFuente,
+  type ProjectStack,
   parseProjectBlock,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
@@ -120,7 +121,7 @@ async function buildRenderInput(
   const stack =
     existing?.stack && Object.keys(existing.stack).length > 0
       ? existing.stack
-      : await detectStackDict(fs, cwd);
+      : await detectStackFromSources(fs, input.fuentes ?? [], cwd);
   const workingBranches: Record<string, string> = {
     ...(existing?.working_branches ?? {}),
     ...(input.workingBranches ?? {}),
@@ -130,6 +131,26 @@ async function buildRenderInput(
     ...(input.qaBranches ?? {}),
   };
   return { proyecto, fuentes, stack, workingBranches, qaBranches };
+}
+
+/**
+ * Detect the stack from the SOURCE paths, not the workspace folder. In the hub
+ * model the workspace dir is just scaffolding (empty), while the real code lives
+ * in the (often external) source repos — scanning `cwd` would always miss it.
+ * Scans each declared source and returns the first non-empty detection; falls
+ * back to the workspace folder when there are no sources / none are detectable.
+ */
+async function detectStackFromSources(
+  fs: FileSystemPort,
+  fuentes: ProjectMdUpsertFuente[],
+  cwdFallback: string,
+): Promise<ProjectStack> {
+  for (const f of fuentes) {
+    if (!f.path) continue;
+    const detected = await detectStackDict(fs, f.path);
+    if (Object.keys(detected).length > 0) return detected;
+  }
+  return detectStackDict(fs, cwdFallback);
 }
 
 /**
