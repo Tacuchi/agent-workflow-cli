@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus a bundled universal `agent-workflow` SKILL that drives AI session-lifecycle workflows. Published to npm; the tarball ships `dist/` + `skills/`. `self install-skill` / `self install-hooks` copy the SKILL, slash commands, and hooks into host agent dirs (Claude/Codex/Warp/OZ).
+`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus a bundled universal `agent-workflow` SKILL that drives AI development workflows (stages + loops). Published to npm; the tarball ships `dist/` + `skills/`. `self install-skill` / `self install-hooks` copy the SKILL, slash commands, and hooks into host agent dirs (Claude/Codex/Warp/OZ).
 
 ## Commands
 
@@ -33,7 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Hexagonal: `domain/` (pure types, no I/O) → `ports/` (interfaces) → `adapters/` (Node implementations). Business logic lives in `application/*-service.ts` and must be I/O-free — all fs/env/git/process access goes through ports injected via `CliContext`.
 - CLI: every subcommand is a `QtcCommand` in `src/cli/commands/`, registered in `src/cli/main.ts` and slotted into a family in `src/cli/help-groups.ts`. Adding a command means doing both.
 - Namespace abstraction: all workspace artifacts live under `.<namespace>/` (default `agent-workflow` → `.agent-workflow/`; fixtures use `.workflow/`). Resolved via `--namespace` flag → `AW_NAMESPACE` → user config → workspace auto-detect → default.
-- `skills/agent-workflow/` is pure markdown + JSON — NOT compiled by `tsc` (which builds `src/` only). It ships in the npm tarball.
+- `skills/w/` is pure markdown + JSON — NOT compiled by `tsc` (which builds `src/` only). It ships in the npm tarball.
 
 ## Conventions / decisions
 
@@ -43,28 +43,4 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Tooling note
 
-The `AW-PROJECT` block (sections Proyecto/Fuentes/Stack/Status) is a managed block written into CLAUDE.md/AGENTS.md by `/agent-workflow:project-init`. If it appears, treat it as tool-owned — keep hand-authored guidance outside it.
-
-<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
-
-`@tacuchi/agent-workflow-cli` (bins agent-workflow/aw) — CLI agnóstico + SKILL universal que conduce workflows de ciclo de vida de sesiones de IA (planning → execution → validation → closure). Publicado en npm; instala SKILL/comandos/hooks en agentes host (Claude/Codex/Warp/OZ).
-
-## Fuentes
-
-| Alias | Path | Rama principal |
-|---|---|---|
-| agent-workflow-cli | /Users/tacuchi/Git/agent-workflow-cli | main |
-
-## Stack
-
-- Lenguaje: TypeScript
-- Framework: React
-- Build: npm
-
-## Status
-
-- Sesiones activas: _ninguna_
-- Última actividad: 2026-05-28 22:44
-- Histórico: `.workflow/HISTORY.md`
-<!-- WORKFLOW-PROJECT-END -->
+The `WORKSPACE` block (sections Proyecto/Fuentes/Stack/Status) is a managed block written into CLAUDE.md/AGENTS.md by `/w:workspace-init`. If it appears, treat it as tool-owned — keep hand-authored guidance outside it.
