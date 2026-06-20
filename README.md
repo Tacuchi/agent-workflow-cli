@@ -1,6 +1,8 @@
 # @tacuchi/agent-workflow-cli
 
-Agnostic runtime CLI for session-lifecycle workflows. Bundles the universal `agent-workflow` skill (35 skills + 17 commands + 7 hooks template) and supports multi-empresa parametrization via `profile.json` cascade. Pairs with optional company-specific plugins for legacy aliases.
+Agnostic runtime CLI for AI development workflows. Bundles the universal **`w`** skill set — a **stages + loops + artifacts** harness — and pairs with optional company-specific plugins for multi-empresa parametrization.
+
+The CLI exposes two binaries: `agent-workflow` (canonical) and `aw` (short alias).
 
 ## Install
 
@@ -8,129 +10,83 @@ Agnostic runtime CLI for session-lifecycle workflows. Bundles the universal `age
 npm install -g @tacuchi/agent-workflow-cli
 ```
 
-The CLI exposes two binaries: `agent-workflow` (canonical) and `aw` (short alias).
+## The model — stages + loops + artifacts
 
-## Bundled SKILL (v7.0.0+)
+The harness has three layers plus a permanent `docs/` zone:
 
-The published tarball bundles the universal `agent-workflow` SKILL under `skills/agent-workflow/`. Install it into your host's skill directory with `--target` (obligatorio desde v7.0.0):
+- **Layer 1 · Commands** (`/w:*`) — the only thing the user invokes:
+  - **SPEC** — `/w:spec-new` (single-pass draft) → `/w:spec-refine` (gap-driven loop) → `docs/specs/`.
+  - **PLANIFICATION** — `/w:plan-new` → `/w:plan-exec` → `docs/plans/` + `docs/tools/`.
+  - **QUICK** — `/w:quick` — lightweight shortcut.
+  - **EXPORTS** — `/w:export-scripts` · `export-manuals` · `export-diagrams` · `export-reports` (the only path that promotes artifacts to `docs/`).
+  - **Bootstrap** — `/w:workspace-init` turns any folder into a workspace (1+ sources; no project/hub distinction).
+- **Layer 2 · Loops** — the AI runs them whole: `spec-refine-loop` (chassis) · `plan-new-loop` · `plan-exec-loop` · `quick-loop`. Gap-driven, with `AskUserQuestion` lifecycle control (compact/close) and resumable `CHECKPOINT`.
+- **Layer 3 · Sessions + artifacts** — internal, ephemeral process state under `.workflow/sessions/` (`SESSION` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` · `ANALYSIS-FILE` · `CONCLUSIONS` · `DECISION` · …). Sessions are slug-named folders, created by loops, never by the user.
+
+**Pluggable capabilities.** Loops compose capability **roles** (`ui-design`, `sql`, `git`, `coding-standards`, `writing`, `research`, `testing`, `tools`, `diagrams`, `overview`); the concrete skill bound to each role is resolved via `.workflow/skills.toml` (cascade: built-in default → `~/.workflow/skills.toml` → workspace). Inspect bindings with `aw skills`.
+
+**Invariants.** No auto-export (only `export-*` writes `docs/`); the spec and plan are documents, not artifacts; DB scripts-only (never executes DML/DDL); git-safe (verifies the per-source working branch before edits; proposes commits).
+
+## Bundled SKILL
+
+The published tarball bundles the universal skill set under `skills/w/`. Install it into your host with `--target` (required):
 
 ```bash
-# Specific host (alias 'install' = 'install-skill' desde v7.0.3)
-agent-workflow self install --target claude
-agent-workflow self install --target codex
-agent-workflow self install --target warp
-
-# All detected hosts (requires --confirm-all)
+agent-workflow self install --target claude     # or: codex · warp · oz · agents
 agent-workflow self install --target all --confirm-all
-```
-
-By default, the CLI clears any plugin cache for the target host before installing. Opt out with `--keep-cache`.
-
-### Per-target install matrix
-
-Since v7.0.2+v7.0.4, `self install --target <host>` installs **SKILL + user-level slash commands + hooks** in a single shot. The full set varies per host based on what the host supports:
-
-| Host | SKILL | User-level commands (`/agent-workflow:*`) | Hooks |
-|---|---|---|---|
-| `claude` | `~/.claude/skills/agent-workflow/` | `~/.claude/commands/agent-workflow/<n>.md` | `~/.claude/settings.json` (JSON merge + backup) |
-| `codex` | `~/.codex/skills/agent-workflow/` | `~/.codex/commands/agent-workflow/<n>.md` | skipped (config.toml format not yet wired) |
-| `warp` | `~/.warp/skills/agent-workflow/` | skipped (uses rules/notebooks, not slash commands — DEC-W3) | skipped (no hook system — DEC-W4) |
-| `oz` | `~/.agents/skills/agent-workflow/` | skipped (same as Warp) | skipped (same as Warp) |
-| `agents` | `~/.agents/skills/agent-workflow/` | skipped | skipped |
-
-For hosts where a layer is skipped, the SKILL is sufficient — the AI reads the SKILL contents and invokes CLI commands directly via `agent-workflow <subcommand>`.
-
-Opt-out flags for granular control:
-
-- `--skill-only` → only the SKILL (legacy v7.0.0/v7.0.1 behavior).
-- `--no-commands` → SKILL + hooks, no user commands.
-- `--no-hooks` → SKILL + commands, no hooks merge.
-
-```bash
-# Detect which hosts are present + which already have the SKILL
-agent-workflow self detect-hosts
-
-# Install hooks separately (claude only for now)
-agent-workflow self install-hooks --target claude
-
-# Dry-run
+agent-workflow self detect-hosts                # which hosts are present + already have it
 agent-workflow self install --target claude --dry-run
 ```
 
+By default the CLI clears the target host's plugin cache before installing (opt out with `--keep-cache`).
+
+### Per-target install matrix
+
+`self install --target <host>` installs **SKILL + user-level slash commands + hooks** in one shot, scaled to what the host supports:
+
+| Host | SKILL | User-level commands (`/w:*`) | Hooks |
+|---|---|---|---|
+| `claude` | `~/.claude/skills/w/` | `~/.claude/commands/w/<n>.md` | `~/.claude/settings.json` (JSON merge + backup) |
+| `codex` | `~/.codex/skills/w/` | `~/.codex/commands/w/<n>.md` | skipped (config.toml not yet wired) |
+| `warp` | `~/.warp/skills/w/` | skipped (uses rules/notebooks) | skipped (no hook system) |
+| `oz` | `~/.agents/skills/w/` | skipped | skipped |
+| `agents` | `~/.agents/skills/w/` | skipped | skipped |
+
+For hosts where a layer is skipped, the SKILL is sufficient — the AI reads it and invokes `agent-workflow <subcommand>` directly.
+
+Opt-out flags: `--skill-only`, `--no-commands`, `--no-hooks`. Override the source with `--from /path/to/skills/w`. Other flags: `--confirm-all` (required with `--target all`), `--keep-cache`, `--force`, `--dry-run`.
+
 ## Multi-empresa via profile.json
 
-The universal SKILL reads a `profile.json` to parametrize 10 sensitive skills (project-init, hub-init, doctor, migrate, rules, analyze-investigate, coding-standards, export-arq, export-report, refactor). Profile resolution cascade (highest precedence first):
+A `profile.json` parametrizes the bundled skills for a company (namespace, lexicon, MCP databases, custom anchors). Resolution cascade (highest precedence first):
 
-1. `--profile <path>` flag (explicit)
+1. `--profile <path>` flag
 2. `AW_PROFILE` env var
 3. `~/.config/agent-workflow/profile.json` (user-level)
 4. `<cwd>/.<namespace>/profile.json` (workspace-level)
-5. Embedded `DEFAULT_PROFILE` (8 fields with agnostic defaults)
+5. Embedded `DEFAULT_PROFILE` (agnostic defaults)
 
-Schema (8 fields): `namespace` (kebab) · `company` · `claude_md_block` (`[A-Z][A-Z0-9_-]*`) · `mcp_databases[]` · `lexicon_path` · `examples_path` · `migrate_legacy_rules[]` · `custom_anchors[]`. See `skills/agent-workflow/references/profile-parametrization.md` for the per-skill contract.
-
-Example profile (replace `acme` with your company namespace):
-
-```json
-{
-  "namespace": "acme",
-  "company": "Acme Corp",
-  "claude_md_block": "ACME-PROJECT",
-  "mcp_databases": [
-    { "alias": "acme-stage", "host": "10.0.0.10", "port": 5432, "database": "acme_stage" },
-    { "alias": "acme-prod", "host": "10.0.0.11", "port": 5432, "database": "acme_prod" }
-  ],
-  "lexicon_path": "profiles/lexico-acme.md",
-  "examples_path": "profiles/examples-acme.md",
-  "migrate_legacy_rules": [
-    { "from": ".claude/sessions", "to": ".workflow/sessions", "scope": "anchor" }
-  ],
-  "custom_anchors": [
-    { "anchor": "acme:super-admin-bypass", "target": "profiles/anchors/acme-super-admin-bypass.md" }
-  ]
-}
-```
-
-Companion plugins package this profile + optional legacy aliases + custom skills. The QTC plugin (`qtc-workflow-plugin@v4.0.0+`) is a reference implementation.
-
-### Override the source
-
-Power users who want a specific revision can pass `--from`:
-
-```bash
-# Copy from a local checkout (skill development)
-agent-workflow self install-skill --target claude --from /path/to/agent-workflow-cli/skills/agent-workflow
-```
-
-Flags:
-
-- `--target <claude|codex|warp|oz|agents|all>` — obligatorio.
-- `--confirm-all` — required when `--target all`.
-- `--keep-cache` — skip the automatic plugin cache clear before install.
-- `--force` — overwrite existing destination.
-- `--dry-run` — preview without writing.
+Companion plugins package this profile + optional custom skills.
 
 ## Namespace resolution
 
-Resolution order (first match wins):
+Workspace artifacts live under `.<namespace>/`. Resolution order (first match wins):
 
-1. `--namespace <name>` flag.
-2. `AW_NAMESPACE` env var.
-3. **Workspace auto-detect** (v1.2.0+): scan cwd for hidden folders matching `^\.[a-z][a-z0-9-]{1,30}$` containing a `sessions/` subdirectory. If exactly one match, use it.
-4. `~/.config/agent-workflow/namespace` user config.
-5. Default: `agent-workflow`.
-
-For plugin workspaces with a single `.<namespace>/sessions/` directory, the CLI auto-detects the namespace without configuration.
+1. `--namespace <name>` flag
+2. `AW_NAMESPACE` env var
+3. **Workspace auto-detect** — a single hidden `^\.[a-z][a-z0-9-]{1,30}$` folder in cwd containing `sessions/`
+4. `~/.config/agent-workflow/namespace` user config
+5. Default: `workflow` (→ `.workflow/`)
 
 ## Commands (selected)
 
-- `sessions` / `session-create` / `session-close` / `session-resume` / `session-artifacts` — session lifecycle.
-- `checkpoint-read` / `checkpoint-write` — CHECKPOINT.md handling.
-- `plugin-doctor` — plugin health check.
-- `auto-plan-decide` — heuristic for skip/lite/full planning.
-- `topic-change-check` — detect when an OBJETIVO drifts.
-- `release-data` / `graduate` — release/handoff helpers.
-- `self install-skill` / `self namespace` / `self doctor` / `self update` — CLI maintenance.
+- `workspace-init` — scaffold a workspace (`.workflow/` + `docs/` taxonomy + WORKSPACE block + `skills.toml`).
+- `skills` — show resolved capability → skill bindings.
+- `sessions` / `session-create --type <research|refine|exec|quick>` / `session-close` / `session-resume` / `session-artifacts` — internal session lifecycle (used by the loops).
+- `checkpoint-read` / `checkpoint-write` — `CHECKPOINT.md` handling.
+- `sources` / `check-branch` / `set-working-branch` — multi-source git-safety (per-source working branch).
+- `release-data` — corpus reader backing the `export-*` skills.
+- `self install-skill` / `self doctor` / `self update` / `mcp` — CLI maintenance.
 
 Run `agent-workflow --help` (or `aw --help`) for the full list, or `agent-workflow <command> --help` for per-command flags.
 

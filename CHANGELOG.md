@@ -4,6 +4,34 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.0.0] — 2026-06-19
+
+**Rediseño completo a un modelo de etapas + loops + artefactos.** Reemplaza el modelo viejo de `session` + flujos `dev/design/analyze` + 4 fases por un harness de 3 capas (comandos `/w:*` → loops que la IA corre enteros → sesiones/artefactos internos en `.workflow/sessions/`) + una zona `docs/` de entregables permanentes. **Cambio mayor con quiebres de API** (comandos, flags y namespace de slash commands).
+
+### Added
+
+- **Flujos nuevos** vía comandos `/w:*`: SPEC (`spec-new` single-pass → `spec-refine` loop → `docs/specs/`), PLANIFICATION (`plan-new` · `plan-exec` → `docs/plans/` + `docs/tools/`) y QUICK (`quick`).
+- **`workspace-init`** — bootstrap que unifica los viejos `hub-init` + `project-init` (sin distinción project/hub): scaffolding `.workflow/` + taxonomía `docs/` + bloque `WORKSPACE` + `.workflow/skills.toml`. 1+ fuentes; rama base y de trabajo por fuente.
+- **Capacidades enchufables** (`skills.toml`): los loops componen roles (`ui-design`, `sql`, `git`, `coding-standards`, `writing`, `research`, `testing`, `tools`, `diagrams`, `overview`) resueltos por cascada `built-in → ~/.workflow/skills.toml → .workflow/skills.toml`. Comando `aw skills` para inspeccionar bindings.
+- **Familia `export-*`** (`export-scripts` · `export-manuals` · `export-diagrams` · `export-reports`) — única vía de promoción artefacto→`docs/`.
+- `set-working-branch` — fija la rama de trabajo por fuente en el bloque WORKSPACE.
+- Sesiones internas con `SESSION.md` + centinela `.closed`; `session-create --type <research|refine|exec|quick>`.
+
+### Changed
+
+- **Plugin renombrado `agent-workflow` → `w`**: los slash commands ahora se invocan como `/w:*` (antes `/agent-workflow:*`). Bundle de skills movido a `skills/w/`.
+- `branch-check` y los resolvers de rama (sources, check-branch, hooks) resuelven la rama de trabajo esperada desde el bloque WORKSPACE (desacoplado de sesiones/flow); estricto.
+- README reescrito al modelo nuevo.
+
+### Removed
+
+- Comandos del modelo viejo: `graduate`, `graduation-check`, `phase-detect`, `phase-next`, `auto-plan-decide`, `specialty-choose`, `workflows`, `topic-change-check`, `objetivo-data`, `tasks-data`, `decisiones-list`, `dependencias-list`, `hub-init`, `workspace-mode`, `upgrade-hub-mode` (+ sus servicios).
+- Conceptos `Flow` (core/dev/design/analyze), `Phase`, `lite`/`patch`, graduación automática, y `ProjectMode` (hub/project). El bloque del workspace ya no lleva "Mode" ni "Sesiones activas".
+
+### Notes
+
+- El binario (`agent-workflow`/`aw`), el nombre del paquete npm y el namespace de artefactos por defecto (`.workflow/`) **no cambian**. Migración de instalaciones viejas: `self uninstall --legacy` limpia los dirs `agent-workflow`/`agent-workflow-manager` previos; `self install --target <host>` instala el bundle nuevo.
+
 ## [11.0.1] — 2026-05-28
 
 **Reglas de moderación anti sobre-análisis en `flow=analyze`** (session002). Frena el `CONCLUSIONS.md` técnico inflado sobre hubs maduros: el output ahora escala con el scope que el stakeholder pidió, no con la madurez del stack. Resuelve el issue `docs/referencias/001`.

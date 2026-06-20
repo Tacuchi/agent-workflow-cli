@@ -1,7 +1,7 @@
 {
   "name": "@tacuchi/agent-workflow-cli",
-  "version": "11.0.1",
-  "description": "Agnostic runtime CLI for session-lifecycle workflows. Auto-detects namespace from any `.<ns>/sessions/` dir in CWD; falls back to 'agent-workflow'. Bundles the universal `agent-workflow` skill (35 skills + 17 commands + 7 hooks template) in the tarball — `self install-skill --target <host>` (obligatory) copies it to the host's skill directory. Multi-empresa parametrization via `profile.json` cascade (flag → AW_PROFILE env → ~/.config/agent-workflow/profile.json → workspace → defaults). Hooks for Claude Code via `self install-hooks --target claude` (JSON merge into ~/.claude/settings.json with backup).",
+  "version": "12.0.0",
+  "description": "Agnostic runtime CLI for AI development workflows — a stages + loops + artifacts harness. Bundles the universal `w` skill set under `skills/w/` (slash commands `/w:*`: spec-new/spec-refine, plan-new/plan-exec, quick, workspace-init, export-*); `self install --target <host>` copies SKILL + commands + hooks into the host. Pluggable capability skills via `.workflow/skills.toml`. Multi-empresa parametrization via `profile.json` cascade. Namespace auto-detected from any `.<ns>/sessions/` dir in CWD; default `workflow`.",
   "type": "module",
   "bin": {
     "agent-workflow": "dist/cli/main.js",
@@ -28,7 +28,16 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
-  "keywords": ["cli", "agent-workflow", "session-lifecycle", "claude-code", "codex", "namespace"],
+  "keywords": [
+    "cli",
+    "agent-workflow",
+    "workflow",
+    "spec",
+    "plan",
+    "claude-code",
+    "codex",
+    "namespace"
+  ],
   "author": "Tacuchi <jesus.loayza@quetalcompra.com>",
   "license": "AGPL-3.0-or-later",
   "repository": {
