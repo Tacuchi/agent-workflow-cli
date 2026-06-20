@@ -24,9 +24,7 @@ export interface SessionArtifactsResult {
   session?: string;
   path?: string;
   code?: string | null;
-  flow?: string | null;
   state?: string;
-  phase?: string;
   scripts?: { name: string; path: string; size: number | null; is_rollback: boolean }[];
   error?: string;
   hint?: string;
@@ -60,9 +58,7 @@ export async function readSessionArtifacts(
     session: entry.folder,
     path: entry.path,
     code: entry.code,
-    flow: entry.flow,
     state: entry.state,
-    phase: entry.phase,
   };
 
   const targetKinds = kinds ?? [...Object.keys(KIND_TO_ARTIFACT), "scripts"];

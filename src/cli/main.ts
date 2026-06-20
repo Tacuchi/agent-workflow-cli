@@ -26,7 +26,6 @@ import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
 import { hostDoctorCommand } from "./commands/host-doctor.js";
-import { hubInitCommand } from "./commands/hub-init.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./commands/multiroot.js";
 import { pluginCacheCommand } from "./commands/plugin-cache.js";
@@ -45,10 +44,8 @@ import { skillIndexCommand } from "./commands/skill-index.js";
 import { skillsCommand } from "./commands/skills.js";
 import { sourcesCommand } from "./commands/sources.js";
 import { stackCommand } from "./commands/stack.js";
-import { upgradeHubModeCommand } from "./commands/upgrade-hub-mode.js";
 import { visibilityCommand } from "./commands/visibility.js";
 import { workspaceInitCommand } from "./commands/workspace-init.js";
-import { workspaceModeCommand } from "./commands/workspace-mode.js";
 import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
 import { type MenuAction, shouldShowInteractiveMenu } from "./interactive-menu.js";
 import { parseArgv } from "./parser.js";
@@ -77,7 +74,6 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(sessionCloseCommand);
   registry.register(sessionCreateCommand);
   registry.register(stackCommand);
-  registry.register(workspaceModeCommand);
   registry.register(workspaceInitCommand);
   registry.register(skillIndexCommand);
   registry.register(skillsCommand);
@@ -90,7 +86,6 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(checkpointWriteCommand);
   registry.register(autoCompactOnCloseCommand);
   registry.register(hookCommand);
-  registry.register(hubInitCommand);
   registry.register(mcpCommand);
   registry.register(visibilityCommand);
   registry.register(harnessCommand);
@@ -98,7 +93,6 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(logsCommand);
   registry.register(nextNumberCommand);
   registry.register(bootstrapDsnCommand);
-  registry.register(upgradeHubModeCommand);
   registry.register(codeScanCommand);
   registry.register(pluginCacheCommand);
   registry.register(pluginDoctorCommand);
@@ -229,7 +223,7 @@ async function dispatchMenuAction(
     case "workspace-init": {
       // Inicializa el directorio como workspace (1+ fuentes). Sin distinción
       // project/hub. La forma interactiva con recolección de fuentes vive en el
-      // TUI (project-tab → HubInitForm); este path es el fallback CLI con la
+      // TUI (project-tab → WorkspaceInitForm); este path es el fallback CLI con la
       // cwd como única fuente.
       const cwd = process.cwd();
       return await run(["workspace-init", "--source", `${basename(cwd)}:${cwd}`]);

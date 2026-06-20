@@ -11,11 +11,9 @@ import { colors } from "../theme.js";
 export interface WorkflowTabProps {
   ctx: CliContext;
   isActive: boolean;
-  /** Flow activo (1-based) inferido desde la sesión activa. 0 = idle. */
-  activePhase?: number;
 }
 
-export function WorkflowTab({ isActive, activePhase = 0 }: WorkflowTabProps) {
+export function WorkflowTab({ isActive }: WorkflowTabProps) {
   const w = WORKFLOW_CONTENT;
 
   const [cursor, setCursor] = useState(0);
@@ -57,7 +55,7 @@ export function WorkflowTab({ isActive, activePhase = 0 }: WorkflowTabProps) {
           <SectionHead label="Flows" rightAction="spec · plan · quick" />
           <Box marginTop={0} flexDirection="column">
             {w.phases.map((p) => (
-              <PhaseCard key={p.id} phase={p} active={activePhase === p.n} />
+              <PhaseCard key={p.id} phase={p} />
             ))}
           </Box>
         </Box>

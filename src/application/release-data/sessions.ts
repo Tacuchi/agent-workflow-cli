@@ -8,38 +8,10 @@ import { listExistingArtifacts } from "../session-artifacts.js";
 import { type SessionEntry, buildSessionEntry, listSessionFolders } from "../session-resolver.js";
 import { sessionCodeInt } from "./common.js";
 
-/**
- * Parse HISTORY.md once and return the set of session codes tagged `kind:patch`
- * in their refs column (micro-lifecycle /patch). Used to collapse patches in
- * release exports. The refs column is the last data cell — robust to the
- * optional `flow` column. (Release bookkeeping reads HISTORY.md; per-session
- * state is now derived from the folder-local `.closed` marker, not HISTORY.)
- */
-async function readPatchCodesFromHistory(
-  fs: FileSystemPort,
-  historyPath: string,
-): Promise<Set<string>> {
-  const codes = new Set<string>();
-  if (!(await fs.exists(historyPath))) return codes;
-  const text = await fs.readText(historyPath);
-  for (const line of text.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split("|").map((c) => c.trim());
-    if (cells.length < 7) continue;
-    const code = cells[1];
-    const refs = cells[cells.length - 2] ?? "";
-    if (!code || !/^\d{3}$/.test(code)) continue;
-    if (refs.includes("kind:patch")) codes.add(code);
-  }
-  return codes;
-}
-
 export interface ReleaseSession extends SessionEntry {
   is_legacy_format?: boolean;
   release_eligible?: boolean;
   legacy_warning?: string;
-  /** True cuando la sesión es un /patch (kind:patch en HISTORY). Los exports las colapsan. */
-  is_patch?: boolean;
 }
 
 export async function listSessionsForRelease(
@@ -59,7 +31,6 @@ export async function listSessionsForRelease(
   const sessionsDir = paths.cwdSessionsDir();
   if (!(await fs.exists(sessionsDir))) return [];
 
-  const patchCodes = await readPatchCodesFromHistory(fs, paths.cwdHistoryFile());
   const sessionsFilter = options.sessions;
   const useDiscrete = sessionsFilter !== undefined && sessionsFilter.length > 0;
   if (useDiscrete) {
@@ -77,7 +48,7 @@ export async function listSessionsForRelease(
   for (const folder of await listSessionFolders(fs, sessionsDir)) {
     const entry = (await buildSessionEntry(fs, folder.path, folder.name)) as ReleaseSession;
     if (!includeReleaseEntry(entry, filter)) continue;
-    await annotateReleaseEntry(entry, folder.path, fs, patchCodes);
+    await annotateReleaseEntry(entry, folder.path, fs);
     result.push(entry);
   }
   return result;
@@ -106,7 +77,6 @@ async function annotateReleaseEntry(
   entry: ReleaseSession,
   folderPath: string,
   fs: FileSystemPort,
-  patchCodes: Set<string>,
 ): Promise<void> {
   const present = await listExistingArtifacts(folderPath, fs);
   const hasObjetivo = present.session !== null || present.objective !== null;
@@ -114,7 +84,6 @@ async function annotateReleaseEntry(
   const hasRequirements = await fs.exists(join(folderPath, "REQUIREMENTS.md"));
   entry.is_legacy_format = hasRequirements && !hasObjetivo;
   entry.release_eligible = !entry.is_legacy_format;
-  if (entry.code !== null && patchCodes.has(entry.code)) entry.is_patch = true;
 }
 
 export function enrichSessionsWithLegacyMeta(

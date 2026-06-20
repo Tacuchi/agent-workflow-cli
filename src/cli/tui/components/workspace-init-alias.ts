@@ -1,4 +1,4 @@
-// Inferencia de alias para el form de hub-init. Cross-platform a propósito:
+// Inferencia de alias para el form de workspace-init. Cross-platform a propósito:
 // parte en `/` y `\` sin depender de `path.basename` (que en POSIX no separa por
 // `\`, así que rompería con rutas Windows escritas en una máquina posix y en los
 // tests). El alias es el nombre de la carpeta tal cual (sin transformar).

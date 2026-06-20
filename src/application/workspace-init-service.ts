@@ -79,11 +79,9 @@ export interface WorkspaceInitResult {
  * legacy `hub-init` + `project-init`: there is no project/hub distinction — a
  * workspace simply has 1+ sources. Idempotent: re-running reconciles in place.
  *
- * Note: the on-disk block is rendered with mode "project" so it carries NO `Mode:`
- * line (the new "WORKSPACE" shape). Source BASE branches live in the Fuentes table;
- * WORKING branches (optional, via --working-branch) render in the Status block
- * MODE-INDEPENDENTLY. The legacy ProjectMode enum is kept for back-compat parsing
- * only and is slated for removal in a later cleanup.
+ * The on-disk block carries NO `Mode:` line (the "WORKSPACE" shape). Source BASE
+ * branches live in the Fuentes table; WORKING branches (optional, via
+ * --working-branch) render in the Status block unconditionally.
  */
 export async function runWorkspaceInit(
   fs: FileSystemPort,
@@ -129,9 +127,8 @@ export async function runWorkspaceInit(
 
   const projectMd = await runProjectMdUpsertWrite(fs, targetEnv, wsPaths, {
     op: "init",
-    // mode "project" → block without `Mode:` line; Fuentes table holds N sources.
-    // Working branches render MODE-INDEPENDENTLY (a kept workspace property).
-    mode: "project",
+    // Block without `Mode:` line; Fuentes table holds N sources. Working branches
+    // render in the Status block.
     proyecto,
     fuentes: input.sources.map((s) => ({
       alias: s.alias,

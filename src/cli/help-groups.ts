@@ -43,7 +43,7 @@ const GROUPS: readonly CommandGroup[] = [
   },
   {
     name: "Orchestration",
-    commands: ["workspace-mode", "stack", "skill-index", "resume-summary"],
+    commands: ["stack", "skill-index", "resume-summary"],
   },
   {
     name: "Doctor / Data",
@@ -56,7 +56,6 @@ const GROUPS: readonly CommandGroup[] = [
       "code-scan",
       "project-md-upsert",
       "bootstrap-dsn",
-      "upgrade-hub-mode",
     ],
   },
   { name: "Hooks", commands: ["hook"] },

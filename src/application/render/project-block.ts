@@ -2,7 +2,6 @@ import type {
   ParsedProjectBlock,
   ProjectBlockMarkers,
   ProjectFuente,
-  ProjectMode,
   ProjectStack,
 } from "../parsers/project-block.js";
 import { LEGACY_QTC_MARKERS } from "../parsers/project-block.js";
@@ -12,7 +11,6 @@ export interface RenderProjectBlockInput {
   fuentes: ProjectFuente[];
   stack: ProjectStack;
   lastActivity?: string;
-  mode?: ProjectMode;
   workingBranches?: Record<string, string>;
   /** Path used in the "Histórico:" line. Default `.workflow/HISTORY.md`. */
   historicoPath?: string;
@@ -24,15 +22,12 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const markers = input.markers ?? LEGACY_QTC_MARKERS;
   const historicoPath = input.historicoPath ?? ".workflow/HISTORY.md";
   const last = input.lastActivity ?? formatNowMinute();
-  const proyectoText =
+  const proyectoSection =
     input.proyecto.trim().length > 0
       ? input.proyecto.trim()
       : "_Describe el proyecto aquí: qué es y por qué existe._";
 
-  const proyectoSection = input.mode === "hub" ? `${proyectoText}\n\nMode: hub` : proyectoText;
-
   const statusLines: string[] = [];
-  // Working branches render MODE-INDEPENDENTLY (a kept workspace property).
   const wb = formatWorkingBranches(input.workingBranches);
   if (wb !== null) statusLines.push(wb);
   statusLines.push(`- Última actividad: ${last}`);
@@ -67,7 +62,6 @@ export function blockFromParsed(
     proyecto: overrides.proyecto ?? parsed.proyecto,
     fuentes: overrides.fuentes ?? parsed.fuentes,
     stack: overrides.stack ?? parsed.stack,
-    mode: overrides.mode ?? parsed.mode,
     workingBranches: overrides.workingBranches ?? parsed.working_branches,
   };
   if (overrides.lastActivity !== undefined) {

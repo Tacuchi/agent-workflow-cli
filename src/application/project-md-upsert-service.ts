@@ -6,7 +6,6 @@ import {
   type ParsedProjectBlock,
   type ProjectBlockMarkers,
   type ProjectFuente,
-  type ProjectMode,
   parseProjectBlock,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
@@ -26,11 +25,10 @@ export interface ProjectMdUpsertFuente {
 export interface ProjectMdUpsertInput {
   op: UpsertOp;
   proyecto?: string;
-  mode?: ProjectMode;
   workingBranches?: Record<string, string>;
-  /** Hub-mode `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repetible). */
+  /** `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repetible). */
   fuentes?: ProjectMdUpsertFuente[];
-  /** Si true, las `fuentes` declaradas REEMPLAZAN a las existentes (no merge). hub-init lo usa para ser autoritativo y soportar remover fuentes. */
+  /** Si true, las `fuentes` declaradas REEMPLAZAN a las existentes (no merge). workspace-init lo usa para ser autoritativo y soportar remover fuentes. */
   replaceFuentes?: boolean;
   /** Default rama principal applied to fuentes that do not declare one. */
   mainBranch?: string;
@@ -51,7 +49,6 @@ export interface ProjectMdUpsertOutput {
   action: UpsertOp;
   results?: UpsertFileResult[];
   mode?: UpsertOp;
-  workspace_mode?: ProjectMode;
   working_branches?: Record<string, string>;
 }
 
@@ -122,12 +119,11 @@ async function buildRenderInput(
     existing?.stack && Object.keys(existing.stack).length > 0
       ? existing.stack
       : await detectStackDict(fs, cwd);
-  const mode: ProjectMode = input.mode ?? existing?.mode ?? "project";
   const workingBranches: Record<string, string> = {
     ...(existing?.working_branches ?? {}),
     ...(input.workingBranches ?? {}),
   };
-  return { proyecto, fuentes, stack, mode, workingBranches };
+  return { proyecto, fuentes, stack, workingBranches };
 }
 
 /**
@@ -194,7 +190,6 @@ function composePayload(
       ok: !write.hasError,
       action: input.op,
       mode: input.op,
-      workspace_mode: renderInput.mode ?? "project",
       working_branches: renderInput.workingBranches ?? {},
       results: write.results,
     };

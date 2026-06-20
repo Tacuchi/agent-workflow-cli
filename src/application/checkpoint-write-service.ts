@@ -13,7 +13,6 @@ export interface CheckpointWriteOutput {
   session: string;
   checkpoint_path: string;
   lines_written?: number;
-  phase?: string | null;
   progress_pct?: number | null;
   tasks_open?: number;
   tasks_closed?: number;
@@ -77,7 +76,6 @@ export async function runCheckpointWrite(
     session: folder,
     checkpoint_path: cpPath,
     lines_written: md.replace(/\n$/, "").split("\n").length,
-    phase: state.phase,
     progress_pct: state.progress_pct,
     tasks_open: state.tasks.open,
     tasks_closed: state.tasks.closed,
@@ -112,7 +110,6 @@ export interface AutoCompactOnCloseOutput {
   checkpoints_written: Array<{
     session?: string;
     checkpoint_path?: string;
-    phase?: string | null;
     progress_pct?: number | null;
     skipped?: boolean;
     reason?: string;
@@ -174,7 +171,6 @@ async function writeCheckpointForActive(
     return {
       session: folder,
       checkpoint_path: cpPath,
-      phase: state.phase,
       progress_pct: state.progress_pct,
     };
   } catch (err) {

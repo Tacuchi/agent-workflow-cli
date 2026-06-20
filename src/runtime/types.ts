@@ -10,7 +10,6 @@ export interface McpGuards {
 export interface SlashCommandHints {
   migrate?: string;
   projectInit?: string;
-  hubInit?: string;
   resume?: string;
   session?: string;
 }

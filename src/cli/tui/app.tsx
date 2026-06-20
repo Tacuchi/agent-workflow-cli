@@ -89,7 +89,6 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     sessionsLabel: "— sessions",
   });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
-  const [activePhase, setActivePhase] = useState<number>(0);
   // Bumpeado por `r`: re-monta el tab activo (re-fetch de sus effects) y recarga
   // los datos del shell (header + activity feed).
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -112,8 +111,6 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     setWorkspaceCtx(wctx);
     const events = await loadActivity(ctx, { cap: 5 });
     setActivity(events);
-    const phase = await loadActivePhase(ctx);
-    setActivePhase(phase);
   }, [ctx]);
 
   useEffect(() => {
@@ -356,9 +353,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
               disabledHosts={prefs.disabledHosts}
             />
           ) : null}
-          {activeTab === "workflow" ? (
-            <WorkflowTab ctx={ctx} isActive={true} activePhase={activePhase} />
-          ) : null}
+          {activeTab === "workflow" ? <WorkflowTab ctx={ctx} isActive={true} /> : null}
           {activeTab === "project" ? (
             <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
           ) : null}
@@ -453,36 +448,4 @@ async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> 
   }
 
   return { branchLabel, sessionsLabel };
-}
-
-/**
- * Mapea fase de sesión activa (planning/execution/validation/closure) al
- * phase number del workflow tab (Discover=1, Start=2, Plan=3, Work=4, Close=5).
- * Si no hay sesión activa, retorna 0 (idle).
- */
-async function loadActivePhase(ctx: CliContext): Promise<number> {
-  try {
-    const sessRes = await ctx.process.run(ctx.runtime.binName, ["sessions"], {
-      cwd: ctx.env.cwd(),
-    });
-    if (sessRes.code !== 0) return 0;
-    const data = JSON.parse(sessRes.stdout) as {
-      sessions?: Array<{ phase?: string; state?: string }>;
-    };
-    const active = (data.sessions ?? []).find((s) => s.state === "active");
-    if (!active) return 0;
-    switch (active.phase) {
-      case "planning":
-        return 3;
-      case "execution":
-      case "validation":
-        return 4;
-      case "closure":
-        return 5;
-      default:
-        return 4;
-    }
-  } catch {
-    return 0;
-  }
 }

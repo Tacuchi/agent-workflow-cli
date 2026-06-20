@@ -40,8 +40,6 @@ function buildBlock(opts: {
 
 Test project.
 
-Mode: hub
-
 ## Fuentes
 
 | Alias | Path | Rama principal |

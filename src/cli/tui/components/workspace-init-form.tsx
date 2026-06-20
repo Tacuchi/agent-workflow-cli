@@ -6,9 +6,9 @@ import {
 } from "../../../application/workspace-init-service.js";
 import type { CliContext } from "../../types.js";
 import { colors, icons } from "../theme.js";
-import { dedupeAlias, deriveAlias } from "./hub-init-alias.js";
 import { InputPrompt } from "./input-prompt.js";
 import { SectionHead } from "./section-head.js";
+import { dedupeAlias, deriveAlias } from "./workspace-init-alias.js";
 
 const DEFAULT_MAIN_BRANCH = "main";
 
@@ -29,7 +29,7 @@ type Step =
   | { kind: "working"; proyecto: string; fuentes: WorkspaceSource[]; mainBranch: string }
   | { kind: "busy"; label: string };
 
-export interface HubInitFormProps {
+export interface WorkspaceInitFormProps {
   ctx: CliContext;
   defaultProyecto: string;
   isActive?: boolean;
@@ -37,13 +37,13 @@ export interface HubInitFormProps {
   onCancel: () => void;
 }
 
-export function HubInitForm({
+export function WorkspaceInitForm({
   ctx,
   defaultProyecto,
   isActive = true,
   onDone,
   onCancel,
-}: HubInitFormProps) {
+}: WorkspaceInitFormProps) {
   const [step, setStep] = useState<Step>({ kind: "proyecto" });
 
   // Esc cancela en cualquier paso de input (no durante la escritura).

@@ -98,7 +98,9 @@ function mergeFields(
   const sesionName = input.sesionName || session?.name || code;
   const date = input.date || session?.date || todayIso();
   const summary = input.summary || session?.summary || sesionName.replace(/-/g, " ");
-  return { flow: session?.flow ?? null, sesionName, date, summary };
+  // Sessions no longer carry a `flow` segment (removed from the model). The
+  // HISTORY.md "Flujo" column is preserved for legacy tables and renders "—".
+  return { flow: null, sesionName, date, summary };
 }
 
 function normalizeCode(code: string): string {

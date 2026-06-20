@@ -114,7 +114,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     {
       id: "orchestration",
       title: "Orchestration",
-      items: ["workspace-mode", "stack", "skill-index", "resume-summary"],
+      items: ["stack", "skill-index", "resume-summary"],
     },
     {
       id: "doctor",
@@ -128,7 +128,6 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
         "code-scan",
         "project-md-upsert",
         "bootstrap-dsn",
-        "upgrade-hub-mode",
       ],
     },
     {

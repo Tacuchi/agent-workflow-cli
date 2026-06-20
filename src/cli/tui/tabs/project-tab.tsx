@@ -7,11 +7,11 @@ import {
   buildProjectTabData,
 } from "../../../application/project-tab-data.js";
 import type { CliContext } from "../../types.js";
-import { HubInitForm } from "../components/hub-init-form.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { StatTile } from "../components/stat-tile.js";
+import { WorkspaceInitForm } from "../components/workspace-init-form.js";
 import { useInputLock } from "../input-lock.js";
 import { colors, icons } from "../theme.js";
 
@@ -94,7 +94,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   if (!data.initialized) {
     if (initForm) {
       return (
-        <HubInitForm
+        <WorkspaceInitForm
           ctx={ctx}
           defaultProyecto={basename(data.workspacePath)}
           isActive={isActive}

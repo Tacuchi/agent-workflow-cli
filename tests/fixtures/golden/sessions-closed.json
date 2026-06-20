@@ -2,12 +2,10 @@
   "sessions": [
     {
       "code": "003",
-      "flow": "dev",
-      "name": "baz",
+      "name": "dev-baz",
       "folder": "session003-dev-baz",
       "path": ".workflow/sessions/session003-dev-baz",
       "state": "closed",
-      "phase": "closure",
       "date": "2026-01-03",
       "summary": "Tarea cerrada baz: ya fue completada y graduada."
     }

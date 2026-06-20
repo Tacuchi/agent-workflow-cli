@@ -148,7 +148,6 @@ describe("buildProjectTabData — GIT tile working branch", () => {
 function block(overrides: Partial<ParsedProjectBlock>): ParsedProjectBlock {
   return {
     proyecto: "p",
-    mode: "project",
     fuentes: [
       { alias: "alpha", path: "/src/alpha", main_branch: "certificacion" },
       { alias: "beta", path: "/src/beta", main_branch: "certificacion" },

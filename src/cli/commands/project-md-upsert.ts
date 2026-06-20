@@ -62,9 +62,6 @@ function buildUpsertInput(
   const proyecto = args.values.get("proyecto");
   if (proyecto !== undefined) input.proyecto = proyecto;
 
-  const mode = args.values.get("mode");
-  if (mode === "hub" || mode === "project") input.mode = mode;
-
   const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []);
   if (workingBranches !== undefined) input.workingBranches = workingBranches;
 

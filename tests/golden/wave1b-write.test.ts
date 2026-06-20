@@ -28,7 +28,9 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
       state: "closed",
       summary: "tarea cerrada via test",
     });
-    expect(result).toEqual({ code: "001", flow: "dev", action: "updated", state: "closed" });
+    // Sessions no longer carry a `flow` segment; the output flow is always null
+    // and the legacy HISTORY.md "Flujo" column renders "—".
+    expect(result).toEqual({ code: "001", flow: null, action: "updated", state: "closed" });
     expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(
       loadGoldenFile("history-update-001-closed", ".workflow/HISTORY.md"),
     );

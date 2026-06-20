@@ -1,19 +1,5 @@
 import type { SessionState } from "./state-reader.js";
 
-const PHASE_INDEX: Record<string, string> = {
-  planning: "1/4",
-  planificacion: "1/4",
-  requerimiento: "1/4",
-  plan: "1/4",
-  execution: "2/4",
-  ejecucion: "2/4",
-  implementacion: "2/4",
-  validation: "3/4",
-  validacion: "3/4",
-  closure: "4/4",
-  cierre: "4/4",
-};
-
 export function formatCheckpointMd(state: SessionState): string {
   const lines: string[] = [];
   appendHeader(lines, state);
@@ -26,8 +12,6 @@ export function formatCheckpointMd(state: SessionState): string {
 }
 
 function appendHeader(lines: string[], state: SessionState): void {
-  const phase = state.phase ?? "?";
-  const phaseIdx = PHASE_INDEX[phase.toLowerCase()] ?? "?/4";
   const progress = state.progress_pct;
   const progressLine =
     progress !== null
@@ -37,7 +21,6 @@ function appendHeader(lines: string[], state: SessionState): void {
     `# Checkpoint — ${state.folder}`,
     "",
     `- Updated: ${state.timestamp}`,
-    `- Current phase: ${phase} (${phaseIdx})`,
     `- Progress: ${progressLine}`,
     "",
     "## Last action",

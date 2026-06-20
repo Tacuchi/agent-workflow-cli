@@ -104,12 +104,11 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     expect(claude).toContain("| core | /repo/core | certificacion |");
   });
 
-  it("merges --working-branch entries (multi-flag) into hub Status", async () => {
+  it("merges --working-branch entries (multi-flag) into Status", async () => {
     const env = new TestEnv(cwd);
     const paths = makePaths(cwd);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      mode: "hub",
       fuentes: [
         { alias: "core", path: "/repo/core" },
         { alias: "plugin", path: "/repo/plugin" },
@@ -120,7 +119,8 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("Mode: hub");
+    // No `Mode:` line is ever emitted (the project/hub mode concept is gone).
+    expect(claude).not.toMatch(/^Mode:/m);
     expect(claude).toContain("- core: feature/upgrade");
     expect(claude).toContain("- plugin: feature/upgrade");
   });

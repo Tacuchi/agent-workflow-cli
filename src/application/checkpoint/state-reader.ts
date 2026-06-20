@@ -6,10 +6,8 @@ import { findArtifact, listExistingArtifacts } from "../session-artifacts.js";
 
 export interface SessionState {
   code: string | null;
-  flow: string | null;
   name: string;
   folder: string;
-  phase: string | null;
   branches: string[];
   tasks: { open: number; closed: number; total: number };
   progress_pct: number | null;
@@ -30,9 +28,8 @@ export async function extractSessionState(
 ): Promise<SessionState> {
   const folder = sessionPath.split(/[\\/]/).pop() ?? "";
   const parsed = parseSessionFolder(folder);
-  // Sessions are no longer registered in the project block; phase derives from
-  // the session-local CHECKPOINT.md and branches are no longer tracked here.
-  const phase = await readPhaseFromCheckpoint(fs, sessionPath);
+  // Sessions are no longer registered in the project block and branches are no
+  // longer tracked here.
   const branches: string[] = [];
 
   const tasks = await countTasks(fs, sessionPath);
@@ -45,10 +42,8 @@ export async function extractSessionState(
 
   return {
     code: parsed.code,
-    flow: parsed.flow,
     name: parsed.name,
     folder,
-    phase,
     branches,
     tasks,
     progress_pct: progressPct,
@@ -63,30 +58,11 @@ export async function extractSessionState(
 
 function parseSessionFolder(folder: string): {
   code: string | null;
-  flow: string | null;
   name: string;
 } {
   const m = folder.match(/^session(\d{3})-(.+)/);
-  if (!m || !m[1] || !m[2]) return { code: null, flow: null, name: folder };
-  const parts = m[2].split("-");
-  if (parts.length >= 2 && ["dev", "design", "analyze", "core"].includes(parts[0] ?? "")) {
-    return { code: m[1], flow: parts[0] ?? null, name: parts.slice(1).join("-") };
-  }
-  return { code: m[1], flow: null, name: m[2] };
-}
-
-async function readPhaseFromCheckpoint(
-  fs: FileSystemPort,
-  sessionPath: string,
-): Promise<string | null> {
-  const path = join(sessionPath, "CHECKPOINT.md");
-  if (!(await fs.exists(path))) return null;
-  const text = await fs.readText(path);
-  const m =
-    text.match(/^[-*]\s+Current phase:\s*(.+)$/im) ?? text.match(/^[-*]\s+Fase actual:\s*(.+)$/im);
-  const raw = m?.[1]?.trim();
-  if (!raw) return null;
-  return raw.split(/\s+/)[0] ?? null;
+  if (!m || !m[1] || !m[2]) return { code: null, name: folder };
+  return { code: m[1], name: m[2] };
 }
 
 async function countTasks(

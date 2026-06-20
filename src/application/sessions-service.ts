@@ -96,4 +96,4 @@ function applyFilter(sessions: SessionEntry[], input: ListSessionsInput): Sessio
 }
 
 // Backwards-compat re-export. Other modules may import { parseSessionFolder } from this file.
-export { parseSessionFolder, KNOWN_FLOWS } from "./session-resolver.js";
+export { parseSessionFolder } from "./session-resolver.js";

@@ -92,17 +92,14 @@ export class PathsService {
 /**
  * Resolve the workspace root directory.
  *
- * Per DEC-002 (session006), graduation lands at the workspace root regardless
- * of mode:
- * - `workspace_mode=hub` → hub root (parent of `.<ns>/`, where CLAUDE.md with
- *   `Mode: hub` lives).
- * - `workspace_mode=project` → project root (parent of `.<ns>/`).
+ * Graduation always lands at the workspace root (the parent of `.<ns>/`),
+ * regardless of how many sources the workspace declares.
  *
  * Walks up from `env.cwd()` looking for the nearest directory that contains
  * `.<ns>/` (the workflow marker). This guarantees that even when the user has
- * `cd`-ed into a fuente subdirectory of a hub workspace before invoking
- * `graduate`, the destination still resolves to the hub root rather than the
- * fuente.
+ * `cd`-ed into a source subdirectory of the workspace before invoking
+ * `graduate`, the destination still resolves to the workspace root rather than
+ * the source.
  *
  * Fallback: if no `.<ns>/` marker is found anywhere up the tree (e.g. the user
  * is outside any workspace), returns `env.cwd()` unchanged so the caller can

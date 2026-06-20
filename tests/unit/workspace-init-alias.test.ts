@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dedupeAlias, deriveAlias } from "../../src/cli/tui/components/hub-init-alias.js";
+import { dedupeAlias, deriveAlias } from "../../src/cli/tui/components/workspace-init-alias.js";
 
 describe("deriveAlias", () => {
   it("toma el último segmento de un path posix", () => {

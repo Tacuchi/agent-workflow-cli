@@ -6,7 +6,6 @@ import {
   parseMdSection,
   parseMdSectionBilingual,
   parseMdValue,
-  parseMdValueBilingual,
 } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { type ArtifactKind, findArtifact, listExistingArtifacts } from "./session-artifacts.js";
@@ -18,7 +17,6 @@ const DEFAULT_STALE_THRESHOLD_SECONDS = 300;
 export interface CheckpointFields {
   path: string;
   actualizado: string | null;
-  fase: string | null;
   avance: string | null;
   ultimo: string | null;
   proximo: string | null;
@@ -47,7 +45,6 @@ export async function readLatestCheckpoint(
   return {
     path,
     actualizado: parseMdValue(text, "Actualizado") ?? null,
-    fase: parseMdValueBilingual(text, "Fase actual") ?? null,
     avance: parseMdValue(text, "Avance") ?? null,
     ultimo: parseMdSectionBilingual(text, "Lo último que hice") ?? null,
     proximo: parseMdSectionBilingual(text, "Próximo paso") ?? null,
@@ -254,7 +251,6 @@ async function resolveTargetSession(
 export interface RecentClosedEntry {
   code: string;
   folder: string;
-  flow: string | null;
   closed_age_seconds: number;
   complete: boolean;
   artifact_signal: string;
@@ -272,7 +268,6 @@ export interface ResumeSummaryOutput {
   needs_ai_action: boolean;
   checkpoint?: {
     actualizado: string | null;
-    fase: string | null;
     avance: string | null;
     proximo: string[] | null;
   };
@@ -353,7 +348,6 @@ export async function runResumeSummary(
       : null;
     summary.checkpoint = {
       actualizado: cp.actualizado,
-      fase: cp.fase,
       avance: cp.avance,
       proximo: proximoLines && proximoLines.length > 0 ? proximoLines : null,
     };
@@ -442,7 +436,7 @@ export async function findRecentClosedWithArtifacts(
 
   for (const folder of folders) {
     if (activeSet.has(folder.name)) continue;
-    const { code, flow } = parseSessionFolder(folder.name);
+    const { code } = parseSessionFolder(folder.name);
     if (code === null) continue;
     // Closed = folder-local `.closed` sentinel present.
     if (!(await fs.exists(join(folder.path, CLOSED_MARKER)))) continue;
@@ -463,7 +457,6 @@ export async function findRecentClosedWithArtifacts(
     out.push({
       code,
       folder: folder.name,
-      flow,
       closed_age_seconds: Math.floor(ageMs / 1000),
       complete: true,
       artifact_signal: signal,

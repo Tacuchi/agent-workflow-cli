@@ -32,12 +32,10 @@ export interface DivergentSource {
 }
 
 export interface SourcesOutput {
-  workspace_mode: "project" | "hub";
   sources: Array<Partial<EnrichedSource>>;
   working_branches_from_status: Record<string, string>;
   cross_source_consistent: boolean;
   divergent_sources: DivergentSource[];
-  is_hub?: boolean;
   session_code?: string;
   scope?: string[] | null;
   error?: string;
@@ -56,7 +54,6 @@ export async function runSources(
 
   if (!block || block.fuentes.length === 0) {
     const empty: SourcesOutput = {
-      workspace_mode: block?.mode ?? "project",
       sources: [],
       working_branches_from_status: {},
       cross_source_consistent: true,
@@ -92,7 +89,6 @@ export async function runSources(
   const { consistent, divergent } = computeCrossSourceConsistency(enriched);
 
   const payload: SourcesOutput = {
-    workspace_mode: block.mode,
     sources: enriched.map((e) => compactSourceEntry(e, cwd, verbose)) as Array<
       Partial<EnrichedSource>
     >,
@@ -102,7 +98,6 @@ export async function runSources(
   };
 
   if (verbose) {
-    payload.is_hub = block.mode === "hub";
     payload.session_code = input.sessionCode ?? "";
     payload.scope = input.scope ?? null;
   } else if (input.sessionCode !== undefined) {

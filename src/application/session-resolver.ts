@@ -7,12 +7,6 @@ import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact } from "./session-artifacts.js";
 
-/**
- * Legacy folder-name segments preserved only to split a leading segment off the
- * session name for backwards-compatible folder parsing. The value is informational
- * (no longer a typed Flow) and is ignored by state derivation.
- */
-export const KNOWN_FLOWS: ReadonlyArray<string> = ["core", "dev", "design", "analyze"];
 const SESSION_FOLDER_RE = /^session(\d{3})-(.+)$/;
 
 /** Folder-local sentinel file marking a session as closed. */
@@ -20,42 +14,32 @@ export const CLOSED_MARKER = ".closed";
 
 export interface SessionEntry {
   code: string | null;
-  flow: string | null;
   name: string;
   folder: string;
   /** Absolute path to the session directory. */
   path: string;
   state: SessionState;
-  /** Best-effort lifecycle phase from CHECKPOINT/STATUS; `requirement` when none. */
-  phase: string;
   /** `## Type` del SESSION/OBJECTIVE. Ausente si no declarado. */
   type?: string;
   date?: string;
   summary?: string;
   branch?: string;
   legacy_source?: string;
-  has_status?: boolean;
 }
 
 export function parseSessionFolder(folder: string): {
   code: string | null;
-  flow: string | null;
   name: string;
 } {
   const m = folder.match(SESSION_FOLDER_RE);
   if (!m || !m[1] || !m[2]) {
     // New-model slug folder (e.g. `003-spec-spec-refine`, `phase1-exec`): the folder
-    // name IS the session identity. No numeric code / flow segment.
-    return { code: folder, flow: null, name: folder };
+    // name IS the session identity. No numeric code segment.
+    return { code: folder, name: folder };
   }
-  const code = m[1];
-  const rest = m[2];
-  const parts = rest.split("-");
-  const candidate = parts[0];
-  if (parts.length >= 2 && candidate && KNOWN_FLOWS.includes(candidate)) {
-    return { code, flow: candidate, name: parts.slice(1).join("-") };
-  }
-  return { code, flow: null, name: rest };
+  // Legacy `sessionNNN-...` folders: split off the leading numeric code for
+  // back-compat. The remainder is the name verbatim (no flow-segment splitting).
+  return { code: m[1], name: m[2] };
 }
 
 export interface BuildEntryOptions {
@@ -69,24 +53,11 @@ export async function buildSessionEntry(
   folder: string,
   options: BuildEntryOptions = {},
 ): Promise<SessionEntry> {
-  const { code, flow, name } = parseSessionFolder(folder);
-
-  const status = await readStatus(fs, sessionPath);
-  const hasStatus = status !== null;
-  const checkpointPhase = await readPhaseFromCheckpoint(fs, sessionPath);
+  const { code, name } = parseSessionFolder(folder);
 
   // Session state is derived solely from a folder-local `.closed` sentinel file
   // (locked decision): present = closed, absent = active. Type-agnostic.
   const state: SessionState = await stateFromClosedMarker(fs, sessionPath);
-
-  let phase: string;
-  if (checkpointPhase !== null) {
-    phase = checkpointPhase;
-  } else if (status) {
-    phase = status.phase;
-  } else {
-    phase = "requirement";
-  }
 
   const requirement = await readRequirement(fs, sessionPath);
   const date = requirement.date ?? (await mtimeAsDate(fs, sessionPath));
@@ -94,21 +65,16 @@ export async function buildSessionEntry(
 
   const entry: SessionEntry = {
     code,
-    flow,
     name,
     folder,
     path: sessionPath,
     state,
-    phase,
     ...(requirement.type ? { type: requirement.type } : {}),
     ...(date ? { date } : {}),
     summary,
     ...(requirement.branch ? { branch: requirement.branch } : {}),
     ...(options.legacySource ? { legacy_source: options.legacySource } : {}),
   };
-  if (options.verbose === true) {
-    entry.has_status = hasStatus;
-  }
   return entry;
 }
 
@@ -118,17 +84,8 @@ export function serializeSessionEntry(
   options: { verbose?: boolean } = {},
 ): SessionEntry {
   const verbose = options.verbose === true;
-  const { has_status: hasStatus, ...rest } = entry;
   const path = verbose ? entry.path : relpath(entry.path, cwd);
-  if (!verbose) {
-    return { ...rest, path };
-  }
-  // Verbose: preserve has_status in fixed position (last) like Python compact=False output.
-  const result: SessionEntry & { has_status?: boolean } = { ...rest, path };
-  if (hasStatus !== undefined) {
-    result.has_status = hasStatus;
-  }
-  return result;
+  return { ...entry, path };
 }
 
 export async function listSessionFolders(
@@ -212,35 +169,6 @@ async function stateFromClosedMarker(
   sessionPath: string,
 ): Promise<SessionState> {
   return (await fs.exists(join(sessionPath, CLOSED_MARKER))) ? "closed" : "active";
-}
-
-async function readStatus(
-  fs: FileSystemPort,
-  sessionPath: string,
-): Promise<{ phase: string } | null> {
-  const path = join(sessionPath, "STATUS.md");
-  if (!(await fs.exists(path))) {
-    return null;
-  }
-  const text = await fs.readText(path);
-  const phaseRaw = parseMdValueBilingual(text, "Phase")?.toLowerCase();
-  return { phase: phaseRaw && phaseRaw.length > 0 ? phaseRaw : "planning" };
-}
-
-async function readPhaseFromCheckpoint(
-  fs: FileSystemPort,
-  sessionPath: string,
-): Promise<string | null> {
-  const path = join(sessionPath, "CHECKPOINT.md");
-  if (!(await fs.exists(path))) return null;
-  const text = await fs.readText(path);
-  // EN canon: "- Current phase: execution (2/4)"
-  // ES legacy: "- Fase actual: execution (2/4)"
-  const raw =
-    parseMdValueBilingual(text, "Current phase") ?? parseMdValueBilingual(text, "Fase actual");
-  if (!raw) return null;
-  const first = raw.trim().toLowerCase().split(/\s+/)[0];
-  return first && first.length > 0 ? first : null;
 }
 
 async function readRequirement(

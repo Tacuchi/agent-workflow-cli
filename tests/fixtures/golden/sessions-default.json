@@ -2,23 +2,19 @@
   "sessions": [
     {
       "code": "001",
-      "flow": "dev",
-      "name": "foo",
+      "name": "dev-foo",
       "folder": "session001-dev-foo",
       "path": ".workflow/sessions/session001-dev-foo",
       "state": "active",
-      "phase": "requirement",
       "date": "2026-01-01",
       "summary": "Implementar el feature foo de prueba para validar el lifecycle de sesiones."
     },
     {
       "code": "002",
-      "flow": "analyze",
-      "name": "bar",
+      "name": "analyze-bar",
       "folder": "session002-analyze-bar",
       "path": ".workflow/sessions/session002-analyze-bar",
       "state": "active",
-      "phase": "requirement",
       "date": "2026-01-02",
       "summary": "Evaluar si el patrón de prueba bar resuelve el caso ABC."
     }

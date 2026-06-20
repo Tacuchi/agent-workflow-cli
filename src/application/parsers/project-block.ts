@@ -13,11 +13,8 @@ export interface ProjectStack {
   build?: string;
 }
 
-export type ProjectMode = "project" | "hub";
-
 export interface ParsedProjectBlock {
   proyecto: string;
-  mode: ProjectMode;
   fuentes: ProjectFuente[];
   stack: ProjectStack;
   working_branches: Record<string, string>;
@@ -70,11 +67,9 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
   const fuentes = parseFuentesTable(fuentesText);
   const stack = parseStackList(stackText);
   const status = parseStatusBlock(statusText);
-  const proyectoData = extractMode(proyectoText);
 
   return {
-    proyecto: proyectoData.proyecto,
-    mode: proyectoData.mode,
+    proyecto: stripLegacyModeLine(proyectoText),
     fuentes,
     stack,
     working_branches: status.workingBranches,
@@ -192,24 +187,15 @@ function addWorkingBranch(out: Record<string, string>, entry: string): void {
   }
 }
 
-interface ProyectoData {
-  proyecto: string;
-  mode: ProjectMode;
-}
-
-function extractMode(text: string): ProyectoData {
-  let mode: ProjectMode = "project";
-  const cleanLines: string[] = [];
-  for (const line of text.split("\n")) {
-    const m = line.match(/^\s*Mode:\s*(hub|project)\s*$/i);
-    if (m?.[1]) {
-      const candidate = m[1].toLowerCase();
-      if (candidate === "hub" || candidate === "project") {
-        mode = candidate;
-      }
-      continue;
-    }
-    cleanLines.push(line);
-  }
-  return { proyecto: cleanLines.join("\n").trim(), mode };
+/**
+ * Drop any legacy `Mode:` line from the Proyecto text. The project/hub mode
+ * concept was removed (a workspace simply has 1+ sources), so the value is
+ * ignored — but historic blocks may still carry the line, and it must not leak
+ * into the parsed `proyecto`.
+ */
+function stripLegacyModeLine(text: string): string {
+  // Strip any legacy `Mode: <value>` line (hub/project/single-repo/...); the mode
+  // concept is gone, so its value is ignored and must not leak into `proyecto`.
+  const cleanLines = text.split("\n").filter((line) => !/^\s*Mode:\s*\S/i.test(line));
+  return cleanLines.join("\n").trim();
 }

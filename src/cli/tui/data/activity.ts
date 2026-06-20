@@ -9,7 +9,6 @@ export interface LoadActivityOptions {
 interface SessionRow {
   code: string;
   name: string;
-  flow: string;
   state: string;
   type?: string;
   date?: string;
@@ -19,7 +18,7 @@ interface SessionRow {
  * Sesiones recientes para el activity-feed (Status tab).
  *
  * Lista TODAS las sesiones (`sessions --all`), la más reciente primero (por
- * código zero-padded), y devuelve las `cap` primeras con tipo/flujo/estado.
+ * código zero-padded), y devuelve las `cap` primeras con tipo/estado.
  */
 export async function loadActivity(
   ctx: CliContext,
@@ -47,7 +46,7 @@ export async function loadActivity(
       when: s.date ?? "",
       dotColor: s.state === "active" ? "accent" : "dim",
       text: `session${s.code} · ${s.name}`,
-      meta: [s.type, s.flow, s.state].filter((v): v is string => Boolean(v)).join(" · "),
+      meta: [s.type, s.state].filter((v): v is string => Boolean(v)).join(" · "),
       metaTone: "dim",
     }));
 }

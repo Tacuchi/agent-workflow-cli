@@ -5,10 +5,8 @@ import type { SessionState } from "../../src/application/checkpoint/state-reader
 function baseState(overrides: Partial<SessionState> = {}): SessionState {
   return {
     code: "042",
-    flow: "dev",
-    name: "foo",
+    name: "dev-foo",
     folder: "session042-dev-foo",
-    phase: "execution",
     branches: [],
     tasks: { open: 0, closed: 0, total: 0 },
     progress_pct: null,
@@ -23,11 +21,13 @@ function baseState(overrides: Partial<SessionState> = {}): SessionState {
 }
 
 describe("formatCheckpointMd — EN headings", () => {
-  it("emits EN headings (Current phase, Progress, Last action, Next step, Recent decisions)", () => {
+  it("emits EN headings (Progress, Last action, Next step, Recent decisions)", () => {
     const md = formatCheckpointMd(baseState());
     expect(md).toContain("# Checkpoint — session042-dev-foo");
     expect(md).toContain("- Updated: 2026-05-08 12:00");
-    expect(md).toContain("- Current phase: execution (2/4)");
+    // Sessions no longer carry a lifecycle phase; the CHECKPOINT has no
+    // "Current phase" line (plan-doc phases live as prose, not session state).
+    expect(md).not.toContain("Current phase");
     expect(md).toContain("## Last action");
     expect(md).toContain("## Next step");
     expect(md).toContain("## Recent decisions");
@@ -98,16 +98,6 @@ describe("formatCheckpointMd — EN headings", () => {
     expect(md).toContain("- Branches: agent-workflow:feature/r3");
     expect(md).toContain("- Artifacts present: tasks, conclusions, scripts(2)");
     expect(md).toContain("- Skills used: _[AI: list the skills invoked during the session]_");
-  });
-
-  it("recognizes Spanish phase aliases (planificacion → 1/4) for legacy compat", () => {
-    const md = formatCheckpointMd(baseState({ phase: "planificacion" }));
-    expect(md).toContain("- Current phase: planificacion (1/4)");
-  });
-
-  it("emits ?/4 when phase is unrecognized", () => {
-    const md = formatCheckpointMd(baseState({ phase: "weird" }));
-    expect(md).toContain("- Current phase: weird (?/4)");
   });
 
   it("trailing comment uses EN", () => {

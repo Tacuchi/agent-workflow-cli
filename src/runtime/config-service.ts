@@ -141,7 +141,7 @@ function parseExpectedMcpServers(value: unknown): string[] | undefined {
 function parseSlashCommands(value: unknown): SlashCommandHints | undefined {
   if (!isRecord(value)) return undefined;
   const hints: SlashCommandHints = {};
-  for (const key of ["migrate", "projectInit", "hubInit", "resume", "session"] as const) {
+  for (const key of ["migrate", "projectInit", "resume", "session"] as const) {
     const v = value[key];
     if (typeof v === "string") hints[key] = v;
   }

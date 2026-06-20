@@ -80,11 +80,11 @@ describe("renderGroupedCommandLines", () => {
 describe("commandHelpText", () => {
   it("renders the command name and its describe (per-subcommand help, not the global list)", () => {
     const out = commandHelpText({
-      name: "hub-init",
-      describe: "Escribe el bloque. Flags: --proyecto, --fuente, --working-branch.",
+      name: "workspace-init",
+      describe: "Inicializa un workspace. Flags: --proyecto, --source, --working-branch.",
     });
-    expect(out).toContain("agent-workflow hub-init");
-    expect(out).toContain("Flags: --proyecto, --fuente, --working-branch.");
+    expect(out).toContain("agent-workflow workspace-init");
+    expect(out).toContain("Flags: --proyecto, --source, --working-branch.");
     // Must NOT spill the global command list (the bug it replaces).
     expect(out).not.toContain("Session lifecycle:");
   });

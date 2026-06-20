@@ -200,9 +200,9 @@ async function buildGitData(
 ): Promise<ProjectGitData | null> {
   const isRepo = await git.isGitRepo(repoPath);
   if (!isRepo) return null;
-  // `workBranch` (rama de trabajo definida en el hub) tiene prioridad sobre la
-  // rama checked out: el tile GIT representa el trabajo del hub, no el HEAD
-  // accidental del source. ahead/behind se calcula contra la rama mostrada.
+  // `workBranch` (rama de trabajo definida en el workspace) tiene prioridad sobre
+  // la rama checked out: el tile GIT representa el trabajo del workspace, no el
+  // HEAD accidental del source. ahead/behind se calcula contra la rama mostrada.
   const branch = workBranch ?? (await git.currentBranch(repoPath)) ?? "(detached)";
 
   // ahead/behind vs `origin/<mainBranch>` — fallback a 0/0 si fail

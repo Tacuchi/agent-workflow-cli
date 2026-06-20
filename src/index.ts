@@ -6,7 +6,7 @@ export type {
   SessionType,
 } from "./domain/types.js";
 export type { Harness, PluginContext } from "./domain/plugin.js";
-export type { ProjectBlock, SourceRef, WorkspaceMode } from "./domain/project.js";
+export type { ProjectBlock, SourceRef } from "./domain/project.js";
 export type { SessionRef, TaskItem, TaskStatus } from "./domain/session.js";
 export type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "./ports/file-system.js";
 export type { GitPort } from "./ports/git.js";

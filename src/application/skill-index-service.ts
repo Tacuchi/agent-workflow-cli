@@ -19,12 +19,10 @@ export interface SkillIndexItem {
 
 export interface SkillIndexInput {
   pluginRoot?: string;
-  flow?: string;
   exportedOnly?: boolean;
 }
 
 export interface SkillIndexOutput {
-  flow: string | null;
   plugin: string | null;
   plugin_root: string;
   skills_count: number;
@@ -42,7 +40,6 @@ export async function runSkillIndex(
   const items = await buildIndex(fs, pluginRoot);
   const filtered = input.exportedOnly === true ? items.filter((s) => s.exported) : items;
   return {
-    flow: input.flow ?? null,
     plugin: pluginName,
     plugin_root: pluginRoot,
     skills_count: filtered.length,
