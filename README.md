@@ -84,7 +84,8 @@ Workspace artifacts live under `.<namespace>/`. Resolution order (first match wi
 - `skills` — show resolved capability → skill bindings.
 - `sessions` / `session-create --type <research|refine|exec|quick>` / `session-close` / `session-resume` / `session-artifacts` — internal session lifecycle (used by the loops).
 - `checkpoint-read` / `checkpoint-write` — `CHECKPOINT.md` handling.
-- `sources` / `check-branch` / `set-working-branch` — multi-source git-safety (per-source working branch).
+- `sources` / `check-branch` / `set-working-branch` / `set-qa-branch` — multi-source git-safety (per-source base / working / QA branches).
+- `git-flow <sync|to-qa|to-prod> [--source|--all] [--target] [--dry-run]` — run the per-source branch flows (sync working ← base, promote to QA, promote to prod) with conflict-pause; also surfaced as Project-tab actions.
 - `release-data` — corpus reader backing the `export-*` skills.
 - `self install-skill` / `self doctor` / `self update` / `mcp` — CLI maintenance.
 

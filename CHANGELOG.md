@@ -4,6 +4,25 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.2.0] — 2026-06-19
+
+**Acciones git-flow por fuente.** Flujos de ramas rutinarios por fuente (sincronizar la rama de trabajo desde la base, promover a QA, promover a prod) — en el Project tab del TUI y como comando CLI, ejecutando git real con pausa en conflicto.
+
+### Added
+
+- **Comando + servicio `git-flow`**: `aw git-flow <sync|to-qa|to-prod> [--source <alias>] [--all] [--target <rama>] [--dry-run]`.
+  - `sync`: pull trabajo → checkout principal+pull → merge principal→trabajo.
+  - `to-qa`: sync + merge principal→qa + merge trabajo→qa + push qa.
+  - `to-prod`: sync + merge trabajo→principal + push principal.
+  - **Pausa en conflicto**: se detiene en un merge conflictivo, reporta los archivos, deja el repo mid-merge; resolvés + commiteas y re-ejecutas (replay idempotente — los merges ya hechos son no-op de git). Guards: no corre sobre un merge en curso ni un árbol sucio; los fallos git no-conflicto se reportan. `--all` fail-stop. Nunca `--force`/`--no-verify`/`--amend`.
+- **Rama QA por fuente** (`qa_branches`): 3er rol de rama por fuente; `set-qa-branch <alias> <rama>` + `workspace-init --qa-branch alias:rama`.
+- **Acciones en el Project tab**: por fuente Actualizar · → QA · → Prod (+ todas las fuentes), con progreso por paso + vista de conflicto.
+- `GitPort` extendido con checkout/pull/merge/push + detección de merge en curso.
+
+### Notes
+
+- Incluye también lo de la 12.1.0 (auto-limpieza de artefactos legacy en `self install`); npm salta 12.0.0 → 12.2.0 (la 12.1.0 quedó documentada + tag git, sin release npm propio).
+
 ## [12.1.0] — 2026-06-19
 
 **Migración limpia desde la versión vieja.** `self install` ahora elimina automáticamente los artefactos del plugin pre-rename (`agent-workflow`) que quedaban en los hosts y seguían apareciendo junto a los nuevos `/w:*`.
