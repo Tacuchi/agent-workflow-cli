@@ -174,7 +174,7 @@ export function GitFlowActions({ ctx, aliases, isActive = true, onClose }: GitFl
   );
 }
 
-function FlowResultView({
+export function FlowResultView({
   action,
   result,
 }: {
