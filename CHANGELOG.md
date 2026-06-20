@@ -4,6 +4,28 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.4.0] — 2026-06-20
+
+**Fixes de dogfooding: numeración global de sesiones, comandos que cargan su loop, y `spec-new` estrictamente single-pass.** Tres bugs que emergieron arrancando los flujos `/w:*`.
+
+### Added
+
+- `session-create` devuelve el campo `number` (el `NNN` global asignado).
+
+### Fixed
+
+- **Numeración de sesiones global y secuencial (caso C):** las sesiones se numeraban por familia de artefacto (spec 001 → `001-spec-refine`, plan 001 → `001-plan-new`), reiniciando el contador por tipo y colisionando todas en `001`. Ahora `session-create` antepone un `NNN` **global** escaneando todo `.workflow/sessions/` (cualquier tipo); el caller pasa **solo el descriptor** vía `--name`. Resultado: `001-spec-refine`, `002-spec-refine-research-x`, `003-plan-new`, … Un descriptor con un `NNN-` accidental se normaliza (no se duplica el prefijo). Revierte la decisión previa de "folder = `--name` verbatim, sin NNN".
+- **Los comandos `/w:*` cargan su loop leyendo el `SKILL.md` (caso B):** `Skill: <loop>` fallaba con "Unknown skill" porque en Claude Code los skills anidados del bundle (`loops/*`, `exports/*`) no son invocables por nombre suelto. Los 4 comandos-loop (`spec-refine`/`plan-new`/`plan-exec`/`quick`) y los 4 `export-*` ahora instruyen **leer y seguir** `../loops|exports/<x>/SKILL.md`. Corregido el claim erróneo en `loops/README.md`.
+- **`spec-new` estrictamente single-pass (caso A):** guard duro que prohíbe lanzar workflows/subagentes/research/web — **incluso bajo modos que pidan "siempre un workflow"** (ultracode/max-effort, que el comando pisa). La investigación a profundidad es trabajo de `spec-refine`.
+
+### Changed
+
+- **Convención de naming de sesiones** en el chasis y los heirs: el `<run>` que prefija las sesiones hijas es ahora el **descriptor sin número** (`spec-refine`/`plan-new`/`plan-exec`/`quick`); el `NNN` lo asigna el CLI. El resolver ya soportaba `NNN-descriptor` (resume por descriptor + `## Origin`, no por número reconstruido).
+
+### Notes
+
+- Los folders de sesión son internos/efímeros; el cambio de formato (`<name>` → `NNN-<name>`) **no es breaking** (el resolver acepta ambas formas). Cubierto por `tests/golden/wave1b-write.test.ts` (numeración global cross-tipo + normalización de prefijo). Suite completa: 666 tests verde.
+
 ## [12.3.0] — 2026-06-20
 
 **Acciones git-flow por fuente desde el Project tab, estilo MCP.** La lista de SOURCES del Project tab pasa de estática a navegable, y seleccionar una fuente abre un panel lateral de acciones — el mismo patrón de interacción que ya tenía el tab MCP (lista + detalle).
