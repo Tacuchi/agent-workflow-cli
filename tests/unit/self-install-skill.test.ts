@@ -458,6 +458,50 @@ describe("selfInstallSkill", () => {
     expect(SKILL_DIR_NAME).toBe("w");
   });
 
+  it("install removes legacy agent-workflow skill + commands dirs (cleaned_legacy)", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    // Seed a pre-`w`-rename install on claude.
+    const legacySkill = join(home, ".claude/skills/agent-workflow");
+    const legacyCmds = join(home, ".claude/commands/agent-workflow");
+    await mkdir(legacySkill, { recursive: true });
+    await writeFile(join(legacySkill, "SKILL.md"), "---\nname: agent-workflow\n---\n", "utf8");
+    await mkdir(legacyCmds, { recursive: true });
+    await writeFile(join(legacyCmds, "session.md"), "# session\n", "utf8");
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "claude" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    // Legacy artifacts gone, new install present.
+    expect(await fs.exists(legacySkill)).toBe(false);
+    expect(await fs.exists(legacyCmds)).toBe(false);
+    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(true);
+    if (result.ok && result.data) {
+      const claude = result.data.dests.find((d) => d.target === "claude");
+      expect(claude?.cleaned_legacy).toEqual(expect.arrayContaining([legacySkill, legacyCmds]));
+    }
+  });
+
+  it("--keep-legacy preserves the old agent-workflow dirs", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    const legacySkill = join(home, ".claude/skills/agent-workflow");
+    await mkdir(legacySkill, { recursive: true });
+    await writeFile(join(legacySkill, "SKILL.md"), "---\nname: agent-workflow\n---\n", "utf8");
+
+    const result = await selfInstallSkill(
+      buildArgs({ from: source, target: "claude" }, ["--keep-legacy"]),
+      ctx,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(legacySkill)).toBe(true); // preserved
+    if (result.ok && result.data) {
+      const claude = result.data.dests.find((d) => d.target === "claude");
+      expect(claude?.cleaned_legacy).toBeUndefined();
+    }
+  });
+
   it("--target missing → TARGET_REQUIRED", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();

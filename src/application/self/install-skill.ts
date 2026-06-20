@@ -40,6 +40,8 @@ export interface SelfInstallTargetResult {
   user_commands_dest?: string;
   user_commands_files?: number;
   user_commands_warning?: string;
+  /** Legacy artifact dirs (pre-`w` rename) removed during this install. */
+  cleaned_legacy?: string[];
   hooks_status?: string;
   hooks_warning?: string;
   flattened_subskills?: number;
@@ -98,6 +100,54 @@ const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
   agents: null,
 };
 
+// Pre-`w`-rename user-commands dirs (slash namespace `/agent-workflow:*`). Removed
+// on install so an upgrade from the old plugin doesn't leave stale slash commands.
+const LEGACY_USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
+  claude: ".claude/commands/agent-workflow",
+  codex: ".codex/commands/agent-workflow",
+  warp: null,
+  oz: null,
+  agents: null,
+};
+
+/**
+ * Remove legacy artifacts from a prior install (before the `agent-workflow` → `w`
+ * rename) for `target`: the old SKILL dirs (LEGACY_SKILL_NAMES), the old
+ * user-commands dir (`/agent-workflow:*`), and — for flatten hosts — the old
+ * `agent-workflow-*` flattened sub-skills. Returns the paths removed.
+ */
+async function cleanLegacyArtifacts(
+  target: InstallTarget,
+  home: string,
+  ctx: CliContext,
+): Promise<string[]> {
+  const removed: string[] = [];
+  const tryRemove = async (p: string): Promise<void> => {
+    if (await ctx.fs.exists(p)) {
+      await rm(p, { recursive: true, force: true });
+      removed.push(p);
+    }
+  };
+  const skillsRoot = join(home, ...TARGET_ROOTS[target]);
+  for (const name of LEGACY_SKILL_NAMES) {
+    await tryRemove(join(skillsRoot, name));
+  }
+  const legacyCmd = LEGACY_USER_COMMANDS_RELPATH_BY_TARGET[target];
+  if (legacyCmd !== null) await tryRemove(join(home, legacyCmd));
+  if (FLATTEN_SUBSKILLS_HOSTS.has(target)) {
+    try {
+      for (const entry of await readdir(skillsRoot, { withFileTypes: true })) {
+        if (entry.isDirectory() && entry.name.startsWith("agent-workflow-")) {
+          await tryRemove(join(skillsRoot, entry.name));
+        }
+      }
+    } catch {
+      // skills root absent / unreadable — nothing to sweep.
+    }
+  }
+  return removed;
+}
+
 // Hosts where install-hooks merges into a user-level config (JSON/TOML).
 // Codex has a different config format (TOML) and no settled hook syntax at
 // the user level yet — see DEC-W4 for Warp/OZ (no hook system at all).
@@ -128,6 +178,7 @@ export async function selfInstallSkill(
   const force = args.flags.has("--force");
   const dryRun = args.flags.has("--dry-run");
   const keepCache = args.flags.has("--keep-cache");
+  const keepLegacy = args.flags.has("--keep-legacy");
   const confirmAll = args.flags.has("--confirm-all");
   const skillOnly = args.flags.has("--skill-only");
   const skipCommands = skillOnly || args.flags.has("--no-commands");
@@ -211,6 +262,7 @@ export async function selfInstallSkill(
       keepCache,
       skipCommands,
       skipHooks,
+      keepLegacy,
     });
     results.push(entry);
   }
@@ -377,6 +429,7 @@ interface InstallOneFlags {
   keepCache: boolean;
   skipCommands: boolean;
   skipHooks: boolean;
+  keepLegacy: boolean;
 }
 
 async function installOneTarget(
@@ -415,6 +468,10 @@ async function installOneTarget(
     const hookResult = await installHooksForTarget(t.target, ctx);
     entry.hooks_status = hookResult.status;
     if (hookResult.warning !== undefined) entry.hooks_warning = hookResult.warning;
+  }
+  if (!flags.keepLegacy) {
+    const cleaned = await cleanLegacyArtifacts(t.target, ctx.env.homeDir(), ctx);
+    if (cleaned.length > 0) entry.cleaned_legacy = cleaned;
   }
   return entry;
 }

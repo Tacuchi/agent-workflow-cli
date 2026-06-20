@@ -20,7 +20,7 @@ export type UninstallTargetChoice = InstallTarget | "all";
 
 export interface UninstallStep {
   target: InstallTarget;
-  kind: "skill" | "legacy-skill" | "user-commands" | "hooks";
+  kind: "skill" | "legacy-skill" | "user-commands" | "legacy-user-commands" | "hooks";
   path: string;
   status: "removed" | "dry-run" | "skipped";
   reason?: string;
@@ -38,6 +38,15 @@ const ALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "war
 const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"];
 
 const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
+  claude: ".claude/commands/w",
+  codex: ".codex/commands/w",
+  warp: null,
+  oz: null,
+  agents: null,
+};
+
+// Pre-`w`-rename user-commands dirs (`/agent-workflow:*`), removed with `--legacy`.
+const LEGACY_USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
   claude: ".claude/commands/agent-workflow",
   codex: ".codex/commands/agent-workflow",
   warp: null,
@@ -133,8 +142,7 @@ async function uninstallOneTarget(
   steps.push(...(await removeSkill(ctx, home, target, flags.includeLegacy, flags.dryRun)));
   steps.push(...(await removeFlattenedSubSkills(ctx, home, target, flags.dryRun)));
   if (!flags.skipCommands) {
-    const cmdStep = await removeUserCommands(ctx, home, target, flags.dryRun);
-    if (cmdStep !== null) steps.push(cmdStep);
+    steps.push(...(await removeUserCommands(ctx, home, target, flags.includeLegacy, flags.dryRun)));
   }
   if (flags.withHooks && !flags.skillOnly) {
     const hookStep = await removeHooks(ctx, home, target, flags.dryRun);
@@ -213,19 +221,25 @@ async function removeUserCommands(
   ctx: CliContext,
   home: string,
   target: InstallTarget,
+  includeLegacy: boolean,
   dryRun: boolean,
-): Promise<UninstallStep | null> {
-  const relpath = USER_COMMANDS_RELPATH_BY_TARGET[target];
-  if (relpath === null) return null;
-  const dir = join(home, relpath);
-  if (!(await ctx.fs.exists(dir))) return null;
-  if (!dryRun) await rm(dir, { recursive: true, force: true });
-  return {
-    target,
-    kind: "user-commands",
-    path: dir,
-    status: dryRun ? "dry-run" : "removed",
+): Promise<UninstallStep[]> {
+  const out: UninstallStep[] = [];
+  const removeDir = async (
+    relpath: string | null,
+    kind: "user-commands" | "legacy-user-commands",
+  ): Promise<void> => {
+    if (relpath === null) return;
+    const dir = join(home, relpath);
+    if (!(await ctx.fs.exists(dir))) return;
+    if (!dryRun) await rm(dir, { recursive: true, force: true });
+    out.push({ target, kind, path: dir, status: dryRun ? "dry-run" : "removed" });
   };
+  await removeDir(USER_COMMANDS_RELPATH_BY_TARGET[target], "user-commands");
+  if (includeLegacy) {
+    await removeDir(LEGACY_USER_COMMANDS_RELPATH_BY_TARGET[target], "legacy-user-commands");
+  }
+  return out;
 }
 
 async function removeHooks(

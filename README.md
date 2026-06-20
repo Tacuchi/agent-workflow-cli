@@ -38,7 +38,7 @@ agent-workflow self detect-hosts                # which hosts are present + alre
 agent-workflow self install --target claude --dry-run
 ```
 
-By default the CLI clears the target host's plugin cache before installing (opt out with `--keep-cache`).
+By default the CLI clears the target host's plugin cache before installing (opt out with `--keep-cache`) and removes legacy artifacts from a prior `agent-workflow`-named install — the old SKILL and the stale `/agent-workflow:*` slash commands (keep them with `--keep-legacy`).
 
 ### Per-target install matrix
 

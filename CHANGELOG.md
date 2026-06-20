@@ -4,6 +4,22 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.1.0] — 2026-06-19
+
+**Migración limpia desde la versión vieja.** `self install` ahora elimina automáticamente los artefactos del plugin pre-rename (`agent-workflow`) que quedaban en los hosts y seguían apareciendo junto a los nuevos `/w:*`.
+
+### Added
+
+- **`self install` auto-limpia los artefactos legacy** del target: el SKILL viejo (`~/.<host>/skills/agent-workflow`, `agent-workflow-manager`), el dir de slash commands viejo (`~/.<host>/commands/agent-workflow` → los `/agent-workflow:*`) y, en hosts con flatten (warp/oz), los sub-skills `agent-workflow-*`. Reportado en `cleaned_legacy`. Flag `--keep-legacy` para conservarlos.
+
+### Fixed
+
+- `self uninstall`: corregido el dir de comandos canónico (apuntaba al viejo `commands/agent-workflow`; ahora `commands/w`). Con `--legacy` también elimina el dir de comandos viejo `commands/agent-workflow`.
+
+### Notes
+
+- Para limpiar un host que ya tenía la versión anterior: re-correr `self install --target <host>` (auto-limpia), o `self uninstall --legacy --target <host>` para remover todo lo legacy.
+
 ## [12.0.0] — 2026-06-19
 
 **Rediseño completo a un modelo de etapas + loops + artefactos.** Reemplaza el modelo viejo de `session` + flujos `dev/design/analyze` + 4 fases por un harness de 3 capas (comandos `/w:*` → loops que la IA corre enteros → sesiones/artefactos internos en `.workflow/sessions/`) + una zona `docs/` de entregables permanentes. **Cambio mayor con quiebres de API** (comandos, flags y namespace de slash commands).
