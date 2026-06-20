@@ -4,6 +4,25 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.3.0] — 2026-06-20
+
+**Acciones git-flow por fuente desde el Project tab, estilo MCP.** La lista de SOURCES del Project tab pasa de estática a navegable, y seleccionar una fuente abre un panel lateral de acciones — el mismo patrón de interacción que ya tenía el tab MCP (lista + detalle).
+
+### Added
+
+- **SOURCES navegable + panel lateral de acciones** en el Project tab: ↑↓ recorre las fuentes y ⏎ abre un panel (estilo MCP, reusando `ListRow` + `DetailPanel`) con tres acciones por fuente — **Alinear con PROD** (`sync`), **Enviar a QA** (`to-qa`) y **Enviar a PROD** (`to-prod`). En el panel: ↑↓ navega acciones · ⏎ ejecuta · esc cierra.
+- **Fila "all sources"** al final de la lista: aplica cualquiera de las tres acciones a todas las fuentes a la vez (`runGitFlow --all`).
+- **Vista de progreso/resultado reutilizada**: al ejecutar, se muestra el resultado paso a paso (se reusa `FlowResultView`); `⏎`/`r` re-ejecuta (resume tras conflicto, replay idempotente) y `esc` vuelve a la lista refrescando el estado git de las fuentes.
+
+### Changed
+
+- **El overlay `f git flow` se reemplazó** por la selección por-fuente en la propia lista. El batch sobre todas las fuentes **no se perdió**: vive ahora en la fila "all sources". Las tres acciones siguen ejecutando el servicio `runGitFlow` existente sin cambios de lógica (mismo motor `sync`/`to-qa`/`to-prod`, mismos guards y pausa-en-conflicto de la 12.2.0).
+- `FlowResultView` se exportó desde `git-flow-actions` para reusarse en el Project tab.
+
+### Notes
+
+- Sin cambios en el comando CLI `git-flow` ni en el servicio `runGitFlow`: es un cambio acotado al TUI. Cubierto por `tests/unit/project-tab.test.tsx` (lista navegable + fila all-sources, apertura del panel con las 3 acciones, ejecución de "Alinear con PROD", panel de all-sources).
+
 ## [12.2.1] — 2026-06-19
 
 **Fix de `workspace-init` para fuentes externas.** En el modelo hub la carpeta del workspace ≠ la ruta de la fuente, pero el init asumía "fuente única = la fuente ES el workspace". Eso rompía dos cosas con una sola fuente externa (el caso común).
