@@ -44,16 +44,22 @@ El loop crea y maneja sus sessions en `.workflow/sessions/`. El usuario nunca la
 
 | Session | When | Artifacts | Role |
 |---|---|---|---|
-| **refine session** `<spec>-spec-refine/` | al arrancar el loop (o se reanuda) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` al cerrar) | Dueña del run. Guarda el avance al `Compactar` y al `Cerrar`; habilita el resume. Type = `refine`. |
-| **research session** `<run>-research-*/` | on-demand, por cada gap factual | `SESSION.md` · `ANALYSIS-FILE.md` → `CONCLUSIONS.md` (+ `SCRIPTS.sql` si consulta BD) | Investiga, concluye, **cierra y reporta**. Puede cerrar **inconclusa**. Type = `research`; on-demand, **no reanudable** (run-and-close, sin `CHECKPOINT`/`BACKLOG` propios). |
+| **refine session** `NNN-spec-refine/` | al arrancar el loop (o se reanuda) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` al cerrar) | Dueña del run. Guarda el avance al `Compactar` y al `Cerrar`; habilita el resume. Type = `refine`. |
+| **research session** `MMM-spec-refine-research-*/` | on-demand, por cada gap factual | `SESSION.md` · `ANALYSIS-FILE.md` → `CONCLUSIONS.md` (+ `SCRIPTS.sql` si consulta BD) | Investiga, concluye, **cierra y reporta**. Puede cerrar **inconclusa**. Type = `research`; on-demand, **no reanudable** (run-and-close, sin `CHECKPOINT`/`BACKLOG` propios). |
 
 > El spec **nunca** entra en una session; vive en `docs/specs/`.
->
-> `<run>` = id de la session dueña del loop padre, que prefija sus sessions hijas: `<spec>-spec-refine`, `<plan>-plan-new`, `<plan>-plan-exec`, `<slug>-quick`. Así el patrón de naming es exacto en cualquier flujo que herede este chasis.
 
-**CLI** (asunción de naming; los subcomandos se implementan en paralelo — no bloquear):
-- `aw session-create --type refine --name <spec>-spec-refine` / `aw session-resume --code <…>` (detecta `CHECKPOINT`).
-- `aw session-create --type research --name <run>-research-<gap>` para cada gap factual.
+### Numeración de sessions (regla dura, heredada por todos los loops)
+
+El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global y secuencial** escaneando **todas** las sessions de `.workflow/sessions/` (cualquier tipo). El caller pasa **solo el descriptor** vía `--name` — **nunca** un número. Así la numeración no se reinicia por tipo ni colisiona (ej.: `001-spec-refine`, `002-spec-refine-research-x`, `003-plan-new`, …).
+
+> `<run>` = el **descriptor** (sin número) de la control session que prefija sus sessions hijas: `spec-refine`, `plan-new`, `plan-exec`, `quick`. La research session pasa `--name <run>-research-<gap>` y el CLI le pone su propio `NNN`. **No** embebas el número del padre en el descriptor del hijo (lo agrega el CLI; embeberlo lo duplicaría).
+>
+> **Resume**: localiza la session existente **escaneando** `.workflow/sessions/` por descriptor + `## Origin` (qué spec/plan), **no** reconstruyendo el número (que ahora es global, no derivable del artefacto). `aw session-resume --code <NNN | folder>` resuelve ambas formas.
+
+**CLI**:
+- `aw session-create --type refine --name spec-refine` → crea `NNN-spec-refine` / `aw session-resume --code <…>` (detecta `CHECKPOINT`).
+- `aw session-create --type research --name <run>-research-<gap>` por cada gap factual → crea `MMM-<run>-research-<gap>`.
 - `aw checkpoint-write` / `aw checkpoint-read` para el resume.
 - `aw session-close` al cerrar (con razón); `aw session-artifacts` para inspeccionar.
 
@@ -140,7 +146,7 @@ Para cada gap, una sola pregunta decide el resolutor:
 ```
 spec-refine-loop(spec):
   input = exists(NNN-spec-refined.md) ? NNN-spec-refined.md : NNN-spec.md   # (#2 resume)
-  refine_session = create_or_resume(<spec>-spec-refine)    # detecta CHECKPOINT
+  refine_session = create_or_resume("spec-refine")         # CLI antepone NNN global; resume localiza por descriptor/origin
   work = read(input)  (+ aplicar avance del checkpoint si reanuda)
   attempts = {}                                            # anti-relanzamiento por gap
   repeat:

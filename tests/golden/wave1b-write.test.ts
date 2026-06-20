@@ -93,10 +93,13 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
       originRaw: "loop exec, docs/plan-004.md",
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
-    // Folder is the --name verbatim (no numeric NNN, no type suffix).
+    // The CLI prepends a global sequential NNN to the descriptor `--name`. The
+    // fixture's legacy `sessionNNN-…` folders don't match the new sequence, so
+    // this fresh session takes 001.
     expect(result.sessionCreate.type).toBe("exec");
     expect(result.sessionCreate.name).toBe("session004-dev-nueva-tarea");
-    expect(result.sessionCreate.folder).toBe("session004-dev-nueva-tarea");
+    expect(result.sessionCreate.number).toBe("001");
+    expect(result.sessionCreate.folder).toBe("001-session004-dev-nueva-tarea");
     expect(result.sessionCreate.origin).toBe("loop exec, docs/plan-004.md");
 
     // Descriptor is SESSION.md (replaces the old per-flow OBJECTIVE.md).
@@ -104,7 +107,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
       clone.cwd,
       ".workflow",
       "sessions",
-      "session004-dev-nueva-tarea",
+      "001-session004-dev-nueva-tarea",
       "SESSION.md",
     );
     expect(existsSync(sessionPath)).toBe(true);
@@ -116,6 +119,45 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     // session-create no longer touches the project block (sessions are internal/light).
     const claudeAfter = readFile(join(clone.cwd, "CLAUDE.md"));
     expect(claudeAfter).not.toContain("session004-dev-nueva-tarea");
+  });
+
+  it("session-create numbers sessions globally & sequentially, regardless of type", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+
+    const first = await runSessionCreate(fs, env, paths, {
+      type: "refine",
+      name: "spec-refine",
+      objetivo: "control del loop de refinamiento",
+    });
+    const second = await runSessionCreate(fs, env, paths, {
+      type: "research",
+      name: "spec-refine-research-winfacts",
+      objetivo: "investigar hechos de Windows",
+    });
+    const third = await runSessionCreate(fs, env, paths, {
+      type: "refine",
+      name: "plan-new",
+      objetivo: "control del loop de planificación",
+    });
+    if ("error" in first || "error" in second || "error" in third) {
+      throw new Error("unexpected error creating sessions");
+    }
+    // One global counter: each new session takes the next NNN, never resetting
+    // per type — this is the fix for "all sessions numbered 001".
+    expect(first.sessionCreate.folder).toBe("001-spec-refine");
+    expect(second.sessionCreate.folder).toBe("002-spec-refine-research-winfacts");
+    expect(third.sessionCreate.folder).toBe("003-plan-new");
+
+    // A descriptor that accidentally carries a leading NNN- is normalized, never doubled.
+    const fourth = await runSessionCreate(fs, env, paths, {
+      type: "quick",
+      name: "001-quick",
+      objetivo: "no debe duplicar el prefijo",
+    });
+    if ("error" in fourth) throw new Error("unexpected error");
+    expect(fourth.sessionCreate.folder).toBe("004-quick");
   });
 
   it("session-create without --from renders the Origin placeholder", async () => {
@@ -131,7 +173,8 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(result.sessionCreate.type).toBe("research");
     expect(result.sessionCreate.origin).toBeUndefined();
 
-    const obj = readFile(join(clone.cwd, ".workflow", "sessions", "investiga-x", "SESSION.md"));
+    expect(result.sessionCreate.folder).toBe("001-investiga-x");
+    const obj = readFile(join(clone.cwd, ".workflow", "sessions", "001-investiga-x", "SESSION.md"));
     expect(obj).toContain("# SESSION — investiga-x");
     expect(obj).toContain("## Objective\nInvestigar el patrón X");
     expect(obj).toContain("## Type\nresearch");

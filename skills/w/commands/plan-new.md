@@ -7,7 +7,6 @@ allowed-tools:
     "Read",
     "Write",
     "Edit",
-    "Skill",
   ]
 ---
 
@@ -23,12 +22,14 @@ El skill evalúa `$ARGUMENTS`:
 2. **`docs/specs/NNN-spec.md`** (borrador sin refinar) → propone correr `/w:spec-refine` primero; planificar sobre un spec sólido produce mejores planes.
 3. **prompt** (sin spec referenciado) → propone usar el flujo SPEC; **por default lanza `/w:spec-new`** con ese prompt para crear el borrador, y desde ahí continúa el flujo natural.
 
-Invocar el skill:
+## Ejecutar el loop
 
-```
-Skill: plan-new-loop
-args: $ARGUMENTS
-```
+`plan-new-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
+
+1. **Leé** `../loops/plan-new-loop/SKILL.md` (ruta relativa a este archivo).
+2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como input (resuelto según las 3 reglas de arriba): detecta estado/resume, corre el motor gap-driven, crea y maneja sessions, converge y reporta.
+
+> No intentes `Skill: plan-new-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.
 
 ## Notas de numeración
 

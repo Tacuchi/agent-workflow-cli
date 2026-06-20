@@ -6,18 +6,14 @@ allowed-tools:
     "Bash",
     "Read",
     "Write",
-    "Skill",
   ]
 ---
 
 # export-manuals — exportar manuales
 
-Consolida sesiones + artefactos `DECISION` + plan-doc (`Final behavior`) + código fuente y genera documentación de usuario/operación en `docs/manuals/`. Single-pass, read-only sobre sesiones. Invoca el skill `export-manuals`.
+Consolida sesiones + artefactos `DECISION` + plan-doc (`Final behavior`) + código fuente y genera documentación de usuario/operación en `docs/manuals/`. Single-pass, read-only sobre sesiones.
 
-```
-Skill: export-manuals
-args: $ARGUMENTS
-```
+Para ejecutar: **leé** `../exports/export-manuals/SKILL.md` y **seguí** sus instrucciones con `$ARGUMENTS` como input. No intentes `Skill: export-manuals` (no está registrada por nombre); el SKILL.md hermano es el cuerpo de este export.
 
 ## Qué produce
 

@@ -6,18 +6,14 @@ allowed-tools:
     "Bash",
     "Read",
     "Write",
-    "Skill",
   ]
 ---
 
 # export-reports — exportar informes
 
-Consolida el corpus completo de sesiones (`CONCLUSIONS`, `DECISION`, spec) + plan-doc (estado) + `docs/` y genera un informe ejecutivo o funcional en `docs/reports/`. Single-pass, read-only sobre sesiones. Invoca el skill `export-reports`.
+Consolida el corpus completo de sesiones (`CONCLUSIONS`, `DECISION`, spec) + plan-doc (estado) + `docs/` y genera un informe ejecutivo o funcional en `docs/reports/`. Single-pass, read-only sobre sesiones.
 
-```
-Skill: export-reports
-args: $ARGUMENTS
-```
+Para ejecutar: **leé** `../exports/export-reports/SKILL.md` y **seguí** sus instrucciones con `$ARGUMENTS` como input. No intentes `Skill: export-reports` (no está registrada por nombre); el SKILL.md hermano es el cuerpo de este export.
 
 ## Qué produce
 

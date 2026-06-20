@@ -6,18 +6,14 @@ allowed-tools:
     "Bash",
     "Read",
     "Write",
-    "Skill",
   ]
 ---
 
 # export-diagrams — exportar diagramas
 
-Lee el código de las fuentes del workspace + el plan-doc (secciones `AS-IS`/`TO-BE`) y genera diagramas C4 / mermaid en `docs/diagrams/`. Single-pass, read-only sobre sesiones. Invoca el skill `export-diagrams`.
+Lee el código de las fuentes del workspace + el plan-doc (secciones `AS-IS`/`TO-BE`) y genera diagramas C4 / mermaid en `docs/diagrams/`. Single-pass, read-only sobre sesiones.
 
-```
-Skill: export-diagrams
-args: $ARGUMENTS
-```
+Para ejecutar: **leé** `../exports/export-diagrams/SKILL.md` y **seguí** sus instrucciones con `$ARGUMENTS` como input. No intentes `Skill: export-diagrams` (no está registrada por nombre); el SKILL.md hermano es el cuerpo de este export.
 
 ## Qué produce
 

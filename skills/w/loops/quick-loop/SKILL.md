@@ -39,7 +39,7 @@ QUICK
 
 ## Internal session
 
-- **SIEMPRE** crea una session ligera `<slug>-quick` (Type = `quick`, ≈ `exec`): `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (+ `BACKLOG` al cerrar). Una sola session (no exec-por-fase).
+- **SIEMPRE** crea una session ligera con descriptor `<slug>-quick` → `NNN-<slug>-quick` (Type = `quick`, ≈ `exec`): `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (+ `BACKLOG` al cerrar). Una sola session (no exec-por-fase). El caller pasa solo el descriptor; el CLI antepone el `NNN` global y secuencial (ver chasis).
 
 ## Inherits
 
@@ -64,7 +64,7 @@ QUICK
 
 ```
 quick-loop(prompt):
-  s = create_or_resume(<slug>-quick)        # siempre session ligera
+  s = create_or_resume("<slug>-quick")      # CLI antepone NNN global; siempre session ligera
   trabajar la tarea (loop mínimo):
     verificar rama esperada por fuente (branch-check); si no → pausar + resolver
     editar código (cambio mínimo)
@@ -82,7 +82,7 @@ finalize: CHECKPOINT + BACKLOG (si queda algo) + cerrar session + reportar
 
 ```mermaid
 flowchart TD
-    S["create_or_resume session <slug>-quick"] --> G["branch-check por fuente"]
+    S["create_or_resume session NNN-&lt;slug&gt;-quick"] --> G["branch-check por fuente"]
     G -->|ok| DO["editar código · BD→SCRIPTS.sql · DECISION<br/>(duda→research/AskUserQuestion)"]
     G -->|rama ≠| PA["pausar + resolver"]
     PA --> G

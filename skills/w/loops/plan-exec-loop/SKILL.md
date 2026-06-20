@@ -59,14 +59,16 @@ Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 
 ## Internal sessions (managed)
 
-- **control session** `<plan>-plan-exec`: dueña del run (`SESSION` + `CHECKPOINT` + `BACKLOG` al cerrar; Type = `control`).
-- **exec session por fase** `<plan>-exec-phase-<N>`: `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (Type = `exec`).
-- **research session** `<plan>-research-*`: on-demand (run-and-close), igual que el chasis.
+- **control session** descriptor `plan-exec` → `NNN-plan-exec`: dueña del run (`SESSION` + `CHECKPOINT` + `BACKLOG` al cerrar; Type = `control`).
+- **exec session por fase** descriptor `plan-exec-phase-<N>` → `NNN-plan-exec-phase-<N>`: `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (Type = `exec`).
+- **research session** descriptor `plan-exec-research-*` → `NNN-plan-exec-research-*`: on-demand (run-and-close), igual que el chasis.
+
+> **Numeración**: el caller pasa solo el descriptor; el CLI antepone el `NNN` global y secuencial sobre `.workflow/sessions/` (ver chasis). No reinicia por tipo ni por fase.
 
 ## Delta 1 — **One exec session per phase** (+ resume intra-fase)
 
 - Recorre las `Phases` del plan en orden (respeta deps).
-- Por cada Phase no completada → `create_or_resume(<plan>-exec-phase-<N>)` (**reusa** la session si la fase quedó a medias; no crea una segunda).
+- Por cada Phase no completada → `create_or_resume("plan-exec-phase-<N>")` (**reusa** la session si la fase quedó a medias; no crea una segunda; el CLI antepone el `NNN` global).
 - Ejecuta las `Tasks` de la fase; **salta** las ya marcadas `- [x]` en el plan (el plan-doc es la fuente de verdad por tarea). Marca `- [x]` + estado **en el plan** (living doc; no en un `TASKS` aparte).
 - Registra `DECISION` solo lo **no obvio**.
 
@@ -102,11 +104,11 @@ Distinción por **ejecución**, no por archivo (ver el esquema `SCRIPTS.sql`):
 
 ```
 plan-exec-loop(PPP-plan.md):
-  control = create_or_resume(<plan>-plan-exec)             # CHECKPOINT, resume
+  control = create_or_resume("plan-exec")                  # CLI antepone NNN global; CHECKPOINT, resume
   plan = read(PPP-plan.md)
   para cada Phase en plan (en orden, respeta deps):
     si Phase done: skip
-    es = create_or_resume(<plan>-exec-phase-<N>)           # reusa si quedó a medias
+    es = create_or_resume("plan-exec-phase-<N>")           # reusa si quedó a medias
     para cada Task de la Phase:
       si Task - [x] en el plan: skip                       # resume intra-fase
       verificar rama esperada por fuente (branch-check)

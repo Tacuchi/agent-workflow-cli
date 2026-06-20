@@ -6,18 +6,14 @@ allowed-tools:
     "Bash",
     "Read",
     "Write",
-    "Skill",
   ]
 ---
 
 # export-scripts — exportar scripts de BD
 
-Promueve los artefactos `SCRIPTS.sql` (tipo B — migraciones) de N sesiones de `.workflow/sessions/` a `docs/scripts/`. Single-pass, read-only sobre sesiones. Invoca el skill `export-scripts`.
+Promueve los artefactos `SCRIPTS.sql` (tipo B — migraciones) de N sesiones de `.workflow/sessions/` a `docs/scripts/`. Single-pass, read-only sobre sesiones.
 
-```
-Skill: export-scripts
-args: $ARGUMENTS
-```
+Para ejecutar: **leé** `../exports/export-scripts/SKILL.md` y **seguí** sus instrucciones con `$ARGUMENTS` como input. No intentes `Skill: export-scripts` (no está registrada por nombre); el SKILL.md hermano es el cuerpo de este export.
 
 ## Qué produce
 

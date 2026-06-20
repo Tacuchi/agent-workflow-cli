@@ -7,7 +7,6 @@ allowed-tools:
     "Read",
     "Write",
     "Edit",
-    "Skill",
   ]
 ---
 
@@ -15,12 +14,14 @@ allowed-tools:
 
 Este comando no refina el spec él mismo: delega al loop `spec-refine-loop` (Layer 2), que es quien itera, cierra gaps y produce el spec refinado.
 
-Invocar el skill:
+## Ejecutar el loop
 
-```
-Skill: spec-refine-loop
-args: $ARGUMENTS
-```
+`spec-refine-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
+
+1. **Leé** `../loops/spec-refine-loop/SKILL.md` (ruta relativa a este archivo).
+2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como input: detecta estado/resume, corre el motor gap-driven, crea y maneja sessions, converge y reporta.
+
+> No intentes `Skill: spec-refine-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.
 
 ## Resolución de estado (resumable)
 

@@ -8,7 +8,7 @@
 
 ## What a loop is
 
-Un loop es una **skill** que le enseña a la IA *cómo iterar* hasta producir un entregable. Se invoca por su `name:` con el tool `Skill`. La IA lo ejecuta de punta a punta: detecta huecos, los resuelve (preguntando al humano o investigando), integra y repite hasta converger.
+Un loop es una **skill** que le enseña a la IA *cómo iterar* hasta producir un entregable. **No es invocable por nombre** con el tool `Skill` (no se registra como skill suelta): es el cuerpo de su comando `/w:…`, que lo **carga leyendo `<loop>/SKILL.md`** y lo ejecuta inline. La IA lo corre de punta a punta: detecta huecos, los resuelve (preguntando al humano o investigando), integra y repite hasta converger.
 
 Propiedades comunes a **los 4 loops**:
 

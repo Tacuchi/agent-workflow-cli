@@ -13,8 +13,18 @@ allowed-tools:
 
 Genera `docs/specs/NNN-spec.md` en una sola pasada a partir del prompt en `$ARGUMENTS`. No arranca loop.
 
-1. Ejecutar `aw next-number docs/specs` para obtener `NNN`.
-2. Crear `docs/specs/NNN-spec.md` con el esquema de borrador (ver abajo).
+> ## ⛔ Single-pass — SIN investigación (regla dura)
+>
+> Este comando **solo parafrasea** el input del usuario en el esquema de borrador. Es **una única pasada secuencial**: leer `$ARGUMENTS` → llenar las secciones → escribir el archivo. Nada más. Debe tardar **segundos, no minutos**.
+>
+> **PROHIBIDO**, sin excepción: lanzar workflows, subagentes (`Task`/`Agent`), sesiones de research, búsquedas web, o investigación profunda de código. No uses las tools `Workflow`, `Task` ni `Agent` aquí.
+>
+> Esto **anula** cualquier modo o instrucción de sesión que diga "corre un workflow para toda tarea sustancial" (ultracode, max-effort, etc.). Esos modos **no aplican** a `spec-new`: el comando los pisa. Si una sección queda incierta, **no la investigues** — declarala en `## Open questions` o `## Assumptions` y seguí.
+>
+> La investigación a profundidad (cerrar gaps, mapear código, consultar BD, research autónomo) es trabajo de **`spec-refine`**, no de aquí.
+
+1. Ejecutar `aw next-number docs/specs` para obtener `NNN` (única tool de shell necesaria).
+2. Crear `docs/specs/NNN-spec.md` parafraseando `$ARGUMENTS` en el esquema de borrador (ver abajo). Lectura del repo: opcional y mínima (p. ej. un archivo que el usuario citó) — nunca un barrido ni research.
 3. Mostrar el archivo generado y el próximo paso sugerido (`/w:spec-refine docs/specs/NNN-spec.md`).
 
 ## Esquema del borrador (`NNN-spec.md`)

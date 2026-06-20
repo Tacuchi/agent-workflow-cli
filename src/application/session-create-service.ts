@@ -19,6 +19,8 @@ export interface SessionCreateInput {
 export interface SessionCreateRecordOutput {
   type: SessionType;
   name: string;
+  /** Global sequential number assigned by the CLI (zero-padded, e.g. "003"). */
+  number: string;
   folder: string;
   path: string;
   session_path: string;
@@ -64,6 +66,7 @@ export async function runSessionCreate(
   const record: SessionCreateRecordOutput = {
     type,
     name,
+    number: folderInfo.number,
     folder: folderInfo.folder,
     path: sessionPath,
     session_path: sessionFilePath,
@@ -102,6 +105,7 @@ function validateInput(input: SessionCreateInput): ValidatedInput | SessionCreat
 
 interface FolderInfo {
   folder: string;
+  number: string;
   sessionPath: string;
   sessionsDir: string;
 }
@@ -113,12 +117,34 @@ async function prepareSessionFolder(
 ): Promise<FolderInfo | SessionCreateError> {
   const sessionsDir = paths.cwdSessionsDir();
   await fs.mkdirp(sessionsDir);
-  // Folder is the --name verbatim (locked decision): no numeric NNN, no type suffix.
-  const folder = name;
+  // The CLI owns the session number: a single global, sequential counter across
+  // ALL sessions in `.workflow/sessions/` (any type), so numbering never resets
+  // per type nor collides. Callers pass only the descriptor via `--name`; the
+  // `NNN-` prefix is assigned here. A descriptor that already carries a leading
+  // `NNN-` is normalized away first so the prefix can't double up.
+  const descriptor = name.replace(/^\d{3}-/, "");
+  const number = await nextSessionNumber(fs, sessionsDir);
+  const folder = `${number}-${descriptor}`;
   const sessionPath = join(sessionsDir, folder);
   if (await fs.exists(sessionPath)) {
     return { error: `Ya existe ${sessionPath}` };
   }
   await fs.mkdirp(sessionPath);
-  return { folder, sessionPath, sessionsDir };
+  return { folder, number, sessionPath, sessionsDir };
+}
+
+/**
+ * Next global session number: scan `.workflow/sessions/` for any entry whose name
+ * starts with a 3-digit code and return max+1, zero-padded. Type-agnostic — one
+ * sequence for every session regardless of kind. Legacy `sessionNNN-…` folders
+ * (no leading digit) don't match and are ignored, so the new sequence starts fresh.
+ */
+async function nextSessionNumber(fs: FileSystemPort, sessionsDir: string): Promise<string> {
+  const entries = await fs.list(sessionsDir);
+  let max = 0;
+  for (const entry of entries) {
+    const m = entry.name.match(/^(\d{3})/);
+    if (m?.[1]) max = Math.max(max, Number.parseInt(m[1], 10));
+  }
+  return String(max + 1).padStart(3, "0");
 }

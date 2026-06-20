@@ -39,11 +39,11 @@ PLANIFICATION
 Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 
 - Motor **gap-driven convergente** (`detect_gaps` → resolver → integrar → repetir; gaps agotados con límite `MAX` no se re-disparan).
-- **Sessions internas**: `control` (`<plan>-plan-new`: `SESSION` + `CHECKPOINT`, + `BACKLOG` al cerrar; Type = `refine`/`control`) + `research` on-demand (run-and-close, puede cerrar inconclusa).
+- **Sessions internas**: `control` (descriptor `plan-new` → `NNN-plan-new`: `SESSION` + `CHECKPOINT`, + `BACKLOG` al cerrar; Type = `refine`/`control`) + `research` on-demand (run-and-close, puede cerrar inconclusa).
 - **AskUserQuestion**: ≤3 tabs de contenido + 1 tab `flow` (`Compactar`/`Cerrar`) siempre.
 - **Ask-vs-research rule** + **research autónomo** + **regla BD** (pregunta MCP si >1 sin default → queries a `SCRIPTS.sql` → ejecuta read-only, `sql-mutation-guard`) + manejo de research **inconclusa** (degrada a humano / difiere a `Open questions` + límite `MAX`).
 - **Compact / resume** (4 casos) y **`Cerrar` persiste** `CHECKPOINT` + `BACKLOG`.
-- **Naming** `<run>` para sessions hijas: `<plan>-plan-new` → `<plan>-research-*`.
+- **Naming + numeración global** del chasis: `<run>` = descriptor `plan-new`; hijas `--name plan-new-research-<gap>`. El CLI antepone el `NNN` global y secuencial (sin reiniciar por tipo); el caller pasa solo el descriptor.
 
 ## Delta 1 — Deliverable: PLAN RICO (`PPP-plan.md`)
 
