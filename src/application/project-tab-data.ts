@@ -77,6 +77,8 @@ export interface ProjectTabData {
   sources: ProjectSource[];
   /** Ramas de trabajo actuales por alias de fuente (bloque WORKSPACE > Status) */
   workingBranches: Record<string, string>;
+  /** Ramas QA actuales por alias de fuente (bloque WORKSPACE > Status > Ramas QA) */
+  qaBranches: Record<string, string>;
   /** Si hubo error parcial fetcheando data */
   warnings: string[];
 }
@@ -185,6 +187,7 @@ export async function buildProjectTabData(
     branches,
     sources,
     workingBranches: block?.working_branches ?? {},
+    qaBranches: block?.qa_branches ?? {},
     warnings,
   };
 }

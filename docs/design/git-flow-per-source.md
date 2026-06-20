@@ -41,7 +41,7 @@ Add: `checkout(repo, branch)`, `pull(repo)`, `merge(repo, fromBranch)`, `push(re
 - Reads the WORKSPACE block (parseProjectBlock) → per-source branches.
 - Builds the ordered step list for the action; executes each via GitPort.
 - On a merge conflict: stop, return `{ source, paused_at, conflicted_files }` with the repo left mid-merge. Remaining sources (when `--all`) are NOT started until the conflict is resolved (fail-stop), reported clearly.
-- **Resume**: re-running the same action detects the in-progress merge (`isMerging` + `currentBranch`) and continues from the next step (idempotent; no fragile state file — derive position from git state + the action's known sequence).
+- **Resume (stateless, idempotent replay)**: re-running the same action replays the plan from the start; completed merges are git no-ops (`git merge X` → "Already up to date") and pull/checkout/push are idempotent, so the resolved merge + all prior steps are skipped automatically — no persisted position, no off-by-one. Preconditions guard correctness: refuse to run while the repo is mid-merge (an unresolved conflict — resolve + commit first) or the working tree is dirty (would break `checkout`). Non-conflict git failures (checkout/pull/push) are caught and reported as `error`, not crashed.
 - `dryRun`: return the step list without executing.
 - Result: per-step `{ step, status: ok|conflict|skipped, detail }` + overall status.
 

@@ -12,7 +12,7 @@ import type { CliContext } from "../types.js";
 export const workspaceInitCommand: QtcCommand = {
   name: "workspace-init",
   describe:
-    "Initialize the current directory as an agent-workflow workspace (unifies the legacy hub-init + project-init; no project/hub distinction). Scaffolds .workflow/sessions + docs/ taxonomy, seeds .workflow/skills.toml, and writes the WORKSPACE block. With 2+ sources it also configures multi-root visibility. Idempotent. Flags: --source alias:path[:rama] (repeatable, 1+), [--working-branch alias:rama (repeatable)], [--proyecto], [--main-branch], [--workspace], [--dry-run].",
+    "Initialize the current directory as an agent-workflow workspace (unifies the legacy hub-init + project-init; no project/hub distinction). Scaffolds .workflow/sessions + docs/ taxonomy, seeds .workflow/skills.toml, and writes the WORKSPACE block. With 2+ sources it also configures multi-root visibility. Idempotent. Flags: --source alias:path[:rama] (repeatable, 1+), [--working-branch alias:rama (repeatable)], [--qa-branch alias:rama (repeatable)], [--proyecto], [--main-branch], [--workspace], [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     // Canonical flag is --source; --fuente kept as a back-compat alias.
     const sourcesRaw = [
@@ -30,6 +30,7 @@ export const workspaceInitCommand: QtcCommand = {
     const mainBranch = args.values.get("main-branch");
     const workspace = args.values.get("workspace");
     const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []);
+    const qaBranches = parseWorkingBranches(args.valuesMulti.get("qa-branch") ?? []);
 
     const data = await runWorkspaceInit(ctx.fs, ctx.env, ctx.paths, {
       sources,
@@ -37,6 +38,7 @@ export const workspaceInitCommand: QtcCommand = {
       ...(mainBranch !== undefined ? { mainBranch } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(workingBranches !== undefined ? { workingBranches } : {}),
+      ...(qaBranches !== undefined ? { qaBranches } : {}),
       dryRun: args.flags.has("--dry-run"),
     });
 

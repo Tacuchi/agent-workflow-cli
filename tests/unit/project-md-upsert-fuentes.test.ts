@@ -125,6 +125,46 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     expect(claude).toContain("- plugin: feature/upgrade");
   });
 
+  it("merges --qa-branch entries (multi-flag) into Status", async () => {
+    const env = new TestEnv(cwd);
+    const paths = makePaths(cwd);
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [
+        { alias: "core", path: "/repo/core" },
+        { alias: "plugin", path: "/repo/plugin" },
+      ],
+      mainBranch: "certificacion",
+      qaBranches: { core: "desarrollo", plugin: "desarrollo" },
+      lastActivity: FIXED_TS,
+    });
+    expect("error" in result).toBe(false);
+    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("- Ramas QA actuales:");
+    expect(claude).toContain("  - core: desarrollo");
+    expect(claude).toContain("  - plugin: desarrollo");
+  });
+
+  it("preserves existing qa_branches and merges new ones on re-init", async () => {
+    const env = new TestEnv(cwd);
+    const paths = makePaths(cwd);
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [{ alias: "core", path: "/repo/core" }],
+      qaBranches: { core: "desarrollo" },
+      lastActivity: FIXED_TS,
+    });
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      qaBranches: { plugin: "qa/plugin" },
+      lastActivity: FIXED_TS,
+    });
+    expect("error" in result).toBe(false);
+    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("  - core: desarrollo");
+    expect(claude).toContain("  - plugin: qa/plugin");
+  });
+
   it("preserves existing fuentes and overrides matching alias on re-init", async () => {
     const env = new TestEnv(cwd);
     const paths = makePaths(cwd);

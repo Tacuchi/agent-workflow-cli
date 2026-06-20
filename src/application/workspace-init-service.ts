@@ -43,6 +43,8 @@ export interface WorkspaceInitInput {
   mainBranch?: string;
   /** Working branches per source alias (rendered in the WORKSPACE Status block). */
   workingBranches?: Record<string, string>;
+  /** QA branches per source alias (rendered in the WORKSPACE Status block). */
+  qaBranches?: Record<string, string>;
   /** Override the target directory (defaults to cwd). */
   workspace?: string;
   dryRun?: boolean;
@@ -139,6 +141,7 @@ export async function runWorkspaceInit(
     replaceFuentes: true,
     mainBranch,
     ...(input.workingBranches !== undefined ? { workingBranches: input.workingBranches } : {}),
+    ...(input.qaBranches !== undefined ? { qaBranches: input.qaBranches } : {}),
     verbose: true,
     ...(input.lastActivity !== undefined ? { lastActivity: input.lastActivity } : {}),
   });

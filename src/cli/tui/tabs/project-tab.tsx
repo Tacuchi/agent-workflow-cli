@@ -7,6 +7,7 @@ import {
   buildProjectTabData,
 } from "../../../application/project-tab-data.js";
 import type { CliContext } from "../../types.js";
+import { GitFlowActions } from "../components/git-flow-actions.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
@@ -25,6 +26,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   const [data, setData] = useState<ProjectTabData | null>(null);
   const [loading, setLoading] = useState(true);
   const [initForm, setInitForm] = useState(false);
+  const [gitFlow, setGitFlow] = useState(false);
   const { lock, unlock } = useInputLock();
 
   const loadData = useCallback(async () => {
@@ -46,11 +48,12 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
     void loadData();
   }, [loadData]);
 
-  // Mientras el form de workspace-init está abierto, bloquea las teclas globales.
+  // Mientras un overlay (workspace-init / git-flow) está abierto, bloquea las
+  // teclas globales para que sus inputs no naveguen entre tabs.
   useEffect(() => {
-    if (initForm) lock();
+    if (initForm || gitFlow) lock();
     else unlock();
-  }, [initForm, lock, unlock]);
+  }, [initForm, gitFlow, lock, unlock]);
   useEffect(() => () => unlock(), [unlock]);
 
   const handleInitKey = useCallback(
@@ -69,18 +72,25 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
     [data, onRunAction],
   );
 
+  const handleReadyKey = useCallback(
+    (input: string, d: ProjectTabData) => {
+      if (input === "g") onRunAction?.("git:status");
+      else if (input === "c" && d.branches.length > 1) {
+        const candidate = d.branches.find((b) => !b.current);
+        if (candidate) onRunAction?.("git:checkout", { name: candidate.name });
+      } else if (input === "s") onRunAction?.("session:start");
+      else if (input === "f" && d.sources.length > 0) setGitFlow(true);
+    },
+    [onRunAction],
+  );
+
   useInput(
     (input, key) => {
       if (!data) return;
       if (handleInitKey(input, key)) return;
-      if (input === "g") onRunAction?.("git:status");
-      if (input === "c" && data.branches.length > 1) {
-        const candidate = data.branches.find((b) => !b.current);
-        if (candidate) onRunAction?.("git:checkout", { name: candidate.name });
-      }
-      if (input === "s") onRunAction?.("session:start");
+      handleReadyKey(input, data);
     },
-    { isActive: isActive && !!data && !initForm },
+    { isActive: isActive && !!data && !initForm && !gitFlow },
   );
 
   if (loading || !data) {
@@ -107,6 +117,20 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
       );
     }
     return <NotInitialized data={data} />;
+  }
+
+  if (gitFlow) {
+    return (
+      <GitFlowActions
+        ctx={ctx}
+        aliases={data.sources.map((s) => s.alias)}
+        isActive={isActive}
+        onClose={() => {
+          setGitFlow(false);
+          void loadData();
+        }}
+      />
+    );
   }
 
   return <Initialized ctx={ctx} data={data} />;
@@ -202,6 +226,7 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
   const totalSources = data.sources.length;
   const dirtySources = data.sources.filter((s) => s.dirty).length;
   const workingEntries = Object.entries(data.workingBranches);
+  const qaEntries = Object.entries(data.qaBranches);
 
   const home = ctx.env.homeDir();
   const shortName = deriveShortName(data.workspaceName, basename(data.workspacePath));
@@ -276,8 +301,33 @@ function Initialized({ ctx, data }: { ctx: CliContext; data: ProjectTabData }) {
         )}
       </Box>
 
+      {qaEntries.length > 0 ? (
+        <>
+          <SectionHead label="Ramas QA actuales" count={qaEntries.length} marginTop={1} />
+          <Box marginLeft={2} flexDirection="column">
+            {qaEntries.map(([alias, branch]) => (
+              <Box key={alias}>
+                <Text color={colors.accent}>{icons.diamond} </Text>
+                <Text color={colors.bright} bold>
+                  {alias}
+                </Text>
+                <Box flexGrow={1} />
+                <Text color={colors.dim}>
+                  {icons.branch} {branch}
+                </Text>
+              </Box>
+            ))}
+          </Box>
+        </>
+      ) : null}
+
       <Box marginTop={1}>
-        <QuickActions actions={[{ key: "s", label: "start session" }]} />
+        <QuickActions
+          actions={[
+            { key: "s", label: "start session" },
+            ...(totalSources > 0 ? [{ key: "f", label: "git flow" }] : []),
+          ]}
+        />
       </Box>
     </Box>
   );

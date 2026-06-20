@@ -16,7 +16,12 @@ export interface ParsedArgs {
 // Flag names (without leading `--`) that accept repetition. Each occurrence
 // pushes onto `valuesMulti`; non-multi flags continue to use `values` (last
 // occurrence wins) for back-compat.
-const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set(["source", "fuente", "working-branch"]);
+const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
+  "source",
+  "fuente",
+  "working-branch",
+  "qa-branch",
+]);
 
 interface PluginFlagSpec {
   flag: string;

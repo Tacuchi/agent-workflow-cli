@@ -66,6 +66,18 @@ class FakeGit implements GitPort {
   async diffNumstat(): Promise<DiffNumstatEntry[]> {
     return [];
   }
+  async checkout(): Promise<void> {}
+  async pull(): Promise<void> {}
+  async merge(): Promise<{ ok: boolean; conflicted: string[] }> {
+    return { ok: true, conflicted: [] };
+  }
+  async push(): Promise<void> {}
+  async isMerging(): Promise<boolean> {
+    return false;
+  }
+  async conflictedFiles(): Promise<string[]> {
+    return [];
+  }
 }
 
 const ns = normalizeNamespace("workflow");

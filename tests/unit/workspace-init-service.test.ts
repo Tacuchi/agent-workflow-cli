@@ -77,6 +77,22 @@ describe("runWorkspaceInit", () => {
     expect(existsSync(join(workspace, ".claude"))).toBe(false);
   });
 
+  it("qaBranches: renderiza la sección 'Ramas QA actuales' en el bloque", async () => {
+    const result = await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "app", path: "/tmp/app-fake" }],
+      workingBranches: { app: "feature/x" },
+      qaBranches: { app: "desarrollo" },
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
+    expect(claude).toContain("- Ramas de trabajo actuales:");
+    expect(claude).toContain("  - app: feature/x");
+    expect(claude).toContain("- Ramas QA actuales:");
+    expect(claude).toContain("  - app: desarrollo");
+  });
+
   it("multi source: configura visibilidad multi-root + .gitignore", async () => {
     const result = await runWorkspaceInit(fs, env, paths, {
       proyecto: "Multi",

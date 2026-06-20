@@ -12,6 +12,7 @@ export interface RenderProjectBlockInput {
   stack: ProjectStack;
   lastActivity?: string;
   workingBranches?: Record<string, string>;
+  qaBranches?: Record<string, string>;
   /** Path used in the "Histórico:" line. Default `.workflow/HISTORY.md`. */
   historicoPath?: string;
   /** Markers used to wrap the block. Default = legacy QTC markers (kept for back-compat parsing). */
@@ -30,6 +31,8 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const statusLines: string[] = [];
   const wb = formatWorkingBranches(input.workingBranches);
   if (wb !== null) statusLines.push(wb);
+  const qa = formatQaBranches(input.qaBranches);
+  if (qa !== null) statusLines.push(qa);
   statusLines.push(`- Última actividad: ${last}`);
   statusLines.push(`- Histórico: \`${historicoPath}\``);
 
@@ -63,6 +66,7 @@ export function blockFromParsed(
     fuentes: overrides.fuentes ?? parsed.fuentes,
     stack: overrides.stack ?? parsed.stack,
     workingBranches: overrides.workingBranches ?? parsed.working_branches,
+    qaBranches: overrides.qaBranches ?? parsed.qa_branches,
   };
   if (overrides.lastActivity !== undefined) {
     input.lastActivity = overrides.lastActivity;
@@ -109,6 +113,15 @@ function formatStackList(stack: ProjectStack): string {
 function formatWorkingBranches(branches: Record<string, string> | undefined): string | null {
   if (!branches || Object.keys(branches).length === 0) return null;
   const lines = ["- Ramas de trabajo actuales:"];
+  for (const [alias, branch] of Object.entries(branches)) {
+    lines.push(`  - ${alias}: ${branch}`);
+  }
+  return lines.join("\n");
+}
+
+function formatQaBranches(branches: Record<string, string> | undefined): string | null {
+  if (!branches || Object.keys(branches).length === 0) return null;
+  const lines = ["- Ramas QA actuales:"];
   for (const [alias, branch] of Object.entries(branches)) {
     lines.push(`  - ${alias}: ${branch}`);
   }

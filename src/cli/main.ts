@@ -22,6 +22,7 @@ import {
   nextNumberCommand,
   profilesCommand,
 } from "./commands/dev-only.js";
+import { gitFlowCommand } from "./commands/git-flow.js";
 import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
@@ -39,6 +40,7 @@ import { sessionCloseCommand } from "./commands/session-close.js";
 import { sessionCreateCommand } from "./commands/session-create.js";
 import { sessionResumeCommand } from "./commands/session-resume.js";
 import { sessionsCommand } from "./commands/sessions.js";
+import { setQaBranchCommand } from "./commands/set-qa-branch.js";
 import { setWorkingBranchCommand } from "./commands/set-working-branch.js";
 import { skillIndexCommand } from "./commands/skill-index.js";
 import { skillsCommand } from "./commands/skills.js";
@@ -79,6 +81,8 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(skillsCommand);
   registry.register(sourcesCommand);
   registry.register(setWorkingBranchCommand);
+  registry.register(setQaBranchCommand);
+  registry.register(gitFlowCommand);
   registry.register(checkpointReadCommand);
   registry.register(resumeSummaryCommand);
   registry.register(compressCheckpointCommand);

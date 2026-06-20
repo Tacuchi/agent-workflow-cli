@@ -13,6 +13,9 @@ function workspaceBlock(withWorkingBranches: boolean): string {
         "- Ramas de trabajo actuales:",
         "  - autoservicio-solicitud-spring: feature/mantenimiento-contratos",
         "  - pefectivo-solicitud-spring: feature/mantenimiento-contratos",
+        "- Ramas QA actuales:",
+        "  - autoservicio-solicitud-spring: desarrollo",
+        "  - pefectivo-solicitud-spring: desarrollo",
       ].join("\n")
     : "";
   return [
@@ -113,6 +116,25 @@ describe("buildProjectTabData — workspace view", () => {
     });
   });
 
+  it("expone las ramas QA actuales por alias", async () => {
+    const deps = buildDeps({ claudeMd: workspaceBlock(true), currentBranch: "desarrollo" });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.qaBranches).toEqual({
+      "autoservicio-solicitud-spring": "desarrollo",
+      "pefectivo-solicitud-spring": "desarrollo",
+    });
+  });
+
+  it("expone qaBranches vacío cuando el bloque no declara ramas QA", async () => {
+    const deps = buildDeps({ claudeMd: workspaceBlock(false), currentBranch: "desarrollo" });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.qaBranches).toEqual({});
+  });
+
   it("no expone sessions, pending ni workspaceMode (vista WORKSPACE unificada)", async () => {
     const deps = buildDeps({ claudeMd: workspaceBlock(true), currentBranch: "desarrollo" });
 
@@ -154,6 +176,7 @@ function block(overrides: Partial<ParsedProjectBlock>): ParsedProjectBlock {
     ],
     stack: {},
     working_branches: {},
+    qa_branches: {},
     last_activity: null,
     ...overrides,
   };

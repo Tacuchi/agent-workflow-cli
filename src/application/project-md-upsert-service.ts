@@ -26,6 +26,7 @@ export interface ProjectMdUpsertInput {
   op: UpsertOp;
   proyecto?: string;
   workingBranches?: Record<string, string>;
+  qaBranches?: Record<string, string>;
   /** `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repetible). */
   fuentes?: ProjectMdUpsertFuente[];
   /** Si true, las `fuentes` declaradas REEMPLAZAN a las existentes (no merge). workspace-init lo usa para ser autoritativo y soportar remover fuentes. */
@@ -50,6 +51,7 @@ export interface ProjectMdUpsertOutput {
   results?: UpsertFileResult[];
   mode?: UpsertOp;
   working_branches?: Record<string, string>;
+  qa_branches?: Record<string, string>;
 }
 
 export interface ProjectMdUpsertError {
@@ -123,7 +125,11 @@ async function buildRenderInput(
     ...(existing?.working_branches ?? {}),
     ...(input.workingBranches ?? {}),
   };
-  return { proyecto, fuentes, stack, workingBranches };
+  const qaBranches: Record<string, string> = {
+    ...(existing?.qa_branches ?? {}),
+    ...(input.qaBranches ?? {}),
+  };
+  return { proyecto, fuentes, stack, workingBranches, qaBranches };
 }
 
 /**
@@ -191,6 +197,7 @@ function composePayload(
       action: input.op,
       mode: input.op,
       working_branches: renderInput.workingBranches ?? {},
+      qa_branches: renderInput.qaBranches ?? {},
       results: write.results,
     };
   }

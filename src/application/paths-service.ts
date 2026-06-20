@@ -19,6 +19,11 @@ export class PathsService {
     return this.ns;
   }
 
+  /** The current workspace directory (cwd the CLI was invoked from). */
+  workspaceDir(): string {
+    return this.cwd;
+  }
+
   // user-level (~/.${ns}/...)
   userRoot(): string {
     return join(this.home, `.${this.ns}`);

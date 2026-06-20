@@ -19,6 +19,8 @@ _Stack sin detectar._
 
 - Ramas de trabajo actuales:
   - sample: main
+- Ramas QA actuales:
+  - sample: desarrollo
 - Última actividad: 2026-01-03 — fixture
 - Histórico: `.workflow/HISTORY.md`
 <!-- WORKFLOW-PROJECT-END -->

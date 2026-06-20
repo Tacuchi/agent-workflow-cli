@@ -33,6 +33,18 @@ describe("parser multi-value flags (--fuente / --working-branch)", () => {
     ]);
   });
 
+  it("collects repeated --qa-branch values into valuesMulti", () => {
+    const parsed = parseArgv([
+      "workspace-init",
+      "--qa-branch",
+      "core:desarrollo",
+      "--qa-branch",
+      "plugin:qa/plugin",
+    ]);
+    expect(parsed.valuesMulti.get("qa-branch")).toEqual(["core:desarrollo", "plugin:qa/plugin"]);
+    expect(parsed.values.has("qa-branch")).toBe(false);
+  });
+
   it("preserves single-value semantics for --main-branch (last wins)", () => {
     const parsed = parseArgv([
       "project-md-upsert",

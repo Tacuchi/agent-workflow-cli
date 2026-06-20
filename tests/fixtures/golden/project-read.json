@@ -12,6 +12,9 @@
     "working_branches": {
       "sample": "main"
     },
+    "qa_branches": {
+      "sample": "desarrollo"
+    },
     "last_activity": "2026-01-03 — fixture"
   },
   "files": [

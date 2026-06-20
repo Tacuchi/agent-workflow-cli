@@ -1,4 +1,4 @@
-import type { DiffNumstatEntry, GitPort } from "../ports/git.js";
+import type { DiffNumstatEntry, GitPort, MergeResult } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
 
 export class GitCliAdapter implements GitPort {
@@ -74,5 +74,58 @@ export class GitCliAdapter implements GitPort {
     } catch {
       return [];
     }
+  }
+
+  async checkout(repoPath: string, branch: string): Promise<void> {
+    const result = await this.process.run("git", ["checkout", branch], { cwd: repoPath });
+    if (result.code !== 0) {
+      throw new Error(`git checkout ${branch} failed in ${repoPath}: ${result.stderr.trim()}`);
+    }
+  }
+
+  async pull(repoPath: string): Promise<void> {
+    const result = await this.process.run("git", ["pull"], { cwd: repoPath });
+    if (result.code !== 0) {
+      throw new Error(`git pull failed in ${repoPath}: ${result.stderr.trim()}`);
+    }
+  }
+
+  async merge(repoPath: string, fromBranch: string): Promise<MergeResult> {
+    const result = await this.process.run("git", ["merge", fromBranch], { cwd: repoPath });
+    if (result.code === 0) {
+      return { ok: true, conflicted: [] };
+    }
+    const conflicted = await this.conflictedFiles(repoPath);
+    if (conflicted.length > 0) {
+      return { ok: false, conflicted };
+    }
+    throw new Error(`git merge ${fromBranch} failed in ${repoPath}: ${result.stderr.trim()}`);
+  }
+
+  async push(repoPath: string, branch: string): Promise<void> {
+    const result = await this.process.run("git", ["push", "origin", branch], { cwd: repoPath });
+    if (result.code !== 0) {
+      throw new Error(`git push ${branch} failed in ${repoPath}: ${result.stderr.trim()}`);
+    }
+  }
+
+  async isMerging(repoPath: string): Promise<boolean> {
+    const result = await this.process.run("git", ["rev-parse", "--verify", "MERGE_HEAD"], {
+      cwd: repoPath,
+    });
+    return result.code === 0;
+  }
+
+  async conflictedFiles(repoPath: string): Promise<string[]> {
+    const result = await this.process.run("git", ["diff", "--name-only", "--diff-filter=U"], {
+      cwd: repoPath,
+    });
+    if (result.code !== 0) {
+      return [];
+    }
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
   }
 }

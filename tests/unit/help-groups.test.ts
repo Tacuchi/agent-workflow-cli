@@ -45,6 +45,14 @@ describe("groupCommands", () => {
     expect(flat.length).toBe(set.size);
   });
 
+  it("places git-flow in the Sources / Branches group", () => {
+    const groups = groupCommands(["git-flow", "set-qa-branch", "self"]);
+    const sources = groups.find((g) => g.name === "Sources / Branches");
+    expect(sources?.commands).toContain("git-flow");
+    // Not leaked into the catch-all Other group.
+    expect(groups.find((g) => g.name === "Other")).toBeUndefined();
+  });
+
   it("preserves the input order of commands within their group", () => {
     const groups = groupCommands(["session-create", "sessions", "session-close"]);
     expect(groups.find((g) => g.name === "Session lifecycle")?.commands).toEqual([

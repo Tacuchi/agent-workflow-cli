@@ -18,6 +18,7 @@ export interface ParsedProjectBlock {
   fuentes: ProjectFuente[];
   stack: ProjectStack;
   working_branches: Record<string, string>;
+  qa_branches: Record<string, string>;
   last_activity: string | null;
 }
 
@@ -73,6 +74,7 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
     fuentes,
     stack,
     working_branches: status.workingBranches,
+    qa_branches: status.qaBranches,
     last_activity: status.lastActivity,
   };
 }
@@ -126,13 +128,15 @@ function parseStackList(text: string): ProjectStack {
 
 interface StatusBlock {
   workingBranches: Record<string, string>;
+  qaBranches: Record<string, string>;
   lastActivity: string | null;
 }
 
-type StatusSection = "none" | "working";
+type StatusSection = "none" | "working" | "qa";
 
 function parseStatusBlock(text: string): StatusBlock {
   const workingBranches: Record<string, string> = {};
+  const qaBranches: Record<string, string> = {};
   let lastActivity: string | null = null;
   let section: StatusSection = "none";
 
@@ -150,10 +154,12 @@ function parseStatusBlock(text: string): StatusBlock {
     const entry = stripped.slice(2).trim();
     if (section === "working") {
       addWorkingBranch(workingBranches, entry);
+    } else if (section === "qa") {
+      addWorkingBranch(qaBranches, entry);
     }
   }
 
-  return { workingBranches, lastActivity };
+  return { workingBranches, qaBranches, lastActivity };
 }
 
 function transitionSection(stripped: string): {
@@ -163,6 +169,7 @@ function transitionSection(stripped: string): {
 } {
   if (stripped.startsWith("- Ramas de trabajo actuales:"))
     return { handled: true, next: "working" };
+  if (stripped.startsWith("- Ramas QA actuales:")) return { handled: true, next: "qa" };
   if (stripped.startsWith("- Última actividad:")) {
     const idx = stripped.indexOf(":");
     return {
