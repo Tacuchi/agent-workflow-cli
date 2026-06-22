@@ -1,6 +1,6 @@
 {
   "name": "@tacuchi/agent-workflow-cli",
-  "version": "12.4.0",
+  "version": "12.5.0",
   "description": "Agnostic runtime CLI for AI development workflows — a stages + loops + artifacts harness. Bundles the universal `w` skill set under `skills/w/` (slash commands `/w:*`: spec-new/spec-refine, plan-new/plan-exec, quick, workspace-init, export-*); `self install --target <host>` copies SKILL + commands + hooks into the host. Pluggable capability skills via `.workflow/skills.toml`. Multi-empresa parametrization via `profile.json` cascade. Namespace auto-detected from any `.<ns>/sessions/` dir in CWD; default `workflow`.",
   "type": "module",
   "bin": {

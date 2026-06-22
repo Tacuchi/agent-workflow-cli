@@ -4,6 +4,28 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.5.0] — 2026-06-21
+
+**Comando `/w:status` (dashboard del workspace) + ciclo artifact-first + sesiones/artefactos más simples.** Reúne el refinamiento de dogfooding sobre `system-updater` (sesiones y artefactos que reflejen progreso real, no cáscaras vacías) y un comando nuevo para ver el estado del workspace de un vistazo.
+
+### Added
+
+- **`/w:status` + `aw status`:** dashboard read-only de todo el workspace — **qué se hizo / qué falta / qué se descartó** — con fechas relativas en español ("hace 2 días", "ayer en la mañana"). Agrega specs (con preguntas abiertas), plans (tareas hechas/pendientes), sesiones (activas/cerradas) y descartados (BACKLOG `Deferred` + CHECKPOINT `Excluded`). Comando **transversal**: no es un flow, no escribe nada. `aw status` emite JSON con el `relative` ya humanizado; el skill lo renderiza.
+- **Humanizador de fechas en español** (`humanize-es.ts`, puro/determinista): `recién`, `hace N minutos`, `hoy/ayer en la {mañana,tarde,noche}`, `hace N días`, `la semana pasada`, `hace N semanas/meses/años`.
+- **Ciclo artifact-first** en el chasis de loops (`spec-refine-loop`), heredado por los 4 loops: el artefacto se **siembra con la intención antes** de ejecutar (`CHECKPOINT.Pending`/`Next`) y se **lleva al estado real después** (`Completed`/`DECISION`); `BACKLOG` solo si se difiere.
+
+### Changed
+
+- **Una sola sesión por run** (revierte "una exec session por fase"): `plan-exec` usa una sola sesión; el avance por fase vive en el plan-doc (`- [x]`) + un `CHECKPOINT` único. **Research inline**: `ANALYSIS-FILE`/`CONCLUSIONS`/`SCRIPTS.sql` read-only se escriben en la sesión activa, sin sesión aparte. Cadena spec→plan→exec ≈ 3 sesiones.
+- **Spec in-place** (revierte `NNN-spec-refined.md`): `spec-refine` edita `docs/specs/NNN-spec-<slug>.md` mismo (agrega `## Refinement decisions` + `## Q&A traceability`); resume keyado off `CHECKPOINT`.
+- **Slug descriptivo** en nombres de documento: `NNN-spec-<slug>.md` / `PPP-plan-<slug>.md`.
+- **Plantillas de artefactos más limpias y directas:** quitados los sufijos de andamiaje de los headings (`## Excluded (list):` → `## Excluded`, `## Deferred (text):` → `## Deferred`, etc.) en todo `artifacts/`; esto realinea la doc-plantilla `SESSION.md` con lo que emite `renderSessionMarkdown` y `session-resolver`. SESSION = Objective/Origin/Type (Success criteria solo `research`); BACKLOG sin `Notes` y solo si hay diferidos; CONCLUSIONS/ANALYSIS-FILE enfocados en código; CHECKPOINT como log vivo artifact-first.
+- `session-close` ya no fabrica un `BACKLOG` vacío.
+
+### Notes
+
+- `aw status` tolera artefactos legacy con headings `(list):`/`(text):` (match flexible) y trata el `type` de sesión como string opaco; sesiones/specs/plans legacy quedan como históricos, nada se migra. Probe read-only: nunca lanza (workspace sin inicializar → `initialized:false` y colecciones vacías). Suite: **696 tests** + lint(0 errores) + typecheck verde; smoke real `aw status` end-to-end OK.
+
 ## [12.4.0] — 2026-06-20
 
 **Fixes de dogfooding: numeración global de sesiones, comandos que cargan su loop, y `spec-new` estrictamente single-pass.** Tres bugs que emergieron arrancando los flujos `/w:*`.
