@@ -53,6 +53,8 @@
 > **Transversal (no flow):** [`/w:status`](status.md) is a read-only dashboard of the whole workspace — what's done / pending / discarded, with friendly Spanish dates. It leans on `aw status`, writes nothing, and belongs to no flow.
 >
 > **Transversal (no flow):** [`/w:fix-git`](fix-git.md) resolves an **in-progress merge conflict** for any repo — identify origin↔destination, analyze both sides' intent, resolve (structured-choice on ambiguity), propose the merge commit (git-safe). Leans on `aw merge-state`; writes no `docs/`; works without a workspace. Neither transversal is counted in **5 flow / 4 loops**.
+>
+> `/w:status` and `/w:fix-git` are **transversal skills** — in the design model they form their own category (`workflow-skills/`, distinct from flow commands); here they are packaged under `commands/` so `/w:` can invoke them (Claude Code only invokes `commands/*.md`). See [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*.
 
 ## Pipeline
 

@@ -1,7 +1,7 @@
 // Datos del Workflow tab — hardcoded para evitar I/O en render.
 // Sincronizado con el modelo rediseñado (stages + loops + artifacts):
 //   - skills/w/commands/   (/w: slash commands — 1 por archivo .md)
-//   - skills/w/README.md   (3 layers + 3 flows: SPEC / PLANIFICATION / QUICK)
+//   - skills/w/README.md   (3 layers + 3 flows: SPEC / PLAN / QUICK)
 //   - src/cli/help-groups.ts (familias del CLI real, post-cleanup)
 //   - skills/w/hooks/hooks.template.json (5 eventos)
 //
@@ -28,7 +28,7 @@ export interface WorkflowContent {
 
 export const WORKFLOW_CONTENT: WorkflowContent = {
   overview:
-    "Stages + loops + artifacts — 3 flows (SPEC · PLANIFICATION · QUICK) drive convergent loops over session artifacts; export-* promotes to docs/.",
+    "Stages + loops + artifacts — 3 flows (SPEC · PLAN · QUICK) drive convergent loops over session artifacts; export-* promotes to docs/. Transversal skills (/w:status · /w:fix-git) sit outside the flows.",
 
   // Las 3 FLOWS del modelo + bootstrap (workspace-init) + familia export-*.
   // Reusa PhaseCardData genérico (id/n/title/desc/commands/slash/hook).
@@ -52,9 +52,9 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       hook: "—",
     },
     {
-      id: "planification",
+      id: "plan",
       n: 3,
-      title: "PLANIFICATION — the how",
+      title: "PLAN — the how",
       desc: "Plan and execute. plan-new + plan-exec each drive loops → docs/plans · docs/tools.",
       commands: ["plan-new", "plan-exec"],
       slash: "/w:plan-new · /w:plan-exec",
@@ -168,6 +168,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     "/w:plan-exec",
     "/w:quick",
     "/w:status",
+    "/w:fix-git",
     "/w:export-scripts",
     "/w:export-manuals",
     "/w:export-diagrams",
@@ -194,7 +195,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     {
       name: "PreCompact",
       matcher: "(any)",
-      fires: "checkpoint-write — preserves OBJECTIVE before compacting",
+      fires: "checkpoint-write — writes CHECKPOINT.md before compacting",
     },
     {
       name: "PostCompact",

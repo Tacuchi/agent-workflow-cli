@@ -73,9 +73,14 @@ Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` →
 - `/w:plan-new` — arranca `plan-new-loop` para derivar un plan ejecutable del spec refinado.
 - `/w:plan-exec` — arranca `plan-exec-loop` para ejecutar y mantener el plan.
 - `/w:quick` — arranca `quick-loop` (atajo, sin `docs/`).
-- `/w:status` — dashboard read-only del workspace (Hecho/Falta/Descartó, con fechas en español). Transversal: no es un flow, no escribe nada; se apoya en `aw status`.
-- `/w:fix-git` — resuelve conflictos de un merge en curso en cualquier repo (identifica origen↔destino, analiza intención, *structured-choice* ante ambigüedad). Transversal: no es flow, no crea session, no toca `docs/`; git-safe; se apoya en `aw merge-state`.
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promueven artefactos a `docs/`.
+
+### Transversal skills (no flow) — `/w:status` · `/w:fix-git`
+
+Skills **invocables independientes de flujo**: se disparan con `/w:` igual que un comando, pero **no** pertenecen a SPEC/PLAN/QUICK, **no** manejan `docs/`, y **no** entran en el conteo **5 comandos de flow / 4 loops**. (En el diseño son su propia categoría —`workflow-skills/`, aparte de los comandos de flow—; en el bundle se empaquetan bajo `commands/` para que `/w:` las invoque.)
+
+- `/w:status` — dashboard read-only del workspace (Hecho/Falta/Descartó, con fechas en español). No escribe nada; se apoya en `aw status`.
+- `/w:fix-git` — resuelve conflictos de un merge en curso en cualquier repo (identifica origen↔destino, analiza intención, *structured-choice* ante ambigüedad). No crea session, no toca `docs/`; git-safe; se apoya en `aw merge-state`.
 
 ### The loops (Layer 2)
 
