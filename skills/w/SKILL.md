@@ -73,6 +73,7 @@ Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` →
 - `/w:plan-new` — arranca `plan-new-loop` para derivar un plan ejecutable del spec refinado.
 - `/w:plan-exec` — arranca `plan-exec-loop` para ejecutar y mantener el plan.
 - `/w:quick` — arranca `quick-loop` (atajo, sin `docs/`).
+- `/w:status` — dashboard read-only del workspace (Hecho/Falta/Descartó, con fechas en español). Transversal: no es un flow, no escribe nada; se apoya en `aw status`.
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promueven artefactos a `docs/`.
 
 ### The loops (Layer 2)
@@ -80,7 +81,7 @@ Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` →
 Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable. Propiedades comunes (el chasis, en `spec-refine-loop`, lo heredan los demás):
 
 1. **Gap-driven convergente** — cada ciclo: detecta huecos → resuelve (pregunta al humano o investiga) → integra → repite hasta converger.
-2. **Una sola session por run + research inline** — el loop crea **una** session (la dueña del run) y maneja sus artefactos en `.workflow/sessions/`. La **investigación es inline**: una actividad dentro de esa misma session (escribe `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only si consulta BD), no una session aparte. El usuario nunca crea sessions. Los artefactos son el **registro vivo** del run (la base guía es el spec/plan).
+2. **Una sola session por run + research inline** — el loop crea **una** session (la dueña del run) y maneja sus artefactos en `.workflow/sessions/`. La **investigación es inline**: una actividad dentro de esa misma session (escribe `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only si consulta BD), no una session aparte. El usuario nunca crea sessions. Los artefactos son el **registro vivo** del run, **ciclo artifact-first** (sembrar `Pending`/`Next` antes de ejecutar, llevar a `Completed` después); la base guía es el spec/plan.
 3. **AskUserQuestion con dos tipos de tab**:
    - **tab(s) de contenido** — la pregunta real del momento.
    - **tab `flow`** — control de ciclo de vida, **siempre presente**: `Compactar` / `Cerrar`. Responder el tab de contenido sin tocar `flow` = seguir iterando.
@@ -142,7 +143,7 @@ El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
 3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión.
 4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
 5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.
-6. **Chasis de loops** — gap-driven convergente · una sola session por run (research inline) · `AskUserQuestion` con ≤3 tabs de contenido + 1 tab `flow` (`Compactar`/`Cerrar`) siempre · compact/resume · artefactos como log vivo (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+6. **Chasis de loops** — gap-driven convergente · una sola session por run (research inline) · `AskUserQuestion` con ≤3 tabs de contenido + 1 tab `flow` (`Compactar`/`Cerrar`) siempre · compact/resume · artefactos como log vivo **artifact-first** (sembrar `Pending`/`Next` antes, `Completed` después; `CHECKPOINT` siempre; `BACKLOG` solo si difiere).
 
 ## Output
 

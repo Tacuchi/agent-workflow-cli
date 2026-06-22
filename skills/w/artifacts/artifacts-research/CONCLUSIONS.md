@@ -2,11 +2,10 @@
 
 > What it is: the conclusions of an **inline research** activity, written into the active session (`refine`/`exec`/`quick`). Produced when the research concludes (success or `inconcluso`). The parent loop reads this to resolve the gap that triggered the research.
 
-## Conclusion (text|list)
+## Conclusion
 Direct answer to the initial question.
 
-## Recommended Action (text|list)
-
+## Recommended Action
 Example:
 - [ ] Fix code
 - [ ] Open follow-up task
@@ -14,5 +13,5 @@ Example:
 - [ ] Defer (insufficient evidence)
 - [ ] No action
 
-## Details (text):
+## Details
 Supporting detail, evidence references, or additional context.

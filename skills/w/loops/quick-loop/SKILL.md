@@ -43,7 +43,7 @@ QUICK
 
 ## Inherits
 
-- del **chasis** [`spec-refine-loop`](../spec-refine-loop/SKILL.md): gap-driven (mínimo), `AskUserQuestion` ≤3 + `flow` (`Compactar`/`Cerrar`), `research` **inline** + regla BD read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only), compact/resume, **artefactos como log vivo** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+- del **chasis** [`spec-refine-loop`](../spec-refine-loop/SKILL.md): gap-driven (mínimo), `AskUserQuestion` ≤3 + `flow` (`Compactar`/`Cerrar`), `research` **inline** + regla BD read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only), compact/resume, **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
 - de [`plan-exec-loop`](../plan-exec-loop/SKILL.md): **git** (rama segura antes de editar + commit propuesto; nunca `push`/`--amend`/`--no-verify`), **BD** (la IA nunca ejecuta DML; migraciones → `SCRIPTS.sql` de la session), **sin auto-export** (no toca otras carpetas `docs/`).
 
 ## Composes
@@ -65,6 +65,7 @@ QUICK
 ```
 quick-loop(prompt):
   s = create_or_resume("<slug>-quick")      # CLI antepone NNN global; siempre session ligera
+  seed CHECKPOINT.Pending/Next = la tarea (s)   # ANTES: sembrar intención (artifact-first); SESSION.Objective = el prompt
   trabajar la tarea (loop mínimo):
     verificar rama esperada por fuente (branch-check); si no → pausar + resolver
     editar código (cambio mínimo)
@@ -77,7 +78,7 @@ quick-loop(prompt):
   validación puntual (test si aplica)
   proponer commit (aprobar antes)                            # nunca push/amend/--no-verify
   AskUserQuestion(contenido: [Cerrar tarea, Preguntar algo más], flow: [Compactar, Cerrar])
-finalize: CHECKPOINT + BACKLOG (solo si queda algo diferido) + cerrar session + reportar
+finalize: CHECKPOINT (DESPUÉS: Pending→Completed) + BACKLOG (solo si queda algo diferido) + cerrar session + reportar
 ```
 
 ```mermaid

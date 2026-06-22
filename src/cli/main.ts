@@ -46,6 +46,7 @@ import { skillIndexCommand } from "./commands/skill-index.js";
 import { skillsCommand } from "./commands/skills.js";
 import { sourcesCommand } from "./commands/sources.js";
 import { stackCommand } from "./commands/stack.js";
+import { statusCommand } from "./commands/status.js";
 import { visibilityCommand } from "./commands/visibility.js";
 import { workspaceInitCommand } from "./commands/workspace-init.js";
 import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
@@ -70,6 +71,7 @@ async function run(argv: string[]): Promise<ExitCode> {
 
   const registry = new CommandRegistry();
   registry.register(sessionsCommand);
+  registry.register(statusCommand);
   registry.register(historyDataCommand);
   registry.register(historyUpdateCommand);
   registry.register(sessionArtifactsCommand);

@@ -2,15 +2,15 @@
 
 > What it is: an internal phases/tasks breakdown for sessions that need their own desglose. **Optional artifact** — in PLANIFICATION, phases and tasks live in the **plan-doc** (`docs/plans/PPP-plan.md`, living). Use this only when a session needs a breakdown that is not covered by the plan-doc.
 
-## Phases (list):
-List of grouping phases. Phases should have a complexity between XS and S.
+## Phases
+Grouping phases. Phases should have a complexity between XS and S.
 
 Example:
 - F1: Investigate billing flow
 - F2: Design new button for new payment method
 
-## Tasks (list):
-List of tasks ordered by phase. Tasks should have a maximum complexity of XS.
+## Tasks
+Tasks ordered by phase. Tasks should have a maximum complexity of XS.
 
 Example:
 - T1 (F1): Analyze sources ms-motor, ms-solicitud

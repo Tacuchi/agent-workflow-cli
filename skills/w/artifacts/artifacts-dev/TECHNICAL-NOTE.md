@@ -2,21 +2,21 @@
 
 > **Model note:** in PLANIFICATION these sections live **inline in the plan-doc** (`docs/plans/PPP-plan.md`, rich plan), not as an exec-session artifact. This file is kept as a reference of the technical schema that the plan absorbs. Use it standalone only when the plan-doc approach does not apply (e.g. a `quick` session that needs scoped technical context).
 
-## Solution (text|list):
+## Solution
 Technical/functional explanation of how the solution will be implemented.
 
-## Impacted (list):
-List of impacted components:
+## Impacted
+Impacted components:
 - Frontend
 - Backend
 - Database (schemas/tables/functions)
 - APIs (controllers/endpoints)
 - Integrations with external systems
 
-## Dependencies (list):
-List of dependencies: sessions / documents / projects / sources / databases, etc.
+## Dependencies
+Dependencies: sessions / documents / projects / sources / databases, etc.
 
-## Current State (text):
+## Current State
 Simple representation of the wiring or cabling (interfaces and methods) — AS-IS behavior.
 
 Example:
@@ -42,10 +42,10 @@ PreviewController.efectivoHtml()  ──> respond TEXT_HTML
                                                        respond APPLICATION_PDF
 ```
 
-## Target State (text):
+## Target State
 Simple representation of the wiring or cabling (interfaces and methods) — TO-BE behavior.
 
-## Final Behavior (text|list):
+## Final Behavior
 How the entire flow should behave at the end (must be aligned with the requirements and acceptance/success criteria in SESSION.md).
 
 Example:
@@ -58,13 +58,13 @@ The user must be able to recover their password via OTP to their mobile number a
 6. [System] Confirms OTP
 7. [System] Saves the mobile number and associates it with the [User]
 
-## Impact / Risks (list):
+## Impact / Risks
 Technical impacts and risks.
 
-## Assumptions (list):
-List of assumptions.
+## Assumptions
+Assumptions.
 
-## Estimated Time (list):
+## Estimated Time
 Time estimates for [Development] and [Internal Testing].
 The work week has 5 days (Monday–Friday only).
 Size scale XS/S/M/L/XL:
@@ -74,8 +74,8 @@ Size scale XS/S/M/L/XL:
 - L  -> 6 to 10 days
 - XL -> More than 10 days
 
-## Validations (list):
+## Validations
 Validations, constraints, business-specific logic.
 
-## Open Questions (text|list):
+## Open Questions
 Pending items, doubts, open questions.

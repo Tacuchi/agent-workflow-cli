@@ -68,7 +68,7 @@ Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 ## Delta 1 — One session per run; per-phase progress in the plan-doc
 
 - Recorre las `Phases` del plan en orden (respeta deps) **dentro de la única session del run** (no hay session-por-fase).
-- El **avance por fase vive en el plan-doc** (`- [x]`) y en el `CHECKPOINT` único (Completed/Pending/Next).
+- El **avance por fase vive en el plan-doc** (`- [x]`) y en el `CHECKPOINT` único (Completed/Pending/Next): **artifact-first** — `CHECKPOINT.Next` se fija a la fase inminente **antes** de iniciarla; el checkbox `- [x]` del plan-doc se voltea **después** de completar la tarea.
 - Ejecuta las `Tasks` de la fase; **salta** las ya marcadas `- [x]` en el plan (el plan-doc es la fuente de verdad por tarea). Marca `- [x]` + estado **en el plan** (living doc; no en un `TASKS` aparte).
 - En **cada límite de fase**: actualiza el `CHECKPOINT` (Completed += Phase N, Next = Phase N+1) y propone commits.
 - Registra `DECISION` solo lo **no obvio**, **a medida que se toma** (los `DECISION` por fase se acumulan en el ÚNICO `DECISION`, etiquetados por fase/tarea — ej. `Origin: T2 (F1)`).
@@ -109,6 +109,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
   plan = read(PPP-plan-<slug>.md)
   para cada Phase en plan (en orden, respeta deps):
     si Phase done (todas sus Tasks - [x] en el plan): skip # resume vía checkbox del plan-doc
+    seed CHECKPOINT.Next = Phase N (Pending = sus Tasks)   # ANTES de iniciar la fase: sembrar intención (artifact-first)
     para cada Task de la Phase:
       si Task - [x] en el plan: skip                       # resume intra-fase por checkbox
       verificar rama esperada por fuente (branch-check)
@@ -120,11 +121,11 @@ plan-exec-loop(PPP-plan-<slug>.md):
         si cambio BD (DDL/DML) → redactar en SCRIPTS.sql (artefacto session, NO ejecutar)
         si decisión no obvia → DECISION (etiquetado por fase/tarea, en el ÚNICO DECISION)
         si duda/gap → research inline ó AskUserQuestion    # chasis
-      marcar Task - [x] + estado EN EL PLAN
+      marcar Task - [x] + estado EN EL PLAN                # DESPUÉS de completar la Task (el plan-doc es la fuente de verdad por tarea)
     validación de la fase:
         la que corre y falla → volver a la tarea
         la dependiente de migración no aplicada → diferir (Open questions + BACKLOG)
-    update CHECKPOINT (Completed += Phase N, Next = Phase N+1) # log vivo, no solo al cerrar
+    update CHECKPOINT (Completed += Phase N, Next = Phase N+1) # DESPUÉS: Pending→Completed + Next = fase siguiente (ver ciclo artifact-first)
     proponer commit(s) por fuente (aprobar antes)          # nunca push/amend/--no-verify
         si rechazado → cambios quedan; registrar "fase sin commitear"
     precondición siguiente fase: working tree limpio o reconocido

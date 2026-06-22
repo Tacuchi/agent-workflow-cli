@@ -45,7 +45,7 @@ const GROUPS: readonly CommandGroup[] = [
   },
   {
     name: "Orchestration",
-    commands: ["stack", "skill-index", "resume-summary"],
+    commands: ["status", "stack", "skill-index", "resume-summary"],
   },
   {
     name: "Doctor / Data",

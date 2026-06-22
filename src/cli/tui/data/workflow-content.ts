@@ -114,7 +114,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     {
       id: "orchestration",
       title: "Orchestration",
-      items: ["stack", "skill-index", "resume-summary"],
+      items: ["status", "stack", "skill-index", "resume-summary"],
     },
     {
       id: "doctor",
@@ -167,6 +167,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     "/w:plan-new",
     "/w:plan-exec",
     "/w:quick",
+    "/w:status",
     "/w:export-scripts",
     "/w:export-manuals",
     "/w:export-diagrams",

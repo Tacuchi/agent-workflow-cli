@@ -3,7 +3,7 @@
 > This is the **bundle README** for the `/w:` slash-command namespace. Every command listed here is something the **user** invokes directly.
 > Related layers: [`../loops/`](../loops/) (Layer 2, AI-driven) · artifacts live in `.workflow/sessions/` (Layer 3) · permanent deliverables in `docs/`.
 >
-> **Namespace:** all commands are under `w:` (`w` = *workflow*): `/w:spec-new`, `/w:spec-refine`, `/w:plan-new`, `/w:plan-exec`, `/w:quick`, `/w:workspace-init`, `/w:export-*`.
+> **Namespace:** all commands are under `w:` (`w` = *workflow*): `/w:spec-new`, `/w:spec-refine`, `/w:plan-new`, `/w:plan-exec`, `/w:quick`, `/w:workspace-init`, `/w:status` (transversal), `/w:export-*`.
 
 ---
 
@@ -49,6 +49,8 @@
 | **QUICK** | — *(no doc)* | `quick` | — | `quick-loop` |
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft in a **single pass** (no loop) and the loop is in `spec-refine`. In PLANIFICATION, **both** commands start loops. Total: **5 flow commands / 4 loops**.
+
+> **Transversal (no flow):** [`/w:status`](status.md) is a read-only dashboard of the whole workspace — what's done / pending / discarded, with friendly Spanish dates. It leans on `aw status`, writes nothing, and belongs to no flow.
 
 ## Pipeline
 
@@ -110,6 +112,7 @@ Each `<command>.md` in this bundle uses this frontmatter + body structure:
 | `plan-new` | [`plan-new.md`](plan-new.md) | starts `plan-new-loop` |
 | `plan-exec` | [`plan-exec.md`](plan-exec.md) | starts `plan-exec-loop` |
 | `quick` | [`quick.md`](quick.md) | starts `quick-loop` |
+| `status` | [`status.md`](status.md) | single-pass, read-only (transversal) |
 | `export-scripts` | [`export-scripts.md`](export-scripts.md) | single-pass, read-only |
 | `export-manuals` | [`export-manuals.md`](export-manuals.md) | single-pass, read-only |
 | `export-diagrams` | [`export-diagrams.md`](export-diagrams.md) | single-pass, read-only |

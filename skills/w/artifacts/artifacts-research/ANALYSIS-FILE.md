@@ -2,23 +2,20 @@
 
 > What it is: an **optional** working scratchpad for deeper investigations, written inline into the active session (`refine`/`exec`/`quick`). For light research, writing only `CONCLUSIONS` is fine — skip this file.
 
-# Case (text):
+## Case
 Short title.
 
-## Question (text)
-What needs to be clarified or demonstrated?
+## Question
+What needs to be clarified or demonstrated? Example: why does endpoint X return stale data after the cache refresh?
 
-Example:
-Why does endpoint X return stale data after the cache refresh?
+## Context
+Optional — one line of scope if useful: system / module + what's in scope.
 
-## Context (text — optional)
-One line of scope if useful: system / module + what's in scope.
-
-## Initial Hypotheses (text|list)
+## Initial Hypotheses
 - H1:
 - H2:
 
-## Evidences (list|table):
+## Evidences
 Open-ended — add rows for whatever dev-relevant sources you actually used. Seeded with the common ones:
 | ID | Source | Finding | Link / file / query |
 |---|---|---|---|
@@ -26,13 +23,13 @@ Open-ended — add rows for whatever dev-relevant sources you actually used. See
 | E2 | Code | | |
 | E3 | Logs | | |
 
-## Findings (text|list)
+## Findings
 What do the evidences indicate?
 
 - E1 shows...
 - E2 confirms...
 
-## Identified Cause (text|list)
+## Identified Cause
 - Technical:
 - Data:
 - Undetermined:

@@ -37,15 +37,15 @@ Actualiza `docs/specs/NNN-spec-<slug>.md` **in place** (cuando el usuario elige 
 
 > **Invariante de boundary:** este loop escribe **solo** en `docs/specs`. Nunca gradúa/exporta otros artefactos a `docs/` — eso es trabajo de `export-*`, aparte.
 
-## Artifacts as a live log (chasis — heredado por todos los loops)
+## Artifacts as a live log — ciclo artifact-first (chasis — heredado por todos los loops)
 
-El loop mantiene sus artefactos como **registro vivo**, no solo al cerrar:
+El loop trabaja **artifact-first**: el artefacto se **siembra antes** de ejecutar y se **actualiza después**, no solo al cerrar. Cada gap/fase/tarea corre el ciclo de **3 tiempos**:
 
-- **`CHECKPOINT`** se actualiza en **cada límite de gap/fase** (Completed/Pending/Next), no únicamente al `Compactar`/`Cerrar`.
-- **`DECISION`** se registra **a medida que se toma** una decisión no obvia.
-- **`BACKLOG`** se escribe **solo cuando hay algo diferido/followup** (`session-close` ya no fabrica un BACKLOG vacío).
+1. **ANTES — sembrar la intención.** Antes de ejecutar, deja en el artefacto lo que se **va a** hacer: `CHECKPOINT.Pending`/`Next` = el trabajo inminente (`SESSION.Objective` ya fijó el qué del run).
+2. **EJECUTAR.** Resolver el gap / correr la fase / editar el código.
+3. **DESPUÉS — llevar al estado real.** `CHECKPOINT.Pending → Completed`; `DECISION` lo no obvio **a medida que se toma**; `BACKLOG` **solo si** algo queda diferido/followup (`session-close` ya no fabrica un BACKLOG vacío).
 
-> Los artefactos de session son el **registro vivo** del run; el spec/plan es la **base guía**.
+> El artefacto expresa la **intención** (Pending/Next, antes) y luego el **resultado** (Completed/DECISION, después), en **cada** límite de gap/fase — no solo al `Compactar`/`Cerrar`. Los artefactos de session son el registro vivo del run; el spec/plan es la **base guía**.
 
 ## Internal sessions (managed)
 
@@ -166,6 +166,7 @@ spec-refine-loop(spec):
     gaps = detect_gaps(work)  menos los gaps "agotados"
     if gaps == ∅: break
     batch = top ≤3 gaps ; pending_human = []
+    seed CHECKPOINT.Pending/Next = batch (refine_session) # ANTES: sembrar intención (artifact-first)
     para cada gap en batch:
       si factual(gap) y attempts[gap] < MAX:
         si requiere BD y >1 MCP sin default → encolar "elección MCP" en pending_human
@@ -174,7 +175,7 @@ spec-refine-loop(spec):
         si no: attempts[gap]++ ; si attempts[gap] >= MAX → pending_human.push(gap)
       si no:
         pending_human.push(gap)
-    update CHECKPOINT (refine_session)        # log vivo: Completed/Pending/Next en cada límite de gap
+    update CHECKPOINT (refine_session)        # DESPUÉS: Pending→Completed, en cada límite de gap (ver ciclo artifact-first)
     si pending_human no vacío:
       ans = AskUserQuestion(contenido: pending_human (≤3), flow: [Compactar, Cerrar])
       switch(flow):
@@ -205,7 +206,7 @@ flowchart TD
     CC -->|no| DEG["attempts++ ; degradar a humano / Open questions"]
     F -->|no| Q["AskUserQuestion<br/>contenido[dudas + elección MCP ≤3]<br/>flow[Compactar · Cerrar]"]
     Q --> I2["integrar → Q&A traceability"]
-    I1 --> CK["update CHECKPOINT (log vivo)"]
+    I1 --> CK["update CHECKPOINT (Pending→Completed)"]
     DEG --> CK
     I2 --> CK
     CK --> D
