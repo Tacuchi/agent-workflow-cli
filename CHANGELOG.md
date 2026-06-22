@@ -4,6 +4,18 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.7.1] — 2026-06-22
+
+**Taxonomía commands / skills / roles + de-stale del tab Workflow.** Refleja en la doctrina del bundle la separación entre comandos de flujo, skills transversales y roles, y corrige contenido viejo del tab Workflow del TUI. Sin cambios de comportamiento del CLI.
+
+### Fixed
+
+- **Tab Workflow del TUI (`workflow-content.ts`):** el flujo se mostraba como `PLANIFICATION` (nombre viejo) en vez de `PLAN`; la lista de slash commands **omitía `/w:fix-git`** (faltante desde 12.6.0); y la descripción del hook `PreCompact` decía `OBJECTIVE` en vez de `CHECKPOINT.md`. Corregidos los tres.
+
+### Changed
+
+- **Doctrina: `/w:status` y `/w:fix-git` como _transversal skills_.** `skills/w/SKILL.md` y `skills/w/commands/README.md` los presentan ahora como categoría propia —skills invocables independientes de flujo, que **no** entran en el conteo «5 comandos de flow / 4 loops»—, alineado con el modelo de diseño (`workflow-skills/` aparte de `workflow-commands/` y `workflow-roles/`). Se siguen empaquetando en `commands/` para que `/w:` los invoque.
+
 ## [12.7.0] — 2026-06-22
 
 **Tab Project: fixes de render (Warp/Windows) + paneles de acciones laterales con marco + helper `rowWidth` reutilizable.** Corrige dos defectos de render reportados al usar el TUI en Warp (Mac y Windows) y desacopla la lógica de ancho de fila que estaba triplicada.
