@@ -4,6 +4,25 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.6.0] — 2026-06-22
+
+**`/w:fix-git` (resolvedor de conflictos de merge) + capa agnóstica al arnés + refinamiento de los 3 flujos.** Propaga el rediseño de `docs/referencias` al bundle desplegado `skills/w` y agrega un comando nuevo para resolver merges.
+
+### Added
+
+- **`/w:fix-git` + `aw merge-state`:** comando **transversal** (como `/w:status`) que resuelve conflictos de un **merge en curso** en cualquier repo — identifica origen (theirs) ↔ destino (ours), analiza la intención de ambos lados, resuelve (ours/theirs/combinar/reescribir), pregunta vía *structured-choice* ante ambigüedad/incoherencia y **propone** el commit de merge (git-safe). **Agnóstico al workspace** (no requiere `.workflow/`). `aw merge-state [<path>] [--source <alias>] [--all]` es el inspector read-only (exit 2 si hay merge en curso); reusa `GitPort` + nuevo `mergeOrigin` (`git name-rev MERGE_HEAD`).
+- **Capa `harness/` (agnóstica al arnés):** `skills/w/harness/SKILL.md` — catálogo de capacidades + matriz de binding por arnés (Claude Code / Codex / opencode / Gemini / genérico) con degradación elegante. La doctrina referencia **capacidades** (`structured-choice`, `compaction`) en vez de tools concretos.
+- **Convergence gate** en los 4 loops: `spec-refine` *analyze gate*, `plan-new` *coherence gate*, `plan-exec` *validación final*, `quick` *validación puntual* (read-only; lo que falla vuelve como gap).
+
+### Changed
+
+- **Rol `git`:** nueva sección *Resolución de conflictos de merge* (3 versiones `:1:/:2:/:3:`, `git log --merge`, structured-choice, propose-then-execute del merge commit, `git merge --abort` como escape).
+- **SPEC:** UI pasa a **gap de primera clase** (→ compone `ui-design`); acceptance criteria **estáticos/testables** (validados en plan-exec, progreso en el PLAN); esqueleto draft↔refinado alineado + "marca de refinado" explícita (contrato con `plan-new`); EARS recomendado.
+- **`ui-spec` Markdown-only:** se descarta la serialización JSON `Screen`; se conservan estructura, vocabulario y reglas; ejemplos en Markdown.
+- **PLAN:** plan rico **escala con complejidad** (secciones `core`/`opt`); trazabilidad criterio→tarea verificada por el gate.
+- **Terminología `PLANIFICATION` → `PLAN`**; de-stale del corpus (sin framing del "modelo viejo").
+- **Artefactos:** `artifacts-dev/` → `artifacts-exec/`; `TECHNICAL-NOTE` queda como referencia de esquema (absorbido por el plan-doc).
+
 ## [12.5.0] — 2026-06-21
 
 **Comando `/w:status` (dashboard del workspace) + ciclo artifact-first + sesiones/artefactos más simples.** Reúne el refinamiento de dogfooding sobre `system-updater` (sesiones y artefactos que reflejen progreso real, no cáscaras vacías) y un comando nuevo para ver el estado del workspace de un vistazo.
