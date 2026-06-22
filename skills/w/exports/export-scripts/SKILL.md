@@ -58,7 +58,7 @@ En plan mode **describe**, no escribe: el `NNN` resuelto, las fuentes detectadas
 
 - `docs/scripts/*.sql` standalone (solo top-level), **excluyendo** cualquier `docs/scripts/NNN-export-scripts-*/` (outputs previos de este export).
 
-**Args** (sin lifecycle `AskUserQuestion`):
+**Args** (sin *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 
 ```
 /w:export-scripts [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]

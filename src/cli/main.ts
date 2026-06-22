@@ -28,6 +28,7 @@ import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
 import { hostDoctorCommand } from "./commands/host-doctor.js";
 import { mcpCommand } from "./commands/mcp.js";
+import { mergeStateCommand } from "./commands/merge-state.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./commands/multiroot.js";
 import { pluginCacheCommand } from "./commands/plugin-cache.js";
 import { pluginDoctorCommand } from "./commands/plugin-doctor.js";
@@ -85,6 +86,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(setWorkingBranchCommand);
   registry.register(setQaBranchCommand);
   registry.register(gitFlowCommand);
+  registry.register(mergeStateCommand);
   registry.register(checkpointReadCommand);
   registry.register(resumeSummaryCommand);
   registry.register(compressCheckpointCommand);

@@ -60,7 +60,7 @@ En plan mode **describe**, no escribe: el modo resuelto, los temas detectados (c
 - `docs/manuals/INDEX.md` — re-generable (sobrescribible) en modo `complement`.
 - Código de las fuentes declaradas — lectura para describir el comportamiento.
 
-**Args** (sin lifecycle `AskUserQuestion`):
+**Args** (sin *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 
 ```
 /w:export-manuals [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
@@ -123,5 +123,5 @@ Si `--dry-run`: imprimir el reporte; no escribir. Si no: `complement` → `Write
 
 - Design: `docs/referencias/workflow-exports/export-manuals.md` · familia: [`../README.md`](../README.md).
 - Capacidad compuesta: `writing` (built-in default; ver `docs/referencias/workflow-skills/`).
-- Artefactos fuente: `DECISION` + plan-doc (ver `docs/referencias/workflow-artifacts/artifacts-dev/` y `docs/specs`/`docs/plans`).
+- Artefactos fuente: `DECISION` + plan-doc (ver `docs/referencias/workflow-artifacts/artifacts-exec/` y `docs/specs`/`docs/plans`).
 - Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).

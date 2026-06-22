@@ -60,7 +60,7 @@ En plan mode **describe**, no escribe: el motor resuelto, los niveles/secciones 
 
 **MCP read-only** (opcional, solo si se pide modelo de datos y está configurado): `\d <tabla>`, `SELECT count(*)`, relaciones FK para el `erDiagram`. Con cost guard.
 
-**Args** (sin lifecycle `AskUserQuestion`):
+**Args** (sin *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 
 ```
 /w:export-diagrams [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]

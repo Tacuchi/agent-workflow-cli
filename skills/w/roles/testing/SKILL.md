@@ -28,10 +28,10 @@ Dar a los loops la capacidad de razonar sobre tests: qué nivel aplicar, con qu�
 
 ### Execution rule
 
-Por defecto, **no ejecutar pruebas automáticamente**. Antes de correr cualquier test runner:
+Por defecto, **no ejecutar pruebas automáticamente**. Antes de correr cualquier test runner, preguntar al humano vía *structured-choice* (capacidad del arnés — ver `../../harness/SKILL.md`). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**.
 
 ```
-AskUserQuestion:
+structured-choice:
   "¿Correr los tests?"
   [a] Sí, el loop los ejecuta
   [b] Los corro yo manualmente

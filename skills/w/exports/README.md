@@ -29,14 +29,14 @@
 | [`export-diagrams`](export-diagrams/SKILL.md) | `diagrams` | source code of the sources + plan-doc (`AS-IS` / `TO-BE`, `Impacted`) | `docs/diagrams/` (C4 / mermaid) |
 | [`export-reports`](export-reports/SKILL.md) | `writing` | corpus of sessions (spec, `CONCLUSIONS`, `DECISION`) + plan-doc state + `docs/` | `docs/reports/` (executive / functional report) |
 
-> **Composition over ownership:** an export does **not** own its authoring logic — it **composes a capability role** from [`../../`workflow-skills](../../) (resolved through `.workflow/skills.toml`): `export-scripts` composes `sql`; `export-manuals` and `export-reports` compose `writing`; `export-diagrams` composes `diagrams`. Swapping the implementation is a one-line config change; it never touches the export.
+> **Composition over ownership:** an export does **not** own its authoring logic — it **composes a capability role** from [`../roles/`](../roles/) (resolved through `.workflow/skills.toml`): `export-scripts` composes `sql`; `export-manuals` and `export-reports` compose `writing`; `export-diagrams` composes `diagrams`. Swapping the implementation is a one-line config change; it never touches the export.
 
 ## Common properties
 
 1. **Layer 1, explicit** — the **user** invokes them (`/w:export-<cat>`). **Never** automatic (no loop fires them).
 2. **Single-pass, read-only over sessions** — they read artifacts/sessions and `docs/`, **synthesize**, and write **only** their own `docs/<category>/` folder. They do **not** mutate sessions and do **not** open/close loops.
 3. **Cross-session** — they consolidate **N** sessions + the `docs/` corpus (dedup, roadmap, continuous numbering).
-4. **No loop, no internal sessions** — options come from **args** (no lifecycle `AskUserQuestion`).
+4. **No loop, no internal sessions** — options come from **args** (no *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../harness/SKILL.md`](../harness/SKILL.md)).
 5. **Git-safe** — they **never** commit, merge, push, `--amend`, or `--no-verify`. The output is a written document the user reviews and commits when ready.
 6. **DB scripts-only** — `export-scripts` ships migration SCRIPTS as a bundle; it **never executes** DDL/DML (a human/DBA applies them).
 

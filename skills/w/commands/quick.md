@@ -12,7 +12,7 @@ allowed-tools:
 
 # quick — trampolín al loop liviano
 
-Para tareas acotadas y directas que no justifican pasar por SPEC ni PLANIFICATION. Siempre crea una sesión ligera (trazabilidad + resume). Delega a `quick-loop` (Layer 2).
+Para tareas acotadas y directas que no justifican pasar por SPEC ni PLAN. Siempre crea una sesión ligera (trazabilidad + resume). Delega a `quick-loop` (Layer 2).
 
 ## Ejecutar el loop
 

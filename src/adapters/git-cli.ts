@@ -128,4 +128,25 @@ export class GitCliAdapter implements GitPort {
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
   }
+
+  async mergeOrigin(repoPath: string): Promise<string | undefined> {
+    const result = await this.process.run("git", ["name-rev", "--name-only", "MERGE_HEAD"], {
+      cwd: repoPath,
+    });
+    if (result.code !== 0) return undefined;
+    const raw = result.stdout.trim();
+    if (raw.length === 0 || raw === "undefined") return undefined;
+    return cleanRefName(raw);
+  }
+}
+
+/**
+ * `git name-rev` can return `remotes/origin/x`, `tags/x`, `x~2`, `x^0` — reduce
+ * to a branch-ish label (best-effort identification of the incoming branch).
+ */
+function cleanRefName(name: string): string {
+  return name
+    .replace(/[~^].*$/, "") // drop ~N / ^N suffixes
+    .replace(/^remotes\/[^/]+\//, "") // drop remotes/<remote>/
+    .replace(/^tags\//, "");
 }

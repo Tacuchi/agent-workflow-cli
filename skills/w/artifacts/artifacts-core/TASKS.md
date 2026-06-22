@@ -1,6 +1,6 @@
 # TASKS.md — internal task breakdown (optional, common)
 
-> What it is: an internal phases/tasks breakdown for sessions that need their own desglose. **Optional artifact** — in PLANIFICATION, phases and tasks live in the **plan-doc** (`docs/plans/PPP-plan.md`, living). Use this only when a session needs a breakdown that is not covered by the plan-doc.
+> What it is: an internal phases/tasks breakdown for sessions that need their own desglose. **Optional artifact** — in the PLAN flow, phases and tasks live in the **plan-doc** (`docs/plans/PPP-plan.md`, living). Use this only when a session needs a breakdown that is not covered by the plan-doc.
 
 ## Phases
 Grouping phases. Phases should have a complexity between XS and S.

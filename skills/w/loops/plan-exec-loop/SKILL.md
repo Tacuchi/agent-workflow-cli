@@ -5,7 +5,7 @@ description: >-
   doc: lo lee y actualiza fase a fase mientras edita el código real, gestiona BD
   y git. Heir del chasis spec-refine-loop: reusa su motor gap-driven (aplicado
   dentro de una tarea ante decisiones/dudas no obvias), research inline con
-  regla BD read-only, AskUserQuestion con ≤3 tabs de contenido + 1 tab flow
+  regla BD read-only, structured-choice con ≤3 preguntas de contenido + 1 control flow
   (Compactar/Cerrar) siempre, y artefactos como log vivo (CHECKPOINT siempre,
   BACKLOG solo si difiere). Sus deltas: una sola session por run (resume vía
   checkbox del plan-doc + CHECKPOINT); git seguro (verifica rama esperada antes
@@ -20,10 +20,10 @@ description: >-
 
 # plan-exec-loop
 
-> **Heir** del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md). Aquí los **deltas de ejecución** — el trabajo real: código, BD, git. El motor (gap-driven, research inline, AskUserQuestion + tab `flow`, compact/resume, artefactos como log vivo) vive en el chasis.
+> **Heir** del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md). Aquí los **deltas de ejecución** — el trabajo real: código, BD, git. El motor (gap-driven, research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo) vive en el chasis.
 
 ## Flow
-PLANIFICATION
+PLAN
 
 ## Layer
 2 — la IA lo corre entero.
@@ -32,7 +32,7 @@ PLANIFICATION
 `/w:plan-exec` — **reanudable** (mismo mecanismo del chasis; aquí el resume keya off el checkbox del plan-doc + CHECKPOINT, ver Delta 1).
 
 ## Reads
-`docs/plans/PPP-plan-<slug>.md` (localizar vía glob `docs/plans/PPP-plan-*.md` o la ruta exacta de `$ARGUMENTS`).
+`docs/plans/PPP-plan-<slug>.md` (localizar vía glob `docs/plans/PPP-plan-*.md` o la ruta exacta del argumento del comando).
 
 ## Writes
 - `docs/plans/PPP-plan-<slug>.md` (**read/update**, living doc: estado de fases/tareas, `Open questions`).
@@ -48,8 +48,8 @@ Este loop **nunca gradúa/promueve artefactos** a `docs/`. Las únicas carpetas 
 
 Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 
-- Motor **gap-driven** (aplica *dentro de una tarea* ante una decisión/duda no obvia: research inline ó AskUserQuestion).
-- **AskUserQuestion**: ≤3 contenido + 1 `flow` (`Compactar`/`Cerrar`) siempre.
+- Motor **gap-driven** (aplica *dentro de una tarea* ante una decisión/duda no obvia: research inline ó structured-choice).
+- **Structured-choice**: ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`).
 - **Research INLINE** + **regla BD** read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only) + research **inconclusa** (degrada/difiere, límite `MAX`).
 - **Compact/resume**; **artefactos como log vivo** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
 
@@ -95,10 +95,12 @@ Distinción por **ejecución**, no por archivo (ver el esquema `SCRIPTS.sql`):
 - Validación que **corre y falla** → vuelve a la tarea (gap); no avanza.
 - **Validación dependiente de una migración no aplicada**: como la IA no ejecuta el DML, **no puede correr read-only** → se **difiere** (handoff a DBA), **no bloquea el avance**. Se registra en `Open questions` del plan + `BACKLOG`, marcando "verificación pendiente tras aplicar SQL". (Reusa el patrón degradar/diferir + límite `MAX` del chasis → evita el bucle "vuelve a la tarea".)
 
+> La **validación final** es el **convergence gate** de PLAN-exec (análogo al *analyze gate* de SPEC y al *coherence gate* de `plan-new`): el plan no se marca *done* hasta que pasa o queda explícitamente diferida (handoff de SQL).
+
 ## Delta 5 — Completitud / cierre
 
 - Una fase cierra **done** cuando sus tareas están `- [x]` y su validación pasó **o** quedó diferida (handoff de SQL). Estado posible: **"done — SQL pendiente de aplicar"**.
-- Todas las fases done → `AskUserQuestion` final (contenido: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`).
+- Todas las fases done → *structured-choice* final (contenido: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`).
 - **Sin export automático**: los artefactos (`SCRIPTS.sql`, `DECISION`, …) quedan en la session. Promoverlos a `docs/` (scripts, manuals, …) es un paso aparte vía `export-*`.
 
 ## Sequence
@@ -120,7 +122,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
         si consulta BD read-only → SCRIPTS.sql + ejecutar read-only
         si cambio BD (DDL/DML) → redactar en SCRIPTS.sql (artefacto session, NO ejecutar)
         si decisión no obvia → DECISION (etiquetado por fase/tarea, en el ÚNICO DECISION)
-        si duda/gap → research inline ó AskUserQuestion    # chasis
+        si duda/gap → research inline ó structured-choice    # chasis
       marcar Task - [x] + estado EN EL PLAN                # DESPUÉS de completar la Task (el plan-doc es la fuente de verdad por tarea)
     validación de la fase:
         la que corre y falla → volver a la tarea
@@ -130,7 +132,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
         si rechazado → cambios quedan; registrar "fase sin commitear"
     precondición siguiente fase: working tree limpio o reconocido
   validación final (lo que se pueda; lo dependiente de SQL queda como handoff)
-  AskUserQuestion(contenido: [Marcar plan done, Preguntar algo más], flow: [Compactar, Cerrar])
+  structured_choice(contenido: [Marcar plan done, Preguntar algo más], flow: [Compactar, Cerrar])
   marcar plan done (o "done — SQL pendiente de aplicar")
   # NO export: los artefactos quedan en la session; un export-* los promueve aparte
 finalize: CHECKPOINT (+ BACKLOG si difiere) + cerrar session + reportar
@@ -153,11 +155,11 @@ flowchart TD
     CM -->|aprobado| P
     CM -->|rechazado| RJ["cambios quedan · registrar 'sin commitear'"]
     RJ --> P
-    V2 --> FIN["AskUserQuestion[Marcar plan done · Preguntar más]<br/>plan done (sin auto-export)"]
+    V2 --> FIN["structured-choice[Marcar plan done · Preguntar más]<br/>plan done (sin auto-export)"]
 ```
 
 ## Convergence / exit
 
 - Plan completo + validación OK (o diferida con handoff) → `Marcar plan done`.
-- `Cerrar` (tab flow, en cualquier momento) → `finalize` persiste `CHECKPOINT` (y `BACKLOG` solo si quedó algo sin ejecutar / sin commitear / sin aplicar), cierra la session, reporta.
+- `Cerrar` (control `flow`, en cualquier momento) → `finalize` persiste `CHECKPOINT` (y `BACKLOG` solo si quedó algo sin ejecutar / sin commitear / sin aplicar), cierra la session, reporta.
 - La promoción de artefactos a `docs/` (vía `export-*`) es **siempre** un paso posterior y explícito, fuera de este loop.

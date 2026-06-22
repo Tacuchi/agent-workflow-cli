@@ -4,8 +4,8 @@ description: >-
   El atajo liviano de agent-workflow: resuelve una tarea acotada (un fix, un
   ajuste pequeño) directamente desde el prompt del usuario, editando código con
   ceremonia mínima. Heir del chasis spec-refine-loop (motor gap-driven mínimo,
-  research INLINE con regla BD read-only, AskUserQuestion con ≤3 tabs de
-  contenido + 1 tab flow Compactar/Cerrar siempre, compact/resume con artefactos
+  research INLINE con regla BD read-only, structured-choice con ≤3 preguntas de
+  contenido + 1 control flow Compactar/Cerrar siempre, compact/resume con artefactos
   como log vivo: CHECKPOINT siempre, BACKLOG solo si difiere) y de plan-exec-loop
   (git seguro: rama esperada antes de editar + commit propuesto, nunca
   push/--amend/--no-verify; la IA nunca ejecuta DML, migraciones a SCRIPTS.sql;
@@ -43,7 +43,7 @@ QUICK
 
 ## Inherits
 
-- del **chasis** [`spec-refine-loop`](../spec-refine-loop/SKILL.md): gap-driven (mínimo), `AskUserQuestion` ≤3 + `flow` (`Compactar`/`Cerrar`), `research` **inline** + regla BD read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only), compact/resume, **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+- del **chasis** [`spec-refine-loop`](../spec-refine-loop/SKILL.md): gap-driven (mínimo), *structured-choice* ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`), `research` **inline** + regla BD read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only), compact/resume, **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
 - de [`plan-exec-loop`](../plan-exec-loop/SKILL.md): **git** (rama segura antes de editar + commit propuesto; nunca `push`/`--amend`/`--no-verify`), **BD** (la IA nunca ejecuta DML; migraciones → `SCRIPTS.sql` de la session), **sin auto-export** (no toca otras carpetas `docs/`).
 
 ## Composes
@@ -72,19 +72,19 @@ quick-loop(prompt):
     si consulta BD read-only → SCRIPTS.sql + ejecutar read-only
     si cambio BD (DDL/DML) → SCRIPTS.sql (artefacto session, NO ejecutar)
     si decisión no obvia → DECISION
-    si duda/gap → research inline ó AskUserQuestion         # chasis
+    si duda/gap → research inline ó structured-choice         # chasis
     si la tarea CRECE → proponer escalar a SPEC/PLAN
         si acepta → handoff (código queda; BACKLOG→spec/plan sembrado) → goto finalize
   validación puntual (test si aplica)
   proponer commit (aprobar antes)                            # nunca push/amend/--no-verify
-  AskUserQuestion(contenido: [Cerrar tarea, Preguntar algo más], flow: [Compactar, Cerrar])
+  structured_choice(contenido: [Cerrar tarea, Preguntar algo más], flow: [Compactar, Cerrar])
 finalize: CHECKPOINT (DESPUÉS: Pending→Completed) + BACKLOG (solo si queda algo diferido) + cerrar session + reportar
 ```
 
 ```mermaid
 flowchart TD
     S["create_or_resume session NNN-&lt;slug&gt;-quick"] --> G["branch-check por fuente"]
-    G -->|ok| DO["editar código · BD→SCRIPTS.sql · DECISION<br/>(duda→research inline/AskUserQuestion)"]
+    G -->|ok| DO["editar código · BD→SCRIPTS.sql · DECISION<br/>(duda→research inline/structured-choice)"]
     G -->|rama ≠| PA["pausar + resolver"]
     PA --> G
     DO --> GROW{"¿la tarea creció?"}
@@ -92,12 +92,14 @@ flowchart TD
     ESC --> FIN
     GROW -->|no| V["validación puntual"]
     V --> CM["proponer commit (aprobar)"]
-    CM --> Q["AskUserQuestion[Cerrar · Preguntar más]<br/>flow[Compactar · Cerrar]"]
+    CM --> Q["structured-choice[Cerrar · Preguntar más]<br/>flow[Compactar · Cerrar]"]
     Q --> FIN["finalize: CHECKPOINT + BACKLOG + cerrar"]
 ```
 
 ## Convergence / exit
 
 - Tarea hecha + commit (o aprobado saltarlo) → `Cerrar`.
-- `Cerrar`/`Compactar` (tab flow) → persiste `CHECKPOINT` + `BACKLOG` (reanudable).
+- `Cerrar`/`Compactar` (control `flow`) → persiste `CHECKPOINT` + `BACKLOG` (reanudable).
 - **Sin export**: nada va a `docs/`. Si algo amerita preservarse → se promueve aparte vía `export-*`, o se escala a SPEC/PLAN.
+
+> La **validación puntual** es el *convergence gate* de QUICK: la **excepción deliberada lightweight** del chasis (sin checklist formal) — se reduce a "¿el cambio hace lo que pedía el prompt? (test si aplica)". Mínima ceremonia por diseño.

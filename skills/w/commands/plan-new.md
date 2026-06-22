@@ -12,7 +12,7 @@ allowed-tools:
 
 # plan-new — trampolín al loop de planificación
 
-Puente SPEC → PLANIFICATION. Convierte el "qué" (spec refinado) en el "cómo" (plan). Delega a `plan-new-loop` (Layer 2).
+Puente SPEC → PLAN. Convierte el "qué" (spec refinado) en el "cómo" (plan). Delega a `plan-new-loop` (Layer 2).
 
 ## Resolución de input
 

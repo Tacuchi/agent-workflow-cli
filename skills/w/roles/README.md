@@ -12,7 +12,7 @@ All 10 roles, their built-in defaults, their tier, and which loops/exports compo
 
 | Role | Default built-in | Tier | Composed by |
 |---|---|---|---|
-| `ui-design` | [`ui-spec`](../ui-spec/SKILL.md) | must | `spec-refine-loop` (when requirement involves UI) |
+| `ui-design` | [`ui-spec`](ui-spec/SKILL.md) | must | `spec-refine-loop` (when requirement involves UI) |
 | `sql` | `sql` | must | inline research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `coding-standards` | `coding-standards` | must | `plan-exec-loop` · `quick-loop` |

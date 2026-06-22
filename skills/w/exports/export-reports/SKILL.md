@@ -57,7 +57,7 @@ En plan mode **describe**, no escribe: la audiencia/longitud resuelta, las sesio
 
 - `docs/specs`, `docs/plans`, `docs/reports/*` — contexto + no colisionar.
 
-**Args** (sin lifecycle `AskUserQuestion`):
+**Args** (sin *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 
 ```
 /w:export-reports [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]

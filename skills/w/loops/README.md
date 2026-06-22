@@ -14,18 +14,18 @@ Propiedades comunes a **los 4 loops**:
 
 1. **Gap-driven convergente** — cada ciclo: `detect_gaps` → resolver (humano o research) → integrar → repetir hasta que no queden gaps materiales. Los gaps "agotados" (límite `MAX` de intentos) no se re-disparan → garantiza convergencia.
 2. **Una sola session por run + research inline** — el loop crea **una** session en `.workflow/sessions/` (la dueña del run) y maneja **sus** artefactos. La **investigación es inline**: una actividad dentro de esa misma session que escribe `ANALYSIS-FILE`/`CONCLUSIONS` (+ `SCRIPTS.sql` read-only si consulta BD) en su propia carpeta — ya no es una session aparte. **El usuario nunca crea sessions.** Los artefactos son el **registro vivo** del run — **ciclo artifact-first**: sembrar `CHECKPOINT.Pending/Next` (la intención) antes de ejecutar, llevar a `Completed`/DECISION después; CHECKPOINT actualizado en cada límite de gap/fase, BACKLOG solo si difiere. El spec/plan es la base guía.
-3. **AskUserQuestion con dos tipos de tab** (límite host: 4 preguntas/llamada):
-   - **tab(s) de contenido** (≤3) — la(s) pregunta(s) real(es) del momento (resolver una duda, elegir MCP, o en convergencia: `Guardar` / `Preguntar algo más`).
-   - **tab `flow`** (1, SIEMPRE presente) — control de ciclo de vida por un canal lateral. Así el contenido lo maneja la IA y el ciclo de vida lo dirige el humano.
+3. **Structured-choice con dos planos** (capacidad del arnés — ver [`../harness/SKILL.md`](../harness/SKILL.md); en **Claude Code** es `AskUserQuestion`, máx 4 preguntas/llamada → **≤3 + 1 control `flow`**; sin elección estructurada degrada a markdown numerado):
+   - **pregunta(s) de contenido** (≤3) — la(s) pregunta(s) real(es) del momento (resolver una duda, elegir MCP, o en convergencia: `Guardar` / `Preguntar algo más`).
+   - **control `flow`** (1, SIEMPRE presente) — control de ciclo de vida por un canal lateral. Así el contenido lo maneja la IA y el ciclo de vida lo dirige el humano.
 4. **Escribe solo en su propia carpeta `docs/`** — y **nunca** gradúa/exporta otros artefactos a `docs/`. Esa promoción la hacen las skills `export-*`, aparte y explícita.
 
-## flow tab — options
+## flow control — options
 
-El tab `flow` es **fijo**: `Compactar` / `Cerrar`, presente en los 4 loops. Responder el tab de contenido **sin tocar `flow`** = seguir iterando ("continuar" es el comportamiento por defecto del loop, no una opción del canal de control).
+El control `flow` es **fijo**: `Compactar` / `Cerrar`, presente en los 4 loops. Responder la pregunta de contenido **sin tocar `flow`** = seguir iterando ("continuar" es el comportamiento por defecto del loop, no una opción del canal de control).
 
 | Option | What it does |
 |---|---|
-| `Compactar` | Escribe `CHECKPOINT` (session dueña del run) + dispara `/compact` del host y reanuda sin perder el hilo. |
+| `Compactar` | Escribe `CHECKPOINT` (session dueña del run) + dispara la **compactación** del arnés (en Claude Code: `/compact`; ver [`../harness/SKILL.md`](../harness/SKILL.md)) y reanuda sin perder el hilo. |
 | `Cerrar` | `finalize`: persiste lo pendiente (`CHECKPOINT` siempre; `BACKLOG` solo si hay algo diferido), cierra la session y termina el loop. |
 
 ## Loops and their flow
@@ -33,8 +33,8 @@ El tab `flow` es **fijo**: `Compactar` / `Cerrar`, presente en los 4 loops. Resp
 | Loop (`name:`) | Flow | Started by | Reads | Writes |
 |---|---|---|---|---|
 | [`spec-refine-loop`](spec-refine-loop/SKILL.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec*.md` (el spec mismo) | `docs/specs/NNN-spec-<slug>.md` (in place) |
-| [`plan-new-loop`](plan-new-loop/SKILL.md) | PLANIFICATION | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md` |
-| [`plan-exec-loop`](plan-exec-loop/SKILL.md) | PLANIFICATION | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update) + `docs/tools`; resto vía `export-*` |
+| [`plan-new-loop`](plan-new-loop/SKILL.md) | PLAN | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md` |
+| [`plan-exec-loop`](plan-exec-loop/SKILL.md) | PLAN | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update) + `docs/tools`; resto vía `export-*` |
 | [`quick-loop`](quick-loop/SKILL.md) | QUICK | `/w:quick` | — (prompt) | edita código + session ligera; **no** `docs/` |
 
 > `/w:spec-new` no tiene loop (es single-pass). Por eso hay **5 comandos / 4 loops**.
@@ -46,14 +46,14 @@ Los loops **nunca** graduan/exportan artefactos a `docs/` automáticamente. Cada
 | Flow | Carpetas `docs/` que escribe |
 |---|---|
 | SPEC | `docs/specs` |
-| PLANIFICATION | `docs/plans` (living) + `docs/tools` (herramientas creadas — salida directa) |
+| PLAN | `docs/plans` (living) + `docs/tools` (herramientas creadas — salida directa) |
 | QUICK | ninguna |
 
 Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, diagramas → `docs/diagrams`, informes → `docs/reports`) queda como **artefacto de session** hasta que un `export-*` lo promueva, como paso aparte y explícito.
 
-## Loops × flow tab
+## Loops × flow control
 
-| Loop | tab(s) de contenido típicos | tab `flow` |
+| Loop | pregunta(s) de contenido típicas | control `flow` |
 |---|---|---|
 | `spec-refine-loop` | dudas-de-humano · elección de MCP · convergencia (`Guardar especificación refinada` / `Preguntar algo más`) | `Compactar` / `Cerrar` |
 | `plan-new-loop` | dudas · elección de MCP · convergencia (`Guardar plan` / `Preguntar algo más`) | `Compactar` / `Cerrar` |
@@ -64,7 +64,7 @@ Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, dia
 
 | Field | Description |
 |---|---|
-| `## Flow` | A qué flujo pertenece (SPEC · PLANIFICATION · QUICK) |
+| `## Flow` | A qué flujo pertenece (SPEC · PLAN · QUICK) |
 | `## Layer` | Siempre 2 (la IA lo corre entero) |
 | `## Started by` | Comando `/w:…` que lo arranca (reanudable) |
 | `## Reads` | Documento(s) de entrada |
@@ -73,7 +73,7 @@ Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, dia
 | `## Sequence` | Pseudocódigo + mermaid del loop |
 | `## Convergence / exit` | Cuándo para |
 
-El **chasis** (`spec-refine-loop`) además detalla `## Composes` (capacidades que compone), `## Deliverable schema`, `## Gap taxonomy`, `## Ask-vs-research rule`, `## Research: autonomy, scope & failure`, `## AskUserQuestion`, `## Compact / resume`, `## Integration`.
+El **chasis** (`spec-refine-loop`) además detalla `## Composes` (capacidades que compone), `## Deliverable schema`, `## Gap taxonomy`, `## Ask-vs-research rule`, `## Research: autonomy, scope & failure`, `## Structured-choice`, `## Compact / resume`, `## Integration`.
 
 Los **heirs** (`plan-new-loop`, `plan-exec-loop`, `quick-loop`) usan `## Inherits` (lo que reusan del chasis, sin repetirlo) + `## Delta N` (sus diferencias).
 
@@ -81,7 +81,7 @@ Los **heirs** (`plan-new-loop`, `plan-exec-loop`, `quick-loop`) usan `## Inherit
 
 ```
 spec-refine-loop  ── CHASIS (patrón de referencia: motor gap-driven, sesión única,
-        │            AskUserQuestion + tab flow, research autónomo INLINE + regla BD,
+        │            structured-choice + control flow, research autónomo INLINE + regla BD,
         │            compact/resume, artefactos como log vivo: CHECKPOINT siempre,
         │            BACKLOG solo si difiere)
         ├── plan-new-loop   (heir)  → deltas: plan rico, gap taxonomy de plan

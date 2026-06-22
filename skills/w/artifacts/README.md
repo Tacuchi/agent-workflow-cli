@@ -1,6 +1,6 @@
 # workflow-artifacts — Artifact catalog (Layer 3)
 
-> Reference for the **new agent-workflow model**. This folder contains the **artifact templates**: process files managed by **sessions** inside `.workflow/sessions/`.
+> Reference for the agent-workflow model (current, deployed). This folder contains the **artifact templates**: process files managed by **sessions** inside `.workflow/sessions/`.
 > Siblings: [`../commands/`](../commands/) (Layer 1) · [`../loops/`](../loops/) (Layer 2) · [`../roles/`](../roles/) (pluggable skills).
 
 ---
@@ -49,7 +49,7 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 |---|---|---|
 | [`artifacts-core/`](artifacts-core/) | common to any session | `SESSION` · `TASKS` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` |
 | [`artifacts-research/`](artifacts-research/) | inline research (any session) | `ANALYSIS-FILE` · `CONCLUSIONS` |
-| [`artifacts-dev/`](artifacts-dev/) | `exec` session | `DECISION` · `TECHNICAL-NOTE` |
+| [`artifacts-exec/`](artifacts-exec/) | `exec` / `quick` session | `DECISION` · `TECHNICAL-NOTE` (schema reference; absorbed by the plan-doc) |
 
 ---
 

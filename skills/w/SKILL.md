@@ -74,6 +74,7 @@ Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` →
 - `/w:plan-exec` — arranca `plan-exec-loop` para ejecutar y mantener el plan.
 - `/w:quick` — arranca `quick-loop` (atajo, sin `docs/`).
 - `/w:status` — dashboard read-only del workspace (Hecho/Falta/Descartó, con fechas en español). Transversal: no es un flow, no escribe nada; se apoya en `aw status`.
+- `/w:fix-git` — resuelve conflictos de un merge en curso en cualquier repo (identifica origen↔destino, analiza intención, *structured-choice* ante ambigüedad). Transversal: no es flow, no crea session, no toca `docs/`; git-safe; se apoya en `aw merge-state`.
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promueven artefactos a `docs/`.
 
 ### The loops (Layer 2)
@@ -82,12 +83,14 @@ Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable. P
 
 1. **Gap-driven convergente** — cada ciclo: detecta huecos → resuelve (pregunta al humano o investiga) → integra → repite hasta converger.
 2. **Una sola session por run + research inline** — el loop crea **una** session (la dueña del run) y maneja sus artefactos en `.workflow/sessions/`. La **investigación es inline**: una actividad dentro de esa misma session (escribe `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only si consulta BD), no una session aparte. El usuario nunca crea sessions. Los artefactos son el **registro vivo** del run, **ciclo artifact-first** (sembrar `Pending`/`Next` antes de ejecutar, llevar a `Completed` después); la base guía es el spec/plan.
-3. **AskUserQuestion con dos tipos de tab**:
-   - **tab(s) de contenido** — la pregunta real del momento.
-   - **tab `flow`** — control de ciclo de vida, **siempre presente**: `Compactar` / `Cerrar`. Responder el tab de contenido sin tocar `flow` = seguir iterando.
+3. **Structured-choice con dos tipos de pregunta** — *structured-choice* (capacidad del arnés — ver `harness/SKILL.md`). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**.
+   - **pregunta(s) de contenido** — la pregunta real del momento.
+   - **control `flow`** — control de ciclo de vida, **siempre presente**: `Compactar` / `Cerrar`. Responder la pregunta de contenido sin tocar `flow` = seguir iterando.
 4. **Escribe solo en su carpeta `docs/`** — y nunca exporta el resto (eso es de `export-*`).
 
-`flow → Compactar` = checkpoint + `/compact` del host y reanuda. `flow → Cerrar` = persiste `CHECKPOINT` (siempre) + `BACKLOG` (solo si difiere), cierra la session, termina.
+`flow → Compactar` = checkpoint + la **compactación** del arnés (en Claude Code: `/compact`; ver `harness/SKILL.md`) y reanuda. `flow → Cerrar` = persiste `CHECKPOINT` (siempre) + `BACKLOG` (solo si difiere), cierra la session, termina.
+
+Cada loop tiene un **convergence gate** read-only antes de ofrecer `Guardar`/`done`: chequea invariantes propios del entregable y lo que falle vuelve como gap (en `spec-refine-loop` es el *analyze gate*; en `plan-new-loop`, la coherencia del plan; en `plan-exec-loop`, la validación final; en `quick-loop`, una validación puntual lightweight). El detalle vive en cada loop.
 
 `spec-new` no tiene loop (single-pass): **5 comandos / 4 loops**.
 
@@ -136,6 +139,18 @@ Catálogo de roles y su default:
 
 El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
 
+### Harness (agnóstico al arnés)
+
+La doctrina nombra **capacidades** abstractas, no tools concretos de un arnés. Un solo doc —`harness/SKILL.md`— liga cada capacidad al mecanismo de cada arnés (Claude Code, Codex, opencode, Gemini, genérico). Dos principios: **capacidad-no-tool** (los loops/comandos referencian la capacidad por nombre) y **progressive-enhancement** (usar el mecanismo más rico del arnés; degradar a un fallback universal cuando no exista).
+
+Capacidades clave:
+
+- **structured-choice** — preguntar al humano ≤3 preguntas de contenido + 1 control `flow`. Claude Code: `AskUserQuestion`. Fallback: markdown numerado.
+- **compaction** — encoger el contexto sin perder el hilo. Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
+- **command-invocation** · **procedure-loading** · **subagent-dispatch** (opt.) · **persistent-context** · **external-data** (MCP) · **dry-run/preview**.
+
+Las únicas `must` para el ciclo de un loop son **structured-choice** y **compaction**, y ambas degradan a texto → cualquier arnés con chat + archivos corre el modelo completo. Detalle, matriz de binding y distribución (`AGENTS.md` canónico + symlink `CLAUDE.md`): ver `harness/SKILL.md`.
+
 ### The 6 hard invariants
 
 1. **Sin auto-export** — los loops nunca graduan/exportan a `docs/`. Solo `export-*` lo hace, explícito.
@@ -143,7 +158,7 @@ El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
 3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión.
 4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
 5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.
-6. **Chasis de loops** — gap-driven convergente · una sola session por run (research inline) · `AskUserQuestion` con ≤3 tabs de contenido + 1 tab `flow` (`Compactar`/`Cerrar`) siempre · compact/resume · artefactos como log vivo **artifact-first** (sembrar `Pending`/`Next` antes, `Completed` después; `CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+6. **Chasis de loops** — gap-driven convergente · una sola session por run (research inline) · **structured-choice** con ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre · compactación/resume · convergence gate read-only antes de cerrar · artefactos como log vivo **artifact-first** (sembrar `Pending`/`Next` antes, `Completed` después; `CHECKPOINT` siempre; `BACKLOG` solo si difiere).
 
 ## Output
 
@@ -151,4 +166,4 @@ Ninguno. Es orientación pura: no escribe documentos ni artefactos.
 
 ## Source
 
-Autorada del modelo de diseño (`docs/referencias/`): README de arquitectura (3 capas + 6 invariantes), `workflow-commands/`, `workflow-loops/`, `workflow-exports/`, `workflow-skills/`. Reemplaza la orientación del bundle viejo (`session` + flows dev/design/analyze, CLI v11), que se descarta.
+Autorada del modelo de diseño (`docs/referencias/`): README de arquitectura (3 capas + 6 invariantes), `workflow-commands/`, `workflow-loops/`, `workflow-artifacts/`, `workflow-exports/`, `workflow-skills/`, `workflow-harness/`. Modelo actual, desplegado. (Compat: reemplaza la orientación del bundle legacy `session` + flows dev/design/analyze.)

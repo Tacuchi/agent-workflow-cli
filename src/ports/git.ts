@@ -30,4 +30,9 @@ export interface GitPort {
   isMerging(repoPath: string): Promise<boolean>;
   /** Unmerged paths: `git diff --name-only --diff-filter=U`. */
   conflictedFiles(repoPath: string): Promise<string[]>;
+  /**
+   * Branch name being merged in (theirs), via `git name-rev` on MERGE_HEAD.
+   * Undefined when not mid-merge or the commit can't be named to a ref.
+   */
+  mergeOrigin(repoPath: string): Promise<string | undefined>;
 }

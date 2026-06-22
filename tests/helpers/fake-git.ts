@@ -29,6 +29,12 @@ export interface RecordingGitOptions {
   dirty?: boolean;
   /** Git op name (`checkout`/`pull`/`push`/`merge`) that throws when invoked. */
   throwOn?: "checkout" | "pull" | "push" | "merge";
+  /** Start mid-merge (MERGE_HEAD present) without calling `merge()` first. */
+  merging?: boolean;
+  /** Conflicted files returned by `conflictedFiles()` while mid-merge. */
+  conflicted?: string[];
+  /** Incoming (theirs) branch name returned by `mergeOrigin()` while mid-merge. */
+  mergeOrigin?: string;
 }
 
 /**
@@ -39,14 +45,16 @@ export interface RecordingGitOptions {
 export class RecordingGit implements GitPort {
   public readonly calls: GitCall[] = [];
   private branch: string;
-  private merging = false;
-  private pendingConflict: string[] = [];
+  private merging: boolean;
+  private pendingConflict: string[];
   private readonly conflicts: Record<string, string[]>;
   private readonly seenConflict = new Set<string>();
 
   constructor(private readonly opts: RecordingGitOptions = {}) {
     this.branch = opts.currentBranch ?? "main";
     this.conflicts = opts.conflicts ?? {};
+    this.merging = opts.merging ?? false;
+    this.pendingConflict = opts.conflicted ?? [];
   }
 
   async isGitRepo(_repo: string): Promise<boolean> {
@@ -122,6 +130,11 @@ export class RecordingGit implements GitPort {
   async conflictedFiles(repo: string): Promise<string[]> {
     this.calls.push({ op: "conflictedFiles", repo });
     return this.pendingConflict;
+  }
+
+  async mergeOrigin(repo: string): Promise<string | undefined> {
+    this.calls.push({ op: "mergeOrigin", repo });
+    return this.merging ? this.opts.mergeOrigin : undefined;
   }
 
   /** Helper for tests that drive resume: clear the mid-merge state. */

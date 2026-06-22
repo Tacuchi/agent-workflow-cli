@@ -33,6 +33,7 @@ ZONE docs/ — permanent, user-facing deliverables
 | [`loops/`](loops/) | 2 | The 4 loops (chassis `spec-refine-loop` + heirs) the AI runs |
 | [`exports/`](exports/) | 1 | The `export-*` family — the only artifact→`docs/` promotion path |
 | [`roles/`](roles/) | cross-cutting | Pluggable capability skills (built-in defaults; rebindable via `.workflow/skills.toml`) |
+| [`harness/`](harness/SKILL.md) | cross-cutting | Capability→harness-mechanism binding (agnostic across Claude Code / Codex / opencode / Gemini) |
 | [`artifacts/`](artifacts/) | 3 | Session artifact templates the loops manage |
 | [`hooks/`](hooks/) | — | Host hook template (branch-check, sql-mutation-guard, checkpoint, …) |
 | [`SKILL.md`](SKILL.md) | overview | The `workflow` orientation skill (whole-model guide) |
@@ -42,10 +43,12 @@ ZONE docs/ — permanent, user-facing deliverables
 | Flow | Commands | `docs/` owned | Loops |
 |---|---|---|---|
 | **SPEC** | `spec-new` *(single-pass)* · `spec-refine` | `docs/specs` | `spec-refine-loop` |
-| **PLANIFICATION** | `plan-new` · `plan-exec` | `docs/plans` · `docs/tools` | `plan-new-loop` · `plan-exec-loop` |
+| **PLAN** | `plan-new` · `plan-exec` | `docs/plans` · `docs/tools` | `plan-new-loop` · `plan-exec-loop` |
 | **QUICK** | `quick` | — | `quick-loop` |
 
 SPEC defines the **what** → PLAN the **how** and executes it → QUICK is the lightweight shortcut. Promotion to `docs/` (scripts/manuals/diagrams/reports) is **always** a separate step via `export-*`.
+
+> **Transversal commands** (no flow, not counted in 5/4): `/w:status` (read-only workspace dashboard) · `/w:fix-git` (resolve an in-progress merge conflict, git-safe — works on any repo). Setup: `/w:workspace-init`.
 
 ## Bootstrap
 
@@ -58,7 +61,7 @@ Run [`/w:workspace-init`](commands/workspace-init.md) once to turn a folder into
 3. **spec & plan are documents** (`docs/`), not artifacts.
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations land in `SCRIPTS.sql` and ship via `export-scripts`; reads are read-only via MCP.
 5. **Git-safe** — verify the expected branch before editing; propose commits per source; never `push`/`--amend`/`--no-verify`.
-6. **All loops** — gap-driven convergent; one session per run (research inline); `AskUserQuestion` with ≤3 content tabs + 1 always-present `flow` tab (`Compactar`/`Cerrar`); compact/resume; artifacts as a live log (`CHECKPOINT` always; `BACKLOG` only when deferring).
+6. **All loops** — gap-driven convergent; one session per run (research inline); **structured-choice** (capability — see [`harness/`](harness/SKILL.md); on Claude Code: `AskUserQuestion`) with ≤3 content questions + 1 always-present `flow` control (`Compactar`/`Cerrar`); a **convergence gate** before saving; compact/resume; artifacts as a live log (`CHECKPOINT` always; `BACKLOG` only when deferring).
 
 ## Pluggable capabilities
 

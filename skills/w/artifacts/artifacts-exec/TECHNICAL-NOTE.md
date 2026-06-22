@@ -1,6 +1,6 @@
 # TECHNICAL-NOTE.md — technical design note (schema reference)
 
-> **Model note:** in PLANIFICATION these sections live **inline in the plan-doc** (`docs/plans/PPP-plan.md`, rich plan), not as an exec-session artifact. This file is kept as a reference of the technical schema that the plan absorbs. Use it standalone only when the plan-doc approach does not apply (e.g. a `quick` session that needs scoped technical context).
+> **Model note:** in PLAN these sections live **inline in the plan-doc** (`docs/plans/PPP-plan.md`, rich plan, in `plan-new-loop`), not as an exec-session artifact. This file is kept **only** as a reference of the technical schema that the plan absorbs — **no `TECHNICAL-NOTE` is created in sessions**. Use it standalone only when the plan-doc approach does not apply (e.g. a `quick` session that needs scoped technical context).
 
 ## Solution
 Technical/functional explanation of how the solution will be implemented.

@@ -24,7 +24,7 @@ El discriminador clave:
 | La pregunta... | Acción |
 |---|---|
 | puede responderse leyendo repo / datos (hechos objetivos del sistema) | **investigar** |
-| depende de preferencias, prioridades o decisiones del usuario | **preguntar al humano** vía `AskUserQuestion` |
+| depende de preferencias, prioridades o decisiones del usuario | **preguntar al humano** vía *structured-choice* (capacidad del arnés — ver `../../harness/SKILL.md`). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**. |
 | está parcialmente en el repo y parcialmente en intención del usuario | investigar primero, luego preguntar solo por la parte incierta |
 
 ## Composed by
