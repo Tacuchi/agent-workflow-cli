@@ -138,8 +138,12 @@ export const icons = {
   uninstall: "×",
   clean: "⊘",
   legacy: "⚒",
-  git: "⎇",
-  branch: "⎇",
+  // NOTE: evitar el glyph "branch" U+2387. Varias fuentes de terminal (p. ej. la
+  // default de Warp, en Mac y Windows) no lo incluyen y usan un fallback de ancho 2,
+  // mientras Ink lo calcula como 1 → desalinea las columnas del tab Project (que lo
+  // usa por fila). U+21B3 (bloque Arrows) está mucho mejor soportado y mide 1 celda.
+  git: "↳",
+  branch: "↳",
   commit: "●",
   edit: "✎",
   tool: "⚙",

@@ -1,4 +1,6 @@
+import { Box } from "ink";
 import { render } from "ink-testing-library";
+import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { ProjectTab } from "../../src/cli/tui/tabs/project-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -68,6 +70,20 @@ function buildCtx(opts: { conflictOn?: string } = {}): CliContext {
   } as unknown as CliContext;
 }
 
+// Réplica del overhead horizontal del frame real (ScreenFrame + Box del tab):
+// 12 cells (2 bordes + 2×2 paddingX, por 2 boxes). Sin este frame el tab dispone
+// de más ancho que el que asume `computeRowWidth`, y el bug de interlineado NO
+// aparece — por eso los tests que renderizan el tab "pelado" nunca lo detectaron.
+function Framed({ children }: { children: ReactNode }) {
+  return (
+    <Box borderStyle="bold" paddingX={2}>
+      <Box borderStyle="single" paddingX={2}>
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
 describe("ProjectTab — navegación de sources + panel lateral de acciones", () => {
   it("renderiza las sources como lista navegable con una fila 'all sources'", async () => {
     const { lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
@@ -116,5 +132,24 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     expect(f).toContain("ACTIONS");
     expect(f).toContain("git flow"); // meta del panel: "git flow · 2 fuentes"
     expect(f).toContain("fuentes");
+  });
+
+  it("no inserta línea en blanco entre source rows con el panel cerrado (regresión interlineado)", async () => {
+    const { lastFrame } = render(
+      <Framed>
+        <ProjectTab ctx={buildCtx()} isActive />
+      </Framed>,
+    );
+    await tick();
+    const lines = (lastFrame() ?? "").split("\n");
+    // Primeras apariciones = los rows de la lista SOURCES (alpha arriba de beta).
+    const alphaIdx = lines.findIndex((l) => l.includes("alpha"));
+    const betaIdx = lines.findIndex((l) => l.includes("beta"));
+    expect(alphaIdx).toBeGreaterThanOrEqual(0);
+    expect(betaIdx).toBeGreaterThan(alphaIdx);
+    // alpha y beta son source rows consecutivos. Si el row se construye más ancho
+    // que su contenedor, Yoga lo envuelve y mete una línea extra (diff 2). Sin el
+    // bug, son adyacentes (diff 1).
+    expect(betaIdx - alphaIdx).toBe(1);
   });
 });

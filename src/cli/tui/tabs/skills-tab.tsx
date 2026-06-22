@@ -20,6 +20,7 @@ import { SectionHead } from "../components/section-head.js";
 import { WORKFLOW_CONTENT } from "../data/workflow-content.js";
 import { HOSTS, type HostMeta } from "../hosts.js";
 import { useInputLock } from "../input-lock.js";
+import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
 
 export interface SkillsTabProps {
@@ -294,39 +295,37 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
               }}
               chevron
               active={cursor === i}
-              widthHint={computeRowWidth(stdout?.columns, detailVisible)}
+              widthHint={rowWidth(stdout?.columns, detailVisible)}
             />
           ))}
         </Box>
 
         {focused && isBackedFocused && detailVisible ? (
-          <Box flexDirection="column">
-            <Text color={colors.borderFaint}>{"│"}</Text>
-            <DetailPanel
-              header={{
-                name: focused.host.name,
-                meta: `${focused.path}${
-                  focused.hooks_installed
-                    ? `\nhooks armed · SKILL + ${WORKFLOW_CONTENT.slashCommands.length} slash + ${WORKFLOW_CONTENT.hooks.length} hooks`
-                    : ""
-                }`,
-              }}
-              statePill={{
-                label: isInstalled ? "installed" : "missing",
-                tone: isInstalled ? "ok" : "dim",
-              }}
-              actions={detailActions}
-              focusedAction={actionCursor}
-              banner={
-                mode.kind === "confirm-uninstall" ? (
-                  <ConfirmBanner
-                    title={`× Uninstall ${mode.host.name}?`}
-                    body={`Removes SKILL + commands + hooks from ${friendlyPath(mode.host, ctx.env.homeDir())}. Reversible with Reinstall.`}
-                  />
-                ) : null
-              }
-            />
-          </Box>
+          <DetailPanel
+            bordered
+            header={{
+              name: focused.host.name,
+              meta: `${focused.path}${
+                focused.hooks_installed
+                  ? `\nhooks armed · SKILL + ${WORKFLOW_CONTENT.slashCommands.length} slash + ${WORKFLOW_CONTENT.hooks.length} hooks`
+                  : ""
+              }`,
+            }}
+            statePill={{
+              label: isInstalled ? "installed" : "missing",
+              tone: isInstalled ? "ok" : "dim",
+            }}
+            actions={detailActions}
+            focusedAction={actionCursor}
+            banner={
+              mode.kind === "confirm-uninstall" ? (
+                <ConfirmBanner
+                  title={`× Uninstall ${mode.host.name}?`}
+                  body={`Removes SKILL + commands + hooks from ${friendlyPath(mode.host, ctx.env.homeDir())}. Reversible with Reinstall.`}
+                />
+              ) : null
+            }
+          />
         ) : null}
       </Box>
 
@@ -345,14 +344,6 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       ) : null}
     </Box>
   );
-}
-
-function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
-  const cols = termCols ?? 100;
-  // ScreenFrame (6) + tab content border+padding (6) + list paddingRight (2) = 14 cols.
-  const baseOverhead = 14;
-  const detailOverhead = detailOpen ? 39 : 0;
-  return Math.max(16, cols - baseOverhead - detailOverhead);
 }
 
 function subSkillsTotal(): number {

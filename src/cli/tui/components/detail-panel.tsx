@@ -37,9 +37,24 @@ export interface DetailPanelProps {
   footer?: DetailFooterEntry[];
   /** If present, the actions block is replaced by this banner (e.g. ConfirmBanner). */
   banner?: ReactNode;
+  /**
+   * Dibuja un marco (borde redondeado) alrededor del panel. El marco se suma por
+   * FUERA del ancho de contenido (no lo achica), así los cálculos internos no cambian;
+   * la fila del tab lo contempla vía {@link DETAIL_PANEL_ROW_OVERHEAD}.
+   */
+  bordered?: boolean;
 }
 
 const DEFAULT_WIDTH = 38;
+/** Celdas que agrega el marco (1 por lado) cuando `bordered`. */
+const BORDER_WIDTH = 2;
+/**
+ * Ancho que ocupa el panel en la fila del tab cuando está abierto: contenido +
+ * marco + 1 de gap respecto de la lista. Lo consume `rowWidth()` para que la lista
+ * no se solape con el panel. Vive acá, junto al ancho real del panel, para que no
+ * se desincronicen (si cambia el ancho/marco, el overhead lo sigue).
+ */
+export const DETAIL_PANEL_ROW_OVERHEAD = DEFAULT_WIDTH + BORDER_WIDTH + 1;
 const DEFAULT_FOOTER: DetailFooterEntry[] = [
   { key: "⏎", label: "apply" },
   { key: "↑↓", label: "action" },
@@ -78,9 +93,18 @@ export function DetailPanel({
   focusedAction,
   footer = DEFAULT_FOOTER,
   banner,
+  bordered = false,
 }: DetailPanelProps) {
+  // El marco se suma por fuera (outerWidth = width + marco) para no achicar el
+  // contenido: los cálculos internos (separador, action rows) siguen usando `width`.
   return (
-    <Box flexDirection="column" width={width} paddingLeft={1}>
+    <Box
+      flexDirection="column"
+      width={bordered ? width + BORDER_WIDTH : width}
+      paddingLeft={1}
+      borderStyle={bordered ? "round" : undefined}
+      borderColor={bordered ? colors.border : undefined}
+    >
       <Box flexDirection="row">
         {header.glyph ? (
           <>

@@ -26,6 +26,7 @@ import { SectionHead } from "../components/section-head.js";
 import { StatTile } from "../components/stat-tile.js";
 import { WorkspaceInitForm } from "../components/workspace-init-form.js";
 import { useInputLock } from "../input-lock.js";
+import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
 
 export interface ProjectTabProps {
@@ -226,16 +227,14 @@ type Mode =
   | { kind: "result"; action: GitFlowAction; result: GitFlowResult };
 
 /**
- * Ancho disponible para un row de la lista de sources, según si el detail panel
- * está abierto. Mismo cálculo que el tab MCP (overhead de frame + padding +
- * panel lateral de 39 cells).
+ * Indentación (marginLeft) del contenedor de rows de SOURCES. Se pasa como `indent`
+ * a {@link rowWidth} para que el ancho del row descuente ese marginLeft — si no, el
+ * `ListRow` se construye más ancho que su contenedor → Yoga lo envuelve → línea en
+ * blanco entre filas (visible solo con el panel cerrado). El `marginLeft` del JSX y
+ * este `indent` comparten esta constante para no desincronizarse. El tab MCP no
+ * indenta su lista (indent 0), por eso nunca sufrió este wrap.
  */
-function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
-  const cols = termCols ?? 100;
-  const baseOverhead = 14; // ScreenFrame (6) + tab content (6) + list paddingRight (2)
-  const detailOverhead = detailOpen ? 39 : 0;
-  return Math.max(16, cols - baseOverhead - detailOverhead);
-}
+const SOURCES_ROWS_INDENT = 2;
 
 interface InitializedProps {
   ctx: CliContext;
@@ -430,13 +429,13 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
                 marginTop={0}
                 rightAction={detailOpen ? "esc to close detail" : "↑↓ select · ⏎ actions"}
               />
-              <Box marginLeft={2} flexDirection="column">
+              <Box marginLeft={SOURCES_ROWS_INDENT} flexDirection="column">
                 {data.sources.map((s, i) => (
                   <SourceRow
                     key={s.alias}
                     source={s}
                     active={i === cursor}
-                    widthHint={computeRowWidth(stdout?.columns, detailOpen)}
+                    widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
                   />
                 ))}
                 <ListRow
@@ -445,7 +444,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
                   subtitle={`aplica a las ${totalSources} fuentes`}
                   chevron
                   active={cursor === targets.length - 1}
-                  widthHint={computeRowWidth(stdout?.columns, detailOpen)}
+                  widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
                 />
               </Box>
             </>
@@ -507,7 +506,7 @@ function SourceRow({
   );
 }
 
-/** Sección "Ramas …" — una fila `◆ alias  ⎇ branch` por entrada del bloque WORKSPACE. */
+/** Sección "Ramas …" — una fila `◆ alias  ↳ branch` por entrada del bloque WORKSPACE. */
 function BranchList({
   label,
   entries,
@@ -567,15 +566,13 @@ function SourceActionsPanel({
       ? { label: `${source.changedFiles} dirty`, tone: "warn" }
       : { label: "in sync", tone: "ok" };
   return (
-    <Box flexDirection="column">
-      <Text color={colors.borderFaint}>{"│"}</Text>
-      <DetailPanel
-        header={{ name, meta }}
-        statePill={statePill}
-        actions={actions}
-        focusedAction={focusedAction}
-      />
-    </Box>
+    <DetailPanel
+      bordered
+      header={{ name, meta }}
+      statePill={statePill}
+      actions={actions}
+      focusedAction={focusedAction}
+    />
   );
 }
 

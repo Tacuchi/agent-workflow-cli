@@ -18,6 +18,7 @@ import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { useInputLock } from "../input-lock.js";
+import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
 
 type Mode =
@@ -35,23 +36,6 @@ export interface McpTabProps {
   isActive: boolean;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
   recentEvents?: ActivityEvent[];
-}
-
-/**
- * Calcula el ancho disponible para un row de la lista, considerando si el
- * detail panel está abierto.
- *
- * Overhead horizontal:
- * - ScreenFrame border (2) + paddingX (4) = 6
- * - Tab content Box border (2) + paddingX (4) = 6
- * - List paddingRight (2)
- * - Detail panel + separator (39) cuando está abierto
- */
-function computeRowWidth(termCols: number | undefined, detailOpen: boolean): number {
-  const cols = termCols ?? 100;
-  const baseOverhead = 14; // 6 + 6 + 2
-  const detailOverhead = detailOpen ? 39 : 0;
-  return Math.max(16, cols - baseOverhead - detailOverhead);
 }
 
 function buildArgs(action: string, values: Record<string, string> = {}): ParsedArgs {
@@ -323,7 +307,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
                   chevron
                   active={i === cursor}
                   dimmed={mode.kind === "wizard-name" || mode.kind === "wizard-dsn"}
-                  widthHint={computeRowWidth(
+                  widthHint={rowWidth(
                     stdout?.columns,
                     mode.kind === "detail" ||
                       mode.kind === "confirm-delete" ||
@@ -419,26 +403,24 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
 
         {/* Right: detail panel (sólo cuando se seleccionó un row con Enter) */}
         {current && (mode.kind === "detail" || mode.kind === "confirm-delete") ? (
-          <Box flexDirection="column" borderLeft={false}>
-            <Text color={colors.borderFaint}>{"│"}</Text>
-            <DetailPanel
-              header={{
-                name: current.nombre,
-                meta: `${current.server_name} · ${current.dsn_var}\nlast test: —`,
-              }}
-              statePill={{ label: "registered", tone: "ok" }}
-              actions={detailActions}
-              focusedAction={actionCursor}
-              banner={
-                mode.kind === "confirm-delete" ? (
-                  <ConfirmBanner
-                    title={`× Remove ${mode.name}?`}
-                    body={`This deletes the entry from profile.json and unexports ${current.dsn_var}. Not reversible.`}
-                  />
-                ) : null
-              }
-            />
-          </Box>
+          <DetailPanel
+            bordered
+            header={{
+              name: current.nombre,
+              meta: `${current.server_name} · ${current.dsn_var}\nlast test: —`,
+            }}
+            statePill={{ label: "registered", tone: "ok" }}
+            actions={detailActions}
+            focusedAction={actionCursor}
+            banner={
+              mode.kind === "confirm-delete" ? (
+                <ConfirmBanner
+                  title={`× Remove ${mode.name}?`}
+                  body={`This deletes the entry from profile.json and unexports ${current.dsn_var}. Not reversible.`}
+                />
+              ) : null
+            }
+          />
         ) : mode.kind === "wizard-name" || mode.kind === "wizard-dsn" ? (
           <Box flexDirection="column">
             <Text color={colors.borderFaint}>{"│"}</Text>
