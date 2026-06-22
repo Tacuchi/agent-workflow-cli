@@ -4,6 +4,23 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.7.0] — 2026-06-22
+
+**Tab Project: fixes de render (Warp/Windows) + paneles de acciones laterales con marco + helper `rowWidth` reutilizable.** Corrige dos defectos de render reportados al usar el TUI en Warp (Mac y Windows) y desacopla la lógica de ancho de fila que estaba triplicada.
+
+### Fixed
+
+- **Columnas desalineadas en el tab Project (Warp/Windows):** el glyph de rama `⎇` (U+2387) no existe en la fuente por defecto de varias terminales (Warp, Cascadia Code) y caía a un fallback de **ancho 2** mientras Ink lo medía como 1 → cada fila con una rama se corría. Se reemplaza por `↳` (U+21B3, presente en la fuente, ancho 1) en `icons.git`/`icons.branch`. Cambio centralizado en `theme.ts` → propaga a Project, header y todo consumidor.
+- **Línea en blanco entre filas de SOURCES (panel cerrado):** la lista indenta sus rows con `<Box marginLeft={2}>`, pero ese indent no se descontaba del `widthHint` → cada `ListRow` se construía 2 celdas más ancho que su contenedor → Yoga lo envolvía y metía una línea en blanco (visible solo con el detail panel cerrado; al abrirlo el ancho se achica y desaparecía). Se descuenta vía la constante compartida `SOURCES_ROWS_INDENT`.
+
+### Added
+
+- **`DetailPanel` con marco (`bordered`):** los paneles de acciones laterales (Project / MCP / Skills) ahora se enmarcan con un **borde redondeado** en lugar del separador `│` suelto. El marco se dibuja por fuera del ancho de contenido y se contempla en el cálculo de fila vía `DETAIL_PANEL_ROW_OVERHEAD`, así que no reintroduce el interlineado.
+
+### Changed
+
+- **Helper `rowWidth` compartido:** el cálculo de ancho de fila (`computeRowWidth`) estaba **triplicado** e idéntico en los tabs Project/MCP/Skills. Se extrae a `src/cli/tui/row-width.ts` con un parámetro `indent` explícito (Project pasa el indent de SOURCES; MCP/Skills 0). El wrapper `│ + DetailPanel`, repetido en 4 call-sites, se consolida en `<DetailPanel bordered>`.
+
 ## [12.6.0] — 2026-06-22
 
 **`/w:fix-git` (resolvedor de conflictos de merge) + capa agnóstica al arnés + refinamiento de los 3 flujos.** Propaga el rediseño de `docs/referencias` al bundle desplegado `skills/w` y agrega un comando nuevo para resolver merges.
