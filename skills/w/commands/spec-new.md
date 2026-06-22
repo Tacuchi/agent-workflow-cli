@@ -1,5 +1,5 @@
 ---
-description: Genera un borrador de especificación (docs/specs/NNN-spec.md) a partir de un prompt, en una sola pasada. Paso 1 del flujo SPEC; no arranca loop.
+description: Genera un borrador de especificación (docs/specs/NNN-spec-<slug>.md) a partir de un prompt, en una sola pasada. Paso 1 del flujo SPEC; no arranca loop.
 argument-hint: <prompt con el requerimiento o idea>
 allowed-tools:
   [
@@ -11,7 +11,7 @@ allowed-tools:
 
 # spec-new — borrador de especificación (single-pass)
 
-Genera `docs/specs/NNN-spec.md` en una sola pasada a partir del prompt en `$ARGUMENTS`. No arranca loop.
+Genera `docs/specs/NNN-spec-<slug>.md` en una sola pasada a partir del prompt en `$ARGUMENTS`. No arranca loop.
 
 > ## ⛔ Single-pass — SIN investigación (regla dura)
 >
@@ -23,11 +23,12 @@ Genera `docs/specs/NNN-spec.md` en una sola pasada a partir del prompt en `$ARGU
 >
 > La investigación a profundidad (cerrar gaps, mapear código, consultar BD, research autónomo) es trabajo de **`spec-refine`**, no de aquí.
 
-1. Ejecutar `aw next-number docs/specs` para obtener `NNN` (única tool de shell necesaria).
-2. Crear `docs/specs/NNN-spec.md` parafraseando `$ARGUMENTS` en el esquema de borrador (ver abajo). Lectura del repo: opcional y mínima (p. ej. un archivo que el usuario citó) — nunca un barrido ni research.
-3. Mostrar el archivo generado y el próximo paso sugerido (`/w:spec-refine docs/specs/NNN-spec.md`).
+1. Ejecutar `aw next-number docs/specs` para obtener `NNN` (única tool de shell necesaria). El CLI solo devuelve el número; el slug lo arma este comando.
+2. Derivar el `<slug>`: kebab-case corto del Requirement — solo `[a-z0-9-]`, ≤ ~5 palabras / ≤ 40 chars.
+3. Crear `docs/specs/NNN-spec-<slug>.md` parafraseando `$ARGUMENTS` en el esquema de borrador (ver abajo). Lectura del repo: opcional y mínima (p. ej. un archivo que el usuario citó) — nunca un barrido ni research.
+4. Mostrar el archivo generado y el próximo paso sugerido (`/w:spec-refine docs/specs/NNN-spec-<slug>.md`).
 
-## Esquema del borrador (`NNN-spec.md`)
+## Esquema del borrador (`NNN-spec-<slug>.md`)
 
 ```markdown
 # Spec NNN — <slug>
@@ -61,7 +62,7 @@ Supuestos asumidos.
 - `Scope` siempre lleva `Out` (qué queda fuera).
 - Los criterios de aceptación deben ser verificables (testeables).
 - Si hay UI involucrada, mencionarlo en `Requirement`/`Context`; el spec UI se autora en `spec-refine` (via capacidad `ui-design`).
-- Alternativa equivalente: el usuario crea el borrador a mano. Ambos caminos producen el mismo `docs/specs/NNN-spec.md`.
+- Alternativa equivalente: el usuario crea el borrador a mano. Ambos caminos producen el mismo `docs/specs/NNN-spec-<slug>.md`.
 
 ## Plan mode
 

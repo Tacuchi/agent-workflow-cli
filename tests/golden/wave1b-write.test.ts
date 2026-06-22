@@ -49,12 +49,15 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(result.sessionClose.closed).toBe(true);
 
     // Folder-local `.closed` sentinel persisted.
-    expect(
-      existsSync(join(clone.cwd, ".workflow", "sessions", "session001-dev-foo", ".closed")),
-    ).toBe(true);
-    // CHECKPOINT.md + BACKLOG.md persist in the folder.
+    const sessionDir = join(clone.cwd, ".workflow", "sessions", "session001-dev-foo");
+    expect(existsSync(join(sessionDir, ".closed"))).toBe(true);
+    // CHECKPOINT.md is created (resume safety net) and persists in the folder.
     expect(result.sessionClose.checkpoint_path).toContain("CHECKPOINT.md");
+    expect(existsSync(join(sessionDir, "CHECKPOINT.md"))).toBe(true);
+    // BACKLOG.md is NOT auto-fabricated: close still reports `backlog_path` as a
+    // string, but the empty boilerplate file is never written.
     expect(result.sessionClose.backlog_path).toContain("BACKLOG.md");
+    expect(existsSync(join(sessionDir, "BACKLOG.md"))).toBe(false);
 
     // HISTORY.md is no longer touched by session-close (release bookkeeping only).
     expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);

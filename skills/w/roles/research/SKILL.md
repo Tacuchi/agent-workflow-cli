@@ -2,10 +2,11 @@
 name: research
 description: >
   Capacidad de investigación on-demand que los loops componen cuando necesitan evidencia para avanzar.
-  Crea una sesión de investigación, lee el workspace + repos asociados + MCPs en modo read-only,
-  produce ANALYSIS-FILE → CONCLUSIONS. Cierra INCONCLUSIVE si la pregunta no puede responderse
-  con las fuentes disponibles. Discrimina cuándo investigar ("¿puedo responder leyendo repo/datos?")
-  vs cuándo preguntar al humano ("¿depende de lo que el usuario quiere?").
+  Investiga INLINE dentro de la sesión activa (no crea una sesión aparte): lee el workspace + repos
+  asociados + MCPs en modo read-only, produce ANALYSIS-FILE → CONCLUSIONS dentro de esa sesión.
+  Concluye INCONCLUSIVE si la pregunta no puede responderse con las fuentes disponibles. Discrimina
+  cuándo investigar ("¿puedo responder leyendo repo/datos?") vs cuándo preguntar al humano
+  ("¿depende de lo que el usuario quiere?").
 ---
 
 # research — On-demand investigation capability
@@ -42,16 +43,16 @@ Todos los loops la cargan on-demand:
 ### Investigation lifecycle
 
 ```
-[pregunta del loop] → [crear sesión research] → [recolectar evidencia] → [sintetizar] → [CONCLUSIONS]
+[pregunta del loop] → [investigar inline en la sesión activa] → [recolectar evidencia] → [sintetizar] → [CONCLUSIONS]
                                                           ↕
                                                [nueva hipótesis o gap] → [más evidencia o INCONCLUSIVE]
 ```
 
-1. **Crear sesión research** en `.workflow/sessions/<slug>/` con `SESSION.md` (pregunta original + scope).
+1. **Investigar inline** — no se crea una sesión aparte; los artefactos se escriben en la sesión activa del loop (`.workflow/sessions/NNN-<run>/`).
 2. **Recolectar evidencia** — read-only: `Read`, `Grep`, `Glob`, MCP SELECT, `git log`.
-3. **Escribir `ANALYSIS-FILE.md`** con hallazgos crudos.
+3. **Escribir `ANALYSIS-FILE.md`** (scratchpad opcional) con hallazgos crudos.
 4. **Sintetizar** en `CONCLUSIONS.md` con conclusiones evidenciadas.
-5. **Cerrar** la sesión: estado `closed` si converge; `inconclusive` si no hay suficiente material.
+5. **Reportar al loop**: `concluido` si converge; `inconclusive` si no hay material suficiente — el loop degrada/difiere el gap.
 
 ### Ask-vs-research discriminator (examples)
 
@@ -64,73 +65,14 @@ Todos los loops la cargan on-demand:
 "¿el servicio Y ya tiene auth implementado?"    → investigar (leer código)
 ```
 
-### ANALYSIS-FILE.md schema
+### Artifact schemas
 
-```markdown
-# Analysis — <slug>
-
-## Question
-
-[La pregunta exacta que el loop planteó.]
-
-## Sources consulted
-
-- Codigo: <repo/path:lineas>
-- BD (<mcp-name>): queries en queries/
-- Git: <SHAs relevantes>
-- Refs externas: <links si aplica>
-
-## Finding 1: <titulo>
-
-- **Que se observo**: ...
-- **Donde**: <path o link>
-- **Cuando**: <fecha si aplica>
-
-## Finding N: ...
-
-## Tentative hypotheses
-
-- [hipotesis sin compromiso, para revisar en synthesis]
-
-## Gaps
-
-- [lo que no pudo leerse o no esta disponible]
-```
-
-### CONCLUSIONS.md schema
-
-```markdown
-# Conclusions — <slug>
-
-## Summary
-
-[1-2 oraciones: que se investigo y que se concluyó.]
-
-## Conclusions
-
-- **C1**: <conclusion + link a ANALYSIS-FILE#section>
-- **C2**: ...
-
-## Recommendations
-
-- **R1**: <accion concreta para el loop que hizo la pregunta>
-
-## Open (gaps)
-
-- <pregunta sin responder si aplica>
-```
+`ANALYSIS-FILE.md` (scratchpad opcional) y `CONCLUSIONS.md` siguen las **plantillas canónicas** en `artifacts/artifacts-research/` — no se duplican aquí para evitar drift. Para research liviana basta `CONCLUSIONS.md`; `ANALYSIS-FILE.md` es opcional para investigaciones más profundas.
 
 ### DB rule (invariant #4)
 
 - **Solo SELECT** — nunca DML/DDL.
-- **Escribir la query primero** en `.workflow/sessions/<slug>/queries/NNN-<slug>.sql` con header:
-  ```sql
-  -- Query: <proposito>
-  -- MCP: <nombre>
-  -- Fecha: YYYY-MM-DD
-  -- Sesion: <slug>
-  -- Costo estimado: <filas|N/A>
-  ```
+- **Escribir la query primero** en el `SCRIPTS.sql` de la sesión activa (tipo A, read-only; ver la plantilla `artifacts/artifacts-core/SCRIPTS.sql`) con su header de propósito + MCP + origen.
 - **Si hay >1 MCP candidato sin default declarado**: preguntar al humano cuál usar antes de ejecutar.
 - **Cost guard antes de ejecutar**:
   - `COUNT(*) ≤ 1.000` o lookup por PK → ejecutar directo.
@@ -156,26 +98,24 @@ Si tras investigar los gaps persisten y no pueden cerrarse con las fuentes dispo
 - Marcar sesión como `inconclusive`.
 - Reportar al loop: qué se pudo y qué no — el loop decide si pregunta al humano.
 
-### Research session artifacts
+### Inline research artifacts (en la sesión activa)
 
 ```
-.workflow/sessions/<slug>/
-├── SESSION.md          # pregunta original + scope + estado (open|closed|inconclusive)
-├── ANALYSIS-FILE.md    # hallazgos crudos (equivale a EVIDENCE.md del modelo viejo)
-├── CONCLUSIONS.md      # sintesis + recomendaciones para el loop
-└── queries/            # SQL read-only (si se usó MCP)
-    └── 001-<slug>.sql
+.workflow/sessions/NNN-<run>/      # la sesión del loop (refine/exec/quick)
+├── ANALYSIS-FILE.md    # hallazgos crudos (scratchpad opcional)
+├── CONCLUSIONS.md      # síntesis + recomendaciones para el loop
+└── SCRIPTS.sql         # SQL read-only (tipo A), si se usó MCP
 ```
 
 ## Output
 
-Produce en `.workflow/sessions/<slug>/`:
-- `ANALYSIS-FILE.md` — hallazgos crudos sin sintetizar.
+Produce, **inline en la sesión activa del loop** (`.workflow/sessions/NNN-<run>/`):
+- `ANALYSIS-FILE.md` — hallazgos crudos sin sintetizar (opcional).
 - `CONCLUSIONS.md` — conclusiones con evidencia + recomendaciones para el loop.
-- `queries/*.sql` — solo si se usó MCP.
+- `SCRIPTS.sql` — queries read-only (tipo A), solo si se usó MCP.
 
 No gradua a `docs/` (invariant #1). El loop que compone esta capacidad consume las conclusiones y actua en consecuencia.
 
 ## Source
 
-Reciclado de `analyze-investigate`, `analyze-synthesize` y `analyze-conclude` del bundle viejo. Se conserva: el modelo de investigacion divergente → sintesis → conclusiones; las reglas read-only; el cost guard de queries; la discriminacion de gaps. Se descarta: la terminología de `flow=analyze`, `EVIDENCE.md`/`FINDINGS.md` como nombres canónicos (ahora `ANALYSIS-FILE.md`/`CONCLUSIONS.md`), el lifecycle de sesiones legacy, y la modulacion por modalidad (technical/incident/data) — la skill de research es de propósito general.
+Reciclado de `analyze-investigate`, `analyze-synthesize` y `analyze-conclude` del bundle viejo. Se conserva: el modelo de investigacion divergente → sintesis → conclusiones; las reglas read-only; el cost guard de queries; la discriminacion de gaps. Se descarta: la terminología de `flow=analyze`, `EVIDENCE.md`/`FINDINGS.md` como nombres canónicos (ahora `ANALYSIS-FILE.md`/`CONCLUSIONS.md`), el lifecycle de sesiones legacy (la research ahora es **inline**, sin sesión propia), y la modulacion por modalidad (technical/incident/data) — la skill de research es de propósito general.

@@ -1,6 +1,6 @@
-# CONCLUSIONS.md — research session conclusions
+# CONCLUSIONS.md — research conclusions
 
-> What it is: the conclusions of a `research` session. Produced when the session closes (success or `inconcluso`). The parent loop reads this to resolve the gap that triggered the research.
+> What it is: the conclusions of an **inline research** activity, written into the active session (`refine`/`exec`/`quick`). Produced when the research concludes (success or `inconcluso`). The parent loop reads this to resolve the gap that triggered the research.
 
 ## Conclusion (text|list)
 Direct answer to the initial question.
@@ -8,13 +8,11 @@ Direct answer to the initial question.
 ## Recommended Action (text|list)
 
 Example:
-- [ ] Create bugfix
-- [ ] Create requirement
-- [ ] Correct data
-- [ ] Escalate to business
-- [ ] Train user
-- [ ] Close without technical action
-- [ ] Request more information
+- [ ] Fix code
+- [ ] Open follow-up task
+- [ ] Update docs
+- [ ] Defer (insufficient evidence)
+- [ ] No action
 
 ## Details (text):
 Supporting detail, evidence references, or additional context.

@@ -19,7 +19,7 @@ LAYER 2 · LOOPS  (the AI runs them whole)                    │
         │ create / manage                                     │
         ▼                                                     │
 LAYER 3 · SESSIONS + ARTIFACTS  (.workflow/sessions/)  ───────┘ export-* read these
-  research · refine/control · exec · quick
+  refine · exec · quick   (research = capacidad inline, no un tipo de session)
 
 ZONE docs/ — permanent, user-facing deliverables
   specs · plans · tools   (flows)   ·   scripts · manuals · diagrams · reports   (export-*)
@@ -58,7 +58,7 @@ Run [`/w:workspace-init`](commands/workspace-init.md) once to turn a folder into
 3. **spec & plan are documents** (`docs/`), not artifacts.
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations land in `SCRIPTS.sql` and ship via `export-scripts`; reads are read-only via MCP.
 5. **Git-safe** — verify the expected branch before editing; propose commits per source; never `push`/`--amend`/`--no-verify`.
-6. **All loops** — gap-driven convergent; `AskUserQuestion` with ≤3 content tabs + 1 always-present `flow` tab (`Compactar`/`Cerrar`); compact/resume; `Cerrar` persists `CHECKPOINT`+`BACKLOG`.
+6. **All loops** — gap-driven convergent; one session per run (research inline); `AskUserQuestion` with ≤3 content tabs + 1 always-present `flow` tab (`Compactar`/`Cerrar`); compact/resume; artifacts as a live log (`CHECKPOINT` always; `BACKLOG` only when deferring).
 
 ## Pluggable capabilities
 

@@ -2,18 +2,18 @@
 name: spec-refine-loop
 description: >-
   El CHASIS de los loops de agent-workflow. Refina un spec borrador
-  (docs/specs/NNN-spec.md) hasta un spec refinado sin ambigüedad
-  (docs/specs/NNN-spec-refined.md) mediante un motor gap-driven convergente:
-  detecta huecos/ambigüedades, los resuelve preguntando al humano (lo que
-  depende de su intención) o investigando de forma autónoma vía sessions de
-  research (lo que se responde leyendo el repo/datos), integra y repite hasta
-  converger. Compone la capacidad ui-design (built-in ui-spec) cuando el
-  requerimiento involucra UI. Lo arranca el comando /w:spec-refine y es
-  reanudable (4 casos de resume). Usa AskUserQuestion con ≤3 tabs de contenido
-  + 1 tab flow (Compactar/Cerrar) siempre presente; Cerrar persiste CHECKPOINT
-  + BACKLOG. Es el patrón de referencia que heredan plan-new-loop,
-  plan-exec-loop y quick-loop. Invocar cuando haya que refinar/desambiguar una
-  especificación antes de planificar.
+  (docs/specs/NNN-spec-<slug>.md) editándolo IN PLACE hasta dejarlo sin
+  ambigüedad, mediante un motor gap-driven convergente: detecta
+  huecos/ambigüedades, los resuelve preguntando al humano (lo que depende de su
+  intención) o investigando de forma autónoma INLINE en la propia session
+  (lo que se responde leyendo el repo/datos), integra y repite hasta converger.
+  Compone la capacidad ui-design (built-in ui-spec) cuando el requerimiento
+  involucra UI. Lo arranca el comando /w:spec-refine y es reanudable vía
+  CHECKPOINT. Usa AskUserQuestion con ≤3 tabs de contenido + 1 tab flow
+  (Compactar/Cerrar) siempre presente; mantiene sus artefactos como log vivo
+  (CHECKPOINT siempre, BACKLOG solo si difiere). Es el patrón de referencia que
+  heredan plan-new-loop, plan-exec-loop y quick-loop. Invocar cuando haya que
+  refinar/desambiguar una especificación antes de planificar.
 ---
 
 # spec-refine-loop
@@ -27,39 +27,50 @@ SPEC
 2 — la IA lo corre entero (gap-driven). El usuario no conduce el ciclo; solo responde tabs de contenido y dirige el ciclo de vida por el tab `flow`.
 
 ## Started by
-`/w:spec-refine` — **reanudable**. Detecta el estado previo y arranca según corresponda (ver *Compact / resume*, 4 casos).
+`/w:spec-refine` — **reanudable**. Detecta el estado previo (vía CHECKPOINT) y arranca según corresponda (ver *Compact / resume*).
 
 ## Reads
-- `docs/specs/NNN-spec.md` (borrador), **o**
-- `docs/specs/NNN-spec-refined.md` si **ya existe** un refinado previo → se re-refina incremental sobre el refined (NO sobre el borrador stale).
+- `docs/specs/NNN-spec*.md` (glob — localiza el spec por número, también captura el legacy `NNN-spec.md`), **o** la ruta exacta pasada en `$ARGUMENTS`. **Siempre el spec mismo**: este loop lo edita in place, no hay un archivo "refined" aparte.
 
 ## Writes
-`docs/specs/NNN-spec-refined.md` (cuando el usuario elige `Guardar especificación refinada`). Si el archivo **ya existe**, **sobrescribe con confirmación** del usuario.
+Actualiza `docs/specs/NNN-spec-<slug>.md` **in place** (cuando el usuario elige `Guardar especificación refinada`): completa secciones y **agrega** `## Refinement decisions` + `## Q&A traceability`, cerrando `Open questions` a medida que se resuelven. Como sobrescribe un doc existente, **con confirmación** del usuario.
 
 > **Invariante de boundary:** este loop escribe **solo** en `docs/specs`. Nunca gradúa/exporta otros artefactos a `docs/` — eso es trabajo de `export-*`, aparte.
 
+## Artifacts as a live log (chasis — heredado por todos los loops)
+
+El loop mantiene sus artefactos como **registro vivo**, no solo al cerrar:
+
+- **`CHECKPOINT`** se actualiza en **cada límite de gap/fase** (Completed/Pending/Next), no únicamente al `Compactar`/`Cerrar`.
+- **`DECISION`** se registra **a medida que se toma** una decisión no obvia.
+- **`BACKLOG`** se escribe **solo cuando hay algo diferido/followup** (`session-close` ya no fabrica un BACKLOG vacío).
+
+> Los artefactos de session son el **registro vivo** del run; el spec/plan es la **base guía**.
+
 ## Internal sessions (managed)
 
-El loop crea y maneja sus sessions en `.workflow/sessions/`. El usuario nunca las crea.
+El loop crea y maneja su session en `.workflow/sessions/`. El usuario nunca la crea.
 
 | Session | When | Artifacts | Role |
 |---|---|---|---|
-| **refine session** `NNN-spec-refine/` | al arrancar el loop (o se reanuda) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` al cerrar) | Dueña del run. Guarda el avance al `Compactar` y al `Cerrar`; habilita el resume. Type = `refine`. |
-| **research session** `MMM-spec-refine-research-*/` | on-demand, por cada gap factual | `SESSION.md` · `ANALYSIS-FILE.md` → `CONCLUSIONS.md` (+ `SCRIPTS.sql` si consulta BD) | Investiga, concluye, **cierra y reporta**. Puede cerrar **inconclusa**. Type = `research`; on-demand, **no reanudable** (run-and-close, sin `CHECKPOINT`/`BACKLOG` propios). |
+| **refine session** `NNN-spec-refine/` | al arrancar el loop (o se reanuda) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` solo si difiere) | Dueña del run. Mantiene el avance vivo (CHECKPOINT) y habilita el resume. Type = `refine`. |
+
+> **Research INLINE** — la investigación ya **no** es una session aparte: es una actividad **dentro de la session actual** que escribe sus artefactos (`ANALYSIS-FILE`/`CONCLUSIONS`, + `SCRIPTS.sql` read-only si consulta BD) **en la carpeta de la propia session del run**. Ver *Research: autonomy, scope & failure*.
 
 > El spec **nunca** entra en una session; vive en `docs/specs/`.
 
+> **Compat (legacy):** workspaces viejos pueden tener `NNN-spec.md` / `NNN-spec-refined.md` y sessions `*-research-*` aparte — son históricos y se dejan tal cual. El glob `NNN-spec*.md` igual encuentra el spec base, y re-correr spec-refine lo edita in place de ahí en adelante.
+
 ### Numeración de sessions (regla dura, heredada por todos los loops)
 
-El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global y secuencial** escaneando **todas** las sessions de `.workflow/sessions/` (cualquier tipo). El caller pasa **solo el descriptor** vía `--name` — **nunca** un número. Así la numeración no se reinicia por tipo ni colisiona (ej.: `001-spec-refine`, `002-spec-refine-research-x`, `003-plan-new`, …).
+El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global y secuencial** escaneando **todas** las sessions de `.workflow/sessions/` (cualquier tipo). El caller pasa **solo el descriptor** vía `--name` — **nunca** un número. Así la numeración no se reinicia por tipo ni colisiona (ej.: `001-spec-refine`, `002-plan-new`, `003-plan-exec`, …).
 
-> `<run>` = el **descriptor** (sin número) de la control session que prefija sus sessions hijas: `spec-refine`, `plan-new`, `plan-exec`, `quick`. La research session pasa `--name <run>-research-<gap>` y el CLI le pone su propio `NNN`. **No** embebas el número del padre en el descriptor del hijo (lo agrega el CLI; embeberlo lo duplicaría).
+> `<run>` = el **descriptor** (sin número) de la session del run: `spec-refine`, `plan-new`, `plan-exec`, `quick`. Como la investigación es **inline** en esta misma session, ya no hay sessions hijas `*-research-*` que numerar (compat: las viejas son históricas).
 >
-> **Resume**: localiza la session existente **escaneando** `.workflow/sessions/` por descriptor + `## Origin` (qué spec/plan), **no** reconstruyendo el número (que ahora es global, no derivable del artefacto). `aw session-resume --code <NNN | folder>` resuelve ambas formas.
+> **Resume**: localiza la session existente **escaneando** `.workflow/sessions/` por descriptor + `## Origin` (qué spec/plan), **no** reconstruyendo el número (que es global, no derivable del artefacto). `aw session-resume --code <NNN | folder>` resuelve ambas formas.
 
 **CLI**:
 - `aw session-create --type refine --name spec-refine` → crea `NNN-spec-refine` / `aw session-resume --code <…>` (detecta `CHECKPOINT`).
-- `aw session-create --type research --name <run>-research-<gap>` por cada gap factual → crea `MMM-<run>-research-<gap>`.
 - `aw checkpoint-write` / `aw checkpoint-read` para el resume.
 - `aw session-close` al cerrar (con razón); `aw session-artifacts` para inspeccionar.
 
@@ -67,16 +78,16 @@ El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global
 
 Cuando el requerimiento involucra **UI**, compone la capacidad **`ui-design`** (default built-in `ui-spec`; rebindeable vía `.workflow/skills.toml`): autora el UI spec nativamente (esquema `Screen`, vocabulario, formato). El loop aporta la iteración/Q&A que el viejo servicio no tenía (design-system, tema, variantes, desambiguación) y lo integra como sección `## UI spec` del spec.
 
-Otras capacidades transversales que el chasis usa siempre: `research` (research on-demand), `sql` (regla BD en research), `writing` (redacción del refined). Todas se resuelven por config; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta.
+Otras capacidades transversales que el chasis usa siempre: `research` (research **inline**, ver abajo), `sql` (regla BD en research), `writing` (redacción del spec). Todas se resuelven por config; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta.
 
-## Deliverable schema (`NNN-spec-refined.md`)
+## Deliverable schema (el spec, editado in place)
 
-Más rico que el borrador: mismas secciones **completadas** + dos nuevas (`Refinement decisions`, `Q&A traceability`).
+El spec se completa **in place**: mismas secciones del borrador **completadas** + dos nuevas que se **agregan** (`Refinement decisions`, `Q&A traceability`). NO se crea un archivo aparte.
 
 ```markdown
-# Spec NNN (refined) — <slug>
+# Spec NNN — <slug>
 
-> Derivado de `NNN-spec.md` · refinado por spec-refine-loop
+> Refinado in place por spec-refine-loop
 
 ## Requirement            (afinado, sin ambigüedad)
 ## Context                (completo)
@@ -87,11 +98,11 @@ Más rico que el borrador: mismas secciones **completadas** + dos nuevas (`Refin
 ## UI spec                (opt. — si involucra UI; vía capacidad ui-design / skill ui-spec)
 Screen (JSON) + render Markdown.
 
-## Refinement decisions   ← NEW
-Qué se definió al refinar y por qué. Incluye lo resuelto vía research
-(con referencia a la research session / CONCLUSIONS).
+## Refinement decisions   ← NEW (se AGREGA)
+Qué se definió al refinar y por qué. Incluye lo resuelto vía research inline
+(con referencia a las CONCLUSIONS de la session).
 
-## Q&A traceability       ← NEW
+## Q&A traceability       ← NEW (se AGREGA)
 Cada duda preguntada al humano + la respuesta elegida.
 
 ## Open questions         (idealmente "None"; lo que quede se difiere)
@@ -120,15 +131,17 @@ Para cada gap, una sola pregunta decide el resolutor:
 
 ## Research: autonomy, scope & failure
 
-- **Autónomo**: la IA crea la research session, investiga y reporta **sin pedir permiso**. El humano se entera al integrarse (en `Refinement decisions`) y mantiene control vía el tab `flow`.
+La investigación es **inline**: una actividad **dentro de la session actual del run**, no una session aparte. Escribe sus artefactos (`ANALYSIS-FILE` → `CONCLUSIONS`, + `SCRIPTS.sql` read-only si consulta BD) en la **carpeta de la propia session**.
+
+- **Autónomo**: la IA investiga inline y reporta **sin pedir permiso**. El humano se entera al integrarse (en `Refinement decisions`) y mantiene control vía el tab `flow`.
 - **Alcance**: workspace + repos asociados (fuentes) + MCPs de BD.
 - **Regla BD** (única excepción a la autonomía):
   1. **Elección de MCP**: si el gap requiere BD y hay **>1 MCP candidato sin default configurado**, la IA pregunta cuál usar. Esa pregunta va por el **mismo `AskUserQuestion`** como un **tab de contenido** (cuenta dentro del límite ≤3 + `flow`), **antes** de ejecutar queries. Si hay un único MCP o un default, no pregunta.
-  2. Escribe **primero** las queries en `SCRIPTS.sql` de la research session.
+  2. Escribe **primero** las queries en `SCRIPTS.sql` de la session.
   3. Las ejecuta **read-only** vía MCP (respeta `sql-mutation-guard`: nunca DML/DDL).
 - **Research inconclusa** (BD no disponible, evidencia insuficiente, gap factual irresoluble):
-  - La research session cierra con estado **`inconcluso`** y reporta el motivo (vía su `Success criteria` no cumplido).
-  - El loop **degrada** el gap: lo pasa a **pregunta-al-humano** (próximo batch → `Q&A traceability`) o, si tampoco aplica, lo **difiere** a `## Open questions` del refined.
+  - La investigación concluye con estado **`inconcluso`** en `CONCLUSIONS` y reporta el motivo.
+  - El loop **degrada** el gap: lo pasa a **pregunta-al-humano** (próximo batch → `Q&A traceability`) o, si tampoco aplica, lo **difiere** a `## Open questions` del spec.
   - El gap se marca **"ya intentado vía research"** (`attempts[gap]++`, límite `MAX`) para que `detect_gaps` **no lo re-dispare en bucle** → garantiza convergencia.
 
 ## AskUserQuestion (design & batching)
@@ -145,10 +158,10 @@ Para cada gap, una sola pregunta decide el resolutor:
 
 ```
 spec-refine-loop(spec):
-  input = exists(NNN-spec-refined.md) ? NNN-spec-refined.md : NNN-spec.md   # (#2 resume)
-  refine_session = create_or_resume("spec-refine")         # CLI antepone NNN global; resume localiza por descriptor/origin
+  input = glob(NNN-spec*.md) | $ARGUMENTS path          # siempre el spec mismo (in place)
+  refine_session = create_or_resume("spec-refine")      # CLI antepone NNN global; resume localiza por descriptor/origin
   work = read(input)  (+ aplicar avance del checkpoint si reanuda)
-  attempts = {}                                            # anti-relanzamiento por gap
+  attempts = {}                                         # anti-relanzamiento por gap
   repeat:
     gaps = detect_gaps(work)  menos los gaps "agotados"
     if gaps == ∅: break
@@ -156,12 +169,12 @@ spec-refine-loop(spec):
     para cada gap en batch:
       si factual(gap) y attempts[gap] < MAX:
         si requiere BD y >1 MCP sin default → encolar "elección MCP" en pending_human
-        rs  = create_research_session(gap)
-        res = rs.run_and_close()             # ANALYSIS-FILE → CONCLUSIONS (+SCRIPTS.sql)
+        res = research_inline(gap)           # en la session actual: ANALYSIS-FILE → CONCLUSIONS (+SCRIPTS.sql read-only)
         si res.concluyente: work = integrate(work, res)    # → Refinement decisions
         si no: attempts[gap]++ ; si attempts[gap] >= MAX → pending_human.push(gap)
       si no:
         pending_human.push(gap)
+    update CHECKPOINT (refine_session)        # log vivo: Completed/Pending/Next en cada límite de gap
     si pending_human no vacío:
       ans = AskUserQuestion(contenido: pending_human (≤3), flow: [Compactar, Cerrar])
       switch(flow):
@@ -171,58 +184,60 @@ spec-refine-loop(spec):
   # convergió:
   ans = AskUserQuestion(contenido: [Guardar refinada, Preguntar algo más],
                         flow: [Compactar, Cerrar])
-  Guardar          → write_with_confirm(NNN-spec-refined.md) ; goto finalize   # (#2)
+  Guardar          → edit_in_place_with_confirm(spec)  # completa secciones + agrega Refinement decisions/Q&A ; goto finalize
   Preguntar algo más → continue
   flow Compactar/Cerrar → manejar igual
 finalize:
-  write CHECKPOINT (refine_session)                        # (#5) persiste siempre
-  write/update BACKLOG (motivo de cierre + Open questions diferidas)   # (#5)
-  cerrar research sessions abiertas ; cerrar refine_session ; reportar
+  write CHECKPOINT (refine_session)                     # persiste siempre
+  si hay diferidos/followup → write/update BACKLOG (motivo + Open questions diferidas)
+  cerrar refine_session ; reportar
 ```
 
 ```mermaid
 flowchart TD
-    S["input = refined si existe, si no borrador<br/>create_or_resume refine session"] --> D{"¿gaps<br/>(no agotados)?"}
+    S["input = glob NNN-spec*.md (el spec mismo)<br/>create_or_resume refine session"] --> D{"¿gaps<br/>(no agotados)?"}
     D -->|no| C["AskUserQuestion<br/>contenido[Guardar refinada · Preguntar más]<br/>flow[Compactar · Cerrar]"]
     D -->|sí| B["tomar ≤3 gaps"]
     B --> F{"¿factual y<br/>attempts<MAX?"}
-    F -->|sí| RS["research session<br/>ANALYSIS-FILE → CONCLUSIONS (+SCRIPTS.sql)"]
+    F -->|sí| RS["research INLINE en la session<br/>ANALYSIS-FILE → CONCLUSIONS (+SCRIPTS.sql)"]
     RS --> CC{"¿concluyente?"}
     CC -->|sí| I1["integrar → Refinement decisions"]
     CC -->|no| DEG["attempts++ ; degradar a humano / Open questions"]
     F -->|no| Q["AskUserQuestion<br/>contenido[dudas + elección MCP ≤3]<br/>flow[Compactar · Cerrar]"]
     Q --> I2["integrar → Q&A traceability"]
-    I1 --> D
-    DEG --> D
-    I2 --> D
-    C -->|Guardar| W["write_with_confirm<br/>NNN-spec-refined.md"]
+    I1 --> CK["update CHECKPOINT (log vivo)"]
+    DEG --> CK
+    I2 --> CK
+    CK --> D
+    C -->|Guardar| W["edit IN PLACE con confirmación<br/>completa + agrega Refinement decisions/Q&A"]
     C -->|Preguntar más| D
-    W --> FIN["finalize: CHECKPOINT + BACKLOG<br/>+ cerrar sessions + reportar"]
+    W --> FIN["finalize: CHECKPOINT (+ BACKLOG si difiere)<br/>+ cerrar session + reportar"]
 ```
 
 ## Compact / resume
 
-Cuatro casos al ejecutar `/w:spec-refine` sobre un spec:
+El resume **keya off el `CHECKPOINT`** de la refine session, no de la existencia de un archivo "refined". Tres casos al ejecutar `/w:spec-refine` sobre un spec:
 
-1. **En curso** (existe `CHECKPOINT.md` en la refine session) → reanuda desde el avance (gaps resueltos, Q&A, `attempts`, research sessions abiertas).
-2. **Sin avance** (no hay CHECKPOINT ni refined) → arranca desde cero leyendo `NNN-spec.md`.
-3. **Ya completado** (existe `NNN-spec-refined.md`, sin CHECKPOINT) → re-refinamiento incremental: input = el **refined** (no el borrador); al `Guardar`, sobrescribe con confirmación.
-4. **`Compactar`** (tab flow) → escribe `CHECKPOINT.md` en la refine session (spec en progreso, gaps restantes, Q&A, `attempts`, research sessions abiertas) → dispara `/compact` del host → reanuda leyendo el checkpoint.
+1. **En curso** (existe `CHECKPOINT.md` en la refine session) → reanuda desde el avance (gaps resueltos, Q&A, `attempts`, research inline en curso).
+2. **Sin avance** (no hay CHECKPOINT y el spec **no** tiene `Refinement decisions`/`Q&A traceability`) → arranca desde cero leyendo el spec (`NNN-spec*.md`).
+3. **Ya refinado** (no hay CHECKPOINT abierto pero el spec **ya tiene** `Refinement decisions`/`Q&A traceability`) → re-refinamiento incremental leyendo el **spec mismo**; al `Guardar`, edita in place con confirmación.
+
+> **`Compactar`** (tab flow, transversal a los 3 casos) → escribe `CHECKPOINT.md` en la refine session (spec en progreso, gaps restantes, Q&A, `attempts`) → dispara `/compact` del host → reanuda leyendo el checkpoint.
 
 ## Convergence / exit
 
 - **Sin gaps materiales** → ofrece `Guardar especificación refinada`.
-- `Guardar` → `write_with_confirm(NNN-spec-refined.md)` y `finalize`.
-- `Cerrar` (tab flow, en cualquier momento) → `finalize`. **`finalize` persiste siempre**: escribe `CHECKPOINT.md` (reanudable) **y** `BACKLOG.md` (motivo de cierre + `Open questions` diferidas), cierra sessions y reporta. Así sobrevive el avance aunque no se haya `Compactar` antes.
+- `Guardar` → `edit_in_place_with_confirm(spec)` y `finalize`.
+- `Cerrar` (tab flow, en cualquier momento) → `finalize`. **`finalize` persiste siempre el `CHECKPOINT.md`** (reanudable) y, **solo si hay algo diferido/followup**, escribe `BACKLOG.md` (motivo de cierre + `Open questions` diferidas); cierra la session y reporta. Así sobrevive el avance aunque no se haya `Compactar` antes.
 
 ## Integration (dónde aterriza cada resolución)
 
-- Resuelto vía **research** → `## Refinement decisions` del refined (+ ref a la research session / `CONCLUSIONS`).
-- Resuelto vía **humano** → `## Q&A traceability` del refined.
-- **Research inconclusa o sin resolver** → `## Open questions` del refined (diferido) + `BACKLOG.md` de la refine session al cerrar.
+- Resuelto vía **research inline** → `## Refinement decisions` del spec (+ ref a las `CONCLUSIONS` de la session).
+- Resuelto vía **humano** → `## Q&A traceability` del spec.
+- **Research inconclusa o sin resolver** → `## Open questions` del spec (diferido) + `BACKLOG.md` de la refine session (solo si queda algo diferido).
 
 ## Heredan este chasis
 
 - `plan-new-loop` — mismo motor; deltas: plan rico + gap taxonomy de plan.
-- `plan-exec-loop` — mismo motor; deltas: ejecución real (código/BD/git), session por fase, sin auto-export.
+- `plan-exec-loop` — mismo motor; deltas: ejecución real (código/BD/git), **una sola session por run** (progreso por fase en el plan-doc), sin auto-export.
 - `quick-loop` — mismo motor (mínimo); hereda además git/BD/no-export de `plan-exec-loop`.

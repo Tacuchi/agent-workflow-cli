@@ -63,7 +63,7 @@ USUARIO invoca
 | **PLAN** (el *cómo* + ejecutar) | `plan-new` · `plan-exec` | `docs/plans` · `docs/tools` | `plan-new-loop` · `plan-exec-loop` |
 | **QUICK** (atajo liviano) | `quick` | — | `quick-loop` |
 
-Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec.md` → `spec-refine` corre el loop → `NNN-spec-refined.md` → `plan-new` → `docs/plans/PPP-plan.md` → `plan-exec` ejecuta y actualiza el plan (living doc) + artefactos en sesiones. La promoción del resto a `docs/` es **siempre** un paso aparte vía `export-*`.
+Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` → `spec-refine` corre el loop y refina **ese mismo spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → `plan-exec` ejecuta y actualiza el plan (living doc) + artefactos en sesiones. La promoción del resto a `docs/` es **siempre** un paso aparte vía `export-*`.
 
 ### The commands (`/w:` namespace)
 
@@ -80,13 +80,13 @@ Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec.md` → `spec-
 Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable. Propiedades comunes (el chasis, en `spec-refine-loop`, lo heredan los demás):
 
 1. **Gap-driven convergente** — cada ciclo: detecta huecos → resuelve (pregunta al humano o investiga) → integra → repite hasta converger.
-2. **Puede crear sessions internas** — si el trabajo es profundo (ej. investigar el código), el loop crea una session (`research`, etc.), maneja sus artefactos en `.workflow/sessions/`, la cierra y reporta. El usuario nunca crea esas sessions.
+2. **Una sola session por run + research inline** — el loop crea **una** session (la dueña del run) y maneja sus artefactos en `.workflow/sessions/`. La **investigación es inline**: una actividad dentro de esa misma session (escribe `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only si consulta BD), no una session aparte. El usuario nunca crea sessions. Los artefactos son el **registro vivo** del run (la base guía es el spec/plan).
 3. **AskUserQuestion con dos tipos de tab**:
    - **tab(s) de contenido** — la pregunta real del momento.
    - **tab `flow`** — control de ciclo de vida, **siempre presente**: `Compactar` / `Cerrar`. Responder el tab de contenido sin tocar `flow` = seguir iterando.
 4. **Escribe solo en su carpeta `docs/`** — y nunca exporta el resto (eso es de `export-*`).
 
-`flow → Compactar` = checkpoint + `/compact` del host y reanuda. `flow → Cerrar` = persiste `CHECKPOINT` + `BACKLOG`, cierra sessions internas, termina.
+`flow → Compactar` = checkpoint + `/compact` del host y reanuda. `flow → Cerrar` = persiste `CHECKPOINT` (siempre) + `BACKLOG` (solo si difiere), cierra la session, termina.
 
 `spec-new` no tiene loop (single-pass): **5 comandos / 4 loops**.
 
@@ -127,7 +127,7 @@ Catálogo de roles y su default:
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `coding-standards` | `coding-standards` | must | `plan-exec-loop` · `quick-loop` |
 | `writing` | `writing` | must | todos los loops · `export-manuals`/`export-reports` |
-| `research` | `research` | should | todos los loops (on-demand) |
+| `research` | `research` | should | todos los loops (capacidad inline) |
 | `testing` | `testing` | should | `plan-exec-loop` · `quick-loop` |
 | `tools` | `tools` | should | `plan-exec-loop` |
 | `diagrams` | `diagrams` | should | `export-diagrams` |
@@ -142,7 +142,7 @@ El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
 3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión.
 4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
 5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.
-6. **Chasis de loops** — gap-driven convergente · `AskUserQuestion` con ≤3 tabs de contenido + 1 tab `flow` (`Compactar`/`Cerrar`) siempre · compact/resume · `Cerrar` persiste `CHECKPOINT`+`BACKLOG`.
+6. **Chasis de loops** — gap-driven convergente · una sola session por run (research inline) · `AskUserQuestion` con ≤3 tabs de contenido + 1 tab `flow` (`Compactar`/`Cerrar`) siempre · compact/resume · artefactos como log vivo (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
 
 ## Output
 

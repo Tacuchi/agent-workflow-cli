@@ -14,14 +14,13 @@ Who created it and from where:
 
 ## Type (text):
 Session type, **set by the parent loop** (not the user). Authoritative catalog: `../README.md`.
-- `research` — investigate/conclude (read-only); on-demand, **not resumable** (run-and-close)
-- `exec` — execute work, one per phase (PLAN)
+- `refine` — owns a spec-refine / plan-new loop run (SESSION + CHECKPOINT; + BACKLOG on close)
+- `exec` — execute work; a single per-run session (PLAN), not one per phase
 - `quick` — lightweight execution (≈ `exec`: single session, single commit) (QUICK)
-- `refine` / `control` — owns a loop run (SESSION + CHECKPOINT; + BACKLOG on close)
 
-## Components (list):
-Projects / systems / sources / databases involved.
+> `research` is **not** a session type the loops create. Research is an **inline** activity: ANALYSIS-FILE / CONCLUSIONS are written into whatever session is active (`refine`/`exec`/`quick`) when it does investigation.
 
-## Success criteria (list):
-Checklist `[ ]` that, when met, **closes the session and triggers the report** back to the loop.
-If NOT met (e.g. research without evidence, DB unavailable): the session **closes anyway with state `inconcluso`** and reports the reason; the parent loop degrades the gap (asks the human or defers to `Open questions`).
+## Success criteria (list) — research only:
+Present **only for research** activity (investigate/conclude). It is a checklist `[ ]` that, when met, marks the research as concluded.
+If NOT met (e.g. research without evidence, DB unavailable): the research closes as `inconcluso` and reports the reason; the parent loop degrades the gap (asks the human or defers to `Open questions`).
+For `exec` / `quick` / `refine` sessions the closing criteria live in the **plan/spec**, not here — omit this section.

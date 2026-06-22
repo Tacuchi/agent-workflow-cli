@@ -39,10 +39,13 @@ export async function runSessionClose(
   if (!session) return { error: `Sesión no encontrada: ${input.code}` };
 
   // Persist the durable artifacts in the session folder (they survive close).
+  // CHECKPOINT is a resume safety net (no-op when the loop already wrote one).
+  // BACKLOG is NOT fabricated here: the owning loop writes a real BACKLOG.md
+  // only when there is deferred/followup content, so close no longer creates
+  // an empty boilerplate file. `backlog_path` still reports the canonical path.
   const checkpointPath = canonicalArtifactPath(session.path, "checkpoint");
   const backlogPath = canonicalArtifactPath(session.path, "backlog");
   await ensureFile(fs, checkpointPath, "# CHECKPOINT\n");
-  await ensureFile(fs, backlogPath, "# BACKLOG\n");
 
   // Mark the session closed via the folder-local sentinel file.
   // Sessions are internal/light: closing no longer touches the project block.

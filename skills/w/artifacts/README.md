@@ -23,14 +23,15 @@ Central distinction of the model:
 
 ## Sessions & their artifacts
 
-Sessions are created by the loops as needed. Each session type manages a set of artifacts:
+Sessions are created by the loops as needed — **one session per run**. The session types loops create are `refine`, `exec`, `quick`:
 
 | Session type | Created by | Artifacts | Notes |
 |---|---|---|---|
-| **research** | all loops, on-demand | `SESSION` · `ANALYSIS-FILE` · `CONCLUSIONS` · `SCRIPTS.sql` (if DB) | On-demand, **not resumable** (run-and-close). No own `CHECKPOINT`/`BACKLOG` — those live in the owning `refine/control` session. |
-| **refine / control** | `spec-refine-loop` · `plan-new-loop` · `plan-exec-loop` | `SESSION` · `CHECKPOINT` · `BACKLOG` (on close) | Owns the loop run. Tracks open research sessions. |
-| **exec** (one per phase) | `plan-exec-loop` | `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` | No `TECHNICAL-NOTE` or own `TASKS` — detail lives in the plan-doc (living). `TASKS` is optional for internal breakdown. |
-| **quick** (one, lightweight) | `quick-loop` | `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` · `BACKLOG` (on close) | Single session, single commit. |
+| **refine** | `spec-refine-loop` · `plan-new-loop` | `SESSION` · `CHECKPOINT` · `BACKLOG` (on close, if any) | Owns the loop run (spec-refine, plan-new). |
+| **exec** | `plan-exec-loop` | `SESSION` · `CHECKPOINT` · `BACKLOG` (on close, if any) · `DECISION` · `SCRIPTS.sql` | A single per-run exec session (**not** one per phase). No `TECHNICAL-NOTE` or own `TASKS` — detail lives in the plan-doc (living). `TASKS` is optional for internal breakdown. |
+| **quick** | `quick-loop` | `SESSION` · `CHECKPOINT` · `BACKLOG` (on close, if any) · `DECISION` · `SCRIPTS.sql` | Single session, single commit. |
+
+> **Inline research (any session):** research is **not** a session type. When any session (`refine`/`exec`/`quick`) needs to investigate, it produces research artifacts **inline**: `ANALYSIS-FILE` (optional scratchpad), `CONCLUSIONS`, and read-only `SCRIPTS.sql` (if DB). These are written into the active session — there is no separate research session.
 
 > **PLAN note (rich plan):** the plan-doc (`docs/plans/PPP-plan.md`) absorbs inline the `TECHNICAL-NOTE` level (Solution/Impacted/AS-IS/TO-BE/Validations…) **and** the `Phases`/`Tasks`. Therefore exec sessions do **not** carry a `TECHNICAL-NOTE` or own `TASKS` artifact: the technical detail and progress live in the plan-doc (living). `TASKS` remains as an optional artifact for sessions that need their own internal breakdown.
 
@@ -38,7 +39,7 @@ Sessions are created by the loops as needed. Each session type manages a set of 
 
 ## Common artifacts (any session)
 
-`SESSION` (descriptor) · `CHECKPOINT` (resume) · `SCRIPTS.sql` (read-only queries **executable** + DDL/DML migrations **deliverable**, not executed) · `TASKS` · `BACKLOG`.
+`SESSION` (descriptor: Objective / Origin / Type; + research-only Success criteria) · `CHECKPOINT` (resume) · `SCRIPTS.sql` (read-only queries **executable** + DDL/DML migrations **deliverable**, not executed) · `TASKS` · `BACKLOG` (only when there's something to defer).
 
 ---
 
@@ -47,7 +48,7 @@ Sessions are created by the loops as needed. Each session type manages a set of 
 | Folder | Role | Contains |
 |---|---|---|
 | [`artifacts-core/`](artifacts-core/) | common to any session | `SESSION` · `TASKS` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` |
-| [`artifacts-research/`](artifacts-research/) | `research` session | `ANALYSIS-FILE` · `CONCLUSIONS` |
+| [`artifacts-research/`](artifacts-research/) | inline research (any session) | `ANALYSIS-FILE` · `CONCLUSIONS` |
 | [`artifacts-dev/`](artifacts-dev/) | `exec` session | `DECISION` · `TECHNICAL-NOTE` |
 
 ---

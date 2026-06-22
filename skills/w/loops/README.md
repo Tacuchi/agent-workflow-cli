@@ -13,7 +13,7 @@ Un loop es una **skill** que le enseña a la IA *cómo iterar* hasta producir un
 Propiedades comunes a **los 4 loops**:
 
 1. **Gap-driven convergente** — cada ciclo: `detect_gaps` → resolver (humano o research) → integrar → repetir hasta que no queden gaps materiales. Los gaps "agotados" (límite `MAX` de intentos) no se re-disparan → garantiza convergencia.
-2. **Puede crear sessions internas** — si refinar/planificar/ejecutar requiere trabajo profundo (ej. investigar el código), el loop crea una session en `.workflow/sessions/` que maneja **sus** artefactos, la cierra y reporta de vuelta. **El usuario nunca crea esas sessions.**
+2. **Una sola session por run + research inline** — el loop crea **una** session en `.workflow/sessions/` (la dueña del run) y maneja **sus** artefactos. La **investigación es inline**: una actividad dentro de esa misma session que escribe `ANALYSIS-FILE`/`CONCLUSIONS` (+ `SCRIPTS.sql` read-only si consulta BD) en su propia carpeta — ya no es una session aparte. **El usuario nunca crea sessions.** Los artefactos son el **registro vivo** del run (CHECKPOINT actualizado en cada límite de gap/fase, DECISION a medida que pasa, BACKLOG solo si difiere); el spec/plan es la base guía.
 3. **AskUserQuestion con dos tipos de tab** (límite host: 4 preguntas/llamada):
    - **tab(s) de contenido** (≤3) — la(s) pregunta(s) real(es) del momento (resolver una duda, elegir MCP, o en convergencia: `Guardar` / `Preguntar algo más`).
    - **tab `flow`** (1, SIEMPRE presente) — control de ciclo de vida por un canal lateral. Así el contenido lo maneja la IA y el ciclo de vida lo dirige el humano.
@@ -26,15 +26,15 @@ El tab `flow` es **fijo**: `Compactar` / `Cerrar`, presente en los 4 loops. Resp
 | Option | What it does |
 |---|---|
 | `Compactar` | Escribe `CHECKPOINT` (session dueña del run) + dispara `/compact` del host y reanuda sin perder el hilo. |
-| `Cerrar` | `finalize`: persiste lo pendiente (`CHECKPOINT` + `BACKLOG`), cierra sessions internas y termina el loop. |
+| `Cerrar` | `finalize`: persiste lo pendiente (`CHECKPOINT` siempre; `BACKLOG` solo si hay algo diferido), cierra la session y termina el loop. |
 
 ## Loops and their flow
 
 | Loop (`name:`) | Flow | Started by | Reads | Writes |
 |---|---|---|---|---|
-| [`spec-refine-loop`](spec-refine-loop/SKILL.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec.md` (o `…-spec-refined.md` si ya existe) | `docs/specs/NNN-spec-refined.md` |
-| [`plan-new-loop`](plan-new-loop/SKILL.md) | PLANIFICATION | `/w:plan-new` | `docs/specs/NNN-spec-refined.md` | `docs/plans/PPP-plan.md` |
-| [`plan-exec-loop`](plan-exec-loop/SKILL.md) | PLANIFICATION | `/w:plan-exec` | `docs/plans/PPP-plan.md` | `docs/plans/PPP-plan.md` (update) + `docs/tools`; resto vía `export-*` |
+| [`spec-refine-loop`](spec-refine-loop/SKILL.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec*.md` (el spec mismo) | `docs/specs/NNN-spec-<slug>.md` (in place) |
+| [`plan-new-loop`](plan-new-loop/SKILL.md) | PLANIFICATION | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md` |
+| [`plan-exec-loop`](plan-exec-loop/SKILL.md) | PLANIFICATION | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update) + `docs/tools`; resto vía `export-*` |
 | [`quick-loop`](quick-loop/SKILL.md) | QUICK | `/w:quick` | — (prompt) | edita código + session ligera; **no** `docs/` |
 
 > `/w:spec-new` no tiene loop (es single-pass). Por eso hay **5 comandos / 4 loops**.
@@ -80,12 +80,13 @@ Los **heirs** (`plan-new-loop`, `plan-exec-loop`, `quick-loop`) usan `## Inherit
 ## Chassis / heirs
 
 ```
-spec-refine-loop  ── CHASIS (patrón de referencia: motor gap-driven, sessions,
-        │            AskUserQuestion + tab flow, research autónomo + regla BD,
-        │            compact/resume, Cerrar persiste CHECKPOINT+BACKLOG)
+spec-refine-loop  ── CHASIS (patrón de referencia: motor gap-driven, sesión única,
+        │            AskUserQuestion + tab flow, research autónomo INLINE + regla BD,
+        │            compact/resume, artefactos como log vivo: CHECKPOINT siempre,
+        │            BACKLOG solo si difiere)
         ├── plan-new-loop   (heir)  → deltas: plan rico, gap taxonomy de plan
         ├── plan-exec-loop  (heir)  → deltas: ejecución real (código/BD/git),
-        │                              session por fase, sin auto-export
+        │                              una sola session por run, sin auto-export
         └── quick-loop      (heir)  → deltas: ceremonia mínima, 1 session,
                                        hereda git/BD/no-export de plan-exec
 ```
@@ -103,7 +104,7 @@ Los loops componen **capacidades por su rol**, no skills concretas; la skill que
 | `git` | `git` | `plan-exec-loop` · `quick-loop` |
 | `coding-standards` | `coding-standards` | `plan-exec-loop` · `quick-loop` |
 | `writing` | `writing` | todos los loops |
-| `research` | `research` | todos los loops (research on-demand) |
+| `research` | `research` | todos los loops (research inline) |
 | `testing` | `testing` | `plan-exec-loop` · `quick-loop` |
 | `tools` | `tools` | `plan-exec-loop` |
 | `overview` | `workflow` | cualquiera (orientación) |

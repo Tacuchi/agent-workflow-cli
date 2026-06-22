@@ -1,6 +1,6 @@
 ---
 description: Inicia o retoma el loop de ejecución (plan-exec-loop) sobre un plan existente. Aquí ocurre el trabajo real: edición de código, scripts SQL propuestos, herramientas creadas. Git-safe.
-argument-hint: <docs/plans/PPP-plan.md>
+argument-hint: <docs/plans/PPP-plan-<slug>.md>
 allowed-tools:
   [
     "Bash",
@@ -12,7 +12,7 @@ allowed-tools:
 
 # plan-exec — trampolín al loop de ejecución
 
-Arranca o retoma `plan-exec-loop` (Layer 2), que ejecuta el trabajo real fase por fase. El plan (`docs/plans/PPP-plan.md`) es un documento vivo que el loop mantiene actualizado (estado de fases y tareas).
+Arranca o retoma `plan-exec-loop` (Layer 2), que ejecuta el trabajo real fase por fase. El plan (`docs/plans/PPP-plan-<slug>.md`) es un documento vivo que el loop mantiene actualizado (estado de fases y tareas).
 
 ## Ejecutar el loop
 
@@ -25,8 +25,8 @@ Arranca o retoma `plan-exec-loop` (Layer 2), que ejecuta el trabajo real fase po
 
 ## Qué hace el loop (resumen)
 
-- Lee y actualiza `docs/plans/PPP-plan.md` (living doc: estado de fases/tareas).
-- Edita código en las fuentes del workspace (una sesión por fase).
+- Lee y actualiza `docs/plans/PPP-plan-<slug>.md` (living doc: estado de fases/tareas).
+- Edita código en las fuentes del workspace (una sola sesión de ejecución para el run; la ejecución sigue siendo fase por fase, solo que no hay sesión por fase).
 - Escribe herramientas/utilidades reutilizables en `docs/tools/`.
 - Propone commits por fuente (git-safe: verifica rama, propone, nunca push/--amend/--no-verify).
 - Genera artefactos de sesión (`DECISION`, `SCRIPTS.sql`) en `.workflow/sessions/`.

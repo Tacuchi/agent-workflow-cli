@@ -7,8 +7,10 @@
  *   ## Objective    (from --objetivo)
  *   ## Origin       (list derived from a plain origin string; placeholder when absent)
  *   ## Type         (the --type value, set by the parent loop)
- *   ## Components    (blank checklist)
- *   ## Success criteria (blank `[ ]` checklist)
+ *   ## Success criteria (blank `[ ]` checklist) — research sessions only
+ *
+ * Components and (for non-research types) Success criteria are intentionally
+ * omitted: empty boilerplate sections made dogfooded sessions look "empty".
  */
 
 export interface SessionTemplateValues {
@@ -36,6 +38,17 @@ function renderOriginSection(origin: string | undefined): string {
 }
 
 export function renderSessionMarkdown(values: SessionTemplateValues): string {
+  // Research sessions are the only type that opens with explicit success
+  // criteria; other types (refine | exec | quick) omit the section so the
+  // descriptor stays free of empty boilerplate.
+  const successCriteria =
+    values.type === "research"
+      ? `
+
+## Success criteria
+<!-- Checklist that, when met, closes the session and triggers the report back to the loop. -->
+- [ ]`
+      : "";
   return `# SESSION — ${values.name}
 
 ## Objective
@@ -45,14 +58,6 @@ ${values.objetivo}
 ${renderOriginSection(values.origin)}
 
 ## Type
-${values.type}
-
-## Components
-<!-- Projects / systems / sources / databases involved. -->
-- [ ]
-
-## Success criteria
-<!-- Checklist that, when met, closes the session and triggers the report back to the loop. -->
-- [ ]
+${values.type}${successCriteria}
 `;
 }

@@ -55,15 +55,15 @@
 ```mermaid
 flowchart LR
     prompt(["user prompt"]) --> sn["/w:spec-new"]
-    sn -->|generates| spec["docs/specs/NNN-spec.md"]
+    sn -->|generates| spec["docs/specs/NNN-spec-&lt;slug&gt;.md"]
     spec -.->|optional manual edit| spec
     spec --> sr["/w:spec-refine"]
     sr -->|starts| srl(["spec-refine-loop"])
-    srl -->|generates| specr["docs/specs/NNN-spec-refined.md"]
+    srl -->|refines IN PLACE| spec
 
-    specr --> pn["/w:plan-new"]
+    spec --> pn["/w:plan-new"]
     pn -->|starts| pnl(["plan-new-loop"])
-    pnl -->|generates| plan["docs/plans/PPP-plan.md"]
+    pnl -->|generates| plan["docs/plans/PPP-plan-&lt;slug&gt;.md"]
 
     plan --> pe["/w:plan-exec"]
     pe -->|starts| pel(["plan-exec-loop"])
@@ -98,7 +98,7 @@ Each `<command>.md` in this bundle uses this frontmatter + body structure:
 3. **Spec and plan are documents** (`docs/`), not artifacts.
 4. **DB scripts-only**: AI **never executes DML/DDL**; migrations live in `SCRIPTS.sql` (type B) and are delivered via `export-scripts`. Only read-only queries via MCP.
 5. **Git-safe**: verify branch before editing; **propose** commits by source; never `push`/`--amend`/`--no-verify`.
-6. **All loops**: gap-driven convergent · `AskUserQuestion` with ≤3 content tabs + 1 `flow` tab (`Compactar`/`Cerrar`) always · compact/resume · `Cerrar` persists `CHECKPOINT`+`BACKLOG`.
+6. **All loops**: gap-driven convergent · one session per run (research inline) · `AskUserQuestion` with ≤3 content tabs + 1 `flow` tab (`Compactar`/`Cerrar`) always · compact/resume · artifacts as a live log (`CHECKPOINT` always; `BACKLOG` only when deferring).
 
 ## Index
 

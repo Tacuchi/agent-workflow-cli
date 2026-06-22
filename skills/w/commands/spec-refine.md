@@ -1,6 +1,6 @@
 ---
-description: Inicia o retoma el loop de refinamiento de una especificación (spec-refine-loop). Input: docs/specs/NNN-spec.md (borrador). Output: docs/specs/NNN-spec-refined.md.
-argument-hint: <docs/specs/NNN-spec.md>
+description: Inicia o retoma el loop de refinamiento de una especificación (spec-refine-loop). Input: docs/specs/NNN-spec-<slug>.md (borrador). Actualiza docs/specs/NNN-spec-<slug>.md in place.
+argument-hint: <docs/specs/NNN-spec-<slug>.md>
 allowed-tools:
   [
     "Bash",
@@ -25,12 +25,14 @@ Este comando no refina el spec él mismo: delega al loop `spec-refine-loop` (Lay
 
 ## Resolución de estado (resumable)
 
-El skill detecta el estado previo antes de arrancar:
+El skill detecta el estado previo antes de arrancar, **keyando off el `CHECKPOINT`** (no la existencia de un archivo "refined"):
 
 1. Busca la sesión de refinamiento del spec en `.workflow/sessions/` y su `CHECKPOINT.md`.
 2. **En curso** (existe CHECKPOINT) → continúa desde el avance previo (gaps resueltos, Q&A).
-3. **Sin avance** (sin CHECKPOINT ni refined) → arranca desde cero leyendo `NNN-spec.md`.
-4. **Ya completado** (existe `NNN-spec-refined.md`, sin CHECKPOINT abierto) → re-refinamiento incremental: lee el **refined** como input (NO el borrador stale); al `Guardar`, sobrescribe con confirmación.
+3. **Sin avance** (sin CHECKPOINT y el spec **no** tiene `## Refinement decisions`/`## Q&A traceability`) → arranca desde cero leyendo el spec (`NNN-spec*.md`).
+4. **Ya refinado** (sin CHECKPOINT abierto pero el spec **ya tiene** `## Refinement decisions`/`## Q&A traceability`) → re-refinamiento incremental leyendo el **spec mismo**; al `Guardar`, edita in place con confirmación.
+
+> **Compat (legacy):** el glob `NNN-spec*.md` también captura specs viejos `NNN-spec.md` / `NNN-spec-refined.md`. Re-correr spec-refine los edita in place de ahí en adelante.
 
 ## Plan mode
 

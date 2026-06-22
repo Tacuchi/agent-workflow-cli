@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderSessionMarkdown } from "../../src/application/templates/session.js";
 
 describe("renderSessionMarkdown — SESSION.md descriptor (new model)", () => {
-  it("renders the canonical section skeleton with H1 = name", () => {
+  it("renders the canonical section skeleton with H1 = name (research)", () => {
     const md = renderSessionMarkdown({
       name: "investiga-x",
       type: "research",
@@ -12,19 +12,27 @@ describe("renderSessionMarkdown — SESSION.md descriptor (new model)", () => {
     expect(md).toContain("## Objective\nInvestigar el patrón X");
     expect(md).toContain("## Type\nresearch");
     expect(md).toContain("## Origin");
-    expect(md).toContain("## Components");
+    // Components is never rendered; Success criteria is research-only.
+    expect(md).not.toContain("## Components");
     expect(md).toContain("## Success criteria");
   });
 
-  it("emits blank checklists for Components and Success criteria", () => {
-    const md = renderSessionMarkdown({
-      name: "s",
-      type: "exec",
-      objetivo: "do it",
-    });
-    // One blank checkbox under each checklist section.
-    expect(md).toMatch(/## Components\n<!--[\s\S]*?-->\n- \[ \]/);
-    expect(md).toMatch(/## Success criteria\n<!--[\s\S]*?-->\n- \[ \]/);
+  it("never emits a Components section, for any type", () => {
+    for (const type of ["research", "refine", "exec", "quick"]) {
+      const md = renderSessionMarkdown({ name: "s", type, objetivo: "do it" });
+      expect(md).not.toContain("## Components");
+    }
+  });
+
+  it("emits a blank Success criteria checklist for research only", () => {
+    const research = renderSessionMarkdown({ name: "s", type: "research", objetivo: "do it" });
+    // One blank checkbox under the research checklist section.
+    expect(research).toMatch(/## Success criteria\n<!--[\s\S]*?-->\n- \[ \]/);
+
+    for (const type of ["refine", "exec", "quick"]) {
+      const md = renderSessionMarkdown({ name: "s", type, objetivo: "do it" });
+      expect(md).not.toContain("## Success criteria");
+    }
   });
 
   it("renders the Origin placeholder comment when no origin is given", () => {
