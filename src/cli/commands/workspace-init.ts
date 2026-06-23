@@ -19,9 +19,9 @@ export const workspaceInitCommand: QtcCommand = {
       ...(args.valuesMulti.get("source") ?? []),
       ...(args.valuesMulti.get("fuente") ?? []),
     ];
-    if (sourcesRaw.length < 1) {
-      return invalid("workspace-init requiere al menos 1 --source alias:path[:rama]");
-    }
+    // No --source is allowed: on an already-initialized workspace the service
+    // reconciles, preserving existing sources + description (so paths are never
+    // re-passed through the shell). A genuinely empty workspace still errors.
     const parsed = parseFuentesSpecs(sourcesRaw);
     if ("error" in parsed) return invalid(parsed.error);
     const sources = parsed.fuentes.map(toWorkspaceSource);

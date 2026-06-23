@@ -211,6 +211,30 @@ describe("runWorkspaceInit", () => {
     expect(second.detached_removed).toBeDefined();
   });
 
+  it("reconcile SIN --source: preserva las fuentes y la descripción existentes", async () => {
+    await runWorkspaceInit(fs, env, paths, {
+      proyecto: "Mi Proyecto",
+      sources: [
+        { alias: "app", path: "/tmp/app-fake" },
+        { alias: "lib", path: "/tmp/lib-fake" },
+      ],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    // Re-correr para reconciliar el schema, sin re-pasar fuentes ni descripción.
+    const second = await runWorkspaceInit(fs, env, paths, {
+      sources: [],
+      workspace,
+      lastActivity: "2026-01-02 00:00",
+    });
+    if ("error" in second) throw new Error(`unexpected error: ${second.error}`);
+    expect(second.sources).toBe(2); // preservadas, no error no_sources
+    const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
+    expect(claude).toContain("Mi Proyecto"); // descripción preservada (no basename)
+    expect(claude).toContain("/tmp/app-fake"); // fuentes preservadas
+    expect(claude).toContain("/tmp/lib-fake");
+  });
+
   it("--dry-run no escribe nada y devuelve preview", async () => {
     const result = await runWorkspaceInit(fs, env, paths, {
       sources: [{ alias: "app", path: "/tmp/app" }],

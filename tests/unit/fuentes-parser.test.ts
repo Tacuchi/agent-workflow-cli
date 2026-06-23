@@ -57,4 +57,13 @@ describe("parseFuentesSpecs", () => {
     const r = parseFuentesSpecs(["solopath"]);
     expect("error" in r).toBe(true);
   });
+
+  // El reporte de campo: re-pasar `C:\Source\x` por el shell se come los
+  // backslashes → llega `C:Sourcex` (unidad pegada al path). Hay que rechazarlo,
+  // no almacenar un path corrupto (que luego destruye el multiroot).
+  it("rechaza una ruta Windows corrupta (unidad sin separador tras el colon)", () => {
+    const r = parseFuentesSpecs(["miscuotas:C:Sourcecore-frontend-miscuotas"]);
+    expect("error" in r).toBe(true);
+    if ("error" in r) expect(r.error).toMatch(/forward-slash|separador|corrupt/i);
+  });
 });

@@ -91,48 +91,41 @@ export async function runWorkspaceInit(
   paths: PathsService,
   input: WorkspaceInitInput,
 ): Promise<WorkspaceInitResult | WorkspaceInitInputError> {
-  const validation = validateInput(input);
+  const workspace = input.workspace ? resolve(input.workspace) : resolve(env.cwd());
+  const mainBranch = input.mainBranch ?? DEFAULT_MAIN_BRANCH;
+  const wsPaths = new PathsService(paths.namespace, env.homeDir(), workspace);
+
+  // Reconcile: re-running on an initialized workspace PRESERVES the existing
+  // sources + description unless explicitly overridden. A plain `workspace-init`
+  // (no --source) brings a workspace onto the current schema WITHOUT re-passing
+  // every source through the shell — where backslashes in Windows paths
+  // (`C:\Source\…`) get eaten, corrupting the block and wiping multiroot.
+  const existing = await readExistingBlock(fs, workspace, wsPaths);
+  const sources = input.sources.length > 0 ? input.sources : (existing?.fuentes ?? []);
+  const proyecto = resolveProyecto(input.proyecto, existing?.proyecto, workspace);
+
+  const validation = validateSources(sources);
   if (validation) return validation;
 
-  const workspace = input.workspace ? resolve(input.workspace) : resolve(env.cwd());
-  const proyecto =
-    input.proyecto && input.proyecto.trim().length > 0
-      ? input.proyecto.trim()
-      : basename(workspace);
-  const mainBranch = input.mainBranch ?? DEFAULT_MAIN_BRANCH;
-
   if (input.dryRun) {
-    const anyExternal = input.sources.some((s) => isExternalToWorkspace(s.path, workspace));
-    return {
-      ok: true,
-      dry_run: true,
-      workspace,
-      sources: input.sources.length,
-      scaffold: { created: plannedScaffold(workspace, paths.namespace), existing: [] },
-      skills_toml: "created",
-      project_md: { ok: true, action: "init" },
-      attach_multiroot: anyExternal
-        ? { skipped: true, reason: "dry_run" }
-        : { skipped: true, reason: "no_external_sources" },
-    };
+    return buildDryRunResult(workspace, paths.namespace, sources);
   }
 
   // Everything is scoped to `workspace` (which may differ from the process cwd).
   const targetEnv = workspace !== resolve(env.cwd()) ? overrideCwd(env, workspace) : env;
-  const wsPaths = new PathsService(paths.namespace, env.homeDir(), workspace);
 
   const scaffold = await scaffoldDirs(fs, workspace, wsPaths);
   const skillsToml = await seedSkillsToml(fs, wsPaths);
 
-  // Capture the previous block's sources before overwriting, to detach removed ones.
-  const previousPaths = await readBlockSourcePaths(fs, workspace, wsPaths);
+  // Previous sources (to detach removed ones) come from the same existing block.
+  const previousPaths = (existing?.fuentes ?? []).map((f) => f.path).filter((p) => p.length > 0);
 
   const projectMd = await runProjectMdUpsertWrite(fs, targetEnv, wsPaths, {
     op: "init",
     // Block without `Mode:` line; Fuentes table holds N sources. Working branches
     // render in the Status block.
     proyecto,
-    fuentes: input.sources.map((s) => ({
+    fuentes: sources.map((s) => ({
       alias: s.alias,
       path: s.path,
       ...(s.mainBranch !== undefined ? { mainBranch: s.mainBranch } : {}),
@@ -151,7 +144,7 @@ export async function runWorkspaceInit(
       ok: false,
       dry_run: false,
       workspace,
-      sources: input.sources.length,
+      sources: sources.length,
       scaffold,
       skills_toml: skillsToml,
       project_md: projectMd,
@@ -165,7 +158,7 @@ export async function runWorkspaceInit(
     targetEnv,
     wsPaths,
     workspace,
-    input.sources,
+    sources,
     previousPaths,
   );
 
@@ -173,7 +166,7 @@ export async function runWorkspaceInit(
     ok: projectMd.ok && visibility.ok,
     dry_run: false,
     workspace,
-    sources: input.sources.length,
+    sources: sources.length,
     scaffold,
     skills_toml: skillsToml,
     project_md: projectMd,
@@ -186,6 +179,26 @@ function plannedScaffold(workspace: string, ns: string): string[] {
   const out = [join(workspace, `.${ns}`, "sessions")];
   for (const f of DOCS_FOLDERS) out.push(join(workspace, "docs", f));
   return out;
+}
+
+function buildDryRunResult(
+  workspace: string,
+  namespace: string,
+  sources: WorkspaceSource[],
+): WorkspaceInitResult {
+  const anyExternal = sources.some((s) => isExternalToWorkspace(s.path, workspace));
+  return {
+    ok: true,
+    dry_run: true,
+    workspace,
+    sources: sources.length,
+    scaffold: { created: plannedScaffold(workspace, namespace), existing: [] },
+    skills_toml: "created",
+    project_md: { ok: true, action: "init" },
+    attach_multiroot: anyExternal
+      ? { skipped: true, reason: "dry_run" }
+      : { skipped: true, reason: "no_external_sources" },
+  };
 }
 
 async function scaffoldDirs(
@@ -308,22 +321,44 @@ function overrideCwd(env: EnvPort, cwd: string): EnvPort {
   };
 }
 
-/** Source paths declared in the current block (before it is rewritten). */
-async function readBlockSourcePaths(
+/** Proyecto + sources declared in the current block (before it is rewritten),
+ *  used to preserve them on a reconcile re-run. Null when no block exists yet. */
+async function readExistingBlock(
   fs: FileSystemPort,
   workspace: string,
   paths: PathsService,
-): Promise<string[]> {
+): Promise<{ proyecto: string; fuentes: WorkspaceSource[] } | null> {
   const markers = paths.blockMarkers();
   for (const fname of ["CLAUDE.md", "AGENTS.md"]) {
     const file = join(workspace, fname);
     if (!(await fs.exists(file))) continue;
     const block = parseProjectBlock(await fs.readText(file), markers);
-    if (block && block.fuentes.length > 0) {
-      return block.fuentes.map((f) => f.path).filter((p) => p.length > 0);
+    if (block) {
+      return {
+        proyecto: block.proyecto,
+        fuentes: block.fuentes
+          .filter((f) => f.path.length > 0)
+          .map((f) => ({
+            alias: f.alias,
+            path: f.path,
+            ...(f.main_branch ? { mainBranch: f.main_branch } : {}),
+          })),
+      };
     }
   }
-  return [];
+  return null;
+}
+
+/** Project description: explicit arg wins, else preserve the existing block's,
+ *  else fall back to the workspace folder name. */
+function resolveProyecto(
+  arg: string | undefined,
+  existing: string | undefined,
+  workspace: string,
+): string {
+  if (arg && arg.trim().length > 0) return arg.trim();
+  if (existing && existing.trim().length > 0) return existing.trim();
+  return basename(workspace);
 }
 
 /** Ensure the workspace `.gitignore` ignores the visibility files (idempotent). */
@@ -343,15 +378,15 @@ async function ensureVisibilityGitignore(fs: FileSystemPort, workspace: string):
   await fs.writeText(file, body.length === 0 ? block : `${body}\n\n${block}`);
 }
 
-function validateInput(input: WorkspaceInitInput): WorkspaceInitInputError | null {
-  if (!input.sources || input.sources.length < 1) {
+function validateSources(sources: WorkspaceSource[]): WorkspaceInitInputError | null {
+  if (!sources || sources.length < 1) {
     return {
       error: "no_sources",
-      hint: "workspace-init requiere al menos 1 fuente (--source alias:path[:rama])",
+      hint: "workspace-init requiere al menos 1 fuente (--source alias:path[:rama]); o re-corré en un workspace ya inicializado para reconciliar preservando las existentes",
     };
   }
   const aliases = new Set<string>();
-  for (const s of input.sources) {
+  for (const s of sources) {
     if (!s.alias || !s.path) {
       return { error: "invalid_source", hint: `fuente sin alias o path: ${JSON.stringify(s)}` };
     }
