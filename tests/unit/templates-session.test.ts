@@ -12,7 +12,7 @@ describe("renderSessionMarkdown — SESSION.md descriptor (new model)", () => {
     expect(md).toContain("## Objective\nInvestigar el patrón X");
     expect(md).toContain("## Type\nresearch");
     expect(md).toContain("## Origin");
-    // Components is never rendered; Success criteria is research-only.
+    // Components is never rendered; Success criteria is seeded for all types (verification-first).
     expect(md).not.toContain("## Components");
     expect(md).toContain("## Success criteria");
   });
@@ -24,14 +24,12 @@ describe("renderSessionMarkdown — SESSION.md descriptor (new model)", () => {
     }
   });
 
-  it("emits a blank Success criteria checklist for research only", () => {
-    const research = renderSessionMarkdown({ name: "s", type: "research", objetivo: "do it" });
-    // One blank checkbox under the research checklist section.
-    expect(research).toMatch(/## Success criteria\n<!--[\s\S]*?-->\n- \[ \]/);
-
-    for (const type of ["refine", "exec", "quick"]) {
+  it("emits a blank Success criteria checklist for every type (verification-first)", () => {
+    // verification-first: the done-condition is seeded for ALL session types, not
+    // just research — a blank falsifiable checklist the loop fills before executing.
+    for (const type of ["research", "refine", "exec", "quick"]) {
       const md = renderSessionMarkdown({ name: "s", type, objetivo: "do it" });
-      expect(md).not.toContain("## Success criteria");
+      expect(md).toMatch(/## Success criteria\n<!--[\s\S]*?-->\n- \[ \]/);
     }
   });
 

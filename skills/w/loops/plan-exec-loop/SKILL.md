@@ -48,7 +48,7 @@ Este loop **nunca gradúa/promueve artefactos** a `docs/`. Las únicas carpetas 
 
 Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 
-- Motor **gap-driven** (aplica *dentro de una tarea* ante una decisión/duda no obvia: research inline ó structured-choice).
+- **Objetivo persistente + verification-first** del chasis: persigue su `SESSION.Objective` hasta que sus `SESSION.Success criteria` están **en verde** (sembrados al inicio; acá = los tests/validaciones del plan pasan — TDD literal cuando hay código, rúbrica para migraciones BD no ejecutables). El motor es **gap-driven** (aplica *dentro de una tarea* ante una decisión/duda no obvia: research inline ó structured-choice).
 - **Structured-choice**: ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`).
 - **Research INLINE** + **regla BD** read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only) + research **inconclusa** (degrada/difiere, límite `MAX`).
 - **Compact/resume**; **artefactos como log vivo** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
@@ -95,7 +95,7 @@ Distinción por **ejecución**, no por archivo (ver el esquema `SCRIPTS.sql`):
 - Validación que **corre y falla** → vuelve a la tarea (gap); no avanza.
 - **Validación dependiente de una migración no aplicada**: como la IA no ejecuta el DML, **no puede correr read-only** → se **difiere** (handoff a DBA), **no bloquea el avance**. Se registra en `Open questions` del plan + `BACKLOG`, marcando "verificación pendiente tras aplicar SQL". (Reusa el patrón degradar/diferir + límite `MAX` del chasis → evita el bucle "vuelve a la tarea".)
 
-> La **validación final** es el **convergence gate** de PLAN-exec (análogo al *analyze gate* de SPEC y al *coherence gate* de `plan-new`): el plan no se marca *done* hasta que pasa o queda explícitamente diferida (handoff de SQL).
+> La **validación final** es el **convergence gate** de PLAN-exec = **`Success criteria` en verde** (*verification-first*; análogo al *analyze gate* de SPEC y al *coherence gate* de `plan-new`): el plan no se marca *done* hasta que pasa o queda explícitamente diferida (handoff de SQL). Para código son **tests ejecutables** (TDD); para migraciones BD no ejecutables, **rúbrica** (SCRIPTS.sql válido + revisado).
 
 ## Delta 5 — Completitud / cierre
 

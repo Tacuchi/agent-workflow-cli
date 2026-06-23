@@ -37,6 +37,39 @@ Actualiza `docs/specs/NNN-spec-<slug>.md` **in place** (cuando el usuario elige 
 
 > **Invariante de boundary:** este loop escribe **solo** en `docs/specs`. Nunca gradúa/exporta otros artefactos a `docs/` — eso es trabajo de `export-*`, aparte.
 
+## Objetivo persistente (chasis — heredado por todos los loops)
+
+Un loop **es un objetivo persistente**: existe para cumplir el `SESSION.Objective` declarado al arrancar, y **no se considera terminado hasta que el convergence gate confirma que el objetivo se cumplió**. La iteración gap-driven es el *método*; los artefactos son el *registro*; el objetivo persistente es el *frame* que los gobierna.
+
+Está **modelado en cómo se comporta el `/goal` de Claude Code** (declarás un objetivo, el agente no para hasta cumplirlo, auto-completa al cumplirse, con corte explícito para abortar antes) pero como **doctrina agnóstica, no una dependencia del host**: el "no parar hasta converger" lo sostiene el propio loop (su `repeat:` + el convergence gate), no un Stop hook del arnés — ningún host necesita `/goal`. Y, a diferencia del `/goal` pelado, **deja registro durable** (artifact-first) que sobrevive compactación y resume.
+
+| Comportamiento de `/goal` (ejemplo) | Análogo agnóstico en el loop |
+|---|---|
+| declarar el objetivo | `SESSION.Objective` |
+| no parar hasta cumplirlo | `repeat:` gap-driven hasta `gaps == ∅` |
+| objetivo cumplido → auto-clear | **convergence gate** pasa → `finalize` |
+| `/goal clear` (abortar antes) | control `flow` `Cerrar` |
+| la directiva sobrevive el contexto | `CHECKPOINT` + resume |
+
+> Los heirs heredan el frame: `plan-new`/`plan-exec` persiguen el plan hasta su gate; `quick-loop` es la encarnación más directa (el prompt *es* el objetivo) — el "símil a `/goal`" del modelo.
+
+## Verification-first (chasis — heredado por todos los loops)
+
+El objetivo persistente necesita una **condición de término checkable** — si no, el loop no sabe cuándo cumplió (o persigue un blanco que inventó). Esa condición se **siembra ANTES de ejecutar**, no se improvisa al final: es **TDD generalizado**. Junto con artifact-first (sección siguiente) son los **dos sembrados** de cada gap/fase: *cómo sabré que funcionó* + *qué voy a hacer*.
+
+**Dónde vive:** en `SESSION.Success criteria` (ver [`../../artifacts/artifacts-core/SESSION.md`](../../artifacts/artifacts-core/SESSION.md)) — checklist `[ ]` de criterios **falsables** (que *pueden* fallar). `CHECKPOINT.Pending/Completed` trackea el avance **red→green**. Dos formas según el deliverable:
+
+| Deliverable | Criterio = | Ciclo |
+|---|---|---|
+| código / script / fix / feature | **tests ejecutables** (unit, build, lint, repro del bug) | TDD literal: red → green → refactor |
+| migración BD (no ejecutable; invariante 4) | **rúbrica**: `SCRIPTS.sql` válido + revisado (no se ejecuta) | rúbrica |
+| spec / plan | **rúbrica** = los acceptance criteria del documento (referenciados, no duplicados) | rúbrica |
+| análisis / diseño | **rúbrica falsable por inspección** (ej. "todos los afectados con `file:line`"; "cada decisión: rationale + ≥1 alternativa") | rúbrica |
+
+**Forma y peso escalan** (preserva la *ceremonia mínima* de quick): un chore es "tests/build existentes siguen verdes" (una línea); un feature, acceptance tests reales. No es "siempre escribir tests nuevos" — es "**siempre declarar el check antes**". Para deliverables **subjetivos** (análisis/diseño) la IA **propone** la rúbrica y el **humano la ratifica** (structured-choice) antes de perseguirla. **Criterio irresoluble** (sin evidencia, BD no disponible) → cierra `inconcluso` + el loop **degrada** (humano, o difiere a `Open questions`/`BACKLOG`); nunca itera en falso.
+
+> El **convergence gate** (sección *Convergence / exit*) es, operacionalmente, **"todos los `Success criteria` en verde"**. Los gates por-heir (analyze gate, coherencia del plan, validación final, validación puntual proporcional) son **instancias** de esto, con los criterios sembrados al inicio.
+
 ## Artifacts as a live log — ciclo artifact-first (chasis — heredado por todos los loops)
 
 El loop trabaja **artifact-first**: el artefacto se **siembra antes** de ejecutar y se **actualiza después**, no solo al cerrar. Cada gap/fase/tarea corre el ciclo de **3 tiempos**:
@@ -168,6 +201,7 @@ La investigación es **inline**: una actividad **dentro de la session actual del
 spec-refine-loop(spec):
   input = glob(NNN-spec*.md) | argumento (ruta)         # siempre el spec mismo (in place)
   refine_session = create_or_resume("spec-refine")      # CLI antepone NNN global; resume localiza por descriptor/origin
+  seed SESSION.Success criteria = acceptance criteria + checklist del analyze gate   # verification-first: ANTES de iterar
   work = read(input)  (+ aplicar avance del checkpoint si reanuda)
   attempts = {}                                         # anti-relanzamiento por gap
   repeat:
@@ -193,7 +227,7 @@ spec-refine-loop(spec):
         Compactar → write CHECKPOINT (refine_session) ; compactar(arnés) ; continue
         Cerrar    → goto finalize
       work = integrate(work, ans)            # → Q&A traceability / Open questions
-  # sin gaps materiales → analyze gate (read-only) antes de ofrecer Guardar:
+  # sin gaps materiales → analyze gate = Success criteria en verde (read-only) antes de ofrecer Guardar:
   issues = analyze(work)   # criterios trazan al Requirement · sin contradicciones · Scope coherente · Open questions cerradas/diferidas
   si issues: gaps += issues ; continue            # los hallazgos vuelven al loop como gaps
   ans = structured_choice(contenido: [Guardar refinada, Preguntar algo más],
@@ -244,7 +278,7 @@ El resume **keya off el `CHECKPOINT`** de la refine session, no de la existencia
 
 ## Convergence / exit
 
-- **Sin gaps materiales** → **analyze gate** (read-only): cada acceptance criterion traza al `Requirement`, sin contradicciones internas, `Scope` In/Out coherente, `Open questions` cerradas o explícitamente diferidas. Lo que falle **vuelve como gap**; si pasa → ofrece `Guardar especificación refinada`. *(Es el "convergence gate" del chasis; heirs: plan-new = coherencia del plan, plan-exec = validación final, quick = validación puntual — excepción lightweight.)*
+- **Sin gaps materiales** → **analyze gate** (read-only) = **`Success criteria` en verde** (*verification-first*): cada acceptance criterion traza al `Requirement`, sin contradicciones internas, `Scope` In/Out coherente, `Open questions` cerradas o explícitamente diferidas. Lo que falle **vuelve como gap**; si pasa → ofrece `Guardar especificación refinada`. *(Es el "convergence gate" del chasis; los heirs son instancias: plan-new = coherencia del plan, plan-exec = validación final, quick = validación puntual proporcional.)*
 - `Guardar` → `edit_in_place_with_confirm(spec)` y `finalize`.
 - `Cerrar` (control `flow`, en cualquier momento) → `finalize`. **`finalize` persiste siempre el `CHECKPOINT.md`** (reanudable) y, **solo si hay algo diferido/followup**, escribe `BACKLOG.md` (motivo de cierre + `Open questions` diferidas); cierra la session y reporta. Así sobrevive el avance aunque no se haya `Compactar` antes.
 

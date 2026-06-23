@@ -86,16 +86,17 @@ Skills **invocables independientes de flujo**: se disparan con `/w:` igual que u
 
 Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable. Propiedades comunes (el chasis, en `spec-refine-loop`, lo heredan los demás):
 
-1. **Gap-driven convergente** — cada ciclo: detecta huecos → resuelve (pregunta al humano o investiga) → integra → repite hasta converger.
-2. **Una sola session por run + research inline** — el loop crea **una** session (la dueña del run) y maneja sus artefactos en `.workflow/sessions/`. La **investigación es inline**: una actividad dentro de esa misma session (escribe `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only si consulta BD), no una session aparte. El usuario nunca crea sessions. Los artefactos son el **registro vivo** del run, **ciclo artifact-first** (sembrar `Pending`/`Next` antes de ejecutar, llevar a `Completed` después); la base guía es el spec/plan.
-3. **Structured-choice con dos tipos de pregunta** — *structured-choice* (capacidad del arnés — ver `harness/SKILL.md`). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**.
+1. **Objetivo persistente + verification-first** — el loop persigue su `SESSION.Objective` y solo finaliza cuando sus `SESSION.Success criteria` (sembrados al inicio, *verification-first* / TDD generalizado: tests para código, rúbrica falsable para análisis/diseño) están **en verde**. Modelado en el `/goal` de Claude Code pero **agnóstico** (no depende de ningún host) y con registro durable.
+2. **Gap-driven convergente** — el *cómo*: cada ciclo detecta huecos → resuelve (pregunta al humano o investiga) → integra → repite hasta converger.
+3. **Una sola session por run + research inline** — el loop crea **una** session (la dueña del run) y maneja sus artefactos en `.workflow/sessions/`. La **investigación es inline**: una actividad dentro de esa misma session (escribe `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only si consulta BD), no una session aparte. El usuario nunca crea sessions. Los artefactos son el **registro vivo** del run, **ciclo artifact-first** (sembrar `Pending`/`Next` antes de ejecutar, llevar a `Completed` después); la base guía es el spec/plan.
+4. **Structured-choice con dos tipos de pregunta** — *structured-choice* (capacidad del arnés — ver `harness/SKILL.md`). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**.
    - **pregunta(s) de contenido** — la pregunta real del momento.
    - **control `flow`** — control de ciclo de vida, **siempre presente**: `Compactar` / `Cerrar`. Responder la pregunta de contenido sin tocar `flow` = seguir iterando.
-4. **Escribe solo en su carpeta `docs/`** — y nunca exporta el resto (eso es de `export-*`).
+5. **Escribe solo en su carpeta `docs/`** — y nunca exporta el resto (eso es de `export-*`).
 
 `flow → Compactar` = checkpoint + la **compactación** del arnés (en Claude Code: `/compact`; ver `harness/SKILL.md`) y reanuda. `flow → Cerrar` = persiste `CHECKPOINT` (siempre) + `BACKLOG` (solo si difiere), cierra la session, termina.
 
-Cada loop tiene un **convergence gate** read-only antes de ofrecer `Guardar`/`done`: chequea invariantes propios del entregable y lo que falle vuelve como gap (en `spec-refine-loop` es el *analyze gate*; en `plan-new-loop`, la coherencia del plan; en `plan-exec-loop`, la validación final; en `quick-loop`, una validación puntual lightweight). El detalle vive en cada loop.
+Cada loop tiene un **convergence gate** read-only antes de ofrecer `Guardar`/`done`, que es operacionalmente **"todos los `SESSION.Success criteria` en verde"** (*verification-first*): chequea invariantes propios del entregable y lo que falle vuelve como gap (en `spec-refine-loop` es el *analyze gate*; en `plan-new-loop`, la coherencia del plan; en `plan-exec-loop`, la validación final; en `quick-loop`, una validación puntual proporcional). El detalle vive en cada loop.
 
 `spec-new` no tiene loop (single-pass): **5 comandos / 4 loops**.
 
@@ -163,7 +164,7 @@ Las únicas `must` para el ciclo de un loop son **structured-choice** y **compac
 3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión.
 4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
 5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.
-6. **Chasis de loops** — gap-driven convergente · una sola session por run (research inline) · **structured-choice** con ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre · compactación/resume · convergence gate read-only antes de cerrar · artefactos como log vivo **artifact-first** (sembrar `Pending`/`Next` antes, `Completed` después; `CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+6. **Chasis de loops** — **objetivo persistente + verification-first** (persigue `SESSION.Objective` hasta que sus `SESSION.Success criteria` —sembrados al inicio, TDD generalizado— están en verde) · gap-driven convergente · una sola session por run (research inline) · **structured-choice** con ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre · compactación/resume · artefactos como log vivo **artifact-first** (sembrar `Pending`/`Next` antes, `Completed` después; `CHECKPOINT` siempre; `BACKLOG` solo si difiere).
 
 ## Output
 

@@ -4,13 +4,17 @@
  * `skills/w/artifacts/artifacts-core/SESSION.md`:
  *
  *   # SESSION — <name>
- *   ## Objective    (from --objetivo)
- *   ## Origin       (list derived from a plain origin string; placeholder when absent)
- *   ## Type         (the --type value, set by the parent loop)
- *   ## Success criteria (blank `[ ]` checklist) — research sessions only
+ *   ## Objective         (from --objetivo)
+ *   ## Origin            (list derived from a plain origin string; placeholder when absent)
+ *   ## Type              (the --type value, set by the parent loop)
+ *   ## Success criteria  (blank `[ ]` checklist) — the verification-first done-condition
  *
- * Components and (for non-research types) Success criteria are intentionally
- * omitted: empty boilerplate sections made dogfooded sessions look "empty".
+ * `## Success criteria` is the run's done-condition, seeded at creation
+ * (verification-first / generalized TDD): a falsifiable `[ ]` checklist the loop
+ * fills BEFORE executing and persists toward — executable tests for code, a
+ * by-inspection rubric for analysis/design. Emitted for EVERY type (was
+ * research-only until verification-first became a chassis principle).
+ * Components stays omitted: empty boilerplate that added no signal.
  */
 
 export interface SessionTemplateValues {
@@ -38,17 +42,10 @@ function renderOriginSection(origin: string | undefined): string {
 }
 
 export function renderSessionMarkdown(values: SessionTemplateValues): string {
-  // Research sessions are the only type that opens with explicit success
-  // criteria; other types (refine | exec | quick) omit the section so the
-  // descriptor stays free of empty boilerplate.
-  const successCriteria =
-    values.type === "research"
-      ? `
-
-## Success criteria
-<!-- Checklist that, when met, closes the session and triggers the report back to the loop. -->
-- [ ]`
-      : "";
+  // verification-first: every session opens with its done-condition seeded as a
+  // blank, falsifiable `[ ]` checklist — the loop fills it BEFORE executing
+  // (tests for code, a by-inspection rubric for analysis/design) and persists
+  // until all items are green. The parent loop owns the actual criteria.
   return `# SESSION — ${values.name}
 
 ## Objective
@@ -58,6 +55,10 @@ ${values.objetivo}
 ${renderOriginSection(values.origin)}
 
 ## Type
-${values.type}${successCriteria}
+${values.type}
+
+## Success criteria
+<!-- Verification-first done-condition, seeded BEFORE executing: falsifiable [ ] items (tests for code, a by-inspection rubric for analysis/design). The loop persists until all are green. -->
+- [ ]
 `;
 }

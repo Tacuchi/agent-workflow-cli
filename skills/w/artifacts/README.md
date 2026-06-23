@@ -39,7 +39,7 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 
 ## Common artifacts (any session)
 
-`SESSION` (descriptor: Objective / Origin / Type; + research-only Success criteria) · `CHECKPOINT` (resume) · `SCRIPTS.sql` (read-only queries **executable** + DDL/DML migrations **deliverable**, not executed) · `TASKS` · `BACKLOG` (only when there's something to defer).
+`SESSION` (descriptor: Objective / Origin / Type / **Success criteria** = verification-first done-condition, formerly research-only) · `CHECKPOINT` (resume) · `SCRIPTS.sql` (read-only queries **executable** + DDL/DML migrations **deliverable**, not executed) · `TASKS` · `BACKLOG` (only when there's something to defer).
 
 ---
 

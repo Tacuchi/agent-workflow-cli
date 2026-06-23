@@ -9,3 +9,7 @@ Probar session-create del CLI TS
 
 ## Type
 exec
+
+## Success criteria
+<!-- Verification-first done-condition, seeded BEFORE executing: falsifiable [ ] items (tests for code, a by-inspection rubric for analysis/design). The loop persists until all are green. -->
+- [ ]

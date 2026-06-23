@@ -49,6 +49,12 @@ export function WorkflowTab({ isActive }: WorkflowTabProps) {
         action={<Text color={colors.mute}>stages + loops + artifacts harness</Text>}
       />
 
+      <Box marginBottom={1}>
+        <Text color={colors.dim} wrap="wrap">
+          {w.overview}
+        </Text>
+      </Box>
+
       {/* 2-column body: lifecycle left, families+slash/hooks right */}
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>

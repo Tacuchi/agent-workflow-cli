@@ -1,5 +1,5 @@
 // Datos del Workflow tab — hardcoded para evitar I/O en render.
-// Sincronizado con el modelo rediseñado (stages + loops + artifacts):
+// Sincronizado con el modelo rediseñado (stages + loops + artifacts; loops = objetivos persistentes + verification-first):
 //   - skills/w/commands/   (/w: slash commands — 1 por archivo .md)
 //   - skills/w/README.md   (3 layers + 3 flows: SPEC / PLAN / QUICK)
 //   - src/cli/help-groups.ts (familias del CLI real, post-cleanup)
@@ -28,7 +28,7 @@ export interface WorkflowContent {
 
 export const WORKFLOW_CONTENT: WorkflowContent = {
   overview:
-    "Stages + loops + artifacts — 3 flows (SPEC · PLAN · QUICK) drive convergent loops over session artifacts; export-* promotes to docs/. Transversal skills (/w:status · /w:fix-git) sit outside the flows.",
+    "Stages + loops + artifacts — 3 flows (SPEC · PLAN · QUICK) drive convergent loops; each loop is a persistent goal that runs until its Success criteria are green (verification-first). export-* promotes to docs/; transversal skills (/w:status · /w:fix-git) sit outside the flows.",
 
   // Las 3 FLOWS del modelo + bootstrap (workspace-init) + familia export-*.
   // Reusa PhaseCardData genérico (id/n/title/desc/commands/slash/hook).
@@ -64,7 +64,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "quick",
       n: 4,
       title: "QUICK — the shortcut",
-      desc: "Lightweight one-command loop for small tasks. Owns no docs/ folder.",
+      desc: "Lightweight one-command loop for small tasks — code or a scoped analysis/design. Proportional verification-first; owns no docs/ folder.",
       commands: ["quick"],
       slash: "/w:quick",
       hook: "SessionEnd",

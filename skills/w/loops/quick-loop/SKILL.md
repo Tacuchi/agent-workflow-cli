@@ -33,9 +33,9 @@ QUICK
 — (el prompt del usuario; no hay documento de entrada).
 
 ## Writes
-- Edita código en las fuentes (cambio mínimo).
+- **Deliverable según la tarea:** edita código en las fuentes (cambio mínimo) **o** produce un **análisis/diseño** acotado (deliverable no-código, vive en los artefactos de la session — no en `docs/`).
 - Artefactos de la session en `.workflow/sessions/`.
-- **NO toca `docs/`** (sin doc, sin auto-export).
+- **NO toca `docs/`** (sin doc, sin auto-export). Un análisis/diseño que amerite preservarse se promueve aparte (`export-*`) o se escala a SPEC/PLAN.
 
 ## Internal session
 
@@ -43,17 +43,18 @@ QUICK
 
 ## Inherits
 
-- del **chasis** [`spec-refine-loop`](../spec-refine-loop/SKILL.md): gap-driven (mínimo), *structured-choice* ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`), `research` **inline** + regla BD read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only), compact/resume, **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+- del **chasis** [`spec-refine-loop`](../spec-refine-loop/SKILL.md): **objetivo persistente** (acá el más directo: el prompt *es* el objetivo) + **verification-first** (`SESSION.Success criteria` proporcional), gap-driven (mínimo), *structured-choice* ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`), `research` **inline** + regla BD read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only), compact/resume, **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
 - de [`plan-exec-loop`](../plan-exec-loop/SKILL.md): **git** (rama segura antes de editar + commit propuesto; nunca `push`/`--amend`/`--no-verify`), **BD** (la IA nunca ejecuta DML; migraciones → `SCRIPTS.sql` de la session), **sin auto-export** (no toca otras carpetas `docs/`).
 
 ## Composes
 
-`git` · `coding-standards` · `testing` (validación puntual) · `sql` (regla BD) · `writing` · `research` (inline). Resueltas por `.workflow/skills.toml`.
+`git` · `coding-standards` · `testing` (verification-first) · `sql` (regla BD) · `writing` · `research` (inline). Resueltas por `.workflow/skills.toml`.
 
 ## Delta QUICK — minimal ceremony
 
 - **Sin fases, sin plan-doc**: el prompt **es** la tarea (una sola unidad). No hay roadmap.
-- **Una sola session**. **Un solo commit** propuesto al final.
+- **Verification-first proporcional** (ceremonia mínima): aun acá se **siembra el check antes**, del tamaño de la tarea. Código: un test (repro del bug → fix) o "build/lint/tests existentes siguen verdes" (chore). **Análisis/diseño**: una **rúbrica falsable corta**, *ratificada por el usuario* antes de perseguirla. Es el `SESSION.Success criteria` del run (ver [chasis § Verification-first](../spec-refine-loop/SKILL.md)).
+- **Una sola session**. **Un solo commit** propuesto al final (solo si hubo cambios de código).
 - **Escalación + handoff**: si la tarea crece (muchos archivos / ≥2 fuentes / necesita arquitectura) → propone subir a **SPEC/PLAN**. Si el usuario acepta:
   - el **código ya editado queda** en el working tree (no se revierte) **y se registra** en `CHECKPOINT` + `BACKLOG` ("cambios sin commitear en `<fuente>` — código a medias; decidir commit/descartar al retomar") — reusando **ambas** mitades del patrón "commit rechazado" de plan-exec (no revertir **y** registrar lo sin commitear). Crítico en la rama **SPEC**, que no retoma el working tree;
   - la session quick va a `finalize`, persistiendo `CHECKPOINT` + `BACKLOG` con un **puntero** al spec/plan sembrado (Followups: "escalado a `docs/specs/NNN` o `docs/plans/PPP` — retomar ahí");
@@ -65,41 +66,43 @@ QUICK
 ```
 quick-loop(prompt):
   s = create_or_resume("<slug>-quick")      # CLI antepone NNN global; siempre session ligera
-  seed CHECKPOINT.Pending/Next = la tarea (s)   # ANTES: sembrar intención (artifact-first); SESSION.Objective = el prompt
+  seed SESSION.Objective = el prompt
+  seed SESSION.Success criteria = check del deliverable     # verification-first, ANTES: test(s) si código · rúbrica corta RATIFICADA si análisis/diseño
+  seed CHECKPOINT.Pending/Next = la tarea (s)               # ANTES: sembrar intención (artifact-first)
   trabajar la tarea (loop mínimo):
-    verificar rama esperada por fuente (branch-check); si no → pausar + resolver
-    editar código (cambio mínimo)
+    si edita código → verificar rama esperada por fuente (branch-check); si no → pausar + resolver
+    producir el deliverable: editar código (cambio mínimo) Ó autorar el análisis/diseño
     si consulta BD read-only → SCRIPTS.sql + ejecutar read-only
     si cambio BD (DDL/DML) → SCRIPTS.sql (artefacto session, NO ejecutar)
     si decisión no obvia → DECISION
     si duda/gap → research inline ó structured-choice         # chasis
     si la tarea CRECE → proponer escalar a SPEC/PLAN
-        si acepta → handoff (código queda; BACKLOG→spec/plan sembrado) → goto finalize
-  validación puntual (test si aplica)
-  proponer commit (aprobar antes)                            # nunca push/amend/--no-verify
+        si acepta → handoff (avance queda; BACKLOG→spec/plan sembrado) → goto finalize
+  convergence gate: Success criteria en verde                # tests verdes si código · rúbrica satisfecha si análisis/diseño
+  si hubo cambios de código → proponer commit (aprobar antes)   # nunca push/amend/--no-verify
   structured_choice(contenido: [Cerrar tarea, Preguntar algo más], flow: [Compactar, Cerrar])
 finalize: CHECKPOINT (DESPUÉS: Pending→Completed) + BACKLOG (solo si queda algo diferido) + cerrar session + reportar
 ```
 
 ```mermaid
 flowchart TD
-    S["create_or_resume session NNN-&lt;slug&gt;-quick"] --> G["branch-check por fuente"]
-    G -->|ok| DO["editar código · BD→SCRIPTS.sql · DECISION<br/>(duda→research inline/structured-choice)"]
+    S["create_or_resume NNN-&lt;slug&gt;-quick<br/>seed Objective + Success criteria (verification-first)"] --> G["branch-check (si edita código)"]
+    G -->|ok| DO["producir deliverable: código Ó análisis/diseño<br/>BD→SCRIPTS.sql · DECISION · (duda→research/structured-choice)"]
     G -->|rama ≠| PA["pausar + resolver"]
     PA --> G
     DO --> GROW{"¿la tarea creció?"}
-    GROW -->|sí| ESC["escalar a SPEC/PLAN<br/>código queda · BACKLOG→spec/plan sembrado"]
+    GROW -->|sí| ESC["escalar a SPEC/PLAN<br/>avance queda · BACKLOG→spec/plan sembrado"]
     ESC --> FIN
-    GROW -->|no| V["validación puntual"]
-    V --> CM["proponer commit (aprobar)"]
+    GROW -->|no| V["convergence gate:<br/>Success criteria en verde"]
+    V --> CM["si hubo código → proponer commit (aprobar)"]
     CM --> Q["structured-choice[Cerrar · Preguntar más]<br/>flow[Compactar · Cerrar]"]
     Q --> FIN["finalize: CHECKPOINT + BACKLOG + cerrar"]
 ```
 
 ## Convergence / exit
 
-- Tarea hecha + commit (o aprobado saltarlo) → `Cerrar`.
+- **Success criteria en verde** (proporcional) + commit propuesto si hubo código (o aprobado saltarlo) → `Cerrar`.
 - `Cerrar`/`Compactar` (control `flow`) → persiste `CHECKPOINT` + `BACKLOG` (reanudable).
 - **Sin export**: nada va a `docs/`. Si algo amerita preservarse → se promueve aparte vía `export-*`, o se escala a SPEC/PLAN.
 
-> La **validación puntual** es el *convergence gate* de QUICK: la **excepción deliberada lightweight** del chasis (sin checklist formal) — se reduce a "¿el cambio hace lo que pedía el prompt? (test si aplica)". Mínima ceremonia por diseño.
+> El *convergence gate* de QUICK es **verification-first proporcional**: un `Success criteria` **corto** sembrado al inicio (no la *ausencia* de checklist, sino su versión mínima) — para código, "el cambio hace lo que pedía el prompt + tests/build verdes"; para análisis/diseño, una rúbrica corta ratificada. Mínima ceremonia por diseño, pero **siempre con el check declarado antes**.

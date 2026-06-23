@@ -12,12 +12,13 @@ Un loop es una **skill** que le enseña a la IA *cómo iterar* hasta producir un
 
 Propiedades comunes a **los 4 loops**:
 
-1. **Gap-driven convergente** — cada ciclo: `detect_gaps` → resolver (humano o research) → integrar → repetir hasta que no queden gaps materiales. Los gaps "agotados" (límite `MAX` de intentos) no se re-disparan → garantiza convergencia.
-2. **Una sola session por run + research inline** — el loop crea **una** session en `.workflow/sessions/` (la dueña del run) y maneja **sus** artefactos. La **investigación es inline**: una actividad dentro de esa misma session que escribe `ANALYSIS-FILE`/`CONCLUSIONS` (+ `SCRIPTS.sql` read-only si consulta BD) en su propia carpeta — ya no es una session aparte. **El usuario nunca crea sessions.** Los artefactos son el **registro vivo** del run — **ciclo artifact-first**: sembrar `CHECKPOINT.Pending/Next` (la intención) antes de ejecutar, llevar a `Completed`/DECISION después; CHECKPOINT actualizado en cada límite de gap/fase, BACKLOG solo si difiere. El spec/plan es la base guía.
-3. **Structured-choice con dos planos** (capacidad del arnés — ver [`../harness/SKILL.md`](../harness/SKILL.md); en **Claude Code** es `AskUserQuestion`, máx 4 preguntas/llamada → **≤3 + 1 control `flow`**; sin elección estructurada degrada a markdown numerado):
+1. **Objetivo persistente + verification-first** — el loop persigue su `SESSION.Objective` y solo finaliza cuando sus `SESSION.Success criteria` están **en verde** (o el humano aborta vía `flow` `Cerrar`). Esos criterios —la condición de término— se **siembran al inicio** (*verification-first*, TDD generalizado: tests ejecutables para código, rúbrica falsable para análisis/diseño), no se improvisan al final. Modelado en el `/goal` de Claude Code pero como **doctrina agnóstica** (sin depender de ningún host) y con registro durable. El "no parar hasta converger" es del loop, no del arnés.
+2. **Gap-driven convergente** — el *cómo* del objetivo persistente: cada ciclo `detect_gaps` → resolver (humano o research) → integrar → repetir hasta que no queden gaps materiales. Los gaps "agotados" (límite `MAX` de intentos) no se re-disparan → garantiza convergencia.
+3. **Una sola session por run + research inline** — el loop crea **una** session en `.workflow/sessions/` (la dueña del run) y maneja **sus** artefactos. La **investigación es inline**: una actividad dentro de esa misma session que escribe `ANALYSIS-FILE`/`CONCLUSIONS` (+ `SCRIPTS.sql` read-only si consulta BD) en su propia carpeta — ya no es una session aparte. **El usuario nunca crea sessions.** Los artefactos son el **registro vivo** del run — **ciclo artifact-first**: sembrar `CHECKPOINT.Pending/Next` (la intención) antes de ejecutar, llevar a `Completed`/DECISION después; CHECKPOINT actualizado en cada límite de gap/fase, BACKLOG solo si difiere. El spec/plan es la base guía.
+4. **Structured-choice con dos planos** (capacidad del arnés — ver [`../harness/SKILL.md`](../harness/SKILL.md); en **Claude Code** es `AskUserQuestion`, máx 4 preguntas/llamada → **≤3 + 1 control `flow`**; sin elección estructurada degrada a markdown numerado):
    - **pregunta(s) de contenido** (≤3) — la(s) pregunta(s) real(es) del momento (resolver una duda, elegir MCP, o en convergencia: `Guardar` / `Preguntar algo más`).
    - **control `flow`** (1, SIEMPRE presente) — control de ciclo de vida por un canal lateral. Así el contenido lo maneja la IA y el ciclo de vida lo dirige el humano.
-4. **Escribe solo en su propia carpeta `docs/`** — y **nunca** gradúa/exporta otros artefactos a `docs/`. Esa promoción la hacen las skills `export-*`, aparte y explícita.
+5. **Escribe solo en su propia carpeta `docs/`** — y **nunca** gradúa/exporta otros artefactos a `docs/`. Esa promoción la hacen las skills `export-*`, aparte y explícita.
 
 ## flow control — options
 
@@ -80,7 +81,7 @@ Los **heirs** (`plan-new-loop`, `plan-exec-loop`, `quick-loop`) usan `## Inherit
 ## Chassis / heirs
 
 ```
-spec-refine-loop  ── CHASIS (patrón de referencia: motor gap-driven, sesión única,
+spec-refine-loop  ── CHASIS (patrón de referencia: objetivo persistente + verification-first, gap-driven, sesión única,
         │            structured-choice + control flow, research autónomo INLINE + regla BD,
         │            compact/resume, artefactos como log vivo: CHECKPOINT siempre,
         │            BACKLOG solo si difiere)
