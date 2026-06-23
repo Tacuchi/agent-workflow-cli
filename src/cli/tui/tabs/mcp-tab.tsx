@@ -4,6 +4,7 @@ import { testMcpConnection } from "../../../application/mcp-test-connection-serv
 import {
   type SelfMcpConfigData,
   type SelfMcpConnectionView,
+  isDsnVisible,
   selfMcpConfig,
 } from "../../../application/self/mcp-config.js";
 import type { CommandResult } from "../../../domain/types.js";
@@ -20,16 +21,25 @@ import { SectionHead } from "../components/section-head.js";
 import { useInputLock } from "../input-lock.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
+import { installActionLabel, installStatusPill, suggestDsnVar } from "./mcp-tab-helpers.js";
 
 type Mode =
   | { kind: "list" }
   | { kind: "detail" }
   | { kind: "wizard-name"; editingName?: string; prefillDsn?: string }
-  | { kind: "wizard-dsn"; name: string; editingExisting?: string }
+  | { kind: "wizard-dsn"; name: string; prefillDsn?: string; editingExisting?: string }
+  | {
+      kind: "wizard-review";
+      name: string;
+      dsnVar: string;
+      visible: boolean;
+      editingExisting?: string;
+      test?: { ok: boolean; msg: string };
+    }
   | { kind: "confirm-delete"; name: string }
   | { kind: "busy"; label: string };
 
-type ActionId = "test" | "edit" | "remove";
+type ActionId = "install" | "test" | "edit" | "remove";
 
 export interface McpTabProps {
   ctx: CliContext;
@@ -46,6 +56,16 @@ function buildArgs(action: string, values: Record<string, string> = {}): ParsedA
     values: new Map(Object.entries(values)),
     valuesMulti: new Map(),
   };
+}
+
+// Crash-safe DSN visibility check (env + bootstrap dsn file) for the review
+// step's badge. Defensive: a malformed ctx reads as "not visible", never throws.
+function safeDsnVisible(ctx: CliContext, dsnVar: string): boolean {
+  try {
+    return isDsnVisible(ctx, dsnVar);
+  } catch {
+    return false;
+  }
 }
 
 export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
@@ -143,10 +163,34 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
     [ctx, onToast, refresh],
   );
 
+  // Install the connection into the workspace `.mcp.json` (root) via the
+  // existing `install-claude` action (runMcpSetup, scope=workspace).
+  const runInstall = useCallback(
+    async (name: string) => {
+      setMode({ kind: "busy", label: `installing ${name} → .mcp.json…` });
+      try {
+        const result = await selfMcpConfig(buildArgs("install-claude", { name }), ctx);
+        onToast?.({
+          tone: result.ok ? "ok" : "err",
+          title: result.ok ? `Installed · ${name}` : `Install failed · ${name}`,
+          body: result.data?.summary ?? result.error?.message ?? "",
+        });
+      } catch (err) {
+        onToast?.({ tone: "err", title: "Install failed", body: (err as Error).message });
+      }
+      await refresh();
+      setMode({ kind: "list" });
+    },
+    [ctx, onToast, refresh],
+  );
+
   const triggerAction = useCallback(
     (id: ActionId) => {
       if (!current) return;
       switch (id) {
+        case "install":
+          void runInstall(current.nombre);
+          return;
         case "test":
           void runTestConnection(current.nombre, current.dsn_var);
           return;
@@ -162,14 +206,20 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
           return;
       }
     },
-    [current, runTestConnection],
+    [current, runTestConnection, runInstall],
   );
 
-  // Detail panel actions (Test/Edit/Remove).
+  // Detail panel actions (Install/Test/Edit/Remove). `Install` adapts its label
+  // to the workspace status: install · update (on drift) · reinstall.
+  const detailActionIds: ActionId[] = ["install", "test", "edit", "remove"];
   const detailActions: DetailAction[] = current
     ? [
+        {
+          name: installActionLabel(current.instalado.claude_code),
+          description: "Write the dbhub entry to .mcp.json at the workspace root.",
+        },
         { name: "Test connection", description: "Run dbhub with DSN (SELECT 1 smoke test)." },
-        { name: "Edit connection", description: "Alias / host / DSN." },
+        { name: "Edit connection", description: "Alias / DSN env var." },
         {
           name: "Remove connection",
           description: "Delete entry + DSN export.",
@@ -219,15 +269,8 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
         return;
       }
       if (key.return) {
-        const action = detailActions[actionCursor];
-        if (!action) return;
-        if (action.danger) {
-          triggerAction("remove");
-        } else if (action.name.startsWith("Edit")) {
-          triggerAction("edit");
-        } else {
-          triggerAction("test");
-        }
+        const id = detailActionIds[actionCursor];
+        if (id) triggerAction(id);
       }
     },
     { isActive },
@@ -261,6 +304,29 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
     { isActive },
   );
 
+  // input — wizard-review (t test · ⏎ save+install · s save only · esc cancel)
+  useInput(
+    (input, key) => {
+      if (!isActive || mode.kind !== "wizard-review") return;
+      if (key.escape) {
+        setMode({ kind: "list" });
+        return;
+      }
+      if (input === "t" || input === "T") {
+        void runWizardTest(mode);
+        return;
+      }
+      if (input === "s" || input === "S") {
+        void saveOnly(mode.name, mode.dsnVar);
+        return;
+      }
+      if (key.return) {
+        void saveAndInstall(mode.name, mode.dsnVar);
+      }
+    },
+    { isActive },
+  );
+
   return (
     <Box flexDirection="column">
       <PageHead
@@ -276,7 +342,9 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
           <SectionHead
             label="Connections"
             count={connections.length}
-            {...(mode.kind === "wizard-name" || mode.kind === "wizard-dsn"
+            {...(mode.kind === "wizard-name" ||
+            mode.kind === "wizard-dsn" ||
+            mode.kind === "wizard-review"
               ? { rightAction: "esc cancel" }
               : mode.kind === "detail" || mode.kind === "confirm-delete"
                 ? { rightAction: "esc to close detail" }
@@ -303,16 +371,21 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
                   iconActive={true}
                   title={c.nombre}
                   subtitle={`${c.dsn_var} · ${c.server_name}`}
-                  state={{ label: "registered", tone: "ok" }}
+                  state={installStatusPill(c.instalado.claude_code)}
                   chevron
                   active={i === cursor}
-                  dimmed={mode.kind === "wizard-name" || mode.kind === "wizard-dsn"}
+                  dimmed={
+                    mode.kind === "wizard-name" ||
+                    mode.kind === "wizard-dsn" ||
+                    mode.kind === "wizard-review"
+                  }
                   widthHint={rowWidth(
                     stdout?.columns,
                     mode.kind === "detail" ||
                       mode.kind === "confirm-delete" ||
                       mode.kind === "wizard-name" ||
-                      mode.kind === "wizard-dsn",
+                      mode.kind === "wizard-dsn" ||
+                      mode.kind === "wizard-review",
                   )}
                 />
               ))}
@@ -346,6 +419,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
                       kind: "wizard-dsn",
                       name: trimmed,
                       ...(mode.editingName ? { editingExisting: mode.editingName } : {}),
+                      ...(mode.prefillDsn ? { prefillDsn: mode.prefillDsn } : {}),
                     });
                   }}
                   isActive={isActive}
@@ -363,17 +437,66 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
               <Box marginLeft={2} marginTop={0}>
                 <InputPrompt
                   message="DSN env var (UPPER_SNAKE_CASE):"
+                  defaultValue={mode.prefillDsn ?? suggestDsnVar(mode.name)}
                   onSubmit={(value) => {
-                    const dsnVar = value.trim();
+                    const dsnVar = value.trim().toUpperCase();
                     if (!dsnVar) {
                       onToast?.({ tone: "err", title: "Empty DSN var" });
                       setMode({ kind: "list" });
                       return;
                     }
-                    void registerConnection(mode.name, dsnVar);
+                    setMode({
+                      kind: "wizard-review",
+                      name: mode.name,
+                      dsnVar,
+                      visible: safeDsnVisible(ctx, dsnVar),
+                      ...(mode.editingExisting ? { editingExisting: mode.editingExisting } : {}),
+                    });
                   }}
                   isActive={isActive}
                 />
+              </Box>
+            </Box>
+          ) : null}
+          {mode.kind === "wizard-review" ? (
+            <Box flexDirection="column" marginTop={1}>
+              <SectionHead
+                label={`${mode.editingExisting ? "Edit" : "Register"} connection · ${mode.name}`}
+                hint="Step 3 of 3 · Review · test · install"
+                rightAction="⏎ save+install · esc cancel"
+              />
+              <Box marginLeft={2} marginTop={1} flexDirection="column">
+                <Box>
+                  <Text color={colors.dim}>alias </Text>
+                  <Text color={colors.bright} bold>
+                    {mode.name}
+                  </Text>
+                </Box>
+                <Box>
+                  <Text color={colors.dim}>DSN </Text>
+                  <Text color={colors.bright} bold>
+                    {mode.dsnVar}
+                  </Text>
+                  <Text> </Text>
+                  {mode.visible ? (
+                    <Text color={colors.ok}>{icons.check} visible</Text>
+                  ) : (
+                    <Text color={colors.warn}>{icons.cross} not in env — export it first</Text>
+                  )}
+                </Box>
+                {mode.test ? (
+                  <Box marginTop={1}>
+                    <Text color={mode.test.ok ? colors.ok : colors.err}>
+                      {mode.test.ok ? icons.check : icons.cross} {mode.test.msg}
+                    </Text>
+                  </Box>
+                ) : null}
+                <Box marginTop={1} flexDirection="column">
+                  <Text color={colors.borderFaint}>{"─".repeat(40)}</Text>
+                  <Text color={colors.faint}>
+                    [⏎] save + install · [s] save only · [t] test · esc cancel
+                  </Text>
+                </Box>
               </Box>
             </Box>
           ) : null}
@@ -421,17 +544,21 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
               ) : null
             }
           />
-        ) : mode.kind === "wizard-name" || mode.kind === "wizard-dsn" ? (
+        ) : mode.kind === "wizard-name" ||
+          mode.kind === "wizard-dsn" ||
+          mode.kind === "wizard-review" ? (
           <Box flexDirection="column">
             <Text color={colors.borderFaint}>{"│"}</Text>
             <Box flexDirection="column" width={38} paddingLeft={1}>
               <Box>
                 <Text color={colors.accent} bold>
-                  + New connection
+                  {mode.kind === "wizard-review" && mode.editingExisting
+                    ? "✎ Edit connection"
+                    : "+ New connection"}
                 </Text>
               </Box>
               <Text color={colors.dim} wrap="truncate-end">
-                2-step wizard · profile.json
+                guided · test · install
               </Text>
 
               <Box marginTop={1} flexDirection="column">
@@ -440,20 +567,41 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
                   index={1}
                   label="Alias"
                   active={mode.kind === "wizard-name"}
-                  completed={mode.kind === "wizard-dsn"}
-                  value={mode.kind === "wizard-dsn" ? mode.name : undefined}
+                  completed={mode.kind === "wizard-dsn" || mode.kind === "wizard-review"}
+                  value={
+                    mode.kind === "wizard-dsn" || mode.kind === "wizard-review"
+                      ? mode.name
+                      : undefined
+                  }
                 />
                 <WizardStep
                   index={2}
                   label="DSN env var"
                   active={mode.kind === "wizard-dsn"}
+                  completed={mode.kind === "wizard-review"}
+                  value={mode.kind === "wizard-review" ? mode.dsnVar : undefined}
+                />
+                <WizardStep
+                  index={3}
+                  label="Test (optional)"
+                  active={mode.kind === "wizard-review"}
+                  completed={mode.kind === "wizard-review" && mode.test?.ok === true}
+                />
+                <WizardStep
+                  index={4}
+                  label="Install → .mcp.json"
+                  active={false}
                   completed={false}
                 />
               </Box>
 
               <Box marginTop={1} flexDirection="column">
                 <Text color={colors.borderFaint}>{"─".repeat(36)}</Text>
-                <Text color={colors.faint}>⏎ next · esc cancel</Text>
+                <Text color={colors.faint}>
+                  {mode.kind === "wizard-review"
+                    ? "⏎ save+install · s save · t test"
+                    : "⏎ next · esc cancel"}
+                </Text>
               </Box>
             </Box>
           </Box>
@@ -466,21 +614,71 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
     </Box>
   );
 
-  async function registerConnection(name: string, dsnVar: string) {
-    setMode({ kind: "busy", label: `registering ${name}…` });
+  // Register the connection in profile.json (use-env). Returns ok so callers can
+  // chain the workspace install. On a not-visible DSN, use-env surfaces env_help.
+  async function saveConnection(name: string, dsnVar: string): Promise<boolean> {
+    const result = await selfMcpConfig(buildArgs("use-env", { name, "dsn-var": dsnVar }), ctx);
+    onToast?.({
+      tone: result.ok ? "ok" : "err",
+      title: result.ok ? `Registered · ${name}` : "Save failed",
+      body: result.data?.summary ?? result.error?.message ?? "",
+    });
+    return result.ok;
+  }
+
+  async function saveOnly(name: string, dsnVar: string) {
+    setMode({ kind: "busy", label: `saving ${name}…` });
     try {
-      const result = await selfMcpConfig(buildArgs("use-env", { name, "dsn-var": dsnVar }), ctx);
-      const summary = result.data?.summary ?? result.error?.message ?? "";
-      onToast?.({
-        tone: result.ok ? "ok" : "err",
-        title: result.ok ? "Connection registered" : "Failed",
-        body: summary,
-      });
+      await saveConnection(name, dsnVar);
       await refresh();
     } catch (err) {
       onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
     } finally {
       setMode({ kind: "list" });
+    }
+  }
+
+  async function saveAndInstall(name: string, dsnVar: string) {
+    setMode({ kind: "busy", label: `saving ${name}…` });
+    try {
+      const saved = await saveConnection(name, dsnVar);
+      if (saved) {
+        setMode({ kind: "busy", label: `installing ${name} → .mcp.json…` });
+        const install = await selfMcpConfig(buildArgs("install-claude", { name }), ctx);
+        onToast?.({
+          tone: install.ok ? "ok" : "err",
+          title: install.ok ? `Installed · ${name}` : `Install failed · ${name}`,
+          body: install.data?.summary ?? install.error?.message ?? "",
+        });
+      }
+      await refresh();
+    } catch (err) {
+      onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
+    } finally {
+      setMode({ kind: "list" });
+    }
+  }
+
+  async function runWizardTest(review: Extract<Mode, { kind: "wizard-review" }>) {
+    setMode({ kind: "busy", label: `testing ${review.dsnVar} → dbhub…` });
+    try {
+      const result = await testMcpConnection({
+        dsnVar: review.dsnVar,
+        env: process.env,
+        paths: ctx.paths,
+        platform: process.platform,
+      });
+      setMode({
+        ...review,
+        test: {
+          ok: result.ok,
+          msg: result.ok
+            ? `dbhub connected (${result.source ?? "env"})`
+            : (result.error ?? "dbhub could not connect"),
+        },
+      });
+    } catch (err) {
+      setMode({ ...review, test: { ok: false, msg: (err as Error).message } });
     }
   }
 }

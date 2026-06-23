@@ -469,7 +469,7 @@ function installStatus(ctx: CliContext, connection: McpConnection, host: McpHost
   return "si";
 }
 
-function isDsnVisible(ctx: CliContext, dsnVar: string): boolean {
+export function isDsnVisible(ctx: CliContext, dsnVar: string): boolean {
   if (ctx.env.get(dsnVar)) return true;
   const dsn = readBootstrapDsn(ctx.paths);
   return Boolean(dsn.values[dsnVar]);
