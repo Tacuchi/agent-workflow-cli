@@ -4,6 +4,15 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.9.0] — 2026-06-23
+
+**Contexto Operativo: ruteo de artefactos por workspace/flujo + continuidad inter-turno, con `session-resume --reopen`.** Nueva doctrina de *entrada* que resuelve, en cada prompt, dónde aterrizan los artefactos (SQL/scripts/decisiones) según `¿workspace?` + `¿sesión a continuar?`: en un flujo van a la sesión activa/continuada; en un workspace sin flujo, directo a `docs/` por convención + numeración; sin workspace, comportamiento vanilla. Un prompt sin comando **continúa/reabre la sesión más reciente** en vez de dispersar el trabajo — la cara *inter-turno* del objetivo persistente.
+
+### Added
+
+- **`aw session-resume --code <NNN> --reopen`.** Reactiva una sesión **cerrada** quitando su sentinel `.closed` (sin el flag, el resume sigue siendo read-only). Es la pieza que hace **ejecutable** la regla de continuidad: un prompt sin comando, relacionado, reabre la sesión más reciente para seguir trabajando en ella (sus scripts → su `SCRIPTS.sql`) y re-cerrarla al converger. (Para detectar la más reciente cerrada: `aw resume-summary --include-recent-closed` o `aw sessions --state all`.)
+- **Doctrina de _Contexto Operativo_ en el bundle `skills/w/`.** `SKILL.md` gana la sección *Contexto operativo* (matriz `¿workspace?` + `¿sesión?` → ruteo) y la aclaración del **alcance de los invariantes #1/#2** (gobiernan el plano sesión→`docs/`, que solo cruza `export-*`; el authoring directo sin flujo es otro plano, **no** es auto-export). El chasis (`spec-refine-loop`) gana la **continuidad inter-turno** y `quick-loop` el **ejemplo QUICK canónico** (comando = sesión nueva; prompt sin comando = continúa/reabre la misma). Espejo de la doctrina diseñada en las referencias.
+
 ## [12.8.0] — 2026-06-23
 
 **Objetivo persistente + verification-first en los loops, tab MCP con instalación al workspace, y fix de corrupción de paths Windows en `workspace-init`.** La doctrina de loops gana el frame *objetivo persistente* (modelado en `/goal`, pero agnóstico) y *verification-first* (TDD generalizado vía `SESSION.Success criteria`); el tab MCP del TUI ahora instala al workspace y guía el registro con test-antes-de-guardar; y `workspace-init` preserva el bloque al reconciliar en vez de corromperlo.
