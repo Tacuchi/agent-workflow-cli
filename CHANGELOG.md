@@ -4,6 +4,23 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.8.0] — 2026-06-23
+
+**Objetivo persistente + verification-first en los loops, tab MCP con instalación al workspace, y fix de corrupción de paths Windows en `workspace-init`.** La doctrina de loops gana el frame *objetivo persistente* (modelado en `/goal`, pero agnóstico) y *verification-first* (TDD generalizado vía `SESSION.Success criteria`); el tab MCP del TUI ahora instala al workspace y guía el registro con test-antes-de-guardar; y `workspace-init` preserva el bloque al reconciliar en vez de corromperlo.
+
+### Added
+
+- **Objetivo persistente + verification-first (chasis de loops).** Un loop es un objetivo persistente que corre hasta que sus `SESSION.Success criteria` —sembrados al inicio (TDD generalizado: tests para código, rúbrica falsable para análisis/diseño)— están en verde. Modelado en cómo se comporta el `/goal` de Claude Code, pero como **doctrina agnóstica** (sin depender de ningún host). Reflejado en `skills/w/` (chasis + heirs + `SKILL.md` + artifacts) y en el tab Workflow del TUI. `quick` gana producir deliverables **no-código** (análisis/diseño).
+- **Tab MCP — instalar al workspace + wizard guiado.** El tab expone **Install to workspace** (escribe `.mcp.json` en la raíz) y muestra el estado de instalación real por conexión (installed / drift / registered). El registro/edición es un flujo guiado: alias → DSN (con default sugerido) → review con **test-antes-de-guardar** (opción) → `save + install`.
+
+### Fixed
+
+- **`workspace-init` corrompía workspaces Windows al reconciliar.** Re-correr para reconciliar el schema sobrescribía el bloque desde los args, forzando re-pasar las fuentes por el shell (que se come los backslashes de `C:\Source\…`) → tabla `Fuentes` corrupta + multiroot borrado. Ahora `aw workspace-init` **sin `--source`** lee y **preserva** las fuentes + descripción existentes (reconcilia sin re-pasar nada), y `parseFuentesSpecs` **rechaza** un path con unidad sin separador (`C:Source…`) con un error que sugiere forward-slash.
+
+### Changed
+
+- **Scaffold de `SESSION.md`: `Success criteria` para todos los tipos.** Antes solo se emitía para sessions `research`; ahora es la condición de término (*verification-first*) de cualquier session. El golden de `session-create` lo refleja.
+
 ## [12.7.1] — 2026-06-22
 
 **Taxonomía commands / skills / roles + de-stale del tab Workflow.** Refleja en la doctrina del bundle la separación entre comandos de flujo, skills transversales y roles, y corrige contenido viejo del tab Workflow del TUI. Sin cambios de comportamiento del CLI.
