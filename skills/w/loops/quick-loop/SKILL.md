@@ -61,6 +61,16 @@ QUICK
   - los artefactos (`DECISION`, `SCRIPTS.sql`) **quedan en la session quick** como contexto referenciable por la nueva session (no se migran);
   - **asimetría**: escalar a **PLAN** puede **absorber** el avance (plan-exec retoma el working tree existente); escalar a **SPEC** **reinicia** el ciclo de diseño y trata el código a medias como **contexto/referencia**, no como trabajo ya ingerido.
 
+## Continuidad entre prompts (contexto operativo)
+
+`quick` es donde la **regla de continuidad** (ver [`../../SKILL.md`](../../SKILL.md) § *Contexto operativo*) se ve más claro. Dentro de un workspace:
+
+1. `/w:quick "primer prompt"` (**comando**) → crea la session `NNN-<slug>-quick`, arranca el loop. Los scripts van a **su** `SCRIPTS.sql`.
+2. `"segundo prompt"` (**sin comando**, trabajo relacionado) → **no** crea otra session: **continúa/reabre la más reciente** (la del paso 1) y agrega los nuevos scripts a **esa misma** `SCRIPTS.sql`.
+3. `/w:quick "tercer prompt"` (**comando** otra vez) → **nueva** session, nuevo loop.
+
+> El **comando** señala "nueva línea de trabajo"; un **prompt pelado** es "sigo en la misma" → por default continúa/reabre la más reciente (la *última iniciada*). Si es claramente no-relacionado, ofrece elegir (`continuar NNN` | `trabajo nuevo`) o cae a la rama **sin flujo** (escribe en `docs/` por convención + numeración). Sin workspace → comportamiento **vanilla**.
+
 ## Sequence
 
 ```

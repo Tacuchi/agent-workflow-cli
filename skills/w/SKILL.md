@@ -65,6 +65,19 @@ USUARIO invoca
 
 Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` → `spec-refine` corre el loop y refina **ese mismo spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → `plan-exec` ejecuta y actualiza el plan (living doc) + artefactos en sesiones. La promoción del resto a `docs/` es **siempre** un paso aparte vía `export-*`.
 
+### Contexto operativo — dónde aterriza cada cosa
+
+Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prompt** con dos detecciones: **¿workspace?** (existe `.<ns>/sessions/`) + **¿sesión a continuar?** (una activa, o una reciente que este prompt continúa). Eso decide el comportamiento y **dónde aterrizan los artefactos** (SQL, scripts, decisiones, …):
+
+| ¿Workspace? | Trigger | → Comportamiento + ruteo |
+|---|---|---|
+| **Sí** | **comando de flujo** (`quick`·`spec-*`·`plan-*`) | crea sesión **nueva**, arranca el loop → artefactos a **esa** sesión (`SCRIPTS.sql`, …) |
+| **Sí** | **prompt sin comando** (relacionado) | **continúa/reabre la sesión más reciente** → los scripts editan **su** `SCRIPTS.sql` (no crea otra) |
+| **Sí** | **prompt sin comando** (no-relacionado / sin sesión) | **sin flujo**: trabajo directo → escribe en `docs/` por convención + numeración (`aw next-number`) |
+| **No** | cualquiera | **vanilla** — sin workspace ni flujo, la IA es libre (nativo) |
+
+**Regla de continuidad:** el **comando** señala "nueva línea de trabajo" (sesión nueva); un **prompt sin comando** es "sigo en la misma" → por default continúa/reabre la más reciente (la *última iniciada*); solo si es claramente no-relacionado ofrece elegir (`continuar NNN` | `trabajo nuevo`) o cae a "sin flujo". Convergencia cierra la sesión; un prompt relacionado posterior la **reabre** (el resume quita `.closed`). Es la cara **inter-turno** del *objetivo persistente* (mismo `CHECKPOINT`+resume, aplicado al próximo prompt) — **doctrina agnóstica**, no un hook del host. Aplica a **todo artefacto** (`SCRIPTS.sql` es el ejemplo trabajado); ver `loops/quick-loop/SKILL.md` para el caso QUICK.
+
 ### The commands (`/w:` namespace)
 
 - `/w:workspace-init` — inicializa el workspace.
@@ -165,6 +178,8 @@ Las únicas `must` para el ciclo de un loop son **structured-choice** y **compac
 4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
 5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.
 6. **Chasis de loops** — **objetivo persistente + verification-first** (persigue `SESSION.Objective` hasta que sus `SESSION.Success criteria` —sembrados al inicio, TDD generalizado— están en verde) · gap-driven convergente · una sola session por run (research inline) · **structured-choice** con ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre · compactación/resume · artefactos como log vivo **artifact-first** (sembrar `Pending`/`Next` antes, `Completed` después; `CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+
+> **Alcance de #1/#2:** gobiernan el plano **sesión → `docs/`** (solo `export-*` lo cruza). El *authoring directo sin flujo* (ver § *Contexto operativo*) es **otro plano**: sin sesión activa, `docs/` es la única superficie gestionada → la IA escribe ahí por convención + numeración. No es auto-export (no hay sesión de la cual graduar).
 
 ## Output
 

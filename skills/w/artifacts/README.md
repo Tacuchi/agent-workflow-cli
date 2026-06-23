@@ -19,6 +19,8 @@ Central distinction of the model:
 
 > An artifact may be **promoted** to a `docs/` document (e.g. `SCRIPTS.sql` → `docs/scripts/`) — but **only via dedicated `export-*` skills**, **never** automatically by the loops. The spec and the plan **are not** artifacts: they are documents.
 
+> **Routing by operating context.** *Where* an artifact is written is decided by the operating context (see [`../SKILL.md`](../SKILL.md) § *Contexto operativo*): **inside a flow** → the **active/continued** session — a prompt with no command edits the `SCRIPTS.sql` (or `DECISION`, …) of the **most recent** session, it does not spawn a new one; **in a workspace but with no flow** → directly into `docs/` by convention + numbering (`aw next-number`), since there is no session to hold it (and it is **not** auto-export); **no workspace** → the AI is free (vanilla). Session→`docs/` promotion is still **only** via `export-*`.
+
 ---
 
 ## Sessions & their artifacts

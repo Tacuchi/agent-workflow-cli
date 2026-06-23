@@ -49,9 +49,11 @@ Está **modelado en cómo se comporta el `/goal` de Claude Code** (declarás un 
 | no parar hasta cumplirlo | `repeat:` gap-driven hasta `gaps == ∅` |
 | objetivo cumplido → auto-clear | **convergence gate** pasa → `finalize` |
 | `/goal clear` (abortar antes) | control `flow` `Cerrar` |
-| la directiva sobrevive el contexto | `CHECKPOINT` + resume |
+| la directiva sobrevive el contexto | `CHECKPOINT` + resume (compactación **y próximo prompt**) |
 
 > Los heirs heredan el frame: `plan-new`/`plan-exec` persiguen el plan hasta su gate; `quick-loop` es la encarnación más directa (el prompt *es* el objetivo) — el "símil a `/goal`" del modelo.
+
+> **Continuidad inter-turno (contexto operativo).** El mismo `CHECKPOINT`+resume que sobrevive la compactación gobierna también el **próximo prompt**: dentro de un workspace, un prompt **sin comando** **continúa/reabre la sesión más reciente** (la *última iniciada*) en vez de arrancar trabajo suelto — el objetivo persiste **entre turnos**, no solo dentro del run. Un **comando de flujo** señala "nueva línea de trabajo" (sesión nueva); la convergencia cierra la sesión y un prompt relacionado posterior la **reabre** (resume quita `.closed`). Es la fila 2 de la matriz de contexto operativo (ver [`../../SKILL.md`](../../SKILL.md) § *Contexto operativo*) — doctrina agnóstica que la IA evalúa en cada turno, no un Stop hook del host.
 
 ## Verification-first (chasis — heredado por todos los loops)
 
@@ -106,6 +108,7 @@ El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global
 - `aw session-create --type refine --name spec-refine` → crea `NNN-spec-refine` / `aw session-resume --code <…>` (detecta `CHECKPOINT`).
 - `aw checkpoint-write` / `aw checkpoint-read` para el resume.
 - `aw session-close` al cerrar (con razón); `aw session-artifacts` para inspeccionar.
+- **Reabrir para continuar** (contexto operativo, fila 2): `aw session-resume --code <NNN> --reopen` reactiva una sesión **cerrada** (quita `.closed` → activa) para seguir trabajando en ella; sin `--reopen`, el resume es read-only. Para detectar cuál es la más reciente cerrada: `aw resume-summary --include-recent-closed` (o `aw sessions --state all`).
 
 ## Composes
 
