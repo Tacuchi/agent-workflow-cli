@@ -4,6 +4,21 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.10.0] — 2026-06-23
+
+**Lanzar sources en local (detached) y administrarlos desde el TUI [Project].** `workspace-init` ahora reconoce el stack de cada source y genera, en `docs/tools/<source>/`, un descriptor `launch.json` (máquina-legible, lo lee el TUI) + scripts `run.sh`/`run.ps1` (uso humano directo) parametrizados con las env-vars de su config y los perfiles disponibles. Desde [Project] se puede **Lanzar en local** un source: corre en segundo plano **independiente del TUI** (sobrevive a su cierre), con su salida en `docs/logs/`, y una nueva sección **"Procesos en segundo plano"** lista/administra los procesos (Detener · Re-lanzar · Ver log), reconciliando su estado por liveness al reabrir.
+
+### Added
+
+- **`ProcessPort` lanza/mata procesos detached.** Nuevos `spawnDetached` (Node `detached:true` + `stdio` redirigido al log + `unref` → sobrevive al padre), `killTree` (\*nix: kill por grupo `kill(-pid)` con fallback; Windows: `taskkill /PID <pid> /T /F`) e `isAlive` (`process.kill(pid, 0)`; `EPERM` = vivo). Implementados en `NodeProcess`.
+- **Registro persistente de procesos (`process-registry-service`).** `.workflow/processes.json` (gitignored) con `register/list/markStopped/remove`; `list()` **reconcilia** liveness (running → exited si el PID murió; stopped/exited son sticky) y persiste el snapshot. Degrada a `[]` ante un registro corrupto (el TUI nunca crashea por esto).
+- **Generación de scripts de arranque en `workspace-init`.** Detección de stack por source (npm/gradle/maven/angular vía marker files) → `docs/tools/<source>/launch.json` (`command`·`args`·`params`·`profiles`·`stack`) + `run.sh`/`run.ps1` con header sentinel/hash. Los params salen de `.env`/`.env.<perfil>` (defaults del `.env` base; secretos enmascarados y **nunca** horneados en archivos versionados) y los perfiles de `.env.<perfil>` / `application-<perfil>.{yml,properties}`. **Idempotente:** re-generar preserva los scripts editados por el usuario (mismatch de hash → skip + aviso). Gateado por el rol `tools` (off → no genera y lo informa). Scaffold de `docs/logs/`.
+- **TUI [Project] — lanzamiento + administración.** Acción **"Lanzar en local"** en el panel del source (deshabilitada + hint si no hay descriptor); si el descriptor tiene perfiles/params, un **form** pide perfil + valores (prellenados con defaults; secretos sin persistir). Nueva sección **"Procesos en segundo plano"** (source·perfil·PID·estado·inicio) con **Detener**, **Re-lanzar** (reusa perfil + valores no-secretos) y **Ver log**; tile `procesos`; manejo de **colisión** (lanzar un source+perfil ya vivo advierte y ofrece Re-lanzar; un perfil distinto arranca como proceso separado).
+
+### Changed
+
+- **`.gitignore` de workspace:** `workspace-init` agrega siempre `.workflow/processes.json` y `docs/logs/` (artefactos runtime machine-specific, no versionables).
+
 ## [12.9.0] — 2026-06-23
 
 **Contexto Operativo: ruteo de artefactos por workspace/flujo + continuidad inter-turno, con `session-resume --reopen`.** Nueva doctrina de *entrada* que resuelve, en cada prompt, dónde aterrizan los artefactos (SQL/scripts/decisiones) según `¿workspace?` + `¿sesión a continuar?`: en un flujo van a la sesión activa/continuada; en un workspace sin flujo, directo a `docs/` por convención + numeración; sin workspace, comportamiento vanilla. Un prompt sin comando **continúa/reabre la sesión más reciente** en vez de dispersar el trabajo — la cara *inter-turno* del objetivo persistente.
