@@ -20,6 +20,14 @@ class ScriptedProcess implements ProcessPort {
   async which(): Promise<string | undefined> {
     return undefined;
   }
+
+  async spawnDetached() {
+    throw new Error("spawnDetached not implemented in this fake");
+  }
+  async killTree(): Promise<void> {}
+  async isAlive() {
+    return false;
+  }
 }
 
 const ok: RunResult = { code: 0, stdout: "", stderr: "" };

@@ -80,6 +80,20 @@ describe("runWorkspaceInit", () => {
     expect(settings.permissions.additionalDirectories).toContain("/tmp/app-fake");
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     expect(gitignore).toContain(".claude/settings.local.json");
+    // Source-launch runtime artifacts are always gitignored.
+    expect(gitignore).toContain(".workflow/processes.json");
+    expect(gitignore).toContain("docs/logs/");
+  });
+
+  it("runtime gitignore se agrega incluso para fuente única dentro del workspace", async () => {
+    await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "self", path: workspace }],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
+    expect(gitignore).toContain(".workflow/processes.json");
+    expect(gitignore).toContain("docs/logs/");
   });
 
   it("fuente única DENTRO del workspace: omite visibilidad (la fuente ES el workspace)", async () => {
@@ -111,6 +125,66 @@ describe("runWorkspaceInit", () => {
       expect(claude).toContain("Lenguaje: TypeScript");
       expect(claude).toContain("Framework: React");
       expect(claude).not.toContain("Stack sin detectar");
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
+  });
+
+  it("genera launch.json + run.sh/run.ps1 por source y scaffolda docs/logs", async () => {
+    const source = mkdtempSync(join(tmpdir(), "ws-init-src-"));
+    try {
+      writeFileSync(
+        join(source, "package.json"),
+        JSON.stringify({ scripts: { dev: "vite" }, devDependencies: { typescript: "^5" } }),
+      );
+      const result = await runWorkspaceInit(fs, env, paths, {
+        sources: [{ alias: "app", path: source }],
+        workspace,
+        lastActivity: "2026-01-01 00:00",
+      });
+      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+
+      // docs/logs scaffolded (gitignored, no .gitkeep).
+      expect(existsSync(join(workspace, "docs", "logs"))).toBe(true);
+
+      // descriptor + per-OS scripts emitted under docs/tools/<alias>/
+      const toolDir = join(workspace, "docs", "tools", "app");
+      expect(existsSync(join(toolDir, "launch.json"))).toBe(true);
+      expect(existsSync(join(toolDir, "run.sh"))).toBe(true);
+      expect(existsSync(join(toolDir, "run.ps1"))).toBe(true);
+      const desc = JSON.parse(readFileSync(join(toolDir, "launch.json"), "utf-8"));
+      expect(desc.command).toBe("npm");
+      expect(desc.args).toEqual(["run", "dev"]);
+
+      expect(result.launch_artifacts.toolsRole).toBe("enabled");
+      expect(result.launch_artifacts.generated.map((g) => g.alias)).toEqual(["app"]);
+      expect(result.launch_artifacts.generated[0]?.launchable).toBe(true);
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
+  });
+
+  it("rol tools en off → no genera scripts y lo informa", async () => {
+    const source = mkdtempSync(join(tmpdir(), "ws-init-src-"));
+    try {
+      writeFileSync(join(source, "package.json"), JSON.stringify({ scripts: { dev: "vite" } }));
+      // First init to seed skills.toml, then disable the tools role and re-run.
+      await runWorkspaceInit(fs, env, paths, {
+        sources: [{ alias: "app", path: source }],
+        workspace,
+        lastActivity: "2026-01-01 00:00",
+      });
+      writeFileSync(join(workspace, ".workflow", "skills.toml"), '[skills]\ntools = "off"\n');
+
+      const result = await runWorkspaceInit(fs, env, paths, {
+        sources: [{ alias: "app", path: source }],
+        workspace,
+        lastActivity: "2026-01-01 00:00",
+      });
+      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+      expect(result.launch_artifacts.toolsRole).toBe("off");
+      expect(result.launch_artifacts.generated).toEqual([]);
+      expect(result.launch_artifacts.skipped.map((s) => s.reason)).toContain("tools_role_off");
     } finally {
       rmSync(source, { recursive: true, force: true });
     }

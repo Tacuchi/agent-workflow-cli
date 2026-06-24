@@ -11,6 +11,11 @@ import {
   type ProjectMdUpsertOutput,
   runProjectMdUpsertWrite,
 } from "./project-md-upsert-service.js";
+import { resolveSkills } from "./skills-resolver-service.js";
+import {
+  type LaunchArtifactsSummary,
+  generateLaunchArtifacts,
+} from "./source-launch-scripts-service.js";
 
 /** docs/ taxonomy scaffolded for every workspace (one folder per export category). */
 const DOCS_FOLDERS = [
@@ -25,6 +30,11 @@ const DOCS_FOLDERS = [
 
 /** Visibility files (machine-specific absolute roots) — gitignored when external sources exist. */
 const VISIBILITY_GITIGNORE = [".claude/settings.local.json", ".codex/config.toml"];
+
+/** Runtime artifacts of the source-launch feature — machine-specific, never committed. */
+function runtimeGitignoreEntries(ns: string): string[] {
+  return [`.${ns}/processes.json`, "docs/logs/"];
+}
 
 const DEFAULT_MAIN_BRANCH = "main";
 
@@ -74,6 +84,8 @@ export interface WorkspaceInitResult {
   attach_multiroot: MultirootResult | MultirootError | { skipped: true; reason: string };
   /** Reconcile: detach of sources that were in the previous block and no longer are. */
   detached_removed?: MultirootResult | MultirootError;
+  /** Per-source launch descriptor + scripts generated under docs/tools/ (gated on the `tools` role). */
+  launch_artifacts: LaunchArtifactsSummary;
 }
 
 /**
@@ -116,6 +128,18 @@ export async function runWorkspaceInit(
 
   const scaffold = await scaffoldDirs(fs, workspace, wsPaths);
   const skillsToml = await seedSkillsToml(fs, wsPaths);
+  // Runtime artifacts (process registry + launch logs) are machine-specific — gitignore always.
+  await ensureRuntimeGitignore(fs, workspace, wsPaths.namespace);
+
+  // Per-source launch artifacts under docs/tools/ (descriptor + run.sh/run.ps1),
+  // gated on the `tools` capability and idempotent (preserves user-edited scripts).
+  const skillsRes = await resolveSkills(fs, wsPaths);
+  const launchArtifacts = await generateLaunchArtifacts(
+    fs,
+    join(workspace, "docs", "tools"),
+    sources.map((s) => ({ alias: s.alias, path: s.path })),
+    skillsRes.skills.tools.enabled,
+  );
 
   // Previous sources (to detach removed ones) come from the same existing block.
   const previousPaths = (existing?.fuentes ?? []).map((f) => f.path).filter((p) => p.length > 0);
@@ -149,6 +173,7 @@ export async function runWorkspaceInit(
       skills_toml: skillsToml,
       project_md: projectMd,
       attach_multiroot: { skipped: true, reason: "project_md_failed" },
+      launch_artifacts: launchArtifacts,
     };
   }
 
@@ -172,6 +197,7 @@ export async function runWorkspaceInit(
     project_md: projectMd,
     attach_multiroot: visibility.attach,
     ...(visibility.detached !== undefined ? { detached_removed: visibility.detached } : {}),
+    launch_artifacts: launchArtifacts,
   };
 }
 
@@ -198,6 +224,11 @@ function buildDryRunResult(
     attach_multiroot: anyExternal
       ? { skipped: true, reason: "dry_run" }
       : { skipped: true, reason: "no_external_sources" },
+    launch_artifacts: {
+      toolsRole: "enabled",
+      generated: [],
+      skipped: sources.map((s) => ({ alias: s.alias, reason: "path_not_found" as const })),
+    },
   };
 }
 
@@ -219,6 +250,14 @@ async function scaffoldDirs(
     const keep = join(dir, ".gitkeep");
     if (!(await fs.exists(keep))) await fs.writeText(keep, "");
     created.push(dir);
+  }
+  // Runtime launch logs — created (no .gitkeep: the folder is gitignored).
+  const logsDir = join(workspace, "docs", "logs");
+  if (await fs.exists(logsDir)) {
+    existing.push(logsDir);
+  } else {
+    await fs.mkdirp(logsDir);
+    created.push(logsDir);
   }
   return { created, existing };
 }
@@ -361,8 +400,13 @@ function resolveProyecto(
   return basename(workspace);
 }
 
-/** Ensure the workspace `.gitignore` ignores the visibility files (idempotent). */
-async function ensureVisibilityGitignore(fs: FileSystemPort, workspace: string): Promise<void> {
+/** Append any missing entries under a header to the workspace `.gitignore` (idempotent). */
+async function appendGitignoreEntries(
+  fs: FileSystemPort,
+  workspace: string,
+  header: string,
+  entries: string[],
+): Promise<void> {
   const file = join(workspace, ".gitignore");
   const existing = (await fs.exists(file)) ? await fs.readText(file) : "";
   const present = new Set(
@@ -371,11 +415,35 @@ async function ensureVisibilityGitignore(fs: FileSystemPort, workspace: string):
       .map((l) => l.trim())
       .filter((l) => l.length > 0),
   );
-  const missing = VISIBILITY_GITIGNORE.filter((e) => !present.has(e));
+  const missing = entries.filter((e) => !present.has(e));
   if (missing.length === 0) return;
-  const block = `# Multi-root visibility (machine-specific paths — do not commit)\n${missing.join("\n")}\n`;
+  const block = `${header}\n${missing.join("\n")}\n`;
   const body = existing.replace(/\s+$/, "");
   await fs.writeText(file, body.length === 0 ? block : `${body}\n\n${block}`);
+}
+
+/** Ensure the workspace `.gitignore` ignores the visibility files (idempotent). */
+async function ensureVisibilityGitignore(fs: FileSystemPort, workspace: string): Promise<void> {
+  await appendGitignoreEntries(
+    fs,
+    workspace,
+    "# Multi-root visibility (machine-specific paths — do not commit)",
+    VISIBILITY_GITIGNORE,
+  );
+}
+
+/** Ensure the workspace `.gitignore` ignores source-launch runtime artifacts (idempotent, always). */
+async function ensureRuntimeGitignore(
+  fs: FileSystemPort,
+  workspace: string,
+  ns: string,
+): Promise<void> {
+  await appendGitignoreEntries(
+    fs,
+    workspace,
+    "# agent-workflow runtime (machine-specific — do not commit)",
+    runtimeGitignoreEntries(ns),
+  );
 }
 
 function validateSources(sources: WorkspaceSource[]): WorkspaceInitInputError | null {

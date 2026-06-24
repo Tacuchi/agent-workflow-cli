@@ -27,6 +27,14 @@ class ThrowingProcess implements ProcessPort {
   async which(_cmd: string): Promise<string | undefined> {
     return undefined;
   }
+
+  async spawnDetached() {
+    throw new Error("spawnDetached not implemented in this fake");
+  }
+  async killTree(): Promise<void> {}
+  async isAlive() {
+    return false;
+  }
 }
 
 class RecordingProcess implements ProcessPort {
@@ -37,6 +45,14 @@ class RecordingProcess implements ProcessPort {
   }
   async which(_cmd: string): Promise<string | undefined> {
     return undefined;
+  }
+
+  async spawnDetached() {
+    throw new Error("spawnDetached not implemented in this fake");
+  }
+  async killTree(): Promise<void> {}
+  async isAlive() {
+    return false;
   }
 }
 

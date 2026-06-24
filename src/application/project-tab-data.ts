@@ -18,6 +18,7 @@ import type { GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
 import { type ParsedProjectBlock, parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
+import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
 
 export interface ProjectGitData {
   branch: string;
@@ -55,6 +56,8 @@ export interface ProjectSource {
   mainBranch: string;
   dirty: boolean;
   changedFiles: number;
+  /** True when a launch descriptor (docs/tools/<alias>/launch.json) exists with a command. */
+  launchable: boolean;
 }
 
 export interface ProjectTabData {
@@ -79,6 +82,8 @@ export interface ProjectTabData {
   workingBranches: Record<string, string>;
   /** Ramas QA actuales por alias de fuente (bloque WORKSPACE > Status > Ramas QA) */
   qaBranches: Record<string, string>;
+  /** Procesos lanzados en segundo plano (registry reconciliado contra liveness). */
+  processes: ProcessRecord[];
   /** Si hubo error parcial fetcheando data */
   warnings: string[];
 }
@@ -168,6 +173,12 @@ export async function buildProjectTabData(
         warnings,
         [] as string[],
       );
+      const launchable = await safeRun(
+        `launchable:${f.alias}`,
+        () => readLaunchable(fs, cwd, f.alias),
+        warnings,
+        false,
+      );
       sources.push({
         alias: f.alias,
         path: f.path,
@@ -175,9 +186,19 @@ export async function buildProjectTabData(
         mainBranch: f.main_branch,
         dirty: changed.length > 0,
         changedFiles: changed.length,
+        launchable,
       });
     }
   }
+
+  // Procesos en segundo plano — el registry reconcilia liveness en list().
+  const registry = new ProcessRegistryService(fs, proc, paths.cwdProcessesFile());
+  const processes = await safeRun(
+    "processes",
+    () => registry.list(),
+    warnings,
+    [] as ProcessRecord[],
+  );
 
   return {
     workspaceName,
@@ -188,8 +209,21 @@ export async function buildProjectTabData(
     sources,
     workingBranches: block?.working_branches ?? {},
     qaBranches: block?.qa_branches ?? {},
+    processes,
     warnings,
   };
+}
+
+/** True when docs/tools/<alias>/launch.json exists and declares a command. */
+async function readLaunchable(fs: FileSystemPort, cwd: string, alias: string): Promise<boolean> {
+  const file = join(cwd, "docs", "tools", alias, "launch.json");
+  if (!(await fs.exists(file))) return false;
+  try {
+    const desc = JSON.parse(await fs.readText(file)) as { command?: unknown };
+    return typeof desc.command === "string" && desc.command.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 // ---------- subfetchers ----------

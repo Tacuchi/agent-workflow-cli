@@ -59,6 +59,14 @@ class FakeProcess implements ProcessPort {
   async which(_cmd: string): Promise<string | undefined> {
     return undefined;
   }
+
+  async spawnDetached() {
+    throw new Error("spawnDetached not implemented in this fake");
+  }
+  async killTree(): Promise<void> {}
+  async isAlive() {
+    return false;
+  }
 }
 
 function buildArgs(flags: string[]): ParsedArgs {

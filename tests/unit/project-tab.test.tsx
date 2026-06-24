@@ -66,6 +66,8 @@ function buildCtx(opts: { conflictOn?: string } = {}): CliContext {
     paths: {
       workspaceDir: () => "/ws",
       blockMarkers: () => MARKERS,
+      cwdProcessesFile: () => "/ws/.workflow/processes.json",
+      cwdDocsLogsDir: () => "/ws/docs/logs",
     },
   } as unknown as CliContext;
 }
@@ -111,9 +113,11 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
   it("ejecuta 'Alinear con PROD' (sync) sobre la fuente y muestra el resultado", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
-    stdin.write(ENTER); // abre panel
+    stdin.write(ENTER); // abre panel (acción 0 = Lanzar en local)
     await tick();
-    stdin.write(ENTER); // ejecuta acción enfocada = Alinear con PROD (sync)
+    stdin.write(DOWN); // baja a "Alinear con PROD" (sync)
+    await tick();
+    stdin.write(ENTER); // ejecuta sync
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("completed");
@@ -151,5 +155,216 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     // que su contenedor, Yoga lo envuelve y mete una línea extra (diff 2). Sin el
     // bug, son adyacentes (diff 1).
     expect(betaIdx - alphaIdx).toBe(1);
+  });
+});
+
+// ===== F3 — lanzamiento + administración de procesos =====
+
+const ALPHA_DESCRIPTOR = JSON.stringify({
+  version: 1,
+  source: "alpha",
+  stack: "npm",
+  cwd: "/src/alpha",
+  command: "npm",
+  args: ["run", "dev"],
+  params: [],
+  profiles: ["dev"],
+});
+
+const RUNNING_PROCESS = JSON.stringify([
+  {
+    id: "alpha__dev__4242",
+    sourceAlias: "alpha",
+    profile: "dev",
+    command: "npm",
+    args: ["run", "dev"],
+    pid: 4242,
+    startedAt: "2026-06-23T09:15:00.000Z",
+    logPath: "/ws/docs/logs/alpha-dev.log",
+    state: "running",
+  },
+]);
+
+/** ctx where alpha has a launch descriptor and one running process is registered. */
+function buildLaunchCtx(): CliContext {
+  return {
+    fs: {
+      exists: async (p: string) =>
+        p === "/ws/CLAUDE.md" ||
+        p === "/ws/docs/tools/alpha/launch.json" ||
+        p === "/ws/.workflow/processes.json",
+      readText: async (p: string) => {
+        if (p === "/ws/docs/tools/alpha/launch.json") return ALPHA_DESCRIPTOR;
+        if (p === "/ws/.workflow/processes.json") return RUNNING_PROCESS;
+        return workspaceMd();
+      },
+    },
+    env: { cwd: () => "/ws", homeDir: () => "/home", get: () => undefined },
+    git: {
+      isGitRepo: async () => true,
+      currentBranch: async () => "feature/x",
+      changedFiles: async () => [],
+      isMerging: async () => false,
+      isDirty: async () => false,
+    },
+    process: {
+      run: async () => ({ code: 0, stdout: "", stderr: "" }),
+      isAlive: async () => true, // running record stays running → no reconcile write
+    },
+    paths: {
+      workspaceDir: () => "/ws",
+      blockMarkers: () => MARKERS,
+      cwdProcessesFile: () => "/ws/.workflow/processes.json",
+      cwdDocsLogsDir: () => "/ws/docs/logs",
+    },
+  } as unknown as CliContext;
+}
+
+describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
+  it("renderiza la sección de procesos (vacía) y el tile 'procesos'", async () => {
+    const { lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("PROCESOS EN SEGUNDO PLANO");
+    expect(f).toContain("procesos");
+    expect(f).toContain("sin procesos");
+  });
+
+  it("'Lanzar en local' aparece deshabilitada (sin descriptor) en el panel de una fuente", async () => {
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
+    await tick();
+    stdin.write(ENTER); // abre el panel sobre alpha (sin descriptor en este ctx)
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("Lanzar en local");
+    // El hint inline se trunca al ancho del panel ("sin descrip…"); el hint completo
+    // aparece en el aviso al activarla (ver test siguiente).
+    expect(f).toContain("sin descrip");
+  });
+
+  it("intentar lanzar sin descriptor muestra el hint /w:workspace-init", async () => {
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
+    await tick();
+    stdin.write(ENTER); // panel
+    await tick();
+    stdin.write(ENTER); // acción 0 = Lanzar en local (no launchable)
+    await tick();
+    expect(lastFrame() ?? "").toContain("/w:workspace-init");
+  });
+
+  it("lista un proceso en ejecución, muestra el tile en 1 y entra al modo procesos con 'p'", async () => {
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildLaunchCtx()} isActive />);
+    await tick();
+    let f = lastFrame() ?? "";
+    expect(f).toContain("PID 4242");
+    expect(f).toContain("running");
+    stdin.write("p"); // entra al modo procesos
+    await tick();
+    f = lastFrame() ?? "";
+    expect(f).toContain("stop"); // hint de acciones del modo procesos
+    expect(f).toContain("relaunch");
+  });
+
+  it("una fuente con descriptor habilita 'Lanzar en local'", async () => {
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildLaunchCtx()} isActive />);
+    await tick();
+    stdin.write(ENTER); // panel sobre alpha (launchable en este ctx)
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("Lanzar en local");
+    // Habilitada: NO muestra el hint de "sin descriptor" (la desc se trunca al ancho del panel).
+    expect(f).not.toContain("sin descriptor");
+  });
+
+  it("lanzar una fuente ya en ejecución (mismo perfil) muestra la pantalla de colisión", async () => {
+    // alpha: descriptor sin perfiles/params (lanza directo, profile null) + proceso vivo profile null.
+    const ctx = {
+      fs: {
+        exists: async (p: string) =>
+          p === "/ws/CLAUDE.md" ||
+          p === "/ws/docs/tools/alpha/launch.json" ||
+          p === "/ws/.workflow/processes.json",
+        readText: async (p: string) => {
+          if (p === "/ws/docs/tools/alpha/launch.json")
+            return JSON.stringify({
+              version: 1,
+              source: "alpha",
+              stack: "npm",
+              cwd: "/src/alpha",
+              command: "npm",
+              args: ["start"],
+              params: [],
+              profiles: [],
+            });
+          if (p === "/ws/.workflow/processes.json")
+            return JSON.stringify([
+              {
+                id: "alpha__default__7777",
+                sourceAlias: "alpha",
+                profile: null,
+                command: "npm",
+                args: ["start"],
+                pid: 7777,
+                startedAt: "2026-06-23T09:00:00.000Z",
+                logPath: "/ws/docs/logs/alpha.log",
+                state: "running",
+              },
+            ]);
+          return workspaceMd();
+        },
+      },
+      env: { cwd: () => "/ws", homeDir: () => "/home", get: () => undefined },
+      git: {
+        isGitRepo: async () => true,
+        currentBranch: async () => "feature/x",
+        changedFiles: async () => [],
+      },
+      process: {
+        run: async () => ({ code: 0, stdout: "", stderr: "" }),
+        isAlive: async () => true,
+      },
+      paths: {
+        workspaceDir: () => "/ws",
+        blockMarkers: () => MARKERS,
+        cwdProcessesFile: () => "/ws/.workflow/processes.json",
+        cwdDocsLogsDir: () => "/ws/docs/logs",
+      },
+    } as unknown as CliContext;
+
+    const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER); // panel sobre alpha
+    await tick();
+    stdin.write(ENTER); // acción 0 = Lanzar en local → lanza directo (sin perfiles/params)
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("Ya corre alpha");
+    expect(f).toContain("re-lanzar");
+  });
+
+  it("sin workspace inicializado: NO ofrece Lanzar ni la sección de procesos (AC12)", async () => {
+    // fs.exists=false → no hay bloque WORKSPACE → landing NotInitialized.
+    const ctx = {
+      fs: { exists: async () => false, readText: async () => "" },
+      env: { cwd: () => "/ws", homeDir: () => "/home", get: () => undefined },
+      git: { isGitRepo: async () => false },
+      process: {
+        run: async () => ({ code: 0, stdout: "", stderr: "" }),
+        isAlive: async () => false,
+      },
+      paths: {
+        workspaceDir: () => "/ws",
+        blockMarkers: () => MARKERS,
+        cwdProcessesFile: () => "/ws/.workflow/processes.json",
+        cwdDocsLogsDir: () => "/ws/docs/logs",
+      },
+    } as unknown as CliContext;
+
+    const { lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("not initialized"); // landing
+    expect(f).not.toContain("Procesos en segundo plano");
+    expect(f).not.toContain("Lanzar en local");
   });
 });

@@ -87,6 +87,8 @@ function buildDeps({ claudeMd, currentBranch }: FakeDepsOptions) {
       blockMarkers: () => MARKERS,
       cwdSessionsDir: () => "/ws/.workflow/sessions",
       cwdHistoryFile: () => "/ws/.workflow/HISTORY.md",
+      cwdProcessesFile: () => "/ws/.workflow/processes.json",
+      cwdDocsLogsDir: () => "/ws/docs/logs",
     } as never,
   };
 }

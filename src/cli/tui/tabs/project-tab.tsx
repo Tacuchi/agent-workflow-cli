@@ -7,11 +7,23 @@ import {
   type GitFlowResult,
   runGitFlow,
 } from "../../../application/git-flow-service.js";
+import type { ProcessRecord } from "../../../application/process-registry-service.js";
 import {
   type ProjectSource,
   type ProjectTabData,
   buildProjectTabData,
 } from "../../../application/project-tab-data.js";
+import type { LaunchDescriptor } from "../../../application/source-launch-scripts-service.js";
+import {
+  type LaunchDeps,
+  type LaunchRequest,
+  findCollision,
+  launchSource,
+  readDescriptor,
+  relaunchProcess,
+  stopProcess,
+  tailLog,
+} from "../../../application/source-launch-service.js";
 import type { CliContext } from "../../types.js";
 import {
   type DetailAction,
@@ -21,8 +33,10 @@ import {
 import { FlowResultView } from "../components/git-flow-actions.js";
 import { ListRow } from "../components/list-row.js";
 import { PageHead } from "../components/page-head.js";
+import { ProcessList } from "../components/process-list.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
+import { type LaunchFormValue, SourceLaunchForm } from "../components/source-launch-form.js";
 import { StatTile } from "../components/stat-tile.js";
 import { WorkspaceInitForm } from "../components/workspace-init-form.js";
 import { useInputLock } from "../input-lock.js";
@@ -224,7 +238,17 @@ type Mode =
   | { kind: "list" }
   | { kind: "detail" }
   | { kind: "running"; label: string }
-  | { kind: "result"; action: GitFlowAction; result: GitFlowResult };
+  | { kind: "result"; action: GitFlowAction; result: GitFlowResult }
+  // ===== Source-launch + process management =====
+  | { kind: "process" } // process region focused
+  | { kind: "launch-form"; alias: string; descriptor: LaunchDescriptor }
+  | { kind: "busy"; label: string }
+  | { kind: "collision"; req: LaunchRequest; existing: ProcessRecord }
+  | { kind: "notice"; tone: "ok" | "err"; lines: string[] }
+  | { kind: "log"; record: ProcessRecord; lines: string[] };
+
+/** First per-source detail action: launch the app locally. */
+const LAUNCH_ACTION = { id: "launch", name: "Lanzar en local" } as const;
 
 /**
  * Indentación (marginLeft) del contenedor de rows de SOURCES. Se pasa como `indent`
@@ -264,7 +288,112 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const hasSources = totalSources > 0;
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
+  const [processCursor, setProcessCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
+
+  const processes = data.processes;
+  const runningCount = useMemo(
+    () => processes.filter((p) => p.state === "running").length,
+    [processes],
+  );
+
+  // Deps for the source-launch service. `baseEnv` = the real process env so the
+  // child inherits PATH etc.; params/profile are layered on at resolve time.
+  const launchDeps = useMemo<LaunchDeps>(
+    () => ({
+      fs: ctx.fs,
+      proc: ctx.process,
+      paths: ctx.paths,
+      baseEnv: Object.fromEntries(
+        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+      ),
+    }),
+    [ctx],
+  );
+
+  // Launch a source: collision-check first, then spawn detached + register.
+  const doLaunch = useCallback(
+    async (req: LaunchRequest) => {
+      const existing = findCollision(processes, req.alias, req.profile);
+      if (existing) return setMode({ kind: "collision", req, existing });
+      setMode({ kind: "busy", label: `Lanzando ${req.alias}…` });
+      const res = await launchSource(launchDeps, req);
+      setMode(
+        res.ok
+          ? {
+              kind: "notice",
+              tone: "ok",
+              lines: [`Lanzado ${req.alias} (PID ${res.record.pid})`, res.record.logPath],
+            }
+          : { kind: "notice", tone: "err", lines: [res.message] },
+      );
+      await onReload?.();
+    },
+    [processes, launchDeps, onReload],
+  );
+
+  // Entry from the "Lanzar en local" detail action: open the form if the
+  // descriptor has profiles/params, otherwise launch directly.
+  const beginLaunch = useCallback(
+    async (alias: string) => {
+      const descriptor = await readDescriptor(ctx.fs, ctx.paths.workspaceDir(), alias);
+      if (!descriptor || !descriptor.command) {
+        return setMode({
+          kind: "notice",
+          tone: "err",
+          lines: [
+            `Sin descriptor de arranque para ${alias}.`,
+            "Generá scripts con /w:workspace-init.",
+          ],
+        });
+      }
+      if (descriptor.profiles.length === 0 && descriptor.params.length === 0) {
+        return void doLaunch({ alias, profile: null, values: {} });
+      }
+      setMode({ kind: "launch-form", alias, descriptor });
+    },
+    [ctx, doLaunch],
+  );
+
+  const doStop = useCallback(
+    async (record: ProcessRecord) => {
+      setMode({ kind: "busy", label: `Deteniendo ${record.sourceAlias}…` });
+      await stopProcess(launchDeps, record);
+      setMode({ kind: "list" });
+      await onReload?.();
+    },
+    [launchDeps, onReload],
+  );
+
+  const doRelaunch = useCallback(
+    async (record: ProcessRecord) => {
+      setMode({ kind: "busy", label: `Re-lanzando ${record.sourceAlias}…` });
+      const res = await relaunchProcess(launchDeps, record);
+      setMode(
+        res.ok
+          ? {
+              kind: "notice",
+              tone: "ok",
+              lines: [`Re-lanzado ${record.sourceAlias} (PID ${res.record.pid})`],
+            }
+          : { kind: "notice", tone: "err", lines: [res.message] },
+      );
+      await onReload?.();
+    },
+    [launchDeps, onReload],
+  );
+
+  const doViewLog = useCallback(
+    async (record: ProcessRecord) => {
+      const lines = await tailLog(ctx.fs, record.logPath, 20);
+      setMode({
+        kind: "log",
+        record,
+        lines: lines.length > 0 ? lines : ["(log vacío o no encontrado)", record.logPath],
+      });
+    },
+    [ctx.fs],
+  );
 
   // El detail panel (y el flujo en curso) bloquean las teclas globales; la lista
   // base las deja pasar.
@@ -280,6 +409,16 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const currentSource = isAllTarget
     ? null
     : (data.sources.find((s) => s.alias === currentTarget) ?? null);
+
+  // Detail-panel actions for the current target: a per-source "Lanzar en local"
+  // (only for real sources) followed by the git-flow actions.
+  const detailItems = useMemo<({ kind: "launch" } | { kind: "flow"; action: GitFlowAction })[]>(
+    () => [
+      ...(currentSource ? [{ kind: "launch" as const }] : []),
+      ...FLOW_ACTIONS.map((a) => ({ kind: "flow" as const, action: a.id })),
+    ],
+    [currentSource],
+  );
 
   const runFlow = useCallback(
     async (action: GitFlowAction) => {
@@ -308,11 +447,15 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [cursor, ctx, targets],
   );
 
-  // Atajos de la lista de sources (↑↓ navega · ⏎ abre panel · s/g/c acciones).
+  // Atajos de la lista de sources (↑↓ navega · ⏎ abre panel · p procesos · s/g/c acciones).
   const handleListKey = useCallback(
     (input: string, key: { upArrow?: boolean; downArrow?: boolean; return?: boolean }) => {
       if (input === "s") return void onRunAction?.("session:start");
       if (input === "g") return void onRunAction?.("git:status");
+      if (input === "p" && processes.length > 0) {
+        setProcessCursor(0);
+        return setMode({ kind: "process" });
+      }
       if (input === "c" && data.branches.length > 1) {
         const candidate = data.branches.find((b) => !b.current);
         if (candidate) onRunAction?.("git:checkout", { name: candidate.name });
@@ -326,30 +469,87 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         setMode({ kind: "detail" });
       }
     },
-    [data.branches, hasSources, onRunAction, targets.length],
+    [data.branches, hasSources, onRunAction, targets.length, processes.length],
   );
 
   // Acciones del panel lateral (↑↓ navega · ⏎ ejecuta · esc cierra).
   const handleDetailKey = useCallback(
     (key: { upArrow?: boolean; downArrow?: boolean; return?: boolean; escape?: boolean }) => {
       if (key.upArrow) return setActionCursor((c) => Math.max(0, c - 1));
-      if (key.downArrow) return setActionCursor((c) => Math.min(FLOW_ACTIONS.length - 1, c + 1));
+      if (key.downArrow) return setActionCursor((c) => Math.min(detailItems.length - 1, c + 1));
       if (key.escape) return setMode({ kind: "list" });
       if (key.return) {
-        const action = FLOW_ACTIONS[actionCursor];
-        if (action) void runFlow(action.id);
+        const item = detailItems[actionCursor];
+        if (!item) return;
+        if (item.kind === "launch") {
+          if (currentSource?.launchable) return void beginLaunch(currentSource.alias);
+          return setMode({
+            kind: "notice",
+            tone: "err",
+            lines: [
+              `${currentSource?.alias ?? "source"}: sin descriptor de arranque.`,
+              "Generá scripts con /w:workspace-init.",
+            ],
+          });
+        }
+        void runFlow(item.action);
       }
     },
-    [actionCursor, runFlow],
+    [actionCursor, detailItems, currentSource, runFlow, beginLaunch],
+  );
+
+  // Modo "process": navega la sección de procesos en segundo plano (x stop · r relaunch · o log).
+  const handleProcessKey = useCallback(
+    (input: string, key: { upArrow?: boolean; downArrow?: boolean; escape?: boolean }) => {
+      if (key.escape) return setMode({ kind: "list" });
+      if (key.upArrow) return setProcessCursor((c) => Math.max(0, c - 1));
+      if (key.downArrow) return setProcessCursor((c) => Math.min(processes.length - 1, c + 1));
+      const record = processes[processCursor];
+      if (!record) return;
+      if (input === "x") return void doStop(record);
+      if (input === "r") return void doRelaunch(record);
+      if (input === "o") return void doViewLog(record);
+    },
+    [processes, processCursor, doStop, doRelaunch, doViewLog],
+  );
+
+  // Colisión: detiene el proceso existente y lanza el pedido (con sus valores).
+  const confirmRelaunch = useCallback(
+    async (req: LaunchRequest, existing: ProcessRecord) => {
+      setMode({ kind: "busy", label: `Re-lanzando ${req.alias}…` });
+      await stopProcess(launchDeps, existing);
+      const res = await launchSource(launchDeps, req);
+      setMode(
+        res.ok
+          ? {
+              kind: "notice",
+              tone: "ok",
+              lines: [`Re-lanzado ${req.alias} (PID ${res.record.pid})`],
+            }
+          : { kind: "notice", tone: "err", lines: [res.message] },
+      );
+      await onReload?.();
+    },
+    [launchDeps, onReload],
   );
 
   // input — delega a cada handler según el modo activo.
   useInput(
     (input, key) => {
       if (!isActive) return;
-      if (mode.kind === "list") handleListKey(input, key);
-      else if (mode.kind === "detail") handleDetailKey(key);
-      else if (mode.kind === "result") {
+      if (mode.kind === "list") return handleListKey(input, key);
+      if (mode.kind === "detail") return handleDetailKey(key);
+      if (mode.kind === "process") return handleProcessKey(input, key);
+      if (mode.kind === "collision") {
+        if (key.escape) setMode({ kind: "list" });
+        else if (input === "r") void confirmRelaunch(mode.req, mode.existing);
+        return;
+      }
+      if (mode.kind === "notice" || mode.kind === "log") {
+        if (key.escape || key.return) setMode({ kind: "list" });
+        return;
+      }
+      if (mode.kind === "result") {
         // ⏎/r re-ejecuta (= resume on conflict) · esc vuelve a la lista.
         if (key.escape) {
           setMode({ kind: "list" });
@@ -375,10 +575,100 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     return <FlowResultView action={mode.action} result={mode.result} />;
   }
 
-  const detailActions: DetailAction[] = FLOW_ACTIONS.map((a) => ({
-    name: a.name,
-    description: a.description,
-  }));
+  if (mode.kind === "launch-form") {
+    return (
+      <SourceLaunchForm
+        descriptor={mode.descriptor}
+        isActive={isActive}
+        onCancel={() => setMode({ kind: "list" })}
+        onSubmit={(v: LaunchFormValue) =>
+          void doLaunch({ alias: mode.alias, profile: v.profile, values: v.values })
+        }
+      />
+    );
+  }
+
+  if (mode.kind === "busy") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead label="Procesos" hint={mode.label} />
+        <Box marginLeft={2} marginTop={1}>
+          <Text color={colors.warn}>
+            {icons.spinner} {mode.label}
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode.kind === "collision") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead label="Ya en ejecución" marginTop={0} />
+        <Box marginLeft={2} marginTop={1} flexDirection="column">
+          <Text color={colors.warn}>
+            Ya corre {mode.existing.sourceAlias}
+            {mode.existing.profile ? ` · ${mode.existing.profile}` : ""} (PID {mode.existing.pid}).
+          </Text>
+          <Box marginTop={1}>
+            <Text color={colors.faint}>
+              r re-lanzar (detiene el actual + lanza de nuevo) · esc cancelar
+            </Text>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode.kind === "notice") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead label={mode.tone === "ok" ? "Listo" : "Atención"} marginTop={0} />
+        <Box marginLeft={2} marginTop={1} flexDirection="column">
+          {mode.lines.map((l, i) => (
+            <Text key={`${i}-${l}`} color={mode.tone === "ok" ? colors.ok : colors.warn}>
+              {l}
+            </Text>
+          ))}
+          <Box marginTop={1}>
+            <Text color={colors.faint}>⏎/esc volver</Text>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode.kind === "log") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead
+          label={`Log · ${mode.record.sourceAlias}${mode.record.profile ? ` · ${mode.record.profile}` : ""}`}
+          hint={mode.record.logPath}
+          marginTop={0}
+        />
+        <Box marginLeft={2} marginTop={1} flexDirection="column">
+          {mode.lines.map((l, i) => (
+            <Text key={`${i}-${l.slice(0, 8)}`} color={colors.dim}>
+              {l}
+            </Text>
+          ))}
+          <Box marginTop={1}>
+            <Text color={colors.faint}>⏎/esc volver</Text>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
+  const detailActions: DetailAction[] = detailItems.map((it) => {
+    if (it.kind === "launch") {
+      return currentSource?.launchable
+        ? { name: LAUNCH_ACTION.name, description: "spawn detached" }
+        : { name: LAUNCH_ACTION.name, description: "sin descriptor — /w:workspace-init" };
+    }
+    const fa = FLOW_ACTIONS.find((a) => a.id === it.action);
+    return { name: fa?.name ?? it.action, description: fa?.description ?? "" };
+  });
 
   return (
     <Box flexDirection="column">
@@ -414,6 +704,16 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           value={`${workingEntries.length}`}
           sub={workingEntries.length > 0 ? "declared" : "none"}
           tone={workingEntries.length > 0 ? "accent" : "dim"}
+        />
+        <StatTile
+          label="procesos"
+          value={`${runningCount}`}
+          sub={
+            processes.length > runningCount
+              ? `${processes.length - runningCount} inactivos`
+              : "running"
+          }
+          tone={runningCount > 0 ? "accent" : "dim"}
         />
       </Box>
 
@@ -458,6 +758,13 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           {qaEntries.length > 0 ? (
             <BranchList label="Ramas QA actuales" entries={qaEntries} />
           ) : null}
+
+          <ProcessList
+            processes={processes}
+            cursor={processCursor}
+            focused={mode.kind === "process"}
+            widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
+          />
         </Box>
 
         {/* Detail panel — sólo cuando se seleccionó una fuente con ⏎. */}
@@ -474,7 +781,13 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       </Box>
 
       <Box marginTop={1}>
-        <QuickActions actions={[{ key: "s", label: "start session" }]} />
+        <QuickActions
+          actions={[
+            { key: "⏎", label: "source actions" },
+            ...(processes.length > 0 ? [{ key: "p", label: "manage processes" }] : []),
+            { key: "s", label: "start session" },
+          ]}
+        />
       </Box>
     </Box>
   );

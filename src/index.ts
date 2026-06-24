@@ -10,7 +10,13 @@ export type { ProjectBlock, SourceRef } from "./domain/project.js";
 export type { SessionRef, TaskItem, TaskStatus } from "./domain/session.js";
 export type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "./ports/file-system.js";
 export type { GitPort } from "./ports/git.js";
-export type { ProcessPort, RunOptions, RunResult } from "./ports/process.js";
+export type {
+  ProcessPort,
+  RunOptions,
+  RunResult,
+  SpawnDetachedOptions,
+  SpawnDetachedResult,
+} from "./ports/process.js";
 export type { EnvPort } from "./ports/env.js";
 export type {
   AgentWorkflowRuntimeConfig,
