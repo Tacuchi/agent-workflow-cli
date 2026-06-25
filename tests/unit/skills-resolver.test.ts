@@ -44,6 +44,19 @@ describe("resolveSkills (skills.toml cascade)", () => {
     });
     expect(skills.overview.skill).toBe("workflow");
     expect(skills.sql).toEqual({ role: "sql", skill: "sql", source: "default", enabled: true });
+    expect(skills.git.skill).toBe("git");
+  });
+
+  it("las convenciones genéricas NO son roles (las auto-descubre el host, no el workflow)", async () => {
+    // coding-standards/testing/writing salieron del sistema de roles: el workflow es
+    // indiferente y el host las auto-aplica si están instaladas. Nombrarlas en skills.toml
+    // → rol desconocido (warning), no rompe la resolución.
+    writeWorkspace('[skills]\ncoding-standards = "x"\ntesting = "y"\nsql = "ws-sql"\n');
+    const { skills, warnings } = await resolveSkills(fs, paths);
+    expect(warnings.some((w) => w.includes("coding-standards"))).toBe(true);
+    expect(warnings.some((w) => w.includes("testing"))).toBe(true);
+    expect(Object.keys(skills)).not.toContain("coding-standards");
+    expect(skills.sql.skill).toBe("ws-sql");
   });
 
   it("workspace bindea un rol a una skill de tercero", async () => {
@@ -81,10 +94,10 @@ describe("resolveSkills (skills.toml cascade)", () => {
   });
 
   it('"off" desactiva la capacidad', async () => {
-    writeWorkspace('[skills]\ntesting = "off"\n');
+    writeWorkspace('[skills]\ntools = "off"\n');
     const { skills } = await resolveSkills(fs, paths);
-    expect(skills.testing).toEqual({
-      role: "testing",
+    expect(skills.tools).toEqual({
+      role: "tools",
       skill: null,
       source: "workspace",
       enabled: false,

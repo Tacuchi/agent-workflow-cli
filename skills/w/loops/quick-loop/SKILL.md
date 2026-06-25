@@ -48,7 +48,9 @@ QUICK
 
 ## Composes
 
-`git` · `coding-standards` · `testing` (verification-first) · `sql` (regla BD) · `writing` · `research` (inline). Resueltas por `.workflow/skills.toml`.
+`git` · `sql` (regla BD) · `research` (inline). Resueltas por `.workflow/skills.toml`.
+
+> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
 
 ## Delta QUICK — minimal ceremony
 

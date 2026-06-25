@@ -14,7 +14,7 @@ description: >-
   se ejecuta); validación por fase y final (lo dependiente de migración no
   aplicada se difiere como handoff a DBA); y SIN auto-export (escribe solo
   docs/plans + docs/tools; el resto queda como artefacto de session para
-  export-*). Compone git, coding-standards, testing, tools y sql. Lo arranca
+  export-*). Compone git, tools y sql. Lo arranca
   /w:plan-exec y es reanudable. Invocar para implementar un plan ya generado.
 ---
 
@@ -55,7 +55,9 @@ Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 
 ## Composes
 
-`git` (rama segura + commits propuestos) · `coding-standards` (cambio mínimo, estilo de la fuente) · `testing` (validación) · `tools` (herramientas reusables → `docs/tools`) · `sql` (regla BD) · `writing`. Todas resueltas por `.workflow/skills.toml`; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta.
+`git` (rama segura + commits propuestos) · `tools` (herramientas reusables → `docs/tools`) · `sql` (regla BD). Todas resueltas por `.workflow/skills.toml`; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta.
+
+> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
 
 ## Internal sessions (managed)
 

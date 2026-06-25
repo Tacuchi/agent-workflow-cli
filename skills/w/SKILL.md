@@ -133,9 +133,8 @@ Un loop **no** compone una skill concreta; compone una **capacidad por su rol** 
 ui-design        = "ui-spec"          # built-in default
 sql              = "sql"
 git              = "git"
-coding-standards = "coding-standards"
-writing          = "writing"
-testing          = "off"              # capacidad desactivada
+research         = "research"
+# diagrams       = "off"              # ← capacidad desactivada
 # ui-design      = "acme/figma-spec"  # ← skill de tercero (vía skills.sh)
 ```
 
@@ -148,13 +147,12 @@ Catálogo de roles y su default:
 | `ui-design` | `ui-spec` | must | `spec-refine-loop` (UI) |
 | `sql` | `sql` | must | research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
-| `coding-standards` | `coding-standards` | must | `plan-exec-loop` · `quick-loop` |
-| `writing` | `writing` | must | todos los loops · `export-manuals`/`export-reports` |
 | `research` | `research` | should | todos los loops (capacidad inline) |
-| `testing` | `testing` | should | `plan-exec-loop` · `quick-loop` |
 | `tools` | `tools` | should | `plan-exec-loop` |
 | `diagrams` | `diagrams` | should | `export-diagrams` |
 | `overview` | `workflow` | should | cualquiera (orientación) |
+
+> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
 
 El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
 

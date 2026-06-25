@@ -92,7 +92,7 @@ spec-refine-loop  ── CHASIS (patrón de referencia: objetivo persistente + v
                                        hereda git/BD/no-export de plan-exec
 ```
 
-El chasis **no es una capacidad bindeable**: *es* `spec-refine-loop` y los demás loops lo heredan. Lo enchufable son las **capacidades** que un loop compone (ej. `ui-design`, `sql`, `git`, `testing`), resueltas por `.workflow/skills.toml`.
+El chasis **no es una capacidad bindeable**: *es* `spec-refine-loop` y los demás loops lo heredan. Lo enchufable son las **capacidades** que un loop compone (ej. `ui-design`, `sql`, `git`, `tools`), resueltas por `.workflow/skills.toml`.
 
 ## Composed capabilities (roles)
 
@@ -103,12 +103,11 @@ Los loops componen **capacidades por su rol**, no skills concretas; la skill que
 | `ui-design` | `ui-spec` | `spec-refine-loop` (cuando hay UI) |
 | `sql` | `sql` | research · `plan-exec-loop` · `quick-loop` |
 | `git` | `git` | `plan-exec-loop` · `quick-loop` |
-| `coding-standards` | `coding-standards` | `plan-exec-loop` · `quick-loop` |
-| `writing` | `writing` | todos los loops |
 | `research` | `research` | todos los loops (research inline) |
-| `testing` | `testing` | `plan-exec-loop` · `quick-loop` |
 | `tools` | `tools` | `plan-exec-loop` |
 | `overview` | `workflow` | cualquiera (orientación) |
+
+> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
 
 `off` en config → capacidad desactivada: el loop sigue sin ella; si era necesaria, lo dice o pregunta al humano.
 

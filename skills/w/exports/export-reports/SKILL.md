@@ -1,21 +1,21 @@
 ---
 name: export-reports
-description: "Consolida N sesiones del workspace en un informe ejecutivo/funcional bajo `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. Lee el corpus: el spec (`docs/specs`), `CONCLUSIONS` (research), `DECISION`, el estado del plan-doc + el resto de `docs/` para contexto. Sintetiza: qué se hizo, decisiones clave, resultados/conclusiones, pendientes/roadmap — con dedup de recomendaciones cross-session. Audiencia ajustable vía `--audience` (gerencia ≈ corto; tecnica ≈ detallado). Funde el espíritu de los viejos export-report (ejecutivo) y export-conclusions (dedup de R-items) en una sola salida a `docs/reports`. Read-only/reporte: no commitea ni muta sesiones. Compone la capacidad `writing`. Úsalo para 'informe ejecutivo', 'qué se hizo este trimestre para gerencia', 'brief con recomendaciones consolidadas'. Invocado por el usuario vía `/w:export-reports`."
+description: "Consolida N sesiones del workspace en un informe ejecutivo/funcional bajo `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. Lee el corpus: el spec (`docs/specs`), `CONCLUSIONS` (research), `DECISION`, el estado del plan-doc + el resto de `docs/` para contexto. Sintetiza: qué se hizo, decisiones clave, resultados/conclusiones, pendientes/roadmap — con dedup de recomendaciones cross-session. Audiencia ajustable vía `--audience` (gerencia ≈ corto; tecnica ≈ detallado). Funde el espíritu de los viejos export-report (ejecutivo) y export-conclusions (dedup de R-items) en una sola salida a `docs/reports`. Read-only/reporte: no commitea ni muta sesiones. La prosa sigue las convenciones de redacción ambientes (el host auto-aplica una skill de writing instalada si está presente). Úsalo para 'informe ejecutivo', 'qué se hizo este trimestre para gerencia', 'brief con recomendaciones consolidadas'. Invocado por el usuario vía `/w:export-reports`."
 ---
 
 # export-reports — Informe ejecutivo/funcional desde el corpus de sesiones + `docs/`
 
 Genera un único `.md` que consolida N sesiones del workspace en un informe **ejecutivo/funcional**: qué se hizo, decisiones clave, resultados/conclusiones y pendientes/roadmap. **Read-only / reporte** — no commitea, no muta sesiones ni el corpus.
 
-> Familia `export-*` (la única vía artefacto→`docs/`). **Funde** el espíritu de dos viejos exports en una sola salida a `docs/reports`: `export-report` (informe ejecutivo con tabla de componentes + diagrama de flujo) y `export-conclusions` (dedup de R-items cross-session). Modernizado: `docs/reports` en inglés, sin modos project/hub, y la prosa la aporta la capacidad `writing`. Diseño: `docs/referencias/workflow-exports/export-reports.md`.
+> Familia `export-*` (la única vía artefacto→`docs/`). **Funde** el espíritu de dos viejos exports en una sola salida a `docs/reports`: `export-report` (informe ejecutivo con tabla de componentes + diagrama de flujo) y `export-conclusions` (dedup de R-items cross-session). Modernizado: `docs/reports` en inglés, sin modos project/hub, y la prosa sigue las convenciones de redacción **ambientes** (el host auto-aplica una skill de writing instalada si está presente), no un rol propio. Diseño: `docs/referencias/workflow-exports/export-reports.md`.
 
 ## Category
 
 `docs/reports` — **única** carpeta `docs/` que este export escribe.
 
-## Composes
+## Writing (convención ambiente, no rol)
 
-Capacidad **`writing`** (built-in default `writing`), resuelta vía `.workflow/skills.toml`. Aporta la traducción técnico→ejecutiva, la cota de longitud por audiencia y el léxico (frases cortas, listas sobre prosa, sin relleno). Este export **no** posee esa lógica: la compone. Rebindeable u `off` por config.
+La redacción del informe sigue las convenciones de redacción **ambientes**: el host auto-aplica una skill de writing instalada (si está presente) por su `description` — traducción técnico→ejecutiva, cota de longitud por audiencia, frases cortas, listas sobre prosa, sin relleno. Este export **no** compone un rol `writing` ni lo bindea; es **indiferente** a qué skill de redacción exista. Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el export **no depende** de él.
 
 ## When to use
 
@@ -91,9 +91,9 @@ Por sesión filtrada (`aw session-artifacts --code <NNN>`): el spec referido (qu
 
 Extraer los R-items de `CONCLUSIONS`/`DECISION` (pendientes, diferidos, "próximos pasos"). Agrupar por slug; merge de duplicados anotando `origins[]`; si dos R-items del mismo slug se contradicen, marcarlos como conflicto para resolución explícita. **No** deduplicar los C-items (son específicos de cada análisis: se preservan con trazabilidad).
 
-### Paso 4 — Sintetizar (compone `writing`)
+### Paso 4 — Sintetizar (prosa: convenciones ambientes)
 
-Render aplicando la capacidad `writing`: Resumen ejecutivo · Qué se hizo (agrupado por capacidad de negocio, **no** por sesión) · Componentes impactados (tabla) · Decisiones clave · Resultados/conclusiones · Pendientes/Roadmap (solo si hay R-items). Traducción técnico→ejecutiva y cota de longitud por `--audience`. Opcional: un `flowchart LR` simple de síntesis (con link `mermaid.ink`); el diagrama técnico detallado es de `export-diagrams`.
+Render aplicando las convenciones de redacción ambientes (host): Resumen ejecutivo · Qué se hizo (agrupado por capacidad de negocio, **no** por sesión) · Componentes impactados (tabla) · Decisiones clave · Resultados/conclusiones · Pendientes/Roadmap (solo si hay R-items). Traducción técnico→ejecutiva y cota de longitud por `--audience`. Opcional: un `flowchart LR` simple de síntesis (con link `mermaid.ink`); el diagrama técnico detallado es de `export-diagrams`.
 
 ### Paso 5 — Escribir o reportar
 
@@ -110,6 +110,6 @@ Idempotente funcional: cada invocación toma el siguiente `NNN`; no sobrescribe 
 ## Resources
 
 - Design: `docs/referencias/workflow-exports/export-reports.md` · familia: [`../README.md`](../README.md).
-- Capacidad compuesta: `writing` (built-in default; ver `docs/referencias/workflow-skills/`).
+- Redacción: convención **ambiente** (no rol) — el host auto-aplica una skill de writing instalada si está presente.
 - Insumos: spec (`docs/specs`), `CONCLUSIONS`/`DECISION` (ver `docs/referencias/workflow-artifacts/`), plan-doc (`docs/plans`).
 - Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md).

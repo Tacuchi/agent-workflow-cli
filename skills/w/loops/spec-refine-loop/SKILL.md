@@ -114,7 +114,9 @@ El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global
 
 El gap **UI sin especificar** (cuando el requerimiento involucra UI; ver *Gap taxonomy*) se resuelve **componiendo** la capacidad **`ui-design`** (default built-in `ui-spec`; rebindeable vía `.workflow/skills.toml`): autora el UI spec nativamente (estructura, vocabulario, formato Markdown). Es un tercer modo de resolución de gap (junto a *research* y *humano*): el loop aporta la iteración/Q&A que el viejo servicio no tenía (design-system, tema, variantes, desambiguación) **vía la misma structured-choice**, y lo integra como sección `## UI spec` del spec.
 
-Otras capacidades transversales que el chasis usa siempre: `research` (research **inline**, ver abajo), `sql` (regla BD en research), `writing` (redacción del spec). Todas se resuelven por config; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta.
+Otras capacidades transversales que el chasis usa siempre: `research` (research **inline**, ver abajo), `sql` (regla BD en research). Todas se resuelven por config; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta. La **prosa del spec** sigue las convenciones de redacción **ambientes** (el host auto-aplica una skill de writing instalada si está presente), no un rol compuesto.
+
+> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
 
 ## Deliverable schema (el spec, editado in place)
 

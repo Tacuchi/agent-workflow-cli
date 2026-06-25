@@ -63,7 +63,7 @@ Mecanismo concreto por arnés (jun-2026; `~` parcial · `?` sin confirmar).
 
 "Aprovechar las skills que el arnés tenga instaladas" se resuelve por el **mismo binding** de `.workflow/skills.toml`: un rol puede apuntar a una skill **instalada en el host** (de tercero, vía skills.sh) en vez del built-in. Regla:
 
-- Si el host tiene una skill **mejor** para un rol (ej. un generador de diagramas superior para `diagrams`, un linter de estándares para `coding-standards`), se la **bindea** en `.workflow/skills.toml` y el loop la compone sin cambios.
+- Si el host tiene una skill **mejor** para un rol (ej. un generador de diagramas superior para `diagrams`, o un investigador especializado para `research`), se la **bindea** en `.workflow/skills.toml` y el loop la compone sin cambios.
 - El built-in default es el **piso**, no el techo: garantiza que el rol funcione en cualquier host; el binding lo **enriquece** donde el host puede más.
 
 ## Convención para el resto del corpus

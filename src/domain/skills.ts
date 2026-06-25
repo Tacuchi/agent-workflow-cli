@@ -4,15 +4,19 @@
  * A loop composes a CAPABILITY by its role (e.g. "ui-design"), not a concrete
  * skill. The role → skill binding is resolved from `skills.toml`
  * (cascade: built-in default → global → workspace). See skills-resolver-service.
+ *
+ * Only WORKFLOW-SPECIFIC capabilities are roles here. Generic, stack-agnostic
+ * conventions (coding standards, testing strategy, technical writing) are NOT
+ * roles: they live as standalone skills the host auto-discovers by `description`
+ * and applies whenever relevant. The workflow stays indifferent — it never reads
+ * or binds a specific convention skill; the host surfaces any useful one that is
+ * installed (e.g. from the `dev-conventions` marketplace plugin, or anywhere).
  */
 export const SKILL_ROLES = [
   "ui-design",
   "sql",
   "git",
-  "coding-standards",
-  "writing",
   "research",
-  "testing",
   "tools",
   "diagrams",
   "overview",
@@ -25,10 +29,7 @@ export const BUILTIN_DEFAULT_SKILLS: Record<SkillRole, string> = {
   "ui-design": "ui-spec",
   sql: "sql",
   git: "git",
-  "coding-standards": "coding-standards",
-  writing: "writing",
   research: "research",
-  testing: "testing",
   tools: "tools",
   diagrams: "diagrams",
   overview: "workflow",

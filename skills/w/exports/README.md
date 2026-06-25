@@ -25,11 +25,11 @@
 | Export | Composes | Reads (artifacts / sessions + corpus) | Writes (its ONLY category) |
 |---|---|---|---|
 | [`export-scripts`](export-scripts/SKILL.md) | `sql` | type-B `SCRIPTS.sql` (DDL/DML migrations) across N sessions + standalone `docs/scripts/*.sql` | `docs/scripts/NNN-export-scripts-<date>/` (numbered forwards + `00-ROLLBACK.sql`) |
-| [`export-manuals`](export-manuals/SKILL.md) | `writing` | sessions + `DECISION` + plan-doc (`Solution`, `Final behavior`, `Validations`) + touched code | `docs/manuals/` |
+| [`export-manuals`](export-manuals/SKILL.md) | — (prosa: convenciones ambientes) | sessions + `DECISION` + plan-doc (`Solution`, `Final behavior`, `Validations`) + touched code | `docs/manuals/` |
 | [`export-diagrams`](export-diagrams/SKILL.md) | `diagrams` | source code of the sources + plan-doc (`AS-IS` / `TO-BE`, `Impacted`) | `docs/diagrams/` (C4 / mermaid) |
-| [`export-reports`](export-reports/SKILL.md) | `writing` | corpus of sessions (spec, `CONCLUSIONS`, `DECISION`) + plan-doc state + `docs/` | `docs/reports/` (executive / functional report) |
+| [`export-reports`](export-reports/SKILL.md) | — (prosa: convenciones ambientes) | corpus of sessions (spec, `CONCLUSIONS`, `DECISION`) + plan-doc state + `docs/` | `docs/reports/` (executive / functional report) |
 
-> **Composition over ownership:** an export does **not** own its authoring logic — it **composes a capability role** from [`../roles/`](../roles/) (resolved through `.workflow/skills.toml`): `export-scripts` composes `sql`; `export-manuals` and `export-reports` compose `writing`; `export-diagrams` composes `diagrams`. Swapping the implementation is a one-line config change; it never touches the export.
+> **Composition over ownership:** an export that owns a derived artifact does **not** own its authoring logic — it **composes a capability role** from [`../roles/`](../roles/) (resolved through `.workflow/skills.toml`): `export-scripts` composes `sql`; `export-diagrams` composes `diagrams`. Swapping the implementation is a one-line config change; it never touches the export. `export-manuals` and `export-reports` produce **prose**, which follows **ambient writing conventions** (the host auto-applies an installed writing skill if present) — they do **not** compose or bind a `writing` role.
 
 ## Common properties
 
@@ -83,6 +83,6 @@ Exports read the corpus through the CLI — **never hard-coded paths**:
 | Export | File | Category | Composes |
 |---|---|---|---|
 | `export-scripts` | [`export-scripts/SKILL.md`](export-scripts/SKILL.md) | `docs/scripts` | `sql` |
-| `export-manuals` | [`export-manuals/SKILL.md`](export-manuals/SKILL.md) | `docs/manuals` | `writing` |
+| `export-manuals` | [`export-manuals/SKILL.md`](export-manuals/SKILL.md) | `docs/manuals` | — (prosa: convenciones ambientes) |
 | `export-diagrams` | [`export-diagrams/SKILL.md`](export-diagrams/SKILL.md) | `docs/diagrams` | `diagrams` |
-| `export-reports` | [`export-reports/SKILL.md`](export-reports/SKILL.md) | `docs/reports` | `writing` |
+| `export-reports` | [`export-reports/SKILL.md`](export-reports/SKILL.md) | `docs/reports` | — (prosa: convenciones ambientes) |

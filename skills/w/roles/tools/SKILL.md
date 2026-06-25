@@ -21,7 +21,7 @@ Dar al `plan-exec-loop` la capacidad de crear herramientas y utilidades auxiliar
 
 | Tipo | Rol | ¿Quién lo maneja? |
 |---|---|---|
-| Código de producto (services, controllers, components) | cambio en el repo fuente | `plan-exec-loop` + `coding-standards` |
+| Código de producto (services, controllers, components) | cambio en el repo fuente | `plan-exec-loop` (estilo: convenciones ambientes del host) |
 | Tool / utilidad auxiliar creada por el plan | herramienta de soporte | esta skill (`tools`) |
 | Script SQL de migración | dato persistente | `sql` + `export-scripts` |
 
@@ -120,7 +120,7 @@ Si la tool genera o manipula SQL:
 
 ### Code quality baseline
 
-Al autorar el código de la tool, aplicar lo que la capacidad `coding-standards` del workspace establezca. Si `coding-standards` está `off` o no está configurada, usar los estándares del lenguaje detectado:
+Al autorar el código de la tool, seguir las convenciones de código **ambientes** del host (auto-descubiertas por su `description`; no es un rol del workflow ni se bindea). Si no hay una skill de estándares aplicable, usar los estándares del lenguaje detectado:
 - **Shell**: shellcheck-compatible, variables entre comillas, `set -euo pipefail`.
 - **Node/TS**: tipado explícito, sin `any` salvo justificación, error handling explícito.
 - **Python**: type hints, docstring en funciones públicas, manejo de excepciones específico.

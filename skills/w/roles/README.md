@@ -8,17 +8,14 @@
 
 ## Capability catalog
 
-All 10 roles, their built-in defaults, their tier, and which loops/exports compose them:
+All 7 roles, their built-in defaults, their tier, and which loops/exports compose them:
 
 | Role | Default built-in | Tier | Composed by |
 |---|---|---|---|
 | `ui-design` | [`ui-spec`](ui-spec/SKILL.md) | must | `spec-refine-loop` (when requirement involves UI) |
 | `sql` | `sql` | must | inline research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
-| `coding-standards` | `coding-standards` | must | `plan-exec-loop` · `quick-loop` |
-| `writing` | `writing` | must | all loops · `export-manuals` · `export-reports` |
 | `research` | [`research`](research/SKILL.md) | should | all loops (on-demand investigation) |
-| `testing` | [`testing`](testing/SKILL.md) | should | `plan-exec-loop` · `quick-loop` |
 | `tools` | [`tools`](tools/SKILL.md) | should | `plan-exec-loop` |
 | `diagrams` | [`diagrams`](diagrams/SKILL.md) | should | `export-diagrams` |
 | `overview` | `workflow` | should | any loop (orientation about the workflow itself) |
@@ -26,6 +23,8 @@ All 10 roles, their built-in defaults, their tier, and which loops/exports compo
 **Tiers:**
 - `must` — core to almost every session; built-in always active unless explicitly `off`.
 - `should` — loaded on-demand; active by default but lower priority to override.
+
+> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
 
 ---
 
@@ -59,18 +58,15 @@ built-in default
 # ui-design        = "ui-spec"
 # sql              = "sql"
 # git              = "git"
-# coding-standards = "coding-standards"
-# writing          = "writing"
 # research         = "research"
-# testing          = "testing"
 # tools            = "tools"
 # diagrams         = "diagrams"
 # overview         = "workflow"
 
 # Override examples:
-testing          = "off"                # disable testing capability
 ui-design        = "acme/figma-spec"    # third-party skill installed via skills.sh
 diagrams         = "mermaid-only"       # custom built installed locally
+sql              = "off"                # disable the sql capability
 ```
 
 ### Override: point to a third-party skill
@@ -86,10 +82,10 @@ ui-design = "acme/figma-spec"
 
 ```toml
 [skills]
-testing = "off"
+sql = "off"
 ```
 
-The loop that composes `testing` will skip it. If the task required testing and the role is `off`, the loop should inform the human and ask how to proceed.
+The loop that composes `sql` will skip it. If the task required the capability and the role is `off`, the loop should inform the human and ask how to proceed.
 
 ### Override: use a different built-in
 
@@ -113,18 +109,15 @@ Lists the resolved binding for every role in the current workspace, showing whic
 Example output:
 
 ```
-Role              Resolved skill      Source
------------------ ------------------- -----------
-ui-design         ui-spec             built-in
-sql               sql                 built-in
-git               git                 built-in
-coding-standards  coding-standards    built-in
-writing           writing             built-in
-research          research            built-in
-testing           off                 workspace   (.workflow/skills.toml)
-tools             tools               built-in
-diagrams          mermaid-only        global      (~/.workflow/skills.toml)
-overview          workflow            built-in
+Role              Resolved skill          Source
+----------------- ----------------------- -----------
+ui-design         ui-spec                 built-in
+sql               sql                     built-in
+git               git                     built-in
+research          research                built-in
+tools             tools                   built-in
+diagrams          mermaid-only            global      (~/.workflow/skills.toml)
+overview          workflow                built-in
 ```
 
 ---
@@ -142,7 +135,7 @@ Each `SKILL.md` follows this schema:
 
 | Section | Content |
 |---|---|
-| Frontmatter `name:` | kebab-case; MUST equal the binding name (`research`, `testing`, etc.) |
+| Frontmatter `name:` | kebab-case; MUST equal the binding name (`research`, `tools`, etc.) |
 | Frontmatter `description:` | rich description: what + when; drives automatic selection |
 | `## Role` | which capability role this implements (its skills.toml slot) |
 | `## Purpose` | what it does |

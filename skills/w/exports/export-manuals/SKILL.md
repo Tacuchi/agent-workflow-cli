@@ -1,21 +1,21 @@
 ---
 name: export-manuals
-description: "Sintetiza manuales técnicos del workspace en `docs/manuals/` consolidando N sesiones (`exec`/`quick`) + `docs/`. Lee de cada sesión el `DECISION` y el plan-doc (`Solution`, `Final behavior`, `Validations`) + el código tocado en las fuentes (cómo opera/funciona lo construido). Dos modos: `complement` (default, sobrescribe `INDEX.md` apuntando a los manuales detectados) y `regenerate` (produce dossier `NNN-export-manuals-YYYY-MM-DD/` con 1 manual por tema). Audiencia: operadores / soporte / onboarding. Read-only/reporte: no commitea ni muta sesiones. Compone la capacidad `writing`. Úsalo para 'manual operativo', 'cómo funciona lo entregado', 'paquete de onboarding técnico', 'índice de manuales'. Invocado por el usuario vía `/w:export-manuals`."
+description: "Sintetiza manuales técnicos del workspace en `docs/manuals/` consolidando N sesiones (`exec`/`quick`) + `docs/`. Lee de cada sesión el `DECISION` y el plan-doc (`Solution`, `Final behavior`, `Validations`) + el código tocado en las fuentes (cómo opera/funciona lo construido). Dos modos: `complement` (default, sobrescribe `INDEX.md` apuntando a los manuales detectados) y `regenerate` (produce dossier `NNN-export-manuals-YYYY-MM-DD/` con 1 manual por tema). Audiencia: operadores / soporte / onboarding. Read-only/reporte: no commitea ni muta sesiones. La prosa sigue las convenciones de redacción ambientes (el host auto-aplica una skill de writing instalada si está presente). Úsalo para 'manual operativo', 'cómo funciona lo entregado', 'paquete de onboarding técnico', 'índice de manuales'. Invocado por el usuario vía `/w:export-manuals`."
 ---
 
 # export-manuals — Manuales técnicos desde sesiones + `docs/`
 
 Genera o refresca manuales de **operación / cómo-funciona / onboarding** en `docs/manuals/`, consolidando lo entregado en N sesiones + el corpus `docs/`. **Read-only / reporte** — no commitea, no muta sesiones ni el código.
 
-> Familia `export-*` (la única vía artefacto→`docs/`). Recicla el espíritu del viejo `export-tech-manuals` (modos complementar/regenerar, `INDEX.md`, dossier por tema), modernizado: `docs/manuals` en inglés, sin modos project/hub, y la prosa la aporta la capacidad `writing` (no una skill propia). Diseño: `docs/referencias/workflow-exports/export-manuals.md`.
+> Familia `export-*` (la única vía artefacto→`docs/`). Recicla el espíritu del viejo `export-tech-manuals` (modos complementar/regenerar, `INDEX.md`, dossier por tema), modernizado: `docs/manuals` en inglés, sin modos project/hub, y la prosa sigue las convenciones de redacción **ambientes** (el host auto-aplica una skill de writing instalada si está presente), no un rol propio. Diseño: `docs/referencias/workflow-exports/export-manuals.md`.
 
 ## Category
 
 `docs/manuals` — **única** carpeta `docs/` que este export escribe.
 
-## Composes
+## Writing (convención ambiente, no rol)
 
-Capacidad **`writing`** (built-in default `writing`), resuelta vía `.workflow/skills.toml`. Aporta la redacción accionable (frases cortas, listas sobre prosa, sin relleno) y el léxico técnico para la audiencia operador/soporte. Este export **no** posee esa lógica: la compone. Rebindeable u `off` por config.
+La redacción del manual sigue las convenciones de redacción **ambientes**: el host auto-aplica una skill de writing instalada (si está presente) por su `description` — frases cortas, listas sobre prosa, sin relleno, léxico técnico para la audiencia operador/soporte. Este export **no** compone un rol `writing` ni lo bindea; es **indiferente** a qué skill de redacción exista. Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el export **no depende** de él.
 
 ## When to use
 
@@ -30,7 +30,7 @@ Capacidad **`writing`** (built-in default `writing`), resuelta vía `.workflow/s
 2. Inspecciona el código tocado en las fuentes (cómo opera/funciona lo construido) — solo lectura.
 3. Detecta temas (declarados en el OBJECTIVE/`SESSION`, o inferidos por keywords operativos).
 4. Resuelve el modo (`complement` o `regenerate`).
-5. Sintetiza el contenido aplicando la capacidad `writing`.
+5. Sintetiza el contenido aplicando las convenciones de redacción ambientes (host).
 6. Escribe: `complement` → sobrescribe `docs/manuals/INDEX.md`; `regenerate` → dossier `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` con 1 manual por tema.
 
 ## What it does NOT do
@@ -99,11 +99,11 @@ Listar `docs/manuals/*.md` (excluyendo `INDEX.md` y subdirectorios `NNN-export-m
 
 Por cada sesión del corpus filtrado (`aw session-artifacts --code <NNN>`): leer `DECISION` + plan-doc (`Solution`/`Final behavior`/`Validations`) + el código tocado. Tema **primario**: sección de temas en el OBJECTIVE/`SESSION`. **Secundario**: inferencia por keywords operativos ("configurar", "instalar", "paso a paso", "cómo …"). Filtrar por `--topics` si está presente. Listar (slug, confidence, sesiones de origen).
 
-### Paso 4 — Sintetizar (compone `writing`)
+### Paso 4 — Sintetizar (prosa: convenciones ambientes)
 
 **Modo `complement`** — un `INDEX.md`: cabecera + count de manuales + tabla (Tema · Slug · Manual presente/`[pendiente]` · Sesiones de origen) + "Próximos pasos" si hay temas pendientes.
 
-**Modo `regenerate`** — 1 `.md` por tema en el dossier, cada uno con: Propósito · Pre-requisitos · Pasos numerados (cómo operar) · Comportamiento final (del plan-doc) · Validación post-uso · Decisiones relevantes (`DECISION`) · Troubleshooting · Referencias. Cada manual debe permitir al operador completar la tarea **sin** invocar al equipo de desarrollo. Más un `README.md` del dossier con el índice. La redacción aplica la capacidad `writing`.
+**Modo `regenerate`** — 1 `.md` por tema en el dossier, cada uno con: Propósito · Pre-requisitos · Pasos numerados (cómo operar) · Comportamiento final (del plan-doc) · Validación post-uso · Decisiones relevantes (`DECISION`) · Troubleshooting · Referencias. Cada manual debe permitir al operador completar la tarea **sin** invocar al equipo de desarrollo. Más un `README.md` del dossier con el índice. La redacción sigue las convenciones de redacción ambientes (host).
 
 ### Paso 5 — Escribir o reportar
 
@@ -122,6 +122,6 @@ Si `--dry-run`: imprimir el reporte; no escribir. Si no: `complement` → `Write
 ## Resources
 
 - Design: `docs/referencias/workflow-exports/export-manuals.md` · familia: [`../README.md`](../README.md).
-- Capacidad compuesta: `writing` (built-in default; ver `docs/referencias/workflow-skills/`).
+- Redacción: convención **ambiente** (no rol) — el host auto-aplica una skill de writing instalada si está presente.
 - Artefactos fuente: `DECISION` + plan-doc (ver `docs/referencias/workflow-artifacts/artifacts-exec/` y `docs/specs`/`docs/plans`).
 - Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).
