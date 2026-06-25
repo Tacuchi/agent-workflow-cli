@@ -4,6 +4,24 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [13.0.0] — 2026-06-25
+
+**BREAKING — las convenciones genéricas salen del sistema de roles.** `coding-standards`, `testing` y `writing` dejan de ser **roles** del workflow: ya no se empaquetan en el bundle, no se bindean por `.workflow/skills.toml` y los loops/exports no las componen ni las buscan. Pasan a ser **skills ambientes** que el host (Claude Code) auto-descubre por su `description` y aplica cuando son relevantes — el CLI es **indiferente** y aprovecha cualquier skill útil instalada. Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el CLI **no depende ni referencia** ningún plugin (sigue company-agnóstico, lo enforce `skill-audit-grep`). `git` queda como rol bundle (flow-coupled: verificación de rama, tag `session<NNN>`, merge de `/w:fix-git`).
+
+### Removed
+
+- **Roles `coding-standards`, `testing`, `writing`** del catálogo (`SKILL_ROLES` 10 → 7) y sus skills built-in (`skills/w/roles/{coding-standards,testing,writing}/`).
+
+### Changed
+
+- **Catálogo de roles = solo capacidades workflow-específicas**: `ui-design`, `sql`, `git`, `research`, `tools`, `diagrams`, `overview`.
+- Loops (`plan-exec`/`quick`/`spec-refine`) y exports (`manuals`/`reports`) **ya no componen** esas 3 capacidades; la calidad de código/test/prosa la aporta el host por auto-descubrimiento de skills instaladas.
+- Docs del bundle (`roles`, `loops`, `exports`, `tools`, `harness`, `SKILL.md`) reframeados a "convenciones ambientes (no roles)". Plugin `w` 8.0.0 → 9.0.0.
+
+### Migration
+
+- Si tu `.workflow/skills.toml` bindea `coding-standards`/`testing`/`writing`, esas líneas ahora se **ignoran** (warning de rol desconocido, no rompe). Instalá las skills equivalentes como standalone (p.ej. el plugin `dev-conventions` del marketplace QTC) y el host las auto-aplica.
+
 ## [12.10.0] — 2026-06-23
 
 **Lanzar sources en local (detached) y administrarlos desde el TUI [Project].** `workspace-init` ahora reconoce el stack de cada source y genera, en `docs/tools/<source>/`, un descriptor `launch.json` (máquina-legible, lo lee el TUI) + scripts `run.sh`/`run.ps1` (uso humano directo) parametrizados con las env-vars de su config y los perfiles disponibles. Desde [Project] se puede **Lanzar en local** un source: corre en segundo plano **independiente del TUI** (sobrevive a su cierre), con su salida en `docs/logs/`, y una nueva sección **"Procesos en segundo plano"** lista/administra los procesos (Detener · Re-lanzar · Ver log), reconciliando su estado por liveness al reabrir.
