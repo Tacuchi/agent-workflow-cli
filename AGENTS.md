@@ -44,3 +44,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Tooling note
 
 The `WORKSPACE` block (sections Proyecto/Fuentes/Stack/Status) is a managed block written into CLAUDE.md/AGENTS.md by `/w:workspace-init`. If it appears, treat it as tool-owned — keep hand-authored guidance outside it.
+
+## dev-conventions (universal — aplica también en subagentes/teams)
+
+Las convenciones del plugin `dev-conventions` aplican en toda sesión Y en subagentes/teams (heredan este archivo). Donde esta guía sea más específica (formato de commit `type(scope): subject sessionNNN`, estilo Biome, gotchas ESM), **esa manda**. Lo de abajo es la base de seguridad/comportamiento que el repo no detallaba:
+
+- **Git seguro:** proponer antes de commitear; nunca `push`/`--force`/`--amend`/`--no-verify` ni trailers `Co-Authored-By`/firmas de modelo sin pedido explícito.
+- **Tests:** preguntar antes de correr el runner.
+- **Prosa técnica:** frases cortas, listas sobre prosa, qué+por qué, sin relleno.
+- **Código:** SOLID, fail-fast, DRY, sin secrets en código/logs, SQL parametrizado.
+
+Detalle: skills `dev-conventions:*`.
