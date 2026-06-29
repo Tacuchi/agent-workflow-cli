@@ -4,6 +4,25 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [13.1.0] — 2026-06-29
+
+**Nuevo: quitar una fuente del workspace (comando + TUI) + blindaje del flujo de promoción git-flow.** El CLI permitía agregar fuentes (`workspace-init`, aditivo) pero no quitarlas; ahora hay un comando y una acción TUI dedicados que orquestan la remoción completa. Además se fija por test la regla de que la promoción a producción nunca arrastra `desarrollo` hacia `certificacion`. Cambios solo de código; plugin `w` sin cambios (9.0.2).
+
+### Added
+
+- **`aw remove-source <alias>`** — quita una fuente del workspace por completo: detach de la visibilidad multi-root (claude/codex/warp/oz), poda del bloque WORKSPACE (fila de `Fuentes` + entradas de `working_branches`/`qa_branches` en CLAUDE.md y AGENTS.md), detiene los procesos corriendo lanzados desde la fuente, y borra `docs/tools/<alias>`. Idempotente; permite dejar el workspace en 0 fuentes. NO borra el repo del filesystem.
+- **Acción TUI [Quitar del workspace]** en el tab Project (detail panel por-fuente, solo fuentes reales — nunca "all sources"), con confirmación y/n y recarga de la vista.
+
+### Changed
+
+- **`to-prod` simplificado**: se quitó un `pull` redundante de la rama destino (ya lo hacía `syncPlan`). Secuencia: alinear con prod → checkout prod → merge work→prod → push prod.
+- **`FileSystemPort.remove`** ahora borra archivos **o** directorios (recursivo, idempotente); antes solo archivos.
+- **`project-md-upsert`** soporta podar aliases del bloque (`removeAliases`): quita la fuente de `Fuentes` + `working_branches` + `qa_branches`.
+
+### Tests
+
+- **Invariante git-flow**: test-guarda que falla si algún flujo (`sync`/`to-qa`/`to-prod`) mergea la rama qa hacia la rama prod (`desarrollo→certificacion`). Codifica la regla "nunca subir desarrollos en prueba a producción".
+
 ## [13.0.2] — 2026-06-29
 
 **Las sesiones de spec/plan ahora llevan slug descriptivo en el folder (`NNN-<slug>-<flow>`).** Pasada de documentación del bundle `w`, sin cambios de comportamiento ni de mecanismo del CLI. Antes los loops de spec/plan creaban folders pelados (`NNN-spec-refine`, `NNN-plan-new`, `NNN-plan-exec`), a diferencia de `quick` (`NNN-<slug>-quick`); ahora todos siguen el mismo patrón autodescriptivo. Plugin `w` 9.0.1 → 9.0.2.
