@@ -361,6 +361,16 @@ describe("runPluginDoctor — version under metadata (Agent Skills standard)", (
     // still resolves the version via the legacy fallback (no missing-version warn)
     expect(warns(data, "missing version")).toBe(false);
   });
+
+  it("does not warn when version is absent (version is optional per the standard)", async () => {
+    const fs = singleSkillFs("noversion", "---\nname: noversion\ndescription: x\n---\n");
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(warns(data, "missing version")).toBe(false);
+    expect(warns(data, "not semver")).toBe(false);
+    expect(data.skills.find((s) => s.dir === "noversion")?.version).toBeNull();
+  });
 });
 
 describe("runPluginDoctor — manifest version drift", () => {

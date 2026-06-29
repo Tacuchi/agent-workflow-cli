@@ -241,9 +241,10 @@ function checkTopLevelKeys(
 }
 
 function checkVersion(skillMd: string, version: string | null, findings: DoctorFinding[]): void {
-  if (!version) {
-    findings.push({ level: "warn", file: skillMd, msg: "missing version (set metadata.version)" });
-  } else if (!/^\d+\.\d+\.\d+$/.test(version)) {
+  // version is OPTIONAL per the Agent Skills standard (metadata.version); only a
+  // malformed value is worth a warning. Skills registered in plugin.json
+  // exportedSkills still require a version — that is enforced in exported-skills.ts.
+  if (version && !/^\d+\.\d+\.\d+$/.test(version)) {
     findings.push({
       level: "warn",
       file: skillMd,
