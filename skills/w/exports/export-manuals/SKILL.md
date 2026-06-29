@@ -1,6 +1,6 @@
 ---
 name: export-manuals
-description: "Sintetiza manuales técnicos del workspace en `docs/manuals/` consolidando N sesiones (`exec`/`quick`) + `docs/`. Lee de cada sesión el `DECISION` y el plan-doc (`Solution`, `Final behavior`, `Validations`) + el código tocado en las fuentes (cómo opera/funciona lo construido). Dos modos: `complement` (default, sobrescribe `INDEX.md` apuntando a los manuales detectados) y `regenerate` (produce dossier `NNN-export-manuals-YYYY-MM-DD/` con 1 manual por tema). Audiencia: operadores / soporte / onboarding. Read-only/reporte: no commitea ni muta sesiones. La prosa sigue las convenciones de redacción ambientes (el host auto-aplica una skill de writing instalada si está presente). Úsalo para 'manual operativo', 'cómo funciona lo entregado', 'paquete de onboarding técnico', 'índice de manuales'. Invocado por el usuario vía `/w:export-manuals`."
+description: "Manuales operativos / de onboarding (audiencia operador/soporte). Sintetiza manuales técnicos del workspace en `docs/manuals/` consolidando N sesiones (`exec`/`quick`) + `docs/`. Lee de cada sesión el `DECISION` y el plan-doc (`Solution`, `Final behavior`, `Validations`) + el código tocado en las fuentes (cómo opera/funciona lo construido). Dos modos: `complement` (default, sobrescribe `INDEX.md` apuntando a los manuales detectados) y `regenerate` (produce dossier `NNN-export-manuals-YYYY-MM-DD/` con 1 manual por tema). Audiencia: operadores / soporte / onboarding. Read-only/reporte: no commitea ni muta sesiones. La prosa sigue las convenciones de redacción ambientes (el host auto-aplica una skill de writing instalada si está presente). Úsalo para 'manual operativo', 'cómo funciona lo entregado', 'paquete de onboarding técnico', 'índice de manuales'. Invocado por el usuario vía `/w:export-manuals`."
 ---
 
 # export-manuals — Manuales técnicos desde sesiones + `docs/`
@@ -28,7 +28,7 @@ La redacción del manual sigue las convenciones de redacción **ambientes**: el 
 
 1. Lee el corpus de sesiones (`exec`/`quick`): por sesión, `DECISION` + el plan-doc (`Solution`, `Final behavior`, `Validations`).
 2. Inspecciona el código tocado en las fuentes (cómo opera/funciona lo construido) — solo lectura.
-3. Detecta temas (declarados en el OBJECTIVE/`SESSION`, o inferidos por keywords operativos).
+3. Detecta temas (declarados en `SESSION` — su `## Objective` —, o inferidos por keywords operativos).
 4. Resuelve el modo (`complement` o `regenerate`).
 5. Sintetiza el contenido aplicando las convenciones de redacción ambientes (host).
 6. Escribe: `complement` → sobrescribe `docs/manuals/INDEX.md`; `regenerate` → dossier `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` con 1 manual por tema.
@@ -51,7 +51,7 @@ En plan mode **describe**, no escribe: el modo resuelto, los temas detectados (c
 **CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
 
 - `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera el corpus.
-- `aw session-artifacts --code <NNN>` — lee `DECISION`, el plan-doc y el OBJECTIVE/`SESSION` (lazy) por sesión.
+- `aw session-artifacts --code <NNN>` — lee `DECISION`, el plan-doc y `SESSION` (su `## Objective`, lazy) por sesión.
 - `aw next-number docs/manuals` — numeración determinística (solo modo `regenerate`).
 
 **Filesystem**:
@@ -97,7 +97,7 @@ Listar `docs/manuals/*.md` (excluyendo `INDEX.md` y subdirectorios `NNN-export-m
 
 ### Paso 3 — Detectar temas
 
-Por cada sesión del corpus filtrado (`aw session-artifacts --code <NNN>`): leer `DECISION` + plan-doc (`Solution`/`Final behavior`/`Validations`) + el código tocado. Tema **primario**: sección de temas en el OBJECTIVE/`SESSION`. **Secundario**: inferencia por keywords operativos ("configurar", "instalar", "paso a paso", "cómo …"). Filtrar por `--topics` si está presente. Listar (slug, confidence, sesiones de origen).
+Por cada sesión del corpus filtrado (`aw session-artifacts --code <NNN>`): leer `DECISION` + plan-doc (`Solution`/`Final behavior`/`Validations`) + el código tocado. Tema **primario**: la sección de temas en `SESSION` (su `## Objective`). **Secundario**: inferencia por keywords operativos ("configurar", "instalar", "paso a paso", "cómo …"). Filtrar por `--topics` si está presente. Listar (slug, confidence, sesiones de origen).
 
 ### Paso 4 — Sintetizar (prosa: convenciones ambientes)
 

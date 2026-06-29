@@ -145,4 +145,4 @@ Writes `docs/tools/` (invariant #2: PLAN es el dueño de esta carpeta). No gradu
 
 ## Source
 
-Autoria original (no hay skill equivalente en el bundle viejo). Basado en la descripción del rol en `workflow-skills/README.md` y en el invariant #2 del diseño (`docs/tools/` es del flujo PLAN). Las convenciones de estructura de doc (`## Purpose`, `## Usage`, `## Parameters`, `## Output`, `## Examples`) siguen el patrón de calidad del bundle.
+Autoria original (no hay skill equivalente en el bundle viejo). Basado en la descripción del rol en `workflow-roles/README.md` y en el invariant #2 del diseño (`docs/tools/` es del flujo PLAN). Las convenciones de estructura de doc (`## Purpose`, `## Usage`, `## Parameters`, `## Output`, `## Examples`) siguen el patrón de calidad del bundle.

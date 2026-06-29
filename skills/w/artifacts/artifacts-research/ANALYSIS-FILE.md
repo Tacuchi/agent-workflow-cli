@@ -29,7 +29,9 @@ What do the evidences indicate?
 - E1 shows...
 - E2 confirms...
 
-## Identified Cause
+## Outcome
+What the evidence establishes — a cause (debugging) or a finding (design / feasibility / comparison research):
 - Technical:
 - Data:
+- Finding:
 - Undetermined:

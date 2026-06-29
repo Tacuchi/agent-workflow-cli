@@ -60,4 +60,4 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 1. **No auto-export**: loops **never** graduate/export to `docs/`. Only `export-*` does, explicitly.
 2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans`+`tools` · QUICK→none · rest→`export-*`.
 3. **Spec and plan are documents** (`docs/`), not artifacts — they never live inside a session.
-4. **DB write-only scripts**: the AI **never executes DML/DDL**; migrations stay in `SCRIPTS.sql` (type B) and are delivered via `export-scripts`. Only read-only queries (type A) are executed via MCP.
+4. **DB scripts-only**: the AI **never executes DML/DDL**; migrations stay in `SCRIPTS.sql` (type B) and are delivered via `export-scripts`. Only read-only queries (type A) are executed via MCP.

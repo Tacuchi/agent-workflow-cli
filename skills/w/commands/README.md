@@ -84,7 +84,7 @@ flowchart LR
 
 **Pipeline reading:** SPEC defines *what* (refined spec) → PLAN defines *how* (plan) and *executes it* → QUICK is a lightweight shortcut for scoped work that does not warrant spec or plan.
 
-> **`docs/` boundary:** each flow only touches its own folders — **SPEC** → `docs/specs`; **PLAN** → `docs/plans` + `docs/tools`. The rest of `docs/` (`scripts`, `manuals`, `diagrams`, `reports`) is written **only** by `export-*` skills (a separate, never-automatic step). See [`../loops/`](../loops/) and workflow-exports reference.
+> **`docs/` boundary:** each flow only touches its own folders — **SPEC** → `docs/specs`; **PLAN** → `docs/plans` + `docs/tools`. The rest of `docs/` (`scripts`, `manuals`, `diagrams`, `reports`) is written **only** by `export-*` skills (a separate, never-automatic step). See [`../loops/`](../loops/) and [`../exports/`](../exports/).
 
 ## Schema of each command file
 
@@ -94,8 +94,8 @@ Each `<command>.md` in this bundle uses this frontmatter + body structure:
 |---|---|
 | `description:` | One line: what + when (drives discovery in `/`-picker) |
 | `argument-hint:` | Argument signature for the user |
-| `allowed-tools:` | YAML list; always includes `Skill` when a loop/export skill is invoked |
-| Body | 1-3 orienting lines, then the invocation (Skill tool or `aw` CLI), `## Plan mode`, `## Resources` |
+| `allowed-tools:` | YAML list (typically `Bash`/`Read`/`Write`/`Edit`). Loops/exports are **read-and-followed**, not invoked with `Skill:` — so `Skill` is **not** in `allowed-tools`. |
+| Body | 1-3 orienting lines, then the invocation: **read-and-follow** the sibling loop/export `SKILL.md`, or call the `aw` CLI; then `## Plan mode`, `## Resources` |
 
 ## 6 Hard invariants (never violate)
 

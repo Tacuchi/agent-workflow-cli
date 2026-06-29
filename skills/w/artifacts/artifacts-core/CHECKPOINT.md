@@ -2,7 +2,7 @@
 
 > What it is: the live resume state of a session — lets the loop resume exactly where it left off.
 > **Live log (artifact-first):** `Pending`/`Next` = the intent (what is about to be done, seeded BEFORE executing); `Completed` = the result (AFTER). Updated at every gap/phase boundary, not only on `Compactar`/`Cerrar`.
-> Owned by: `refine` sessions (and `exec` / `quick` sessions that carry a checkpoint).
+> Owned by: **every session** (`refine` · `exec` · `quick`). Persisted **always** on close/compact (the resume key — invariant #6), unlike `BACKLOG` which is written only when something is deferred.
 
 ## Activity
 Summary of the activity done so far.

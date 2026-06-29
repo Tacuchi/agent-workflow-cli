@@ -30,4 +30,4 @@ Corré `aw merge-state` (read-only), reportá **origen ↔ destino** y los confl
 
 - Capability: `../roles/git/SKILL.md` (sección *Resolución de conflictos de merge*)
 - CLI: `aw merge-state` (inspector read-only del estado de merge)
-- Design reference: `docs/referencias/workflow-commands/fix-git.md`
+- Design reference: `docs/referencias/workflow-skills/fix-git.md`

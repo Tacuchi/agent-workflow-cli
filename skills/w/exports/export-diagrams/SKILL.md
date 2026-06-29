@@ -120,6 +120,6 @@ Idempotente funcional: cada invocación toma el siguiente `NNN`; no sobrescribe 
 ## Resources
 
 - Design: `docs/referencias/workflow-exports/export-diagrams.md` · familia: [`../README.md`](../README.md).
-- Capacidad compuesta: `diagrams` (built-in default; ver `docs/referencias/workflow-skills/`).
+- Capacidad compuesta: `diagrams` (built-in default; ver `docs/referencias/workflow-roles/`).
 - Insumo: plan-doc `AS-IS`/`TO-BE`/`Impacted` (ver `docs/plans`).
 - Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).

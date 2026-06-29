@@ -47,4 +47,4 @@ Igual que en ejecución: corré `aw status` (read-only) y mostrá el resumen. No
 
 ## Resources
 - CLI: `aw status` (servicio `status-service`; fechas vía `humanize-es`)
-- Design reference: `docs/referencias/workflow-commands/status.md`
+- Design reference: `docs/referencias/workflow-skills/status.md`

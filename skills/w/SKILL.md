@@ -185,4 +185,4 @@ Ninguno. Es orientación pura: no escribe documentos ni artefactos.
 
 ## Source
 
-Autorada del modelo de diseño (`docs/referencias/`): README de arquitectura (3 capas + 6 invariantes), `workflow-commands/`, `workflow-loops/`, `workflow-artifacts/`, `workflow-exports/`, `workflow-skills/`, `workflow-harness/`. Modelo actual, desplegado. (Compat: reemplaza la orientación del bundle legacy `session` + flows dev/design/analyze.)
+Autorada del modelo de diseño (`docs/referencias/`): README de arquitectura (3 capas + 6 invariantes), `workflow-commands/`, `workflow-loops/`, `workflow-artifacts/`, `workflow-exports/`, `workflow-roles/`, `workflow-skills/`, `workflow-harness/`. Modelo actual, desplegado. (Compat: reemplaza la orientación del bundle legacy `session` + flows dev/design/analyze.)

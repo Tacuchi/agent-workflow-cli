@@ -80,9 +80,11 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     },
   ],
 
-  // Command families — espejo EXACTO de help-groups.ts (post-cleanup), con
-  // los nombres de comandos realmente registrados en main.ts. `workspace-init`
-  // y `set-working-branch` viven bajo Sources / Branches.
+  // Command families — vista del TUI alineada con help-groups.ts (post-cleanup),
+  // con los nombres realmente registrados en main.ts. Algunas familias se
+  // enriquecen con subcomandos (Hooks/MCP/Self) para orientar; `workspace-init`
+  // se surface también aquí (además de su phase card) por descubribilidad. Los
+  // totales se derivan con `.length` — NO hardcodear cantidades en strings.
   commandFamilies: [
     {
       id: "session",
@@ -105,6 +107,9 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       items: [
         "sources",
         "set-working-branch",
+        "set-qa-branch",
+        "git-flow",
+        "merge-state",
         "workspace-init",
         "attach-multiroot",
         "detach-multiroot",

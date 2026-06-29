@@ -1,11 +1,11 @@
 ---
 name: diagrams
 description: >
-  Autoría de diagramas de arquitectura y sistema: C4 (Context, Container, Component),
-  PlantUML y Structurizr DSL. Compuesta por export-diagrams para producir el contenido
-  de docs/diagrams/. Selecciona el motor de render según el flag --diagrams del export
-  (Structurizr default, Mermaid y PlantUML opt-in). Incluye link mermaid.ink por cada
-  bloque Mermaid para preview sin renderer local.
+  Autoría de diagramas de arquitectura y sistema con notación C4 (Context, Container,
+  Component): Mermaid C4 nativo (default) o Structurizr DSL. Compuesta por export-diagrams
+  para producir el contenido de docs/diagrams/. Selecciona el motor según el flag `--engine`
+  del export (Mermaid default; `c4`/Structurizr DSL opt-in). Incluye link mermaid.ink por
+  cada bloque Mermaid para preview sin renderer local.
 ---
 
 # diagrams — Diagram authoring capability
@@ -16,7 +16,7 @@ description: >
 
 ## Purpose
 
-Autorar diagramas de arquitectura con notación C4 (Levels 1-3) usando el motor que el export configure. Produce source renderizable (DSL, PUML, Mermaid) — **no renderiza visualmente**; el render lo hace el lector con sus herramientas. Cubre el estándar C4 formal (Structurizr DSL), el opt-in embebido (Mermaid nativo) y el opt-in exportable (PlantUML).
+Autorar diagramas de arquitectura con notación C4 (Levels 1-3) usando el motor que el export configure vía `--engine`. Produce source renderizable (Mermaid / DSL) — **no renderiza visualmente**; el render lo hace el lector con sus herramientas. Cubre el motor por defecto (Mermaid C4 nativo, embebido) y el opt-in `c4` (Structurizr DSL, C4 formal).
 
 ## Composed by
 
@@ -30,13 +30,14 @@ Cualquier loop puede componerla también si necesita producir un diagrama inline
 
 ### Engine matrix
 
-| `--diagrams` flag | Motor | Archivos producidos | Cuándo elegirlo |
-|---|---|---|---|
-| `structurizr` (default) | Structurizr DSL | `workspace.dsl` + Mermaid auxiliar embebido en `.md` | Dossier técnico formal; soporte de tooling externo (structurizr.com, structurizr-lite) |
-| `mermaid` | Mermaid C4 nativo | solo `.md` con bloques Mermaid | Preferir render embebido sin DSL separado; GitHub/GitLab lo renderizan inline |
-| `plantuml` | PlantUML C4-stdlib | `arquitectura.puml` + nota en `.md` | Equipos con pipeline PlantUML instalado |
+El export elige el motor con `--engine mermaid|c4` (default `mermaid`):
 
-**Regla canónica**: `export-diagrams` usa Structurizr DSL por defecto (C4 formal, separa modelo de vistas). Mermaid es opt-in cuando se prefiere render embebido.
+| `--engine` | Motor | Archivos producidos | Cuándo elegirlo |
+|---|---|---|---|
+| `mermaid` (default) | Mermaid C4 nativo | solo `.md` con bloques Mermaid | Render embebido sin DSL separado; GitHub/GitLab lo renderizan inline |
+| `c4` | Structurizr DSL | `workspace.dsl` + Mermaid auxiliar embebido en `.md` | Dossier técnico formal; tooling externo (structurizr.com, structurizr-lite) |
+
+**Regla canónica**: `export-diagrams` usa **Mermaid** por defecto (`--engine mermaid`) — render embebido sin tooling externo. `--engine c4` produce Structurizr DSL (C4 formal, separa modelo de vistas) para el dossier técnico.
 
 ### C4 model — levels
 
@@ -138,7 +139,9 @@ workspace "<PRODUCTO>" "<descripcion>" {
 
 Render online gratuito: [structurizr.com/dsl](https://structurizr.com/dsl) o structurizr-lite (Docker).
 
-### PlantUML C4-stdlib template
+### PlantUML C4-stdlib template (motor extra, fuera del contrato actual)
+
+> El contrato vigente de `export-diagrams` expone solo `--engine mermaid|c4` (no produce `.puml`). Esta plantilla queda como **referencia** para un export rebindeado/custom que quiera emitir PlantUML.
 
 ```plantuml
 @startuml arquitectura
@@ -162,9 +165,9 @@ SHOW_LEGEND()
 
 Render: [plantuml.com](https://plantuml.com) o `plantuml.jar` local.
 
-### Mermaid auxiliar (bajo Structurizr default)
+### Mermaid auxiliar (bajo `--engine c4`)
 
-Cuando `--diagrams structurizr`, el archivo `.md` incluye también un bloque Mermaid derivado del DSL como **fallback offline** (lectores sin acceso a structurizr.com/dsl pueden leerlo directamente):
+Cuando `--engine c4`, el archivo `.md` incluye también un bloque Mermaid derivado del DSL como **fallback offline** (lectores sin acceso a structurizr.com/dsl pueden leerlo directamente):
 
 ```
 ```mermaid
@@ -196,7 +199,7 @@ Solo si aporta claridad real — no agregar sequence diagrams por defecto.
 
 ### Entity-Relationship (modelo de datos)
 
-Cuando `export-diagrams` incluye `--scope datos` y hay MCP configurado:
+Cuando `export-diagrams` incluye `--scope data` y hay MCP configurado:
 
 ```mermaid
 erDiagram
@@ -218,10 +221,9 @@ MCP read-only: `\d <tabla>` + `SELECT count(*)` para magnitud (aplicar cost guar
 
 ```
 docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/
-├── README.md            # indice + how-to-read + motores usados
-├── arquitectura.md      # documento principal con C4 + Mermaid auxiliar
-├── workspace.dsl        # solo con --diagrams structurizr (default)
-└── arquitectura.puml    # solo con --diagrams plantuml
+├── README.md            # índice + how-to-read + motores usados
+├── diagrams.md          # documento principal con C4 + Mermaid (+ links mermaid.ink)
+└── workspace.dsl        # solo con --engine c4 (Structurizr)
 ```
 
 ### Render rules
@@ -237,12 +239,11 @@ docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/
 
 Produce en `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/`:
 - `README.md`
-- `arquitectura.md` (siempre)
-- `workspace.dsl` (si `--diagrams structurizr`)
-- `arquitectura.puml` (si `--diagrams plantuml`)
+- `diagrams.md` (siempre)
+- `workspace.dsl` (si `--engine c4`)
 
 Escribe solo `docs/diagrams/` (invariant #1 y #2: solo `export-*` gradua a `docs/`; esta skill la compone `export-diagrams`).
 
 ## Source
 
-Reciclado de `agent-workflow/exports/export-arq/` del bundle viejo (v1.3.0). Se conserva: el modelo C4 Levels 1-3, los tres motores (Structurizr default, Mermaid opt-in, PlantUML opt-in), las plantillas DSL y PUML, la regla de link `mermaid.ink` por bloque Mermaid, la estructura de output, el cost guard para MCP. Se descarta: la lógica de lectura de AW-PROJECT legacy, los comandos CLI `agent-workflow next-number`/`history-data`/etc. (son detalles de implementación del CLI, no de la skill), y el scope `--diagrams` como input flag (lo recibe el export que compone esta skill).
+Reciclado de `agent-workflow/exports/export-arq/` del bundle viejo (v1.3.0). Se conserva: el modelo C4 Levels 1-3, las plantillas DSL/PUML, la regla de link `mermaid.ink` por bloque Mermaid, la estructura de output, el cost guard para MCP. Se moderniza al contrato vigente de `export-diagrams`: **Mermaid por defecto** (antes Structurizr), motor elegido por `--engine mermaid|c4` (lo recibe el export que compone esta skill); PlantUML queda como apéndice de referencia, fuera del contrato actual. Se descarta: la lógica de lectura de AW-PROJECT legacy y los comandos CLI `agent-workflow next-number`/`history-data`/etc. (detalles de implementación del CLI, no de la skill).

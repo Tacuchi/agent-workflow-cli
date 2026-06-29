@@ -130,6 +130,6 @@ Idempotente funcional: cada invocación toma el siguiente `NNN` y **no sobrescri
 ## Resources
 
 - Design: `docs/referencias/workflow-exports/export-scripts.md` · familia: [`../README.md`](../README.md).
-- Capacidad compuesta: `sql` (built-in default; ver `docs/referencias/workflow-skills/`).
+- Capacidad compuesta: `sql` (built-in default; ver `docs/referencias/workflow-roles/`).
 - Artefacto fuente: `SCRIPTS.sql` (ver `docs/referencias/workflow-artifacts/artifacts-core/`).
 - Siblings: [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).
