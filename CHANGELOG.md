@@ -4,6 +4,23 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [13.0.1] — 2026-06-28
+
+**Consistencia del bundle `w` (auditoría skill-creator): des-stalea el README publicado + reconcilia contratos cross-skill.** Pasada de documentación, sin cambios de comportamiento en comandos/flags/output. El README de npm aún describía el catálogo viejo de 10 roles (incluía las convenciones extraídas en 13.0.0); se corrige a 7 + nota "ambientes, no roles". Se reconcilian contratos entre skills que se componen, referencias de diseño renombradas, y afirmaciones de los docs de hooks que sobre-prometían enforcement. Plugin `w` 9.0.0 → 9.0.1.
+
+### Fixed
+
+- **README publicado** des-staleado: catálogo 10 → 7 roles (sin `coding-standards`/`testing`/`writing`, ahora ambientes), `PLANIFICATION` → `PLAN`, y el leak `AskUserQuestion` reframeado como la capacidad *structured-choice* (su binding en Claude Code). Mismo fix `PLANIFICATION` → `PLAN` en la `description` del plugin.
+- **Contrato `roles/diagrams` ↔ `export-diagrams`** alineado al diseño: flag `--engine` (no `--diagrams`), default `mermaid` (no structurizr), `--scope data`, output `diagrams.md`.
+- **Referencias de diseño** `workflow-skills/` → `workflow-roles/` para los roles (`workspace-init`, `export-scripts`/`export-diagrams`, `tools`); `status`/`fix-git` apuntaban a `workflow-commands/` → `workflow-skills/`; `SKILL.md` source-list suma `workflow-roles/`.
+- **`commands/README`**: el schema decía que `allowed-tools` "always includes Skill" — ningún comando lo hace (loops/exports se **leen-y-siguen**); corregido.
+- **`hooks/README`** ya no sobre-afirma todo git-safe #5: `git-commit-advisor` solo **avisa** (no bloquea `push`/`--amend`/`--no-verify`/`--force`). Se documenta honesto qué bloquea (#4 `sql-mutation-guard`, rama de #5 `branch-check`) y que los hooks de ciclo de vida son comandos top-level, no subcomandos `hook`. + framing binding-agnóstico.
+- Drift menor: `CHECKPOINT` ownership (toda sesión, siempre — invariante #6), descriptions `export-manuals`/`export-reports` (audiencia front-loaded), wording `artifacts/README` ("scripts-only"), `TECHNICAL-NOTE`/`ANALYSIS-FILE`, y la familia TUI Sources/Branches (+`set-qa-branch`/`git-flow`/`merge-state`).
+
+### Added
+
+- **Guard test `skill-consistency.test.ts`**: detecta drift cross-skill (cero `--diagrams` en el bundle; el rol `diagrams` y `export-diagrams` concuerdan en `--engine`/default-mermaid). Cubre el hueco que `skill-audit-grep` (solo refs QTC legacy) no veía.
+
 ## [13.0.0] — 2026-06-25
 
 **BREAKING — las convenciones genéricas salen del sistema de roles.** `coding-standards`, `testing` y `writing` dejan de ser **roles** del workflow: ya no se empaquetan en el bundle, no se bindean por `.workflow/skills.toml` y los loops/exports no las componen ni las buscan. Pasan a ser **skills ambientes** que el host (Claude Code) auto-descubre por su `description` y aplica cuando son relevantes — el CLI es **indiferente** y aprovecha cualquier skill útil instalada. Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el CLI **no depende ni referencia** ningún plugin (sigue company-agnóstico, lo enforce `skill-audit-grep`). `git` queda como rol bundle (flow-coupled: verificación de rama, tag `session<NNN>`, merge de `/w:fix-git`).
