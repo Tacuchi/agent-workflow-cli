@@ -132,7 +132,7 @@ Each `SKILL.md` follows this schema:
 
 | Section | Content |
 |---|---|
-| Frontmatter `name:` | kebab-case; MUST equal the binding name (`research`, `tools`, etc.) |
+| Frontmatter `name:` | kebab-case; MUST equal the binding name (`research`, `diagrams`, etc.) |
 | Frontmatter `description:` | rich description: what + when; drives automatic selection |
 | `## Role` | which capability role this implements (its skills.toml slot) |
 | `## Purpose` | what it does |

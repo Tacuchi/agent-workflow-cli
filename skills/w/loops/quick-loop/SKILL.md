@@ -50,7 +50,7 @@ QUICK
 
 `git` · `sql` (regla BD) · `research` (inline). Resueltas por `.workflow/skills.toml`.
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
+> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
 
 ## Delta QUICK — minimal ceremony
 

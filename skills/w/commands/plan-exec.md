@@ -27,7 +27,7 @@ Arranca o retoma `plan-exec-loop` (Layer 2), que ejecuta el trabajo real fase po
 
 - Lee y actualiza `docs/plans/PPP-plan-<slug>.md` (living doc: estado de fases/tareas).
 - Edita código en las fuentes del workspace (una sola sesión de ejecución para el run; la ejecución sigue siendo fase por fase, solo que no hay sesión por fase).
-- Escribe herramientas/utilidades reutilizables en `docs/tools/`.
+- Si crea una herramienta/utilidad, la documenta la skill ambiente `creating-tools` en `docs/tools/` (auto-descubierta; el workflow no la bindea).
 - Propone commits por fuente (git-safe: verifica rama, propone, nunca push/--amend/--no-verify).
 - Genera artefactos de sesión (`DECISION`, `SCRIPTS.sql`) en `.workflow/sessions/`.
 - **No exporta** a `docs/scripts`, `docs/manuals`, `docs/diagrams`, `docs/reports` — eso lo hacen los `export-*` como paso aparte.

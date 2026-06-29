@@ -35,7 +35,7 @@ El control `flow` es **fijo**: `Compactar` / `Cerrar`, presente en los 4 loops. 
 |---|---|---|---|---|
 | [`spec-refine-loop`](spec-refine-loop/SKILL.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec*.md` (el spec mismo) | `docs/specs/NNN-spec-<slug>.md` (in place) |
 | [`plan-new-loop`](plan-new-loop/SKILL.md) | PLAN | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md` |
-| [`plan-exec-loop`](plan-exec-loop/SKILL.md) | PLAN | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update) + `docs/tools`; resto vía `export-*` |
+| [`plan-exec-loop`](plan-exec-loop/SKILL.md) | PLAN | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update); resto vía `export-*` |
 | [`quick-loop`](quick-loop/SKILL.md) | QUICK | `/w:quick` | — (prompt) | edita código + session ligera; **no** `docs/` |
 
 > `/w:spec-new` no tiene loop (es single-pass). Por eso hay **5 comandos / 4 loops**.
@@ -47,7 +47,7 @@ Los loops **nunca** graduan/exportan artefactos a `docs/` automáticamente. Cada
 | Flow | Carpetas `docs/` que escribe |
 |---|---|
 | SPEC | `docs/specs` |
-| PLAN | `docs/plans` (living) + `docs/tools` (herramientas creadas — salida directa) |
+| PLAN | `docs/plans` (living) |
 | QUICK | ninguna |
 
 Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, diagramas → `docs/diagrams`, informes → `docs/reports`) queda como **artefacto de session** hasta que un `export-*` lo promueva, como paso aparte y explícito.
@@ -92,7 +92,7 @@ spec-refine-loop  ── CHASIS (patrón de referencia: objetivo persistente + v
                                        hereda git/BD/no-export de plan-exec
 ```
 
-El chasis **no es una capacidad bindeable**: *es* `spec-refine-loop` y los demás loops lo heredan. Lo enchufable son las **capacidades** que un loop compone (ej. `ui-design`, `sql`, `git`, `tools`), resueltas por `.workflow/skills.toml`.
+El chasis **no es una capacidad bindeable**: *es* `spec-refine-loop` y los demás loops lo heredan. Lo enchufable son las **capacidades** que un loop compone (ej. `ui-design`, `sql`, `git`), resueltas por `.workflow/skills.toml`.
 
 ## Composed capabilities (roles)
 
@@ -104,10 +104,9 @@ Los loops componen **capacidades por su rol**, no skills concretas; la skill que
 | `sql` | `sql` | research · `plan-exec-loop` · `quick-loop` |
 | `git` | `git` | `plan-exec-loop` · `quick-loop` |
 | `research` | `research` | todos los loops (research inline) |
-| `tools` | `tools` | `plan-exec-loop` |
 | `overview` | `workflow` | cualquiera (orientación) |
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
+> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
 
 `off` en config → capacidad desactivada: el loop sigue sin ella; si era necesaria, lo dice o pregunta al humano.
 

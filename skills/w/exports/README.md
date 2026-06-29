@@ -9,7 +9,7 @@
 
 ## Principle (boundary) — hard rule
 
-**Loops NEVER graduate/export to `docs/` automatically.** A loop produces **artifacts** under `.workflow/sessions/` and writes only the `docs/` folder owned by its own flow (SPEC→`specs`; PLAN→`plans`+`tools`). Promoting the **rest** of the artifacts into documents is done **only** by these `export-*` skills, as a **separate and explicit** step that the **user** invokes — the execution loops never trigger it.
+**Loops NEVER graduate/export to `docs/` automatically.** A loop produces **artifacts** under `.workflow/sessions/` and writes only the `docs/` folder owned by its own flow (SPEC→`specs`; PLAN→`plans`). Promoting the **rest** of the artifacts into documents is done **only** by these `export-*` skills, as a **separate and explicit** step that the **user** invokes — the execution loops never trigger it.
 
 ```
 .workflow/sessions/<NNN-…>/           docs/  (permanent, user-facing)

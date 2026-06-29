@@ -22,7 +22,7 @@ aw workspace-init --source alias:path[:rama] [--proyecto <nombre>] [--main-branc
 
 1. **Detectar/confirmar fuentes** — el CLI detecta la/s ruta/s de repo; el usuario confirma aliases, paths y ramas. Se acepta `--source` múltiple.
 2. **Elegir skills por defecto** — se presenta el catálogo de capacidades (roles) disponibles. Para cada rol: `built-in default`, override a skill de tercero (`skills.sh`), o `off`. Resultado escrito en `.workflow/skills.toml`. La cascada de config es: `built-in → ~/.workflow/skills.toml (global) → .workflow/skills.toml (workspace)`.
-3. **Escribir scaffolding** — crea `.workflow/sessions/`, `docs/` con su taxonomía completa (`specs/`, `plans/`, `tools/`, `scripts/`, `manuals/`, `diagrams/`, `reports/`), el bloque `WORKSPACE` en `CLAUDE.md`/`AGENTS.md` (fuentes + metadatos), y `.workflow/skills.toml`.
+3. **Escribir scaffolding** — crea `.workflow/sessions/`, `docs/` con su taxonomía (`specs/`, `plans/`, `scripts/`, `manuals/`, `diagrams/`, `reports/`), el bloque `WORKSPACE` en `CLAUDE.md`/`AGENTS.md` (fuentes + metadatos), y `.workflow/skills.toml`.
 4. **Multi-fuente** — si hay ≥2 fuentes, configura visibilidad multi-root (settings.local.json + config, gitignored) y reconcilia fuentes.
 
 Al terminar, el usuario puede correr `/w:spec-new`, `/w:plan-new` o `/w:quick` directamente.
