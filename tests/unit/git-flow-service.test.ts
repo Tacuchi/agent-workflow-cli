@@ -43,6 +43,21 @@ function opLog(calls: GitCall[]): string[] {
     .map((c) => (c.arg ? `${c.op} ${c.arg}` : c.op));
 }
 
+/**
+ * True if any merge brings the qa branch ONTO the prod branch — the forbidden
+ * `desarrollo→certificacion` promotion that would drag unreleased work to prod.
+ * Tracks the current branch via checkouts; a `merge <qa>` while on `prod` is the
+ * violation.
+ */
+function mergesQaOntoProd(calls: GitCall[], qa: string, prod: string): boolean {
+  let current = "";
+  for (const c of calls) {
+    if (c.op === "checkout") current = c.arg ?? current;
+    if (c.op === "merge" && c.arg === qa && current === prod) return true;
+  }
+  return false;
+}
+
 describe("git-flow service", () => {
   let cwd: string;
 
@@ -113,7 +128,7 @@ describe("git-flow service", () => {
     ]);
   });
 
-  it("to-prod: sync + checkout prod+pull + merge work→prod + push prod", async () => {
+  it("to-prod: sync + checkout prod + merge work→prod + push prod (no qa→prod)", async () => {
     await writeBlock([
       { alias: "core", path: "/repo/core", main: "certificacion", work: "feature/x" },
     ]);
@@ -130,12 +145,29 @@ describe("git-flow service", () => {
       "pull certificacion",
       "checkout feature/x",
       "merge certificacion",
-      // promote to prod
+      // promote to prod (no re-pull; syncPlan already pulled certificacion)
       "checkout certificacion",
-      "pull certificacion",
       "merge feature/x",
       "push certificacion",
     ]);
+  });
+
+  it("invariant: no flow ever merges qa→prod (desarrollo→certificacion)", async () => {
+    await writeBlock([
+      {
+        alias: "core",
+        path: "/repo/core",
+        main: "certificacion",
+        work: "feature/x",
+        qa: "desarrollo",
+      },
+    ]);
+    for (const action of ["sync", "to-qa", "to-prod"] as const) {
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+      const result = await runGitFlow(fs, git, paths(), { action, source: "core" });
+      expect(result.status).toBe("ok");
+      expect(mergesQaOntoProd(git.calls, "desarrollo", "certificacion")).toBe(false);
+    }
   });
 
   it("--target overrides the destination branch (to-qa)", async () => {
