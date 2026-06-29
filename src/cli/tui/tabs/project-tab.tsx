@@ -24,6 +24,7 @@ import {
   stopProcess,
   tailLog,
 } from "../../../application/source-launch-service.js";
+import { removeSource } from "../../../application/source-remove-service.js";
 import type { CliContext } from "../../types.js";
 import {
   type DetailAction,
@@ -239,6 +240,8 @@ type Mode =
   | { kind: "detail" }
   | { kind: "running"; label: string }
   | { kind: "result"; action: GitFlowAction; result: GitFlowResult }
+  // ===== Source removal =====
+  | { kind: "confirm-remove"; alias: string }
   // ===== Source-launch + process management =====
   | { kind: "process" } // process region focused
   | { kind: "launch-form"; alias: string; descriptor: LaunchDescriptor }
@@ -411,11 +414,15 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     : (data.sources.find((s) => s.alias === currentTarget) ?? null);
 
   // Detail-panel actions for the current target: a per-source "Lanzar en local"
-  // (only for real sources) followed by the git-flow actions.
-  const detailItems = useMemo<({ kind: "launch" } | { kind: "flow"; action: GitFlowAction })[]>(
+  // (only for real sources), the git-flow actions, and a destructive "Quitar del
+  // workspace" last (only for real sources, never for "all sources").
+  const detailItems = useMemo<
+    ({ kind: "launch" } | { kind: "flow"; action: GitFlowAction } | { kind: "remove" })[]
+  >(
     () => [
       ...(currentSource ? [{ kind: "launch" as const }] : []),
       ...FLOW_ACTIONS.map((a) => ({ kind: "flow" as const, action: a.id })),
+      ...(currentSource ? [{ kind: "remove" as const }] : []),
     ],
     [currentSource],
   );
@@ -445,6 +452,33 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       }
     },
     [cursor, ctx, targets],
+  );
+
+  // Quitar una fuente del workspace: orquesta detach + poda bloque + stop procesos
+  // + borra docs/tools/<alias> (vía el servicio); luego recarga la vista.
+  const doRemove = useCallback(
+    async (alias: string) => {
+      setMode({ kind: "busy", label: `Quitando ${alias}…` });
+      const res = await removeSource(
+        { fs: ctx.fs, env: ctx.env, proc: ctx.process, paths: ctx.paths },
+        alias,
+      );
+      setCursor(0);
+      setMode(
+        "error" in res
+          ? { kind: "notice", tone: "err", lines: [res.error] }
+          : {
+              kind: "notice",
+              tone: "ok",
+              lines: [
+                `Quitada ${alias} del workspace.`,
+                res.processesStopped > 0 ? `${res.processesStopped} proceso(s) detenido(s).` : "",
+              ].filter((l) => l.length > 0),
+            },
+      );
+      await onReload?.();
+    },
+    [ctx, onReload],
   );
 
   // Atajos de la lista de sources (↑↓ navega · ⏎ abre panel · p procesos · s/g/c acciones).
@@ -491,6 +525,10 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
               "Generá scripts con /w:workspace-init.",
             ],
           });
+        }
+        if (item.kind === "remove") {
+          if (currentSource) return setMode({ kind: "confirm-remove", alias: currentSource.alias });
+          return;
         }
         void runFlow(item.action);
       }
@@ -543,6 +581,11 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       if (mode.kind === "collision") {
         if (key.escape) setMode({ kind: "list" });
         else if (input === "r") void confirmRelaunch(mode.req, mode.existing);
+        return;
+      }
+      if (mode.kind === "confirm-remove") {
+        if (key.escape || input === "n" || input === "N") setMode({ kind: "list" });
+        else if (input === "y" || input === "Y") void doRemove(mode.alias);
         return;
       }
       if (mode.kind === "notice" || mode.kind === "log") {
@@ -620,6 +663,27 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     );
   }
 
+  if (mode.kind === "confirm-remove") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead label="Quitar del workspace" marginTop={0} />
+        <Box marginLeft={2} marginTop={1} flexDirection="column">
+          <Text color={colors.warn}>¿Quitar {mode.alias} del workspace?</Text>
+          <Box marginLeft={2} marginTop={1} flexDirection="column">
+            <Text color={colors.dim}>
+              Sale del bloque WORKSPACE (Fuentes + ramas), de la visibilidad multi-root,
+            </Text>
+            <Text color={colors.dim}>detiene sus procesos y borra docs/tools/{mode.alias}.</Text>
+            <Text color={colors.faint}>El repo en disco NO se borra.</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text color={colors.faint}>y quitar · n/esc cancelar</Text>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
   if (mode.kind === "notice") {
     return (
       <Box flexDirection="column">
@@ -665,6 +729,9 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       return currentSource?.launchable
         ? { name: LAUNCH_ACTION.name, description: "spawn detached" }
         : { name: LAUNCH_ACTION.name, description: "sin descriptor — /w:workspace-init" };
+    }
+    if (it.kind === "remove") {
+      return { name: "Quitar del workspace", description: "detach + poda bloque + scripts" };
     }
     const fa = FLOW_ACTIONS.find((a) => a.id === it.action);
     return { name: fa?.name ?? it.action, description: fa?.description ?? "" };

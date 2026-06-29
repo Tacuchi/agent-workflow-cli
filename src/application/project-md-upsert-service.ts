@@ -32,6 +32,8 @@ export interface ProjectMdUpsertInput {
   fuentes?: ProjectMdUpsertFuente[];
   /** Si true, las `fuentes` declaradas REEMPLAZAN a las existentes (no merge). workspace-init lo usa para ser autoritativo y soportar remover fuentes. */
   replaceFuentes?: boolean;
+  /** Aliases a podar del bloque: se quitan de `Fuentes` + `working_branches` + `qa_branches`. Lo usa remove-source. */
+  removeAliases?: string[];
   /** Default rama principal applied to fuentes that do not declare one. */
   mainBranch?: string;
   verbose?: boolean;
@@ -117,7 +119,8 @@ async function buildRenderInput(
   existing: ParsedProjectBlock | null,
 ): Promise<RenderProjectBlockInput> {
   const proyecto = input.proyecto ?? existing?.proyecto ?? "";
-  const fuentes = mergeFuentes(existing?.fuentes ?? [], input);
+  const remove = new Set(input.removeAliases ?? []);
+  const fuentes = mergeFuentes(existing?.fuentes ?? [], input).filter((f) => !remove.has(f.alias));
   const stack =
     existing?.stack && Object.keys(existing.stack).length > 0
       ? existing.stack
@@ -130,6 +133,10 @@ async function buildRenderInput(
     ...(existing?.qa_branches ?? {}),
     ...(input.qaBranches ?? {}),
   };
+  for (const alias of remove) {
+    delete workingBranches[alias];
+    delete qaBranches[alias];
+  }
   return { proyecto, fuentes, stack, workingBranches, qaBranches };
 }
 

@@ -34,6 +34,7 @@ import { pluginCacheCommand } from "./commands/plugin-cache.js";
 import { pluginDoctorCommand } from "./commands/plugin-doctor.js";
 import { projectMdUpsertCommand } from "./commands/project-md-upsert.js";
 import { releaseDataCommand } from "./commands/release-data.js";
+import { removeSourceCommand } from "./commands/remove-source.js";
 import { resumeSummaryCommand } from "./commands/resume-summary.js";
 import { selfCommand } from "./commands/self.js";
 import { sessionArtifactsCommand } from "./commands/session-artifacts.js";
@@ -85,6 +86,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(sourcesCommand);
   registry.register(setWorkingBranchCommand);
   registry.register(setQaBranchCommand);
+  registry.register(removeSourceCommand);
   registry.register(gitFlowCommand);
   registry.register(mergeStateCommand);
   registry.register(checkpointReadCommand);

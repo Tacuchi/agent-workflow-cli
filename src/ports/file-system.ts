@@ -22,7 +22,7 @@ export interface FileSystemPort {
    * "already exists" propagate as exceptions.
    */
   writeTextExclusive(path: string, content: string): Promise<{ created: boolean }>;
-  /** Idempotent file removal. ENOENT is silently ignored. */
+  /** Idempotent removal of a file or directory (recursive). A missing path is silently ignored. */
   remove(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   list(path: string): Promise<DirEntry[]>;

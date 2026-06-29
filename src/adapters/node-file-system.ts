@@ -1,4 +1,14 @@
-import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "../ports/file-system.js";
 
@@ -57,12 +67,9 @@ export class NodeFileSystem implements FileSystemPort {
   }
 
   async remove(path: string): Promise<void> {
-    try {
-      await unlink(path);
-    } catch (err) {
-      if ((err as NodeError).code === "ENOENT") return;
-      throw err;
-    }
+    // recursive+force: borra archivo o directorio (con su contenido); force
+    // ignora ENOENT → idempotente. Antes solo unlink (archivos).
+    await rm(path, { recursive: true, force: true });
   }
 
   async exists(path: string): Promise<boolean> {

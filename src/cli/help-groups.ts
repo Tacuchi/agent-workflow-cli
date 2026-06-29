@@ -37,6 +37,7 @@ const GROUPS: readonly CommandGroup[] = [
       "sources",
       "set-working-branch",
       "set-qa-branch",
+      "remove-source",
       "git-flow",
       "merge-state",
       "attach-multiroot",

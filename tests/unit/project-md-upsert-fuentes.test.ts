@@ -187,4 +187,51 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     expect(claude).toContain("| extra | /repo/extra | main |");
     expect(claude).not.toContain("/repo/old-core");
   });
+
+  it("removeAliases prunes a source from fuentes + working + qa branches", async () => {
+    const env = new TestEnv(cwd);
+    const paths = makePaths(cwd);
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [
+        { alias: "core", path: "/repo/core", mainBranch: "main" },
+        { alias: "plugin", path: "/repo/plugin", mainBranch: "main" },
+      ],
+      workingBranches: { core: "feature/a", plugin: "feature/b" },
+      qaBranches: { core: "desarrollo", plugin: "qa/plugin" },
+      lastActivity: FIXED_TS,
+    });
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      removeAliases: ["plugin"],
+      lastActivity: FIXED_TS,
+    });
+    expect("error" in result).toBe(false);
+    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("| core | /repo/core | main |");
+    expect(claude).not.toContain("/repo/plugin");
+    expect(claude).toContain("- core: feature/a");
+    expect(claude).not.toContain("plugin: feature/b");
+    expect(claude).toContain("  - core: desarrollo");
+    expect(claude).not.toContain("qa/plugin");
+  });
+
+  it("removeAliases of the last source leaves an empty fuentes table", async () => {
+    const env = new TestEnv(cwd);
+    const paths = makePaths(cwd);
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      lastActivity: FIXED_TS,
+    });
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      removeAliases: ["core"],
+      lastActivity: FIXED_TS,
+    });
+    expect("error" in result).toBe(false);
+    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(claude).not.toContain("/repo/core");
+    expect(claude).toContain("Sin fuentes declaradas");
+  });
 });
