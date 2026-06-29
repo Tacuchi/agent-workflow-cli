@@ -72,6 +72,15 @@ El objetivo persistente necesita una **condición de término checkable** — si
 
 > El **convergence gate** (sección *Convergence / exit*) es, operacionalmente, **"todos los `Success criteria` en verde"**. Los gates por-heir (analyze gate, coherencia del plan, validación final, validación puntual proporcional) son **instancias** de esto, con los criterios sembrados al inicio.
 
+**Integridad del gate (anti-gaming + verificación independiente).** El gate solo vale si no se hace trampa para pasarlo. El loop **no**:
+
+- modifica el check ni afloja un `Success criterion` para forzar verde;
+- debilita, borra ni saltea tests/validaciones;
+- usa asserts triviales o tautológicos que siempre pasan (el valor esperado sale de una fuente independiente, no del propio output);
+- parchea el test en lugar de arreglar la causa (preferir arreglar producción).
+
+Ante un blocker real **para y lo reporta** (→ `Open questions`/`BACKLOG`) en vez de gamear la métrica. El veredicto cuenta **solo el output del check, no la auto-declaración** del implementador: cuando el deliverable lo justifica, la verificación final la hace una pasada **independiente** (subagente o re-lectura limpia) que no asume correcta la implementación — *only command output counts*.
+
 ## Artifacts as a live log — ciclo artifact-first (chasis — heredado por todos los loops)
 
 El loop trabaja **artifact-first**: el artefacto se **siembra antes** de ejecutar y se **actualiza después**, no solo al cerrar. Cada gap/fase/tarea corre el ciclo de **3 tiempos**:
@@ -199,6 +208,7 @@ La investigación es **inline**: una actividad **dentro de la session actual del
   - elección de MCP (regla BD) — antes de ejecutar queries;
   - en **convergencia**, acción: `Guardar especificación refinada` | `Preguntar algo más`.
 - **Batching**: agrupar hasta 3 gaps de humano en una sola llamada. Si hay más de 3 pendientes, priorizar (los que desbloquean otros gaps primero) y diferir el resto a la próxima vuelta.
+- **Respuesta recomendada por pregunta**: cada pregunta de contenido lleva **siempre** la respuesta que la IA recomienda — como primera opción (marcada *recomendada*) en `AskUserQuestion`, o señalada en el markdown numerado al degradar. Nunca se pregunta "a secas": el humano ratifica o corrige una propuesta, no parte de cero. La IA recomienda en base a lo investigado (regla ask-vs-research), no por defecto vacío.
 
 ## Sequence
 

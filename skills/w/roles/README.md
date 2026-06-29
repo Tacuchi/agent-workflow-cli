@@ -74,7 +74,7 @@ sql              = "off"                # disable the sql capability
 ui-design = "acme/figma-spec"
 ```
 
-`acme/figma-spec` must be installed on the host (e.g. via `skills.sh install acme/figma-spec`). The CLI resolves the skill by name; if not found, it falls back to the built-in default and warns.
+`acme/figma-spec` must be installed on the host (e.g. via `skills.sh install acme/figma-spec`). The binding is **advisory**: the resolver emits the name as-is — it does **not** verify the skill is installed and does **not** auto-fall-back to the built-in default. A typo'd name silently leaves the role bound to a skill that does not exist. Verify the resolution with `aw skills`, which warns when a bound skill is not found in the standard skill roots.
 
 ### Override: disable a capability
 
