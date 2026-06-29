@@ -43,11 +43,11 @@ PLAN
 Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 
 - **Objetivo persistente + verification-first** del chasis: persigue su `SESSION.Objective` hasta que sus `SESSION.Success criteria` están **en verde** (sembrados al inicio; acá la rúbrica = **coherencia del plan**: cada Task traza a un acceptance criterion del spec). El motor es **gap-driven convergente** + **ciclo artifact-first** (sembrar `CHECKPOINT.Pending/Next` ANTES → `detect_gaps` → resolver → integrar → actualizar `Pending→Completed` DESPUÉS; gaps agotados con límite `MAX` no se re-disparan).
-- **Una sola session por run**: descriptor `plan-new` → `NNN-plan-new` (Type = `refine`): `SESSION` + `CHECKPOINT` (+ `BACKLOG` solo si difiere). La **investigación es inline** dentro de esta session (produce `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only en su propia carpeta), no una session aparte.
+- **Una sola session por run**: descriptor `<slug>-plan-new` → `NNN-<slug>-plan-new` (Type = `refine`): `SESSION` + `CHECKPOINT` (+ `BACKLOG` solo si difiere). La **investigación es inline** dentro de esta session (produce `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only en su propia carpeta), no una session aparte.
 - **Structured-choice**: ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`).
 - **Ask-vs-research rule** + **research autónomo inline** + **regla BD** (pregunta MCP si >1 sin default → queries a `SCRIPTS.sql` → ejecuta read-only, `sql-mutation-guard`) + manejo de research **inconclusa** (degrada a humano / difiere a `Open questions` + límite `MAX`).
 - **Compact / resume** y **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
-- **Naming + numeración global** del chasis: `<run>` = descriptor `plan-new`. El CLI antepone el `NNN` global y secuencial (sin reiniciar por tipo); el caller pasa solo el descriptor.
+- **Naming + numeración global** del chasis: `<run>` = descriptor `<slug>-plan-new`, donde `<slug>` sale del spec de entrada (`docs/specs/NNN-spec-<slug>.md`) → folder autodescriptivo `NNN-<slug>-plan-new`. El CLI antepone el `NNN` global y secuencial (sin reiniciar por tipo); el caller pasa solo el descriptor.
 
 ## Delta 1 — Deliverable: PLAN RICO (`PPP-plan-<slug>.md`)
 

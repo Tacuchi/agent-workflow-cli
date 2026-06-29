@@ -88,7 +88,7 @@ El loop crea y maneja su session en `.workflow/sessions/`. El usuario nunca la c
 
 | Session | When | Artifacts | Role |
 |---|---|---|---|
-| **refine session** `NNN-spec-refine/` | al arrancar el loop (o se reanuda) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` solo si difiere) | Dueña del run. Mantiene el avance vivo (CHECKPOINT) y habilita el resume. Type = `refine`. |
+| **refine session** `NNN-<slug>-spec-refine/` | al arrancar el loop (o se reanuda) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` solo si difiere) | Dueña del run. Mantiene el avance vivo (CHECKPOINT) y habilita el resume. Type = `refine`. |
 
 > **Research INLINE** — la investigación ya **no** es una session aparte: es una actividad **dentro de la session actual** que escribe sus artefactos (`ANALYSIS-FILE`/`CONCLUSIONS`, + `SCRIPTS.sql` read-only si consulta BD) **en la carpeta de la propia session del run**. Ver *Research: autonomy, scope & failure*.
 
@@ -98,14 +98,14 @@ El loop crea y maneja su session en `.workflow/sessions/`. El usuario nunca la c
 
 ### Numeración de sessions (regla dura, heredada por todos los loops)
 
-El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global y secuencial** escaneando **todas** las sessions de `.workflow/sessions/` (cualquier tipo). El caller pasa **solo el descriptor** vía `--name` — **nunca** un número. Así la numeración no se reinicia por tipo ni colisiona (ej.: `001-spec-refine`, `002-plan-new`, `003-plan-exec`, …).
+El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global y secuencial** escaneando **todas** las sessions de `.workflow/sessions/` (cualquier tipo). El caller pasa **solo el descriptor** vía `--name` — **nunca** un número. Así la numeración no se reinicia por tipo ni colisiona, y cada folder queda **autodescriptivo** con la forma `NNN-<slug>-<flow>` (ej.: `002-correo-otp-spec-refine`, `003-correo-otp-plan-new`, `004-correo-otp-plan-exec`, `005-validacion-correo-quick`).
 
-> `<run>` = el **descriptor** (sin número) de la session del run: `spec-refine`, `plan-new`, `plan-exec`; QUICK usa `<slug>-quick` (slug del prompt). Como la investigación es **inline** en esta misma session, ya no hay sessions hijas `*-research-*` que numerar (compat: las viejas son históricas).
+> `<run>` = el **descriptor** (sin número) de la session del run, siempre con forma **`<slug>-<flow>`**: `<slug>-spec-refine`, `<slug>-plan-new`, `<slug>-plan-exec`, `<slug>-quick`. El `<slug>` es **descriptivo** y sale del doc de entrada del flujo — `docs/specs/NNN-spec-<slug>.md` para spec-refine/plan-new; `docs/plans/PPP-plan-<slug>.md` para plan-exec; el prompt para quick — para que el folder diga de un vistazo de qué trata, no solo qué flujo lo creó. Como la investigación es **inline** en esta misma session, ya no hay sessions hijas `*-research-*` que numerar (compat: las viejas son históricas).
 >
 > **Resume**: localiza la session existente **escaneando** `.workflow/sessions/` por descriptor + `## Origin` (qué spec/plan), **no** reconstruyendo el número (que es global, no derivable del artefacto). `aw session-resume --code <NNN | folder>` resuelve ambas formas.
 
 **CLI**:
-- `aw session-create --type refine --name spec-refine` → crea `NNN-spec-refine` / `aw session-resume --code <…>` (detecta `CHECKPOINT`).
+- `aw session-create --type refine --name <slug>-spec-refine` → crea `NNN-<slug>-spec-refine` / `aw session-resume --code <…>` (detecta `CHECKPOINT`).
 - `aw checkpoint-write` / `aw checkpoint-read` para el resume.
 - `aw session-close` al cerrar (con razón); `aw session-artifacts` para inspeccionar.
 - **Reabrir para continuar** (contexto operativo, fila 2): `aw session-resume --code <NNN> --reopen` reactiva una sesión **cerrada** (quita `.closed` → activa) para seguir trabajando en ella; sin `--reopen`, el resume es read-only. Para detectar cuál es la más reciente cerrada: `aw resume-summary --include-recent-closed` (o `aw sessions --state all`).
@@ -205,7 +205,7 @@ La investigación es **inline**: una actividad **dentro de la session actual del
 ```
 spec-refine-loop(spec):
   input = glob(NNN-spec*.md) | argumento (ruta)         # siempre el spec mismo (in place)
-  refine_session = create_or_resume("spec-refine")      # CLI antepone NNN global; resume localiza por descriptor/origin
+  refine_session = create_or_resume("<slug>-spec-refine") # <slug> del spec de entrada; CLI antepone NNN global; resume localiza por descriptor/origin
   seed SESSION.Success criteria = acceptance criteria + checklist del analyze gate   # verification-first: ANTES de iterar
   work = read(input)  (+ aplicar avance del checkpoint si reanuda)
   attempts = {}                                         # anti-relanzamiento por gap

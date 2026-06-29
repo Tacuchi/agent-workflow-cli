@@ -61,7 +61,7 @@ Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 
 ## Internal sessions (managed)
 
-- **plan-exec session** descriptor `plan-exec` → `NNN-plan-exec`: **una sola session por run** (Type = `exec`). Dueña del run; posee `SESSION` + `CHECKPOINT` + `DECISION` + `SCRIPTS.sql` (+ `BACKLOG` solo si difiere). La investigación es **inline** dentro de esta session: produce `ANALYSIS-FILE`/`CONCLUSIONS` (+ `SCRIPTS.sql` read-only si consulta BD) en su propia carpeta.
+- **plan-exec session** descriptor `<slug>-plan-exec` → `NNN-<slug>-plan-exec` (el `<slug>` sale del plan-doc de entrada `docs/plans/PPP-plan-<slug>.md`): **una sola session por run** (Type = `exec`). Dueña del run; posee `SESSION` + `CHECKPOINT` + `DECISION` + `SCRIPTS.sql` (+ `BACKLOG` solo si difiere). La investigación es **inline** dentro de esta session: produce `ANALYSIS-FILE`/`CONCLUSIONS` (+ `SCRIPTS.sql` read-only si consulta BD) en su propia carpeta.
 
 > **Numeración**: el caller pasa solo el descriptor; el CLI antepone el `NNN` global y secuencial sobre `.workflow/sessions/` (ver chasis). No reinicia por tipo.
 
@@ -109,7 +109,7 @@ Distinción por **ejecución**, no por archivo (ver el esquema `SCRIPTS.sql`):
 
 ```
 plan-exec-loop(PPP-plan-<slug>.md):
-  session = create_or_resume("plan-exec")                  # UNA sola session por run; CLI antepone NNN global; CHECKPOINT, resume
+  session = create_or_resume("<slug>-plan-exec")           # <slug> del plan-doc; UNA sola session por run; CLI antepone NNN global; CHECKPOINT, resume
   plan = read(PPP-plan-<slug>.md)
   para cada Phase en plan (en orden, respeta deps):
     si Phase done (todas sus Tasks - [x] en el plan): skip # resume vía checkbox del plan-doc
