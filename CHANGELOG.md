@@ -4,6 +4,15 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [13.0.2] — 2026-06-29
+
+**Las sesiones de spec/plan ahora llevan slug descriptivo en el folder (`NNN-<slug>-<flow>`).** Pasada de documentación del bundle `w`, sin cambios de comportamiento ni de mecanismo del CLI. Antes los loops de spec/plan creaban folders pelados (`NNN-spec-refine`, `NNN-plan-new`, `NNN-plan-exec`), a diferencia de `quick` (`NNN-<slug>-quick`); ahora todos siguen el mismo patrón autodescriptivo. Plugin `w` 9.0.1 → 9.0.2.
+
+### Fixed
+
+- **Descriptor de sesión de spec/plan** ahora `<slug>-<flow>` (era el flujo pelado): `spec-refine-loop`, `plan-new-loop` y `plan-exec-loop` instruyen pasar `<slug>-spec-refine` / `<slug>-plan-new` / `<slug>-plan-exec`. El `<slug>` sale del doc de entrada del flujo (`docs/specs/NNN-spec-<slug>.md` para spec-refine/plan-new; `docs/plans/PPP-plan-<slug>.md` para plan-exec) → el folder dice de qué trata, no solo qué flujo lo creó.
+- Sin cambio de código: el CLI antepone el `NNN` global al descriptor recibido y `session-resolver` matchea por número/prefijo de folder, no por el literal del flujo → las sesiones viejas (`NNN-spec-refine`, …) siguen resolviendo. Solo se actualizaron las skill-docs de los 3 loops (y sus referencias de diseño).
+
 ## [13.0.1] — 2026-06-28
 
 **Consistencia del bundle `w` (auditoría skill-creator): des-stalea el README publicado + reconcilia contratos cross-skill.** Pasada de documentación, sin cambios de comportamiento en comandos/flags/output. El README de npm aún describía el catálogo viejo de 10 roles (incluía las convenciones extraídas en 13.0.0); se corrige a 7 + nota "ambientes, no roles". Se reconcilian contratos entre skills que se componen, referencias de diseño renombradas, y afirmaciones de los docs de hooks que sobre-prometían enforcement. Plugin `w` 9.0.0 → 9.0.1.
