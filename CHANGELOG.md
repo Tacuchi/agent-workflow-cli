@@ -4,6 +4,28 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.0.0] — 2026-06-29
+
+**La creación de herramientas sale del workflow a un skill standalone del marketplace; los scripts de arranque por fuente se reubican a `.workflow/launch/`.** La capacidad de crear utilidades auxiliares (antes el rol `tools`, acoplado a `plan-exec`) ahora es la skill ambiente `creating-tools` (plugin `tool-builder` del marketplace `qtc-marketplace`), reutilizable en cualquier momento y auto-descubierta por su `description` — el workflow es **indiferente**, no la bindea. `docs/tools/` queda libre para esas herramientas; los scripts de arranque (feature source-local-run) se mueven a `.workflow/launch/<alias>/` (machine-specific, gitignorado). **Breaking** por la reubicación de launch + el retiro del rol; `workspace-init` migra solo las carpetas legacy. Plugin `w` 9.0.2 → 9.1.0.
+
+### Changed (breaking)
+
+- **Scripts de arranque por fuente reubicados** de `docs/tools/<alias>/` a `.workflow/launch/<alias>/` (descriptor + `run.sh`/`run.ps1`), ahora **gitignorados** (machine-specific, junto a `processes.json` y `docs/logs/`). El TUI ("Lanzar en local") y `remove-source` leen/borran la nueva ubicación. Nuevo helper ns-aware `PathsService.cwdLaunchDir()`.
+- **Generación de launch sin gate**: antes la gateaba el rol `tools` (`tools = "off"` la desactivaba); ahora se genera siempre (es liviana y local). `LaunchArtifactsSummary` pierde el campo `toolsRole`.
+- **`docs/tools/` ya no se scaffoldea** en `workspace-init` (sale de `DOCS_FOLDERS`): lo crea on-demand la skill `creating-tools`.
+
+### Removed
+
+- **Rol-capacidad `tools`** del sistema de roles (`SKILL_ROLES` 7 → 6: `ui-design`, `sql`, `git`, `research`, `diagrams`, `overview`). La doctrina de autoría de tools se extrajo al skill `creating-tools` del marketplace. El bundle `w` borra `roles/tools/SKILL.md` y actualiza su doctrina (`docs/tools` = zona ambiente, no de flujo PLAN).
+
+### Added
+
+- **Migración automática** en `workspace-init`: mueve las carpetas legacy `docs/tools/<alias>/` de launch (detectadas por un `launch.json` con marker `_generated`) a `.workflow/launch/`, preservando scripts editados; nunca toca carpetas de herramientas creadas (que no llevan ese descriptor).
+
+### Notes
+
+- La skill **`creating-tools`** (plugin `tool-builder`, marketplace) organiza cada herramienta en `docs/tools/<tool>/` con README + código (o puntero al repo) + `runs/<ts>/` (logs por corrida) + `output/`. Vive en el marketplace, no en el CLI; el workflow la aprovecha por auto-discovery.
+
 ## [13.1.0] — 2026-06-29
 
 **Nuevo: quitar una fuente del workspace (comando + TUI) + blindaje del flujo de promoción git-flow.** El CLI permitía agregar fuentes (`workspace-init`, aditivo) pero no quitarlas; ahora hay un comando y una acción TUI dedicados que orquestan la remoción completa. Además se fija por test la regla de que la promoción a producción nunca arrastra `desarrollo` hacia `certificacion`. Cambios solo de código; plugin `w` sin cambios (9.0.2).

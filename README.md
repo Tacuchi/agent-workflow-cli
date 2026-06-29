@@ -16,14 +16,14 @@ The harness has three layers plus a permanent `docs/` zone:
 
 - **Layer 1 · Commands** (`/w:*`) — the only thing the user invokes:
   - **SPEC** — `/w:spec-new` (single-pass draft) → `/w:spec-refine` (gap-driven loop) → `docs/specs/`.
-  - **PLAN** — `/w:plan-new` → `/w:plan-exec` → `docs/plans/` + `docs/tools/`.
+  - **PLAN** — `/w:plan-new` → `/w:plan-exec` → `docs/plans/`.
   - **QUICK** — `/w:quick` — lightweight shortcut.
   - **EXPORTS** — `/w:export-scripts` · `export-manuals` · `export-diagrams` · `export-reports` (the only path that promotes artifacts to `docs/`).
   - **Bootstrap** — `/w:workspace-init` turns any folder into a workspace (1+ sources; no project/hub distinction).
 - **Layer 2 · Loops** — the AI runs them whole: `spec-refine-loop` (chassis) · `plan-new-loop` · `plan-exec-loop` · `quick-loop`. Each loop is a **persistent goal** that runs until its success criteria are green (verification-first); gap-driven, with **structured-choice** lifecycle control (compact/close — `AskUserQuestion` on Claude Code, numbered markdown elsewhere) and resumable `CHECKPOINT`.
 - **Layer 3 · Sessions + artifacts** — internal, ephemeral process state under `.workflow/sessions/` (`SESSION` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` · `ANALYSIS-FILE` · `CONCLUSIONS` · `DECISION` · …). Sessions are slug-named folders, created by loops, never by the user.
 
-**Pluggable capabilities.** Loops compose capability **roles** (`ui-design`, `sql`, `git`, `research`, `tools`, `diagrams`, `overview`); the concrete skill bound to each role is resolved via `.workflow/skills.toml` (cascade: built-in default → `~/.workflow/skills.toml` → workspace). Inspect bindings with `aw skills`. Code/testing/writing conventions are **not** roles — they're ambient skills the host auto-applies when present, independent of the workflow.
+**Pluggable capabilities.** Loops compose capability **roles** (`ui-design`, `sql`, `git`, `research`, `diagrams`, `overview`); the concrete skill bound to each role is resolved via `.workflow/skills.toml` (cascade: built-in default → `~/.workflow/skills.toml` → workspace). Inspect bindings with `aw skills`. Code/testing/writing conventions **and tool authoring** (`creating-tools`) are **not** roles — they're ambient skills the host auto-applies when present, independent of the workflow. Per-source launch scripts live under `.workflow/launch/` (machine-specific, gitignored); created tools live under `docs/tools/`.
 
 **Invariants.** No auto-export (only `export-*` writes `docs/`); the spec and plan are documents, not artifacts; DB scripts-only (never executes DML/DDL); git-safe (verifies the per-source working branch before edits; proposes commits).
 
