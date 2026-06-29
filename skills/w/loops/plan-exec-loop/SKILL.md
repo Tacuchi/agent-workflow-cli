@@ -13,8 +13,8 @@ description: >-
   NUNCA ejecuta DML/DDL (migraciones se redactan en SCRIPTS.sql, solo read-only
   se ejecuta); validación por fase y final (lo dependiente de migración no
   aplicada se difiere como handoff a DBA); y SIN auto-export (escribe solo
-  docs/plans + docs/tools; el resto queda como artefacto de session para
-  export-*). Compone git, tools y sql. Lo arranca
+  docs/plans; el resto queda como artefacto de session para
+  export-*). Compone git y sql. Lo arranca
   /w:plan-exec y es reanudable. Invocar para implementar un plan ya generado.
 ---
 
@@ -36,13 +36,12 @@ PLAN
 
 ## Writes
 - `docs/plans/PPP-plan-<slug>.md` (**read/update**, living doc: estado de fases/tareas, `Open questions`).
-- `docs/tools/`: herramientas/utilidades reusables que la IA **crea** durante la ejecución (salida directa, no export).
 - Artefactos de la plan-exec session en `.workflow/sessions/` (`SCRIPTS.sql`, `DECISION`, `ANALYSIS-FILE`/`CONCLUSIONS`, …).
 - **NO** escribe en otras carpetas `docs/` ni **gradúa/exporta** otros artefactos automáticamente (ver *Boundary*).
 
 ## Boundary — sin auto-export (hard rule)
 
-Este loop **nunca gradúa/promueve artefactos** a `docs/`. Las únicas carpetas `docs/` que escribe son **`docs/plans`** (el plan, living) y **`docs/tools`** (las herramientas que crea — salida directa, no un export). Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, diagramas → `docs/diagrams`, etc.) lo hacen skills **`export-*`** aparte, como paso explícito posterior. Los artefactos quedan en sus sessions hasta entonces.
+Este loop **nunca gradúa/promueve artefactos** a `docs/`. La única carpeta `docs/` que escribe es **`docs/plans`** (el plan, living). Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, diagramas → `docs/diagrams`, etc.) lo hacen skills **`export-*`** aparte, como paso explícito posterior. Los artefactos quedan en sus sessions hasta entonces. Si una tarea crea una herramienta/utilidad, la documenta la skill ambiente `creating-tools` en `docs/tools` (auto-descubierta por su `description`; el workflow es **indiferente**, no la bindea).
 
 ## Inherits
 
@@ -55,9 +54,9 @@ Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 
 ## Composes
 
-`git` (rama segura + commits propuestos) · `tools` (herramientas reusables → `docs/tools`) · `sql` (regla BD). Todas resueltas por `.workflow/skills.toml`; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta.
+`git` (rama segura + commits propuestos) · `sql` (regla BD). Ambas resueltas por `.workflow/skills.toml`; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta.
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
+> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
 
 ## Internal sessions (managed)
 
@@ -120,7 +119,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
         si no coincide → pausar + resolver con humano
       ejecutar Task:
         editar código en las fuentes (cambio mínimo)
-        si crea herramienta/utilidad reusable → docs/tools (salida directa)
+        si crea herramienta/utilidad → la skill ambiente creating-tools la documenta en docs/tools
         si consulta BD read-only → SCRIPTS.sql + ejecutar read-only
         si cambio BD (DDL/DML) → redactar en SCRIPTS.sql (artefacto session, NO ejecutar)
         si decisión no obvia → DECISION (etiquetado por fase/tarea, en el ÚNICO DECISION)

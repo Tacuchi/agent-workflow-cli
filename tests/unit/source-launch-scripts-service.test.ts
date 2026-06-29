@@ -112,9 +112,9 @@ describe("source-launch-scripts-service", () => {
   describe("generateSourceLaunchArtifacts (idempotency)", () => {
     it("first run creates, second run regenerates pristine files", async () => {
       const dir = source("app", { "package.json": JSON.stringify({ scripts: { dev: "vite" } }) });
-      const toolsDir = join(root, "ws", "docs", "tools");
+      const launchDir = join(root, "ws", ".workflow", "launch");
 
-      const first = await generateSourceLaunchArtifacts(fs, toolsDir, dir, "app");
+      const first = await generateSourceLaunchArtifacts(fs, launchDir, dir, "app");
       expect(first.outcomes).toEqual({
         launchJson: "created",
         runSh: "created",
@@ -122,7 +122,7 @@ describe("source-launch-scripts-service", () => {
       });
       expect(first.launchable).toBe(true);
 
-      const second = await generateSourceLaunchArtifacts(fs, toolsDir, dir, "app");
+      const second = await generateSourceLaunchArtifacts(fs, launchDir, dir, "app");
       expect(second.outcomes).toEqual({
         launchJson: "regenerated",
         runSh: "regenerated",
@@ -132,14 +132,14 @@ describe("source-launch-scripts-service", () => {
 
     it("preserves a user-edited run.sh (hash mismatch) but regenerates the rest", async () => {
       const dir = source("app", { "package.json": JSON.stringify({ scripts: { dev: "vite" } }) });
-      const toolsDir = join(root, "ws", "docs", "tools");
-      await generateSourceLaunchArtifacts(fs, toolsDir, dir, "app");
+      const launchDir = join(root, "ws", ".workflow", "launch");
+      await generateSourceLaunchArtifacts(fs, launchDir, dir, "app");
 
-      const runShPath = join(toolsDir, "app", "run.sh");
+      const runShPath = join(launchDir, "app", "run.sh");
       const edited = `${readFileSync(runShPath, "utf-8")}\n# my custom tweak\n`;
       writeFileSync(runShPath, edited);
 
-      const out = await generateSourceLaunchArtifacts(fs, toolsDir, dir, "app");
+      const out = await generateSourceLaunchArtifacts(fs, launchDir, dir, "app");
       expect(out.outcomes.runSh).toBe("preserved");
       expect(out.outcomes.launchJson).toBe("regenerated");
       expect(readFileSync(runShPath, "utf-8")).toBe(edited); // untouched
@@ -147,14 +147,14 @@ describe("source-launch-scripts-service", () => {
 
     it("a file without a marker is treated as user-owned and preserved", async () => {
       const dir = source("app", { "package.json": JSON.stringify({ scripts: { dev: "vite" } }) });
-      const toolsDir = join(root, "ws", "docs", "tools");
-      const appTools = join(toolsDir, "app");
-      mkdirSync(appTools, { recursive: true });
-      writeFileSync(join(appTools, "run.sh"), "#!/bin/sh\necho hand-written\n");
+      const launchDir = join(root, "ws", ".workflow", "launch");
+      const appLaunch = join(launchDir, "app");
+      mkdirSync(appLaunch, { recursive: true });
+      writeFileSync(join(appLaunch, "run.sh"), "#!/bin/sh\necho hand-written\n");
 
-      const out = await generateSourceLaunchArtifacts(fs, toolsDir, dir, "app");
+      const out = await generateSourceLaunchArtifacts(fs, launchDir, dir, "app");
       expect(out.outcomes.runSh).toBe("preserved");
-      expect(readFileSync(join(appTools, "run.sh"), "utf-8")).toContain("hand-written");
+      expect(readFileSync(join(appLaunch, "run.sh"), "utf-8")).toContain("hand-written");
     });
   });
 });

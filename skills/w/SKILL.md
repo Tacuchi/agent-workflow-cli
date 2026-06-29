@@ -48,7 +48,7 @@ USUARIO invoca
         │ los export-* leen artefactos
         ▼
   ZONA docs/ — documentos permanentes, cara al usuario
-    specs · plans · tools (flujos) · scripts · manuals · diagrams · reports (export-*)
+    specs · plans (flujos) · scripts · manuals · diagrams · reports (export-*) · tools (ambiente)
 ```
 
 - **Layer 1** — alto nivel. Single-pass o arranca un loop. Sin lógica de iteración.
@@ -60,7 +60,7 @@ USUARIO invoca
 | Flow | Commands | docs/ propio | Loops |
 |---|---|---|---|
 | **SPEC** (el *qué*) | `spec-new` *(single-pass)* · `spec-refine` | `docs/specs` | `spec-refine-loop` |
-| **PLAN** (el *cómo* + ejecutar) | `plan-new` · `plan-exec` | `docs/plans` · `docs/tools` | `plan-new-loop` · `plan-exec-loop` |
+| **PLAN** (el *cómo* + ejecutar) | `plan-new` · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-exec-loop` |
 | **QUICK** (atajo liviano) | `quick` | — | `quick-loop` |
 
 Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` → `spec-refine` corre el loop y refina **ese mismo spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → `plan-exec` ejecuta y actualiza el plan (living doc) + artefactos en sesiones. La promoción del resto a `docs/` es **siempre** un paso aparte vía `export-*`.
@@ -148,11 +148,10 @@ Catálogo de roles y su default:
 | `sql` | `sql` | must | research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `research` | `research` | should | todos los loops (capacidad inline) |
-| `tools` | `tools` | should | `plan-exec-loop` |
 | `diagrams` | `diagrams` | should | `export-diagrams` |
 | `overview` | `workflow` | should | cualquiera (orientación) |
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
+> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`, escribe `docs/tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
 
 El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
 
@@ -171,7 +170,7 @@ Las únicas `must` para el ciclo de un loop son **structured-choice** y **compac
 ### The 6 hard invariants
 
 1. **Sin auto-export** — los loops nunca graduan/exportan a `docs/`. Solo `export-*` lo hace, explícito.
-2. **Cada flujo toca solo sus carpetas `docs/`** — SPEC→`specs` · PLAN→`plans`+`tools` · QUICK→ninguna · resto→`export-*`.
+2. **Cada flujo toca solo sus carpetas `docs/`** — SPEC→`specs` · PLAN→`plans` · QUICK→ninguna · resto→`export-*`. (`docs/tools` no es de un flujo: lo escribe la skill ambiente `creating-tools`.)
 3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión.
 4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
 5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.

@@ -79,6 +79,10 @@ export class PathsService {
   cwdProcessesFile(): string {
     return join(this.cwdRoot(), "processes.json");
   }
+  /** Per-source launch artifacts (descriptor + run scripts); machine-specific, gitignored. */
+  cwdLaunchDir(): string {
+    return join(this.cwdRoot(), "launch");
+  }
   /** Workspace docs/logs dir — per-process launch logs (gitignored). */
   cwdDocsLogsDir(): string {
     return join(this.cwd, "docs", "logs");

@@ -30,7 +30,7 @@ export interface RemoveSourceError {
  * Quita una fuente del workspace por completo, componiendo servicios existentes
  * en orden idempotente: (1) detach de la visibilidad multi-root (4 hosts), (2)
  * poda del bloque WORKSPACE (Fuentes + working/qa branches), (3) detener los
- * procesos corriendo lanzados desde la fuente, (4) borrar `docs/tools/<alias>`.
+ * procesos corriendo lanzados desde la fuente, (4) borrar `.workflow/launch/<alias>`.
  *
  * NO borra el repo del filesystem: solo lo saca del workspace. Cada paso tolera
  * "ya no está", así que re-correrlo no falla. Permite dejar el workspace en 0
@@ -68,8 +68,8 @@ export async function removeSource(
     await registry.markStopped(record.id);
   }
 
-  // 5. Borrar los scripts de arranque generados (docs/tools/<alias>).
-  await fs.remove(join(paths.workspaceDir(), "docs", "tools", alias));
+  // 5. Borrar los scripts de arranque generados (.workflow/launch/<alias>).
+  await fs.remove(join(paths.cwdLaunchDir(), alias));
 
   return { alias, path: fuente.path, processesStopped: running.length };
 }

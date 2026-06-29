@@ -31,8 +31,9 @@
 └────────────────────────────────────────────────────────────────────────┘
 
 ╔═ docs/ ZONE — PERMANENT documents, user-facing ════════════════════════╗
-║  specs · plans · tools          ← written by flows directly            ║
+║  specs · plans                  ← written by flows directly            ║
 ║  scripts · manuals · diagrams · reports   ← written by export-* only  ║
+║  tools                          ← written by the ambient creating-tools║
 ╚════════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -45,7 +46,7 @@
 | Flow | docs/ target | Entry command | Advance command | Loops involved |
 |---|---|---|---|---|
 | **SPEC** | `docs/specs/` | `spec-new` *(single-pass)* | `spec-refine` | `spec-refine-loop` |
-| **PLAN** | `docs/plans/` + `docs/tools/` | `plan-new` | `plan-exec` | `plan-new-loop`, `plan-exec-loop` |
+| **PLAN** | `docs/plans/` | `plan-new` | `plan-exec` | `plan-new-loop`, `plan-exec-loop` |
 | **QUICK** | — *(no doc)* | `quick` | — | `quick-loop` |
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft in a **single pass** (no loop) and the loop is in `spec-refine`. In PLAN, **both** commands start loops. Total: **5 flow commands / 4 loops**.
@@ -74,7 +75,6 @@ flowchart LR
     plan --> pe["/w:plan-exec"]
     pe -->|starts| pel(["plan-exec-loop"])
     pel -->|read/update| plan
-    pel -->|writes tools| tools["docs/tools/"]
     pel -->|artifacts| sess[".workflow/sessions/\nSCRIPTS.sql · DECISION"]
     sess -.->|export-* (separate step)| outd["docs/scripts · manuals · diagrams · reports"]
 
@@ -84,7 +84,7 @@ flowchart LR
 
 **Pipeline reading:** SPEC defines *what* (refined spec) → PLAN defines *how* (plan) and *executes it* → QUICK is a lightweight shortcut for scoped work that does not warrant spec or plan.
 
-> **`docs/` boundary:** each flow only touches its own folders — **SPEC** → `docs/specs`; **PLAN** → `docs/plans` + `docs/tools`. The rest of `docs/` (`scripts`, `manuals`, `diagrams`, `reports`) is written **only** by `export-*` skills (a separate, never-automatic step). See [`../loops/`](../loops/) and [`../exports/`](../exports/).
+> **`docs/` boundary:** each flow only touches its own folders — **SPEC** → `docs/specs`; **PLAN** → `docs/plans`. The rest of `docs/` (`scripts`, `manuals`, `diagrams`, `reports`) is written **only** by `export-*` skills (a separate, never-automatic step); `docs/tools` is written by the ambient `creating-tools` skill (not the workflow). See [`../loops/`](../loops/) and [`../exports/`](../exports/).
 
 ## Schema of each command file
 
@@ -100,7 +100,7 @@ Each `<command>.md` in this bundle uses this frontmatter + body structure:
 ## 6 Hard invariants (never violate)
 
 1. **No auto-export**: loops **never** graduate/export to `docs/`. Only `export-*` does, explicitly.
-2. **Each flow touches only its `docs/` folders**: SPEC→`specs`; PLAN→`plans`+`tools`; QUICK→none; rest→`export-*`.
+2. **Each flow touches only its `docs/` folders**: SPEC→`specs`; PLAN→`plans`; QUICK→none; rest→`export-*`. (`docs/tools` is ambient — `creating-tools`, not a flow.)
 3. **Spec and plan are documents** (`docs/`), not artifacts.
 4. **DB scripts-only**: AI **never executes DML/DDL**; migrations live in `SCRIPTS.sql` (type B) and are delivered via `export-scripts`. Only read-only queries via MCP.
 5. **Git-safe**: verify branch before editing; **propose** commits by source; never `push`/`--amend`/`--no-verify`.

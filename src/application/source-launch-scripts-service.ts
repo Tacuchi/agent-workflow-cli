@@ -12,7 +12,7 @@ export interface LaunchParam {
 }
 
 /**
- * Machine-readable launch descriptor for one source (`docs/tools/<alias>/launch.json`).
+ * Machine-readable launch descriptor for one source (`.workflow/launch/<alias>/launch.json`).
  * The TUI reads this; it never parses the shell scripts.
  */
 export interface LaunchDescriptor {
@@ -334,12 +334,12 @@ export interface SourceArtifactResult {
 /** Generate (idempotently) the descriptor + per-OS scripts for one source. */
 export async function generateSourceLaunchArtifacts(
   fs: FileSystemPort,
-  toolsDir: string,
+  launchDir: string,
   sourcePath: string,
   alias: string,
 ): Promise<SourceArtifactResult> {
   const desc = await detectLaunchDescriptor(fs, sourcePath, alias);
-  const dir = join(toolsDir, alias);
+  const dir = join(launchDir, alias);
   await fs.mkdirp(dir);
   const launchJson = await writeIfPristine(
     fs,
@@ -363,30 +363,20 @@ export async function generateSourceLaunchArtifacts(
 }
 
 export interface LaunchArtifactsSummary {
-  /** "enabled" when the `tools` capability is on; "off" when disabled (no generation). */
-  toolsRole: "enabled" | "off";
   generated: SourceArtifactResult[];
-  skipped: { alias: string; reason: "path_not_found" | "tools_role_off" }[];
+  skipped: { alias: string; reason: "path_not_found" }[];
 }
 
 /**
- * Generate launch artifacts for every source under `toolsDir/<alias>/`. Degrades
- * cleanly: with the `tools` capability off, nothing is generated (and it says so);
- * a source whose path is missing is skipped rather than producing junk.
+ * Generate launch artifacts for every source under `launchDir/<alias>/`. Always
+ * generates (no capability gate); a source whose path is missing is skipped
+ * rather than producing junk.
  */
 export async function generateLaunchArtifacts(
   fs: FileSystemPort,
-  toolsDir: string,
+  launchDir: string,
   sources: { alias: string; path: string }[],
-  toolsEnabled: boolean,
 ): Promise<LaunchArtifactsSummary> {
-  if (!toolsEnabled) {
-    return {
-      toolsRole: "off",
-      generated: [],
-      skipped: sources.map((s) => ({ alias: s.alias, reason: "tools_role_off" as const })),
-    };
-  }
   const generated: SourceArtifactResult[] = [];
   const skipped: LaunchArtifactsSummary["skipped"] = [];
   for (const s of sources) {
@@ -394,7 +384,7 @@ export async function generateLaunchArtifacts(
       skipped.push({ alias: s.alias, reason: "path_not_found" });
       continue;
     }
-    generated.push(await generateSourceLaunchArtifacts(fs, toolsDir, s.path, s.alias));
+    generated.push(await generateSourceLaunchArtifacts(fs, launchDir, s.path, s.alias));
   }
-  return { toolsRole: "enabled", generated, skipped };
+  return { generated, skipped };
 }

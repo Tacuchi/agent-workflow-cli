@@ -94,14 +94,25 @@ describe("resolveSkills (skills.toml cascade)", () => {
   });
 
   it('"off" desactiva la capacidad', async () => {
-    writeWorkspace('[skills]\ntools = "off"\n');
+    writeWorkspace('[skills]\nresearch = "off"\n');
     const { skills } = await resolveSkills(fs, paths);
-    expect(skills.tools).toEqual({
-      role: "tools",
+    expect(skills.research).toEqual({
+      role: "research",
       skill: null,
       source: "workspace",
       enabled: false,
     });
+  });
+
+  it("`tools` ya NO es un rol (se removió la capability)", async () => {
+    const { skills } = await resolveSkills(fs, paths);
+    expect(Object.keys(skills)).not.toContain("tools");
+    // Nombrarlo en skills.toml → rol desconocido (warning), no rompe la resolución.
+    writeWorkspace('[skills]\ntools = "off"\nsql = "ws-sql"\n');
+    const res = await resolveSkills(fs, paths);
+    expect(res.warnings.some((w) => w.includes("tools"))).toBe(true);
+    expect(Object.keys(res.skills)).not.toContain("tools");
+    expect(res.skills.sql.skill).toBe("ws-sql");
   });
 
   it("rol desconocido → warning e ignorado", async () => {

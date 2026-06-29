@@ -21,7 +21,7 @@ class FakeEnv implements EnvPort {
   }
 }
 
-const DOCS_FOLDERS = ["specs", "plans", "tools", "manuals", "scripts", "diagrams", "reports"];
+const DOCS_FOLDERS = ["specs", "plans", "manuals", "scripts", "diagrams", "reports"];
 
 describe("runWorkspaceInit", () => {
   let workspace: string;
@@ -56,6 +56,9 @@ describe("runWorkspaceInit", () => {
       expect(existsSync(join(workspace, "docs", f))).toBe(true);
       expect(existsSync(join(workspace, "docs", f, ".gitkeep"))).toBe(true);
     }
+    // docs/tools NO se scaffoldea: lo crea on-demand la skill creating-tools (marketplace),
+    // el workflow es indiferente a esa capacidad extraída.
+    expect(existsSync(join(workspace, "docs", "tools"))).toBe(false);
 
     // skills.toml seeded
     expect(result.skills_toml).toBe("created");
@@ -82,6 +85,7 @@ describe("runWorkspaceInit", () => {
     expect(gitignore).toContain(".claude/settings.local.json");
     // Source-launch runtime artifacts are always gitignored.
     expect(gitignore).toContain(".workflow/processes.json");
+    expect(gitignore).toContain(".workflow/launch/");
     expect(gitignore).toContain("docs/logs/");
   });
 
@@ -147,8 +151,8 @@ describe("runWorkspaceInit", () => {
       // docs/logs scaffolded (gitignored, no .gitkeep).
       expect(existsSync(join(workspace, "docs", "logs"))).toBe(true);
 
-      // descriptor + per-OS scripts emitted under docs/tools/<alias>/
-      const toolDir = join(workspace, "docs", "tools", "app");
+      // descriptor + per-OS scripts emitted under .workflow/launch/<alias>/
+      const toolDir = join(workspace, ".workflow", "launch", "app");
       expect(existsSync(join(toolDir, "launch.json"))).toBe(true);
       expect(existsSync(join(toolDir, "run.sh"))).toBe(true);
       expect(existsSync(join(toolDir, "run.ps1"))).toBe(true);
@@ -156,35 +160,8 @@ describe("runWorkspaceInit", () => {
       expect(desc.command).toBe("npm");
       expect(desc.args).toEqual(["run", "dev"]);
 
-      expect(result.launch_artifacts.toolsRole).toBe("enabled");
       expect(result.launch_artifacts.generated.map((g) => g.alias)).toEqual(["app"]);
       expect(result.launch_artifacts.generated[0]?.launchable).toBe(true);
-    } finally {
-      rmSync(source, { recursive: true, force: true });
-    }
-  });
-
-  it("rol tools en off → no genera scripts y lo informa", async () => {
-    const source = mkdtempSync(join(tmpdir(), "ws-init-src-"));
-    try {
-      writeFileSync(join(source, "package.json"), JSON.stringify({ scripts: { dev: "vite" } }));
-      // First init to seed skills.toml, then disable the tools role and re-run.
-      await runWorkspaceInit(fs, env, paths, {
-        sources: [{ alias: "app", path: source }],
-        workspace,
-        lastActivity: "2026-01-01 00:00",
-      });
-      writeFileSync(join(workspace, ".workflow", "skills.toml"), '[skills]\ntools = "off"\n');
-
-      const result = await runWorkspaceInit(fs, env, paths, {
-        sources: [{ alias: "app", path: source }],
-        workspace,
-        lastActivity: "2026-01-01 00:00",
-      });
-      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
-      expect(result.launch_artifacts.toolsRole).toBe("off");
-      expect(result.launch_artifacts.generated).toEqual([]);
-      expect(result.launch_artifacts.skipped.map((s) => s.reason)).toContain("tools_role_off");
     } finally {
       rmSync(source, { recursive: true, force: true });
     }

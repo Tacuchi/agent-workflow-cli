@@ -170,7 +170,7 @@ describe("source-launch-service — launch/stop/relaunch", () => {
   afterEach(() => rmSync(ws, { recursive: true, force: true }));
 
   function writeDescriptor(alias: string, desc: LaunchDescriptor) {
-    const dir = join(ws, "docs", "tools", alias);
+    const dir = join(ws, ".workflow", "launch", alias);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "launch.json"), JSON.stringify(desc));
   }
@@ -251,7 +251,8 @@ describe("source-launch-service — launch/stop/relaunch", () => {
 
   it("readDescriptor reads a written descriptor and returns null when absent", async () => {
     writeDescriptor("app", descriptor());
-    expect((await readDescriptor(fs, ws, "app"))?.command).toBe("npm");
-    expect(await readDescriptor(fs, ws, "nope")).toBeNull();
+    const launchDir = join(ws, ".workflow", "launch");
+    expect((await readDescriptor(fs, launchDir, "app"))?.command).toBe("npm");
+    expect(await readDescriptor(fs, launchDir, "nope")).toBeNull();
   });
 });

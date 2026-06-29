@@ -68,6 +68,7 @@ function buildCtx(opts: { conflictOn?: string } = {}): CliContext {
       blockMarkers: () => MARKERS,
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
       cwdDocsLogsDir: () => "/ws/docs/logs",
+      cwdLaunchDir: () => "/ws/.workflow/launch",
     },
   } as unknown as CliContext;
 }
@@ -191,10 +192,10 @@ function buildLaunchCtx(): CliContext {
     fs: {
       exists: async (p: string) =>
         p === "/ws/CLAUDE.md" ||
-        p === "/ws/docs/tools/alpha/launch.json" ||
+        p === "/ws/.workflow/launch/alpha/launch.json" ||
         p === "/ws/.workflow/processes.json",
       readText: async (p: string) => {
-        if (p === "/ws/docs/tools/alpha/launch.json") return ALPHA_DESCRIPTOR;
+        if (p === "/ws/.workflow/launch/alpha/launch.json") return ALPHA_DESCRIPTOR;
         if (p === "/ws/.workflow/processes.json") return RUNNING_PROCESS;
         return workspaceMd();
       },
@@ -216,6 +217,7 @@ function buildLaunchCtx(): CliContext {
       blockMarkers: () => MARKERS,
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
       cwdDocsLogsDir: () => "/ws/docs/logs",
+      cwdLaunchDir: () => "/ws/.workflow/launch",
     },
   } as unknown as CliContext;
 }
@@ -282,10 +284,10 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
       fs: {
         exists: async (p: string) =>
           p === "/ws/CLAUDE.md" ||
-          p === "/ws/docs/tools/alpha/launch.json" ||
+          p === "/ws/.workflow/launch/alpha/launch.json" ||
           p === "/ws/.workflow/processes.json",
         readText: async (p: string) => {
-          if (p === "/ws/docs/tools/alpha/launch.json")
+          if (p === "/ws/.workflow/launch/alpha/launch.json")
             return JSON.stringify({
               version: 1,
               source: "alpha",
@@ -328,6 +330,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
         blockMarkers: () => MARKERS,
         cwdProcessesFile: () => "/ws/.workflow/processes.json",
         cwdDocsLogsDir: () => "/ws/docs/logs",
+        cwdLaunchDir: () => "/ws/.workflow/launch",
       },
     } as unknown as CliContext;
 
@@ -357,6 +360,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
         blockMarkers: () => MARKERS,
         cwdProcessesFile: () => "/ws/.workflow/processes.json",
         cwdDocsLogsDir: () => "/ws/docs/logs",
+        cwdLaunchDir: () => "/ws/.workflow/launch",
       },
     } as unknown as CliContext;
 

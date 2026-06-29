@@ -11,29 +11,20 @@ import {
   type ProjectMdUpsertOutput,
   runProjectMdUpsertWrite,
 } from "./project-md-upsert-service.js";
-import { resolveSkills } from "./skills-resolver-service.js";
 import {
   type LaunchArtifactsSummary,
   generateLaunchArtifacts,
 } from "./source-launch-scripts-service.js";
 
 /** docs/ taxonomy scaffolded for every workspace (one folder per export category). */
-const DOCS_FOLDERS = [
-  "specs",
-  "plans",
-  "tools",
-  "manuals",
-  "scripts",
-  "diagrams",
-  "reports",
-] as const;
+const DOCS_FOLDERS = ["specs", "plans", "manuals", "scripts", "diagrams", "reports"] as const;
 
 /** Visibility files (machine-specific absolute roots) — gitignored when external sources exist. */
 const VISIBILITY_GITIGNORE = [".claude/settings.local.json", ".codex/config.toml"];
 
 /** Runtime artifacts of the source-launch feature — machine-specific, never committed. */
 function runtimeGitignoreEntries(ns: string): string[] {
-  return [`.${ns}/processes.json`, "docs/logs/"];
+  return [`.${ns}/processes.json`, `.${ns}/launch/`, "docs/logs/"];
 }
 
 const DEFAULT_MAIN_BRANCH = "main";
@@ -84,7 +75,7 @@ export interface WorkspaceInitResult {
   attach_multiroot: MultirootResult | MultirootError | { skipped: true; reason: string };
   /** Reconcile: detach of sources that were in the previous block and no longer are. */
   detached_removed?: MultirootResult | MultirootError;
-  /** Per-source launch descriptor + scripts generated under docs/tools/ (gated on the `tools` role). */
+  /** Per-source launch descriptor + scripts generated under .workflow/launch/ (always). */
   launch_artifacts: LaunchArtifactsSummary;
 }
 
@@ -131,14 +122,12 @@ export async function runWorkspaceInit(
   // Runtime artifacts (process registry + launch logs) are machine-specific — gitignore always.
   await ensureRuntimeGitignore(fs, workspace, wsPaths.namespace);
 
-  // Per-source launch artifacts under docs/tools/ (descriptor + run.sh/run.ps1),
-  // gated on the `tools` capability and idempotent (preserves user-edited scripts).
-  const skillsRes = await resolveSkills(fs, wsPaths);
+  // Per-source launch artifacts under .workflow/launch/ (descriptor + run.sh/run.ps1),
+  // always generated and idempotent (preserves user-edited scripts).
   const launchArtifacts = await generateLaunchArtifacts(
     fs,
-    join(workspace, "docs", "tools"),
+    wsPaths.cwdLaunchDir(),
     sources.map((s) => ({ alias: s.alias, path: s.path })),
-    skillsRes.skills.tools.enabled,
   );
 
   // Previous sources (to detach removed ones) come from the same existing block.
@@ -225,7 +214,6 @@ function buildDryRunResult(
       ? { skipped: true, reason: "dry_run" }
       : { skipped: true, reason: "no_external_sources" },
     launch_artifacts: {
-      toolsRole: "enabled",
       generated: [],
       skipped: sources.map((s) => ({ alias: s.alias, reason: "path_not_found" as const })),
     },

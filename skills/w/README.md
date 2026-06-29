@@ -22,7 +22,7 @@ LAYER 3 · SESSIONS + ARTIFACTS  (.workflow/sessions/)  ───────┘
   refine · exec · quick   (research = capacidad inline, no un tipo de session)
 
 ZONE docs/ — permanent, user-facing deliverables
-  specs · plans · tools   (flows)   ·   scripts · manuals · diagrams · reports   (export-*)
+  specs · plans   (flows)   ·   scripts · manuals · diagrams · reports   (export-*)   ·   tools (ambient)
 ```
 
 ## Folders
@@ -43,7 +43,7 @@ ZONE docs/ — permanent, user-facing deliverables
 | Flow | Commands | `docs/` owned | Loops |
 |---|---|---|---|
 | **SPEC** | `spec-new` *(single-pass)* · `spec-refine` | `docs/specs` | `spec-refine-loop` |
-| **PLAN** | `plan-new` · `plan-exec` | `docs/plans` · `docs/tools` | `plan-new-loop` · `plan-exec-loop` |
+| **PLAN** | `plan-new` · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-exec-loop` |
 | **QUICK** | `quick` | — | `quick-loop` |
 
 SPEC defines the **what** → PLAN the **how** and executes it → QUICK is the lightweight shortcut. Promotion to `docs/` (scripts/manuals/diagrams/reports) is **always** a separate step via `export-*`.
@@ -57,7 +57,7 @@ Run [`/w:workspace-init`](commands/workspace-init.md) once to turn a folder into
 ## Invariants (hard rules)
 
 1. **No auto-export** — loops never promote artifacts to `docs/`; only `export-*` does, explicitly.
-2. **Folder ownership** — SPEC→`specs`; PLAN→`plans`+`tools`; QUICK→none; the rest→`export-*`.
+2. **Folder ownership** — SPEC→`specs`; PLAN→`plans`; QUICK→none; the rest→`export-*`. (`docs/tools` is ambient — written by the `creating-tools` skill, not a flow.)
 3. **spec & plan are documents** (`docs/`), not artifacts.
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations land in `SCRIPTS.sql` and ship via `export-scripts`; reads are read-only via MCP.
 5. **Git-safe** — verify the expected branch before editing; propose commits per source; never `push`/`--amend`/`--no-verify`.

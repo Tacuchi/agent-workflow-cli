@@ -15,7 +15,7 @@ Central distinction of the model:
 | Location | `.workflow/sessions/NNN-…/` | `docs/<category>/` |
 | Who manages it | a **loop**, through a **session** | produced by a loop/command at "save" time |
 | User-facing | No (internal) | Yes |
-| Examples | `CHECKPOINT`, `ANALYSIS-FILE`, `CONCLUSIONS`, `SCRIPTS.sql`, `TASKS`, `DECISION` | `specs`, `plans`, `manuals`, `scripts`, `tools`, `diagrams`, `reports` |
+| Examples | `CHECKPOINT`, `ANALYSIS-FILE`, `CONCLUSIONS`, `SCRIPTS.sql`, `TASKS`, `DECISION` | `specs`, `plans`, `manuals`, `scripts`, `diagrams`, `reports` |
 
 > An artifact may be **promoted** to a `docs/` document (e.g. `SCRIPTS.sql` → `docs/scripts/`) — but **only via dedicated `export-*` skills**, **never** automatically by the loops. The spec and the plan **are not** artifacts: they are documents.
 
@@ -58,6 +58,6 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 ## Invariants (hard rules — do not break)
 
 1. **No auto-export**: loops **never** graduate/export to `docs/`. Only `export-*` does, explicitly.
-2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans`+`tools` · QUICK→none · rest→`export-*`.
+2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` is ambient — `creating-tools`, not a flow.)
 3. **Spec and plan are documents** (`docs/`), not artifacts — they never live inside a session.
 4. **DB scripts-only**: the AI **never executes DML/DDL**; migrations stay in `SCRIPTS.sql` (type B) and are delivered via `export-scripts`. Only read-only queries (type A) are executed via MCP.

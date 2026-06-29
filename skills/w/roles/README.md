@@ -8,7 +8,7 @@
 
 ## Capability catalog
 
-All 7 roles, their built-in defaults, their tier, and which loops/exports compose them:
+All 6 roles, their built-in defaults, their tier, and which loops/exports compose them:
 
 | Role | Default built-in | Tier | Composed by |
 |---|---|---|---|
@@ -16,7 +16,6 @@ All 7 roles, their built-in defaults, their tier, and which loops/exports compos
 | `sql` | `sql` | must | inline research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `research` | [`research`](research/SKILL.md) | should | all loops (on-demand investigation) |
-| `tools` | [`tools`](tools/SKILL.md) | should | `plan-exec-loop` |
 | `diagrams` | [`diagrams`](diagrams/SKILL.md) | should | `export-diagrams` |
 | `overview` | `workflow` | should | any loop (orientation about the workflow itself) |
 
@@ -24,7 +23,7 @@ All 7 roles, their built-in defaults, their tier, and which loops/exports compos
 - `must` — core to almost every session; built-in always active unless explicitly `off`.
 - `should` — loaded on-demand; active by default but lower priority to override.
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing y redacción **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el workflow **no depende** de él.
+> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
 
 ---
 
@@ -59,7 +58,6 @@ built-in default
 # sql              = "sql"
 # git              = "git"
 # research         = "research"
-# tools            = "tools"
 # diagrams         = "diagrams"
 # overview         = "workflow"
 
@@ -115,7 +113,6 @@ ui-design         ui-spec                 built-in
 sql               sql                     built-in
 git               git                     built-in
 research          research                built-in
-tools             tools                   built-in
 diagrams          mermaid-only            global      (~/.workflow/skills.toml)
 overview          workflow                built-in
 ```

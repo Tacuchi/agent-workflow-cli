@@ -56,7 +56,7 @@ export interface ProjectSource {
   mainBranch: string;
   dirty: boolean;
   changedFiles: number;
-  /** True when a launch descriptor (docs/tools/<alias>/launch.json) exists with a command. */
+  /** True when a launch descriptor (.workflow/launch/<alias>/launch.json) exists with a command. */
   launchable: boolean;
 }
 
@@ -175,7 +175,7 @@ export async function buildProjectTabData(
       );
       const launchable = await safeRun(
         `launchable:${f.alias}`,
-        () => readLaunchable(fs, cwd, f.alias),
+        () => readLaunchable(fs, paths.cwdLaunchDir(), f.alias),
         warnings,
         false,
       );
@@ -214,9 +214,13 @@ export async function buildProjectTabData(
   };
 }
 
-/** True when docs/tools/<alias>/launch.json exists and declares a command. */
-async function readLaunchable(fs: FileSystemPort, cwd: string, alias: string): Promise<boolean> {
-  const file = join(cwd, "docs", "tools", alias, "launch.json");
+/** True when .workflow/launch/<alias>/launch.json exists and declares a command. */
+async function readLaunchable(
+  fs: FileSystemPort,
+  launchDir: string,
+  alias: string,
+): Promise<boolean> {
+  const file = join(launchDir, alias, "launch.json");
   if (!(await fs.exists(file))) return false;
   try {
     const desc = JSON.parse(await fs.readText(file)) as { command?: unknown };

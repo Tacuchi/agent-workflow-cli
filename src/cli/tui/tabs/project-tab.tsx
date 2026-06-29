@@ -339,7 +339,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   // descriptor has profiles/params, otherwise launch directly.
   const beginLaunch = useCallback(
     async (alias: string) => {
-      const descriptor = await readDescriptor(ctx.fs, ctx.paths.workspaceDir(), alias);
+      const descriptor = await readDescriptor(ctx.fs, ctx.paths.cwdLaunchDir(), alias);
       if (!descriptor || !descriptor.command) {
         return setMode({
           kind: "notice",
@@ -455,7 +455,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   );
 
   // Quitar una fuente del workspace: orquesta detach + poda bloque + stop procesos
-  // + borra docs/tools/<alias> (vía el servicio); luego recarga la vista.
+  // + borra .workflow/launch/<alias> (vía el servicio); luego recarga la vista.
   const doRemove = useCallback(
     async (alias: string) => {
       setMode({ kind: "busy", label: `Quitando ${alias}…` });
@@ -673,7 +673,9 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
             <Text color={colors.dim}>
               Sale del bloque WORKSPACE (Fuentes + ramas), de la visibilidad multi-root,
             </Text>
-            <Text color={colors.dim}>detiene sus procesos y borra docs/tools/{mode.alias}.</Text>
+            <Text color={colors.dim}>
+              detiene sus procesos y borra .workflow/launch/{mode.alias}.
+            </Text>
             <Text color={colors.faint}>El repo en disco NO se borra.</Text>
           </Box>
           <Box marginTop={1}>

@@ -7,7 +7,7 @@ import type { CliContext } from "../types.js";
 export const removeSourceCommand: QtcCommand = {
   name: "remove-source",
   describe:
-    "Remove a source from the workspace: detach multi-root visibility, prune the WORKSPACE block (Fuentes + working/qa branches), stop its processes, and delete docs/tools/<alias>. Does NOT delete the repo. Usage: aw remove-source <alias>.",
+    "Remove a source from the workspace: detach multi-root visibility, prune the WORKSPACE block (Fuentes + working/qa branches), stop its processes, and delete .workflow/launch/<alias>. Does NOT delete the repo. Usage: aw remove-source <alias>.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const alias = args.rest[0];
     if (!alias) {

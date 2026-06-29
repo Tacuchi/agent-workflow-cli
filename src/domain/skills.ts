@@ -12,15 +12,7 @@
  * or binds a specific convention skill; the host surfaces any useful one that is
  * installed (e.g. from the `dev-conventions` marketplace plugin, or anywhere).
  */
-export const SKILL_ROLES = [
-  "ui-design",
-  "sql",
-  "git",
-  "research",
-  "tools",
-  "diagrams",
-  "overview",
-] as const;
+export const SKILL_ROLES = ["ui-design", "sql", "git", "research", "diagrams", "overview"] as const;
 
 export type SkillRole = (typeof SKILL_ROLES)[number];
 
@@ -30,7 +22,6 @@ export const BUILTIN_DEFAULT_SKILLS: Record<SkillRole, string> = {
   sql: "sql",
   git: "git",
   research: "research",
-  tools: "tools",
   diagrams: "diagrams",
   overview: "workflow",
 };

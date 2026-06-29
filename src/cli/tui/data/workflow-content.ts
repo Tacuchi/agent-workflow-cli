@@ -55,7 +55,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "plan",
       n: 3,
       title: "PLAN — the how",
-      desc: "Plan and execute. plan-new + plan-exec each drive loops → docs/plans · docs/tools.",
+      desc: "Plan and execute. plan-new + plan-exec each drive loops → docs/plans.",
       commands: ["plan-new", "plan-exec"],
       slash: "/w:plan-new · /w:plan-exec",
       hook: "PreCompact · PostCompact",

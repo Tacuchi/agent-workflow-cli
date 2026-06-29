@@ -74,15 +74,15 @@ describe("removeSource", () => {
     });
   }
 
-  it("prunes the block, stops its processes, and deletes docs/tools/<alias>", async () => {
+  it("prunes the block, stops its processes, and deletes .workflow/launch/<alias>", async () => {
     const env = new TestEnv(cwd);
     const paths = makePaths(cwd);
     const proc = new FakeProc();
     await seedBlock(env, paths);
 
-    const toolsDir = join(cwd, "docs", "tools", "plugin");
-    await mkdir(toolsDir, { recursive: true });
-    await writeFile(join(toolsDir, "launch.json"), "{}");
+    const launchDir = join(cwd, ".agent-workflow", "launch", "plugin");
+    await mkdir(launchDir, { recursive: true });
+    await writeFile(join(launchDir, "launch.json"), "{}");
 
     const registry = new ProcessRegistryService(fs, proc, paths.cwdProcessesFile());
     await registry.register({
@@ -103,7 +103,7 @@ describe("removeSource", () => {
     expect(claude).not.toContain("/repo/plugin");
     expect(claude).not.toContain("feature/x");
     expect(claude).not.toContain("- plugin: desarrollo");
-    expect(await fs.exists(toolsDir)).toBe(false);
+    expect(await fs.exists(launchDir)).toBe(false);
     expect(proc.killed).toContain(4321);
     if (!("error" in result)) expect(result.processesStopped).toBe(1);
   });

@@ -37,10 +37,10 @@ export type LaunchResult =
 /** Read a source's launch descriptor, or null when absent/corrupt. */
 export async function readDescriptor(
   fs: FileSystemPort,
-  workspaceDir: string,
+  launchDir: string,
   alias: string,
 ): Promise<LaunchDescriptor | null> {
-  const file = join(workspaceDir, "docs", "tools", alias, "launch.json");
+  const file = join(launchDir, alias, "launch.json");
   if (!(await fs.exists(file))) return null;
   try {
     return JSON.parse(await fs.readText(file)) as LaunchDescriptor;
@@ -93,7 +93,7 @@ function registry(deps: LaunchDeps): ProcessRegistryService {
 
 /** Launch a source detached: resolve → open log dir → spawnDetached → register. */
 export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promise<LaunchResult> {
-  const desc = await readDescriptor(deps.fs, deps.paths.workspaceDir(), req.alias);
+  const desc = await readDescriptor(deps.fs, deps.paths.cwdLaunchDir(), req.alias);
   if (!desc)
     return { ok: false, error: "no_descriptor", message: `Sin descriptor para ${req.alias}` };
   const logsDir = deps.paths.cwdDocsLogsDir();
