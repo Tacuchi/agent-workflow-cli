@@ -4,6 +4,25 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.1.0] — 2026-06-29
+
+**Alineación con el estándar abierto Agent Skills (agentskills.io): parser de frontmatter correcto, validación del estándar en `plugin-doctor`, y validación advisory de bindings en `aw skills`.** Deriva del análisis de fuentes externas (mattpocock/skills, skills.sh, agentskills.io, loops.elorm.xyz). Cambios aditivos + una relajación advisory + un bugfix; nada breaking. Plugin `w` 9.1.0 → 9.2.0.
+
+### Added
+
+- **Parser de frontmatter compartido** (`src/domain/skill-frontmatter.ts`): lee block-scalars YAML (`>-`, `>`, `|` con chomping), el mapa anidado `metadata:`, claves con guion (`allowed-tools`) y valores entre comillas. Unifica los dos parsers regex duplicados (`skill-index-service` y `plugin-doctor/skills`) que capturaban `>-` como valor — el bug latente que el análisis de fuentes detectó. `getSkillVersion` lee `metadata.version` con fallback al `version` top-level legacy.
+- **`plugin-doctor` valida contra el estándar Agent Skills**: `description` ≤ 1024, `name` ≤ 64 + regex lowercase-guion (sin guion inicial/final ni `--`), y set cerrado de claves top-level (`name`, `description`, `license`, `allowed-tools`, `metadata`, `compatibility`); avisa cuando hay un `version` top-level para moverlo a `metadata.version`.
+- **`aw skills` valida los bindings (advisory)**: nuevo `checkInstalledBindings` escanea las raíces estándar de skills (`.claude/.codex/.agents/.warp` × cwd + home) y avisa cuando un rol está bindeado a una skill que no está instalada (eximiendo built-ins). El comando suma `bindingChecks` y fusiona esos warnings — cierra el riesgo del binding-fantasma silencioso.
+
+### Changed
+
+- **`version` de skill ahora es OPCIONAL** (alineado al estándar: vive bajo `metadata.version`). `plugin-doctor` avisa solo si está presente y no es semver. Las skills registradas en `plugin.json` `exportedSkills` siguen requiriendo versión (lo enforce `exported-skills.ts`).
+- **Bundle `w` (9.2.0)** — doctrina del chasis (`loops/spec-refine-loop`, heredada por todos los loops): **integridad del convergence gate** (anti-gaming: no aflojar el check/criterio, no debilitar/saltear tests, no asserts triviales, arreglar prod sobre parchear el test; **verificación independiente**: "only command output counts") + **respuesta recomendada por pregunta** en structured-choice. `roles/README.md`: corregido el claim del fallback inexistente (el binding es advisory; verificá con `aw skills`). `plan-exec-loop` description recortada a < 1024.
+
+### Removed
+
+- Warning **"missing version"** de `plugin-doctor` (contradecía el estándar, que hace la versión opcional).
+
 ## [14.0.0] — 2026-06-29
 
 **La creación de herramientas sale del workflow a un skill standalone del marketplace; los scripts de arranque por fuente se reubican a `.workflow/launch/`.** La capacidad de crear utilidades auxiliares (antes el rol `tools`, acoplado a `plan-exec`) ahora es la skill ambiente `creating-tools` (plugin `tool-builder` del marketplace `qtc-marketplace`), reutilizable en cualquier momento y auto-descubierta por su `description` — el workflow es **indiferente**, no la bindea. `docs/tools/` queda libre para esas herramientas; los scripts de arranque (feature source-local-run) se mueven a `.workflow/launch/<alias>/` (machine-specific, gitignorado). **Breaking** por la reubicación de launch + el retiro del rol; `workspace-init` migra solo las carpetas legacy. Plugin `w` 9.0.2 → 9.1.0.
