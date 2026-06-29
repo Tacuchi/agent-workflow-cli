@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -162,6 +162,41 @@ describe("runWorkspaceInit", () => {
 
       expect(result.launch_artifacts.generated.map((g) => g.alias)).toEqual(["app"]);
       expect(result.launch_artifacts.generated[0]?.launchable).toBe(true);
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
+  });
+
+  it("migra carpetas legacy docs/tools/<alias> de launch a .workflow/launch (preserva tools)", async () => {
+    const source = mkdtempSync(join(tmpdir(), "ws-init-src-"));
+    try {
+      writeFileSync(join(source, "package.json"), JSON.stringify({ scripts: { dev: "vite" } }));
+      // Legacy launch folder (generated marker) con run.sh editado + una tool no-launch.
+      mkdirSync(join(workspace, "docs", "tools", "app"), { recursive: true });
+      writeFileSync(
+        join(workspace, "docs", "tools", "app", "launch.json"),
+        JSON.stringify({ version: 1, source: "app", _generated: { sha256: "stale" } }),
+      );
+      writeFileSync(join(workspace, "docs", "tools", "app", "run.sh"), "echo legacy-edit\n");
+      mkdirSync(join(workspace, "docs", "tools", "keepme"), { recursive: true });
+      writeFileSync(join(workspace, "docs", "tools", "keepme", "README.md"), "# keepme tool\n");
+
+      const result = await runWorkspaceInit(fs, env, paths, {
+        sources: [{ alias: "app", path: source }],
+        workspace,
+        lastActivity: "2026-01-01 00:00",
+      });
+      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+
+      // la carpeta legacy se reubica y se elimina
+      expect(existsSync(join(workspace, "docs", "tools", "app"))).toBe(false);
+      expect(existsSync(join(workspace, ".workflow", "launch", "app", "launch.json"))).toBe(true);
+      // el run.sh editado (sin marker) sobrevive a la mudanza (no se regenera)
+      expect(
+        readFileSync(join(workspace, ".workflow", "launch", "app", "run.sh"), "utf-8"),
+      ).toContain("legacy-edit");
+      // una tool no-launch (README, sin launch.json) queda intacta
+      expect(existsSync(join(workspace, "docs", "tools", "keepme", "README.md"))).toBe(true);
     } finally {
       rmSync(source, { recursive: true, force: true });
     }

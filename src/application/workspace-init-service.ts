@@ -27,6 +27,54 @@ function runtimeGitignoreEntries(ns: string): string[] {
   return [`.${ns}/processes.json`, `.${ns}/launch/`, "docs/logs/"];
 }
 
+/**
+ * Migrate legacy per-source launch folders from `docs/tools/<x>/` to `.workflow/launch/<x>/`.
+ * A legacy launch folder is identified by a `launch.json` carrying the generated
+ * `_generated.sha256` marker — so creating-tools tool folders (a README, not a generated
+ * launch.json) are never touched. Content is moved (preserving user-edited scripts); if the
+ * destination already exists the legacy copy is just removed (superseded). Runs BEFORE
+ * generation so moved edits survive the idempotent rewrite.
+ */
+async function isGeneratedLaunchFolder(fs: FileSystemPort, dir: string): Promise<boolean> {
+  const file = join(dir, "launch.json");
+  if (!(await fs.exists(file))) return false; // not a launch folder (e.g. a created tool)
+  try {
+    const parsed = JSON.parse(await fs.readText(file)) as { _generated?: { sha256?: string } };
+    return typeof parsed._generated?.sha256 === "string"; // hand-authored → no marker → leave it
+  } catch {
+    return false;
+  }
+}
+
+/** Copy every flat file from `src` to `dest`, preserving content (user-edited scripts survive). */
+async function copyDirFiles(fs: FileSystemPort, src: string, dest: string): Promise<void> {
+  await fs.mkdirp(dest);
+  for (const f of await fs.list(src)) {
+    if (f.type === "file") {
+      await fs.writeText(join(dest, f.name), await fs.readText(join(src, f.name)));
+    }
+  }
+}
+
+async function migrateLegacyLaunchDirs(
+  fs: FileSystemPort,
+  docsToolsDir: string,
+  launchDir: string,
+): Promise<string[]> {
+  if (!(await fs.exists(docsToolsDir))) return [];
+  const migrated: string[] = [];
+  for (const entry of await fs.list(docsToolsDir)) {
+    if (entry.type !== "dir") continue;
+    const legacyDir = join(docsToolsDir, entry.name);
+    if (!(await isGeneratedLaunchFolder(fs, legacyDir))) continue;
+    const dest = join(launchDir, entry.name);
+    if (!(await fs.exists(dest))) await copyDirFiles(fs, legacyDir, dest);
+    await fs.remove(legacyDir);
+    migrated.push(entry.name);
+  }
+  return migrated;
+}
+
 const DEFAULT_MAIN_BRANCH = "main";
 
 export interface WorkspaceSource {
@@ -121,6 +169,10 @@ export async function runWorkspaceInit(
   const skillsToml = await seedSkillsToml(fs, wsPaths);
   // Runtime artifacts (process registry + launch logs) are machine-specific — gitignore always.
   await ensureRuntimeGitignore(fs, workspace, wsPaths.namespace);
+
+  // Migrate legacy launch folders (docs/tools/<alias>/) to .workflow/launch/ BEFORE
+  // (re)generating, so any user-edited scripts survive the idempotent rewrite.
+  await migrateLegacyLaunchDirs(fs, join(workspace, "docs", "tools"), wsPaths.cwdLaunchDir());
 
   // Per-source launch artifacts under .workflow/launch/ (descriptor + run.sh/run.ps1),
   // always generated and idempotent (preserves user-edited scripts).
