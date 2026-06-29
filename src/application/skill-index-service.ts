@@ -1,10 +1,8 @@
 import { join, posix as posixPath, relative } from "node:path";
 import { HARNESSES } from "../domain/harnesses.js";
+import { getSkillVersion, parseSkillFrontmatter } from "../domain/skill-frontmatter.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-
-const FRONTMATTER_DELIMITER = "---";
-const FRONTMATTER_MAX_LINES = 60;
 
 export interface SkillIndexItem {
   name: string;
@@ -75,7 +73,7 @@ async function buildIndex(fs: FileSystemPort, pluginRoot: string): Promise<Skill
     const skillMd = join(dir.path, "SKILL.md");
     if (!(await fs.exists(skillMd))) continue;
     const text = await fs.readText(skillMd);
-    const fm = parseFrontmatter(text);
+    const fm = parseSkillFrontmatter(text);
     const relPath = toPosixRelative(skillMd, pluginRoot);
     if (!fm) {
       items.push({
@@ -88,11 +86,11 @@ async function buildIndex(fs: FileSystemPort, pluginRoot: string): Promise<Skill
       });
       continue;
     }
-    const name = fm.name ?? dir.name;
+    const name = fm.fields.name ?? dir.name;
     items.push({
       name,
-      description: fm.description ?? null,
-      version: fm.version ?? null,
+      description: fm.fields.description ?? null,
+      version: getSkillVersion(fm),
       exported: false,
       registry_version: null,
       since_export: null,
@@ -102,22 +100,6 @@ async function buildIndex(fs: FileSystemPort, pluginRoot: string): Promise<Skill
   }
   items.sort((a, b) => a.name.localeCompare(b.name));
   return items;
-}
-
-function parseFrontmatter(text: string): Record<string, string> | null {
-  const lines = text.split("\n");
-  if ((lines[0] ?? "").trim() !== FRONTMATTER_DELIMITER) return null;
-  const fm: Record<string, string> = {};
-  for (let i = 1; i <= FRONTMATTER_MAX_LINES && i < lines.length; i++) {
-    const line = lines[i];
-    if (line === undefined) return null;
-    if (line.trim() === FRONTMATTER_DELIMITER) return fm;
-    const m = line.match(/^(\w+):\s*(.+)$/);
-    if (m?.[1] && m[2] !== undefined) {
-      fm[m[1]] = m[2].trim();
-    }
-  }
-  return null;
 }
 
 function toPosixRelative(path: string, base: string): string {

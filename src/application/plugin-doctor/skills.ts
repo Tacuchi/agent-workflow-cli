@@ -1,4 +1,9 @@
 import { join, relative, sep } from "node:path";
+import {
+  type ParsedFrontmatter,
+  getSkillVersion,
+  parseSkillFrontmatter,
+} from "../../domain/skill-frontmatter.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { type DoctorFinding, type SkillFrontmatterInfo, collectMarkdownFiles } from "./common.js";
 
@@ -33,16 +38,16 @@ export async function checkSkillsFrontmatter(
     const skillMd = join(sd, "SKILL.md");
     const dirName = sd.split(sep).pop() ?? "";
     const parsed = await parseSkillFile(skillMd, fs);
-    if (parsed.error) {
-      findings.push({ level: "error", file: skillMd, msg: parsed.error });
+    if (parsed.error || !parsed.fm) {
+      findings.push({ level: "error", file: skillMd, msg: parsed.error ?? "invalid frontmatter" });
       skillsInfo.push({ dir: dirName, name: null, version: null });
       continue;
     }
-    validateSkillFrontmatter(skillMd, dirName, parsed.frontmatter, findings);
+    validateSkillFrontmatter(skillMd, dirName, parsed.fm, findings);
     skillsInfo.push({
       dir: dirName,
-      name: parsed.frontmatter.name ?? null,
-      version: parsed.frontmatter.version ?? null,
+      name: parsed.fm.fields.name ?? null,
+      version: getSkillVersion(parsed.fm),
     });
   }
   return { skillsCount: skillDirs.length, skillsInfo, findings };
@@ -121,7 +126,7 @@ async function collectSkillDirs(skillsDir: string, fs: FileSystemPort): Promise<
 }
 
 interface ParsedSkill {
-  frontmatter: Record<string, string>;
+  fm: ParsedFrontmatter | null;
   error: string | null;
 }
 
@@ -130,51 +135,114 @@ async function parseSkillFile(skillMd: string, fs: FileSystemPort): Promise<Pars
   try {
     content = await fs.readText(skillMd);
   } catch (e) {
-    return { frontmatter: {}, error: `cannot read: ${(e as Error).message}` };
+    return { fm: null, error: `cannot read: ${(e as Error).message}` };
   }
-  const lines = content.split(/\r?\n/);
-  if (lines.length === 0 || (lines[0] ?? "").trim() !== "---") {
-    return { frontmatter: {}, error: "missing frontmatter opening ---" };
-  }
-  let endIdx = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if ((lines[i] ?? "").trim() === "---") {
-      endIdx = i;
-      break;
-    }
-  }
-  if (endIdx === -1) {
-    return { frontmatter: {}, error: "missing frontmatter closing ---" };
-  }
-  const fm: Record<string, string> = {};
-  for (let i = 1; i < endIdx; i++) {
-    const m = (lines[i] ?? "").match(/^(\w+):\s*(.+)$/);
-    if (m?.[1] && m[2] !== undefined) fm[m[1]] = m[2].trim();
-  }
-  return { frontmatter: fm, error: null };
+  const fm = parseSkillFrontmatter(content);
+  if (!fm) return { fm: null, error: "missing or unclosed frontmatter (---)" };
+  return { fm, error: null };
 }
+
+// Limits from the Agent Skills standard (agentskills.io/specification).
+const NAME_MAX = 64;
+const DESCRIPTION_MAX = 1024;
+const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const ALLOWED_TOP_LEVEL_KEYS = new Set([
+  "name",
+  "description",
+  "license",
+  "allowed-tools",
+  "metadata",
+  "compatibility",
+]);
 
 function validateSkillFrontmatter(
   skillMd: string,
   dirName: string,
-  fm: Record<string, string>,
+  fm: ParsedFrontmatter,
   findings: DoctorFinding[],
 ): void {
-  const { name, version, description } = fm;
+  checkName(skillMd, dirName, fm.fields.name, findings);
+  checkDescription(skillMd, fm.fields.description, findings);
+  checkTopLevelKeys(skillMd, fm.fields, findings);
+  checkVersion(skillMd, getSkillVersion(fm), findings);
+}
+
+function checkName(
+  skillMd: string,
+  dirName: string,
+  name: string | undefined,
+  findings: DoctorFinding[],
+): void {
   if (!name) {
     findings.push({ level: "error", file: skillMd, msg: "missing 'name' in frontmatter" });
-  } else if (name !== dirName) {
+    return;
+  }
+  if (name !== dirName) {
     findings.push({
       level: "warn",
       file: skillMd,
       msg: `frontmatter name '${name}' differs from directory '${dirName}'`,
     });
   }
+  if (name.length > NAME_MAX) {
+    findings.push({
+      level: "warn",
+      file: skillMd,
+      msg: `name is ${name.length} chars; the Agent Skills standard caps it at ${NAME_MAX}`,
+    });
+  }
+  if (!NAME_PATTERN.test(name)) {
+    findings.push({
+      level: "warn",
+      file: skillMd,
+      msg: `name '${name}' is not lowercase alphanumeric + single hyphens (no leading/trailing or doubled '-')`,
+    });
+  }
+}
+
+function checkDescription(
+  skillMd: string,
+  description: string | undefined,
+  findings: DoctorFinding[],
+): void {
   if (!description) {
     findings.push({ level: "error", file: skillMd, msg: "missing 'description' in frontmatter" });
+    return;
   }
+  if (description.length > DESCRIPTION_MAX) {
+    findings.push({
+      level: "warn",
+      file: skillMd,
+      msg: `description is ${description.length} chars; the Agent Skills standard caps it at ${DESCRIPTION_MAX} — lenient clients truncate the overflow (often the cross-skill 'For X load Y' pointers)`,
+    });
+  }
+}
+
+function checkTopLevelKeys(
+  skillMd: string,
+  fields: Record<string, string>,
+  findings: DoctorFinding[],
+): void {
+  if ("version" in fields) {
+    findings.push({
+      level: "warn",
+      file: skillMd,
+      msg: "top-level 'version' is non-standard; move it to metadata.version (the Agent Skills standard rejects unknown top-level keys)",
+    });
+  }
+  for (const key of Object.keys(fields)) {
+    if (key === "version" || ALLOWED_TOP_LEVEL_KEYS.has(key)) continue;
+    findings.push({
+      level: "warn",
+      file: skillMd,
+      msg: `unknown top-level frontmatter key '${key}'; the Agent Skills standard allows only ${[...ALLOWED_TOP_LEVEL_KEYS].join(", ")} (extra data goes under metadata)`,
+    });
+  }
+}
+
+function checkVersion(skillMd: string, version: string | null, findings: DoctorFinding[]): void {
   if (!version) {
-    findings.push({ level: "warn", file: skillMd, msg: "missing 'version' in frontmatter" });
+    findings.push({ level: "warn", file: skillMd, msg: "missing version (set metadata.version)" });
   } else if (!/^\d+\.\d+\.\d+$/.test(version)) {
     findings.push({
       level: "warn",

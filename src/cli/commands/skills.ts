@@ -1,4 +1,7 @@
-import { resolveSkills } from "../../application/skills-resolver-service.js";
+import {
+  checkInstalledBindings,
+  resolveSkills,
+} from "../../application/skills-resolver-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
@@ -8,7 +11,13 @@ export const skillsCommand: QtcCommand = {
   name: "skills",
   describe: "Show resolved capability→skill bindings (skills.toml cascade).",
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const data = await resolveSkills(ctx.fs, ctx.paths);
+    const resolution = await resolveSkills(ctx.fs, ctx.paths);
+    const validation = await checkInstalledBindings(ctx.fs, ctx.env, resolution);
+    const data = {
+      ...resolution,
+      bindingChecks: validation.checks,
+      warnings: [...resolution.warnings, ...validation.warnings],
+    };
     return { ok: true, data, exitCode: 0 };
   },
 };

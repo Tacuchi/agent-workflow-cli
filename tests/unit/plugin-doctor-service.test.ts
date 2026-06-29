@@ -66,13 +66,29 @@ function skillFrontmatter(name: string, version = "1.0.0"): string {
   return `---
 name: ${name}
 description: Test skill ${name}.
-version: ${version}
+metadata:
+  version: ${version}
 ---
 
 # ${name}
 
 Test content.
 `;
+}
+
+function singleSkillFs(dir: string, skillMd: string, pluginRoot = "/cwd/p"): FakeFs {
+  return new FakeFs(
+    new Map([[`${pluginRoot}/skills/${dir}/SKILL.md`, skillMd]]),
+    new Map([
+      [pluginRoot, []],
+      [`${pluginRoot}/skills`, [{ name: dir, path: `${pluginRoot}/skills/${dir}`, type: "dir" }]],
+      [`${pluginRoot}/skills/${dir}`, []],
+    ]),
+  );
+}
+
+function warns(data: { findings: { level: string; msg: string }[] }, needle: string): boolean {
+  return data.findings.some((f) => f.level === "warn" && f.msg.includes(needle));
 }
 
 describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
@@ -245,6 +261,105 @@ describe("runPluginDoctor — skills frontmatter", () => {
     expect(
       data.findings.some((f) => f.level === "warn" && f.msg.includes("differs from directory")),
     ).toBe(true);
+  });
+});
+
+describe("runPluginDoctor — Agent Skills standard limits", () => {
+  it("warns when description exceeds the 1024-char standard cap", async () => {
+    const longDesc = `Use when ${"x".repeat(1100)}`;
+    const fs = singleSkillFs(
+      "big",
+      `---\nname: big\ndescription: ${longDesc}\nmetadata:\n  version: 1.0.0\n---\n`,
+    );
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(warns(data, "caps it at 1024")).toBe(true);
+  });
+
+  it("does not warn on a description at/under the 1024-char cap", async () => {
+    const okDesc = `Use when ${"x".repeat(900)}`;
+    const fs = singleSkillFs(
+      "okdesc",
+      `---\nname: okdesc\ndescription: ${okDesc}\nmetadata:\n  version: 1.0.0\n---\n`,
+    );
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(warns(data, "caps it at 1024")).toBe(false);
+  });
+
+  it("warns when name exceeds 64 chars", async () => {
+    const longName = "a".repeat(70);
+    const fs = singleSkillFs(
+      longName,
+      `---\nname: ${longName}\ndescription: x\nmetadata:\n  version: 1.0.0\n---\n`,
+    );
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(warns(data, "caps it at 64")).toBe(true);
+  });
+
+  it("warns when name is not lowercase-hyphen (uppercase / underscore)", async () => {
+    const fs = singleSkillFs(
+      "Bad_Name",
+      "---\nname: Bad_Name\ndescription: x\nmetadata:\n  version: 1.0.0\n---\n",
+    );
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(warns(data, "not lowercase alphanumeric")).toBe(true);
+  });
+
+  it("warns on an unknown top-level frontmatter key", async () => {
+    const fs = singleSkillFs(
+      "extrakey",
+      "---\nname: extrakey\ndescription: x\nauthor: someone\nmetadata:\n  version: 1.0.0\n---\n",
+    );
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(warns(data, "unknown top-level frontmatter key 'author'")).toBe(true);
+  });
+
+  it("does not warn 'unknown key' for standard optional fields (license, compatibility, allowed-tools)", async () => {
+    const fs = singleSkillFs(
+      "rich",
+      "---\nname: rich\ndescription: x\nlicense: MIT\ncompatibility: Requires git\nallowed-tools: Read\nmetadata:\n  version: 1.0.0\n---\n",
+    );
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(warns(data, "unknown top-level frontmatter key")).toBe(false);
+  });
+});
+
+describe("runPluginDoctor — version under metadata (Agent Skills standard)", () => {
+  it("reads version from metadata.version without a missing-version warning", async () => {
+    const fs = singleSkillFs(
+      "metaver",
+      "---\nname: metaver\ndescription: x\nmetadata:\n  version: 1.2.3\n---\n",
+    );
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(data.skills.find((s) => s.dir === "metaver")?.version).toBe("1.2.3");
+    expect(warns(data, "missing version")).toBe(false);
+    expect(warns(data, "move it to metadata.version")).toBe(false);
+  });
+
+  it("warns to migrate a legacy top-level version to metadata.version", async () => {
+    const fs = singleSkillFs(
+      "legacyver",
+      "---\nname: legacyver\ndescription: x\nversion: 1.0.0\n---\n",
+    );
+    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+      pluginRoot: "/cwd/p",
+    });
+    expect(warns(data, "move it to metadata.version")).toBe(true);
+    // still resolves the version via the legacy fallback (no missing-version warn)
+    expect(warns(data, "missing version")).toBe(false);
   });
 });
 
