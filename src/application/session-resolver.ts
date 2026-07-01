@@ -124,7 +124,18 @@ export async function resolveSession(
     const lookupCode = normalizeCode(sessionCode);
     for (const folder of folders) {
       const { code } = parseSessionFolder(folder.name);
-      if (code === lookupCode || folder.name.startsWith(sessionCode)) {
+      // Match the legacy numeric code, an exact new-model folder name, or a
+      // prefix up to a `-` word boundary. The boundary matters: a bare
+      // `startsWith(code)` lets "100" fuzzy-match "1000-…" (reachable once the
+      // global counter passes 999 and 4-digit prefixes coexist with 3-digit
+      // ones) or "01" match "012-…", silently resolving the wrong session.
+      // Anchor on the normalized `lookupCode` so abbreviated numeric codes
+      // (e.g. `--code 1`) resolve consistently too.
+      if (
+        code === lookupCode ||
+        folder.name === lookupCode ||
+        folder.name.startsWith(`${lookupCode}-`)
+      ) {
         return buildSessionEntry(fs, folder.path, folder.name);
       }
     }

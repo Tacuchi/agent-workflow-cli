@@ -71,12 +71,12 @@ Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prom
 
 | ¿Workspace? | Trigger | → Comportamiento + ruteo |
 |---|---|---|
-| **Sí** | **comando de flujo** (`quick`·`spec-*`·`plan-*`) | crea sesión **nueva**, arranca el loop → artefactos a **esa** sesión (`SCRIPTS.sql`, …) |
+| **Sí** | **comando de flujo** (`quick`·`spec-*`·`plan-*`) | **nueva línea de trabajo** → crea sesión **nueva** (salvo re-run del mismo flujo sobre la misma entrada: `create_or_resume` reabre la existente), arranca el loop → artefactos a **esa** sesión (`SCRIPTS.sql`, …) |
 | **Sí** | **prompt sin comando** (relacionado) | **continúa/reabre la sesión más reciente** → los scripts editan **su** `SCRIPTS.sql` (no crea otra) |
 | **Sí** | **prompt sin comando** (no-relacionado / sin sesión) | **sin flujo**: trabajo directo → escribe en `docs/` por convención + numeración (`aw next-number`) |
 | **No** | cualquiera | **vanilla** — sin workspace ni flujo, la IA es libre (nativo) |
 
-**Regla de continuidad:** el **comando** señala "nueva línea de trabajo" (sesión nueva); un **prompt sin comando** es "sigo en la misma" → por default continúa/reabre la más reciente (la *última iniciada*); solo si es claramente no-relacionado ofrece elegir (`continuar NNN` | `trabajo nuevo`) o cae a "sin flujo". Convergencia cierra la sesión; un prompt relacionado posterior la **reabre** (el resume quita `.closed`). Es la cara **inter-turno** del *objetivo persistente* (mismo `CHECKPOINT`+resume, aplicado al próximo prompt) — **doctrina agnóstica**, no un hook del host. Aplica a **todo artefacto** (`SCRIPTS.sql` es el ejemplo trabajado); ver `loops/quick-loop/SKILL.md` para el caso QUICK.
+**Regla de continuidad:** el **comando** señala "nueva línea de trabajo" (sesión nueva) — **salvo re-correr el mismo comando sobre la misma entrada** (ej. `/w:spec-refine` sobre el mismo spec), que **no** abre otra línea: `create_or_resume` localiza la sesión de ese flujo (por descriptor + `## Origin`) y la **reanuda o reabre** (quita `.closed`), sin duplicarla; un **prompt sin comando** es "sigo en la misma" → por default continúa/reabre la más reciente (la *última iniciada*); solo si es claramente no-relacionado ofrece elegir (`continuar NNN` | `trabajo nuevo`) o cae a "sin flujo". Convergencia cierra la sesión; un prompt relacionado posterior la **reabre** (el resume quita `.closed`). Es la cara **inter-turno** del *objetivo persistente* (mismo `CHECKPOINT`+resume, aplicado al próximo prompt) — **doctrina agnóstica**, no un hook del host. Aplica a **todo artefacto** (`SCRIPTS.sql` es el ejemplo trabajado); ver `loops/quick-loop/SKILL.md` para el caso QUICK.
 
 ### The commands (`/w:` namespace)
 

@@ -30,7 +30,7 @@ El skill detecta el estado previo antes de arrancar, **keyando off el `CHECKPOIN
 1. Busca la sesión de refinamiento del spec en `.workflow/sessions/` y su `CHECKPOINT.md`.
 2. **En curso** (existe CHECKPOINT) → continúa desde el avance previo (gaps resueltos, Q&A).
 3. **Sin avance** (sin CHECKPOINT y el spec **no** tiene `## Refinement decisions`/`## Q&A traceability`) → arranca desde cero leyendo el spec (`NNN-spec*.md`).
-4. **Ya refinado** (sin CHECKPOINT abierto pero el spec **ya tiene** `## Refinement decisions`/`## Q&A traceability`) → re-refinamiento incremental leyendo el **spec mismo**; al `Guardar`, edita in place con confirmación.
+4. **Ya refinado / re-refine a demanda** (sin CHECKPOINT abierto pero el spec **ya tiene** `## Refinement decisions`/`## Q&A traceability`) → **soportado de primera clase**: mientras el flujo siga en SPEC podés re-correr este comando sobre el mismo spec **las veces que haga falta** (nuevos requerimientos, cambios de scope, re-lectura). El loop hace `create_or_resume` — localiza la refine session existente (aunque esté cerrada) y la **reabre** en vez de duplicarla — y re-refina leyendo el **spec mismo**; al `Guardar`, edita in place con confirmación.
 
 > **Compat (legacy):** el glob `NNN-spec*.md` también captura specs viejos `NNN-spec.md` / `NNN-spec-refined.md`. Re-correr spec-refine los edita in place de ahí en adelante.
 

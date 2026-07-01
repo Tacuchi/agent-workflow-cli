@@ -4,6 +4,18 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.1.1] — 2026-06-30
+
+**Re-run de `spec-refine` a demanda (mismo spec, múltiples veces) confirmado y hecho de primera clase; hardening del resolver de sesiones.** El flujo SPEC ya soportaba re-correr `/w:spec-refine` sobre el mismo spec cuantas veces haga falta mientras esté en SPEC (verificado end-to-end: sin gate, `--reopen` idempotente, N ciclos → una sola sesión); esta versión lo **documenta como operación de primera clase** y **endurece** el match de códigos de sesión. Un bugfix + aclaraciones de doctrina (bundle `w`). Nada breaking. Plugin `w` 9.2.0 → 9.2.1.
+
+### Fixed
+
+- **`session-resolver`: match de `--code` con word-boundary.** `resolveSession` hacía `folder.name.startsWith(sessionCode)` sin límite de token, así que un código numérico podía resolver la sesión **equivocada** cuando los prefijos colisionan (`100` → `1000-…` una vez que el contador global pasa 999; `01` → `012-…`). Ahora ancla en el código normalizado con boundary `-` (`code === lookupCode || folder.name === lookupCode || folder.name.startsWith("<lookupCode>-")`), lo que además resuelve códigos abreviados de forma consistente. +4 tests (`session-resolver-code-boundary`).
+
+### Changed
+
+- **Bundle `w` (9.2.1)** — re-run on-demand de spec-refine hecho **de primera clase**: el caso "Ya refinado" (`loops/spec-refine-loop`, `commands/spec-refine`) ahora dice explícitamente que, mientras el flujo siga en SPEC, se puede re-correr `/w:spec-refine` sobre el mismo spec **cuantas veces haga falta** (nuevos requerimientos, cambios de scope, re-lectura), y que `create_or_resume` **reabre** la refine session existente (aunque esté cerrada tras converger) en vez de duplicarla. Se reconcilia la regla de contexto operativo "comando = sesión nueva" con un carve-out de **misma entrada** (`SKILL.md`), y se documenta la detección/reapertura de la sesión cerrada (`aw session-resume --code <NNN> --reopen`; detección con `aw resume-summary --include-recent-closed` o `aw sessions --state all`, ya que `aw sessions` a secas solo lista activas).
+
 ## [14.1.0] — 2026-06-29
 
 **Alineación con el estándar abierto Agent Skills (agentskills.io): parser de frontmatter correcto, validación del estándar en `plugin-doctor`, y validación advisory de bindings en `aw skills`.** Deriva del análisis de fuentes externas (mattpocock/skills, skills.sh, agentskills.io, loops.elorm.xyz). Cambios aditivos + una relajación advisory + un bugfix; nada breaking. Plugin `w` 9.1.0 → 9.2.0.
