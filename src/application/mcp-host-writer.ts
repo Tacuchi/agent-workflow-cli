@@ -83,7 +83,12 @@ export function writeMcpEntry(
 ): McpWriteResult {
   if (host === "claude") return writeClaudeMcpEntry(entry, scope, opts);
   if (host === "warp") return writeWarpMcpEntry(entry, scope, opts);
-  return writeCodexMcpEntry(entry, scope, opts);
+  if (host === "codex") return writeCodexMcpEntry(entry, scope, opts);
+  if (host === "gemini")
+    return writeJsonMcpEntry("gemini", geminiMcpFile(scope), "mcpServers", entry, opts);
+  if (host === "opencode")
+    return writeJsonMcpEntry("opencode", opencodeMcpFile(scope), "mcp", entry, opts);
+  return writeJsonMcpEntry("crush", crushMcpFile(scope), "mcp", entry, opts);
 }
 
 export function removeMcpEntry(
@@ -94,7 +99,123 @@ export function removeMcpEntry(
 ): McpWriteResult {
   if (host === "claude") return removeClaudeMcpEntry(entry, scope, opts);
   if (host === "warp") return removeWarpMcpEntry(entry, scope, opts);
-  return removeCodexMcpEntry(entry, scope, opts);
+  if (host === "codex") return removeCodexMcpEntry(entry, scope, opts);
+  if (host === "gemini")
+    return removeJsonMcpEntry("gemini", geminiMcpFile(scope), "mcpServers", entry, opts);
+  if (host === "opencode")
+    return removeJsonMcpEntry("opencode", opencodeMcpFile(scope), "mcp", entry, opts);
+  return removeJsonMcpEntry("crush", crushMcpFile(scope), "mcp", entry, opts);
+}
+
+// --- New-host MCP file locations ---
+// Global scope passes scopeDir = homedir(); OpenCode/Crush are XDG-based
+// (~/.config/<name>/…), so global differs from the project-root file. Gemini's
+// .gemini/settings.json is the same relative path for both scopes.
+function geminiMcpFile(scope: ScopeInput): string {
+  return join(scope.scopeDir, ".gemini", "settings.json");
+}
+function opencodeMcpFile(scope: ScopeInput): string {
+  return scope.kind === "global"
+    ? join(scope.scopeDir, ".config", "opencode", "opencode.json")
+    : join(scope.scopeDir, "opencode.json");
+}
+function crushMcpFile(scope: ScopeInput): string {
+  return scope.kind === "global"
+    ? join(scope.scopeDir, ".config", "crush", "crush.json")
+    : join(scope.scopeDir, "crush.json");
+}
+
+// Per-host serialization of a dbhub McpEntry into the host's JSON schema.
+function mcpShapeFor(host: McpHost, entry: McpEntry): Record<string, unknown> {
+  if (host === "opencode") {
+    // OpenCode: { type: "local", command: [cmd, ...args], environment, enabled }
+    return {
+      type: "local",
+      command: [entry.command, ...entry.args],
+      environment: { ...entry.env },
+      enabled: true,
+    };
+  }
+  if (host === "crush") {
+    // Crush: { type: "stdio", command, args, env }
+    return {
+      type: "stdio",
+      command: entry.command,
+      args: [...entry.args],
+      env: { ...entry.env },
+    };
+  }
+  // gemini (and any Claude-compatible host): { command, args, env }
+  return expectedClaudeShape(entry);
+}
+
+// Generic writer for hosts whose MCP config is a JSON file with a top-level
+// object keyed by server name (Gemini `mcpServers`, OpenCode/Crush `mcp`).
+// Preserves other top-level keys and other server entries; idempotent; dry-run;
+// transient backup purged on success.
+function writeJsonMcpEntry(
+  host: McpHost,
+  file: string,
+  topKey: string,
+  entry: McpEntry,
+  opts: McpWriteOpts,
+): McpWriteResult {
+  const data = readJsonFile(file);
+  const bag = ensureRecord(data, topKey);
+  const existing = bag[entry.name];
+  const expected = mcpShapeFor(host, entry);
+
+  if (deepEqual(existing, expected)) {
+    return resultSkipped(host, file, entry.name);
+  }
+
+  bag[entry.name] = expected;
+  data[topKey] = bag;
+  const newJson = `${JSON.stringify(data, null, 2)}\n`;
+
+  if (opts.dryRun) {
+    return resultDryRun(host, file, entry.name, [
+      `${topKey}.${entry.name}: ${existing ? "update" : "add"}`,
+    ]);
+  }
+
+  mkdirSync(dirname(file), { recursive: true });
+  purgeStaleBackups(file);
+  const backup = backupFile(file);
+  writeFileSync(file, newJson, "utf-8");
+  discardBackup(backup);
+  return resultWritten(host, file, entry.name, null);
+}
+
+function removeJsonMcpEntry(
+  host: McpHost,
+  file: string,
+  topKey: string,
+  entry: McpEntry,
+  opts: McpWriteOpts,
+): McpWriteResult {
+  const data = readJsonFile(file);
+  const bag = ensureRecord(data, topKey);
+  const existing = bag[entry.name];
+  if (existing === undefined) {
+    return resultSkipped(host, file, entry.name);
+  }
+
+  bag[entry.name] = undefined;
+  const remaining = Object.fromEntries(Object.entries(bag).filter(([, v]) => v !== undefined));
+  data[topKey] = Object.keys(remaining).length === 0 ? undefined : remaining;
+  const newJson = `${JSON.stringify(data, null, 2)}\n`;
+
+  if (opts.dryRun) {
+    return resultDryRun(host, file, entry.name, [`${topKey}.${entry.name}: remove`]);
+  }
+
+  mkdirSync(dirname(file), { recursive: true });
+  purgeStaleBackups(file);
+  const backup = backupFile(file);
+  writeFileSync(file, newJson, "utf-8");
+  discardBackup(backup);
+  return resultRemoved(host, file, entry.name, null);
 }
 
 function writeClaudeMcpEntry(

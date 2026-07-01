@@ -101,15 +101,49 @@ describe("selfDetectHosts", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("returns 5 hosts, all undetected when no config dirs exist", async () => {
+  it("returns 8 hosts, all undetected when no config dirs exist", async () => {
     const ctx = buildCtx(home);
     const result = await selfDetectHosts(ctx);
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
-      expect(result.data.hosts).toHaveLength(5);
+      expect(result.data.hosts).toHaveLength(8);
+      expect(result.data.hosts.map((h) => h.target)).toEqual([
+        "claude",
+        "codex",
+        "warp",
+        "oz",
+        "agents",
+        "gemini",
+        "opencode",
+        "crush",
+      ]);
       expect(result.data.detected_count).toBe(0);
       expect(result.data.installed_count).toBe(0);
       expect(result.data.summary).toContain("No host config");
+    }
+  });
+
+  it("detects OpenCode via its XDG dir ~/.config/opencode (not ~/.opencode)", async () => {
+    await mkdir(join(home, ".config", "opencode"), { recursive: true });
+    const ctx = buildCtx(home);
+    const result = await selfDetectHosts(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const oc = result.data.hosts.find((h) => h.target === "opencode");
+      expect(oc?.config_dir).toBe(join(home, ".config", "opencode"));
+      expect(oc?.config_dir_present).toBe(true);
+      expect(result.data.detected_count).toBe(1);
+    }
+  });
+
+  it("detects Gemini via ~/.gemini", async () => {
+    await mkdir(join(home, ".gemini"), { recursive: true });
+    const ctx = buildCtx(home);
+    const result = await selfDetectHosts(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      const gemini = result.data.hosts.find((h) => h.target === "gemini");
+      expect(gemini?.config_dir_present).toBe(true);
     }
   });
 

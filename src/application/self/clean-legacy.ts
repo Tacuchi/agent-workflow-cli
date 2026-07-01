@@ -23,6 +23,20 @@ const LEGACY_SCAN_PATHS_BY_TARGET: Record<InstallTarget, readonly (readonly stri
   ],
   oz: [[".agents", "skills"]],
   agents: [[".agents", "skills"]],
+  gemini: [
+    [".agents", "skills"],
+    [".gemini", "skills"],
+  ],
+  opencode: [
+    [".opencode", "skills"],
+    [".agents", "skills"],
+    [".claude", "skills"],
+  ],
+  crush: [
+    [".agents", "skills"],
+    [".crush", "skills"],
+    [".claude", "skills"],
+  ],
 };
 
 export type CleanLegacyTargetChoice = InstallTarget | "all";

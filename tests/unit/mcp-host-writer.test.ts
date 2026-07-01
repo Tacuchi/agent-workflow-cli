@@ -284,3 +284,176 @@ describe("writeMcpEntry — Warp (.warp/.mcp.json, project scope)", () => {
     expect(content.mcpServers.prod).toBeDefined();
   });
 });
+
+describe("writeMcpEntry — Gemini (.gemini/settings.json, mcpServers)", () => {
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-gemini-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  it("crea .gemini/settings.json con mcpServers.cert (shape command/args/env)", () => {
+    const result = writeMcpEntry("gemini", buildMcpEntry("cert"), { scopeDir });
+    expect(result.action).toBe("written");
+    expect(result.host).toBe("gemini");
+    const file = join(scopeDir, ".gemini", "settings.json");
+    expect(result.target).toBe(file);
+    const content = JSON.parse(readFileSync(file, "utf-8"));
+    expect(content.mcpServers.cert).toEqual({
+      command: "agent-workflow",
+      args: ["mcp", "dbhub", "cert"],
+      env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+    });
+  });
+
+  it("idempotencia: segunda corrida → skipped-idempotent", () => {
+    writeMcpEntry("gemini", buildMcpEntry("cert"), { scopeDir });
+    const second = writeMcpEntry("gemini", buildMcpEntry("cert"), { scopeDir });
+    expect(second.action).toBe("skipped-idempotent");
+  });
+
+  it("preserva otras claves de settings.json (no solo mcpServers)", () => {
+    const file = join(scopeDir, ".gemini", "settings.json");
+    mkdirSync(join(scopeDir, ".gemini"), { recursive: true });
+    writeFileSync(file, JSON.stringify({ theme: "dark", mcpServers: {} }, null, 2));
+    writeMcpEntry("gemini", buildMcpEntry("prod"), { scopeDir });
+    const content = JSON.parse(readFileSync(file, "utf-8"));
+    expect(content.theme).toBe("dark");
+    expect(content.mcpServers.prod).toBeDefined();
+  });
+
+  it("dry-run no escribe", () => {
+    const file = join(scopeDir, ".gemini", "settings.json");
+    const result = writeMcpEntry("gemini", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
+    expect(result.action).toBe("dry-run");
+    expect(existsSync(file)).toBe(false);
+  });
+});
+
+describe("writeMcpEntry — OpenCode (opencode.json, mcp: type local)", () => {
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-opencode-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  it("crea opencode.json con mcp.cert (type local, command array, environment)", () => {
+    const result = writeMcpEntry("opencode", buildMcpEntry("cert"), { scopeDir });
+    expect(result.action).toBe("written");
+    expect(result.host).toBe("opencode");
+    const file = join(scopeDir, "opencode.json");
+    expect(result.target).toBe(file);
+    const content = JSON.parse(readFileSync(file, "utf-8"));
+    expect(content.mcp.cert).toEqual({
+      type: "local",
+      command: ["agent-workflow", "mcp", "dbhub", "cert"],
+      environment: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+      enabled: true,
+    });
+  });
+
+  it("idempotencia: segunda corrida → skipped-idempotent", () => {
+    writeMcpEntry("opencode", buildMcpEntry("cert"), { scopeDir });
+    const second = writeMcpEntry("opencode", buildMcpEntry("cert"), { scopeDir });
+    expect(second.action).toBe("skipped-idempotent");
+  });
+
+  it("preserva otras claves + otras entradas mcp", () => {
+    const file = join(scopeDir, "opencode.json");
+    writeFileSync(
+      file,
+      JSON.stringify({ model: "x", mcp: { other: { type: "local", command: ["y"] } } }, null, 2),
+    );
+    writeMcpEntry("opencode", buildMcpEntry("prod"), { scopeDir });
+    const content = JSON.parse(readFileSync(file, "utf-8"));
+    expect(content.model).toBe("x");
+    expect(content.mcp.other).toBeDefined();
+    expect(content.mcp.prod).toBeDefined();
+  });
+
+  it("dry-run no escribe", () => {
+    const file = join(scopeDir, "opencode.json");
+    const result = writeMcpEntry("opencode", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
+    expect(result.action).toBe("dry-run");
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("scope global → ~/.config/opencode/opencode.json (XDG)", () => {
+    const result = writeMcpEntry("opencode", buildMcpEntry("cert"), {
+      scopeDir,
+      kind: "global",
+    });
+    expect(result.target).toBe(join(scopeDir, ".config", "opencode", "opencode.json"));
+    const content = JSON.parse(readFileSync(result.target, "utf-8"));
+    expect(content.mcp.cert.type).toBe("local");
+  });
+});
+
+describe("writeMcpEntry — Crush (crush.json, mcp: type stdio)", () => {
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-crush-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  it("crea crush.json con mcp.cert (type stdio, command/args/env)", () => {
+    const result = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir });
+    expect(result.action).toBe("written");
+    expect(result.host).toBe("crush");
+    const file = join(scopeDir, "crush.json");
+    expect(result.target).toBe(file);
+    const content = JSON.parse(readFileSync(file, "utf-8"));
+    expect(content.mcp.cert).toEqual({
+      type: "stdio",
+      command: "agent-workflow",
+      args: ["mcp", "dbhub", "cert"],
+      env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+    });
+  });
+
+  it("idempotencia: segunda corrida → skipped-idempotent", () => {
+    writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir });
+    const second = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir });
+    expect(second.action).toBe("skipped-idempotent");
+  });
+
+  it("preserva $schema + otras entradas mcp", () => {
+    const file = join(scopeDir, "crush.json");
+    writeFileSync(
+      file,
+      JSON.stringify(
+        {
+          $schema: "https://charm.land/crush.json",
+          mcp: { other: { type: "stdio", command: "y" } },
+        },
+        null,
+        2,
+      ),
+    );
+    writeMcpEntry("crush", buildMcpEntry("prod"), { scopeDir });
+    const content = JSON.parse(readFileSync(file, "utf-8"));
+    expect(content.$schema).toBe("https://charm.land/crush.json");
+    expect(content.mcp.other).toBeDefined();
+    expect(content.mcp.prod).toBeDefined();
+  });
+
+  it("dry-run no escribe", () => {
+    const file = join(scopeDir, "crush.json");
+    const result = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
+    expect(result.action).toBe("dry-run");
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("scope global → ~/.config/crush/crush.json (XDG)", () => {
+    const result = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir, kind: "global" });
+    expect(result.target).toBe(join(scopeDir, ".config", "crush", "crush.json"));
+    const content = JSON.parse(readFileSync(result.target, "utf-8"));
+    expect(content.mcp.cert.type).toBe("stdio");
+  });
+});

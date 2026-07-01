@@ -18,7 +18,23 @@ export interface SelfDetectHostsData {
   summary: string;
 }
 
-const HOST_ORDER: readonly InstallTarget[] = ["claude", "codex", "warp", "oz", "agents"];
+const HOST_ORDER: readonly InstallTarget[] = [
+  "claude",
+  "codex",
+  "warp",
+  "oz",
+  "agents",
+  "gemini",
+  "opencode",
+  "crush",
+];
+
+// Config dirs that do NOT follow the ~/.<target> convention. OpenCode and Crush
+// are XDG-based (~/.config/<name>); the rest use ~/.<target>.
+const CONFIG_DIR_OVERRIDES: Partial<Record<InstallTarget, readonly string[]>> = {
+  opencode: [".config", "opencode"],
+  crush: [".config", "crush"],
+};
 
 export async function selfDetectHosts(
   ctx: CliContext,
@@ -28,7 +44,8 @@ export async function selfDetectHosts(
 
   for (const target of HOST_ORDER) {
     const skillPath = join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
-    const configDir = join(home, `.${target}`);
+    const configRel = CONFIG_DIR_OVERRIDES[target] ?? [`.${target}`];
+    const configDir = join(home, ...configRel);
     const [configPresent, skillInstalled] = await Promise.all([
       ctx.fs.exists(configDir),
       ctx.fs.exists(skillPath),
@@ -55,7 +72,7 @@ export async function selfDetectHosts(
 
 function buildSummary(detected: number, installed: number): string {
   if (detected === 0) {
-    return "No host config directories detected. Run any host (Claude Code / Codex / Warp / OZ) once to create them.";
+    return "No host config directories detected. Run any host (Claude Code / Codex / Warp / OZ / Gemini / OpenCode / Crush) once to create them.";
   }
   return `Detected ${detected} host config dir(s); SKILL installed in ${installed}.`;
 }

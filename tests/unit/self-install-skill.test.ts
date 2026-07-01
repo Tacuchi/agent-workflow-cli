@@ -142,7 +142,7 @@ describe("selfInstallSkill", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it("default --target=all installs into ~/.claude/skills/, ~/.codex/skills/, ~/.warp/skills/, ~/.agents/skills/", async () => {
+  it("default --target=all installs into all 7 hosts (claude/codex/warp/oz + gemini/opencode/crush)", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
@@ -155,15 +155,22 @@ describe("selfInstallSkill", () => {
     if (result.ok && result.data) {
       expect(result.data.status).toBe("installed");
       expect(result.data.source_kind).toBe("path");
-      expect(result.data.dests).toHaveLength(4);
+      expect(result.data.dests).toHaveLength(7);
       const claudeDest = result.data.dests.find((d) => d.target === "claude");
       const codexDest = result.data.dests.find((d) => d.target === "codex");
+      const opencodeDest = result.data.dests.find((d) => d.target === "opencode");
+      const geminiDest = result.data.dests.find((d) => d.target === "gemini");
+      const crushDest = result.data.dests.find((d) => d.target === "crush");
       expect(claudeDest?.dest).toBe(join(home, ".claude/skills", SKILL_DIR_NAME));
       expect(codexDest?.dest).toBe(join(home, ".codex/skills", SKILL_DIR_NAME));
+      expect(opencodeDest?.dest).toBe(join(home, ".opencode/skills", SKILL_DIR_NAME));
+      expect(geminiDest?.dest).toBe(join(home, ".gemini/skills", SKILL_DIR_NAME));
+      expect(crushDest?.dest).toBe(join(home, ".crush/skills", SKILL_DIR_NAME));
       expect(claudeDest?.overwrote_existing).toBe(false);
       expect(codexDest?.overwrote_existing).toBe(false);
       expect(claudeDest?.files_copied).toBeGreaterThan(0);
       expect(codexDest?.files_copied).toBeGreaterThan(0);
+      expect(opencodeDest?.files_copied).toBeGreaterThan(0);
     }
 
     const claudeSkill = await readFile(
@@ -321,7 +328,7 @@ describe("selfInstallSkill", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.status).toBe("dry-run");
-      expect(result.data.dests).toHaveLength(4);
+      expect(result.data.dests).toHaveLength(7);
       expect(result.data.dests.every((d) => d.status === "dry-run")).toBe(true);
     }
 

@@ -34,7 +34,16 @@ export interface SelfUninstallData {
   lock_warning?: string;
 }
 
-const ALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "warp", "oz"];
+const ALL_TARGETS: readonly InstallTarget[] = [
+  "claude",
+  "codex",
+  "agents",
+  "warp",
+  "oz",
+  "gemini",
+  "opencode",
+  "crush",
+];
 const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"];
 
 const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
@@ -43,6 +52,9 @@ const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
   warp: null,
   oz: null,
   agents: null,
+  gemini: null,
+  opencode: null,
+  crush: null,
 };
 
 // Pre-`w`-rename user-commands dirs (`/agent-workflow:*`), removed with `--legacy`.
@@ -52,6 +64,9 @@ const LEGACY_USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | nul
   warp: null,
   oz: null,
   agents: null,
+  gemini: null,
+  opencode: null,
+  crush: null,
 };
 
 const HOOKS_REMOVABLE_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);

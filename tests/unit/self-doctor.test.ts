@@ -75,9 +75,16 @@ describe("selfDoctor", () => {
     }
   });
 
-  it("reports all 3 file-hosting targets when claude, codex and warp have it", async () => {
+  it("reports all 6 file-hosting targets when all have it (claude/codex/warp/gemini/opencode/crush)", async () => {
     const fs = new FakeFs(
-      new Set(["/home/u/.claude/skills/w", "/home/u/.codex/skills/w", "/home/u/.warp/skills/w"]),
+      new Set([
+        "/home/u/.claude/skills/w",
+        "/home/u/.codex/skills/w",
+        "/home/u/.warp/skills/w",
+        "/home/u/.gemini/skills/w",
+        "/home/u/.opencode/skills/w",
+        "/home/u/.crush/skills/w",
+      ]),
     );
     const ctx = {
       fs,
@@ -91,6 +98,14 @@ describe("selfDoctor", () => {
     if (result.ok && result.data) {
       expect(result.data.skill.installed).toBe(true);
       expect(result.data.skill.targets.every((t) => t.installed)).toBe(true);
+      expect(result.data.skill.targets.map((t) => t.target)).toEqual([
+        "claude",
+        "codex",
+        "warp",
+        "gemini",
+        "opencode",
+        "crush",
+      ]);
     }
   });
 
@@ -189,7 +204,7 @@ describe("selfDoctor", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       const targets = result.data.skill.targets.map((t) => t.target);
-      expect(targets).toEqual(["claude", "codex", "warp"]);
+      expect(targets).toEqual(["claude", "codex", "warp", "gemini", "opencode", "crush"]);
       expect(targets).not.toContain("agents");
     }
   });

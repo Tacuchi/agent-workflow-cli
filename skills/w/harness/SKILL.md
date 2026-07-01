@@ -3,7 +3,7 @@ name: harness
 description: >-
   Harness-agnostic capability layer for agent-workflow. Read-and-follow doc (no es
   invocable por nombre): define el contrato que mantiene a la herramienta agnóstica al
-  arnés (Claude Code, Codex, opencode, Gemini CLI, genérico) sin renunciar a las
+  arnés (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp, genérico) sin renunciar a las
   capacidades ricas de cada uno. Cataloga las capacidades de las que depende el
   workflow, las liga al mecanismo concreto de cada arnés (binding matrix), y fija los
   dos principios (capacidad-no-tool · progressive-enhancement). Referenciado desde
@@ -44,20 +44,21 @@ Las capacidades de las que depende el harness, con su fallback universal (lo que
 
 ## Harness binding matrix
 
-Mecanismo concreto por arnés (jun-2026; `~` parcial · `?` sin confirmar).
+Mecanismo concreto por arnés (**jul-2026**, verificado contra docs oficiales; `~` parcial). Antigravity CLI reusa las superficies de Gemini (`~/.gemini/`).
 
-| Capability | Claude Code | Codex CLI | opencode | Gemini CLI | Genérico |
-|---|---|---|---|---|---|
-| command-invocation | `.claude/commands/` (slash) | skills (prompts custom **deprecados**) | `.opencode/commands/` | `.gemini/commands/*.toml` | texto |
-| procedure-loading | skills `SKILL.md` | skills `SKILL.md` | skills `SKILL.md` | skills (extensiones) | read-and-follow `.md` |
-| structured-choice | `AskUserQuestion` (**solo main-agent**) | — | — | — | markdown numerado |
-| compaction | `/compact` | `?` | `?` | `?` | CHECKPOINT + resume |
-| subagent-dispatch | `Task` (paralelo) | agents (depth=1) | Explore/Scout | agents | inline |
-| persistent-context | `CLAUDE.md` (**no** lee AGENTS.md → symlink) | `AGENTS.md` | `AGENTS.md` | `AGENTS.md`/`GEMINI.md` | `AGENTS.md` |
-| external-data | MCP | MCP | MCP | MCP | — |
-| dry-run / plan | plan mode (enforced) | `/plan` (prompt, **no** enforced) | Plan agent | plan mode | describir sin escribir |
+| Capability | Claude Code | Codex | Gemini / Antigravity | OpenCode | Crush | Warp | Genérico |
+|---|---|---|---|---|---|---|---|
+| command-invocation | `.claude/commands/` (slash) | slash + skills | `.gemini/commands/*.toml` | `.opencode/command/` | skills user-invocable | Workflows (Drive) | texto |
+| procedure-loading (skills) | `SKILL.md` `.claude/skills` | `SKILL.md` `.agents/skills` | `SKILL.md` (agentskills) | `SKILL.md` `.opencode`+`.claude`+`.agents` | `SKILL.md` `.agents`+`.crush`+`.claude` | `SKILL.md` `.agents`+`.warp`+`.claude` | read-and-follow `.md` |
+| structured-choice | `AskUserQuestion` (**solo main-agent**) | — | — | — | — | — | markdown numerado |
+| compaction | `/compact` | Pre/PostCompact hooks | ~ | `session.compacted` | ~ | ~ | CHECKPOINT + resume |
+| subagent-dispatch | `Task` (paralelo) | `SubagentStart` / agents | agents (`.gemini/agents`) | `.opencode/agent/*.md` | ~ | ~ (cloud agents) | inline |
+| persistent-context | `CLAUDE.md` (**no** lee AGENTS.md → symlink) | `AGENTS.md` | `GEMINI.md` + `AGENTS.md` | `AGENTS.md` | `CRUSH.md` + `AGENTS.md` | `AGENTS.md` (auto) | `AGENTS.md` |
+| external-data (MCP) | `.mcp.json` | `.codex/config.toml` `[mcp_servers]` | `settings.json` `mcpServers` | `opencode.json` `mcp` | `crush.json` `mcp` | `.warp/.mcp.json` (+autodescubre `.mcp.json`) | — |
+| **enforcement (deny tool)** | `PreToolUse` → `permissionDecision:deny` / exit 2 | `PreToolUse` (**≈mismo protocolo**) | `BeforeTool` → `decision:deny` / exit 2 | plugin `tool.execute.before` (`throw`) | `allowed_tools` (+ hooks preliminares) | allow/deny lists (**grueso**) | doctrina (git-safe #5) |
+| plugin / dist | `.claude-plugin` + marketplace | `.codex-plugin` + `/plugins` marketplace | Extension `gemini-extension.json` | plugin JS/TS (npm) | MCP + skills + config | Warp Drive | — |
 
-> **Notas (investigación de campo jun-2026):** las **skills `SKILL.md`** son la unidad portable **universal** (las cinco las soportan; Codex deprecó los prompts custom) → la doctrina se empaqueta como skill. La **elección estructurada** (`AskUserQuestion`) es **solo de Claude Code y solo del main-agent** → en el resto, `structured-choice` degrada a markdown numerado. El **plan mode** está *enforced* solo en Claude Code/opencode (prompt-level en Codex) → **no se confía para safety**; el git-safe (invariante #5) es propio. **MCP** es universal. El **piso garantizado** (última columna) corre el modelo completo.
+> **Notas (investigación de campo jul-2026):** las **skills `SKILL.md`** son la unidad portable **universal** — **los seis** arneses las soportan (Codex las agregó Dic-2025; **`.agents/skills` es el ancla cross-host**, leída por Codex/OpenCode/Crush/Warp). La **elección estructurada** (`AskUserQuestion`) sigue siendo **solo Claude Code / main-agent** → en el resto `structured-choice` degrada a markdown numerado. La **capa de enforcement** (fila nueva) ya **NO es exclusiva de Claude**: Codex + Gemini usan un protocolo casi idéntico (`permissionDecision:deny` / exit 2) y OpenCode bloquea vía `throw` en un plugin JS; Crush/Warp solo ofrecen allow/deny **grueso** (sin lógica custom por comando) → en ellos las convenciones quedan **advisory** + listas allow/deny. El **plan mode** enforced no se confía para safety; el git-safe (invariante #5) es propio. **MCP** es universal (cada host su archivo/clave). El **piso garantizado** (última columna) corre el modelo completo.
 
 ## Leverage installed skills
 
@@ -78,8 +79,8 @@ Patrón probado (Spec Kit, 30+ agentes): **una fuente canónica** + generar/syml
 
 ## Command packaging (harness-specific)
 
-El **contrato** de cada comando (Flow, Trigger, Input, Mode, …) es agnóstico. El **archivo** que el arnés ejecuta envuelve ese contrato en su formato nativo: Claude Code = slash-command con frontmatter (`description`, `argument-hint`, `allowed-tools`) + cuerpo que invoca la skill o el `aw` CLI; Codex = skill (los prompts custom en `~/.codex/prompts/` están deprecados); otros, su equivalente. El contrato no cambia; el envoltorio sí (otra columna). El comportamiento en *dry-run / plan mode* (previsualizar sin escribir) se documenta en el cuerpo del comando cuando aplica.
+El **contrato** de cada comando (Flow, Trigger, Input, Mode, …) es agnóstico. El **archivo** que el arnés ejecuta envuelve ese contrato en su formato nativo: Claude Code = slash-command con frontmatter (`description`, `argument-hint`, `allowed-tools`) + cuerpo que invoca la skill o el `aw` CLI; Codex = slash-command o skill; Gemini/Antigravity = `.gemini/commands/*.toml`; OpenCode = `.opencode/command/*.md`; Crush/Warp = la **skill misma** invocable. El **fallback universal** es *skill-as-command*: como los seis arneses cargan skills, la doctrina siempre corre aunque el host no tenga comandos nativos. El contrato no cambia; el envoltorio sí (otra columna).
 
 ## Status
 
-Modelo de capacidades + matriz de binding **definidos** y **validados** con investigación de campo (jun-2026). El piso universal (`AGENTS.md` + texto + archivos + skills) corre el modelo completo hoy.
+Modelo de capacidades + matriz de binding **definidos** y **validados** con investigación de campo (**jul-2026**, contra docs oficiales). Cobertura **6 arneses reales**: Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp — todos soportan `SKILL.md` (ancla `.agents/skills`) + MCP + `AGENTS.md`; enforcement determinista en Claude/Codex/Gemini/OpenCode, advisory + allow/deny grueso en Crush/Warp. El CLI (`aw`) implementa el registro (`domain/harnesses.ts`), los writers MCP por-host, `detect-hosts` e `install-skill --target <host>`. El piso universal (`AGENTS.md` + texto + archivos + skills) corre el modelo completo hoy.

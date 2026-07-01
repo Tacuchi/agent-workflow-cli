@@ -7,13 +7,48 @@ import {
 } from "../../src/domain/harnesses.js";
 
 describe("HARNESSES registry — shape invariants", () => {
-  it("contiene exactamente los 4 harnesses esperados", () => {
+  it("contiene los 7 harnesses esperados (claude/codex/oz/warp + gemini/opencode/crush)", () => {
     const ids = HARNESSES.map((h) => h.id);
     expect(ids).toContain("claude-code");
     expect(ids).toContain("codex");
     expect(ids).toContain("warp");
     expect(ids).toContain("oz");
-    expect(ids).toHaveLength(4);
+    expect(ids).toContain("gemini");
+    expect(ids).toContain("opencode");
+    expect(ids).toContain("crush");
+    expect(ids).toHaveLength(7);
+  });
+
+  it("codex expone skills en .agents/skills (estándar abierto, no solo .codex/skills)", () => {
+    const codex = HARNESSES.find((h) => h.id === "codex");
+    expect(codex?.skillsDirs).toContain(".agents/skills");
+    // hooks bundled desde hooks/hooks.json en la raíz del plugin (env PLUGIN_ROOT)
+    expect(codex?.pluginHooksDir).toBe("hooks");
+  });
+
+  it("gemini: mcpHostId + settings.json (mcpServers) + lee .agents/skills", () => {
+    const gemini = HARNESSES.find((h) => h.id === "gemini");
+    expect(gemini?.mcpHostId).toBe("gemini");
+    expect(gemini?.installTarget).toBe("gemini");
+    expect(gemini?.projectMcpPath).toBe(".gemini/settings.json");
+    expect(gemini?.skillsDirs).toContain(".agents/skills");
+  });
+
+  it("opencode: mcpHostId + opencode.json + lee .claude/.agents/.opencode skills", () => {
+    const oc = HARNESSES.find((h) => h.id === "opencode");
+    expect(oc?.mcpHostId).toBe("opencode");
+    expect(oc?.installTarget).toBe("opencode");
+    expect(oc?.projectMcpPath).toBe("opencode.json");
+    expect(oc?.skillsDirs).toContain(".agents/skills");
+    expect(oc?.skillsDirs).toContain(".claude/skills");
+  });
+
+  it("crush: mcpHostId + crush.json + lee .agents/.crush/.claude skills", () => {
+    const crush = HARNESSES.find((h) => h.id === "crush");
+    expect(crush?.mcpHostId).toBe("crush");
+    expect(crush?.installTarget).toBe("crush");
+    expect(crush?.projectMcpPath).toBe("crush.json");
+    expect(crush?.skillsDirs).toContain(".agents/skills");
   });
 
   it("cada harness tiene envMarkers no vacío", () => {
@@ -115,6 +150,12 @@ describe("harnessForMcpHost", () => {
 
   it("'warp' → warp spec", () => {
     expect(harnessForMcpHost("warp")?.id).toBe("warp");
+  });
+
+  it("'gemini'/'opencode'/'crush' → sus specs", () => {
+    expect(harnessForMcpHost("gemini")?.id).toBe("gemini");
+    expect(harnessForMcpHost("opencode")?.id).toBe("opencode");
+    expect(harnessForMcpHost("crush")?.id).toBe("crush");
   });
 });
 

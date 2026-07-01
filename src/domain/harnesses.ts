@@ -1,9 +1,25 @@
 import type { McpHost } from "./mcp-entry.js";
 
-export type Harness = "claude-code" | "codex" | "warp" | "oz" | "unknown";
+export type Harness =
+  | "claude-code"
+  | "codex"
+  | "warp"
+  | "oz"
+  | "gemini"
+  | "opencode"
+  | "crush"
+  | "unknown";
 
-// Canonical key used as TARGET_ROOTS key in install-skill (Phase 2 wires this up)
-export type InstallTarget = "claude" | "codex" | "agents" | "warp" | "oz";
+// Canonical key used as TARGET_ROOTS key in install-skill (re-exported there).
+export type InstallTarget =
+  | "claude"
+  | "codex"
+  | "agents"
+  | "warp"
+  | "oz"
+  | "gemini"
+  | "opencode"
+  | "crush";
 
 export type HarnessChannel = "stable" | "preview";
 
@@ -63,8 +79,14 @@ export const HARNESSES: readonly HarnessSpec[] = [
     },
     projectMcpPath: ".codex/config.toml",
     pluginManifest: ".codex-plugin/plugin.json",
-    pluginHooksDir: "codex-hooks",
-    skillsDirs: [".codex/skills"],
+    // Codex plugin bundles ship hooks at `hooks/hooks.json` in the plugin root
+    // (env PLUGIN_ROOT), same layout as Claude's `hooks/`. Verified 2026-07 vs
+    // developers.openai.com/codex/hooks.
+    pluginHooksDir: "hooks",
+    // Codex loads Agent Skills from `.agents/skills` (the open-standard dir,
+    // ~/.agents/skills global) — this is primary. `.codex/skills` kept as a
+    // secondary for older builds. Verified vs developers.openai.com/codex/skills.
+    skillsDirs: [".agents/skills", ".codex/skills"],
     installTarget: "codex",
   },
   {
@@ -107,6 +129,61 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // `application/self/install-skill.ts:flattenSubSkillsForHost`.
     skillsDirs: [".warp/skills", ".agents/skills", ".claude/skills", ".codex/skills"],
     installTarget: "warp",
+  },
+  {
+    // Gemini CLI + Antigravity CLI (successor; reuses ~/.gemini/). envMarkers are
+    // best-effort (detection also keys off the ~/.gemini config dir); Antigravity
+    // markers are treated as a Gemini alias. MCP in settings.json (mcpServers,
+    // Claude-compatible shape). Skills = open agentskills standard.
+    id: "gemini",
+    envMarkers: ["GEMINI_CLI", "GEMINI_SANDBOX", "ANTIGRAVITY", "ANTIGRAVITY_CLI"],
+    mcpHostId: "gemini",
+    globalMcpPaths: {
+      darwin: { stable: "~/.gemini/settings.json" },
+      linux: { stable: "~/.gemini/settings.json" },
+      win32: { stable: "~/.gemini/settings.json" },
+    },
+    projectMcpPath: ".gemini/settings.json",
+    pluginManifest: null, // Gemini uses Extensions (gemini-extension.json) — Phase 2
+    pluginHooksDir: null, // Extension-bundled hooks (BeforeTool) — Phase 2
+    skillsDirs: [".agents/skills", ".gemini/skills"],
+    installTarget: "gemini",
+  },
+  {
+    // OpenCode (sst/opencode). Config `opencode.json` ($schema); MCP under `mcp`
+    // (type "local", command as array, `environment`). Reads .claude/skills and
+    // .agents/skills directly. Enforcement via JS plugins (tool.execute.before) — Phase 2.
+    id: "opencode",
+    envMarkers: ["OPENCODE", "OPENCODE_BIN", "OPENCODE_CONFIG"],
+    mcpHostId: "opencode",
+    globalMcpPaths: {
+      darwin: { stable: "~/.config/opencode/opencode.json" },
+      linux: { stable: "~/.config/opencode/opencode.json" },
+      win32: { stable: "~/.config/opencode/opencode.json" },
+    },
+    projectMcpPath: "opencode.json",
+    pluginManifest: null, // JS/TS plugins in .opencode/plugin — Phase 2
+    pluginHooksDir: null,
+    skillsDirs: [".opencode/skills", ".agents/skills", ".claude/skills"],
+    installTarget: "opencode",
+  },
+  {
+    // Crush (charmbracelet/crush). Config `crush.json` ($schema charm.land/crush.json);
+    // MCP under `mcp` (type "stdio"). Reads .agents/skills + .claude/skills. Hooks are
+    // preliminary; enforcement via `allowed_tools` allowlist — Phase 3.
+    id: "crush",
+    envMarkers: ["CRUSH", "CRUSH_CONFIG"],
+    mcpHostId: "crush",
+    globalMcpPaths: {
+      darwin: { stable: "~/.config/crush/crush.json" },
+      linux: { stable: "~/.config/crush/crush.json" },
+      win32: { stable: "~/.config/crush/crush.json" },
+    },
+    projectMcpPath: "crush.json",
+    pluginManifest: null,
+    pluginHooksDir: null,
+    skillsDirs: [".agents/skills", ".crush/skills", ".claude/skills"],
+    installTarget: "crush",
   },
 ] as const satisfies readonly HarnessSpec[];
 

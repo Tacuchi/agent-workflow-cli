@@ -4,13 +4,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
+import type { InstallTarget } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 
 export const SKILL_DIR_NAME = "w";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
 
-export type InstallTarget = "claude" | "codex" | "agents" | "warp" | "oz";
+// InstallTarget is defined canonically in domain/harnesses.ts (HarnessSpec.installTarget)
+// and re-exported here since detect-hosts and callers import it from this module.
+export type { InstallTarget };
 
 export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
   claude: [".claude", "skills"],
@@ -18,6 +21,11 @@ export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
   agents: [".agents", "skills"],
   warp: [".warp", "skills"],
   oz: [".agents", "skills"],
+  // New hosts install to their native skill dir; all of them ALSO read
+  // .agents/skills, so `--target agents` is the cross-host alternative.
+  gemini: [".gemini", "skills"],
+  opencode: [".opencode", "skills"],
+  crush: [".crush", "skills"],
 };
 
 export const AGENTS_LOCK_REL = [".agents", ".skill-lock.json"] as const;
@@ -62,10 +70,21 @@ const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [
   "agents",
   "warp",
   "oz",
+  "gemini",
+  "opencode",
+  "crush",
   "all",
 ];
 
-const ALL_INSTALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "warp", "oz"];
+const ALL_INSTALL_TARGETS: readonly InstallTarget[] = [
+  "claude",
+  "codex",
+  "warp",
+  "oz",
+  "gemini",
+  "opencode",
+  "crush",
+];
 
 const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
   "claude",
@@ -98,6 +117,11 @@ const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
   warp: null,
   oz: null,
   agents: null,
+  // gemini uses .gemini/commands/*.toml (not .md), opencode .opencode/command/*.md,
+  // crush n/a — native command install deferred to Phase 3; skills-as-command meanwhile.
+  gemini: null,
+  opencode: null,
+  crush: null,
 };
 
 // Pre-`w`-rename user-commands dirs (slash namespace `/agent-workflow:*`). Removed
@@ -108,6 +132,9 @@ const LEGACY_USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | nul
   warp: null,
   oz: null,
   agents: null,
+  gemini: null,
+  opencode: null,
+  crush: null,
 };
 
 /**
@@ -347,6 +374,9 @@ function buildDestByTarget(home: string): Record<InstallTarget, string> {
     agents: join(home, ...TARGET_ROOTS.agents, SKILL_DIR_NAME),
     warp: join(home, ...TARGET_ROOTS.warp, SKILL_DIR_NAME),
     oz: join(home, ...TARGET_ROOTS.oz, SKILL_DIR_NAME),
+    gemini: join(home, ...TARGET_ROOTS.gemini, SKILL_DIR_NAME),
+    opencode: join(home, ...TARGET_ROOTS.opencode, SKILL_DIR_NAME),
+    crush: join(home, ...TARGET_ROOTS.crush, SKILL_DIR_NAME),
   };
 }
 
