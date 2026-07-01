@@ -228,8 +228,7 @@ export async function selfInstallSkill(
       ok: false,
       error: {
         code: "CONFIRM_ALL_REQUIRED",
-        message:
-          "--target all installs into every detected host. Pass --confirm-all to acknowledge, or pick a specific host (claude|codex|warp|oz|agents).",
+        message: `--target all installs into every supported host. Pass --confirm-all to acknowledge, or pick a specific host (${ALL_INSTALL_TARGETS.join("|")}).`,
       },
       exitCode: 1,
     };
@@ -255,7 +254,7 @@ export async function selfInstallSkill(
       ok: false,
       error: {
         code: "DEST_EXISTS",
-        message: `Destination already exists: ${names}. Use --force to overwrite, --dry-run to preview, or --target <claude|codex> to install only one.`,
+        message: `Destination already exists: ${names}. Use --force to overwrite, --dry-run to preview, or --target <host> to install only one.`,
       },
       exitCode: 1,
     };

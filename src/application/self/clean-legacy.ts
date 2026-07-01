@@ -56,7 +56,12 @@ export interface SelfCleanLegacyData {
   summary: string;
 }
 
-const ALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "warp", "oz"];
+// Derived from the exhaustive Record above so a newly-supported host can never be
+// silently dropped from `--target all` (the bug that shipped gemini/opencode/crush
+// unreachable in v14.5.0). TypeScript guarantees the keys ARE every InstallTarget.
+const ALL_TARGETS: readonly InstallTarget[] = Object.keys(
+  LEGACY_SCAN_PATHS_BY_TARGET,
+) as InstallTarget[];
 const TARGET_CHOICES: readonly CleanLegacyTargetChoice[] = [...ALL_TARGETS, "all"];
 
 // Default legacy patterns left over from pre-v7.0.0 plugins:
