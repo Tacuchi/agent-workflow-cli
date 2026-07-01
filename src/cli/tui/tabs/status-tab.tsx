@@ -1,14 +1,15 @@
 import { Box, Text, useInput } from "ink";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type SelfDoctorReport, selfDoctor } from "../../../application/self/doctor-self.js";
 import type { SelfMcpConnectionView } from "../../../application/self/mcp-config.js";
 import { selfMcpConfig } from "../../../application/self/mcp-config.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
-import { type ActivityEvent, ActivityFeed } from "../components/activity-feed.js";
+import { LogsSection } from "../components/logs-section.js";
 import { PageHead } from "../components/page-head.js";
 import { SectionHead } from "../components/section-head.js";
 import { StatTile } from "../components/stat-tile.js";
+import type { LogEntry } from "../data/logs.js";
 import { HOSTS } from "../hosts.js";
 import { colors, icons } from "../theme.js";
 
@@ -18,8 +19,12 @@ export interface StatusTabProps {
   isActive: boolean;
   onActivateTab?: (tab: "mcp" | "skills") => void;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
-  /** Eventos recientes (activity feed). Si vacío, se renderiza empty-state. */
-  recentEvents?: ActivityEvent[];
+  /** Logs operativos diarios (global user-level). Si vacío, se renderiza empty-state. */
+  logs?: LogEntry[];
+  /** Última app usada en "abrir con…" (prefill + memoria). */
+  lastOpenApp?: string;
+  /** Persistir la última app elegida en "abrir con…". */
+  onSetLastApp?: (app: string) => void;
   /** Hosts deshabilitados en Config: se excluyen del cómputo de cobertura. */
   disabledHosts?: string[];
 }
@@ -31,7 +36,7 @@ interface StatusData {
   loading: boolean;
 }
 
-const TILE_IDS = ["cli", "hosts", "hooks", "mcp"] as const;
+const TILE_IDS = ["cli", "hosts", "hooks", "mcp", "logs"] as const;
 type TileId = (typeof TILE_IDS)[number];
 
 export function StatusTab({
@@ -39,7 +44,10 @@ export function StatusTab({
   version,
   isActive,
   onActivateTab,
-  recentEvents,
+  onToast,
+  logs = [],
+  lastOpenApp,
+  onSetLastApp,
   disabledHosts = [],
 }: StatusTabProps) {
   const [data, setData] = useState<StatusData>({
@@ -49,7 +57,31 @@ export function StatusTab({
     loading: true,
   });
   const [tileCursor, setTileCursor] = useState<TileId>("cli");
+  // When true the Logs section owns the keyboard (↑↓/⏎/a/esc); the tiles strip
+  // pauses its own nav so the two don't fight over arrows.
+  const [logsMode, setLogsMode] = useState(false);
   const dataStartedRef = useRef(false);
+
+  const openEntry = useCallback(
+    async (entry: LogEntry, app?: string) => {
+      if (!(await ctx.fs.exists(entry.path))) {
+        onToast?.({ tone: "err", title: "Log no encontrado", body: entry.path });
+        return;
+      }
+      try {
+        await ctx.process.openPath(entry.path, app ? { app } : {});
+        onToast?.({
+          tone: "info",
+          title: `Abriendo ${entry.name}`,
+          ...(app ? { body: `con ${app}` } : {}),
+        });
+        if (app) onSetLastApp?.(app);
+      } catch {
+        onToast?.({ tone: "err", title: "No se pudo abrir", body: entry.path });
+      }
+    },
+    [ctx, onToast, onSetLastApp],
+  );
 
   useEffect(() => {
     if (dataStartedRef.current) return;
@@ -69,7 +101,9 @@ export function StatusTab({
   }, [ctx]);
 
   // El update-check + banner ahora viven en el AppShell vía NotificationCenter.
-  // Esta tab sólo navega tiles y delega `⏎` en hosts/mcp para cambiar de tab.
+  // Esta tab navega tiles y delega `⏎` en hosts/mcp (cambiar de tab) y en logs
+  // (entrar al modo Logs). Mientras logsMode está activo, la LogsSection es dueña
+  // del teclado → esta captura se apaga para no pelear por las flechas.
   useInput(
     (_input, key) => {
       if (!isActive) return;
@@ -90,9 +124,10 @@ export function StatusTab({
       if (key.return) {
         if (tileCursor === "hosts") onActivateTab?.("skills");
         if (tileCursor === "mcp") onActivateTab?.("mcp");
+        if (tileCursor === "logs") setLogsMode(true);
       }
     },
-    { isActive },
+    { isActive: isActive && !logsMode },
   );
 
   if (data.loading) {
@@ -119,8 +154,6 @@ export function StatusTab({
   const backedHosts = activeHosts.filter((h) => h.backed).length;
   const pendingHosts = supportedHosts - backedHosts;
   const pct = supportedHosts > 0 ? Math.round((installedHosts / supportedHosts) * 100) : 0;
-
-  const events: ActivityEvent[] = recentEvents ?? [];
 
   return (
     <Box flexDirection="column">
@@ -164,6 +197,14 @@ export function StatusTab({
           clickable
           active={tileCursor === "mcp"}
         />
+        <StatTile
+          label="logs"
+          value={`${logs.length}`}
+          sub="daily"
+          tone={logs.length > 0 ? "accent" : "dim"}
+          clickable
+          active={tileCursor === "logs"}
+        />
       </Box>
 
       <Text color={colors.borderFaint}>{"─".repeat(60)}</Text>
@@ -187,10 +228,14 @@ export function StatusTab({
         ))}
       </Box>
 
-      <SectionHead label="Recent" count={events.length} marginTop={1} />
-      <Box marginLeft={2}>
-        <ActivityFeed events={events} cap={5} emptyHint="  (no sessions yet)" />
-      </Box>
+      <LogsSection
+        logs={logs}
+        focused={logsMode}
+        {...(lastOpenApp !== undefined ? { lastApp: lastOpenApp } : {})}
+        onOpen={(entry) => void openEntry(entry)}
+        onOpenWith={(entry, app) => void openEntry(entry, app)}
+        onExit={() => setLogsMode(false)}
+      />
     </Box>
   );
 }

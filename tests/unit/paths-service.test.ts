@@ -15,6 +15,18 @@ describe("PathsService", () => {
     expect(wfPaths.userConfigMd()).toBe("/home/u/.workflow/user-config.md");
   });
 
+  it("userDailyLogFile: global user-level daily log, literal 'agent-workflow' prefix + YYYY-MM-DD", () => {
+    // Local calendar date (not UTC) so it matches the user's "today".
+    const d = new Date(2026, 6, 1, 15, 30, 0); // 2026-07-01 local
+    expect(wfPaths.userDailyLogFile(d)).toBe(
+      "/home/u/.workflow/logs/agent-workflow-2026-07-01.log",
+    );
+    const d2 = new Date(2026, 0, 9, 0, 5, 0); // zero-padded month/day
+    expect(wfPaths.userDailyLogFile(d2)).toBe(
+      "/home/u/.workflow/logs/agent-workflow-2026-01-09.log",
+    );
+  });
+
   it("resolves cwd-level dirs for namespace 'workflow'", () => {
     expect(wfPaths.cwdRoot()).toBe("/cwd/.workflow");
     expect(wfPaths.cwdSessionsDir()).toBe("/cwd/.workflow/sessions");

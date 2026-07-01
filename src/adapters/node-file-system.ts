@@ -1,4 +1,5 @@
 import {
+  appendFile,
   mkdir,
   open,
   readFile,
@@ -9,7 +10,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "../ports/file-system.js";
 
 interface NodeError extends Error {
@@ -64,6 +65,12 @@ export class NodeFileSystem implements FileSystemPort {
       await handle.close();
     }
     return { created: true };
+  }
+
+  /** Append content, creating parent dirs on first write (log-friendly). */
+  async appendText(path: string, content: string): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    await appendFile(path, content, "utf8");
   }
 
   async remove(path: string): Promise<void> {

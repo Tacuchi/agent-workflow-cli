@@ -4,14 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
-import type { ActivityEvent } from "./components/activity-feed.js";
 import { HomeFooter } from "./components/home-footer.js";
 import { HomeHeader } from "./components/home-header.js";
 import { NotificationStack } from "./components/notification-stack.js";
 import { ScreenFrame } from "./components/screen-frame.js";
 import { TabBar } from "./components/tab-bar.js";
 import { TABS_LIST, type TabId, type WorkspaceContext } from "./components/tabs-config.js";
-import { loadActivity } from "./data/activity.js";
+import type { LogEntry } from "./data/logs.js";
+import { loadLogs } from "./data/logs.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { NotificationCenterProvider, useNotifications } from "./notification-center.js";
 import { ConfigTab } from "./tabs/config-tab.js";
@@ -88,9 +88,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     branchLabel: "— · loading",
     sessionsLabel: "— sessions",
   });
-  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   // Bumpeado por `r`: re-monta el tab activo (re-fetch de sus effects) y recarga
-  // los datos del shell (header + activity feed).
+  // los datos del shell (header + historial de logs del tab Status).
   const [refreshNonce, setRefreshNonce] = useState(0);
   const { exit } = useApp();
   const { locked: inputLocked } = useInputLock();
@@ -109,8 +109,8 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     setProjectName(name);
     const wctx = await loadWorkspaceContext(ctx);
     setWorkspaceCtx(wctx);
-    const events = await loadActivity(ctx, { cap: 5 });
-    setActivity(events);
+    const dailyLogs = await loadLogs(ctx);
+    setLogs(dailyLogs);
   }, [ctx]);
 
   useEffect(() => {
@@ -349,7 +349,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
               isActive={true}
               onActivateTab={(t) => setActiveTab(t)}
               onToast={pushToast}
-              recentEvents={activity}
+              logs={logs}
+              {...(prefs.lastOpenApp !== undefined ? { lastOpenApp: prefs.lastOpenApp } : {})}
+              onSetLastApp={(app) => onChangePrefs({ lastOpenApp: app })}
               disabledHosts={prefs.disabledHosts}
             />
           ) : null}

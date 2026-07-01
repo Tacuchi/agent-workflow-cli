@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { HARNESSES, type Harness } from "../domain/harnesses.js";
@@ -153,19 +153,20 @@ export async function runLogs(
   paths: PathsService,
   input: LogsInput,
 ): Promise<LogsOutput> {
-  // Prefer the in-cwd ${ns}/logs/ when present, fallback to ~/.${ns}/logs/.
+  // Unified to the GLOBAL, user-level daily log (~/.${ns}/logs/agent-workflow-*.log):
+  // the same source the [Status] tab lists. The old per-workspace path is obsolete.
   void env;
-  const cwdRoot = paths.cwdRoot();
-  const path =
-    existsSync(cwdRoot) && statSync(cwdRoot).isDirectory()
-      ? paths.cwdLogFile()
-      : join(paths.userLogsDir(), "agent-workflow.log");
+  const logsDir = paths.userLogsDir();
+  const path = paths.userDailyLogFile(new Date());
 
   if (input.clear === true) {
-    if (existsSync(path)) unlinkSync(path);
-    const old = path.replace(/\.log$/, ".log.old");
-    if (existsSync(old)) unlinkSync(old);
-    return { cleared: true, path };
+    // Clear every daily log, not just today's.
+    if (existsSync(logsDir)) {
+      for (const name of readdirSync(logsDir)) {
+        if (/^agent-workflow-.*\.log$/.test(name)) unlinkSync(join(logsDir, name));
+      }
+    }
+    return { cleared: true, path: logsDir };
   }
 
   if (!existsSync(path)) {

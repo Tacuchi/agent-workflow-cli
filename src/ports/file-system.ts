@@ -15,6 +15,8 @@ export interface FileStat {
 export interface FileSystemPort {
   readText(path: string): Promise<string>;
   writeText(path: string, content: string): Promise<void>;
+  /** Append `content` to `path`, creating the file and its parent dirs if absent. */
+  appendText(path: string, content: string): Promise<void>;
   /**
    * Atomically create file with content. Returns `{ created: true }` on success
    * or `{ created: false }` if path already exists. Used by lock-service to

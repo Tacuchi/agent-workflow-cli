@@ -67,6 +67,13 @@ export interface ProcessPort {
     opts: SpawnInTerminalOptions,
   ): Promise<SpawnInTerminalResult>;
   /**
+   * Open a file in an EXTERNAL application — the OS default text editor, or
+   * `opts.app` when given — spawned detached so it never captures the TUI's TTY.
+   * Best-effort: resolves even if the opener can't be launched (the caller
+   * surfaces failure, e.g. checks the file exists first).
+   */
+  openPath(path: string, opts?: { app?: string }): Promise<void>;
+  /**
    * Terminate a process and its whole tree/group. Best-effort: resolves even if
    * the process is already gone.
    */

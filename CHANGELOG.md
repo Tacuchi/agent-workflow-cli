@@ -4,6 +4,31 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.4.0] — 2026-07-01
+
+**El CLI/TUI ahora lleva un log operativo propio, global y por día, y el tab [Status] tiene un historial de esos logs para abrirlos rápido.** Antes `agent-workflow.log` estaba declarado pero **nadie lo escribía** (solo `aw logs` lo leía → casi siempre "No log file found"). Ahora cada ejecución de comando `aw` y el arranque del TUI **anexan una línea** al diario global `~/.<ns>/logs/agent-workflow-YYYY-MM-DD.log` (mismo path sin importar desde qué ruta se ejecute — pensado para "probar en otras rutas"). En el tab **[Status]**, la sección **[RECENT]** se reemplaza por **"Logs"**: lista los diarios (más nuevo primero, ruta clara), y al seleccionar uno **Enter** lo abre con el editor de texto por defecto del SO y **`a`** permite **elegir con qué app** (recordando la última). Solo runtime CLI/TUI — el bundle `w` no cambia (9.3.0). Aditivo.
+
+### Added
+
+- **Logging operativo global diario** (productor, antes inexistente):
+  - `Logger` (`src/application/logging/logger.ts`) — anexa `<ISO> <LEVEL> <msg>` al diario del día; rotación **por día** (fecha local); **redacción de secretos** (flags `token/secret/password/…` + `Bearer`); **best-effort** (nunca crashea el CLI).
+  - `FileSystemPort.appendText` (+ `NodeFileSystem`, crea el dir padre) — antes el port no sabía anexar.
+  - `PathsService.userDailyLogFile(date)` → `~/.<ns>/logs/agent-workflow-YYYY-MM-DD.log` (global user-level, prefijo literal `agent-workflow-`).
+  - Inyección **transversal** en `src/cli/main.ts`: `logger.info(<comando+args>)` antes del dispatch + outcome/error después, y `tui: open` al abrir el TUI (helpers en `logging/log-events.ts`). Registra **comandos + eventos + errores** (info); debug detallado queda como opt-in.
+- **Capacidad cross-platform "abrir archivo externo"**:
+  - `open-external.ts` (puro) `buildOpenCommand` — macOS `open -t`/`open -a <App>`, Windows `cmd /c start "" [app] path`, Linux `xdg-open`/`<app>`; unit-testeado por-OS.
+  - `ProcessPort.openPath(path, {app?})` (+ `NodeProcess.openPath`) — spawn **detached**, no captura el TTY del TUI; best-effort.
+- **Sección "Logs" en el tab [Status]** (consumidor):
+  - `src/cli/tui/data/logs.ts` `loadLogs` — lista los diarios de `userLogsDir()` (más nuevo primero, con fecha/tamaño/mtime); best-effort → `[]`.
+  - `src/cli/tui/components/logs-section.tsx` `LogsSection` — lista navegable (↑↓), **Enter** = abrir con default del SO, **`a`** = "abrir con…" (input inline, recuerda la última app), **esc** = volver a los tiles; empty-state.
+  - 5º stat-tile **"logs"** + patrón "mode" de foco en `status-tab.tsx` (no rompe la navegación de los tiles).
+  - `TuiPrefs.lastOpenApp` — persiste la última app usada en "abrir con…".
+
+### Changed
+
+- **`aw logs` unificado al diario global**: lee el diario del día en `~/.<ns>/logs/` y `--clear` limpia **todos** los `agent-workflow-*.log`; la ruta per-workspace `.workflow/logs/agent-workflow.log` queda **obsoleta**.
+- **Tab [Status]**: la sección **"Recent"** (activity-feed de sesiones) se **reemplaza** por **"Logs"** (historial de diarios). `app.tsx` carga los logs vía `loadLogs` en lugar de `loadActivity`.
+
 ## [14.3.0] — 2026-07-01
 
 **"Lanzar en local" ahora abre una terminal visible que se mantiene abierta (macOS/Linux/Windows), para monitorear el proceso en vivo y detenerlo cerrando la ventana.** Antes el arranque era detached-a-logfile con `windowsHide:true`, lo que en Windows producía el síntoma reportado: una consola que **parpadea y se cierra**. Ahora cada source se lanza en la terminal nativa del OS (Terminal.app · consola de PowerShell · emulador de Linux), y si no hay terminal disponible (headless/SSH/CI) **cae a background+log** como antes. La administración desde el TUI (listar/detener/re-lanzar) se preserva. Solo runtime CLI/TUI — el bundle `w` no cambia (9.3.0). Aditivo, nada breaking.

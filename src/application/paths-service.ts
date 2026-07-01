@@ -40,6 +40,18 @@ export class PathsService {
   userLogsDir(): string {
     return join(this.userRoot(), "logs");
   }
+  /**
+   * Global, user-level daily operational log for the given local calendar day:
+   * `~/.${ns}/logs/agent-workflow-YYYY-MM-DD.log`. The `agent-workflow-` prefix is
+   * literal (like `cwdLogFile`), independent of the namespaced dir; the date uses
+   * LOCAL parts so it matches the user's "today".
+   */
+  userDailyLogFile(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return join(this.userLogsDir(), `agent-workflow-${y}-${m}-${d}.log`);
+  }
   userLibConfigDir(): string {
     return join(this.userRoot(), "lib", "config");
   }

@@ -5,6 +5,12 @@ import { GitCliAdapter } from "../adapters/git-cli.js";
 import { NodeEnv } from "../adapters/node-env.js";
 import { NodeFileSystem } from "../adapters/node-file-system.js";
 import { NodeProcess } from "../adapters/node-process.js";
+import {
+  formatCommandError,
+  formatCommandInvocation,
+  formatCommandOutcome,
+} from "../application/logging/log-events.js";
+import { Logger } from "../application/logging/logger.js";
 import { PathsService } from "../application/paths-service.js";
 import { resolveSkills } from "../application/skills-resolver-service.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
@@ -156,6 +162,9 @@ async function run(argv: string[]): Promise<ExitCode> {
     skills: skillsResolution.skills,
   };
 
+  // Operational logger → global user-level daily log. Best-effort; never throws.
+  const logger = new Logger({ fs, paths });
+
   if (
     shouldShowInteractiveMenu({
       command: parsed.command,
@@ -163,6 +172,7 @@ async function run(argv: string[]): Promise<ExitCode> {
       hasHelp,
     })
   ) {
+    await logger.info("tui: open");
     const tuiResult = await runTui(readPackageVersion(), ctx);
     if (tuiResult.kind === "menu-action") {
       return await dispatchMenuAction(tuiResult.action, registry);
@@ -187,11 +197,17 @@ async function run(argv: string[]): Promise<ExitCode> {
     return 0;
   }
 
+  await logger.info(formatCommandInvocation(parsed));
   try {
     const result = await command.execute(parsed, ctx);
+    await logger.log(
+      result.ok ? "info" : "error",
+      formatCommandOutcome(command.name, result.exitCode),
+    );
     emit(result);
     return result.exitCode;
   } catch (err) {
+    await logger.error(formatCommandError(command.name, err));
     const message = err instanceof Error ? err.message : String(err);
     emit({ ok: false, error: { code: "UNHANDLED", message }, exitCode: 1 });
     return 1;

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { closeSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildOpenCommand } from "../application/open-external.js";
 import {
   LINUX_TERMINALS,
   buildNixWrapper,
@@ -271,6 +272,24 @@ export class NodeProcess implements ProcessPort {
       if (await this.which(t.bin)) found.push(t.bin);
     }
     return found;
+  }
+
+  async openPath(path: string, opts: { app?: string } = {}): Promise<void> {
+    const plan = buildOpenCommand(this.platform, opts.app ? { path, app: opts.app } : { path });
+    try {
+      const child = spawn(plan.cmd, plan.args, {
+        detached: true,
+        stdio: "ignore",
+        // GUI openers may want a window; do not hide it on Windows.
+        windowsHide: false,
+      });
+      // Best-effort: swallow async spawn failures (e.g. ENOENT) so opening never
+      // crashes the TUI — the caller surfaces failure by other means.
+      child.on("error", () => {});
+      child.unref();
+    } catch {
+      // Synchronous spawn failure — also best-effort.
+    }
   }
 
   async killTree(pid: number): Promise<void> {

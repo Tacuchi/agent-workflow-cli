@@ -17,6 +17,8 @@ export interface TuiPrefs {
   initialScreen: TabId;
   /** Hosts excluidos del targeting (opt-out). Vacío = todos habilitados. */
   disabledHosts: string[];
+  /** Última app usada en "abrir con…" del historial de logs (memoria + prefill). */
+  lastOpenApp?: string;
 }
 
 export const DEFAULT_TUI_PREFS: TuiPrefs = {
@@ -59,6 +61,7 @@ export class TuiPrefsService {
         disabledHosts: Array.isArray(parsed.disabledHosts)
           ? parsed.disabledHosts.filter((h): h is string => typeof h === "string")
           : DEFAULT_TUI_PREFS.disabledHosts,
+        ...(typeof parsed.lastOpenApp === "string" ? { lastOpenApp: parsed.lastOpenApp } : {}),
       };
     } catch {
       return { ...DEFAULT_TUI_PREFS };
