@@ -20,6 +20,8 @@ export interface ProcessRecord {
   logPath: string;
   /** Non-secret param values entered at launch, so a relaunch reuses them (secrets never persisted). */
   values?: Record<string, string>;
+  /** How it was launched: "terminal" (visible window) or "background" (detached + log fallback). Absent = legacy background. */
+  launchMode?: "terminal" | "background";
   state: ProcessState;
 }
 

@@ -227,7 +227,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     const { lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
     const f = lastFrame() ?? "";
-    expect(f).toContain("PROCESOS EN SEGUNDO PLANO");
+    expect(f).toContain("PROCESOS LANZADOS");
     expect(f).toContain("procesos");
     expect(f).toContain("sin procesos");
   });
@@ -368,7 +368,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("not initialized"); // landing
-    expect(f).not.toContain("Procesos en segundo plano");
+    expect(f).not.toContain("Procesos lanzados");
     expect(f).not.toContain("Lanzar en local");
   });
 });

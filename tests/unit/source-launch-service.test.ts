@@ -19,31 +19,37 @@ import {
 } from "../../src/application/source-launch-service.js";
 import type {
   ProcessPort,
-  SpawnDetachedOptions,
   SpawnDetachedResult,
+  SpawnInTerminalOptions,
+  SpawnInTerminalResult,
 } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
 class FakeProc implements ProcessPort {
-  spawns: { cmd: string; args: string[]; opts: SpawnDetachedOptions }[] = [];
+  terminalSpawns: { cmd: string; args: string[]; opts: SpawnInTerminalOptions }[] = [];
   killed: number[] = [];
   alive = new Set<number>();
   nextPid = 5000;
+  /** What the (impure) adapter would report — the service just records it. */
+  mode: "terminal" | "background" = "terminal";
   async run() {
     return { code: 0, stdout: "", stderr: "" };
   }
   async which() {
     return undefined;
   }
-  async spawnDetached(
+  async spawnDetached(): Promise<SpawnDetachedResult> {
+    throw new Error("the service must launch via spawnInTerminal, not spawnDetached");
+  }
+  async spawnInTerminal(
     cmd: string,
     args: string[],
-    opts: SpawnDetachedOptions,
-  ): Promise<SpawnDetachedResult> {
+    opts: SpawnInTerminalOptions,
+  ): Promise<SpawnInTerminalResult> {
     const pid = this.nextPid++;
-    this.spawns.push({ cmd, args, opts });
+    this.terminalSpawns.push({ cmd, args, opts });
     this.alive.add(pid);
-    return { pid };
+    return { pid, mode: this.mode };
   }
   async killTree(pid: number): Promise<void> {
     this.killed.push(pid);
@@ -93,6 +99,18 @@ describe("source-launch-service — pure logic", () => {
     expect(r?.env.API_TOKEN).toBe("sk-123"); // user value overrides empty secret default
     expect(r?.env.PROFILE).toBe("dev");
     expect(r?.logPath).toBe("/logs/app-dev.log");
+  });
+
+  it("resolveLaunch exposes env deltas (params + PROFILE) apart from the base env", () => {
+    const r = resolveLaunch(
+      descriptor(),
+      { alias: "app", profile: "dev", values: { API_TOKEN: "sk-123" } },
+      "/logs",
+      { PATH: "/usr/bin" },
+    );
+    // Deltas are what a terminal that doesn't inherit our env must have baked in.
+    expect(r?.envDelta).toEqual({ PORT: "3000", API_TOKEN: "sk-123", PROFILE: "dev" });
+    expect(r?.envDelta.PATH).toBeUndefined(); // base env is NOT a delta
   });
 
   it("resolveLaunch returns null when the descriptor has no command", () => {
@@ -175,7 +193,7 @@ describe("source-launch-service — launch/stop/relaunch", () => {
     writeFileSync(join(dir, "launch.json"), JSON.stringify(desc));
   }
 
-  it("launchSource spawns detached, opens a log, and registers a running record", async () => {
+  it("launchSource opens a terminal, tees to a log, and registers a running record + mode", async () => {
     writeDescriptor("app", descriptor());
     const res = await launchSource(deps, {
       alias: "app",
@@ -186,14 +204,26 @@ describe("source-launch-service — launch/stop/relaunch", () => {
     if (!res.ok) return;
     expect(res.record.state).toBe("running");
     expect(res.record.pid).toBe(5000);
-    expect(proc.spawns).toHaveLength(1);
-    expect(proc.spawns[0]?.cmd).toBe("npm");
-    expect(proc.spawns[0]?.opts.logPath).toBe(join(ws, "docs", "logs", "app-dev.log"));
+    expect(res.record.launchMode).toBe("terminal");
+    expect(proc.terminalSpawns).toHaveLength(1);
+    expect(proc.terminalSpawns[0]?.cmd).toBe("npm");
+    expect(proc.terminalSpawns[0]?.opts.logPath).toBe(join(ws, "docs", "logs", "app-dev.log"));
+    expect(proc.terminalSpawns[0]?.opts.envDelta.PROFILE).toBe("dev");
+    expect(proc.terminalSpawns[0]?.opts.title).toContain("app");
 
     // Persisted in the registry.
     const registry = new ProcessRegistryService(fs, proc, deps.paths.cwdProcessesFile());
     const listed = await registry.list();
     expect(listed.map((r) => r.pid)).toContain(5000);
+  });
+
+  it("launchSource records background mode when the adapter fell back (no terminal)", async () => {
+    writeDescriptor("app", descriptor({ profiles: [], params: [] }));
+    proc.mode = "background";
+    const res = await launchSource(deps, { alias: "app", profile: null, values: {} });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.record.launchMode).toBe("background");
   });
 
   it("launchSource errors when no descriptor exists", async () => {
@@ -239,7 +269,7 @@ describe("source-launch-service — launch/stop/relaunch", () => {
     // Relaunch reuses the persisted non-secret value.
     const again = await relaunchProcess(deps, launched.record);
     if (!again.ok) throw new Error("relaunch failed");
-    expect(proc.spawns.at(-1)?.opts.env?.PORT).toBe("8080");
+    expect(proc.terminalSpawns.at(-1)?.opts.env?.PORT).toBe("8080");
   });
 
   it("tailLog returns the last lines of a log", async () => {

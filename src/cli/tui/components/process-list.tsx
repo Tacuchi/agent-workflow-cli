@@ -32,8 +32,9 @@ function startedClock(iso: string): string {
 }
 
 /**
- * "Procesos en segundo plano" — the launched detached processes for the
- * workspace sources, with their reconciled state. Navigable in process mode.
+ * "Procesos lanzados" — the launched source processes (in a visible terminal, or
+ * background when no terminal was available), with their reconciled state.
+ * Navigable in process mode.
  */
 export function ProcessList({ processes, cursor, focused, widthHint }: ProcessListProps) {
   const rightAction =
@@ -45,7 +46,7 @@ export function ProcessList({ processes, cursor, focused, widthHint }: ProcessLi
   return (
     <>
       <SectionHead
-        label="Procesos en segundo plano"
+        label="Procesos lanzados"
         count={processes.length}
         marginTop={1}
         {...(rightAction ? { rightAction } : {})}
@@ -78,11 +79,17 @@ function ProcessRow({
   widthHint: number;
 }) {
   const profile = record.profile ?? "default";
+  const mode =
+    record.launchMode === "terminal"
+      ? " · terminal"
+      : record.launchMode === "background"
+        ? " · bg"
+        : "";
   return (
     <ListRow
       icon={icons.diamond}
       title={`${record.sourceAlias} · ${profile}`}
-      subtitle={`PID ${record.pid} · desde ${startedClock(record.startedAt)}`}
+      subtitle={`PID ${record.pid} · desde ${startedClock(record.startedAt)}${mode}`}
       meta={[{ label: STATE_LABEL[record.state], tone: STATE_TONE[record.state] }]}
       state={{ label: record.command, tone: "dim" }}
       active={active}

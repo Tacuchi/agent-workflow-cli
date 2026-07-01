@@ -24,6 +24,9 @@ class ScriptedProcess implements ProcessPort {
   async spawnDetached() {
     throw new Error("spawnDetached not implemented in this fake");
   }
+  async spawnInTerminal() {
+    throw new Error("spawnInTerminal not implemented in this fake");
+  }
   async killTree(): Promise<void> {}
   async isAlive() {
     return false;

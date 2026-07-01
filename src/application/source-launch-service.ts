@@ -16,7 +16,10 @@ export interface ResolvedLaunch {
   command: string;
   args: string[];
   cwd: string;
+  /** Full child env: base + params + PROFILE. */
   env: Record<string, string>;
+  /** Deltas over the base env (params + PROFILE) — what a terminal must bake in when it doesn't inherit our env. */
+  envDelta: Record<string, string>;
   logPath: string;
 }
 
@@ -62,16 +65,17 @@ export function resolveLaunch(
   baseEnv: Record<string, string>,
 ): ResolvedLaunch | null {
   if (!desc.command) return null;
-  const env: Record<string, string> = { ...baseEnv };
+  const envDelta: Record<string, string> = {};
   for (const p of desc.params) {
-    env[p.name] = req.values[p.name] ?? p.default;
+    envDelta[p.name] = req.values[p.name] ?? p.default;
   }
-  if (req.profile) env.PROFILE = req.profile;
+  if (req.profile) envDelta.PROFILE = req.profile;
   return {
     command: desc.command,
     args: desc.args,
     cwd: desc.cwd,
-    env,
+    env: { ...baseEnv, ...envDelta },
+    envDelta,
     logPath: logFileFor(logsDir, req.alias, req.profile),
   };
 }
@@ -91,7 +95,7 @@ function registry(deps: LaunchDeps): ProcessRegistryService {
   return new ProcessRegistryService(deps.fs, deps.proc, deps.paths.cwdProcessesFile());
 }
 
-/** Launch a source detached: resolve → open log dir → spawnDetached → register. */
+/** Launch a source: resolve → open log dir → spawnInTerminal (terminal or background fallback) → register. */
 export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promise<LaunchResult> {
   const desc = await readDescriptor(deps.fs, deps.paths.cwdLaunchDir(), req.alias);
   if (!desc)
@@ -107,10 +111,14 @@ export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promis
   }
   await deps.fs.mkdirp(logsDir);
   try {
-    const { pid } = await deps.proc.spawnDetached(resolved.command, resolved.args, {
+    // Open a visible, persistent terminal window (monitor live + close-to-stop);
+    // the adapter falls back to a background+log process when no terminal exists.
+    const { pid, mode } = await deps.proc.spawnInTerminal(resolved.command, resolved.args, {
       cwd: resolved.cwd,
       env: resolved.env,
+      envDelta: resolved.envDelta,
       logPath: resolved.logPath,
+      title: req.profile ? `${req.alias} · ${req.profile}` : req.alias,
     });
     const startedAt = (deps.now ?? (() => new Date().toISOString()))();
     // Persist only NON-secret entered values so a relaunch can reuse them; secrets
@@ -128,6 +136,7 @@ export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promis
       startedAt,
       logPath: resolved.logPath,
       values: persistedValues,
+      launchMode: mode,
     });
     return { ok: true, record };
   } catch (err) {

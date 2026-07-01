@@ -22,6 +22,9 @@ class FakeProc implements ProcessPort {
   async spawnDetached() {
     throw new Error("not used here");
   }
+  async spawnInTerminal(): Promise<never> {
+    throw new Error("not used here");
+  }
   async killTree(pid: number): Promise<void> {
     this.killed.push(pid);
     this.alive.delete(pid);

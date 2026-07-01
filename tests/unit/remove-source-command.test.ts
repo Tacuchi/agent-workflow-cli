@@ -35,6 +35,9 @@ class FakeProc implements ProcessPort {
   async spawnDetached() {
     return { pid: 0 };
   }
+  async spawnInTerminal() {
+    return { pid: 0, mode: "background" as const };
+  }
   async killTree() {}
   async isAlive() {
     return true;

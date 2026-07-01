@@ -314,7 +314,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [ctx],
   );
 
-  // Launch a source: collision-check first, then spawn detached + register.
+  // Launch a source: collision-check first, then open a terminal (or background fallback) + register.
   const doLaunch = useCallback(
     async (req: LaunchRequest) => {
       const existing = findCollision(processes, req.alias, req.profile);
@@ -326,7 +326,16 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           ? {
               kind: "notice",
               tone: "ok",
-              lines: [`Lanzado ${req.alias} (PID ${res.record.pid})`, res.record.logPath],
+              lines:
+                res.record.launchMode === "terminal"
+                  ? [
+                      `Lanzado ${req.alias} en una terminal (PID ${res.record.pid}).`,
+                      "Monitoreá en esa ventana; cerrala para detener.",
+                    ]
+                  : [
+                      `Lanzado ${req.alias} en segundo plano (PID ${res.record.pid}) — sin terminal disponible.`,
+                      res.record.logPath,
+                    ],
             }
           : { kind: "notice", tone: "err", lines: [res.message] },
       );
@@ -536,7 +545,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [actionCursor, detailItems, currentSource, runFlow, beginLaunch],
   );
 
-  // Modo "process": navega la sección de procesos en segundo plano (x stop · r relaunch · o log).
+  // Modo "process": navega la sección de procesos lanzados (x stop · r relaunch · o log).
   const handleProcessKey = useCallback(
     (input: string, key: { upArrow?: boolean; downArrow?: boolean; escape?: boolean }) => {
       if (key.escape) return setMode({ kind: "list" });
@@ -729,7 +738,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const detailActions: DetailAction[] = detailItems.map((it) => {
     if (it.kind === "launch") {
       return currentSource?.launchable
-        ? { name: LAUNCH_ACTION.name, description: "spawn detached" }
+        ? { name: LAUNCH_ACTION.name, description: "abre una terminal" }
         : { name: LAUNCH_ACTION.name, description: "sin descriptor — /w:workspace-init" };
     }
     if (it.kind === "remove") {

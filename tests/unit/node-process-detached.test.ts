@@ -53,6 +53,39 @@ describe("NodeProcess detached lifecycle", () => {
     expect(dead).toBe(true);
   }, 15000);
 
+  it("spawnInTerminal falls back to a background process when no terminal exists", async () => {
+    // Force a headless *nix (linux, no DISPLAY) so no real terminal window opens.
+    const headless = new NodeProcess("linux", { PATH: process.env.PATH ?? "" });
+    const logPath = join(dir, "term.log");
+    const { pid, mode } = await headless.spawnInTerminal(
+      process.execPath,
+      ["-e", "console.log('bg-started'); setInterval(() => {}, 1000);"],
+      {
+        cwd: dir,
+        env: { PATH: process.env.PATH ?? "" },
+        envDelta: {},
+        logPath,
+        title: "app",
+      },
+    );
+    expect(mode).toBe("background");
+    expect(pid).toBeGreaterThan(0);
+    expect(await headless.isAlive(pid)).toBe(true);
+
+    const logged = await waitUntil(async () => {
+      try {
+        return readFileSync(logPath, "utf-8").includes("bg-started");
+      } catch {
+        return false;
+      }
+    }, 3000);
+    expect(logged).toBe(true);
+
+    await headless.killTree(pid);
+    const dead = await waitUntil(async () => !(await headless.isAlive(pid)), 5000);
+    expect(dead).toBe(true);
+  }, 15000);
+
   it("isAlive is false for an obviously dead pid", async () => {
     // PID 1 is init/launchd (not killable by us); a huge pid is virtually never live.
     expect(await proc.isAlive(2147483646)).toBe(false);

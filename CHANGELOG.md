@@ -4,6 +4,24 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.3.0] — 2026-07-01
+
+**"Lanzar en local" ahora abre una terminal visible que se mantiene abierta (macOS/Linux/Windows), para monitorear el proceso en vivo y detenerlo cerrando la ventana.** Antes el arranque era detached-a-logfile con `windowsHide:true`, lo que en Windows producía el síntoma reportado: una consola que **parpadea y se cierra**. Ahora cada source se lanza en la terminal nativa del OS (Terminal.app · consola de PowerShell · emulador de Linux), y si no hay terminal disponible (headless/SSH/CI) **cae a background+log** como antes. La administración desde el TUI (listar/detener/re-lanzar) se preserva. Solo runtime CLI/TUI — el bundle `w` no cambia (9.3.0). Aditivo, nada breaking.
+
+### Added
+
+- **`ProcessPort.spawnInTerminal`** (`src/ports/process.ts`, adapter en `src/adapters/node-process.ts`) — lanza el proceso en una **ventana de terminal visible y persistente** por-OS:
+  - **macOS**: `osascript` → `Terminal.app` corre un wrapper efímero (`do script`).
+  - **Windows**: consola de PowerShell propia (`spawn` `detached` + `windowsHide:false` + `-NoExit`); los secretos viajan por `env` heredado, nunca por la línea de comandos.
+  - **Linux**: primer emulador disponible por prioridad (`x-terminal-emulator` → `gnome-terminal` → `konsole` → `xfce4-terminal` → `alacritty` → `kitty` → `xterm`), detectado con `which`; requiere `DISPLAY`/`WAYLAND_DISPLAY`.
+  - **Fallback**: sin terminal (headless/SSH/CI) → proceso detached + `docs/logs/<src>.log` (semántica anterior).
+  - El wrapper *nix usa **job control** (`set -m`) para que la app sea líder de su propio grupo de procesos: tanto cerrar la ventana (trap `HUP`) como el "Detener" del TUI (`killTree` con pid negativo) matan el **árbol completo** (npm→node…). Captura el **PID real** de la app vía pidfile; tee a la vez a la terminal y al log. Módulo puro `src/application/terminal-launch.ts` (constructores por-OS unit-testeados para los 3 sistemas).
+
+### Changed
+
+- **`resolveLaunch` expone `envDelta`** (params + `PROFILE`, aparte del env base) para que el wrapper de terminal pueda **hornear** esas variables (los emuladores no siempre heredan el env: `Terminal.app do script`, `gnome-terminal-server`). El registro de procesos guarda `launchMode` (`terminal` | `background`); el TUI lo muestra como chip por fila y adapta el aviso de lanzamiento ("cerrá la ventana para detener" vs "sin terminal disponible").
+- **TUI [Project]** — la sección "Procesos en segundo plano" pasa a **"Procesos lanzados"** (ya no siempre es background); la acción "Lanzar en local" describe "abre una terminal".
+
 ## [14.2.0] — 2026-06-30
 
 **Nuevo comando+loop auxiliar `plan-refine`: refina un plan existente in place antes de ejecutar (el gemelo de `spec-refine`, pero para el plan).** Paso **NO obligatorio** del flujo PLAN — `plan-exec` corre cualquier plan, refinado o no. La cadena PLAN pasa a ser `plan-new` · `plan-refine` *(aux)* · `plan-exec`; el modelo queda en **6 comandos de flow / 5 loops**. Aditivo, nada breaking. Plugin `w` 9.2.1 → 9.3.0.
