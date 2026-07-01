@@ -215,7 +215,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
   const detailActions: DetailAction[] = current
     ? [
         {
-          name: installActionLabel(current.instalado.claude_code),
+          name: installActionLabel(current.instalado.claude),
           description: "Write the dbhub entry to .mcp.json at the workspace root.",
         },
         { name: "Test connection", description: "Run dbhub with DSN (SELECT 1 smoke test)." },
@@ -371,7 +371,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
                   iconActive={true}
                   title={c.nombre}
                   subtitle={`${c.dsn_var} · ${c.server_name}`}
-                  state={installStatusPill(c.instalado.claude_code)}
+                  state={installStatusPill(c.instalado.claude)}
                   chevron
                   active={i === cursor}
                   dimmed={

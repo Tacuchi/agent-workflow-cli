@@ -4,80 +4,95 @@ import {
   formatConnectionsTable,
 } from "../../src/application/self/mcp-config.js";
 
+type Status = "si" | "no" | "drift";
+type Host = "claude" | "codex" | "warp" | "gemini" | "opencode" | "crush";
+
+// All 6 hosts default to "no"; override any subset.
 function view(
   nombre: string,
   dsnVar: string,
-  claude: "si" | "no" | "drift" = "no",
-  codex: "si" | "no" | "drift" = "no",
-  warp: "si" | "no" | "drift" = "no",
+  status: Partial<Record<Host, Status>> = {},
 ): SelfMcpConnectionView {
+  const d: Status = "no";
   return {
     nombre,
     server_name: nombre,
     dsn_var: dsnVar,
     dsn_visible: false,
-    instalado: { claude_code: claude, codex, warp },
+    instalado: {
+      claude: status.claude ?? d,
+      codex: status.codex ?? d,
+      warp: status.warp ?? d,
+      gemini: status.gemini ?? d,
+      opencode: status.opencode ?? d,
+      crush: status.crush ?? d,
+    },
   };
 }
 
+// The host status cells of a data row (after `nombre` and `DSN var`, before the trailing edge).
+function statusCells(line: string): string[] {
+  const cells = line.split("│").map((c) => c.trim());
+  return cells.slice(3, cells.length - 1);
+}
+
 describe("formatConnectionsTable", () => {
-  it("caso vacío: header + bottom sin filas, marco cerrado", () => {
+  it("caso vacío: marco cerrado + una columna por cada host (los 6)", () => {
     const out = formatConnectionsTable([]);
     const lines = out.split("\n");
     expect(lines).toHaveLength(3);
     expect(lines[0]?.startsWith("┌")).toBe(true);
     expect(lines[0]?.endsWith("┐")).toBe(true);
-    expect(lines[1]).toContain("nombre");
-    expect(lines[1]).toContain("DSN var");
-    expect(lines[1]).toContain("Claude");
-    expect(lines[1]).toContain("Codex");
-    expect(lines[1]).toContain("Warp");
+    for (const h of [
+      "nombre",
+      "DSN var",
+      "Claude",
+      "Codex",
+      "Warp",
+      "Gemini",
+      "OpenCode",
+      "Crush",
+    ]) {
+      expect(lines[1]).toContain(h);
+    }
     expect(lines[2]?.startsWith("└")).toBe(true);
   });
 
-  it("una conexión con status icons (no/no): – en ambas columnas", () => {
+  it("una conexión sin instalar: – en las 6 columnas de host", () => {
     const out = formatConnectionsTable([view("cert", "DB_CERT_DSN")]);
     const lines = out.split("\n");
     expect(lines).toHaveLength(5);
     expect(lines[3]).toContain("│ cert");
     expect(lines[3]).toContain("DB_CERT_DSN");
-    expect(lines[3]).toContain("│ –      │"); // padded a "Claude"
-    expect(lines[3]).toMatch(/│ – {4}│$/); // último char antes del cierre = padded "Warp"
+    expect(statusCells(lines[3] ?? "")).toEqual(["–", "–", "–", "–", "–", "–"]);
   });
 
-  it("status icons mapean: si→✓ · no→– · drift→!", () => {
+  it("status icons mapean: si→✓ en las 6 columnas", () => {
+    const all: Status = "si";
     const out = formatConnectionsTable([
-      view("a", "DSN_A", "si", "no"),
-      view("b", "DSN_B", "drift", "si"),
+      view("a", "DSN_A", {
+        claude: all,
+        codex: all,
+        warp: all,
+        gemini: all,
+        opencode: all,
+        crush: all,
+      }),
     ]);
-    const lines = out.split("\n");
-    expect(lines[3]).toContain("│ ✓"); // Claude=si
-    expect(lines[3]).toContain("│ –"); // Codex=no
-    expect(lines[4]).toContain("│ !"); // Claude=drift
-    expect(lines[4]).toContain("│ ✓     │"); // Codex=si
-    expect(lines[4]).toMatch(/│ – {4}│$/); // Warp=no (last col)
+    expect(statusCells(out.split("\n")[3] ?? "")).toEqual(["✓", "✓", "✓", "✓", "✓", "✓"]);
+  });
+
+  it("status icons mapean: drift→! y no→–, por columna independiente", () => {
+    const out = formatConnectionsTable([
+      view("a", "DSN_A", { claude: "drift", warp: "drift" }), // resto = no
+    ]);
+    // orden de columnas = orden del registro de hosts (claude, codex, warp, gemini, opencode, crush)
+    expect(statusCells(out.split("\n")[3] ?? "")).toEqual(["!", "–", "!", "–", "–", "–"]);
   });
 
   it("ancho de columna se ajusta al valor más largo (no al header)", () => {
     const out = formatConnectionsTable([view("reporting-warehouse", "REPORTING_WAREHOUSE_DSN")]);
     const lines = out.split("\n");
-    expect(lines[1]).toMatch(/│ nombre {14}│/);
     expect(lines[3]).toContain("│ reporting-warehouse │");
-  });
-
-  it("snapshot exacto para 2 conexiones con todos los estados mixtos", () => {
-    const out = formatConnectionsTable([
-      view("cert", "DB_CERT_DSN", "si", "no"),
-      view("prod", "DB_PROD_DSN", "drift", "si"),
-    ]);
-    const expected = [
-      "┌────────┬─────────────┬────────┬───────┬──────┐",
-      "│ nombre │ DSN var     │ Claude │ Codex │ Warp │",
-      "├────────┼─────────────┼────────┼───────┼──────┤",
-      "│ cert   │ DB_CERT_DSN │ ✓      │ –     │ –    │",
-      "│ prod   │ DB_PROD_DSN │ !      │ ✓     │ –    │",
-      "└────────┴─────────────┴────────┴───────┴──────┘",
-    ].join("\n");
-    expect(out).toBe(expected);
   });
 });

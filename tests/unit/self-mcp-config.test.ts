@@ -125,6 +125,28 @@ describe("selfMcpConfig", () => {
     expect(config).toContain('DBHUB_DSN_VAR = "REPORTING_DATABASE_URL"');
   });
 
+  it("instala en Gemini (host nuevo) escribiendo su settings.json de workspace", async () => {
+    const ctx = buildCtx(root, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await selfMcpConfig(
+      buildArgs(["mcp", "use-env"], { name: "reporting", "dsn-var": "REPORTING_DATABASE_URL" }),
+      ctx,
+      prompts(),
+    );
+
+    const result = await selfMcpConfig(
+      buildArgs(["mcp", "install-gemini"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.data.setup?.applied[0]?.name).toBe("reporting");
+    const settings = readFileSync(join(root, ".gemini", "settings.json"), "utf-8");
+    expect(settings).toContain("reporting");
+    expect(settings).toContain("REPORTING_DATABASE_URL");
+  });
+
   it("crear DSN env var sólo devuelve comandos de ayuda y no registra conexión", async () => {
     const ctx = buildCtx(root);
     const result = await selfMcpConfig(

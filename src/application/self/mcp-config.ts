@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
+import { HARNESSES } from "../../domain/harnesses.js";
 import {
   type McpHost,
   type McpInstance,
@@ -28,25 +29,43 @@ import {
 } from "../mcp-warp-postinstall-hint.js";
 import { resolveWarpProjectMcpPath } from "../multiroot/warp.js";
 
+// Hosts with a file-based MCP config the CLI can write, derived from the registry
+// (all 6: claude/codex/warp/gemini/opencode/crush). Keeping this data-driven means
+// a newly-supported host shows up in the wizard menu, status table, doctor and
+// remove automatically — no host can be silently left on 3.
+const FILE_HOSTS: readonly McpHost[] = HARNESSES.filter((h) => h.mcpHostId !== null).map(
+  (h) => h.mcpHostId as McpHost,
+);
+const HOST_LABEL: Record<McpHost, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  warp: "Warp Terminal",
+  gemini: "Gemini CLI / Antigravity",
+  opencode: "OpenCode",
+  crush: "Crush",
+};
+// Concise column headers for the status table.
+const HOST_COLUMN: Record<McpHost, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  warp: "Warp",
+  gemini: "Gemini",
+  opencode: "OpenCode",
+  crush: "Crush",
+};
+
+type InstallAction = `install-${McpHost}`;
 type SelfMcpAction =
   | "list"
   | "use-env"
   | "create-env"
-  | "install-claude"
-  | "install-codex"
-  | "install-warp"
+  | InstallAction
   | "doctor"
   | "remove"
   | "cancel";
 
 type InstallStatus = "si" | "no" | "drift";
-type ConnectionMenuAction =
-  | "install-claude"
-  | "install-codex"
-  | "install-warp"
-  | "doctor"
-  | "remove"
-  | "cancel";
+type ConnectionMenuAction = InstallAction | "doctor" | "remove" | "cancel";
 
 interface PromptChoice<T extends string> {
   name: string;
@@ -85,11 +104,7 @@ export interface SelfMcpConnectionView {
   server_name: string;
   dsn_var: string;
   dsn_visible: boolean;
-  instalado: {
-    claude_code: InstallStatus;
-    codex: InstallStatus;
-    warp: InstallStatus;
-  };
+  instalado: Record<McpHost, InstallStatus>;
 }
 
 export interface SelfMcpConfigData {
@@ -131,22 +146,15 @@ export async function selfMcpConfig(
       return useExistingDsnVar(args, ctx, prompt);
     case "create-env":
       return createDsnEnvHelp(args, prompt);
-    case "install-claude":
-      return runConnectionAction(args, ctx, prompt, resolved.action);
-    case "install-codex":
-      return runConnectionAction(args, ctx, prompt, resolved.action);
-    case "install-warp":
-      return runConnectionAction(args, ctx, prompt, resolved.action);
-    case "doctor":
-      return runConnectionAction(args, ctx, prompt, resolved.action);
-    case "remove":
-      return runConnectionAction(args, ctx, prompt, resolved.action);
     case "cancel":
       return {
         ok: true,
         data: { action: "cancel", connection: null, summary: "Operación cancelada." },
         exitCode: 0,
       };
+    default:
+      // install-<host> | doctor | remove — all operate on a registered connection.
+      return runConnectionAction(args, ctx, prompt, resolved.action);
   }
 }
 
@@ -193,9 +201,10 @@ async function listConnectionsMenu(
     default: "install-claude",
     choices: [
       { type: "separator", separator: "── Instalar / Actualizar ──" },
-      { name: "▸ Claude Code", value: "install-claude" },
-      { name: "▸ Codex", value: "install-codex" },
-      { name: "▸ Warp Terminal", value: "install-warp" },
+      ...FILE_HOSTS.map((h) => ({
+        name: `▸ ${HOST_LABEL[h]}`,
+        value: `install-${h}` as ConnectionMenuAction,
+      })),
       { type: "separator", separator: "── Operar ──" },
       { name: "· Diagnosticar", value: "doctor" },
       { name: "✗ Eliminar", value: "remove" },
@@ -301,16 +310,13 @@ async function runConnectionAction(
   }
 
   switch (action) {
-    case "install-claude":
-      return installConnection(args, ctx, connection, "claude");
-    case "install-codex":
-      return installConnection(args, ctx, connection, "codex");
-    case "install-warp":
-      return installConnection(args, ctx, connection, "warp");
     case "doctor":
       return doctorConnection(ctx, connection);
     case "remove":
       return removeConnection(args, ctx, connection);
+    default:
+      // install-<host>
+      return installConnection(args, ctx, connection, action.slice("install-".length) as McpHost);
   }
 }
 
@@ -368,7 +374,7 @@ function doctorConnection(
   ctx: CliContext,
   connection: McpConnection,
 ): CommandResult<SelfMcpConfigData> {
-  const doctor = runDoctor(ctx, connection, ["claude", "codex", "warp"]);
+  const doctor = runDoctor(ctx, connection, [...FILE_HOSTS]);
   const allOk = doctor.summary.ok === doctor.reports.length;
   return {
     ok: allOk,
@@ -397,7 +403,7 @@ function removeConnection(
 ): CommandResult<SelfMcpConfigData> {
   const dryRun = args.flags.has("--dry-run");
   const remove = runMcpRemove(ctx.env, {
-    hosts: ["claude", "codex", "warp"],
+    hosts: [...FILE_HOSTS],
     instances: [connection.name],
     scope: "workspace",
     dryRun,
@@ -416,7 +422,7 @@ function removeConnection(
       ...(deleted ? { registry: { path: deleted.path, changed: deleted.removed } } : {}),
       summary: dryRun
         ? `Previsualización de eliminación para '${connection.name}'.`
-        : `Conexión '${connection.name}' eliminada de Claude Code, Codex, Warp y del registro local.`,
+        : `Conexión '${connection.name}' eliminada de los hosts con MCP y del registro local.`,
     },
     ...(hasErrors
       ? {
@@ -451,11 +457,9 @@ function connectionView(ctx: CliContext, connection: McpConnection): SelfMcpConn
     server_name: mcpEntryNameFor(connection.name),
     dsn_var: connection.dsnVar,
     dsn_visible: isDsnVisible(ctx, connection.dsnVar),
-    instalado: {
-      claude_code: installStatus(ctx, connection, "claude"),
-      codex: installStatus(ctx, connection, "codex"),
-      warp: installStatus(ctx, connection, "warp"),
-    },
+    instalado: Object.fromEntries(
+      FILE_HOSTS.map((h) => [h, installStatus(ctx, connection, h)]),
+    ) as Record<McpHost, InstallStatus>,
   };
 }
 
@@ -482,13 +486,11 @@ const INSTALL_STATUS_ICON: Record<InstallStatus, string> = {
 };
 
 export function formatConnectionsTable(connections: SelfMcpConnectionView[]): string {
-  const headers = ["nombre", "DSN var", "Claude", "Codex", "Warp"];
+  const headers = ["nombre", "DSN var", ...FILE_HOSTS.map((h) => HOST_COLUMN[h])];
   const rows = connections.map((item) => [
     item.nombre,
     item.dsn_var,
-    INSTALL_STATUS_ICON[item.instalado.claude_code],
-    INSTALL_STATUS_ICON[item.instalado.codex],
-    INSTALL_STATUS_ICON[item.instalado.warp],
+    ...FILE_HOSTS.map((h) => INSTALL_STATUS_ICON[item.instalado[h]]),
   ]);
   return renderBoxTable(headers, rows);
 }
@@ -686,29 +688,29 @@ async function resolveAction(args: ParsedArgs, prompts: SelfMcpPrompts): Promise
 }
 
 function isAction(value: string | undefined): value is SelfMcpAction {
-  return (
+  if (value === undefined) return false;
+  if (
     value === "list" ||
     value === "use-env" ||
     value === "create-env" ||
-    value === "install-claude" ||
-    value === "install-codex" ||
-    value === "install-warp" ||
     value === "doctor" ||
     value === "remove" ||
     value === "cancel"
-  );
+  ) {
+    return true;
+  }
+  if (value.startsWith("install-")) {
+    return (FILE_HOSTS as readonly string[]).includes(value.slice("install-".length));
+  }
+  return false;
 }
 
-function hostAction(host: McpHost): "install-claude" | "install-codex" | "install-warp" {
-  if (host === "claude") return "install-claude";
-  if (host === "warp") return "install-warp";
-  return "install-codex";
+function hostAction(host: McpHost): InstallAction {
+  return `install-${host}`;
 }
 
 function hostLabel(host: McpHost): string {
-  if (host === "claude") return "Claude Code";
-  if (host === "warp") return "Warp Terminal";
-  return "Codex";
+  return HOST_LABEL[host];
 }
 
 function refusal(
