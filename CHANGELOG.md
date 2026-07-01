@@ -4,6 +4,23 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.5.0] — 2026-07-01
+
+**El CLI ahora reconoce y sirve 6 hosts, no solo Claude Code: Gemini CLI/Antigravity, OpenCode y Crush pasan de placeholders (`backed:false`) a soporte real, junto con Codex y Warp.** El sistema ya era multi-host en la doctrina (capa de capacidades agnóstica); esta release lo realiza en el runtime. `aw self detect-hosts` ahora lista **8 destinos** (claude/codex/warp/oz/agents + gemini/opencode/crush) con sus dirs de config correctos (XDG para OpenCode/Crush: `~/.config/<host>`), `aw self install-skill --target <host>` instala el bundle en el skill-dir de cada uno (y `--target all` cubre los 7), y `aw mcp setup --host <gemini|opencode|crush>` escribe el MCP con el **esquema exacto de cada host**. Verificado con 889 tests + smoke real del CLI. Bundle `w` 9.3.0 → **9.4.0** (matriz de arnés refrescada a jul-2026). Aditivo — Claude Code sin regresión. La capa de enforcement (hooks) de los plugins del marketplace se portó en paralelo (repo `qtc-plugins-marketplace`).
+
+### Added
+
+- **Registro de hosts (`src/domain/harnesses.ts`)**: specs `HarnessSpec` para **gemini**, **opencode** y **crush** — envMarkers, `mcpHostId`, `globalMcpPaths` por plataforma+canal, `projectMcpPath`, `skillsDirs`, `installTarget`. Uniones `Harness` / `InstallTarget` / `McpHost` extendidas. Antigravity se trata como **alias de Gemini** (reusa `~/.gemini/`).
+- **MCP writers por-host** (`src/application/mcp-host-writer.ts`) con el esquema exacto de cada uno: Gemini `.gemini/settings.json` → `mcpServers` (shape Claude-compatible); OpenCode `opencode.json` → `mcp` (`type:"local"`, `command` como array, `environment`); Crush `crush.json` → `mcp` (`type:"stdio"`). Idempotencia, dry-run, backup transitorio y **scope global XDG** (`~/.config/<host>/`) para OpenCode/Crush.
+- **`aw self install-skill --target gemini|opencode|crush`** — instala a su skill-dir nativo; `--target all` ahora cubre 7 hosts. `InstallTarget` unificado con `domain/harnesses` (fuente única).
+- **`aw self detect-hosts`** — 8 hosts, con override de config-dir XDG para OpenCode (`~/.config/opencode`) y Crush (`~/.config/crush`).
+
+### Changed
+
+- **Fix Codex** (correcciones verificadas vs docs oficiales): `skillsDirs` ahora incluye **`.agents/skills`** (ancla del estándar abierto, primario; `.codex/skills` queda secundario) y `pluginHooksDir` corregido de `codex-hooks` → **`hooks`** (Codex bundlea hooks en `hooks/hooks.json` con env `PLUGIN_ROOT`).
+- **TUI** (`src/cli/tui/hosts.ts`): gemini/opencode/crush pasan a `backed:true`; Gemini se etiqueta "Gemini CLI / Antigravity".
+- **Bundle `w` 9.4.0**: `skills/w/harness/SKILL.md` refresca la matriz de binding a jul-2026 — 6 arneses (agrega Warp/Crush/Antigravity), fila **enforcement** nueva, celdas `?` cerradas, y el ancla `.agents/skills`.
+
 ## [14.4.0] — 2026-07-01
 
 **El CLI/TUI ahora lleva un log operativo propio, global y por día, y el tab [Status] tiene un historial de esos logs para abrirlos rápido.** Antes `agent-workflow.log` estaba declarado pero **nadie lo escribía** (solo `aw logs` lo leía → casi siempre "No log file found"). Ahora cada ejecución de comando `aw` y el arranque del TUI **anexan una línea** al diario global `~/.<ns>/logs/agent-workflow-YYYY-MM-DD.log` (mismo path sin importar desde qué ruta se ejecute — pensado para "probar en otras rutas"). En el tab **[Status]**, la sección **[RECENT]** se reemplaza por **"Logs"**: lista los diarios (más nuevo primero, ruta clara), y al seleccionar uno **Enter** lo abre con el editor de texto por defecto del SO y **`a`** permite **elegir con qué app** (recordando la última). Solo runtime CLI/TUI — el bundle `w` no cambia (9.3.0). Aditivo.
