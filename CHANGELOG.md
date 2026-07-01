@@ -4,6 +4,25 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.6.0] — 2026-07-01
+
+**El wizard interactivo `aw self mcp` ahora cubre los 6 hosts, no 3.** El menú (instalar/actualizar), la tabla de estado y las acciones de diagnóstico/eliminación estaban cableados a claude/codex/warp; ahora se derivan del registro de arneses (`FILE_HOSTS`), así que ofrecen y reportan los 6 hosts con config MCP (claude/codex/warp/gemini/opencode/crush) — igual que el comando no-interactivo `aw mcp --host`. Cierra la última asimetría multi-host del CLI (surge de la revisión de compatibilidad). Solo runtime CLI — bundle `w` sin cambios (9.4.0). El tab [MCP] del TUI sigue siendo un flujo de `.mcp.json` de workspace (superficie aparte, sin cambio de alcance).
+
+**Fix pre-existente (v14.5.0) destapado por la review adversarial pre-publish:** el reader de MCP (`readMcpEntry`) leía solo la clave top-level `mcpServers`, pero desde v14.5.0 el writer guarda **OpenCode** y **Crush** bajo la clave `mcp` con shapes propias (opencode: `command` como array + `environment`; crush: `type=stdio`). Por eso el read-back (la tabla de estado del wizard y `aw mcp doctor`) reportaba esos 2 hosts como **no instalados / drift** aun tras un install correcto. El bug estaba latente hasta que este release hizo que el wizard leyera los 6 hosts. Verificado con un round-trip real writer→reader (antes no existía cobertura opencode/crush del reader).
+
+### Fixed
+
+- **Read-back de OpenCode/Crush** (`src/application/mcp-host-reader.ts`): nuevo branch que lee la clave `mcp` con la shape de cada host (opencode: reconstruye `command`/`args` desde el array + `environment`; crush: `command`/`args`/`env` bajo `mcp`), incluida la ruta XDG global. Los otros 4 hosts (claude/codex/warp/gemini) no cambian. Tests nuevos: round-trip real `writeMcpEntry`→`readMcpEntry` para gemini/opencode/crush + assert de estado `si` tras `install-opencode`.
+
+### Changed
+
+- **`self mcp` data-driven** (`src/application/self/mcp-config.ts`): `SelfMcpAction` usa `install-${McpHost}` (template literal); menú, dispatch, `doctor`, `remove` y la tabla de estado se derivan de `FILE_HOSTS` (registro). `SelfMcpConnectionView.instalado` pasa de `{claude_code,codex,warp}` a `Record<McpHost,InstallStatus>`.
+- **TUI `mcp-tab`** adapta el rename `instalado.claude_code` → `instalado.claude` (sin cambio de comportamiento; sigue instalando al `.mcp.json` de workspace).
+
+### Tests
+
+- `self-mcp-config`: nuevo caso `install-gemini` (escribe el `settings.json` de Gemini de workspace). `format-connections-table` reescrito para las 6 columnas de host (aserciones por celda, no snapshot posicional).
+
 ## [14.5.1] — 2026-07-01
 
 **Fix: `aw self clean-legacy --target all` ahora barre también los 3 hosts nuevos (Gemini/OpenCode/Crush).** En v14.5.0 el soporte multi-host agregó gemini/opencode/crush a los mapas forzados por tipo (`install`/`uninstall`/`detect`), pero el array plano `ALL_TARGETS` de `clean-legacy` quedó con los 5 hosts viejos → `--target gemini|opencode|crush` daba `INVALID_TARGET` y `--target all` no escaneaba sus skill-dirs (`.gemini/skills`, `.opencode/skills`, `.crush/skills`) para limpiar artefactos legacy `qtc-*`/`agent-workflow-manager`. Ahora `ALL_TARGETS` se deriva de las keys del `Record` exhaustivo, así un host nuevo no puede volver a caerse del barrido. Solo runtime CLI — bundle `w` sin cambios (9.4.0). Surge de una revisión de compatibilidad multi-host (CLI + marketplace).
