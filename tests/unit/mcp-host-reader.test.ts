@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readMcpEntry } from "../../src/application/mcp-host-reader.js";
+import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
+import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
 describe("readMcpEntry — Claude (project scope = .mcp.json)", () => {
   let scopeDir: string;
@@ -182,4 +184,33 @@ describe("readMcpEntry — Warp (.warp/.mcp.json, DEC-W3)", () => {
     const snap = readMcpEntry("warp", scopeDir, "cert");
     expect(snap.exists).toBe(false);
   });
+});
+
+// El reader debe poder LEER lo que el writer ESCRIBE, para cada host. OpenCode y
+// Crush guardan la entrada bajo la clave top-level `mcp` con shapes propias
+// (opencode: command como array + `environment`; crush: type=stdio) — no bajo
+// `mcpServers`. Sin este round-trip real, el reader se quedó leyendo `mcpServers`
+// y reportaba exists=false para opencode/crush aun tras un install correcto.
+describe("readMcpEntry — round-trip real vs writeMcpEntry (todos los hosts JSON)", () => {
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-reader-roundtrip-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  for (const host of ["gemini", "opencode", "crush"] as const) {
+    it(`${host}: lo escrito por writeMcpEntry se lee de vuelta idéntico`, () => {
+      const entry = buildMcpEntry("cert", "DB_CERT_DSN");
+      const written = writeMcpEntry(host, entry, { scopeDir });
+      expect(written.action).toBe("written");
+
+      const snap = readMcpEntry(host, scopeDir, "cert");
+      expect(snap.exists).toBe(true);
+      expect(snap.command).toBe(entry.command);
+      expect(snap.args).toEqual(entry.args);
+      expect(snap.env).toEqual(entry.env);
+    });
+  }
 });

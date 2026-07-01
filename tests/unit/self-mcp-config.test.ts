@@ -147,6 +147,27 @@ describe("selfMcpConfig", () => {
     expect(settings).toContain("REPORTING_DATABASE_URL");
   });
 
+  it("tras install-opencode, la tabla de estado reporta opencode como instalado (si)", async () => {
+    const ctx = buildCtx(root, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await selfMcpConfig(
+      buildArgs(["mcp", "use-env"], { name: "reporting", "dsn-var": "REPORTING_DATABASE_URL" }),
+      ctx,
+      prompts(),
+    );
+
+    const result = await selfMcpConfig(
+      buildArgs(["mcp", "install-opencode"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    // Read-back path: connectionView -> installStatus -> readMcpEntry must SEE the
+    // opencode entry it just wrote (under the `mcp` key), else the wizard lies.
+    expect(result.data.connection?.instalado.opencode).toBe("si");
+  });
+
   it("crear DSN env var sólo devuelve comandos de ayuda y no registra conexión", async () => {
     const ctx = buildCtx(root);
     const result = await selfMcpConfig(
