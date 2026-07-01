@@ -4,6 +4,15 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.5.1] — 2026-07-01
+
+**Fix: `aw self clean-legacy --target all` ahora barre también los 3 hosts nuevos (Gemini/OpenCode/Crush).** En v14.5.0 el soporte multi-host agregó gemini/opencode/crush a los mapas forzados por tipo (`install`/`uninstall`/`detect`), pero el array plano `ALL_TARGETS` de `clean-legacy` quedó con los 5 hosts viejos → `--target gemini|opencode|crush` daba `INVALID_TARGET` y `--target all` no escaneaba sus skill-dirs (`.gemini/skills`, `.opencode/skills`, `.crush/skills`) para limpiar artefactos legacy `qtc-*`/`agent-workflow-manager`. Ahora `ALL_TARGETS` se deriva de las keys del `Record` exhaustivo, así un host nuevo no puede volver a caerse del barrido. Solo runtime CLI — bundle `w` sin cambios (9.4.0). Surge de una revisión de compatibilidad multi-host (CLI + marketplace).
+
+### Fixed
+
+- **`clean-legacy` cubre los 6 hosts** (`src/application/self/clean-legacy.ts`): `ALL_TARGETS` se deriva de `LEGACY_SCAN_PATHS_BY_TARGET` (Record exhaustivo) en vez de un literal desincronizado con su hermano `uninstall`. Nuevo `tests/unit/self-clean-legacy.test.ts` (no había cobertura dedicada → por eso el gap shippeó en v14.5.0).
+- **Mensajes de `install-skill`** (`src/application/self/install-skill.ts`): `--target all` y `DEST_EXISTS` interpolan los targets reales en vez de hardcodear la lista vieja de hosts.
+
 ## [14.5.0] — 2026-07-01
 
 **El CLI ahora reconoce y sirve 6 hosts, no solo Claude Code: Gemini CLI/Antigravity, OpenCode y Crush pasan de placeholders (`backed:false`) a soporte real, junto con Codex y Warp.** El sistema ya era multi-host en la doctrina (capa de capacidades agnóstica); esta release lo realiza en el runtime. `aw self detect-hosts` ahora lista **8 destinos** (claude/codex/warp/oz/agents + gemini/opencode/crush) con sus dirs de config correctos (XDG para OpenCode/Crush: `~/.config/<host>`), `aw self install-skill --target <host>` instala el bundle en el skill-dir de cada uno (y `--target all` cubre los 7), y `aw mcp setup --host <gemini|opencode|crush>` escribe el MCP con el **esquema exacto de cada host**. Verificado con 889 tests + smoke real del CLI. Bundle `w` 9.3.0 → **9.4.0** (matriz de arnés refrescada a jul-2026). Aditivo — Claude Code sin regresión. La capa de enforcement (hooks) de los plugins del marketplace se portó en paralelo (repo `qtc-plugins-marketplace`).
