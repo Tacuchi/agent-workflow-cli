@@ -9,13 +9,13 @@ This bundle implements the **stages + loops + artifacts** model. The design sour
 ```
 LAYER 1 · COMMANDS  (/w:* — the only thing the user invokes)
   SPEC   spec-new (single-pass) · spec-refine        EXPORTS  export-scripts · export-manuals
-  PLAN   plan-new · plan-exec                                  export-diagrams · export-reports
+  PLAN   plan-new · plan-refine · plan-exec                    export-diagrams · export-reports
   QUICK  quick                                        SETUP   workspace-init
         │ start                                              │ (single-pass, read-only)
         ▼                                                    │
 LAYER 2 · LOOPS  (the AI runs them whole)                    │
   spec-refine-loop (chassis) · plan-new-loop ·                │
-  plan-exec-loop · quick-loop                                 │
+  plan-refine-loop · plan-exec-loop · quick-loop              │
         │ create / manage                                     │
         ▼                                                     │
 LAYER 3 · SESSIONS + ARTIFACTS  (.workflow/sessions/)  ───────┘ export-* read these
@@ -30,7 +30,7 @@ ZONE docs/ — permanent, user-facing deliverables
 | Folder | Layer | Contains |
 |---|---|---|
 | [`commands/`](commands/) | 1 | The `/w:` slash commands the user invokes |
-| [`loops/`](loops/) | 2 | The 4 loops (chassis `spec-refine-loop` + heirs) the AI runs |
+| [`loops/`](loops/) | 2 | The 5 loops (chassis `spec-refine-loop` + heirs) the AI runs |
 | [`exports/`](exports/) | 1 | The `export-*` family — the only artifact→`docs/` promotion path |
 | [`roles/`](roles/) | cross-cutting | Pluggable capability skills (built-in defaults; rebindable via `.workflow/skills.toml`) |
 | [`harness/`](harness/SKILL.md) | cross-cutting | Capability→harness-mechanism binding (agnostic across Claude Code / Codex / opencode / Gemini) |
@@ -43,12 +43,12 @@ ZONE docs/ — permanent, user-facing deliverables
 | Flow | Commands | `docs/` owned | Loops |
 |---|---|---|---|
 | **SPEC** | `spec-new` *(single-pass)* · `spec-refine` | `docs/specs` | `spec-refine-loop` |
-| **PLAN** | `plan-new` · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-exec-loop` |
+| **PLAN** | `plan-new` · `plan-refine` *(aux)* · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` |
 | **QUICK** | `quick` | — | `quick-loop` |
 
 SPEC defines the **what** → PLAN the **how** and executes it → QUICK is the lightweight shortcut. Promotion to `docs/` (scripts/manuals/diagrams/reports) is **always** a separate step via `export-*`.
 
-> **Transversal commands** (no flow, not counted in 5/4): `/w:status` (read-only workspace dashboard) · `/w:fix-git` (resolve an in-progress merge conflict, git-safe — works on any repo). Setup: `/w:workspace-init`.
+> **Transversal commands** (no flow, not counted in 6/5): `/w:status` (read-only workspace dashboard) · `/w:fix-git` (resolve an in-progress merge conflict, git-safe — works on any repo). Setup: `/w:workspace-init`.
 
 ## Bootstrap
 

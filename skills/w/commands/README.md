@@ -3,7 +3,7 @@
 > This is the **bundle README** for the `/w:` slash-command namespace. Every command listed here is something the **user** invokes directly.
 > Related layers: [`../loops/`](../loops/) (Layer 2, AI-driven) · artifacts live in `.workflow/sessions/` (Layer 3) · permanent deliverables in `docs/`.
 >
-> **Namespace:** all commands are under `w:` (`w` = *workflow*): `/w:spec-new`, `/w:spec-refine`, `/w:plan-new`, `/w:plan-exec`, `/w:quick`, `/w:workspace-init`, `/w:status` (transversal), `/w:fix-git` (transversal), `/w:export-*`.
+> **Namespace:** all commands are under `w:` (`w` = *workflow*): `/w:spec-new`, `/w:spec-refine`, `/w:plan-new`, `/w:plan-refine`, `/w:plan-exec`, `/w:quick`, `/w:workspace-init`, `/w:status` (transversal), `/w:fix-git` (transversal), `/w:export-*`.
 
 ---
 
@@ -12,14 +12,15 @@
 ```
 ┌─ LAYER 1 · COMMANDS (this dir) — the only thing the user invokes ──────┐
 │   workspace-init                                                        │
-│   spec-new · spec-refine · plan-new · plan-exec · quick                │
+│   spec-new · spec-refine · plan-new · plan-refine · plan-exec · quick  │
 │   export-scripts · export-manuals · export-diagrams · export-reports   │
 │   High-level. Single-pass or starts a loop. No iteration logic here.   │
 └───────────────────────────┬────────────────────────────────────────────┘
                             │ starts / delegates to
                             ▼
 ┌─ LAYER 2 · LOOPS (../loops/) — AI runs these end-to-end ───────────────┐
-│   spec-refine-loop · plan-new-loop · plan-exec-loop · quick-loop        │
+│   spec-refine-loop · plan-new-loop · plan-refine-loop                  │
+│   plan-exec-loop · quick-loop                                          │
 │   Gap-driven · structured-choice: ≤3 content questions + 1 `flow`     │
 │   (Compactar / Cerrar always present) · compact/resume support.        │
 └───────────────────────────┬────────────────────────────────────────────┘
@@ -46,14 +47,14 @@
 | Flow | docs/ target | Entry command | Advance command | Loops involved |
 |---|---|---|---|---|
 | **SPEC** | `docs/specs/` | `spec-new` *(single-pass)* | `spec-refine` | `spec-refine-loop` |
-| **PLAN** | `docs/plans/` | `plan-new` | `plan-exec` | `plan-new-loop`, `plan-exec-loop` |
+| **PLAN** | `docs/plans/` | `plan-new` | `plan-refine` *(aux, opcional)* · `plan-exec` | `plan-new-loop`, `plan-refine-loop`, `plan-exec-loop` |
 | **QUICK** | — *(no doc)* | `quick` | — | `quick-loop` |
 
-> **Intentional asymmetry:** in SPEC, `spec-new` generates the draft in a **single pass** (no loop) and the loop is in `spec-refine`. In PLAN, **both** commands start loops. Total: **5 flow commands / 4 loops**.
+> **Intentional asymmetry:** in SPEC, `spec-new` generates the draft in a **single pass** (no loop) and the loop is in `spec-refine`. In PLAN, all commands start loops — `plan-new` generates, `plan-refine` (auxiliary, **optional**) refines it in place, `plan-exec` executes. Total: **6 flow commands / 5 loops**.
 
 > **Transversal (no flow):** [`/w:status`](status.md) is a read-only dashboard of the whole workspace — what's done / pending / discarded, with friendly Spanish dates. It leans on `aw status`, writes nothing, and belongs to no flow.
 >
-> **Transversal (no flow):** [`/w:fix-git`](fix-git.md) resolves an **in-progress merge conflict** for any repo — identify origin↔destination, analyze both sides' intent, resolve (structured-choice on ambiguity), propose the merge commit (git-safe). Leans on `aw merge-state`; writes no `docs/`; works without a workspace. Neither transversal is counted in **5 flow / 4 loops**.
+> **Transversal (no flow):** [`/w:fix-git`](fix-git.md) resolves an **in-progress merge conflict** for any repo — identify origin↔destination, analyze both sides' intent, resolve (structured-choice on ambiguity), propose the merge commit (git-safe). Leans on `aw merge-state`; writes no `docs/`; works without a workspace. Neither transversal is counted in **6 flow / 5 loops**.
 >
 > `/w:status` and `/w:fix-git` are **transversal skills** — in the design model they form their own category (`workflow-skills/`, distinct from flow commands); here they are packaged under `commands/` so `/w:` can invoke them (Claude Code only invokes `commands/*.md`). See [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*.
 
@@ -71,6 +72,10 @@ flowchart LR
     spec --> pn["/w:plan-new"]
     pn -->|starts| pnl(["plan-new-loop"])
     pnl -->|generates| plan["docs/plans/PPP-plan-&lt;slug&gt;.md"]
+
+    plan -.->|optional: changes before exec| pr["/w:plan-refine"]
+    pr -->|starts| prl(["plan-refine-loop"])
+    prl -->|refines IN PLACE| plan
 
     plan --> pe["/w:plan-exec"]
     pe -->|starts| pel(["plan-exec-loop"])
@@ -114,6 +119,7 @@ Each `<command>.md` in this bundle uses this frontmatter + body structure:
 | `spec-new` | [`spec-new.md`](spec-new.md) | single-pass |
 | `spec-refine` | [`spec-refine.md`](spec-refine.md) | starts `spec-refine-loop` |
 | `plan-new` | [`plan-new.md`](plan-new.md) | starts `plan-new-loop` |
+| `plan-refine` | [`plan-refine.md`](plan-refine.md) | starts `plan-refine-loop` (aux, optional) |
 | `plan-exec` | [`plan-exec.md`](plan-exec.md) | starts `plan-exec-loop` |
 | `quick` | [`quick.md`](quick.md) | starts `quick-loop` |
 | `status` | [`status.md`](status.md) | single-pass, read-only (transversal) |

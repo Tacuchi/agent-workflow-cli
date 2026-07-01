@@ -4,7 +4,7 @@ description: >-
   Orientation skill for the whole agent-workflow harness — built-in default for the
   `overview` role. Load this to understand the model end-to-end: the 3-layer
   architecture (commands → loops → sessions/artifacts) plus the docs/ zone, the 3
-  flows (SPEC / PLAN / QUICK), the `/w:` commands, the 4 loops and their chassis, the
+  flows (SPEC / PLAN / QUICK), the `/w:` commands, the 5 loops and their chassis, the
   `export-*` family, the composable capability skills + `.workflow/skills.toml`
   binding cascade, and the 6 hard invariants. Use whenever an agent (or human) needs
   to know how the pieces fit, where a deliverable should land, or which command/loop/
@@ -36,12 +36,12 @@ Un solo concepto: **workspace**. No hay project/hub. La carpeta donde arranca el
 ```
 USUARIO invoca
   LAYER 1 · COMMANDS (lo único que el usuario invoca)
-    FLOWS:   spec-new · spec-refine · plan-new · plan-exec · quick
+    FLOWS:   spec-new · spec-refine · plan-new · plan-refine · plan-exec · quick
     EXPORTS: export-scripts · export-manuals · export-diagrams · export-reports
         │ arranca / delega
         ▼
   LAYER 2 · LOOPS (los corre la IA, gap-driven)
-    spec-refine-loop (CHASIS) · plan-new-loop · plan-exec-loop · quick-loop
+    spec-refine-loop (CHASIS) · plan-new-loop · plan-refine-loop · plan-exec-loop · quick-loop
         │ crea / lee / escribe
         ▼
   LAYER 3 · SESSIONS + ARTIFACTS (.workflow/sessions/ — efímero, interno)
@@ -60,10 +60,10 @@ USUARIO invoca
 | Flow | Commands | docs/ propio | Loops |
 |---|---|---|---|
 | **SPEC** (el *qué*) | `spec-new` *(single-pass)* · `spec-refine` | `docs/specs` | `spec-refine-loop` |
-| **PLAN** (el *cómo* + ejecutar) | `plan-new` · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-exec-loop` |
+| **PLAN** (el *cómo* + ejecutar) | `plan-new` · `plan-refine` *(aux, opcional)* · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` |
 | **QUICK** (atajo liviano) | `quick` | — | `quick-loop` |
 
-Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` → `spec-refine` corre el loop y refina **ese mismo spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → `plan-exec` ejecuta y actualiza el plan (living doc) + artefactos en sesiones. La promoción del resto a `docs/` es **siempre** un paso aparte vía `export-*`.
+Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` → `spec-refine` corre el loop y refina **ese mismo spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(opcional)* `plan-refine` ajusta **ese mismo plan in place** si hay cambios antes de ejecutar → `plan-exec` ejecuta y actualiza el plan (living doc) + artefactos en sesiones. La promoción del resto a `docs/` es **siempre** un paso aparte vía `export-*`.
 
 ### Contexto operativo — dónde aterriza cada cosa
 
@@ -84,13 +84,14 @@ Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prom
 - `/w:spec-new` — genera un spec inicial (single-pass, sin loop).
 - `/w:spec-refine` — arranca `spec-refine-loop` para refinar el spec.
 - `/w:plan-new` — arranca `plan-new-loop` para derivar un plan ejecutable del spec refinado.
+- `/w:plan-refine` — arranca `plan-refine-loop` para refinar el plan in place (auxiliar, **no obligatorio**) antes de ejecutar.
 - `/w:plan-exec` — arranca `plan-exec-loop` para ejecutar y mantener el plan.
 - `/w:quick` — arranca `quick-loop` (atajo, sin `docs/`).
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promueven artefactos a `docs/`.
 
 ### Transversal skills (no flow) — `/w:status` · `/w:fix-git`
 
-Skills **invocables independientes de flujo**: se disparan con `/w:` igual que un comando, pero **no** pertenecen a SPEC/PLAN/QUICK, **no** manejan `docs/`, y **no** entran en el conteo **5 comandos de flow / 4 loops**. (En el diseño son su propia categoría —`workflow-skills/`, aparte de los comandos de flow—; en el bundle se empaquetan bajo `commands/` para que `/w:` las invoque.)
+Skills **invocables independientes de flujo**: se disparan con `/w:` igual que un comando, pero **no** pertenecen a SPEC/PLAN/QUICK, **no** manejan `docs/`, y **no** entran en el conteo **6 comandos de flow / 5 loops**. (En el diseño son su propia categoría —`workflow-skills/`, aparte de los comandos de flow—; en el bundle se empaquetan bajo `commands/` para que `/w:` las invoque.)
 
 - `/w:status` — dashboard read-only del workspace (Hecho/Falta/Descartó, con fechas en español). No escribe nada; se apoya en `aw status`.
 - `/w:fix-git` — resuelve conflictos de un merge en curso en cualquier repo (identifica origen↔destino, analiza intención, *structured-choice* ante ambigüedad). No crea session, no toca `docs/`; git-safe; se apoya en `aw merge-state`.
@@ -109,9 +110,9 @@ Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable. P
 
 `flow → Compactar` = checkpoint + la **compactación** del arnés (en Claude Code: `/compact`; ver `harness/SKILL.md`) y reanuda. `flow → Cerrar` = persiste `CHECKPOINT` (siempre) + `BACKLOG` (solo si difiere), cierra la session, termina.
 
-Cada loop tiene un **convergence gate** read-only antes de ofrecer `Guardar`/`done`, que es operacionalmente **"todos los `SESSION.Success criteria` en verde"** (*verification-first*): chequea invariantes propios del entregable y lo que falle vuelve como gap (en `spec-refine-loop` es el *analyze gate*; en `plan-new-loop`, la coherencia del plan; en `plan-exec-loop`, la validación final; en `quick-loop`, una validación puntual proporcional). El detalle vive en cada loop.
+Cada loop tiene un **convergence gate** read-only antes de ofrecer `Guardar`/`done`, que es operacionalmente **"todos los `SESSION.Success criteria` en verde"** (*verification-first*): chequea invariantes propios del entregable y lo que falle vuelve como gap (en `spec-refine-loop` es el *analyze gate*; en `plan-new-loop` —y en `plan-refine-loop`— la coherencia del plan; en `plan-exec-loop`, la validación final; en `quick-loop`, una validación puntual proporcional). El detalle vive en cada loop.
 
-`spec-new` no tiene loop (single-pass): **5 comandos / 4 loops**.
+`spec-new` no tiene loop (single-pass): **6 comandos / 5 loops**.
 
 ### The `export-*` family (única vía artefacto → `docs/`)
 

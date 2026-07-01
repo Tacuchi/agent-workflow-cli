@@ -307,5 +307,6 @@ El resume **keya off el `CHECKPOINT`** de la refine session, no de la existencia
 ## Heredan este chasis
 
 - `plan-new-loop` — mismo motor; deltas: plan rico + gap taxonomy de plan.
+- `plan-refine-loop` — mismo motor; deltas: refina el **plan** in place (auxiliar, no obligatorio), reusando la gap taxonomy + coherence gate de `plan-new-loop`. Es a `plan-new` lo que este chasis (`spec-refine`) es a `spec-new`.
 - `plan-exec-loop` — mismo motor; deltas: ejecución real (código/BD/git), **una sola session por run** (progreso por fase en el plan-doc), sin auto-export.
 - `quick-loop` — mismo motor (mínimo); hereda además git/BD/no-export de `plan-exec-loop`.

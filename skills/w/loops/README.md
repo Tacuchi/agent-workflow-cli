@@ -10,7 +10,7 @@
 
 Un loop es una **skill** que le enseña a la IA *cómo iterar* hasta producir un entregable. **No es invocable por nombre** con el tool `Skill` (no se registra como skill suelta): es el cuerpo de su comando `/w:…`, que lo **carga leyendo `<loop>/SKILL.md`** y lo ejecuta inline. La IA lo corre de punta a punta: detecta huecos, los resuelve (preguntando al humano o investigando), integra y repite hasta converger.
 
-Propiedades comunes a **los 4 loops**:
+Propiedades comunes a **los 5 loops**:
 
 1. **Objetivo persistente + verification-first** — el loop persigue su `SESSION.Objective` y solo finaliza cuando sus `SESSION.Success criteria` están **en verde** (o el humano aborta vía `flow` `Cerrar`). Esos criterios —la condición de término— se **siembran al inicio** (*verification-first*, TDD generalizado: tests ejecutables para código, rúbrica falsable para análisis/diseño), no se improvisan al final. Modelado en el `/goal` de Claude Code pero como **doctrina agnóstica** (sin depender de ningún host) y con registro durable. El "no parar hasta converger" es del loop, no del arnés. **Entre turnos**, el mismo `CHECKPOINT`+resume hace que un prompt **sin comando** **continúe/reabra la sesión más reciente** en vez de arrancar trabajo suelto — la cara *inter-turno* del objetivo persistente (ver [`../SKILL.md`](../SKILL.md) § *Contexto operativo*).
 2. **Gap-driven convergente** — el *cómo* del objetivo persistente: cada ciclo `detect_gaps` → resolver (humano o research) → integrar → repetir hasta que no queden gaps materiales. Los gaps "agotados" (límite `MAX` de intentos) no se re-disparan → garantiza convergencia.
@@ -22,7 +22,7 @@ Propiedades comunes a **los 4 loops**:
 
 ## flow control — options
 
-El control `flow` es **fijo**: `Compactar` / `Cerrar`, presente en los 4 loops. Responder la pregunta de contenido **sin tocar `flow`** = seguir iterando ("continuar" es el comportamiento por defecto del loop, no una opción del canal de control).
+El control `flow` es **fijo**: `Compactar` / `Cerrar`, presente en los 5 loops. Responder la pregunta de contenido **sin tocar `flow`** = seguir iterando ("continuar" es el comportamiento por defecto del loop, no una opción del canal de control).
 
 | Option | What it does |
 |---|---|
@@ -35,10 +35,11 @@ El control `flow` es **fijo**: `Compactar` / `Cerrar`, presente en los 4 loops. 
 |---|---|---|---|---|
 | [`spec-refine-loop`](spec-refine-loop/SKILL.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec*.md` (el spec mismo) | `docs/specs/NNN-spec-<slug>.md` (in place) |
 | [`plan-new-loop`](plan-new-loop/SKILL.md) | PLAN | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md` |
+| [`plan-refine-loop`](plan-refine-loop/SKILL.md) | PLAN | `/w:plan-refine` *(aux, opcional)* | `docs/plans/PPP-plan-*.md` (el plan mismo) | `docs/plans/PPP-plan-<slug>.md` (in place) |
 | [`plan-exec-loop`](plan-exec-loop/SKILL.md) | PLAN | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update); resto vía `export-*` |
 | [`quick-loop`](quick-loop/SKILL.md) | QUICK | `/w:quick` | — (prompt) | edita código + session ligera; **no** `docs/` |
 
-> `/w:spec-new` no tiene loop (es single-pass). Por eso hay **5 comandos / 4 loops**.
+> `/w:spec-new` no tiene loop (es single-pass). Por eso hay **6 comandos / 5 loops**.
 
 ### `docs/` boundary (regla dura)
 
@@ -58,6 +59,7 @@ Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, dia
 |---|---|---|
 | `spec-refine-loop` | dudas-de-humano · elección de MCP · convergencia (`Guardar especificación refinada` / `Preguntar algo más`) | `Compactar` / `Cerrar` |
 | `plan-new-loop` | dudas · elección de MCP · convergencia (`Guardar plan` / `Preguntar algo más`) | `Compactar` / `Cerrar` |
+| `plan-refine-loop` | dudas · elección de MCP · convergencia (`Guardar plan refinado` / `Preguntar algo más`) | `Compactar` / `Cerrar` |
 | `plan-exec-loop` | decisiones/dudas no obvias · elección de MCP · cierre (`Marcar plan done` / `Preguntar algo más`) | `Compactar` / `Cerrar` |
 | `quick-loop` | dudas no obvias · escalar a SPEC/PLAN · cierre (`Cerrar tarea` / `Preguntar algo más`) | `Compactar` / `Cerrar` |
 
@@ -76,7 +78,7 @@ Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, dia
 
 El **chasis** (`spec-refine-loop`) además detalla `## Composes` (capacidades que compone), `## Deliverable schema`, `## Gap taxonomy`, `## Ask-vs-research rule`, `## Research: autonomy, scope & failure`, `## Structured-choice`, `## Compact / resume`, `## Integration`.
 
-Los **heirs** (`plan-new-loop`, `plan-exec-loop`, `quick-loop`) usan `## Inherits` (lo que reusan del chasis, sin repetirlo) + `## Delta N` (sus diferencias).
+Los **heirs** (`plan-new-loop`, `plan-refine-loop`, `plan-exec-loop`, `quick-loop`) usan `## Inherits` (lo que reusan del chasis, sin repetirlo) + `## Delta N` (sus diferencias).
 
 ## Chassis / heirs
 
@@ -85,11 +87,13 @@ spec-refine-loop  ── CHASIS (patrón de referencia: objetivo persistente + v
         │            structured-choice + control flow, research autónomo INLINE + regla BD,
         │            compact/resume, artefactos como log vivo: CHECKPOINT siempre,
         │            BACKLOG solo si difiere)
-        ├── plan-new-loop   (heir)  → deltas: plan rico, gap taxonomy de plan
-        ├── plan-exec-loop  (heir)  → deltas: ejecución real (código/BD/git),
-        │                              una sola session por run, sin auto-export
-        └── quick-loop      (heir)  → deltas: ceremonia mínima, 1 session,
-                                       hereda git/BD/no-export de plan-exec
+        ├── plan-new-loop    (heir)  → deltas: plan rico, gap taxonomy de plan
+        ├── plan-refine-loop (heir)  → deltas: refina el plan in place (aux, opcional);
+        │                               reusa gap taxonomy + coherence gate de plan-new
+        ├── plan-exec-loop   (heir)  → deltas: ejecución real (código/BD/git),
+        │                               una sola session por run, sin auto-export
+        └── quick-loop       (heir)  → deltas: ceremonia mínima, 1 session,
+                                        hereda git/BD/no-export de plan-exec
 ```
 
 El chasis **no es una capacidad bindeable**: *es* `spec-refine-loop` y los demás loops lo heredan. Lo enchufable son las **capacidades** que un loop compone (ej. `ui-design`, `sql`, `git`), resueltas por `.workflow/skills.toml`.
@@ -114,5 +118,6 @@ Los loops componen **capacidades por su rol**, no skills concretas; la skill que
 
 - [`spec-refine-loop/SKILL.md`](spec-refine-loop/SKILL.md) — el chasis
 - [`plan-new-loop/SKILL.md`](plan-new-loop/SKILL.md)
+- [`plan-refine-loop/SKILL.md`](plan-refine-loop/SKILL.md) — aux, opcional (refina el plan in place)
 - [`plan-exec-loop/SKILL.md`](plan-exec-loop/SKILL.md)
 - [`quick-loop/SKILL.md`](quick-loop/SKILL.md)

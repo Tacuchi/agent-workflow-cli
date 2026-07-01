@@ -4,6 +4,18 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.2.0] — 2026-06-30
+
+**Nuevo comando+loop auxiliar `plan-refine`: refina un plan existente in place antes de ejecutar (el gemelo de `spec-refine`, pero para el plan).** Paso **NO obligatorio** del flujo PLAN — `plan-exec` corre cualquier plan, refinado o no. La cadena PLAN pasa a ser `plan-new` · `plan-refine` *(aux)* · `plan-exec`; el modelo queda en **6 comandos de flow / 5 loops**. Aditivo, nada breaking. Plugin `w` 9.2.1 → 9.3.0.
+
+### Added
+
+- **`/w:plan-refine` + `plan-refine-loop`** — comando trampolín (Layer 1) + loop heir del chasis (Layer 2). Refina `docs/plans/PPP-plan-<slug>.md` **in place** cuando surgen cambios antes de ejecutar (nuevos requerimientos, ajustes de alcance, deps/riesgos detectados al releer), sin re-generar el plan desde cero. Reusa la gap taxonomy + el coherence gate de `plan-new-loop`; agrega `## Refinement decisions`/`## Q&A traceability` como **traza** (sin contrato de gating — a diferencia del contrato spec↔plan). Sesión `<slug>-plan-refine` (type `refine`, sin nuevo enum); re-run on-demand + `create_or_resume` como `spec-refine`. **Auxiliar y no obligatorio.**
+
+### Changed
+
+- **Bundle `w` (9.3.0)** — modelo actualizado a **6 comandos de flow / 5 loops**: `SKILL.md` (front matter, diagrama de 3 capas, tabla de flows con PLAN = plan-new · plan-refine · plan-exec, § commands, conteos, convergence-gate list), `commands/README.md` + `loops/README.md` (tablas, ASCII, índices, conteos), la lista "Heredan este chasis" de `spec-refine-loop`, y cross-refs en `plan-new-loop` (plan-refine como paso opcional siguiente) y `plan-exec-loop` (corre planes refinados-o-no). TUI `workflow` tab: la fase PLAN y los slash commands incluyen `/w:plan-refine`.
+
 ## [14.1.1] — 2026-06-30
 
 **Re-run de `spec-refine` a demanda (mismo spec, múltiples veces) confirmado y hecho de primera clase; hardening del resolver de sesiones.** El flujo SPEC ya soportaba re-correr `/w:spec-refine` sobre el mismo spec cuantas veces haga falta mientras esté en SPEC (verificado end-to-end: sin gate, `--reopen` idempotente, N ciclos → una sola sesión); esta versión lo **documenta como operación de primera clase** y **endurece** el match de códigos de sesión. Un bugfix + aclaraciones de doctrina (bundle `w`). Nada breaking. Plugin `w` 9.2.0 → 9.2.1.
