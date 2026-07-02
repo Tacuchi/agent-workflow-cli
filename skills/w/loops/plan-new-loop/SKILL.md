@@ -10,7 +10,9 @@ description: >-
   deltas: el plan absorbe inline el nivel TECHNICAL-NOTE
   (Solution/Impacted/AS-IS/TO-BE/Validations…) + Phases/Tasks con estado vivo;
   el research aquí mapea código/impacto (componentes FE/BE/BD, wiring AS-IS,
-  dependencias); y una gap taxonomy propia de planificación. Distingue spec
+  dependencias); una gap taxonomy propia de planificación; y si el plan incluye
+  UI compone la capacidad ui-design para autorar design SPECs por pantalla
+  (NNN-SPEC-<SLUG>.md) como artefactos de su sesión. Distingue spec
   refinado de borrador por la presencia de Refinement decisions/Q&A traceability
   (si faltan → soft-suggest correr spec-refine antes). Lo arranca el comando
   /w:plan-new y es reanudable. Invocar cuando un spec deba convertirse en un plan
@@ -34,7 +36,7 @@ PLAN
 `docs/specs/NNN-spec-*.md` (glob — localiza el spec por número; o la ruta exacta del argumento del comando). **Refinado vs borrador** se distingue por la **presencia** de `## Refinement decisions` / `## Q&A traceability` en el spec: si faltan → **soft-suggest** correr `/w:spec-refine` primero (planificar sobre un spec sólido produce mejores planes), pero el usuario puede proceder.
 
 ## Writes
-`docs/plans/PPP-plan-<slug>.md` (`generate`; **sobrescribe con confirmación** si existe). Solo escribe `docs/plans` — nunca otras carpetas `docs/` ni auto-export.
+`docs/plans/PPP-plan-<slug>.md` (`generate`; **sobrescribe con confirmación** si existe). Solo escribe `docs/plans` — nunca otras carpetas `docs/` ni auto-export. Si el plan **incluye UI**, además produce **design SPECs** (`NNN-SPEC-<SLUG>.md`) como artefactos **de su sesión** (ver *Delta 4* — no son `docs/`, no hay auto-export).
 
 > **slug**: kebab-case corto derivado del Requirement del spec — solo `[a-z0-9-]`, ≤ ~5 palabras / ≤ 40 chars. El CLI solo devuelve el número `PPP`; el loop arma el nombre completo. Para localizar planes, glob `docs/plans/PPP-plan-*.md`.
 
@@ -93,13 +95,18 @@ Reemplaza la gap taxonomy de spec por una orientada a planificación:
 | Deps faltantes | orden no claro | research / humano |
 | Criterios del spec sin cubrir | tareas no trazan a acceptance criteria | la IA deriva + humano confirma |
 | Riesgos sin atender | riesgos técnicos sin mitigar/declarar | humano |
+| UI sin design SPEC *(si aplica)* | el plan incluye UI (FE/pantallas en `Impacted`, `## UI spec` en el spec, o tareas UI) sin `NNN-SPEC-*.md` en la sesión | **capacidad `ui-design`** |
 
 ## Delta 3 — What research investigates here
 
 El research **inline** del chasis se especializa: mapear **código/impacto** — componentes FE/BE/BD afectados, wiring AS-IS, dependencias. Alimenta las secciones `Solution`, `Impacted`, `Current state (AS-IS)`. La regla BD del chasis aplica igual (queries read-only a `SCRIPTS.sql`, MCP elegido vía pregunta de contenido si >1 sin default).
 
+## Delta 4 — Design SPECs (si el plan incluye UI)
+
+El gap **UI sin design SPEC** se resuelve **componiendo** la capacidad **`ui-design`** (default built-in [`ui-spec`](../../roles/ui-spec/SKILL.md); rebindeable vía `.workflow/skills.toml`; `off` → degrada a humano / `Open questions`): autora **un design SPEC por pantalla** como artefacto de la sesión — `NNN-SPEC-<SLUG>.md` (`001-SPEC-MODAL-EXPORT.md`, `002-SPEC-ADMIN-DASHBOARD.md`; numeración local a la sesión, ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)). **Deriva** de la sección `## UI spec` del spec si existe (la parte por pantalla y la eleva a detalle ejecutable); si no, autora desde el `Requirement` (design-system/tema/ambigüedades vía *structured-choice*, cuenta en el batch). Las **Tasks UI del plan referencian** la ruta de su SPEC — esa referencia es la fuente de verdad — y `plan-exec-loop` los lee como referencia de diseño. Es el mismo tercer modo de resolución de gap del chasis (junto a *research* y *humano*).
+
 ## Convergence / exit
 
-Sin gaps materiales → **coherence gate** (read-only) = **`Success criteria` en verde** (*verification-first*; es el "convergence gate" del chasis para PLAN-new): cada `acceptance criterion` del spec **traza** a una fase/tarea, `Final behavior` los cubre, fases XS–S / tareas XS, `deps` sin ciclos, `Impacted` consistente con `Solution`. Lo que falle **vuelve como gap** — la trazabilidad criterio→tarea es una **invariante chequeada**, no una sección aparte. Si pasa → *structured-choice* (contenido: `Guardar plan` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`) → al `Guardar`, escribe `docs/plans/PPP-plan-<slug>.md` (con confirmación si existe) → `finalize` (persiste `CHECKPOINT`, y `BACKLOG` solo si difiere; cierra la session, reporta). `Cerrar` en cualquier momento → `finalize` igual.
+Sin gaps materiales → **coherence gate** (read-only) = **`Success criteria` en verde** (*verification-first*; es el "convergence gate" del chasis para PLAN-new): cada `acceptance criterion` del spec **traza** a una fase/tarea, `Final behavior` los cubre, fases XS–S / tareas XS, `deps` sin ciclos, `Impacted` consistente con `Solution`; y si el plan incluye UI: cada pantalla/tarea UI **traza a su design SPEC** (`NNN-SPEC-*.md`) y los SPECs no contradicen el `## UI spec` del spec (si existe). Lo que falle **vuelve como gap** — la trazabilidad criterio→tarea es una **invariante chequeada**, no una sección aparte. Si pasa → *structured-choice* (contenido: `Guardar plan` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`) → al `Guardar`, escribe `docs/plans/PPP-plan-<slug>.md` (con confirmación si existe) → `finalize` (persiste `CHECKPOINT`, y `BACKLOG` solo si difiere; cierra la session, reporta). `Cerrar` en cualquier momento → `finalize` igual.
 
 > **Después de generar:** el plan puede ir directo a `plan-exec`, o —si surgen cambios antes de ejecutar (nuevos requerimientos, ajustes de alcance)— pasar por [`plan-refine-loop`](../plan-refine-loop/SKILL.md) (`/w:plan-refine`, auxiliar y **no obligatorio**), que lo refina in place.

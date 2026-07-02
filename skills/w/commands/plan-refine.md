@@ -43,6 +43,10 @@ El skill detecta el estado previo antes de arrancar, **keyando off el `CHECKPOIN
 3. **Sin avance** (sin CHECKPOINT y el plan **no** tiene `## Refinement decisions`/`## Q&A traceability`) → arranca desde cero leyendo el plan (`PPP-plan-*.md`).
 4. **Ya refinado / re-refine a demanda** (sin CHECKPOINT abierto pero el plan **ya tiene** `## Refinement decisions`/`## Q&A traceability`) → **soportado de primera clase**: mientras el flujo siga en PLAN podés re-correr `/w:plan-refine` sobre el mismo plan **las veces que haga falta** (nuevos requerimientos, cambios de scope, re-lectura). El loop hace `create_or_resume` — localiza la refine session existente (aunque esté cerrada) y la **reabre** en vez de duplicarla — y re-refina leyendo el **plan mismo**; al `Guardar`, edita in place con confirmación.
 
+## UI → design SPECs
+
+Si el refine **toca UI**, el loop compone `ui-design` y produce/actualiza **design SPECs** (`NNN-SPEC-<SLUG>.md`) en su propia sesión — acotado a las pantallas nuevas/cambiadas — y re-apunta las referencias del plan (ver `../loops/plan-refine-loop/SKILL.md` § *Delta 4*).
+
 ## Plan mode
 
 El skill resuelve el estado y describe las acciones que ejecutaría el loop (gaps que cerraría, preguntas que haría), sin arrancar la iteración.

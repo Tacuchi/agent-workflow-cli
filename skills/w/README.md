@@ -58,7 +58,7 @@ Run [`/w:workspace-init`](commands/workspace-init.md) once to turn a folder into
 
 1. **No auto-export** — loops never promote artifacts to `docs/`; only `export-*` does, explicitly.
 2. **Folder ownership** — SPEC→`specs`; PLAN→`plans`; QUICK→none; the rest→`export-*`. (`docs/tools` is ambient — written by the `creating-tools` skill, not a flow.)
-3. **spec & plan are documents** (`docs/`), not artifacts.
+3. **spec & plan are documents** (`docs/`), not artifacts. *(Not to be confused with the **design SPECs** `NNN-SPEC-<SLUG>.md`: per-screen UI design artifacts of PLAN sessions — see [`artifacts/artifacts-design/`](artifacts/artifacts-design/).)*
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations land in `SCRIPTS.sql` and ship via `export-scripts`; reads are read-only via MCP.
 5. **Git-safe** — verify the expected branch before editing; propose commits per source; never `push`/`--amend`/`--no-verify`.
 6. **All loops** — gap-driven convergent; one session per run (research inline); **structured-choice** (capability — see [`harness/`](harness/SKILL.md); on Claude Code: `AskUserQuestion`) with ≤3 content questions + 1 always-present `flow` control (`Compactar`/`Cerrar`); a **convergence gate** before saving; compact/resume; artifacts as a live log (`CHECKPOINT` always; `BACKLOG` only when deferring).

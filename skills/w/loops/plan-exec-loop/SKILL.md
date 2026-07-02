@@ -30,7 +30,7 @@ PLAN
 `/w:plan-exec` — **reanudable** (mismo mecanismo del chasis; aquí el resume keya off el checkbox del plan-doc + CHECKPOINT, ver Delta 1).
 
 ## Reads
-`docs/plans/PPP-plan-<slug>.md` (localizar vía glob `docs/plans/PPP-plan-*.md` o la ruta exacta del argumento del comando). Corre **cualquier** plan, haya pasado o no por [`plan-refine-loop`](../plan-refine-loop/SKILL.md) — plan-refine es auxiliar y no obligatorio; no hay gate que lo exija.
+`docs/plans/PPP-plan-<slug>.md` (localizar vía glob `docs/plans/PPP-plan-*.md` o la ruta exacta del argumento del comando). Corre **cualquier** plan, haya pasado o no por [`plan-refine-loop`](../plan-refine-loop/SKILL.md) — plan-refine es auxiliar y no obligatorio; no hay gate que lo exija. Si el plan incluye UI, también los **design SPECs** (`NNN-SPEC-<SLUG>.md`) que sus Tasks referencian — artefactos de la sesión de plan-new/plan-refine, leídos **read-only** como referencia de diseño al implementar (ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
 
 ## Writes
 - `docs/plans/PPP-plan-<slug>.md` (**read/update**, living doc: estado de fases/tareas, `Open questions`).

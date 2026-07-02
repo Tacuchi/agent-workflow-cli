@@ -28,7 +28,7 @@
                             ▼
 ┌─ LAYER 3 · SESSIONS + ARTIFACTS (.workflow/sessions/) ─────────────────┐
 │   Ephemeral, internal. No one invokes this by hand. Process-only.      │
-│   (schema in ../workflow-artifacts/)                                   │
+│   (schema in ../artifacts/)                                            │
 └────────────────────────────────────────────────────────────────────────┘
 
 ╔═ docs/ ZONE — PERMANENT documents, user-facing ════════════════════════╗

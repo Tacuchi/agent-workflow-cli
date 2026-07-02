@@ -14,7 +14,7 @@ Who created it and from where:
 
 ## Type
 Session type, **set by the parent loop** (not the user). Authoritative catalog: `../README.md`.
-- `refine` — owns a spec-refine / plan-new loop run (SESSION + CHECKPOINT; + BACKLOG on close)
+- `refine` — owns a spec-refine / plan-new / plan-refine loop run (SESSION + CHECKPOINT; + BACKLOG on close; + `NNN-SPEC-<SLUG>.md` in PLAN sessions with UI — see [`../artifacts-design/`](../artifacts-design/))
 - `exec` — execute work; a single per-run session (PLAN), not one per phase
 - `quick` — lightweight execution (≈ `exec`: single session, single commit) (QUICK)
 

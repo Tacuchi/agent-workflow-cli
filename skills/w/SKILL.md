@@ -145,7 +145,7 @@ Catálogo de roles y su default:
 
 | Role | Default | Tier | Composed by |
 |---|---|---|---|
-| `ui-design` | `ui-spec` | must | `spec-refine-loop` (UI) |
+| `ui-design` | `ui-spec` | must | `spec-refine-loop` (UI) · `plan-new-loop` / `plan-refine-loop` (design SPECs) |
 | `sql` | `sql` | must | research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `research` | `research` | should | todos los loops (capacidad inline) |
@@ -172,7 +172,7 @@ Las únicas `must` para el ciclo de un loop son **structured-choice** y **compac
 
 1. **Sin auto-export** — los loops nunca graduan/exportan a `docs/`. Solo `export-*` lo hace, explícito.
 2. **Cada flujo toca solo sus carpetas `docs/`** — SPEC→`specs` · PLAN→`plans` · QUICK→ninguna · resto→`export-*`. (`docs/tools` no es de un flujo: lo escribe la skill ambiente `creating-tools`.)
-3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión.
+3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión. *(No confundir con los **design SPECs** `NNN-SPEC-<SLUG>.md`: artefactos de diseño de UI **por pantalla** que las sesiones de PLAN producen vía la capacidad `ui-design` cuando el plan incluye UI — ver `artifacts/artifacts-design/` — no son el requirement-spec.)*
 4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
 5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.
 6. **Chasis de loops** — **objetivo persistente + verification-first** (persigue `SESSION.Objective` hasta que sus `SESSION.Success criteria` —sembrados al inicio, TDD generalizado— están en verde) · gap-driven convergente · una sola session por run (research inline) · **structured-choice** con ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre · compactación/resume · artefactos como log vivo **artifact-first** (sembrar `Pending`/`Next` antes, `Completed` después; `CHECKPOINT` siempre; `BACKLOG` solo si difiere).

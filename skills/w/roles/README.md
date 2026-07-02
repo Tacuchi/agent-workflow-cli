@@ -12,7 +12,7 @@ All 6 roles, their built-in defaults, their tier, and which loops/exports compos
 
 | Role | Default built-in | Tier | Composed by |
 |---|---|---|---|
-| `ui-design` | [`ui-spec`](ui-spec/SKILL.md) | must | `spec-refine-loop` (when requirement involves UI) |
+| `ui-design` | [`ui-spec`](ui-spec/SKILL.md) | must | `spec-refine-loop` (when requirement involves UI) · `plan-new-loop` / `plan-refine-loop` (per-screen design SPECs) |
 | `sql` | `sql` | must | inline research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `research` | [`research`](research/SKILL.md) | should | all loops (on-demand investigation) |

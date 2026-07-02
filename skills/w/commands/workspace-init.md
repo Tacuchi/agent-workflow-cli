@@ -35,5 +35,5 @@ Resuelve las fuentes y describe el scaffolding que crearía, sin escribir archiv
 
 ## Resources
 
-- Design reference: `docs/referencias/workflow-commands/workspace-init.md` (design spec)
+- Design reference: `docs/referencias/workflow-commands/workspace-init.md`
 - Skills config: `docs/referencias/workflow-roles/` (capacidades/roles disponibles y cascada de binding)

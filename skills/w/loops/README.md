@@ -104,7 +104,7 @@ Los loops componen **capacidades por su rol**, no skills concretas; la skill que
 
 | Role | Default built-in | Composed by |
 |---|---|---|
-| `ui-design` | `ui-spec` | `spec-refine-loop` (cuando hay UI) |
+| `ui-design` | `ui-spec` | `spec-refine-loop` (cuando hay UI) · `plan-new-loop` / `plan-refine-loop` (design SPECs `NNN-SPEC-<SLUG>.md`) |
 | `sql` | `sql` | research · `plan-exec-loop` · `quick-loop` |
 | `git` | `git` | `plan-exec-loop` · `quick-loop` |
 | `research` | `research` | todos los loops (research inline) |

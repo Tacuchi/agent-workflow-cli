@@ -10,7 +10,9 @@ description: >-
   difiere). Es a plan-new lo que spec-refine es a spec-new: edita el plan-doc in
   place (no genera uno nuevo). Reusa la gap taxonomy y el coherence gate de
   plan-new-loop; agrega Refinement decisions/Q&A traceability al plan (traza, sin
-  contrato de gating: plan-exec corre cualquier plan). Lo arranca /w:plan-refine y
+  contrato de gating: plan-exec corre cualquier plan). Si el refine toca UI,
+  compone la capacidad ui-design y produce/actualiza design SPECs por pantalla
+  (NNN-SPEC-<SLUG>.md) en su propia sesión. Lo arranca /w:plan-refine y
   es reanudable + re-corrible a demanda. Invocar cuando un plan ya generado deba
   ajustarse antes de ejecutarlo.
 ---
@@ -37,7 +39,7 @@ PLAN
 `docs/plans/PPP-plan-*.md` (glob — localiza el plan por número; o la ruta exacta del argumento del comando). **Siempre el plan mismo**: este loop lo edita in place, no hay un archivo "refined" aparte.
 
 ## Writes
-Actualiza `docs/plans/PPP-plan-<slug>.md` **in place** (cuando el usuario elige `Guardar plan refinado`): completa/ajusta secciones y **agrega** `## Refinement decisions` + `## Q&A traceability`. Como sobrescribe un doc existente, **con confirmación** del usuario. Solo escribe `docs/plans` — nunca otras carpetas `docs/` ni auto-export.
+Actualiza `docs/plans/PPP-plan-<slug>.md` **in place** (cuando el usuario elige `Guardar plan refinado`): completa/ajusta secciones y **agrega** `## Refinement decisions` + `## Q&A traceability`. Como sobrescribe un doc existente, **con confirmación** del usuario. Solo escribe `docs/plans` — nunca otras carpetas `docs/` ni auto-export. Si el refine **toca UI**, además produce/actualiza **design SPECs** (`NNN-SPEC-<SLUG>.md`) como artefactos **de su propia sesión** (ver *Delta 4* — no son `docs/`, no hay auto-export).
 
 ## Inherits
 
@@ -69,7 +71,7 @@ Cada duda preguntada al humano + la respuesta elegida.
 
 ## Delta 2 — Gap taxonomy (de "plan")
 
-Reusa **íntegra** la gap taxonomy de [`plan-new-loop`](../plan-new-loop/SKILL.md) (§ *Delta 2*): Approach/Solution vago, componentes sin identificar, wiring AS-IS desconocido, fase muy grande, tarea no atómica, deps faltantes, criterios del spec sin cubrir, riesgos sin atender. **Diferencia de foco:** plan-new **construye** el plan desde cero; plan-refine **detecta qué cambió** respecto del plan ya escrito (o respecto del spec, si el spec se re-refinó) y cierra **esos** gaps — típicamente menos y más localizados. Un gap extra propio del re-refine:
+Reusa **íntegra** la gap taxonomy de [`plan-new-loop`](../plan-new-loop/SKILL.md) (§ *Delta 2*): Approach/Solution vago, componentes sin identificar, wiring AS-IS desconocido, fase muy grande, tarea no atómica, deps faltantes, criterios del spec sin cubrir, riesgos sin atender, UI sin design SPEC. **Diferencia de foco:** plan-new **construye** el plan desde cero; plan-refine **detecta qué cambió** respecto del plan ya escrito (o respecto del spec, si el spec se re-refinó) y cierra **esos** gaps — típicamente menos y más localizados. Un gap extra propio del re-refine:
 
 | Gap | Signal | Resolved by |
 |---|---|---|
@@ -78,6 +80,10 @@ Reusa **íntegra** la gap taxonomy de [`plan-new-loop`](../plan-new-loop/SKILL.m
 ## Delta 3 — What research investigates here
 
 Igual que plan-new (mapea código/impacto: componentes FE/BE/BD, wiring AS-IS, deps), pero **acotado al delta**: re-verifica solo lo que el cambio toca (no re-mapea todo el plan). Regla BD del chasis igual (read-only a `SCRIPTS.sql`, MCP vía pregunta si >1 sin default).
+
+## Delta 4 — Design SPECs (si el refine toca UI)
+
+Mismo mecanismo que [`plan-new-loop`](../plan-new-loop/SKILL.md) (§ *Delta 4*: capacidad **`ui-design`** → `NNN-SPEC-<SLUG>.md` por pantalla, ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)), **acotado al delta**: solo las pantallas **nuevas o cambiadas** por el refine reciben design SPEC. El SPEC actualizado se escribe en **la sesión propia** del plan-refine (cada loop maneja los artefactos de SU sesión — no edita los de la sesión de plan-new) y el plan **re-apunta** la referencia de la Task UI al SPEC vigente. Pantallas no tocadas conservan su SPEC original.
 
 ## Compact / resume
 
@@ -91,4 +97,4 @@ El resume **keya off el `CHECKPOINT`** de la refine session, no de un archivo "r
 
 ## Convergence / exit
 
-Sin gaps materiales → **coherence gate** (read-only) = **`Success criteria` en verde** (*verification-first*; el "convergence gate" del chasis para PLAN, mismo que plan-new): cada `acceptance criterion` del spec **traza** a una fase/tarea, `Final behavior` los cubre, fases XS–S / tareas XS, `deps` sin ciclos, `Impacted` consistente con `Solution`, y —propio del re-refine— **el plan quedó realineado** con lo que cambió. Lo que falle **vuelve como gap**. Si pasa → *structured-choice* (contenido: `Guardar plan refinado` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`) → al `Guardar`, edita `docs/plans/PPP-plan-<slug>.md` in place (con confirmación) + inserta `Refinement decisions`/`Q&A traceability` → `finalize` (persiste `CHECKPOINT`; `BACKLOG` solo si difiere; cierra la session, reporta). `Cerrar` en cualquier momento → `finalize` igual.
+Sin gaps materiales → **coherence gate** (read-only) = **`Success criteria` en verde** (*verification-first*; el "convergence gate" del chasis para PLAN, mismo que plan-new): cada `acceptance criterion` del spec **traza** a una fase/tarea, `Final behavior` los cubre, fases XS–S / tareas XS, `deps` sin ciclos, `Impacted` consistente con `Solution`, si hay UI cada pantalla/tarea UI **traza a su design SPEC vigente**, y —propio del re-refine— **el plan quedó realineado** con lo que cambió. Lo que falle **vuelve como gap**. Si pasa → *structured-choice* (contenido: `Guardar plan refinado` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`) → al `Guardar`, edita `docs/plans/PPP-plan-<slug>.md` in place (con confirmación) + inserta `Refinement decisions`/`Q&A traceability` → `finalize` (persiste `CHECKPOINT`; `BACKLOG` solo si difiere; cierra la session, reporta). `Cerrar` en cualquier momento → `finalize` igual.

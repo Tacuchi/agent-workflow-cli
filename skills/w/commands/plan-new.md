@@ -37,6 +37,10 @@ El skill evalúa `$ARGUMENTS` (los specs viven in place — `docs/specs/NNN-spec
 
 El plan se nombra `docs/plans/PPP-plan-<slug>.md`. El CLI solo devuelve el número `PPP`; el loop arma el nombre completo (slug = kebab-case corto del Requirement: `[a-z0-9-]`, ≤ ~5 palabras / ≤ 40 chars). **No hereda el `NNN` del spec**. El vínculo al spec se establece por referencia (`## Origin` / "Derivado de") en el plan, no por número.
 
+## UI → design SPECs
+
+Si el plan **incluye UI**, el loop compone la capacidad `ui-design` y produce **design SPECs** por pantalla (`NNN-SPEC-<SLUG>.md`) como artefactos de su sesión — las Tasks UI del plan los referencian (ver `../loops/plan-new-loop/SKILL.md` § *Delta 4* y `../artifacts/artifacts-design/SPEC.md`).
+
 ## Plan mode
 
 El skill resuelve el input según las 3 reglas de arriba y describe las acciones del loop que ejecutaría, sin arrancar la iteración.

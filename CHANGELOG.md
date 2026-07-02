@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.7.0] — 2026-07-01
+
+**Los planes con UI ahora producen design SPECs por pantalla.** La capacidad `ui-design` (built-in `ui-spec`) deja de ser exclusiva del flujo SPEC: cuando el plan **incluye UI**, `plan-new-loop`/`plan-refine-loop` la componen para autorar **design SPECs** — `NNN-SPEC-<SLUG>.md`, un artefacto **por pantalla** (`001-SPEC-MODAL-EXPORT.md`, `002-SPEC-ADMIN-DASHBOARD.md`; numeración local a la sesión) — dentro de su propia sesión de PLAN. Derivan de la sección `## UI spec` del spec si existe; las Tasks UI del plan referencian la ruta del SPEC vigente (fuente de verdad) y `plan-exec-loop` los lee read-only como referencia de diseño. El requirement-spec y el plan siguen siendo documentos (invariante 3 intacta; la grafía `SPEC` MAYÚSCULAS = artefacto desambigua). Solo doctrina — bundle `w` 9.4.0 → **9.5.0**, sin cambios de runtime. Espeja `docs/referencias/` del hub de diseño.
+
+### Added
+
+- **Nuevo tipo de artefacto de sesión: design SPEC** (`skills/w/artifacts/artifacts-design/SPEC.md`): naming (`NNN-SPEC-<SLUG>.md`, local a la sesión, una pantalla por archivo), schema (encabezado de traza + render `ui-spec`) y reglas (referencia del plan = fuente de verdad; deriva de `## UI spec`; promoción solo vía `export-*`).
+- **`plan-new-loop` / `plan-refine-loop` § Delta 4** — componen `ui-design` ante el gap *UI sin design SPEC* (nueva fila en la gap taxonomy; el coherence gate exige que cada pantalla/tarea UI trace a su SPEC). En plan-refine, acotado al delta: solo pantallas nuevas/cambiadas, SPEC actualizado en su propia sesión + re-apunta la referencia del plan.
+- **`plan-exec-loop` § Reads** — lee los design SPECs referenciados por el plan como referencia de diseño (read-only).
+
+### Changed
+
+- **`roles/ui-spec`** — dos aterrizajes, un solo formato: sección `## UI spec` del spec (SPEC) · design SPECs por pantalla (PLAN). `Composed by` suma los loops de PLAN.
+- **Catálogos y READMEs** (`SKILL.md` orientación, `roles/README`, `loops/README`, `artifacts/README`, `README` del bundle): fila `ui-design` actualizada, nota *Inline design (PLAN sessions)*, carpeta `artifacts-design/` indexada, aclaración de la invariante 3 (design SPEC ≠ requirement-spec). La tabla de sesiones `refine` ahora lista también a `plan-refine-loop` como creador (drift preexistente).
+
+### Fixed
+
+Auditoría de consistencia post-cambio (workflow adversarial de 5 dimensiones; 8 hallazgos confirmados, todos corregidos):
+
+- **`artifacts/artifacts-core/SESSION.md`** — el bullet del tipo `refine` omitía a plan-refine-loop como creador y a los design SPECs como artefacto posible (contradecía la tabla autoritativa de `artifacts/README.md`).
+- **`loops/plan-refine-loop` § Delta 2** — la enumeración inline de la gap taxonomy reusada omitía el nuevo gap *UI sin design SPEC*.
+- **`commands/plan-new.md` / `commands/plan-refine.md`** — no espejaban la nota UI → design SPECs de sus docs de diseño (nueva sección).
+- **`commands/README.md`** — el diagrama apuntaba el schema de artefactos a `../workflow-artifacts/` (ruta del repo de diseño, colgada en el bundle) → `../artifacts/`.
+- **`commands/workspace-init.md`** — footer "(design spec)" colisionaba con el término ahora reservado *design SPEC*.
+- **`README.md` raíz (preexistentes destapados):** omitía `plan-refine-loop` / `/w:plan-refine` en el catálogo de capas, y la lista + matriz de `self install --target` seguía en 5 hosts (faltaban gemini/opencode/crush, soportados desde v14.5.0).
+
 ## [14.6.0] — 2026-07-01
 
 **El wizard interactivo `aw self mcp` ahora cubre los 6 hosts, no 3.** El menú (instalar/actualizar), la tabla de estado y las acciones de diagnóstico/eliminación estaban cableados a claude/codex/warp; ahora se derivan del registro de arneses (`FILE_HOSTS`), así que ofrecen y reportan los 6 hosts con config MCP (claude/codex/warp/gemini/opencode/crush) — igual que el comando no-interactivo `aw mcp --host`. Cierra la última asimetría multi-host del CLI (surge de la revisión de compatibilidad). Solo runtime CLI — bundle `w` sin cambios (9.4.0). El tab [MCP] del TUI sigue siendo un flujo de `.mcp.json` de workspace (superficie aparte, sin cambio de alcance).
