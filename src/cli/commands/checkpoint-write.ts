@@ -9,7 +9,9 @@ import type { CliContext } from "../types.js";
 
 export const checkpointWriteCommand: QtcCommand = {
   name: "checkpoint-write",
-  describe: "Write CHECKPOINT.md draft for the active (or --code) session.",
+  describe:
+    "Write CHECKPOINT.md draft for the active (or --code) session. " +
+    "Usage: aw checkpoint-write [--code <session>] [--force].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const force = args.flags.has("--force");

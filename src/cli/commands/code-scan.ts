@@ -6,7 +6,10 @@ import type { CliContext } from "../types.js";
 
 export const codeScanCommand: QtcCommand = {
   name: "code-scan",
-  describe: "Scan files for release patterns (localhost, secrets, TODOs, ...).",
+  describe:
+    "Scan files for release patterns (localhost, secrets, TODOs, ...). " +
+    "Usage: aw code-scan [--root <dir>] [--patterns-file <file>] " +
+    "[--pattern <id:regex[:sev]> ...] [--ext <csv>] [--exclude <csv>] [--max-per-pattern <n>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const root = args.values.get("root");
     const patternsFile = args.values.get("patterns-file");
@@ -14,7 +17,7 @@ export const codeScanCommand: QtcCommand = {
     const exclude = args.values.get("exclude");
     const maxStr = args.values.get("max-per-pattern");
 
-    const inlinePatterns = collectInlinePatterns(process.argv.slice(2));
+    const inlinePatterns = collectInlinePatterns(args.valuesMulti.get("pattern") ?? []);
 
     const input: Parameters<typeof runCodeScan>[3] = {};
     if (root !== undefined) input.root = root;
@@ -43,14 +46,11 @@ export const codeScanCommand: QtcCommand = {
   },
 };
 
-function collectInlinePatterns(argv: string[]): ScanPattern[] {
+function collectInlinePatterns(rawPatterns: string[]): ScanPattern[] {
   const out: ScanPattern[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--pattern" && i + 1 < argv.length) {
-      const parsed = parsePatternArg(argv[i + 1] ?? "");
-      if (parsed) out.push(parsed);
-      i += 1;
-    }
+  for (const raw of rawPatterns) {
+    const parsed = parsePatternArg(raw);
+    if (parsed) out.push(parsed);
   }
   return out;
 }

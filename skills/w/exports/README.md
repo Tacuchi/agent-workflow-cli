@@ -64,7 +64,7 @@ Exports read the corpus through the CLI — **never hard-coded paths**:
 
 - `aw sessions` — list sessions (counts + next correlative) to enumerate the corpus.
 - `aw release-data [--since sessionNNN] [--source alias]` — consolidated dump of sessions (corpus enumeration).
-- `aw session-artifacts --code <NNN>` — lazy read of a session's artifacts.
+- `aw session-artifacts --code <NNN> [--dump [kinds]]` — counts by default; `--dump` returns `{path, content, size}` per artifact (objetivo, decisiones, conclusiones, tasks, checkpoint, backlog, scripts).
 - `aw next-number docs/<category>` — deterministic numbering of the output.
 
 > The destination-folder resolution (workspace root, single- vs multi-source) is handled by the CLI internally. If a specific flag is uncertain at implementation time, it is noted inline in each SKILL.

@@ -1,5 +1,6 @@
 import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { selfCleanLegacy } from "../../../application/self/clean-legacy.js";
 import {
   type InstallTarget,
@@ -163,12 +164,15 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
                 ? { tone: "err", title: `Step ${step} failed`, body: failMsg }
                 : { tone: "err", title: `Step ${step} failed` },
             );
+            // The err toast is mirrored to the log by the notification-center
+            // safety net; nothing more to log here.
             await refresh();
             return;
           }
         }
         const finalAction: SkillAction = kind === "install" ? "install-full" : "uninstall-full";
         onToast?.({ tone: "ok", title: buildSuccessMessage(finalAction, host.name) });
+        void ctx.logger?.info(formatTuiEvent(`skill ${kind} ${host.name}`, "ok"));
         await refresh();
       } catch (err) {
         onToast?.({ tone: "err", title: "Error", body: (err as Error).message });

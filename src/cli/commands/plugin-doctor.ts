@@ -9,7 +9,10 @@ import type { CliContext } from "../types.js";
 
 export const pluginDoctorCommand: QtcCommand = {
   name: "plugin-doctor",
-  describe: "Health check del plugin (frontmatter, manifests, hooks, MCP, exports).",
+  describe:
+    "Health check del plugin (frontmatter, manifests, hooks, MCP, exports). " +
+    "Usage: aw plugin-doctor [--plugin-root <path>] [--plugin-name <name>] " +
+    "[--plugin-version <semver>] [--compat-range <range>] [--exports-file <file>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: PluginDoctorInput = {};
     const root = args.values.get("plugin-root") ?? args.plugin.pluginRoot;

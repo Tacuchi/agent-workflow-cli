@@ -88,6 +88,54 @@ describe("flagValue accessor (multi-routed flags reach commands that read single
   });
 });
 
+describe("repeated --path / --pattern route to valuesMulti", () => {
+  // Regression: attach-multiroot/code-scan re-scanned raw process.argv because
+  // the parser overwrote repeated non-multi values (last-wins). Now both are
+  // MULTI_VALUE_FLAGS so every occurrence is captured.
+  it("collects repeated --path values into valuesMulti", () => {
+    const parsed = parseArgv(["attach-multiroot", "--path", "/repo/a", "--path", "/repo/b"]);
+    expect(parsed.valuesMulti.get("path")).toEqual(["/repo/a", "/repo/b"]);
+    expect(parsed.values.has("path")).toBe(false);
+  });
+
+  it("collects repeated --pattern values into valuesMulti", () => {
+    const parsed = parseArgv([
+      "code-scan",
+      "--pattern",
+      "todo:TODO",
+      "--pattern",
+      "fixme:FIXME:alta",
+    ]);
+    expect(parsed.valuesMulti.get("pattern")).toEqual(["todo:TODO", "fixme:FIXME:alta"]);
+  });
+});
+
+describe("boolean flags never consume the following positional", () => {
+  // Regression: boolean flags greedily captured the next token as their value.
+  // `merge-state --all /repo` lost BOTH (--all ate "/repo"); `git-flow --dry-run
+  // sync` ate the action. Now known booleans route to `flags` and leave the
+  // positional in `rest`.
+  it("keeps the positional for `merge-state --all <path>`", () => {
+    const parsed = parseArgv(["merge-state", "--all", "/repo"]);
+    expect(parsed.flags.has("--all")).toBe(true);
+    expect(parsed.rest).toEqual(["/repo"]);
+    expect(parsed.values.has("all")).toBe(false);
+  });
+
+  it("keeps the action for `git-flow --dry-run sync`", () => {
+    const parsed = parseArgv(["git-flow", "--dry-run", "sync"]);
+    expect(parsed.flags.has("--dry-run")).toBe(true);
+    expect(parsed.rest).toEqual(["sync"]);
+    expect(parsed.values.has("dry-run")).toBe(false);
+  });
+
+  it("does not affect value flags: `--source X` still consumes its value", () => {
+    const parsed = parseArgv(["git-flow", "sync", "--source", "core"]);
+    expect(parsed.rest).toEqual(["sync"]);
+    expect(parsed.valuesMulti.get("source")).toEqual(["core"]);
+  });
+});
+
 describe("single-dash help alias", () => {
   // Regression: `-h` fell into `rest` (only `--` tokens become flags), so
   // `aw <cmd> -h` EXECUTED the command instead of showing its help.

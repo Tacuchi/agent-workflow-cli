@@ -43,7 +43,21 @@ describe("GitCliAdapter — new git-flow ops", () => {
     const p = new ScriptedProcess([]);
     await new GitCliAdapter(p).checkout("/repo", "feature/x");
     expect(argsOf(p, "checkout")).toEqual(["checkout", "feature/x"]);
-    expect(p.invocations[0]?.opts).toEqual({ cwd: "/repo" });
+    expect(p.invocations[0]?.opts?.cwd).toBe("/repo");
+  });
+
+  it("runs every git command non-interactively (GIT_TERMINAL_PROMPT=0) so it fails fast on creds", async () => {
+    const p = new ScriptedProcess([]);
+    const git = new GitCliAdapter(p);
+    // A network op that could otherwise block on a credential prompt.
+    await git.push("/repo", "main");
+    await git.pull("/repo");
+    await git.currentBranch("/repo");
+    for (const inv of p.invocations) {
+      expect(inv.opts?.env?.GIT_TERMINAL_PROMPT).toBe("0");
+      // The rest of the environment is preserved (not wiped).
+      expect(inv.opts?.env?.PATH).toBe(process.env.PATH);
+    }
   });
 
   it("checkout throws on non-zero exit", async () => {

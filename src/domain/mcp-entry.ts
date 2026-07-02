@@ -92,7 +92,11 @@ export function validateDsnVarName(
   return { ok: true, value };
 }
 
-export function buildMcpEntry(instance: McpInstance, dsnVar?: string): McpEntry {
+export function buildMcpEntry(
+  instance: McpInstance,
+  dsnVar?: string,
+  platform: string = process.platform,
+): McpEntry {
   const normalized = normalizeMcpInstance(instance);
   const env: Record<string, string> = {
     MAX_ROWS: "1000",
@@ -102,10 +106,16 @@ export function buildMcpEntry(instance: McpInstance, dsnVar?: string): McpEntry 
   if (dsnVar !== undefined) {
     env.DBHUB_DSN_VAR = normalizeDsnVarName(dsnVar);
   }
+  // Windows: el bin npm global es un shim `agent-workflow.cmd`; los hosts que
+  // spawnean el server sin shell fallan (ENOENT/EINVAL) → envolver en `cmd /c`.
+  // El doctor compara contra esta misma forma en la misma máquina, sin drift.
+  const isWin = platform === "win32";
   return {
     name: mcpEntryNameFor(normalized),
-    command: "agent-workflow",
-    args: ["mcp", "dbhub", normalized],
+    command: isWin ? "cmd" : "agent-workflow",
+    args: isWin
+      ? ["/c", "agent-workflow", "mcp", "dbhub", normalized]
+      : ["mcp", "dbhub", normalized],
     env,
   };
 }

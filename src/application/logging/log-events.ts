@@ -27,3 +27,13 @@ export function formatCommandError(command: string, err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   return `${command} → error: ${message}`;
 }
+
+/**
+ * `tui: <action>` (optionally `→ <outcome>` or `→ <outcome>: <detail>`) for a
+ * TUI-originated event in the operational log. Mirrors the `<command> → …` shape
+ * used for CLI dispatches so both read the same when grepping the daily log.
+ */
+export function formatTuiEvent(action: string, outcome?: string, detail?: string): string {
+  if (!outcome) return `tui: ${action}`;
+  return `tui: ${action} → ${detail ? `${outcome}: ${detail}` : outcome}`;
+}

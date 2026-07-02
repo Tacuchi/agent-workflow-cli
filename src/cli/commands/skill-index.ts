@@ -6,7 +6,9 @@ import type { CliContext } from "../types.js";
 
 export const skillIndexCommand: QtcCommand = {
   name: "skill-index",
-  describe: "Lazy-load skill index (frontmatter only).",
+  describe:
+    "Lazy-load skill index (frontmatter only). " +
+    "Usage: aw skill-index [--plugin-root <path>] [--exported-only].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const pluginRoot = args.plugin.pluginRoot ?? args.values.get("plugin-root");
     const exportedOnly = args.flags.has("--exported-only");

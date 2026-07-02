@@ -111,7 +111,7 @@ Los loops componen **capacidades por su rol**, no skills concretas; la skill que
 | `research` | `research` | todos los loops (research inline) |
 | `overview` | `workflow` | cualquiera (orientación) |
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
+> **Convenciones ambientes (no roles):** estándares de código/testing/redacción y `creating-tools` son skills standalone que el host auto-descubre por su `description` — el workflow no las bindea ni depende de ellas. Doctrina completa: [../roles/README.md](../roles/README.md).
 
 `off` en config → capacidad desactivada: el loop sigue sin ella; si era necesaria, lo dice o pregunta al humano.
 

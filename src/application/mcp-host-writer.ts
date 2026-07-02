@@ -16,7 +16,8 @@ import type {
   McpWriteOpts,
   McpWriteResult,
 } from "../domain/mcp-entry.js";
-import { resolveWarpProjectMcpPath } from "./multiroot/warp.js";
+import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
+import { resolveWarpGlobalMcpPath, resolveWarpProjectMcpPath } from "./multiroot/warp.js";
 
 export interface ScopeInput {
   scopeDir: string;
@@ -116,12 +117,12 @@ function geminiMcpFile(scope: ScopeInput): string {
 }
 function opencodeMcpFile(scope: ScopeInput): string {
   return scope.kind === "global"
-    ? join(scope.scopeDir, ".config", "opencode", "opencode.json")
+    ? opencodeGlobalMcpFile(scope.scopeDir)
     : join(scope.scopeDir, "opencode.json");
 }
 function crushMcpFile(scope: ScopeInput): string {
   return scope.kind === "global"
-    ? join(scope.scopeDir, ".config", "crush", "crush.json")
+    ? crushGlobalMcpFile(scope.scopeDir)
     : join(scope.scopeDir, "crush.json");
 }
 
@@ -384,8 +385,21 @@ function removeCodexMcpEntry(
   return resultRemoved("codex", configFile, entry.name, null);
 }
 
+/**
+ * Warp file by scope: workspace = <scopeDir>/.warp/.mcp.json; global = the
+ * per-platform registry path (Linux/Windows difieren de ~/.warp — DEC-W3).
+ * scopeDir actúa de homedir en global, así los tests inyectan un tmpdir.
+ */
+function warpMcpFile(scope: ScopeInput): string {
+  if (scope.kind === "global") {
+    const globalPath = resolveWarpGlobalMcpPath(process.platform, "stable", () => scope.scopeDir);
+    if (globalPath) return globalPath;
+  }
+  return resolveWarpProjectMcpPath(scope.scopeDir);
+}
+
 function writeWarpMcpEntry(entry: McpEntry, scope: ScopeInput, opts: McpWriteOpts): McpWriteResult {
-  const settingsFile = resolveWarpProjectMcpPath(scope.scopeDir);
+  const settingsFile = warpMcpFile(scope);
   const data = readJsonFile(settingsFile);
   const mcpServers = ensureRecord(data, "mcpServers");
   const existing = mcpServers[entry.name];
@@ -418,7 +432,7 @@ function removeWarpMcpEntry(
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
-  const settingsFile = resolveWarpProjectMcpPath(scope.scopeDir);
+  const settingsFile = warpMcpFile(scope);
   const data = readJsonFile(settingsFile);
   const mcpServers = ensureRecord(data, "mcpServers");
   const existing = mcpServers[entry.name];

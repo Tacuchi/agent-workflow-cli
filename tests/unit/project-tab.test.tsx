@@ -34,8 +34,28 @@ function workspaceMd(): string {
   ].join("\n");
 }
 
-function buildCtx(opts: { conflictOn?: string } = {}): CliContext {
+interface FakeLogger {
+  lines: { level: string; msg: string }[];
+  info: (m: string) => Promise<void>;
+  warn: (m: string) => Promise<void>;
+  error: (m: string) => Promise<void>;
+  log: (level: string, m: string) => Promise<void>;
+}
+
+function fakeLogger(): FakeLogger {
+  const lines: { level: string; msg: string }[] = [];
   return {
+    lines,
+    info: async (m) => void lines.push({ level: "info", msg: m }),
+    warn: async (m) => void lines.push({ level: "warn", msg: m }),
+    error: async (m) => void lines.push({ level: "error", msg: m }),
+    log: async (level, m) => void lines.push({ level, msg: m }),
+  };
+}
+
+function buildCtx(opts: { conflictOn?: string; logger?: FakeLogger } = {}): CliContext {
+  return {
+    logger: opts.logger,
     fs: {
       exists: async (p: string) => p === "/ws/CLAUDE.md",
       readText: async () => workspaceMd(),
@@ -123,6 +143,30 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     const f = lastFrame() ?? "";
     expect(f).toContain("completed");
     expect(f).toContain("merge prod→work");
+  });
+
+  it("loguea el outcome de git-flow en el log operativo (finding tui-actions-not-logged)", async () => {
+    const logger = fakeLogger();
+    const { stdin } = render(<ProjectTab ctx={buildCtx({ logger })} isActive />);
+    await tick();
+    stdin.write(ENTER); // abre panel (acción 0 = Lanzar en local)
+    await tick();
+    stdin.write(DOWN); // baja a "Alinear con PROD" (sync)
+    await tick();
+    stdin.write(ENTER); // ejecuta sync
+    await tick();
+    const flow = logger.lines.find((l) => l.msg.includes("git-flow sync"));
+    expect(flow).toBeDefined();
+    expect(flow?.level).toBe("info");
+    expect(flow?.msg).toContain("→ ok");
+  });
+
+  it("QuickActions ofrece 'git status' y ya no el stub 'start session' (finding stub-quick-actions)", async () => {
+    const { lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("git status");
+    expect(f).not.toContain("start session");
   });
 
   it("permite seleccionar 'all sources' y abrir el panel aplicado a todas", async () => {

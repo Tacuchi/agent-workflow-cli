@@ -29,7 +29,7 @@ export const profilesCommand: QtcCommand = {
 
 export const logsCommand: QtcCommand = {
   name: "logs",
-  describe: "View or clear the CLI log.",
+  describe: "View or clear the CLI log. Usage: aw logs [--tail <n>] [--clear].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const tailStr = args.values.get("tail");
     const tail = tailStr ? Number.parseInt(tailStr, 10) : undefined;
@@ -44,7 +44,7 @@ export const logsCommand: QtcCommand = {
 
 export const nextNumberCommand: QtcCommand = {
   name: "next-number",
-  describe: "Compute next NNN correlative for a directory.",
+  describe: "Compute next NNN correlative for a directory. Usage: aw next-number <directorio>.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dir = args.rest[0];
     if (!dir) {

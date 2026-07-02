@@ -154,7 +154,7 @@ Catálogo de roles y su default:
 | `diagrams` | `diagrams` | should | `export-diagrams` |
 | `overview` | `workflow` | should | cualquiera (orientación) |
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`, escribe `docs/tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
+> **Convenciones ambientes (no roles):** estándares de código/testing/redacción y `creating-tools` son skills standalone que el host auto-descubre por su `description` — el workflow no las bindea ni depende de ellas. Doctrina completa: [roles/README.md](roles/README.md).
 
 El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
 

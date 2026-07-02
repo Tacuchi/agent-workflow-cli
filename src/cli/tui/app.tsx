@@ -44,7 +44,7 @@ export interface AppProps {
 export function App(props: AppProps) {
   return (
     <InputLockProvider>
-      <NotificationCenterProvider>
+      <NotificationCenterProvider {...(props.ctx.logger ? { logger: props.ctx.logger } : {})}>
         <AppShell {...props} />
       </NotificationCenterProvider>
     </InputLockProvider>
@@ -267,7 +267,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
         });
         return;
       }
-      pushToast({ tone: "info", title: id });
+      // Unknown/unwired id — surface it explicitly (never echo the raw id as if
+      // it were a real action). Err tone routes it through the log safety net too.
+      pushToast({ tone: "err", title: "Acción no disponible", body: id });
     },
     [pushToast, onResult, exit],
   );

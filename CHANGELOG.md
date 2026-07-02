@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.10.0] — 2026-07-02
+
+**Ronda backlog-medium de la auditoría integral: MCP host-aware y multi-plataforma, artefactos dumpeables, parser/help para agentes, y TUI con logs y errores observables.** Segunda ronda derivada del informe `docs/reports/001` del hub de diseño (los 18 ítems medium). Bundle `w` 9.6.1 → **9.7.0** (doctrina: delegación git + dump de artefactos + dedup).
+
+### Added
+
+- **`aw session-artifacts --dump [kinds]`**: devuelve `{path, content, size}` por artefacto (`objetivo`, `decisiones`, `conclusiones`, `tasks`, `checkpoint`, `backlog`, `scripts`) — los 4 `export-*` afirmaban delegar esta lectura pero el comando solo devolvía counts y el dump real era código muerto con un filtro de naming legacy (`session\d{3}-`) que jamás encontraba las sessions del modelo nuevo. Las 4 skills export citan ahora el flag exacto.
+- **`src/application/mcp-host-paths.ts`**: fuente única de los config globales de OpenCode/Crush para writer + reader + detect-hosts — honra `XDG_CONFIG_HOME`, `CRUSH_GLOBAL_CONFIG`, y Crush en Windows va a `%LOCALAPPDATA%\crush\crush.json` (verificado contra docs oficiales; el registro escribía un archivo que Crush nunca lee).
+- **Parser: `BOOLEAN_FLAGS`** — los flags booleanos ya no capturan el siguiente token (`merge-state --all /repo` perdía ambos; `git-flow --dry-run sync` se comía el action); `--path`/`--pattern` pasan a `MULTI_VALUE_FLAGS` y `multiroot`/`code-scan` dejan de re-escanear `process.argv` crudo.
+- **TUI: acciones logueadas al log diario** (spec 005): `logger` en `CliContext`; launch/stop/relaunch/remove, git-flow, install/uninstall de skills, save/install/test de MCP y todo toast de error escriben su outcome.
+- Tests: +56 (round-trip global XDG por host, `resolveHosts` por harness, dump de artefactos, ramas win32 del adapter con platform inyectada, `selfUninstall` completo, guard de help-groups, `GIT_TERMINAL_PROMPT`).
+
+### Fixed
+
+- **`aw mcp setup/remove/doctor` dentro de Gemini/OpenCode/Crush**: `resolveHosts` especial-caseaba 3 hosts y hacía fan-out a los 6 archivos de config corriendo dentro de los nuevos; ahora mapea data-driven vía `harnessById().mcpHostId` (verificado e2e con env markers).
+- **Warp scope global en Linux/Windows**: writer/remover/reader usaban siempre `<scope>/.warp/.mcp.json`; ahora el scope global resuelve el path por plataforma del registro (DEC-W3) — antes se escribía un archivo que Warp nunca lee y `doctor` no podía detectarlo. Los hints globales de setup/remove muestran el path de la plataforma real (antes siempre darwin).
+- **Entradas MCP en Windows**: `buildMcpEntry` emite `cmd /c agent-workflow …` en win32 — el bin npm es un shim `.cmd` que los hosts que spawnean sin shell no pueden ejecutar.
+- **`openPath` observable**: los fallos de spawn ya no se tragan (ventana de sondeo de 600ms); el TUI muestra el error real y no persiste una app inválida en prefs.
+- **git no-interactivo**: `GIT_TERMINAL_PROMPT=0` en todos los comandos git — un push que pedía credenciales colgaba el TUI (solo Ctrl+C).
+- **Ayuda global**: `next-number` sale de "Dev-only" (las skills lo usan para los correlativos NNN); `workspace-init`/`skills`/`host-doctor`/`visibility` clasificados (guard test: nada cae en "Other"); el listado muestra `name — glosa` y ~15 describes documentan sus flags; `workflow-content` (TUI) reconciliado.
+- **TUI**: acciones stub `s`/`c` del tab Project retiradas (mostraban el id crudo); el fallback de acción desconocida avisa "acción no disponible".
+
+### Changed
+
+- **Bundle `w` 9.7.0**: `roles/git` delega la verificación de rama a `aw check-branch --source` y el inventario de commits a `aw sources` (el git-directo queda como fallback sin workspace) — `plan-exec-loop`/`quick-loop` citan el comando exacto; el bloque "Convenciones ambientes (no roles)" queda canónico en `roles/README.md` (6 copias verbatim → 1 + links).
+
 ## [14.9.0] — 2026-07-02
 
 **Ronda de assurance multi-host/multi-OS: los targets se derivan del registro y el lanzamiento JVM funciona en Windows.** Surge de una auditoría integral por dimensiones (hosts · Windows/Linux/macOS · economía de tokens · claridad del CLI · TUI) con verificación adversarial por hallazgo; el informe completo y el backlog priorizado viven en el hub de diseño (`docs/reports/001-report-auditoria-integral-multihost.md`). El patrón de bug dominante era "lista de hosts hardcodeada desincronizada del registro" (la familia del fix `clean-legacy` v14.5.1): reapareció en 4 superficies y se cierra de raíz con una fuente única derivada. Bundle `w` 9.6.0 → **9.6.1** (solo docs).

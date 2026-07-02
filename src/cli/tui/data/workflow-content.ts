@@ -105,21 +105,23 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "sources",
       title: "Sources / Branches",
       items: [
+        "workspace-init",
         "sources",
         "set-working-branch",
         "set-qa-branch",
+        "remove-source",
         "git-flow",
         "merge-state",
-        "workspace-init",
         "attach-multiroot",
         "detach-multiroot",
+        "visibility",
         "check-branch",
       ],
     },
     {
       id: "orchestration",
       title: "Orchestration",
-      items: ["status", "stack", "skill-index", "resume-summary"],
+      items: ["status", "stack", "skill-index", "skills", "resume-summary", "next-number"],
     },
     {
       id: "doctor",
@@ -127,6 +129,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       items: [
         "plugin-doctor",
         "plugin-cache",
+        "host-doctor",
         "history-data",
         "history-update",
         "release-data",
@@ -148,7 +151,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     {
       id: "dev",
       title: "Dev-only",
-      items: ["harness", "profiles", "logs", "next-number"],
+      items: ["harness", "profiles", "logs"],
     },
     {
       id: "self",

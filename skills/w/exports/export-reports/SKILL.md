@@ -50,7 +50,7 @@ En plan mode **describe**, no escribe: la audiencia/longitud resuelta, las sesio
 **CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
 
 - `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera + filtra el corpus.
-- `aw session-artifacts --code <NNN>` — lee spec referido, `CONCLUSIONS`, `DECISION` y estado del plan-doc (lazy) por sesión.
+- `aw session-artifacts --code <NNN> --dump objetivo,conclusiones,decisiones` — devuelve `{path, content, size}` de `SESSION` (spec referido), `CONCLUSIONS` y `DECISION`; el estado del plan-doc se lee por su path.
 - `aw next-number docs/reports` — numeración determinística (la resolución de la carpeta destino la maneja el CLI).
 
 **Filesystem**:
@@ -85,7 +85,7 @@ Sin args: todo el corpus, audiencia ejecutiva por default. *(Si algún flag exac
 
 ### Paso 2 — Recolectar inputs por sesión
 
-Por sesión filtrada (`aw session-artifacts --code <NNN>`): el spec referido (qué se planteó), `CONCLUSIONS` (cierre técnico / R-items), `DECISION` (qué se decidió), estado del plan-doc (qué se entregó / qué queda). Recoger también componentes impactados (fuentes tocadas) para la tabla de síntesis.
+Por sesión filtrada (`aw session-artifacts --code <NNN> --dump objetivo,conclusiones,decisiones`): el spec referido (qué se planteó), `CONCLUSIONS` (cierre técnico / R-items), `DECISION` (qué se decidió), estado del plan-doc (qué se entregó / qué queda). Recoger también componentes impactados (fuentes tocadas) para la tabla de síntesis.
 
 ### Paso 3 — Dedup de recomendaciones (cross-session)
 

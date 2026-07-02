@@ -6,7 +6,9 @@ import type { CliContext } from "../types.js";
 
 export const compressCheckpointCommand: QtcCommand = {
   name: "compress-checkpoint",
-  describe: "Identify long artifacts that should be compressed (HALLAZGOS/EVIDENCIA/...).",
+  describe:
+    "Identify long artifacts that should be compressed (HALLAZGOS/EVIDENCIA/...). " +
+    "Usage: aw compress-checkpoint [--code <session>] [--threshold <chars>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const thresholdRaw = args.values.get("threshold");

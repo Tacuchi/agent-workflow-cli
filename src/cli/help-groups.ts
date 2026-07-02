@@ -2,9 +2,11 @@
 // family so users can scan by intent (session lifecycle, checkpoint workflow,
 // orchestration helpers, etc.) instead of one long alphabetical list.
 //
-// Adding a new command? Decide which family it belongs to and append it to
-// the matching group below. Commands not listed in any group fall through to
-// the "Other" section automatically.
+// Adding a new command? Decide which family it belongs to and append it to the
+// matching group below. Any registered command NOT listed here falls into the
+// catch-all "Other" section — the `help-groups` guard test fails if that happens,
+// so every command must have a real home. Keep this in sync with
+// `src/cli/tui/data/workflow-content.ts` (the TUI Workflow tab) too.
 
 export interface CommandGroup {
   name: string;
@@ -34,6 +36,7 @@ const GROUPS: readonly CommandGroup[] = [
   {
     name: "Sources / Branches",
     commands: [
+      "workspace-init",
       "sources",
       "set-working-branch",
       "set-qa-branch",
@@ -42,18 +45,22 @@ const GROUPS: readonly CommandGroup[] = [
       "merge-state",
       "attach-multiroot",
       "detach-multiroot",
+      "visibility",
       "check-branch",
     ],
   },
   {
     name: "Orchestration",
-    commands: ["status", "stack", "skill-index", "resume-summary"],
+    // next-number is a core helper (the bundle skills call it for NNN
+    // correlatives), not dev-only; skills/skill-index resolve capability bindings.
+    commands: ["status", "stack", "skill-index", "skills", "resume-summary", "next-number"],
   },
   {
     name: "Doctor / Data",
     commands: [
       "plugin-doctor",
       "plugin-cache",
+      "host-doctor",
       "history-data",
       "history-update",
       "release-data",
@@ -64,7 +71,7 @@ const GROUPS: readonly CommandGroup[] = [
   },
   { name: "Hooks", commands: ["hook"] },
   { name: "MCP", commands: ["mcp"] },
-  { name: "Dev-only", commands: ["harness", "profiles", "logs", "next-number"] },
+  { name: "Dev-only", commands: ["harness", "profiles", "logs"] },
   { name: "Self", commands: ["self"] },
 ];
 
@@ -83,14 +90,49 @@ export function groupCommands(allCommands: string[]): CommandGroup[] {
   return out;
 }
 
-export function renderGroupedCommandLines(allCommands: string[]): string[] {
+// Max width of the one-line summary in the global command list; longer first
+// sentences are elided with an ellipsis so the help never wraps awkwardly.
+const MAX_SUMMARY_WIDTH = 72;
+
+/**
+ * One-line gloss for the global command list: the first sentence of a command's
+ * `describe`, minus any appended `Usage: …` clause (that belongs to
+ * `<cmd> --help`). Elided to {@link MAX_SUMMARY_WIDTH}.
+ */
+export function commandSummary(describe: string): string {
+  const head = describe.split(/\s+Usage:/i)[0]?.trim() ?? describe.trim();
+  // First sentence = up to a `.`/`!`/`?` that is followed by whitespace + an
+  // uppercase letter (a real sentence boundary). This skips ellipses ("...")
+  // and abbreviations that are not followed by a capitalized word.
+  const match = head.match(/^[\s\S]*?[.!?](?=\s+[A-ZÁÉÍÓÚÑ])/);
+  let sentence = (match ? match[0] : head).trim();
+  if (sentence.length > MAX_SUMMARY_WIDTH) {
+    sentence = `${sentence.slice(0, MAX_SUMMARY_WIDTH - 1).trimEnd()}…`;
+  }
+  return sentence;
+}
+
+/**
+ * Renders the grouped command list for `aw --help`. When `describes` is provided
+ * (a name→describe map), each line becomes `name — <first sentence>` with the
+ * names column-aligned; without it, names are listed alone (back-compat).
+ */
+export function renderGroupedCommandLines(
+  allCommands: string[],
+  describes?: ReadonlyMap<string, string>,
+): string[] {
   const groups = groupCommands(allCommands);
+  const nameWidth = describes ? Math.max(0, ...allCommands.map((c) => c.length)) : 0;
   const lines: string[] = [];
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];
     if (!g) continue;
     lines.push(`${g.name}:`);
-    for (const c of g.commands) lines.push(`  ${c}`);
+    for (const c of g.commands) {
+      const describe = describes?.get(c);
+      const summary = describe ? commandSummary(describe) : "";
+      lines.push(summary ? `  ${c.padEnd(nameWidth)}  ${summary}` : `  ${c}`);
+    }
     if (i < groups.length - 1) lines.push("");
   }
   return lines;

@@ -3,6 +3,7 @@ import {
   formatCommandError,
   formatCommandInvocation,
   formatCommandOutcome,
+  formatTuiEvent,
 } from "../../src/application/logging/log-events.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 
@@ -39,5 +40,13 @@ describe("log-events", () => {
 
   it("error carries the command and message", () => {
     expect(formatCommandError("status", new Error("boom"))).toBe("status → error: boom");
+  });
+
+  it("tui event: action only, action+outcome, and action+outcome+detail", () => {
+    expect(formatTuiEvent("open")).toBe("tui: open");
+    expect(formatTuiEvent("launch alpha", "ok")).toBe("tui: launch alpha → ok");
+    expect(formatTuiEvent("git-flow sync · alpha", "error", "no working branch")).toBe(
+      "tui: git-flow sync · alpha → error: no working branch",
+    );
   });
 });

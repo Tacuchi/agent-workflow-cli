@@ -15,8 +15,10 @@ import { collectFilesByExt, sessionCodeInt } from "./common.js";
 const KIND_TO_ARTIFACT: Record<string, readonly ArtifactKind[]> = {
   objetivo: ["session", "objective"],
   decisiones: ["decisions"],
+  conclusiones: ["conclusions"],
   tasks: ["tasks"],
   checkpoint: ["checkpoint"],
+  backlog: ["backlog"],
 };
 const SCRIPTS_SUBDIR = "scripts";
 
@@ -79,8 +81,10 @@ async function findSessionFolder(
 ): Promise<{ sessionPath: string; folderName: string } | null> {
   const targetInt = sessionCodeInt(sessionCode);
   if (!(await fs.exists(sessionsDir)) || targetInt === null) return null;
+  // Acepta el naming nuevo (NNN-<slug>-<flow>) y el legacy (sessionNNN-…):
+  // el filtro solo-legacy hacía que el dump jamás encontrara sessions actuales.
   const folders = (await fs.list(sessionsDir)).filter(
-    (e) => e.type === "dir" && /^session\d{3}-/.test(e.name),
+    (e) => e.type === "dir" && /^(session)?\d{3}-/.test(e.name),
   );
   const match = folders.find((f) => sessionCodeInt(parseSessionFolder(f.name).code) === targetInt);
   if (!match) return null;

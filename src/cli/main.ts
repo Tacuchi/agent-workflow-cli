@@ -9,6 +9,7 @@ import {
   formatCommandError,
   formatCommandInvocation,
   formatCommandOutcome,
+  formatTuiEvent,
 } from "../application/logging/log-events.js";
 import { Logger } from "../application/logging/logger.js";
 import { PathsService } from "../application/paths-service.js";
@@ -33,6 +34,7 @@ import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
 import { hostDoctorCommand } from "./commands/host-doctor.js";
+import { commandDescribes } from "./commands/index.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { mergeStateCommand } from "./commands/merge-state.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./commands/multiroot.js";
@@ -150,6 +152,10 @@ async function run(argv: string[]): Promise<ExitCode> {
   );
   const runtime = await runtimeService.resolveRuntime();
 
+  // Operational logger → global user-level daily log. Best-effort; never throws.
+  // Built before ctx so the TUI (and its tabs, via ctx.logger) can log too.
+  const logger = new Logger({ fs, paths });
+
   const skillsResolution = await resolveSkills(fs, paths);
   const ctx: CliContext = {
     fs,
@@ -160,10 +166,8 @@ async function run(argv: string[]): Promise<ExitCode> {
     namespace,
     paths,
     skills: skillsResolution.skills,
+    logger,
   };
-
-  // Operational logger → global user-level daily log. Best-effort; never throws.
-  const logger = new Logger({ fs, paths });
 
   if (
     shouldShowInteractiveMenu({
@@ -172,7 +176,7 @@ async function run(argv: string[]): Promise<ExitCode> {
       hasHelp,
     })
   ) {
-    await logger.info("tui: open");
+    await logger.info(formatTuiEvent("open"));
     const tuiResult = await runTui(readPackageVersion(), ctx);
     if (tuiResult.kind === "menu-action") {
       return await dispatchMenuAction(tuiResult.action, registry);
@@ -288,7 +292,7 @@ function printHelp(commands: string[]): void {
     "",
     "Commands:",
     "",
-    ...renderGroupedCommandLines(commands),
+    ...renderGroupedCommandLines(commands, commandDescribes()),
     "",
     "Aliases:",
     "  aw                  short alias of `agent-workflow`",

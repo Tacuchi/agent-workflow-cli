@@ -6,8 +6,8 @@ import type { CliContext } from "../types.js";
 
 function buildInput(args: ParsedArgs): MultirootInput {
   const input: MultirootInput = {};
-  // Repeated --path support via argv scan (the parser overwrites map values).
-  const repeatedPaths = collectRepeated(process.argv.slice(2), "--path");
+  // Repeated --path (routed to valuesMulti by the parser).
+  const repeatedPaths = (args.valuesMulti.get("path") ?? []).filter((p) => p.length > 0);
   if (repeatedPaths.length > 0) input.paths = repeatedPaths;
   const csv = args.values.get("paths");
   if (csv !== undefined) input.pathsCsv = csv;
@@ -22,20 +22,12 @@ function buildInput(args: ParsedArgs): MultirootInput {
   return input;
 }
 
-function collectRepeated(argv: string[], flag: string): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === flag && i + 1 < argv.length) {
-      out.push(argv[i + 1] ?? "");
-      i += 1;
-    }
-  }
-  return out.filter((p) => p.length > 0);
-}
-
 export const attachMultirootCommand: QtcCommand = {
   name: "attach-multiroot",
-  describe: "Configura visibilidad multi-root en Claude Code y Codex CLI.",
+  describe:
+    "Configura visibilidad multi-root en Claude Code y Codex CLI. " +
+    "Usage: aw attach-multiroot [--path <dir> ...] [--paths <csv>] [--workspace <dir>] " +
+    "[--from-sources] [--global] [--skip-claude] [--skip-codex] [--skip-warp] [--skip-oz].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const data = await runMultiroot(ctx.fs, ctx.env, ctx.paths, "attach", buildInput(args));
     return { ok: true, data, exitCode: 0 };
@@ -44,7 +36,10 @@ export const attachMultirootCommand: QtcCommand = {
 
 export const detachMultirootCommand: QtcCommand = {
   name: "detach-multiroot",
-  describe: "Quita visibilidad multi-root previamente configurada.",
+  describe:
+    "Quita visibilidad multi-root previamente configurada. " +
+    "Usage: aw detach-multiroot [--path <dir> ...] [--paths <csv>] [--workspace <dir>] " +
+    "[--from-sources] [--global] [--skip-claude] [--skip-codex] [--skip-warp] [--skip-oz].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const data = await runMultiroot(ctx.fs, ctx.env, ctx.paths, "detach", buildInput(args));
     return { ok: true, data, exitCode: 0 };

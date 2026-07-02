@@ -46,7 +46,7 @@ QUICK
 
 `git` · `sql` (regla BD) · `research` (inline). Resueltas por `.workflow/skills.toml`.
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
+> **Convenciones ambientes (no roles):** estándares de código/testing/redacción y `creating-tools` son skills standalone que el host auto-descubre por su `description` — el workflow no las bindea ni depende de ellas. Doctrina completa: [../../roles/README.md](../../roles/README.md).
 
 ## Delta QUICK — minimal ceremony
 
@@ -78,7 +78,7 @@ quick-loop(prompt):
   seed SESSION.Success criteria = check del deliverable     # verification-first, ANTES: test(s) si código · rúbrica corta RATIFICADA si análisis/diseño
   seed CHECKPOINT.Pending/Next = la tarea (s)               # ANTES: sembrar intención (artifact-first)
   trabajar la tarea (loop mínimo):
-    si edita código → verificar rama esperada por fuente (branch-check); si no → pausar + resolver
+    si edita código → verificar rama esperada por fuente (`aw check-branch`); si no → pausar + resolver
     producir el deliverable: editar código (cambio mínimo) Ó autorar el análisis/diseño
     si consulta BD read-only → SCRIPTS.sql + ejecutar read-only
     si cambio BD (DDL/DML) → SCRIPTS.sql (artefacto session, NO ejecutar)

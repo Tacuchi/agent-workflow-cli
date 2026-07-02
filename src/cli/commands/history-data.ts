@@ -7,7 +7,9 @@ import type { CliContext } from "../types.js";
 
 export const historyDataCommand: QtcCommand = {
   name: "history-data",
-  describe: "Aggregate session metadata to (re)build HISTORY.md.",
+  describe:
+    "Aggregate session metadata to (re)build HISTORY.md. " +
+    "Usage: aw history-data [--sessions <csv>] [--include-docs] [--verbose].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verbose = args.flags.has("--verbose");
     const includeDocs = args.flags.has("--include-docs");

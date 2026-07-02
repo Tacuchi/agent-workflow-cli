@@ -1,6 +1,7 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
+import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
 import { type InstallTarget, SKILL_DIR_NAME, TARGET_ROOTS } from "./install-skill.js";
 
 export interface DetectedHost {
@@ -30,11 +31,13 @@ const HOST_ORDER: readonly InstallTarget[] = [
 ];
 
 // Config dirs that do NOT follow the ~/.<target> convention. OpenCode and Crush
-// are XDG-based (~/.config/<name>); the rest use ~/.<target>.
-const CONFIG_DIR_OVERRIDES: Partial<Record<InstallTarget, readonly string[]>> = {
-  opencode: [".config", "opencode"],
-  crush: [".config", "crush"],
-};
+// resuelven vía mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA) —
+// misma fuente que writer/reader MCP; el resto usa ~/.<target>.
+function overrideConfigDir(target: InstallTarget, home: string): string | null {
+  if (target === "opencode") return dirname(opencodeGlobalMcpFile(home));
+  if (target === "crush") return dirname(crushGlobalMcpFile(home));
+  return null;
+}
 
 export async function selfDetectHosts(
   ctx: CliContext,
@@ -44,8 +47,7 @@ export async function selfDetectHosts(
 
   for (const target of HOST_ORDER) {
     const skillPath = join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
-    const configRel = CONFIG_DIR_OVERRIDES[target] ?? [`.${target}`];
-    const configDir = join(home, ...configRel);
+    const configDir = overrideConfigDir(target, home) ?? join(home, `.${target}`);
     const [configPresent, skillInstalled] = await Promise.all([
       ctx.fs.exists(configDir),
       ctx.fs.exists(skillPath),

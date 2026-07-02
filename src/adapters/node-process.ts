@@ -20,6 +20,14 @@ import type {
 
 const WIN_SHELL_CMDS = new Set(["npm", "npx", "yarn", "pnpm", "node-gyp", "gradle", "mvn"]);
 
+/**
+ * How long `openPath` watches a freshly-spawned opener for an early failure.
+ * macOS `open -a <bad app>` (and xdg-open on a bad handler) exits non-zero within
+ * a few hundred ms; a GUI editor that stays open never exits, so once this window
+ * elapses with the process still alive we treat the launch as successful.
+ */
+const OPEN_PROBE_MS = 600;
+
 /** Windows: .bat/.cmd shims (and the known CLI shims above) only run under a shell (Node ≥20 EINVAL otherwise). */
 function needsWinShell(cmd: string): boolean {
   return WIN_SHELL_CMDS.has(cmd) || /\.(bat|cmd)$/i.test(cmd);
@@ -281,20 +289,47 @@ export class NodeProcess implements ProcessPort {
 
   async openPath(path: string, opts: { app?: string } = {}): Promise<void> {
     const plan = buildOpenCommand(this.platform, opts.app ? { path, app: opts.app } : { path });
+    let child: ReturnType<typeof spawn>;
     try {
-      const child = spawn(plan.cmd, plan.args, {
+      child = spawn(plan.cmd, plan.args, {
         detached: true,
         stdio: "ignore",
         // GUI openers may want a window; do not hide it on Windows.
         windowsHide: false,
       });
-      // Best-effort: swallow async spawn failures (e.g. ENOENT) so opening never
-      // crashes the TUI — the caller surfaces failure by other means.
-      child.on("error", () => {});
-      child.unref();
-    } catch {
-      // Synchronous spawn failure — also best-effort.
+    } catch (err) {
+      // Synchronous spawn failure (rare) — surface it to the caller.
+      throw err instanceof Error ? err : new Error(String(err));
     }
+    // Make failure OBSERVABLE: reject on a spawn 'error' (ENOENT — opener missing)
+    // or a fast non-zero exit (bad app), so the caller can show a real error and
+    // NOT persist an invalid app. If the opener is still running after a short
+    // probe window (a GUI editor holding the file), the launch succeeded → unref
+    // and let it outlive us.
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (action: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        action();
+      };
+      child.on("error", (err) => finish(() => reject(err)));
+      child.on("exit", (code) =>
+        finish(() =>
+          code && code !== 0 ? reject(new Error(`opener exited with code ${code}`)) : resolve(),
+        ),
+      );
+      // Handlers above only fire on later ticks, by which point `timer` is set.
+      const timer = setTimeout(
+        () =>
+          finish(() => {
+            child.unref();
+            resolve();
+          }),
+        OPEN_PROBE_MS,
+      );
+    });
   }
 
   async killTree(pid: number): Promise<void> {

@@ -127,7 +127,7 @@ El gap **UI sin especificar** (cuando el requerimiento involucra UI; ver *Gap ta
 
 Otras capacidades transversales que el chasis usa siempre: `research` (research **inline**, ver abajo), `sql` (regla BD en research). Todas se resuelven por config; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta. La **prosa del spec** sigue las convenciones de redacción **ambientes** (el host auto-aplica una skill de writing instalada si está presente), no un rol compuesto.
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
+> **Convenciones ambientes (no roles):** estándares de código/testing/redacción y `creating-tools` son skills standalone que el host auto-descubre por su `description` — el workflow no las bindea ni depende de ellas. Doctrina completa: [../../roles/README.md](../../roles/README.md).
 
 ## Deliverable schema (el spec, editado in place)
 

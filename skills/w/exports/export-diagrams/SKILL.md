@@ -50,7 +50,7 @@ En plan mode **describe**, no escribe: el motor resuelto, los niveles/secciones 
 **CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
 
 - `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera el corpus (insumo del delta AS-IS/TO-BE).
-- `aw session-artifacts --code <NNN>` — lee el plan-doc (`AS-IS`/`TO-BE`/`Impacted`) por sesión.
+- `aw session-artifacts --code <NNN> --dump objetivo` — ubica la sesión y su referencia al plan-doc; `AS-IS`/`TO-BE`/`Impacted` se leen del plan-doc por su path.
 - `aw next-number docs/diagrams` — numeración determinística (la resolución de la carpeta destino la maneja el CLI).
 
 **Filesystem / código**:
@@ -90,7 +90,7 @@ Por cada fuente: estructura básica, componentes internos (módulos, servicios, 
 
 ### Paso 3 — Leer el delta del corpus
 
-Por sesión filtrada (`aw session-artifacts --code <NNN>`): `Current state (AS-IS)` / `Target state (TO-BE)` y `Impacted` del plan-doc. Sirve para resaltar lo que cambió sobre el snapshot vigente.
+Por sesión filtrada (`aw session-artifacts --code <NNN> --dump objetivo`): seguir la referencia al plan-doc y leer `Current state (AS-IS)` / `Target state (TO-BE)` e `Impacted`. Sirve para resaltar lo que cambió sobre el snapshot vigente.
 
 ### Paso 4 — Inspeccionar MCP (opcional)
 

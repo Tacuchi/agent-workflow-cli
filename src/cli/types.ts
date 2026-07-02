@@ -1,3 +1,4 @@
+import type { Logger } from "../application/logging/logger.js";
 import type { PathsService } from "../application/paths-service.js";
 import type { ResolvedSkills } from "../domain/skills.js";
 import type { EnvPort } from "../ports/env.js";
@@ -17,4 +18,10 @@ export interface CliContext {
   paths: PathsService;
   /** Resolved capability role → skill bindings (skills.toml cascade). */
   skills: ResolvedSkills;
+  /**
+   * Operational logger → global user-level daily log. Best-effort (never throws).
+   * Optional: production wires it in `main.ts`; lightweight/test contexts may omit
+   * it, in which case logging is a no-op.
+   */
+  logger?: Logger;
 }

@@ -7,6 +7,7 @@ import {
   type GitFlowResult,
   runGitFlow,
 } from "../../../application/git-flow-service.js";
+import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import type { ProcessRecord } from "../../../application/process-registry-service.js";
 import {
   type ProjectSource,
@@ -321,6 +322,15 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       if (existing) return setMode({ kind: "collision", req, existing });
       setMode({ kind: "busy", label: `Lanzando ${req.alias}…` });
       const res = await launchSource(launchDeps, req);
+      const target = `${req.alias}${req.profile ? ` · ${req.profile}` : ""}`;
+      void ctx.logger?.log(
+        res.ok ? "info" : "error",
+        formatTuiEvent(
+          `launch ${target}`,
+          res.ok ? "ok" : "error",
+          res.ok ? undefined : res.message,
+        ),
+      );
       setMode(
         res.ok
           ? {
@@ -341,7 +351,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       );
       await onReload?.();
     },
-    [processes, launchDeps, onReload],
+    [processes, launchDeps, onReload, ctx],
   );
 
   // Entry from the "Lanzar en local" detail action: open the form if the
@@ -371,16 +381,25 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     async (record: ProcessRecord) => {
       setMode({ kind: "busy", label: `Deteniendo ${record.sourceAlias}…` });
       await stopProcess(launchDeps, record);
+      void ctx.logger?.info(formatTuiEvent(`stop ${record.sourceAlias} (PID ${record.pid})`, "ok"));
       setMode({ kind: "list" });
       await onReload?.();
     },
-    [launchDeps, onReload],
+    [launchDeps, onReload, ctx],
   );
 
   const doRelaunch = useCallback(
     async (record: ProcessRecord) => {
       setMode({ kind: "busy", label: `Re-lanzando ${record.sourceAlias}…` });
       const res = await relaunchProcess(launchDeps, record);
+      void ctx.logger?.log(
+        res.ok ? "info" : "error",
+        formatTuiEvent(
+          `relaunch ${record.sourceAlias}`,
+          res.ok ? "ok" : "error",
+          res.ok ? undefined : res.message,
+        ),
+      );
       setMode(
         res.ok
           ? {
@@ -392,7 +411,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       );
       await onReload?.();
     },
-    [launchDeps, onReload],
+    [launchDeps, onReload, ctx],
   );
 
   const doViewLog = useCallback(
@@ -443,10 +462,16 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       const actionName = FLOW_ACTIONS.find((a) => a.id === action)?.name ?? action;
       setMode({ kind: "running", label: `${actionName} · ${isAll ? "all sources" : target}` });
       const input: GitFlowInput = isAll ? { action, all: true } : { action, source: target };
+      const event = `git-flow ${action} · ${isAll ? "all-sources" : target}`;
       try {
         const result = await runGitFlow(ctx.fs, ctx.git, ctx.paths, input);
+        const level =
+          result.status === "error" ? "error" : result.status === "conflict" ? "warn" : "info";
+        void ctx.logger?.log(level, formatTuiEvent(event, result.status, result.error));
         setMode({ kind: "result", action, result });
       } catch (err) {
+        const message = (err as Error).message;
+        void ctx.logger?.error(formatTuiEvent(event, "error", message));
         setMode({
           kind: "result",
           action,
@@ -455,7 +480,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
             dry_run: false,
             status: "error",
             results: [],
-            error: (err as Error).message,
+            error: message,
           },
         });
       }
@@ -473,6 +498,14 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         alias,
       );
       setCursor(0);
+      void ctx.logger?.log(
+        "error" in res ? "error" : "info",
+        formatTuiEvent(
+          `remove ${alias}`,
+          "error" in res ? "error" : "ok",
+          "error" in res ? res.error : undefined,
+        ),
+      );
       setMode(
         "error" in res
           ? { kind: "notice", tone: "err", lines: [res.error] }
@@ -490,19 +523,13 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [ctx, onReload],
   );
 
-  // Atajos de la lista de sources (↑↓ navega · ⏎ abre panel · p procesos · s/g/c acciones).
+  // Atajos de la lista de sources (↑↓ navega · ⏎ abre panel · p procesos · g git status).
   const handleListKey = useCallback(
     (input: string, key: { upArrow?: boolean; downArrow?: boolean; return?: boolean }) => {
-      if (input === "s") return void onRunAction?.("session:start");
       if (input === "g") return void onRunAction?.("git:status");
       if (input === "p" && processes.length > 0) {
         setProcessCursor(0);
         return setMode({ kind: "process" });
-      }
-      if (input === "c" && data.branches.length > 1) {
-        const candidate = data.branches.find((b) => !b.current);
-        if (candidate) onRunAction?.("git:checkout", { name: candidate.name });
-        return;
       }
       if (!hasSources) return;
       if (key.upArrow) return setCursor((c) => Math.max(0, c - 1));
@@ -512,7 +539,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         setMode({ kind: "detail" });
       }
     },
-    [data.branches, hasSources, onRunAction, targets.length, processes.length],
+    [hasSources, onRunAction, targets.length, processes.length],
   );
 
   // Acciones del panel lateral (↑↓ navega · ⏎ ejecuta · esc cierra).
@@ -566,6 +593,14 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       setMode({ kind: "busy", label: `Re-lanzando ${req.alias}…` });
       await stopProcess(launchDeps, existing);
       const res = await launchSource(launchDeps, req);
+      void ctx.logger?.log(
+        res.ok ? "info" : "error",
+        formatTuiEvent(
+          `relaunch ${req.alias}`,
+          res.ok ? "ok" : "error",
+          res.ok ? undefined : res.message,
+        ),
+      );
       setMode(
         res.ok
           ? {
@@ -577,7 +612,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       );
       await onReload?.();
     },
-    [launchDeps, onReload],
+    [launchDeps, onReload, ctx],
   );
 
   // input — delega a cada handler según el modo activo.
@@ -616,8 +651,11 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     return (
       <Box flexDirection="column">
         <SectionHead label="Git flow" hint={mode.label} />
-        <Box marginLeft={2} marginTop={1}>
+        <Box marginLeft={2} marginTop={1} flexDirection="column">
           <Text color={colors.warn}>{icons.spinner} ejecutando…</Text>
+          {/* No cancelable: git corre sin prompts (GIT_TERMINAL_PROMPT=0) → falla
+              rápido en credenciales en vez de colgarse. Ctrl+C aborta el TUI. */}
+          <Text color={colors.faint}>git corriendo · no interrumpible — Ctrl+C aborta el TUI</Text>
         </Box>
       </Box>
     );
@@ -863,7 +901,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           actions={[
             { key: "⏎", label: "source actions" },
             ...(processes.length > 0 ? [{ key: "p", label: "manage processes" }] : []),
-            { key: "s", label: "start session" },
+            { key: "g", label: "git status" },
           ]}
         />
       </Box>

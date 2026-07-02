@@ -171,13 +171,15 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // Crush (charmbracelet/crush). Config `crush.json` ($schema charm.land/crush.json);
     // MCP under `mcp` (type "stdio"). Reads .agents/skills + .claude/skills. Hooks are
     // preliminary; enforcement via `allowed_tools` allowlist — Phase 3.
+    // Global config verificado 2026-07 (README charmbracelet/crush): Unix XDG,
+    // Windows %LOCALAPPDATA%\crush\crush.json (override CRUSH_GLOBAL_CONFIG).
     id: "crush",
     envMarkers: ["CRUSH", "CRUSH_CONFIG"],
     mcpHostId: "crush",
     globalMcpPaths: {
       darwin: { stable: "~/.config/crush/crush.json" },
       linux: { stable: "~/.config/crush/crush.json" },
-      win32: { stable: "~/.config/crush/crush.json" },
+      win32: { stable: "%LOCALAPPDATA%/crush/crush.json" },
     },
     projectMcpPath: "crush.json",
     pluginManifest: null,

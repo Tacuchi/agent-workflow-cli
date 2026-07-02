@@ -1,18 +1,40 @@
 import type { DiffNumstatEntry, GitPort, MergeResult } from "../ports/git.js";
-import type { ProcessPort } from "../ports/process.js";
+import type { ProcessPort, RunOptions } from "../ports/process.js";
+
+/**
+ * Non-interactive git env: `GIT_TERMINAL_PROMPT=0` makes git FAIL FAST instead of
+ * blocking on a terminal credential prompt (a push against a repo needing creds
+ * would otherwise hang the TUI, recoverable only with Ctrl+C). Applied to every
+ * git command — harmless for local ops, essential for the network ones.
+ */
+function nonInteractiveGitEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) env[key] = value;
+  }
+  env.GIT_TERMINAL_PROMPT = "0";
+  return env;
+}
 
 export class GitCliAdapter implements GitPort {
   constructor(private readonly process: ProcessPort) {}
 
+  /** Run options for a git command in `repoPath` with the non-interactive env. */
+  private opts(repoPath: string, extra: Partial<RunOptions> = {}): RunOptions {
+    return { cwd: repoPath, env: nonInteractiveGitEnv(), ...extra };
+  }
+
   async isGitRepo(repoPath: string): Promise<boolean> {
-    const result = await this.process.run("git", ["rev-parse", "--git-dir"], { cwd: repoPath });
+    const result = await this.process.run("git", ["rev-parse", "--git-dir"], this.opts(repoPath));
     return result.code === 0;
   }
 
   async currentBranch(repoPath: string): Promise<string | undefined> {
-    const result = await this.process.run("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-      cwd: repoPath,
-    });
+    const result = await this.process.run(
+      "git",
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      this.opts(repoPath),
+    );
     if (result.code !== 0) {
       return undefined;
     }
@@ -21,7 +43,7 @@ export class GitCliAdapter implements GitPort {
   }
 
   async isDirty(repoPath: string): Promise<boolean> {
-    const result = await this.process.run("git", ["status", "--porcelain"], { cwd: repoPath });
+    const result = await this.process.run("git", ["status", "--porcelain"], this.opts(repoPath));
     if (result.code !== 0) {
       throw new Error(`git status failed in ${repoPath}: ${result.stderr.trim()}`);
     }
@@ -29,7 +51,7 @@ export class GitCliAdapter implements GitPort {
   }
 
   async changedFiles(repoPath: string): Promise<string[]> {
-    const result = await this.process.run("git", ["status", "--porcelain"], { cwd: repoPath });
+    const result = await this.process.run("git", ["status", "--porcelain"], this.opts(repoPath));
     if (result.code !== 0) {
       throw new Error(`git status failed in ${repoPath}: ${result.stderr.trim()}`);
     }
@@ -44,7 +66,7 @@ export class GitCliAdapter implements GitPort {
   }
 
   async log(args: string[], repoPath: string): Promise<string> {
-    const result = await this.process.run("git", ["log", ...args], { cwd: repoPath });
+    const result = await this.process.run("git", ["log", ...args], this.opts(repoPath));
     if (result.code !== 0) {
       throw new Error(`git log failed in ${repoPath}: ${result.stderr.trim()}`);
     }
@@ -53,10 +75,11 @@ export class GitCliAdapter implements GitPort {
 
   async diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]> {
     try {
-      const result = await this.process.run("git", ["diff", "--numstat", "HEAD"], {
-        cwd: repoPath,
-        timeoutMs: 5000,
-      });
+      const result = await this.process.run(
+        "git",
+        ["diff", "--numstat", "HEAD"],
+        this.opts(repoPath, { timeoutMs: 5000 }),
+      );
       if (result.code !== 0) return [];
       const entries: DiffNumstatEntry[] = [];
       for (const line of result.stdout.split("\n")) {
@@ -77,21 +100,21 @@ export class GitCliAdapter implements GitPort {
   }
 
   async checkout(repoPath: string, branch: string): Promise<void> {
-    const result = await this.process.run("git", ["checkout", branch], { cwd: repoPath });
+    const result = await this.process.run("git", ["checkout", branch], this.opts(repoPath));
     if (result.code !== 0) {
       throw new Error(`git checkout ${branch} failed in ${repoPath}: ${result.stderr.trim()}`);
     }
   }
 
   async pull(repoPath: string): Promise<void> {
-    const result = await this.process.run("git", ["pull"], { cwd: repoPath });
+    const result = await this.process.run("git", ["pull"], this.opts(repoPath));
     if (result.code !== 0) {
       throw new Error(`git pull failed in ${repoPath}: ${result.stderr.trim()}`);
     }
   }
 
   async merge(repoPath: string, fromBranch: string): Promise<MergeResult> {
-    const result = await this.process.run("git", ["merge", fromBranch], { cwd: repoPath });
+    const result = await this.process.run("git", ["merge", fromBranch], this.opts(repoPath));
     if (result.code === 0) {
       return { ok: true, conflicted: [] };
     }
@@ -103,23 +126,27 @@ export class GitCliAdapter implements GitPort {
   }
 
   async push(repoPath: string, branch: string): Promise<void> {
-    const result = await this.process.run("git", ["push", "origin", branch], { cwd: repoPath });
+    const result = await this.process.run("git", ["push", "origin", branch], this.opts(repoPath));
     if (result.code !== 0) {
       throw new Error(`git push ${branch} failed in ${repoPath}: ${result.stderr.trim()}`);
     }
   }
 
   async isMerging(repoPath: string): Promise<boolean> {
-    const result = await this.process.run("git", ["rev-parse", "--verify", "MERGE_HEAD"], {
-      cwd: repoPath,
-    });
+    const result = await this.process.run(
+      "git",
+      ["rev-parse", "--verify", "MERGE_HEAD"],
+      this.opts(repoPath),
+    );
     return result.code === 0;
   }
 
   async conflictedFiles(repoPath: string): Promise<string[]> {
-    const result = await this.process.run("git", ["diff", "--name-only", "--diff-filter=U"], {
-      cwd: repoPath,
-    });
+    const result = await this.process.run(
+      "git",
+      ["diff", "--name-only", "--diff-filter=U"],
+      this.opts(repoPath),
+    );
     if (result.code !== 0) {
       return [];
     }
@@ -130,9 +157,11 @@ export class GitCliAdapter implements GitPort {
   }
 
   async mergeOrigin(repoPath: string): Promise<string | undefined> {
-    const result = await this.process.run("git", ["name-rev", "--name-only", "MERGE_HEAD"], {
-      cwd: repoPath,
-    });
+    const result = await this.process.run(
+      "git",
+      ["name-rev", "--name-only", "MERGE_HEAD"],
+      this.opts(repoPath),
+    );
     if (result.code !== 0) return undefined;
     const raw = result.stdout.trim();
     if (raw.length === 0 || raw === "undefined") return undefined;

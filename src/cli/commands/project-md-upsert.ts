@@ -12,7 +12,11 @@ import type { CliContext } from "../types.js";
 
 export const projectMdUpsertCommand: QtcCommand = {
   name: "project-md-upsert",
-  describe: "Read or update the <NS>-PROJECT block in CLAUDE.md/AGENTS.md.",
+  describe:
+    "Read or update the <NS>-PROJECT block in CLAUDE.md/AGENTS.md. " +
+    "Usage: aw project-md-upsert [--read] [--init] [--proyecto <name>] " +
+    "[--fuente <alias:path[:rama]> ...] [--working-branch <alias:rama> ...] " +
+    "[--main-branch <rama>] [--verbose].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verbose = args.flags.has("--verbose");
     if (args.flags.has("--read")) {

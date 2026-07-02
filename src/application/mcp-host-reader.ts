@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { harnessForMcpHost } from "../domain/harnesses.js";
 import type { McpHost } from "../domain/mcp-entry.js";
+import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
+import { resolveWarpGlobalMcpPath } from "./multiroot/warp.js";
 
 export type ReaderScopeKind = "workspace" | "global";
 
@@ -36,19 +38,26 @@ export function readMcpEntry(
   }
 
   // OpenCode & Crush store the entry under the top-level `mcp` key (NOT `mcpServers`)
-  // with host-specific shapes — this mirrors the writer (mcp-host-writer.ts). File is
-  // the XDG path (~/.config/<host>/<host>.json) for global scope, or <host>.json at the
-  // project root for workspace scope.
+  // with host-specific shapes — this mirrors the writer (mcp-host-writer.ts). Global
+  // scope resolves via mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA),
+  // workspace scope is <host>.json at the project root.
   if (host === "opencode" || host === "crush") {
     const target =
       kind === "global"
-        ? join(scopeDir, ".config", host, `${host}.json`)
+        ? host === "opencode"
+          ? opencodeGlobalMcpFile(scopeDir)
+          : crushGlobalMcpFile(scopeDir)
         : join(scopeDir, `${host}.json`);
     return readMcpKeyEntry(host, target, name);
   }
 
   // JSON readers keyed by `mcpServers` (Claude shape): claude uses .mcp.json (workspace)
-  // or .claude.json (global); warp uses .warp/.mcp.json; gemini uses .gemini/settings.json.
+  // or .claude.json (global); warp uses .warp/.mcp.json (workspace) o el path global
+  // por plataforma del registro (espejo del writer — DEC-W3); gemini usa .gemini/settings.json.
+  if (host === "warp" && kind === "global") {
+    const globalPath = resolveWarpGlobalMcpPath(process.platform, "stable", () => scopeDir);
+    if (globalPath) return readJsonMcpEntry(host, globalPath, name);
+  }
   const target =
     host === "claude" && kind === "global"
       ? join(scopeDir, ".claude.json")

@@ -51,7 +51,7 @@ En plan mode **describe**, no escribe: el `NNN` resuelto, las fuentes detectadas
 **CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
 
 - `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera el corpus de sesiones.
-- `aw session-artifacts --code <NNN>` — lee `SCRIPTS.sql` de cada sesión (lazy). Si no existe → skip silencioso.
+- `aw session-artifacts --code <NNN> --dump scripts` — lista los `.sql` de la sesión con path y size (el contenido se lee por path). Si no hay scripts → lista vacía, skip silencioso.
 - `aw next-number docs/scripts` — numeración determinística del directorio del bundle (la resolución de la carpeta destino la maneja el CLI).
 
 **Filesystem**:
@@ -79,7 +79,7 @@ Sin args: todas las sesiones del corpus + todos los `.sql` standalone (excluyend
 
 ### Paso 1 — Recolección de fuentes SQL
 
-**Fuente A — sesiones**: por cada sesión del corpus (`aw sessions` / `release-data` + `session-artifacts --code <NNN>`), leer `.workflow/sessions/<folder>/SCRIPTS.sql` si existe. Tomar **solo** las sentencias tipo-B (migraciones DDL/DML entregables); ignorar el tipo-A read-only (consultas de diagnóstico). Markers esperados por sentencia: `-- @category: <01-04>` + `-- @stmt: NNN-verbo-objetivo` (formato definido por la capacidad `sql`).
+**Fuente A — sesiones**: por cada sesión del corpus (`aw sessions` / `release-data` + `session-artifacts --code <NNN> --dump scripts`), leer los `.sql` que el dump lista (path por script). Tomar **solo** las sentencias tipo-B (migraciones DDL/DML entregables); ignorar el tipo-A read-only (consultas de diagnóstico). Markers esperados por sentencia: `-- @category: <01-04>` + `-- @stmt: NNN-verbo-objetivo` (formato definido por la capacidad `sql`).
 
 **Fuente B — standalone** (salvo `--skip-standalone`): listar `docs/scripts/*.sql` top-level, **excluyendo** `docs/scripts/NNN-export-scripts-*/`. Por archivo: respetar markers `@category` si los hay; si no, inferir categoría del contenido (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). Si el filename contiene `rollback` → skip (no entra en forward).
 

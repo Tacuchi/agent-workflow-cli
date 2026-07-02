@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
   commandHelpText,
+  commandSummary,
   groupCommands,
   renderGroupedCommandLines,
 } from "../../src/cli/help-groups.js";
@@ -81,6 +85,67 @@ describe("renderGroupedCommandLines", () => {
 
   it("handles a single group cleanly", () => {
     const lines = renderGroupedCommandLines(["self"]);
+    expect(lines).toEqual(["Self:", "  self"]);
+  });
+});
+
+describe("guard: every registered command has a real group (no 'Other')", () => {
+  it("groups all commands from the canonical registry with none left in Other", () => {
+    const groups = groupCommands(ALL_COMMANDS.map((c) => c.name));
+    const other = groups.find((g) => g.name === "Other");
+    expect(other, `these commands fell into Other: ${other?.commands.join(", ")}`).toBeUndefined();
+  });
+
+  it("commands/index.ts lists exactly what main.ts registers (drift guard)", () => {
+    const read = (rel: string) =>
+      readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+    const registered = new Set(
+      [...read("../../src/cli/main.ts").matchAll(/registry\.register\((\w+)\)/g)].map((m) => m[1]),
+    );
+    const indexSrc = read("../../src/cli/commands/index.ts");
+    const arrayBody = indexSrc.slice(indexSrc.indexOf("ALL_COMMANDS"));
+    const listed = new Set([...arrayBody.matchAll(/^ {2}(\w+Command),$/gm)].map((m) => m[1]));
+    expect(listed).toEqual(registered);
+  });
+});
+
+describe("commandSummary (global help one-liner)", () => {
+  it("takes the first sentence and drops the appended Usage clause", () => {
+    expect(commandSummary("Do a thing. Usage: aw x [--flag].")).toBe("Do a thing.");
+  });
+
+  it("cuts at a real sentence boundary (period + space + capital)", () => {
+    expect(commandSummary("First sentence. Second one here.")).toBe("First sentence.");
+  });
+
+  it("does not truncate at an ellipsis or a non-boundary period", () => {
+    expect(commandSummary("Scan files (localhost, secrets, ...). Usage: aw code-scan.")).toBe(
+      "Scan files (localhost, secrets, ...).",
+    );
+  });
+
+  it("elides overly long summaries with an ellipsis", () => {
+    const out = commandSummary(`${"palabra ".repeat(20)}fin.`);
+    expect(out.length).toBeLessThanOrEqual(72);
+    expect(out.endsWith("…")).toBe(true);
+  });
+});
+
+describe("renderGroupedCommandLines with describes", () => {
+  it("renders `name  <first sentence>` aligned when a describe map is given", () => {
+    const describes = new Map([
+      ["self", "Self-management umbrella. Usage: aw self <sub>."],
+      ["hook", "Run a workflow hook."],
+    ]);
+    const lines = renderGroupedCommandLines(["self", "hook"], describes);
+    expect(lines.some((l) => /self\s+Self-management umbrella\./.test(l))).toBe(true);
+    expect(lines.some((l) => /hook\s+Run a workflow hook\./.test(l))).toBe(true);
+    // The Usage clause is NOT spilled into the global list.
+    expect(lines.every((l) => !l.includes("Usage:"))).toBe(true);
+  });
+
+  it("falls back to name-only for commands missing from the describe map", () => {
+    const lines = renderGroupedCommandLines(["self"], new Map());
     expect(lines).toEqual(["Self:", "  self"]);
   });
 });

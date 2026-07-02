@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { HARNESSES } from "../domain/harnesses.js";
+import { HARNESSES, resolveGlobalMcpRawPath } from "../domain/harnesses.js";
 import {
   type McpEntry,
   type McpHost,
@@ -124,8 +124,8 @@ function resolveScopeDir(env: EnvPort, input: McpRemoveInput): string {
 
 function buildGlobalHint(hosts: McpHost[]): string {
   const paths = HARNESSES.filter((h) => hosts.includes(h.mcpHostId as McpHost))
-    .map((h) => h.globalMcpPaths?.darwin.stable)
-    .filter((p): p is string => p !== undefined);
+    .map((h) => resolveGlobalMcpRawPath(h))
+    .filter((p): p is string => p !== null);
   const files = paths.length > 0 ? paths.join(", ") : "archivos de config globales";
   return `Tocar ${files} afecta TODOS los proyectos. Reintentá con --force o usá --dry-run para previsualizar.`;
 }

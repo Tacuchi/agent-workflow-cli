@@ -1,5 +1,6 @@
 import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { testMcpConnection } from "../../../application/mcp-test-connection-service.js";
 import {
   type SelfMcpConfigData,
@@ -116,6 +117,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
           onToast?.({ tone: "err", title: `Step ${action} failed`, body: summary });
           return false;
         }
+        void ctx.logger?.info(formatTuiEvent(`mcp ${action} ${name}`, "ok"));
         return true;
       } catch (err) {
         onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
@@ -147,6 +149,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
             title: `Connection OK · ${name}`,
             body: `dbhub conectó usando ${dsnVar} (${result.source ?? "unknown"})`,
           });
+          void ctx.logger?.info(formatTuiEvent(`mcp test ${name}`, "ok"));
         } else {
           onToast?.({
             tone: "err",
@@ -175,6 +178,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
           title: result.ok ? `Installed · ${name}` : `Install failed · ${name}`,
           body: result.data?.summary ?? result.error?.message ?? "",
         });
+        if (result.ok) void ctx.logger?.info(formatTuiEvent(`mcp install ${name}`, "ok"));
       } catch (err) {
         onToast?.({ tone: "err", title: "Install failed", body: (err as Error).message });
       }
@@ -623,6 +627,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
       title: result.ok ? `Registered · ${name}` : "Save failed",
       body: result.data?.summary ?? result.error?.message ?? "",
     });
+    if (result.ok) void ctx.logger?.info(formatTuiEvent(`mcp register ${name}`, "ok"));
     return result.ok;
   }
 
@@ -650,6 +655,7 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
           title: install.ok ? `Installed · ${name}` : `Install failed · ${name}`,
           body: install.data?.summary ?? install.error?.message ?? "",
         });
+        if (install.ok) void ctx.logger?.info(formatTuiEvent(`mcp install ${name}`, "ok"));
       }
       await refresh();
     } catch (err) {

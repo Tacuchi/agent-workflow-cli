@@ -69,8 +69,9 @@ export interface ProcessPort {
   /**
    * Open a file in an EXTERNAL application — the OS default text editor, or
    * `opts.app` when given — spawned detached so it never captures the TUI's TTY.
-   * Best-effort: resolves even if the opener can't be launched (the caller
-   * surfaces failure, e.g. checks the file exists first).
+   * Failure is observable: rejects if the opener can't be launched (missing
+   * binary) or exits non-zero quickly (e.g. macOS `open -a <bad app>`); resolves
+   * once the opener is running.
    */
   openPath(path: string, opts?: { app?: string }): Promise<void>;
   /**

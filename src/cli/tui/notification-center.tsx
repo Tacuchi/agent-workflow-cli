@@ -72,11 +72,22 @@ const NotificationCenterContext = createContext<NotificationCenterApi | null>(nu
 
 const DEFAULT_TOAST_DURATION_MS = 3200;
 
-export interface NotificationCenterProviderProps {
-  children: ReactNode;
+/** Minimal structural sink so the provider can log without importing the Logger. */
+export interface ErrorLogSink {
+  error(message: string): unknown;
 }
 
-export function NotificationCenterProvider({ children }: NotificationCenterProviderProps) {
+export interface NotificationCenterProviderProps {
+  children: ReactNode;
+  /**
+   * Operational logger for the err-notification safety net: every err-toned item
+   * pushed here is also written to the daily log (title + body). Optional so tests
+   * and lightweight mounts can omit it.
+   */
+  logger?: ErrorLogSink;
+}
+
+export function NotificationCenterProvider({ children, logger }: NotificationCenterProviderProps) {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const seq = useRef(0);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -126,9 +137,16 @@ export function NotificationCenterProvider({ children }: NotificationCenterProvi
         return next;
       });
       if (item.duration !== undefined) scheduleAutoDismiss(id, item.duration);
+      // Safety net: mirror every err notification to the operational log so a
+      // failure surfaced only as a fleeting toast still leaves a durable trace.
+      // Only string titles are logged (ReactNode banners like the update card
+      // carry no plain message). The Logger redacts secrets before writing.
+      if (item.tone === "err" && typeof item.title === "string") {
+        logger?.error(`tui: ${item.title}${item.body ? ` — ${item.body}` : ""}`);
+      }
       return id;
     },
-    [scheduleAutoDismiss],
+    [scheduleAutoDismiss, logger],
   );
 
   const pushToast = useCallback(

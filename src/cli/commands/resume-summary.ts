@@ -9,7 +9,9 @@ import type { CliContext } from "../types.js";
 
 export const resumeSummaryCommand: QtcCommand = {
   name: "resume-summary",
-  describe: "Compact resume payload for PostCompact hook.",
+  describe:
+    "Compact resume payload for PostCompact hook. " +
+    "Usage: aw resume-summary [--include-recent-closed] [--recent-days <n>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const options: ResumeSummaryOptions = {};
     if (args.flags.has("--include-recent-closed")) {

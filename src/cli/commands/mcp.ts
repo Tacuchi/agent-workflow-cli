@@ -15,7 +15,7 @@ import {
   resolveWarpGlobalMcpPath,
   resolveWarpProjectMcpPath,
 } from "../../application/multiroot/warp.js";
-import { HARNESSES } from "../../domain/harnesses.js";
+import { HARNESSES, harnessById } from "../../domain/harnesses.js";
 import {
   DEFAULT_MCP_INSTANCES,
   type McpHost,
@@ -277,13 +277,19 @@ async function runDoctorSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   };
 }
 
-function resolveHosts(args: ParsedArgs, ctx: CliContext): { value: McpHost[] } | CommandResult {
+/** Exportado para tests: la detección de host anfitrión debe cubrir los 6 hosts. */
+export function resolveHosts(
+  args: ParsedArgs,
+  ctx: CliContext,
+): { value: McpHost[] } | CommandResult {
   const flag = args.values.get("host");
   if (flag === undefined) {
+    // Sin --host: escribir solo en el harness anfitrión, data-driven desde el
+    // registro (los ifs hardcodeados dejaban afuera a gemini/opencode/crush →
+    // fan-out a los 6 hosts corriendo dentro de uno de ellos).
     const harness = runHarness((k) => ctx.env.get(k));
-    if (harness.harness === "claude-code") return { value: ["claude"] };
-    if (harness.harness === "codex") return { value: ["codex"] };
-    if (harness.harness === "warp") return { value: ["warp"] };
+    const spec = harness.harness === "unknown" ? null : harnessById(harness.harness);
+    if (spec?.mcpHostId) return { value: [spec.mcpHostId] };
     return { value: [...FILE_HOSTS] };
   }
   if (!HOST_VALUES.has(flag)) {

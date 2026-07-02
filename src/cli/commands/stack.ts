@@ -6,7 +6,9 @@ import type { CliContext } from "../types.js";
 
 export const stackCommand: QtcCommand = {
   name: "stack",
-  describe: "Detect stack of the project (language/framework/db/build).",
+  describe:
+    "Detect stack of the project (language/framework/db/build). " +
+    "Usage: aw stack [--project-dir <dir>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const projectDir = args.values.get("project-dir");
     const data = await runStack(ctx.fs, ctx.env, projectDir !== undefined ? { projectDir } : {});

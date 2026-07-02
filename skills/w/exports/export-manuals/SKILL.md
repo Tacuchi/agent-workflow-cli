@@ -51,7 +51,7 @@ En plan mode **describe**, no escribe: el modo resuelto, los temas detectados (c
 **CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
 
 - `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera el corpus.
-- `aw session-artifacts --code <NNN>` — lee `DECISION`, el plan-doc y `SESSION` (su `## Objective`, lazy) por sesión.
+- `aw session-artifacts --code <NNN> --dump objetivo,decisiones` — devuelve `{path, content, size}` por artefacto (`SESSION` con su `## Objective`, `DECISION`); el plan-doc se lee por su path.
 - `aw next-number docs/manuals` — numeración determinística (solo modo `regenerate`).
 
 **Filesystem**:
@@ -97,7 +97,7 @@ Listar `docs/manuals/*.md` (excluyendo `INDEX.md` y subdirectorios `NNN-export-m
 
 ### Paso 3 — Detectar temas
 
-Por cada sesión del corpus filtrado (`aw session-artifacts --code <NNN>`): leer `DECISION` + plan-doc (`Solution`/`Final behavior`/`Validations`) + el código tocado. Tema **primario**: la sección de temas en `SESSION` (su `## Objective`). **Secundario**: inferencia por keywords operativos ("configurar", "instalar", "paso a paso", "cómo …"). Filtrar por `--topics` si está presente. Listar (slug, confidence, sesiones de origen).
+Por cada sesión del corpus filtrado (`aw session-artifacts --code <NNN> --dump objetivo,decisiones`): tomar `DECISION` del dump + plan-doc (`Solution`/`Final behavior`/`Validations`) + el código tocado. Tema **primario**: la sección de temas en `SESSION` (su `## Objective`). **Secundario**: inferencia por keywords operativos ("configurar", "instalar", "paso a paso", "cómo …"). Filtrar por `--topics` si está presente. Listar (slug, confidence, sesiones de origen).
 
 ### Paso 4 — Sintetizar (prosa: convenciones ambientes)
 

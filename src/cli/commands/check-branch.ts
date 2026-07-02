@@ -9,7 +9,8 @@ export const checkBranchCommand: QtcCommand = {
   describe: "Verify a source branch vs expected work branch.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const alias = flagValue(args, "source");
-    const pathArg = args.values.get("path");
+    // `path` es multi-value en el parser (multiroot) → leerlo vía flagValue.
+    const pathArg = flagValue(args, "path");
     const fileArg = args.values.get("file");
     const session = args.values.get("session");
     const strict = args.flags.has("--strict");

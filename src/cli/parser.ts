@@ -27,11 +27,65 @@ export function flagValue(args: ParsedArgs, name: string): string | undefined {
 // Flag names (without leading `--`) that accept repetition. Each occurrence
 // pushes onto `valuesMulti`; non-multi flags continue to use `values` (last
 // occurrence wins) for back-compat.
+//
+// A flag listed here routes to `valuesMulti`, NOT `values` — so a command that
+// only wants the single (last) value MUST read it via `flagValue()`, never
+// `values.get()`, or it silently sees `undefined`.
 const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   "source",
   "fuente",
   "working-branch",
   "qa-branch",
+  // Repeated `--path` (attach/detach-multiroot) and `--pattern` (code-scan);
+  // both previously re-scanned raw process.argv because the parser overwrote
+  // repeated non-multi values.
+  "path",
+  "pattern",
+]);
+
+// Flag names (without leading `--`) that are booleans: their presence is the
+// value, so they must NEVER consume the following token. Without this the parser
+// greedily swallows the next positional — `merge-state --all /repo` loses the
+// path and `git-flow --dry-run sync` loses the action. Inventory mirrors every
+// `flags.has("--…")` in the repo; keep it in sync when a boolean flag is added.
+// (No flag here is ever read via `values.get()`, so routing them to `flags`
+// changes no value semantics.)
+const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
+  "all",
+  "verbose",
+  "dry-run",
+  "force",
+  "strict",
+  "init",
+  "global",
+  "legacy",
+  "reopen",
+  "read",
+  "clear",
+  "yes",
+  "version",
+  "help",
+  "with-hooks",
+  "skill-only",
+  "no-commands",
+  "no-open",
+  "no-hooks",
+  "no-git",
+  "no-closed",
+  "keep-legacy",
+  "keep-cache",
+  "include-graduated",
+  "include-legacy",
+  "include-recent-closed",
+  "include-docs",
+  "from-sources",
+  "exported-only",
+  "confirm-all",
+  "skip-claude",
+  "skip-codex",
+  "skip-warp",
+  "skip-oz",
+  "skip-content",
 ]);
 
 interface PluginFlagSpec {
@@ -160,9 +214,15 @@ function consumeOptionFlag(state: ParseState, token: string): boolean {
     state.index += 1;
     return true;
   }
+  const name = token.slice(2);
   const next = state.argv[state.index + 1];
-  if (next !== undefined && !next.startsWith("-") && !PLUGIN_FLAGS.has(token)) {
-    setValue(state, token.slice(2), next);
+  if (
+    next !== undefined &&
+    !next.startsWith("-") &&
+    !PLUGIN_FLAGS.has(token) &&
+    !BOOLEAN_FLAGS.has(name)
+  ) {
+    setValue(state, name, next);
     state.index += 2;
     return true;
   }
