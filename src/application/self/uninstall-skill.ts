@@ -5,6 +5,7 @@ import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import {
   AGENTS_LOCK_REL,
+  INSTALL_TARGETS,
   type InstallTarget,
   LEGACY_SKILL_NAMES,
   SKILL_DIR_NAME,
@@ -29,7 +30,9 @@ export interface SelfUninstallSkillData {
   lock_warning?: string;
 }
 
-const ALL_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "warp", "oz"];
+// Derived from TARGET_ROOTS (single source) so uninstall keeps round-trip
+// parity with install when a host is added — the clean-legacy v14.5.1 lesson.
+const ALL_TARGETS: readonly InstallTarget[] = INSTALL_TARGETS;
 const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"];
 
 export async function selfUninstallSkill(

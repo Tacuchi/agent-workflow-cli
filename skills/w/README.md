@@ -33,7 +33,7 @@ ZONE docs/ — permanent, user-facing deliverables
 | [`loops/`](loops/) | 2 | The 5 loops (chassis `spec-refine-loop` + heirs) the AI runs |
 | [`exports/`](exports/) | 1 | The `export-*` family — the only artifact→`docs/` promotion path |
 | [`roles/`](roles/) | cross-cutting | Pluggable capability skills (built-in defaults; rebindable via `.workflow/skills.toml`) |
-| [`harness/`](harness/SKILL.md) | cross-cutting | Capability→harness-mechanism binding (agnostic across Claude Code / Codex / opencode / Gemini) |
+| [`harness/`](harness/SKILL.md) | cross-cutting | Capability→harness-mechanism binding (agnostic across Claude Code / Codex / Gemini-Antigravity / OpenCode / Crush / Warp) |
 | [`artifacts/`](artifacts/) | 3 | Session artifact templates the loops manage |
 | [`hooks/`](hooks/) | — | Host hook template (branch-check, sql-mutation-guard, checkpoint, …) |
 | [`SKILL.md`](SKILL.md) | overview | The `workflow` orientation skill (whole-model guide) |

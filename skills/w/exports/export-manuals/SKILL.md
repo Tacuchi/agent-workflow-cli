@@ -70,7 +70,7 @@ En plan mode **describe**, no escribe: el modo resuelto, los temas detectados (c
 | Flag | Comportamiento |
 |---|---|
 | `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`) |
-| `--since sessionNNN` | Solo sesiones posteriores a NNN (inclusive) |
+| `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
 | `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
 | `--mode complement\|regenerate` | Default `complement` |
 | `--topics slug1,slug2` | Limita a los temas declarados |

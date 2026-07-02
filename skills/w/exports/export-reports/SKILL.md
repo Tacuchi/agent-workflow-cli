@@ -68,7 +68,7 @@ En plan mode **describe**, no escribe: la audiencia/longitud resuelta, las sesio
 | Flag | Comportamiento |
 |---|---|
 | `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`/`--period`) |
-| `--since sessionNNN` | Solo sesiones posteriores a NNN (inclusive) |
+| `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
 | `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
 | `--period` | Ventana temporal (`last-month`/`last-quarter`/rango `YYYY-MM..YYYY-MM`) |
 | `--audience gerencia\|tecnica` | Modula longitud/léxico: `gerencia` ≈ corto/ejecutivo; `tecnica` ≈ detallado |

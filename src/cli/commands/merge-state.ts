@@ -1,6 +1,6 @@
 import { type MergeStateInput, runMergeState } from "../../application/merge-state-service.js";
 import type { CommandResult } from "../../domain/types.js";
-import type { ParsedArgs } from "../parser.js";
+import { type ParsedArgs, flagValue } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
@@ -14,12 +14,7 @@ export const mergeStateCommand: QtcCommand = {
     const input: MergeStateInput = {};
     const path = args.rest[0];
     if (path !== undefined) input.path = path;
-    // `--source` is a multi-value flag (parser); take the last occurrence, `values` as fallback.
-    const sourceMulti = args.valuesMulti.get("source");
-    const source =
-      sourceMulti && sourceMulti.length > 0
-        ? sourceMulti[sourceMulti.length - 1]
-        : args.values.get("source");
+    const source = flagValue(args, "source");
     if (source !== undefined) input.source = source;
     if (args.flags.has("--all")) input.all = true;
 

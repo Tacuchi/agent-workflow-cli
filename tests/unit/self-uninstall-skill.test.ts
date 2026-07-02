@@ -102,11 +102,10 @@ function buildCtx(home: string, fs: FileSystemPort, process: ProcessPort): CliCo
 
 async function seedTarget(
   home: string,
-  target: "claude" | "codex" | "agents",
+  target: "claude" | "codex" | "agents" | "gemini" | "opencode" | "crush",
   skillName: string,
 ): Promise<string> {
-  const root = target === "claude" ? ".claude" : target === "codex" ? ".codex" : ".agents";
-  const path = join(home, root, "skills", skillName);
+  const path = join(home, `.${target}`, "skills", skillName);
   await mkdir(path, { recursive: true });
   await writeFile(join(path, "SKILL.md"), `---\nname: ${skillName}\n---\nbody\n`, "utf8");
   return path;
@@ -240,6 +239,26 @@ describe("selfUninstallSkill", () => {
     expect(await fs.exists(claudeCanonical)).toBe(true); // preserved
     const lockAfter = JSON.parse(await fs.readText(lockPath));
     expect(lockAfter.skills.w).toBeDefined(); // preserved
+  });
+
+  it("covers gemini/opencode/crush: single target and --target=all (install↔uninstall round-trip)", async () => {
+    // Regression: ALL_TARGETS was a literal 5-host list, so the three hosts
+    // added in v14.5.0 were rejected and `--target all` left residue behind
+    // (same family as the clean-legacy v14.5.1 bug).
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    const gemini = await seedTarget(home, "gemini", "w");
+    const opencode = await seedTarget(home, "opencode", "w");
+    const crush = await seedTarget(home, "crush", "w");
+
+    const single = await selfUninstallSkill(buildArgs({ target: "gemini" }, []), ctx);
+    expect(single.ok).toBe(true);
+    expect(await fs.exists(gemini)).toBe(false);
+
+    const all = await selfUninstallSkill(buildArgs({}, []), ctx);
+    expect(all.ok).toBe(true);
+    expect(await fs.exists(opencode)).toBe(false);
+    expect(await fs.exists(crush)).toBe(false);
   });
 
   it("--target=invalid is rejected with INVALID_TARGET", async () => {

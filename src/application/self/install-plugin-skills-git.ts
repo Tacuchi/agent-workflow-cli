@@ -8,9 +8,9 @@ import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { SelfInstallPluginSkillsData } from "./install-plugin-skills.js";
 import { selfInstallPluginSkills } from "./install-plugin-skills.js";
-import type { InstallTarget } from "./install-skill.js";
+import { INSTALL_TARGETS, type InstallTarget } from "./install-skill.js";
 
-const VALID_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "warp", "oz"];
+const VALID_TARGETS: readonly InstallTarget[] = INSTALL_TARGETS;
 
 export async function installPluginSkillsFromGit(
   args: ParsedArgs,

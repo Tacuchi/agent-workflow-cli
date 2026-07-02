@@ -69,3 +69,31 @@ describe("parser multi-value flags (--fuente / --working-branch)", () => {
     expect(parsed.valuesMulti.get("fuente")).toEqual(["core:/repo/core", "plugin:/repo/plugin"]);
   });
 });
+
+describe("flagValue accessor (multi-routed flags reach commands that read single values)", () => {
+  // Regression: `aw release-data --source X` / `aw check-branch --source X`
+  // silently dropped the flag because `source` routes to valuesMulti while the
+  // commands read `values` (the write↔read family of the v14.6.0 mcp bug).
+  it("returns the last valuesMulti occurrence for a multi-value flag", async () => {
+    const { flagValue } = await import("../../src/cli/parser.js");
+    const parsed = parseArgv(["release-data", "--source", "core", "--source", "plugin"]);
+    expect(parsed.values.has("source")).toBe(false);
+    expect(flagValue(parsed, "source")).toBe("plugin");
+  });
+
+  it("falls back to values for single-value flags", async () => {
+    const { flagValue } = await import("../../src/cli/parser.js");
+    const parsed = parseArgv(["release-data", "--since", "session012"]);
+    expect(flagValue(parsed, "since")).toBe("session012");
+  });
+});
+
+describe("single-dash help alias", () => {
+  // Regression: `-h` fell into `rest` (only `--` tokens become flags), so
+  // `aw <cmd> -h` EXECUTED the command instead of showing its help.
+  it("captures -h as a flag so main.ts help detection fires", () => {
+    const parsed = parseArgv(["sessions", "-h"]);
+    expect(parsed.flags.has("-h")).toBe(true);
+    expect(parsed.rest).toEqual([]);
+  });
+});

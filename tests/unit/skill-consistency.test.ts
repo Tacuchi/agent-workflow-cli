@@ -1,6 +1,8 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DESCRIPTION_MAX } from "../../src/application/plugin-doctor/skills.js";
+import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 
 // Consistency guards for the `w` skill bundle. These catch CROSS-SKILL drift —
 // where two skills that compose each other disagree on a shared contract — which
@@ -57,5 +59,22 @@ describe("SKILL consistency — cross-skill contracts", () => {
     // Modernized away from a structurizr default; neither may re-assert it.
     expect(role).not.toMatch(/structurizr.{0,20}(default|por defecto)/i);
     expect(exp).not.toMatch(/structurizr.{0,20}(default|por defecto)/i);
+  });
+
+  it("every bundle SKILL.md respects the Agent Skills description cap the doctor enforces on third parties", async () => {
+    // On flatten hosts (warp/oz) every sub-skill description enters the per-session
+    // skill listing, so overflow is both a standard violation and a token tax.
+    const files = (await bundleMdFiles()).filter((f) => f.endsWith("SKILL.md"));
+    files.push("SKILL.md", join("harness", "SKILL.md"));
+    const offenders: string[] = [];
+    for (const relpath of files) {
+      const text = await readFile(join(SKILL_ROOT, relpath), "utf8");
+      const fm = parseSkillFrontmatter(text);
+      const description = fm?.fields.description ?? "";
+      if (description.length > DESCRIPTION_MAX) {
+        offenders.push(`${relpath} (${description.length} chars)`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@ import {
   runGitFlow,
 } from "../../application/git-flow-service.js";
 import type { CommandResult } from "../../domain/types.js";
-import type { ParsedArgs } from "../parser.js";
+import { type ParsedArgs, flagValue } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
@@ -29,14 +29,8 @@ export const gitFlowCommand: QtcCommand = {
       };
     }
 
-    // `--source` is a multi-value flag (parser), so a single `--source core`
-    // lands in valuesMulti; take the last occurrence. `values` is a fallback.
-    const sourceMulti = args.valuesMulti.get("source");
-    const source =
-      sourceMulti && sourceMulti.length > 0
-        ? sourceMulti[sourceMulti.length - 1]
-        : args.values.get("source");
-    const target = args.values.get("target");
+    const source = flagValue(args, "source");
+    const target = flagValue(args, "target");
     const input: GitFlowInput = { action: action as GitFlowAction };
     if (source !== undefined) input.source = source;
     if (target !== undefined) input.target = target;

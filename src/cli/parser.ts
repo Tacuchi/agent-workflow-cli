@@ -13,6 +13,17 @@ export interface ParsedArgs {
   valuesMulti: Map<string, string[]>;
 }
 
+/**
+ * Value of `--<name>` regardless of routing: MULTI_VALUE_FLAGS land in
+ * `valuesMulti` (last occurrence wins), the rest in `values`. Commands that
+ * read only `values` silently lose multi-routed flags like `--source`.
+ */
+export function flagValue(args: ParsedArgs, name: string): string | undefined {
+  const multi = args.valuesMulti.get(name);
+  if (multi !== undefined && multi.length > 0) return multi[multi.length - 1];
+  return args.values.get(name);
+}
+
 // Flag names (without leading `--`) that accept repetition. Each occurrence
 // pushes onto `valuesMulti`; non-multi flags continue to use `values` (last
 // occurrence wins) for back-compat.
@@ -108,6 +119,14 @@ function consumeToken(state: ParseState): void {
   if (consumePluginFlag(state, token)) return;
   if (consumeCommandIfFirst(state, token)) return;
   if (consumeOptionFlag(state, token)) return;
+
+  // Single-dash help: only `--` tokens become flags, so alias `-h` here or it
+  // would fall into `rest` and the command would run instead of showing help.
+  if (token === "-h") {
+    state.flags.add("-h");
+    state.index += 1;
+    return;
+  }
 
   state.rest.push(token);
   state.index += 1;

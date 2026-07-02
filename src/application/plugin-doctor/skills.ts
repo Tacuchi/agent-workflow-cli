@@ -144,7 +144,7 @@ async function parseSkillFile(skillMd: string, fs: FileSystemPort): Promise<Pars
 
 // Limits from the Agent Skills standard (agentskills.io/specification).
 const NAME_MAX = 64;
-const DESCRIPTION_MAX = 1024;
+export const DESCRIPTION_MAX = 1024;
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ALLOWED_TOP_LEVEL_KEYS = new Set([
   "name",

@@ -160,7 +160,7 @@ El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
 
 ### Harness (agnóstico al arnés)
 
-La doctrina nombra **capacidades** abstractas, no tools concretos de un arnés. Un solo doc —`harness/SKILL.md`— liga cada capacidad al mecanismo de cada arnés (Claude Code, Codex, opencode, Gemini, genérico). Dos principios: **capacidad-no-tool** (los loops/comandos referencian la capacidad por nombre) y **progressive-enhancement** (usar el mecanismo más rico del arnés; degradar a un fallback universal cuando no exista).
+La doctrina nombra **capacidades** abstractas, no tools concretos de un arnés. Un solo doc —`harness/SKILL.md`— liga cada capacidad al mecanismo de cada arnés (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp, genérico). Dos principios: **capacidad-no-tool** (los loops/comandos referencian la capacidad por nombre) y **progressive-enhancement** (usar el mecanismo más rico del arnés; degradar a un fallback universal cuando no exista).
 
 Capacidades clave:
 

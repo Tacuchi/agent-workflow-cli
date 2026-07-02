@@ -18,7 +18,12 @@ import type {
   SpawnInTerminalResult,
 } from "../ports/process.js";
 
-const WIN_SHELL_CMDS = new Set(["npm", "npx", "yarn", "pnpm", "node-gyp"]);
+const WIN_SHELL_CMDS = new Set(["npm", "npx", "yarn", "pnpm", "node-gyp", "gradle", "mvn"]);
+
+/** Windows: .bat/.cmd shims (and the known CLI shims above) only run under a shell (Node ≥20 EINVAL otherwise). */
+function needsWinShell(cmd: string): boolean {
+  return WIN_SHELL_CMDS.has(cmd) || /\.(bat|cmd)$/i.test(cmd);
+}
 
 /** Monotonic suffix for ephemeral wrapper/pid files (avoids Date.now/random). */
 let terminalSeq = 0;
@@ -39,7 +44,7 @@ export class NodeProcess implements ProcessPort {
   ) {}
 
   async run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
-    const useShell = this.platform === "win32" && WIN_SHELL_CMDS.has(cmd);
+    const useShell = this.platform === "win32" && needsWinShell(cmd);
     return new Promise((resolve, reject) => {
       const child = spawn(cmd, args, {
         cwd: opts.cwd,
@@ -99,7 +104,7 @@ export class NodeProcess implements ProcessPort {
     args: string[],
     opts: SpawnDetachedOptions,
   ): Promise<SpawnDetachedResult> {
-    const useShell = this.platform === "win32" && WIN_SHELL_CMDS.has(cmd);
+    const useShell = this.platform === "win32" && needsWinShell(cmd);
     // Open the log in append mode and hand the fd to the child for stdout+stderr.
     const fd = openSync(opts.logPath, "a");
     try {

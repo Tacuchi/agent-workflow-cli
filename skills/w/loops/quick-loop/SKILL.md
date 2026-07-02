@@ -1,21 +1,15 @@
 ---
 name: quick-loop
 description: >-
-  El atajo liviano de agent-workflow: resuelve una tarea acotada (un fix, un
-  ajuste pequeño) directamente desde el prompt del usuario, editando código con
-  ceremonia mínima. Heir del chasis spec-refine-loop (motor gap-driven mínimo,
-  research INLINE con regla BD read-only, structured-choice con ≤3 preguntas de
-  contenido + 1 control flow Compactar/Cerrar siempre, compact/resume con artefactos
-  como log vivo: CHECKPOINT siempre, BACKLOG solo si difiere) y de plan-exec-loop
-  (git seguro: rama esperada antes de editar + commit propuesto, nunca
-  push/--amend/--no-verify; la IA nunca ejecuta DML, migraciones a SCRIPTS.sql;
-  sin auto-export; gate de revisión de cierre proporcional: re-lee el diff con
-  las convenciones ambientes instaladas y corrige antes de proponer el commit).
-  Sus deltas: sin fases ni plan-doc (el prompt ES la tarea),
-  una sola session ligera (<slug>-quick), un solo commit; y escalación con
-  handoff si la tarea crece (propone subir a SPEC/PLAN dejando el código a
-  medias como contexto). NO toca docs/. Lo arranca /w:quick y es reanudable.
-  Invocar para cambios pequeños y directos que no ameritan spec ni plan formal.
+  El atajo liviano de agent-workflow: resuelve una tarea acotada (fix, ajuste
+  chico) directamente desde el prompt, editando código con ceremonia mínima.
+  Heir del chasis spec-refine-loop y de plan-exec-loop (git seguro, BD solo-
+  scripts, gate de revisión de cierre proporcional, sin auto-export); sus
+  deltas viven en el cuerpo: sin fases ni plan-doc (el prompt ES la tarea),
+  session ligera única (<slug>-quick), un solo commit, y escalación con
+  handoff a SPEC/PLAN si la tarea crece. NO toca docs/. Lo arranca /w:quick y
+  es reanudable. Invocar para cambios pequeños y directos que no ameritan spec
+  ni plan formal.
 ---
 
 # quick-loop

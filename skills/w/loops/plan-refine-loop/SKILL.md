@@ -1,19 +1,15 @@
 ---
 name: plan-refine-loop
 description: >-
-  Refina un plan existente (docs/plans/PPP-plan-<slug>.md) editándolo IN PLACE,
-  como paso auxiliar y NO obligatorio del flujo PLAN antes de plan-exec. Heir del
-  chasis spec-refine-loop: reusa íntegro su motor gap-driven convergente, su única
-  session por run, research INLINE, structured-choice con ≤3 preguntas de contenido
-  + 1 control flow (Compactar/Cerrar) siempre, research autónomo con regla BD
-  read-only, y artefactos como log vivo (CHECKPOINT siempre, BACKLOG solo si
-  difiere). Es a plan-new lo que spec-refine es a spec-new: edita el plan-doc in
-  place (no genera uno nuevo). Reusa la gap taxonomy y el coherence gate de
-  plan-new-loop; agrega Refinement decisions/Q&A traceability al plan (traza, sin
-  contrato de gating: plan-exec corre cualquier plan). Si el refine toca UI,
-  compone la capacidad ui-design y produce/actualiza design SPECs por pantalla
-  (NNN-SPEC-<SLUG>.md) en su propia sesión. Lo arranca /w:plan-refine y
-  es reanudable + re-corrible a demanda. Invocar cuando un plan ya generado deba
+  Refina un plan existente (docs/plans/PPP-plan-<slug>.md) editándolo IN
+  PLACE, como paso auxiliar y NO obligatorio del flujo PLAN antes de plan-
+  exec. Es a plan-new lo que spec-refine es a spec-new. Heir del chasis spec-
+  refine-loop (motor gap-driven, session única, research inline, structured-
+  choice, artefactos como log vivo); reusa la gap taxonomy y el coherence gate
+  de plan-new-loop, agrega Refinement decisions/Q&A traceability al plan
+  (traza, sin gating), y si el refine toca UI compone ui-design y
+  produce/actualiza design SPECs por pantalla. Lo arranca /w:plan-refine;
+  reanudable y re-corrible a demanda. Invocar cuando un plan ya generado deba
   ajustarse antes de ejecutarlo.
 ---
 

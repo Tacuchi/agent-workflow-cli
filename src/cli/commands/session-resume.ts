@@ -15,6 +15,14 @@ export const sessionResumeCommand: QtcCommand = {
       ...(code !== undefined ? { code } : {}),
       ...(reopen ? { reopen: true } : {}),
     });
+    if ("error" in data) {
+      return {
+        ok: false,
+        error: { code: "SESSION_NOT_FOUND", message: data.error },
+        data,
+        exitCode: 1,
+      };
+    }
     return { ok: true, data, exitCode: 0 };
   },
 };

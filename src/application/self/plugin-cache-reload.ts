@@ -110,7 +110,7 @@ function buildHostReloadResult(
 }
 
 function buildSourceMissingResult(
-  target: "warp" | "agents",
+  target: Exclude<CacheTarget, "claude" | "codex">,
   plugin: string,
   removed: PluginCacheRemoval[],
   clearSummary: string,
@@ -136,7 +136,7 @@ function buildSourceMissingResult(
 async function runReinstall(
   ctx: CliContext,
   plugin: string,
-  target: "warp" | "agents",
+  target: Exclude<CacheTarget, "claude" | "codex">,
   source: string,
   removed: PluginCacheRemoval[],
   clearSummary: string,

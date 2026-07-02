@@ -14,6 +14,14 @@ export const sessionArtifactsCommand: QtcCommand = {
     if (code !== undefined) input.code = code;
     if (verbose) input.verbose = true;
     const data = await runArtifactsCommand(ctx.fs, ctx.env, ctx.paths, input);
+    if ("error" in data) {
+      return {
+        ok: false,
+        error: { code: "SESSION_NOT_FOUND", message: data.error },
+        data,
+        exitCode: 1,
+      };
+    }
     return { ok: true, data, exitCode: 0 };
   },
 };

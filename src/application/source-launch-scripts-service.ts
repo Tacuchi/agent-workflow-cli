@@ -237,7 +237,19 @@ export function renderRunSh(desc: LaunchDescriptor): string {
   return withMarker(["#!/usr/bin/env bash"], after);
 }
 
+/**
+ * Windows form of a launch command: the JVM wrappers are bash scripts without
+ * extension; PowerShell/cmd need their `.bat`/`.cmd` twins (shipped alongside
+ * by the same wrapper). Non-wrapper commands pass through untouched.
+ */
+export function winLaunchCommand(command: string | null): string | null {
+  if (command === "./gradlew") return "./gradlew.bat";
+  if (command === "./mvnw") return "./mvnw.cmd";
+  return command;
+}
+
 export function renderRunPs1(desc: LaunchDescriptor): string {
+  const winCommand = winLaunchCommand(desc.command);
   const after: string[] = [
     ...humanHeader(desc),
     'param([string]$Profile = "")',
@@ -248,8 +260,8 @@ export function renderRunPs1(desc: LaunchDescriptor): string {
   for (const p of desc.params) {
     after.push(`if (-not $env:${p.name}) { $env:${p.name} = "${ps1Escape(p.default)}" }`);
   }
-  if (desc.command) {
-    after.push(`& ${ps1Quote(desc.command)} ${desc.args.map(ps1Quote).join(" ")}`.trimEnd());
+  if (winCommand) {
+    after.push(`& ${ps1Quote(winCommand)} ${desc.args.map(ps1Quote).join(" ")}`.trimEnd());
   } else {
     after.push(
       `Write-Error "No se detectó comando de arranque para ${desc.source}. Completá este script."`,

@@ -1,7 +1,8 @@
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { humanizeRelativeEs } from "../../../application/humanize-es.js";
 import type { LogEntry } from "../data/logs.js";
+import { useInputLock } from "../input-lock.js";
 import { colors } from "../theme.js";
 import { SectionHead } from "./section-head.js";
 
@@ -37,6 +38,16 @@ export function LogsSection({
   const [sel, setSel] = useState(0);
   // null = list mode; string = typing an app name for "open with…".
   const [appInput, setAppInput] = useState<string | null>(null);
+  const { lock, unlock } = useInputLock();
+
+  // While typing an app name, mute the global keys (q/r/1-6/i) or a typed
+  // letter would quit, remount the tab or switch tabs — config-tab's pattern.
+  useEffect(() => {
+    if (appInput !== null) lock();
+    else unlock();
+  }, [appInput, lock, unlock]);
+
+  useEffect(() => () => unlock(), [unlock]);
 
   const clampedSel = Math.min(sel, Math.max(0, logs.length - 1));
 

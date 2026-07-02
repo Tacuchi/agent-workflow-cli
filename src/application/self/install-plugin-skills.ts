@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { type InstallTarget, TARGET_ROOTS } from "./install-skill.js";
+import { INSTALL_TARGETS, type InstallTarget, TARGET_ROOTS } from "./install-skill.js";
 
 export interface PluginSkillResult {
   skillName: string;
@@ -21,7 +21,7 @@ export interface SelfInstallPluginSkillsData {
   summary: string;
 }
 
-const VALID_TARGETS: readonly InstallTarget[] = ["claude", "codex", "agents", "warp", "oz"];
+const VALID_TARGETS: readonly InstallTarget[] = INSTALL_TARGETS;
 
 export async function selfInstallPluginSkills(
   args: ParsedArgs,

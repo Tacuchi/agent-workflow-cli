@@ -1,22 +1,16 @@
 ---
 name: plan-new-loop
 description: >-
-  Genera un plan de implementación rico (docs/plans/PPP-plan-<slug>.md) a partir
-  de un spec (docs/specs/NNN-spec-<slug>.md). Heir del chasis spec-refine-loop:
-  reusa íntegro su motor gap-driven convergente, su única session por run,
-  research INLINE, structured-choice con ≤3 preguntas de contenido + 1 control flow
-  (Compactar/Cerrar) siempre presente, research autónomo con regla BD read-only,
-  y artefactos como log vivo (CHECKPOINT siempre, BACKLOG solo si difiere). Sus
-  deltas: el plan absorbe inline el nivel TECHNICAL-NOTE
-  (Solution/Impacted/AS-IS/TO-BE/Validations…) + Phases/Tasks con estado vivo;
-  el research aquí mapea código/impacto (componentes FE/BE/BD, wiring AS-IS,
-  dependencias); una gap taxonomy propia de planificación; y si el plan incluye
-  UI compone la capacidad ui-design para autorar design SPECs por pantalla
-  (NNN-SPEC-<SLUG>.md) como artefactos de su sesión. Distingue spec
-  refinado de borrador por la presencia de Refinement decisions/Q&A traceability
-  (si faltan → soft-suggest correr spec-refine antes). Lo arranca el comando
-  /w:plan-new y es reanudable. Invocar cuando un spec deba convertirse en un plan
-  ejecutable antes de implementar.
+  Genera un plan de implementación rico (docs/plans/PPP-plan-<slug>.md) a
+  partir de un spec (docs/specs/NNN-spec-<slug>.md). Heir del chasis spec-
+  refine-loop (motor gap-driven convergente, session única, research inline,
+  structured-choice, artefactos como log vivo); sus deltas viven en el cuerpo:
+  el plan absorbe el nivel TECHNICAL-NOTE + Phases/Tasks con estado vivo,
+  research de mapeo código/impacto, gap taxonomy de planificación, y si el
+  plan incluye UI compone ui-design para autorar design SPECs por pantalla
+  (NNN-SPEC-<SLUG>.md). Si el spec no está refinado sugiere spec-refine antes.
+  Lo arranca /w:plan-new y es reanudable. Invocar cuando un spec deba
+  convertirse en un plan ejecutable antes de implementar.
 ---
 
 # plan-new-loop

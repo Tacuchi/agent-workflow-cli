@@ -109,6 +109,31 @@ describe("source-launch-scripts-service", () => {
     });
   });
 
+  describe("Windows command form", () => {
+    // Regression: the descriptor carried the bash wrapper (./gradlew) into
+    // run.ps1 and the win32 terminal spawn, where PowerShell can't run it —
+    // the whole gradle/maven family failed to launch on Windows.
+    it("winLaunchCommand maps the JVM wrappers to their .bat/.cmd twins", async () => {
+      const { winLaunchCommand } = await import(
+        "../../src/application/source-launch-scripts-service.js"
+      );
+      expect(winLaunchCommand("./gradlew")).toBe("./gradlew.bat");
+      expect(winLaunchCommand("./mvnw")).toBe("./mvnw.cmd");
+      expect(winLaunchCommand("npm")).toBe("npm");
+      expect(winLaunchCommand(null)).toBeNull();
+    });
+
+    it("run.ps1 invokes the .bat wrapper while run.sh keeps the bash one", async () => {
+      const { renderRunPs1 } = await import(
+        "../../src/application/source-launch-scripts-service.js"
+      );
+      const dir = source("svc", { "build.gradle.kts": "", gradlew: "#!/bin/sh\n" });
+      const d = await detectLaunchDescriptor(fs, dir, "svc");
+      expect(renderRunSh(d)).toContain("exec ./gradlew bootRun");
+      expect(renderRunPs1(d)).toContain("& ./gradlew.bat bootRun");
+    });
+  });
+
   describe("generateSourceLaunchArtifacts (idempotency)", () => {
     it("first run creates, second run regenerates pristine files", async () => {
       const dir = source("app", { "package.json": JSON.stringify({ scripts: { dev: "vite" } }) });

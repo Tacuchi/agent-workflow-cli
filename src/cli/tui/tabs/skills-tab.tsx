@@ -42,7 +42,9 @@ type SkillAction = "install-full" | "uninstall-full" | "clean-cache" | "clean-le
 type Mode = { kind: "list" } | { kind: "detail" } | { kind: "confirm-uninstall"; host: HostMeta };
 
 const HOOKS_SUPPORTED_TARGETS: ReadonlySet<string> = new Set(["claude"]);
-const BACKED_INSTALL_TARGETS: ReadonlySet<string> = new Set(["claude", "codex", "warp", "agents"]);
+// Derived from the backend's own target map so the tab can't drift from what
+// `self install/uninstall-skill` actually supports (clean-legacy v14.5.1 lesson).
+const BACKED_INSTALL_TARGETS: ReadonlySet<string> = new Set(Object.keys(TARGET_ROOTS));
 
 export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const [skills, setSkills] = useState<HostState[]>([]);
@@ -358,11 +360,9 @@ function pathForHost(host: HostMeta, home: string): string | null {
 }
 
 function friendlyPath(host: HostMeta, _home: string): string {
-  if (host.id === "claude") return `~/.claude/skills/${SKILL_DIR_NAME}/`;
-  if (host.id === "codex") return `~/.codex/skills/${SKILL_DIR_NAME}/`;
-  if (host.id === "warp") return `~/.warp/skills/${SKILL_DIR_NAME}/`;
-  if (host.id === "agents") return `~/.agents/skills/${SKILL_DIR_NAME}/`;
-  return "(not wired yet)";
+  const root = TARGET_ROOTS[host.id as InstallTarget];
+  if (!root) return "(not wired yet)";
+  return `~/${root.join("/")}/${SKILL_DIR_NAME}/`;
 }
 
 function buildArgsFor(action: SkillAction, target: InstallTarget): ParsedArgs {

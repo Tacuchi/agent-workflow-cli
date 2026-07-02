@@ -113,6 +113,14 @@ describe("source-launch-service — pure logic", () => {
     expect(r?.envDelta.PATH).toBeUndefined(); // base env is NOT a delta
   });
 
+  it("resolveLaunch translates the JVM wrapper to its .bat twin on win32 only", () => {
+    const desc = descriptor({ command: "./gradlew", args: ["bootRun"] });
+    const req = { alias: "app", profile: null, values: {} };
+    expect(resolveLaunch(desc, req, "/logs", {}, "win32")?.command).toBe("./gradlew.bat");
+    expect(resolveLaunch(desc, req, "/logs", {}, "darwin")?.command).toBe("./gradlew");
+    expect(resolveLaunch(desc, req, "/logs", {}, "linux")?.command).toBe("./gradlew");
+  });
+
   it("resolveLaunch returns null when the descriptor has no command", () => {
     expect(
       resolveLaunch(

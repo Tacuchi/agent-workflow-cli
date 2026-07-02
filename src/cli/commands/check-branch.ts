@@ -1,6 +1,6 @@
 import { runCheckBranch } from "../../application/check-branch-service.js";
 import type { CommandResult } from "../../domain/types.js";
-import type { ParsedArgs } from "../parser.js";
+import { type ParsedArgs, flagValue } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
@@ -8,7 +8,7 @@ export const checkBranchCommand: QtcCommand = {
   name: "check-branch",
   describe: "Verify a source branch vs expected work branch.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const alias = args.values.get("source");
+    const alias = flagValue(args, "source");
     const pathArg = args.values.get("path");
     const fileArg = args.values.get("file");
     const session = args.values.get("session");

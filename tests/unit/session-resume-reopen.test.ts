@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionResume } from "../../src/application/session-resume-service.js";
+import type { CliContext } from "../../src/cli/types.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -106,5 +107,43 @@ describe("runSessionResume --reopen", () => {
     const result = await runSessionResume(fs, new FakeEnv(), paths, { code: "003", reopen: true });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.state).toBe("active");
+  });
+});
+
+describe("session-resume / session-artifacts commands — not-found envelope", () => {
+  // Regression: both commands wrapped every service result in {ok:true, exitCode:0},
+  // so a nonexistent session looked like success to loops keying off exit codes.
+  function fakeCtx(fs: FakeFs): CliContext {
+    return { fs, env: new FakeEnv(), paths } as unknown as CliContext;
+  }
+
+  it("session-resume maps session_not_found to ok:false + exit 1", async () => {
+    const { sessionResumeCommand } = await import("../../src/cli/commands/session-resume.js");
+    const args = {
+      rest: [],
+      plugin: {},
+      flags: new Set<string>(),
+      values: new Map([["code", "999"]]),
+      valuesMulti: new Map(),
+    };
+    const result = await sessionResumeCommand.execute(args, fakeCtx(buildFs({ closed: false })));
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.error?.code).toBe("SESSION_NOT_FOUND");
+  });
+
+  it("session-artifacts maps session_not_found to ok:false + exit 1", async () => {
+    const { sessionArtifactsCommand } = await import("../../src/cli/commands/session-artifacts.js");
+    const args = {
+      rest: [],
+      plugin: {},
+      flags: new Set<string>(),
+      values: new Map([["code", "999"]]),
+      valuesMulti: new Map(),
+    };
+    const result = await sessionArtifactsCommand.execute(args, fakeCtx(buildFs({ closed: false })));
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.error?.code).toBe("SESSION_NOT_FOUND");
   });
 });

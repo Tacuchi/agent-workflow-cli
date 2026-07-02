@@ -68,7 +68,7 @@ En plan mode **describe**, no escribe: el `NNN` resuelto, las fuentes detectadas
 | Flag | Comportamiento |
 |---|---|
 | `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`) |
-| `--since sessionNNN` | Solo sesiones posteriores a NNN (inclusive) |
+| `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
 | `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
 | `--skip-standalone` | Omite la lectura de `docs/scripts/*.sql` standalone |
 | `--dry-run` | Reporte propositivo sin escribir archivos |

@@ -1,22 +1,16 @@
 ---
 name: plan-exec-loop
 description: >-
-  Ejecuta un plan de implementación (docs/plans/PPP-plan-<slug>.md) como living
-  doc: lo lee y actualiza fase a fase mientras edita el código real, gestiona BD
-  y git. Heir del chasis spec-refine-loop: reusa su motor gap-driven, research
-  inline (regla BD read-only), structured-choice (≤3 preguntas + control flow
-  Compactar/Cerrar) y artefactos como log vivo (CHECKPOINT siempre, BACKLOG solo
-  si difiere). Deltas: una sola session por run (resume vía checkbox del plan-doc
-  + CHECKPOINT); git seguro (verifica la rama antes de editar, propone commits por
-  fuente, nunca push/--amend/--no-verify); la IA NUNCA ejecuta DML/DDL (las
-  migraciones se redactan en SCRIPTS.sql, solo read-only se ejecuta); validación
-  por fase y final (lo dependiente de migración no aplicada se difiere a DBA);
-  gate de revisión de cierre por fase ANTES de proponer commits (re-lectura
-  independiente del diff aplicando las convenciones ambientes instaladas —
-  corrige o difiere; nada llega a un commit sin revisar); y
-  SIN auto-export (escribe solo docs/plans; el resto queda como artefacto para
-  export-*). Compone git y sql. Lo arranca /w:plan-exec, es reanudable. Invocar
-  para implementar un plan ya generado.
+  Ejecuta un plan de implementación (docs/plans/PPP-plan-<slug>.md) como
+  living doc: lo lee y actualiza fase a fase mientras edita el código real,
+  gestiona BD y git. Heir del chasis spec-refine-loop (motor gap-driven,
+  research inline, structured-choice, artefactos como log vivo); sus deltas
+  viven en el cuerpo: session única reanudable, git seguro (rama verificada,
+  commits propuestos por fuente, nunca push/--amend/--no-verify), BD solo-
+  scripts (la IA nunca ejecuta DML/DDL), validación por fase y final, gate de
+  revisión de cierre pre-commit, y sin auto-export (solo escribe docs/plans).
+  Compone git y sql. Lo arranca /w:plan-exec. Invocar para implementar un plan
+  ya generado.
 ---
 
 # plan-exec-loop

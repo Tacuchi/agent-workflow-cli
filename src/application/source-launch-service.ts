@@ -3,7 +3,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { ProcessPort } from "../ports/process.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
-import type { LaunchDescriptor } from "./source-launch-scripts-service.js";
+import { type LaunchDescriptor, winLaunchCommand } from "./source-launch-scripts-service.js";
 
 export interface LaunchRequest {
   alias: string;
@@ -31,6 +31,8 @@ export interface LaunchDeps {
   baseEnv: Record<string, string>;
   /** Injected clock for deterministic tests; defaults to the wall clock. */
   now?: () => string;
+  /** Injected platform for deterministic tests; defaults to the real one. */
+  platform?: string;
 }
 
 export type LaunchResult =
@@ -63,15 +65,18 @@ export function resolveLaunch(
   req: LaunchRequest,
   logsDir: string,
   baseEnv: Record<string, string>,
+  platform: string = process.platform,
 ): ResolvedLaunch | null {
   if (!desc.command) return null;
+  const command = platform === "win32" ? winLaunchCommand(desc.command) : desc.command;
+  if (!command) return null;
   const envDelta: Record<string, string> = {};
   for (const p of desc.params) {
     envDelta[p.name] = req.values[p.name] ?? p.default;
   }
   if (req.profile) envDelta.PROFILE = req.profile;
   return {
-    command: desc.command,
+    command,
     args: desc.args,
     cwd: desc.cwd,
     env: { ...baseEnv, ...envDelta },
@@ -101,7 +106,7 @@ export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promis
   if (!desc)
     return { ok: false, error: "no_descriptor", message: `Sin descriptor para ${req.alias}` };
   const logsDir = deps.paths.cwdDocsLogsDir();
-  const resolved = resolveLaunch(desc, req, logsDir, deps.baseEnv);
+  const resolved = resolveLaunch(desc, req, logsDir, deps.baseEnv, deps.platform);
   if (!resolved) {
     return {
       ok: false,

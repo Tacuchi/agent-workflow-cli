@@ -6,27 +6,17 @@ import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { InstallTarget } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
+import { INSTALL_TARGETS, TARGET_ROOTS } from "./install-targets.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 
 export const SKILL_DIR_NAME = "w";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
 
-// InstallTarget is defined canonically in domain/harnesses.ts (HarnessSpec.installTarget)
-// and re-exported here since detect-hosts and callers import it from this module.
+// InstallTarget is defined canonically in domain/harnesses.ts (HarnessSpec.installTarget).
+// The target→dir map lives in install-targets.ts (cycle-free); both are
+// re-exported here since detect-hosts and callers import them from this module.
 export type { InstallTarget };
-
-export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
-  claude: [".claude", "skills"],
-  codex: [".codex", "skills"],
-  agents: [".agents", "skills"],
-  warp: [".warp", "skills"],
-  oz: [".agents", "skills"],
-  // New hosts install to their native skill dir; all of them ALSO read
-  // .agents/skills, so `--target agents` is the cross-host alternative.
-  gemini: [".gemini", "skills"],
-  opencode: [".opencode", "skills"],
-  crush: [".crush", "skills"],
-};
+export { INSTALL_TARGETS, TARGET_ROOTS };
 
 export const AGENTS_LOCK_REL = [".agents", ".skill-lock.json"] as const;
 /**
@@ -64,27 +54,10 @@ export interface SelfInstallSkillData {
   dests: SelfInstallTargetResult[];
 }
 
-const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [
-  "claude",
-  "codex",
-  "agents",
-  "warp",
-  "oz",
-  "gemini",
-  "opencode",
-  "crush",
-  "all",
-];
+const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [...INSTALL_TARGETS, "all"];
 
-const ALL_INSTALL_TARGETS: readonly InstallTarget[] = [
-  "claude",
-  "codex",
-  "warp",
-  "oz",
-  "gemini",
-  "opencode",
-  "crush",
-];
+// `--target all` skips `agents`: it is the shared cross-host dir, not a host.
+const ALL_INSTALL_TARGETS: readonly InstallTarget[] = INSTALL_TARGETS.filter((t) => t !== "agents");
 
 const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
   "claude",

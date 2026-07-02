@@ -70,7 +70,7 @@ En plan mode **describe**, no escribe: el motor resuelto, los niveles/secciones 
 | Flag | Comportamiento |
 |---|---|
 | `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`); afecta el delta AS-IS/TO-BE |
-| `--since sessionNNN` | Solo sesiones posteriores a NNN (inclusive) |
+| `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
 | `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
 | `--engine mermaid\|c4` | Default `mermaid` (render en GitHub); `c4` = Structurizr DSL opt-in |
 | `--scope` | Qué secciones aparecen: `c4` (contexto/contenedores/componentes), `integrations`, `data` (solo si MCP), `todo` (default) |

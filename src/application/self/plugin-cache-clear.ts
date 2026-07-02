@@ -3,10 +3,13 @@ import { join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
+import { INSTALL_TARGETS, type InstallTarget, TARGET_ROOTS } from "./install-targets.js";
 
-export type CacheTarget = "claude" | "codex" | "warp" | "agents";
+export type CacheTarget = InstallTarget;
 
-export const CACHE_TARGETS: readonly CacheTarget[] = ["claude", "codex", "warp", "agents"];
+// Same single source as install/uninstall: hosts without a plugin cache or
+// flattened skills simply report "nothing" instead of rejecting the target.
+export const CACHE_TARGETS: readonly CacheTarget[] = INSTALL_TARGETS;
 
 export interface PluginCacheRemoval {
   path: string;
@@ -145,12 +148,12 @@ async function listSafe(ctx: CliContext, path: string): Promise<{ name: string }
 async function clearSkillDirs(
   ctx: CliContext,
   home: string,
-  target: "warp" | "agents",
+  target: CacheTarget,
   plugin: string,
   dryRun: boolean,
 ): Promise<PluginCacheRemoval[]> {
   const removals: PluginCacheRemoval[] = [];
-  const skillsRoot = join(home, `.${target}`, "skills");
+  const skillsRoot = join(home, ...TARGET_ROOTS[target]);
 
   if (!(await ctx.fs.exists(skillsRoot))) return removals;
 

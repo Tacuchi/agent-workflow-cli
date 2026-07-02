@@ -1,13 +1,17 @@
 import { SessionsCsvError, parseSessionsCsv } from "../../application/parsers/sessions-csv.js";
 import { runReleaseData } from "../../application/release-data-service.js";
 import type { CommandResult } from "../../domain/types.js";
-import type { ParsedArgs } from "../parser.js";
+import { type ParsedArgs, flagValue } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
 export const releaseDataCommand: QtcCommand = {
   name: "release-data",
-  describe: "Dump consolidado para los skills release y release-scripts.",
+  describe:
+    "Dump consolidado del corpus de sesiones para la familia export-* " +
+    "(scripts/manuals/diagrams/reports). Usage: aw release-data [--sessions <csv>] " +
+    "[--since sessionNNN] [--source <alias>] [--include-graduated] [--no-open] " +
+    "[--no-closed] [--skip-content] [--verbose].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: Parameters<typeof runReleaseData>[3] = {};
     const sessionsRaw = args.values.get("sessions");
@@ -28,7 +32,7 @@ export const releaseDataCommand: QtcCommand = {
     } else if (since !== undefined) {
       input.since = since;
     }
-    const source = args.values.get("source");
+    const source = flagValue(args, "source");
     if (source !== undefined) input.sourceAlias = source;
     if (args.flags.has("--include-graduated")) input.includeGraduated = true;
     if (args.flags.has("--no-open")) input.includeOpen = false;
