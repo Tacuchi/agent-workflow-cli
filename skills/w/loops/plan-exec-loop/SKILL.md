@@ -10,7 +10,10 @@ description: >-
   + CHECKPOINT); git seguro (verifica la rama antes de editar, propone commits por
   fuente, nunca push/--amend/--no-verify); la IA NUNCA ejecuta DML/DDL (las
   migraciones se redactan en SCRIPTS.sql, solo read-only se ejecuta); validación
-  por fase y final (lo dependiente de migración no aplicada se difiere a DBA); y
+  por fase y final (lo dependiente de migración no aplicada se difiere a DBA);
+  gate de revisión de cierre por fase ANTES de proponer commits (re-lectura
+  independiente del diff aplicando las convenciones ambientes instaladas —
+  corrige o difiere; nada llega a un commit sin revisar); y
   SIN auto-export (escribe solo docs/plans; el resto queda como artefacto para
   export-*). Compone git y sql. Lo arranca /w:plan-exec, es reanudable. Invocar
   para implementar un plan ya generado.
@@ -69,13 +72,13 @@ Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 - Recorre las `Phases` del plan en orden (respeta deps) **dentro de la única session del run** (no hay session-por-fase).
 - El **avance por fase vive en el plan-doc** (`- [x]`) y en el `CHECKPOINT` único (Completed/Pending/Next): **artifact-first** — `CHECKPOINT.Next` se fija a la fase inminente **antes** de iniciarla; el checkbox `- [x]` del plan-doc se voltea **después** de completar la tarea.
 - Ejecuta las `Tasks` de la fase; **salta** las ya marcadas `- [x]` en el plan (el plan-doc es la fuente de verdad por tarea). Marca `- [x]` + estado **en el plan** (living doc; no en un `TASKS` aparte).
-- En **cada límite de fase**: actualiza el `CHECKPOINT` (Completed += Phase N, Next = Phase N+1) y propone commits.
+- En **cada límite de fase**: valida, corre el **gate de revisión de cierre** (Delta 5), actualiza el `CHECKPOINT` (Completed += Phase N, Next = Phase N+1) y propone commits.
 - Registra `DECISION` solo lo **no obvio**, **a medida que se toma** (los `DECISION` por fase se acumulan en el ÚNICO `DECISION`, etiquetados por fase/tarea — ej. `Origin: T2 (F1)`).
 
 ## Delta 2 — Git policy: **rama segura + commits propuestos**
 
 - **Antes de editar** archivos de una fuente: verifica rama actual = rama esperada de esa fuente (estilo `branch-check`). Si no coincide → **pausa y resuelve con el humano**; nunca `stash`/`reset --hard`/`checkout -- .`/`clean` sin confirmación por fuente.
-- **Al cerrar una fase** (o al `Cerrar`): **propone commits por fuente** (propose-then-execute, aprobar antes); nunca `push`/`--amend`/`--no-verify`.
+- **Al cerrar una fase** (o al `Cerrar`): **tras pasar el gate de revisión de cierre** (Delta 5), **propone commits por fuente** (propose-then-execute, aprobar antes); nunca `push`/`--amend`/`--no-verify`. Nada llega a un commit propuesto sin revisar.
 - **Commit rechazado**: los cambios **quedan en el working tree** (no se revierten). Se permite reproponer / editar mensaje. Se registra en `CHECKPOINT` + `BACKLOG` que la fase quedó **sin commitear** (reanudable).
 - **Precondición entre fases**: `branch-check` valida *identidad* de rama, **no** *limpieza* del working tree. Antes de iniciar la siguiente fase, el working tree de cada fuente debe estar **limpio** (committeado) o explícitamente **reconocido** como "cambios sin commitear de la fase N" — para no co-mezclar dos fases en un mismo commit.
 
@@ -96,7 +99,18 @@ Distinción por **ejecución**, no por archivo (ver el esquema `SCRIPTS.sql`):
 
 > La **validación final** es el **convergence gate** de PLAN-exec = **`Success criteria` en verde** (*verification-first*; análogo al *analyze gate* de SPEC y al *coherence gate* de `plan-new`): el plan no se marca *done* hasta que pasa o queda explícitamente diferida (handoff de SQL). Para código son **tests ejecutables** (TDD); para migraciones BD no ejecutables, **rúbrica** (SCRIPTS.sql válido + revisado).
 
-## Delta 5 — Completitud / cierre
+## Delta 5 — Gate de revisión de cierre (convenciones, pre-commit)
+
+Tras la validación de la fase y **antes de proponer sus commits** (también en un `Cerrar` anticipado, antes de proponer los commits pendientes), el diff de la fase pasa un **gate de revisión de cierre**:
+
+- **Re-lectura independiente** del diff (subagente o re-lectura limpia — la *verificación independiente* del chasis: no asume correcta la implementación; *only command output counts*).
+- **Aplica las convenciones ambientes instaladas** relevantes al stack tocado (estándares de código/stack, seguridad, revisión de diffs, familias propias del workspace) — el host las **auto-descubre por su `description`**. El workflow **no nombra ni bindea** skills concretas: **crea el momento; las skills instaladas lo llenan** (por eso la revisión **no es un rol** — ver [`../../roles/README.md`](../../roles/README.md)). Sin skills de convenciones instaladas → checklist genérico mínimo: SOLID/early-return, nombres claros, DRY, errores no silenciados, sin secrets/PII, SQL parametrizado, sin código muerto, + las `Validations` del plan.
+- **Hallazgos**: se **corrigen** en el working tree y se **re-corre la validación de la fase** (el gate no reemplaza los tests: los re-verifica tras corregir), o se **difieren justificados** (→ `Open questions` del plan + `BACKLOG`); lo no obvio → `DECISION`. Integridad del gate (chasis): nunca se debilita un check ni se baja una convención para pasar.
+- **Artifact-first + verification-first**: `CHECKPOINT.Next = "review fase N"` antes de la pasada; `SESSION.Success criteria` incluye desde el inicio "cada fase pasó el gate de revisión antes de sus commits".
+
+Recién con el gate en verde se proponen los commits de la fase (Delta 2).
+
+## Delta 6 — Completitud / cierre
 
 - Una fase cierra **done** cuando sus tareas están `- [x]` y su validación pasó **o** quedó diferida (handoff de SQL). Estado posible: **"done — SQL pendiente de aplicar"**.
 - Todas las fases done → *structured-choice* final (contenido: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`).
@@ -126,8 +140,11 @@ plan-exec-loop(PPP-plan-<slug>.md):
     validación de la fase:
         la que corre y falla → volver a la tarea
         la dependiente de migración no aplicada → diferir (Open questions + BACKLOG)
+    gate de revisión de cierre (pre-commit):               # Delta 5: CHECKPOINT.Next = "review fase N"
+        re-lectura INDEPENDIENTE del diff de la fase + convenciones ambientes instaladas
+        hallazgos → corregir (y re-validar la fase) ó diferir justificado (Open questions + BACKLOG)
     update CHECKPOINT (Completed += Phase N, Next = Phase N+1) # DESPUÉS: Pending→Completed + Next = fase siguiente (ver ciclo artifact-first)
-    proponer commit(s) por fuente (aprobar antes)          # nunca push/amend/--no-verify
+    proponer commit(s) por fuente (aprobar antes)          # nunca push/amend/--no-verify; solo tras el gate en verde
         si rechazado → cambios quedan; registrar "fase sin commitear"
     precondición siguiente fase: working tree limpio o reconocido
   validación final (lo que se pueda; lo dependiente de SQL queda como handoff)
@@ -149,7 +166,8 @@ flowchart TD
     DO --> MK["marcar Task - [x] en el PLAN"]
     MK --> T
     T -->|no| VP["validación de fase<br/>(falla→tarea · dep. SQL→diferir)"]
-    VP --> CK["update CHECKPOINT (Completed/Next)"]
+    VP --> RV["gate de revisión de cierre<br/>(diff + convenciones ambientes → corregir/diferir)"]
+    RV --> CK["update CHECKPOINT (Completed/Next)"]
     CK --> CM["proponer commits por fuente"]
     CM -->|aprobado| P
     CM -->|rechazado| RJ["cambios quedan · registrar 'sin commitear'"]
@@ -159,6 +177,6 @@ flowchart TD
 
 ## Convergence / exit
 
-- Plan completo + validación OK (o diferida con handoff) → `Marcar plan done`.
+- Plan completo + validación OK (o diferida con handoff) + **cada fase pasó su gate de revisión de cierre** antes de commitear → `Marcar plan done`.
 - `Cerrar` (control `flow`, en cualquier momento) → `finalize` persiste `CHECKPOINT` (y `BACKLOG` solo si quedó algo sin ejecutar / sin commitear / sin aplicar), cierra la session, reporta.
 - La promoción de artefactos a `docs/` (vía `export-*`) es **siempre** un paso posterior y explícito, fuera de este loop.

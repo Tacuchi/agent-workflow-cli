@@ -112,6 +112,8 @@ Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable. P
 
 Cada loop tiene un **convergence gate** read-only antes de ofrecer `Guardar`/`done`, que es operacionalmente **"todos los `SESSION.Success criteria` en verde"** (*verification-first*): chequea invariantes propios del entregable y lo que falle vuelve como gap (en `spec-refine-loop` es el *analyze gate*; en `plan-new-loop` —y en `plan-refine-loop`— la coherencia del plan; en `plan-exec-loop`, la validación final; en `quick-loop`, una validación puntual proporcional). El detalle vive en cada loop.
 
+Los loops que **editan código** (`plan-exec-loop` por fase, `quick-loop` proporcional) corren además un **gate de revisión de cierre** ANTES de proponer cada commit: re-lectura **independiente** del diff aplicando las **convenciones ambientes instaladas** (el host las auto-descubre; el workflow crea el momento, no las bindea — no es un rol); los hallazgos se corrigen (re-validando) o se difieren justificados. Nada llega a un commit propuesto sin revisar. Ver `loops/plan-exec-loop/SKILL.md` § *Delta 5*.
+
 `spec-new` no tiene loop (single-pass): **6 comandos / 5 loops**.
 
 ### The `export-*` family (única vía artefacto → `docs/`)

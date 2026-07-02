@@ -9,7 +9,9 @@ description: >-
   como log vivo: CHECKPOINT siempre, BACKLOG solo si difiere) y de plan-exec-loop
   (git seguro: rama esperada antes de editar + commit propuesto, nunca
   push/--amend/--no-verify; la IA nunca ejecuta DML, migraciones a SCRIPTS.sql;
-  sin auto-export). Sus deltas: sin fases ni plan-doc (el prompt ES la tarea),
+  sin auto-export; gate de revisión de cierre proporcional: re-lee el diff con
+  las convenciones ambientes instaladas y corrige antes de proponer el commit).
+  Sus deltas: sin fases ni plan-doc (el prompt ES la tarea),
   una sola session ligera (<slug>-quick), un solo commit; y escalación con
   handoff si la tarea crece (propone subir a SPEC/PLAN dejando el código a
   medias como contexto). NO toca docs/. Lo arranca /w:quick y es reanudable.
@@ -44,7 +46,7 @@ QUICK
 ## Inherits
 
 - del **chasis** [`spec-refine-loop`](../spec-refine-loop/SKILL.md): **objetivo persistente** (acá el más directo: el prompt *es* el objetivo) + **verification-first** (`SESSION.Success criteria` proporcional), gap-driven (mínimo), *structured-choice* ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`), `research` **inline** + regla BD read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only), compact/resume, **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
-- de [`plan-exec-loop`](../plan-exec-loop/SKILL.md): **git** (rama segura antes de editar + commit propuesto; nunca `push`/`--amend`/`--no-verify`), **BD** (la IA nunca ejecuta DML; migraciones → `SCRIPTS.sql` de la session), **sin auto-export** (no toca otras carpetas `docs/`).
+- de [`plan-exec-loop`](../plan-exec-loop/SKILL.md): **git** (rama segura antes de editar + commit propuesto; nunca `push`/`--amend`/`--no-verify`), **BD** (la IA nunca ejecuta DML; migraciones → `SCRIPTS.sql` de la session), **sin auto-export** (no toca otras carpetas `docs/`), y el **gate de revisión de cierre** (§ *Delta 5* de plan-exec) en versión **proporcional**: antes de proponer el único commit, re-lectura del diff aplicando las convenciones ambientes instaladas → corregir o diferir justificado.
 
 ## Composes
 
@@ -56,7 +58,7 @@ QUICK
 
 - **Sin fases, sin plan-doc**: el prompt **es** la tarea (una sola unidad). No hay roadmap.
 - **Verification-first proporcional** (ceremonia mínima): aun acá se **siembra el check antes**, del tamaño de la tarea. Código: un test (repro del bug → fix) o "build/lint/tests existentes siguen verdes" (chore). **Análisis/diseño**: una **rúbrica falsable corta**, *ratificada por el usuario* antes de perseguirla. Es el `SESSION.Success criteria` del run (ver [chasis § Verification-first](../spec-refine-loop/SKILL.md)).
-- **Una sola session**. **Un solo commit** propuesto al final (solo si hubo cambios de código).
+- **Una sola session**. **Un solo commit** propuesto al final (solo si hubo cambios de código), **tras el gate de revisión de cierre proporcional** (heredado de plan-exec § *Delta 5*): re-lectura del diff + convenciones ambientes; corregir o diferir; nada llega al commit sin revisar.
 - **Escalación + handoff**: si la tarea crece (muchos archivos / ≥2 fuentes / necesita arquitectura) → propone subir a **SPEC/PLAN**. Si el usuario acepta:
   - el **código ya editado queda** en el working tree (no se revierte) **y se registra** en `CHECKPOINT` + `BACKLOG` ("cambios sin commitear en `<fuente>` — código a medias; decidir commit/descartar al retomar") — reusando **ambas** mitades del patrón "commit rechazado" de plan-exec (no revertir **y** registrar lo sin commitear). Crítico en la rama **SPEC**, que no retoma el working tree;
   - la session quick va a `finalize`, persistiendo `CHECKPOINT` + `BACKLOG` con un **puntero** al spec/plan sembrado (Followups: "escalado a `docs/specs/NNN` o `docs/plans/PPP` — retomar ahí");
@@ -91,7 +93,10 @@ quick-loop(prompt):
     si la tarea CRECE → proponer escalar a SPEC/PLAN
         si acepta → handoff (avance queda; BACKLOG→spec/plan sembrado) → goto finalize
   convergence gate: Success criteria en verde                # tests verdes si código · rúbrica satisfecha si análisis/diseño
-  si hubo cambios de código → proponer commit (aprobar antes)   # nunca push/amend/--no-verify
+  si hubo cambios de código:
+    gate de revisión de cierre (proporcional):               # re-lectura del diff + convenciones ambientes instaladas
+        hallazgos → corregir (re-validar) ó diferir justificado (BACKLOG)
+    proponer commit (aprobar antes)                          # nunca push/amend/--no-verify; solo tras el gate
   structured_choice(contenido: [Cerrar tarea, Preguntar algo más], flow: [Compactar, Cerrar])
 finalize: CHECKPOINT (DESPUÉS: Pending→Completed) + BACKLOG (solo si queda algo diferido) + cerrar session + reportar
 ```
@@ -106,14 +111,15 @@ flowchart TD
     GROW -->|sí| ESC["escalar a SPEC/PLAN<br/>avance queda · BACKLOG→spec/plan sembrado"]
     ESC --> FIN
     GROW -->|no| V["convergence gate:<br/>Success criteria en verde"]
-    V --> CM["si hubo código → proponer commit (aprobar)"]
+    V --> RV["si hubo código → gate de revisión de cierre<br/>(diff + convenciones ambientes → corregir/diferir)"]
+    RV --> CM["proponer commit (aprobar)"]
     CM --> Q["structured-choice[Cerrar · Preguntar más]<br/>flow[Compactar · Cerrar]"]
     Q --> FIN["finalize: CHECKPOINT + BACKLOG + cerrar"]
 ```
 
 ## Convergence / exit
 
-- **Success criteria en verde** (proporcional) + commit propuesto si hubo código (o aprobado saltarlo) → `Cerrar`.
+- **Success criteria en verde** (proporcional) + gate de revisión de cierre pasado y commit propuesto si hubo código (o aprobado saltarlo) → `Cerrar`.
 - `Cerrar`/`Compactar` (control `flow`) → persiste `CHECKPOINT` + `BACKLOG` (reanudable).
 - **Sin export**: nada va a `docs/`. Si algo amerita preservarse → se promueve aparte vía `export-*`, o se escala a SPEC/PLAN.
 

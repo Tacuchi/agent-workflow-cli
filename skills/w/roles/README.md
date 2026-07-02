@@ -24,6 +24,8 @@ All 6 roles, their built-in defaults, their tier, and which loops/exports compos
 - `should` — loaded on-demand; active by default but lower priority to override.
 
 > **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
+>
+> **La revisión de cierre tampoco es un rol** (decisión deliberada — se evaluó y descartó un rol `conventions`/`rules`/`review`): el **gate de revisión de cierre** de `plan-exec-loop`/`quick-loop` (pre-commit) es un **paso del loop**; el loop crea el **momento** y las convenciones ambientes instaladas lo llenan. Un rol que "señale las skills del marketplace" re-acoplaría lo que esta extracción desacopló.
 
 ---
 

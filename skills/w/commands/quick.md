@@ -27,6 +27,7 @@ Para tareas acotadas y directas que no justifican pasar por SPEC ni PLAN. Siempr
 
 - Edita código en las fuentes del workspace.
 - Artefactos mínimos en la sesión (DECISION lazy, commit propuesto).
+- **Gate de revisión de cierre proporcional** antes de proponer el único commit: re-lee el diff aplicando las convenciones ambientes instaladas y corrige o difiere (ver `../loops/quick-loop/SKILL.md` § *Sequence*).
 - **No toca `docs/`** ni exporta nada.
 - **Escala** a SPEC/PLAN si emerge complejidad (muchos archivos, ≥2 fuentes, necesita arquitectura, o el cambio es feature/refactor).
 

@@ -91,7 +91,8 @@ spec-refine-loop  ── CHASIS (patrón de referencia: objetivo persistente + v
         ├── plan-refine-loop (heir)  → deltas: refina el plan in place (aux, opcional);
         │                               reusa gap taxonomy + coherence gate de plan-new
         ├── plan-exec-loop   (heir)  → deltas: ejecución real (código/BD/git),
-        │                               una sola session por run, sin auto-export
+        │                               una sola session por run, gate de revisión
+        │                               de cierre pre-commit, sin auto-export
         └── quick-loop       (heir)  → deltas: ceremonia mínima, 1 session,
                                         hereda git/BD/no-export de plan-exec
 ```

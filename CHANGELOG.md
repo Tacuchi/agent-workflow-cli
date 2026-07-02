@@ -4,6 +4,19 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.8.0] — 2026-07-02
+
+**Nada llega a un commit sin revisar: gate de revisión de cierre en los loops que editan código.** `plan-exec-loop` gana un nuevo **Delta 5 — Gate de revisión de cierre**: en cada límite de fase, tras la validación y **antes de proponer los commits de esa fase** (también en un `Cerrar` anticipado), una re-lectura **independiente** del diff aplica las **convenciones ambientes instaladas** (estándares de código/stack, seguridad, revisión de diffs — p.ej. las familias `dev-conventions`/`qtc-conventions` del marketplace, si están en el host) y **corrige** los hallazgos (re-validando la fase) o los **difiere justificados** (`Open questions` + `BACKLOG`). `quick-loop` lo hereda **proporcional** (antes de su único commit). Decisión de modelado deliberada: **NO es un rol** — se evaluó y descartó un rol `conventions`/`rules`/`review`; el workflow **crea el momento** y las skills ambientes lo llenan (auto-descubiertas por `description`), preservando el desacople de la extracción dev-conventions (el workflow sigue sin nombrar ni depender del marketplace). Sin skills de convenciones instaladas, degrada a un checklist genérico mínimo. Solo doctrina — bundle `w` 9.5.0 → **9.6.0**, sin cambios de runtime. Espeja `docs/referencias/` del hub de diseño.
+
+### Added
+
+- **`loops/plan-exec-loop` § Delta 5 — Gate de revisión de cierre (convenciones, pre-commit)**: re-lectura independiente del diff por fase + convenciones ambientes; corregir-y-revalidar o diferir justificado; integridad del gate (nunca debilitar un check para pasar); artifact-first (`CHECKPOINT.Next = "review fase N"`) + verification-first (Success criterion sembrado). El delta *Completitud/cierre* pasa a Delta 6. Sequence y mermaid actualizados; el convergence gate exige "cada fase pasó su gate de revisión antes de commitear".
+- **`loops/quick-loop`** — hereda el gate en versión proporcional: re-lectura del diff + convenciones ambientes antes de proponer el único commit.
+
+### Changed
+
+- **Doctrina transversal**: `SKILL.md` (orientación) documenta el gate pre-commit de los loops que editan código; `loops/README` (diagrama chassis/heirs) y los commands `plan-exec`/`quick` lo referencian; `roles/README` registra la decisión "la revisión de cierre NO es un rol" junto a la nota de convenciones ambientes.
+
 ## [14.7.0] — 2026-07-01
 
 **Los planes con UI ahora producen design SPECs por pantalla.** La capacidad `ui-design` (built-in `ui-spec`) deja de ser exclusiva del flujo SPEC: cuando el plan **incluye UI**, `plan-new-loop`/`plan-refine-loop` la componen para autorar **design SPECs** — `NNN-SPEC-<SLUG>.md`, un artefacto **por pantalla** (`001-SPEC-MODAL-EXPORT.md`, `002-SPEC-ADMIN-DASHBOARD.md`; numeración local a la sesión) — dentro de su propia sesión de PLAN. Derivan de la sección `## UI spec` del spec si existe; las Tasks UI del plan referencian la ruta del SPEC vigente (fuente de verdad) y `plan-exec-loop` los lee read-only como referencia de diseño. El requirement-spec y el plan siguen siendo documentos (invariante 3 intacta; la grafía `SPEC` MAYÚSCULAS = artefacto desambigua). Solo doctrina — bundle `w` 9.4.0 → **9.5.0**, sin cambios de runtime. Espeja `docs/referencias/` del hub de diseño.
