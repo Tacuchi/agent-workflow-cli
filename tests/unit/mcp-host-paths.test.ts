@@ -9,11 +9,11 @@ import {
 } from "../../src/application/mcp-host-paths.js";
 import { readMcpEntry } from "../../src/application/mcp-host-reader.js";
 import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
+import { resolveHosts } from "../../src/cli/commands/mcp.js";
+import type { ParsedArgs } from "../../src/cli/parser.js";
+import type { CliContext } from "../../src/cli/types.js";
 import { HARNESSES } from "../../src/domain/harnesses.js";
 import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
-import { resolveHosts } from "../../src/cli/commands/mcp.js";
-import type { CliContext } from "../../src/cli/types.js";
-import type { ParsedArgs } from "../../src/cli/parser.js";
 
 const HOME = "/home/u";
 
@@ -33,7 +33,9 @@ describe("mcp-host-paths — global config resolution (writer/reader/detect sing
   });
 
   it("crush: XDG on unix, %LOCALAPPDATA% on win32, CRUSH_GLOBAL_CONFIG overrides all", () => {
-    expect(crushGlobalMcpFile(HOME, "linux", {})).toBe(join(HOME, ".config", "crush", "crush.json"));
+    expect(crushGlobalMcpFile(HOME, "linux", {})).toBe(
+      join(HOME, ".config", "crush", "crush.json"),
+    );
     expect(crushGlobalMcpFile(HOME, "win32", { LOCALAPPDATA: "C:/Users/u/AppData/Local" })).toBe(
       join("C:/Users/u/AppData/Local", "crush", "crush.json"),
     );
@@ -74,16 +76,16 @@ describe("global-scope round-trip write↔read (opencode/crush with XDG)", () =>
     scopeDir = mkdtempSync(join(tmpdir(), "aw-mcp-global-"));
     savedXdg = process.env.XDG_CONFIG_HOME;
     savedCrushCfg = process.env.CRUSH_GLOBAL_CONFIG;
-    delete process.env.XDG_CONFIG_HOME;
-    delete process.env.CRUSH_GLOBAL_CONFIG;
+    Reflect.deleteProperty(process.env, "XDG_CONFIG_HOME");
+    Reflect.deleteProperty(process.env, "CRUSH_GLOBAL_CONFIG");
   });
 
   afterEach(() => {
     rmSync(scopeDir, { recursive: true, force: true });
     if (savedXdg !== undefined) process.env.XDG_CONFIG_HOME = savedXdg;
-    else delete process.env.XDG_CONFIG_HOME;
+    else Reflect.deleteProperty(process.env, "XDG_CONFIG_HOME");
     if (savedCrushCfg !== undefined) process.env.CRUSH_GLOBAL_CONFIG = savedCrushCfg;
-    else delete process.env.CRUSH_GLOBAL_CONFIG;
+    else Reflect.deleteProperty(process.env, "CRUSH_GLOBAL_CONFIG");
   });
 
   it("opencode global honors XDG_CONFIG_HOME end-to-end (writer and reader agree)", () => {
@@ -122,7 +124,9 @@ describe("resolveHosts — host anfitrión data-driven desde el registro", () =>
     return { rest: [], plugin: {}, flags: new Set(), values: new Map(), valuesMulti: new Map() };
   }
   function ctxWithEnv(vars: Record<string, string>): CliContext {
-    return { env: { get: (k: string) => vars[k], homeDir: () => HOME, cwd: () => "/cwd" } } as unknown as CliContext;
+    return {
+      env: { get: (k: string) => vars[k], homeDir: () => HOME, cwd: () => "/cwd" },
+    } as unknown as CliContext;
   }
 
   it("cada harness con mcpHostId resuelve SOLO su propio host (sin fan-out)", () => {

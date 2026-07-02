@@ -1,12 +1,12 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { sessionArtifactsCommand } from "../../src/cli/commands/session-artifacts.js";
-import type { CliContext } from "../../src/cli/types.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
+import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
 // Regression: los 4 export-* delegan la LECTURA de artefactos a session-artifacts,
@@ -37,7 +37,11 @@ describe("session-artifacts --dump", () => {
     await writeFile(join(sessionDir, "scripts", "SCRIPTS.sql"), "-- read-only\n");
     const fs = new NodeFileSystem();
     const paths = new PathsService(normalizeNamespace("workflow"), workdir, workdir);
-    ctx = { fs, env: { homeDir: () => workdir, cwd: () => workdir, get: () => undefined }, paths } as unknown as CliContext;
+    ctx = {
+      fs,
+      env: { homeDir: () => workdir, cwd: () => workdir, get: () => undefined },
+      paths,
+    } as unknown as CliContext;
   });
 
   afterEach(async () => {
@@ -45,7 +49,10 @@ describe("session-artifacts --dump", () => {
   });
 
   it("devuelve {path, content, size} por kind para una session del naming nuevo", async () => {
-    const result = await sessionArtifactsCommand.execute(args({ code: "012", dump: "objetivo,decisiones,conclusiones,scripts" }), ctx);
+    const result = await sessionArtifactsCommand.execute(
+      args({ code: "012", dump: "objetivo,decisiones,conclusiones,scripts" }),
+      ctx,
+    );
     expect(result.ok).toBe(true);
     const data = result.data as Record<string, { path: string; content: string } | unknown>;
     expect(data.session).toBe("012-foo-quick");
@@ -59,7 +66,15 @@ describe("session-artifacts --dump", () => {
     const result = await sessionArtifactsCommand.execute(args({ code: "012" }, ["--dump"]), ctx);
     expect(result.ok).toBe(true);
     const data = result.data as Record<string, unknown>;
-    for (const kind of ["objetivo", "decisiones", "conclusiones", "tasks", "checkpoint", "backlog", "scripts"]) {
+    for (const kind of [
+      "objetivo",
+      "decisiones",
+      "conclusiones",
+      "tasks",
+      "checkpoint",
+      "backlog",
+      "scripts",
+    ]) {
       expect(kind in data, kind).toBe(true);
     }
   });
