@@ -4,11 +4,11 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [17.0.0] — 2026-07-03
 
-**Reorganización de la TUI + administrador de skills sueltas** (spec 007 / plan 004 del workspace). Cuatro frentes: MCP a user scope, `[Workflow]`→`[Workflows]` con la administración por host, motor de skills sueltas (modelo skills.sh) y `[Skills]` reescrito sobre él. Cada fase pasó un review gate adversarial multi-agente antes de su commit.
+**Reorganización de la TUI + administrador de skills sueltas** (spec 007 / plan 004 del workspace). Cuatro frentes: MCP a user scope, `[Workflow]`→`[Workflows]` con la administración por host, motor de skills sueltas (modelo skills.sh) y `[Skills]` reescrito sobre él. Cada fase pasó un review gate adversarial multi-agente antes de su commit. **Major** por el cambio de comportamiento de `self mcp`.
 
-### Changed (⚠ breaking — próxima release debería ser major)
+### Changed (⚠ breaking)
 
 - **`self mcp` (TUI e interactivo) instala/remueve/diagnostica en el scope de usuario** — el config global por host (`~/.claude.json` · `~/.codex/config.toml` · Warp por plataforma · `~/.gemini/settings.json` · opencode/crush XDG) en vez del `.mcp.json` del workspace. La acción explícita del usuario equivale al consentimiento del guard `global_requires_force`. Los MCP proyecto-scope existentes **no se migran ni se tocan**; `aw mcp setup/remove` (workspace por defecto; `--workspace <dir>` / `--global` con su guard `global_requires_force`) conserva su comportamiento. El estado instalado/drift se evalúa contra los archivos globales.
 - **`[Workflow]` → `[Workflows]`** (id interno y atajo `2` estables — prefs sin migración): absorbe la administración por host del bundle `w` que vivía en `[Skills]` (extraída como `HostAdminSection`); el informativo queda en overview de 1 línea + strip compacto de flows (FamilyCards/PhaseCards eliminadas). El tile "hosts" de `[Status]` navega a `[Workflows]`.
