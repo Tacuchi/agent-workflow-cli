@@ -32,7 +32,7 @@ Dos niveles, misma capacidad:
 
 En ambos, el loop aporta lo que el servicio viejo no tenía:
 
-- **Pregunta al humano** (design-system, tema, ambigüedades de pantalla) vía *structured-choice* (capacidad del arnés — ver `../../harness/SKILL.md`). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**.
+- **Pregunta al humano** (design-system, tema, ambigüedades de pantalla) vía *structured-choice* (regla canónica: `../../loops/CHASSIS.md` § *Structured-choice*; binding por arnés: `../../harness/SKILL.md`).
 - **Itera** gap-driven hasta converger.
 - Ofrece **variantes** y **cura** el resultado.
 

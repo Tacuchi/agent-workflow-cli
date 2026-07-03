@@ -21,10 +21,4 @@ Session type, **set by the parent loop** (not the user). Authoritative catalog: 
 > `research` is **not** a session type the loops create. Research is an **inline** activity: ANALYSIS-FILE / CONCLUSIONS are written into whatever session is active (`refine`/`exec`/`quick`) when it does investigation.
 
 ## Success criteria
-The run's **done-condition**, seeded when the session is created (**verification-first** — generalized TDD; see [`../../loops/CHASSIS.md`](../../loops/CHASSIS.md) § Verification-first): a checklist `[ ]` of **falsifiable** items (that *can* fail) defining "done". The loop **persists until they are all green** (it is the *persistent-objective* condition); `CHECKPOINT.Pending/Completed` tracks the **red→green** progress. Two forms:
-
-- **Executable** (code/script/fix): **runnable** tests/checks (unit, build, lint, bug repro) — literal TDD. May **reference** the repo's tests rather than copy them.
-- **Rubric** (analysis/design and other non-executable deliverables): items checked by **inspection** (e.g. "identifies every affected site with `file:line`"; "each decision: rationale + ≥1 alternative"). For **subjective** deliverables the AI **proposes** the rubric and the **human ratifies** it before pursuing it.
-
-> **Spec/plan** may **reference** the document's acceptance criteria instead of duplicating them. **Research** is the original particular case: its checklist marks the research concluded.
-> **If an item cannot be met** (no evidence, DB unavailable, irresolvable): it closes as `inconcluso` with a reason and the loop **degrades** (asks the human or defers to `Open questions`/`BACKLOG`) — never spinning in place.
+The run's **done-condition**, seeded at session creation: a checklist `[ ]` of **falsifiable** items. Executable deliverable → runnable tests/checks; non-executable → inspection rubric (the human ratifies it if subjective). Spec/plan sessions may **reference** the doc's acceptance criteria instead of duplicating them. Full doctrine: [`../../loops/CHASSIS.md`](../../loops/CHASSIS.md) § *Verification-first*.

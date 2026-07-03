@@ -24,7 +24,7 @@ El discriminador clave:
 | La pregunta... | Acción |
 |---|---|
 | puede responderse leyendo repo / datos (hechos objetivos del sistema) | **investigar** |
-| depende de preferencias, prioridades o decisiones del usuario | **preguntar al humano** vía *structured-choice* (capacidad del arnés — ver `../../harness/SKILL.md`). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**. |
+| depende de preferencias, prioridades o decisiones del usuario | **preguntar al humano** vía *structured-choice* (regla canónica: `../../loops/CHASSIS.md` § *Structured-choice*; binding por arnés: `../../harness/SKILL.md`) |
 | está parcialmente en el repo y parcialmente en intención del usuario | investigar primero, luego preguntar solo por la parte incierta |
 
 ## Composed by
@@ -118,4 +118,4 @@ No gradua a `docs/` (invariant #1). El loop que compone esta capacidad consume l
 
 ## Source
 
-Reciclado de `analyze-investigate`, `analyze-synthesize` y `analyze-conclude` del bundle viejo. Se conserva: el modelo de investigacion divergente → sintesis → conclusiones; las reglas read-only; el cost guard de queries; la discriminacion de gaps. Se descarta: la terminología de `flow=analyze`, `EVIDENCE.md`/`FINDINGS.md` como nombres canónicos (ahora `ANALYSIS-FILE.md`/`CONCLUSIONS.md`), el lifecycle de sesiones legacy (la research ahora es **inline**, sin sesión propia), y la modulacion por modalidad (technical/incident/data) — la skill de research es de propósito general.
+Racional e historia: diseño (`docs/referencias/workflow-roles/research.md`).

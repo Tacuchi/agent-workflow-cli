@@ -4,6 +4,26 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [15.2.0] — 2026-07-03
+
+**Ola 1 del informe 003 (claridad para modelos débiles):** la norma del bundle `w` se reestructura a forma imperativa — reglas numeradas, pseudocódigo y fuente única — con dieta de racional y **presupuesto de carga defendido por tests**. Bundle `w` 10.2.0 → **10.3.0**.
+
+### Added
+
+- `## Sequence` (pseudocódigo operativo) en `plan-new-loop` y `plan-refine-loop` — los 5 loops comparten ahora el mismo esqueleto ejecutable.
+- **Guards de doctrina** (`tests/unit/doctrine-guards.test.ts`): G1 presupuesto de carga garantizada por flujo (quick ≤40,5 kB, etc. — subir un techo es editar la tabla, nunca drift silencioso) · G2 techos de legibilidad en loops/commands (línea ≤900 chars, oración ≤60 palabras) · G4 presupuesto de descriptions por área · G5 forma canónica exacta del `## Inherits` (mata el parafraseo del motor).
+
+### Changed
+
+- **Regla de continuidad → 6 reglas numeradas** en `SKILL.md` § *Contexto operativo* (fuente única); el chasis referencia en 1 línea — muere la triple declaración con wording distinto.
+- **Chasis**: nueva § *Resolución de referencias* (regla global de layouts aplanados — reemplaza el boilerplate "(instalación normal) o …" repetido por link); § *Structured-choice* marcada **regla canónica** (los ~10 restatements de "≤3 + 1 flow" en roles/exports pasan a referencias); ciclo gap-driven en 5 pasos numerados; racional (analogía `/goal`) movido al diseño.
+- `## Inherits` de los 5 loops → forma canónica corta (pineada por G5); **descriptions de loops −38%** (490–561 chars); bullets de escalación de `quick-loop` → pasos numerados.
+- **Artefactos**: `SESSION.md` y `artifacts/README.md` vuelven a plantilla pura (doctrina por referencia al chasis/raíz); `TECHNICAL-NOTE.md` a esquema mínimo (2,9 kB → 1,1 kB).
+- **Roles**: parenteticals de structured-choice → referencia a la regla canónica; secciones `## Source` arqueológicas → puntero al diseño.
+- Precisión de contrato CLI: `aw next-number` "devuelve JSON — usá el campo `next`" (antes "solo devuelve el número").
+
+Cargas garantizadas: quick 41,1 → 39,1 kB (−5,0%) · plan-exec −3,9% · spec-refine −4,6%. El recorte mayor llega con la ola 2 (migración EN).
+
 ## [15.1.0] — 2026-07-03
 
 **Escalación en vivo QUICK → SPEC.** `quick-loop` gana un **gate de tamaño a la entrada** (corre ANTES de crear la session): si el objetivo excede un quick (≥2 señales claras), pregunta vía structured-choice — `Cambiar a SPEC` (recomendada) / `Seguir en quick` / `Recortar alcance` — y al aceptar la línea de trabajo pasa al flujo SPEC: borrador vía el procedimiento de `spec-new` + `spec-refine-loop` directo, sin re-invocar comandos. La escalación **mid-loop a SPEC** pasa de handoff diferido ("retomar ahí") a la misma transición en vivo tras el `finalize`; **a PLAN queda diferida** como hoy (siembra + puntero). Cambio de pura doctrina (más 1 string espejo de la TUI). Bundle `w` 10.1.0 → **10.2.0**.

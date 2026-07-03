@@ -3,15 +3,12 @@ name: plan-exec-loop
 description: >-
   Ejecuta un plan de implementación (docs/plans/PPP-plan-<slug>.md) como
   living doc: lo lee y actualiza fase a fase mientras edita el código real,
-  gestiona BD y git. Heir del chasis común de los loops (loops/CHASSIS.md —
-  motor gap-driven, research inline, structured-choice, artefactos como log
-  vivo, y las políticas de loops que editan código); sus deltas viven en el
-  cuerpo: session única reanudable, git seguro (rama verificada,
-  commits propuestos por fuente, nunca push/--amend/--no-verify), BD solo-
-  scripts (la IA nunca ejecuta DML/DDL), validación por fase y final, gate de
-  revisión de cierre pre-commit, y sin auto-export (solo escribe docs/plans).
-  Compone git y sql. Lo arranca /w:plan-exec. Invocar para implementar un plan
-  ya generado.
+  gestiona BD y git. Heir del chasis (loops/CHASSIS.md + CODE-POLICIES.md).
+  Deltas: session única reanudable, git seguro (rama verificada, commits
+  propuestos por fuente, nunca push/--amend/--no-verify), BD solo-scripts
+  (nunca ejecuta DML/DDL), validación por fase y final, gate de revisión de
+  cierre pre-commit, sin auto-export. Compone git y sql. Lo arranca
+  /w:plan-exec. Invocar para implementar un plan ya generado.
 ---
 
 # plan-exec-loop
@@ -41,7 +38,7 @@ Regla completa en el chasis (§ *docs/ boundary — sin auto-export*). Acá: la 
 
 ## Inherits
 
-Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.md` junto a este archivo (instalación aplanada) — el motor completo del loop (objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo, numeración, convergence gate, docs/ boundary) — **y** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** (o `CODE-POLICIES.md` junto a este archivo) — las *Políticas de loops que editan código* (git seguro · BD solo-scripts · gate de revisión de cierre) — **siempre antes** de estos deltas.
+Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **y** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** — las *Políticas de loops que editan código* — **siempre antes** de estos deltas. *(Si `../` no resuelve: mismos nombres junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*
 
 ## Composes
 

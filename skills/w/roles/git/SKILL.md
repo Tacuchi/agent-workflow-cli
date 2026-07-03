@@ -46,7 +46,7 @@ Y **siempre** prohibido, aún cuando el usuario pida commit: `--no-verify` (resp
 
 ### Operaciones read-only (siempre permitidas, sin preguntar)
 
-`status` · `log` · `diff` · `branch --show-current` · `rev-parse` · `show`. `git checkout` (cambio de rama) **no** es read-only: requiere *structured-choice* (capacidad del arnés — ver `../../harness/SKILL.md`; en **Claude Code** es `AskUserQuestion`, máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**; sin elección estructurada degrada a **markdown numerado**) aunque no sea destructivo (ver verificación de rama).
+`status` · `log` · `diff` · `branch --show-current` · `rev-parse` · `show`. `git checkout` (cambio de rama) **no** es read-only: requiere *structured-choice* (regla canónica: `../../loops/CHASSIS.md` § *Structured-choice*; binding por arnés: `../../harness/SKILL.md`) aunque no sea destructivo (ver verificación de rama).
 
 ### Verificación de rama (antes de editar)
 
@@ -68,7 +68,7 @@ Casos:
 Ante cualquier pedido o disparo de commit (cierre de loop, "commitea esto", "guardá los cambios"):
 
 1. Resolver las fuentes y su estado dirty/rama con `aw sources` (inventario con git status enriquecido; fallback: git directo por fuente).
-2. Si hay 1+ fuentes `dirty=true`, invocar **una sola** *structured-choice* con una pregunta de contenido por fuente dirty (máx 4 simultáneas → **≤3 preguntas de contenido + 1 control `flow`**; si N>3, en tandas):
+2. Si hay 1+ fuentes `dirty=true`, invocar **una sola** *structured-choice* con una pregunta de contenido por fuente dirty (≤3 por llamada + control `flow`; si N>3, en tandas):
    - Header de la pregunta: el `alias` de la fuente.
    - Opciones: "Aprobar sugerido (Recomendado)" con el mensaje canónico / "Saltar esta fuente". `Other` = mensaje custom.
 3. Ejecutar `git -C <path> commit -m "<msg>"` solo en las fuentes aprobadas, **una a una**. Respetar hooks (sin `--no-verify`).
@@ -116,4 +116,4 @@ Ninguno en `docs/`. Produce commits **solo** cuando el usuario aprueba, en los r
 
 ## Source
 
-Reciclada de la doctrina vieja: `doctrine/session/references/commits-policy.md` (Reglas 1-5: propose-then-execute, formato canónico, bypass) + `doctrine/session/references/branch-verification.md` (Casos A/B/C, cross-fuente hard gate). La verificación delega lo mecánico al CLI (`aw check-branch`, `aw sources`) — computarlo a mano en cada task pagaba tokens por trabajo que el runtime ya expone; el git read-only directo queda como fallback para repos sin workspace.
+Racional e historia: diseño (`docs/referencias/workflow-roles/git.md`).

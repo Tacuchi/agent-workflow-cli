@@ -16,19 +16,11 @@ Los **5 loops** corren este motor; cada uno agrega solo sus deltas:
 
 Un loop **es un objetivo persistente**: existe para cumplir el `SESSION.Objective` declarado al arrancar, y **no se considera terminado hasta que el convergence gate confirma que el objetivo se cumplió**. La iteración gap-driven es el *método*; los artefactos son el *registro*; el objetivo persistente es el *frame* que los gobierna.
 
-Está **modelado en cómo se comporta el `/goal` de Claude Code** (declarás un objetivo, el agente no para hasta cumplirlo, auto-completa al cumplirse, con corte explícito para abortar antes) pero como **doctrina agnóstica, no una dependencia del host**: el "no parar hasta converger" lo sostiene el propio loop (su `repeat:` + el convergence gate), no un Stop hook del arnés — ningún host necesita `/goal`. Y, a diferencia del `/goal` pelado, **deja registro durable** (artifact-first) que sobrevive compactación y resume.
+Es **doctrina agnóstica**, no una dependencia del host: el "no parar hasta converger" lo sostiene el propio loop (su `repeat:` + el convergence gate), no un hook del arnés — y **deja registro durable** (artifact-first) que sobrevive compactación y resume. *(Racional y análogo con el `/goal` de Claude Code: ver diseño, `workflow-loops/chassis.md`.)*
 
-| Comportamiento de `/goal` (ejemplo) | Análogo agnóstico en el loop |
-|---|---|
-| declarar el objetivo | `SESSION.Objective` |
-| no parar hasta cumplirlo | `repeat:` gap-driven hasta `gaps == ∅` |
-| objetivo cumplido → auto-clear | **convergence gate** pasa → `finalize` |
-| `/goal clear` (abortar antes) | control `flow` `Cerrar` |
-| la directiva sobrevive el contexto | `CHECKPOINT` + resume (compactación **y próximo prompt**) |
+> Cada heir instancia el frame: `spec-refine` persigue el spec; `plan-new`/`plan-refine` el plan hasta su gate; `plan-exec` el plan hasta su validación final; `quick-loop` es la encarnación más directa (el prompt *es* el objetivo).
 
-> Cada heir instancia el frame: `spec-refine` persigue el spec y `plan-new`/`plan-refine` el plan hasta su gate; `plan-exec` persigue el plan hasta su validación final; `quick-loop` es la encarnación más directa (el prompt *es* el objetivo) — el "símil a `/goal`" del modelo.
-
-> **Continuidad inter-turno (contexto operativo).** El mismo `CHECKPOINT`+resume que sobrevive la compactación gobierna también el **próximo prompt**: dentro de un workspace, un prompt **sin comando** **continúa/reabre la sesión más reciente** (la *última iniciada*) en vez de arrancar trabajo suelto — el objetivo persiste **entre turnos**, no solo dentro del run. Un **comando de flujo** señala "nueva línea de trabajo" (sesión nueva) — **salvo re-correr el mismo flujo sobre la misma entrada** (mismo spec/plan), que hace `create_or_resume`: reanuda/reabre la session existente en vez de duplicarla (ver *Compact / resume*, caso 3); la convergencia cierra la sesión y un prompt relacionado posterior la **reabre** (resume quita `.closed`). Es la fila 2 de la matriz de contexto operativo (ver [`../SKILL.md`](../SKILL.md) § *Contexto operativo*) — doctrina agnóstica que la IA evalúa en cada turno, no un Stop hook del host.
+> **Continuidad inter-turno.** El mismo `CHECKPOINT`+resume gobierna también el **próximo prompt**: el objetivo persiste **entre turnos**, no solo dentro del run. Las reglas canónicas (comando = línea nueva · re-run = `create_or_resume` · prompt pelado = continuar la más reciente · reapertura de cerradas · escalación consentida) viven en [`../SKILL.md`](../SKILL.md) § *Contexto operativo* — **única fuente**; este motor las ejecuta vía *Compact / resume* (caso 3).
 
 ## Verification-first
 
@@ -43,7 +35,9 @@ El objetivo persistente necesita una **condición de término checkable** — si
 | spec / plan | **rúbrica** = los acceptance criteria del documento (referenciados, no duplicados) | rúbrica |
 | análisis / diseño | **rúbrica falsable por inspección** (ej. "todos los afectados con `file:line`"; "cada decisión: rationale + ≥1 alternativa") | rúbrica |
 
-**Forma y peso escalan** (preserva la *ceremonia mínima* de quick): un chore es "tests/build existentes siguen verdes" (una línea); un feature, acceptance tests reales. No es "siempre escribir tests nuevos" — es "**siempre declarar el check antes**". Para deliverables **subjetivos** (análisis/diseño) la IA **propone** la rúbrica y el **humano la ratifica** (structured-choice) antes de perseguirla. **Criterio irresoluble** (sin evidencia, BD no disponible) → cierra `inconcluso` + el loop **degrada** (humano, o difiere a `Open questions`/`BACKLOG`); nunca itera en falso.
+- **Forma y peso escalan** (ceremonia mínima de quick preservada): chore = "tests/build existentes siguen verdes" (una línea); feature = acceptance tests reales. La regla es "**siempre declarar el check antes**", no "siempre escribir tests nuevos".
+- **Deliverable subjetivo** (análisis/diseño): la IA **propone** la rúbrica y el **humano la ratifica** (structured-choice) antes de perseguirla.
+- **Criterio irresoluble** (sin evidencia, BD no disponible): cierra `inconcluso` y el loop **degrada** (humano, o difiere a `Open questions`/`BACKLOG`) — **nunca itera en falso**.
 
 > El **convergence gate** (sección *Convergence / exit*) es, operacionalmente, **"todos los `Success criteria` en verde"**. Los gates por-heir (analyze gate; coherencia del plan — plan-new y plan-refine; validación final; validación puntual proporcional) son **instancias** de esto, con los criterios sembrados al inicio.
 
@@ -68,7 +62,13 @@ El loop trabaja **artifact-first**: el artefacto se **siembra antes** de ejecuta
 
 ## Motor gap-driven convergente
 
-El ciclo común (cada heir lo instancia en su `## Sequence`, con su propia gap taxonomy): `detect_gaps(work)` — menos los gaps *agotados* (ver *Research*) — → si `∅`, **convergence gate** (ver *Convergence / exit*); si hay gaps, tomar un batch (≤3), **sembrar** `CHECKPOINT.Pending/Next` (*artifact-first*), resolver cada gap con su **resolutor** — humano (structured-choice) · research inline · una capacidad compuesta (p. ej. `ui-design`) — según la *ask-vs-research rule*, **integrar** y actualizar `CHECKPOINT` → repetir.
+El ciclo común — cada heir lo instancia en su `## Sequence` con su propia gap taxonomy:
+
+1. `detect_gaps(work)`, menos los gaps *agotados* (ver *Research*).
+2. Si `∅` → **convergence gate** (ver *Convergence / exit*).
+3. Si hay gaps: tomar un batch (≤3) y **sembrar** `CHECKPOINT.Pending/Next` (*artifact-first*).
+4. Resolver cada gap con su **resolutor** según la *ask-vs-research rule*: humano (structured-choice) · research inline · una capacidad compuesta (p. ej. `ui-design`).
+5. **Integrar**, actualizar `CHECKPOINT` → repetir.
 
 ## Internal sessions (managed) — una session por run
 
@@ -116,7 +116,7 @@ La investigación es **inline**: una actividad **dentro de la session actual del
 
 ## Structured-choice (design & batching)
 
-*structured-choice* (capacidad del arnés — ver [`../harness/SKILL.md`](../harness/SKILL.md)). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**.
+**Regla canónica (única fuente — el resto del corpus solo referencia):** *structured-choice* = **≤3 preguntas de contenido + 1 control `flow`**, siempre. Binding por arnés en [`../harness/SKILL.md`](../harness/SKILL.md) (Claude Code: `AskUserQuestion`, máx 4 preguntas/llamada; sin elección estructurada, degrada a **markdown numerado**).
 
 - Como el control `flow` va **siempre** → **≤3 preguntas de contenido + 1 control `flow`**.
 - **control `flow`** (ciclo de vida, siempre presente): `Compactar` | `Cerrar`. Responder solo las preguntas de contenido (sin tocar `flow`) = seguir iterando.
@@ -152,8 +152,12 @@ Un loop escribe en `docs/` **solo** el doc de su propio flujo (spec-refine: `doc
 
 Los loops que **editan código** (`plan-exec-loop`, `quick-loop`) corren además las políticas de [`CODE-POLICIES.md`](CODE-POLICIES.md) — **git seguro** (rama verificada + commits propuestos) · **BD solo-scripts** · **gate de revisión de cierre** (proporcional en quick). Las mandan leer desde su `## Inherits` **junto con este chasis**; los loops de documento (spec-refine, plan-new, plan-refine) **no** las cargan — por eso viven en un doc aparte.
 
-## Qué NO es el chasis
+## Resolución de referencias (regla global de layout)
 
-- **No es una skill**: no tiene frontmatter, no aparece en el system prompt, no se invoca ni se bindea vía `.workflow/skills.toml`. Es un documento **referenciado**: entra al contexto solo porque un loop manda leerlo.
-- **No corre solo**: no define flujo, deliverable ni gap taxonomy — eso es de cada heir. Sin un heir, el chasis no hace nada.
-- **Localización**: los heirs lo referencian como `../CHASSIS.md` (instalación normal, árbol `w/loops/`). En instalaciones **aplanadas** (p. ej. Warp/Oz) puede estar como `CHASSIS.md` **junto al `SKILL.md` del loop** (ídem `CODE-POLICIES.md` para los loops que editan código). En esas copias aplanadas los **links salientes** del chasis (`../SKILL.md`, `../harness/`, `../artifacts/`, `../roles/`) pueden no resolver: son **profundización opcional** — la doctrina del motor es autocontenida.
+Vale para **toda** referencia relativa de la doctrina — no se repite por link:
+
+1. **Instalación normal** (árbol `w/`): la ruta relativa resuelve tal cual (`../CHASSIS.md`, `../../commands/spec-new.md`).
+2. **Instalación aplanada** (p. ej. Warp/Oz): los `.md` compartidos (`CHASSIS.md`, `CODE-POLICIES.md`) están **junto al `SKILL.md` del loop**; otro loop es una skill **hermana** `w-<loop>/` (ej. `../spec-refine-loop/SKILL.md` → `../w-spec-refine-loop/SKILL.md`).
+3. Referencia que no resuelva = **profundización opcional** — la doctrina de este motor es autocontenida.
+
+El chasis **no es una skill** (sin frontmatter; no se invoca ni se bindea vía `.workflow/skills.toml`): entra al contexto solo porque un loop manda leerlo desde su `## Inherits`. No define flujo, deliverable ni gap taxonomy — eso es de cada heir.

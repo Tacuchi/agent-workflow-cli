@@ -2,16 +2,12 @@
 name: plan-new-loop
 description: >-
   Genera un plan de implementación rico (docs/plans/PPP-plan-<slug>.md) a
-  partir de un spec (docs/specs/NNN-spec-<slug>.md). Heir del chasis común de
-  los loops (loops/CHASSIS.md — motor gap-driven convergente, session única
-  con research inline, structured-choice, artefactos como log vivo); sus
-  deltas viven en el cuerpo:
-  el plan absorbe el nivel TECHNICAL-NOTE + Phases/Tasks con estado vivo,
-  research de mapeo código/impacto, gap taxonomy de planificación, y si el
-  plan incluye UI compone ui-design para autorar design SPECs por pantalla
-  (NNN-SPEC-<SLUG>.md). Si el spec no está refinado sugiere spec-refine antes.
-  Lo arranca /w:plan-new y es reanudable. Invocar cuando un spec deba
-  convertirse en un plan ejecutable antes de implementar.
+  partir de un spec. Heir del chasis (loops/CHASSIS.md). Deltas: el plan
+  absorbe el nivel TECHNICAL-NOTE + Phases/Tasks con estado vivo, research de
+  mapeo código/impacto, gap taxonomy de planificación, y design SPECs por
+  pantalla vía ui-design si el plan incluye UI. Si el spec no está refinado
+  sugiere spec-refine antes. Lo arranca /w:plan-new; reanudable. Invocar
+  cuando un spec deba convertirse en un plan ejecutable.
 ---
 
 # plan-new-loop
@@ -33,11 +29,11 @@ PLAN
 ## Writes
 `docs/plans/PPP-plan-<slug>.md` (`generate`; **sobrescribe con confirmación** si existe). Solo escribe `docs/plans` — nunca otras carpetas `docs/` ni auto-export. Si el plan **incluye UI**, además produce **design SPECs** (`NNN-SPEC-<SLUG>.md`) como artefactos **de su sesión** (ver *Delta 4* — no son `docs/`, no hay auto-export).
 
-> **slug**: kebab-case corto derivado del Requirement del spec — solo `[a-z0-9-]`, ≤ ~5 palabras / ≤ 40 chars. El CLI solo devuelve el número `PPP`; el loop arma el nombre completo. Para localizar planes, glob `docs/plans/PPP-plan-*.md`.
+> **slug**: kebab-case corto derivado del Requirement del spec — solo `[a-z0-9-]`, ≤ ~5 palabras / ≤ 40 chars. `aw next-number docs/plans` devuelve JSON (campo `next` = `PPP`); el loop arma el nombre completo. Para localizar planes, glob `docs/plans/PPP-plan-*.md`.
 
 ## Inherits
 
-Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.md` junto a este archivo (instalación aplanada) — el motor completo del loop (objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo, numeración, convergence gate), **siempre antes** de estos deltas.
+Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **siempre antes** de estos deltas. *(Si `../` no resuelve: `CHASSIS.md` junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*
 
 ## Internal sessions — instancia PLAN-new
 
@@ -99,10 +95,44 @@ El research **inline** del chasis se especializa: mapear **código/impacto** —
 
 ## Delta 4 — Design SPECs (si el plan incluye UI)
 
-El gap **UI sin design SPEC** se resuelve **componiendo** la capacidad **`ui-design`** (default built-in [`ui-spec`](../../roles/ui-spec/SKILL.md); rebindeable vía `.workflow/skills.toml`; `off` → degrada a humano / `Open questions`): autora **un design SPEC por pantalla** como artefacto de la sesión — `NNN-SPEC-<SLUG>.md` (`001-SPEC-MODAL-EXPORT.md`, `002-SPEC-ADMIN-DASHBOARD.md`; numeración local a la sesión, ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)). **Deriva** de la sección `## UI spec` del spec si existe (la parte por pantalla y la eleva a detalle ejecutable); si no, autora desde el `Requirement` (design-system/tema/ambigüedades vía *structured-choice*, cuenta en el batch). Las **Tasks UI del plan referencian** la ruta de su SPEC — esa referencia es la fuente de verdad — y `plan-exec-loop` los lee como referencia de diseño. Es el mismo tercer modo de resolución de gap del chasis (junto a *research* y *humano*).
+El gap **UI sin design SPEC** se resuelve **componiendo** la capacidad **`ui-design`** (default built-in [`ui-spec`](../../roles/ui-spec/SKILL.md); rebindeable vía `.workflow/skills.toml`; `off` → degrada a humano / `Open questions`):
+
+- Autora **un design SPEC por pantalla** como artefacto de la sesión: `NNN-SPEC-<SLUG>.md` (numeración local a la sesión — ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
+- **Deriva** de la sección `## UI spec` del spec si existe (la parte por pantalla y la eleva a detalle ejecutable); si no, autora desde el `Requirement` (design-system/tema/ambigüedades vía *structured-choice*, cuenta en el batch).
+- Las **Tasks UI del plan referencian** la ruta de su SPEC — esa referencia es la **fuente de verdad** — y `plan-exec-loop` los lee como referencia de diseño.
+- Es el mismo tercer modo de resolución de gap del chasis (junto a *research* y *humano*).
+
+## Sequence
+
+```
+plan-new-loop(spec):
+  input = glob(docs/specs/NNN-spec-*.md) | ruta del argumento
+  si el spec NO tiene ## Refinement decisions + ## Q&A traceability:
+    soft-suggest /w:spec-refine (el usuario puede proceder igual)
+  session = create_or_resume("<slug>-plan-new")               # CLI antepone NNN global
+  seed SESSION.Success criteria = checklist del coherence gate  # verification-first, ANTES
+  work = esqueleto del plan (Delta 1) derivado del spec (+ avance del checkpoint si reanuda)
+  repeat:                                                      # motor del chasis
+    gaps = detect_gaps(work)  (taxonomy Delta 2)  menos los agotados
+    if gaps == ∅: break
+    batch ≤3 → sembrar CHECKPOINT.Pending/Next → resolver cada gap:
+      research (mapea código/impacto — Delta 3) · humano (structured-choice) · ui-design (Delta 4)
+    integrar + update CHECKPOINT                               # ciclo artifact-first
+  coherence gate (read-only) = Success criteria en verde:
+    - cada acceptance criterion del spec traza a una fase/tarea
+    - Final behavior cubre los criterios
+    - fases XS–S · tareas XS · deps sin ciclos · Impacted consistente con Solution
+    - (UI) cada pantalla/tarea UI traza a su design SPEC y no contradice ## UI spec
+    lo que falle → vuelve como gap
+  structured_choice(contenido: [Guardar plan, Preguntar algo más], flow: [Compactar, Cerrar])
+  Guardar → write docs/plans/PPP-plan-<slug>.md (con confirmación si existe)
+finalize: CHECKPOINT persiste (+ BACKLOG solo si difiere) + cerrar session + reportar
+```
 
 ## Convergence / exit
 
-Sin gaps materiales → **coherence gate** (read-only) = **`Success criteria` en verde** (*verification-first*; es el "convergence gate" del chasis para PLAN-new): cada `acceptance criterion` del spec **traza** a una fase/tarea, `Final behavior` los cubre, fases XS–S / tareas XS, `deps` sin ciclos, `Impacted` consistente con `Solution`; y si el plan incluye UI: cada pantalla/tarea UI **traza a su design SPEC** (`NNN-SPEC-*.md`) y los SPECs no contradicen el `## UI spec` del spec (si existe). Lo que falle **vuelve como gap** — la trazabilidad criterio→tarea es una **invariante chequeada**, no una sección aparte. Si pasa → *structured-choice* (contenido: `Guardar plan` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`) → al `Guardar`, escribe `docs/plans/PPP-plan-<slug>.md` (con confirmación si existe) → `finalize` (persiste `CHECKPOINT`, y `BACKLOG` solo si difiere; cierra la session, reporta). `Cerrar` en cualquier momento → `finalize` igual.
+- **Sin gaps materiales** → **coherence gate** (checklist del *Sequence*; la instancia PLAN-new del convergence gate del chasis). La trazabilidad criterio→tarea es una **invariante chequeada**, no una sección aparte.
+- Pasa → `Guardar plan` (escribe con confirmación si existe) → `finalize`.
+- `Cerrar` en cualquier momento → `finalize` (persiste `CHECKPOINT`; `BACKLOG` solo si difiere; cierra la session, reporta).
 
 > **Después de generar:** el plan puede ir directo a `plan-exec`, o —si surgen cambios antes de ejecutar (nuevos requerimientos, ajustes de alcance)— pasar por [`plan-refine-loop`](../plan-refine-loop/SKILL.md) (`/w:plan-refine`, auxiliar y **no obligatorio**), que lo refina in place.

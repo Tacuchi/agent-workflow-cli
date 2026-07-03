@@ -2,16 +2,12 @@
 name: plan-refine-loop
 description: >-
   Refina un plan existente (docs/plans/PPP-plan-<slug>.md) editándolo IN
-  PLACE, como paso auxiliar y NO obligatorio del flujo PLAN antes de plan-
-  exec. Es a plan-new lo que spec-refine es a spec-new. Heir del chasis común
-  de los loops (loops/CHASSIS.md — motor gap-driven, session única con
-  research inline, structured-choice, artefactos como log vivo); reusa la gap
-  taxonomy y el coherence gate de plan-new-loop, agrega Refinement
-  decisions/Q&A traceability al plan
-  (traza, sin gating), y si el refine toca UI compone ui-design y
-  produce/actualiza design SPECs por pantalla. Lo arranca /w:plan-refine;
-  reanudable y re-corrible a demanda. Invocar cuando un plan ya generado deba
-  ajustarse antes de ejecutarlo.
+  PLACE — paso auxiliar y NO obligatorio antes de plan-exec. Heir del chasis
+  (loops/CHASSIS.md). Deltas: reusa la gap taxonomy y el coherence gate de
+  plan-new-loop, agrega Refinement decisions / Q&A traceability (traza, sin
+  gating), y produce/actualiza design SPECs vía ui-design si el refine toca
+  UI. Lo arranca /w:plan-refine; reanudable y re-corrible a demanda. Invocar
+  cuando un plan ya generado deba ajustarse antes de ejecutarlo.
 ---
 
 # plan-refine-loop
@@ -40,7 +36,7 @@ Actualiza `docs/plans/PPP-plan-<slug>.md` **in place** (cuando el usuario elige 
 
 ## Inherits
 
-Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.md` junto a este archivo (instalación aplanada) — el motor completo del loop (objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo, numeración, convergence gate), **siempre antes** de estos deltas.
+Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **siempre antes** de estos deltas. *(Si `../` no resuelve: `CHASSIS.md` junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*
 
 ## Internal sessions — instancia PLAN-refine
 
@@ -90,10 +86,38 @@ El resume **keya off el `CHECKPOINT`** de la refine session, no de un archivo "r
 
 1. **En curso** (existe `CHECKPOINT.md` en la refine session) → reanuda desde el avance (gaps resueltos, Q&A, `attempts`, research inline en curso).
 2. **Sin avance** (no hay CHECKPOINT y el plan **no** tiene `Refinement decisions`/`Q&A traceability`) → arranca desde cero leyendo el plan (`PPP-plan-*.md`).
-3. **Ya refinado / re-refine on demand** (no hay CHECKPOINT abierto pero el plan **ya tiene** `Refinement decisions`/`Q&A traceability`) → **operación de primera clase**: mientras el flujo siga en PLAN, re-correr `/w:plan-refine` sobre el mismo plan **cuantas veces haga falta** está soportado. `create_or_resume` detecta la refine session existente —típicamente **cerrada** tras converger— por descriptor + `## Origin` y la **reabre** (ver chasis § *Internal sessions*: detección con `aw sessions --state all` / `aw resume-summary --include-recent-closed`, reapertura con `aw session-resume --code <NNN> --reopen`); re-refinamiento incremental leyendo el **plan mismo**; al `Guardar`, edita in place con confirmación.
+3. **Ya refinado / re-refine on demand** (sin CHECKPOINT abierto, pero el plan **ya tiene** las 2 secciones) → **operación de primera clase**, cuantas veces haga falta mientras el flujo siga en PLAN:
+   - `create_or_resume` detecta la refine session existente (típicamente **cerrada** tras converger) por descriptor + `## Origin` y la **reabre**: `aw session-resume --code <NNN> --reopen` (detección: `aw sessions --state all`).
+   - Re-refinamiento incremental leyendo el **plan mismo**; al `Guardar`, edita in place con confirmación.
 
 > **Continuidad inter-turno** (chasis, fila 2): un **comando de flujo** abre "nueva línea de trabajo" (sesión nueva) — **salvo re-correr el mismo flujo sobre la misma entrada** (mismo plan), que hace `create_or_resume` (reanuda/reabre en vez de duplicar).
 
+## Sequence
+
+```
+plan-refine-loop(plan):
+  input = glob(docs/plans/PPP-plan-*.md) | ruta del argumento   # siempre el plan mismo (in place)
+  session = create_or_resume("<slug>-plan-refine")              # reabre si existe (ver Compact / resume)
+  seed SESSION.Success criteria = checklist del coherence gate  # verification-first, ANTES
+  work = read(plan) (+ el spec si hay que re-alinear; + avance del checkpoint si reanuda)
+  repeat:                                                       # motor del chasis
+    gaps = detect_gaps(work)  (taxonomy de plan-new + deriva plan↔spec)  menos los agotados
+    if gaps == ∅: break
+    batch ≤3 → sembrar CHECKPOINT.Pending/Next → resolver cada gap:
+      research (acotado al delta — Delta 3) · humano (structured-choice) ·
+      ui-design (Delta 4, solo pantallas nuevas/cambiadas)
+    integrar + update CHECKPOINT                                # ciclo artifact-first
+  coherence gate (read-only) = Success criteria en verde:
+    - checklist de plan-new (criterio→tarea · Final behavior · XS–S/XS · deps · Impacted↔Solution · UI→SPEC vigente)
+    - propio del re-refine: el plan quedó REALINEADO con lo que cambió
+    lo que falle → vuelve como gap
+  structured_choice(contenido: [Guardar plan refinado, Preguntar algo más], flow: [Compactar, Cerrar])
+  Guardar → edit in place (con confirmación) + inserta/actualiza Refinement decisions + Q&A traceability
+finalize: CHECKPOINT persiste (+ BACKLOG solo si difiere) + cerrar session + reportar
+```
+
 ## Convergence / exit
 
-Sin gaps materiales → **coherence gate** (read-only) = **`Success criteria` en verde** (*verification-first*; el "convergence gate" del chasis para PLAN, mismo que plan-new): cada `acceptance criterion` del spec **traza** a una fase/tarea, `Final behavior` los cubre, fases XS–S / tareas XS, `deps` sin ciclos, `Impacted` consistente con `Solution`, si hay UI cada pantalla/tarea UI **traza a su design SPEC vigente**, y —propio del re-refine— **el plan quedó realineado** con lo que cambió. Lo que falle **vuelve como gap**. Si pasa → *structured-choice* (contenido: `Guardar plan refinado` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`) → al `Guardar`, edita `docs/plans/PPP-plan-<slug>.md` in place (con confirmación) + inserta `Refinement decisions`/`Q&A traceability` → `finalize` (persiste `CHECKPOINT`; `BACKLOG` solo si difiere; cierra la session, reporta). `Cerrar` en cualquier momento → `finalize` igual.
+- **Sin gaps materiales** → **coherence gate** (checklist del *Sequence*; el mismo gate de plan-new + la realineación propia del re-refine).
+- Pasa → `Guardar plan refinado` (edita in place con confirmación) → `finalize`.
+- `Cerrar` en cualquier momento → `finalize` (persiste `CHECKPOINT`; `BACKLOG` solo si difiere; cierra la session, reporta).

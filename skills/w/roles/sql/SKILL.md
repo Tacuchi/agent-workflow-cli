@@ -134,4 +134,4 @@ Nunca escribe a `docs/` desde un loop (invariante 1: solo `export-*` exporta). N
 
 ## Source
 
-Reciclada de `standards/sql-script-organizer/` (staging `SCRIPTS.sql`, markers, 4 categorías, estilo) + `standards/sql-rollback-generator/` (derivación de rollback, irreversibles, Fase 5) + reglas de estilo de `standards/coding-standards/references/database-conventions.md` (esa familia hoy es **ambiente** —extraída del workflow—; las reglas quedan **inlined** arriba, sin dependencia externa). Se moderniza al modelo nuevo: el bundle lo arma `export-scripts`, no la skill; el "release/graduate" viejo se reemplaza por `export-scripts`.
+Reglas autocontenidas (sin dependencia de skills externas). Racional e historia: diseño (`docs/referencias/workflow-roles/sql.md`).

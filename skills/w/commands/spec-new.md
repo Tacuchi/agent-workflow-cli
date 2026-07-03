@@ -23,7 +23,7 @@ Genera `docs/specs/NNN-spec-<slug>.md` en una sola pasada a partir del prompt en
 >
 > La investigación a profundidad (cerrar gaps, mapear código, consultar BD, research autónomo) es trabajo de **`spec-refine`**, no de aquí.
 
-1. Ejecutar `aw next-number docs/specs` para obtener `NNN` (única tool de shell necesaria). El CLI solo devuelve el número; el slug lo arma este comando.
+1. Ejecutar `aw next-number docs/specs` (única tool de shell necesaria): devuelve JSON — usá el campo `next` como `NNN`. El slug lo arma este comando.
 2. Derivar el `<slug>`: kebab-case corto del Requirement — solo `[a-z0-9-]`, ≤ ~5 palabras / ≤ 40 chars.
 3. Crear `docs/specs/NNN-spec-<slug>.md` parafraseando `$ARGUMENTS` en el esquema de borrador (ver abajo). Lectura del repo: opcional y mínima (p. ej. un archivo que el usuario citó) — nunca un barrido ni research.
 4. Mostrar el archivo generado y el próximo paso sugerido (`/w:spec-refine docs/specs/NNN-spec-<slug>.md`).

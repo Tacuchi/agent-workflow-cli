@@ -19,7 +19,7 @@ Central distinction of the model:
 
 > An artifact may be **promoted** to a `docs/` document (e.g. `SCRIPTS.sql` → `docs/scripts/`) — but **only via dedicated `export-*` skills**, **never** automatically by the loops. The spec and the plan **are not** artifacts: they are documents.
 
-> **Routing by operating context.** *Where* an artifact is written is decided by the operating context (see [`../SKILL.md`](../SKILL.md) § *Contexto operativo*): **inside a flow** → the **active/continued** session — a prompt with no command edits the `SCRIPTS.sql` (or `DECISION`, …) of the **most recent** session, it does not spawn a new one; **in a workspace but with no flow** → directly into `docs/` by convention + numbering (`aw next-number`), since there is no session to hold it (and it is **not** auto-export); **no workspace** → the AI is free (vanilla). Session→`docs/` promotion is still **only** via `export-*`.
+> **Routing by operating context** (canonical rules: [`../SKILL.md`](../SKILL.md) § *Contexto operativo*): inside a flow → the **active/continued** session (a prompt with no command edits the most recent session's artifacts); workspace without flow → `docs/` by convention + numbering; no workspace → vanilla. Session→`docs/` promotion is still **only** via `export-*`.
 
 ---
 
@@ -58,9 +58,9 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 
 ---
 
-## Invariants (hard rules — do not break)
+## Invariants (hard rules — canonical list: [`../SKILL.md`](../SKILL.md) § *The 6 hard invariants*)
 
-1. **No auto-export**: loops **never** graduate/export to `docs/`. Only `export-*` does, explicitly.
-2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` is ambient — `creating-tools`, not a flow.)
-3. **Spec and plan are documents** (`docs/`), not artifacts — they never live inside a session. *(Do not confuse with the **design SPECs** `NNN-SPEC-<SLUG>.md`: per-screen UI design artifacts of PLAN sessions — see [`artifacts-design/`](artifacts-design/) — which are not the requirement-spec.)*
-4. **DB scripts-only**: the AI **never executes DML/DDL**; migrations stay in `SCRIPTS.sql` (type B) and are delivered via `export-scripts`. Only read-only queries (type A) are executed via MCP.
+1. **No auto-export**: only `export-*` promotes to `docs/`, explicitly.
+2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans` · QUICK→none.
+3. **Spec and plan are documents**, never session artifacts. *(Design SPECs `NNN-SPEC-<SLUG>.md` are a different thing: per-screen UI artifacts of PLAN sessions — [`artifacts-design/`](artifacts-design/).)*
+4. **DB scripts-only**: never execute DML/DDL; migrations (type B) stay in `SCRIPTS.sql` and ship via `export-scripts`; only read-only queries (type A) run via MCP.

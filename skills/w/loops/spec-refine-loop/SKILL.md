@@ -2,16 +2,13 @@
 name: spec-refine-loop
 description: >-
   Refina un spec borrador (docs/specs/NNN-spec-<slug>.md) editándolo IN PLACE
-  hasta dejarlo sin ambigüedad. Heir del chasis común de los loops
-  (loops/CHASSIS.md — motor gap-driven convergente: session única con research
-  inline, structured-choice ≤3 preguntas + control flow, artefactos como log
-  vivo, compact/resume, convergence gate); aquí viven solo sus deltas SPEC:
+  hasta dejarlo sin ambigüedad. Heir del chasis (loops/CHASSIS.md). Deltas:
   gap taxonomy de spec, analyze gate, sección ## UI spec vía la capacidad
-  ui-design cuando el requerimiento involucra UI, y agrega Refinement
-  decisions + Q&A traceability al spec — la marca de refinado que plan-new
-  detecta. Lo arranca /w:spec-refine (o la escalación en vivo desde
-  quick-loop); reanudable vía CHECKPOINT y re-corrible a demanda. Invocar cuando haya que refinar/desambiguar una especificación
-  antes de planificar.
+  ui-design, y agrega Refinement decisions + Q&A traceability — la marca de
+  refinado que plan-new detecta. Lo arranca /w:spec-refine (o la escalación
+  en vivo desde quick-loop); reanudable vía CHECKPOINT y re-corrible a
+  demanda. Invocar para refinar/desambiguar una especificación antes de
+  planificar.
 ---
 
 # spec-refine-loop
@@ -20,7 +17,7 @@ description: >-
 
 ## Inherits
 
-Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.md` junto a este archivo (instalación aplanada) — el motor completo del loop (objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo, numeración, convergence gate), **siempre antes** de estos deltas.
+Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **siempre antes** de estos deltas. *(Si `../` no resuelve: `CHASSIS.md` junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*
 
 ## Flow
 SPEC
@@ -57,7 +54,7 @@ Doctrina completa en el chasis (§ *Internal sessions* + *Numeración*). La inst
 
 El gap **UI sin especificar** (cuando el requerimiento involucra UI; ver *Gap taxonomy*) se resuelve **componiendo** la capacidad **`ui-design`** (default built-in `ui-spec`; rebindeable vía `.workflow/skills.toml`): autora el UI spec nativamente (estructura, vocabulario, formato Markdown). Es un tercer modo de resolución de gap (junto a *research* y *humano*): el loop aporta la iteración/Q&A que el viejo servicio no tenía (design-system, tema, variantes, desambiguación) **vía la misma structured-choice**, y lo integra como sección `## UI spec` del spec.
 
-> **Dos niveles de la misma capacidad:** aquí (SPEC) produce la sección `## UI spec` del spec — el *qué* de la UI, grano grueso. En PLAN, `plan-new-loop`/`plan-refine-loop` componen la **misma** capacidad para producir **design SPECs por pantalla** (`NNN-SPEC-<SLUG>.md`, artefactos de su sesión — ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)), derivados de esta sección si existe.
+> **Dos niveles de la misma capacidad:** aquí (SPEC) produce `## UI spec` — el *qué* de la UI, grano grueso; en PLAN, los loops de plan producen **design SPECs por pantalla** derivados de esa sección (ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
 
 Otras capacidades transversales que el motor usa siempre: `research` (research **inline** — chasis § *Research*), `sql` (regla BD en research — chasis). Todas se resuelven por config; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta. La **prosa del spec** sigue las convenciones de redacción **ambientes** (el host auto-aplica una skill de writing instalada si está presente), no un rol compuesto.
 

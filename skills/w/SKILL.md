@@ -78,7 +78,16 @@ Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prom
 | **Sí** | **prompt sin comando** (no-relacionado / sin sesión) | **sin flujo**: trabajo directo → escribe en `docs/` por convención + numeración (`aw next-number`) |
 | **No** | cualquiera | **vanilla** — sin workspace ni flujo, la IA es libre (nativo) |
 
-**Regla de continuidad:** el **comando** señala "nueva línea de trabajo" (sesión nueva) — **salvo re-correr el mismo comando sobre la misma entrada** (ej. `/w:spec-refine` sobre el mismo spec), que **no** abre otra línea: `create_or_resume` localiza la sesión de ese flujo (por descriptor + `## Origin`) y la **reanuda o reabre** (quita `.closed`), sin duplicarla; un **prompt sin comando** es "sigo en la misma" → por default continúa/reabre la más reciente (la *última iniciada*); solo si es claramente no-relacionado ofrece elegir (`continuar NNN` | `trabajo nuevo`) o cae a "sin flujo". Convergencia cierra la sesión; un prompt relacionado posterior la **reabre** (el resume quita `.closed`). Es la cara **inter-turno** del *objetivo persistente* (mismo `CHECKPOINT`+resume, aplicado al próximo prompt) — **doctrina agnóstica**, no un hook del host. Aplica a **todo artefacto** (`SCRIPTS.sql` es el ejemplo trabajado); ver `loops/quick-loop/SKILL.md` para el caso QUICK. **Excepción consentida:** la **escalación aceptada** dentro de un loop (ej. quick → SPEC) también abre una **nueva línea de trabajo** sin comando — la señal es el **consentimiento explícito** del usuario en la structured-choice, equivalente a haber invocado el comando del flujo destino.
+**Regla de continuidad** (fuente única — el chasis y los loops referencian acá):
+
+1. **Comando de flujo** = **nueva línea de trabajo** → sesión nueva.
+2. **Excepción — re-run:** el mismo comando sobre la **misma entrada** (ej. `/w:spec-refine` sobre el mismo spec) **no** abre otra línea: `create_or_resume` localiza la sesión de ese flujo (descriptor + `## Origin`) y la **reanuda o reabre** (quita `.closed`), sin duplicarla.
+3. **Excepción consentida — escalación:** la **escalación aceptada** dentro de un loop (ej. quick → SPEC) abre una **nueva línea de trabajo sin comando**; la señal es el **consentimiento explícito** del usuario en la structured-choice, equivalente a haber invocado el comando del flujo destino.
+4. **Prompt sin comando** = "sigo en la misma" → continúa/reabre la sesión **más reciente** (la *última iniciada*).
+5. Solo si el prompt es claramente **no-relacionado**: ofrecer elegir (`continuar NNN` | `trabajo nuevo`) o caer a "sin flujo".
+6. La **convergencia cierra** la sesión; un prompt relacionado posterior la **reabre** (el resume quita `.closed`).
+
+Es la cara **inter-turno** del *objetivo persistente* (mismo `CHECKPOINT`+resume, aplicado al próximo prompt) — doctrina agnóstica, no un hook del host. Aplica a **todo artefacto** (`SCRIPTS.sql` es el ejemplo trabajado; caso QUICK: `loops/quick-loop/SKILL.md`).
 
 ### The commands (`/w:` namespace)
 
@@ -93,7 +102,7 @@ Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prom
 
 ### Transversal skills (no flow) — `/w:status` · `/w:fix-git`
 
-Skills **invocables independientes de flujo**: se disparan con `/w:` igual que un comando, pero **no** pertenecen a SPEC/PLAN/QUICK, **no** manejan `docs/`, y **no** entran en el conteo **6 comandos de flow / 5 loops**. (En el diseño son su propia categoría —`workflow-skills/`, aparte de los comandos de flow—; en el bundle se empaquetan bajo `commands/` para que `/w:` las invoque.)
+Skills **invocables independientes de flujo**: se disparan con `/w:` igual que un comando, pero **no** pertenecen a SPEC/PLAN/QUICK, **no** manejan `docs/`, y **no** entran en el conteo **6 comandos de flow / 5 loops**. *(En el bundle se empaquetan bajo `commands/` para que `/w:` las invoque; en el diseño son la categoría `workflow-skills/`.)*
 
 - `/w:status` — dashboard read-only del workspace (Hecho/Falta/Descartó, con fechas en español). No escribe nada; se apoya en `aw status`.
 - `/w:fix-git` — resuelve conflictos de un merge en curso en cualquier repo (identifica origen↔destino, analiza intención, *structured-choice* ante ambigüedad). No crea session, no toca `docs/`; git-safe; se apoya en `aw merge-state`.

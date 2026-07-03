@@ -2,16 +2,13 @@
 name: quick-loop
 description: >-
   El atajo liviano de agent-workflow: resuelve una tarea acotada (fix, ajuste
-  chico) directamente desde el prompt, editando código con ceremonia mínima.
-  Heir del chasis común de los loops (loops/CHASSIS.md — motor gap-driven con
-  las políticas de loops que editan código: git seguro, BD solo-scripts, gate
-  de revisión de cierre proporcional, sin auto-export); sus deltas viven en
-  el cuerpo: sin fases ni plan-doc (el prompt ES la tarea),
-  session ligera única (<slug>-quick), un solo commit, gate de tamaño a la
-  entrada y escalación EN VIVO a SPEC (handoff + spec-refine directo; a PLAN
-  queda diferida) si el objetivo excede un quick o la tarea crece. NO toca
-  docs/. Lo arranca /w:quick y es reanudable. Invocar para cambios pequeños y
-  directos que no ameritan spec ni plan formal.
+  chico) desde el prompt, con ceremonia mínima y un solo commit. Heir del
+  chasis (loops/CHASSIS.md + CODE-POLICIES.md). Deltas: sin plan-doc (el
+  prompt ES la tarea), session ligera única <slug>-quick, gate de tamaño a la
+  entrada y escalación EN VIVO a SPEC (a PLAN queda diferida) si el objetivo
+  excede un quick o la tarea crece. NO toca docs/. Lo arranca /w:quick;
+  reanudable. Invocar para cambios pequeños y directos que no ameritan spec
+  ni plan formal.
 ---
 
 # quick-loop
@@ -41,7 +38,7 @@ QUICK
 
 ## Inherits
 
-Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.md` junto a este archivo (instalación aplanada) — el motor completo del loop (objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo, numeración, convergence gate, docs/ boundary) — **y** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** (o `CODE-POLICIES.md` junto a este archivo) — las *Políticas de loops que editan código* (git seguro · BD solo-scripts · gate de revisión de cierre **proporcional**) — **siempre antes** de estos deltas.
+Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **y** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** — las *Políticas de loops que editan código* — **siempre antes** de estos deltas. *(Si `../` no resuelve: mismos nombres junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*
 
 ## Composes
 
@@ -60,12 +57,15 @@ Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.m
   - **Seguir en quick** → continúa normal (`create_or_resume` + loop).
   - **Recortar alcance** → la IA propone la **sub-tarea que SÍ cabe** en un quick; el loop sigue con ella (`SESSION.Objective` = la sub-tarea; el prompt original queda en el `## Origin` de la session) y el resto se difiere al `BACKLOG` ("recortado en el gate — puede ameritar spec aparte, `/w:spec-new`").
   - **Anti-duplicado** (espíritu `create_or_resume`): si ya existe un spec cuyo `## Origin` referencia este mismo objetivo (o una session `*-spec-refine` equivalente), la recomendada pasa a ser **retomar ese spec** (semántica `/w:spec-refine`) — nunca materializar un segundo borrador.
-- **Transición en vivo a SPEC** (compartida por el gate y la escalación mid-loop): al aceptar, la línea de trabajo **deja de ser QUICK y pasa a ser flujo SPEC** — el consentimiento explícito en la structured-choice **equivale a invocar el comando** del flujo destino (excepción consentida a la regla de continuidad; ver [`../../SKILL.md`](../../SKILL.md) § *Contexto operativo*). Ya **del lado SPEC**: (1) materializar el **borrador** siguiendo el procedimiento de [`../../commands/spec-new.md`](../../commands/spec-new.md) — o `commands/spec-new.md` dentro de la skill `w` instalada (instalación aplanada) — `aw next-number docs/specs`, slug, esquema, single-pass **SIN investigación**; `## Origin` = "escalado desde `/w:quick`" + el prompt original (+ la session quick de origen si existe); (2) **cargar y ejecutar** [`../spec-refine-loop/SKILL.md`](../spec-refine-loop/SKILL.md) — o `../w-spec-refine-loop/SKILL.md` (instalación aplanada, skill hermana) — sobre ese spec, mismo patrón "cargalo y ejecutalo" de los comandos trampolín. La session del run es la `NNN-<slug>-spec-refine` **normal** de ese loop (el CLI numera; su `## Origin` registra la escalación). El **invariante 2 queda intacto**: quick, mientras es quick, no escribe `docs/` — el borrador lo escribe el flujo SPEC, post-consentimiento.
+- **Transición en vivo a SPEC** (compartida por el gate y la escalación mid-loop). Al aceptar, la línea de trabajo **pasa al flujo SPEC**: el consentimiento explícito en la structured-choice **equivale a invocar el comando destino** (*excepción consentida* — regla 3 de la *Regla de continuidad*, [`../../SKILL.md`](../../SKILL.md) § *Contexto operativo*). Ya del lado SPEC:
+  1. **Materializar el borrador** por el procedimiento de [`../../commands/spec-new.md`](../../commands/spec-new.md): `aw next-number docs/specs`, slug, esquema, single-pass **SIN investigación**. `## Origin` = "escalado desde `/w:quick`" + el prompt original (+ la session quick de origen si existe).
+  2. **Cargar y ejecutar** [`../spec-refine-loop/SKILL.md`](../spec-refine-loop/SKILL.md) — aplanada: `../w-spec-refine-loop/SKILL.md` — sobre ese spec (patrón trampolín).
+  3. La session del run es la `NNN-<slug>-spec-refine` **normal** de ese loop (el CLI numera; su `## Origin` registra la escalación). **Invariante 2 intacto**: quick, mientras es quick, no escribe `docs/` — el borrador lo escribe el flujo SPEC, post-consentimiento.
 - **Escalación mid-loop + handoff**: si la tarea crece (mismas señales del gate) → propone subir a **SPEC/PLAN** (structured-choice, recomendación primera). Si el usuario acepta:
-  - el **código ya editado queda** en el working tree (no se revierte) **y se registra** en `CHECKPOINT` + `BACKLOG` ("cambios sin commitear en `<fuente>` — código a medias; decidir commit/descartar al retomar") — reusando **ambas** mitades del patrón "commit rechazado" ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Git seguro*: no revertir **y** registrar lo sin commitear). Crítico en la rama **SPEC**, que no retoma el working tree;
-  - la session quick va a `finalize`, persistiendo `CHECKPOINT` + `BACKLOG` con el **puntero**: a **PLAN**, "escalado a `docs/plans/PPP` — retomar ahí" (**diferido como hoy**: siembra + puntero, sin entrar en vivo); a **SPEC**, "escalado a `docs/specs/NNN` — **continuado en vivo** (session `NNN-<slug>-spec-refine`)";
-  - los artefactos (`DECISION`, `SCRIPTS.sql`) **quedan en la session quick** como contexto referenciable por la nueva session (no se migran);
-  - **SPEC entra en vivo**: tras el `finalize`, corre la *Transición en vivo a SPEC* (borrador vía procedimiento spec-new **solo si no existe** spec para este objetivo; luego el loop). **Asimetría** intacta: escalar a **PLAN** puede **absorber** el avance (plan-exec retoma el working tree existente); escalar a **SPEC** **reinicia** el ciclo de diseño y trata el código a medias como **contexto/referencia**, no como trabajo ya ingerido.
+  1. El **código ya editado queda** en el working tree (no se revierte) y se **registra** en `CHECKPOINT` + `BACKLOG`: "cambios sin commitear en `<fuente>` — decidir commit/descartar al retomar" (patrón "commit rechazado", [`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Git seguro*).
+  2. La session quick va a `finalize` con el **puntero** en `BACKLOG`: a **PLAN** → "escalado a `docs/plans/PPP` — retomar ahí" (**diferido como hoy**: siembra + puntero, sin entrar en vivo); a **SPEC** → "escalado a `docs/specs/NNN` — **continuado en vivo** (session `NNN-<slug>-spec-refine`)".
+  3. Los artefactos (`DECISION`, `SCRIPTS.sql`) **quedan en la session quick** como contexto referenciable por la nueva session (no se migran).
+  4. **SPEC entra en vivo**: tras el `finalize` corre la *Transición en vivo a SPEC* (borrador **solo si no existe** spec para este objetivo; luego el loop). **Asimetría** intacta: PLAN puede **absorber** el avance (plan-exec retoma el working tree existente); SPEC **reinicia** el ciclo de diseño y trata el código a medias como contexto/referencia, no como trabajo ya ingerido.
 
 ## Continuidad entre prompts (contexto operativo)
 
