@@ -242,6 +242,43 @@ describe("Doctrine guards — G6 · artifact contract (informe 003, wave 3)", ()
   });
 });
 
+describe("Doctrine guards — G7 · hard floor inline in the flow commands (informe 003, wave 6)", () => {
+  // The empirical smoke (informe 003 § wave 5) proved the reference chain can
+  // break at hop 2 on the weakest models: the loop gets read but the chassis
+  // does not → no session, no CHECKPOINT, no canonical gate options, English
+  // replies to Spanish users. The fix: every loop-trampoline command carries a
+  // minimal, self-contained "hard floor" block (same pattern as the inline
+  // git/DB summaries in the code-editing loops).
+  const LOOP_COMMANDS = [
+    "commands/quick.md",
+    "commands/spec-refine.md",
+    "commands/plan-new.md",
+    "commands/plan-refine.md",
+    "commands/plan-exec.md",
+  ];
+
+  it("every loop command carries the hard-floor block (session + language)", async () => {
+    for (const rel of LOOP_COMMANDS) {
+      const text = await readRel(rel);
+      expect(text, rel).toContain("Hard floor — applies even if you read nothing beyond this file");
+      expect(text, rel).toContain("aw session-create --type");
+      expect(text, rel).toContain("user's language");
+    }
+  });
+
+  it("quick's hard floor carries the gate's canonical options verbatim", async () => {
+    const quick = await readRel("commands/quick.md");
+    expect(quick).toContain("Cambiar a SPEC");
+    expect(quick).toContain("Seguir en quick");
+    expect(quick).toContain("Recortar alcance");
+  });
+
+  it("spec-new pins the user's-language rule for the draft content", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    expect(specNew).toContain("user's language");
+  });
+});
+
 describe("Doctrine guards — G3 · language policy (English doctrine)", () => {
   // Post language-migration (informe 003, wave 2) the doctrine is English.
   // User-facing Spanish is allowed ONLY inside code fences (output templates,

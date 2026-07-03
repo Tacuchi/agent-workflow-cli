@@ -16,6 +16,13 @@ An **auxiliary, NOT mandatory** step of the PLAN flow: `spec-refine`'s twin, but
 
 This command does not refine the plan itself: it delegates to `plan-refine-loop` (Layer 2), which iterates, closes gaps and edits the plan **in place**.
 
+> **Hard floor — applies even if you read nothing beyond this file:**
+>
+> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-plan-refine`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
+> 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
+> 3. **Write boundary** — this flow edits only `docs/plans/…` (in place, with confirmation); nothing else lands in `docs/`.
+> 4. **Language** — everything user-facing (questions, option labels, the plan's content) goes in the **user's language**.
+
 > **Not mandatory.** `plan-exec` runs **any** plan, refined or not — no gate requires passing through here. Use it only when the plan needs adjustments before executing.
 
 ## Input resolution

@@ -14,6 +14,13 @@ allowed-tools:
 
 For scoped, direct tasks that do not justify going through SPEC or PLAN. Creates a light session (traceability + resume) — unless the **entry size gate** escalates to SPEC before starting. Delegates to `quick-loop` (Layer 2).
 
+> **Hard floor — applies even if you read nothing beyond this file:**
+>
+> 1. **Size gate BEFORE any session** — if the objective exceeds a quick (≥2 clear signals: needs architecture · ≥2 sources · several deliverables · large feature/refactor · ambiguous requirements), ask first with these verbatim options: `Cambiar a SPEC` *(recommended)* · `Seguir en quick` · `Recortar alcance`. If it escalates, create **no** quick session.
+> 2. **Session first** — otherwise, before touching code, create/resume the run's session: `aw session-create --type quick --name <slug>-quick`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
+> 3. **Git/DB** — commits are **proposed**, never executed without approval; **never** `push`/`--amend`/`--no-verify`; never execute DML/DDL (SQL goes to the session's `SCRIPTS.sql`).
+> 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
+
 ## Run the loop
 
 `quick-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:

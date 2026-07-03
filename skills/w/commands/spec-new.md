@@ -61,6 +61,7 @@ Pending doubts. ← the spec-refine-loop closes them.
 
 **Filling notes:**
 
+- The draft's **content** is written in the **user's language** (the schema headings stay as-is).
 - No `Type` field — `plan-new` infers the how.
 - `Scope` always carries `Out` (what stays out).
 - **Acceptance criteria = static testable criteria** (the "what"): `plan-exec` validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]` in the spec; the spec never mutates by execution, only by a re-refine.

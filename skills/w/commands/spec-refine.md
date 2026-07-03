@@ -14,6 +14,13 @@ allowed-tools:
 
 This command does not refine the spec itself: it delegates to `spec-refine-loop` (Layer 2), which iterates, closes gaps and produces the refined spec.
 
+> **Hard floor — applies even if you read nothing beyond this file:**
+>
+> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-spec-refine`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
+> 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
+> 3. **Write boundary** — this flow edits only `docs/specs/…` (in place, with confirmation); nothing else lands in `docs/`.
+> 4. **Language** — everything user-facing (questions, option labels, the doc's content) goes in the **user's language**.
+
 ## Run the loop
 
 `spec-refine-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:

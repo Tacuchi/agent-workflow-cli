@@ -4,6 +4,22 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [16.2.0] — 2026-07-03
+
+**Ronda 6 del informe 003 (menor, derivada del smoke empírico de la ola 5).** El smoke con modelos débiles reales probó que la cadena de referencias puede cortarse en hop 2 (el loop se lee, el chasis no → sin session, sin CHECKPOINT, sin opciones canónicas del gate, respuestas en inglés a usuarios en español). Fix: cada comando-trampolín gana un bloque **"Hard floor"** inline y autocontenido — mismo patrón del resumen git/BD inline de los loops de código. Bundle `w` 11.1.0 → **11.2.0**.
+
+### Added
+
+- **Bloque "Hard floor — applies even if you read nothing beyond this file"** en los 5 comandos de loop (`quick`, `spec-refine`, `plan-new`, `plan-refine`, `plan-exec`): session-first con el `aw session-create` exacto + contrato del CHECKPOINT · git/BD o write-boundary según el flujo · ask-don't-invent (≤3 + `flow`) · **idioma del usuario**. En `quick`, además las **3 opciones canónicas del gate verbatim** (`Cambiar a SPEC` · `Seguir en quick` · `Recortar alcance`) y "gate antes de cualquier session".
+- **Guard G7** en `doctrine-guards` (3 asserts): los 5 comandos llevan el hard floor (marker + `aw session-create --type` + "user's language"); `quick` lleva las 3 opciones verbatim; `spec-new` pinea el idioma del contenido del borrador.
+
+### Changed
+
+- `spec-new`: nota de llenado "contenido del borrador en el idioma del usuario". `fix-git`: línea de idioma user-facing.
+- Cargas garantizadas post-bloques (G1 verdes, y midiendo el costo como corresponde): quick 40,1 kB (≤40,5) · plan-exec 39,0 (≤39,5) · plan-refine 42,6 (≤43,0).
+
+Verificación: suite 999/999 (996 + G7). La re-corrida empírica del smoke quedó **parcial** por infraestructura (opencode+flash con stalls intermitentes; cuota free de deepseek agotada) — registrada como pendiente en la tool `weak-model-smoke` del workspace.
+
 ## [16.1.0] — 2026-07-03
 
 **Ola 3 del informe 003: contrato de artefactos.** El esquema del `CHECKPOINT` adopta la **forma que los runs reales demostraron** (headings canónicos `Completed` · `Pending / Next` · `Open questions`; `Excluded` y el snapshot máquina del hook quedan como opcionales documentados) con **reglas duras nuevas** en el chasis: *forma fija* (headings exactos de la plantilla, update **in place**, **nunca** duplicar una sección — mata el bug de append detectado en la sesión real 011) y *flip de criterios* (el **convergence gate marca `- [x]`** los `Success criteria` en verde; un criterio sin marcar al `finalize` exige motivo explícito). Los comentarios-guía `<!-- … -->` de las plantillas se **reemplazan** al llenar la sección. Bundle `w` 11.0.0 → **11.1.0**.

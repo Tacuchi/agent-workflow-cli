@@ -11,7 +11,7 @@ allowed-tools:
 
 # fix-git — merge-conflict resolver (transversal)
 
-Single-pass, **no loop, no session**, **never writes `docs/`**. **Transversal** command (belongs to no SPEC / PLAN / QUICK flow). **Workspace-agnostic**: operates on any git repo — the given `<source>` (path or alias), or the cwd — without requiring `.workflow/`.
+Single-pass, **no loop, no session**, **never writes `docs/`**. **Transversal** command (belongs to no SPEC / PLAN / QUICK flow). **Workspace-agnostic**: operates on any git repo — the given `<source>` (path or alias), or the cwd — without requiring `.workflow/`. Everything user-facing (questions, proposals, the report) goes in the **user's language**.
 
 ## Run
 

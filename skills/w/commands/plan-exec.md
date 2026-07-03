@@ -14,6 +14,13 @@ allowed-tools:
 
 Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase by phase. The plan (`docs/plans/PPP-plan-<slug>.md`) is a living document the loop keeps updated (phase and task state).
 
+> **Hard floor — applies even if you read nothing beyond this file:**
+>
+> 1. **Session first** — create/resume the run's session before touching code: `aw session-create --type exec --name <slug>-plan-exec`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
+> 2. **Git/DB** — verify each source's expected branch before editing (`aw check-branch`); commits are **proposed**, never executed without approval; **never** `push`/`--amend`/`--no-verify`; never execute DML/DDL (SQL goes to the session's `SCRIPTS.sql`).
+> 3. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
+> 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
+
 ## Run the loop
 
 `plan-exec-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
