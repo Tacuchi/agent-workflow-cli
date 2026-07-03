@@ -1,6 +1,6 @@
 {
   "name": "w",
-  "version": "11.0.0",
+  "version": "11.1.0",
   "description": "Universal slash commands `/w:*` (w = workflow) for the `@tacuchi/agent-workflow-cli` runtime. Stages + loops + artifacts model: SPEC (spec-new · spec-refine), PLAN (plan-new · plan-exec), QUICK (quick), workspace-init bootstrap, and the export-* family (the only artifact→docs/ promotion path). Commands start AI-run loops that manage sessions/artifacts under `.workflow/sessions/`; pluggable capability skills bind via `.workflow/skills.toml`. Install: `/plugin marketplace add ...` + `/plugin install w@<marketplace>`. peerDependency: `@tacuchi/agent-workflow-cli`.",
   "author": {
     "name": "Tacuchi",

@@ -60,6 +60,8 @@ The loop works **artifact-first**: the artifact is **seeded before** executing a
 
 > The artifact expresses the **intent** (Pending/Next, before) and then the **result** (Completed/DECISION, after), at **every** gap/phase boundary — not only on `Compactar`/`Cerrar`. Session artifacts are the run's live log; the spec/plan is the **guiding base**.
 
+> **Fixed form (hard rule):** an artifact keeps its template's `##` headings **exactly** and is updated **in place** — appending a **duplicate heading** is a contract violation. When a scaffolded section is filled, its `<!-- … -->` guidance comment is **replaced** by the real content. Canonical headings per artifact: its template under [`../artifacts/`](../artifacts/) (CHECKPOINT contract: `Completed` · `Pending / Next` · `Open questions`).
+
 ## Gap-driven convergent engine
 
 The common cycle — each heir instantiates it in its `## Sequence` with its own gap taxonomy:
@@ -144,7 +146,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 ## Convergence / exit
 
-- **No material gaps** → **convergence gate** (read-only) = **`Success criteria` green** (*verification-first*). Whatever fails **comes back as a gap**; if it passes → the loop offers its closing action. The heirs are **instances** of the same gate: `spec-refine` = analyze gate, `plan-new` and `plan-refine` = plan coherence, `plan-exec` = final validation, `quick` = proportional spot validation.
+- **No material gaps** → **convergence gate** (read-only) = **`Success criteria` green** (*verification-first*). Whatever fails **comes back as a gap**; if it passes → the loop **flips the green criteria** in `SESSION.md` (`- [ ]` → `- [x]`) and offers its closing action. The checklist must reflect the real final state: a criterion left unchecked at `finalize` needs an explicit reason (`Open questions`/`BACKLOG`). The heirs are **instances** of the same gate: `spec-refine` = analyze gate, `plan-new` and `plan-refine` = plan coherence, `plan-exec` = final validation, `quick` = proportional spot validation.
 - `Cerrar` (the `flow` control, at any time) → `finalize`. **`finalize` always persists `CHECKPOINT.md`** (resumable) and, **only if something was deferred/follow-up**, writes `BACKLOG.md` (close reason + the deferred items); closes the session and reports. Progress survives even without a prior `Compactar`.
 
 ## docs/ boundary — no auto-export (hard rule)

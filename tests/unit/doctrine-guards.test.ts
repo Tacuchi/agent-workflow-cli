@@ -203,6 +203,45 @@ describe("Doctrine guards — G5 · canonical ## Inherits form", () => {
   });
 });
 
+describe("Doctrine guards — G6 · artifact contract (informe 003, wave 3)", () => {
+  // The CHECKPOINT contract adopts the form real runs proved out; the chassis
+  // pins who flips the Success criteria and forbids duplicated sections (the
+  // 011-session append bug). The CLI session template and the schema doc must
+  // agree — they are two renderings of the same artifact.
+  it("the CHECKPOINT template carries the canonical headings and the no-duplicate rule", async () => {
+    const tpl = await readRel(join("artifacts", "artifacts-core", "CHECKPOINT.md"));
+    expect(tpl).toContain("## Completed");
+    expect(tpl).toContain("## Pending / Next");
+    expect(tpl).toContain("## Open questions");
+    expect(tpl).toContain("NEVER duplicate");
+  });
+
+  it("the chassis pins the fixed-form rule and the criteria flip at the convergence gate", async () => {
+    const chassis = await readRel(join("loops", "CHASSIS.md"));
+    expect(chassis).toMatch(/duplicate heading/i);
+    expect(chassis).toMatch(/flips the green criteria/i);
+  });
+
+  it("the CLI session template and the SESSION schema doc agree on headings", async () => {
+    const { renderSessionMarkdown } = await import("../../src/application/templates/session.js");
+    const rendered = renderSessionMarkdown({
+      name: "x",
+      type: "exec",
+      objetivo: "y",
+    });
+    const schema = await readRel(join("artifacts", "artifacts-core", "SESSION.md"));
+    const renderedHeadings = rendered
+      .split(/\r?\n/)
+      .filter((l) => l.startsWith("## "))
+      .map((l) => l.slice(3).trim());
+    expect(renderedHeadings.length).toBeGreaterThan(0);
+    for (const heading of renderedHeadings) {
+      expect(schema, `schema doc missing ## ${heading}`).toContain(`## ${heading}`);
+    }
+    expect(rendered).toContain("flips each to [x]");
+  });
+});
+
 describe("Doctrine guards — G3 · language policy (English doctrine)", () => {
   // Post language-migration (informe 003, wave 2) the doctrine is English.
   // User-facing Spanish is allowed ONLY inside code fences (output templates,

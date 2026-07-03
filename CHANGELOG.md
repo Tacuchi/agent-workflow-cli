@@ -4,6 +4,22 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [16.1.0] — 2026-07-03
+
+**Ola 3 del informe 003: contrato de artefactos.** El esquema del `CHECKPOINT` adopta la **forma que los runs reales demostraron** (headings canónicos `Completed` · `Pending / Next` · `Open questions`; `Excluded` y el snapshot máquina del hook quedan como opcionales documentados) con **reglas duras nuevas** en el chasis: *forma fija* (headings exactos de la plantilla, update **in place**, **nunca** duplicar una sección — mata el bug de append detectado en la sesión real 011) y *flip de criterios* (el **convergence gate marca `- [x]`** los `Success criteria` en verde; un criterio sin marcar al `finalize` exige motivo explícito). Los comentarios-guía `<!-- … -->` de las plantillas se **reemplazan** al llenar la sección. Bundle `w` 11.0.0 → **11.1.0**.
+
+### Added
+
+- **Guard G6 — contrato de artefactos** en `doctrine-guards` (3 asserts): headings canónicos + regla no-duplicar en la plantilla CHECKPOINT · el chasis pinea forma-fija y flip · **el template de SESSION del CLI (`renderSessionMarkdown`) y el schema doc concuerdan en headings** (contrato código↔doctrina verificado de verdad).
+
+### Changed
+
+- `artifacts-core/CHECKPOINT.md`: esquema nuevo con § *Contract (hard rules)* — reemplaza los 6 headings que la práctica real nunca usó (Activity/Critical context/Excluded/Pending/Next separados).
+- `artifacts-core/SESSION.md` + `templates/session.ts` (CLI) + golden `session-create-exec`: nota del flip ("flips each to [x] at the convergence gate; replace this comment when filling").
+- Chasis § *Artifacts as a live log* (regla de forma fija) y § *Convergence / exit* (flip de criterios).
+
+Sin cambios de parsing en el CLI: `status-service` (`## Excluded`) y los readers de checkpoint ya eran tolerantes; el snapshot del hook `checkpoint-write` queda documentado como **dialecto máquina** aparte.
+
 ## [16.0.0] — 2026-07-03
 
 **Ola 2 del informe 003: la doctrina del bundle `w` migra COMPLETA a inglés** (44 docs — chasis, políticas, 5 loops, 14 commands, roles, exports, harness, artifacts y READMEs), con **política de idioma por superficie** documentada en `SKILL.md` § *Language policy*: doctrina y headings de esquemas en inglés; TODO lo user-facing (structured-choice, reportes, dashboard, contenido de artefactos y entregables `docs/`, mensajes de commit) en el idioma del usuario (español); labels literales (`Compactar`, `Cerrar`, `Guardar plan`, …) como strings canónicos verbatim; términos de dominio QTC en español. Cierra el hallazgo nº 1 del informe 003 (corpus bilingüe por capas). **BREAKING** para consumidores de la doctrina del bundle: todo el texto normativo cambió de idioma (la semántica es la misma, verificada por los guards migrados en lockstep). Bundle `w` 10.3.0 → **11.0.0**.
