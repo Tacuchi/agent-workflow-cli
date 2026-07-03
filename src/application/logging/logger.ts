@@ -8,6 +8,8 @@ export interface LoggerDeps {
   paths: PathsService;
   /** Injected clock; defaults to the wall clock. The daily file uses its LOCAL date. */
   now?: () => Date;
+  /** When false, every log call is a no-op (used to silence re-entrant internal runs). Defaults to true. */
+  enabled?: boolean;
 }
 
 /**
@@ -20,11 +22,13 @@ export class Logger {
   private readonly fs: FileSystemPort;
   private readonly paths: PathsService;
   private readonly now: () => Date;
+  private readonly enabled: boolean;
 
   constructor(deps: LoggerDeps) {
     this.fs = deps.fs;
     this.paths = deps.paths;
     this.now = deps.now ?? (() => new Date());
+    this.enabled = deps.enabled ?? true;
   }
 
   info(message: string): Promise<void> {
@@ -38,6 +42,7 @@ export class Logger {
   }
 
   async log(level: LogLevel, message: string): Promise<void> {
+    if (!this.enabled) return;
     const at = this.now();
     const line = `${at.toISOString()} ${level.toUpperCase()} ${redactSecrets(message)}\n`;
     try {

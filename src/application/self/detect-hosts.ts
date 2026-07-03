@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
+import { resolveWarpGlobalMcpPath } from "../multiroot/warp.js";
 import { type InstallTarget, SKILL_DIR_NAME, TARGET_ROOTS } from "./install-skill.js";
 
 export interface DetectedHost {
@@ -30,12 +31,19 @@ const HOST_ORDER: readonly InstallTarget[] = [
   "crush",
 ];
 
-// Config dirs that do NOT follow the ~/.<target> convention. OpenCode and Crush
-// resuelven vía mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA) —
-// misma fuente que writer/reader MCP; el resto usa ~/.<target>.
+// Config dirs that do NOT follow the ~/.<target> convention. OpenCode y Crush
+// resuelven vía mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA);
+// Warp es platform-divergente (darwin ~/.warp, linux ~/.config/warp-terminal,
+// win32 %LOCALAPPDATA%/warp/Warp/config) y se deriva del registro vía
+// resolveWarpGlobalMcpPath — misma fuente que writer/reader MCP; el resto usa
+// ~/.<target>.
 function overrideConfigDir(target: InstallTarget, home: string): string | null {
   if (target === "opencode") return dirname(opencodeGlobalMcpFile(home));
   if (target === "crush") return dirname(crushGlobalMcpFile(home));
+  if (target === "warp") {
+    const mcpFile = resolveWarpGlobalMcpPath(process.platform, "stable", () => home);
+    return mcpFile ? dirname(mcpFile) : null;
+  }
   return null;
 }
 

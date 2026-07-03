@@ -53,7 +53,9 @@ function fakeLogger(): FakeLogger {
   };
 }
 
-function buildCtx(opts: { conflictOn?: string; logger?: FakeLogger } = {}): CliContext {
+function buildCtx(
+  opts: { conflictOn?: string; logger?: FakeLogger; failGit?: boolean } = {},
+): CliContext {
   return {
     logger: opts.logger,
     fs: {
@@ -66,7 +68,10 @@ function buildCtx(opts: { conflictOn?: string; logger?: FakeLogger } = {}): CliC
       get: () => undefined,
     },
     git: {
-      isGitRepo: async () => true,
+      isGitRepo: async () => {
+        if (opts.failGit) throw new Error("git exploded");
+        return true;
+      },
       currentBranch: async () => "feature/x",
       changedFiles: async () => [],
       isMerging: async () => false,
@@ -159,6 +164,20 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     expect(flow).toBeDefined();
     expect(flow?.level).toBe("info");
     expect(flow?.msg).toContain("→ ok");
+  });
+
+  it("loguea y muestra las advertencias de fetch parcial del workspace (finding project-tab-warnings)", async () => {
+    const logger = fakeLogger();
+    const { lastFrame } = render(<ProjectTab ctx={buildCtx({ logger, failGit: true })} isActive />);
+    await tick();
+    // 1) Cada warning de subfetch parcial se vuelca al log operativo (ctx.logger.warn).
+    const warn = logger.lines.find((l) => l.level === "warn" && l.msg.includes("workspace data"));
+    expect(warn).toBeDefined();
+    expect(warn?.msg).toContain("git exploded");
+    // 2) El tab muestra un aviso visible de datos parciales (antes se descartaban).
+    const f = lastFrame() ?? "";
+    expect(f).toContain("advertencia");
+    expect(f).toContain("datos parciales");
   });
 
   it("QuickActions ofrece 'git status' y ya no el stub 'start session' (finding stub-quick-actions)", async () => {

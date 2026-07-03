@@ -1,6 +1,8 @@
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 import { Box, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatTuiEvent } from "../../application/logging/log-events.js";
+import { writeNamespacePin } from "../../application/self/namespace-info.js";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
@@ -73,11 +75,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   // (~/.config/agent-workflow/namespace). Aplica al próximo arranque.
   const onSaveNamespace = useCallback(
     (ns: string) => {
-      void (async () => {
-        const dir = join(ctx.env.homeDir(), ".config", "agent-workflow");
-        await ctx.fs.mkdirp(dir);
-        await ctx.fs.writeText(join(dir, "namespace"), `${ns}\n`);
-      })();
+      void writeNamespacePin(ctx.fs, ctx.env.homeDir(), ns);
     },
     [ctx],
   );
@@ -125,6 +123,15 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   const runUpdateCheck = useCallback(
     async (opts?: { manual?: boolean }) => {
       const manual = opts?.manual === true;
+      // Manual recheck: feedback explícito. Boot-check: un error de registry
+      // (offline, npm hiccup) es ruido benigno → al log diario, no toast rojo.
+      const reportFailure = (detail: string) => {
+        if (manual) {
+          pushToast({ tone: "err", title: "Update check failed", body: detail });
+        } else {
+          void ctx.logger?.warn(formatTuiEvent("update check", "failed", detail));
+        }
+      };
       if (manual) {
         pushToast({ tone: "info", title: "Checking npm registry…" });
       }
@@ -135,11 +142,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
           {},
         );
         if (result.code !== 0) {
-          pushToast({
-            tone: "err",
-            title: "Update check failed",
-            body: result.stderr.trim() || "npm view returned non-zero exit.",
-          });
+          reportFailure(result.stderr.trim() || "npm view returned non-zero exit.");
           return;
         }
         const latest = result.stdout.trim();
@@ -190,11 +193,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
           ],
         });
       } catch (err) {
-        pushToast({
-          tone: "err",
-          title: "Update check failed",
-          body: (err as Error).message,
-        });
+        reportFailure((err as Error).message);
       }
     },
     [ctx, version, pushNotification, pushToast, dismiss, onResult, exit],
@@ -437,7 +436,19 @@ async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> 
   // Sessions count
   let sessionsLabel = "— sessions";
   try {
-    const sessRes = await ctx.process.run(ctx.runtime.binName, ["sessions"], { cwd });
+    // Re-entrant call: flag it internal so the spawned `aw` keeps its own
+    // invocation out of the daily log (main.ts gates the Logger on
+    // AW_INTERNAL_CALL). The child still needs the full env (PATH etc.), and the
+    // adapter replaces `env` wholesale, so merge rather than pass the flag alone.
+    const sessRes = await ctx.process.run(ctx.runtime.binName, ["sessions"], {
+      cwd,
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+        ),
+        AW_INTERNAL_CALL: "1",
+      },
+    });
     if (sessRes.code === 0) {
       const data = JSON.parse(sessRes.stdout) as {
         active_count?: number;

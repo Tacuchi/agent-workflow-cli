@@ -15,6 +15,15 @@ export const ENV_VAR_NAMESPACE = "AW_NAMESPACE";
 
 const LEGACY_NAMESPACE_DENYLIST = new Set<string>(["qtc"]);
 
+/**
+ * Absolute path to the CLI's global namespace-pin file. Single source shared by
+ * the resolver (reads it, source "config") and `aw self namespace --pin` (writes
+ * it), so the two can't drift on path.
+ */
+export function namespaceConfigFile(homeDir: string): string {
+  return join(homeDir, ".config", "agent-workflow", "namespace");
+}
+
 export class NamespaceResolver {
   constructor(
     private readonly fs: FileSystemPort,
@@ -33,7 +42,7 @@ export class NamespaceResolver {
     if (workspaceNs !== null) {
       return { namespace: workspaceNs, source: "workspace" };
     }
-    const configPath = join(this.env.homeDir(), ".config", "agent-workflow", "namespace");
+    const configPath = namespaceConfigFile(this.env.homeDir());
     if (await this.fs.exists(configPath)) {
       const raw = await this.fs.readText(configPath);
       return { namespace: normalizeNamespace(raw), source: "config" };

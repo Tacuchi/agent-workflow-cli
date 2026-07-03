@@ -3,6 +3,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -98,6 +99,17 @@ export function NotificationCenterProvider({ children, logger }: NotificationCen
       clearTimeout(t);
       timers.current.delete(id);
     }
+  }, []);
+
+  // On unmount, clear every pending auto-dismiss timer so a timeout that fires
+  // after teardown can't call `dismiss` (setItems) on an unmounted provider. The
+  // timers Map outlives the render tree, so per-item cleanup alone isn't enough.
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const handle of pending.values()) clearTimeout(handle);
+      pending.clear();
+    };
   }, []);
 
   const dismiss = useCallback(

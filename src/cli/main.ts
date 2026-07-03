@@ -154,7 +154,10 @@ async function run(argv: string[]): Promise<ExitCode> {
 
   // Operational logger → global user-level daily log. Best-effort; never throws.
   // Built before ctx so the TUI (and its tabs, via ctx.logger) can log too.
-  const logger = new Logger({ fs, paths });
+  // Re-entrant internal runs (e.g. the TUI spawning `aw sessions` to refresh its
+  // header) set AW_INTERNAL_CALL=1 to keep their invocation out of the daily log;
+  // a disabled logger no-ops so nothing the internal run does gets recorded.
+  const logger = new Logger({ fs, paths, enabled: env.get("AW_INTERNAL_CALL") !== "1" });
 
   const skillsResolution = await resolveSkills(fs, paths);
   const ctx: CliContext = {

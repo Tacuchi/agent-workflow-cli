@@ -4,7 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [14.11.0] — 2026-07-02
+## [14.12.0] — 2026-07-03
+
+**Ronda backlog-low de la auditoría integral (cierre del informe): hooks portables a Windows, paths por plataforma, tipo público alineado al registro, TUI sin ruido, y Oz documentado en doctrina.** Tercera y última ronda del informe `docs/reports/001` del hub de diseño (~19 ítems low, cada uno re-verificado contra v14.11 antes de tocar). Bundle `w` 10.0.0 → **10.1.0**.
+
+### Added
+
+- **`aw self namespace --pin <name>`**: pin global del namespace cross-platform vía Node `fs` (valida con el normalizador compartido; JSON `{pinned, path}`). Reemplaza en `hooks.template.json` el único hook que shelleaba (`sh -c` + `$HOME`, no corría en Windows); la TUI usa la **misma** función de escritura (fuente única del path/formato).
+- **Doctrina: Oz documentado** en la matriz del harness como familia **Warp / Oz** (existía en el registro y en el flatten, no en doctrina): detección `OZ_RUN_ID` prioritaria, MCP por flag `--mcp` de `oz agent run` (sin archivo de config), sin plugin/hooks (advisory como Warp).
+
+### Fixed
+
+- **`self install-hooks`**: los targets derivan de `INSTALL_TARGETS` (cierra otra instancia de la familia clean-legacy) — gemini/opencode/crush recibían `INVALID_TARGET` genérico; ahora `unsupported` explicativo como codex/warp/oz.
+- **`detect-hosts`**: el config dir de Warp se resuelve por plataforma desde el registro (`resolveWarpGlobalMcpPath`) — asumía `~/.warp` también en Linux (`~/.config/warp-terminal`) y Windows (`%LOCALAPPDATA%`).
+- **Tipo público `Harness`** (re-exportado por `src/index.ts`): existía un gemelo stale de 3 valores (`'claude'` incluido); ahora re-exporta el canónico del registro (8 hosts).
+- **`relFromCwd`** (status): rutas relativas correctas en win32 — comparaba prefijo string con `/` y nunca matcheaba, mostrando rutas absolutas.
+- **`history-update --session`** canónico (`--sesion` queda como alias legacy); **hints de export** alineados a los flags reales de sus SKILLs (`--audience`/`--engine`/`--mode` — `--tipo`/`--audiencia`/`--period` no existían).
+- **Log diario sin auto-contaminación**: `Logger` gana `enabled` y `main.ts` respeta `AW_INTERNAL_CALL=1`; el spawn re-entrante de `aw sessions` del TUI lo setea (mergeando `process.env`, que `RunOptions.env` reemplaza).
+- **TUI**: sección Recent del tab MCP (muerta desde que `McpTab` no recibe `recentEvents`) retirada + 3 módulos huérfanos borrados (`activity-feed`, `data/activity`, `inline-wizard`); los warnings de project-tab (subfetch parcial) ahora se muestran y loguean; cleanup de todos los timers de toasts al desmontar el provider; el update-check del boot degrada a log silencioso sin red (toast solo en recheck manual).
+- **Doctrina**: vocabulario capacidad-no-tool en 3 READMEs (el tool `Skill` marcado como binding de Claude Code con puntero a `harness/SKILL.md`); `export-reports` ya no documenta `--period`.
+
+### Notes
+
+- Inventario de comandos huérfanos (decisión de producto pendiente): `history-data` y `compress-checkpoint` sin consumidor funcional (candidatos a deprecar); los otros 6 (`history-update`, `skill-index`, `bootstrap-dsn`, `visibility`, `profiles`, `project-md-upsert`) son agent/manual-facing documentados — se mantienen.
+- Marketplace (repo aparte, mismo round): LICENSE AGPL-3.0 íntegro + coherencia de licencias, guía de verificación post-install para OpenCode, referencia rota `conventions-map` corregida, y **tool-builder 1.1.0** (scripts portados de bash a Node `.mjs` single-source + 8 subtests).
+
+
 
 **Refactor estructural del chasis: motor único `loops/CHASSIS.md` + `loops/CODE-POLICIES.md`, unbundling de quick, flatten Warp/Oz con docs compartidos.** Cierra el diferido mayor de la auditoría integral (informe `docs/reports/002` del hub de diseño: dup re-confirmada + modelo de ahorro corregido). Bundle `w` 9.7.0 → **10.0.0** (reestructura doctrinal mayor).
 

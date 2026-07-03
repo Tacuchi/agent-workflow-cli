@@ -203,6 +203,23 @@ describe("selfInstallHooks", () => {
     if (result.ok && result.data) expect(result.data.status).toBe("unsupported");
   });
 
+  // New registry hosts must resolve to the explanatory "unsupported" result, not
+  // a generic INVALID_TARGET (the daily-status documents them as valid hosts).
+  it.each(["gemini", "opencode", "crush"])(
+    "--target %s → unsupported (not INVALID_TARGET)",
+    async (target) => {
+      const result = await selfInstallHooks(
+        buildArgs({ target, template: templatePath }),
+        buildCtx(home),
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok && result.data) {
+        expect(result.data.status).toBe("unsupported");
+        expect(result.data.warning).toContain(target);
+      }
+    },
+  );
+
   it("--target claude (no existing settings) → installs all events", async () => {
     const result = await selfInstallHooks(
       buildArgs({ target: "claude", template: templatePath }),

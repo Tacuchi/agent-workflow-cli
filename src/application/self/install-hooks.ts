@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { type InstallTarget, SKILL_DIR_NAME } from "./install-skill.js";
+import { INSTALL_TARGETS, type InstallTarget, SKILL_DIR_NAME } from "./install-skill.js";
 
 export interface HookEntry {
   matcher?: string;
@@ -32,7 +32,11 @@ export interface SelfInstallHooksData {
   warning?: string;
 }
 
-const HOOK_TARGET_CHOICES: readonly InstallTarget[] = ["claude", "codex", "warp", "oz", "agents"];
+// Every install target is a valid --target; hooks merge-into-config is only
+// implemented for claude, so the rest resolve to an explanatory "unsupported"
+// result (not a generic INVALID_TARGET). Derived from INSTALL_TARGETS so a new
+// host can't silently fall into the invalid bucket (the clean-legacy lesson).
+const HOOK_TARGET_CHOICES: readonly InstallTarget[] = INSTALL_TARGETS;
 
 const SUPPORTED_HOOK_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
 
@@ -78,7 +82,7 @@ export async function selfInstallHooks(
         events_installed: [],
         events_already_present: [],
         backup_path: null,
-        warning: `Hooks via merge-into-config are not yet implemented for host '${target}'. Currently supported: claude. Other hosts (codex, warp, oz, agents) use file-based or no-hook mechanisms.`,
+        warning: `Hooks via merge-into-config are not yet implemented for host '${target}'. Currently supported: claude. Other hosts use file-based or no-hook mechanisms.`,
       },
       exitCode: 0,
     };

@@ -1,4 +1,4 @@
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
@@ -392,8 +392,11 @@ async function safeExists(fs: FileSystemPort, path: string): Promise<boolean> {
 }
 
 function relFromCwd(path: string, cwd: string): string {
-  const prefix = cwd.endsWith("/") ? cwd : `${cwd}/`;
-  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  // path.relative handles the win32 case a raw string-prefix strip missed: join()
+  // yields backslash paths while the old prefix appended a forward slash, so the
+  // strip never matched and status showed absolute paths. Normalize to forward
+  // slashes so the displayed path reads the same on every OS.
+  return relative(cwd, path).split("\\").join("/");
 }
 
 /**

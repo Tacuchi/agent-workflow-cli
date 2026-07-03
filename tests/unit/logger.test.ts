@@ -65,6 +65,20 @@ describe("Logger", () => {
     expect(all).toContain("--name db"); // non-secret args survive
   });
 
+  it("writes nothing when disabled (silences re-entrant internal runs)", async () => {
+    const fs = new MemFs();
+    const logger = new Logger({
+      fs: asFs(fs),
+      paths,
+      now: () => new Date(2026, 6, 1),
+      enabled: false,
+    });
+    await logger.info("run: sessions");
+    await logger.warn("w");
+    await logger.error("e");
+    expect(fs.appended.size).toBe(0);
+  });
+
   it("never throws even if the sink fails (logging is best-effort)", async () => {
     const failing = {
       appendText: async () => {

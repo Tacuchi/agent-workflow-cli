@@ -3,7 +3,7 @@ name: harness
 description: >-
   Harness-agnostic capability layer for agent-workflow. Read-and-follow doc (no es
   invocable por nombre): define el contrato que mantiene a la herramienta agnóstica al
-  arnés (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp, genérico) sin renunciar a las
+  arnés (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp/Oz, genérico) sin renunciar a las
   capacidades ricas de cada uno. Cataloga las capacidades de las que depende el
   workflow, las liga al mecanismo concreto de cada arnés (binding matrix), y fija los
   dos principios (capacidad-no-tool · progressive-enhancement). Referenciado desde
@@ -44,9 +44,9 @@ Las capacidades de las que depende el harness, con su fallback universal (lo que
 
 ## Harness binding matrix
 
-Mecanismo concreto por arnés (**jul-2026**, verificado contra docs oficiales; `~` parcial). Antigravity CLI reusa las superficies de Gemini (`~/.gemini/`).
+Mecanismo concreto por arnés (**jul-2026**, verificado contra docs oficiales; `~` parcial). Antigravity CLI reusa las superficies de Gemini (`~/.gemini/`); Oz reusa las de Warp (comparte columna **Warp / Oz**, con MCP por flag — ver la nota al pie de la matriz).
 
-| Capability | Claude Code | Codex | Gemini / Antigravity | OpenCode | Crush | Warp | Genérico |
+| Capability | Claude Code | Codex | Gemini / Antigravity | OpenCode | Crush | Warp / Oz | Genérico |
 |---|---|---|---|---|---|---|---|
 | command-invocation | `.claude/commands/` (slash) | slash + skills | `.gemini/commands/*.toml` | `.opencode/command/` | skills user-invocable | Workflows (Drive) | texto |
 | procedure-loading (skills) | `SKILL.md` `.claude/skills` | `SKILL.md` `.agents/skills` | `SKILL.md` (agentskills) | `SKILL.md` `.opencode`+`.claude`+`.agents` | `SKILL.md` `.agents`+`.crush`+`.claude` | `SKILL.md` `.agents`+`.warp`+`.claude` | read-and-follow `.md` |
@@ -54,11 +54,13 @@ Mecanismo concreto por arnés (**jul-2026**, verificado contra docs oficiales; `
 | compaction | `/compact` | Pre/PostCompact hooks | ~ | `session.compacted` | ~ | ~ | CHECKPOINT + resume |
 | subagent-dispatch | `Task` (paralelo) | `SubagentStart` / agents | agents (`.gemini/agents`) | `.opencode/agent/*.md` | ~ | ~ (cloud agents) | inline |
 | persistent-context | `CLAUDE.md` (**no** lee AGENTS.md → symlink) | `AGENTS.md` | `GEMINI.md` + `AGENTS.md` | `AGENTS.md` | `CRUSH.md` + `AGENTS.md` | `AGENTS.md` (auto) | `AGENTS.md` |
-| external-data (MCP) | `.mcp.json` | `.codex/config.toml` `[mcp_servers]` | `settings.json` `mcpServers` | `opencode.json` `mcp` | `crush.json` `mcp` | `.warp/.mcp.json` (+autodescubre `.mcp.json`) | — |
+| external-data (MCP) | `.mcp.json` | `.codex/config.toml` `[mcp_servers]` | `settings.json` `mcpServers` | `opencode.json` `mcp` | `crush.json` `mcp` | `.warp/.mcp.json` (+autodescubre `.mcp.json`) · Oz: flag `--mcp` | — |
 | **enforcement (deny tool)** | `PreToolUse` → `permissionDecision:deny` / exit 2 | `PreToolUse` (**≈mismo protocolo**) | `BeforeTool` → `decision:deny` / exit 2 | plugin `tool.execute.before` (`throw`) | `allowed_tools` (+ hooks preliminares) | allow/deny lists (**grueso**) | doctrina (git-safe #5) |
 | plugin / dist | `.claude-plugin` + marketplace | `.codex-plugin` + `/plugins` marketplace | Extension `gemini-extension.json` | plugin JS/TS (npm) | MCP + skills + config | Warp Drive | — |
 
 > **Notas (investigación de campo jul-2026):** las **skills `SKILL.md`** son la unidad portable **universal** — **los seis** arneses las soportan (Codex las agregó Dic-2025; **`.agents/skills` es el ancla cross-host**, leída por Codex/OpenCode/Crush/Warp). La **elección estructurada** (`AskUserQuestion`) sigue siendo **solo Claude Code / main-agent** → en el resto `structured-choice` degrada a markdown numerado. La **capa de enforcement** (fila nueva) ya **NO es exclusiva de Claude**: Codex + Gemini usan un protocolo casi idéntico (`permissionDecision:deny` / exit 2) y OpenCode bloquea vía `throw` en un plugin JS; Crush/Warp solo ofrecen allow/deny **grueso** (sin lógica custom por comando) → en ellos las convenciones quedan **advisory** + listas allow/deny. El **plan mode** enforced no se confía para safety; el git-safe (invariante #5) es propio. **MCP** es universal (cada host su archivo/clave). El **piso garantizado** (última columna) corre el modelo completo.
+
+> **Oz (hermano cloud de Warp).** `oz agent run` es un orquestador de agentes en la nube que **reusa las superficies de Warp**: mismas skills (`.agents/skills`, aplanadas a top-level como Warp) y `AGENTS.md`, con `structured-choice` igual degradada a markdown numerado. Difiere en tres puntos: **detección** por `OZ_RUN_ID` (prioritaria sobre Warp si coexisten los marcadores); **MCP sin archivo de config** — emite el JSON por el flag `--mcp` de `oz agent run` (o la env `OZ_MCP_CONFIG`), no escribe `.warp/.mcp.json`; y **sin plugin ni hooks** (enforcement advisory, como Warp). Por eso comparte la columna **Warp / Oz** con esa salvedad de MCP.
 
 ## Leverage installed skills
 
@@ -83,4 +85,4 @@ El **contrato** de cada comando (Flow, Trigger, Input, Mode, …) es agnóstico.
 
 ## Status
 
-Modelo de capacidades + matriz de binding **definidos** y **validados** con investigación de campo (**jul-2026**, contra docs oficiales). Cobertura **6 arneses reales**: Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp — todos soportan `SKILL.md` (ancla `.agents/skills`) + MCP + `AGENTS.md`; enforcement determinista en Claude/Codex/Gemini/OpenCode, advisory + allow/deny grueso en Crush/Warp. El CLI (`aw`) implementa el registro (`domain/harnesses.ts`), los writers MCP por-host, `detect-hosts` e `install-skill --target <host>`. El piso universal (`AGENTS.md` + texto + archivos + skills) corre el modelo completo hoy.
+Modelo de capacidades + matriz de binding **definidos** y **validados** con investigación de campo (**jul-2026**, contra docs oficiales). Cobertura **6 arneses reales** (familias; Warp/Oz cuenta como una, igual que Gemini/Antigravity): Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp/Oz — todos soportan `SKILL.md` (ancla `.agents/skills`) + MCP + `AGENTS.md`; enforcement determinista en Claude/Codex/Gemini/OpenCode, advisory + allow/deny grueso en Crush/Warp/Oz. El CLI (`aw`) implementa el registro (`domain/harnesses.ts`), los writers MCP por-host, `detect-hosts` e `install-skill --target <host>`. El piso universal (`AGENTS.md` + texto + archivos + skills) corre el modelo completo hoy.

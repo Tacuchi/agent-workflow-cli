@@ -17,3 +17,5 @@
 > **What they enforce (host-level, blocking):** invariant **#4** (DB scripts-only) via `sql-mutation-guard` (blocks DML/DDL over MCP), and the *expected-branch* clause of **#5** via `branch-check` (blocks edits on the wrong branch). The rest of git-safe (`push`/`--amend`/`--no-verify`/`--force`) is **doctrinal** — `git-commit-advisor` only **warns**, it does not block; a host may add its own deny hook if it wants hard enforcement.
 >
 > **Commands:** the three `PreToolUse` hooks are `agent-workflow hook <branch-check|sql-mutation-guard|git-commit-advisor>` subcommands; the lifecycle hooks (`auto-compact-on-close`, `checkpoint-write`, `resume-summary`) are **top-level** runtime commands (`agent-workflow <cmd>`).
+>
+> **Portability (`SessionStart`).** The namespace-pin hook invokes the binary directly — `agent-workflow self namespace --pin workflow` — which writes `~/.config/agent-workflow/namespace` cross-platform via Node `fs` (no shell, no literal `$HOME`), the same portable-argv shape every other hook uses. It replaced the old `sh -c` + `$HOME` one-liner, which was the only hook that could not run on Windows.

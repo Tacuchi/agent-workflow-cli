@@ -1,6 +1,6 @@
 ---
 description: Genera manuales de usuario/operación en docs/manuals/ consolidando sesiones, DECISION, plan-doc y código fuente. Single-pass, explícito.
-argument-hint: [--sessions <ids>] [--audiencia <usuario|operacion>] [--dry-run]
+argument-hint: [--sessions <ids>] [--mode <complement|regenerate>] [--dry-run]
 allowed-tools:
   [
     "Bash",

@@ -1,6 +1,6 @@
 ---
 description: Genera diagramas C4/mermaid en docs/diagrams/ a partir del código fuente y el plan-doc (AS-IS/TO-BE). Single-pass, explícito.
-argument-hint: [--tipo <c4|mermaid|ambos>] [--sesiones <ids>] [--dry-run]
+argument-hint: [--engine <mermaid|c4>] [--sessions <ids>] [--dry-run]
 allowed-tools:
   [
     "Bash",

@@ -3,7 +3,7 @@
 > This is the **bundle README** for the `export-*` family: the **only** path that promotes session artifacts to permanent `docs/` documents. Each export is invoked by the **user** (never by a loop) as a separate, explicit step.
 > Related layers: [`../commands/`](../commands/) (Layer 1 flows) · [`../loops/`](../loops/) (Layer 2, AI-driven) · artifacts live in `.workflow/sessions/` (Layer 3). Design reference: `docs/referencias/workflow-exports/`.
 >
-> **Namespace:** invoked via the Skill tool by `name:` — `export-scripts`, `export-manuals`, `export-diagrams`, `export-reports`. The thin `/w:export-*` slash commands that route here are authored separately under [`../commands/`](../commands/).
+> **Namespace:** these are skills registered **by name** (`name:` — `export-scripts`, `export-manuals`, `export-diagrams`, `export-reports`); in Claude Code they are reached via the `Skill` tool — the by-name binding of the procedure-loading capability, not a universal (see [`../harness/SKILL.md`](../harness/SKILL.md)). The thin `/w:export-*` slash commands that route here are authored separately under [`../commands/`](../commands/).
 
 ---
 

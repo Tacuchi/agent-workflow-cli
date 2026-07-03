@@ -11,7 +11,6 @@ import {
 import type { CommandResult } from "../../../domain/types.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
-import { type ActivityEvent, ActivityFeed } from "../components/activity-feed.js";
 import { ConfirmBanner } from "../components/confirm-banner.js";
 import { type DetailAction, DetailPanel } from "../components/detail-panel.js";
 import { InputPrompt } from "../components/input-prompt.js";
@@ -46,7 +45,6 @@ export interface McpTabProps {
   ctx: CliContext;
   isActive: boolean;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
-  recentEvents?: ActivityEvent[];
 }
 
 function buildArgs(action: string, values: Record<string, string> = {}): ParsedArgs {
@@ -69,7 +67,7 @@ function safeDsnVisible(ctx: CliContext, dsnVar: string): boolean {
   }
 }
 
-export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
+export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
   const [connections, setConnections] = useState<SelfMcpConnectionView[]>([]);
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
@@ -503,20 +501,6 @@ export function McpTab({ ctx, isActive, onToast, recentEvents }: McpTabProps) {
                 </Box>
               </Box>
             </Box>
-          ) : null}
-
-          {/* Recent calls */}
-          {mode.kind === "list" ? (
-            <>
-              <SectionHead label="Recent" count={recentEvents?.length ?? 0} marginTop={1} />
-              <Box marginLeft={2}>
-                <ActivityFeed
-                  events={recentEvents ?? []}
-                  cap={4}
-                  emptyHint="  (no recent MCP calls yet)"
-                />
-              </Box>
-            </>
           ) : null}
 
           {mode.kind === "busy" ? (

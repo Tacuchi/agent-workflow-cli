@@ -61,16 +61,14 @@ En plan mode **describe**, no escribe: la audiencia/longitud resuelta, las sesio
 
 ```
 /w:export-reports [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
-                  [--period last-quarter|last-month|YYYY-MM..YYYY-MM]
                   [--audience gerencia|tecnica] [--slug <kebab>] [--dry-run]
 ```
 
 | Flag | Comportamiento |
 |---|---|
-| `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`/`--period`) |
+| `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`) |
 | `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
 | `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
-| `--period` | Ventana temporal (`last-month`/`last-quarter`/rango `YYYY-MM..YYYY-MM`) |
 | `--audience gerencia\|tecnica` | Modula longitud/léxico: `gerencia` ≈ corto/ejecutivo; `tecnica` ≈ detallado |
 | `--slug <kebab>` | Override del slug del filename (default: `export-reports`) |
 | `--dry-run` | Reporte propositivo sin escribir |
@@ -81,7 +79,7 @@ Sin args: todo el corpus, audiencia ejecutiva por default. *(Si algún flag exac
 
 ### Paso 1 — Resolver contexto y filtrar corpus
 
-`aw sessions` / `release-data` aplicando `--sessions`/`--since`/`--source`/`--period`. Si el conjunto resultante está vacío → **abortar** con mensaje explícito ("No hay sesiones en el rango declarado"). La resolución de la carpeta destino la maneja el CLI.
+`aw sessions` / `release-data` aplicando `--sessions`/`--since`/`--source`. Si el conjunto resultante está vacío → **abortar** con mensaje explícito ("No hay sesiones en el rango declarado"). La resolución de la carpeta destino la maneja el CLI.
 
 ### Paso 2 — Recolectar inputs por sesión
 

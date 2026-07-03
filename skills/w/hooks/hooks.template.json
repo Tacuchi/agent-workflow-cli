@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'NS_FILE=\"$HOME/.config/agent-workflow/namespace\"; mkdir -p \"$(dirname \"$NS_FILE\")\" 2>/dev/null; printf \"workflow\\n\" > \"$NS_FILE\" 2>/dev/null; exit 0'",
+            "command": "agent-workflow self namespace --pin workflow",
             "timeout": 5
           }
         ]

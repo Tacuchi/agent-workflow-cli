@@ -67,6 +67,12 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
         paths: ctx.paths,
       });
       setData(out);
+      // Partial-fetch failures (a git subcommand threw) are collected in
+      // `warnings` instead of tanking the render — surface them to the daily log
+      // so a degraded workspace view leaves a durable, greppable trace.
+      for (const w of out.warnings) {
+        void ctx.logger?.warn(formatTuiEvent("workspace data", "warning", w));
+      }
     } finally {
       setLoading(false);
     }
@@ -797,6 +803,22 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           <Text color={colors.dim} wrap="truncate-end">
             {description}
           </Text>
+        </Box>
+      ) : null}
+
+      {/* Degraded-data notice: some subfetch failed (see the daily log for detail). */}
+      {data.warnings.length > 0 ? (
+        <Box marginBottom={1} flexDirection="column">
+          <Text color={colors.warn} wrap="truncate-end">
+            {icons.alertDot} {data.warnings.length} advertencia
+            {data.warnings.length > 1 ? "s" : ""} al cargar el workspace (datos parciales)
+          </Text>
+          {data.warnings.slice(0, 3).map((w, i) => (
+            <Text key={`${i}-${w.slice(0, 16)}`} color={colors.faint} wrap="truncate-end">
+              {"  "}
+              {w}
+            </Text>
+          ))}
         </Box>
       ) : null}
 

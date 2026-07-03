@@ -8,12 +8,14 @@ export const historyUpdateCommand: QtcCommand = {
   name: "history-update",
   describe:
     "Upsert a row in the workspace history file. " +
-    "Usage: aw history-update [--code <session>] [--sesion <n>] [--state <estado>] " +
+    "Usage: aw history-update [--code <session>] [--session <n>] [--state <estado>] " +
     "[--summary <text>] [--refs <csv>] [--date <iso>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const state = args.values.get("state");
-    const sesion = args.values.get("sesion");
+    // Canonical flag is --session (matches sources/check-branch); --sesion kept
+    // as a legacy alias so any older caller keeps working.
+    const sesion = args.values.get("session") ?? args.values.get("sesion");
     const date = args.values.get("date");
     const summary = args.values.get("summary");
     const refs = args.values.get("refs");

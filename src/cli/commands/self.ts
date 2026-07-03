@@ -7,7 +7,7 @@ import { installPluginSkillsFromGit } from "../../application/self/install-plugi
 import { selfInstallPluginSkills } from "../../application/self/install-plugin-skills.js";
 import { selfInstallSkill } from "../../application/self/install-skill.js";
 import { selfMcpConfig } from "../../application/self/mcp-config.js";
-import { selfNamespace } from "../../application/self/namespace-info.js";
+import { selfNamespace, selfNamespacePin } from "../../application/self/namespace-info.js";
 import { selfClearPluginCache } from "../../application/self/plugin-cache-clear.js";
 import { selfUninstallSkill } from "../../application/self/uninstall-skill.js";
 import { selfUninstall } from "../../application/self/uninstall.js";
@@ -38,12 +38,14 @@ const SELF_SUBCOMMANDS = [
 export const selfCommand: QtcCommand = {
   name: "self",
   describe:
-    "Manage the agent-workflow CLI itself (namespace, doctor, detect-hosts, update, install-skill, install-hooks, install-plugin-skills, install-plugin-skills-git, uninstall-skill, mcp, bootstrap).",
+    "Manage the agent-workflow CLI itself (namespace, doctor, detect-hosts, update, install-skill, install-hooks, install-plugin-skills, install-plugin-skills-git, uninstall-skill, mcp, bootstrap). 'self namespace' prints the active namespace; 'self namespace --pin <name>' persists it to ~/.config/agent-workflow/namespace (cross-platform).",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const sub = args.rest[0];
     switch (sub) {
-      case "namespace":
-        return selfNamespace(ctx);
+      case "namespace": {
+        const pin = args.values.get("pin");
+        return pin !== undefined ? selfNamespacePin(ctx, pin) : selfNamespace(ctx);
+      }
       case "doctor":
         return selfDoctor(ctx);
       case "detect-hosts":

@@ -34,7 +34,7 @@
 
 ## Schema of each command file
 
-Cada `<command>.md` de esta carpeta usa este frontmatter + estructura de cuerpo:
+Cada `<command>.md` de esta carpeta usa este frontmatter + estructura de cuerpo — el esquema (incluidos `allowed-tools:` y el tool `Skill`) es el **binding Claude Code**; otros arneses envuelven el mismo contrato en su formato (ver [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*):
 
 | Field | Description |
 |---|---|

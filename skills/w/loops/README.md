@@ -8,7 +8,7 @@
 
 ## What a loop is
 
-Un loop es una **skill** que le enseña a la IA *cómo iterar* hasta producir un entregable. **No es invocable por nombre** con el tool `Skill` (no se registra como skill suelta): es el cuerpo de su comando `/w:…`, que lo **carga leyendo `<loop>/SKILL.md`** y lo ejecuta inline.
+Un loop es una **skill** que le enseña a la IA *cómo iterar* hasta producir un entregable. **No es invocable por nombre** como skill suelta (no se registra como tal; en Claude Code, la invocación por nombre es el tool `Skill` — su binding, no un universal): es el cuerpo de su comando `/w:…`, que lo **carga leyendo `<loop>/SKILL.md`** y lo ejecuta inline.
 
 Los 5 loops corren el mismo **motor común**, cuyo canon vive en [`CHASSIS.md`](CHASSIS.md): objetivo persistente + verification-first, gap-driven convergente, session única por run con research inline, structured-choice + control `flow` (`Compactar`/`Cerrar`, siempre presente), compact/resume, artefactos como log vivo, convergence gate y el boundary de `docs/`. Cada loop es un **heir**: su `## Inherits` manda leer el chasis antes de sus deltas — nada del motor se repite acá.
 

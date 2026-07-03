@@ -1,6 +1,6 @@
 ---
 description: Genera un informe ejecutivo/funcional en docs/reports/ consolidando el corpus de sesiones (spec, CONCLUSIONS, DECISION), el plan-doc y el estado de docs/. Single-pass, explícito.
-argument-hint: [--sesiones <ids>] [--tipo <ejecutivo|funcional>] [--dry-run]
+argument-hint: [--sessions <ids>] [--audience <gerencia|tecnica>] [--dry-run]
 allowed-tools:
   [
     "Bash",

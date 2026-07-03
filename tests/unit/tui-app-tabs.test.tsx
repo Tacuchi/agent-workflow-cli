@@ -1,13 +1,32 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/cli/tui/app.js";
+import type { CliContext } from "../../src/cli/types.js";
 
 const ENTER = "\r";
 const TAB = "\t";
 const ESC = "[";
 
-function buildCtx() {
+interface CtxOpts {
+  logger?: {
+    info: (m: string) => Promise<void>;
+    warn: (m: string) => Promise<void>;
+    error: (m: string) => Promise<void>;
+    log: (level: string, m: string) => Promise<void>;
+  };
+  /** When true, `npm view` (the boot update-check) rejects as if offline. */
+  npmThrows?: boolean;
+  /** Observe every process.run call (cmd/args/opts) — used to assert spawn env. */
+  onRun?: (
+    cmd: string,
+    args: string[],
+    opts?: { cwd?: string; env?: Record<string, string> },
+  ) => void;
+}
+
+function buildCtx(opts: CtxOpts = {}): CliContext {
   return {
+    ...(opts.logger ? { logger: opts.logger } : {}),
     fs: {
       exists: async () => false,
       readText: async () => "",
@@ -20,7 +39,17 @@ function buildCtx() {
       get: () => undefined,
     },
     process: {
-      run: async () => ({ code: 0, stdout: "", stderr: "" }),
+      run: async (
+        cmd: string,
+        args: string[] = [],
+        runOpts?: { cwd?: string; env?: Record<string, string> },
+      ) => {
+        opts.onRun?.(cmd, args, runOpts);
+        if (opts.npmThrows && cmd === "npm") {
+          throw new Error("getaddrinfo ENOTFOUND registry.npmjs.org");
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
       which: async () => undefined,
     },
     git: {
@@ -45,7 +74,7 @@ function buildCtx() {
       cwdSessionsDir: () => "/home/test/project/.workflow/sessions",
       blockMarkers: () => ({ start: "<!-- AW-PROJECT-START -->", end: "<!-- AW-PROJECT-END -->" }),
     } as never,
-  };
+  } as unknown as CliContext;
 }
 
 describe("App (tab-home)", () => {
@@ -106,6 +135,39 @@ describe("App (tab-home)", () => {
     stdin.write("q");
     await new Promise((r) => setTimeout(r, 50));
     expect(onResult).toHaveBeenCalledWith({ kind: "exit", exitCode: 0 });
+  });
+
+  it("boot update-check offline: no muestra toast de error, loguea al diario (finding update-check-offline-toast)", async () => {
+    const logged: { level: string; msg: string }[] = [];
+    const logger = {
+      info: async () => {},
+      warn: async (m: string) => void logged.push({ level: "warn", msg: m }),
+      error: async () => {},
+      log: async (level: string, m: string) => void logged.push({ level, msg: m }),
+    };
+    const ctx = buildCtx({ logger, npmThrows: true });
+    const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
+    await new Promise((r) => setTimeout(r, 60));
+    const frame = lastFrame() ?? "";
+    // El check de arranque falló (offline) → NO hay toast rojo "Update check failed"…
+    expect(frame).not.toContain("Update check failed");
+    // …pero sí queda una traza durable en el log operativo diario.
+    expect(logged.some((l) => l.level === "warn" && l.msg.includes("update check"))).toBe(true);
+  });
+
+  it("marca el spawn re-entrante de `aw sessions` como interno (finding sessions-reentrant-log)", async () => {
+    const calls: { cmd: string; args: string[]; env?: Record<string, string> }[] = [];
+    const ctx = buildCtx({
+      onRun: (cmd, args, runOpts) => calls.push({ cmd, args, env: runOpts?.env }),
+    });
+    render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
+    await new Promise((r) => setTimeout(r, 60));
+    const sessCall = calls.find((c) => c.args[0] === "sessions");
+    expect(sessCall).toBeDefined();
+    // El env pasa AW_INTERNAL_CALL=1 (main.ts silencia el logger) y conserva el
+    // resto del entorno (PATH, etc.) para que el hijo `aw` pueda ejecutarse.
+    expect(sessCall?.env?.AW_INTERNAL_CALL).toBe("1");
+    expect(Object.keys(sessCall?.env ?? {}).length).toBeGreaterThan(1);
   });
 
   // ESC se referencia para asegurar el import del byte ESC en el test bundle.
