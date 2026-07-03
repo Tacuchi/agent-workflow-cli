@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   installActionLabel,
+  installDestination,
   installStatusPill,
   suggestDsnVar,
 } from "../../src/cli/tui/tabs/mcp-tab-helpers.js";
@@ -24,7 +25,7 @@ describe("suggestDsnVar", () => {
 });
 
 describe("installStatusPill", () => {
-  it("maps the workspace install status to a labelled pill", () => {
+  it("maps the user-scope install status to a labelled pill", () => {
     expect(installStatusPill("si")).toEqual({ label: "installed", tone: "ok" });
     expect(installStatusPill("drift")).toEqual({ label: "drift", tone: "warn" });
     expect(installStatusPill("no")).toEqual({ label: "registered", tone: "dim" });
@@ -32,9 +33,17 @@ describe("installStatusPill", () => {
 });
 
 describe("installActionLabel", () => {
-  it("adapts the install action label to the current status", () => {
-    expect(installActionLabel("no")).toBe("Install to workspace");
-    expect(installActionLabel("drift")).toBe("Update .mcp.json");
-    expect(installActionLabel("si")).toBe("Reinstall to workspace");
+  it("adapts the install action label to the current user-scope status", () => {
+    expect(installActionLabel("no")).toBe("Install → user scope");
+    expect(installActionLabel("drift")).toBe("Update user config");
+    expect(installActionLabel("si")).toBe("Reinstall → user scope");
+  });
+});
+
+describe("installDestination", () => {
+  it("resolves the host's global config path from the harness registry", () => {
+    // Same on every platform for claude; keeps TUI labels in sync with the writer.
+    expect(installDestination("claude")).toBe("~/.claude.json");
+    expect(installDestination("codex")).toBe("~/.codex/config.toml");
   });
 });

@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import { HARNESSES } from "../../domain/harnesses.js";
@@ -6,6 +5,7 @@ import {
   type McpHost,
   type McpInstance,
   buildMcpEntry,
+  isDbhubManagedEntry,
   mcpEntryNameFor,
   normalizeDsnVarName,
   validateDsnVarName,
@@ -27,7 +27,6 @@ import {
   type WarpPostInstallHint,
   buildWarpPostInstallHint,
 } from "../mcp-warp-postinstall-hint.js";
-import { resolveWarpProjectMcpPath } from "../multiroot/warp.js";
 
 // Hosts with a file-based MCP config the CLI can write, derived from the registry
 // (all 6: claude/codex/warp/gemini/opencode/crush). Keeping this data-driven means
@@ -115,6 +114,8 @@ export interface SelfMcpConfigData {
   registry?: { path: string; changed: boolean };
   setup?: McpSetupResult;
   remove?: McpRemoveResult;
+  /** Hosts whose same-named global entry is NOT ours (remove leaves it intact). */
+  preserved_foreign?: McpHost[];
   doctor?: McpDoctorResult;
   warp_hint?: WarpPostInstallHint;
   env_help?: {
@@ -326,23 +327,24 @@ function installConnection(
   connection: McpConnection,
   host: McpHost,
 ): CommandResult<SelfMcpConfigData> {
+  // User scope: the explicit install action (TUI button / menu choice) IS the
+  // consent the global_requires_force guard asks for, hence force: true.
   const setup = runMcpSetup(ctx.env, {
     hosts: [host],
     instances: [connection.name],
-    scope: "workspace",
+    scope: "global",
+    force: true,
     dsnVars: { [connection.name]: connection.dsnVar },
     dryRun: args.flags.has("--dry-run"),
   });
   if ("ok" in setup) return refusal(hostAction(host), connectionView(ctx, connection), setup.hint);
   const doctor = runDoctor(ctx, connection, [host]);
   const hasErrors = setup.errors.length > 0;
+  // The hint cites the file actually written (per-platform global path).
+  const warpTarget = [...setup.applied, ...setup.skipped].find((r) => r.host === "warp")?.target;
   const warpHint =
-    host === "warp" && !hasErrors
-      ? buildWarpPostInstallHint(
-          mcpEntryNameFor(connection.name),
-          "workspace",
-          resolveWarpProjectMcpPath(resolve(ctx.env.cwd())),
-        )
+    host === "warp" && !hasErrors && warpTarget
+      ? buildWarpPostInstallHint(mcpEntryNameFor(connection.name), "global", warpTarget)
       : undefined;
   return {
     ok: !hasErrors,
@@ -402,15 +404,29 @@ function removeConnection(
   connection: McpConnection,
 ): CommandResult<SelfMcpConfigData> {
   const dryRun = args.flags.has("--dry-run");
+  // Ownership guard: a same-named global entry the tool never wrote (user's own
+  // server) is preserved — remove only fans out to hosts whose entry is ours.
+  const entryName = mcpEntryNameFor(connection.name);
+  const preservedForeign = FILE_HOSTS.filter((host) => {
+    const snapshot = readMcpEntry(host, ctx.env.homeDir(), entryName, "global");
+    return snapshot.exists && !isDbhubManagedEntry(snapshot);
+  });
+  const removableHosts = FILE_HOSTS.filter((host) => !preservedForeign.includes(host));
+  // User scope; the explicit remove action is the consent the guard asks for.
   const remove = runMcpRemove(ctx.env, {
-    hosts: [...FILE_HOSTS],
+    hosts: removableHosts,
     instances: [connection.name],
-    scope: "workspace",
+    scope: "global",
+    force: true,
     dryRun,
   });
   if ("ok" in remove) return refusal("remove", connectionView(ctx, connection), remove.hint);
   const hasErrors = remove.errors.length > 0;
   const deleted = !dryRun && !hasErrors ? deleteMcpConnection(ctx.paths, connection) : null;
+  const preservedNote =
+    preservedForeign.length > 0
+      ? ` Se conservó la entrada ajena homónima en: ${preservedForeign.join(", ")}.`
+      : "";
   return {
     ok: !hasErrors,
     data: {
@@ -419,10 +435,11 @@ function removeConnection(
       connections: connectionViews(ctx),
       table: formatConnectionsTable(connectionViews(ctx)),
       remove,
+      ...(preservedForeign.length > 0 ? { preserved_foreign: preservedForeign } : {}),
       ...(deleted ? { registry: { path: deleted.path, changed: deleted.removed } } : {}),
       summary: dryRun
-        ? `Previsualización de eliminación para '${connection.name}'.`
-        : `Conexión '${connection.name}' eliminada de los hosts con MCP y del registro local.`,
+        ? `Previsualización de eliminación para '${connection.name}'.${preservedNote}`
+        : `Conexión '${connection.name}' eliminada de los hosts con MCP y del registro local.${preservedNote}`,
     },
     ...(hasErrors
       ? {
@@ -440,7 +457,7 @@ function runDoctor(ctx: CliContext, connection: McpConnection, hosts: McpHost[])
   return runMcpDoctor(ctx.env, ctx.paths, {
     hosts,
     instances: [connection.name],
-    scope: "workspace",
+    scope: "global",
     dsnVars: { [connection.name]: connection.dsnVar },
   });
 }
@@ -465,7 +482,7 @@ function connectionView(ctx: CliContext, connection: McpConnection): SelfMcpConn
 
 function installStatus(ctx: CliContext, connection: McpConnection, host: McpHost): InstallStatus {
   const entry = buildMcpEntry(connection.name, connection.dsnVar);
-  const snapshot = readMcpEntry(host, resolve(ctx.env.cwd()), entry.name);
+  const snapshot = readMcpEntry(host, ctx.env.homeDir(), entry.name, "global");
   if (!snapshot.exists) return "no";
   if (snapshot.command !== entry.command) return "drift";
   if (!arraysEqual(snapshot.args ?? [], entry.args)) return "drift";

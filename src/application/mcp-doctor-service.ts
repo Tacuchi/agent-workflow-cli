@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { resolve } from "node:path";
 import {
   type McpDriftReport,
@@ -170,7 +169,9 @@ function recordsEqual(a: Record<string, string>, b: Record<string, string>): boo
 }
 
 function resolveScopeDir(env: EnvPort, input: McpDoctorInput): string {
-  if (input.scope === "global") return homedir();
+  // Global scope resolves through the port (not os.homedir()) so tests can
+  // inject a sandbox home instead of reading the developer's real configs.
+  if (input.scope === "global") return env.homeDir();
   if (input.workspace) return resolve(input.workspace);
   return resolve(env.cwd());
 }

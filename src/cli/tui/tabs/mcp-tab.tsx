@@ -21,7 +21,12 @@ import { SectionHead } from "../components/section-head.js";
 import { useInputLock } from "../input-lock.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
-import { installActionLabel, installStatusPill, suggestDsnVar } from "./mcp-tab-helpers.js";
+import {
+  installActionLabel,
+  installDestination,
+  installStatusPill,
+  suggestDsnVar,
+} from "./mcp-tab-helpers.js";
 
 type Mode =
   | { kind: "list" }
@@ -164,11 +169,12 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     [ctx, onToast, refresh],
   );
 
-  // Install the connection into the workspace `.mcp.json` (root) via the
-  // existing `install-claude` action (runMcpSetup, scope=workspace).
+  // Install the connection into the host's user-scope config (claude →
+  // ~/.claude.json) via the existing `install-claude` action (runMcpSetup,
+  // scope=global; the button press is the consent the guard asks for).
   const runInstall = useCallback(
     async (name: string) => {
-      setMode({ kind: "busy", label: `installing ${name} → .mcp.json…` });
+      setMode({ kind: "busy", label: `installing ${name} → ${installDestination("claude")}…` });
       try {
         const result = await selfMcpConfig(buildArgs("install-claude", { name }), ctx);
         onToast?.({
@@ -212,19 +218,19 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
   );
 
   // Detail panel actions (Install/Test/Edit/Remove). `Install` adapts its label
-  // to the workspace status: install · update (on drift) · reinstall.
+  // to the user-scope status: install · update (on drift) · reinstall.
   const detailActionIds: ActionId[] = ["install", "test", "edit", "remove"];
   const detailActions: DetailAction[] = current
     ? [
         {
           name: installActionLabel(current.instalado.claude),
-          description: "Write the dbhub entry to .mcp.json at the workspace root.",
+          description: `Write the dbhub entry to ${installDestination("claude")} (user scope).`,
         },
         { name: "Test connection", description: "Run dbhub with DSN (SELECT 1 smoke test)." },
         { name: "Edit connection", description: "Alias / DSN env var." },
         {
           name: "Remove connection",
-          description: "Delete entry + DSN export.",
+          description: "Delete dbhub entries from every host's user config + local registry.",
           danger: true,
         },
       ]
@@ -333,7 +339,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     <Box flexDirection="column">
       <PageHead
         title="MCP"
-        count={{ label: `${connections.length} databases · profile.json`, tone: "accent" }}
+        count={{ label: `${connections.length} databases · mcp-connections.json`, tone: "accent" }}
         action={<Text color={colors.mute}>aliases match mcp_databases[] · consumed by skills</Text>}
       />
 
@@ -527,7 +533,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
               mode.kind === "confirm-delete" ? (
                 <ConfirmBanner
                   title={`× Remove ${mode.name}?`}
-                  body={`This deletes the entry from profile.json and unexports ${current.dsn_var}. Not reversible.`}
+                  body={`This removes '${mode.name}' (dbhub entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Not reversible.`}
                 />
               ) : null
             }
@@ -577,7 +583,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
                 />
                 <WizardStep
                   index={4}
-                  label="Install → .mcp.json"
+                  label="Install → user scope"
                   active={false}
                   completed={false}
                 />
@@ -602,8 +608,9 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     </Box>
   );
 
-  // Register the connection in profile.json (use-env). Returns ok so callers can
-  // chain the workspace install. On a not-visible DSN, use-env surfaces env_help.
+  // Register the connection in the local registry, mcp-connections.json (use-env).
+  // Returns ok so callers can chain the user-scope install. On a not-visible DSN,
+  // use-env surfaces env_help.
   async function saveConnection(name: string, dsnVar: string): Promise<boolean> {
     const result = await selfMcpConfig(buildArgs("use-env", { name, "dsn-var": dsnVar }), ctx);
     onToast?.({
@@ -632,7 +639,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     try {
       const saved = await saveConnection(name, dsnVar);
       if (saved) {
-        setMode({ kind: "busy", label: `installing ${name} → .mcp.json…` });
+        setMode({ kind: "busy", label: `installing ${name} → ${installDestination("claude")}…` });
         const install = await selfMcpConfig(buildArgs("install-claude", { name }), ctx);
         onToast?.({
           tone: install.ok ? "ok" : "err",

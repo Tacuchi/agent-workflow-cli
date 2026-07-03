@@ -92,6 +92,20 @@ export function validateDsnVarName(
   return { ok: true, value };
 }
 
+/**
+ * Ownership check: true when an existing config entry plausibly belongs to this
+ * tool. Every shape this CLI ever wrote launches dbhub ("agent-workflow mcp
+ * dbhub <x>" today; "npx @bytebase/dbhub" in the legacy era), so a same-named
+ * entry with neither marker is the user's own server — remove/cleanup must
+ * leave it untouched (at user scope the blast radius is every project).
+ */
+export function isDbhubManagedEntry(raw: { command?: unknown; args?: unknown }): boolean {
+  const command = typeof raw.command === "string" ? raw.command : "";
+  const args = Array.isArray(raw.args) ? raw.args.filter((x) => typeof x === "string") : [];
+  const haystack = [command, ...args].join(" ");
+  return haystack.includes("dbhub") || haystack.includes("agent-workflow");
+}
+
 export function buildMcpEntry(
   instance: McpInstance,
   dsnVar?: string,

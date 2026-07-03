@@ -12,7 +12,8 @@ class FakeEnv implements EnvPort {
     return undefined;
   }
   homeDir() {
-    return "/tmp/fakehome";
+    // Sandboxed under the test workspace: global-scope paths never leave tmp.
+    return join(this._cwd, "home");
   }
   cwd() {
     return this._cwd;

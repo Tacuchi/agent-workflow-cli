@@ -2,11 +2,13 @@
 // testable without mounting the Ink component. The async command wiring
 // (selfMcpConfig / testMcpConnection) stays in mcp-tab.tsx, thin over these.
 
+import { harnessForMcpHost, resolveGlobalMcpRawPath } from "../../../domain/harnesses.js";
+import type { McpHost } from "../../../domain/mcp-entry.js";
 import type { MetaTone } from "../components/list-row.js";
 
-/** Whether a connection is present in the workspace `.mcp.json` for the current
- *  host. Mirror of the (unexported) `InstallStatus` in `self/mcp-config.ts`. */
-export type WorkspaceInstallStatus = "si" | "no" | "drift";
+/** Whether a connection is present in the host's user-scope (global) config.
+ *  Mirror of the (unexported) `InstallStatus` in `self/mcp-config.ts`. */
+export type HostInstallStatus = "si" | "no" | "drift";
 
 /**
  * Suggest a DSN env var name from a connection alias, mirroring the CLI's
@@ -23,10 +25,10 @@ export function suggestDsnVar(alias: string): string {
 }
 
 /**
- * Row state pill reflecting whether the connection is installed in the
- * workspace `.mcp.json` (vs. merely registered in profile.json).
+ * Row state pill reflecting whether the connection is installed in the host's
+ * user-scope config (vs. merely registered in profile.json).
  */
-export function installStatusPill(status: WorkspaceInstallStatus): {
+export function installStatusPill(status: HostInstallStatus): {
   label: string;
   tone: MetaTone;
 } {
@@ -41,13 +43,24 @@ export function installStatusPill(status: WorkspaceInstallStatus): {
 }
 
 /** Detail-panel install action label, adapting to the current install status. */
-export function installActionLabel(status: WorkspaceInstallStatus): string {
+export function installActionLabel(status: HostInstallStatus): string {
   switch (status) {
     case "no":
-      return "Install to workspace";
+      return "Install → user scope";
     case "drift":
-      return "Update .mcp.json";
+      return "Update user config";
     case "si":
-      return "Reinstall to workspace";
+      return "Reinstall → user scope";
   }
+}
+
+/**
+ * Display path of the host's user-scope (global) MCP config, straight from the
+ * harness registry (e.g. claude → `~/.claude.json`) so labels never drift from
+ * the file the installer actually writes.
+ */
+export function installDestination(host: McpHost): string {
+  const spec = harnessForMcpHost(host);
+  const raw = spec ? resolveGlobalMcpRawPath(spec) : null;
+  return raw ?? "user config";
 }

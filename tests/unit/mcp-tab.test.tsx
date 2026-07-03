@@ -49,23 +49,23 @@ const ctx = {} as unknown as CliContext;
 const ENTER = "\r";
 const tick = () => new Promise((r) => setTimeout(r, 80));
 
-describe("McpTab — workspace install", () => {
-  it("shows the real per-connection workspace install status (not a static pill)", async () => {
+describe("McpTab — user-scope install", () => {
+  it("shows the real per-connection user-scope install status (not a static pill)", async () => {
     const { lastFrame } = render(<McpTab ctx={ctx} isActive />);
     await tick();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("cert");
     expect(frame).toContain("prod");
-    // prod is installed in the workspace .mcp.json → "installed" pill.
+    // prod is installed in the user-scope ~/.claude.json → "installed" pill.
     expect(frame).toContain("installed");
   });
 
-  it("offers 'Install to workspace' in the detail panel of an uninstalled connection", async () => {
+  it("offers 'Install → user scope' in the detail panel of an uninstalled connection", async () => {
     const { lastFrame, stdin } = render(<McpTab ctx={ctx} isActive />);
     await tick();
     stdin.write(ENTER); // open detail on the focused (first) row = cert, status "no"
     await tick();
-    expect(lastFrame() ?? "").toContain("Install to workspace");
+    expect(lastFrame() ?? "").toContain("Install → user scope");
   });
 
   it("guides add → alias → DSN (suggested) → review with save+install before committing", async () => {

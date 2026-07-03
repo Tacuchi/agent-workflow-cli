@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { HARNESSES, resolveGlobalMcpRawPath } from "../domain/harnesses.js";
 import {
@@ -117,7 +116,9 @@ function toErrorRecord(
 }
 
 function resolveScopeDir(env: EnvPort, input: McpRemoveInput): string {
-  if (input.scope === "global") return homedir();
+  // Global scope resolves through the port (not os.homedir()) so tests can
+  // inject a sandbox home instead of touching the developer's real configs.
+  if (input.scope === "global") return env.homeDir();
   if (input.workspace) return resolve(input.workspace);
   return resolve(env.cwd());
 }

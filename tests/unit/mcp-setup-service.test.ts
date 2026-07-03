@@ -6,12 +6,15 @@ import { runMcpSetup } from "../../src/application/mcp-setup-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
 
 class FakeEnv implements EnvPort {
-  constructor(private readonly _cwd: string) {}
+  constructor(
+    private readonly _cwd: string,
+    private readonly _home: string,
+  ) {}
   get() {
     return undefined;
   }
   homeDir() {
-    return "/tmp/fakehome";
+    return this._home;
   }
   cwd() {
     return this._cwd;
@@ -20,11 +23,13 @@ class FakeEnv implements EnvPort {
 
 describe("runMcpSetup", () => {
   let workspace: string;
+  let home: string;
   let env: FakeEnv;
 
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "mcp-setup-svc-"));
-    env = new FakeEnv(workspace);
+    home = join(workspace, "home");
+    env = new FakeEnv(workspace, home);
   });
   afterEach(() => {
     rmSync(workspace, { recursive: true, force: true });
@@ -113,7 +118,7 @@ describe("runMcpSetup", () => {
     expect(result.exitCode).toBe(2);
   });
 
-  it("scope=global con --force NO retorna refusal", () => {
+  it("scope=global con --force escribe en el home inyectado (EnvPort), no en el real", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude"],
       instances: ["cert"],
@@ -122,6 +127,9 @@ describe("runMcpSetup", () => {
       workspace,
     });
     expect("ok" in result).toBe(false);
+    if ("ok" in result) throw new Error("did not expect refusal");
+    expect(result.scope_dir).toBe(home);
+    expect(result.applied[0]?.target).toBe(join(home, ".claude.json"));
   });
 
   it("scope=global con --dry-run NO retorna refusal", () => {

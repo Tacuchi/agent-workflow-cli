@@ -99,7 +99,8 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
       JSON.stringify(
         {
           permissions: { additionalDirectories: ["/some/path"] },
-          mcpServers: { cert: { command: "old", args: [], env: {} } },
+          // Shape de la era legacy de esta tool (dbhub) — sí es nuestra.
+          mcpServers: { cert: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} } },
         },
         null,
         2,
@@ -119,7 +120,7 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
       JSON.stringify(
         {
           mcpServers: {
-            cert: { command: "old", args: [], env: {} },
+            cert: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} },
             keep: { command: "x", args: [], env: {} },
           },
         },
@@ -131,6 +132,24 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     const legacy = JSON.parse(readFileSync(legacyPath, "utf-8"));
     expect(legacy.mcpServers.cert).toBeUndefined();
     expect(legacy.mcpServers.keep).toBeDefined();
+  });
+
+  it("legacy cleanup conserva una entrada homónima ajena (guard de ownership)", () => {
+    // Mismo nombre 'cert', pero el server es del usuario (no menciona dbhub ni
+    // agent-workflow): a scope global ese archivo es ~/.claude/settings.json real.
+    const legacyPath = join(scopeDir, ".claude", "settings.json");
+    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
+    writeFileSync(
+      legacyPath,
+      JSON.stringify(
+        { mcpServers: { cert: { command: "node", args: ["my-cert-server.js"], env: {} } } },
+        null,
+        2,
+      ),
+    );
+    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    const legacy = JSON.parse(readFileSync(legacyPath, "utf-8"));
+    expect(legacy.mcpServers.cert.args).toEqual(["my-cert-server.js"]);
   });
 });
 

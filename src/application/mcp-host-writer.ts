@@ -4,17 +4,19 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import type {
-  McpEntry,
-  McpHost,
-  McpWriteAction,
-  McpWriteOpts,
-  McpWriteResult,
+import {
+  type McpEntry,
+  type McpHost,
+  type McpWriteAction,
+  type McpWriteOpts,
+  type McpWriteResult,
+  isDbhubManagedEntry,
 } from "../domain/mcp-entry.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
 import { resolveWarpGlobalMcpPath, resolveWarpProjectMcpPath } from "./multiroot/warp.js";
@@ -22,6 +24,27 @@ import { resolveWarpGlobalMcpPath, resolveWarpProjectMcpPath } from "./multiroot
 export interface ScopeInput {
   scopeDir: string;
   kind?: "workspace" | "global";
+}
+
+// Atomic replace: stage to a tmp sibling and rename over the target. At global
+// scope the targets are live user files (~/.claude.json is rewritten by any
+// running Claude Code session); rename keeps a concurrent reader from seeing a
+// truncated/half-written file. Lost-update between two writers remains possible
+// (would need locking) — accepted residual risk.
+let atomicWriteCounter = 0;
+function atomicWriteFileSync(path: string, content: string): void {
+  const tmp = `${path}.${process.pid}.${++atomicWriteCounter}.tmp`;
+  try {
+    writeFileSync(tmp, content, "utf-8");
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // tmp may not exist if writeFileSync failed before creating it
+    }
+    throw err;
+  }
 }
 
 function claudeMcpFile(scope: ScopeInput): string {
@@ -52,6 +75,11 @@ function cleanupLegacyClaudeMcpEntry(scope: ScopeInput, name: string, dryRun: bo
   if (!mcpServers || typeof mcpServers !== "object" || Array.isArray(mcpServers)) return;
   const servers = mcpServers as Record<string, unknown>;
   if (!(name in servers)) return;
+  // Ownership guard: at global scope this file is the user's real
+  // ~/.claude/settings.json — a same-named entry the tool never wrote stays.
+  const existing = servers[name];
+  if (!existing || typeof existing !== "object" || Array.isArray(existing)) return;
+  if (!isDbhubManagedEntry(existing as { command?: unknown; args?: unknown })) return;
   servers[name] = undefined;
   const remaining = Object.fromEntries(Object.entries(servers).filter(([, v]) => v !== undefined));
   if (Object.keys(remaining).length === 0) {
@@ -61,7 +89,7 @@ function cleanupLegacyClaudeMcpEntry(scope: ScopeInput, name: string, dryRun: bo
   }
   purgeStaleBackups(legacy);
   const legacyBackup = backupFile(legacy);
-  writeFileSync(legacy, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  atomicWriteFileSync(legacy, `${JSON.stringify(data, null, 2)}\n`);
   discardBackup(legacyBackup);
 }
 
@@ -183,7 +211,7 @@ function writeJsonMcpEntry(
   mkdirSync(dirname(file), { recursive: true });
   purgeStaleBackups(file);
   const backup = backupFile(file);
-  writeFileSync(file, newJson, "utf-8");
+  atomicWriteFileSync(file, newJson);
   discardBackup(backup);
   return resultWritten(host, file, entry.name, null);
 }
@@ -214,7 +242,7 @@ function removeJsonMcpEntry(
   mkdirSync(dirname(file), { recursive: true });
   purgeStaleBackups(file);
   const backup = backupFile(file);
-  writeFileSync(file, newJson, "utf-8");
+  atomicWriteFileSync(file, newJson);
   discardBackup(backup);
   return resultRemoved(host, file, entry.name, null);
 }
@@ -253,7 +281,7 @@ function writeClaudeMcpEntry(
   mkdirSync(dirname(settingsFile), { recursive: true });
   purgeStaleBackups(settingsFile);
   const backup = backupFile(settingsFile);
-  writeFileSync(settingsFile, newJson, "utf-8");
+  atomicWriteFileSync(settingsFile, newJson);
   discardBackup(backup);
   cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
   return resultWritten("claude", settingsFile, entry.name, null);
@@ -303,7 +331,7 @@ function writeCodexMcpEntry(
   mkdirSync(dirname(configFile), { recursive: true });
   purgeStaleBackups(configFile);
   const backup = backupFile(configFile);
-  writeFileSync(configFile, newContent, "utf-8");
+  atomicWriteFileSync(configFile, newContent);
   discardBackup(backup);
   return resultWritten("codex", configFile, entry.name, null);
 }
@@ -340,7 +368,7 @@ function removeClaudeMcpEntry(
   mkdirSync(dirname(settingsFile), { recursive: true });
   purgeStaleBackups(settingsFile);
   const backup = backupFile(settingsFile);
-  writeFileSync(settingsFile, newJson, "utf-8");
+  atomicWriteFileSync(settingsFile, newJson);
   discardBackup(backup);
   cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
   return resultRemoved("claude", settingsFile, entry.name, null);
@@ -380,7 +408,7 @@ function removeCodexMcpEntry(
   mkdirSync(dirname(configFile), { recursive: true });
   purgeStaleBackups(configFile);
   const backup = backupFile(configFile);
-  writeFileSync(configFile, newContent, "utf-8");
+  atomicWriteFileSync(configFile, newContent);
   discardBackup(backup);
   return resultRemoved("codex", configFile, entry.name, null);
 }
@@ -422,7 +450,7 @@ function writeWarpMcpEntry(entry: McpEntry, scope: ScopeInput, opts: McpWriteOpt
   mkdirSync(dirname(settingsFile), { recursive: true });
   purgeStaleBackups(settingsFile);
   const backup = backupFile(settingsFile);
-  writeFileSync(settingsFile, newJson, "utf-8");
+  atomicWriteFileSync(settingsFile, newJson);
   discardBackup(backup);
   return resultWritten("warp", settingsFile, entry.name, null);
 }
@@ -454,7 +482,7 @@ function removeWarpMcpEntry(
   mkdirSync(dirname(settingsFile), { recursive: true });
   purgeStaleBackups(settingsFile);
   const backup = backupFile(settingsFile);
-  writeFileSync(settingsFile, newJson, "utf-8");
+  atomicWriteFileSync(settingsFile, newJson);
   discardBackup(backup);
   return resultRemoved("warp", settingsFile, entry.name, null);
 }
