@@ -84,7 +84,8 @@ export async function installPluginSkillsFromGit(
   }
 }
 
-async function gitClone(url: string, dest: string, ref?: string): Promise<void> {
+// Exported: skills-manager reuses the same shallow clone for register/update.
+export async function gitClone(url: string, dest: string, ref?: string): Promise<void> {
   const gitArgs = ["clone", "--depth=1"];
   if (ref) gitArgs.push("--branch", ref);
   gitArgs.push(url, dest);

@@ -142,7 +142,9 @@ async function processSkill(opts: ProcessSkillOpts): Promise<PluginSkillResult> 
   }
 }
 
-async function scanSkillDirs(fromDir: string): Promise<{ name: string; path: string }[]> {
+// Exported: skills-manager reuses the same scan to register/install standalone
+// skills (a valid skill dir = subdir with SKILL.md + name/description frontmatter).
+export async function scanSkillDirs(fromDir: string): Promise<{ name: string; path: string }[]> {
   let entries: string[];
   try {
     entries = await readdir(fromDir);
@@ -181,11 +183,15 @@ async function patchFrontmatterName(skillMdPath: string, newName: string): Promi
   }
 }
 
-async function copyDir(src: string, dest: string): Promise<void> {
+// Exported: shared with skills-manager (materializes canonical copies).
+export async function copyDir(src: string, dest: string): Promise<void> {
   await mkdir(dest, { recursive: true });
   const entries = await readdir(src, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name === ".git") continue;
+    // Nunca seguir symlinks: un repo hostil puede commitear un link a un archivo
+    // del usuario (p.ej. ~/.ssh) y copyFile lo dereferenciaría al materializar.
+    if (entry.isSymbolicLink()) continue;
     const srcPath = join(src, entry.name);
     const destPath = join(dest, entry.name);
     if (entry.isDirectory()) {
@@ -196,7 +202,9 @@ async function copyDir(src: string, dest: string): Promise<void> {
   }
 }
 
-function hasValidFrontmatter(content: string): boolean {
+// Exported: skills-manager valida con la misma regla qué es una skill (SKILL.md
+// con frontmatter name+description) al registrar fuentes de un solo directorio.
+export function hasValidFrontmatter(content: string): boolean {
   const match = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return false;
   const block = match[1] ?? "";

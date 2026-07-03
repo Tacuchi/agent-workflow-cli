@@ -1,5 +1,6 @@
 import {
   appendFile,
+  lstat,
   mkdir,
   open,
   readFile,
@@ -7,11 +8,18 @@ import {
   rename,
   rm,
   stat,
+  symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { DirEntry, DirEntryType, FileStat, FileSystemPort } from "../ports/file-system.js";
+import type {
+  DirEntry,
+  DirEntryType,
+  FileStat,
+  FileSystemPort,
+  LinkStat,
+} from "../ports/file-system.js";
 
 interface NodeError extends Error {
   code?: string;
@@ -104,5 +112,22 @@ export class NodeFileSystem implements FileSystemPort {
     const s = await stat(path);
     const type: DirEntryType = s.isFile() ? "file" : s.isDirectory() ? "dir" : "other";
     return { mtime: s.mtime, size: s.size, type };
+  }
+
+  async symlink(target: string, path: string): Promise<void> {
+    // "junction" en Windows: enlaza dirs sin privilegios de admin (los symlink
+    // reales requieren Developer Mode). En POSIX el type se ignora.
+    await symlink(target, path, process.platform === "win32" ? "junction" : "dir");
+  }
+
+  async lstat(path: string): Promise<LinkStat | null> {
+    try {
+      const s = await lstat(path);
+      const type: DirEntryType = s.isFile() ? "file" : s.isDirectory() ? "dir" : "other";
+      return { type, isSymlink: s.isSymbolicLink() };
+    } catch (err) {
+      if ((err as NodeError).code === "ENOENT") return null;
+      throw err;
+    }
   }
 }

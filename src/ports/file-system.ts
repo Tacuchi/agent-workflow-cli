@@ -12,6 +12,12 @@ export interface FileStat {
   type: DirEntryType;
 }
 
+/** Result of `lstat`: the entry itself, symlinks NOT followed. */
+export interface LinkStat {
+  type: DirEntryType;
+  isSymlink: boolean;
+}
+
 export interface FileSystemPort {
   readText(path: string): Promise<string>;
   writeText(path: string, content: string): Promise<void>;
@@ -30,4 +36,12 @@ export interface FileSystemPort {
   list(path: string): Promise<DirEntry[]>;
   mkdirp(path: string): Promise<void>;
   stat(path: string): Promise<FileStat>;
+  /**
+   * Create a symbolic link at `path` pointing to `target` (directories; on
+   * Windows a junction, which needs no admin rights). Fails if `path` exists or
+   * the platform forbids links (EPERM) — callers catch to fall back to copying.
+   */
+  symlink(target: string, path: string): Promise<void>;
+  /** Stat without following symlinks; `null` when the path does not exist. */
+  lstat(path: string): Promise<LinkStat | null>;
 }
