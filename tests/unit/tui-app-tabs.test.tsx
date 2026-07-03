@@ -93,7 +93,7 @@ describe("App (tab-home)", () => {
     expect(frame).toContain("project");
     expect(frame).toContain("v9.9.9");
     expect(frame).toContain("Status");
-    expect(frame).toContain("Workflow");
+    expect(frame).toContain("Workflows");
   });
 
   it("HomeHeader expone workspace context", async () => {
@@ -107,14 +107,16 @@ describe("App (tab-home)", () => {
     expect(frame).toMatch(/sessions/);
   });
 
-  it("número 2 desde la Status tab salta a Workflow tab", async () => {
+  it("número 2 desde la Status tab salta a Workflows tab (admin por host + strip de flows)", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("2");
     await new Promise((r) => setTimeout(r, 50));
-    // Workflow tab renderiza SectionHead "FLOWS" (modelo stages+loops).
-    expect(lastFrame()).toContain("FLOWS");
+    // [Workflows] monta la administración por host (SectionHead "HOSTS") y el
+    // informativo compacto de flows.
+    expect(lastFrame()).toContain("HOSTS");
+    expect(lastFrame()).toContain("Flows:");
   });
 
   it("número 5 desde la Status tab salta a Skills tab", async () => {

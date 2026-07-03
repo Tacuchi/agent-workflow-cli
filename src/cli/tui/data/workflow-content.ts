@@ -1,16 +1,25 @@
-// Datos del Workflow tab — hardcoded para evitar I/O en render.
-// Sincronizado con el modelo rediseñado (stages + loops + artifacts; loops = objetivos persistentes + verification-first):
+// Datos del [Workflows] tab — hardcoded para evitar I/O en render.
+// Sincronizado con el modelo rediseñado (stages + loops + artifacts):
 //   - skills/w/commands/   (/w: slash commands — 1 por archivo .md)
-//   - skills/w/README.md   (3 layers + 3 flows: SPEC / PLAN / QUICK)
-//   - src/cli/help-groups.ts (familias del CLI real, post-cleanup)
+//   - skills/w/README.md   (3 flows: SPEC / PLAN / QUICK)
 //   - skills/w/hooks/hooks.template.json (5 eventos)
 //
-// Puntos de drift: si se agregan/quitan /w: commands en `commands/`, o se
-// renombran familias en help-groups.ts, actualizar este archivo. Los totales se
-// derivan con `.length` en runtime — NO hardcodear cantidades en strings.
+// Puntos de drift: si se agregan/quitan /w: commands en `commands/` o hooks en
+// el template, actualizar este archivo. Los totales se derivan con `.length` en
+// runtime — NO hardcodear cantidades en strings.
 
-import type { FamilyCardData } from "../components/family-card.js";
-import type { PhaseCardData } from "../components/phase-card.js";
+// Shapes propios del data module, reducidos a lo que la TUI consume: el strip
+// de flows usa id+title; commandFamilies solo alimenta el count transitorio de
+// sub-skills en [Skills] (desaparece con su reescritura como manager de sueltas).
+export interface WorkflowPhase {
+  id: string;
+  title: string;
+}
+
+export interface CommandFamily {
+  id: string;
+  items: string[];
+}
 
 export interface HookEntry {
   name: string;
@@ -20,85 +29,40 @@ export interface HookEntry {
 
 export interface WorkflowContent {
   overview: string;
-  phases: PhaseCardData[];
-  commandFamilies: FamilyCardData[];
+  phases: WorkflowPhase[];
+  commandFamilies: CommandFamily[];
   slashCommands: string[];
   hooks: HookEntry[];
 }
 
 export const WORKFLOW_CONTENT: WorkflowContent = {
+  // Una sola línea: [Workflows] la renderiza con truncate — el detalle doctrinal
+  // vive en el bundle `w`, no en la TUI.
   overview:
-    "Stages + loops + artifacts — 3 flows (SPEC · PLAN · QUICK) drive convergent loops; each loop is a persistent goal that runs until its Success criteria are green (verification-first). export-* promotes to docs/; transversal skills (/w:status · /w:fix-git) sit outside the flows.",
+    "3 flows (SPEC · PLAN · QUICK) drive convergent loops — each a persistent goal that runs until its Success criteria are green (verification-first).",
 
   // Las 3 FLOWS del modelo + bootstrap (workspace-init) + familia export-*.
-  // Reusa PhaseCardData genérico (id/n/title/desc/commands/slash/hook).
   phases: [
-    {
-      id: "workspace-init",
-      n: 1,
-      title: "Workspace init",
-      desc: "Bootstrap a folder into a workspace — .workflow/ + docs/ taxonomy + WORKSPACE block. Single-pass.",
-      commands: ["workspace-init"],
-      slash: "/w:workspace-init",
-      hook: "SessionStart",
-    },
-    {
-      id: "spec",
-      n: 2,
-      title: "SPEC — the what",
-      desc: "Define the spec. spec-new is single-pass; spec-refine drives the refine loop → docs/specs.",
-      commands: ["spec-new", "spec-refine"],
-      slash: "/w:spec-new · /w:spec-refine",
-      hook: "—",
-    },
-    {
-      id: "plan",
-      n: 3,
-      title: "PLAN — the how",
-      desc: "Plan, (optionally) refine, and execute. plan-new + plan-refine (aux) + plan-exec each drive loops → docs/plans.",
-      commands: ["plan-new", "plan-refine", "plan-exec"],
-      slash: "/w:plan-new · /w:plan-refine · /w:plan-exec",
-      hook: "PreCompact · PostCompact",
-    },
-    {
-      id: "quick",
-      n: 4,
-      title: "QUICK — the shortcut",
-      desc: "Lightweight one-command loop for small tasks — code or a scoped analysis/design. Proportional verification-first; owns no docs/ folder. Escalates live to SPEC when the task outgrows it.",
-      commands: ["quick"],
-      slash: "/w:quick",
-      hook: "SessionEnd",
-    },
-    {
-      id: "export",
-      n: 5,
-      title: "Export — promote to docs/",
-      desc: "The only artifact→docs/ promotion path. Read-only consolidation of session artifacts.",
-      commands: ["export-scripts", "export-manuals", "export-diagrams", "export-reports"],
-      slash: "/w:export-scripts …",
-      hook: "—",
-    },
+    { id: "workspace-init", title: "Workspace init" },
+    { id: "spec", title: "SPEC — the what" },
+    { id: "plan", title: "PLAN — the how" },
+    { id: "quick", title: "QUICK — the shortcut" },
+    { id: "export", title: "Export — promote to docs/" },
   ],
 
-  // Command families — vista del TUI alineada con help-groups.ts (post-cleanup),
-  // con los nombres realmente registrados en main.ts. Algunas familias se
-  // enriquecen con subcomandos (Hooks/MCP/Self) para orientar; `workspace-init`
-  // se surface también aquí (además de su phase card) por descubribilidad. Los
-  // totales se derivan con `.length` — NO hardcodear cantidades en strings.
+  // Familias del CLI real (help-groups.ts post-cleanup) — hoy solo se consume
+  // items.length para el count de sub-skills del [Skills] transitorio.
   commandFamilies: [
     {
       id: "session",
-      title: "Session lifecycle",
       items: ["sessions", "session-create", "session-resume", "session-close", "session-artifacts"],
     },
     {
       id: "checkpoint",
-      title: "Checkpoint",
       items: ["checkpoint-read", "checkpoint-write", "auto-compact-on-close"],
     },
     {
       id: "sources",
-      title: "Sources / Branches",
       items: [
         "workspace-init",
         "sources",
@@ -115,12 +79,10 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     },
     {
       id: "orchestration",
-      title: "Orchestration",
       items: ["status", "stack", "skill-index", "skills", "resume-summary", "next-number"],
     },
     {
       id: "doctor",
-      title: "Doctor / Data",
       items: [
         "plugin-doctor",
         "plugin-cache",
@@ -134,22 +96,18 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     },
     {
       id: "hooks",
-      title: "Hooks",
       items: ["hook branch-check", "hook sql-mutation-guard", "hook git-commit-advisor"],
     },
     {
       id: "mcp",
-      title: "MCP",
       items: ["mcp dbhub", "mcp setup", "mcp remove", "mcp doctor", "mcp warp-status"],
     },
     {
       id: "dev",
-      title: "Dev-only",
       items: ["harness", "profiles", "logs"],
     },
     {
       id: "self",
-      title: "Self",
       items: [
         "self doctor",
         "self install",

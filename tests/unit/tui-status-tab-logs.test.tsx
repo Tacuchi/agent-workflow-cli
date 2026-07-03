@@ -89,4 +89,23 @@ describe("StatusTab — Logs section", () => {
     await tick(60);
     expect(opened).toEqual(["/home/u/.agent-workflow/logs/agent-workflow-2026-07-01.log"]);
   });
+
+  it("Enter on the hosts tile activates the Workflows tab (admin moved there)", async () => {
+    const activated: string[] = [];
+    const { stdin } = render(
+      <StatusTab
+        ctx={buildCtx([])}
+        version="9.9.9"
+        isActive={true}
+        logs={logs}
+        onActivateTab={(t) => activated.push(t)}
+      />,
+    );
+    await tick();
+    stdin.write(RIGHT); // cli → hosts
+    await tick(20);
+    stdin.write(ENTER);
+    await tick(40);
+    expect(activated).toEqual(["workflow"]);
+  });
 });

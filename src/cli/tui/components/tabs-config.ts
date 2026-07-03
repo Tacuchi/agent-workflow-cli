@@ -17,7 +17,7 @@ export interface TabConfig {
 /** Lista canónica de tabs en orden de presentación + atajo numérico. */
 export const TABS_LIST: readonly TabConfig[] = [
   { id: "status", key: "1", label: "Status" },
-  { id: "workflow", key: "2", label: "Workflow" },
+  { id: "workflow", key: "2", label: "Workflows" },
   { id: "project", key: "3", label: "Project" },
   { id: "mcp", key: "4", label: "MCP" },
   { id: "skills", key: "5", label: "Skills" },

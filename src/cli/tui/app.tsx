@@ -171,7 +171,10 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
           ),
           actions: [
             {
-              key: "i",
+              // 'u' y no 'i': ink despacha cada tecla a TODOS los useInput
+              // activos, e 'i' es el atajo empty-state de la administración por
+              // host — con el banner arriba dispararía install + update a la vez.
+              key: "u",
               label: "apply",
               emphasis: true,
               run: () => {
@@ -356,7 +359,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
               disabledHosts={prefs.disabledHosts}
             />
           ) : null}
-          {activeTab === "workflow" ? <WorkflowTab ctx={ctx} isActive={true} /> : null}
+          {activeTab === "workflow" ? (
+            <WorkflowTab ctx={ctx} isActive={true} onToast={pushToast} />
+          ) : null}
           {activeTab === "project" ? (
             <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
           ) : null}

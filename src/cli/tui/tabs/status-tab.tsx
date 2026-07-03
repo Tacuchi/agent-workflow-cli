@@ -17,7 +17,7 @@ export interface StatusTabProps {
   ctx: CliContext;
   version: string;
   isActive: boolean;
-  onActivateTab?: (tab: "mcp" | "skills") => void;
+  onActivateTab?: (tab: "workflow" | "mcp" | "skills") => void;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
   /** Logs operativos diarios (global user-level). Si vacío, se renderiza empty-state. */
   logs?: LogEntry[];
@@ -122,7 +122,8 @@ export function StatusTab({
         return;
       }
       if (key.return) {
-        if (tileCursor === "hosts") onActivateTab?.("skills");
+        // La administración por host vive en [Workflows] desde esta ronda.
+        if (tileCursor === "hosts") onActivateTab?.("workflow");
         if (tileCursor === "mcp") onActivateTab?.("mcp");
         if (tileCursor === "logs") setLogsMode(true);
       }
@@ -192,7 +193,7 @@ export function StatusTab({
         <StatTile
           label="mcp"
           value={`${data.mcp.length} db`}
-          sub="profile.json"
+          sub="mcp-connections.json"
           tone={data.mcp.length > 0 ? "accent" : "dim"}
           clickable
           active={tileCursor === "mcp"}

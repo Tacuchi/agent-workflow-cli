@@ -158,6 +158,18 @@ describe("SkillsTab (TUI) — hooks integration (T2.8)", () => {
     unmount();
   });
 
+  it("el header refleja los counts que reporta HostAdminSection (seam onSummary)", async () => {
+    // Con ~/.claude/skills/w presente, la sección reporta installed=1 y el
+    // PageHead del tab debe decir "1/7 hosts" — cubre el seam onSummary→estado
+    // del tab que el refactor de extracción introdujo.
+    await mkdir(join(home, ".claude", "skills", "w"), { recursive: true });
+    const { lastFrame, unmount } = render(<SkillsTab ctx={buildCtx(home)} isActive={true} />);
+    await new Promise((r) => setTimeout(r, 100));
+    const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(frame).toContain("1/7 hosts");
+    unmount();
+  });
+
   it("renders without crashing when settings.json is invalid JSON", async () => {
     await mkdir(join(home, ".claude"), { recursive: true });
     await writeFile(join(home, ".claude", "settings.json"), "{not valid", "utf8");
