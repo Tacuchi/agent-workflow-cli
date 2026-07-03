@@ -26,7 +26,7 @@ export function suggestDsnVar(alias: string): string {
 
 /**
  * Row state pill reflecting whether the connection is installed in the host's
- * user-scope config (vs. merely registered in profile.json).
+ * user-scope config (vs. merely registered in mcp-connections.json).
  */
 export function installStatusPill(status: HostInstallStatus): {
   label: string;

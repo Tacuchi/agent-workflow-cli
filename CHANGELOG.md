@@ -4,6 +4,29 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Reorganización de la TUI + administrador de skills sueltas** (spec 007 / plan 004 del workspace). Cuatro frentes: MCP a user scope, `[Workflow]`→`[Workflows]` con la administración por host, motor de skills sueltas (modelo skills.sh) y `[Skills]` reescrito sobre él. Cada fase pasó un review gate adversarial multi-agente antes de su commit.
+
+### Changed (⚠ breaking — próxima release debería ser major)
+
+- **`self mcp` (TUI e interactivo) instala/remueve/diagnostica en el scope de usuario** — el config global por host (`~/.claude.json` · `~/.codex/config.toml` · Warp por plataforma · `~/.gemini/settings.json` · opencode/crush XDG) en vez del `.mcp.json` del workspace. La acción explícita del usuario equivale al consentimiento del guard `global_requires_force`. Los MCP proyecto-scope existentes **no se migran ni se tocan**; `aw mcp setup/remove` (workspace por defecto; `--workspace <dir>` / `--global` con su guard `global_requires_force`) conserva su comportamiento. El estado instalado/drift se evalúa contra los archivos globales.
+- **`[Workflow]` → `[Workflows]`** (id interno y atajo `2` estables — prefs sin migración): absorbe la administración por host del bundle `w` que vivía en `[Skills]` (extraída como `HostAdminSection`); el informativo queda en overview de 1 línea + strip compacto de flows (FamilyCards/PhaseCards eliminadas). El tile "hosts" de `[Status]` navega a `[Workflows]`.
+- **Remove de conexiones MCP con guard de ownership**: solo borra entradas dbhub (una entrada global homónima del usuario se conserva y se reporta); el legacy-cleanup de `~/.claude/settings.json` aplica el mismo guard.
+- Banner de update: aplicar pasó de `i` a `u` (ink despacha cada tecla a todos los handlers activos; `i` chocaba con el atajo de install del empty-state).
+
+### Added
+
+- **Motor de skills sueltas** (`application/self/skills-manager.ts` + registro `~/.agents/.skills-registry.json`): `register` (git `owner/repo`/URL/`file://` con `#ref`, o path local absoluto; cherry-pick cuando la fuente trae varias; encuentra skills anidadas `skills/<categoría>/<skill>`), `install` (canónica `~/.agents/skills/<n>` vía staging+swap con `.bak` restaurable + réplica symlink `~/.claude/skills/<n>`, fallback copia → `mode:"copy"`), `update` (re-fetch del ref registrado; un fallo deja la instalación previa intacta), `reinstall` (repara la réplica offline), `uninstall` (conserva el registro), `remove`. **Guards**: nunca toca dirs que no registró/materializó (protege el bundle `w` y skills de plugins), réplicas ajenas se preservan (symlink verificado por target), registro corrupto aborta mutaciones, `copyDir` no sigue symlinks de repos de terceros, clones sin prompts interactivos (`GIT_TERMINAL_PROMPT=0`).
+- **`[Skills]` reescrito** como administrador de sueltas: lista única con badges (`installed`/`registered`/`recommended`) y counts derivados, detail con acciones por estado (Update solo fuentes git), wizard `[a]` fuente → picker → **warning de terceros antes de registrar** (`probeSkillSource`, inspección sin efectos). Semilla: las skills externas recomendadas del README del marketplace (`data/recommended-skills.ts`, espejo con nota de drift).
+- `FileSystemPort.symlink/lstat` + adapter (junction en Windows, sin admin); escritura atómica tmp+rename en todos los configs MCP de host (a scope global son archivos vivos).
+- Sección **TUI** en el README (tabs + destinos user-scope).
+
+### Fixed
+
+- El test de setup MCP global con `--force` escribía en el **home real** del desarrollador; el scope global ahora resuelve vía `EnvPort.homeDir()` (inyectable) y los tests corren en sandbox.
+- Strings de la TUI que citaban `profile.json` donde el archivo real es `mcp-connections.json`.
+
 ## [16.2.0] — 2026-07-03
 
 **Ronda 6 del informe 003 (menor, derivada del smoke empírico de la ola 5).** El smoke con modelos débiles reales probó que la cadena de referencias puede cortarse en hop 2 (el loop se lee, el chasis no → sin session, sin CHECKPOINT, sin opciones canónicas del gate, respuestas en inglés a usuarios en español). Fix: cada comando-trampolín gana un bloque **"Hard floor"** inline y autocontenido — mismo patrón del resumen git/BD inline de los loops de código. Bundle `w` 11.1.0 → **11.2.0**.
