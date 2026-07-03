@@ -26,12 +26,7 @@ const GROUPS: readonly CommandGroup[] = [
   },
   {
     name: "Checkpoint",
-    commands: [
-      "checkpoint-read",
-      "checkpoint-write",
-      "compress-checkpoint",
-      "auto-compact-on-close",
-    ],
+    commands: ["checkpoint-read", "checkpoint-write", "auto-compact-on-close"],
   },
   {
     name: "Sources / Branches",
@@ -61,7 +56,6 @@ const GROUPS: readonly CommandGroup[] = [
       "plugin-doctor",
       "plugin-cache",
       "host-doctor",
-      "history-data",
       "history-update",
       "release-data",
       "code-scan",

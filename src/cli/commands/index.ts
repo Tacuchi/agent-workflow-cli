@@ -10,10 +10,8 @@ import { checkBranchCommand } from "./check-branch.js";
 import { checkpointReadCommand } from "./checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-write.js";
 import { codeScanCommand } from "./code-scan.js";
-import { compressCheckpointCommand } from "./compress-checkpoint.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
 import { gitFlowCommand } from "./git-flow.js";
-import { historyDataCommand } from "./history-data.js";
 import { historyUpdateCommand } from "./history-update.js";
 import { hookCommand } from "./hook.js";
 import { hostDoctorCommand } from "./host-doctor.js";
@@ -45,7 +43,6 @@ import { workspaceInitCommand } from "./workspace-init.js";
 export const ALL_COMMANDS: readonly QtcCommand[] = [
   sessionsCommand,
   statusCommand,
-  historyDataCommand,
   historyUpdateCommand,
   sessionArtifactsCommand,
   sessionCloseCommand,
@@ -62,7 +59,6 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   mergeStateCommand,
   checkpointReadCommand,
   resumeSummaryCommand,
-  compressCheckpointCommand,
   checkBranchCommand,
   checkpointWriteCommand,
   autoCompactOnCloseCommand,

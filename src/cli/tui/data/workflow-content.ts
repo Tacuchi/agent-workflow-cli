@@ -94,12 +94,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     {
       id: "checkpoint",
       title: "Checkpoint",
-      items: [
-        "checkpoint-read",
-        "checkpoint-write",
-        "compress-checkpoint",
-        "auto-compact-on-close",
-      ],
+      items: ["checkpoint-read", "checkpoint-write", "auto-compact-on-close"],
     },
     {
       id: "sources",
@@ -130,7 +125,6 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
         "plugin-doctor",
         "plugin-cache",
         "host-doctor",
-        "history-data",
         "history-update",
         "release-data",
         "code-scan",

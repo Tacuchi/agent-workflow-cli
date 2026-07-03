@@ -1,14 +1,9 @@
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import {
-  firstNonEmptyLine,
-  parseMdSection,
-  parseMdSectionBilingual,
-  parseMdValue,
-} from "./markdown.js";
+import { parseMdSection, parseMdSectionBilingual, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
-import { type ArtifactKind, findArtifact, listExistingArtifacts } from "./session-artifacts.js";
+import { type ArtifactKind, listExistingArtifacts } from "./session-artifacts.js";
 import { CLOSED_MARKER, listSessionFolders, parseSessionFolder } from "./session-resolver.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
@@ -363,53 +358,6 @@ export async function runResumeSummary(
   }
 
   return summary;
-}
-
-export interface CompressCheckpointOutput {
-  session: string;
-  candidates: Array<{
-    file: string;
-    lines: number;
-    excess: number;
-    head_excerpt: string;
-    tail_excerpt: string;
-  }>;
-}
-
-export interface CompressCheckpointError {
-  error: string;
-}
-
-const COMPRESS_KINDS: ArtifactKind[] = ["analysis_file", "conclusions"];
-const DEFAULT_COMPRESS_THRESHOLD = 200;
-
-export async function runCompressCheckpoint(
-  fs: FileSystemPort,
-  env: EnvPort,
-  paths: PathsService,
-  options: { code?: string; threshold?: number } = {},
-): Promise<CompressCheckpointOutput | CompressCheckpointError> {
-  const folder = await resolveTargetSession(fs, env, paths, options.code);
-  if (!folder) return { error: "no hay sesión activa única; especificá --code" };
-  const sessionPath = join(paths.cwdSessionsDir(), folder);
-  const threshold = options.threshold ?? DEFAULT_COMPRESS_THRESHOLD;
-
-  const candidates: CompressCheckpointOutput["candidates"] = [];
-  for (const kind of COMPRESS_KINDS) {
-    const fpath = await findArtifact(sessionPath, kind, fs);
-    if (!fpath) continue;
-    const text = await fs.readText(fpath);
-    const lines = text.split("\n");
-    if (lines.length <= threshold) continue;
-    candidates.push({
-      file: basename(fpath),
-      lines: lines.length,
-      excess: lines.length - threshold,
-      head_excerpt: (firstNonEmptyLine(text) ?? "").slice(0, 50),
-      tail_excerpt: (lines[lines.length - 2] ?? "").slice(0, 50),
-    });
-  }
-  return { session: folder, candidates };
 }
 
 /**

@@ -4,7 +4,17 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [14.12.0] — 2026-07-03
+## [15.0.0] — 2026-07-03
+
+**BREAKING — retiro de los comandos legacy sin consumidor `history-data` y `compress-checkpoint`.** Decisión de producto que cierra el último resto del informe de auditoría (001 § Ronda 3): el inventario confirmó cero consumidores funcionales (doctrina, hooks, TUI, diseño). `HISTORY.md` lo genera `history-update`; la disciplina de checkpoint vive en `checkpoint-write`/`checkpoint-read`.
+
+### Removed
+
+- **`aw history-data`** + su servicio completo (`history-data-service.ts`, la skill `diagrams` ya lo marcaba legacy descartado).
+- **`aw compress-checkpoint`** + `runCompressCheckpoint` y sus tipos/consts en `checkpoint-service.ts` (el resto del servicio queda: lo comparten write/read).
+- Entradas de ambos en el help agrupado y en el catálogo del TUI (guard test `help-groups` sigue verde por ambos lados).
+
+
 
 **Ronda backlog-low de la auditoría integral (cierre del informe): hooks portables a Windows, paths por plataforma, tipo público alineado al registro, TUI sin ruido, y Oz documentado en doctrina.** Tercera y última ronda del informe `docs/reports/001` del hub de diseño (~19 ítems low, cada uno re-verificado contra v14.11 antes de tocar). Bundle `w` 10.0.0 → **10.1.0**.
 

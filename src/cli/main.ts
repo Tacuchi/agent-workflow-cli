@@ -22,7 +22,6 @@ import { checkBranchCommand } from "./commands/check-branch.js";
 import { checkpointReadCommand } from "./commands/checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./commands/checkpoint-write.js";
 import { codeScanCommand } from "./commands/code-scan.js";
-import { compressCheckpointCommand } from "./commands/compress-checkpoint.js";
 import {
   harnessCommand,
   logsCommand,
@@ -30,7 +29,6 @@ import {
   profilesCommand,
 } from "./commands/dev-only.js";
 import { gitFlowCommand } from "./commands/git-flow.js";
-import { historyDataCommand } from "./commands/history-data.js";
 import { historyUpdateCommand } from "./commands/history-update.js";
 import { hookCommand } from "./commands/hook.js";
 import { hostDoctorCommand } from "./commands/host-doctor.js";
@@ -82,7 +80,6 @@ async function run(argv: string[]): Promise<ExitCode> {
   const registry = new CommandRegistry();
   registry.register(sessionsCommand);
   registry.register(statusCommand);
-  registry.register(historyDataCommand);
   registry.register(historyUpdateCommand);
   registry.register(sessionArtifactsCommand);
   registry.register(sessionCloseCommand);
@@ -99,7 +96,6 @@ async function run(argv: string[]): Promise<ExitCode> {
   registry.register(mergeStateCommand);
   registry.register(checkpointReadCommand);
   registry.register(resumeSummaryCommand);
-  registry.register(compressCheckpointCommand);
   registry.register(checkBranchCommand);
   registry.register(checkpointWriteCommand);
   registry.register(autoCompactOnCloseCommand);
