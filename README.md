@@ -17,7 +17,7 @@ The harness has three layers plus a permanent `docs/` zone:
 - **Layer 1 · Commands** (`/w:*`) — the only thing the user invokes:
   - **SPEC** — `/w:spec-new` (single-pass draft) → `/w:spec-refine` (gap-driven loop) → `docs/specs/`.
   - **PLAN** — `/w:plan-new` → (`/w:plan-refine` — aux, optional) → `/w:plan-exec` → `docs/plans/`.
-  - **QUICK** — `/w:quick` — lightweight shortcut.
+  - **QUICK** — `/w:quick` — lightweight shortcut; escalates live to SPEC when the goal outgrows a quick.
   - **EXPORTS** — `/w:export-scripts` · `export-manuals` · `export-diagrams` · `export-reports` (the only path that promotes artifacts to `docs/`).
   - **Bootstrap** — `/w:workspace-init` turns any folder into a workspace (1+ sources; no project/hub distinction).
 - **Layer 2 · Loops** — the AI runs them whole: `spec-refine-loop` · `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` · `quick-loop` — all heirs of the shared engine `skills/w/loops/CHASSIS.md` (+ `CODE-POLICIES.md` for the code-editing loops). Each loop is a **persistent goal** that runs until its success criteria are green (verification-first); gap-driven, with **structured-choice** lifecycle control (compact/close — `AskUserQuestion` on Claude Code, numbered markdown elsewhere) and resumable `CHECKPOINT`.

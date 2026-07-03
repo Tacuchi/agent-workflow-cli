@@ -4,6 +4,21 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [15.1.0] — 2026-07-02
+
+**Escalación en vivo QUICK → SPEC.** `quick-loop` gana un **gate de tamaño a la entrada** (corre ANTES de crear la session): si el objetivo excede un quick (≥2 señales claras), pregunta vía structured-choice — `Cambiar a SPEC` (recomendada) / `Seguir en quick` / `Recortar alcance` — y al aceptar la línea de trabajo pasa al flujo SPEC: borrador vía el procedimiento de `spec-new` + `spec-refine-loop` directo, sin re-invocar comandos. La escalación **mid-loop a SPEC** pasa de handoff diferido ("retomar ahí") a la misma transición en vivo tras el `finalize`; **a PLAN queda diferida** como hoy (siembra + puntero). Cambio de pura doctrina (más 1 string espejo de la TUI). Bundle `w` 10.1.0 → **10.2.0**.
+
+### Added
+
+- **Gate de tamaño a la entrada** en `quick-loop` § *Delta QUICK* + § *Sequence*: señales claras (≥2), borderline sigue sin preguntar, un resume no re-dispara; si escala, **no se crea la session quick** (trazabilidad en el `## Origin` del spec y de la session `NNN-<slug>-spec-refine`). **Anti-duplicado**: si ya existe spec/session spec-refine del mismo objetivo, la recomendada pasa a retomar (`/w:spec-refine`) — nunca un segundo borrador.
+- **Transición en vivo a SPEC** (compartida por gate y mid-loop): el consentimiento en la structured-choice equivale a invocar el flujo destino (**excepción consentida** a la regla de continuidad, documentada en `skills/w/SKILL.md` § *Contexto operativo*); borrador por el procedimiento single-pass de `spec-new` (reuso documentado allí, regla dura intacta) + carga de `spec-refine-loop` con referencias tolerantes al layout aplanado warp/oz (`../w-spec-refine-loop/SKILL.md`).
+- **Guard tests**: `skill-consistency` gana el describe *QUICK escalation contract* (7 asserts: refs dual-layout, targets en disco, gate antes de `create_or_resume`, `Started by` de spec-refine-loop, regla dura de spec-new, asimetría SPEC-vivo/PLAN-diferido, excepción de continuidad en la raíz).
+
+### Changed
+
+- `spec-refine-loop`: segunda vía de arranque (escalación desde quick) + nota de `## Origin` por escalación; `commands/quick.md` (gate + sesión condicional + plan mode), `commands/spec-refine.md`, `commands/spec-new.md`, `skills/w/SKILL.md` (cadena de flujos + regla de continuidad + catálogo), README raíz y TUI (phase card QUICK) alineados al nuevo comportamiento.
+- CHANGELOG: restaurados los headers perdidos de `14.12.0` y `14.11.0` (los cuerpos existían sin header, fix cosmético).
+
 ## [15.0.0] — 2026-07-03
 
 **BREAKING — retiro de los comandos legacy sin consumidor `history-data` y `compress-checkpoint`.** Decisión de producto que cierra el último resto del informe de auditoría (001 § Ronda 3): el inventario confirmó cero consumidores funcionales (doctrina, hooks, TUI, diseño). `HISTORY.md` lo genera `history-update`; la disciplina de checkpoint vive en `checkpoint-write`/`checkpoint-read`.
@@ -14,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **`aw compress-checkpoint`** + `runCompressCheckpoint` y sus tipos/consts en `checkpoint-service.ts` (el resto del servicio queda: lo comparten write/read).
 - Entradas de ambos en el help agrupado y en el catálogo del TUI (guard test `help-groups` sigue verde por ambos lados).
 
-
+## [14.12.0] — 2026-07-02
 
 **Ronda backlog-low de la auditoría integral (cierre del informe): hooks portables a Windows, paths por plataforma, tipo público alineado al registro, TUI sin ruido, y Oz documentado en doctrina.** Tercera y última ronda del informe `docs/reports/001` del hub de diseño (~19 ítems low, cada uno re-verificado contra v14.11 antes de tocar). Bundle `w` 10.0.0 → **10.1.0**.
 
@@ -39,7 +54,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Inventario de comandos huérfanos (decisión de producto pendiente): `history-data` y `compress-checkpoint` sin consumidor funcional (candidatos a deprecar); los otros 6 (`history-update`, `skill-index`, `bootstrap-dsn`, `visibility`, `profiles`, `project-md-upsert`) son agent/manual-facing documentados — se mantienen.
 - Marketplace (repo aparte, mismo round): LICENSE AGPL-3.0 íntegro + coherencia de licencias, guía de verificación post-install para OpenCode, referencia rota `conventions-map` corregida, y **tool-builder 1.1.0** (scripts portados de bash a Node `.mjs` single-source + 8 subtests).
 
-
+## [14.11.0] — 2026-07-02
 
 **Refactor estructural del chasis: motor único `loops/CHASSIS.md` + `loops/CODE-POLICIES.md`, unbundling de quick, flatten Warp/Oz con docs compartidos.** Cierra el diferido mayor de la auditoría integral (informe `docs/reports/002` del hub de diseño: dup re-confirmada + modelo de ahorro corregido). Bundle `w` 9.7.0 → **10.0.0** (reestructura doctrinal mayor).
 

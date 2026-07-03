@@ -65,6 +65,8 @@ USUARIO invoca
 
 Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` → `spec-refine` corre el loop y refina **ese mismo spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(opcional)* `plan-refine` ajusta **ese mismo plan in place** si hay cambios antes de ejecutar → `plan-exec` ejecuta y actualiza el plan (living doc) + artefactos en sesiones. La promoción del resto a `docs/` es **siempre** un paso aparte vía `export-*`.
 
+QUICK puede **escalar en vivo a SPEC** si el objetivo excede un quick (gate de tamaño a la entrada) o la tarea crece mid-loop: con consentimiento vía structured-choice, la línea de trabajo pasa al flujo SPEC (borrador por procedimiento `spec-new` + `spec-refine-loop` directo); a PLAN la escalación queda **diferida** (siembra + puntero). Ver `loops/quick-loop/SKILL.md` § *Delta QUICK*.
+
 ### Contexto operativo — dónde aterriza cada cosa
 
 Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prompt** con dos detecciones: **¿workspace?** (existe `.<ns>/sessions/`) + **¿sesión a continuar?** (una activa, o una reciente que este prompt continúa). Eso decide el comportamiento y **dónde aterrizan los artefactos** (SQL, scripts, decisiones, …):
@@ -76,7 +78,7 @@ Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prom
 | **Sí** | **prompt sin comando** (no-relacionado / sin sesión) | **sin flujo**: trabajo directo → escribe en `docs/` por convención + numeración (`aw next-number`) |
 | **No** | cualquiera | **vanilla** — sin workspace ni flujo, la IA es libre (nativo) |
 
-**Regla de continuidad:** el **comando** señala "nueva línea de trabajo" (sesión nueva) — **salvo re-correr el mismo comando sobre la misma entrada** (ej. `/w:spec-refine` sobre el mismo spec), que **no** abre otra línea: `create_or_resume` localiza la sesión de ese flujo (por descriptor + `## Origin`) y la **reanuda o reabre** (quita `.closed`), sin duplicarla; un **prompt sin comando** es "sigo en la misma" → por default continúa/reabre la más reciente (la *última iniciada*); solo si es claramente no-relacionado ofrece elegir (`continuar NNN` | `trabajo nuevo`) o cae a "sin flujo". Convergencia cierra la sesión; un prompt relacionado posterior la **reabre** (el resume quita `.closed`). Es la cara **inter-turno** del *objetivo persistente* (mismo `CHECKPOINT`+resume, aplicado al próximo prompt) — **doctrina agnóstica**, no un hook del host. Aplica a **todo artefacto** (`SCRIPTS.sql` es el ejemplo trabajado); ver `loops/quick-loop/SKILL.md` para el caso QUICK.
+**Regla de continuidad:** el **comando** señala "nueva línea de trabajo" (sesión nueva) — **salvo re-correr el mismo comando sobre la misma entrada** (ej. `/w:spec-refine` sobre el mismo spec), que **no** abre otra línea: `create_or_resume` localiza la sesión de ese flujo (por descriptor + `## Origin`) y la **reanuda o reabre** (quita `.closed`), sin duplicarla; un **prompt sin comando** es "sigo en la misma" → por default continúa/reabre la más reciente (la *última iniciada*); solo si es claramente no-relacionado ofrece elegir (`continuar NNN` | `trabajo nuevo`) o cae a "sin flujo". Convergencia cierra la sesión; un prompt relacionado posterior la **reabre** (el resume quita `.closed`). Es la cara **inter-turno** del *objetivo persistente* (mismo `CHECKPOINT`+resume, aplicado al próximo prompt) — **doctrina agnóstica**, no un hook del host. Aplica a **todo artefacto** (`SCRIPTS.sql` es el ejemplo trabajado); ver `loops/quick-loop/SKILL.md` para el caso QUICK. **Excepción consentida:** la **escalación aceptada** dentro de un loop (ej. quick → SPEC) también abre una **nueva línea de trabajo** sin comando — la señal es el **consentimiento explícito** del usuario en la structured-choice, equivalente a haber invocado el comando del flujo destino.
 
 ### The commands (`/w:` namespace)
 
@@ -86,7 +88,7 @@ Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prom
 - `/w:plan-new` — arranca `plan-new-loop` para derivar un plan ejecutable del spec refinado.
 - `/w:plan-refine` — arranca `plan-refine-loop` para refinar el plan in place (auxiliar, **no obligatorio**) antes de ejecutar.
 - `/w:plan-exec` — arranca `plan-exec-loop` para ejecutar y mantener el plan.
-- `/w:quick` — arranca `quick-loop` (atajo, sin `docs/`).
+- `/w:quick` — arranca `quick-loop` (atajo, sin `docs/`; escala en vivo a SPEC si el objetivo excede un quick).
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promueven artefactos a `docs/`.
 
 ### Transversal skills (no flow) — `/w:status` · `/w:fix-git`

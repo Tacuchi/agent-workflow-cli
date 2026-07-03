@@ -67,6 +67,8 @@ Dudas pendientes. ← el spec-refine-loop las va cerrando.
 - Los **gaps** que detecta el loop = secciones débiles del esquema (Requirement vago, Scope sin `Out`, criterios no testables, Open questions abiertas, supuestos no declarados, contradicciones) **+ UI sin especificar** si el requerimiento involucra UI.
 - Alternativa equivalente: el usuario crea el borrador a mano. Ambos caminos producen el mismo `docs/specs/NNN-spec-<slug>.md`.
 
+> **Reuso por escalación:** la escalación en vivo de `/w:quick` (ver [`../loops/quick-loop/SKILL.md`](../loops/quick-loop/SKILL.md) § *Delta QUICK*) materializa su borrador siguiendo **este mismo procedimiento** (pasos 1-3: mismo esquema, misma regla dura single-pass **SIN investigación**), con `## Origin` = "escalado desde `/w:quick`" + el prompt original. No hace falta tipear `/w:spec-new`: el consentimiento en la structured-choice equivale a invocarlo.
+
 ## Plan mode
 
 Resuelve `NNN` leyendo `docs/specs/`, describe el borrador que generaría sin escribir el archivo.

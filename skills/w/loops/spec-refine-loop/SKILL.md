@@ -9,8 +9,8 @@ description: >-
   gap taxonomy de spec, analyze gate, sección ## UI spec vía la capacidad
   ui-design cuando el requerimiento involucra UI, y agrega Refinement
   decisions + Q&A traceability al spec — la marca de refinado que plan-new
-  detecta. Lo arranca /w:spec-refine; reanudable vía CHECKPOINT y re-corrible
-  a demanda. Invocar cuando haya que refinar/desambiguar una especificación
+  detecta. Lo arranca /w:spec-refine (o la escalación en vivo desde
+  quick-loop); reanudable vía CHECKPOINT y re-corrible a demanda. Invocar cuando haya que refinar/desambiguar una especificación
   antes de planificar.
 ---
 
@@ -31,6 +31,8 @@ SPEC
 ## Started by
 `/w:spec-refine` — **reanudable**. Detecta el estado previo (vía CHECKPOINT) y arranca según corresponda (ver *Compact / resume — claves SPEC*).
 
+También lo arranca la **escalación en vivo desde `quick-loop`** (gate de entrada o mid-loop — ver [`../quick-loop/SKILL.md`](../quick-loop/SKILL.md) § *Delta QUICK*): quick materializa el borrador (procedimiento de `spec-new`) y **carga este loop** sobre ese spec — misma semántica que si el usuario hubiera corrido `/w:spec-refine`.
+
 ## Reads
 - `docs/specs/NNN-spec*.md` (glob — localiza el spec por número, también captura el legacy `NNN-spec.md`), **o** la ruta exacta pasada en el argumento del comando. **Siempre el spec mismo**: este loop lo edita in place, no hay un archivo "refined" aparte.
 
@@ -46,6 +48,8 @@ Doctrina completa en el chasis (§ *Internal sessions* + *Numeración*). La inst
 | Session | When | Artifacts | Role |
 |---|---|---|---|
 | **refine session** `NNN-<slug>-spec-refine/` | al arrancar el loop (o se reanuda) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` solo si difiere) | Dueña del run. Type = `refine`; descriptor `<slug>-spec-refine` (el `<slug>` sale del spec de entrada). |
+
+> **Origin por escalación:** si el run nace de la escalación en vivo de `quick-loop`, el `## Origin` de la session registra "escalado desde `/w:quick`" + la session quick de origen si existe (sus `DECISION`/`SCRIPTS.sql` son contexto referenciable — no se migran).
 
 > **Compat (legacy):** workspaces viejos pueden tener `NNN-spec.md` / `NNN-spec-refined.md` y sessions `*-research-*` aparte — son históricos y se dejan tal cual. El glob `NNN-spec*.md` igual encuentra el spec base, y re-correr spec-refine lo edita in place de ahí en adelante.
 

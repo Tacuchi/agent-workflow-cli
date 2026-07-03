@@ -64,7 +64,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       id: "quick",
       n: 4,
       title: "QUICK — the shortcut",
-      desc: "Lightweight one-command loop for small tasks — code or a scoped analysis/design. Proportional verification-first; owns no docs/ folder.",
+      desc: "Lightweight one-command loop for small tasks — code or a scoped analysis/design. Proportional verification-first; owns no docs/ folder. Escalates live to SPEC when the task outgrows it.",
       commands: ["quick"],
       slash: "/w:quick",
       hook: "SessionEnd",

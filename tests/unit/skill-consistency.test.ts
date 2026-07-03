@@ -78,3 +78,63 @@ describe("SKILL consistency — cross-skill contracts", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec-new", () => {
+  // Live QUICK→SPEC escalation spans three docs: quick-loop (the gate + live
+  // transition), spec-new (the draft procedure it reuses) and spec-refine-loop
+  // (the loop it hands off to). These pins keep the composing trio in agreement.
+  const QUICK_LOOP = "loops/quick-loop/SKILL.md";
+
+  it("quick-loop names both escalation targets, in both layouts (normal tree + flattened w- prefix)", async () => {
+    const quick = await readFile(join(SKILL_ROOT, QUICK_LOOP), "utf8");
+    // The refs are load-bearing (the transition loads these docs), and the
+    // flattened spelling must survive for warp/oz installs where loops live
+    // as sibling `w-<loop>/` skills.
+    expect(quick).toContain("spec-refine-loop/SKILL.md");
+    expect(quick).toContain("spec-new.md");
+    expect(quick).toContain("w-spec-refine-loop");
+  });
+
+  it("the escalation targets exist on disk (anti-rename guard)", async () => {
+    await expect(
+      readFile(join(SKILL_ROOT, "loops/spec-refine-loop/SKILL.md"), "utf8"),
+    ).resolves.toBeTruthy();
+    await expect(readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8")).resolves.toBeTruthy();
+  });
+
+  it("the size gate runs BEFORE the quick session is created (Sequence order)", async () => {
+    const quick = await readFile(join(SKILL_ROOT, QUICK_LOOP), "utf8");
+    const seq = quick.slice(quick.indexOf("## Sequence"));
+    const gate = seq.indexOf("excede un quick");
+    const create = seq.indexOf('create_or_resume("<slug>-quick")');
+    expect(gate).toBeGreaterThan(-1);
+    expect(create).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(create);
+  });
+
+  it("spec-refine-loop declares the quick escalation as a second Started-by path", async () => {
+    const refine = await readFile(join(SKILL_ROOT, "loops/spec-refine-loop/SKILL.md"), "utf8");
+    const startedBy = refine.match(/## Started by[\s\S]*?(?=\n## )/)?.[0] ?? "";
+    expect(startedBy).toMatch(/quick/);
+    expect(startedBy).toMatch(/escalaci/i);
+  });
+
+  it("spec-new keeps its hard single-pass rule and gains the escalation-reuse note", async () => {
+    const specNew = await readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8");
+    expect(specNew).toContain("SIN investigación");
+    expect(specNew).toMatch(/quick/);
+  });
+
+  it("command and loop agree: SPEC live, PLAN deferred (asymmetry pinned)", async () => {
+    const quickCmd = await readFile(join(SKILL_ROOT, "commands/quick.md"), "utf8");
+    const quickLoop = await readFile(join(SKILL_ROOT, QUICK_LOOP), "utf8");
+    expect(quickCmd).toContain("en vivo");
+    expect(quickLoop).toContain("en vivo");
+    expect(quickLoop).toMatch(/PLAN[^\n]*diferid/i);
+  });
+
+  it("the root orientation records the consented exception to the continuity rule", async () => {
+    const root = await readFile(join(SKILL_ROOT, "SKILL.md"), "utf8");
+    expect(root).toMatch(/escalaci[oó]n aceptada|consentimiento explícito/i);
+  });
+});

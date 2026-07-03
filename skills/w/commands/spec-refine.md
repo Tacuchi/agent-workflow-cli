@@ -1,5 +1,5 @@
 ---
-description: Inicia o retoma el loop de refinamiento de una especificación (spec-refine-loop). Input: docs/specs/NNN-spec-<slug>.md (borrador). Actualiza docs/specs/NNN-spec-<slug>.md in place.
+description: Inicia o retoma el loop de refinamiento de una especificación (spec-refine-loop). Input: docs/specs/NNN-spec-<slug>.md (borrador — de spec-new, a mano, o materializado por la escalación de quick). Actualiza docs/specs/NNN-spec-<slug>.md in place.
 argument-hint: <docs/specs/NNN-spec-<slug>.md>
 allowed-tools:
   [
