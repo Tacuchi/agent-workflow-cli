@@ -4,7 +4,7 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [15.1.0] — 2026-07-02
+## [15.1.0] — 2026-07-03
 
 **Escalación en vivo QUICK → SPEC.** `quick-loop` gana un **gate de tamaño a la entrada** (corre ANTES de crear la session): si el objetivo excede un quick (≥2 señales claras), pregunta vía structured-choice — `Cambiar a SPEC` (recomendada) / `Seguir en quick` / `Recortar alcance` — y al aceptar la línea de trabajo pasa al flujo SPEC: borrador vía el procedimiento de `spec-new` + `spec-refine-loop` directo, sin re-invocar comandos. La escalación **mid-loop a SPEC** pasa de handoff diferido ("retomar ahí") a la misma transición en vivo tras el `finalize`; **a PLAN queda diferida** como hoy (siembra + puntero). Cambio de pura doctrina (más 1 string espejo de la TUI). Bundle `w` 10.1.0 → **10.2.0**.
 
