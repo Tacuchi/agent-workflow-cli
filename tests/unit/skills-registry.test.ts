@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import {
   readSkillsRegistry,
+  readSkillsShLockSources,
   skillsRegistryPath,
   writeSkillsRegistry,
 } from "../../src/application/self/skills-registry.js";
@@ -123,5 +124,30 @@ describe("skills-registry (T3.2)", () => {
     const read = await readSkillsRegistry(ctx);
 
     expect(Object.keys(read.registry.skills)).toEqual(["buena-skill"]);
+  });
+
+  it("readSkillsShLockSources: fuentes del lock; inseguros/sin-fuente filtrados; ausente o roto = vacío", async () => {
+    const ctx = buildCtx(home);
+    expect(await readSkillsShLockSources(ctx)).toEqual({});
+
+    await mkdir(join(home, ".agents"), { recursive: true });
+    const lockPath = join(home, ".agents", ".skill-lock.json");
+    await writeFile(
+      lockPath,
+      JSON.stringify({
+        skills: {
+          "mermaid-diagrams": { source: "softaworks/agent-toolkit" },
+          "../fuera": { source: "evil/evil" },
+          "sin-fuente": { installedAt: "2026-01-01T00:00:00.000Z" },
+        },
+      }),
+      "utf8",
+    );
+    expect(await readSkillsShLockSources(ctx)).toEqual({
+      "mermaid-diagrams": "softaworks/agent-toolkit",
+    });
+
+    await writeFile(lockPath, "{roto", "utf8");
+    expect(await readSkillsShLockSources(ctx)).toEqual({});
   });
 });

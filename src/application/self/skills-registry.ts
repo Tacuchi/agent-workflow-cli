@@ -5,6 +5,7 @@
 
 import { join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
+import { AGENTS_LOCK_REL } from "./install-skill.js";
 
 export const SKILLS_REGISTRY_REL = [".agents", ".skills-registry.json"] as const;
 
@@ -89,4 +90,27 @@ export async function writeSkillsRegistry(
   await ctx.fs.mkdirp(join(ctx.env.homeDir(), ".agents"));
   await ctx.fs.writeText(path, `${JSON.stringify(registry, null, 2)}\n`);
   return path;
+}
+
+/** Lock compartido con skills.sh (mismo path que escribe el flujo install-skill
+ *  del bundle — constante única en install-skill.ts). Este motor solo lo LEE:
+ *  pista de fuente para canónicas fuera del registro. */
+export async function readSkillsShLockSources(ctx: CliContext): Promise<Record<string, string>> {
+  const path = join(ctx.env.homeDir(), ...AGENTS_LOCK_REL);
+  try {
+    const parsed = JSON.parse(await ctx.fs.readText(path)) as {
+      skills?: Record<string, { source?: unknown }>;
+    };
+    const sources: Record<string, string> = {};
+    for (const [name, value] of Object.entries(parsed?.skills ?? {})) {
+      if (!isValidSkillName(name)) continue;
+      if (typeof value?.source === "string" && value.source.length > 0) {
+        sources[name] = value.source;
+      }
+    }
+    return sources;
+  } catch {
+    // Ausente o roto = sin pistas; el lock nunca bloquea el listado.
+    return {};
+  }
 }

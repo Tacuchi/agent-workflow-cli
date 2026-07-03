@@ -1,6 +1,7 @@
 // [Skills] — administrador de skills sueltas (modelo skills.sh): lista única
-// con badges (installed → registered → recommended), detail con acciones por
-// estado y wizard [a] fuente → picker → warning de terceros → registrar.
+// con badges (installed → unmanaged → registered → recommended), detail con
+// acciones por estado (unmanaged = informativa) y wizard [a] fuente → picker
+// → warning de terceros → registrar.
 // Respaldado por skills-manager; la administración del bundle `w` vive en
 // [Workflows] (HostAdminSection).
 
@@ -53,6 +54,7 @@ type Mode =
 
 const STATUS_GLYPH: Record<SkillListItem["status"], { glyph: string; active: boolean }> = {
   installed: { glyph: "◆", active: true },
+  unmanaged: { glyph: "◈", active: true },
   registered: { glyph: "◇", active: false },
   recommended: { glyph: "·", active: false },
 };
@@ -100,14 +102,17 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
 
   const current = items[cursor] ?? null;
   const installedCount = items.filter((s) => s.status === "installed").length;
+  const unmanagedCount = items.filter((s) => s.status === "unmanaged").length;
   const registeredCount = items.filter((s) => s.status === "registered").length;
   const recommendedCount = items.filter((s) => s.status === "recommended").length;
 
   // Acciones del detail según estado (SPEC 003): recommended/registered →
   // Install; installed → Update (solo git) / Reinstall / Uninstall; Remove para
-  // todo lo registrado (una recomendada vuelve a `recommended`).
+  // todo lo registrado (una recomendada vuelve a `recommended`). `unmanaged`
+  // (fuera del registro) no es operable: el guard de ownership del motor
+  // rechaza register/uninstall sobre dirs ajenos — fila informativa.
   const detailActions = useMemo<{ id: ActionId; action: DetailAction }[]>(() => {
-    if (!current) return [];
+    if (!current || current.status === "unmanaged") return [];
     if (current.status === "recommended") {
       return [
         {
@@ -273,7 +278,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         return;
       }
       if (key.downArrow) {
-        setActionCursor((c) => Math.min(detailActions.length - 1, c + 1));
+        setActionCursor((c) => Math.min(Math.max(0, detailActions.length - 1), c + 1));
         return;
       }
       if (key.escape) {
@@ -400,7 +405,9 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       <PageHead
         title="Skills"
         count={{
-          label: `${installedCount} installed · ${registeredCount} registered · ${recommendedCount} recommended`,
+          label: `${installedCount} installed${
+            unmanagedCount > 0 ? ` · ${unmanagedCount} unmanaged` : ""
+          } · ${registeredCount} registered · ${recommendedCount} recommended`,
           tone: installedCount > 0 ? "accent" : "warn",
         }}
         action={<Text color={colors.mute}>~/.agents/skills + host replicas</Text>}
@@ -409,7 +416,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       <SectionHead
         label="Skills"
         count={items.length}
-        hint="installed → registered → recommended"
+        hint="installed → unmanaged → registered → recommended"
         {...(overlayVisible ? { rightAction: "esc to close" } : {})}
         marginTop={0}
       />
@@ -424,12 +431,22 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
                 icon={glyph.glyph}
                 iconActive={glyph.active}
                 title={s.name}
-                subtitle={`${s.source}${s.ref ? ` #${s.ref}` : ""}`}
+                subtitle={
+                  s.status === "unmanaged" && s.source === ""
+                    ? "outside the registry"
+                    : `${s.source}${s.ref ? ` #${s.ref}` : ""}`
+                }
                 meta={s.mode === "copy" ? [{ label: "copy", tone: "warn" }] : []}
                 state={{
                   label: s.status,
                   tone:
-                    s.status === "installed" ? "ok" : s.status === "registered" ? "dim" : "info",
+                    s.status === "installed"
+                      ? "ok"
+                      : s.status === "unmanaged"
+                        ? "warn"
+                        : s.status === "registered"
+                          ? "dim"
+                          : "info",
                 }}
                 chevron
                 active={cursor === i}
@@ -524,7 +541,12 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
             }}
             statePill={{
               label: current.status,
-              tone: current.status === "installed" ? "ok" : "dim",
+              tone:
+                current.status === "installed"
+                  ? "ok"
+                  : current.status === "unmanaged"
+                    ? "warn"
+                    : "dim",
             }}
             actions={detailActions.map((a) => a.action)}
             focusedAction={actionCursor}
@@ -560,5 +582,8 @@ function detailMeta(item: SkillListItem, home: string): string {
   const replicas = `agents ${item.replicas.agents ? "✓" : "·"} · claude ${item.replicas.claude ? "✓" : "·"}${
     item.mode === "copy" ? " (copy)" : ""
   }`;
+  if (item.status === "unmanaged") {
+    return `${source === "" ? "unknown source" : source}\n${canonical}\n${replicas}\nInstalled outside the registry (e.g. skills.sh) — not operable from here.`;
+  }
   return `${source}\n${canonical}\n${replicas}`;
 }

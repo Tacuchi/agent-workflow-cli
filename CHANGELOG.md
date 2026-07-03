@@ -4,6 +4,13 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`[Skills]` muestra las canónicas fuera del registro como `unmanaged`** (glyph `◈`, pill warn): dirs de `~/.agents/skills` sin entrada en el registro v17 — p.ej. instaladas por el instalador de skills.sh o a mano — con la fuente recuperada en solo-lectura del lock compartido `~/.agents/.skill-lock.json` (`readSkillsShLockSources`; constante única `AGENTS_LOCK_REL`). Fila informativa: el detail lo explica y no ofrece acciones del motor (el guard de ownership las rechaza a propósito). Excluidos del scan: el bundle `w`, su namespace `w-*` del flatten y los nombres legacy (los administra `[Workflows]`); symlinks-a-dir del usuario sí se listan (los hosts los siguen). Con registro ilegible el scan se apaga (nada se etiqueta como ajeno) y un ancla ilegible nunca vacía la tab (best-effort). Una semilla cuyo nombre choca con una canónica existente se oculta (ofrecer Install garantizaría `SKILL_NAME_COLLISION`).
+- **7 semillas nuevas** en las recomendadas del `[Skills]` tab, todas verificadas instalables en vivo: `find-skills` (vercel-labs/skills), `ponytail` + `ponytail-review` (DietrichGebert/ponytail), `c4-architecture` + `skill-judge` (softaworks/agent-toolkit), `react-best-practices` (vercel-labs/agent-skills), `grill-me` (mattpocock/skills). Espejadas en el README del marketplace (§ skills externas recomendadas).
+
 ## [17.0.0] — 2026-07-03
 
 **Reorganización de la TUI + administrador de skills sueltas** (spec 007 / plan 004 del workspace). Cuatro frentes: MCP a user scope, `[Workflow]`→`[Workflows]` con la administración por host, motor de skills sueltas (modelo skills.sh) y `[Skills]` reescrito sobre él. Cada fase pasó un review gate adversarial multi-agente antes de su commit. **Major** por el cambio de comportamiento de `self mcp`.

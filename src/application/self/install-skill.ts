@@ -75,7 +75,9 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
 // resolución (Skill tool / SKILL.md frontmatter recursivo).
 const FLATTEN_SUBSKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["warp", "oz"]);
 const FLATTEN_PARENT_DIRS = ["loops", "exports", "roles"] as const;
-const FLATTEN_DEST_PREFIX = "w-";
+// Exportado: es el namespace del bundle en el ancla — el scan de sueltas
+// (skills-manager.listSkills) lo excluye para no listar `w-*` como unmanaged.
+export const FLATTEN_DEST_PREFIX = "w-";
 
 // Per-target user-level commands directory (subdir = namespace).
 // File `<base>/<filename>.md` is invoked as `/w:<filename>`.

@@ -87,6 +87,35 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     unmount();
   });
 
+  it("una canónica fuera del registro se lista como unmanaged (fuente del lock) y su detail no ofrece acciones", async () => {
+    const ctx = buildCtx(home);
+    await makeSkillDir(join(home, ".agents", "skills"), "ajena");
+    await writeFile(
+      join(home, ".agents", ".skill-lock.json"),
+      JSON.stringify({ skills: { ajena: { source: "softaworks/agent-toolkit" } } }),
+      "utf8",
+    );
+
+    const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(frame).toContain(
+      `0 installed · 1 unmanaged · 0 registered · ${RECOMMENDED_SKILLS.length} recommended`,
+    );
+    expect(frame).toContain("ajena");
+    expect(frame).toContain("softaworks/agent-toolkit");
+
+    stdin.write(ENTER); // primera fila = la unmanaged (rank sobre registered/recommended)
+    await tick();
+    const detail = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(detail).toContain("outside the registry");
+    // Informativa: ninguna acción del motor sobre dirs ajenos.
+    expect(detail).not.toContain("Reinstall");
+    expect(detail).not.toContain("Uninstall");
+    expect(detail).not.toContain("Remove");
+    unmount();
+  });
+
   it("⏎ sobre una recomendada abre el detail con Install y su descripción", async () => {
     const { lastFrame, stdin, unmount } = render(
       <SkillsTab ctx={buildCtx(home)} isActive={true} />,

@@ -51,4 +51,42 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
     source: "mattpocock/skills",
     description: "Author effective agent skills.",
   },
+  {
+    name: "grill-me",
+    source: "mattpocock/skills",
+    description: "Socratic grilling of design decisions.",
+  },
+  // Meta / descubrimiento — vercel-labs
+  {
+    name: "find-skills",
+    source: "vercel-labs/skills",
+    description: "Discover and install agent skills on demand.",
+  },
+  {
+    name: "react-best-practices",
+    source: "vercel-labs/agent-skills",
+    description: "React/Next.js performance rules from Vercel.",
+  },
+  // Anti over-engineering — DietrichGebert/ponytail (MIT)
+  {
+    name: "ponytail",
+    source: "DietrichGebert/ponytail",
+    description: "Lazy-senior-dev mode: YAGNI, stdlib first, minimal code.",
+  },
+  {
+    name: "ponytail-review",
+    source: "DietrichGebert/ponytail",
+    description: "Review diffs hunting over-engineering to delete.",
+  },
+  // Documentación y calidad de skills — softaworks/agent-toolkit
+  {
+    name: "c4-architecture",
+    source: "softaworks/agent-toolkit",
+    description: "C4 architecture diagrams with Mermaid.",
+  },
+  {
+    name: "skill-judge",
+    source: "softaworks/agent-toolkit",
+    description: "Evaluate SKILL.md design quality.",
+  },
 ] as const;

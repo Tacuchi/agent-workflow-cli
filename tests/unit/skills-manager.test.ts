@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -456,7 +456,7 @@ describe("skills-manager (T3.3-T3.7)", () => {
     expect(await readFile(join(canonical, "SKILL.md"), "utf8")).toContain("v1");
   });
 
-  it("listSkills ordena installed → registered → recommended, alfabético por grupo", async () => {
+  it("listSkills ordena installed → unmanaged → registered → recommended, alfabético por grupo", async () => {
     const seed = [
       { name: "zeta-rec", source: "a/b", description: "z" },
       { name: "alfa-rec", source: "a/b", description: "a" },
@@ -466,16 +466,78 @@ describe("skills-manager (T3.3-T3.7)", () => {
     await registerSkill(ctx, { source: inst });
     await installSkill(ctx, "instalada");
     await registerSkill(ctx, { source: reg });
+    // Canónica ajena (fuera del registro), p.ej. instalada por skills.sh.
+    await makeSkillDir(canonicalSkillsRoot(home), "fuera-registro");
 
     const list = await listSkills(ctx, seed);
 
     expect(list.map((s) => `${s.name}:${s.status}`)).toEqual([
       "instalada:installed",
+      "fuera-registro:unmanaged",
       "solo-registrada:registered",
       "alfa-rec:recommended",
       "zeta-rec:recommended",
     ]);
     expect(list[0]?.replicas).toEqual({ agents: true, claude: true });
-    expect(list[1]?.replicas).toEqual({ agents: false, claude: false });
+    expect(list[1]?.replicas).toEqual({ agents: true, claude: false });
+    expect(list[2]?.replicas).toEqual({ agents: false, claude: false });
+  });
+
+  it("unmanaged: fuente desde el lock de skills.sh, ruido ignorado y sin fila recommended duplicada", async () => {
+    const canonRoot = canonicalSkillsRoot(home);
+    await makeSkillDir(canonRoot, "con-lock");
+    await makeSkillDir(canonRoot, "sin-lock");
+    // Ruido que el scan NO debe listar: dot-dir, dir sin SKILL.md, archivo suelto.
+    await mkdir(join(canonRoot, ".staging-x"), { recursive: true });
+    await mkdir(join(canonRoot, "sin-skill-md"), { recursive: true });
+    await writeFile(join(canonRoot, "suelto.txt"), "x", "utf8");
+    await writeFile(
+      join(home, ".agents", ".skill-lock.json"),
+      JSON.stringify({ skills: { "con-lock": { source: "softaworks/agent-toolkit" } } }),
+      "utf8",
+    );
+
+    // El bundle y su namespace NO son "de otro" (los administra [Workflows]).
+    await makeSkillDir(canonRoot, "w");
+    await makeSkillDir(canonRoot, "w-plan-exec-loop");
+    await makeSkillDir(canonRoot, "agent-workflow");
+    // Nombre heredado de Object.prototype: exige hasOwn, no truthiness.
+    await makeSkillDir(canonRoot, "constructor");
+
+    // Semilla homónima: la fila unmanaged gana y no se duplica como recommended.
+    const seed = [{ name: "con-lock", source: "a/b", description: "homónima" }];
+    const list = await listSkills(ctx, seed);
+
+    expect(list.map((s) => `${s.name}:${s.status}`).sort()).toEqual([
+      "con-lock:unmanaged",
+      "constructor:unmanaged",
+      "sin-lock:unmanaged",
+    ]);
+    const byName = new Map(list.map((s) => [s.name, s]));
+    expect(byName.get("con-lock")?.source).toBe("softaworks/agent-toolkit");
+    expect(byName.get("sin-lock")?.source).toBe("");
+  });
+
+  it("gate 016: registro corrupto apaga el scan; symlink-a-dir se lista; semilla con canónica inválida no ofrece Install", async () => {
+    const canonRoot = canonicalSkillsRoot(home);
+    // Dev checkout linkeado al ancla: los hosts lo siguen, la tab debe verlo.
+    const real = await makeSkillDir(root, "linked-real");
+    await mkdir(canonRoot, { recursive: true });
+    await symlink(real, join(canonRoot, "linkeada"));
+    // Canónica homónima de una semilla pero SIN frontmatter válido: ofrecer
+    // Install garantizaría SKILL_NAME_COLLISION → la semilla se oculta.
+    await mkdir(join(canonRoot, "pdf"), { recursive: true });
+    await writeFile(join(canonRoot, "pdf", "SKILL.md"), "sin frontmatter", "utf8");
+
+    const seed = [{ name: "pdf", source: "anthropics/skills", description: "d" }];
+    let list = await listSkills(ctx, seed);
+    expect(list.map((s) => `${s.name}:${s.status}`)).toEqual(["linkeada:unmanaged"]);
+
+    // Registro ilegible: nada se clasifica unmanaged (podría ser del motor) y
+    // la lista no revienta.
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents", ".skills-registry.json"), "{roto", "utf8");
+    list = await listSkills(ctx, seed);
+    expect(list).toEqual([]);
   });
 });
