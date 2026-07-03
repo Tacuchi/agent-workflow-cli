@@ -11,6 +11,7 @@ import {
   installSkill,
   listSkills,
   materializeCanonical,
+  probeSkillSource,
   registerSkill,
   reinstallSkill,
   removeSkill,
@@ -302,6 +303,19 @@ describe("skills-manager (T3.3-T3.7)", () => {
       expect(result.error?.code).toBe("SKILL_NOT_REGISTERED");
     }
     expect(existsSync(join(canonicalSkillsRoot(home), "w"))).toBe(false);
+  });
+
+  it("probeSkillSource lista candidatos sin registrar nada (para el wizard)", async () => {
+    const source = join(root, "container");
+    await makeSkillDir(join(source, "skills"), "pdf");
+    await makeSkillDir(join(source, "skills"), "docx");
+
+    const probe = await probeSkillSource(ctx, { source });
+
+    expect(probe.ok).toBe(true);
+    expect(probe.data?.candidates).toEqual(["docx", "pdf"]);
+    const { registry } = await readSkillsRegistry(ctx);
+    expect(Object.keys(registry.skills)).toEqual([]);
   });
 
   it("repo git con SKILL.md en la raíz se registra por su frontmatter name (nunca el tempdir) e instala", async () => {

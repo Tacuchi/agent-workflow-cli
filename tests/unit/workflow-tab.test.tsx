@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { readFile, stat, writeFile as writeFileAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -136,5 +136,26 @@ describe("WorkflowTab ([Workflows] = admin + informativo mínimo)", () => {
       expect(frame).toContain(host.name);
     }
     expect(frame).toContain("skills/w/");
+  });
+
+  // Los tests de hooks-armed vivían en tui-skills-tab; la sección ahora se
+  // monta acá, así que su detección de ~/.claude/settings.json se fija acá.
+  it("muestra 'hooks armed' cuando ~/.claude/settings.json trae hooks", async () => {
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await writeFile(
+      join(home, ".claude", "settings.json"),
+      JSON.stringify({ hooks: { SessionStart: [{ matcher: "", hooks: [] }] } }),
+      "utf8",
+    );
+    const frame = await renderFlat();
+    expect(frame).toContain("hooks armed");
+  });
+
+  it("no crashea con settings.json inválido y no muestra hooks armed", async () => {
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await writeFile(join(home, ".claude", "settings.json"), "{not valid", "utf8");
+    const frame = await renderFlat();
+    expect(frame).toContain("Claude Code");
+    expect(frame).not.toContain("hooks armed");
   });
 });

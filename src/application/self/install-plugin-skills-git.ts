@@ -91,7 +91,15 @@ export async function gitClone(url: string, dest: string, ref?: string): Promise
   gitArgs.push(url, dest);
 
   await new Promise<void>((resolve, reject) => {
-    const proc = spawn("git", gitArgs, { stdio: "pipe" });
+    // Nunca prompts interactivos: bajo la TUI (alt-screen + raw mode) git
+    // preguntaría credenciales/host-key por /dev/tty invisible y colgaría el
+    // busy-lock para siempre (mismo fix que GitCliAdapter). Fallar rápido.
+    const env = {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes",
+    };
+    const proc = spawn("git", gitArgs, { stdio: "pipe", env });
     let stderr = "";
     proc.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();

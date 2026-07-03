@@ -119,14 +119,15 @@ describe("App (tab-home)", () => {
     expect(lastFrame()).toContain("Flows:");
   });
 
-  it("número 5 desde la Status tab salta a Skills tab", async () => {
+  it("número 5 desde la Status tab salta a Skills tab (administrador de sueltas)", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("5");
-    await new Promise((r) => setTimeout(r, 50));
-    // Skills tab renderiza SectionHead "HOSTS".
-    expect(lastFrame()).toContain("HOSTS");
+    await new Promise((r) => setTimeout(r, 100));
+    // [Skills] renderiza la lista única con las recomendadas de la semilla.
+    expect(lastFrame()).toContain("recommended");
+    expect(lastFrame()).toContain("add skill");
   });
 
   it("'q' desde la Status tab resuelve con kind:exit", async () => {

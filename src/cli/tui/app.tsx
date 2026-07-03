@@ -367,7 +367,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
           ) : null}
           {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
           {activeTab === "skills" ? (
-            <SkillsTab ctx={ctx} isActive={true} version={version} onToast={pushToast} />
+            <SkillsTab ctx={ctx} isActive={true} onToast={pushToast} />
           ) : null}
           {activeTab === "config" ? (
             <ConfigTab

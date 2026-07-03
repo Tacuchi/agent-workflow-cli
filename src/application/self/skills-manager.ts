@@ -229,6 +229,33 @@ async function readRegistryForWrite(
   return { registry: read.registry };
 }
 
+/** Inspección sin efectos: lista las skills de una fuente para que el wizard
+ *  muestre picker + warning de terceros ANTES de registrar nada. */
+export async function probeSkillSource(
+  ctx: CliContext,
+  input: Pick<RegisterInput, "source" | "ref">,
+): Promise<CommandResult<{ candidates: string[] }>> {
+  const resolved = resolveSkillSource(input.source, input.ref);
+  if ("error" in resolved) return fail("INVALID_SOURCE", resolved.error);
+  const fetched = await fetchSourceCandidates(resolved, ctx);
+  if ("error" in fetched) return fail(fetched.code, fetched.error);
+  try {
+    if (fetched.candidates.length === 0) {
+      return fail(
+        "SOURCE_NOT_FOUND",
+        `no se encontró ninguna skill válida (SKILL.md con name+description) en '${input.source}'`,
+      );
+    }
+    return {
+      ok: true,
+      data: { candidates: fetched.candidates.map((c) => c.name).sort() },
+      exitCode: 0,
+    };
+  } finally {
+    await fetched.cleanup();
+  }
+}
+
 export async function registerSkill(
   ctx: CliContext,
   input: RegisterInput,
