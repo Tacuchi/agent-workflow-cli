@@ -28,7 +28,7 @@ El skill evalúa `$ARGUMENTS` (los specs viven in place — `docs/specs/NNN-spec
 
 `plan-new-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
 
-1. **Leé** `../loops/plan-new-loop/SKILL.md` (ruta relativa a este archivo).
+1. **Leé** `../loops/plan-new-loop/SKILL.md` (dentro de la skill `w` instalada — p. ej. `~/.claude/skills/w/loops/…`).
 2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como input (resuelto según las 3 reglas de arriba): detecta estado/resume, corre el motor gap-driven, crea y maneja sessions, converge y reporta.
 
 > No intentes `Skill: plan-new-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.

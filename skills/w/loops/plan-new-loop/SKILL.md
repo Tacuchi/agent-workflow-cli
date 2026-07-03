@@ -2,9 +2,10 @@
 name: plan-new-loop
 description: >-
   Genera un plan de implementación rico (docs/plans/PPP-plan-<slug>.md) a
-  partir de un spec (docs/specs/NNN-spec-<slug>.md). Heir del chasis spec-
-  refine-loop (motor gap-driven convergente, session única, research inline,
-  structured-choice, artefactos como log vivo); sus deltas viven en el cuerpo:
+  partir de un spec (docs/specs/NNN-spec-<slug>.md). Heir del chasis común de
+  los loops (loops/CHASSIS.md — motor gap-driven convergente, session única
+  con research inline, structured-choice, artefactos como log vivo); sus
+  deltas viven en el cuerpo:
   el plan absorbe el nivel TECHNICAL-NOTE + Phases/Tasks con estado vivo,
   research de mapeo código/impacto, gap taxonomy de planificación, y si el
   plan incluye UI compone ui-design para autorar design SPECs por pantalla
@@ -15,7 +16,7 @@ description: >-
 
 # plan-new-loop
 
-> **Heir** del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md). Aquí **solo** los deltas. El motor (gap-driven, sesión única, structured-choice + control `flow`, research inline + regla BD, compact/resume, artefactos como log vivo) vive en el chasis — no se repite.
+> **Heir** del chasis común — aquí **solo** los deltas de PLAN-new. El motor no se repite.
 
 ## Flow
 PLAN
@@ -36,14 +37,15 @@ PLAN
 
 ## Inherits
 
-Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
+Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.md` junto a este archivo (instalación aplanada) — el motor completo del loop (objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo, numeración, convergence gate), **siempre antes** de estos deltas.
 
-- **Objetivo persistente + verification-first** del chasis: persigue su `SESSION.Objective` hasta que sus `SESSION.Success criteria` están **en verde** (sembrados al inicio; acá la rúbrica = **coherencia del plan**: cada Task traza a un acceptance criterion del spec). El motor es **gap-driven convergente** + **ciclo artifact-first** (sembrar `CHECKPOINT.Pending/Next` ANTES → `detect_gaps` → resolver → integrar → actualizar `Pending→Completed` DESPUÉS; gaps agotados con límite `MAX` no se re-disparan).
-- **Una sola session por run**: descriptor `<slug>-plan-new` → `NNN-<slug>-plan-new` (Type = `refine`): `SESSION` + `CHECKPOINT` (+ `BACKLOG` solo si difiere). La **investigación es inline** dentro de esta session (produce `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only en su propia carpeta), no una session aparte.
-- **Structured-choice**: ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`).
-- **Ask-vs-research rule** + **research autónomo inline** + **regla BD** (pregunta MCP si >1 sin default → queries a `SCRIPTS.sql` → ejecuta read-only, `sql-mutation-guard`) + manejo de research **inconclusa** (degrada a humano / difiere a `Open questions` + límite `MAX`).
-- **Compact / resume** y **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
-- **Naming + numeración global** del chasis: `<run>` = descriptor `<slug>-plan-new`, donde `<slug>` sale del spec de entrada (`docs/specs/NNN-spec-<slug>.md`) → folder autodescriptivo `NNN-<slug>-plan-new`. El CLI antepone el `NNN` global y secuencial (sin reiniciar por tipo); el caller pasa solo el descriptor.
+## Internal sessions — instancia PLAN-new
+
+Doctrina completa en el chasis (§ *Internal sessions* + *Numeración*). La instancia de este loop:
+
+| Session | When | Artifacts | Role |
+|---|---|---|---|
+| **plan session** `NNN-<slug>-plan-new/` | al arrancar el loop (o se reanuda) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` solo si difiere) | Dueña del run. Type = `refine`; descriptor `<slug>-plan-new` (el `<slug>` sale del spec de entrada). |
 
 ## Delta 1 — Deliverable: PLAN RICO (`PPP-plan-<slug>.md`)
 

@@ -18,7 +18,7 @@ Para tareas acotadas y directas que no justifican pasar por SPEC ni PLAN. Siempr
 
 `quick-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
 
-1. **Leé** `../loops/quick-loop/SKILL.md` (ruta relativa a este archivo).
+1. **Leé** `../loops/quick-loop/SKILL.md` (dentro de la skill `w` instalada — p. ej. `~/.claude/skills/w/loops/…`).
 2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como la tarea: crea la session ligera, trabaja con ceremonia mínima (git-safe), escala a SPEC/PLAN si crece, y reporta.
 
 > No intentes `Skill: quick-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.

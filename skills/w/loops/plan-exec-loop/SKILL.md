@@ -3,9 +3,10 @@ name: plan-exec-loop
 description: >-
   Ejecuta un plan de implementación (docs/plans/PPP-plan-<slug>.md) como
   living doc: lo lee y actualiza fase a fase mientras edita el código real,
-  gestiona BD y git. Heir del chasis spec-refine-loop (motor gap-driven,
-  research inline, structured-choice, artefactos como log vivo); sus deltas
-  viven en el cuerpo: session única reanudable, git seguro (rama verificada,
+  gestiona BD y git. Heir del chasis común de los loops (loops/CHASSIS.md —
+  motor gap-driven, research inline, structured-choice, artefactos como log
+  vivo, y las políticas de loops que editan código); sus deltas viven en el
+  cuerpo: session única reanudable, git seguro (rama verificada,
   commits propuestos por fuente, nunca push/--amend/--no-verify), BD solo-
   scripts (la IA nunca ejecuta DML/DDL), validación por fase y final, gate de
   revisión de cierre pre-commit, y sin auto-export (solo escribe docs/plans).
@@ -15,7 +16,7 @@ description: >-
 
 # plan-exec-loop
 
-> **Heir** del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md). Aquí los **deltas de ejecución** — el trabajo real: código, BD, git. El motor (gap-driven, research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo) vive en el chasis.
+> **Heir** del chasis común — aquí los **deltas de ejecución**: el trabajo real (código, BD, git). El motor vive en el chasis y las *Políticas de loops que editan código* en `CODE-POLICIES.md` — no se repiten.
 
 ## Flow
 PLAN
@@ -36,16 +37,11 @@ PLAN
 
 ## Boundary — sin auto-export (hard rule)
 
-Este loop **nunca gradúa/promueve artefactos** a `docs/`. La única carpeta `docs/` que escribe es **`docs/plans`** (el plan, living). Todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, diagramas → `docs/diagrams`, etc.) lo hacen skills **`export-*`** aparte, como paso explícito posterior. Los artefactos quedan en sus sessions hasta entonces. Si una tarea crea una herramienta/utilidad, la documenta la skill ambiente `creating-tools` en `docs/tools` (auto-descubierta por su `description`; el workflow es **indiferente**, no la bindea).
+Regla completa en el chasis (§ *docs/ boundary — sin auto-export*). Acá: la única carpeta `docs/` que este loop escribe es **`docs/plans`** (el plan, living); todo lo demás queda en la session hasta un `export-*` explícito y posterior.
 
 ## Inherits
 
-Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
-
-- **Objetivo persistente + verification-first** del chasis: persigue su `SESSION.Objective` hasta que sus `SESSION.Success criteria` están **en verde** (sembrados al inicio; acá = los tests/validaciones del plan pasan — TDD literal cuando hay código, rúbrica para migraciones BD no ejecutables). El motor es **gap-driven** (aplica *dentro de una tarea* ante una decisión/duda no obvia: research inline ó structured-choice).
-- **Structured-choice**: ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre (capacidad del arnés — ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`).
-- **Research INLINE** + **regla BD** read-only (pregunta MCP si >1 sin default → `SCRIPTS.sql` → ejecuta read-only) + research **inconclusa** (degrada/difiere, límite `MAX`).
-- **Compact/resume**; **artefactos como log vivo** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.md` junto a este archivo (instalación aplanada) — el motor completo del loop (objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo, numeración, convergence gate, docs/ boundary) — **y** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** (o `CODE-POLICIES.md` junto a este archivo) — las *Políticas de loops que editan código* (git seguro · BD solo-scripts · gate de revisión de cierre) — **siempre antes** de estos deltas.
 
 ## Composes
 
@@ -68,22 +64,15 @@ Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
 - Ejecuta las `Tasks` de la fase; **salta** las ya marcadas `- [x]` en el plan (el plan-doc es la fuente de verdad por tarea). Marca `- [x]` + estado **en el plan** (living doc; no en un `TASKS` aparte).
 - En **cada límite de fase**: valida, corre el **gate de revisión de cierre** (Delta 5), actualiza el `CHECKPOINT` (Completed += Phase N, Next = Phase N+1) y propone commits.
 - Registra `DECISION` solo lo **no obvio**, **a medida que se toma** (los `DECISION` por fase se acumulan en el ÚNICO `DECISION`, etiquetados por fase/tarea — ej. `Origin: T2 (F1)`).
+- El motor **gap-driven** del chasis aplica acá **dentro de una tarea**: ante una decisión/duda no obvia → research inline ó structured-choice.
 
 ## Delta 2 — Git policy: **rama segura + commits propuestos**
 
-- **Antes de editar** archivos de una fuente: verifica rama actual = rama esperada de esa fuente (`aw check-branch --source <alias>`; ver rol `git`). Si no coincide → **pausa y resuelve con el humano**; nunca `stash`/`reset --hard`/`checkout -- .`/`clean` sin confirmación por fuente.
-- **Al cerrar una fase** (o al `Cerrar`): **tras pasar el gate de revisión de cierre** (Delta 5), **propone commits por fuente** (propose-then-execute, aprobar antes); nunca `push`/`--amend`/`--no-verify`. Nada llega a un commit propuesto sin revisar.
-- **Commit rechazado**: los cambios **quedan en el working tree** (no se revierten). Se permite reproponer / editar mensaje. Se registra en `CHECKPOINT` + `BACKLOG` que la fase quedó **sin commitear** (reanudable).
-- **Precondición entre fases**: `branch-check` valida *identidad* de rama, **no** *limpieza* del working tree. Antes de iniciar la siguiente fase, el working tree de cada fuente debe estar **limpio** (committeado) o explícitamente **reconocido** como "cambios sin commitear de la fase N" — para no co-mezclar dos fases en un mismo commit.
+Política completa en [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Git seguro*: branch-check antes de editar, commit rechazado — los cambios quedan + se registra —, precondición de working tree entre fases). **Inline:** antes de editar, verificar rama esperada por fuente (`aw check-branch --source <alias>`; si no coincide → pausar y resolver con el humano); al cerrar cada fase y **tras el gate de revisión** (Delta 5), **commits propuestos por fuente** (aprobar antes) — nunca `push`/`--amend`/`--no-verify`.
 
 ## Delta 3 — DB policy: **la IA nunca ejecuta DML**
 
-Distinción por **ejecución**, no por archivo (ver el esquema `SCRIPTS.sql`):
-
-- **Consultas read-only** (diagnóstico/validación) → `SCRIPTS.sql` (artefacto de la session); la IA **sí** las ejecuta read-only vía MCP (`sql-mutation-guard`).
-- **Migraciones DDL/DML** (cambios de esquema/datos) → la IA las **redacta en `SCRIPTS.sql`** (artefacto de la session) pero **NUNCA las ejecuta**.
-
-> El SQL mutante **queda en la session**, no se mueve a `docs/`. Su promoción a `docs/scripts/` (forward + rollback) la hace un `export-*` **aparte**, no este loop.
+Política completa en [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *BD solo-scripts*). **Inline:** consultas read-only → `SCRIPTS.sql` de la session y se ejecutan vía MCP (`sql-mutation-guard`); migraciones DDL/DML → la IA las **redacta en `SCRIPTS.sql` pero NUNCA las ejecuta** — su promoción a `docs/scripts/` la hace un `export-*` aparte, no este loop.
 
 ## Delta 4 — Validation
 
@@ -95,14 +84,7 @@ Distinción por **ejecución**, no por archivo (ver el esquema `SCRIPTS.sql`):
 
 ## Delta 5 — Gate de revisión de cierre (convenciones, pre-commit)
 
-Tras la validación de la fase y **antes de proponer sus commits** (también en un `Cerrar` anticipado, antes de proponer los commits pendientes), el diff de la fase pasa un **gate de revisión de cierre**:
-
-- **Re-lectura independiente** del diff (subagente o re-lectura limpia — la *verificación independiente* del chasis: no asume correcta la implementación; *only command output counts*).
-- **Aplica las convenciones ambientes instaladas** relevantes al stack tocado (estándares de código/stack, seguridad, revisión de diffs, familias propias del workspace) — el host las **auto-descubre por su `description`**. El workflow **no nombra ni bindea** skills concretas: **crea el momento; las skills instaladas lo llenan** (por eso la revisión **no es un rol** — ver [`../../roles/README.md`](../../roles/README.md)). Sin skills de convenciones instaladas → checklist genérico mínimo: SOLID/early-return, nombres claros, DRY, errores no silenciados, sin secrets/PII, SQL parametrizado, sin código muerto, + las `Validations` del plan.
-- **Hallazgos**: se **corrigen** en el working tree y se **re-corre la validación de la fase** (el gate no reemplaza los tests: los re-verifica tras corregir), o se **difieren justificados** (→ `Open questions` del plan + `BACKLOG`); lo no obvio → `DECISION`. Integridad del gate (chasis): nunca se debilita un check ni se baja una convención para pasar.
-- **Artifact-first + verification-first**: `CHECKPOINT.Next = "review fase N"` antes de la pasada; `SESSION.Success criteria` incluye desde el inicio "cada fase pasó el gate de revisión antes de sus commits".
-
-Recién con el gate en verde se proponen los commits de la fase (Delta 2).
+Gate completo en [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Gate de revisión de cierre*): re-lectura **independiente** del diff + convenciones ambientes instaladas; hallazgos → corregir (re-validando la fase) o diferir justificado. Acá solo el cableado exec: corre **entre la validación de la fase (Delta 4) y sus commits (Delta 2)**; recién con el gate en verde se proponen los commits de la fase.
 
 ## Delta 6 — Completitud / cierre
 
@@ -146,27 +128,6 @@ plan-exec-loop(PPP-plan-<slug>.md):
   marcar plan done (o "done — SQL pendiente de aplicar")
   # NO export: los artefactos quedan en la session; un export-* los promueve aparte
 finalize: CHECKPOINT (+ BACKLOG si difiere) + cerrar session + reportar
-```
-
-```mermaid
-flowchart TD
-    S["create_or_resume plan-exec session (única)<br/>read PPP-plan-&lt;slug&gt;.md"] --> P{"¿más Phases<br/>(no done)?"}
-    P -->|no| V2["validación final<br/>(dep. de SQL → handoff)"]
-    P -->|sí| T{"¿Task pendiente<br/>(no - [x])?"}
-    T -->|sí| G["branch-check por fuente"]
-    G -->|rama ok| DO["editar código · read-only→SCRIPTS.sql<br/>migración DDL/DML→SCRIPTS.sql (no ejecuta) · DECISION"]
-    G -->|rama ≠| PA["pausar + resolver con humano"]
-    PA --> G
-    DO --> MK["marcar Task - [x] en el PLAN"]
-    MK --> T
-    T -->|no| VP["validación de fase<br/>(falla→tarea · dep. SQL→diferir)"]
-    VP --> RV["gate de revisión de cierre<br/>(diff + convenciones ambientes → corregir/diferir)"]
-    RV --> CK["update CHECKPOINT (Completed/Next)"]
-    CK --> CM["proponer commits por fuente"]
-    CM -->|aprobado| P
-    CM -->|rechazado| RJ["cambios quedan · registrar 'sin commitear'"]
-    RJ --> P
-    V2 --> FIN["structured-choice[Marcar plan done · Preguntar más]<br/>plan done (sin auto-export)"]
 ```
 
 ## Convergence / exit

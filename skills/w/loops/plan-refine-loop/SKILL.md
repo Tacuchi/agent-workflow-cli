@@ -3,10 +3,11 @@ name: plan-refine-loop
 description: >-
   Refina un plan existente (docs/plans/PPP-plan-<slug>.md) editándolo IN
   PLACE, como paso auxiliar y NO obligatorio del flujo PLAN antes de plan-
-  exec. Es a plan-new lo que spec-refine es a spec-new. Heir del chasis spec-
-  refine-loop (motor gap-driven, session única, research inline, structured-
-  choice, artefactos como log vivo); reusa la gap taxonomy y el coherence gate
-  de plan-new-loop, agrega Refinement decisions/Q&A traceability al plan
+  exec. Es a plan-new lo que spec-refine es a spec-new. Heir del chasis común
+  de los loops (loops/CHASSIS.md — motor gap-driven, session única con
+  research inline, structured-choice, artefactos como log vivo); reusa la gap
+  taxonomy y el coherence gate de plan-new-loop, agrega Refinement
+  decisions/Q&A traceability al plan
   (traza, sin gating), y si el refine toca UI compone ui-design y
   produce/actualiza design SPECs por pantalla. Lo arranca /w:plan-refine;
   reanudable y re-corrible a demanda. Invocar cuando un plan ya generado deba
@@ -15,7 +16,7 @@ description: >-
 
 # plan-refine-loop
 
-> **Heir** del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md). Aquí **solo** los deltas. El motor (gap-driven, sesión única, structured-choice + control `flow`, research inline + regla BD, compact/resume, artefactos como log vivo, objetivo persistente + verification-first) vive en el chasis — no se repite.
+> **Heir** del chasis común — aquí **solo** los deltas de PLAN-refine. El motor no se repite.
 
 > **Relación con los otros loops de PLAN:** `plan-new-loop` **genera** el plan desde el spec; `plan-refine-loop` **lo refina in place** (opcional); `plan-exec-loop` **lo ejecuta**. plan-refine es a plan-new lo que spec-refine es a spec-new.
 
@@ -39,17 +40,19 @@ Actualiza `docs/plans/PPP-plan-<slug>.md` **in place** (cuando el usuario elige 
 
 ## Inherits
 
-Del chasis [`spec-refine-loop`](../spec-refine-loop/SKILL.md), sin cambios:
+Leé **[`../CHASSIS.md`](../CHASSIS.md)** (instalación normal) **o** `CHASSIS.md` junto a este archivo (instalación aplanada) — el motor completo del loop (objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artefactos como log vivo, numeración, convergence gate), **siempre antes** de estos deltas.
 
-- **Objetivo persistente + verification-first**: persigue su `SESSION.Objective` hasta que sus `SESSION.Success criteria` están **en verde** (sembrados al inicio; acá la rúbrica = **coherencia del plan**, ver *Convergence*). Motor **gap-driven convergente** + **ciclo artifact-first** (sembrar `CHECKPOINT.Pending/Next` ANTES → `detect_gaps` → resolver → integrar → `Pending→Completed` DESPUÉS; gaps agotados con límite `MAX` no se re-disparan).
-- **Una sola session por run**: descriptor `<slug>-plan-refine` → `NNN-<slug>-plan-refine` (Type = `refine`): `SESSION` + `CHECKPOINT` (+ `BACKLOG` solo si difiere). La **investigación es inline** dentro de esta session (produce `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only en su propia carpeta), no una session aparte. El CLI antepone el `NNN` global; el caller pasa solo el descriptor.
-- **Structured-choice**: ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre (ver [`../../harness/SKILL.md`](../../harness/SKILL.md); en Claude Code es `AskUserQuestion`). Cada pregunta de contenido lleva **respuesta recomendada**.
-- **Ask-vs-research rule** + **research autónomo inline** + **regla BD** (pregunta MCP si >1 sin default → queries a `SCRIPTS.sql` → ejecuta read-only, `sql-mutation-guard`) + manejo de research **inconclusa** (degrada a humano / difiere a `Open questions` + límite `MAX`).
-- **Compact / resume** y **artefactos como log vivo (ciclo artifact-first)** (`CHECKPOINT` siempre; `BACKLOG` solo si difiere). **Integridad del gate** (anti-gaming + verificación independiente): *only command output counts*.
+## Internal sessions — instancia PLAN-refine
+
+Doctrina completa en el chasis (§ *Internal sessions* + *Numeración*). La instancia de este loop:
+
+| Session | When | Artifacts | Role |
+|---|---|---|---|
+| **refine session** `NNN-<slug>-plan-refine/` | al arrancar el loop (o se reanuda/reabre) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` solo si difiere) | Dueña del run. Type = `refine`; descriptor `<slug>-plan-refine` (el `<slug>` sale del plan de entrada). |
 
 ## Delta 1 — Deliverable: el PLAN, editado in place
 
-El plan usa el **mismo esqueleto** que produce [`plan-new-loop`](../plan-new-loop/SKILL.md) (§ *Delta 1 — PLAN RICO*: `Summary`/`Solution`/`Impacted`/`Phases`/`Tasks`/`Validations`/`Final behavior`/… con secciones `(core)` siempre y `(opt.)` según complejidad). plan-refine **no** cambia el esquema: **completa/ajusta** las secciones existentes **in place** y **agrega** dos de traza:
+El plan usa el **mismo esqueleto** que produce [`plan-new-loop`](../plan-new-loop/SKILL.md) (en instalaciones aplanadas: la copia hermana `w-plan-new-loop/SKILL.md`) (§ *Delta 1 — PLAN RICO*: `Summary`/`Solution`/`Impacted`/`Phases`/`Tasks`/`Validations`/`Final behavior`/… con secciones `(core)` siempre y `(opt.)` según complejidad). plan-refine **no** cambia el esquema: **completa/ajusta** las secciones existentes **in place** y **agrega** dos de traza:
 
 ```markdown
 ## Refinement decisions   ← NEW (se AGREGA)

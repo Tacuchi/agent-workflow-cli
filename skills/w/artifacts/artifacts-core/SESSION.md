@@ -21,7 +21,7 @@ Session type, **set by the parent loop** (not the user). Authoritative catalog: 
 > `research` is **not** a session type the loops create. Research is an **inline** activity: ANALYSIS-FILE / CONCLUSIONS are written into whatever session is active (`refine`/`exec`/`quick`) when it does investigation.
 
 ## Success criteria
-The run's **done-condition**, seeded when the session is created (**verification-first** — generalized TDD; see [`../../loops/spec-refine-loop/SKILL.md`](../../loops/spec-refine-loop/SKILL.md) § Verification-first): a checklist `[ ]` of **falsifiable** items (that *can* fail) defining "done". The loop **persists until they are all green** (it is the *persistent-objective* condition); `CHECKPOINT.Pending/Completed` tracks the **red→green** progress. Two forms:
+The run's **done-condition**, seeded when the session is created (**verification-first** — generalized TDD; see [`../../loops/CHASSIS.md`](../../loops/CHASSIS.md) § Verification-first): a checklist `[ ]` of **falsifiable** items (that *can* fail) defining "done". The loop **persists until they are all green** (it is the *persistent-objective* condition); `CHECKPOINT.Pending/Completed` tracks the **red→green** progress. Two forms:
 
 - **Executable** (code/script/fix): **runnable** tests/checks (unit, build, lint, bug repro) — literal TDD. May **reference** the repo's tests rather than copy them.
 - **Rubric** (analysis/design and other non-executable deliverables): items checked by **inspection** (e.g. "identifies every affected site with `file:line`"; "each decision: rationale + ≥1 alternative"). For **subjective** deliverables the AI **proposes** the rubric and the **human ratifies** it before pursuing it.

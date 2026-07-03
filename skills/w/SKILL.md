@@ -40,8 +40,8 @@ USUARIO invoca
     EXPORTS: export-scripts · export-manuals · export-diagrams · export-reports
         │ arranca / delega
         ▼
-  LAYER 2 · LOOPS (los corre la IA, gap-driven)
-    spec-refine-loop (CHASIS) · plan-new-loop · plan-refine-loop · plan-exec-loop · quick-loop
+  LAYER 2 · LOOPS (los corre la IA, gap-driven; motor: loops/CHASSIS.md)
+    spec-refine-loop · plan-new-loop · plan-refine-loop · plan-exec-loop · quick-loop
         │ crea / lee / escribe
         ▼
   LAYER 3 · SESSIONS + ARTIFACTS (.workflow/sessions/ — efímero, interno)
@@ -98,21 +98,9 @@ Skills **invocables independientes de flujo**: se disparan con `/w:` igual que u
 
 ### The loops (Layer 2)
 
-Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable. Propiedades comunes (el chasis, en `spec-refine-loop`, lo heredan los demás):
+Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable: detecta huecos, los resuelve (humano vía structured-choice, research inline o una capacidad compuesta), integra y repite hasta converger. Los 5 loops corren el mismo **motor común** — objetivo persistente + verification-first, gap-driven convergente, session única por run, structured-choice + control `flow` (`Compactar`/`Cerrar`), compact/resume, artefactos como log vivo, convergence gate — cuyo canon vive en [`loops/CHASSIS.md`](loops/CHASSIS.md); cada loop es un **heir** que agrega solo sus deltas.
 
-1. **Objetivo persistente + verification-first** — el loop persigue su `SESSION.Objective` y solo finaliza cuando sus `SESSION.Success criteria` (sembrados al inicio, *verification-first* / TDD generalizado: tests para código, rúbrica falsable para análisis/diseño) están **en verde**. Modelado en el `/goal` de Claude Code pero **agnóstico** (no depende de ningún host) y con registro durable.
-2. **Gap-driven convergente** — el *cómo*: cada ciclo detecta huecos → resuelve (pregunta al humano o investiga) → integra → repite hasta converger.
-3. **Una sola session por run + research inline** — el loop crea **una** session (la dueña del run) y maneja sus artefactos en `.workflow/sessions/`. La **investigación es inline**: una actividad dentro de esa misma session (escribe `ANALYSIS-FILE`/`CONCLUSIONS` + `SCRIPTS.sql` read-only si consulta BD), no una session aparte. El usuario nunca crea sessions. Los artefactos son el **registro vivo** del run, **ciclo artifact-first** (sembrar `Pending`/`Next` antes de ejecutar, llevar a `Completed` después); la base guía es el spec/plan.
-4. **Structured-choice con dos tipos de pregunta** — *structured-choice* (capacidad del arnés — ver `harness/SKILL.md`). En **Claude Code** es `AskUserQuestion` (máx 4 preguntas/llamada → **≤3 preguntas de contenido + 1 control `flow`**); en un arnés sin elección estructurada, degrada a **markdown numerado**.
-   - **pregunta(s) de contenido** — la pregunta real del momento.
-   - **control `flow`** — control de ciclo de vida, **siempre presente**: `Compactar` / `Cerrar`. Responder la pregunta de contenido sin tocar `flow` = seguir iterando.
-5. **Escribe solo en su carpeta `docs/`** — y nunca exporta el resto (eso es de `export-*`).
-
-`flow → Compactar` = checkpoint + la **compactación** del arnés (en Claude Code: `/compact`; ver `harness/SKILL.md`) y reanuda. `flow → Cerrar` = persiste `CHECKPOINT` (siempre) + `BACKLOG` (solo si difiere), cierra la session, termina.
-
-Cada loop tiene un **convergence gate** read-only antes de ofrecer `Guardar`/`done`, que es operacionalmente **"todos los `SESSION.Success criteria` en verde"** (*verification-first*): chequea invariantes propios del entregable y lo que falle vuelve como gap (en `spec-refine-loop` es el *analyze gate*; en `plan-new-loop` —y en `plan-refine-loop`— la coherencia del plan; en `plan-exec-loop`, la validación final; en `quick-loop`, una validación puntual proporcional). El detalle vive en cada loop.
-
-Los loops que **editan código** (`plan-exec-loop` por fase, `quick-loop` proporcional) corren además un **gate de revisión de cierre** ANTES de proponer cada commit: re-lectura **independiente** del diff aplicando las **convenciones ambientes instaladas** (el host las auto-descubre; el workflow crea el momento, no las bindea — no es un rol); los hallazgos se corrigen (re-validando) o se difieren justificados. Nada llega a un commit propuesto sin revisar. Ver `loops/plan-exec-loop/SKILL.md` § *Delta 5*.
+Los loops que **editan código** (`plan-exec-loop`, `quick-loop`) aplican además las *Políticas de loops que editan código*: git seguro, BD solo-scripts y el **gate de revisión de cierre** pre-commit (nada llega a un commit propuesto sin revisar) — ver [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (doc hermano del chasis; los loops de documento no lo cargan).
 
 `spec-new` no tiene loop (single-pass): **6 comandos / 5 loops**.
 
@@ -156,7 +144,7 @@ Catálogo de roles y su default:
 
 > **Convenciones ambientes (no roles):** estándares de código/testing/redacción y `creating-tools` son skills standalone que el host auto-descubre por su `description` — el workflow no las bindea ni depende de ellas. Doctrina completa: [roles/README.md](roles/README.md).
 
-El **chasis del loop** NO se bindea: **es** el loop, no es enchufable.
+El **chasis del loop** NO se bindea: es el motor común de los 5 loops ([`loops/CHASSIS.md`](loops/CHASSIS.md), un doc referenciado), no una capacidad enchufable.
 
 ### Harness (agnóstico al arnés)
 
@@ -177,7 +165,7 @@ Las únicas `must` para el ciclo de un loop son **structured-choice** y **compac
 3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión. *(No confundir con los **design SPECs** `NNN-SPEC-<SLUG>.md`: artefactos de diseño de UI **por pantalla** que las sesiones de PLAN producen vía la capacidad `ui-design` cuando el plan incluye UI — ver `artifacts/artifacts-design/` — no son el requirement-spec.)*
 4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
 5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.
-6. **Chasis de loops** — **objetivo persistente + verification-first** (persigue `SESSION.Objective` hasta que sus `SESSION.Success criteria` —sembrados al inicio, TDD generalizado— están en verde) · gap-driven convergente · una sola session por run (research inline) · **structured-choice** con ≤3 preguntas de contenido + 1 control `flow` (`Compactar`/`Cerrar`) siempre · compactación/resume · artefactos como log vivo **artifact-first** (sembrar `Pending`/`Next` antes, `Completed` después; `CHECKPOINT` siempre; `BACKLOG` solo si difiere).
+6. **Chasis de loops** — los 5 loops corren el mismo **motor común**; cada loop es un heir que agrega solo sus deltas, nada del motor se re-declara. Detalle: `loops/CHASSIS.md`.
 
 > **Alcance de #1/#2:** gobiernan el plano **sesión → `docs/`** (solo `export-*` lo cruza). El *authoring directo sin flujo* (ver § *Contexto operativo*) es **otro plano**: sin sesión activa, `docs/` es la única superficie gestionada → la IA escribe ahí por convención + numeración. No es auto-export (no hay sesión de la cual graduar).
 

@@ -483,7 +483,10 @@ async function installOneTarget(
 // hermano top-level del SKILL universal, namespaced con `agent-workflow-`.
 // El frontmatter `name:` del SKILL.md interno define el slash command que
 // el host lista (ej. `name: doctor` → `/doctor`); el directorio solo
-// resuelve la unicidad en filesystem.
+// resuelve la unicidad en filesystem. Los .md sueltos del parentDir (docs
+// compartidos entre sub-skills hermanos, ej. `loops/CHASSIS.md`) se copian
+// dentro de cada sub-skill aplanado para que la referencia relativa
+// "CHASSIS.md junto a este archivo" siga resolviendo.
 async function flattenSubSkillsForHost(
   target: InstallTarget,
   skillDest: string,
@@ -502,6 +505,9 @@ async function flattenSubSkillsForHost(
     } catch {
       continue;
     }
+    const sharedDocs = entries.filter(
+      (e) => e.isFile() && e.name.endsWith(".md") && e.name !== "README.md",
+    );
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const subSkillPath = join(parentPath, entry.name);
@@ -515,6 +521,7 @@ async function flattenSubSkillsForHost(
       try {
         await rm(destDir, { recursive: true, force: true });
         await copyTree(subSkillPath, destDir);
+        await copySharedSiblingDocs(parentPath, sharedDocs, destDir);
         count += 1;
       } catch (err) {
         if (!force) {
@@ -524,6 +531,23 @@ async function flattenSubSkillsForHost(
     }
   }
   return { count, warnings };
+}
+
+// Copia los docs compartidos del parentDir dentro de un sub-skill aplanado,
+// sin pisar un archivo homónimo propio del sub-skill.
+async function copySharedSiblingDocs(
+  parentPath: string,
+  docs: readonly import("node:fs").Dirent[],
+  destDir: string,
+): Promise<void> {
+  for (const doc of docs) {
+    const target = join(destDir, doc.name);
+    try {
+      await stat(target);
+    } catch {
+      await copyFile(join(parentPath, doc.name), target);
+    }
+  }
 }
 
 async function installUserCommands(

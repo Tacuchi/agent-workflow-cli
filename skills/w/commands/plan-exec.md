@@ -18,7 +18,7 @@ Arranca o retoma `plan-exec-loop` (Layer 2), que ejecuta el trabajo real fase po
 
 `plan-exec-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
 
-1. **Leé** `../loops/plan-exec-loop/SKILL.md` (ruta relativa a este archivo).
+1. **Leé** `../loops/plan-exec-loop/SKILL.md` (dentro de la skill `w` instalada — p. ej. `~/.claude/skills/w/loops/…`).
 2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como input: detecta CHECKPOINT/resume, ejecuta fase por fase (git-safe, BD solo-scripts), mantiene el plan vivo y reporta.
 
 > No intentes `Skill: plan-exec-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.

@@ -4,7 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [14.10.0] — 2026-07-02
+## [14.11.0] — 2026-07-02
+
+**Refactor estructural del chasis: motor único `loops/CHASSIS.md` + `loops/CODE-POLICIES.md`, unbundling de quick, flatten Warp/Oz con docs compartidos.** Cierra el diferido mayor de la auditoría integral (informe `docs/reports/002` del hub de diseño: dup re-confirmada + modelo de ahorro corregido). Bundle `w` 9.7.0 → **10.0.0** (reestructura doctrinal mayor).
+
+### Added
+
+- **`skills/w/loops/CHASSIS.md`** (motor común, 20.1 KB): objetivo persistente + verification-first, gap-driven, session única + research inline, structured-choice + control `flow`, compact/resume, artifact-first, numeración, convergence gate, docs/ boundary — antes embebido en `spec-refine-loop` (27.8 KB) y re-narrado 6-8 veces (SKILL.md raíz ×2, loops/README, `## Inherits` de cada heir): ese patrón fabricaba drift.
+- **`skills/w/loops/CODE-POLICIES.md`** (doc hermano): git seguro · BD solo-scripts · gate de revisión de cierre — **solo lo cargan `plan-exec-loop` y `quick-loop`**; los loops de documento ya no pagan ~1k tokens/run de políticas que no usan (hallazgo de la verificación post-refactor).
+- **Flatten Warp/Oz inyecta los `.md` hermanos compartidos** (`copySharedSiblingDocs`: archivos sueltos no-README del parentDir) en cada copia aplanada `w-<loop>/` — la referencia tolerante de los heirs ("`../CHASSIS.md` o `CHASSIS.md` junto a este archivo") resuelve en ambos layouts sin pisar homónimos.
+- **Guard test `chassis-consistency`**: heirs declarados en `## Heirs` ≡ directorios reales de `loops/`, cada heir referencia el chasis, ningún heir re-declara encabezados del motor, CHASSIS sin frontmatter. Cazó un drift real en vivo durante el propio refactor.
+
+### Changed
+
+- **Los 5 loops son heirs puros**: `## Inherits` de 1 línea (referencia tolerante) + deltas propios; `spec-refine-loop` deja de ser "el chasis" (27.8 → 12.2 KB) y su description ya no enumera heirs (mataba de raíz el drift D1: omitía `plan-refine-loop` en el system prompt).
+- **Unbundling de quick**: `quick-loop` ya no hereda de `plan-exec-loop` (leía 15.6 KB para usar 4.2 KB de políticas — ahora viven en CODE-POLICIES). Invariantes 4/5 conservan resumen inline en los loops que editan código (hosts advisory no siguen Reads).
+- **SKILL.md raíz + README + loops/README + commands/README**: re-declaraciones normativas → punteros al canon (−40% agregado; commands/README era 83% duplicado); README npm ídem.
+- **4 mermaids decorativos retirados** (re-dibujaban el pseudocódigo normativo inmediatamente anterior); quedan solo las 6 plantillas load-bearing de `roles/diagrams`.
+- **Carga siempre-cargada por run**: quick **−35.1%** (55.3 → 35.9 KB), plan-new −21.7%, plan-refine −19.0%, plan-exec −14.3%, spec-refine +14.9% (paga el framing del motor; las políticas exec ya no). Neto de los 5 flujos: **−17.9% (≈ −10k tokens)**.
+
+### Fixed
+
+- **5 drifts de enumeración** muertos con su clase (la lista canónica de heirs vive solo en el chasis): description/gates del chasis viejo, secciones omitidas en loops/README, `## Inherits` asimétricos, gemelos divergentes del SKILL.md raíz.
+- **Comandos instalados**: "(ruta relativa a este archivo)" era literalmente falsa desde `~/.claude/commands/w/` — ahora localización tolerante ("dentro de la skill `w` instalada"); ídem la dependencia plan-refine → plan-new en copias aplanadas.
+- Plantilla `SESSION.md` apuntaba `§ Verification-first` al archivo viejo del chasis.
+
+
 
 **Ronda backlog-medium de la auditoría integral: MCP host-aware y multi-plataforma, artefactos dumpeables, parser/help para agentes, y TUI con logs y errores observables.** Segunda ronda derivada del informe `docs/reports/001` del hub de diseño (los 18 ítems medium). Bundle `w` 9.6.1 → **9.7.0** (doctrina: delegación git + dump de artefactos + dedup).
 

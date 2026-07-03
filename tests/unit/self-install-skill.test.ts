@@ -125,6 +125,23 @@ async function makeFakeRepo(root: string, withFrontmatter = true): Promise<void>
   await writeFile(join(root, ".git/HEAD"), "ref: refs/heads/main\n", "utf8");
 }
 
+// Fixture para el flatten de hosts top-level (warp/oz): un sub-skill bajo
+// loops/ + docs .md hermanos compartidos a nivel de loops/ (como el
+// loops/CHASSIS.md real). README.md del parentDir NO debe copiarse y un
+// homónimo propio del sub-skill NO debe pisarse.
+async function seedFlattenFixture(root: string): Promise<void> {
+  await mkdir(join(root, "loops/quick-loop"), { recursive: true });
+  await writeFile(join(root, "loops/CHASSIS.md"), "# CHASSIS compartido\n", "utf8");
+  await writeFile(join(root, "loops/README.md"), "# loops readme\n", "utf8");
+  await writeFile(join(root, "loops/NOTES.md"), "# notes compartido\n", "utf8");
+  await writeFile(
+    join(root, "loops/quick-loop/SKILL.md"),
+    "---\nname: quick-loop\ndescription: Quick loop.\n---\n\n# quick-loop\n",
+    "utf8",
+  );
+  await writeFile(join(root, "loops/quick-loop/NOTES.md"), "# notes propio\n", "utf8");
+}
+
 describe("selfInstallSkill", () => {
   let workdir: string;
   let home: string;
@@ -236,6 +253,47 @@ describe("selfInstallSkill", () => {
     }
     expect(await fs.exists(join(home, ".warp/skills", SKILL_DIR_NAME))).toBe(true);
     expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
+  });
+
+  it("flatten (warp): w-quick-loop/ recibe los .md hermanos compartidos (CHASSIS.md) sin pisar homónimos", async () => {
+    await seedFlattenFixture(source);
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "warp" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      // Solo el sub-skill directorio se aplana; CHASSIS.md (archivo) no cuenta.
+      expect(result.data.dests[0]?.flattened_subskills).toBe(1);
+      expect(result.data.dests[0]?.flattened_warnings).toBeUndefined();
+    }
+
+    const flatDir = join(home, ".warp/skills", "w-quick-loop");
+    const skill = await readFile(join(flatDir, "SKILL.md"), "utf8");
+    expect(skill).toContain("name: quick-loop");
+    // Doc compartido copiado junto al SKILL.md — la referencia tolerante
+    // "CHASSIS.md junto a este archivo" resuelve en la instalación aplanada.
+    const chassis = await readFile(join(flatDir, "CHASSIS.md"), "utf8");
+    expect(chassis).toBe("# CHASSIS compartido\n");
+    // Homónimo del sub-skill NO se pisa con el hermano compartido.
+    const notes = await readFile(join(flatDir, "NOTES.md"), "utf8");
+    expect(notes).toBe("# notes propio\n");
+    // README.md del parentDir queda excluido.
+    expect(await fs.exists(join(flatDir, "README.md"))).toBe(false);
+  });
+
+  it("flatten (oz): mismo comportamiento — CHASSIS.md junto al sub-skill aplanado", async () => {
+    await seedFlattenFixture(source);
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "oz" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    const flatDir = join(home, ".agents/skills", "w-quick-loop");
+    expect(await fs.exists(join(flatDir, "SKILL.md"))).toBe(true);
+    expect(await fs.exists(join(flatDir, "CHASSIS.md"))).toBe(true);
   });
 
   it("--target=oz installs only to ~/.agents/skills/", async () => {

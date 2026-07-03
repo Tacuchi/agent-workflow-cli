@@ -1,99 +1,40 @@
 # w — Command map (Layer 1)
 
-> This is the **bundle README** for the `/w:` slash-command namespace. Every command listed here is something the **user** invokes directly.
-> Related layers: [`../loops/`](../loops/) (Layer 2, AI-driven) · artifacts live in `.workflow/sessions/` (Layer 3) · permanent deliverables in `docs/`.
+> README del namespace `/w:` (`w` = *workflow*): todo lo listado acá es lo **único que el usuario invoca** directamente. Los comandos son la **Capa 1** — single-pass o arrancan un loop; sin lógica de iteración.
 >
-> **Namespace:** all commands are under `w:` (`w` = *workflow*): `/w:spec-new`, `/w:spec-refine`, `/w:plan-new`, `/w:plan-refine`, `/w:plan-exec`, `/w:quick`, `/w:workspace-init`, `/w:status` (transversal), `/w:fix-git` (transversal), `/w:export-*`.
+> **Canon**: el modelo completo (3 capas + zona `docs/`, los 3 flujos, invariantes duros) vive en [`../SKILL.md`](../SKILL.md); el **motor de los loops** en [`../loops/CHASSIS.md`](../loops/CHASSIS.md). Este README es solo el índice de la carpeta.
 
 ---
 
-## 3-layer model + docs/ zone
-
-```
-┌─ LAYER 1 · COMMANDS (this dir) — the only thing the user invokes ──────┐
-│   workspace-init                                                        │
-│   spec-new · spec-refine · plan-new · plan-refine · plan-exec · quick  │
-│   export-scripts · export-manuals · export-diagrams · export-reports   │
-│   High-level. Single-pass or starts a loop. No iteration logic here.   │
-└───────────────────────────┬────────────────────────────────────────────┘
-                            │ starts / delegates to
-                            ▼
-┌─ LAYER 2 · LOOPS (../loops/) — AI runs these end-to-end ───────────────┐
-│   spec-refine-loop · plan-new-loop · plan-refine-loop                  │
-│   plan-exec-loop · quick-loop                                          │
-│   Gap-driven · structured-choice: ≤3 content questions + 1 `flow`     │
-│   (Compactar / Cerrar always present) · compact/resume support.        │
-└───────────────────────────┬────────────────────────────────────────────┘
-                            │ creates / reads / writes
-                            ▼
-┌─ LAYER 3 · SESSIONS + ARTIFACTS (.workflow/sessions/) ─────────────────┐
-│   Ephemeral, internal. No one invokes this by hand. Process-only.      │
-│   (schema in ../artifacts/)                                            │
-└────────────────────────────────────────────────────────────────────────┘
-
-╔═ docs/ ZONE — PERMANENT documents, user-facing ════════════════════════╗
-║  specs · plans                  ← written by flows directly            ║
-║  scripts · manuals · diagrams · reports   ← written by export-* only  ║
-║  tools                          ← written by the ambient creating-tools║
-╚════════════════════════════════════════════════════════════════════════╝
-```
-
 ## Bootstrap
 
-[`/w:workspace-init`](workspace-init.md) converts the current folder into an agent-workflow **workspace** (scaffolds `.workflow/` + `docs/` + `WORKSPACE` block + `.workflow/skills.toml`). Replaces the old `hub-init` + `project-init` — **no project/hub distinction**. A workspace has 1+ sources; "standalone" is just a single-source workspace. Run once before any flow.
+[`/w:workspace-init`](workspace-init.md) convierte la carpeta actual en un **workspace** (`.workflow/` + `docs/` + bloque `WORKSPACE` + `.workflow/skills.toml`). Sin distinción project/hub; correr una vez antes de cualquier flujo.
 
-## Flows & commands
+## Index
 
-| Flow | docs/ target | Entry command | Advance command | Loops involved |
-|---|---|---|---|---|
-| **SPEC** | `docs/specs/` | `spec-new` *(single-pass)* | `spec-refine` | `spec-refine-loop` |
-| **PLAN** | `docs/plans/` | `plan-new` | `plan-refine` *(aux, opcional)* · `plan-exec` | `plan-new-loop`, `plan-refine-loop`, `plan-exec-loop` |
-| **QUICK** | — *(no doc)* | `quick` | — | `quick-loop` |
+| Command | Qué hace | Mode |
+|---|---|---|
+| [`workspace-init`](workspace-init.md) | Bootstrap del workspace | single-pass, interactivo |
+| [`spec-new`](spec-new.md) | Genera el borrador de spec (`docs/specs/NNN-spec-<slug>.md`) | single-pass, sin loop |
+| [`spec-refine`](spec-refine.md) | Refina el spec **in place** hasta desambiguarlo | arranca `spec-refine-loop` |
+| [`plan-new`](plan-new.md) | Deriva el plan ejecutable (`docs/plans/PPP-plan-<slug>.md`) del spec | arranca `plan-new-loop` |
+| [`plan-refine`](plan-refine.md) | Refina el plan **in place** antes de ejecutar (aux, opcional) | arranca `plan-refine-loop` |
+| [`plan-exec`](plan-exec.md) | Ejecuta el plan (código/BD/git) y lo mantiene como living doc | arranca `plan-exec-loop` |
+| [`quick`](quick.md) | Atajo liviano para trabajo acotado; no toca `docs/` | arranca `quick-loop` |
+| [`status`](status.md) | Dashboard read-only del workspace | single-pass (transversal) |
+| [`fix-git`](fix-git.md) | Resuelve un merge en curso, git-safe | single-pass (transversal) |
+| [`export-scripts`](export-scripts.md) | Promueve migraciones SQL de sesiones a `docs/scripts/` | single-pass, read-only |
+| [`export-manuals`](export-manuals.md) | Genera manuales en `docs/manuals/` | single-pass, read-only |
+| [`export-diagrams`](export-diagrams.md) | Genera diagramas C4/mermaid en `docs/diagrams/` | single-pass, read-only |
+| [`export-reports`](export-reports.md) | Genera informes en `docs/reports/` | single-pass, read-only |
 
-> **Intentional asymmetry:** in SPEC, `spec-new` generates the draft in a **single pass** (no loop) and the loop is in `spec-refine`. In PLAN, all commands start loops — `plan-new` generates, `plan-refine` (auxiliary, **optional**) refines it in place, `plan-exec` executes. Total: **6 flow commands / 5 loops**.
-
-> **Transversal (no flow):** [`/w:status`](status.md) is a read-only dashboard of the whole workspace — what's done / pending / discarded, with friendly Spanish dates. It leans on `aw status`, writes nothing, and belongs to no flow.
+> **Asimetría intencional:** en SPEC, `spec-new` genera el borrador en single-pass (sin loop) y el loop está en `spec-refine`; en PLAN, los 3 comandos arrancan loops. Total: **6 comandos de flow / 5 loops**.
 >
-> **Transversal (no flow):** [`/w:fix-git`](fix-git.md) resolves an **in-progress merge conflict** for any repo — identify origin↔destination, analyze both sides' intent, resolve (structured-choice on ambiguity), propose the merge commit (git-safe). Leans on `aw merge-state`; writes no `docs/`; works without a workspace. Neither transversal is counted in **6 flow / 5 loops**.
->
-> `/w:status` and `/w:fix-git` are **transversal skills** — in the design model they form their own category (`workflow-skills/`, distinct from flow commands); here they are packaged under `commands/` so `/w:` can invoke them (Claude Code only invokes `commands/*.md`). See [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*.
-
-## Pipeline
-
-```mermaid
-flowchart LR
-    prompt(["user prompt"]) --> sn["/w:spec-new"]
-    sn -->|generates| spec["docs/specs/NNN-spec-&lt;slug&gt;.md"]
-    spec -.->|optional manual edit| spec
-    spec --> sr["/w:spec-refine"]
-    sr -->|starts| srl(["spec-refine-loop"])
-    srl -->|refines IN PLACE| spec
-
-    spec --> pn["/w:plan-new"]
-    pn -->|starts| pnl(["plan-new-loop"])
-    pnl -->|generates| plan["docs/plans/PPP-plan-&lt;slug&gt;.md"]
-
-    plan -.->|optional: changes before exec| pr["/w:plan-refine"]
-    pr -->|starts| prl(["plan-refine-loop"])
-    prl -->|refines IN PLACE| plan
-
-    plan --> pe["/w:plan-exec"]
-    pe -->|starts| pel(["plan-exec-loop"])
-    pel -->|read/update| plan
-    pel -->|artifacts| sess[".workflow/sessions/\nSCRIPTS.sql · DECISION"]
-    sess -.->|export-* (separate step)| outd["docs/scripts · manuals · diagrams · reports"]
-
-    promptq(["prompt"]) --> q["/w:quick"]
-    q -->|starts| ql(["quick-loop"])
-```
-
-**Pipeline reading:** SPEC defines *what* (refined spec) → PLAN defines *how* (plan) and *executes it* → QUICK is a lightweight shortcut for scoped work that does not warrant spec or plan.
-
-> **`docs/` boundary:** each flow only touches its own folders — **SPEC** → `docs/specs`; **PLAN** → `docs/plans`. The rest of `docs/` (`scripts`, `manuals`, `diagrams`, `reports`) is written **only** by `export-*` skills (a separate, never-automatic step); `docs/tools` is written by the ambient `creating-tools` skill (not the workflow). See [`../loops/`](../loops/) and [`../exports/`](../exports/).
+> **Transversales (no flow):** `status` y `fix-git` no pertenecen a SPEC/PLAN/QUICK ni cuentan en 6/5. En el diseño son su propia categoría (`workflow-skills/`); acá se empaquetan bajo `commands/` para que `/w:` las invoque — ver [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*.
 
 ## Schema of each command file
 
-Each `<command>.md` in this bundle uses this frontmatter + body structure:
+Cada `<command>.md` de esta carpeta usa este frontmatter + estructura de cuerpo:
 
 | Field | Description |
 |---|---|
@@ -101,30 +42,3 @@ Each `<command>.md` in this bundle uses this frontmatter + body structure:
 | `argument-hint:` | Argument signature for the user |
 | `allowed-tools:` | YAML list (typically `Bash`/`Read`/`Write`/`Edit`). Loops/exports are **read-and-followed**, not invoked with `Skill:` — so `Skill` is **not** in `allowed-tools`. |
 | Body | 1-3 orienting lines, then the invocation: **read-and-follow** the sibling loop/export `SKILL.md`, or call the `aw` CLI; then `## Plan mode`, `## Resources` |
-
-## 6 Hard invariants (never violate)
-
-1. **No auto-export**: loops **never** graduate/export to `docs/`. Only `export-*` does, explicitly.
-2. **Each flow touches only its `docs/` folders**: SPEC→`specs`; PLAN→`plans`; QUICK→none; rest→`export-*`. (`docs/tools` is ambient — `creating-tools`, not a flow.)
-3. **Spec and plan are documents** (`docs/`), not artifacts.
-4. **DB scripts-only**: AI **never executes DML/DDL**; migrations live in `SCRIPTS.sql` (type B) and are delivered via `export-scripts`. Only read-only queries via MCP.
-5. **Git-safe**: verify branch before editing; **propose** commits by source; never `push`/`--amend`/`--no-verify`.
-6. **All loops**: gap-driven convergent · one session per run (research inline) · *structured-choice* (capacidad del arnés — ver [`../harness/SKILL.md`](../harness/SKILL.md); en **Claude Code** es `AskUserQuestion`) con **≤3 preguntas de contenido + 1 control `flow`** (`Compactar`/`Cerrar`) siempre · compact/resume · artifacts as a live log (`CHECKPOINT` always; `BACKLOG` only when deferring).
-
-## Index
-
-| Command | File | Mode |
-|---|---|---|
-| `workspace-init` | [`workspace-init.md`](workspace-init.md) | single-pass, interactive (bootstrap) |
-| `spec-new` | [`spec-new.md`](spec-new.md) | single-pass |
-| `spec-refine` | [`spec-refine.md`](spec-refine.md) | starts `spec-refine-loop` |
-| `plan-new` | [`plan-new.md`](plan-new.md) | starts `plan-new-loop` |
-| `plan-refine` | [`plan-refine.md`](plan-refine.md) | starts `plan-refine-loop` (aux, optional) |
-| `plan-exec` | [`plan-exec.md`](plan-exec.md) | starts `plan-exec-loop` |
-| `quick` | [`quick.md`](quick.md) | starts `quick-loop` |
-| `status` | [`status.md`](status.md) | single-pass, read-only (transversal) |
-| `fix-git` | [`fix-git.md`](fix-git.md) | single-pass, read/edit working tree (transversal) |
-| `export-scripts` | [`export-scripts.md`](export-scripts.md) | single-pass, read-only |
-| `export-manuals` | [`export-manuals.md`](export-manuals.md) | single-pass, read-only |
-| `export-diagrams` | [`export-diagrams.md`](export-diagrams.md) | single-pass, read-only |
-| `export-reports` | [`export-reports.md`](export-reports.md) | single-pass, read-only |
