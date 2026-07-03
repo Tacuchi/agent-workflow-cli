@@ -1,163 +1,166 @@
-# CHASSIS — motor de los loops
+# CHASSIS — the loop engine
 
-Este documento es el **motor común** de los loops de agent-workflow: la doctrina que todo loop corre por debajo de sus deltas. **No es una skill** — es un documento referenciado: cada loop lo manda leer desde su `## Inherits`, **siempre, antes de sus deltas**. Si editás el motor, editálo **acá** — los heirs no lo repiten, solo lo referencian.
+This document is the **common engine** of the agent-workflow loops: the doctrine every loop runs underneath its deltas. **It is not a skill** — it is a referenced document: every loop orders it read from its `## Inherits`, **always, before its deltas**. If you edit the engine, edit it **here** — heirs never repeat it, they only reference it.
 
-## Heirs (lista canónica)
+## Heirs (canonical list)
 
-Los **5 loops** corren este motor; cada uno agrega solo sus deltas:
+The **5 loops** run this engine; each adds only its deltas:
 
-- [`spec-refine-loop`](spec-refine-loop/SKILL.md) — refina el **spec** in place; deltas: gap taxonomy de spec, analyze gate, `## UI spec` vía la capacidad `ui-design`.
-- [`plan-new-loop`](plan-new-loop/SKILL.md) — genera el **plan** desde el spec; deltas: plan rico + gap taxonomy de plan (+ design SPECs por pantalla si hay UI).
-- [`plan-refine-loop`](plan-refine-loop/SKILL.md) — refina el **plan** in place (auxiliar, no obligatorio); reusa la gap taxonomy + coherence gate de `plan-new-loop`. Es a `plan-new` lo que `spec-refine` es a `spec-new`.
-- [`plan-exec-loop`](plan-exec-loop/SKILL.md) — **ejecuta** el plan: código/BD/git, una sola session por run, progreso por fase en el plan-doc, sin auto-export. Aplica las políticas de [`CODE-POLICIES.md`](CODE-POLICIES.md).
-- [`quick-loop`](quick-loop/SKILL.md) — el motor con **ceremonia mínima** (el prompt *es* el objetivo); aplica también [`CODE-POLICIES.md`](CODE-POLICIES.md) (gate en versión proporcional).
+- [`spec-refine-loop`](spec-refine-loop/SKILL.md) — refines the **spec** in place; deltas: spec gap taxonomy, analyze gate, `## UI spec` via the `ui-design` capability.
+- [`plan-new-loop`](plan-new-loop/SKILL.md) — generates the **plan** from the spec; deltas: rich plan + plan gap taxonomy (+ per-screen design SPECs when the plan includes UI).
+- [`plan-refine-loop`](plan-refine-loop/SKILL.md) — refines the **plan** in place (auxiliary, not mandatory); reuses the gap taxonomy + coherence gate of `plan-new-loop`. It is to `plan-new` what `spec-refine` is to `spec-new`.
+- [`plan-exec-loop`](plan-exec-loop/SKILL.md) — **executes** the plan: code/DB/git, a single session per run, per-phase progress in the plan-doc, no auto-export. Applies the policies in [`CODE-POLICIES.md`](CODE-POLICIES.md).
+- [`quick-loop`](quick-loop/SKILL.md) — the engine with **minimal ceremony** (the prompt *is* the objective); also applies [`CODE-POLICIES.md`](CODE-POLICIES.md) (proportional gate).
 
-## Objetivo persistente
+## Persistent objective
 
-Un loop **es un objetivo persistente**: existe para cumplir el `SESSION.Objective` declarado al arrancar, y **no se considera terminado hasta que el convergence gate confirma que el objetivo se cumplió**. La iteración gap-driven es el *método*; los artefactos son el *registro*; el objetivo persistente es el *frame* que los gobierna.
+A loop **is a persistent objective**: it exists to fulfill the `SESSION.Objective` declared at start, and **it is not finished until the convergence gate confirms the objective was met**. Gap-driven iteration is the *method*; the artifacts are the *record*; the persistent objective is the *frame* that governs them.
 
-Es **doctrina agnóstica**, no una dependencia del host: el "no parar hasta converger" lo sostiene el propio loop (su `repeat:` + el convergence gate), no un hook del arnés — y **deja registro durable** (artifact-first) que sobrevive compactación y resume. *(Racional y análogo con el `/goal` de Claude Code: ver diseño, `workflow-loops/chassis.md`.)*
+This is **harness-agnostic doctrine**, not a host dependency: "don't stop until convergence" is sustained by the loop itself (its `repeat:` + the convergence gate), not by a host hook — and it **leaves a durable record** (artifact-first) that survives compaction and resume. *(Rationale and the `/goal` analogy: see the design, `workflow-loops/chassis.md`.)*
 
-> Cada heir instancia el frame: `spec-refine` persigue el spec; `plan-new`/`plan-refine` el plan hasta su gate; `plan-exec` el plan hasta su validación final; `quick-loop` es la encarnación más directa (el prompt *es* el objetivo).
+> Each heir instantiates the frame: `spec-refine` pursues the spec; `plan-new`/`plan-refine` pursue the plan up to their gate; `plan-exec` pursues the plan up to its final validation; `quick-loop` is the most direct embodiment (the prompt *is* the objective).
 
-> **Continuidad inter-turno.** El mismo `CHECKPOINT`+resume gobierna también el **próximo prompt**: el objetivo persiste **entre turnos**, no solo dentro del run. Las reglas canónicas (comando = línea nueva · re-run = `create_or_resume` · prompt pelado = continuar la más reciente · reapertura de cerradas · escalación consentida) viven en [`../SKILL.md`](../SKILL.md) § *Contexto operativo* — **única fuente**; este motor las ejecuta vía *Compact / resume* (caso 3).
+> **Inter-turn continuity.** The same `CHECKPOINT`+resume also governs the **next prompt**: the objective persists **across turns**, not only within a run. The canonical rules (command = new work line · re-run = `create_or_resume` · bare prompt = continue the most recent session · reopening closed sessions · consented escalation) live in [`../SKILL.md`](../SKILL.md) § *Operating context* — **single source**; this engine executes them via *Compact / resume* (case 3).
 
 ## Verification-first
 
-El objetivo persistente necesita una **condición de término checkable** — si no, el loop no sabe cuándo cumplió (o persigue un blanco que inventó). Esa condición se **siembra ANTES de ejecutar**, no se improvisa al final: es **TDD generalizado**. Junto con artifact-first (sección siguiente) son los **dos sembrados** de cada gap/fase: *cómo sabré que funcionó* + *qué voy a hacer*.
+The persistent objective needs a **checkable done-condition** — otherwise the loop cannot know when it is done (or chases a target it invented). That condition is **seeded BEFORE executing**, never improvised at the end: it is **generalized TDD**. Together with artifact-first (next section) these are the **two seeds** of every gap/phase: *how will I know it worked* + *what am I about to do*.
 
-**Dónde vive:** en `SESSION.Success criteria` (ver [`../artifacts/artifacts-core/SESSION.md`](../artifacts/artifacts-core/SESSION.md)) — checklist `[ ]` de criterios **falsables** (que *pueden* fallar). `CHECKPOINT.Pending/Completed` trackea el avance **red→green**. Dos formas según el deliverable:
+**Where it lives:** in `SESSION.Success criteria` (see [`../artifacts/artifacts-core/SESSION.md`](../artifacts/artifacts-core/SESSION.md)) — a `[ ]` checklist of **falsifiable** criteria (that *can* fail). `CHECKPOINT.Pending/Completed` tracks the **red→green** progress. Two forms, by deliverable:
 
-| Deliverable | Criterio = | Ciclo |
+| Deliverable | Criterion = | Cycle |
 |---|---|---|
-| código / script / fix / feature | **tests ejecutables** (unit, build, lint, repro del bug) | TDD literal: red → green → refactor |
-| migración BD (no ejecutable; invariante 4) | **rúbrica**: `SCRIPTS.sql` válido + revisado (no se ejecuta) | rúbrica |
-| spec / plan | **rúbrica** = los acceptance criteria del documento (referenciados, no duplicados) | rúbrica |
-| análisis / diseño | **rúbrica falsable por inspección** (ej. "todos los afectados con `file:line`"; "cada decisión: rationale + ≥1 alternativa") | rúbrica |
+| code / script / fix / feature | **runnable tests** (unit, build, lint, bug repro) | literal TDD: red → green → refactor |
+| DB migration (not executable; invariant 4) | **rubric**: `SCRIPTS.sql` valid + reviewed (never executed) | rubric |
+| spec / plan | **rubric** = the document's acceptance criteria (referenced, not duplicated) | rubric |
+| analysis / design | **rubric falsifiable by inspection** (e.g. "every affected site with `file:line`"; "each decision: rationale + ≥1 alternative") | rubric |
 
-- **Forma y peso escalan** (ceremonia mínima de quick preservada): chore = "tests/build existentes siguen verdes" (una línea); feature = acceptance tests reales. La regla es "**siempre declarar el check antes**", no "siempre escribir tests nuevos".
-- **Deliverable subjetivo** (análisis/diseño): la IA **propone** la rúbrica y el **humano la ratifica** (structured-choice) antes de perseguirla.
-- **Criterio irresoluble** (sin evidencia, BD no disponible): cierra `inconcluso` y el loop **degrada** (humano, o difiere a `Open questions`/`BACKLOG`) — **nunca itera en falso**.
+- **Form and weight scale** (quick's minimal ceremony preserved): a chore = "existing tests/build stay green" (one line); a feature = real acceptance tests. The rule is "**always declare the check before**", not "always write new tests".
+- **Subjective deliverable** (analysis/design): the AI **proposes** the rubric and the **human ratifies** it (structured-choice) before pursuing it.
+- **Unresolvable criterion** (no evidence, DB unavailable): closes as `inconclusive` and the loop **degrades** (asks the human, or defers to `Open questions`/`BACKLOG`) — **never iterates against a fake target**.
 
-> El **convergence gate** (sección *Convergence / exit*) es, operacionalmente, **"todos los `Success criteria` en verde"**. Los gates por-heir (analyze gate; coherencia del plan — plan-new y plan-refine; validación final; validación puntual proporcional) son **instancias** de esto, con los criterios sembrados al inicio.
+> The **convergence gate** (section *Convergence / exit*) is, operationally, **"all `Success criteria` green"**. The per-heir gates (analyze gate; plan coherence — plan-new and plan-refine; final validation; proportional spot validation) are **instances** of it, with the criteria seeded at start.
 
-**Integridad del gate (anti-gaming + verificación independiente).** El gate solo vale si no se hace trampa para pasarlo. El loop **no**:
+**Gate integrity (anti-gaming + independent verification).** The gate only counts if it is not gamed to pass. The loop does **not**:
 
-- modifica el check ni afloja un `Success criterion` para forzar verde;
-- debilita, borra ni saltea tests/validaciones;
-- usa asserts triviales o tautológicos que siempre pasan (el valor esperado sale de una fuente independiente, no del propio output);
-- parchea el test en lugar de arreglar la causa (preferir arreglar producción).
+- modify the check or loosen a `Success criterion` to force green;
+- weaken, delete or skip tests/validations;
+- use trivial or tautological asserts that always pass (the expected value comes from an independent source, never from the output itself);
+- patch the test instead of fixing the cause (prefer fixing production code).
 
-Ante un blocker real **para y lo reporta** (→ `Open questions`/`BACKLOG`) en vez de gamear la métrica. El veredicto cuenta **solo el output del check, no la auto-declaración** del implementador: cuando el deliverable lo justifica, la verificación final la hace una pasada **independiente** (subagente o re-lectura limpia) que no asume correcta la implementación — *only command output counts*.
+Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration**: when the deliverable warrants it, the final verification is an **independent** pass (subagent or clean re-read) that does not assume the implementation is correct — *only command output counts*.
 
-## Artifacts as a live log — ciclo artifact-first
+## Artifacts as a live log — the artifact-first cycle
 
-El loop trabaja **artifact-first**: el artefacto se **siembra antes** de ejecutar y se **actualiza después**, no solo al cerrar. Cada gap/fase/tarea corre el ciclo de **3 tiempos**:
+The loop works **artifact-first**: the artifact is **seeded before** executing and **updated after**, not only on close. Every gap/phase/task runs the **3-beat** cycle:
 
-1. **ANTES — sembrar la intención.** Antes de ejecutar, deja en el artefacto lo que se **va a** hacer: `CHECKPOINT.Pending`/`Next` = el trabajo inminente (`SESSION.Objective` ya fijó el qué del run).
-2. **EJECUTAR.** Resolver el gap / correr la fase / editar el código.
-3. **DESPUÉS — llevar al estado real.** `CHECKPOINT.Pending → Completed`; `DECISION` lo no obvio **a medida que se toma**; `BACKLOG` **solo si** algo queda diferido/followup (`session-close` ya no fabrica un BACKLOG vacío).
+1. **BEFORE — seed the intent.** Before executing, record in the artifact what is **about to** be done: `CHECKPOINT.Pending`/`Next` = the imminent work (`SESSION.Objective` already fixed the run's what).
+2. **EXECUTE.** Resolve the gap / run the phase / edit the code.
+3. **AFTER — bring to actual state.** `CHECKPOINT.Pending → Completed`; `DECISION` records the non-obvious **as it is decided**; `BACKLOG` **only if** something is deferred/follow-up (`session-close` no longer fabricates an empty BACKLOG).
 
-> El artefacto expresa la **intención** (Pending/Next, antes) y luego el **resultado** (Completed/DECISION, después), en **cada** límite de gap/fase — no solo al `Compactar`/`Cerrar`. Los artefactos de session son el registro vivo del run; el spec/plan es la **base guía**.
+> The artifact expresses the **intent** (Pending/Next, before) and then the **result** (Completed/DECISION, after), at **every** gap/phase boundary — not only on `Compactar`/`Cerrar`. Session artifacts are the run's live log; the spec/plan is the **guiding base**.
 
-## Motor gap-driven convergente
+## Gap-driven convergent engine
 
-El ciclo común — cada heir lo instancia en su `## Sequence` con su propia gap taxonomy:
+The common cycle — each heir instantiates it in its `## Sequence` with its own gap taxonomy:
 
-1. `detect_gaps(work)`, menos los gaps *agotados* (ver *Research*).
-2. Si `∅` → **convergence gate** (ver *Convergence / exit*).
-3. Si hay gaps: tomar un batch (≤3) y **sembrar** `CHECKPOINT.Pending/Next` (*artifact-first*).
-4. Resolver cada gap con su **resolutor** según la *ask-vs-research rule*: humano (structured-choice) · research inline · una capacidad compuesta (p. ej. `ui-design`).
-5. **Integrar**, actualizar `CHECKPOINT` → repetir.
+1. `detect_gaps(work)`, minus the *exhausted* gaps (see *Research*).
+2. If `∅` → **convergence gate** (see *Convergence / exit*).
+3. If there are gaps: take a batch (≤3) and **seed** `CHECKPOINT.Pending/Next` (*artifact-first*).
+4. Resolve each gap with its **resolver** per the *ask-vs-research rule*: human (structured-choice) · inline research · a composed capability (e.g. `ui-design`).
+5. **Integrate**, update `CHECKPOINT` → repeat.
 
-## Internal sessions (managed) — una session por run
+## Internal sessions (managed) — one session per run
 
-El loop crea y maneja su session en `.workflow/sessions/`. **El usuario nunca la crea.** **Una sola session por run**, dueña del run: mantiene el avance vivo (`CHECKPOINT`) y habilita el resume. Artefactos: `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` solo si difiere; los loops que editan código suman `DECISION` y `SCRIPTS.sql`). Cada heir declara su descriptor y su `Type` en su propio `## Internal sessions`.
+The loop creates and manages its session under `.workflow/sessions/`. **The user never creates it.** **A single session per run**, owning the run: it keeps progress live (`CHECKPOINT`) and enables resume. Artifacts: `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` only if something is deferred; code-editing loops add `DECISION` and `SCRIPTS.sql`). Each heir declares its descriptor and `Type` in its own `## Internal sessions`.
 
-> **Research INLINE** — la investigación ya **no** es una session aparte: es una actividad **dentro de la session actual** que escribe sus artefactos (`ANALYSIS-FILE`/`CONCLUSIONS`, + `SCRIPTS.sql` read-only si consulta BD) **en la carpeta de la propia session del run**. Ver *Research: autonomy, scope & failure*.
+> **INLINE research** — investigation is **not** a separate session: it is an activity **inside the current session** that writes its artifacts (`ANALYSIS-FILE`/`CONCLUSIONS`, + read-only `SCRIPTS.sql` if it queries DB) **into the run's own session folder**. See *Research: autonomy, scope & failure*.
 
-> El doc de entrada del flujo (spec/plan) **nunca** entra en una session; vive en `docs/`.
+> The flow's input document (spec/plan) **never** goes inside a session; it lives in `docs/`.
 
-### Numeración de sessions (regla dura)
+### Session numbering (hard rule)
 
-El **CLI es dueño del número**: `aw session-create` antepone un `NNN` **global y secuencial** escaneando **todas** las sessions de `.workflow/sessions/` (cualquier tipo). El caller pasa **solo el descriptor** vía `--name` — **nunca** un número. Así la numeración no se reinicia por tipo ni colisiona, y cada folder queda **autodescriptivo** con la forma `NNN-<slug>-<flow>` (ej.: `002-correo-otp-spec-refine`, `003-correo-otp-plan-new`, `004-correo-otp-plan-exec`, `005-validacion-correo-quick`).
+The **CLI owns the number**: `aw session-create` prepends a **global, sequential** `NNN` by scanning **all** sessions under `.workflow/sessions/` (any type). The caller passes **only the descriptor** via `--name` — **never** a number. Numbering neither restarts per type nor collides, and every folder is **self-describing**: `NNN-<slug>-<flow>` (e.g. `002-correo-otp-spec-refine`, `003-correo-otp-plan-new`, `004-correo-otp-plan-exec`, `005-validacion-correo-quick`).
 
-> `<run>` = el **descriptor** (sin número) de la session del run, siempre con forma **`<slug>-<flow>`**: `<slug>-spec-refine`, `<slug>-plan-new`, `<slug>-plan-refine`, `<slug>-plan-exec`, `<slug>-quick`. El `<slug>` es **descriptivo** y sale del doc de entrada del flujo — `docs/specs/NNN-spec-<slug>.md` para spec-refine/plan-new; `docs/plans/PPP-plan-<slug>.md` para plan-refine/plan-exec; el prompt para quick — para que el folder diga de un vistazo de qué trata, no solo qué flujo lo creó. Como la investigación es **inline** en esta misma session, ya no hay sessions hijas `*-research-*` que numerar (compat: las viejas son históricas).
+> `<run>` = the session's **descriptor** (no number), always shaped **`<slug>-<flow>`**: `<slug>-spec-refine`, `<slug>-plan-new`, `<slug>-plan-refine`, `<slug>-plan-exec`, `<slug>-quick`. The `<slug>` is **descriptive** and comes from the flow's input doc — `docs/specs/NNN-spec-<slug>.md` for spec-refine/plan-new; `docs/plans/PPP-plan-<slug>.md` for plan-refine/plan-exec; the prompt for quick — so the folder says at a glance what it is about, not just which flow created it. Research being **inline** in this same session, there are no child `*-research-*` sessions to number (compat: old ones are historical).
 >
-> **Resume**: localiza la session existente **escaneando** `.workflow/sessions/` por descriptor + `## Origin` (qué spec/plan), **no** reconstruyendo el número (que es global, no derivable del artefacto). `aw session-resume --code <NNN | folder>` resuelve ambas formas.
+> **Resume**: locate the existing session by **scanning** `.workflow/sessions/` for descriptor + `## Origin` (which spec/plan), **not** by reconstructing the number (global, not derivable from the artifact). `aw session-resume --code <NNN | folder>` resolves both forms.
 
 **CLI**:
-- `aw session-create --type <type> --name <slug>-<flow>` → crea `NNN-<slug>-<flow>` / `aw session-resume --code <…>` (detecta `CHECKPOINT`).
-- `aw checkpoint-write` / `aw checkpoint-read` para el resume.
-- `aw session-close` al cerrar (con razón); `aw session-artifacts` para inspeccionar.
-- **Reabrir para continuar** (contexto operativo, fila 2): `aw session-resume --code <NNN> --reopen` reactiva una sesión **cerrada** (quita `.closed` → activa) para seguir trabajando en ella; sin `--reopen`, el resume es read-only. Para detectar cuál es la más reciente cerrada: `aw resume-summary --include-recent-closed` (o `aw sessions --state all`).
 
-## Ask-vs-research rule (el discriminador)
+- `aw session-create --type <type> --name <slug>-<flow>` → creates `NNN-<slug>-<flow>` / `aw session-resume --code <…>` (detects `CHECKPOINT`).
+- `aw checkpoint-write` / `aw checkpoint-read` for resume.
+- `aw session-close` on close (with reason); `aw session-artifacts` to inspect.
+- **Reopen to continue** (operating context, row 2): `aw session-resume --code <NNN> --reopen` reactivates a **closed** session (removes `.closed` → active) to keep working in it; without `--reopen`, resume is read-only. To detect the most recent closed one: `aw resume-summary --include-recent-closed` (or `aw sessions --state all`).
 
-Para cada gap, una sola pregunta decide el resolutor:
+## Ask-vs-research rule (the discriminator)
 
-> *"¿Puedo responder esto leyendo el repo/datos?"* → **research** (autónomo).
-> *"¿Depende de lo que el usuario quiere?"* → **preguntar al humano** (structured-choice).
+For every gap, a single question picks the resolver:
+
+> *"Can I answer this by reading the repo/data?"* → **research** (autonomous).
+> *"Does it depend on what the user wants?"* → **ask the human** (structured-choice).
 
 ## Research: autonomy, scope & failure
 
-La investigación es **inline**: una actividad **dentro de la session actual del run**, no una session aparte. Escribe sus artefactos (`ANALYSIS-FILE` → `CONCLUSIONS`, + `SCRIPTS.sql` read-only si consulta BD) en la **carpeta de la propia session**.
+Investigation is **inline**: an activity **inside the run's current session**, never a separate session. It writes its artifacts (`ANALYSIS-FILE` → `CONCLUSIONS`, + read-only `SCRIPTS.sql` if it queries DB) into the **session's own folder**.
 
-- **Autónomo**: la IA investiga inline y reporta **sin pedir permiso**. El humano se entera al integrarse (en el registro de decisiones del flujo — p. ej. `## Refinement decisions` en los refine loops, `DECISION` en los que editan código) y mantiene control vía el control `flow`.
-- **Alcance**: workspace + repos asociados (fuentes) + MCPs de BD.
-- **Regla BD** (única excepción a la autonomía):
-  1. **Elección de MCP**: si el gap requiere BD y hay **>1 MCP candidato sin default configurado**, la IA pregunta cuál usar. Esa pregunta va por la **misma structured-choice** como una **pregunta de contenido** (cuenta dentro del límite ≤3 + `flow`), **antes** de ejecutar queries. Si hay un único MCP o un default, no pregunta.
-  2. Escribe **primero** las queries en `SCRIPTS.sql` de la session.
-  3. Las ejecuta **read-only** vía MCP (respeta `sql-mutation-guard`: nunca DML/DDL).
-- **Research inconclusa** (BD no disponible, evidencia insuficiente, gap factual irresoluble):
-  - La investigación concluye con estado **`inconcluso`** en `CONCLUSIONS` y reporta el motivo.
-  - El loop **degrada** el gap: lo pasa a **pregunta-al-humano** (próximo batch → el registro de Q&A del flujo: `Q&A traceability` en los refine loops, `DECISION` en los que editan código) o, si tampoco aplica, lo **difiere** a las `## Open questions` del doc del flujo (spec/plan) — o al `BACKLOG` de la session si el flujo no tiene doc (quick).
-  - El gap se marca **"ya intentado vía research"** (`attempts[gap]++`, límite `MAX`) para que `detect_gaps` **no lo re-dispare en bucle** → garantiza convergencia.
+- **Autonomous**: the AI investigates inline and reports **without asking permission**. The human learns of it at integration time (in the flow's decision record — e.g. `## Refinement decisions` in the refine loops, `DECISION` in the code-editing ones) and keeps control via the `flow` control.
+- **Scope**: workspace + associated repos (sources) + DB MCPs.
+- **DB rule** (the single exception to autonomy):
+  1. **MCP choice**: if the gap needs DB and there is **>1 candidate MCP with no configured default**, the AI asks which one to use. That question goes through the **same structured-choice** as a **content question** (counts inside the ≤3 + `flow` limit), **before** running queries. A single MCP or a default → no question.
+  2. Write the queries **first** into the session's `SCRIPTS.sql`.
+  3. Execute them **read-only** via MCP (respect `sql-mutation-guard`: never DML/DDL).
+- **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap):
+  - The investigation closes with status **`inconclusive`** in `CONCLUSIONS` and reports why.
+  - The loop **degrades** the gap: to a **human question** (next batch → the flow's Q&A record: `Q&A traceability` in refine loops, `DECISION` in code-editing ones) or, failing that, **defers** it to the flow doc's `## Open questions` (spec/plan) — or the session's `BACKLOG` when the flow has no doc (quick).
+  - The gap is marked **"already tried via research"** (`attempts[gap]++`, `MAX` cap) so `detect_gaps` does **not** re-fire it in a loop → guarantees convergence.
 
 ## Structured-choice (design & batching)
 
-**Regla canónica (única fuente — el resto del corpus solo referencia):** *structured-choice* = **≤3 preguntas de contenido + 1 control `flow`**, siempre. Binding por arnés en [`../harness/SKILL.md`](../harness/SKILL.md) (Claude Code: `AskUserQuestion`, máx 4 preguntas/llamada; sin elección estructurada, degrada a **markdown numerado**).
+**Canonical rule (single source — the rest of the corpus only references it):** *structured-choice* = **≤3 content questions + 1 `flow` control**, always. Per-harness binding in [`../harness/SKILL.md`](../harness/SKILL.md) (Claude Code: `AskUserQuestion`, max 4 questions/call; without structured choice it degrades to **numbered markdown**).
 
-- Como el control `flow` va **siempre** → **≤3 preguntas de contenido + 1 control `flow`**.
-- **control `flow`** (ciclo de vida, siempre presente): `Compactar` | `Cerrar`. Responder solo las preguntas de contenido (sin tocar `flow`) = seguir iterando.
-- **Preguntas de contenido** posibles:
-  - dudas-de-humano (gaps no factuales);
-  - elección de MCP (regla BD) — antes de ejecutar queries;
-  - en **convergencia**, la acción de cierre propia del loop — **cada heir la define en su *Convergence / exit*** (p. ej. `Guardar especificación refinada` · `Cerrar tarea`) — | `Preguntar algo más`.
-- **Batching**: agrupar hasta 3 gaps de humano en una sola llamada. Si hay más de 3 pendientes, priorizar (los que desbloquean otros gaps primero) y diferir el resto a la próxima vuelta.
-- **Respuesta recomendada por pregunta**: cada pregunta de contenido lleva **siempre** la respuesta que la IA recomienda — como primera opción (marcada *recomendada*) en `AskUserQuestion`, o señalada en el markdown numerado al degradar. Nunca se pregunta "a secas": el humano ratifica o corrige una propuesta, no parte de cero. La IA recomienda en base a lo investigado (regla ask-vs-research), no por defecto vacío.
+- Since the `flow` control is **always** present → **≤3 content questions + 1 `flow` control**.
+- **`flow` control** (lifecycle, always present): `Compactar` | `Cerrar`. Answering only the content questions (not touching `flow`) = keep iterating.
+- **Content questions** can be:
+  - human doubts (non-factual gaps);
+  - MCP choice (DB rule) — before running queries;
+  - at **convergence**, the loop's own closing action — **each heir defines it in its *Convergence / exit*** (e.g. `Guardar especificación refinada` · `Cerrar tarea`) — | `Preguntar algo más`.
+- **Batching**: group up to 3 human gaps in one call. With more than 3 pending, prioritize (the ones that unblock other gaps first) and defer the rest to the next round.
+- **Recommended answer per question**: every content question **always** carries the AI's recommended answer — as the first option (marked *recommended*) in `AskUserQuestion`, or flagged in the numbered-markdown fallback. Never ask "cold": the human ratifies or corrects a proposal, never starts from zero. The AI recommends based on what it researched (ask-vs-research rule), never on an empty default.
+
+> **Label language:** the literal option labels (`Compactar`, `Cerrar`, `Guardar plan`, …) are **canonical product strings** — present them **verbatim**; they are user-facing, authored in the product's user language (Spanish). All other user-facing output follows [`../SKILL.md`](../SKILL.md) § *Language policy*.
 
 ## Compact / resume
 
-El resume **keya off el `CHECKPOINT`** de la session del run, no de la existencia de un archivo aparte. Tres casos al ejecutar el comando del flujo sobre una entrada:
+Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of a separate file. Three cases when the flow's command runs over an input:
 
-1. **En curso** (existe `CHECKPOINT.md` en la session) → reanuda desde el avance (gaps resueltos, Q&A, `attempts`, research inline en curso).
-2. **Sin avance** (no hay CHECKPOINT y el doc de entrada **no** tiene la marca de trabajo previo del flujo) → arranca desde cero leyendo el doc de entrada.
-3. **Ya convergido / re-run on demand** (no hay CHECKPOINT abierto pero el doc **ya tiene** la marca) → **operación de primera clase**: mientras el flujo siga en su etapa, re-correr el comando sobre la misma entrada **cuantas veces haga falta** está soportado. `create_or_resume` detecta la session existente —típicamente **cerrada** tras converger— por descriptor + `## Origin` y la **reabre** (ver *Internal sessions*: detección con `aw sessions --state all` / `aw resume-summary --include-recent-closed`, reapertura con `aw session-resume --code <NNN> --reopen`); trabajo incremental leyendo el **doc mismo**.
+1. **In progress** (a `CHECKPOINT.md` exists in the session) → resume from the recorded progress (resolved gaps, Q&A, `attempts`, in-flight inline research).
+2. **No progress** (no CHECKPOINT and the input doc does **not** have the flow's prior-work mark) → start from zero reading the input doc.
+3. **Already converged / re-run on demand** (no open CHECKPOINT but the doc **already has** the mark) → **first-class operation**: while the flow stays in its stage, re-running the command over the same input **as many times as needed** is supported. `create_or_resume` finds the existing session — typically **closed** after convergence — by descriptor + `## Origin` and **reopens** it (see *Internal sessions*: detection via `aw sessions --state all` / `aw resume-summary --include-recent-closed`, reopening via `aw session-resume --code <NNN> --reopen`); incremental work reading the **doc itself**.
 
-> Cada heir define su **marca de trabajo previo**: en los refine loops, la presencia de `## Refinement decisions` + `## Q&A traceability` en el doc; en plan-exec, los checkbox `- [x]` del plan-doc; quick no tiene doc (resume solo por CHECKPOINT).
+> Each heir defines its **prior-work mark**: in the refine loops, the presence of `## Refinement decisions` + `## Q&A traceability` in the doc; in plan-exec, the plan-doc's `- [x]` checkboxes; quick has no doc (resume by CHECKPOINT only).
 
-> **`Compactar`** (control `flow`, transversal a los 3 casos) → escribe `CHECKPOINT.md` en la session (avance en progreso, gaps restantes, Q&A, `attempts`) → dispara la **compactación** del arnés (en Claude Code: `/compact`; ver [`../harness/SKILL.md`](../harness/SKILL.md)) → reanuda leyendo el checkpoint.
+> **`Compactar`** (the `flow` control, across all 3 cases) → write `CHECKPOINT.md` in the session (in-flight progress, remaining gaps, Q&A, `attempts`) → trigger the harness **compaction** (Claude Code: `/compact`; see [`../harness/SKILL.md`](../harness/SKILL.md)) → resume by reading the checkpoint.
 
 ## Convergence / exit
 
-- **Sin gaps materiales** → **convergence gate** (read-only) = **`Success criteria` en verde** (*verification-first*). Lo que falle **vuelve como gap**; si pasa → el loop ofrece su acción de cierre. Los heirs son **instancias** del mismo gate: `spec-refine` = analyze gate, `plan-new` y `plan-refine` = coherencia del plan, `plan-exec` = validación final, `quick` = validación puntual proporcional.
-- `Cerrar` (control `flow`, en cualquier momento) → `finalize`. **`finalize` persiste siempre el `CHECKPOINT.md`** (reanudable) y, **solo si hay algo diferido/followup**, escribe `BACKLOG.md` (motivo de cierre + lo diferido); cierra la session y reporta. Así sobrevive el avance aunque no se haya `Compactar` antes.
+- **No material gaps** → **convergence gate** (read-only) = **`Success criteria` green** (*verification-first*). Whatever fails **comes back as a gap**; if it passes → the loop offers its closing action. The heirs are **instances** of the same gate: `spec-refine` = analyze gate, `plan-new` and `plan-refine` = plan coherence, `plan-exec` = final validation, `quick` = proportional spot validation.
+- `Cerrar` (the `flow` control, at any time) → `finalize`. **`finalize` always persists `CHECKPOINT.md`** (resumable) and, **only if something was deferred/follow-up**, writes `BACKLOG.md` (close reason + the deferred items); closes the session and reports. Progress survives even without a prior `Compactar`.
 
-## docs/ boundary — sin auto-export (regla dura)
+## docs/ boundary — no auto-export (hard rule)
 
-Un loop escribe en `docs/` **solo** el doc de su propio flujo (spec-refine: `docs/specs` · plan-new/plan-refine/plan-exec: `docs/plans` · quick: **ninguno** — no toca `docs/`). Ningún loop **gradúa/promueve artefactos** a `docs/`: todo lo demás (migraciones → `docs/scripts`, manuales → `docs/manuals`, diagramas → `docs/diagrams`, etc.) lo hacen skills **`export-*`** aparte, como paso explícito posterior. Los artefactos quedan en sus sessions hasta entonces. Si una tarea crea una herramienta/utilidad, la documenta la skill ambiente `creating-tools` en `docs/tools` (auto-descubierta por su `description`; el workflow es **indiferente**, no la bindea).
+A loop writes into `docs/` **only** its own flow's doc (spec-refine: `docs/specs` · plan-new/plan-refine/plan-exec: `docs/plans` · quick: **none** — it never touches `docs/`). No loop **graduates/promotes artifacts** into `docs/`: everything else (migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams`, …) is done by the separate **`export-*`** skills, as an explicit later step. Artifacts stay in their sessions until then. If a task creates a tool/utility, the ambient skill `creating-tools` documents it in `docs/tools` (auto-discovered by its `description`; the workflow is **indifferent** — it does not bind it).
 
-## Políticas de loops que editan código → `CODE-POLICIES.md`
+## Code-editing loop policies → CODE-POLICIES.md
 
-Los loops que **editan código** (`plan-exec-loop`, `quick-loop`) corren además las políticas de [`CODE-POLICIES.md`](CODE-POLICIES.md) — **git seguro** (rama verificada + commits propuestos) · **BD solo-scripts** · **gate de revisión de cierre** (proporcional en quick). Las mandan leer desde su `## Inherits` **junto con este chasis**; los loops de documento (spec-refine, plan-new, plan-refine) **no** las cargan — por eso viven en un doc aparte.
+The loops that **edit code** (`plan-exec-loop`, `quick-loop`) additionally run the policies in [`CODE-POLICIES.md`](CODE-POLICIES.md) — **safe git** (verified branch + proposed commits) · **DB scripts-only** · **closing review gate** (proportional in quick). They order it read from their `## Inherits` **together with this chassis**; the document loops (spec-refine, plan-new, plan-refine) do **not** load it — that is why it lives in a separate doc.
 
-## Resolución de referencias (regla global de layout)
+## Reference resolution (global layout rule) — and what the chassis is NOT
 
-Vale para **toda** referencia relativa de la doctrina — no se repite por link:
+Applies to **every** relative reference in the doctrine — never repeated per link:
 
-1. **Instalación normal** (árbol `w/`): la ruta relativa resuelve tal cual (`../CHASSIS.md`, `../../commands/spec-new.md`).
-2. **Instalación aplanada** (p. ej. Warp/Oz): los `.md` compartidos (`CHASSIS.md`, `CODE-POLICIES.md`) están **junto al `SKILL.md` del loop**; otro loop es una skill **hermana** `w-<loop>/` (ej. `../spec-refine-loop/SKILL.md` → `../w-spec-refine-loop/SKILL.md`).
-3. Referencia que no resuelva = **profundización opcional** — la doctrina de este motor es autocontenida.
+1. **Normal install** (the `w/` tree): the relative path resolves as-is (`../CHASSIS.md`, `../../commands/spec-new.md`).
+2. **Flattened install** (e.g. Warp/Oz): the shared `.md` files (`CHASSIS.md`, `CODE-POLICIES.md`) sit **next to the loop's `SKILL.md`**; another loop is a **sibling** skill `w-<loop>/` (e.g. `../spec-refine-loop/SKILL.md` → `../w-spec-refine-loop/SKILL.md`).
+3. A reference that does not resolve = **optional deep-dive** — this engine's doctrine is self-contained.
 
-El chasis **no es una skill** (sin frontmatter; no se invoca ni se bindea vía `.workflow/skills.toml`): entra al contexto solo porque un loop manda leerlo desde su `## Inherits`. No define flujo, deliverable ni gap taxonomy — eso es de cada heir.
+The chassis **is not a skill** (no frontmatter; never invoked nor bound via `.workflow/skills.toml`): it enters the context only because a loop orders it read from its `## Inherits`. It does not define flow, deliverable or gap taxonomy — that belongs to each heir.

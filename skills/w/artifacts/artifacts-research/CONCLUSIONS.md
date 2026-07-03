@@ -1,6 +1,6 @@
 # CONCLUSIONS.md — research conclusions
 
-> What it is: the conclusions of an **inline research** activity, written into the active session (`refine`/`exec`/`quick`). Produced when the research concludes (success or `inconcluso`). The parent loop reads this to resolve the gap that triggered the research.
+> What it is: the conclusions of an **inline research** activity, written into the active session (`refine`/`exec`/`quick`). Produced when the research concludes (success or `inconclusive`). The parent loop reads this to resolve the gap that triggered the research.
 
 ## Conclusion
 Direct answer to the initial question.

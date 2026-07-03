@@ -1,5 +1,5 @@
 ---
-description: Exporta scripts de BD (SCRIPTS.sql tipo-B) de N sesiones a docs/scripts/ como forwards numerados + rollback. Paso explícito y aparte — nunca automático.
+description: Exports DB scripts (type-B SCRIPTS.sql) from N sessions to docs/scripts/ as numbered forwards + rollback. Explicit, separate step — never automatic.
 argument-hint: [--sessions <ids>] [--dry-run]
 allowed-tools:
   [
@@ -9,21 +9,21 @@ allowed-tools:
   ]
 ---
 
-# export-scripts — exportar scripts de BD
+# export-scripts — export DB scripts
 
-Promueve los artefactos `SCRIPTS.sql` (tipo B — migraciones) de N sesiones de `.workflow/sessions/` a `docs/scripts/`. Single-pass, read-only sobre sesiones.
+Promotes the `SCRIPTS.sql` artifacts (type B — migrations) of N sessions from `.workflow/sessions/` to `docs/scripts/`. Single-pass, read-only over sessions.
 
-Para ejecutar: **leé** `../exports/export-scripts/SKILL.md` y **seguí** sus instrucciones con `$ARGUMENTS` como input. No intentes `Skill: export-scripts` (no está registrada por nombre); el SKILL.md hermano es el cuerpo de este export.
+To run: **read** `../exports/export-scripts/SKILL.md` and **follow** its instructions with `$ARGUMENTS` as input. Do not try `Skill: export-scripts` (it is not registered by name); the sibling SKILL.md is this export's body.
 
-## Qué produce
+## What it produces
 
-- `docs/scripts/`: forwards numerados de forma continua (cross-session, dedup) + `00-ROLLBACK.sql`.
-- **No** muta sesiones ni abre/cierra loops.
-- La IA **nunca ejecuta** los scripts — solo los consolida y entrega.
+- `docs/scripts/`: continuously numbered forwards (cross-session, dedup) + `00-ROLLBACK.sql`.
+- Does **not** mutate sessions nor open/close loops.
+- The AI **never executes** the scripts — it only consolidates and delivers them.
 
 ## Plan mode
 
-Describe los scripts que consolidaría y la estructura de `docs/scripts/` que generaría, sin escribir archivos.
+Describes the scripts it would consolidate and the `docs/scripts/` structure it would generate, without writing files.
 
 ## Resources
 

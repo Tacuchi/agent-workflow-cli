@@ -19,116 +19,116 @@ description: >-
 
 ## Purpose
 
-Explicar el **modelo completo** de agent-workflow para que un agente sepa: qué invoca el usuario, qué corre la IA, dónde aterriza cada entregable, y qué reglas no se rompen. Es el mapa; el detalle fino vive en cada loop/command/export/role.
+Explain the **complete model** of agent-workflow so an agent knows: what the user invokes, what the AI runs, where every deliverable lands, and which rules never break. This is the map; the fine detail lives in each loop/command/export/role.
 
 ## Composed by
 
-Cualquiera que necesite orientación — un loop al arrancar, un agente nuevo en el workspace, o el usuario preguntando "¿cómo funciona esto?".
+Anyone needing orientation — a loop at start, a new agent in the workspace, or the user asking "how does this work?".
 
 ## Knowledge
 
-### Workspace (sin modos)
+### Workspace (no modes)
 
-Un solo concepto: **workspace**. No hay project/hub. La carpeta donde arranca el agente se vuelve workspace con `/w:workspace-init` (scaffolding `.workflow/` + `docs/` + bloque `WORKSPACE` en CLAUDE.md + `.workflow/skills.toml`). Tiene 1+ fuentes (repos); "standalone" = una sola fuente.
+A single concept: **workspace**. There is no project/hub split. The folder where the agent starts becomes a workspace with `/w:workspace-init` (scaffolding `.workflow/` + `docs/` + the `WORKSPACE` block in CLAUDE.md + `.workflow/skills.toml`). It has 1+ sources (repos); "standalone" = a single source.
 
 ### The 3-layer architecture + `docs/` zone
 
 ```
-USUARIO invoca
-  LAYER 1 · COMMANDS (lo único que el usuario invoca)
+USER invokes
+  LAYER 1 · COMMANDS (the only thing the user invokes)
     FLOWS:   spec-new · spec-refine · plan-new · plan-refine · plan-exec · quick
     EXPORTS: export-scripts · export-manuals · export-diagrams · export-reports
-        │ arranca / delega
+        │ starts / delegates
         ▼
-  LAYER 2 · LOOPS (los corre la IA, gap-driven; motor: loops/CHASSIS.md)
+  LAYER 2 · LOOPS (the AI runs them, gap-driven; engine: loops/CHASSIS.md)
     spec-refine-loop · plan-new-loop · plan-refine-loop · plan-exec-loop · quick-loop
-        │ crea / lee / escribe
+        │ creates / reads / writes
         ▼
-  LAYER 3 · SESSIONS + ARTIFACTS (.workflow/sessions/ — efímero, interno)
-        │ los export-* leen artefactos
+  LAYER 3 · SESSIONS + ARTIFACTS (.workflow/sessions/ — ephemeral, internal)
+        │ the export-* read the artifacts
         ▼
-  ZONA docs/ — documentos permanentes, cara al usuario
-    specs · plans (flujos) · scripts · manuals · diagrams · reports (export-*) · tools (ambiente)
+  docs/ ZONE — permanent, user-facing documents
+    specs · plans (flows) · scripts · manuals · diagrams · reports (export-*) · tools (ambient)
 ```
 
-- **Layer 1** — alto nivel. Single-pass o arranca un loop. Sin lógica de iteración.
-- **Layer 2** — la IA itera entera hasta converger. Sin invocación humana directa.
-- **Layer 3** — efímero, interno, process-only. Nadie lo invoca a mano.
+- **Layer 1** — high level. Single-pass or starts a loop. No iteration logic.
+- **Layer 2** — the AI iterates end to end until convergence. No direct human invocation.
+- **Layer 3** — ephemeral, internal, process-only. Nobody invokes it by hand.
 
 ### The 3 flows
 
-| Flow | Commands | docs/ propio | Loops |
+| Flow | Commands | Own docs/ | Loops |
 |---|---|---|---|
-| **SPEC** (el *qué*) | `spec-new` *(single-pass)* · `spec-refine` | `docs/specs` | `spec-refine-loop` |
-| **PLAN** (el *cómo* + ejecutar) | `plan-new` · `plan-refine` *(aux, opcional)* · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` |
-| **QUICK** (atajo liviano) | `quick` | — | `quick-loop` |
+| **SPEC** (the *what*) | `spec-new` *(single-pass)* · `spec-refine` | `docs/specs` | `spec-refine-loop` |
+| **PLAN** (the *how* + execute) | `plan-new` · `plan-refine` *(aux, optional)* · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` |
+| **QUICK** (lightweight shortcut) | `quick` | — | `quick-loop` |
 
-Cadena típica: prompt → `spec-new` genera `docs/specs/NNN-spec-<slug>.md` → `spec-refine` corre el loop y refina **ese mismo spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(opcional)* `plan-refine` ajusta **ese mismo plan in place** si hay cambios antes de ejecutar → `plan-exec` ejecuta y actualiza el plan (living doc) + artefactos en sesiones. La promoción del resto a `docs/` es **siempre** un paso aparte vía `export-*`.
+Typical chain: prompt → `spec-new` generates `docs/specs/NNN-spec-<slug>.md` → `spec-refine` runs the loop and refines **that same spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(optional)* `plan-refine` adjusts **that same plan in place** if changes arise before executing → `plan-exec` executes and updates the plan (living doc) + artifacts in sessions. Promoting anything else to `docs/` is **always** a separate step via `export-*`.
 
-QUICK puede **escalar en vivo a SPEC** si el objetivo excede un quick (gate de tamaño a la entrada) o la tarea crece mid-loop: con consentimiento vía structured-choice, la línea de trabajo pasa al flujo SPEC (borrador por procedimiento `spec-new` + `spec-refine-loop` directo); a PLAN la escalación queda **diferida** (siembra + puntero). Ver `loops/quick-loop/SKILL.md` § *Delta QUICK*.
+QUICK can **escalate live to SPEC** when the objective exceeds a quick (entry size gate) or the task grows mid-loop: with consent via structured-choice, the work line moves to the SPEC flow (draft via the `spec-new` procedure + `spec-refine-loop` directly); escalation to PLAN stays **deferred** (seed + pointer). See `loops/quick-loop/SKILL.md` § *QUICK delta*.
 
-### Contexto operativo — dónde aterriza cada cosa
+### Operating context — where everything lands
 
-Antes de cualquier loop, la IA resuelve su **contexto operativo** en **cada prompt** con dos detecciones: **¿workspace?** (existe `.<ns>/sessions/`) + **¿sesión a continuar?** (una activa, o una reciente que este prompt continúa). Eso decide el comportamiento y **dónde aterrizan los artefactos** (SQL, scripts, decisiones, …):
+Before any loop, the AI resolves its **operating context** on **every prompt** with two detections: **workspace?** (`.<ns>/sessions/` exists) + **session to continue?** (an active one, or a recent one this prompt continues). That decides the behavior and **where artifacts land** (SQL, scripts, decisions, …):
 
-| ¿Workspace? | Trigger | → Comportamiento + ruteo |
+| Workspace? | Trigger | → Behavior + routing |
 |---|---|---|
-| **Sí** | **comando de flujo** (`quick`·`spec-*`·`plan-*`) | **nueva línea de trabajo** → crea sesión **nueva** (salvo re-run del mismo flujo sobre la misma entrada: `create_or_resume` reabre la existente), arranca el loop → artefactos a **esa** sesión (`SCRIPTS.sql`, …) |
-| **Sí** | **prompt sin comando** (relacionado) | **continúa/reabre la sesión más reciente** → los scripts editan **su** `SCRIPTS.sql` (no crea otra) |
-| **Sí** | **prompt sin comando** (no-relacionado / sin sesión) | **sin flujo**: trabajo directo → escribe en `docs/` por convención + numeración (`aw next-number`) |
-| **No** | cualquiera | **vanilla** — sin workspace ni flujo, la IA es libre (nativo) |
+| **Yes** | **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → creates a **new** session (except re-running the same flow over the same input: `create_or_resume` reopens the existing one), starts the loop → artifacts go to **that** session (`SCRIPTS.sql`, …) |
+| **Yes** | **prompt with no command** (related) | **continues/reopens the most recent session** → scripts edit **its** `SCRIPTS.sql` (no new session) |
+| **Yes** | **prompt with no command** (unrelated / no session) | **no flow**: direct work → writes into `docs/` by convention + numbering (`aw next-number`) |
+| **No** | anything | **vanilla** — no workspace, no flow; the AI is free (native) |
 
-**Regla de continuidad** (fuente única — el chasis y los loops referencian acá):
+**Continuity rule** (single source — the chassis and the loops reference here):
 
-1. **Comando de flujo** = **nueva línea de trabajo** → sesión nueva.
-2. **Excepción — re-run:** el mismo comando sobre la **misma entrada** (ej. `/w:spec-refine` sobre el mismo spec) **no** abre otra línea: `create_or_resume` localiza la sesión de ese flujo (descriptor + `## Origin`) y la **reanuda o reabre** (quita `.closed`), sin duplicarla.
-3. **Excepción consentida — escalación:** la **escalación aceptada** dentro de un loop (ej. quick → SPEC) abre una **nueva línea de trabajo sin comando**; la señal es el **consentimiento explícito** del usuario en la structured-choice, equivalente a haber invocado el comando del flujo destino.
-4. **Prompt sin comando** = "sigo en la misma" → continúa/reabre la sesión **más reciente** (la *última iniciada*).
-5. Solo si el prompt es claramente **no-relacionado**: ofrecer elegir (`continuar NNN` | `trabajo nuevo`) o caer a "sin flujo".
-6. La **convergencia cierra** la sesión; un prompt relacionado posterior la **reabre** (el resume quita `.closed`).
+1. **Flow command** = **new work line** → new session.
+2. **Exception — re-run:** the same command over the **same input** (e.g. `/w:spec-refine` over the same spec) does **not** open another line: `create_or_resume` locates that flow's session (descriptor + `## Origin`) and **resumes or reopens** it (removes `.closed`), never duplicating it.
+3. **Consented exception — escalation:** an **accepted escalation** inside a loop (e.g. quick → SPEC) opens a **new work line without a command**; the signal is the user's **explicit consent** in the structured-choice, equivalent to having invoked the destination flow's command.
+4. **Prompt with no command** = "same line" → continue/reopen the **most recent** session (the *last started*).
+5. Only if the prompt is clearly **unrelated**: offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to "no flow".
+6. **Convergence closes** the session; a later related prompt **reopens** it (resume removes `.closed`).
 
-Es la cara **inter-turno** del *objetivo persistente* (mismo `CHECKPOINT`+resume, aplicado al próximo prompt) — doctrina agnóstica, no un hook del host. Aplica a **todo artefacto** (`SCRIPTS.sql` es el ejemplo trabajado; caso QUICK: `loops/quick-loop/SKILL.md`).
+It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+resume, applied to the next prompt) — agnostic doctrine, not a host hook. It applies to **every artifact** (`SCRIPTS.sql` is the worked example; QUICK case: `loops/quick-loop/SKILL.md`).
 
 ### The commands (`/w:` namespace)
 
-- `/w:workspace-init` — inicializa el workspace.
-- `/w:spec-new` — genera un spec inicial (single-pass, sin loop).
-- `/w:spec-refine` — arranca `spec-refine-loop` para refinar el spec.
-- `/w:plan-new` — arranca `plan-new-loop` para derivar un plan ejecutable del spec refinado.
-- `/w:plan-refine` — arranca `plan-refine-loop` para refinar el plan in place (auxiliar, **no obligatorio**) antes de ejecutar.
-- `/w:plan-exec` — arranca `plan-exec-loop` para ejecutar y mantener el plan.
-- `/w:quick` — arranca `quick-loop` (atajo, sin `docs/`; escala en vivo a SPEC si el objetivo excede un quick).
-- `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promueven artefactos a `docs/`.
+- `/w:workspace-init` — initializes the workspace.
+- `/w:spec-new` — generates an initial spec (single-pass, no loop).
+- `/w:spec-refine` — starts `spec-refine-loop` to refine the spec.
+- `/w:plan-new` — starts `plan-new-loop` to derive an executable plan from the refined spec.
+- `/w:plan-refine` — starts `plan-refine-loop` to refine the plan in place (auxiliary, **not mandatory**) before executing.
+- `/w:plan-exec` — starts `plan-exec-loop` to execute and maintain the plan.
+- `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
+- `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promote artifacts to `docs/`.
 
 ### Transversal skills (no flow) — `/w:status` · `/w:fix-git`
 
-Skills **invocables independientes de flujo**: se disparan con `/w:` igual que un comando, pero **no** pertenecen a SPEC/PLAN/QUICK, **no** manejan `docs/`, y **no** entran en el conteo **6 comandos de flow / 5 loops**. *(En el bundle se empaquetan bajo `commands/` para que `/w:` las invoque; en el diseño son la categoría `workflow-skills/`.)*
+**Flow-independent invocable** skills: triggered with `/w:` like any command, but they do **not** belong to SPEC/PLAN/QUICK, do **not** manage `docs/`, and do **not** count in **6 flow commands / 5 loops**. *(In the bundle they are packaged under `commands/` so `/w:` can invoke them; in the design they are the `workflow-skills/` category.)*
 
-- `/w:status` — dashboard read-only del workspace (Hecho/Falta/Descartó, con fechas en español). No escribe nada; se apoya en `aw status`.
-- `/w:fix-git` — resuelve conflictos de un merge en curso en cualquier repo (identifica origen↔destino, analiza intención, *structured-choice* ante ambigüedad). No crea session, no toca `docs/`; git-safe; se apoya en `aw merge-state`.
+- `/w:status` — read-only workspace dashboard (Done/Missing/Discarded, dates humanized in the user's language). Writes nothing; backed by `aw status`.
+- `/w:fix-git` — resolves an in-progress merge's conflicts in any repo (identifies origin↔destination, analyzes intent, *structured-choice* on ambiguity). No session, never touches `docs/`; git-safe; backed by `aw merge-state`.
 
 ### The loops (Layer 2)
 
-Un loop es una skill que enseña a la IA **cómo iterar** hasta un entregable: detecta huecos, los resuelve (humano vía structured-choice, research inline o una capacidad compuesta), integra y repite hasta converger. Los 5 loops corren el mismo **motor común** — objetivo persistente + verification-first, gap-driven convergente, session única por run, structured-choice + control `flow` (`Compactar`/`Cerrar`), compact/resume, artefactos como log vivo, convergence gate — cuyo canon vive en [`loops/CHASSIS.md`](loops/CHASSIS.md); cada loop es un **heir** que agrega solo sus deltas.
+A loop is a skill that teaches the AI **how to iterate** to a deliverable: detect gaps, resolve them (human via structured-choice, inline research or a composed capability), integrate and repeat until convergence. The 5 loops run the same **common engine** — persistent objective + verification-first, gap-driven convergent, single session per run, structured-choice + `flow` control (`Compactar`/`Cerrar`), compact/resume, artifacts as a live log, convergence gate — whose canon lives in [`loops/CHASSIS.md`](loops/CHASSIS.md); each loop is an **heir** adding only its deltas.
 
-Los loops que **editan código** (`plan-exec-loop`, `quick-loop`) aplican además las *Políticas de loops que editan código*: git seguro, BD solo-scripts y el **gate de revisión de cierre** pre-commit (nada llega a un commit propuesto sin revisar) — ver [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (doc hermano del chasis; los loops de documento no lo cargan).
+The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply the *code-editing loop policies*: safe git, DB scripts-only and the pre-commit **closing review gate** (nothing reaches a proposed commit unreviewed) — see [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (the chassis' sibling doc; document loops do not load it).
 
-`spec-new` no tiene loop (single-pass): **6 comandos / 5 loops**.
+`spec-new` has no loop (single-pass): **6 commands / 5 loops**.
 
-### The `export-*` family (única vía artefacto → `docs/`)
+### The `export-*` family (the only artifact → `docs/` path)
 
-| Export | Lee | Produce |
+| Export | Reads | Produces |
 |---|---|---|
-| `export-scripts` | `SCRIPTS.sql` (migraciones) de N sesiones | `docs/scripts/` (forwards numerados + `00-ROLLBACK.sql`) |
-| `export-manuals` | sesiones + decisiones + plan + código | `docs/manuals/` |
-| `export-diagrams` | código de las fuentes + plan (AS-IS/TO-BE) | `docs/diagrams/` (C4 / mermaid) |
-| `export-reports` | corpus de sesiones + plan + `docs/` | `docs/reports/` (informe ejecutivo/funcional) |
+| `export-scripts` | `SCRIPTS.sql` (migrations) from N sessions | `docs/scripts/` (numbered forwards + `00-ROLLBACK.sql`) |
+| `export-manuals` | sessions + decisions + plan + code | `docs/manuals/` |
+| `export-diagrams` | source code + plan (AS-IS/TO-BE) | `docs/diagrams/` (C4 / mermaid) |
+| `export-reports` | session corpus + plan + `docs/` | `docs/reports/` (executive/functional report) |
 
-Comunes: Capa 1, explícitos (los invoca el usuario, nunca un loop) · single-pass, read-only sobre sesiones · cross-session (consolidan N sesiones + `docs/`) · sin loop ni sessions internas (opciones por args).
+Common: Layer 1, explicit (user-invoked, never by a loop) · single-pass, read-only over sessions · cross-session (consolidate N sessions + `docs/`) · no loop, no internal sessions (options via args).
 
 ### Capability skills + `.workflow/skills.toml`
 
-Un loop **no** compone una skill concreta; compone una **capacidad por su rol** (ej. `ui-design`). Qué skill cumple el rol lo decide la config, no el loop. Cambiar de implementación = una línea del config.
+A loop does **not** compose a concrete skill; it composes a **capability by its role** (e.g. `ui-design`). Which skill fulfills the role is decided by config, never by the loop. Swapping implementations = one config line.
 
 ```toml
 [skills]
@@ -136,54 +136,66 @@ ui-design        = "ui-spec"          # built-in default
 sql              = "sql"
 git              = "git"
 research         = "research"
-# diagrams       = "off"              # ← capacidad desactivada
-# ui-design      = "acme/figma-spec"  # ← skill de tercero (vía skills.sh)
+# diagrams       = "off"              # ← capability disabled
+# ui-design      = "acme/figma-spec"  # ← third-party skill (via skills.sh)
 ```
 
-**Cascada de resolución**: built-in default → `~/.workflow/skills.toml` (global, PC) → `.workflow/skills.toml` (workspace). El workspace pisa al global; el global al default. Rol sin binding → built-in default. `off` → desactivada (el loop sigue sin ella; si era necesaria, lo dice o pregunta).
+**Resolution cascade**: built-in default → `~/.workflow/skills.toml` (global, machine) → `.workflow/skills.toml` (workspace). Workspace overrides global; global overrides default. Unbound role → built-in default. `off` → disabled (the loop continues without it; if it was needed, it says so or asks).
 
-Catálogo de roles y su default:
+Role catalog and defaults:
 
 | Role | Default | Tier | Composed by |
 |---|---|---|---|
 | `ui-design` | `ui-spec` | must | `spec-refine-loop` (UI) · `plan-new-loop` / `plan-refine-loop` (design SPECs) |
 | `sql` | `sql` | must | research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
-| `research` | `research` | should | todos los loops (capacidad inline) |
+| `research` | `research` | should | every loop (inline capability) |
 | `diagrams` | `diagrams` | should | `export-diagrams` |
-| `overview` | `workflow` | should | cualquiera (orientación) |
+| `overview` | `workflow` | should | anyone (orientation) |
 
-> **Convenciones ambientes (no roles):** estándares de código/testing/redacción y `creating-tools` son skills standalone que el host auto-descubre por su `description` — el workflow no las bindea ni depende de ellas. Doctrina completa: [roles/README.md](roles/README.md).
+> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — the workflow neither binds nor depends on them. Full doctrine: [roles/README.md](roles/README.md).
 
-El **chasis del loop** NO se bindea: es el motor común de los 5 loops ([`loops/CHASSIS.md`](loops/CHASSIS.md), un doc referenciado), no una capacidad enchufable.
+The **loop chassis** is NOT bound: it is the common engine of the 5 loops ([`loops/CHASSIS.md`](loops/CHASSIS.md), a referenced doc), not a pluggable capability.
 
-### Harness (agnóstico al arnés)
+### Harness (harness-agnostic)
 
-La doctrina nombra **capacidades** abstractas, no tools concretos de un arnés. Un solo doc —`harness/SKILL.md`— liga cada capacidad al mecanismo de cada arnés (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp, genérico). Dos principios: **capacidad-no-tool** (los loops/comandos referencian la capacidad por nombre) y **progressive-enhancement** (usar el mecanismo más rico del arnés; degradar a un fallback universal cuando no exista).
+The doctrine names abstract **capabilities**, never a concrete harness tool. A single doc —`harness/SKILL.md`— binds each capability to each harness's mechanism (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp, generic). Two principles: **capability-not-tool** (loops/commands reference the capability by name) and **progressive-enhancement** (use the harness's richest mechanism; degrade to a universal fallback when it does not exist).
 
-Capacidades clave:
+Key capabilities:
 
-- **structured-choice** — preguntar al humano ≤3 preguntas de contenido + 1 control `flow`. Claude Code: `AskUserQuestion`. Fallback: markdown numerado.
-- **compaction** — encoger el contexto sin perder el hilo. Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
+- **structured-choice** — ask the human ≤3 content questions + 1 `flow` control. Claude Code: `AskUserQuestion`. Fallback: numbered markdown.
+- **compaction** — shrink the context without losing the thread. Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
 - **command-invocation** · **procedure-loading** · **subagent-dispatch** (opt.) · **persistent-context** · **external-data** (MCP) · **dry-run/preview**.
 
-Las únicas `must` para el ciclo de un loop son **structured-choice** y **compaction**, y ambas degradan a texto → cualquier arnés con chat + archivos corre el modelo completo. Detalle, matriz de binding y distribución (`AGENTS.md` canónico + symlink `CLAUDE.md`): ver `harness/SKILL.md`.
+The only `must` capabilities for a loop's cycle are **structured-choice** and **compaction**, and both degrade to text → any harness with chat + files runs the full model. Detail, binding matrix and distribution (canonical `AGENTS.md` + `CLAUDE.md` symlink): see `harness/SKILL.md`.
+
+### Language policy (per surface)
+
+One language per plane — never mix them:
+
+| Surface | Language |
+|---|---|
+| Doctrine (this bundle: chassis, loops, commands, roles, exports, harness) | **English** |
+| **Section headings** of artifacts and docs (`## Requirement`, `## Completed`, …) | **English** (parse contract) |
+| Everything **user-facing**: structured-choice questions, reports, dashboards, the **content** the AI writes into artifacts and `docs/` deliverables, commit messages | **the user's language** (this product: Spanish) |
+| Literal option labels (`Compactar`, `Cerrar`, `Guardar plan`, …) | canonical product strings — use them **verbatim** |
+| Domain terms (class/route/table names, e.g. the QTC fleet) | the domain's ubiquitous language (Spanish) — never translated |
 
 ### The 6 hard invariants
 
-1. **Sin auto-export** — los loops nunca graduan/exportan a `docs/`. Solo `export-*` lo hace, explícito.
-2. **Cada flujo toca solo sus carpetas `docs/`** — SPEC→`specs` · PLAN→`plans` · QUICK→ninguna · resto→`export-*`. (`docs/tools` no es de un flujo: lo escribe la skill ambiente `creating-tools`.)
-3. **El spec y el plan son documentos** (`docs/`), no artefactos de sesión. *(No confundir con los **design SPECs** `NNN-SPEC-<SLUG>.md`: artefactos de diseño de UI **por pantalla** que las sesiones de PLAN producen vía la capacidad `ui-design` cuando el plan incluye UI — ver `artifacts/artifacts-design/` — no son el requirement-spec.)*
-4. **BD solo-scripts** — la IA nunca ejecuta DML/DDL; las migraciones quedan en `SCRIPTS.sql` y las aplica el usuario. Solo lecturas read-only vía MCP.
-5. **Git seguro** — rama esperada verificada antes de editar; commits propuestos por fuente; nunca `push`/`--amend`/`--no-verify`.
-6. **Chasis de loops** — los 5 loops corren el mismo **motor común**; cada loop es un heir que agrega solo sus deltas, nada del motor se re-declara. Detalle: `loops/CHASSIS.md`.
+1. **No auto-export** — loops never graduate/export to `docs/`. Only `export-*` does, explicitly.
+2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` belongs to no flow: the ambient skill `creating-tools` writes it.)
+3. **The spec and the plan are documents** (`docs/`), not session artifacts. *(Not to be confused with the **design SPECs** `NNN-SPEC-<SLUG>.md`: **per-screen** UI design artifacts that PLAN sessions produce via the `ui-design` capability when the plan includes UI — see `artifacts/artifacts-design/` — they are not the requirement-spec.)*
+4. **DB scripts-only** — the AI never executes DML/DDL; migrations stay in `SCRIPTS.sql` and the user applies them. Only read-only reads via MCP.
+5. **Safe git** — expected branch verified before editing; proposed commits per source; never `push`/`--amend`/`--no-verify`.
+6. **Loop chassis** — the 5 loops run the same **common engine**; each loop is an heir adding only its deltas, nothing of the engine is re-declared. Detail: `loops/CHASSIS.md`.
 
-> **Alcance de #1/#2:** gobiernan el plano **sesión → `docs/`** (solo `export-*` lo cruza). El *authoring directo sin flujo* (ver § *Contexto operativo*) es **otro plano**: sin sesión activa, `docs/` es la única superficie gestionada → la IA escribe ahí por convención + numeración. No es auto-export (no hay sesión de la cual graduar).
+> **Scope of #1/#2:** they govern the **session → `docs/`** plane (only `export-*` crosses it). *Direct no-flow authoring* (see § *Operating context*) is **another plane**: with no active session, `docs/` is the only managed surface → the AI writes there by convention + numbering. It is not auto-export (there is no session to graduate from).
 
 ## Output
 
-Ninguno. Es orientación pura: no escribe documentos ni artefactos.
+None. Pure orientation: it writes no documents or artifacts.
 
 ## Source
 
-Autorada del modelo de diseño (`docs/referencias/`): README de arquitectura (3 capas + 6 invariantes), `workflow-commands/`, `workflow-loops/`, `workflow-artifacts/`, `workflow-exports/`, `workflow-roles/`, `workflow-skills/`, `workflow-harness/`. Modelo actual, desplegado. (Compat: reemplaza la orientación del bundle legacy `session` + flows dev/design/analyze.)
+Authored from the design model (`docs/referencias/`): architecture README (3 layers + 6 invariants), `workflow-commands/`, `workflow-loops/`, `workflow-artifacts/`, `workflow-exports/`, `workflow-roles/`, `workflow-skills/`, `workflow-harness/`. Current, deployed model. (Compat: replaces the legacy `session` bundle orientation + dev/design/analyze flows.)

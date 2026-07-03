@@ -1,135 +1,135 @@
 ---
 name: export-scripts
-description: "Consolida los SQL pendientes del workspace en un único bundle `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` con numeración continua tras `00-ROLLBACK.sql`. Lee migraciones tipo-B (DDL/DML) desde dos fuentes: `.workflow/sessions/<folder>/SCRIPTS.sql` de N sesiones Y `docs/scripts/*.sql` standalone (excluyendo bundles previos). Ignora el tipo-A read-only (consultas de diagnóstico, no entregables). Headers SQL mínimos + README simple (3 secciones: Archivos / Aplicar / Revertir). El rollback se deriva de los forwards. Read-only/reporte: NUNCA ejecuta SQL ni commitea — el bundle es para que un humano/DBA lo aplique. Compone la capacidad `sql`. Úsalo para 'bundle SQL del release', 'preparar paso a prod', 'consolidar SQLs pendientes'. Invocado por el usuario vía `/w:export-scripts`."
+description: "Consolidates the workspace's pending SQL into a single `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` bundle with continuous numbering after `00-ROLLBACK.sql`. Reads type-B migrations (DDL/DML) from two sources: `.workflow/sessions/<folder>/SCRIPTS.sql` across N sessions AND standalone `docs/scripts/*.sql` (excluding previous bundles). Ignores read-only type-A (diagnostic queries, not deliverables). Minimal SQL headers + a simple README (3 sections: Files / Apply / Revert). The rollback is derived from the forwards. Read-only/report: it NEVER executes SQL nor commits — the bundle is for a human/DBA to apply. Composes the `sql` capability. Use for 'release SQL bundle', 'prepare the prod push', 'consolidate pending SQLs'. User-invoked via `/w:export-scripts`."
 ---
 
-# export-scripts — Bundle SQL consolidado, simple y directo
+# export-scripts — consolidated SQL bundle, simple and direct
 
-Consolida las migraciones SQL pendientes de N sesiones + archivos standalone en un único bundle bajo `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, con numeración continua tras `00-ROLLBACK.sql`. **Read-only / reporte** — la IA **nunca ejecuta** el SQL; el usuario/DBA aplica el bundle manualmente.
+Consolidates the pending SQL migrations of N sessions + standalone files into a single bundle under `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with continuous numbering after `00-ROLLBACK.sql`. **Read-only / report** — the AI **never executes** the SQL; the user/DBA applies the bundle manually.
 
-> Familia `export-*` (la única vía artefacto→`docs/`). Recicla el espíritu del viejo `export-scripts` v5.0.0 (numeración continua, headers SQL minimal, README de 3 secciones, rollback derivado de forwards), modernizado al modelo nuevo (sin modos project/hub; `docs/scripts` en inglés). Diseño: `docs/referencias/workflow-exports/export-scripts.md`.
+> `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-scripts.md`.
 
 ## Category
 
-`docs/scripts` — **única** carpeta `docs/` que este export escribe.
+`docs/scripts` — the **only** `docs/` folder this export writes.
 
 ## Composes
 
-Capacidad **`sql`** (built-in default `sql`), resuelta vía `.workflow/skills.toml`. Aporta el vocabulario de categorías DDL/DML, el orden de aplicación y la derivación de rollback. Este export **no** posee esa lógica: la compone. Rebindeable u `off` por config.
+The **`sql`** capability (built-in default `sql`), resolved via `.workflow/skills.toml`. It contributes the DDL/DML category vocabulary, the application order and the rollback derivation. This export does **not** own that logic: it composes it. Rebindable or `off` by config.
 
 ## When to use
 
-- "Bundle SQL del release", "preparar paso a prod", "consolidar SQLs pendientes".
-- Antes de promover una rama a certificación / `main`.
-- Tras varias sesiones `exec`/`quick` que dejaron `SCRIPTS.sql` con migraciones.
+- "Release SQL bundle", "prepare the prod push", "consolidate pending SQLs".
+- Before promoting a branch to certification / `main`.
+- After several `exec`/`quick` sessions left `SCRIPTS.sql` files with migrations.
 
 ## What it does
 
-1. Recolecta SQL del workspace desde **dos fuentes**: `SCRIPTS.sql` tipo-B de cada sesión del corpus + `docs/scripts/*.sql` standalone (excluyendo bundles previos).
-2. Clasifica las sentencias por categoría canónica (DDL-TABLES / DDL-FUNCTIONS / DML / INSERTS).
-3. Consolida cross-source por categoría con **numeración continua** tras `00-ROLLBACK.sql`.
-4. Escribe los forwards consolidados (cada sentencia con su origen, 1 línea).
-5. Deriva `00-ROLLBACK.sql` **al final**, leyendo los forwards ya escritos.
-6. Escribe un `README.md` minimal (Archivos / Aplicar / Revertir).
+1. Collects the workspace's SQL from **two sources**: each corpus session's type-B `SCRIPTS.sql` + standalone `docs/scripts/*.sql` (excluding previous bundles).
+2. Classifies the statements by canonical category (DDL-TABLES / DDL-FUNCTIONS / DML / INSERTS).
+3. Consolidates cross-source per category with **continuous numbering** after `00-ROLLBACK.sql`.
+4. Writes the consolidated forwards (each statement with its origin, 1 line).
+5. Derives `00-ROLLBACK.sql` **at the end**, reading the already-written forwards.
+6. Writes a minimal `README.md` (Files / Apply / Revert).
 
 ## What it does NOT do
 
-- **Ejecutar SQL** (invariante BD scripts-only). El bundle es entregable; lo aplica un humano/DBA.
-- Commitear, mergear, push.
-- Tocar `.workflow/sessions/` ni los `docs/scripts/*.sql` standalone (solo lectura).
-- Escribir cualquier carpeta `docs/` que no sea `docs/scripts/` (invariante: una categoría).
-- Migrar bundles previos (`docs/scripts/NNN-export-scripts-*/` quedan como histórico).
-- Incluir el tipo-A read-only (consultas de diagnóstico) ni inventar SQL.
-- Generar plantillas de correo, checklists de producción, listados de commits/sesiones, ni resúmenes ejecutivos en el README.
+- **Execute SQL** (DB scripts-only invariant). The bundle is a deliverable; a human/DBA applies it.
+- Commit, merge, push.
+- Touch `.workflow/sessions/` or the standalone `docs/scripts/*.sql` (read-only).
+- Write any `docs/` folder other than `docs/scripts/` (invariant: one category).
+- Migrate previous bundles (`docs/scripts/NNN-export-scripts-*/` stay as history).
+- Include read-only type-A (diagnostic queries) or invent SQL.
+- Generate email templates, production checklists, commit/session listings, or executive summaries in the README.
 
 ## Read-only sandbox
 
-En plan mode **describe**, no escribe: el `NNN` resuelto, las fuentes detectadas (sesiones + standalone), las categorías con contenido, los archivos que aparecerían al root del bundle y el contenido aproximado del README. **No** ejecuta `Write`, ni `aw next-number` con efecto, ni mutaciones.
+In plan mode it **describes**, never writes: the resolved `NNN`, the detected sources (sessions + standalone), the categories with content, the files that would appear at the bundle root and the approximate README content. It does **not** run `Write`, effectful `aw next-number`, or mutations.
 
 ## Inputs
 
-**CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
+**`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera el corpus de sesiones.
-- `aw session-artifacts --code <NNN> --dump scripts` — lista los `.sql` de la sesión con path y size (el contenido se lee por path). Si no hay scripts → lista vacía, skip silencioso.
-- `aw next-number docs/scripts` — numeración determinística del directorio del bundle (la resolución de la carpeta destino la maneja el CLI).
+- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the session corpus.
+- `aw session-artifacts --code <NNN> --dump scripts` — lists the session's `.sql` files with path and size (content is read by path). No scripts → empty list, silent skip.
+- `aw next-number docs/scripts` — deterministic numbering of the bundle directory (the CLI handles destination-folder resolution).
 
 **Filesystem**:
 
-- `docs/scripts/*.sql` standalone (solo top-level), **excluyendo** cualquier `docs/scripts/NNN-export-scripts-*/` (outputs previos de este export).
+- Standalone `docs/scripts/*.sql` (top-level only), **excluding** any `docs/scripts/NNN-export-scripts-*/` (previous outputs of this export).
 
-**Args** (sin *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../../harness/SKILL.md`](../../harness/SKILL.md)):
+**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 
 ```
 /w:export-scripts [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
                   [--skip-standalone] [--dry-run]
 ```
 
-| Flag | Comportamiento |
+| Flag | Behavior |
 |---|---|
-| `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`) |
-| `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
-| `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
-| `--skip-standalone` | Omite la lectura de `docs/scripts/*.sql` standalone |
-| `--dry-run` | Reporte propositivo sin escribir archivos |
+| `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
+| `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
+| `--source <alias>` | Limits to one source (multi-source workspace) |
+| `--skip-standalone` | Skips reading the standalone `docs/scripts/*.sql` |
+| `--dry-run` | Propositional report, no files written |
 
-Sin args: todas las sesiones del corpus + todos los `.sql` standalone (excluyendo bundles previos). *(Si algún flag exacto difiere en el CLI runtime, ajustar al contrato real de `aw`.)*
+No args: every corpus session + every standalone `.sql` (excluding previous bundles).
 
 ## Flow
 
-### Paso 1 — Recolección de fuentes SQL
+### Step 1 — Collect SQL sources
 
-**Fuente A — sesiones**: por cada sesión del corpus (`aw sessions` / `release-data` + `session-artifacts --code <NNN> --dump scripts`), leer los `.sql` que el dump lista (path por script). Tomar **solo** las sentencias tipo-B (migraciones DDL/DML entregables); ignorar el tipo-A read-only (consultas de diagnóstico). Markers esperados por sentencia: `-- @category: <01-04>` + `-- @stmt: NNN-verbo-objetivo` (formato definido por la capacidad `sql`).
+**Source A — sessions**: for every corpus session (`aw sessions` / `release-data` + `session-artifacts --code <NNN> --dump scripts`), read the `.sql` files the dump lists (per-script path). Take **only** type-B statements (deliverable DDL/DML migrations); ignore read-only type-A (diagnostic queries). Expected per-statement markers: `-- @category: <01-04>` + `-- @stmt: NNN-verb-target` (format defined by the `sql` capability).
 
-**Fuente B — standalone** (salvo `--skip-standalone`): listar `docs/scripts/*.sql` top-level, **excluyendo** `docs/scripts/NNN-export-scripts-*/`. Por archivo: respetar markers `@category` si los hay; si no, inferir categoría del contenido (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). Si el filename contiene `rollback` → skip (no entra en forward).
+**Source B — standalone** (unless `--skip-standalone`): list top-level `docs/scripts/*.sql`, **excluding** `docs/scripts/NNN-export-scripts-*/`. Per file: honor `@category` markers when present; otherwise infer the category from content (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). If the filename contains `rollback` → skip (it never enters a forward).
 
-Si la unión A + B está vacía → **abortar**: "No hay SQL pendientes en el workspace".
+If the A + B union is empty → **abort**: there is no pending SQL in the workspace.
 
-### Paso 2 — Numeración del bundle
+### Step 2 — Bundle numbering
 
 `aw next-number docs/scripts` → `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`.
 
-### Paso 3 — Clasificación y orden interno
+### Step 3 — Classification and internal order
 
-Agrupar por categoría canónica: `01 DDL-TABLES` · `02 DDL-FUNCTIONS` · `03 DML` · `04 INSERTS`. Orden interno cronológico por origen (sesión ascendente → stmt ascendente; standalone intercalado por orden léxico del filename).
+Group by canonical category: `01 DDL-TABLES` · `02 DDL-FUNCTIONS` · `03 DML` · `04 INSERTS`. Internal order chronological by origin (ascending session → ascending stmt; standalone interleaved by lexical filename order).
 
-### Paso 4 — Numeración continua (sin gaps)
+### Step 4 — Continuous numbering (no gaps)
 
-Asignar números secuenciales **solo a las categorías con contenido**, en el orden canónico. El primer forward siempre es `01-…`. Ej.: solo DML → `00-ROLLBACK.sql`, `01-DML.sql`; las 4 categorías → `00-ROLLBACK.sql`, `01-DDL-TABLES.sql`, `02-DDL-FUNCTIONS.sql`, `03-DML.sql`, `04-INSERTS.sql`.
+Assign sequential numbers **only to categories with content**, in canonical order. The first forward is always `01-…`. E.g.: DML only → `00-ROLLBACK.sql`, `01-DML.sql`; all 4 categories → `00-ROLLBACK.sql`, `01-DDL-TABLES.sql`, `02-DDL-FUNCTIONS.sql`, `03-DML.sql`, `04-INSERTS.sql`.
 
-### Paso 5 — Escribir forwards
+### Step 5 — Write the forwards
 
-Por categoría con contenido, un archivo con header de 1-2 líneas (`-- 0N-<CATEGORIA>.sql — bundle NNN-export-scripts-YYYY-MM-DD`) y, por sentencia, **un comentario de una línea** con el origen (`-- sessionXXX / stmt-id` o `-- docs/scripts/001-filename.sql`) seguido del SQL tal cual lo escribió el developer (envuelto en `BEGIN; … COMMIT;` si aplica). No replicar motivación/impacto/idempotencia ya presentes en el origen; no agregar índice de sentencias ni SELECTs de verificación inventados.
+Per category with content, one file with a 1-2 line header (`-- 0N-<CATEGORY>.sql — bundle NNN-export-scripts-YYYY-MM-DD`) and, per statement, **a one-line origin comment** (`-- sessionXXX / stmt-id` or `-- docs/scripts/001-filename.sql`) followed by the SQL exactly as the developer wrote it (wrapped in `BEGIN; … COMMIT;` where it applies). Do not replicate motivation/impact/idempotency already present at the origin; no statement index, no invented verification SELECTs.
 
-### Paso 6 — Derivar `00-ROLLBACK.sql` (al final)
+### Step 6 — Derive `00-ROLLBACK.sql` (at the end)
 
-Vía la capacidad `sql`, **leyendo los forwards ya escritos** (no el `SCRIPTS.sql` original): sentencias inversas en orden inverso (último→primero), bloque transaccional único, y un bloque "Cleanup irreversible" al final fuera de transacción solo si hay operaciones sin reversa automática.
+Via the `sql` capability, **reading the already-written forwards** (not the original `SCRIPTS.sql`): inverse statements in reverse order (last→first), a single transactional block, and an "irreversible cleanup" block at the end outside the transaction only if there are operations without an automatic reverse.
 
-### Paso 7 — Escribir `README.md` (3 secciones)
+### Step 7 — Write the `README.md` (3 sections)
 
-`## Archivos` (tabla: 1 fila por archivo presente) · `## Aplicar` (un `psql -f` por archivo en orden ascendente; el export no ejecuta nada) · `## Revertir` (`psql -f 00-ROLLBACK.sql` + nota si hay bloque irreversible). **Vetado**: resumen ejecutivo, tabla de sesiones, plantillas de correo, listado de commits, checklist de producción.
+`## Archivos` (table: 1 row per file present) · `## Aplicar` (one `psql -f` per file in ascending order; the export executes nothing) · `## Revertir` (`psql -f 00-ROLLBACK.sql` + a note if there is an irreversible block). The README is a user-facing deliverable → write it in the user's language. **Vetoed**: executive summary, session table, email templates, commit listing, production checklist.
 
-### Paso 8 — Escribir o reportar
+### Step 8 — Write or report
 
-Si `--dry-run`: imprimir el reporte; no escribir. Si no: `Write` del bundle. **NUNCA commitear**. Resumen al usuario: una línea por archivo escrito + ruta del bundle (sin replicar el README).
+With `--dry-run`: print the report; write nothing. Otherwise: `Write` the bundle. **NEVER commit**. Summary to the user: one line per written file + the bundle path (without replicating the README).
 
 ## Output location
 
 ```
 docs/scripts/NNN-export-scripts-YYYY-MM-DD/
-├── 00-ROLLBACK.sql       # reversa derivada de los forwards
-├── 01-<CATEGORIA>.sql    # primer forward (numeración continua)
-├── 02-<CATEGORIA>.sql    # …según categorías con contenido
+├── 00-ROLLBACK.sql       # reverse derived from the forwards
+├── 01-<CATEGORY>.sql     # first forward (continuous numbering)
+├── 02-<CATEGORY>.sql     # …per category with content
 └── README.md             # Archivos · Aplicar · Revertir
 ```
 
 ## Re-run
 
-Idempotente funcional: cada invocación toma el siguiente `NNN` y **no sobrescribe** bundles previos. Para regenerar: borrar el directorio manualmente y re-invocar.
+Functionally idempotent: each invocation takes the next `NNN` and **never overwrites** previous bundles. To regenerate: delete the directory manually and re-invoke.
 
 ## Resources
 
-- Design: `docs/referencias/workflow-exports/export-scripts.md` · familia: [`../README.md`](../README.md).
-- Capacidad compuesta: `sql` (built-in default; ver `docs/referencias/workflow-roles/`).
-- Artefacto fuente: `SCRIPTS.sql` (ver `docs/referencias/workflow-artifacts/artifacts-core/`).
+- Design: `docs/referencias/workflow-exports/export-scripts.md` · family: [`../README.md`](../README.md).
+- Composed capability: `sql` (built-in default; see `docs/referencias/workflow-roles/`).
+- Source artifact: `SCRIPTS.sql` (see `docs/referencias/workflow-artifacts/artifacts-core/`).
 - Siblings: [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).

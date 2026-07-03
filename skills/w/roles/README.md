@@ -23,9 +23,9 @@ All 6 roles, their built-in defaults, their tier, and which loops/exports compos
 - `must` — core to almost every session; built-in always active unless explicitly `off`.
 - `should` — loaded on-demand; active by default but lower priority to override.
 
-> **Convenciones ambientes (no roles).** Los estándares de código, testing, redacción **y la creación de herramientas** (`creating-tools`, escribe `docs/tools`) **no son roles** del workflow ni se bindean: son **skills standalone que el host auto-descubre por su `description`** y aplica cuando son relevantes. El workflow es **indiferente** (no las lee ni las busca). Familias útiles viven en plugins del marketplace (`dev-conventions`, `tool-builder`), pero el workflow **no depende** de ellos.
+> **Ambient conventions (not roles).** Code, testing and writing standards **and tool authoring** (`creating-tools`, which writes `docs/tools`) are **not workflow roles** and are never bound: they are **standalone skills the host auto-discovers by `description`** and applies when relevant. The workflow is **indifferent** (it neither reads nor looks for them). Useful families live in marketplace plugins (`dev-conventions`, `tool-builder`), but the workflow does **not depend** on them.
 >
-> **La revisión de cierre tampoco es un rol** (decisión deliberada — se evaluó y descartó un rol `conventions`/`rules`/`review`): el **gate de revisión de cierre** de `plan-exec-loop`/`quick-loop` (pre-commit) es un **paso del loop**; el loop crea el **momento** y las convenciones ambientes instaladas lo llenan. Un rol que "señale las skills del marketplace" re-acoplaría lo que esta extracción desacopló.
+> **The closing review is not a role either** (deliberate decision — a `conventions`/`rules`/`review` role was evaluated and discarded): the pre-commit **closing review gate** of `plan-exec-loop`/`quick-loop` is a **loop step**; the loop creates the **moment** and the installed ambient conventions fill it. A role that "points at the marketplace skills" would re-couple what this extraction decoupled.
 
 ---
 

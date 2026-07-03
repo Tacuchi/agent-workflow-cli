@@ -1,121 +1,124 @@
 ---
 name: research
 description: >
-  Capacidad de investigación on-demand que los loops componen cuando necesitan evidencia para avanzar.
-  Investiga INLINE dentro de la sesión activa (no crea una sesión aparte): lee el workspace + repos
-  asociados + MCPs en modo read-only, produce ANALYSIS-FILE → CONCLUSIONS dentro de esa sesión.
-  Concluye INCONCLUSIVE si la pregunta no puede responderse con las fuentes disponibles. Discrimina
-  cuándo investigar ("¿puedo responder leyendo repo/datos?") vs cuándo preguntar al humano
-  ("¿depende de lo que el usuario quiere?").
+  On-demand investigation capability that loops compose when they need evidence to
+  move forward. Investigates INLINE inside the active session (never creates a
+  separate session): reads the workspace + associated repos + MCPs read-only,
+  produces ANALYSIS-FILE → CONCLUSIONS inside that session. Concludes INCONCLUSIVE
+  when the question cannot be answered with the available sources. Discriminates
+  when to investigate ("can I answer by reading repo/data?") vs when to ask the
+  human ("does it depend on what the user wants?").
 ---
 
 # research — On-demand investigation capability
 
 ## Role
 
-`research` — implementación built-in por defecto. Rebindeable a otra skill (de tercero o `off`) en `.workflow/skills.toml`.
+`research` — built-in default implementation. Rebindable to another skill (third-party or `off`) in `.workflow/skills.toml`.
 
 ## Purpose
 
-Resolver preguntas factuales sobre el sistema antes de actuar: leer el repo, rastrear datos vía MCP read-only, producir hallazgos sintetizados. **No crea artefactos de producción** — produce evidencia y conclusiones para que el loop que la compuso pueda avanzar con información de calidad.
+Resolve factual questions about the system before acting: read the repo, trace data via read-only MCP, produce synthesized findings. **It creates no production artifacts** — it produces evidence and conclusions so the composing loop can move forward with quality information.
 
-El discriminador clave:
+The key discriminator:
 
-| La pregunta... | Acción |
+| The question... | Action |
 |---|---|
-| puede responderse leyendo repo / datos (hechos objetivos del sistema) | **investigar** |
-| depende de preferencias, prioridades o decisiones del usuario | **preguntar al humano** vía *structured-choice* (regla canónica: `../../loops/CHASSIS.md` § *Structured-choice*; binding por arnés: `../../harness/SKILL.md`) |
-| está parcialmente en el repo y parcialmente en intención del usuario | investigar primero, luego preguntar solo por la parte incierta |
+| can be answered by reading repo / data (objective system facts) | **investigate** |
+| depends on the user's preferences, priorities or decisions | **ask the human** via *structured-choice* (canonical rule: `../../loops/CHASSIS.md` § *Structured-choice*; per-harness binding: `../../harness/SKILL.md`) |
+| is partly in the repo and partly user intent | investigate first, then ask only about the uncertain part |
 
 ## Composed by
 
-Todos los loops la cargan on-demand:
+Every loop loads it on demand:
 
-| Loop | Cuándo la compone |
+| Loop | When it composes it |
 |---|---|
-| `spec-refine-loop` | para entender el sistema existente antes de refinar un spec |
-| `plan-new-loop` | para descubrir dependencias, integrations, convenciones del repo |
-| `plan-exec-loop` | para investigar comportamiento real de un componente antes de modificarlo |
-| `quick-loop` | para responder preguntas de orientación sobre el código o datos |
+| `spec-refine-loop` | to understand the existing system before refining a spec |
+| `plan-new-loop` | to discover dependencies, integrations, repo conventions |
+| `plan-exec-loop` | to investigate a component's real behavior before modifying it |
+| `quick-loop` | to answer orientation questions about the code or data |
 
 ## Knowledge
 
 ### Investigation lifecycle
 
 ```
-[pregunta del loop] → [investigar inline en la sesión activa] → [recolectar evidencia] → [sintetizar] → [CONCLUSIONS]
+[loop's question] → [investigate inline in the active session] → [collect evidence] → [synthesize] → [CONCLUSIONS]
                                                           ↕
-                                               [nueva hipótesis o gap] → [más evidencia o INCONCLUSIVE]
+                                               [new hypothesis or gap] → [more evidence or INCONCLUSIVE]
 ```
 
-1. **Investigar inline** — no se crea una sesión aparte; los artefactos se escriben en la sesión activa del loop (`.workflow/sessions/NNN-<run>/`).
-2. **Recolectar evidencia** — read-only: `Read`, `Grep`, `Glob`, MCP SELECT, `git log`.
-3. **Escribir `ANALYSIS-FILE.md`** (scratchpad opcional) con hallazgos crudos.
-4. **Sintetizar** en `CONCLUSIONS.md` con conclusiones evidenciadas.
-5. **Reportar al loop**: `concluido` si converge; `inconclusive` si no hay material suficiente — el loop degrada/difiere el gap.
+1. **Investigate inline** — no separate session is created; artifacts are written into the loop's active session (`.workflow/sessions/NNN-<run>/`).
+2. **Collect evidence** — read-only: `Read`, `Grep`, `Glob`, MCP SELECT, `git log`.
+3. **Write `ANALYSIS-FILE.md`** (optional scratchpad) with raw findings.
+4. **Synthesize** into `CONCLUSIONS.md` with evidence-backed conclusions.
+5. **Report to the loop**: `concluded` if it converges; `inconclusive` if there is not enough material — the loop degrades/defers the gap.
 
 ### Ask-vs-research discriminator (examples)
 
 ```
-"¿qué convención de nombres usa este repo?"     → investigar (Grep + Read)
-"¿qué endpoint necesita el spec?"               → investigar (leer spec + código)
-"¿prefieres enfoque A o B?"                     → preguntar al humano
-"¿cuál es el estado de la tabla X?"             → investigar (MCP read-only)
-"¿qué tan urgente es esto para ti?"             → preguntar al humano
-"¿el servicio Y ya tiene auth implementado?"    → investigar (leer código)
+"what naming convention does this repo use?"     → investigate (Grep + Read)
+"which endpoint does the spec need?"             → investigate (read spec + code)
+"do you prefer approach A or B?"                 → ask the human
+"what is the state of table X?"                  → investigate (read-only MCP)
+"how urgent is this for you?"                    → ask the human
+"does service Y already have auth implemented?"  → investigate (read code)
 ```
 
 ### Artifact schemas
 
-`ANALYSIS-FILE.md` (scratchpad opcional) y `CONCLUSIONS.md` siguen las **plantillas canónicas** en `artifacts/artifacts-research/` — no se duplican aquí para evitar drift. Para research liviana basta `CONCLUSIONS.md`; `ANALYSIS-FILE.md` es opcional para investigaciones más profundas.
+`ANALYSIS-FILE.md` (optional scratchpad) and `CONCLUSIONS.md` follow the **canonical templates** in `artifacts/artifacts-research/` — never duplicated here, to avoid drift. Light research needs only `CONCLUSIONS.md`; `ANALYSIS-FILE.md` is optional for deeper investigations.
 
 ### DB rule (invariant #4)
 
-- **Solo SELECT** — nunca DML/DDL.
-- **Escribir la query primero** en el `SCRIPTS.sql` de la sesión activa (tipo A, read-only; ver la plantilla `artifacts/artifacts-core/SCRIPTS.sql`) con su header de propósito + MCP + origen.
-- **Si hay >1 MCP candidato sin default declarado**: preguntar al humano cuál usar antes de ejecutar.
-- **Cost guard antes de ejecutar**:
-  - `COUNT(*) ≤ 1.000` o lookup por PK → ejecutar directo.
-  - `1.000–10.000` filas o seq scan tabla pequeña → avisar estimado al usuario.
-  - `> 10.000` filas o seq scan tabla grande → confirmación explícita del usuario.
-  - UPDATE/INSERT/DELETE → rechazar.
+- **SELECT only** — never DML/DDL.
+- **Write the query first** into the active session's `SCRIPTS.sql` (type A, read-only; see the `artifacts/artifacts-core/SCRIPTS.sql` template) with its purpose + MCP + origin header.
+- **With >1 candidate MCP and no declared default**: ask the human which to use before executing.
+- **Cost guard before executing**:
+  - `COUNT(*) ≤ 1,000` or PK lookup → run directly.
+  - `1,000–10,000` rows or a small-table seq scan → tell the user the estimate.
+  - `> 10,000` rows or a large-table seq scan → explicit user confirmation.
+  - UPDATE/INSERT/DELETE → refuse.
 
 ### Code reading rules
 
-- Usar `Grep` y `Read` extensivamente. **Nunca** `Edit/Write` durante investigación.
-- Citar con path + líneas: `src/services/Foo.java:142`.
-- Si el código está disperso: `Glob` + `Grep` para acotar.
+- Use `Grep` and `Read` extensively. **Never** `Edit/Write` during investigation.
+- Cite with path + lines: `src/services/Foo.java:142`.
+- Scattered code: `Glob` + `Grep` to narrow down.
 
-### Git read-only (git-safe, invariant #5)
+### Read-only git (git-safe, invariant #5)
 
-Solo: `git log`, `git show`, `git diff`, `git blame`, `git branch --show-current`.
-Nunca durante investigación: `commit`, `push`, `merge`, `rebase`, `reset`, `checkout`.
+Only: `git log`, `git show`, `git diff`, `git blame`, `git branch --show-current`.
+Never during investigation: `commit`, `push`, `merge`, `rebase`, `reset`, `checkout`.
 
 ### Inconclusive closure
 
-Si tras investigar los gaps persisten y no pueden cerrarse con las fuentes disponibles:
-- Documentar los gaps en `CONCLUSIONS.md#Open`.
-- Marcar sesión como `inconclusive`.
-- Reportar al loop: qué se pudo y qué no — el loop decide si pregunta al humano.
+If, after investigating, gaps persist and cannot be closed with the available sources:
 
-### Inline research artifacts (en la sesión activa)
+- Document the gaps in `CONCLUSIONS.md#Open`.
+- Mark the investigation `inconclusive`.
+- Report to the loop: what could and could not be resolved — the loop decides whether to ask the human.
+
+### Inline research artifacts (in the active session)
 
 ```
-.workflow/sessions/NNN-<run>/      # la sesión del loop (refine/exec/quick)
-├── ANALYSIS-FILE.md    # hallazgos crudos (scratchpad opcional)
-├── CONCLUSIONS.md      # síntesis + recomendaciones para el loop
-└── SCRIPTS.sql         # SQL read-only (tipo A), si se usó MCP
+.workflow/sessions/NNN-<run>/      # the loop's session (refine/exec/quick)
+├── ANALYSIS-FILE.md    # raw findings (optional scratchpad)
+├── CONCLUSIONS.md      # synthesis + recommendations for the loop
+└── SCRIPTS.sql         # read-only SQL (type A), if MCP was used
 ```
 
 ## Output
 
-Produce, **inline en la sesión activa del loop** (`.workflow/sessions/NNN-<run>/`):
-- `ANALYSIS-FILE.md` — hallazgos crudos sin sintetizar (opcional).
-- `CONCLUSIONS.md` — conclusiones con evidencia + recomendaciones para el loop.
-- `SCRIPTS.sql` — queries read-only (tipo A), solo si se usó MCP.
+Produces, **inline in the loop's active session** (`.workflow/sessions/NNN-<run>/`):
 
-No gradua a `docs/` (invariant #1). El loop que compone esta capacidad consume las conclusiones y actua en consecuencia.
+- `ANALYSIS-FILE.md` — raw, unsynthesized findings (optional).
+- `CONCLUSIONS.md` — evidence-backed conclusions + recommendations for the loop.
+- `SCRIPTS.sql` — read-only queries (type A), only if MCP was used.
+
+It never graduates to `docs/` (invariant #1). The composing loop consumes the conclusions and acts on them.
 
 ## Source
 
-Racional e historia: diseño (`docs/referencias/workflow-roles/research.md`).
+Rationale and history: design (`docs/referencias/workflow-roles/research.md`).

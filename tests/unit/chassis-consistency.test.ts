@@ -17,7 +17,7 @@ const CHASSIS_PATH = join(LOOPS_ROOT, "CHASSIS.md");
 // instancias del mismo gate"; "cada heir define su marca de trabajo previo"):
 // los heirs las instancian legítimamente, no cuentan como re-declaración.
 const HEIR_INSTANCED_SECTIONS: ReadonlySet<string> = new Set([
-  "Internal sessions (managed) — una session por run",
+  "Internal sessions (managed) — one session per run",
   "Compact / resume",
   "Convergence / exit",
 ]);

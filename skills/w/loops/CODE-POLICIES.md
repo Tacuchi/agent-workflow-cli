@@ -1,34 +1,34 @@
-# CODE-POLICIES — políticas de loops que editan código
+# CODE-POLICIES — policies for code-editing loops
 
-Aplican a **`plan-exec-loop`** (por fase del plan) y **`quick-loop`** (la única tarea; gate en versión **proporcional**): cada uno lo manda leer desde su `## Inherits`, **junto con el chasis** ([`CHASSIS.md`](CHASSIS.md)). Los loops de documento (spec-refine, plan-new, plan-refine) no editan código y **no cargan este doc** — por eso vive aparte del chasis. Estas políticas materializan los invariantes **BD solo-scripts** y **git seguro** — que además quedan resumidos **inline** (1-2 líneas) en el `SKILL.md` de cada loop que edita código, porque los hosts advisory no siguen Reads; el texto normativo completo vive acá.
+They apply to **`plan-exec-loop`** (per plan phase) and **`quick-loop`** (the single task; **proportional** gate): each orders this doc read from its `## Inherits`, **together with the chassis** ([`CHASSIS.md`](CHASSIS.md)). The document loops (spec-refine, plan-new, plan-refine) edit no code and do **not** load this doc — that is why it lives apart from the chassis. These policies materialize the **DB scripts-only** and **safe git** invariants — which also stay summarized **inline** (1-2 lines) in each code-editing loop's `SKILL.md`, because advisory hosts do not follow Reads; the full normative text lives here.
 
-## Git seguro — rama verificada + commits propuestos
+## Safe git — verified branch + proposed commits
 
-- **Antes de editar** archivos de una fuente: verifica rama actual = rama esperada de esa fuente (`aw check-branch --source <alias>`; ver rol `git`). Si no coincide → **pausa y resuelve con el humano**; nunca `stash`/`reset --hard`/`checkout -- .`/`clean` sin confirmación por fuente.
-- **Commits propuestos** (propose-then-execute, aprobar antes): **tras pasar el gate de revisión de cierre** (abajo), propone commits **por fuente** — en plan-exec al cerrar cada fase (o al `Cerrar`); en quick, **un solo commit** al final si hubo cambios de código. Nunca `push`/`--amend`/`--no-verify`. Nada llega a un commit propuesto sin revisar.
-- **Commit rechazado**: los cambios **quedan en el working tree** (no se revierten). Se permite reproponer / editar mensaje. Se registra en `CHECKPOINT` + `BACKLOG` que la fase/tarea quedó **sin commitear** (reanudable).
-- **Precondición entre fases** (plan-exec): `branch-check` valida *identidad* de rama, **no** *limpieza* del working tree. Antes de iniciar la siguiente fase, el working tree de cada fuente debe estar **limpio** (committeado) o explícitamente **reconocido** como "cambios sin commitear de la fase N" — para no co-mezclar dos fases en un mismo commit.
+- **Before editing** a source's files: verify current branch = that source's expected branch (`aw check-branch --source <alias>`; see the `git` role). On mismatch → **pause and resolve with the human**; never `stash`/`reset --hard`/`checkout -- .`/`clean` without per-source confirmation.
+- **Proposed commits** (propose-then-execute, approve before): **after the closing review gate passes** (below), propose commits **per source** — in plan-exec at each phase close (or on `Cerrar`); in quick, **a single commit** at the end if there were code changes. Never `push`/`--amend`/`--no-verify`. Nothing reaches a proposed commit without review.
+- **Rejected commit**: the changes **stay in the working tree** (never reverted). Re-proposing / editing the message is allowed. Record in `CHECKPOINT` + `BACKLOG` that the phase/task remained **uncommitted** (resumable).
+- **Between-phase precondition** (plan-exec): `branch-check` validates branch *identity*, **not** working-tree *cleanliness*. Before starting the next phase, each source's working tree must be **clean** (committed) or explicitly **acknowledged** as "uncommitted changes from phase N" — so two phases never co-mingle in one commit.
 
-## BD solo-scripts — la IA nunca ejecuta DML/DDL
+## DB scripts-only — the AI never executes DML/DDL
 
-Distinción por **ejecución**, no por archivo (ver el esquema [`SCRIPTS.sql`](../artifacts/artifacts-core/SCRIPTS.sql)):
+Distinguished by **execution**, not by file (see the [`SCRIPTS.sql`](../artifacts/artifacts-core/SCRIPTS.sql) schema):
 
-- **Consultas read-only** (diagnóstico/validación) → `SCRIPTS.sql` (artefacto de la session); la IA **sí** las ejecuta read-only vía MCP (`sql-mutation-guard`).
-- **Migraciones DDL/DML** (cambios de esquema/datos) → la IA las **redacta en `SCRIPTS.sql`** (artefacto de la session) pero **NUNCA las ejecuta**.
+- **Read-only queries** (diagnosis/validation) → `SCRIPTS.sql` (session artifact); the AI **does** execute them read-only via MCP (`sql-mutation-guard`).
+- **DDL/DML migrations** (schema/data changes) → the AI **drafts them in `SCRIPTS.sql`** (session artifact) but **NEVER executes them**.
 
-> El SQL mutante **queda en la session**, no se mueve a `docs/`. Su promoción a `docs/scripts/` (forward + rollback) la hace un `export-*` **aparte**, no el loop.
+> Mutating SQL **stays in the session**; it is never moved to `docs/`. Its promotion to `docs/scripts/` (forward + rollback) is done by a separate `export-*`, never by the loop.
 
-## Gate de revisión de cierre (convenciones, pre-commit)
+## Closing review gate (conventions, pre-commit)
 
-Tras la validación (de la fase en plan-exec; de la tarea en quick, proporcional) y **antes de proponer sus commits** (también en un `Cerrar` anticipado, antes de proponer los commits pendientes), el diff pasa un **gate de revisión de cierre**:
+After validation (of the phase in plan-exec; of the task in quick, proportional) and **before proposing its commits** (also on an early `Cerrar`, before proposing the pending commits), the diff passes a **closing review gate**:
 
-- **Re-lectura independiente** del diff (subagente o re-lectura limpia — la *verificación independiente* del motor: no asume correcta la implementación; *only command output counts*).
-- **Aplica las convenciones ambientes instaladas** relevantes al stack tocado (estándares de código/stack, seguridad, revisión de diffs, familias propias del workspace) — el host las **auto-descubre por su `description`**. El workflow **no nombra ni bindea** skills concretas: **crea el momento; las skills instaladas lo llenan** (por eso la revisión **no es un rol** — ver [`../roles/README.md`](../roles/README.md)). Sin skills de convenciones instaladas → checklist genérico mínimo: SOLID/early-return, nombres claros, DRY, errores no silenciados, sin secrets/PII, SQL parametrizado, sin código muerto, + las `Validations` del plan (si las hay).
-- **Hallazgos**: se **corrigen** en el working tree y se **re-corre la validación** (el gate no reemplaza los tests: los re-verifica tras corregir), o se **difieren justificados** (→ `Open questions` del plan + `BACKLOG`; en quick, `BACKLOG`); lo no obvio → `DECISION`. Integridad del gate (ver [`CHASSIS.md`](CHASSIS.md) § *Verification-first*): nunca se debilita un check ni se baja una convención para pasar.
-- **Artifact-first + verification-first**: `CHECKPOINT.Next = "review <fase/tarea>"` antes de la pasada; `SESSION.Success criteria` incluye desde el inicio "el diff pasó el gate de revisión antes de sus commits".
+- **Independent re-read** of the diff (subagent or clean re-read — the engine's *independent verification*: it does not assume the implementation is correct; *only command output counts*).
+- **Apply the installed ambient conventions** relevant to the touched stack (code/stack standards, security, diff review, the workspace's own families) — the host **auto-discovers them by `description`**. The workflow **names and binds no** concrete skill: **it creates the moment; the installed skills fill it** (that is why review is **not a role** — see [`../roles/README.md`](../roles/README.md)). With no convention skills installed → minimal generic checklist: SOLID/early-return, clear names, DRY, no silenced errors, no secrets/PII, parametrized SQL, no dead code, + the plan's `Validations` (if any).
+- **Findings**: **fix** them in the working tree and **re-run validation** (the gate does not replace the tests: it re-verifies after fixing), or **defer them justified** (→ the plan's `Open questions` + `BACKLOG`; in quick, `BACKLOG`); the non-obvious → `DECISION`. Gate integrity (see [`CHASSIS.md`](CHASSIS.md) § *Verification-first*): never weaken a check or lower a convention to pass.
+- **Artifact-first + verification-first**: `CHECKPOINT.Next = "review <phase/task>"` before the pass; `SESSION.Success criteria` includes from the start "the diff passed the review gate before its commits".
 
-Recién con el gate en verde se proponen los commits.
+Only with the gate green are the commits proposed.
 
-## Localización
+## Location
 
-Igual que el chasis: los loops que editan código lo referencian como `../CODE-POLICIES.md` (instalación normal, árbol `w/loops/`); en instalaciones **aplanadas** (p. ej. Warp/Oz) puede estar como `CODE-POLICIES.md` **junto al `SKILL.md` del loop**.
+Same as the chassis: code-editing loops reference it as `../CODE-POLICIES.md` (normal install, `w/loops/` tree); in **flattened** installs it may sit as `CODE-POLICIES.md` **next to the loop's `SKILL.md`** (chassis § *Reference resolution*).

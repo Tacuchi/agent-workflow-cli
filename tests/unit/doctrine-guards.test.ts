@@ -175,9 +175,9 @@ describe("Doctrine guards — G5 · canonical ## Inherits form", () => {
   // One exact short form per loop kind. The old per-loop paraphrases of the
   // engine index drifted silently; the canonical string cannot.
   const DOC_LOOP_INHERITS =
-    "Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **siempre antes** de estos deltas. *(Si `../` no resuelve: `CHASSIS.md` junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*";
+    "Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **always before** these deltas. *(If `../` does not resolve: `CHASSIS.md` next to this file — global layout rule, chassis § Reference resolution.)*";
   const CODE_LOOP_INHERITS =
-    "Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **y** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** — las *Políticas de loops que editan código* — **siempre antes** de estos deltas. *(Si `../` no resuelve: mismos nombres junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*";
+    "Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **and** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** — the *code-editing loop policies* — **always before** these deltas. *(If `../` does not resolve: same names next to this file — global layout rule, chassis § Reference resolution.)*";
   const DOC_LOOPS = ["spec-refine-loop", "plan-new-loop", "plan-refine-loop"];
   const CODE_LOOPS = ["plan-exec-loop", "quick-loop"];
 
@@ -198,7 +198,39 @@ describe("Doctrine guards — G5 · canonical ## Inherits form", () => {
 
   it("the global layout-resolution rule lives in the chassis (single source)", async () => {
     const chassis = await readRel(join("loops", "CHASSIS.md"));
-    expect(chassis).toContain("Resolución de referencias");
+    expect(chassis).toContain("Reference resolution");
     expect(chassis).toContain("w-<loop>");
+  });
+});
+
+describe("Doctrine guards — G3 · language policy (English doctrine)", () => {
+  // Post language-migration (informe 003, wave 2) the doctrine is English.
+  // User-facing Spanish is allowed ONLY inside code fences (output templates,
+  // examples, canonical labels) and inline code spans (`Compactar`, `Cerrar`,
+  // `Guardar plan`, `▸ DESCARTÓ`, …). Any Spanish diacritic in bare prose is
+  // a patchwork regression — the informe-003 problem #1 reborn.
+  const SPANISH_MARKS = /[áéíóúñÁÉÍÓÚÑ¿¡]/;
+
+  it("no Spanish diacritics outside code fences and inline code in skills/w/**.md", async () => {
+    const targets: string[] = [join(SKILL_ROOT, "SKILL.md"), join(SKILL_ROOT, "README.md")];
+    for (const sub of ["commands", "loops", "exports", "roles", "artifacts", "harness", "hooks"]) {
+      targets.push(...(await listMdFiles(join(SKILL_ROOT, sub))));
+    }
+    const offenders: string[] = [];
+    for (const file of targets) {
+      const rel = file.slice(SKILL_ROOT.length + 1);
+      const lines = (await readFile(file, "utf8")).split(/\r?\n/);
+      let fence = false;
+      lines.forEach((line, i) => {
+        if (/^\s*(```|~~~)/.test(line)) {
+          fence = !fence;
+          return;
+        }
+        if (fence) return;
+        const bareProse = line.replace(/`[^`]*`/g, "");
+        if (SPANISH_MARKS.test(bareProse)) offenders.push(`${rel}:${i + 1}`);
+      });
+    }
+    expect(offenders).toEqual([]);
   });
 });

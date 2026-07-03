@@ -1,6 +1,6 @@
 ---
-description: Convierte la carpeta actual en un workspace de agent-workflow (scaffolding .workflow/ + docs/ + WORKSPACE block + skills.toml). Reemplaza hub-init + project-init — sin distinción project/hub. Correr una vez antes de cualquier flujo; idempotente.
-argument-hint: --source alias:path[:rama] [--proyecto <nombre>] [--main-branch <rama>] [--dry-run]
+description: Turns the current folder into an agent-workflow workspace (scaffolding .workflow/ + docs/ + WORKSPACE block + skills.toml). Replaces hub-init + project-init — no project/hub distinction. Run once before any flow; idempotent.
+argument-hint: --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run]
 allowed-tools:
   [
     "Bash",
@@ -10,30 +10,30 @@ allowed-tools:
   ]
 ---
 
-# workspace-init — bootstrap del workspace
+# workspace-init — workspace bootstrap
 
-Corre `aw workspace-init` para convertir la carpeta actual en un workspace de agent-workflow. Un workspace tiene **1+ fuentes** (repos); "standalone" = una sola fuente. No hay modos project/hub — el modelo es unificado.
+Runs `aw workspace-init` to turn the current folder into an agent-workflow workspace. A workspace has **1+ sources** (repos); "standalone" = a single source. There are no project/hub modes — the model is unified.
 
 ```bash
-aw workspace-init --source alias:path[:rama] [--proyecto <nombre>] [--main-branch <rama>] [--dry-run]
+aw workspace-init --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run]
 ```
 
-## Pasos interactivos
+## Interactive steps
 
-1. **Detectar/confirmar fuentes** — el CLI detecta la/s ruta/s de repo; el usuario confirma aliases, paths y ramas. Se acepta `--source` múltiple.
-2. **Elegir skills por defecto** — se presenta el catálogo de capacidades (roles) disponibles. Para cada rol: `built-in default`, override a skill de tercero (`skills.sh`), o `off`. Resultado escrito en `.workflow/skills.toml`. La cascada de config es: `built-in → ~/.workflow/skills.toml (global) → .workflow/skills.toml (workspace)`.
-3. **Escribir scaffolding** — crea `.workflow/sessions/`, `docs/` con su taxonomía (`specs/`, `plans/`, `scripts/`, `manuals/`, `diagrams/`, `reports/`), el bloque `WORKSPACE` en `CLAUDE.md`/`AGENTS.md` (fuentes + metadatos), y `.workflow/skills.toml`.
-4. **Multi-fuente** — si hay ≥2 fuentes, configura visibilidad multi-root (settings.local.json + config, gitignored) y reconcilia fuentes.
+1. **Detect/confirm sources** — the CLI detects the repo path(s); the user confirms aliases, paths and branches. Multiple `--source` accepted.
+2. **Pick default skills** — the catalog of available capabilities (roles) is presented. Per role: `built-in default`, override to a third-party skill (`skills.sh`), or `off`. The result is written to `.workflow/skills.toml`. Config cascade: `built-in → ~/.workflow/skills.toml (global) → .workflow/skills.toml (workspace)`.
+3. **Write the scaffolding** — creates `.workflow/sessions/`, `docs/` with its taxonomy (`specs/`, `plans/`, `scripts/`, `manuals/`, `diagrams/`, `reports/`), the `WORKSPACE` block in CLAUDE.md/AGENTS.md (sources + metadata), and `.workflow/skills.toml`.
+4. **Multi-source** — with ≥2 sources, configures multi-root visibility (settings.local.json + config, gitignored) and reconciles sources.
 
-Al terminar, el usuario puede correr `/w:spec-new`, `/w:plan-new` o `/w:quick` directamente.
+When done, the user can run `/w:spec-new`, `/w:plan-new` or `/w:quick` directly.
 
-**Idempotente**: re-ejecutar reconcilia (no duplica entradas ni sobrescribe configuración manual).
+**Idempotent**: re-running reconciles (no duplicate entries, no overwriting manual configuration).
 
 ## Plan mode
 
-Resuelve las fuentes y describe el scaffolding que crearía, sin escribir archivos. Muestra qué crearía en `.workflow/` y `docs/`, y qué escribiría en `CLAUDE.md`.
+Resolves the sources and describes the scaffolding it would create, without writing files. Shows what it would create under `.workflow/` and `docs/`, and what it would write into CLAUDE.md.
 
 ## Resources
 
 - Design reference: `docs/referencias/workflow-commands/workspace-init.md`
-- Skills config: `docs/referencias/workflow-roles/` (capacidades/roles disponibles y cascada de binding)
+- Skills config: `docs/referencias/workflow-roles/` (available capabilities/roles and the binding cascade)

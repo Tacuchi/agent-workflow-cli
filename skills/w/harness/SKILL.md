@@ -1,88 +1,89 @@
 ---
 name: harness
 description: >-
-  Harness-agnostic capability layer for agent-workflow. Read-and-follow doc (no es
-  invocable por nombre): define el contrato que mantiene a la herramienta agnóstica al
-  arnés (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp/Oz, genérico) sin renunciar a las
-  capacidades ricas de cada uno. Cataloga las capacidades de las que depende el
-  workflow, las liga al mecanismo concreto de cada arnés (binding matrix), y fija los
-  dos principios (capacidad-no-tool · progressive-enhancement). Referenciado desde
-  SKILL.md (overview) y los loops cuando nombran structured-choice / compaction.
+  Harness-agnostic capability layer for agent-workflow. Read-and-follow doc (not
+  invocable by name): defines the contract that keeps the tool harness-agnostic
+  (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp/Oz, generic) without
+  giving up each harness's rich capabilities. Catalogs the capabilities the workflow
+  depends on, binds each to the concrete mechanism of every harness (binding matrix),
+  and fixes the two principles (capability-not-tool · progressive-enhancement).
+  Referenced from SKILL.md (overview) and the loops when they name structured-choice /
+  compaction.
 ---
 
-# harness — capa de capacidades agnóstica al arnés (cross-cutting)
+# harness — harness-agnostic capability layer (cross-cutting)
 
-Doc de **lectura y seguimiento** (no se invoca por nombre). Aquí vive el contrato que mantiene a agent-workflow **agnóstico al arnés** (Claude Code, Codex, opencode, Gemini CLI, …) sin renunciar a las capacidades ricas de cada uno. Referenciado desde `../SKILL.md` (overview) y desde los loops cuando nombran una capacidad (`structured-choice`, `compaction`, …).
+**Read-and-follow** doc (never invoked by name). Here lives the contract that keeps agent-workflow **harness-agnostic** (Claude Code, Codex, opencode, Gemini CLI, …) without giving up each harness's rich capabilities. Referenced from `../SKILL.md` (overview) and from the loops when they name a capability (`structured-choice`, `compaction`, …).
 
-## El problema
+## The problem
 
-La doctrina (comandos + loops + artefactos) describe **qué** hace la IA, no **con qué tool** de un arnés concreto. El vocabulario natural arrastra mecanismos específicos de Claude Code —`AskUserQuestion`, `/compact`, `$ARGUMENTS`, `Task`/`Agent`— como si fueran universales. Este documento los abstrae: la doctrina referencia **capacidades**; aquí se mapea cada capacidad al **mecanismo concreto** de cada arnés.
+The doctrine (commands + loops + artifacts) describes **what** the AI does, never **with which tool** of a concrete harness. Natural vocabulary drags in Claude-Code-specific mechanisms — `AskUserQuestion`, `/compact`, `$ARGUMENTS`, `Task`/`Agent` — as if they were universal. This document abstracts them: the doctrine references **capabilities**; here each capability maps to each harness's **concrete mechanism**.
 
-## Dos principios
+## Two principles
 
-1. **Capacidad, no tool.** Los loops/comandos nombran una **capacidad** abstracta (ej. *structured-choice*, *compaction*). Una sola tabla —esta— la liga al mecanismo de cada arnés. Cambiar de arnés = cambiar de columna, no de doctrina.
-2. **Progressive enhancement.** Usá el mecanismo **más rico** que ofrezca el arnés; **degradá** a un fallback universal cuando no exista. Así se cumple a la vez "agnóstica al arnés" **y** "aprovechar las capacidades de cada uno".
+1. **Capability, not tool.** Loops/commands name an abstract **capability** (e.g. *structured-choice*, *compaction*). A single table — this one — binds it to each harness's mechanism. Switching harness = switching column, never doctrine.
+2. **Progressive enhancement.** Use the **richest** mechanism the harness offers; **degrade** to a universal fallback when it does not exist. That satisfies both "harness-agnostic" **and** "leverage each harness".
 
-> **Simetría con la cascada de skills (`.workflow/skills.toml`):** esa categoría liga **roles → skills** por config; esta liga **capacidades → mecanismos del arnés** por detección. Mismo patrón (binding + default), distinto eje: una es *qué saber compone el loop*, la otra es *con qué primitivas del host se ejecuta*.
+> **Symmetry with the skills cascade (`.workflow/skills.toml`):** that category binds **roles → skills** by config; this one binds **capabilities → harness mechanisms** by detection. Same pattern (binding + default), different axis: one is *what knowledge the loop composes*, the other is *which host primitives execute it*.
 
 ## Capability catalog
 
-Las capacidades de las que depende el harness, con su fallback universal (lo que se usa si el arnés no ofrece algo mejor):
+The capabilities the harness layer depends on, with their universal fallback (what is used when the harness offers nothing better):
 
-| Capability | Qué necesita el workflow | Fallback universal (mínimo común) |
+| Capability | What the workflow needs | Universal fallback (lowest common) |
 |---|---|---|
-| **command-invocation** | el usuario dispara un flujo por nombre (`spec-new`, `plan-exec`, …) | el usuario escribe "corré el procedimiento `<cmd>`" y la IA lee su doc |
-| **procedure-loading** | cargar la doctrina de un loop/comando | la IA **lee el `.md`** del loop y lo sigue (read-and-follow) |
-| **structured-choice** | preguntar al humano ≤3 preguntas de contenido **+ siempre** un control `flow` (`Compactar`/`Cerrar`) por un canal lateral | pregunta en **markdown numerado** en el chat; el control `flow` se ofrece como una opción más |
-| **compaction** | encoger el contexto sin perder el hilo | escribir `CHECKPOINT` y pedir al usuario reiniciar el contexto y reanudar (resume keya off `CHECKPOINT`) |
-| **subagent-dispatch** | *(opcional)* paralelizar breadth de research | research **inline secuencial** en la misma session (es el default igual) |
-| **persistent-context** | bloque `WORKSPACE` + convenciones siempre presentes | archivo de contexto del repo (**`AGENTS.md`** estándar; `CLAUDE.md` en Claude Code) |
-| **external-data** | lecturas read-only de BD u otras fuentes para research/validación | **MCP** (ampliamente soportado); si no hay, el gap se degrada a pregunta-al-humano |
-| **dry-run / preview** | previsualizar lo que haría un comando sin escribir | el comando **describe** el cambio en vez de aplicarlo (ej. `spec-new` lista el borrador sin crear el archivo) |
+| **command-invocation** | the user triggers a flow by name (`spec-new`, `plan-exec`, …) | the user writes "run the `<cmd>` procedure" and the AI reads its doc |
+| **procedure-loading** | load a loop's/command's doctrine | the AI **reads the `.md`** of the loop and follows it (read-and-follow) |
+| **structured-choice** | ask the human ≤3 content questions **+ always** a `flow` control (`Compactar`/`Cerrar`) through a side channel | a **numbered markdown** question in chat; the `flow` control is offered as one more option |
+| **compaction** | shrink the context without losing the thread | write `CHECKPOINT` and ask the user to restart the context and resume (resume keys off `CHECKPOINT`) |
+| **subagent-dispatch** | *(optional)* parallelize research breadth | **inline sequential** research in the same session (the default anyway) |
+| **persistent-context** | the `WORKSPACE` block + conventions always present | the repo's context file (standard **`AGENTS.md`**; `CLAUDE.md` on Claude Code) |
+| **external-data** | read-only DB reads or other sources for research/validation | **MCP** (widely supported); without it, the gap degrades to a human question |
+| **dry-run / preview** | preview what a command would do without writing | the command **describes** the change instead of applying it (e.g. `spec-new` lists the draft without creating the file) |
 
-> **Las capacidades `must` para el ciclo de un loop son solo dos**: `structured-choice` y `compaction`. Ambas degradan a un fallback puramente textual → **cualquier** arnés con chat + sistema de archivos corre el modelo completo. El resto (subagents, MCP, slash commands, skills nativas) es *enhancement*.
+> **Only two capabilities are `must` for a loop's cycle**: `structured-choice` and `compaction`. Both degrade to a purely textual fallback → **any** harness with chat + a filesystem runs the full model. The rest (subagents, MCP, slash commands, native skills) is *enhancement*.
 
 ## Harness binding matrix
 
-Mecanismo concreto por arnés (**jul-2026**, verificado contra docs oficiales; `~` parcial). Antigravity CLI reusa las superficies de Gemini (`~/.gemini/`); Oz reusa las de Warp (comparte columna **Warp / Oz**, con MCP por flag — ver la nota al pie de la matriz).
+Concrete mechanism per harness (**Jul-2026**, verified against official docs; `~` partial). Antigravity CLI reuses Gemini's surfaces (`~/.gemini/`); Oz reuses Warp's (they share the **Warp / Oz** column, with MCP via flag — see the note under the matrix).
 
-| Capability | Claude Code | Codex | Gemini / Antigravity | OpenCode | Crush | Warp / Oz | Genérico |
+| Capability | Claude Code | Codex | Gemini / Antigravity | OpenCode | Crush | Warp / Oz | Generic |
 |---|---|---|---|---|---|---|---|
-| command-invocation | `.claude/commands/` (slash) | slash + skills | `.gemini/commands/*.toml` | `.opencode/command/` | skills user-invocable | Workflows (Drive) | texto |
+| command-invocation | `.claude/commands/` (slash) | slash + skills | `.gemini/commands/*.toml` | `.opencode/command/` | user-invocable skills | Workflows (Drive) | text |
 | procedure-loading (skills) | `SKILL.md` `.claude/skills` | `SKILL.md` `.agents/skills` | `SKILL.md` (agentskills) | `SKILL.md` `.opencode`+`.claude`+`.agents` | `SKILL.md` `.agents`+`.crush`+`.claude` | `SKILL.md` `.agents`+`.warp`+`.claude` | read-and-follow `.md` |
-| structured-choice | `AskUserQuestion` (**solo main-agent**) | — | — | — | — | — | markdown numerado |
+| structured-choice | `AskUserQuestion` (**main-agent only**) | — | — | — | — | — | numbered markdown |
 | compaction | `/compact` | Pre/PostCompact hooks | ~ | `session.compacted` | ~ | ~ | CHECKPOINT + resume |
-| subagent-dispatch | `Task` (paralelo) | `SubagentStart` / agents | agents (`.gemini/agents`) | `.opencode/agent/*.md` | ~ | ~ (cloud agents) | inline |
-| persistent-context | `CLAUDE.md` (**no** lee AGENTS.md → symlink) | `AGENTS.md` | `GEMINI.md` + `AGENTS.md` | `AGENTS.md` | `CRUSH.md` + `AGENTS.md` | `AGENTS.md` (auto) | `AGENTS.md` |
-| external-data (MCP) | `.mcp.json` | `.codex/config.toml` `[mcp_servers]` | `settings.json` `mcpServers` | `opencode.json` `mcp` | `crush.json` `mcp` | `.warp/.mcp.json` (+autodescubre `.mcp.json`) · Oz: flag `--mcp` | — |
-| **enforcement (deny tool)** | `PreToolUse` → `permissionDecision:deny` / exit 2 | `PreToolUse` (**≈mismo protocolo**) | `BeforeTool` → `decision:deny` / exit 2 | plugin `tool.execute.before` (`throw`) | `allowed_tools` (+ hooks preliminares) | allow/deny lists (**grueso**) | doctrina (git-safe #5) |
-| plugin / dist | `.claude-plugin` + marketplace | `.codex-plugin` + `/plugins` marketplace | Extension `gemini-extension.json` | plugin JS/TS (npm) | MCP + skills + config | Warp Drive | — |
+| subagent-dispatch | `Task` (parallel) | `SubagentStart` / agents | agents (`.gemini/agents`) | `.opencode/agent/*.md` | ~ | ~ (cloud agents) | inline |
+| persistent-context | `CLAUDE.md` (does **not** read AGENTS.md → symlink) | `AGENTS.md` | `GEMINI.md` + `AGENTS.md` | `AGENTS.md` | `CRUSH.md` + `AGENTS.md` | `AGENTS.md` (auto) | `AGENTS.md` |
+| external-data (MCP) | `.mcp.json` | `.codex/config.toml` `[mcp_servers]` | `settings.json` `mcpServers` | `opencode.json` `mcp` | `crush.json` `mcp` | `.warp/.mcp.json` (+auto-discovers `.mcp.json`) · Oz: `--mcp` flag | — |
+| **enforcement (deny tool)** | `PreToolUse` → `permissionDecision:deny` / exit 2 | `PreToolUse` (**≈same protocol**) | `BeforeTool` → `decision:deny` / exit 2 | plugin `tool.execute.before` (`throw`) | `allowed_tools` (+ preliminary hooks) | allow/deny lists (**coarse**) | doctrine (git-safe #5) |
+| plugin / dist | `.claude-plugin` + marketplace | `.codex-plugin` + `/plugins` marketplace | Extension `gemini-extension.json` | JS/TS plugin (npm) | MCP + skills + config | Warp Drive | — |
 
-> **Notas (investigación de campo jul-2026):** las **skills `SKILL.md`** son la unidad portable **universal** — **los seis** arneses las soportan (Codex las agregó Dic-2025; **`.agents/skills` es el ancla cross-host**, leída por Codex/OpenCode/Crush/Warp). La **elección estructurada** (`AskUserQuestion`) sigue siendo **solo Claude Code / main-agent** → en el resto `structured-choice` degrada a markdown numerado. La **capa de enforcement** (fila nueva) ya **NO es exclusiva de Claude**: Codex + Gemini usan un protocolo casi idéntico (`permissionDecision:deny` / exit 2) y OpenCode bloquea vía `throw` en un plugin JS; Crush/Warp solo ofrecen allow/deny **grueso** (sin lógica custom por comando) → en ellos las convenciones quedan **advisory** + listas allow/deny. El **plan mode** enforced no se confía para safety; el git-safe (invariante #5) es propio. **MCP** es universal (cada host su archivo/clave). El **piso garantizado** (última columna) corre el modelo completo.
+> **Notes (field research Jul-2026):** **`SKILL.md` skills** are the **universal** portable unit — **all six** harnesses support them (Codex added them Dec-2025; **`.agents/skills` is the cross-host anchor**, read by Codex/OpenCode/Crush/Warp). **Structured choice** (`AskUserQuestion`) remains **Claude Code / main-agent only** → elsewhere `structured-choice` degrades to numbered markdown. The **enforcement layer** (new row) is **NO longer Claude-exclusive**: Codex + Gemini use a near-identical protocol (`permissionDecision:deny` / exit 2) and OpenCode blocks via `throw` in a JS plugin; Crush/Warp only offer **coarse** allow/deny (no custom per-command logic) → there, conventions stay **advisory** + allow/deny lists. Enforced **plan mode** is never trusted for safety; git-safe (invariant #5) is our own. **MCP** is universal (each host its file/key). The **guaranteed floor** (last column) runs the full model.
 
-> **Oz (hermano cloud de Warp).** `oz agent run` es un orquestador de agentes en la nube que **reusa las superficies de Warp**: mismas skills (`.agents/skills`, aplanadas a top-level como Warp) y `AGENTS.md`, con `structured-choice` igual degradada a markdown numerado. Difiere en tres puntos: **detección** por `OZ_RUN_ID` (prioritaria sobre Warp si coexisten los marcadores); **MCP sin archivo de config** — emite el JSON por el flag `--mcp` de `oz agent run` (o la env `OZ_MCP_CONFIG`), no escribe `.warp/.mcp.json`; y **sin plugin ni hooks** (enforcement advisory, como Warp). Por eso comparte la columna **Warp / Oz** con esa salvedad de MCP.
+> **Oz (Warp's cloud sibling).** `oz agent run` is a cloud agent orchestrator that **reuses Warp's surfaces**: same skills (`.agents/skills`, flattened to top level like Warp) and `AGENTS.md`, with `structured-choice` equally degraded to numbered markdown. It differs in three points: **detection** via `OZ_RUN_ID` (takes priority over Warp when both markers coexist); **MCP without a config file** — the JSON is passed via the `--mcp` flag of `oz agent run` (or the `OZ_MCP_CONFIG` env), it never writes `.warp/.mcp.json`; and **no plugin or hooks** (advisory enforcement, like Warp). Hence it shares the **Warp / Oz** column with that MCP caveat.
 
 ## Leverage installed skills
 
-"Aprovechar las skills que el arnés tenga instaladas" se resuelve por el **mismo binding** de `.workflow/skills.toml`: un rol puede apuntar a una skill **instalada en el host** (de tercero, vía skills.sh) en vez del built-in. Regla:
+"Leverage whatever skills the harness has installed" resolves through the **same** `.workflow/skills.toml` binding: a role can point at a skill **installed on the host** (third-party, via skills.sh) instead of the built-in. Rule:
 
-- Si el host tiene una skill **mejor** para un rol (ej. un generador de diagramas superior para `diagrams`, o un investigador especializado para `research`), se la **bindea** en `.workflow/skills.toml` y el loop la compone sin cambios.
-- El built-in default es el **piso**, no el techo: garantiza que el rol funcione en cualquier host; el binding lo **enriquece** donde el host puede más.
+- If the host has a **better** skill for a role (e.g. a superior diagram generator for `diagrams`, or a specialized investigator for `research`), **bind it** in `.workflow/skills.toml` and the loop composes it unchanged.
+- The built-in default is the **floor**, not the ceiling: it guarantees the role works on any host; the binding **enriches** it where the host can do more.
 
-## Convención para el resto del corpus
+## Convention for the rest of the corpus
 
-- Los loops/comandos referencian la **capacidad** por nombre (ej. "*structured-choice* (ver `harness/SKILL.md`)"), **no** el tool concreto.
-- El nombre histórico `AskUserQuestion` se conserva **solo** como el binding Claude-Code de `structured-choice` (esta tabla), no como vocabulario de la doctrina.
-- El control de ciclo de vida `flow` (`Compactar`/`Cerrar`) es parte de la capacidad `structured-choice`, no de un tool: en arneses sin elección estructurada se ofrece como una opción textual más.
+- Loops/commands reference the **capability** by name (e.g. "*structured-choice* (see `harness/SKILL.md`)"), **never** the concrete tool.
+- The historical name `AskUserQuestion` survives **only** as the Claude-Code binding of `structured-choice` (this table), never as doctrine vocabulary.
+- The `flow` lifecycle control (`Compactar`/`Cerrar`) belongs to the `structured-choice` capability, not to a tool: on harnesses without structured choice it is offered as one more textual option.
 
 ## Distribution (install-time)
 
-Patrón probado (Spec Kit, 30+ agentes): **una fuente canónica** + generar/symlinkear a los dirs por-arnés en la instalación (`.claude/`, `.codex/`, `.gemini/`, …). agent-workflow ya lo hace vía `aw self install-skill`. Convención recomendada: **`AGENTS.md` canónico + `CLAUDE.md` symlink** (Claude Code no lee `AGENTS.md` nativo; el resto sí).
+Proven pattern (Spec Kit, 30+ agents): **one canonical source** + generate/symlink into the per-harness dirs at install (`.claude/`, `.codex/`, `.gemini/`, …). agent-workflow already does this via `aw self install-skill`. Recommended convention: **canonical `AGENTS.md` + `CLAUDE.md` symlink** (Claude Code does not read `AGENTS.md` natively; the rest do).
 
 ## Command packaging (harness-specific)
 
-El **contrato** de cada comando (Flow, Trigger, Input, Mode, …) es agnóstico. El **archivo** que el arnés ejecuta envuelve ese contrato en su formato nativo: Claude Code = slash-command con frontmatter (`description`, `argument-hint`, `allowed-tools`) + cuerpo que invoca la skill o el `aw` CLI; Codex = slash-command o skill; Gemini/Antigravity = `.gemini/commands/*.toml`; OpenCode = `.opencode/command/*.md`; Crush/Warp = la **skill misma** invocable. El **fallback universal** es *skill-as-command*: como los seis arneses cargan skills, la doctrina siempre corre aunque el host no tenga comandos nativos. El contrato no cambia; el envoltorio sí (otra columna).
+Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The **file** the harness executes wraps that contract in its native format: Claude Code = slash command with frontmatter (`description`, `argument-hint`, `allowed-tools`) + a body that invokes the skill or the `aw` CLI; Codex = slash command or skill; Gemini/Antigravity = `.gemini/commands/*.toml`; OpenCode = `.opencode/command/*.md`; Crush/Warp = the invocable **skill itself**. The **universal fallback** is *skill-as-command*: since all six harnesses load skills, the doctrine always runs even without native commands. The contract never changes; the wrapper does (another column).
 
 ## Status
 
-Modelo de capacidades + matriz de binding **definidos** y **validados** con investigación de campo (**jul-2026**, contra docs oficiales). Cobertura **6 arneses reales** (familias; Warp/Oz cuenta como una, igual que Gemini/Antigravity): Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp/Oz — todos soportan `SKILL.md` (ancla `.agents/skills`) + MCP + `AGENTS.md`; enforcement determinista en Claude/Codex/Gemini/OpenCode, advisory + allow/deny grueso en Crush/Warp/Oz. El CLI (`aw`) implementa el registro (`domain/harnesses.ts`), los writers MCP por-host, `detect-hosts` e `install-skill --target <host>`. El piso universal (`AGENTS.md` + texto + archivos + skills) corre el modelo completo hoy.
+Capability model + binding matrix **defined** and **validated** with field research (**Jul-2026**, against official docs). Coverage: **6 real harnesses** (families; Warp/Oz counts as one, like Gemini/Antigravity): Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp/Oz — all support `SKILL.md` (anchor `.agents/skills`) + MCP + `AGENTS.md`; deterministic enforcement on Claude/Codex/Gemini/OpenCode, advisory + coarse allow/deny on Crush/Warp/Oz. The CLI (`aw`) implements the registry (`domain/harnesses.ts`), the per-host MCP writers, `detect-hosts` and `install-skill --target <host>`. The universal floor (`AGENTS.md` + text + files + skills) runs the full model today.

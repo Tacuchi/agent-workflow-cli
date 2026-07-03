@@ -1,5 +1,5 @@
 ---
-description: Genera manuales de usuario/operación en docs/manuals/ consolidando sesiones, DECISION, plan-doc y código fuente. Single-pass, explícito.
+description: Generates user/operations manuals in docs/manuals/ consolidating sessions, DECISION, plan-doc and source code. Single-pass, explicit.
 argument-hint: [--sessions <ids>] [--mode <complement|regenerate>] [--dry-run]
 allowed-tools:
   [
@@ -9,21 +9,21 @@ allowed-tools:
   ]
 ---
 
-# export-manuals — exportar manuales
+# export-manuals — export manuals
 
-Consolida sesiones + artefactos `DECISION` + plan-doc (`Final behavior`) + código fuente y genera documentación de usuario/operación en `docs/manuals/`. Single-pass, read-only sobre sesiones.
+Consolidates sessions + `DECISION` artifacts + plan-doc (`Final behavior`) + source code and generates user/operations documentation in `docs/manuals/`. Single-pass, read-only over sessions.
 
-Para ejecutar: **leé** `../exports/export-manuals/SKILL.md` y **seguí** sus instrucciones con `$ARGUMENTS` como input. No intentes `Skill: export-manuals` (no está registrada por nombre); el SKILL.md hermano es el cuerpo de este export.
+To run: **read** `../exports/export-manuals/SKILL.md` and **follow** its instructions with `$ARGUMENTS` as input. Do not try `Skill: export-manuals` (it is not registered by name); the sibling SKILL.md is this export's body.
 
-## Qué produce
+## What it produces
 
-- `docs/manuals/`: manuales consolidados, cross-session, dedup.
-- **No** muta sesiones ni abre/cierra loops.
-- Solo escribe en `docs/manuals/`.
+- `docs/manuals/`: consolidated, cross-session, deduplicated manuals.
+- Does **not** mutate sessions nor open/close loops.
+- Writes only `docs/manuals/`.
 
 ## Plan mode
 
-Describe el alcance de los manuales que generaría (secciones, sesiones fuente) sin escribir archivos.
+Describes the scope of the manuals it would generate (sections, source sessions) without writing files.
 
 ## Resources
 

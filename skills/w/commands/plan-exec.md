@@ -1,5 +1,5 @@
 ---
-description: Inicia o retoma el loop de ejecución (plan-exec-loop) sobre un plan existente. Aquí ocurre el trabajo real: edición de código, scripts SQL propuestos, herramientas creadas. Git-safe.
+description: Starts or resumes the execution loop (plan-exec-loop) over an existing plan. The real work happens here - code edits, proposed SQL scripts, created tools. Git-safe.
 argument-hint: <docs/plans/PPP-plan-<slug>.md>
 allowed-tools:
   [
@@ -10,37 +10,37 @@ allowed-tools:
   ]
 ---
 
-# plan-exec — trampolín al loop de ejecución
+# plan-exec — trampoline to the execution loop
 
-Arranca o retoma `plan-exec-loop` (Layer 2), que ejecuta el trabajo real fase por fase. El plan (`docs/plans/PPP-plan-<slug>.md`) es un documento vivo que el loop mantiene actualizado (estado de fases y tareas).
+Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase by phase. The plan (`docs/plans/PPP-plan-<slug>.md`) is a living document the loop keeps updated (phase and task state).
 
-## Ejecutar el loop
+## Run the loop
 
-`plan-exec-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
+`plan-exec-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
 
-1. **Leé** `../loops/plan-exec-loop/SKILL.md` (dentro de la skill `w` instalada — p. ej. `~/.claude/skills/w/loops/…`).
-2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como input: detecta CHECKPOINT/resume, ejecuta fase por fase (git-safe, BD solo-scripts), mantiene el plan vivo y reporta.
+1. **Read** `../loops/plan-exec-loop/SKILL.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
+2. **Follow** its instructions taking `$ARGUMENTS` as input: it detects CHECKPOINT/resume, executes phase by phase (git-safe, DB scripts-only), keeps the plan alive and reports.
 
-> No intentes `Skill: plan-exec-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.
+> Do not try `Skill: plan-exec-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
 
-## Qué hace el loop (resumen)
+## What the loop does (summary)
 
-- Lee y actualiza `docs/plans/PPP-plan-<slug>.md` (living doc: estado de fases/tareas).
-- Edita código en las fuentes del workspace (una sola sesión de ejecución para el run; la ejecución sigue siendo fase por fase, solo que no hay sesión por fase).
-- Si crea una herramienta/utilidad, la documenta la skill ambiente `creating-tools` en `docs/tools/` (auto-descubierta; el workflow no la bindea).
-- **Gate de revisión de cierre** en cada límite de fase, **antes de proponer los commits**: re-lee el diff (pasada independiente) aplicando las **convenciones ambientes instaladas** y corrige o difiere hallazgos — nada llega a un commit sin revisar (ver `../loops/plan-exec-loop/SKILL.md` § *Delta 5*).
-- Propone commits por fuente (git-safe: verifica rama, propone, nunca push/--amend/--no-verify).
-- Genera artefactos de sesión (`DECISION`, `SCRIPTS.sql`) en `.workflow/sessions/`.
-- **No exporta** a `docs/scripts`, `docs/manuals`, `docs/diagrams`, `docs/reports` — eso lo hacen los `export-*` como paso aparte.
-- Scripts de BD (migraciones) van a `SCRIPTS.sql` tipo B; la IA **nunca ejecuta DML/DDL**, solo lecturas read-only vía MCP.
+- Reads and updates `docs/plans/PPP-plan-<slug>.md` (living doc: phase/task state).
+- Edits code in the workspace sources (a single execution session per run; execution is still phase by phase, there is just no session per phase).
+- If it creates a tool/utility, the ambient `creating-tools` skill documents it in `docs/tools/` (auto-discovered; the workflow does not bind it).
+- **Closing review gate** at every phase boundary, **before proposing the commits**: re-reads the diff (independent pass) applying the **installed ambient conventions** and fixes or defers findings — nothing reaches a commit unreviewed (see `../loops/plan-exec-loop/SKILL.md` § *Delta 5*).
+- Proposes commits per source (git-safe: verifies the branch, proposes, never push/--amend/--no-verify).
+- Generates session artifacts (`DECISION`, `SCRIPTS.sql`) under `.workflow/sessions/`.
+- **Never exports** to `docs/scripts`, `docs/manuals`, `docs/diagrams`, `docs/reports` — the `export-*` do that as a separate step.
+- DB scripts (migrations) go to `SCRIPTS.sql` type B; the AI **never executes DML/DDL**, only read-only reads via MCP.
 
 ## Resumable
 
-Mismo patrón que los demás loops: detecta CHECKPOINT existente y continúa desde ahí.
+Same pattern as the other loops: it detects an existing CHECKPOINT and continues from there.
 
 ## Plan mode
 
-El skill describe fase por fase lo que ejecutaría, qué archivos tocaría, y qué commits propondría, sin aplicar cambios.
+The skill describes, phase by phase, what it would execute, which files it would touch, and which commits it would propose, without applying changes.
 
 ## Resources
 

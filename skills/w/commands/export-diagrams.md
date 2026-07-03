@@ -1,5 +1,5 @@
 ---
-description: Genera diagramas C4/mermaid en docs/diagrams/ a partir del código fuente y el plan-doc (AS-IS/TO-BE). Single-pass, explícito.
+description: Generates C4/mermaid diagrams in docs/diagrams/ from the source code and the plan-doc (AS-IS/TO-BE). Single-pass, explicit.
 argument-hint: [--engine <mermaid|c4>] [--sessions <ids>] [--dry-run]
 allowed-tools:
   [
@@ -9,21 +9,21 @@ allowed-tools:
   ]
 ---
 
-# export-diagrams — exportar diagramas
+# export-diagrams — export diagrams
 
-Lee el código de las fuentes del workspace + el plan-doc (secciones `AS-IS`/`TO-BE`) y genera diagramas C4 / mermaid en `docs/diagrams/`. Single-pass, read-only sobre sesiones.
+Reads the workspace sources' code + the plan-doc (`AS-IS`/`TO-BE` sections) and generates C4 / mermaid diagrams in `docs/diagrams/`. Single-pass, read-only over sessions.
 
-Para ejecutar: **leé** `../exports/export-diagrams/SKILL.md` y **seguí** sus instrucciones con `$ARGUMENTS` como input. No intentes `Skill: export-diagrams` (no está registrada por nombre); el SKILL.md hermano es el cuerpo de este export.
+To run: **read** `../exports/export-diagrams/SKILL.md` and **follow** its instructions with `$ARGUMENTS` as input. Do not try `Skill: export-diagrams` (it is not registered by name); the sibling SKILL.md is this export's body.
 
-## Qué produce
+## What it produces
 
-- `docs/diagrams/`: diagramas C4 y/o mermaid, numerados, cross-session.
-- **No** muta sesiones ni abre/cierra loops.
-- Solo escribe en `docs/diagrams/`.
+- `docs/diagrams/`: C4 and/or mermaid diagrams, numbered, cross-session.
+- Does **not** mutate sessions nor open/close loops.
+- Writes only `docs/diagrams/`.
 
 ## Plan mode
 
-Describe los diagramas que generaría (tipo, componentes cubiertos) sin escribir archivos.
+Describes the diagrams it would generate (type, covered components) without writing files.
 
 ## Resources
 

@@ -1,101 +1,101 @@
 ---
 name: export-reports
-description: "Informe ejecutivo/funcional (audiencia gerencia/comité) que consolida N sesiones del workspace bajo `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. Lee el corpus: el spec (`docs/specs`), `CONCLUSIONS` (research), `DECISION`, el estado del plan-doc + el resto de `docs/` para contexto. Sintetiza: qué se hizo, decisiones clave, resultados/conclusiones, pendientes/roadmap — con dedup de recomendaciones cross-session. Audiencia ajustable vía `--audience` (gerencia ≈ corto; tecnica ≈ detallado). Funde el espíritu de los viejos export-report (ejecutivo) y export-conclusions (dedup de R-items) en una sola salida a `docs/reports`. Read-only/reporte: no commitea ni muta sesiones. La prosa sigue las convenciones de redacción ambientes (el host auto-aplica una skill de writing instalada si está presente). Úsalo para 'informe ejecutivo', 'qué se hizo este trimestre para gerencia', 'brief con recomendaciones consolidadas'. Invocado por el usuario vía `/w:export-reports`."
+description: "Executive/functional report (management/committee audience) consolidating N workspace sessions under `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. Reads the corpus: the spec (`docs/specs`), `CONCLUSIONS` (research), `DECISION`, the plan-doc state + the rest of `docs/` for context. Synthesizes: what was done, key decisions, results/conclusions, pending/roadmap — with cross-session recommendation dedup. Audience adjustable via `--audience` (gerencia ≈ short; tecnica ≈ detailed). Read-only/report: it never commits nor mutates sessions. The prose follows the ambient writing conventions (the host auto-applies an installed writing skill when present). Use for 'executive report', 'what got done this quarter for management', 'brief with consolidated recommendations'. User-invoked via `/w:export-reports`."
 ---
 
-# export-reports — Informe ejecutivo/funcional desde el corpus de sesiones + `docs/`
+# export-reports — executive/functional report from the session corpus + `docs/`
 
-Genera un único `.md` que consolida N sesiones del workspace en un informe **ejecutivo/funcional**: qué se hizo, decisiones clave, resultados/conclusiones y pendientes/roadmap. **Read-only / reporte** — no commitea, no muta sesiones ni el corpus.
+Generates a single `.md` consolidating N workspace sessions into an **executive/functional** report: what was done, key decisions, results/conclusions and pending/roadmap. **Read-only / report** — it never commits, never mutates sessions or the corpus.
 
-> Familia `export-*` (la única vía artefacto→`docs/`). **Funde** el espíritu de dos viejos exports en una sola salida a `docs/reports`: `export-report` (informe ejecutivo con tabla de componentes + diagrama de flujo) y `export-conclusions` (dedup de R-items cross-session). Modernizado: `docs/reports` en inglés, sin modos project/hub, y la prosa sigue las convenciones de redacción **ambientes** (el host auto-aplica una skill de writing instalada si está presente), no un rol propio. Diseño: `docs/referencias/workflow-exports/export-reports.md`.
+> `export-*` family (the only artifact→`docs/` path). It **merges** two legacy exports into one `docs/reports` output: the executive report and the cross-session recommendation dedup. Design: `docs/referencias/workflow-exports/export-reports.md`.
 
 ## Category
 
-`docs/reports` — **única** carpeta `docs/` que este export escribe.
+`docs/reports` — the **only** `docs/` folder this export writes.
 
-## Writing (convención ambiente, no rol)
+## Writing (ambient convention, not a role)
 
-La redacción del informe sigue las convenciones de redacción **ambientes**: el host auto-aplica una skill de writing instalada (si está presente) por su `description` — traducción técnico→ejecutiva, cota de longitud por audiencia, frases cortas, listas sobre prosa, sin relleno. Este export **no** compone un rol `writing` ni lo bindea; es **indiferente** a qué skill de redacción exista. Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el export **no depende** de él.
+The report's prose follows the **ambient** writing conventions: the host auto-applies an installed writing skill (when present) by its `description` — technical→executive translation, per-audience length cap, short sentences, lists over prose, no filler. This export does **not** compose or bind a `writing` role. Reports are user-facing deliverables → write them in the user's language.
 
 ## When to use
 
-- "Informe ejecutivo", "documento funcional", "qué se hizo este trimestre para gerencia".
-- Brief con las **recomendaciones consolidadas** (deduplicadas) de las últimas N sesiones.
-- Re-generar tras un nuevo período (mes / trimestre); antes de un comité de seguimiento.
+- "Executive report", "functional document", "what got done this quarter for management".
+- A brief with the **consolidated** (deduplicated) recommendations of the last N sessions.
+- Re-generate after a new period (month / quarter); before a follow-up committee.
 
 ## What it does
 
-1. Lee el corpus de sesiones filtrado: el spec (`docs/specs`), `CONCLUSIONS` (research), `DECISION`, el estado del plan-doc.
-2. Lee el resto de `docs/` (specs, plans, reports previos) para contexto.
-3. Resuelve la audiencia/longitud (`--audience`).
-4. Sintetiza: Resumen ejecutivo · Qué se hizo (agrupado por capacidad de negocio, no por sesión) · Decisiones clave · Resultados/conclusiones · Pendientes/Roadmap.
-5. **Deduplica** las recomendaciones (R-items) cross-session por slug, anotando los orígenes.
-6. Escribe `docs/reports/NNN-<slug>-YYYY-MM-DD.md`.
+1. Reads the filtered session corpus: the spec (`docs/specs`), `CONCLUSIONS` (research), `DECISION`, the plan-doc state.
+2. Reads the rest of `docs/` (specs, plans, previous reports) for context.
+3. Resolves the audience/length (`--audience`).
+4. Synthesizes: Executive summary · What was done (grouped by business capability, not by session) · Key decisions · Results/conclusions · Pending/Roadmap.
+5. **Deduplicates** the recommendations (R-items) cross-session by slug, annotating the origins.
+6. Writes `docs/reports/NNN-<slug>-YYYY-MM-DD.md`.
 
 ## What it does NOT do
 
-- Ejecutar commits, merges, push, SQL ni envío de correos / creación de PRs.
-- Mutar sesiones, el corpus ni el plan-doc (solo lectura).
-- Escribir cualquier carpeta `docs/` que no sea `docs/reports/` (invariante: una categoría).
-- Inventar logros, métricas o recomendaciones: las secciones condicionales (p.ej. "Oportunidades de mejora"/Roadmap) **solo** aparecen si el corpus tiene items abiertos detectables.
-- Generar diagramas técnicos avanzados (C4/erDiagram extenso) — esos viven en `export-diagrams`; aquí, como mucho, un `flowchart LR` simple de síntesis ejecutiva.
-- Sobrescribir reports previos (siempre next-number).
+- Run commits, merges, push, SQL, emails or PR creation.
+- Mutate sessions, the corpus or the plan-doc (read-only).
+- Write any `docs/` folder other than `docs/reports/` (invariant: one category).
+- Invent achievements, metrics or recommendations: conditional sections (e.g. "Improvement opportunities"/Roadmap) appear **only** when the corpus has detectable open items.
+- Generate advanced technical diagrams (extensive C4/erDiagram) — those live in `export-diagrams`; here, at most a simple executive-synthesis `flowchart LR`.
+- Overwrite previous reports (always next-number).
 
 ## Read-only sandbox
 
-En plan mode **describe**, no escribe: la audiencia/longitud resuelta, las sesiones del corpus que entrarían tras los filtros, las secciones que aparecerían, los R-items que se consolidarían (y conflictos detectados), y la longitud estimada. **No** ejecuta `Write` ni `aw next-number` con efecto.
+In plan mode it **describes**, never writes: the resolved audience/length, the corpus sessions that would enter after the filters, the sections that would appear, the R-items that would consolidate (and detected conflicts), and the estimated length. It does **not** run `Write` or effectful `aw next-number`.
 
 ## Inputs
 
-**CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
+**`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera + filtra el corpus.
-- `aw session-artifacts --code <NNN> --dump objetivo,conclusiones,decisiones` — devuelve `{path, content, size}` de `SESSION` (spec referido), `CONCLUSIONS` y `DECISION`; el estado del plan-doc se lee por su path.
-- `aw next-number docs/reports` — numeración determinística (la resolución de la carpeta destino la maneja el CLI).
+- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates + filters the corpus.
+- `aw session-artifacts --code <NNN> --dump objetivo,conclusiones,decisiones` — returns `{path, content, size}` for `SESSION` (referenced spec), `CONCLUSIONS` and `DECISION`; the plan-doc state is read by its path.
+- `aw next-number docs/reports` — deterministic numbering (the CLI handles destination-folder resolution).
 
 **Filesystem**:
 
-- `docs/specs`, `docs/plans`, `docs/reports/*` — contexto + no colisionar.
+- `docs/specs`, `docs/plans`, `docs/reports/*` — context + collision avoidance.
 
-**Args** (sin *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../../harness/SKILL.md`](../../harness/SKILL.md)):
+**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 
 ```
 /w:export-reports [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
                   [--audience gerencia|tecnica] [--slug <kebab>] [--dry-run]
 ```
 
-| Flag | Comportamiento |
+| Flag | Behavior |
 |---|---|
-| `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`) |
-| `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
-| `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
-| `--audience gerencia\|tecnica` | Modula longitud/léxico: `gerencia` ≈ corto/ejecutivo; `tecnica` ≈ detallado |
-| `--slug <kebab>` | Override del slug del filename (default: `export-reports`) |
-| `--dry-run` | Reporte propositivo sin escribir |
+| `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
+| `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
+| `--source <alias>` | Limits to one source (multi-source workspace) |
+| `--audience gerencia\|tecnica` | Modulates length/lexicon: `gerencia` ≈ short/executive; `tecnica` ≈ detailed |
+| `--slug <kebab>` | Filename slug override (default: `export-reports`) |
+| `--dry-run` | Propositional report, no writing |
 
-Sin args: todo el corpus, audiencia ejecutiva por default. *(Si algún flag exacto difiere en el CLI runtime, ajustar al contrato real de `aw`.)*
+No args: the whole corpus, executive audience by default.
 
 ## Flow
 
-### Paso 1 — Resolver contexto y filtrar corpus
+### Step 1 — Resolve context and filter the corpus
 
-`aw sessions` / `release-data` aplicando `--sessions`/`--since`/`--source`. Si el conjunto resultante está vacío → **abortar** con mensaje explícito ("No hay sesiones en el rango declarado"). La resolución de la carpeta destino la maneja el CLI.
+`aw sessions` / `release-data` applying `--sessions`/`--since`/`--source`. If the resulting set is empty → **abort** with an explicit message (no sessions in the declared range). The CLI handles destination-folder resolution.
 
-### Paso 2 — Recolectar inputs por sesión
+### Step 2 — Collect per-session inputs
 
-Por sesión filtrada (`aw session-artifacts --code <NNN> --dump objetivo,conclusiones,decisiones`): el spec referido (qué se planteó), `CONCLUSIONS` (cierre técnico / R-items), `DECISION` (qué se decidió), estado del plan-doc (qué se entregó / qué queda). Recoger también componentes impactados (fuentes tocadas) para la tabla de síntesis.
+Per filtered session (`aw session-artifacts --code <NNN> --dump objetivo,conclusiones,decisiones`): the referenced spec (what was posed), `CONCLUSIONS` (technical close / R-items), `DECISION` (what was decided), the plan-doc state (what shipped / what remains). Also collect the impacted components (touched sources) for the synthesis table.
 
-### Paso 3 — Dedup de recomendaciones (cross-session)
+### Step 3 — Recommendation dedup (cross-session)
 
-Extraer los R-items de `CONCLUSIONS`/`DECISION` (pendientes, diferidos, "próximos pasos"). Agrupar por slug; merge de duplicados anotando `origins[]`; si dos R-items del mismo slug se contradicen, marcarlos como conflicto para resolución explícita. **No** deduplicar los C-items (son específicos de cada análisis: se preservan con trazabilidad).
+Extract the R-items from `CONCLUSIONS`/`DECISION` (pending, deferred, "next steps"). Group by slug; merge duplicates annotating `origins[]`; if two same-slug R-items contradict each other, mark them as a conflict for explicit resolution. Do **not** dedup the C-items (they are analysis-specific: preserved with traceability).
 
-### Paso 4 — Sintetizar (prosa: convenciones ambientes)
+### Step 4 — Synthesize (prose: ambient conventions)
 
-Render aplicando las convenciones de redacción ambientes (host): Resumen ejecutivo · Qué se hizo (agrupado por capacidad de negocio, **no** por sesión) · Componentes impactados (tabla) · Decisiones clave · Resultados/conclusiones · Pendientes/Roadmap (solo si hay R-items). Traducción técnico→ejecutiva y cota de longitud por `--audience`. Opcional: un `flowchart LR` simple de síntesis (con link `mermaid.ink`); el diagrama técnico detallado es de `export-diagrams`.
+Render applying the ambient writing conventions (host): Executive summary · What was done (grouped by business capability, **not** by session) · Impacted components (table) · Key decisions · Results/conclusions · Pending/Roadmap (only with R-items). Technical→executive translation and length cap per `--audience`. Optional: a simple synthesis `flowchart LR` (with a `mermaid.ink` link); the detailed technical diagram belongs to `export-diagrams`.
 
-### Paso 5 — Escribir o reportar
+### Step 5 — Write or report
 
-`aw next-number docs/reports` → `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. Si `--dry-run`: imprimir; no escribir. **NUNCA commitear**. Resumen al usuario: ruta, audiencia/longitud, sesiones cubiertas (count + rango), R-items consolidados, y nota si se omitió una sección condicional.
+`aw next-number docs/reports` → `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. With `--dry-run`: print; write nothing. **NEVER commit**. Summary to the user: path, audience/length, covered sessions (count + range), consolidated R-items, and a note if a conditional section was omitted.
 
 ## Output location
 
@@ -103,11 +103,11 @@ Render aplicando las convenciones de redacción ambientes (host): Resumen ejecut
 
 ## Re-run
 
-Idempotente funcional: cada invocación toma el siguiente `NNN`; no sobrescribe reports previos. Para regenerar el último: borrar el archivo y re-invocar.
+Functionally idempotent: each invocation takes the next `NNN`; it never overwrites previous reports. To regenerate the latest: delete the file and re-invoke.
 
 ## Resources
 
-- Design: `docs/referencias/workflow-exports/export-reports.md` · familia: [`../README.md`](../README.md).
-- Redacción: convención **ambiente** (no rol) — el host auto-aplica una skill de writing instalada si está presente.
-- Insumos: spec (`docs/specs`), `CONCLUSIONS`/`DECISION` (ver `docs/referencias/workflow-artifacts/`), plan-doc (`docs/plans`).
+- Design: `docs/referencias/workflow-exports/export-reports.md` · family: [`../README.md`](../README.md).
+- Writing: **ambient** convention (not a role) — the host auto-applies an installed writing skill when present.
+- Inputs: spec (`docs/specs`), `CONCLUSIONS`/`DECISION` (see `docs/referencias/workflow-artifacts/`), plan-doc (`docs/plans`).
 - Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md).

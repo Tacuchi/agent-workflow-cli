@@ -1,123 +1,123 @@
 ---
 name: plan-refine-loop
 description: >-
-  Refina un plan existente (docs/plans/PPP-plan-<slug>.md) editándolo IN
-  PLACE — paso auxiliar y NO obligatorio antes de plan-exec. Heir del chasis
-  (loops/CHASSIS.md). Deltas: reusa la gap taxonomy y el coherence gate de
-  plan-new-loop, agrega Refinement decisions / Q&A traceability (traza, sin
-  gating), y produce/actualiza design SPECs vía ui-design si el refine toca
-  UI. Lo arranca /w:plan-refine; reanudable y re-corrible a demanda. Invocar
-  cuando un plan ya generado deba ajustarse antes de ejecutarlo.
+  Refines an existing plan (docs/plans/PPP-plan-<slug>.md) by editing it IN
+  PLACE — an auxiliary, NOT mandatory step before plan-exec. Heir of the
+  chassis (loops/CHASSIS.md). Deltas: reuses plan-new-loop's gap taxonomy and
+  coherence gate, adds Refinement decisions / Q&A traceability (trace, no
+  gating), and produces/updates design SPECs via ui-design when the refine
+  touches UI. Started by /w:plan-refine; resumable and re-runnable on demand.
+  Invoke when an already generated plan must be adjusted before executing it.
 ---
 
 # plan-refine-loop
 
-> **Heir** del chasis común — aquí **solo** los deltas de PLAN-refine. El motor no se repite.
+> **Heir** of the common chassis — **only** the PLAN-refine deltas live here. The engine is never repeated.
 
-> **Relación con los otros loops de PLAN:** `plan-new-loop` **genera** el plan desde el spec; `plan-refine-loop` **lo refina in place** (opcional); `plan-exec-loop` **lo ejecuta**. plan-refine es a plan-new lo que spec-refine es a spec-new.
+> **Relation to the other PLAN loops:** `plan-new-loop` **generates** the plan from the spec; `plan-refine-loop` **refines it in place** (optional); `plan-exec-loop` **executes it**. plan-refine is to plan-new what spec-refine is to spec-new.
 
 ## Flow
 PLAN
 
 ## Layer
-2 — la IA lo corre entero.
+2 — the AI runs it end to end.
 
-## Auxiliar / NO obligatorio
-`plan-exec` corre **cualquier** plan, refinado o no — **no** hay gate que exija plan-refine. Este loop existe para incorporar cambios (nuevos requerimientos, ajustes de alcance, deps/riesgos detectados al releer) **antes** de ejecutar, sin re-generar el plan desde cero.
+## Auxiliary / NOT mandatory
+`plan-exec` runs **any** plan, refined or not — there is **no** gate requiring plan-refine. This loop exists to incorporate changes (new requirements, scope adjustments, deps/risks spotted on re-read) **before** executing, without regenerating the plan from scratch.
 
 ## Started by
-`/w:plan-refine` — **reanudable** (mismo mecanismo del chasis, keyado off CHECKPOINT) y **re-corrible a demanda** (ver *Compact / resume*).
+`/w:plan-refine` — **resumable** (same chassis mechanism, keyed off CHECKPOINT) and **re-runnable on demand** (see *Compact / resume*).
 
 ## Reads
-`docs/plans/PPP-plan-*.md` (glob — localiza el plan por número; o la ruta exacta del argumento del comando). **Siempre el plan mismo**: este loop lo edita in place, no hay un archivo "refined" aparte.
+`docs/plans/PPP-plan-*.md` (glob — locates the plan by number; or the exact path from the command argument). **Always the plan itself**: this loop edits it in place; there is no separate "refined" file.
 
 ## Writes
-Actualiza `docs/plans/PPP-plan-<slug>.md` **in place** (cuando el usuario elige `Guardar plan refinado`): completa/ajusta secciones y **agrega** `## Refinement decisions` + `## Q&A traceability`. Como sobrescribe un doc existente, **con confirmación** del usuario. Solo escribe `docs/plans` — nunca otras carpetas `docs/` ni auto-export. Si el refine **toca UI**, además produce/actualiza **design SPECs** (`NNN-SPEC-<SLUG>.md`) como artefactos **de su propia sesión** (ver *Delta 4* — no son `docs/`, no hay auto-export).
+Updates `docs/plans/PPP-plan-<slug>.md` **in place** (when the user picks `Guardar plan refinado`): completes/adjusts sections and **adds** `## Refinement decisions` + `## Q&A traceability`. Since it overwrites an existing doc, it asks the user's **confirmation**. It writes only `docs/plans` — never other `docs/` folders, no auto-export. If the refine **touches UI**, it also produces/updates **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts **of its own session** (see *Delta 4* — they are not `docs/`, no auto-export).
 
 ## Inherits
 
-Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **siempre antes** de estos deltas. *(Si `../` no resuelve: `CHASSIS.md` junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*
+Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **always before** these deltas. *(If `../` does not resolve: `CHASSIS.md` next to this file — global layout rule, chassis § Reference resolution.)*
 
-## Internal sessions — instancia PLAN-refine
+## Internal sessions — PLAN-refine instance
 
-Doctrina completa en el chasis (§ *Internal sessions* + *Numeración*). La instancia de este loop:
+Full doctrine in the chassis (§ *Internal sessions* + *Numbering*). This loop's instance:
 
 | Session | When | Artifacts | Role |
 |---|---|---|---|
-| **refine session** `NNN-<slug>-plan-refine/` | al arrancar el loop (o se reanuda/reabre) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` solo si difiere) | Dueña del run. Type = `refine`; descriptor `<slug>-plan-refine` (el `<slug>` sale del plan de entrada). |
+| **refine session** `NNN-<slug>-plan-refine/` | when the loop starts (or resumes/reopens) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` only if something is deferred) | Owns the run. Type = `refine`; descriptor `<slug>-plan-refine` (the `<slug>` comes from the input plan). |
 
-## Delta 1 — Deliverable: el PLAN, editado in place
+## Delta 1 — Deliverable: the PLAN, edited in place
 
-El plan usa el **mismo esqueleto** que produce [`plan-new-loop`](../plan-new-loop/SKILL.md) (en instalaciones aplanadas: la copia hermana `w-plan-new-loop/SKILL.md`) (§ *Delta 1 — PLAN RICO*: `Summary`/`Solution`/`Impacted`/`Phases`/`Tasks`/`Validations`/`Final behavior`/… con secciones `(core)` siempre y `(opt.)` según complejidad). plan-refine **no** cambia el esquema: **completa/ajusta** las secciones existentes **in place** y **agrega** dos de traza:
+The plan uses the **same skeleton** [`plan-new-loop`](../plan-new-loop/SKILL.md) produces (§ *Delta 1 — RICH PLAN*: `Summary`/`Solution`/`Impacted`/`Phases`/`Tasks`/`Validations`/`Final behavior`/… with `(core)` sections always and `(opt.)` by complexity). plan-refine does **not** change the schema: it **completes/adjusts** the existing sections **in place** and **adds** two trace sections:
 
 ```markdown
-## Refinement decisions   ← NEW (se AGREGA)
-Qué se ajustó al refinar y por qué (nuevos requerimientos, cambios de scope,
-deps/riesgos). Incluye lo resuelto vía research inline (ref a las CONCLUSIONS
-de la session).
+## Refinement decisions   ← NEW (ADDED)
+What was adjusted while refining and why (new requirements, scope changes,
+deps/risks). Includes what inline research resolved (ref to the session's
+CONCLUSIONS).
 
-## Q&A traceability       ← NEW (se AGREGA)
-Cada duda preguntada al humano + la respuesta elegida.
+## Q&A traceability       ← NEW (ADDED)
+Every doubt asked to the human + the chosen answer.
 ```
 
-> **Sin contrato de gating** (a diferencia de spec↔plan): la presencia de `## Refinement decisions`/`## Q&A traceability` en el plan es solo **traza de auditoría** — `plan-exec` **no** la exige ni la chequea (corre cualquier plan). Sirve para (a) distinguir un plan re-refinado de uno recién generado en el resume, y (b) dejar registro de qué cambió y por qué.
+> **No gating contract** (unlike spec↔plan): the presence of `## Refinement decisions`/`## Q&A traceability` in the plan is **audit trace only** — `plan-exec` neither requires nor checks it (it runs any plan). It serves to (a) distinguish a re-refined plan from a freshly generated one on resume, and (b) record what changed and why.
 
-> El plan **no muta por ejecución** (eso lo trackea plan-exec en las Tasks del plan-doc) — solo por un (re-)refine.
+> The plan **never mutates by execution** (plan-exec tracks that in the plan-doc's Tasks) — only by a (re-)refine.
 
-## Delta 2 — Gap taxonomy (de "plan")
+## Delta 2 — Gap taxonomy (of "plan")
 
-Reusa **íntegra** la gap taxonomy de [`plan-new-loop`](../plan-new-loop/SKILL.md) (§ *Delta 2*): Approach/Solution vago, componentes sin identificar, wiring AS-IS desconocido, fase muy grande, tarea no atómica, deps faltantes, criterios del spec sin cubrir, riesgos sin atender, UI sin design SPEC. **Diferencia de foco:** plan-new **construye** el plan desde cero; plan-refine **detecta qué cambió** respecto del plan ya escrito (o respecto del spec, si el spec se re-refinó) y cierra **esos** gaps — típicamente menos y más localizados. Un gap extra propio del re-refine:
+Reuses plan-new-loop's gap taxonomy **in full** ([`plan-new-loop`](../plan-new-loop/SKILL.md) § *Delta 2*): vague Approach/Solution, components unidentified, AS-IS wiring unknown, phase too large, task not atomic, missing deps, spec criteria uncovered, unaddressed risks, UI without design SPEC. **Focus difference:** plan-new **builds** the plan from scratch; plan-refine **detects what changed** against the written plan (or against the spec, if the spec was re-refined) and closes **those** gaps — typically fewer and more localized. One extra re-refine gap:
 
 | Gap | Signal | Resolved by |
 |---|---|---|
-| Deriva plan↔spec | el spec se re-refinó y el plan quedó desalineado | **research** (re-lee el spec) / **humano** |
+| Plan↔spec drift | the spec was re-refined and the plan fell out of line | **research** (re-reads the spec) / **human** |
 
 ## Delta 3 — What research investigates here
 
-Igual que plan-new (mapea código/impacto: componentes FE/BE/BD, wiring AS-IS, deps), pero **acotado al delta**: re-verifica solo lo que el cambio toca (no re-mapea todo el plan). Regla BD del chasis igual (read-only a `SCRIPTS.sql`, MCP vía pregunta si >1 sin default).
+Same as plan-new (maps code/impact: FE/BE/DB components, AS-IS wiring, deps), but **scoped to the delta**: it re-verifies only what the change touches (never re-maps the whole plan). Chassis DB rule unchanged (read-only into `SCRIPTS.sql`, MCP via a question when >1 without default).
 
-## Delta 4 — Design SPECs (si el refine toca UI)
+## Delta 4 — Design SPECs (when the refine touches UI)
 
-Mismo mecanismo que [`plan-new-loop`](../plan-new-loop/SKILL.md) (§ *Delta 4*: capacidad **`ui-design`** → `NNN-SPEC-<SLUG>.md` por pantalla, ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)), **acotado al delta**: solo las pantallas **nuevas o cambiadas** por el refine reciben design SPEC. El SPEC actualizado se escribe en **la sesión propia** del plan-refine (cada loop maneja los artefactos de SU sesión — no edita los de la sesión de plan-new) y el plan **re-apunta** la referencia de la Task UI al SPEC vigente. Pantallas no tocadas conservan su SPEC original.
+Same mechanism as [`plan-new-loop`](../plan-new-loop/SKILL.md) (§ *Delta 4*: the **`ui-design`** capability → per-screen `NNN-SPEC-<SLUG>.md`, see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)), **scoped to the delta**: only the screens **new or changed** by the refine get a design SPEC. The updated SPEC is written in **plan-refine's own session** (each loop manages ITS session's artifacts — it never edits plan-new's) and the plan **re-points** the UI Task reference to the current SPEC. Untouched screens keep their original SPEC.
 
 ## Compact / resume
 
-El resume **keya off el `CHECKPOINT`** de la refine session, no de un archivo "refined". Tres casos al ejecutar `/w:plan-refine` sobre un plan:
+Resume **keys off the `CHECKPOINT`** of the refine session, never a "refined" file. Three cases when `/w:plan-refine` runs over a plan:
 
-1. **En curso** (existe `CHECKPOINT.md` en la refine session) → reanuda desde el avance (gaps resueltos, Q&A, `attempts`, research inline en curso).
-2. **Sin avance** (no hay CHECKPOINT y el plan **no** tiene `Refinement decisions`/`Q&A traceability`) → arranca desde cero leyendo el plan (`PPP-plan-*.md`).
-3. **Ya refinado / re-refine on demand** (sin CHECKPOINT abierto, pero el plan **ya tiene** las 2 secciones) → **operación de primera clase**, cuantas veces haga falta mientras el flujo siga en PLAN:
-   - `create_or_resume` detecta la refine session existente (típicamente **cerrada** tras converger) por descriptor + `## Origin` y la **reabre**: `aw session-resume --code <NNN> --reopen` (detección: `aw sessions --state all`).
-   - Re-refinamiento incremental leyendo el **plan mismo**; al `Guardar`, edita in place con confirmación.
+1. **In progress** (a `CHECKPOINT.md` exists in the refine session) → resume from the recorded progress (resolved gaps, Q&A, `attempts`, in-flight inline research).
+2. **No progress** (no CHECKPOINT and the plan does **not** have `Refinement decisions`/`Q&A traceability`) → start from zero reading the plan (`PPP-plan-*.md`).
+3. **Already refined / re-refine on demand** (no open CHECKPOINT, but the plan **already has** the 2 sections) → **first-class operation**, as many times as needed while the flow stays in PLAN:
+   - `create_or_resume` finds the existing refine session (typically **closed** after convergence) by descriptor + `## Origin` and **reopens** it: `aw session-resume --code <NNN> --reopen` (detection: `aw sessions --state all`).
+   - Incremental re-refinement reading the **plan itself**; on `Guardar`, edits in place with confirmation.
 
-> **Continuidad inter-turno** (chasis, fila 2): un **comando de flujo** abre "nueva línea de trabajo" (sesión nueva) — **salvo re-correr el mismo flujo sobre la misma entrada** (mismo plan), que hace `create_or_resume` (reanuda/reabre en vez de duplicar).
+> **Inter-turn continuity** (chassis, row 2): a flow command opens a "new work line" (new session) — **except re-running the same flow over the same input** (same plan), which does `create_or_resume` (resumes/reopens instead of duplicating).
 
 ## Sequence
 
 ```
 plan-refine-loop(plan):
-  input = glob(docs/plans/PPP-plan-*.md) | ruta del argumento   # siempre el plan mismo (in place)
-  session = create_or_resume("<slug>-plan-refine")              # reabre si existe (ver Compact / resume)
-  seed SESSION.Success criteria = checklist del coherence gate  # verification-first, ANTES
-  work = read(plan) (+ el spec si hay que re-alinear; + avance del checkpoint si reanuda)
-  repeat:                                                       # motor del chasis
-    gaps = detect_gaps(work)  (taxonomy de plan-new + deriva plan↔spec)  menos los agotados
+  input = glob(docs/plans/PPP-plan-*.md) | argument path       # always the plan itself (in place)
+  session = create_or_resume("<slug>-plan-refine")             # reopens if it exists (see Compact / resume)
+  seed SESSION.Success criteria = coherence-gate checklist     # verification-first, BEFORE
+  work = read(plan) (+ the spec if realignment is needed; + checkpoint progress if resuming)
+  repeat:                                                      # chassis engine
+    gaps = detect_gaps(work)  (plan-new taxonomy + plan↔spec drift)  minus the exhausted ones
     if gaps == ∅: break
-    batch ≤3 → sembrar CHECKPOINT.Pending/Next → resolver cada gap:
-      research (acotado al delta — Delta 3) · humano (structured-choice) ·
-      ui-design (Delta 4, solo pantallas nuevas/cambiadas)
-    integrar + update CHECKPOINT                                # ciclo artifact-first
-  coherence gate (read-only) = Success criteria en verde:
-    - checklist de plan-new (criterio→tarea · Final behavior · XS–S/XS · deps · Impacted↔Solution · UI→SPEC vigente)
-    - propio del re-refine: el plan quedó REALINEADO con lo que cambió
-    lo que falle → vuelve como gap
-  structured_choice(contenido: [Guardar plan refinado, Preguntar algo más], flow: [Compactar, Cerrar])
-  Guardar → edit in place (con confirmación) + inserta/actualiza Refinement decisions + Q&A traceability
-finalize: CHECKPOINT persiste (+ BACKLOG solo si difiere) + cerrar session + reportar
+    batch ≤3 → seed CHECKPOINT.Pending/Next → resolve each gap:
+      research (scoped to the delta — Delta 3) · human (structured-choice) ·
+      ui-design (Delta 4, only new/changed screens)
+    integrate + update CHECKPOINT                              # artifact-first cycle
+  coherence gate (read-only) = Success criteria green:
+    - plan-new checklist (criterion→task · Final behavior · XS–S/XS · deps · Impacted↔Solution · UI→current SPEC)
+    - re-refine's own check: the plan is REALIGNED with what changed
+    whatever fails → comes back as a gap
+  structured_choice(content: [Guardar plan refinado, Preguntar algo más], flow: [Compactar, Cerrar])
+  Guardar → edit in place (with confirmation) + insert/update Refinement decisions + Q&A traceability
+finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close session + report
 ```
 
 ## Convergence / exit
 
-- **Sin gaps materiales** → **coherence gate** (checklist del *Sequence*; el mismo gate de plan-new + la realineación propia del re-refine).
-- Pasa → `Guardar plan refinado` (edita in place con confirmación) → `finalize`.
-- `Cerrar` en cualquier momento → `finalize` (persiste `CHECKPOINT`; `BACKLOG` solo si difiere; cierra la session, reporta).
+- **No material gaps** → **coherence gate** (the *Sequence* checklist; plan-new's gate + the re-refine's own realignment check).
+- Passes → `Guardar plan refinado` (edits in place with confirmation) → `finalize`.
+- `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).

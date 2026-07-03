@@ -1,44 +1,44 @@
 # w — Command map (Layer 1)
 
-> README del namespace `/w:` (`w` = *workflow*): todo lo listado acá es lo **único que el usuario invoca** directamente. Los comandos son la **Capa 1** — single-pass o arrancan un loop; sin lógica de iteración.
+> README of the `/w:` namespace (`w` = *workflow*): everything listed here is the **only thing the user invokes** directly. Commands are **Layer 1** — single-pass or they start a loop; no iteration logic.
 >
-> **Canon**: el modelo completo (3 capas + zona `docs/`, los 3 flujos, invariantes duros) vive en [`../SKILL.md`](../SKILL.md); el **motor de los loops** en [`../loops/CHASSIS.md`](../loops/CHASSIS.md). Este README es solo el índice de la carpeta.
+> **Canon**: the full model (3 layers + `docs/` zone, the 3 flows, hard invariants) lives in [`../SKILL.md`](../SKILL.md); the **loop engine** in [`../loops/CHASSIS.md`](../loops/CHASSIS.md). This README is only the folder index.
 
 ---
 
 ## Bootstrap
 
-[`/w:workspace-init`](workspace-init.md) convierte la carpeta actual en un **workspace** (`.workflow/` + `docs/` + bloque `WORKSPACE` + `.workflow/skills.toml`). Sin distinción project/hub; correr una vez antes de cualquier flujo.
+[`/w:workspace-init`](workspace-init.md) turns the current folder into a **workspace** (`.workflow/` + `docs/` + `WORKSPACE` block + `.workflow/skills.toml`). No project/hub distinction; run once before any flow.
 
 ## Index
 
-| Command | Qué hace | Mode |
+| Command | What it does | Mode |
 |---|---|---|
-| [`workspace-init`](workspace-init.md) | Bootstrap del workspace | single-pass, interactivo |
-| [`spec-new`](spec-new.md) | Genera el borrador de spec (`docs/specs/NNN-spec-<slug>.md`) | single-pass, sin loop |
-| [`spec-refine`](spec-refine.md) | Refina el spec **in place** hasta desambiguarlo | arranca `spec-refine-loop` |
-| [`plan-new`](plan-new.md) | Deriva el plan ejecutable (`docs/plans/PPP-plan-<slug>.md`) del spec | arranca `plan-new-loop` |
-| [`plan-refine`](plan-refine.md) | Refina el plan **in place** antes de ejecutar (aux, opcional) | arranca `plan-refine-loop` |
-| [`plan-exec`](plan-exec.md) | Ejecuta el plan (código/BD/git) y lo mantiene como living doc | arranca `plan-exec-loop` |
-| [`quick`](quick.md) | Atajo liviano para trabajo acotado; no toca `docs/` | arranca `quick-loop` |
-| [`status`](status.md) | Dashboard read-only del workspace | single-pass (transversal) |
-| [`fix-git`](fix-git.md) | Resuelve un merge en curso, git-safe | single-pass (transversal) |
-| [`export-scripts`](export-scripts.md) | Promueve migraciones SQL de sesiones a `docs/scripts/` | single-pass, read-only |
-| [`export-manuals`](export-manuals.md) | Genera manuales en `docs/manuals/` | single-pass, read-only |
-| [`export-diagrams`](export-diagrams.md) | Genera diagramas C4/mermaid en `docs/diagrams/` | single-pass, read-only |
-| [`export-reports`](export-reports.md) | Genera informes en `docs/reports/` | single-pass, read-only |
+| [`workspace-init`](workspace-init.md) | Workspace bootstrap | single-pass, interactive |
+| [`spec-new`](spec-new.md) | Generates the spec draft (`docs/specs/NNN-spec-<slug>.md`) | single-pass, no loop |
+| [`spec-refine`](spec-refine.md) | Refines the spec **in place** until unambiguous | starts `spec-refine-loop` |
+| [`plan-new`](plan-new.md) | Derives the executable plan (`docs/plans/PPP-plan-<slug>.md`) from the spec | starts `plan-new-loop` |
+| [`plan-refine`](plan-refine.md) | Refines the plan **in place** before executing (aux, optional) | starts `plan-refine-loop` |
+| [`plan-exec`](plan-exec.md) | Executes the plan (code/DB/git) and maintains it as a living doc | starts `plan-exec-loop` |
+| [`quick`](quick.md) | Lightweight shortcut for scoped work; never touches `docs/` | starts `quick-loop` |
+| [`status`](status.md) | Read-only workspace dashboard | single-pass (transversal) |
+| [`fix-git`](fix-git.md) | Resolves an in-progress merge, git-safe | single-pass (transversal) |
+| [`export-scripts`](export-scripts.md) | Promotes session SQL migrations to `docs/scripts/` | single-pass, read-only |
+| [`export-manuals`](export-manuals.md) | Generates manuals in `docs/manuals/` | single-pass, read-only |
+| [`export-diagrams`](export-diagrams.md) | Generates C4/mermaid diagrams in `docs/diagrams/` | single-pass, read-only |
+| [`export-reports`](export-reports.md) | Generates reports in `docs/reports/` | single-pass, read-only |
 
-> **Asimetría intencional:** en SPEC, `spec-new` genera el borrador en single-pass (sin loop) y el loop está en `spec-refine`; en PLAN, los 3 comandos arrancan loops. Total: **6 comandos de flow / 5 loops**.
+> **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.
 >
-> **Transversales (no flow):** `status` y `fix-git` no pertenecen a SPEC/PLAN/QUICK ni cuentan en 6/5. En el diseño son su propia categoría (`workflow-skills/`); acá se empaquetan bajo `commands/` para que `/w:` las invoque — ver [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*.
+> **Transversal (no flow):** `status` and `fix-git` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*.
 
 ## Schema of each command file
 
-Cada `<command>.md` de esta carpeta usa este frontmatter + estructura de cuerpo — el esquema (incluidos `allowed-tools:` y el tool `Skill`) es el **binding Claude Code**; otros arneses envuelven el mismo contrato en su formato (ver [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*):
+Every `<command>.md` in this folder uses this frontmatter + body structure — the schema (including `allowed-tools:` and the `Skill` tool) is the **Claude Code binding**; other harnesses wrap the same contract in their format (see [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*):
 
 | Field | Description |
 |---|---|
-| `description:` | One line: what + when (drives discovery in `/`-picker) |
+| `description:` | One line: what + when (drives discovery in the `/`-picker) |
 | `argument-hint:` | Argument signature for the user |
 | `allowed-tools:` | YAML list (typically `Bash`/`Read`/`Write`/`Edit`). Loops/exports are **read-and-followed**, not invoked with `Skill:` — so `Skill` is **not** in `allowed-tools`. |
 | Body | 1-3 orienting lines, then the invocation: **read-and-follow** the sibling loop/export `SKILL.md`, or call the `aw` CLI; then `## Plan mode`, `## Resources` |

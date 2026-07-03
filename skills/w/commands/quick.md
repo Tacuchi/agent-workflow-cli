@@ -1,6 +1,6 @@
 ---
-description: Atajo liviano para trabajo acotado (fix, ajuste, chore) que no amerita spec ni plan. Inicia quick-loop. No toca docs/. Si el objetivo excede un quick o la tarea crece, escala: a SPEC en vivo (con consentimiento), a PLAN diferido.
-argument-hint: <prompt con la tarea acotada>
+description: Lightweight shortcut for scoped work (fix, tweak, chore) that warrants no spec or plan. Starts quick-loop. Never touches docs/. If the objective exceeds a quick or the task grows, it escalates — to SPEC live (with consent), to PLAN deferred.
+argument-hint: <prompt with the scoped task>
 allowed-tools:
   [
     "Bash",
@@ -10,30 +10,30 @@ allowed-tools:
   ]
 ---
 
-# quick — trampolín al loop liviano
+# quick — trampoline to the lightweight loop
 
-Para tareas acotadas y directas que no justifican pasar por SPEC ni PLAN. Crea una sesión ligera (trazabilidad + resume) — salvo que el **gate de tamaño a la entrada** escale a SPEC antes de empezar. Delega a `quick-loop` (Layer 2).
+For scoped, direct tasks that do not justify going through SPEC or PLAN. Creates a light session (traceability + resume) — unless the **entry size gate** escalates to SPEC before starting. Delegates to `quick-loop` (Layer 2).
 
-## Ejecutar el loop
+## Run the loop
 
-`quick-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
+`quick-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
 
-1. **Leé** `../loops/quick-loop/SKILL.md` (dentro de la skill `w` instalada — p. ej. `~/.claude/skills/w/loops/…`).
-2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como la tarea: evalúa el gate de tamaño, crea la session ligera, trabaja con ceremonia mínima (git-safe), escala si excede o crece (SPEC en vivo / PLAN diferido), y reporta.
+1. **Read** `../loops/quick-loop/SKILL.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
+2. **Follow** its instructions taking `$ARGUMENTS` as the task: it evaluates the size gate, creates the light session, works with minimal ceremony (git-safe), escalates if the task exceeds or grows (SPEC live / PLAN deferred), and reports.
 
-> No intentes `Skill: quick-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.
+> Do not try `Skill: quick-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
 
-## Qué hace el loop
+## What the loop does
 
-- Edita código en las fuentes del workspace.
-- Artefactos mínimos en la sesión (DECISION lazy, commit propuesto).
-- **Gate de revisión de cierre proporcional** antes de proponer el único commit: re-lee el diff aplicando las convenciones ambientes instaladas y corrige o difiere (ver `../loops/quick-loop/SKILL.md` § *Sequence*).
-- **No toca `docs/`** ni exporta nada.
-- **Escala** si emerge complejidad — **gate de tamaño a la entrada** (antes de crear la session) y mid-loop (muchos archivos, ≥2 fuentes, necesita arquitectura, o el cambio es feature/refactor). Aceptar **SPEC** = transición **en vivo** al flujo SPEC (borrador vía procedimiento spec-new + spec-refine-loop); **PLAN** queda sembrado para retomar. Ver `../loops/quick-loop/SKILL.md` § *Delta QUICK*.
+- Edits code in the workspace sources.
+- Minimal session artifacts (lazy DECISION, proposed commit).
+- **Proportional closing review gate** before proposing the single commit: re-reads the diff applying the installed ambient conventions and fixes or defers (see `../loops/quick-loop/SKILL.md` § *Sequence*).
+- **Never touches `docs/`** and exports nothing.
+- **Escalates** when complexity emerges — **entry size gate** (before creating the session) and mid-loop (many files, ≥2 sources, needs architecture, or the change is a feature/refactor). Accepting **SPEC** = **live** transition into the SPEC flow (draft via the spec-new procedure + spec-refine-loop); **PLAN** stays seeded for later. See `../loops/quick-loop/SKILL.md` § *QUICK delta*.
 
 ## Plan mode
 
-El skill describe los cambios que aplicaría y los archivos que tocaría, sin ejecutarlos. Incluye la escalación: si el gate (de entrada o mid-loop) dispararía, la describe (opciones + spec que materializaría) sin escribir `docs/` ni arrancar loops.
+The skill describes the changes it would apply and the files it would touch, without executing them. Escalation included: if the gate (entry or mid-loop) would fire, it describes it (options + the spec it would materialize) without writing `docs/` or starting loops.
 
 ## Resources
 

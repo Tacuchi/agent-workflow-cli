@@ -1,134 +1,134 @@
 ---
 name: plan-exec-loop
 description: >-
-  Ejecuta un plan de implementación (docs/plans/PPP-plan-<slug>.md) como
-  living doc: lo lee y actualiza fase a fase mientras edita el código real,
-  gestiona BD y git. Heir del chasis (loops/CHASSIS.md + CODE-POLICIES.md).
-  Deltas: session única reanudable, git seguro (rama verificada, commits
-  propuestos por fuente, nunca push/--amend/--no-verify), BD solo-scripts
-  (nunca ejecuta DML/DDL), validación por fase y final, gate de revisión de
-  cierre pre-commit, sin auto-export. Compone git y sql. Lo arranca
-  /w:plan-exec. Invocar para implementar un plan ya generado.
+  Executes an implementation plan (docs/plans/PPP-plan-<slug>.md) as a living
+  doc: reads and updates it phase by phase while editing the real code and
+  managing DB and git. Heir of the chassis (loops/CHASSIS.md +
+  CODE-POLICIES.md). Deltas: single resumable session, safe git (verified
+  branch, per-source proposed commits, never push/--amend/--no-verify), DB
+  scripts-only (never executes DML/DDL), per-phase and final validation,
+  pre-commit closing review gate, no auto-export. Composes git and sql.
+  Started by /w:plan-exec. Invoke to implement an already generated plan.
 ---
 
 # plan-exec-loop
 
-> **Heir** del chasis común — aquí los **deltas de ejecución**: el trabajo real (código, BD, git). El motor vive en el chasis y las *Políticas de loops que editan código* en `CODE-POLICIES.md` — no se repiten.
+> **Heir** of the common chassis — the **execution deltas** live here: the real work (code, DB, git). The engine lives in the chassis and the *code-editing loop policies* in `CODE-POLICIES.md` — never repeated.
 
 ## Flow
 PLAN
 
 ## Layer
-2 — la IA lo corre entero.
+2 — the AI runs it end to end.
 
 ## Started by
-`/w:plan-exec` — **reanudable** (mismo mecanismo del chasis; aquí el resume keya off el checkbox del plan-doc + CHECKPOINT, ver Delta 1).
+`/w:plan-exec` — **resumable** (same chassis mechanism; here resume keys off the plan-doc checkboxes + CHECKPOINT, see Delta 1).
 
 ## Reads
-`docs/plans/PPP-plan-<slug>.md` (localizar vía glob `docs/plans/PPP-plan-*.md` o la ruta exacta del argumento del comando). Corre **cualquier** plan, haya pasado o no por [`plan-refine-loop`](../plan-refine-loop/SKILL.md) — plan-refine es auxiliar y no obligatorio; no hay gate que lo exija. Si el plan incluye UI, también los **design SPECs** (`NNN-SPEC-<SLUG>.md`) que sus Tasks referencian — artefactos de la sesión de plan-new/plan-refine, leídos **read-only** como referencia de diseño al implementar (ver [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
+`docs/plans/PPP-plan-<slug>.md` (locate via the `docs/plans/PPP-plan-*.md` glob or the exact path from the command argument). It runs **any** plan, whether or not it passed through [`plan-refine-loop`](../plan-refine-loop/SKILL.md) — plan-refine is auxiliary, not mandatory; no gate requires it. If the plan includes UI, it also reads the **design SPECs** (`NNN-SPEC-<SLUG>.md`) its Tasks reference — artifacts of the plan-new/plan-refine session, read **read-only** as the design reference while implementing (see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
 
 ## Writes
-- `docs/plans/PPP-plan-<slug>.md` (**read/update**, living doc: estado de fases/tareas, `Open questions`).
-- Artefactos de la plan-exec session en `.workflow/sessions/` (`SCRIPTS.sql`, `DECISION`, `ANALYSIS-FILE`/`CONCLUSIONS`, …).
-- **NO** escribe en otras carpetas `docs/` ni **gradúa/exporta** otros artefactos automáticamente (ver *Boundary*).
+- `docs/plans/PPP-plan-<slug>.md` (**read/update**, living doc: phase/task state, `Open questions`).
+- Artifacts of the plan-exec session under `.workflow/sessions/` (`SCRIPTS.sql`, `DECISION`, `ANALYSIS-FILE`/`CONCLUSIONS`, …).
+- It does **NOT** write other `docs/` folders nor **graduate/export** artifacts automatically (see *Boundary*).
 
-## Boundary — sin auto-export (hard rule)
+## Boundary — no auto-export (hard rule)
 
-Regla completa en el chasis (§ *docs/ boundary — sin auto-export*). Acá: la única carpeta `docs/` que este loop escribe es **`docs/plans`** (el plan, living); todo lo demás queda en la session hasta un `export-*` explícito y posterior.
+Full rule in the chassis (§ *docs/ boundary — no auto-export*). Here: the only `docs/` folder this loop writes is **`docs/plans`** (the plan, living); everything else stays in the session until an explicit, later `export-*`.
 
 ## Inherits
 
-Leé **[`../CHASSIS.md`](../CHASSIS.md)** — el **motor completo** del loop — **y** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** — las *Políticas de loops que editan código* — **siempre antes** de estos deltas. *(Si `../` no resuelve: mismos nombres junto a este archivo — regla global de layout, chasis § Resolución de referencias.)*
+Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **and** **[`../CODE-POLICIES.md`](../CODE-POLICIES.md)** — the *code-editing loop policies* — **always before** these deltas. *(If `../` does not resolve: same names next to this file — global layout rule, chassis § Reference resolution.)*
 
 ## Composes
 
-`git` (rama segura + commits propuestos) · `sql` (regla BD). Ambas resueltas por `.workflow/skills.toml`; `off` → el loop sigue sin la capacidad y, si era necesaria, lo dice o pregunta.
+`git` (safe branch + proposed commits) · `sql` (DB rule). Both resolved via `.workflow/skills.toml`; `off` → the loop continues without the capability and, if it was needed, says so or asks.
 
-> **Convenciones ambientes (no roles):** estándares de código/testing/redacción y `creating-tools` son skills standalone que el host auto-descubre por su `description` — el workflow no las bindea ni depende de ellas. Doctrina completa: [../../roles/README.md](../../roles/README.md).
+> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — the workflow neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
 
 ## Internal sessions (managed)
 
-- **plan-exec session** descriptor `<slug>-plan-exec` → `NNN-<slug>-plan-exec` (el `<slug>` sale del plan-doc de entrada `docs/plans/PPP-plan-<slug>.md`): **una sola session por run** (Type = `exec`). Dueña del run; posee `SESSION` + `CHECKPOINT` + `DECISION` + `SCRIPTS.sql` (+ `BACKLOG` solo si difiere). La investigación es **inline** dentro de esta session: produce `ANALYSIS-FILE`/`CONCLUSIONS` (+ `SCRIPTS.sql` read-only si consulta BD) en su propia carpeta.
+- **plan-exec session** descriptor `<slug>-plan-exec` → `NNN-<slug>-plan-exec` (the `<slug>` comes from the input plan-doc `docs/plans/PPP-plan-<slug>.md`): **a single session per run** (Type = `exec`). Owns the run; holds `SESSION` + `CHECKPOINT` + `DECISION` + `SCRIPTS.sql` (+ `BACKLOG` only if something is deferred). Research is **inline** inside this session: it produces `ANALYSIS-FILE`/`CONCLUSIONS` (+ read-only `SCRIPTS.sql` if it queries DB) in its own folder.
 
-> **Numeración**: el caller pasa solo el descriptor; el CLI antepone el `NNN` global y secuencial sobre `.workflow/sessions/` (ver chasis). No reinicia por tipo.
+> **Numbering**: the caller passes only the descriptor; the CLI prepends the global sequential `NNN` over `.workflow/sessions/` (see chassis). It never restarts per type.
 
-> **Compat (legacy):** workspaces viejos pueden tener sessions `plan-exec-phase-*` (una por fase) y `*-research-*` — son históricas y se dejan tal cual; los runs nuevos usan una sola session.
+> **Compat (legacy):** old workspaces may hold `plan-exec-phase-*` sessions (one per phase) and `*-research-*` ones — historical, left as-is; new runs use a single session.
 
 ## Delta 1 — One session per run; per-phase progress in the plan-doc
 
-- Recorre las `Phases` del plan en orden (respeta deps) **dentro de la única session del run** (no hay session-por-fase).
-- El **avance por fase vive en el plan-doc** (`- [x]`) y en el `CHECKPOINT` único (Completed/Pending/Next): **artifact-first** — `CHECKPOINT.Next` se fija a la fase inminente **antes** de iniciarla; el checkbox `- [x]` del plan-doc se voltea **después** de completar la tarea.
-- Ejecuta las `Tasks` de la fase; **salta** las ya marcadas `- [x]` en el plan (el plan-doc es la fuente de verdad por tarea). Marca `- [x]` + estado **en el plan** (living doc; no en un `TASKS` aparte).
-- En **cada límite de fase**: valida, corre el **gate de revisión de cierre** (Delta 5), actualiza el `CHECKPOINT` (Completed += Phase N, Next = Phase N+1) y propone commits.
-- Registra `DECISION` solo lo **no obvio**, **a medida que se toma** (los `DECISION` por fase se acumulan en el ÚNICO `DECISION`, etiquetados por fase/tarea — ej. `Origin: T2 (F1)`).
-- El motor **gap-driven** del chasis aplica acá **dentro de una tarea**: ante una decisión/duda no obvia → research inline ó structured-choice.
+- Walks the plan's `Phases` in order (respecting deps) **inside the run's single session** (no session-per-phase).
+- **Per-phase progress lives in the plan-doc** (`- [x]`) and in the single `CHECKPOINT` (Completed/Pending/Next): **artifact-first** — `CHECKPOINT.Next` is set to the imminent phase **before** starting it; the plan-doc's `- [x]` checkbox is flipped **after** completing the task.
+- Executes the phase's `Tasks`; **skips** the ones already `- [x]` in the plan (the plan-doc is the per-task source of truth). Marks `- [x]` + state **in the plan** (living doc; never in a separate `TASKS`).
+- At **every phase boundary**: validate, run the **closing review gate** (Delta 5), update the `CHECKPOINT` (Completed += Phase N, Next = Phase N+1) and propose commits.
+- Records in `DECISION` only the **non-obvious**, **as it is decided** (per-phase decisions accumulate in the SINGLE `DECISION`, tagged by phase/task — e.g. `Origin: T2 (F1)`).
+- The chassis **gap-driven** engine applies here **inside a task**: facing a non-obvious decision/doubt → inline research OR structured-choice.
 
-## Delta 2 — Git policy: **rama segura + commits propuestos**
+## Delta 2 — Git policy: **safe branch + proposed commits**
 
-Política completa en [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Git seguro*: branch-check antes de editar, commit rechazado — los cambios quedan + se registra —, precondición de working tree entre fases). **Inline:** antes de editar, verificar rama esperada por fuente (`aw check-branch --source <alias>`; si no coincide → pausar y resolver con el humano); al cerrar cada fase y **tras el gate de revisión** (Delta 5), **commits propuestos por fuente** (aprobar antes) — nunca `push`/`--amend`/`--no-verify`.
+Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Safe git*: branch-check before editing, rejected commit — changes stay + get recorded —, working-tree precondition between phases). **Inline:** before editing, verify each source's expected branch (`aw check-branch --source <alias>`; on mismatch → pause and resolve with the human); at each phase close and **after the review gate** (Delta 5), **proposed commits per source** (approve first) — never `push`/`--amend`/`--no-verify`.
 
-## Delta 3 — DB policy: **la IA nunca ejecuta DML**
+## Delta 3 — DB policy: **the AI never executes DML**
 
-Política completa en [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *BD solo-scripts*). **Inline:** consultas read-only → `SCRIPTS.sql` de la session y se ejecutan vía MCP (`sql-mutation-guard`); migraciones DDL/DML → la IA las **redacta en `SCRIPTS.sql` pero NUNCA las ejecuta** — su promoción a `docs/scripts/` la hace un `export-*` aparte, no este loop.
+Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *DB scripts-only*). **Inline:** read-only queries → the session's `SCRIPTS.sql`, executed via MCP (`sql-mutation-guard`); DDL/DML migrations → the AI **drafts them in `SCRIPTS.sql` but NEVER executes them** — their promotion to `docs/scripts/` is done by a separate `export-*`, never this loop.
 
 ## Delta 4 — Validation
 
-- Tras ejecutar (por fase y al final): corre tests/checks contra `Validations` + `Final behavior` + acceptance/success criteria del spec.
-- Validación que **corre y falla** → vuelve a la tarea (gap); no avanza.
-- **Validación dependiente de una migración no aplicada**: como la IA no ejecuta el DML, **no puede correr read-only** → se **difiere** (handoff a DBA), **no bloquea el avance**. Se registra en `Open questions` del plan + `BACKLOG`, marcando "verificación pendiente tras aplicar SQL". (Reusa el patrón degradar/diferir + límite `MAX` del chasis → evita el bucle "vuelve a la tarea".)
+- After executing (per phase and at the end): run tests/checks against `Validations` + `Final behavior` + the spec's acceptance/success criteria.
+- A validation that **runs and fails** → back to the task (gap); no advancing.
+- **Validation depending on an unapplied migration**: since the AI never executes the DML, it **cannot run it read-only** → it is **deferred** (handoff to a DBA), it does **not block progress**. Recorded in the plan's `Open questions` + `BACKLOG`, marked "verification pending until the SQL is applied". (Reuses the chassis degrade/defer pattern + `MAX` cap → avoids the "back to the task" loop.)
 
-> La **validación final** es el **convergence gate** de PLAN-exec = **`Success criteria` en verde** (*verification-first*; análogo al *analyze gate* de SPEC y al *coherence gate* de `plan-new`): el plan no se marca *done* hasta que pasa o queda explícitamente diferida (handoff de SQL). Para código son **tests ejecutables** (TDD); para migraciones BD no ejecutables, **rúbrica** (SCRIPTS.sql válido + revisado).
+> The **final validation** is PLAN-exec's **convergence gate** = **`Success criteria` green** (*verification-first*; analogous to SPEC's *analyze gate* and plan-new's *coherence gate*): the plan is not marked *done* until it passes or is explicitly deferred (SQL handoff). For code these are **runnable tests** (TDD); for non-executable DB migrations, a **rubric** (SCRIPTS.sql valid + reviewed).
 
-## Delta 5 — Gate de revisión de cierre (convenciones, pre-commit)
+## Delta 5 — Closing review gate (conventions, pre-commit)
 
-Gate completo en [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Gate de revisión de cierre*): re-lectura **independiente** del diff + convenciones ambientes instaladas; hallazgos → corregir (re-validando la fase) o diferir justificado. Acá solo el cableado exec: corre **entre la validación de la fase (Delta 4) y sus commits (Delta 2)**; recién con el gate en verde se proponen los commits de la fase.
+Full gate in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Closing review gate*): **independent** diff re-read + installed ambient conventions; findings → fix (re-validating the phase) or defer justified. Here only the exec wiring: it runs **between the phase validation (Delta 4) and its commits (Delta 2)**; only with the gate green are the phase's commits proposed.
 
-## Delta 6 — Completitud / cierre
+## Delta 6 — Completion / close
 
-- Una fase cierra **done** cuando sus tareas están `- [x]` y su validación pasó **o** quedó diferida (handoff de SQL). Estado posible: **"done — SQL pendiente de aplicar"**.
-- Todas las fases done → *structured-choice* final (contenido: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`).
-- **Sin export automático**: los artefactos (`SCRIPTS.sql`, `DECISION`, …) quedan en la session. Promoverlos a `docs/` (scripts, manuals, …) es un paso aparte vía `export-*`.
+- A phase closes **done** when its tasks are `- [x]` and its validation passed **or** was deferred (SQL handoff). Possible state: **"done — SQL pending application"**.
+- All phases done → final *structured-choice* (content: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`).
+- **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.
 
 ## Sequence
 
 ```
 plan-exec-loop(PPP-plan-<slug>.md):
-  session = create_or_resume("<slug>-plan-exec")           # <slug> del plan-doc; UNA sola session por run; CLI antepone NNN global; CHECKPOINT, resume
+  session = create_or_resume("<slug>-plan-exec")           # <slug> from the plan-doc; ONE session per run; CLI prepends global NNN; CHECKPOINT, resume
   plan = read(PPP-plan-<slug>.md)
-  para cada Phase en plan (en orden, respeta deps):
-    si Phase done (todas sus Tasks - [x] en el plan): skip # resume vía checkbox del plan-doc
-    seed CHECKPOINT.Next = Phase N (Pending = sus Tasks)   # ANTES de iniciar la fase: sembrar intención (artifact-first)
-    para cada Task de la Phase:
-      si Task - [x] en el plan: skip                       # resume intra-fase por checkbox
-      verificar rama esperada por fuente (branch-check)
-        si no coincide → pausar + resolver con humano
-      ejecutar Task:
-        editar código en las fuentes (cambio mínimo)
-        si crea herramienta/utilidad → la skill ambiente creating-tools la documenta en docs/tools
-        si consulta BD read-only → SCRIPTS.sql + ejecutar read-only
-        si cambio BD (DDL/DML) → redactar en SCRIPTS.sql (artefacto session, NO ejecutar)
-        si decisión no obvia → DECISION (etiquetado por fase/tarea, en el ÚNICO DECISION)
-        si duda/gap → research inline ó structured-choice    # chasis
-      marcar Task - [x] + estado EN EL PLAN                # DESPUÉS de completar la Task (el plan-doc es la fuente de verdad por tarea)
-    validación de la fase:
-        la que corre y falla → volver a la tarea
-        la dependiente de migración no aplicada → diferir (Open questions + BACKLOG)
-    gate de revisión de cierre (pre-commit):               # Delta 5: CHECKPOINT.Next = "review fase N"
-        re-lectura INDEPENDIENTE del diff de la fase + convenciones ambientes instaladas
-        hallazgos → corregir (y re-validar la fase) ó diferir justificado (Open questions + BACKLOG)
-    update CHECKPOINT (Completed += Phase N, Next = Phase N+1) # DESPUÉS: Pending→Completed + Next = fase siguiente (ver ciclo artifact-first)
-    proponer commit(s) por fuente (aprobar antes)          # nunca push/amend/--no-verify; solo tras el gate en verde
-        si rechazado → cambios quedan; registrar "fase sin commitear"
-    precondición siguiente fase: working tree limpio o reconocido
-  validación final (lo que se pueda; lo dependiente de SQL queda como handoff)
-  structured_choice(contenido: [Marcar plan done, Preguntar algo más], flow: [Compactar, Cerrar])
-  marcar plan done (o "done — SQL pendiente de aplicar")
-  # NO export: los artefactos quedan en la session; un export-* los promueve aparte
-finalize: CHECKPOINT (+ BACKLOG si difiere) + cerrar session + reportar
+  for each Phase in plan (in order, respecting deps):
+    if Phase done (all its Tasks - [x] in the plan): skip  # resume via plan-doc checkboxes
+    seed CHECKPOINT.Next = Phase N (Pending = its Tasks)   # BEFORE starting the phase: seed the intent (artifact-first)
+    for each Task of the Phase:
+      if Task - [x] in the plan: skip                      # intra-phase resume by checkbox
+      verify each source's expected branch (branch-check)
+        on mismatch → pause + resolve with the human
+      execute Task:
+        edit code in the sources (minimal change)
+        if it creates a tool/utility → the ambient creating-tools skill documents it in docs/tools
+        if read-only DB query → SCRIPTS.sql + execute read-only
+        if DB change (DDL/DML) → draft in SCRIPTS.sql (session artifact, DO NOT execute)
+        if non-obvious decision → DECISION (tagged by phase/task, in the SINGLE DECISION)
+        if doubt/gap → inline research OR structured-choice    # chassis
+      mark Task - [x] + state IN THE PLAN                  # AFTER completing the Task (the plan-doc is the per-task source of truth)
+    phase validation:
+        what runs and fails → back to the task
+        what depends on an unapplied migration → defer (Open questions + BACKLOG)
+    closing review gate (pre-commit):                      # Delta 5: CHECKPOINT.Next = "review phase N"
+        INDEPENDENT re-read of the phase diff + installed ambient conventions
+        findings → fix (and re-validate the phase) OR defer justified (Open questions + BACKLOG)
+    update CHECKPOINT (Completed += Phase N, Next = Phase N+1) # AFTER: Pending→Completed + Next = next phase (see artifact-first cycle)
+    propose commit(s) per source (approve first)           # never push/amend/--no-verify; only after the gate is green
+        if rejected → changes stay; record "phase uncommitted"
+    next-phase precondition: working tree clean or acknowledged
+  final validation (whatever can run; the SQL-dependent part stays as a handoff)
+  structured_choice(content: [Marcar plan done, Preguntar algo más], flow: [Compactar, Cerrar])
+  mark plan done (or "done — SQL pending application")
+  # NO export: artifacts stay in the session; a separate export-* promotes them
+finalize: CHECKPOINT (+ BACKLOG if something is deferred) + close session + report
 ```
 
 ## Convergence / exit
 
-- Plan completo + validación OK (o diferida con handoff) + **cada fase pasó su gate de revisión de cierre** antes de commitear → `Marcar plan done`.
-- `Cerrar` (control `flow`, en cualquier momento) → `finalize` persiste `CHECKPOINT` (y `BACKLOG` solo si quedó algo sin ejecutar / sin commitear / sin aplicar), cierra la session, reporta.
-- La promoción de artefactos a `docs/` (vía `export-*`) es **siempre** un paso posterior y explícito, fuera de este loop.
+- Plan complete + validation OK (or deferred with a handoff) + **every phase passed its closing review gate** before committing → `Marcar plan done`.
+- `Cerrar` (`flow` control, at any time) → `finalize` persists `CHECKPOINT` (and `BACKLOG` only if something remained unexecuted / uncommitted / unapplied), closes the session, reports.
+- Promoting artifacts to `docs/` (via `export-*`) is **always** a later, explicit step outside this loop.

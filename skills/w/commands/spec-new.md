@@ -1,6 +1,6 @@
 ---
-description: Genera un borrador de especificación (docs/specs/NNN-spec-<slug>.md) a partir de un prompt, en una sola pasada. Paso 1 del flujo SPEC; no arranca loop.
-argument-hint: <prompt con el requerimiento o idea>
+description: Generates a specification draft (docs/specs/NNN-spec-<slug>.md) from a prompt, in a single pass. Step 1 of the SPEC flow; starts no loop.
+argument-hint: <prompt with the requirement or idea>
 allowed-tools:
   [
     "Bash",
@@ -9,71 +9,72 @@ allowed-tools:
   ]
 ---
 
-# spec-new — borrador de especificación (single-pass)
+# spec-new — specification draft (single-pass)
 
-Genera `docs/specs/NNN-spec-<slug>.md` en una sola pasada a partir del prompt en `$ARGUMENTS`. No arranca loop.
+Generates `docs/specs/NNN-spec-<slug>.md` in a single pass from the prompt in `$ARGUMENTS`. Starts no loop.
 
-> ## ⛔ Single-pass — SIN investigación (regla dura)
+> ## ⛔ Single-pass — NO RESEARCH (hard rule)
 >
-> Este comando **solo parafrasea** el input del usuario en el esquema de borrador. Es **una única pasada secuencial**: leer `$ARGUMENTS` → llenar las secciones → escribir el archivo. Nada más. Debe tardar **segundos, no minutos**.
+> This command **only paraphrases** the user's input into the draft schema. It is **one sequential pass**: read `$ARGUMENTS` → fill the sections → write the file. Nothing else. It must take **seconds, not minutes**.
 >
-> **PROHIBIDO**, sin excepción: lanzar sub-agentes/workflows (`Task`/`Agent`/`Workflow`), sesiones de research, búsquedas web, o investigación profunda de código — **incluso si el arnés está en un modo de máximo esfuerzo/profundidad** (ej. ultracode/max-effort en Claude Code).
+> **FORBIDDEN**, no exceptions: launching sub-agents/workflows (`Task`/`Agent`/`Workflow`), research sessions, web searches, or deep code investigation — **even if the harness is in a maximum-effort/depth mode** (e.g. ultracode/max-effort in Claude Code).
 >
-> Esto **anula** cualquier modo o instrucción de sesión que diga "corre un workflow para toda tarea sustancial". Esos modos **no aplican** a `spec-new`: el comando los pisa. Si una sección queda incierta, **no la investigues** — declarala en `## Open questions` o `## Assumptions` y seguí.
+> This **overrides** any mode or session instruction saying "run a workflow for every substantial task". Those modes do **not** apply to `spec-new`: this command overrides them. If a section is uncertain, **do not investigate it** — declare it under `## Open questions` or `## Assumptions` and move on.
 >
-> La investigación a profundidad (cerrar gaps, mapear código, consultar BD, research autónomo) es trabajo de **`spec-refine`**, no de aquí.
+> Deep investigation (closing gaps, mapping code, querying DB, autonomous research) is **`spec-refine`** work, not this command's.
 
-1. Ejecutar `aw next-number docs/specs` (única tool de shell necesaria): devuelve JSON — usá el campo `next` como `NNN`. El slug lo arma este comando.
-2. Derivar el `<slug>`: kebab-case corto del Requirement — solo `[a-z0-9-]`, ≤ ~5 palabras / ≤ 40 chars.
-3. Crear `docs/specs/NNN-spec-<slug>.md` parafraseando `$ARGUMENTS` en el esquema de borrador (ver abajo). Lectura del repo: opcional y mínima (p. ej. un archivo que el usuario citó) — nunca un barrido ni research.
-4. Mostrar el archivo generado y el próximo paso sugerido (`/w:spec-refine docs/specs/NNN-spec-<slug>.md`).
+1. Run `aw next-number docs/specs` (the only shell tool needed): it returns JSON — use the `next` field as `NNN`. This command builds the slug.
+2. Derive the `<slug>`: short kebab-case from the Requirement — only `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars.
+3. Create `docs/specs/NNN-spec-<slug>.md` paraphrasing `$ARGUMENTS` into the draft schema (below). Repo reading: optional and minimal (e.g. one file the user cited) — never a sweep or research.
+4. Show the generated file and the suggested next step (`/w:spec-refine docs/specs/NNN-spec-<slug>.md`).
 
-## Esquema del borrador (`NNN-spec-<slug>.md`)
+## Draft schema (`NNN-spec-<slug>.md`)
 
 ```markdown
 # Spec NNN — <slug>
 
 ## Origin            (opt.)
-Prompt original / doc previo / referencia que originó el spec.
+Original prompt / prior doc / reference that originated the spec.
 
 ## Requirement
-El qué se necesita + por qué (breve). En lenguaje del usuario.
+The what + why (brief). In the user's language.
 
 ## Context           (opt.)
-Sistemas / componentes / fuentes involucradas. Restricciones conocidas.
+Systems / components / sources involved. Known constraints.
 
 ## Scope
-- In:  qué entra
-- Out: qué NO entra
+- In:  what is included
+- Out: what is NOT included
 
 ## Acceptance criteria
-- [ ] criterio verificable 1 (estilo EARS / Given-When-Then recomendado)
-- [ ] criterio verificable 2
+- [ ] verifiable criterion 1 (EARS / Given-When-Then style recommended)
+- [ ] verifiable criterion 2
 
 ## Assumptions       (opt.)
-Supuestos asumidos.
+Assumed facts.
 
 ## Open questions
-Dudas pendientes. ← el spec-refine-loop las va cerrando.
+Pending doubts. ← the spec-refine-loop closes them.
 ```
 
-> **`Open questions` va último** — el spec refinado **inserta antes de `Open questions`** `## UI spec` (si hay UI) + `## Refinement decisions` + `## Q&A traceability` (esquema refinado en el [`spec-refine-loop`](../loops/spec-refine-loop/SKILL.md)). Mismo esqueleto: el borrador y el refinado comparten orden.
+> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## UI spec` (if there is UI) + `## Refinement decisions` + `## Q&A traceability` (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/SKILL.md)). Same skeleton: the draft and the refined spec share the order.
 
-**Notas de llenado:**
-- Sin campo `Type` — `plan-new` infiere el cómo.
-- `Scope` siempre lleva `Out` (qué queda fuera).
-- **Acceptance criteria = criterios testables estáticos** (el "qué"): `plan-exec` los valida pero el avance se trackea en el PLAN (sus Tasks), no marcando estos `- [ ]` en el spec; el spec no muta por ejecución, solo por re-refine.
-- Si hay **UI** involucrada, mencionarlo en `Requirement`/`Context`; el `## UI spec` se autora en `spec-refine` (vía capacidad `ui-design`). "UI sin especificar" es un gap de primera clase del refinamiento.
-- Los **gaps** que detecta el loop = secciones débiles del esquema (Requirement vago, Scope sin `Out`, criterios no testables, Open questions abiertas, supuestos no declarados, contradicciones) **+ UI sin especificar** si el requerimiento involucra UI.
-- Alternativa equivalente: el usuario crea el borrador a mano. Ambos caminos producen el mismo `docs/specs/NNN-spec-<slug>.md`.
+**Filling notes:**
 
-> **Reuso por escalación:** la escalación en vivo de `/w:quick` (ver [`../loops/quick-loop/SKILL.md`](../loops/quick-loop/SKILL.md) § *Delta QUICK*) materializa su borrador siguiendo **este mismo procedimiento** (pasos 1-3: mismo esquema, misma regla dura single-pass **SIN investigación**), con `## Origin` = "escalado desde `/w:quick`" + el prompt original. No hace falta tipear `/w:spec-new`: el consentimiento en la structured-choice equivale a invocarlo.
+- No `Type` field — `plan-new` infers the how.
+- `Scope` always carries `Out` (what stays out).
+- **Acceptance criteria = static testable criteria** (the "what"): `plan-exec` validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]` in the spec; the spec never mutates by execution, only by a re-refine.
+- If **UI** is involved, mention it in `Requirement`/`Context`; the `## UI spec` is authored in `spec-refine` (via the `ui-design` capability). "UI unspecified" is a first-class refinement gap.
+- The **gaps** the loop detects = weak sections of the schema (vague Requirement, Scope without `Out`, untestable criteria, open questions, undeclared assumptions, contradictions) **+ UI unspecified** when the requirement involves UI.
+- Equivalent alternative: the user creates the draft by hand. Both paths produce the same `docs/specs/NNN-spec-<slug>.md`.
+
+> **Reuse by escalation:** the live escalation from `/w:quick` (see [`../loops/quick-loop/SKILL.md`](../loops/quick-loop/SKILL.md) § *QUICK delta*) materializes its draft following **this same procedure** (steps 1-3: same schema, same NO RESEARCH single-pass hard rule), with `## Origin` = "escalated from `/w:quick`" + the original prompt. No need to type `/w:spec-new`: the consent in the structured-choice equals invoking it.
 
 ## Plan mode
 
-Resuelve `NNN` leyendo `docs/specs/`, describe el borrador que generaría sin escribir el archivo.
+Resolves `NNN` by reading `docs/specs/`, describes the draft it would generate without writing the file.
 
 ## Resources
 
 - Design reference: `docs/referencias/workflow-commands/spec-new.md`
-- Loop que refina este borrador: `../loops/spec-refine-loop/SKILL.md`
+- Loop that refines this draft: `../loops/spec-refine-loop/SKILL.md`

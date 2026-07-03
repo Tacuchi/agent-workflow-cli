@@ -1,6 +1,6 @@
 ---
-description: Dashboard read-only del workspace — qué se hizo / qué falta / qué se descartó, con fechas en español (hace 2 días, ayer en la mañana). Se apoya en `aw status`. Comando transversal (no es un flow); no escribe nada.
-argument-hint: (sin argumentos)
+description: Read-only workspace dashboard — what got done / what is missing / what was discarded, with dates humanized in the user's language. Backed by `aw status`. Transversal command (not a flow); writes nothing.
+argument-hint: (no arguments)
 allowed-tools:
   [
     "Bash",
@@ -8,22 +8,22 @@ allowed-tools:
   ]
 ---
 
-# status — estado del workspace (read-only)
+# status — workspace state (read-only)
 
-Muestra, simple y directo, el estado del workspace agrupado en **Hecho / Falta / Descartó**. Single-pass, read-only: no abre loop, no crea sesiones, no escribe en `docs/` ni en `.workflow/`. Comando **transversal** (no pertenece a ningún flow).
+Shows, simple and direct, the workspace state grouped as **Done / Missing / Discarded**. Single-pass, read-only: no loop, no sessions, writes nothing in `docs/` or `.workflow/`. **Transversal** command (belongs to no flow).
 
-## Ejecutar
+## Run
 
-1. Corré `aw status` (devuelve JSON; se apoya en `status-service`).
-2. Renderizá un resumen legible a partir del JSON — **no** muestres el JSON crudo. Usá el campo `relative` tal cual (ya viene humanizado en español). Encabezá con `workspace.name`.
-3. Agrupá en tres bloques:
-   - **▸ HECHO** — specs con `refined: true`; plans con su progreso (`tasks_done`/`tasks_total`, `progress_pct`); sesiones `closed`.
-   - **▸ FALTA** — sesiones `active`; plans con tareas pendientes (`tasks_total − tasks_done`); specs con `open_questions > 0`.
-   - **▸ DESCARTÓ** — cada item de `discarded[]` (`kind: deferred` = diferido en BACKLOG; `kind: excluded` = excluido en CHECKPOINT), con su `text`.
-4. Cada línea termina con su fecha relativa tras ` · ` (ej. `· ayer en la mañana`). Si una sección queda vacía, mostrá `— (nada)`. No inventes datos que no estén en el JSON.
-5. Si `workspace.initialized` es `false` y todo está vacío → decí "No es un workspace de agent-workflow (no hay `.workflow/`)" y sugerí `/w:workspace-init`.
+1. Run `aw status` (returns JSON; backed by `status-service`).
+2. Render a readable summary from the JSON — do **not** show the raw JSON. Use the `relative` field verbatim (it comes pre-humanized in the user's language — Spanish). Head it with `workspace.name`.
+3. Group into three blocks (the dashboard is user-facing → render it in the user's language; the canonical Spanish labels below):
+   - `▸ HECHO` — specs with `refined: true`; plans with their progress (`tasks_done`/`tasks_total`, `progress_pct`); `closed` sessions.
+   - `▸ FALTA` — `active` sessions; plans with pending tasks (`tasks_total − tasks_done`); specs with `open_questions > 0`.
+   - `▸ DESCARTÓ` — every item in `discarded[]` (`kind: deferred` = deferred in BACKLOG; `kind: excluded` = excluded in CHECKPOINT), with its `text`.
+4. Every line ends with its relative date after ` · ` (e.g. `· ayer en la mañana`). An empty section shows `— (nada)`. Never invent data not present in the JSON.
+5. If `workspace.initialized` is `false` and everything is empty → say the folder is not an agent-workflow workspace (no `.workflow/`) and suggest `/w:workspace-init`.
 
-Formato sugerido (texto plano):
+Suggested format (plain text; user-facing labels in Spanish):
 
 ```
 Workspace: <name>
@@ -43,8 +43,10 @@ Workspace: <name>
 ```
 
 ## Plan mode
-Igual que en ejecución: corré `aw status` (read-only) y mostrá el resumen. No hay cambios que aplicar.
+
+Same as execution: run `aw status` (read-only) and show the summary. There are no changes to apply.
 
 ## Resources
-- CLI: `aw status` (servicio `status-service`; fechas vía `humanize-es`)
+
+- CLI: `aw status` (service `status-service`; dates via `humanize-es`)
 - Design reference: `docs/referencias/workflow-skills/status.md`

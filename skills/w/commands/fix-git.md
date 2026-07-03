@@ -1,5 +1,5 @@
 ---
-description: Resuelve conflictos de un merge en curso para una fuente dada o detectada. Identifica origen (theirs) y destino (ours), analiza la intención de ambos lados y resuelve; pregunta (structured-choice) ante ambigüedad o incoherencia. Git-safe — propone el commit de merge, nunca push/--amend/--no-verify. Transversal (no es flow), sin loop ni session, no toca docs/. Funciona en cualquier repo git, sin workspace inicializado.
+description: Resolves the conflicts of an in-progress merge for a given or detected source. Identifies origin (theirs) and destination (ours), analyzes both sides' intent and resolves; asks (structured-choice) on ambiguity or incoherence. Git-safe — proposes the merge commit, never push/--amend/--no-verify. Transversal (not a flow), no loop, no session, never touches docs/. Works in any git repo, no initialized workspace required.
 argument-hint: "[<source path | alias>]"
 allowed-tools:
   [
@@ -9,25 +9,25 @@ allowed-tools:
   ]
 ---
 
-# fix-git — resolvedor de conflictos de merge (transversal)
+# fix-git — merge-conflict resolver (transversal)
 
-Single-pass, **sin loop ni session**, **no escribe en `docs/`**. Comando **transversal** (no pertenece a SPEC / PLAN / QUICK). **Agnóstico al workspace**: opera sobre cualquier repo git — el `<source>` dado (path o alias), o el cwd — sin requerir `.workflow/`.
+Single-pass, **no loop, no session**, **never writes `docs/`**. **Transversal** command (belongs to no SPEC / PLAN / QUICK flow). **Workspace-agnostic**: operates on any git repo — the given `<source>` (path or alias), or the cwd — without requiring `.workflow/`.
 
-## Ejecutar
+## Run
 
-1. **Detectar + identificar** — corré `aw merge-state [<source>]` (read-only; `--source <alias>` o `--all` si hay workspace; un path directo si no). Del JSON, por repo: `is_merging`, `current_branch` (**destino / ours**), `merge_origin` (**origen / theirs**), `conflicted_files`.
-   - Si **no hay merge en curso** (`is_merging:false`) y el usuario indicó un **target** (p.ej. "merge `<branch>`"): es pedido explícito → `git -C <path> merge <branch>` y seguí. Sin target → informá que no hay merge que resolver y terminá.
-2. **Resolver** — **leé y seguí** la sección ***Resolución de conflictos de merge*** del rol `git` (`../roles/git/SKILL.md`): analizá la intención de cada conflicto (3 versiones `git show :1:/:2:/:3:<file>`, `git log --merge`), resolvé (ours / theirs / combinar / reescribir) y `git add` lo resuelto. Ante **ambigüedad o incoherencia**, preguntá vía *structured-choice* (no inventes la resolución).
-3. **Cerrar** — **proponé** el commit de merge (propose-then-execute, formato canónico, git-safe). Escape: `git merge --abort` tras confirmación del usuario.
+1. **Detect + identify** — run `aw merge-state [<source>]` (read-only; `--source <alias>` or `--all` when a workspace exists; a direct path otherwise). From the JSON, per repo: `is_merging`, `current_branch` (**destination / ours**), `merge_origin` (**origin / theirs**), `conflicted_files`.
+   - If **no merge is in progress** (`is_merging:false`) and the user named a **target** (e.g. "merge `<branch>`"): that is an explicit request → `git -C <path> merge <branch>` and continue. No target → report there is no merge to resolve and stop.
+2. **Resolve** — **read and follow** the ***Merge-conflict resolution*** section of the `git` role (`../roles/git/SKILL.md`): analyze each conflict's intent (3 versions `git show :1:/:2:/:3:<file>`, `git log --merge`), resolve (ours / theirs / combine / rewrite) and `git add` what is resolved. On **ambiguity or incoherence**, ask via *structured-choice* (never invent the resolution).
+3. **Close** — **propose** the merge commit (propose-then-execute, canonical format, git-safe). Escape hatch: `git merge --abort` after user confirmation.
 
-> No intentes `Skill: git` — el rol se **lee y se sigue** (es la capacidad que este comando compone). El comando **es** la entrada; la doctrina de conflictos vive en el rol `git`.
+> Do not try `Skill: git` — the role is **read and followed** (it is the capability this command composes). The command **is** the entry; the conflict doctrine lives in the `git` role.
 
 ## Plan mode
 
-Corré `aw merge-state` (read-only), reportá **origen ↔ destino** y los conflictos por archivo, y describí la **estrategia de resolución** que aplicarías — **sin** editar archivos ni commitear.
+Run `aw merge-state` (read-only), report **origin ↔ destination** and the per-file conflicts, and describe the **resolution strategy** you would apply — **without** editing files or committing.
 
 ## Resources
 
-- Capability: `../roles/git/SKILL.md` (sección *Resolución de conflictos de merge*)
-- CLI: `aw merge-state` (inspector read-only del estado de merge)
+- Capability: `../roles/git/SKILL.md` (section *Merge-conflict resolution*)
+- CLI: `aw merge-state` (read-only merge-state inspector)
 - Design reference: `docs/referencias/workflow-skills/fix-git.md`

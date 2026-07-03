@@ -1,5 +1,5 @@
 ---
-description: Inicia o retoma el loop de refinamiento de una especificación (spec-refine-loop). Input: docs/specs/NNN-spec-<slug>.md (borrador — de spec-new, a mano, o materializado por la escalación de quick). Actualiza docs/specs/NNN-spec-<slug>.md in place.
+description: Starts or resumes the specification refinement loop (spec-refine-loop). Input: docs/specs/NNN-spec-<slug>.md (a draft — from spec-new, hand-written, or materialized by the quick escalation). Updates docs/specs/NNN-spec-<slug>.md in place.
 argument-hint: <docs/specs/NNN-spec-<slug>.md>
 allowed-tools:
   [
@@ -10,33 +10,33 @@ allowed-tools:
   ]
 ---
 
-# spec-refine — trampolín al loop de refinamiento
+# spec-refine — trampoline to the refinement loop
 
-Este comando no refina el spec él mismo: delega al loop `spec-refine-loop` (Layer 2), que es quien itera, cierra gaps y produce el spec refinado.
+This command does not refine the spec itself: it delegates to `spec-refine-loop` (Layer 2), which iterates, closes gaps and produces the refined spec.
 
-## Ejecutar el loop
+## Run the loop
 
-`spec-refine-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
+`spec-refine-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
 
-1. **Leé** `../loops/spec-refine-loop/SKILL.md` (dentro de la skill `w` instalada — p. ej. `~/.claude/skills/w/loops/…`).
-2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como input: detecta estado/resume, corre el motor gap-driven, crea y maneja sessions, converge y reporta.
+1. **Read** `../loops/spec-refine-loop/SKILL.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
+2. **Follow** its instructions taking `$ARGUMENTS` as input: it detects state/resume, runs the gap-driven engine, creates and manages sessions, converges and reports.
 
-> No intentes `Skill: spec-refine-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.
+> Do not try `Skill: spec-refine-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
 
-## Resolución de estado (resumable)
+## State resolution (resumable)
 
-El skill detecta el estado previo antes de arrancar, **keyando off el `CHECKPOINT`** (no la existencia de un archivo "refined"):
+The skill detects prior state before starting, **keying off the `CHECKPOINT`** (never the existence of a "refined" file):
 
-1. Busca la sesión de refinamiento del spec en `.workflow/sessions/` y su `CHECKPOINT.md`.
-2. **En curso** (existe CHECKPOINT) → continúa desde el avance previo (gaps resueltos, Q&A).
-3. **Sin avance** (sin CHECKPOINT y el spec **no** tiene `## Refinement decisions`/`## Q&A traceability`) → arranca desde cero leyendo el spec (`NNN-spec*.md`).
-4. **Ya refinado / re-refine a demanda** (sin CHECKPOINT abierto pero el spec **ya tiene** `## Refinement decisions`/`## Q&A traceability`) → **soportado de primera clase**: mientras el flujo siga en SPEC podés re-correr este comando sobre el mismo spec **las veces que haga falta** (nuevos requerimientos, cambios de scope, re-lectura). El loop hace `create_or_resume` — localiza la refine session existente (aunque esté cerrada) y la **reabre** en vez de duplicarla — y re-refina leyendo el **spec mismo**; al `Guardar`, edita in place con confirmación.
+1. Find the spec's refinement session under `.workflow/sessions/` and its `CHECKPOINT.md`.
+2. **In progress** (a CHECKPOINT exists) → continue from the recorded progress (resolved gaps, Q&A).
+3. **No progress** (no CHECKPOINT and the spec does **not** have `## Refinement decisions`/`## Q&A traceability`) → start from zero reading the spec (`NNN-spec*.md`).
+4. **Already refined / re-refine on demand** (no open CHECKPOINT but the spec **already has** the 2 sections) → **first-class operation**: while the flow stays in SPEC you can re-run this command over the same spec **as many times as needed** (new requirements, scope changes, re-reads). The loop does `create_or_resume` — it locates the existing refine session (even closed) and **reopens** it instead of duplicating — and re-refines reading the **spec itself**; on `Guardar`, edits in place with confirmation.
 
-> **Compat (legacy):** el glob `NNN-spec*.md` también captura specs viejos `NNN-spec.md` / `NNN-spec-refined.md`. Re-correr spec-refine los edita in place de ahí en adelante.
+> **Compat (legacy):** the `NNN-spec*.md` glob also catches old `NNN-spec.md` / `NNN-spec-refined.md` specs. Re-running spec-refine edits them in place from then on.
 
 ## Plan mode
 
-El skill resuelve el estado y describe las acciones que ejecutaría el loop (gaps que cerraría, preguntas que haría), sin arrancar la iteración.
+The skill resolves the state and describes the actions the loop would run (gaps it would close, questions it would ask), without starting the iteration.
 
 ## Resources
 

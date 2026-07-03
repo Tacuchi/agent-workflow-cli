@@ -14,106 +14,106 @@ description: >-
 
 ## Role
 
-`git` — built-in default. Rebindable in `.workflow/skills.toml` (third-party skill or `off`). This skill encodes invariant 5: **git seguro**.
+`git` — built-in default. Rebindable in `.workflow/skills.toml` (third-party skill or `off`). This skill encodes invariant 5: **safe git**.
 
 ## Purpose
 
-Operar git de forma **segura y controlada**: verificar la rama esperada antes de editar, **proponer** commits por fuente, y nunca ejecutar operaciones destructivas o de publicación sin pedido explícito del usuario.
+Operate git in a **safe, controlled** way: verify the expected branch before editing, **propose** commits per source, and never run destructive or publishing operations without the user's explicit request.
 
 ## Composed by
 
-- **`plan-exec-loop`** — verifica rama antes de cada edit; propone commits al cerrar/checkpoint.
-- **`quick-loop`** — igual, en el atajo liviano.
-- **`/w:fix-git`** (comando transversal) — compone la sección *Resolución de conflictos de merge* para resolver un merge en curso en cualquier repo.
+- **`plan-exec-loop`** — verifies the branch before each edit; proposes commits on close/checkpoint.
+- **`quick-loop`** — same, in the lightweight shortcut.
+- **`/w:fix-git`** (transversal command) — composes the *Merge-conflict resolution* section to resolve an in-progress merge in any repo.
 
-(Cualquier flujo que edite código o que el usuario quiera commitear lo usa.)
+(Any flow that edits code, or any user commit request, uses it.)
 
 ## Knowledge
 
-### Operaciones prohibidas sin solicitud explícita del usuario
+### Operations forbidden without an explicit user request
 
-Lista cerrada. La IA **nunca** las ejecuta por iniciativa propia:
+Closed list. The AI **never** runs them on its own initiative:
 
-- `git commit` (incluye `--amend`)
-- `git push` (incluye `--force` / `-f`)
+- `git commit` (includes `--amend`)
+- `git push` (includes `--force` / `-f`)
 - `git merge` · `git rebase` · `git cherry-pick`
-- `git tag` (crear o editar)
-- `git reset --hard` · `git restore .` · `git checkout -- .` · `git clean -fd` · `git stash` (cuando hay trabajo sin commit)
+- `git tag` (create or edit)
+- `git reset --hard` · `git restore .` · `git checkout -- .` · `git clean -fd` · `git stash` (when there is uncommitted work)
 
-Y **siempre** prohibido, aún cuando el usuario pida commit: `--no-verify` (respetar los hooks pre-commit), `--force`, trailers `Co-Authored-By`, firmas de modelo.
+And **always** forbidden, even when the user asks for a commit: `--no-verify` (respect the pre-commit hooks), `--force`, `Co-Authored-By` trailers, model signatures.
 
-> **Excepción — merge en curso:** resolver los conflictos de un merge **ya iniciado** (MERGE_HEAD), o iniciado a pedido **explícito** del usuario vía `/w:fix-git`, **sí** está permitido (es solicitud explícita, no iniciativa propia) — ver *Resolución de conflictos de merge*.
+> **Exception — merge in progress:** resolving the conflicts of an **already started** merge (MERGE_HEAD), or one started at the user's **explicit** request via `/w:fix-git`, **is** allowed (it is an explicit request, not own initiative) — see *Merge-conflict resolution*.
 
-### Operaciones read-only (siempre permitidas, sin preguntar)
+### Read-only operations (always allowed, no asking)
 
-`status` · `log` · `diff` · `branch --show-current` · `rev-parse` · `show`. `git checkout` (cambio de rama) **no** es read-only: requiere *structured-choice* (regla canónica: `../../loops/CHASSIS.md` § *Structured-choice*; binding por arnés: `../../harness/SKILL.md`) aunque no sea destructivo (ver verificación de rama).
+`status` · `log` · `diff` · `branch --show-current` · `rev-parse` · `show`. `git checkout` (branch switch) is **not** read-only: it requires *structured-choice* (canonical rule: `../../loops/CHASSIS.md` § *Structured-choice*; per-harness binding: `../../harness/SKILL.md`) even though it is not destructive (see branch verification).
 
-### Verificación de rama (antes de editar)
+### Branch verification (before editing)
 
-La rama esperada **nunca se asume desde la rama actual** — el usuario pudo cambiarla a mano. Verificar contra la rama de trabajo declarada por fuente antes de cualquier `Write/Edit`.
+The expected branch is **never assumed from the current branch** — the user may have switched it by hand. Verify against each source's declared work branch before any `Write/Edit`.
 
-**Mecanismo primario**: `aw check-branch --source <alias>` (o `--file <path-del-edit-inminente>`; `--strict` devuelve exit 2 en mismatch — útil como gate). Devuelve ya computados los campos por fuente: `alias`, `path`, `main_branch` (base, default `certificacion`), `expected_work_branch`, `current_branch`, `match` (`current == expected`), `dirty` (cambios sin commit). **Fallback** (repo suelto sin workspace/CLI): computarlos con git read-only directo (`git branch --show-current` + `git status --porcelain`) más la rama declarada por la sesión.
+**Primary mechanism**: `aw check-branch --source <alias>` (or `--file <path-of-the-imminent-edit>`; `--strict` returns exit 2 on mismatch — useful as a gate). It returns the per-source fields already computed: `alias`, `path`, `main_branch` (base), `expected_work_branch`, `current_branch`, `match` (`current == expected`), `dirty` (uncommitted changes). **Fallback** (loose repo without workspace/CLI): compute them with direct read-only git (`git branch --show-current` + `git status --porcelain`) plus the session's declared branch.
 
-Casos:
+Cases:
 
-- **`match=true`** → OK, editar.
-- **`match=false, dirty=false`** (Caso A — rama distinta, repo limpio) → *structured-choice*: hacer `git checkout <expected>` / mantener current y actualizar la expectativa de la sesión / cancelar.
-- **`match=false, dirty=true`** (Caso B — rama distinta + cambios sin commit) → **pausar y esperar resolución manual**. No proponer checkout (podría perder trabajo). Pedir al usuario commit/stash/discard y avisar cuando continuar.
-- **Cross-fuente (hub)**: si las fuentes tocadas apuntan a ramas distintas sin declararlo, **hard gate** — bloquear avance con *structured-choice* (alinear todas / declarar divergencia explícita / cancelar).
-- **HEAD detached** → tratar como Caso A.
-- **Fuente fuera de git** (`is_repo=false`) → informar, no bloquear.
+- **`match=true`** → OK, edit.
+- **`match=false, dirty=false`** (Case A — different branch, clean repo) → *structured-choice*: `git checkout <expected>` / keep current and update the session's expectation / cancel.
+- **`match=false, dirty=true`** (Case B — different branch + uncommitted changes) → **pause and wait for manual resolution**. Never propose checkout (it could lose work). Ask the user to commit/stash/discard and to say when to continue.
+- **Cross-source (hub)**: if the touched sources point to different branches without declaring it, **hard gate** — block progress with *structured-choice* (align all / declare the divergence explicitly / cancel).
+- **Detached HEAD** → treat as Case A.
+- **Source outside git** (`is_repo=false`) → report, do not block.
 
-### Commits — propose-then-execute, una fuente a la vez
+### Commits — propose-then-execute, one source at a time
 
-Ante cualquier pedido o disparo de commit (cierre de loop, "commitea esto", "guardá los cambios"):
+On any commit request or trigger (loop close, "commit this", "save the changes"):
 
-1. Resolver las fuentes y su estado dirty/rama con `aw sources` (inventario con git status enriquecido; fallback: git directo por fuente).
-2. Si hay 1+ fuentes `dirty=true`, invocar **una sola** *structured-choice* con una pregunta de contenido por fuente dirty (≤3 por llamada + control `flow`; si N>3, en tandas):
-   - Header de la pregunta: el `alias` de la fuente.
-   - Opciones: "Aprobar sugerido (Recomendado)" con el mensaje canónico / "Saltar esta fuente". `Other` = mensaje custom.
-3. Ejecutar `git -C <path> commit -m "<msg>"` solo en las fuentes aprobadas, **una a una**. Respetar hooks (sin `--no-verify`).
-4. Si una fuente tiene `match=false` (rama distinta a la esperada): **omitirla y abortar su commit**; avisar para alinear la rama primero.
-5. Si todas están `dirty=false` → skip silencioso, informar en chat que no hay nada que commitear.
+1. Resolve the sources and their dirty/branch state with `aw sources` (inventory with enriched git status; fallback: direct git per source).
+2. With 1+ `dirty=true` sources, invoke **a single** *structured-choice* with one content question per dirty source (≤3 per call + `flow` control; N>3 → in batches):
+   - Question header: the source's `alias`.
+   - Options: "Approve suggested (Recommended)" with the canonical message / "Skip this source". `Other` = custom message.
+3. Run `git -C <path> commit -m "<msg>"` only on the approved sources, **one at a time**. Respect hooks (no `--no-verify`).
+4. If a source has `match=false` (branch differs from expected): **skip it and abort its commit**; ask to align the branch first.
+5. If all are `dirty=false` → silent skip; report in chat that there is nothing to commit.
 
-**Bypass** (Regla 5): si el usuario aporta el mensaje literal exacto (`-m "..."`, comillas), commitear directo sin *structured-choice*, pero seguir validando rama, hooks y formato. Si el literal viola el formato, avisar antes de ejecutar.
+**Bypass** (Rule 5): if the user provides the exact literal message (`-m "..."`, quoted), commit directly without *structured-choice*, still validating branch, hooks and format. If the literal violates the format, warn before executing.
 
-### Formato canónico del mensaje
+### Canonical message format
 
-- **Una sola línea**, corta (≤72 chars sugerido), descriptiva (qué cambia, no cómo).
-- Incluir el código de sesión activa (`session<NNN>` como tag o en el prefijo) cuando aplique.
-- Prefijo Conventional Commits **opcional** (`feat:` `fix:` `docs:` `chore:` `refactor:` `test:`).
-- **Prohibido**: multi-línea/body, trailers `Co-Authored-By`, firmas de modelo, emojis (salvo pedido explícito), `--no-verify`.
+- **A single line**, short (≤72 chars suggested), descriptive (what changes, not how), written in the user's language.
+- Include the active session code (`session<NNN>` as a tag or prefix) when it applies.
+- Conventional Commits prefix **optional** (`feat:` `fix:` `docs:` `chore:` `refactor:` `test:`).
+- **Forbidden**: multi-line/body, `Co-Authored-By` trailers, model signatures, emojis (unless explicitly requested), `--no-verify`.
 
-Válidos:
+Valid:
 ```
 session007: agrega politica de commits controlados
 feat(session012): nuevo export-scripts
 fix(session018): corrige drift en hooks.json
 ```
 
-Fuera de sesión activa: relajar a "1 línea + sin co-author"; el tag `session<NNN>` se omite. El propose-then-execute sigue activo.
+Outside an active session: relax to "1 line + no co-author"; the `session<NNN>` tag is omitted. Propose-then-execute stays active.
 
-### Resolución de conflictos de merge
+### Merge-conflict resolution
 
-`git merge` autónomo está prohibido (arriba), **pero** resolver un merge **ya en curso** (MERGE_HEAD) o invocado por el usuario vía `/w:fix-git` **sí** es trabajo sancionado. **Agnóstico al workspace**: opera sobre cualquier repo (no requiere `.workflow/`, flows ni sesiones).
+Autonomous `git merge` is forbidden (above), **but** resolving an **in-progress** merge (MERGE_HEAD), or one invoked by the user via `/w:fix-git`, **is** sanctioned work. **Workspace-agnostic**: it operates on any repo (no `.workflow/`, flows or sessions required).
 
-1. **Detectar + identificar** con `aw merge-state [<path>|--source <alias>|--all]` (read-only): `is_merging`, `current_branch` (**destino / ours**), `merge_origin` (**origen / theirs**), `conflicted_files`. Si `merge_origin` viene vacío, mirar `.git/MERGE_MSG` o `git log --oneline -1 MERGE_HEAD`.
-2. **Analizar la intención** de cada conflicto **antes** de resolver — nunca elegir un lado a ciegas:
-   - Las tres versiones: `git show :1:<file>` (base) · `:2:<file>` (ours/destino) · `:3:<file>` (theirs/origen).
-   - El porqué de cada lado: `git log --merge -p -- <file>`; el historial del hunk en cada rama.
-   - El código alrededor del marcador (coherencia con el resto del archivo).
-3. **Resolver** editando el archivo (quitar `<<<<<<<` / `=======` / `>>>>>>>`): elegir **ours**, **theirs**, **combinar** ambas intenciones, o **reescribir** para satisfacer las dos. `git add <file>` lo resuelto.
-4. **Preguntar** (*structured-choice*) cuando la intención es **ambigua** o los dos lados son **incoherentes** entre sí (no combinables sin perder algo): una pregunta de contenido por archivo/hunk dudoso (≤3 + control `flow`), opciones "Ours (`<destino>`)" / "Theirs (`<origen>`)" / "Combinar" / "Editar manual". **No inventar** una resolución cuando hay duda real.
-5. **Commit propuesto**: completar el merge es un `git commit` (el merge commit) → **propose-then-execute** como cualquier commit (formato canónico de arriba; fuera de sesión → 1 línea sin tag `session<NNN>`; nunca `--no-verify`/`--amend`/`push`). El hook `git-commit-advisor` lo gatea.
-6. **Escape**: si el merge no debe completarse, `git merge --abort` **tras confirmación** del usuario (*structured-choice*) — deja el repo como antes del merge.
+1. **Detect + identify** with `aw merge-state [<path>|--source <alias>|--all]` (read-only): `is_merging`, `current_branch` (**destination / ours**), `merge_origin` (**origin / theirs**), `conflicted_files`. If `merge_origin` comes empty, check `.git/MERGE_MSG` or `git log --oneline -1 MERGE_HEAD`.
+2. **Analyze each conflict's intent** **before** resolving — never pick a side blindly:
+   - The three versions: `git show :1:<file>` (base) · `:2:<file>` (ours/destination) · `:3:<file>` (theirs/origin).
+   - Each side's why: `git log --merge -p -- <file>`; the hunk's history on each branch.
+   - The code around the marker (coherence with the rest of the file).
+3. **Resolve** by editing the file (remove `<<<<<<<` / `=======` / `>>>>>>>`): pick **ours**, **theirs**, **combine** both intents, or **rewrite** to satisfy both. `git add <file>` what is resolved.
+4. **Ask** (*structured-choice*) when the intent is **ambiguous** or both sides are **incoherent** with each other (not combinable without losing something): one content question per doubtful file/hunk (≤3 + `flow` control), options "Ours (`<destination>`)" / "Theirs (`<origin>`)" / "Combine" / "Edit manually". **Never invent** a resolution under real doubt.
+5. **Proposed commit**: completing the merge is a `git commit` (the merge commit) → **propose-then-execute** like any commit (canonical format above; outside a session → 1 line without the `session<NNN>` tag; never `--no-verify`/`--amend`/`push`). The `git-commit-advisor` hook gates it.
+6. **Escape hatch**: if the merge must not complete, `git merge --abort` **after user confirmation** (*structured-choice*) — leaves the repo as before the merge.
 
-> **Resume por git**: el estado del merge en `.git` (MERGE_HEAD + índice) **es** el checkpoint; re-correr `/w:fix-git` reanuda desde los conflictos que queden. No hay session ni artefacto.
-> **Rebase / cherry-pick**: fuera de v1 (misma resolución de markers; distinto `--continue` / `REBASE_HEAD`).
+> **Resume via git**: the merge state in `.git` (MERGE_HEAD + index) **is** the checkpoint; re-running `/w:fix-git` resumes from the remaining conflicts. No session, no artifact.
+> **Rebase / cherry-pick**: out of v1 (same marker resolution; different `--continue` / `REBASE_HEAD`).
 
 ## Output
 
-Ninguno en `docs/`. Produce commits **solo** cuando el usuario aprueba, en los repos fuente. La verificación de rama puede actualizar la expectativa de rama de la sesión si el usuario lo elige.
+Nothing in `docs/`. It produces commits **only** when the user approves, in the source repos. Branch verification may update the session's branch expectation if the user picks that.
 
 ## Source
 
-Racional e historia: diseño (`docs/referencias/workflow-roles/git.md`).
+Rationale and history: design (`docs/referencias/workflow-roles/git.md`).

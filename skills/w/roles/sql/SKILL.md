@@ -19,36 +19,36 @@ description: >-
 
 ## Purpose
 
-Autorar cambios de base de datos como **scripts SQL versionados**, nunca ejecutándolos. Cubre dos modos:
+Author database changes as **versioned SQL scripts**, never executing them. Two modes:
 
-- **Read-only** (consulta): leer schema/datos via MCP para entender el dominio (research, planning).
-- **Write-to-script** (cambio): toda mutación de BD se escribe a `SCRIPTS.sql` de la sesión; la **aplica el usuario**, no la IA.
+- **Read-only** (query): read schema/data via MCP to understand the domain (research, planning).
+- **Write-to-script** (change): every DB mutation is written to the session's `SCRIPTS.sql`; the **user applies it**, never the AI.
 
 ## Composed by
 
-- **research** — leer schema via MCP read-only para entender el dominio.
-- **`plan-exec-loop`** — cada cambio SQL se appendea a `SCRIPTS.sql` durante la ejecución.
-- **`quick-loop`** — igual, para el atajo liviano.
-- **`export-scripts`** — consolida los `SCRIPTS.sql` de N sesiones en el bundle `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` y deriva el rollback.
+- **research** — read schema via read-only MCP to understand the domain.
+- **`plan-exec-loop`** — every SQL change is appended to `SCRIPTS.sql` during execution.
+- **`quick-loop`** — same, for the lightweight shortcut.
+- **`export-scripts`** — consolidates N sessions' `SCRIPTS.sql` into the `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` bundle and derives the rollback.
 
 ## Knowledge
 
-### Regla cero — nunca ejecutar SQL (invariante 4)
+### Rule zero — never execute SQL (invariant 4)
 
-La IA **nunca ejecuta DML/DDL** contra ninguna BD, por ningún canal (MCP, `psql`, `Bash`, driver de app). Las migraciones quedan en `SCRIPTS.sql` y las **aplica el usuario**. Si aparece la tentación de "verificar aplicando", rehusar y pedir al usuario que ejecute.
+The AI **never executes DML/DDL** against any DB, through any channel (MCP, `psql`, `Bash`, an app driver). Migrations stay in `SCRIPTS.sql` and the **user applies them**. If the temptation "verify by applying" appears, refuse and ask the user to run it.
 
-- **Lecturas read-only via MCP**: `SELECT`, inspección de schema, conteos — OK. Sin `INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE`.
-- Los MCP de BD (cert/prod) son **READONLY** por contrato.
-- Excepción única, que NO relaja la regla: si el usuario pide explícitamente "ejecutalo vos contra cert", aún así confirmar por bloque y no asumir autorización ampliada.
+- **Read-only reads via MCP**: `SELECT`, schema inspection, counts — OK. No `INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE`.
+- The DB MCPs (cert/prod) are **READONLY** by contract.
+- Single exception, which does NOT relax the rule: if the user explicitly asks "run it yourself against cert", still confirm per block and never assume broadened authorization.
 
-### Staging — archivo único `SCRIPTS.sql` por sesión
+### Staging — a single `SCRIPTS.sql` per session
 
 ```
 .workflow/sessions/<folder>/
-└── SCRIPTS.sql      (consolidado de TODAS las sentencias de la sesión)
+└── SCRIPTS.sql      (consolidated: ALL of the session's statements)
 ```
 
-Cada sentencia se **appendea** con un par de markers en comentarios:
+Every statement is **appended** with a pair of comment markers:
 
 ```sql
 -- @category: 01-ddl-tablas
@@ -58,60 +58,64 @@ CREATE TABLE IF NOT EXISTS esq_credito.tb_usuarios (
 );
 ```
 
-- `@category` clasifica (4 valores canónicos, abajo).
-- `@stmt` da el slug determinístico `NN-verbo-objetivo`; `export-scripts` deriva el filename al separar.
-- Orden dentro del archivo = orden cronológico de append. El orden de ejecución final por categoría (01→02→03→04) lo resuelve `export-scripts`, no este paso.
-- `BEGIN;` global al inicio del archivo, `COMMIT;` al final. Cada sentencia individual **no** trae su propio BEGIN/COMMIT.
-- **Sin** `.rollback.sql` per archivo durante exec — el rollback se genera al exportar.
+- `@category` classifies (4 canonical values, below).
+- `@stmt` gives the deterministic slug `NN-verb-target`; `export-scripts` derives the filename when splitting.
+- Order inside the file = chronological append order. The final per-category execution order (01→02→03→04) is resolved by `export-scripts`, not here.
+- A global `BEGIN;` at the top of the file, `COMMIT;` at the end. Individual statements carry **no** BEGIN/COMMIT of their own.
+- **No** per-file `.rollback.sql` during exec — the rollback is generated on export.
 
-### Las 4 categorías (`@category`)
+### The 4 categories (`@category`)
 
-| Marker | Patrones de detección |
+| Marker | Detection patterns |
 |---|---|
 | `01-ddl-tablas` | `CREATE/DROP/ALTER TABLE`, `CREATE INDEX`, `CREATE SEQUENCE` |
 | `02-ddl-funciones` | `CREATE [OR REPLACE] FUNCTION/PROCEDURE`, `DROP FUNCTION/PROCEDURE` |
-| `03-migracion` | `UPDATE`, `INSERT ... SELECT`, `DELETE` sobre datos existentes, transformaciones de columnas |
-| `04-inserts` | `INSERT INTO ... VALUES`, seeds de catálogos, datos de configuración inicial |
+| `03-migracion` | `UPDATE`, `INSERT ... SELECT`, `DELETE` over existing data, column transformations |
+| `04-inserts` | `INSERT INTO ... VALUES`, catalog seeds, initial configuration data |
 
-**Orden de ejecución obligatorio**: 01 → 02 → 03 → 04. El `SCRIPTS.sql` puede mezclar categorías cronológicamente; `export-scripts` ordena el bundle final.
+**Mandatory execution order**: 01 → 02 → 03 → 04. `SCRIPTS.sql` may mix categories chronologically; `export-scripts` orders the final bundle.
 
-### Estilo SQL
+### SQL style
 
-- **Header canónico de 4 líneas**, entre dos líneas de iguales:
+- **Canonical 4-line header**, between two equal-sign lines (delivered scripts are user-facing → field values in the user's language):
+
   ```sql
   -- ============================================================================
   -- Script:  NNN-tipo-objetivo.sql
   -- Sesion:  sNNN
-  -- Objeto:  <qué hace, 1-2 líneas>
-  -- Alcance: <filtros y boundaries del cambio, 1 línea>
+  -- Objeto:  <what it does, 1-2 lines>
+  -- Alcance: <filters and boundaries of the change, 1 line>
   -- ============================================================================
   ```
-  Solo 4 campos. Autor/Fecha/notas largas NO van en el header (si hacen falta, bloque libre debajo). Si el motor no es Postgres, indicarlo en `Objeto:`.
-- **Idempotencia**: `CREATE TABLE IF NOT EXISTS`, `DROP ... IF EXISTS`, `CREATE OR REPLACE`, `ON CONFLICT`.
-- **Schema explícito** siempre (`esq_credito.tb_x`, nunca `public.`).
-- **CTEs sobre DO/LOOP**: una transformación = `WITH ... AS` encadenadas + un `INSERT/UPDATE/DELETE` final. Evitar `DO $$ ... LOOP ... END $$` cuando el resultado se logra declarativamente (más fácil de auditar y revertir). Excepción: descubrimiento dinámico de objetos (FKs/columnas/constraints) — documentar el motivo en `Objeto:`.
-- **Queries parametrizadas** siempre (nunca concatenar strings) — en cualquier SQL que termine en código de app.
-- Nunca crear `fn_*`/`sp_*` para reusar lógica exclusiva de un script; usar CTE o inline.
-- **Separadores entre secciones** (solo si hay 2+ secciones):
+
+  Only 4 fields. Author/Date/long notes do NOT go in the header (a free block below, if needed). If the engine is not Postgres, state it in `Objeto:`.
+- **Idempotency**: `CREATE TABLE IF NOT EXISTS`, `DROP ... IF EXISTS`, `CREATE OR REPLACE`, `ON CONFLICT`.
+- **Explicit schema** always (`esq_credito.tb_x`, never `public.`).
+- **CTEs over DO/LOOP**: one transformation = chained `WITH ... AS` + one final `INSERT/UPDATE/DELETE`. Avoid `DO $$ ... LOOP ... END $$` when the result is achievable declaratively (easier to audit and revert). Exception: dynamic object discovery (FKs/columns/constraints) — document the reason in `Objeto:`.
+- **Parametrized queries** always (never string concatenation) — in any SQL that ends up in app code.
+- Never create `fn_*`/`sp_*` to reuse logic exclusive to one script; use a CTE or inline.
+- **Section separators** (only with 2+ sections):
+
   ```sql
   -- ----------------------------------------------------------------------------
-  -- N. Descripción corta de qué hace este bloque.
+  -- N. Short description of what this block does.
   -- ----------------------------------------------------------------------------
   ```
-  Cajas dobles (`====`) solo para el header.
 
-### Proceso de mantenimiento del `SCRIPTS.sql`
+  Double boxes (`====`) only for the header.
 
-1. **Detectar la categoría** del cambio (tabla de markers).
-2. **Verificar idempotencia** del statement.
-3. **Append** con par de markers (`@category` + `@stmt`).
-4. **Style check** — header canónico, CTEs sobre DO/LOOP, schema explícito.
-5. **No** renumerar ni mover (solo hay un `SCRIPTS.sql`).
-6. **No** generar `.rollback.sql` durante exec.
+### `SCRIPTS.sql` maintenance process
 
-### Rollback (lo genera `export-scripts`, no este paso)
+1. **Detect the category** of the change (markers table).
+2. **Verify idempotency** of the statement.
+3. **Append** with the marker pair (`@category` + `@stmt`).
+4. **Style check** — canonical header, CTEs over DO/LOOP, explicit schema.
+5. **Never** renumber or move (there is a single `SCRIPTS.sql`).
+6. **Never** generate `.rollback.sql` during exec.
 
-`export-scripts` lee los forwards ya consolidados y genera **un único** `00-ROLLBACK.sql` al root del bundle, en orden inverso. Conocer las estrategias para escribir forwards reversibles:
+### Rollback (generated by `export-scripts`, not here)
+
+`export-scripts` reads the consolidated forwards and generates **a single** `00-ROLLBACK.sql` at the bundle root, in reverse order. Know the strategies to write reversible forwards:
 
 | Forward | Rollback |
 |---|---|
@@ -119,19 +123,19 @@ CREATE TABLE IF NOT EXISTS esq_credito.tb_usuarios (
 | `ALTER TABLE tb_x ADD COLUMN col` | `ALTER TABLE tb_x DROP COLUMN IF EXISTS col;` |
 | `CREATE INDEX idx_...` | `DROP INDEX IF EXISTS idx_...;` |
 | `CREATE SEQUENCE seq_...` | `DROP SEQUENCE IF EXISTS seq_...;` |
-| `CREATE OR REPLACE FUNCTION fn_x(...)` | `DROP FUNCTION IF EXISTS fn_x(<firma>);` |
-| `UPDATE/DELETE` con backup en `esq_audit.tb_bkp_*` | `UPDATE … FROM esq_audit.tb_bkp_…` |
-| `INSERT INTO tb_x VALUES (...)` | `DELETE FROM tb_x WHERE <clave natural / rango>;` (nunca DELETE sin WHERE) |
+| `CREATE OR REPLACE FUNCTION fn_x(...)` | `DROP FUNCTION IF EXISTS fn_x(<signature>);` |
+| `UPDATE/DELETE` with a backup in `esq_audit.tb_bkp_*` | `UPDATE … FROM esq_audit.tb_bkp_…` |
+| `INSERT INTO tb_x VALUES (...)` | `DELETE FROM tb_x WHERE <natural key / range>;` (never DELETE without WHERE) |
 
-**Irreversibles → bloque "Fase 5" manual** (fuera de la transacción, una línea por caso): `TRUNCATE`, `DROP COLUMN`/`DROP TABLE` sin backup, `ALTER COLUMN TYPE` con pérdida, `DROP ... CASCADE`, `DELETE/UPDATE` sin respaldo en `esq_audit`. Para que un cambio destructivo sea reversible, escribir el backup en el mismo forward (`esq_audit.tb_bkp_<tabla>_sNNN`).
+**Irreversible → manual "Fase 5" block** (outside the transaction, one line per case): `TRUNCATE`, `DROP COLUMN`/`DROP TABLE` without backup, lossy `ALTER COLUMN TYPE`, `DROP ... CASCADE`, `DELETE/UPDATE` without a backup in `esq_audit`. To make a destructive change reversible, write the backup in the same forward (`esq_audit.tb_bkp_<table>_sNNN`).
 
 ## Output
 
-- Durante loops: sentencias appendeadas a `.workflow/sessions/<folder>/SCRIPTS.sql` (artefacto de sesión, no `docs/`).
-- Vía `export-scripts`: bundle `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` — `00-ROLLBACK.sql` + `01-<CATEGORIA>.sql` … (numeración continua, sin gaps por categoría vacía) + `README.md`. Orden canónico de categorías: `DDL-TABLES → DDL-FUNCTIONS → DML → INSERTS`.
+- During loops: statements appended to `.workflow/sessions/<folder>/SCRIPTS.sql` (session artifact, never `docs/`).
+- Via `export-scripts`: the `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` bundle — `00-ROLLBACK.sql` + `01-<CATEGORY>.sql` … (continuous numbering, no gaps for empty categories) + `README.md`. Canonical category order: `DDL-TABLES → DDL-FUNCTIONS → DML → INSERTS`.
 
-Nunca escribe a `docs/` desde un loop (invariante 1: solo `export-*` exporta). Nunca ejecuta nada contra una BD (invariante 4).
+It never writes `docs/` from a loop (invariant 1: only `export-*` exports). It never executes anything against a DB (invariant 4).
 
 ## Source
 
-Reglas autocontenidas (sin dependencia de skills externas). Racional e historia: diseño (`docs/referencias/workflow-roles/sql.md`).
+Self-contained rules (no dependency on external skills). Rationale and history: design (`docs/referencias/workflow-roles/sql.md`).

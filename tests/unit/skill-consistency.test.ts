@@ -105,7 +105,7 @@ describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec
   it("the size gate runs BEFORE the quick session is created (Sequence order)", async () => {
     const quick = await readFile(join(SKILL_ROOT, QUICK_LOOP), "utf8");
     const seq = quick.slice(quick.indexOf("## Sequence"));
-    const gate = seq.indexOf("excede un quick");
+    const gate = seq.indexOf("exceeds a quick");
     const create = seq.indexOf('create_or_resume("<slug>-quick")');
     expect(gate).toBeGreaterThan(-1);
     expect(create).toBeGreaterThan(-1);
@@ -116,25 +116,25 @@ describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec
     const refine = await readFile(join(SKILL_ROOT, "loops/spec-refine-loop/SKILL.md"), "utf8");
     const startedBy = refine.match(/## Started by[\s\S]*?(?=\n## )/)?.[0] ?? "";
     expect(startedBy).toMatch(/quick/);
-    expect(startedBy).toMatch(/escalaci/i);
+    expect(startedBy).toMatch(/escalation/i);
   });
 
   it("spec-new keeps its hard single-pass rule and gains the escalation-reuse note", async () => {
     const specNew = await readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8");
-    expect(specNew).toContain("SIN investigación");
+    expect(specNew).toContain("NO RESEARCH");
     expect(specNew).toMatch(/quick/);
   });
 
   it("command and loop agree: SPEC live, PLAN deferred (asymmetry pinned)", async () => {
     const quickCmd = await readFile(join(SKILL_ROOT, "commands/quick.md"), "utf8");
     const quickLoop = await readFile(join(SKILL_ROOT, QUICK_LOOP), "utf8");
-    expect(quickCmd).toContain("en vivo");
-    expect(quickLoop).toContain("en vivo");
-    expect(quickLoop).toMatch(/PLAN[^\n]*diferid/i);
+    expect(quickCmd).toMatch(/live/i);
+    expect(quickLoop).toMatch(/live/i);
+    expect(quickLoop).toMatch(/PLAN[^\n]*deferred/i);
   });
 
   it("the root orientation records the consented exception to the continuity rule", async () => {
     const root = await readFile(join(SKILL_ROOT, "SKILL.md"), "utf8");
-    expect(root).toMatch(/escalaci[oó]n aceptada|consentimiento explícito/i);
+    expect(root).toMatch(/accepted escalation|explicit consent/i);
   });
 });

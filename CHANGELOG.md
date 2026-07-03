@@ -4,6 +4,24 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [16.0.0] — 2026-07-03
+
+**Ola 2 del informe 003: la doctrina del bundle `w` migra COMPLETA a inglés** (44 docs — chasis, políticas, 5 loops, 14 commands, roles, exports, harness, artifacts y READMEs), con **política de idioma por superficie** documentada en `SKILL.md` § *Language policy*: doctrina y headings de esquemas en inglés; TODO lo user-facing (structured-choice, reportes, dashboard, contenido de artefactos y entregables `docs/`, mensajes de commit) en el idioma del usuario (español); labels literales (`Compactar`, `Cerrar`, `Guardar plan`, …) como strings canónicos verbatim; términos de dominio QTC en español. Cierra el hallazgo nº 1 del informe 003 (corpus bilingüe por capas). **BREAKING** para consumidores de la doctrina del bundle: todo el texto normativo cambió de idioma (la semántica es la misma, verificada por los guards migrados en lockstep). Bundle `w` 10.3.0 → **11.0.0**.
+
+### Added
+
+- **Guard G3 — política de idioma** en `doctrine-guards`: cero diacríticos españoles fuera de code fences e inline-code en `skills/w/**.md` (el patchwork bilingüe no puede volver).
+- `SKILL.md` § *Language policy (per surface)* — la tabla normativa de qué idioma va en qué plano.
+
+### Changed
+
+- Los pins de los guards migraron en lockstep: `chassis-consistency` (heading instanciado EN), *QUICK escalation contract* ("exceeds a quick" · "NO RESEARCH" · `/PLAN[^\n]*deferred/` · `/accepted escalation|explicit consent/`), G5 (Inherits canónicos EN).
+- Token de estado unificado: `inconcluso` → **`inconclusive`** (CONCLUSIONS, chasis y research usaban dos grafías).
+- Spanglish eliminado ("keya off" → "keys off", "gamear", "bindea", "soft-suggest" normalizado, …).
+- Cargas garantizadas: quick 38,5 kB (acumulado olas 1+2: **−6,5%** vs v15.1.0); corpus del bundle 251,1 kB. Presupuestos G1 sin cambios (quedan con más holgura).
+
+Espejo: `docs/referencias` **permanece en español** como canon de diseño (decisión del usuario) — la correspondencia pasa a ser "diseño ES ↔ runtime EN" por sección.
+
 ## [15.2.0] — 2026-07-03
 
 **Ola 1 del informe 003 (claridad para modelos débiles):** la norma del bundle `w` se reestructura a forma imperativa — reglas numeradas, pseudocódigo y fuente única — con dieta de racional y **presupuesto de carga defendido por tests**. Bundle `w` 10.2.0 → **10.3.0**.

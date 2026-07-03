@@ -1,5 +1,5 @@
 ---
-description: Inicia o retoma el loop de planificación (plan-new-loop) a partir de un spec. Convierte el "qué" (spec) en el "cómo" (plan). Input ideal: docs/specs/NNN-spec-<slug>.md ya refinado.
+description: Starts or resumes the planning loop (plan-new-loop) from a spec. Turns the "what" (spec) into the "how" (plan). Ideal input: an already refined docs/specs/NNN-spec-<slug>.md.
 argument-hint: <docs/specs/NNN-spec-<slug>.md | prompt>
 allowed-tools:
   [
@@ -10,40 +10,40 @@ allowed-tools:
   ]
 ---
 
-# plan-new — trampolín al loop de planificación
+# plan-new — trampoline to the planning loop
 
-Puente SPEC → PLAN. Convierte el "qué" (spec refinado) en el "cómo" (plan). Delega a `plan-new-loop` (Layer 2).
+SPEC → PLAN bridge. Turns the "what" (refined spec) into the "how" (plan). Delegates to `plan-new-loop` (Layer 2).
 
-## Resolución de input
+## Input resolution
 
-El skill evalúa `$ARGUMENTS` (los specs viven in place — `docs/specs/NNN-spec-<slug>.md`; localizar vía glob `docs/specs/NNN-spec-*.md` o la ruta exacta):
+The skill evaluates `$ARGUMENTS` (specs live in place — `docs/specs/NNN-spec-<slug>.md`; locate via the `docs/specs/NNN-spec-*.md` glob or the exact path):
 
-1. **Spec refinado** (`docs/specs/NNN-spec-<slug>.md` que **ya tiene** `## Refinement decisions` / `## Q&A traceability`) → ideal. Procede directamente a `plan-new-loop`.
-2. **Spec borrador** (mismo archivo, pero **sin** esas dos secciones) → **soft-suggest** correr `/w:spec-refine` primero; planificar sobre un spec sólido produce mejores planes (el usuario puede proceder igual).
-3. **prompt** (sin spec referenciado) → propone usar el flujo SPEC; **por default lanza `/w:spec-new`** con ese prompt para crear el borrador, y desde ahí continúa el flujo natural.
+1. **Refined spec** (`docs/specs/NNN-spec-<slug>.md` that **already has** `## Refinement decisions` / `## Q&A traceability`) → ideal. Proceed straight to `plan-new-loop`.
+2. **Draft spec** (same file, but **without** those two sections) → **soft-suggest** running `/w:spec-refine` first; planning over a solid spec produces better plans (the user may proceed anyway).
+3. **prompt** (no spec referenced) → propose using the SPEC flow; **by default launch `/w:spec-new`** with that prompt to create the draft, and continue the natural flow from there.
 
-> **Refinado vs borrador** se distingue por la **presencia** de `## Refinement decisions` / `## Q&A traceability` en el spec, no por el nombre del archivo (ya no hay `-refined`).
+> **Refined vs draft** is distinguished by the **presence** of `## Refinement decisions` / `## Q&A traceability` in the spec, never by the filename (there is no `-refined` anymore).
 
-## Ejecutar el loop
+## Run the loop
 
-`plan-new-loop` **no** es una skill invocable por nombre — es el manual de operación de este comando (un doc hermano del bundle). **Cargalo y ejecutalo de punta a punta**:
+`plan-new-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
 
-1. **Leé** `../loops/plan-new-loop/SKILL.md` (dentro de la skill `w` instalada — p. ej. `~/.claude/skills/w/loops/…`).
-2. **Seguí** sus instrucciones tomando `$ARGUMENTS` como input (resuelto según las 3 reglas de arriba): detecta estado/resume, corre el motor gap-driven, crea y maneja sessions, converge y reporta.
+1. **Read** `../loops/plan-new-loop/SKILL.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
+2. **Follow** its instructions taking `$ARGUMENTS` as input (resolved per the 3 rules above): it detects state/resume, runs the gap-driven engine, creates and manages sessions, converges and reports.
 
-> No intentes `Skill: plan-new-loop` — no está registrada como skill. El comando **es** la entrada; el loop es su cuerpo.
+> Do not try `Skill: plan-new-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
 
-## Notas de numeración
+## Numbering notes
 
-El plan se nombra `docs/plans/PPP-plan-<slug>.md`. `aw next-number docs/plans` devuelve JSON (campo `next` = `PPP`); el loop arma el nombre completo (slug = kebab-case corto del Requirement: `[a-z0-9-]`, ≤ ~5 palabras / ≤ 40 chars). **No hereda el `NNN` del spec**. El vínculo al spec se establece por referencia (`## Origin` / "Derivado de") en el plan, no por número.
+The plan is named `docs/plans/PPP-plan-<slug>.md`. `aw next-number docs/plans` returns JSON (field `next` = `PPP`); the loop builds the full name (slug = short kebab-case from the Requirement: `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars). It does **not inherit the spec's `NNN`**. The link to the spec is established by reference (`## Origin` / "Derived from") in the plan, never by number.
 
 ## UI → design SPECs
 
-Si el plan **incluye UI**, el loop compone la capacidad `ui-design` y produce **design SPECs** por pantalla (`NNN-SPEC-<SLUG>.md`) como artefactos de su sesión — las Tasks UI del plan los referencian (ver `../loops/plan-new-loop/SKILL.md` § *Delta 4* y `../artifacts/artifacts-design/SPEC.md`).
+If the plan **includes UI**, the loop composes the `ui-design` capability and produces per-screen **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts of its session — the plan's UI Tasks reference them (see `../loops/plan-new-loop/SKILL.md` § *Delta 4* and `../artifacts/artifacts-design/SPEC.md`).
 
 ## Plan mode
 
-El skill resuelve el input según las 3 reglas de arriba y describe las acciones del loop que ejecutaría, sin arrancar la iteración.
+The skill resolves the input per the 3 rules above and describes the loop actions it would run, without starting the iteration.
 
 ## Resources
 

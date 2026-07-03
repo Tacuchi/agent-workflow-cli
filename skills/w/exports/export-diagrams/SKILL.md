@@ -1,125 +1,125 @@
 ---
 name: export-diagrams
-description: "Genera diagramas de arquitectura y flujos del workspace en `docs/diagrams/` consolidando el código de las fuentes + el plan-doc (`Current state (AS-IS)` / `Target state (TO-BE)`, `Impacted`) de N sesiones. Produce contexto, contenedores, componentes, integraciones y modelo de datos (si MCP read-only disponible). Default `mermaid` (renderiza en GitHub, link `mermaid.ink` para preview); `c4`/structurizr opt-in vía `--engine`. Output en `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/` (o `.md`). Read-only/reporte: emite solo el source del diagrama (el render visual lo hace el lector); no commitea ni muta nada; MCP solo lecturas. Compone la capacidad `diagrams`. Úsalo para 'diagrama del sistema', 'C4 del workspace', 'mapa de arquitectura/flujos'. Invocado por el usuario vía `/w:export-diagrams`."
+description: "Generates the workspace's architecture and flow diagrams in `docs/diagrams/` consolidating the sources' code + the plan-doc (`Current state (AS-IS)` / `Target state (TO-BE)`, `Impacted`) of N sessions. Produces context, containers, components, integrations and data model (when read-only MCP is available). Default `mermaid` (renders on GitHub, `mermaid.ink` link for preview); `c4`/structurizr opt-in via `--engine`. Output in `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/` (or `.md`). Read-only/report: emits only the diagram source (the reader renders it); never commits nor mutates anything; MCP reads only. Composes the `diagrams` capability. Use for 'system diagram', 'workspace C4', 'architecture/flow map'. User-invoked via `/w:export-diagrams`."
 ---
 
-# export-diagrams — Diagramas de arquitectura y flujos desde código + plan-doc
+# export-diagrams — architecture and flow diagrams from code + plan-doc
 
-Genera un dossier de diagramas (**arquitectura y flujos**) del workspace, agregando la estructura de las fuentes y el delta de las sesiones. **Read-only / reporte** — emite solo el **source** del diagrama (Mermaid / DSL); el render visual lo hace el lector. No commitea, no muta nada; MCP solo lecturas.
+Generates a diagram dossier (**architecture and flows**) of the workspace, aggregating the sources' structure and the sessions' delta. **Read-only / report** — it emits only the diagram **source** (Mermaid / DSL); the reader renders it. It never commits, never mutates anything; MCP reads only.
 
-> Familia `export-*` (la única vía artefacto→`docs/`). Recicla el espíritu del viejo `export-arq` (C4, niveles contexto/contenedores/componentes, integraciones, modelo de datos), reubicado a `docs/diagrams` y modernizado: default `mermaid` (en vez de structurizr), sin modos project/hub, y la generación la aporta la capacidad `diagrams` (no una skill propia). Diseño: `docs/referencias/workflow-exports/export-diagrams.md`.
+> `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-diagrams.md`.
 
 ## Category
 
-`docs/diagrams` — **única** carpeta `docs/` que este export escribe.
+`docs/diagrams` — the **only** `docs/` folder this export writes.
 
 ## Composes
 
-Capacidad **`diagrams`** (built-in default `diagrams`), resuelta vía `.workflow/skills.toml`. Aporta el motor de render (Mermaid C4 nativo / Structurizr DSL), los niveles C1–C4 y la convención del link de preview. Este export **no** posee esa lógica: la compone. Rebindeable u `off` por config.
+The **`diagrams`** capability (built-in default `diagrams`), resolved via `.workflow/skills.toml`. It contributes the render engine (native Mermaid C4 / Structurizr DSL), the C1–C4 levels and the preview-link convention. This export does **not** own that logic: it composes it. Rebindable or `off` by config.
 
 ## When to use
 
-- "Diagrama del sistema", "C4 del workspace", "mapa de arquitectura".
-- "Diagrama de flujo" entre componentes / integraciones tocadas.
-- Onboarding técnico; antes de cambios estructurales (validar arquitectura vigente); auditoría técnica.
+- "System diagram", "workspace C4", "architecture map".
+- "Flow diagram" across touched components / integrations.
+- Technical onboarding; before structural changes (validate the current architecture); technical audit.
 
 ## What it does
 
-1. Inspecciona el código de las fuentes del workspace (estructura, wiring, integraciones, tecnologías).
-2. Lee de las sesiones el plan-doc: `Current state (AS-IS)` / `Target state (TO-BE)` y `Impacted` (qué cambió y dónde).
-3. (Opcional) Si MCP read-only está disponible y se pide modelo de datos: consulta esquemas BD (solo lectura).
-4. Resuelve el motor (`--engine`) y consolida la arquitectura/flujos tocados por las N sesiones.
-5. Renderiza los diagramas (compone `diagrams`): contexto, contenedores, componentes, integraciones, modelo de datos (si aplica).
-6. Escribe el dossier en `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/` con un `README.md` (índice + cómo leer).
+1. Inspects the workspace sources' code (structure, wiring, integrations, technologies).
+2. Reads the plan-doc from the sessions: `Current state (AS-IS)` / `Target state (TO-BE)` and `Impacted` (what changed and where).
+3. (Optional) With read-only MCP available and a data-model request: queries DB schemas (reads only).
+4. Resolves the engine (`--engine`) and consolidates the architecture/flows touched by the N sessions.
+5. Renders the diagrams (composes `diagrams`): context, containers, components, integrations, data model (when it applies).
+6. Writes the dossier to `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/` with a `README.md` (index + how to read).
 
 ## What it does NOT do
 
-- Ejecutar commits, merges, push, ni SQL.
-- Mutar sesiones, el plan-doc ni el código (solo lectura). MCP **solo** lecturas read-only (nunca DML/DDL).
-- Escribir cualquier carpeta `docs/` que no sea `docs/diagrams/` (invariante: una categoría).
-- **Renderizar visualmente** el diagrama: emite solo el source (Mermaid / DSL); el render lo hace el lector con sus herramientas (o el link `mermaid.ink`).
-- Validar que las integraciones funcionen (eso es del doctor) ni inventar componentes ausentes.
-- Sobrescribir dossiers previos (siempre next-number).
+- Run commits, merges, push, or SQL.
+- Mutate sessions, the plan-doc or the code (read-only). MCP **reads only** (never DML/DDL).
+- Write any `docs/` folder other than `docs/diagrams/` (invariant: one category).
+- **Visually render** the diagram: it emits only the source (Mermaid / DSL); the reader renders with their tools (or the `mermaid.ink` link).
+- Validate that the integrations work (that is doctor work) or invent absent components.
+- Overwrite previous dossiers (always next-number).
 
 ## Read-only sandbox
 
-En plan mode **describe**, no escribe: el motor resuelto, los niveles/secciones que aparecerían (resueltos por args), las fuentes a inspeccionar + integraciones detectadas, y — si se pide modelo de datos — las queries MCP propuestas con su costo estimado. **No** ejecuta `Write`, ni mutaciones MCP, ni `aw next-number` con efecto.
+In plan mode it **describes**, never writes: the resolved engine, the levels/sections that would appear (resolved by args), the sources to inspect + detected integrations, and — with a data-model request — the proposed MCP queries with their estimated cost. It does **not** run `Write`, MCP mutations, or effectful `aw next-number`.
 
 ## Inputs
 
-**CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
+**`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera el corpus (insumo del delta AS-IS/TO-BE).
-- `aw session-artifacts --code <NNN> --dump objetivo` — ubica la sesión y su referencia al plan-doc; `AS-IS`/`TO-BE`/`Impacted` se leen del plan-doc por su path.
-- `aw next-number docs/diagrams` — numeración determinística (la resolución de la carpeta destino la maneja el CLI).
+- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the corpus (input for the AS-IS/TO-BE delta).
+- `aw session-artifacts --code <NNN> --dump objetivo` — locates the session and its plan-doc reference; `AS-IS`/`TO-BE`/`Impacted` are read from the plan-doc by its path.
+- `aw next-number docs/diagrams` — deterministic numbering (the CLI handles destination-folder resolution).
 
-**Filesystem / código**:
+**Filesystem / code**:
 
-- Código de las fuentes declaradas (estructura, wiring, manifests de tecnología).
-- `docs/diagrams/` existentes (para complementar / no colisionar).
+- The declared sources' code (structure, wiring, technology manifests).
+- Existing `docs/diagrams/` (to complement / avoid collisions).
 
-**MCP read-only** (opcional, solo si se pide modelo de datos y está configurado): `\d <tabla>`, `SELECT count(*)`, relaciones FK para el `erDiagram`. Con cost guard.
+**Read-only MCP** (optional, only with a data-model request and configuration): `\d <table>`, `SELECT count(*)`, FK relations for the `erDiagram`. With the cost guard.
 
-**Args** (sin *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../../harness/SKILL.md`](../../harness/SKILL.md)):
+**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 
 ```
 /w:export-diagrams [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
                    [--engine mermaid|c4] [--scope c4|integrations|data|todo] [--dry-run]
 ```
 
-| Flag | Comportamiento |
+| Flag | Behavior |
 |---|---|
-| `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`); afecta el delta AS-IS/TO-BE |
-| `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
-| `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
-| `--engine mermaid\|c4` | Default `mermaid` (render en GitHub); `c4` = Structurizr DSL opt-in |
-| `--scope` | Qué secciones aparecen: `c4` (contexto/contenedores/componentes), `integrations`, `data` (solo si MCP), `todo` (default) |
-| `--dry-run` | Reporte propositivo sin escribir archivos |
+| `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`); affects the AS-IS/TO-BE delta |
+| `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
+| `--source <alias>` | Limits to one source (multi-source workspace) |
+| `--engine mermaid\|c4` | Default `mermaid` (renders on GitHub); `c4` = opt-in Structurizr DSL |
+| `--scope` | Which sections appear: `c4` (context/containers/components), `integrations`, `data` (only with MCP), `todo` (default: all) |
+| `--dry-run` | Propositional report, no files written |
 
-Sin args: `--engine mermaid --scope todo`. El **snapshot** del sistema es siempre el último estado conocido; `--since`/`--sessions` modulan el énfasis del delta (qué se tocó), no el snapshot base. *(Si algún flag exacto difiere en el CLI runtime, ajustar al contrato real de `aw`.)*
+No args: `--engine mermaid --scope todo`. The system **snapshot** is always the last known state; `--since`/`--sessions` modulate the delta emphasis (what was touched), not the base snapshot.
 
 ## Flow
 
-### Paso 1 — Resolver contexto y corpus
+### Step 1 — Resolve context and corpus
 
-`aw sessions` / `release-data` aplicando `--sessions`/`--since`/`--source`. La resolución de la carpeta destino la maneja el CLI.
+`aw sessions` / `release-data` applying `--sessions`/`--since`/`--source`. The CLI handles destination-folder resolution.
 
-### Paso 2 — Inspeccionar las fuentes
+### Step 2 — Inspect the sources
 
-Por cada fuente: estructura básica, componentes internos (módulos, servicios, comandos, hooks, MCP configurado), tecnologías por manifest (`package.json`, `pom.xml`, …), integraciones externas.
+Per source: basic structure, internal components (modules, services, commands, hooks, configured MCP), technologies per manifest (`package.json`, `pom.xml`, …), external integrations.
 
-### Paso 3 — Leer el delta del corpus
+### Step 3 — Read the corpus delta
 
-Por sesión filtrada (`aw session-artifacts --code <NNN> --dump objetivo`): seguir la referencia al plan-doc y leer `Current state (AS-IS)` / `Target state (TO-BE)` e `Impacted`. Sirve para resaltar lo que cambió sobre el snapshot vigente.
+Per filtered session (`aw session-artifacts --code <NNN> --dump objetivo`): follow the plan-doc reference and read `Current state (AS-IS)` / `Target state (TO-BE)` and `Impacted`. Used to highlight what changed over the current snapshot.
 
-### Paso 4 — Inspeccionar MCP (opcional)
+### Step 4 — Inspect MCP (optional)
 
-Si `--scope` incluye `data` y hay MCP read-only: `\d <tabla>`, `count(*)`, relaciones FK (con cost guard). Si no disponible → omitir la sección "Modelo de datos" con nota inline.
+If `--scope` includes `data` and read-only MCP exists: `\d <table>`, `count(*)`, FK relations (with the cost guard). Not available → omit the "Data model" section with an inline note.
 
-### Paso 5 — Renderizar (compone `diagrams`)
+### Step 5 — Render (composes `diagrams`)
 
-Según `--engine`: `mermaid` → bloques Mermaid C4 nativos (`C4Context`/`C4Container`/`C4Component`) y `flowchart` para flujos; `c4` → `workspace.dsl` Structurizr aparte + Mermaid auxiliar embebido para lectura offline. Por cada bloque ```` ```mermaid ````, agregar inmediatamente después del fence de cierre un blockquote con el link de preview: `> Ver diagrama renderizado: <https://mermaid.ink/img/BASE64>` (base64 URL-safe del código plano). No aplica a `workspace.dsl`.
+Per `--engine`: `mermaid` → native Mermaid C4 blocks (`C4Context`/`C4Container`/`C4Component`) and `flowchart` for flows; `c4` → a separate Structurizr `workspace.dsl` + auxiliary embedded Mermaid for offline reading. For every ```` ```mermaid ```` block, add immediately after the closing fence a blockquote with the preview link: `> Ver diagrama renderizado: <https://mermaid.ink/img/BASE64>` (URL-safe base64 of the plain code). Not applicable to `workspace.dsl`.
 
-### Paso 6 — Escribir o reportar
+### Step 6 — Write or report
 
-Si `--dry-run`: imprimir el reporte; no escribir. Si no: `aw next-number docs/diagrams` + escribir el dossier. **NUNCA commitear**. Resumen al usuario: motor, secciones presentes/omitidas (p.ej. Datos omitido si no MCP) y ruta.
+With `--dry-run`: print the report; write nothing. Otherwise: `aw next-number docs/diagrams` + write the dossier. **NEVER commit**. Summary to the user: engine, present/omitted sections (e.g. Data omitted without MCP) and the path.
 
 ## Output location
 
 ```
 docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/
-├── README.md          # índice + cómo leer + counts
-├── diagrams.md        # documento principal con Mermaid embebido (+ links mermaid.ink)
-└── workspace.dsl      # solo con --engine c4 (Structurizr)
+├── README.md          # index + how to read + counts
+├── diagrams.md        # main document with embedded Mermaid (+ mermaid.ink links)
+└── workspace.dsl      # only with --engine c4 (Structurizr)
 ```
 
 ## Re-run
 
-Idempotente funcional: cada invocación toma el siguiente `NNN`; no sobrescribe dossiers previos. Para regenerar: borrar el directorio y re-invocar.
+Functionally idempotent: each invocation takes the next `NNN`; it never overwrites previous dossiers. To regenerate: delete the directory and re-invoke.
 
 ## Resources
 
-- Design: `docs/referencias/workflow-exports/export-diagrams.md` · familia: [`../README.md`](../README.md).
-- Capacidad compuesta: `diagrams` (built-in default; ver `docs/referencias/workflow-roles/`).
-- Insumo: plan-doc `AS-IS`/`TO-BE`/`Impacted` (ver `docs/plans`).
+- Design: `docs/referencias/workflow-exports/export-diagrams.md` · family: [`../README.md`](../README.md).
+- Composed capability: `diagrams` (built-in default; see `docs/referencias/workflow-roles/`).
+- Input: plan-doc `AS-IS`/`TO-BE`/`Impacted` (see `docs/plans`).
 - Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).

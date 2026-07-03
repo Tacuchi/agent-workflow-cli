@@ -1,26 +1,26 @@
 # w — agent-workflow skill bundle
 
-> El bundle `w` (`w` = *workflow*) empaqueta el arnés agent-workflow como skills de Claude Code + slash commands `/w:`. Runtime: [`@tacuchi/agent-workflow-cli`](../../README.md) (`agent-workflow` / `aw`).
+> The `w` bundle (`w` = *workflow*) packages the agent-workflow harness as Claude Code skills + `/w:` slash commands. Runtime: [`@tacuchi/agent-workflow-cli`](../../README.md) (`agent-workflow` / `aw`).
 
-Implementa el modelo **stages + loops + artifacts**. La fuente de diseño vive en `docs/referencias/` del hub de agent-workflow. Este README es el índice del bundle; la normativa vive en sus docs canónicos:
+It implements the **stages + loops + artifacts** model. The design source lives under `docs/referencias/` in the agent-workflow hub. This README is the bundle index; the normative text lives in its canonical docs:
 
-- **Modelo completo** — 3 capas + zona `docs/`, los 3 flujos (SPEC/PLAN/QUICK), comandos, capacidades componibles y los 6 invariantes duros: [`SKILL.md`](SKILL.md) (la skill de orientación `workflow`).
-- **Motor de los loops** — objetivo persistente + verification-first, gap-driven, sessions, structured-choice, compact/resume, políticas git/BD/gate de revisión: [`loops/CHASSIS.md`](loops/CHASSIS.md) (los 5 loops son heirs).
-- **Binding capacidad→arnés** (Claude Code / Codex / Gemini-Antigravity / OpenCode / Crush / Warp): [`harness/SKILL.md`](harness/SKILL.md).
+- **Full model** — 3 layers + `docs/` zone, the 3 flows (SPEC/PLAN/QUICK), commands, composable capabilities and the 6 hard invariants: [`SKILL.md`](SKILL.md) (the `workflow` orientation skill).
+- **Loop engine** — persistent objective + verification-first, gap-driven, sessions, structured-choice, compact/resume, git/DB/review-gate policies: [`loops/CHASSIS.md`](loops/CHASSIS.md) (the 5 loops are heirs) + [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md).
+- **Capability→harness binding** (Claude Code / Codex / Gemini-Antigravity / OpenCode / Crush / Warp): [`harness/SKILL.md`](harness/SKILL.md).
 
 ## Folders
 
 | Folder | Layer | Contains |
 |---|---|---|
-| [`commands/`](commands/) | 1 | Los slash commands `/w:` que invoca el usuario |
-| [`loops/`](loops/) | 2 | [`CHASSIS.md`](loops/CHASSIS.md) (el motor) + los 5 loop heirs que corre la IA |
-| [`exports/`](exports/) | 1 | La familia `export-*` — única vía artefacto→`docs/` |
-| [`roles/`](roles/) | cross-cutting | Capacidades enchufables (defaults built-in; rebindeables vía `.workflow/skills.toml`) |
-| [`harness/`](harness/SKILL.md) | cross-cutting | Binding capacidad→mecanismo por arnés |
-| [`artifacts/`](artifacts/) | 3 | Plantillas de artefactos de session que manejan los loops |
-| [`hooks/`](hooks/) | — | Plantilla de hooks del host (branch-check, sql-mutation-guard, checkpoint, …) |
-| [`SKILL.md`](SKILL.md) | overview | La skill de orientación `workflow` (guía del modelo completo) |
+| [`commands/`](commands/) | 1 | The `/w:` slash commands the user invokes |
+| [`loops/`](loops/) | 2 | [`CHASSIS.md`](loops/CHASSIS.md) (the engine) + the 5 loop heirs the AI runs |
+| [`exports/`](exports/) | 1 | The `export-*` family — the only artifact→`docs/` path |
+| [`roles/`](roles/) | cross-cutting | Pluggable capabilities (built-in defaults; rebindable via `.workflow/skills.toml`) |
+| [`harness/`](harness/SKILL.md) | cross-cutting | Capability→mechanism binding per harness |
+| [`artifacts/`](artifacts/) | 3 | Session artifact templates the loops manage |
+| [`hooks/`](hooks/) | — | Host hook template (branch-check, sql-mutation-guard, checkpoint, …) |
+| [`SKILL.md`](SKILL.md) | overview | The `workflow` orientation skill (guide to the full model) |
 
 ## Bootstrap
 
-Correr [`/w:workspace-init`](commands/workspace-init.md) una vez para convertir una carpeta en workspace (`.workflow/` + taxonomía `docs/` + bloque `WORKSPACE` + `.workflow/skills.toml`). Sin distinción project/hub — un workspace tiene 1+ fuentes.
+Run [`/w:workspace-init`](commands/workspace-init.md) once to turn a folder into a workspace (`.workflow/` + `docs/` taxonomy + `WORKSPACE` block + `.workflow/skills.toml`). No project/hub distinction — a workspace has 1+ sources.

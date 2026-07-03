@@ -1,5 +1,5 @@
 ---
-description: Genera un informe ejecutivo/funcional en docs/reports/ consolidando el corpus de sesiones (spec, CONCLUSIONS, DECISION), el plan-doc y el estado de docs/. Single-pass, explícito.
+description: Generates an executive/functional report in docs/reports/ consolidating the session corpus (spec, CONCLUSIONS, DECISION), the plan-doc and the docs/ state. Single-pass, explicit.
 argument-hint: [--sessions <ids>] [--audience <gerencia|tecnica>] [--dry-run]
 allowed-tools:
   [
@@ -9,21 +9,21 @@ allowed-tools:
   ]
 ---
 
-# export-reports — exportar informes
+# export-reports — export reports
 
-Consolida el corpus completo de sesiones (`CONCLUSIONS`, `DECISION`, spec) + plan-doc (estado) + `docs/` y genera un informe ejecutivo o funcional en `docs/reports/`. Single-pass, read-only sobre sesiones.
+Consolidates the full session corpus (`CONCLUSIONS`, `DECISION`, spec) + plan-doc (state) + `docs/` and generates an executive or functional report in `docs/reports/`. Single-pass, read-only over sessions.
 
-Para ejecutar: **leé** `../exports/export-reports/SKILL.md` y **seguí** sus instrucciones con `$ARGUMENTS` como input. No intentes `Skill: export-reports` (no está registrada por nombre); el SKILL.md hermano es el cuerpo de este export.
+To run: **read** `../exports/export-reports/SKILL.md` and **follow** its instructions with `$ARGUMENTS` as input. Do not try `Skill: export-reports` (it is not registered by name); the sibling SKILL.md is this export's body.
 
-## Qué produce
+## What it produces
 
-- `docs/reports/`: informe consolidado, cross-session, con dedup y estado de avance.
-- **No** muta sesiones ni abre/cierra loops.
-- Solo escribe en `docs/reports/`.
+- `docs/reports/`: a consolidated, cross-session report with dedup and progress state.
+- Does **not** mutate sessions nor open/close loops.
+- Writes only `docs/reports/`.
 
 ## Plan mode
 
-Describe el alcance e índice del informe que generaría (secciones, sesiones fuente, estado de avance) sin escribir archivos.
+Describes the scope and index of the report it would generate (sections, source sessions, progress state) without writing files.
 
 ## Resources
 

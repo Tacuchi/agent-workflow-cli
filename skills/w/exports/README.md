@@ -25,9 +25,9 @@
 | Export | Composes | Reads (artifacts / sessions + corpus) | Writes (its ONLY category) |
 |---|---|---|---|
 | [`export-scripts`](export-scripts/SKILL.md) | `sql` | type-B `SCRIPTS.sql` (DDL/DML migrations) across N sessions + standalone `docs/scripts/*.sql` | `docs/scripts/NNN-export-scripts-<date>/` (numbered forwards + `00-ROLLBACK.sql`) |
-| [`export-manuals`](export-manuals/SKILL.md) | — (prosa: convenciones ambientes) | sessions + `DECISION` + plan-doc (`Solution`, `Final behavior`, `Validations`) + touched code | `docs/manuals/` |
+| [`export-manuals`](export-manuals/SKILL.md) | — (prose: ambient conventions) | sessions + `DECISION` + plan-doc (`Solution`, `Final behavior`, `Validations`) + touched code | `docs/manuals/` |
 | [`export-diagrams`](export-diagrams/SKILL.md) | `diagrams` | source code of the sources + plan-doc (`AS-IS` / `TO-BE`, `Impacted`) | `docs/diagrams/` (C4 / mermaid) |
-| [`export-reports`](export-reports/SKILL.md) | — (prosa: convenciones ambientes) | corpus of sessions (spec, `CONCLUSIONS`, `DECISION`) + plan-doc state + `docs/` | `docs/reports/` (executive / functional report) |
+| [`export-reports`](export-reports/SKILL.md) | — (prose: ambient conventions) | corpus of sessions (spec, `CONCLUSIONS`, `DECISION`) + plan-doc state + `docs/` | `docs/reports/` (executive / functional report) |
 
 > **Composition over ownership:** an export that owns a derived artifact does **not** own its authoring logic — it **composes a capability role** from [`../roles/`](../roles/) (resolved through `.workflow/skills.toml`): `export-scripts` composes `sql`; `export-diagrams` composes `diagrams`. Swapping the implementation is a one-line config change; it never touches the export. `export-manuals` and `export-reports` produce **prose**, which follows **ambient writing conventions** (the host auto-applies an installed writing skill if present) — they do **not** compose or bind a `writing` role.
 
@@ -36,7 +36,7 @@
 1. **Layer 1, explicit** — the **user** invokes them (`/w:export-<cat>`). **Never** automatic (no loop fires them).
 2. **Single-pass, read-only over sessions** — they read artifacts/sessions and `docs/`, **synthesize**, and write **only** their own `docs/<category>/` folder. They do **not** mutate sessions and do **not** open/close loops.
 3. **Cross-session** — they consolidate **N** sessions + the `docs/` corpus (dedup, roadmap, continuous numbering).
-4. **No loop, no internal sessions** — options come from **args** (no *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../harness/SKILL.md`](../harness/SKILL.md)).
+4. **No loop, no internal sessions** — options come from **args** (no lifecycle *structured-choice*; harness capability — see [`../harness/SKILL.md`](../harness/SKILL.md)).
 5. **Git-safe** — they **never** commit, merge, push, `--amend`, or `--no-verify`. The output is a written document the user reviews and commits when ready.
 6. **DB scripts-only** — `export-scripts` ships migration SCRIPTS as a bundle; it **never executes** DDL/DML (a human/DBA applies them).
 
@@ -83,6 +83,6 @@ Exports read the corpus through the CLI — **never hard-coded paths**:
 | Export | File | Category | Composes |
 |---|---|---|---|
 | `export-scripts` | [`export-scripts/SKILL.md`](export-scripts/SKILL.md) | `docs/scripts` | `sql` |
-| `export-manuals` | [`export-manuals/SKILL.md`](export-manuals/SKILL.md) | `docs/manuals` | — (prosa: convenciones ambientes) |
+| `export-manuals` | [`export-manuals/SKILL.md`](export-manuals/SKILL.md) | `docs/manuals` | — (prose: ambient conventions) |
 | `export-diagrams` | [`export-diagrams/SKILL.md`](export-diagrams/SKILL.md) | `docs/diagrams` | `diagrams` |
-| `export-reports` | [`export-reports/SKILL.md`](export-reports/SKILL.md) | `docs/reports` | — (prosa: convenciones ambientes) |
+| `export-reports` | [`export-reports/SKILL.md`](export-reports/SKILL.md) | `docs/reports` | — (prose: ambient conventions) |

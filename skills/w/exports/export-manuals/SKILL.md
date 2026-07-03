@@ -1,127 +1,127 @@
 ---
 name: export-manuals
-description: "Manuales operativos / de onboarding (audiencia operador/soporte). Sintetiza manuales técnicos del workspace en `docs/manuals/` consolidando N sesiones (`exec`/`quick`) + `docs/`. Lee de cada sesión el `DECISION` y el plan-doc (`Solution`, `Final behavior`, `Validations`) + el código tocado en las fuentes (cómo opera/funciona lo construido). Dos modos: `complement` (default, sobrescribe `INDEX.md` apuntando a los manuales detectados) y `regenerate` (produce dossier `NNN-export-manuals-YYYY-MM-DD/` con 1 manual por tema). Audiencia: operadores / soporte / onboarding. Read-only/reporte: no commitea ni muta sesiones. La prosa sigue las convenciones de redacción ambientes (el host auto-aplica una skill de writing instalada si está presente). Úsalo para 'manual operativo', 'cómo funciona lo entregado', 'paquete de onboarding técnico', 'índice de manuales'. Invocado por el usuario vía `/w:export-manuals`."
+description: "Operations / onboarding manuals (operator/support audience). Synthesizes the workspace's technical manuals into `docs/manuals/` consolidating N sessions (`exec`/`quick`) + `docs/`. Reads each session's `DECISION` and the plan-doc (`Solution`, `Final behavior`, `Validations`) + the touched code in the sources (how what was built operates/works). Two modes: `complement` (default, overwrites `INDEX.md` pointing at the detected manuals) and `regenerate` (produces a `NNN-export-manuals-YYYY-MM-DD/` dossier with 1 manual per topic). Audience: operators / support / onboarding. Read-only/report: it never commits nor mutates sessions. The prose follows the ambient writing conventions (the host auto-applies an installed writing skill when present). Use for 'operations manual', 'how what we shipped works', 'technical onboarding pack', 'manuals index'. User-invoked via `/w:export-manuals`."
 ---
 
-# export-manuals — Manuales técnicos desde sesiones + `docs/`
+# export-manuals — technical manuals from sessions + `docs/`
 
-Genera o refresca manuales de **operación / cómo-funciona / onboarding** en `docs/manuals/`, consolidando lo entregado en N sesiones + el corpus `docs/`. **Read-only / reporte** — no commitea, no muta sesiones ni el código.
+Generates or refreshes **operations / how-it-works / onboarding** manuals in `docs/manuals/`, consolidating what N sessions delivered + the `docs/` corpus. **Read-only / report** — it never commits, never mutates sessions or code.
 
-> Familia `export-*` (la única vía artefacto→`docs/`). Recicla el espíritu del viejo `export-tech-manuals` (modos complementar/regenerar, `INDEX.md`, dossier por tema), modernizado: `docs/manuals` en inglés, sin modos project/hub, y la prosa sigue las convenciones de redacción **ambientes** (el host auto-aplica una skill de writing instalada si está presente), no un rol propio. Diseño: `docs/referencias/workflow-exports/export-manuals.md`.
+> `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-manuals.md`.
 
 ## Category
 
-`docs/manuals` — **única** carpeta `docs/` que este export escribe.
+`docs/manuals` — the **only** `docs/` folder this export writes.
 
-## Writing (convención ambiente, no rol)
+## Writing (ambient convention, not a role)
 
-La redacción del manual sigue las convenciones de redacción **ambientes**: el host auto-aplica una skill de writing instalada (si está presente) por su `description` — frases cortas, listas sobre prosa, sin relleno, léxico técnico para la audiencia operador/soporte. Este export **no** compone un rol `writing` ni lo bindea; es **indiferente** a qué skill de redacción exista. Una familia útil vive en el plugin `dev-conventions` del marketplace, pero el export **no depende** de él.
+The manual's prose follows the **ambient** writing conventions: the host auto-applies an installed writing skill (when present) by its `description` — short sentences, lists over prose, no filler, technical lexicon for the operator/support audience. This export does **not** compose or bind a `writing` role; it is **indifferent** to which writing skill exists. A useful family lives in the `dev-conventions` marketplace plugin, but the export does **not depend** on it. Manuals are user-facing deliverables → write them in the user's language.
 
 ## When to use
 
-- "Manual operativo", "cómo funciona lo que entregamos", "guía paso a paso".
-- "Índice de manuales" / refrescar el `INDEX.md` tras nuevas sesiones.
-- Paquete de **onboarding técnico** para nuevos miembros del equipo.
-- Auditoría de cobertura documental.
+- "Operations manual", "how what we delivered works", "step-by-step guide".
+- "Manuals index" / refresh the `INDEX.md` after new sessions.
+- **Technical onboarding** pack for new team members.
+- Documentation-coverage audit.
 
 ## What it does
 
-1. Lee el corpus de sesiones (`exec`/`quick`): por sesión, `DECISION` + el plan-doc (`Solution`, `Final behavior`, `Validations`).
-2. Inspecciona el código tocado en las fuentes (cómo opera/funciona lo construido) — solo lectura.
-3. Detecta temas (declarados en `SESSION` — su `## Objective` —, o inferidos por keywords operativos).
-4. Resuelve el modo (`complement` o `regenerate`).
-5. Sintetiza el contenido aplicando las convenciones de redacción ambientes (host).
-6. Escribe: `complement` → sobrescribe `docs/manuals/INDEX.md`; `regenerate` → dossier `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` con 1 manual por tema.
+1. Reads the session corpus (`exec`/`quick`): per session, `DECISION` + the plan-doc (`Solution`, `Final behavior`, `Validations`).
+2. Inspects the touched code in the sources (how what was built operates/works) — read-only.
+3. Detects topics (declared in `SESSION` — its `## Objective` —, or inferred by operational keywords).
+4. Resolves the mode (`complement` or `regenerate`).
+5. Synthesizes the content applying the ambient writing conventions (host).
+6. Writes: `complement` → overwrites `docs/manuals/INDEX.md`; `regenerate` → a `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` dossier with 1 manual per topic.
 
 ## What it does NOT do
 
-- Ejecutar commits, merges, push, SQL ni envío de correos.
-- Mutar sesiones, el plan-doc, ni el código de las fuentes (solo lectura).
-- Escribir cualquier carpeta `docs/` que no sea `docs/manuals/` (invariante: una categoría).
-- Sobrescribir un dossier `regenerate` previo (siempre next-number).
-- Inventar manuales: si no hay tema detectable → en `regenerate` aborta con mensaje claro; en `complement` produce un `INDEX.md` vacío con nota inline.
-- Renderizar visualmente diagramas (la arquitectura visual es de `export-diagrams`; Mermaid embebido solo si aporta).
+- Run commits, merges, push, SQL or send emails.
+- Mutate sessions, the plan-doc, or the sources' code (read-only).
+- Write any `docs/` folder other than `docs/manuals/` (invariant: one category).
+- Overwrite a previous `regenerate` dossier (always next-number).
+- Invent manuals: with no detectable topic → in `regenerate` it aborts with a clear message; in `complement` it produces an empty `INDEX.md` with an inline note.
+- Visually render diagrams (visual architecture belongs to `export-diagrams`; embedded Mermaid only when it adds value).
 
 ## Read-only sandbox
 
-En plan mode **describe**, no escribe: el modo resuelto, los temas detectados (con sesiones de origen), los manuales ya presentes en `docs/manuals/`, y — según el modo — la estructura del `INDEX.md` que sobrescribiría o el count de manuales que generaría el dossier. **No** ejecuta `Write` ni `aw next-number` con efecto.
+In plan mode it **describes**, never writes: the resolved mode, the detected topics (with origin sessions), the manuals already present in `docs/manuals/`, and — per mode — the `INDEX.md` structure it would overwrite or the count of manuals the dossier would generate. It does **not** run `Write` or effectful `aw next-number`.
 
 ## Inputs
 
-**CLI `agent-workflow` (alias `aw`)** — no leer paths hardcodeados:
+**`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumera el corpus.
-- `aw session-artifacts --code <NNN> --dump objetivo,decisiones` — devuelve `{path, content, size}` por artefacto (`SESSION` con su `## Objective`, `DECISION`); el plan-doc se lee por su path.
-- `aw next-number docs/manuals` — numeración determinística (solo modo `regenerate`).
+- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the corpus.
+- `aw session-artifacts --code <NNN> --dump objetivo,decisiones` — returns `{path, content, size}` per artifact (`SESSION` with its `## Objective`, `DECISION`); the plan-doc is read by its path.
+- `aw next-number docs/manuals` — deterministic numbering (`regenerate` mode only).
 
 **Filesystem**:
 
-- `docs/manuals/*.md` — manuales ya presentes (para complementar).
-- `docs/manuals/INDEX.md` — re-generable (sobrescribible) en modo `complement`.
-- Código de las fuentes declaradas — lectura para describir el comportamiento.
+- `docs/manuals/*.md` — manuals already present (to complement).
+- `docs/manuals/INDEX.md` — re-generable (overwritable) in `complement` mode.
+- The declared sources' code — read to describe behavior.
 
-**Args** (sin *structured-choice* de ciclo de vida — capacidad del arnés; ver [`../../harness/SKILL.md`](../../harness/SKILL.md)):
+**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 
 ```
 /w:export-manuals [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
                   [--mode complement|regenerate] [--topics slug1,slug2] [--dry-run]
 ```
 
-| Flag | Comportamiento |
+| Flag | Behavior |
 |---|---|
-| `--sessions NNN[,NNN]` | Filtro discreto por código (precede a `--since`) |
-| `--since sessionNNN` | Solo sesiones posteriores a NNN (exclusivo: la propia NNN no entra; usá `--sessions` para incluirla) |
-| `--source <alias>` | Limita a una fuente (workspace multi-fuente) |
+| `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
+| `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
+| `--source <alias>` | Limits to one source (multi-source workspace) |
 | `--mode complement\|regenerate` | Default `complement` |
-| `--topics slug1,slug2` | Limita a los temas declarados |
-| `--dry-run` | Reporte propositivo sin escribir archivos |
+| `--topics slug1,slug2` | Limits to the declared topics |
+| `--dry-run` | Propositional report, no files written |
 
-Sin args: `--mode complement` sobre todo el corpus. *(Si algún flag exacto difiere en el CLI runtime, ajustar al contrato real de `aw`.)*
+No args: `--mode complement` over the whole corpus.
 
-### Resolución de `--mode`
+### `--mode` resolution
 
-| Modo | Output | Cuándo usar |
+| Mode | Output | When to use |
 |---|---|---|
-| `complement` (default) | `docs/manuals/INDEX.md` (sobrescribe) | Refrescar el índice tras nuevas sesiones/manuales |
-| `regenerate` | `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` (next-number) | Paquete consolidado de manuales (ej. onboarding) |
+| `complement` (default) | `docs/manuals/INDEX.md` (overwrites) | Refresh the index after new sessions/manuals |
+| `regenerate` | `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` (next-number) | Consolidated manual pack (e.g. onboarding) |
 
 ## Flow
 
-### Paso 1 — Resolver contexto y corpus
+### Step 1 — Resolve context and corpus
 
-`aw sessions` / `release-data` aplicando `--sessions`/`--since`/`--source`. La resolución de la carpeta destino la maneja el CLI.
+`aw sessions` / `release-data` applying `--sessions`/`--since`/`--source`. The CLI handles destination-folder resolution.
 
-### Paso 2 — Inspeccionar manuales presentes
+### Step 2 — Inspect the present manuals
 
-Listar `docs/manuals/*.md` (excluyendo `INDEX.md` y subdirectorios `NNN-export-manuals-*/`). Por manual: slug (del filename), título (primer `#`), resumen breve (primer párrafo), path.
+List `docs/manuals/*.md` (excluding `INDEX.md` and `NNN-export-manuals-*/` subdirectories). Per manual: slug (from the filename), title (first `#`), brief summary (first paragraph), path.
 
-### Paso 3 — Detectar temas
+### Step 3 — Detect topics
 
-Por cada sesión del corpus filtrado (`aw session-artifacts --code <NNN> --dump objetivo,decisiones`): tomar `DECISION` del dump + plan-doc (`Solution`/`Final behavior`/`Validations`) + el código tocado. Tema **primario**: la sección de temas en `SESSION` (su `## Objective`). **Secundario**: inferencia por keywords operativos ("configurar", "instalar", "paso a paso", "cómo …"). Filtrar por `--topics` si está presente. Listar (slug, confidence, sesiones de origen).
+For every filtered corpus session (`aw session-artifacts --code <NNN> --dump objetivo,decisiones`): take the dump's `DECISION` + the plan-doc (`Solution`/`Final behavior`/`Validations`) + the touched code. **Primary** topic: the topic in `SESSION` (its `## Objective`). **Secondary**: inference by operational keywords ("configure", "install", "step by step", "how to …" — in the user's language). Filter by `--topics` when present. List (slug, confidence, origin sessions).
 
-### Paso 4 — Sintetizar (prosa: convenciones ambientes)
+### Step 4 — Synthesize (prose: ambient conventions)
 
-**Modo `complement`** — un `INDEX.md`: cabecera + count de manuales + tabla (Tema · Slug · Manual presente/`[pendiente]` · Sesiones de origen) + "Próximos pasos" si hay temas pendientes.
+**`complement` mode** — one `INDEX.md`: header + manual count + table (Topic · Slug · Manual present/`[pending]` · Origin sessions) + "Next steps" when there are pending topics.
 
-**Modo `regenerate`** — 1 `.md` por tema en el dossier, cada uno con: Propósito · Pre-requisitos · Pasos numerados (cómo operar) · Comportamiento final (del plan-doc) · Validación post-uso · Decisiones relevantes (`DECISION`) · Troubleshooting · Referencias. Cada manual debe permitir al operador completar la tarea **sin** invocar al equipo de desarrollo. Más un `README.md` del dossier con el índice. La redacción sigue las convenciones de redacción ambientes (host).
+**`regenerate` mode** — 1 `.md` per topic in the dossier, each with: Purpose · Prerequisites · Numbered steps (how to operate) · Final behavior (from the plan-doc) · Post-use validation · Relevant decisions (`DECISION`) · Troubleshooting · References. Every manual must let the operator complete the task **without** calling the development team. Plus a dossier `README.md` with the index. The prose follows the ambient writing conventions (host).
 
-### Paso 5 — Escribir o reportar
+### Step 5 — Write or report
 
-Si `--dry-run`: imprimir el reporte; no escribir. Si no: `complement` → `Write` sobre `docs/manuals/INDEX.md`; `regenerate` → `aw next-number docs/manuals` + crear el dossier. **NUNCA commitear**. Resumen al usuario: modo + paths escritos + counts; si hay temas detectables sin manual, sugerir cubrirlos.
+With `--dry-run`: print the report; write nothing. Otherwise: `complement` → `Write` over `docs/manuals/INDEX.md`; `regenerate` → `aw next-number docs/manuals` + create the dossier. **NEVER commit**. Summary to the user: mode + written paths + counts; if there are detectable topics without a manual, suggest covering them.
 
 ## Output location
 
-- `complement`: `docs/manuals/INDEX.md` (sobrescribe).
-- `regenerate`: `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` con `README.md` + 1 `.md` por tema.
+- `complement`: `docs/manuals/INDEX.md` (overwrites).
+- `regenerate`: `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` with `README.md` + 1 `.md` per topic.
 
 ## Re-run
 
-- `complement`: idempotente — dos invocaciones con el mismo corpus producen el mismo `INDEX.md`.
-- `regenerate`: cada invocación toma el siguiente `NNN`; no sobrescribe dossiers previos.
+- `complement`: idempotent — two invocations over the same corpus produce the same `INDEX.md`.
+- `regenerate`: each invocation takes the next `NNN`; it never overwrites previous dossiers.
 
 ## Resources
 
-- Design: `docs/referencias/workflow-exports/export-manuals.md` · familia: [`../README.md`](../README.md).
-- Redacción: convención **ambiente** (no rol) — el host auto-aplica una skill de writing instalada si está presente.
-- Artefactos fuente: `DECISION` + plan-doc (ver `docs/referencias/workflow-artifacts/artifacts-exec/` y `docs/specs`/`docs/plans`).
+- Design: `docs/referencias/workflow-exports/export-manuals.md` · family: [`../README.md`](../README.md).
+- Writing: **ambient** convention (not a role) — the host auto-applies an installed writing skill when present.
+- Source artifacts: `DECISION` + plan-doc (see `docs/referencias/workflow-artifacts/artifacts-exec/` and `docs/specs`/`docs/plans`).
 - Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).
