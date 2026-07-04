@@ -19,7 +19,7 @@ Central distinction of the model:
 
 > An artifact may be **promoted** to a `docs/` document (e.g. `SCRIPTS.sql` → `docs/scripts/`) — but **only via dedicated `export-*` skills**, **never** automatically by the loops. The spec and the plan **are not** artifacts: they are documents.
 
-> **Routing by operating context** (canonical rules: [`../SKILL.md`](../SKILL.md) § *Contexto operativo*): inside a flow → the **active/continued** session (a prompt with no command edits the most recent session's artifacts); workspace without flow → `docs/` by convention + numbering; no workspace → vanilla. Session→`docs/` promotion is still **only** via `export-*`.
+> **Routing by operating context** (canonical rules: [`../SKILL.md`](../SKILL.md) § *Operating context*): inside a flow → the **active/continued** session (a prompt with no command edits the most recent session's artifacts); workspace without flow → `docs/` by convention + numbering; no workspace → vanilla. Session→`docs/` promotion is still **only** via `export-*`.
 
 ---
 

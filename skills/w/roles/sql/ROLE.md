@@ -138,4 +138,4 @@ It never writes `docs/` from a loop (invariant 1: only `export-*` exports). It n
 
 ## Source
 
-Self-contained rules (no dependency on external skills). Rationale and history: design (`docs/referencias/workflow-roles/sql.md`).
+Self-contained rules (no dependency on external skills). Rationale and history: design (`docs/referencias/workflow-roles/`).

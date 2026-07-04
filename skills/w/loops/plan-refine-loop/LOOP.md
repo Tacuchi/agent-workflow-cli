@@ -80,15 +80,9 @@ Same as plan-new (maps code/impact: FE/BE/DB components, AS-IS wiring, deps), bu
 
 Same mechanism as [`plan-new-loop`](../plan-new-loop/LOOP.md) (§ *Delta 4*: the **`ui-design`** capability → per-screen `NNN-SPEC-<SLUG>.md`, see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)), **scoped to the delta**: only the screens **new or changed** by the refine get a design SPEC. The updated SPEC is written in **plan-refine's own session** (each loop manages ITS session's artifacts — it never edits plan-new's) and the plan **re-points** the UI Task reference to the current SPEC. Untouched screens keep their original SPEC.
 
-## Compact / resume
+## Compact / resume — PLAN-refine keys
 
-Resume **keys off the `CHECKPOINT`** of the refine session, never a "refined" file. Three cases when `/w:plan-refine` runs over a plan:
-
-1. **In progress** (a `CHECKPOINT.md` exists in the refine session) → resume from the recorded progress (resolved gaps, Q&A, `attempts`, in-flight inline research).
-2. **No progress** (no CHECKPOINT and the plan does **not** have `Refinement decisions`/`Q&A traceability`) → start from zero reading the plan (`PPP-plan-*.md`).
-3. **Already refined / re-refine on demand** (no open CHECKPOINT, but the plan **already has** the 2 sections) → **first-class operation**, as many times as needed while the flow stays in PLAN:
-   - `create_or_resume` finds the existing refine session (typically **closed** after convergence) by descriptor + `## Origin` and **reopens** it: `aw session-resume --code <NNN> --reopen` (detection: `aw sessions --state all`).
-   - Incremental re-refinement reading the **plan itself**; on `Guardar`, edits in place with confirmation.
+Full mechanism (3 cases, `Compactar`, re-run with `--reopen`) in the chassis (§ *Compact / resume*). PLAN-refine keys: prior-work mark = `## Refinement decisions` + `## Q&A traceability` **in the plan**; re-refine on demand is **first-class** as many times as needed while the flow stays in PLAN.
 
 > **Inter-turn continuity** (chassis, row 2): a flow command opens a "new work line" (new session) — **except re-running the same flow over the same input** (same plan), which does `create_or_resume` (resumes/reopens instead of duplicating).
 

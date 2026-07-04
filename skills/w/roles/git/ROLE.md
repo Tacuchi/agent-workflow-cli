@@ -116,4 +116,4 @@ Nothing in `docs/`. It produces commits **only** when the user approves, in the 
 
 ## Source
 
-Rationale and history: design (`docs/referencias/workflow-roles/git.md`).
+Rationale and history: design (`docs/referencias/workflow-roles/`).

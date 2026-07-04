@@ -10,7 +10,7 @@
 | `PreToolUse` (Edit/Write) | `hook branch-check` | Verifies the expected work branch before any file edit (git-safe invariant). |
 | `PreToolUse` (`execute_sql`) | `hook sql-mutation-guard` | Blocks DML/DDL over MCP — reads only (DB scripts-only invariant). |
 | `PreToolUse` (Bash) | `hook git-commit-advisor` | **Advisory (does not block)**: warns if a `git commit` message lacks the active session's `sessionNNN` tag (traceability). Does **not** inspect `push`/`--amend`/`--no-verify`. |
-| `SessionEnd` | `auto-compact-on-close` | Writes `CHECKPOINT.md` on close — the resume key (*CHECKPOINT always*, invariant #6). |
+| `SessionEnd` | `auto-compact-on-close` | Writes `CHECKPOINT.md` on close — the resume key (*CHECKPOINT always* — chassis § Convergence / exit). |
 | `PreCompact` | `checkpoint-write` | Writes `CHECKPOINT.md` before the host compacts. |
 | `PostCompact` | `resume-summary` | Recovers the active loop state after a compact. |
 

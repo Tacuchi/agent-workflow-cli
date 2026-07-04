@@ -141,32 +141,6 @@ workspace "<PRODUCTO>" "<descripcion>" {
 
 Free online render: [structurizr.com/dsl](https://structurizr.com/dsl) or structurizr-lite (Docker).
 
-### PlantUML C4-stdlib template (extra engine, outside the current contract)
-
-> The current `export-diagrams` contract exposes only `--engine mermaid|c4` (it produces no `.puml`). This template remains as a **reference** for a rebound/custom export that wants to emit PlantUML.
-
-```plantuml
-@startuml arquitectura
-
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
-
-title <PRODUCTO> — Diagrama de Contexto C4
-
-Person(dev, "Developer", "Miembro del equipo")
-System(sistema, "<PRODUCTO>", "<descripcion>")
-System_Ext(extA, "<Sistema A>", "<rol>")
-
-Rel(dev, sistema, "Usa")
-Rel(sistema, extA, "<protocolo>")
-
-SHOW_LEGEND()
-@enduml
-```
-
-Render: [plantuml.com](https://plantuml.com) or a local `plantuml.jar`.
-
 ### Auxiliary Mermaid (under `--engine c4`)
 
 With `--engine c4`, the `.md` file also includes a Mermaid block derived from the DSL as an **offline fallback** (readers without access to structurizr.com/dsl can read it directly):
@@ -249,4 +223,4 @@ Writes only `docs/diagrams/` (invariants #1 and #2: only `export-*` graduates to
 
 ## Source
 
-Rationale and history: design (`docs/referencias/workflow-roles/diagrams.md`).
+Rationale and history: design (`docs/referencias/workflow-roles/`).

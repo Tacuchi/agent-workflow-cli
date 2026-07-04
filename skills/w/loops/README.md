@@ -49,19 +49,7 @@ The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skil
 
 ## Composed capabilities (roles)
 
-Loops compose **capabilities by role**, never concrete skills; the skill fulfilling the role is resolved by `.workflow/skills.toml` (`built-in default → ~/.workflow/skills.toml → .workflow/skills.toml`).
-
-| Role | Default built-in | Composed by |
-|---|---|---|
-| `ui-design` | `ui-spec` | `spec-refine-loop` (when there is UI) · `plan-new-loop` / `plan-refine-loop` (design SPECs `NNN-SPEC-<SLUG>.md`) |
-| `sql` | `sql` | research · `plan-exec-loop` · `quick-loop` |
-| `git` | `git` | `plan-exec-loop` · `quick-loop` |
-| `research` | `research` | every loop (inline research) |
-| `overview` | `w` | anyone (orientation) |
-
-> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — the workflow neither binds nor depends on them. Full doctrine: [../roles/README.md](../roles/README.md).
-
-`off` in config → capability disabled: the loop continues without it; if it was needed, it says so or asks the human.
+Loops compose **capabilities by role**, never concrete skills; the skill fulfilling the role is resolved via `.workflow/skills.toml` (cascade: built-in → global → workspace; `off` = disabled — the loop continues and says so if it was needed). Catalog, defaults and ambient-conventions doctrine: [../roles/README.md](../roles/README.md).
 
 ## Index
 

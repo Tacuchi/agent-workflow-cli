@@ -39,6 +39,7 @@
 4. **No loop, no internal sessions** — options come from **args** (no lifecycle *structured-choice*; harness capability — see [`../harness/HARNESS.md`](../harness/HARNESS.md)).
 5. **Git-safe** — they **never** commit, merge, push, `--amend`, or `--no-verify`. The output is a written document the user reviews and commits when ready.
 6. **DB scripts-only** — `export-scripts` ships migration SCRIPTS as a bundle; it **never executes** DDL/DML (a human/DBA applies them).
+7. **Spec and plan are documents** — written by the SPEC/PLAN flows directly, never exported.
 
 ## Section schema of each `export-*/EXPORT.md`
 

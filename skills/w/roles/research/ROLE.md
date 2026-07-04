@@ -96,7 +96,7 @@ Never during investigation: `commit`, `push`, `merge`, `rebase`, `reset`, `check
 
 If, after investigating, gaps persist and cannot be closed with the available sources:
 
-- Document the gaps in `CONCLUSIONS.md#Open`.
+- Document the gaps in `CONCLUSIONS.md` (`## Details`) and tick `Defer (insufficient evidence)` in Recommended Action.
 - Mark the investigation `inconclusive`.
 - Report to the loop: what could and could not be resolved — the loop decides whether to ask the human.
 
@@ -121,4 +121,4 @@ It never graduates to `docs/` (invariant #1). The composing loop consumes the co
 
 ## Source
 
-Rationale and history: design (`docs/referencias/workflow-roles/research.md`).
+Rationale and history: design (`docs/referencias/workflow-roles/`).
