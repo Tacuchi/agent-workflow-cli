@@ -5,15 +5,15 @@ import { colors } from "../theme.js";
 export type PageHeadTone = "accent" | "ok" | "warn" | "err" | "dim" | "mute";
 
 export interface PageHeadProps {
-  /** Título principal */
+  /** Main title. */
   title: string;
-  /** Counter / status inline next to title — texto coloreado sin brackets. */
+  /** Counter / status inline next to the title — colored text, no brackets. */
   count?: { label: string; tone?: PageHeadTone };
-  /** Subtítulo descriptivo inline · color dim. */
+  /** Descriptive inline subtitle · dim color. */
   desc?: string;
-  /** Right-side meta o acción primaria. */
+  /** Right-side meta or primary action. */
   action?: ReactNode;
-  /** Compact: sin margin bottom (consumido por sub-headers internos). */
+  /** Compact: no bottom margin (consumed by internal sub-headers). */
   compact?: boolean;
 }
 

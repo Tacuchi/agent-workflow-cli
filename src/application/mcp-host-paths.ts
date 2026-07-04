@@ -1,17 +1,17 @@
 import { join } from "node:path";
 
 /**
- * Global config files de OpenCode y Crush, compartidos por writer, reader y
- * detect (una sola fuente: la asimetría writer↔reader ya causó el bug v14.5.0).
+ * OpenCode and Crush global config files, shared by writer, reader and detect
+ * (single source: a writer↔reader asymmetry already caused the v14.5.0 bug).
  *
- * Verificado 2026-07 contra docs oficiales:
- * - OpenCode (opencode.ai/docs/config): global en `~/.config/opencode/opencode.json`
- *   en TODAS las plataformas (también Windows nativo), honrando XDG_CONFIG_HOME.
+ * Verified 2026-07 against official docs:
+ * - OpenCode (opencode.ai/docs/config): global at `~/.config/opencode/opencode.json`
+ *   on ALL platforms (native Windows too), honoring XDG_CONFIG_HOME.
  * - Crush (charmbracelet/crush README): Unix `~/.config/crush/crush.json` (XDG);
- *   Windows `%LOCALAPPDATA%\crush\crush.json`; override por CRUSH_GLOBAL_CONFIG.
+ *   Windows `%LOCALAPPDATA%\crush\crush.json`; override via CRUSH_GLOBAL_CONFIG.
  *
- * `homeDir` es inyectable (los tests pasan un tmpdir); env/platform se leen de
- * process para reflejar la máquina real salvo que se inyecten.
+ * `homeDir` is injectable (tests pass a tmpdir); env/platform are read from
+ * process to reflect the real machine unless injected.
  */
 export function xdgConfigBase(homeDir: string, env: NodeJS.ProcessEnv = process.env): string {
   return env.XDG_CONFIG_HOME || join(homeDir, ".config");

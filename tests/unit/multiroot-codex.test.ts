@@ -14,17 +14,17 @@ describe("attachCodex — TOML válido cross-platform", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  // Regresión: las comillas dobles rompían en Windows (`"C:\Source"` → `\S` no es
-  // escape TOML válido). Los literales con comillas simples no escapan nada.
+  // Regression: double quotes broke on Windows (`"C:\Source"` → `\S` is not a
+  // valid TOML escape). Single-quoted literals escape nothing.
   it("escribe additional_writable_roots con literales de comilla simple", () => {
     attachCodex(["C:\\Source\\app", "C:\\Source\\otro"], scopeDir);
     const text = readFileSync(codexConfigPath(scopeDir), "utf-8");
 
     const block = text.match(/additional_writable_roots\s*=\s*\[([\s\S]*?)\]/)?.[1] ?? "";
-    expect(block).toMatch(/'[^']+'/); // hay literales con comilla simple
-    expect(block).not.toMatch(/"/); // y ninguno con comilla doble
+    expect(block).toMatch(/'[^']+'/); // single-quoted literals present
+    expect(block).not.toMatch(/"/); // and none double-quoted
 
-    // El archivo entero parsea con el mismo parser que usa Codex/el doctor.
+    // The whole file parses with the same parser Codex/the doctor uses.
     expect(() => parseToml(text)).not.toThrow();
     const parsed = parseToml(text) as { additional_writable_roots?: string[] };
     expect(parsed.additional_writable_roots).toHaveLength(2);

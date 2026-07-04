@@ -1,20 +1,22 @@
-// Motor de skills sueltas (modelo skills.sh): canónica en ~/.agents/skills/<n>
-// (el ancla del estándar abierto que escanean los hosts no-Claude) + réplica en
-// ~/.claude/skills/<n> vía symlink, con fallback a copia (Windows sin links).
+// Standalone-skills engine (skills.sh model): canonical copy in
+// ~/.agents/skills/<n> (the open-standard anchor that non-Claude hosts scan)
+// + replica in ~/.claude/skills/<n> via symlink, with a copy fallback
+// (Windows without links).
 //
-// El registro user-level (skills-registry.ts) es la fuente de verdad de QUÉ
-// administra este motor. Guards de ownership (el motor escribe bajo el HOME
-// real del usuario, donde también viven el bundle `w`, skills de plugins y
-// skills manuales):
-//   - toda operación exige nombre registrado (SKILL_NOT_REGISTERED);
-//   - la canónica solo se crea/borra si este motor la materializó — señal:
-//     `installedAt` en el registro (SKILL_NAME_COLLISION al chocar con un dir
-//     ajeno; en uninstall/remove el dir ajeno se conserva con warning);
-//   - la réplica de Claude es nuestra solo si es un symlink QUE APUNTA a la
-//     canónica o un dir con mode:"copy" registrado (FOREIGN_REPLICA si no), y
-//     se verifica ANTES de mutar nada;
-//   - un registro ilegible (warning del read) aborta toda mutación: jamás se
-//     reescribe por encima de entradas que no se pudieron leer.
+// The user-level registry (skills-registry.ts) is the source of truth for WHAT
+// this engine manages. Ownership guards (the engine writes under the user's
+// real HOME, which also hosts the `w` bundle, plugin skills and manual
+// skills):
+//   - every operation requires a registered name (SKILL_NOT_REGISTERED);
+//   - the canonical dir is only created/deleted if this engine materialized it
+//     — signal: `installedAt` in the registry (SKILL_NAME_COLLISION when
+//     colliding with a foreign dir; on uninstall/remove the foreign dir is
+//     preserved with a warning);
+//   - the Claude replica is ours only if it is a symlink THAT POINTS AT the
+//     canonical or a dir with registered mode:"copy" (FOREIGN_REPLICA
+//     otherwise), verified BEFORE mutating anything;
+//   - an unreadable registry (read warning) aborts every mutation: never
+//     rewrite over entries that could not be read.
 
 import type { Dirent } from "node:fs";
 import { readFile, readdir, readlink, rename } from "node:fs/promises";
@@ -36,13 +38,13 @@ import {
   writeSkillsRegistry,
 } from "./skills-registry.js";
 
-/** `unmanaged`: canónica presente en ~/.agents/skills SIN entrada en el registro
- *  (skills.sh, manual) — visible pero no operable (register la rechaza:
- *  SKILL_NAME_COLLISION, guard de ownership). */
+/** `unmanaged`: canonical dir present in ~/.agents/skills WITHOUT a registry
+ *  entry (skills.sh, manual) — visible but not operable (register rejects it:
+ *  SKILL_NAME_COLLISION, ownership guard). */
 export type SkillStatus = "installed" | "unmanaged" | "registered" | "recommended";
 
-/** Semilla de recomendadas — la define el data module de la TUI y entra por parámetro
- *  (application no importa de cli/). */
+/** Recommended-skills seed — defined by the TUI data module and passed in as a
+ *  parameter (application does not import from cli/). */
 export interface SeedSkill {
   name: string;
   source: string;
@@ -57,15 +59,15 @@ export interface SkillListItem {
   installedAt?: string;
   description?: string;
   status: SkillStatus;
-  /** Réplicas materializadas: ancla .agents (canónica), .claude y .gemini. */
+  /** Materialized replicas: .agents anchor (canonical), .claude and .gemini. */
   replicas: { agents: boolean; claude: boolean; gemini: boolean };
 }
 
 export interface RegisterInput {
-  /** `owner/repo`, URL git (con `#ref` opcional) o path local absoluto. */
+  /** `owner/repo`, git URL (with optional `#ref`) or absolute local path. */
   source: string;
   ref?: string;
-  /** Nombre del skill-dir a registrar cuando la fuente contiene varios. */
+  /** Skill-dir name to register when the source contains several. */
   pick?: string;
 }
 
@@ -73,7 +75,7 @@ export interface RegisterData {
   status: "registered" | "needs-pick";
   name?: string;
   entry?: SkillRegistryEntry;
-  /** Candidatos cuando la fuente trae >1 skill y no hubo `pick`. */
+  /** Candidates when the source ships >1 skill and no `pick` was given. */
   candidates?: string[];
   summary: string;
 }
@@ -82,10 +84,10 @@ export interface MaterializeData {
   status: "installed" | "updated" | "reinstalled";
   name: string;
   canonical: string;
-  /** Réplica primaria (Claude) — compat con consumidores previos. */
+  /** Primary replica (Claude) — compat with prior consumers. */
   replica: string;
   mode: SkillReplicaMode;
-  /** Todas las réplicas por host (claude symlink · gemini copy). */
+  /** All per-host replicas (claude symlink · gemini copy). */
   replicas: { host: "claude" | "gemini"; path: string; mode: SkillReplicaMode }[];
   summary: string;
 }
@@ -93,7 +95,7 @@ export interface MaterializeData {
 export interface UninstallData {
   status: "uninstalled" | "removed";
   name: string;
-  /** Presente si algo ajeno homónimo se conservó (canónica o réplica). */
+  /** Present when a same-named foreign dir was preserved (canonical or replica). */
   warning?: string;
   summary: string;
 }
@@ -102,7 +104,7 @@ type ResolvedSource = { kind: "git"; url: string; ref?: string } | { kind: "loca
 
 type SkillCandidate = { name: string; path: string };
 
-// skills/<categoría>/<skill> (mattpocock/skills) cabe en 3 niveles bajo la raíz.
+// skills/<category>/<skill> (mattpocock/skills) fits within 3 levels below the root.
 const MAX_SCAN_DEPTH = 3;
 
 export function canonicalSkillsRoot(home: string): string {
@@ -117,21 +119,22 @@ export function geminiReplicaRoot(home: string): string {
   return join(home, ".gemini", "skills");
 }
 
-// Marker de propiedad de las réplicas COPY (contraparte del symlink, que se
-// autentica apuntando a nuestra canónica): sin él, un dir real homónimo de
-// otro origen sería indistinguible de nuestra copia y el teardown/reinstall
-// podría pisarlo.
+// Ownership marker for COPY replicas (counterpart of the symlink, which
+// authenticates by pointing at our canonical): without it, a same-named real
+// dir from another origin would be indistinguishable from our copy and
+// teardown/reinstall could clobber it.
 export const REPLICA_MARKER_FILENAME = ".aw-replica";
 
-// Réplicas por host: los hosts que NO leen el ancla user-level
-// ~/.agents/skills reciben una réplica de cada suelta instalada.
-// - claude: solo lee ~/.claude/skills → symlink (fallback copy sin symlinks,
-//   p.ej. Windows sin Developer Mode).
+// Per-host replicas: hosts that do NOT read the user-level anchor
+// ~/.agents/skills get a replica of every installed standalone skill.
+// - claude: only reads ~/.claude/skills → symlink (copy fallback without
+//   symlinks, e.g. Windows without Developer Mode).
 // - gemini/Antigravity (agy 1.0.16): tiers Workspace <repo>/.agents/skills ·
-//   Global ~/.gemini/antigravity-cli/skills · Shared ~/.gemini/skills — NO lee
-//   el ancla user-level (field-research 2026-07). Réplica en Shared, modo
-//   SIEMPRE copy: el walker de agy no es verificable (Go filepath.WalkDir no
-//   sigue symlinks de dir por default) — la copia garantiza el descubrimiento.
+//   Global ~/.gemini/antigravity-cli/skills · Shared ~/.gemini/skills — does
+//   NOT read the user-level anchor (field research 2026-07). Replica goes in
+//   Shared, mode ALWAYS copy: agy's walker is not verifiable (Go
+//   filepath.WalkDir does not follow dir symlinks by default) — the copy
+//   guarantees discovery.
 interface ReplicaHost {
   key: "claude" | "gemini";
   root: (home: string) => string;
@@ -144,15 +147,15 @@ const REPLICA_HOSTS: readonly ReplicaHost[] = [
 ];
 
 /**
- * Normaliza la fuente del usuario: URL git (con `#ref`), atajo `owner/repo`
- * (→ GitHub) o path local absoluto. Paths relativos se rechazan a propósito:
- * el registro debe poder resolverse desde cualquier cwd futuro.
+ * Normalizes the user's source: git URL (with `#ref`), `owner/repo` shorthand
+ * (→ GitHub) or absolute local path. Relative paths are rejected on purpose:
+ * the registry must resolve from any future cwd.
  */
 export function resolveSkillSource(raw: string, ref?: string): ResolvedSource | { error: string } {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return { error: "la fuente no puede estar vacía" };
-  // file:// cuenta como git (clone por transporte local) — permite registrar
-  // repos locales CON historial, a diferencia del path plano.
+  // file:// counts as git (clone over local transport) — lets users register
+  // local repos WITH history, unlike a plain path.
   if (/^(https?:\/\/|git@|ssh:\/\/|file:\/\/)/.test(trimmed)) {
     const hashIdx = trimmed.indexOf("#");
     const url = hashIdx >= 0 ? trimmed.slice(0, hashIdx) : trimmed;
@@ -160,8 +163,8 @@ export function resolveSkillSource(raw: string, ref?: string): ResolvedSource | 
     return { kind: "git", url, ...(parsedRef ? { ref: parsedRef } : {}) };
   }
   if (isAbsolute(trimmed)) return { kind: "local", path: trimmed };
-  // El atajo GitHub exige segmentos que arranquen alfanuméricos: "./x" o "../x"
-  // son paths relativos (rechazados), no owner/repo.
+  // The GitHub shorthand requires segments starting alphanumeric: "./x" or
+  // "../x" are relative paths (rejected), not owner/repo.
   if (/^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(trimmed)) {
     return { kind: "git", url: `https://github.com/${trimmed}.git`, ...(ref ? { ref } : {}) };
   }
@@ -178,15 +181,15 @@ async function isSkillDir(dir: string): Promise<boolean> {
   }
 }
 
-/** `name:` del frontmatter — el nombre real de la skill cuando la fuente ES un
- *  skill-dir (el basename de un clone temporal es aleatorio, jamás sirve). */
+/** Frontmatter `name:` — the skill's real name when the source IS a skill dir
+ *  (the basename of a temp clone is random, never usable). */
 function frontmatterName(content: string): string | null {
   const block = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
   return block.match(/^name:\s*(\S[^\r\n]*)/m)?.[1]?.trim() ?? null;
 }
 
-/** Walk acotado: skills anidadas hasta skills/<categoría>/<skill>; salta
- *  dot-dirs, node_modules y symlinks (Dirent de link no es isDirectory). */
+/** Bounded walk: nested skills up to skills/<category>/<skill>; skips
+ *  dot-dirs, node_modules and symlinks (a link's Dirent is not isDirectory). */
 async function walkSkillDirs(dir: string, depth: number): Promise<SkillCandidate[]> {
   if (depth >= MAX_SCAN_DEPTH) return [];
   let entries: Dirent[];
@@ -209,8 +212,8 @@ async function walkSkillDirs(dir: string, depth: number): Promise<SkillCandidate
   return out;
 }
 
-/** Skill dirs de una fuente: el dir mismo (si ES una skill, nombrado por su
- *  frontmatter) o el árbol; nombres duplicados o inválidos se descartan. */
+/** Skill dirs of a source: the dir itself (if it IS a skill, named by its
+ *  frontmatter) or the tree; duplicate or invalid names are discarded. */
 async function collectCandidates(dir: string): Promise<SkillCandidate[]> {
   if (await isSkillDir(dir)) {
     const content = await readFile(join(dir, "SKILL.md"), "utf8");
@@ -226,7 +229,7 @@ async function collectCandidates(dir: string): Promise<SkillCandidate[]> {
   return [...byName.values()];
 }
 
-/** Trae la fuente a un dir legible y lista sus skills (clone temp si es git). */
+/** Brings the source into a readable dir and lists its skills (temp clone for git). */
 async function fetchSourceCandidates(
   resolved: ResolvedSource,
   ctx: CliContext,
@@ -252,8 +255,8 @@ async function fetchSourceCandidates(
   return { candidates: await collectCandidates(temp), cleanup };
 }
 
-/** Lectura previa a una mutación: un registro ilegible ABORTA — la primera
- *  escritura tras un read fallido pisaría todas las entradas previas. */
+/** Read preceding a mutation: an unreadable registry ABORTS — the first write
+ *  after a failed read would clobber every prior entry. */
 async function readRegistryForWrite(
   ctx: CliContext,
 ): Promise<{ registry: SkillsRegistry } | { code: string; error: string }> {
@@ -267,8 +270,8 @@ async function readRegistryForWrite(
   return { registry: read.registry };
 }
 
-/** Inspección sin efectos: lista las skills de una fuente para que el wizard
- *  muestre picker + warning de terceros ANTES de registrar nada. */
+/** Side-effect-free inspection: lists a source's skills so the wizard can show
+ *  the picker + third-party warning BEFORE registering anything. */
 export async function probeSkillSource(
   ctx: CliContext,
   input: Pick<RegisterInput, "source" | "ref">,
@@ -328,17 +331,17 @@ export async function registerSkill(
         `'${picked.name}' ya está registrada (fuente: ${registry.skills[picked.name]?.source})`,
       );
     }
-    // `w-*` es el namespace de los wrappers sintetizados del bundle
-    // (install-skill.ts) — registrar una suelta ahí la dejaría a merced del
-    // sweep de install/uninstall en los mismos roots.
+    // `w-*` is the namespace of the bundle's synthesized wrappers
+    // (install-skill.ts) — registering a standalone skill there would leave it
+    // at the mercy of the install/uninstall sweep over the same roots.
     if (picked.name.startsWith(COMMAND_SKILL_PREFIX)) {
       return fail(
         "RESERVED_SKILL_PREFIX",
         `'${picked.name}' usa el prefijo reservado '${COMMAND_SKILL_PREFIX}' (wrappers del bundle) — elegí otro nombre`,
       );
     }
-    // Guard de ownership: un dir canónico existente NO registrado es de otro
-    // (bundle `w`, skill de plugin, instalación manual) — nunca lo adoptamos.
+    // Ownership guard: an existing UNregistered canonical dir belongs to someone
+    // else (`w` bundle, plugin skill, manual install) — we never adopt it.
     const canonical = join(canonicalSkillsRoot(ctx.env.homeDir()), picked.name);
     if (await ctx.fs.exists(canonical)) {
       return fail(
@@ -408,8 +411,8 @@ export async function installSkill(
   const home = ctx.env.homeDir();
   const canonical = join(canonicalSkillsRoot(home), name);
 
-  // Pre-flight ANTES de mutar nada: réplica ajena (en cualquier host) o
-  // colisión de canónica abortan sin tocar la instalación previa ni el dir ajeno.
+  // Pre-flight BEFORE mutating anything: a foreign replica (on any host) or a
+  // canonical collision aborts without touching the prior install or the foreign dir.
   const replicaStates = new Map<ReplicaHost["key"], Exclude<ReplicaState, "foreign">>();
   for (const host of REPLICA_HOSTS) {
     const state = await inspectReplica(ctx, name, entry.mode, host);
@@ -448,8 +451,8 @@ export async function installSkill(
       await fetched.cleanup();
     }
   } else if (!entry.installedAt || !(await ctx.fs.exists(canonical))) {
-    // Reinstall exige que ESTE manager haya materializado la canónica: sin
-    // installedAt, un dir homónimo existente es ajeno y no se replica.
+    // Reinstall requires THIS manager to have materialized the canonical dir:
+    // without installedAt, an existing same-named dir is foreign and is not replicated.
     return fail(
       "SKILL_NOT_INSTALLED",
       `'${name}' no está instalada (no existe ${canonical} materializada por este manager); usá Install/Update`,
@@ -460,13 +463,13 @@ export async function installSkill(
   for (const host of REPLICA_HOSTS) {
     replicas.push(await replicateToHost(ctx, name, replicaStates.get(host.key) ?? "absent", host));
   }
-  // El mode registrado sigue siendo el de la réplica Claude (la primaria):
-  // el badge "(copy)" de la TUI señala SU degradación (Windows sin symlinks);
-  // la copia gemini es by-design y se autentica por marker, no por mode.
+  // The registered mode is still the Claude replica's (the primary one): the
+  // TUI's "(copy)" badge flags ITS degradation (Windows without symlinks);
+  // the gemini copy is by-design and authenticates via marker, not mode.
   const claudeReplica = replicas[0] ?? { path: canonical, mode: "symlink" as const };
 
-  // Re-leer antes de escribir: el clone puede tardar y otra invocación pudo
-  // tocar el registro en el medio — nunca escribir un snapshot viejo.
+  // Re-read before writing: the clone can take a while and another invocation
+  // may have touched the registry in between — never write a stale snapshot.
   const fresh = await readRegistryForWrite(ctx);
   if ("error" in fresh) return fail(fresh.code, fresh.error);
   const current = fresh.registry.skills[name] ?? entry;
@@ -494,7 +497,7 @@ export async function installSkill(
   };
 }
 
-/** Reinstall: repara canónica→réplica sin tocar la fuente (offline-safe). */
+/** Reinstall: repairs canonical→replica without touching the source (offline-safe). */
 export async function reinstallSkill(
   ctx: CliContext,
   name: string,
@@ -502,8 +505,8 @@ export async function reinstallSkill(
   return installSkill(ctx, name, { refetch: false });
 }
 
-/** Update: re-fetch del ref registrado; solo fuentes git. Staging+swap: un fallo
- *  de fetch deja la instalación previa intacta. */
+/** Update: re-fetches the registered ref; git sources only. Staging+swap: a
+ *  fetch failure leaves the prior install intact. */
 export async function updateSkill(
   ctx: CliContext,
   name: string,
@@ -585,9 +588,9 @@ export async function removeSkill(
   };
 }
 
-/** Lista única para la TUI: registradas (instaladas o no) + canónicas fuera del
- *  registro (`unmanaged`) + semilla no registrada. Orden: installed → unmanaged
- *  → registered → recommended; alfabético dentro de cada grupo. */
+/** Single list for the TUI: registered (installed or not) + canonicals outside
+ *  the registry (`unmanaged`) + unregistered seed. Order: installed → unmanaged
+ *  → registered → recommended; alphabetical within each group. */
 export async function listSkills(
   ctx: CliContext,
   seed: readonly SeedSkill[],
@@ -614,13 +617,14 @@ export async function listSkills(
     });
   }
 
-  // Canónicas fuera del registro (skills.sh, manuales): visibles como
-  // `unmanaged` para que la tab refleje TODO el ancla, sin volverlas operables
-  // (guard de ownership intacto). La fuente sale del lock de skills.sh si la
-  // conoce; "" cuando nadie la sabe. Excluidos: el bundle `w` y su namespace
-  // `w-*` sintetizadas (skill-as-command) + nombres legacy (los administra [Workflows], no son
-  // "de otro"). Con registro ILEGIBLE no se clasifica nada: podrían ser del
-  // motor y quedarían mal etiquetadas como ajenas.
+  // Canonicals outside the registry (skills.sh, manual): shown as `unmanaged`
+  // so the tab reflects the WHOLE anchor, without making them operable
+  // (ownership guard intact). The source comes from the skills.sh lock when it
+  // knows it; "" when nobody does. Excluded: the `w` bundle and its
+  // synthesized `w-*` namespace (skill-as-command) + legacy names (managed by
+  // [Workflows], not "someone else's"). With an UNREADABLE registry nothing is
+  // classified: entries could belong to this engine and would be mislabeled as
+  // foreign.
   const bundleOwned = new Set<string>([SKILL_DIR_NAME, ...LEGACY_SKILL_NAMES]);
   const unmanaged = new Set<string>();
   const root = canonicalSkillsRoot(home);
@@ -628,8 +632,8 @@ export async function listSkills(
     try {
       const lockSources = await readSkillsShLockSources(ctx);
       for (const entry of await ctx.fs.list(root)) {
-        // Un symlink-a-dir se tipa "other" (Dirent no lo resuelve); solo se
-        // descartan files — isSkillDir lee A TRAVÉS del link y decide.
+        // A symlink-to-dir is typed "other" (Dirent does not resolve it); only
+        // files are discarded — isSkillDir reads THROUGH the link and decides.
         if (entry.type === "file" || entry.name.startsWith(".")) continue;
         if (bundleOwned.has(entry.name) || entry.name.startsWith(COMMAND_SKILL_PREFIX)) continue;
         if (Object.hasOwn(registry.skills, entry.name) || !isValidSkillName(entry.name)) continue;
@@ -645,16 +649,16 @@ export async function listSkills(
         });
       }
     } catch {
-      // Ancla ausente o ilegible (p.ej. permisos): el scan es best-effort —
-      // las administradas ya están listadas; jamás vaciamos la tab por esto.
+      // Anchor absent or unreadable (e.g. permissions): the scan is best-effort —
+      // managed skills are already listed; never empty the tab over this.
     }
   }
 
   for (const s of seed) {
     if (Object.hasOwn(registry.skills, s.name) || unmanaged.has(s.name)) continue;
-    // Canónica homónima que el scan no listó (frontmatter inválido, file,
-    // registro ilegible): ofrecer Install garantiza SKILL_NAME_COLLISION —
-    // mejor no ofrecer la semilla.
+    // Same-named canonical the scan did not list (invalid frontmatter, file,
+    // unreadable registry): offering Install guarantees SKILL_NAME_COLLISION —
+    // better not to offer the seed.
     if (await ctx.fs.exists(join(root, s.name))) continue;
     items.push({
       name: s.name,
@@ -674,12 +678,12 @@ export async function listSkills(
   return items.sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
 }
 
-// --- internos ---
+// --- internals ---
 
 /**
- * Copia src a un staging oculto y lo intercambia con la canónica; el .bak solo
- * se descarta cuando el swap completó — un fallo restaura el estado previo.
- * `renameFn` es inyectable para poder testear la rama de restore.
+ * Copies src into a hidden staging dir and swaps it with the canonical one;
+ * the .bak is only discarded once the swap completed — a failure restores the
+ * previous state. `renameFn` is injectable to test the restore branch.
  */
 export async function materializeCanonical(
   ctx: CliContext,
@@ -711,10 +715,10 @@ export async function materializeCanonical(
 
 type ReplicaState = "absent" | "ours" | "foreign";
 
-/** Ownership de la réplica en un host: nuestra solo si es un symlink que
- *  apunta a NUESTRA canónica, un dir real con marker `.aw-replica`, o — legacy
- *  (copias pre-marker, Windows) — un dir real con mode:"copy" registrado. Un
- *  symlink del usuario hacia otro lado es ajeno — jamás se re-apunta. */
+/** Replica ownership on a host: ours only if it is a symlink pointing at OUR
+ *  canonical, a real dir with the `.aw-replica` marker, or — legacy
+ *  (pre-marker copies, Windows) — a real dir with registered mode:"copy". A
+ *  user's symlink pointing elsewhere is foreign — never re-pointed. */
 async function inspectReplica(
   ctx: CliContext,
   name: string,
@@ -736,12 +740,12 @@ async function inspectReplica(
     }
   }
   if (await ctx.fs.exists(join(replica, REPLICA_MARKER_FILENAME))) return "ours";
-  // Legacy: copias del host claude previas al marker se autenticaban solo por
-  // el mode registrado.
+  // Legacy: pre-marker copies on the claude host authenticated only via the
+  // registered mode.
   return host.key === "claude" && registeredMode === "copy" ? "ours" : "foreign";
 }
 
-/** Materializa la réplica en un host (el pre-flight ya garantizó que no es ajena). */
+/** Materializes the replica on a host (pre-flight already ensured it is not foreign). */
 async function replicateToHost(
   ctx: CliContext,
   name: string,
@@ -760,7 +764,7 @@ async function replicateToHost(
       await ctx.fs.symlink(canonical, replica);
       return { host: host.key, path: replica, mode: "symlink" };
     } catch {
-      // Sin symlinks (Windows sin Developer Mode / EPERM) → copia real.
+      // No symlinks (Windows without Developer Mode / EPERM) → real copy.
     }
   }
   await copyDir(canonical, replica);
@@ -768,8 +772,8 @@ async function replicateToHost(
   return { host: host.key, path: replica, mode: "copy" };
 }
 
-/** Desmonta réplicas y canónica respetando ownership; devuelve warning si algo
- *  ajeno homónimo se conservó. */
+/** Tears down replicas and the canonical dir respecting ownership; returns a
+ *  warning if a same-named foreign dir was preserved. */
 async function teardownSkill(
   ctx: CliContext,
   name: string,

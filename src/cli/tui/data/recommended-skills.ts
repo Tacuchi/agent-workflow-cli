@@ -1,17 +1,17 @@
-// Semilla de skills externas recomendadas para el [Skills] tab — hardcoded para
-// evitar I/O en render (patrón workflow-content).
+// Seed of recommended external skills for the [Skills] tab — hardcoded to
+// avoid I/O during render (workflow-content pattern).
 //
-// Punto de drift: espejo de qtc-plugins-marketplace/README.md § "Skills externas
-// recomendadas" — si esa sección cambia, actualizar este archivo (y viceversa).
-// Los counts se derivan con `.length` — NO hardcodear cantidades en strings.
+// Drift point: mirror of qtc-plugins-marketplace/README.md § "Skills externas
+// recomendadas" — if that section changes, update this file (and vice versa).
+// Counts are derived with `.length` — do NOT hardcode counts in strings.
 //
-// Una recomendada nunca desaparece de la lista: `Remove` quita su registro y la
-// devuelve a este estado `recommended` (la semilla es data, no registro).
+// A recommended skill never leaves the list: `Remove` drops its registration
+// and returns it to this `recommended` state (the seed is data, not registry).
 
 import type { SeedSkill } from "../../../application/self/skills-manager.js";
 
 export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
-  // Procesamiento de documentos / MCP — anthropics/skills
+  // Document processing / MCP — anthropics/skills
   { name: "pdf", source: "anthropics/skills", description: "Create, edit and analyze PDF files." },
   { name: "docx", source: "anthropics/skills", description: "Create and edit Word documents." },
   { name: "xlsx", source: "anthropics/skills", description: "Create and edit Excel spreadsheets." },
@@ -30,7 +30,7 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
     source: "anthropics/skills",
     description: "Drive and test web apps end-to-end.",
   },
-  // Disciplina de ingeniería — mattpocock/skills (MIT)
+  // Engineering discipline — mattpocock/skills (MIT)
   {
     name: "diagnosing-bugs",
     source: "mattpocock/skills",
@@ -56,7 +56,7 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
     source: "mattpocock/skills",
     description: "Socratic grilling of design decisions.",
   },
-  // Meta / descubrimiento — vercel-labs
+  // Meta / discovery — vercel-labs
   {
     name: "find-skills",
     source: "vercel-labs/skills",
@@ -78,7 +78,7 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
     source: "DietrichGebert/ponytail",
     description: "Review diffs hunting over-engineering to delete.",
   },
-  // Documentación y calidad de skills — softaworks/agent-toolkit
+  // Skill documentation and quality — softaworks/agent-toolkit
   {
     name: "c4-architecture",
     source: "softaworks/agent-toolkit",

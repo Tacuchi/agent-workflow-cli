@@ -5,7 +5,7 @@ import type { ProjectFuente } from "./parsers/project-block.js";
  *
  * The expected work branch is sourced from the WORKSPACE block's
  * `working_branches` (per owning Fuentes source). It is DECOUPLED from sessions
- * and flow (removed in P5). "Rama principal" (the Fuentes table) is the BASE
+ * and flow. "Rama principal" (the Fuentes table) is the BASE
  * branch, NOT the expected work branch, so it is never used here.
  *
  * Returns the declared working branch for the source, or `null` when the source

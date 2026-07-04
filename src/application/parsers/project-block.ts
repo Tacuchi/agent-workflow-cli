@@ -201,8 +201,6 @@ function addWorkingBranch(out: Record<string, string>, entry: string): void {
  * into the parsed `proyecto`.
  */
 function stripLegacyModeLine(text: string): string {
-  // Strip any legacy `Mode: <value>` line (hub/project/single-repo/...); the mode
-  // concept is gone, so its value is ignored and must not leak into `proyecto`.
   const cleanLines = text.split("\n").filter((line) => !/^\s*Mode:\s*\S/i.test(line));
   return cleanLines.join("\n").trim();
 }

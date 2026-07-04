@@ -13,14 +13,14 @@ import { dedupeAlias, deriveAlias } from "./workspace-init-alias.js";
 const DEFAULT_MAIN_BRANCH = "main";
 
 /**
- * Form nativo en ink para inicializar un WORKSPACE. Recolecta proyecto + fuentes
- * (≥1) + rama base + rama de trabajo DENTRO del TUI y corre `runWorkspaceInit`
- * in-process. No hace handoff a inquirer (la causa del crash en Windows
- * post-teardown de ink). El alias de cada fuente se infiere del nombre de su
- * carpeta. Escribe el bloque WORKSPACE y, con 2+ fuentes, configura la
- * visibilidad multi-root (settings.local.json + config.toml, gitignored).
+ * Native ink form to initialize a WORKSPACE. Collects project + sources (≥1)
+ * + base branch + working branch INSIDE the TUI and runs `runWorkspaceInit`
+ * in-process. No handoff to inquirer (the cause of the Windows crash after
+ * ink's teardown). Each source's alias is inferred from its folder name.
+ * Writes the WORKSPACE block and, with 2+ sources, configures multi-root
+ * visibility (settings.local.json + config.toml, gitignored).
  *
- * No hay distinción project/hub: un workspace simplemente tiene 1+ fuentes.
+ * No project/hub distinction: a workspace simply has 1+ sources.
  */
 type Step =
   | { kind: "proyecto" }
@@ -46,7 +46,7 @@ export function WorkspaceInitForm({
 }: WorkspaceInitFormProps) {
   const [step, setStep] = useState<Step>({ kind: "proyecto" });
 
-  // Esc cancela en cualquier paso de input (no durante la escritura).
+  // Esc cancels at any input step (not while the workspace is being written).
   useInput(
     (_input, key) => {
       if (key.escape && step.kind !== "busy") onCancel();
@@ -63,8 +63,8 @@ export function WorkspaceInitForm({
     ) => {
       setStep({ kind: "busy", label: `creando workspace · ${fuentes.length} fuentes…` });
       try {
-        // La rama de trabajo se aplica a TODAS las fuentes (patrón común: una feature
-        // branch compartida). Vacía = sin rama de trabajo (queda solo la rama base).
+        // The working branch applies to ALL sources (common pattern: a shared
+        // feature branch). Empty = no working branch (only the base branch remains).
         const workingBranches = workingBranch
           ? Object.fromEntries(fuentes.map((f) => [f.alias, workingBranch]))
           : {};

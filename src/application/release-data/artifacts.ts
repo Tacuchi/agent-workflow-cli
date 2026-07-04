@@ -81,8 +81,8 @@ async function findSessionFolder(
 ): Promise<{ sessionPath: string; folderName: string } | null> {
   const targetInt = sessionCodeInt(sessionCode);
   if (!(await fs.exists(sessionsDir)) || targetInt === null) return null;
-  // Acepta el naming nuevo (NNN-<slug>-<flow>) y el legacy (sessionNNN-…):
-  // el filtro solo-legacy hacía que el dump jamás encontrara sessions actuales.
+  // Accept both the current naming (NNN-<slug>-<flow>) and the legacy one
+  // (sessionNNN-…): a legacy-only filter would never find current sessions.
   const folders = (await fs.list(sessionsDir)).filter(
     (e) => e.type === "dir" && /^(session)?\d{3}-/.test(e.name),
   );

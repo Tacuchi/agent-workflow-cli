@@ -5,18 +5,18 @@ import { NotificationBanner } from "./notification-banner.js";
 
 export interface NotificationStackProps {
   items: NotificationItem[];
-  /** Máximo de items visibles a la vez (los más nuevos primero). Default 3. */
+  /** Max items visible at once (newest first). Default 3. */
   max?: number;
 }
 
 /**
- * NotificationStack — render del array de items del NotificationCenter.
+ * NotificationStack — renders the NotificationCenter's item array.
  *
- * Vive entre `HomeHeader` y `TabBar`. Cuando `items` está vacío, no rinde nada
- * (collapse total — no ocupa filas).
+ * Lives between `HomeHeader` and `TabBar`. When `items` is empty it renders
+ * nothing (full collapse — occupies no rows).
  *
- * Si hay más de `max` items, muestra los `max` más nuevos y un contador
- * `+N more` debajo para señalizar el overflow.
+ * With more than `max` items, it shows the `max` newest ones and a `+N more`
+ * counter below to signal the overflow.
  */
 export function NotificationStack({ items, max = 3 }: NotificationStackProps) {
   if (items.length === 0) return null;

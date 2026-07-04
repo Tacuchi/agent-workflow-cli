@@ -4,7 +4,7 @@
  * that runs inside it.
  *
  * The window must stay open (to monitor the app live) and closing it must stop
- * the app (to detenerla al cerrarla). To also keep the TUI process registry
+ * the app. To also keep the TUI process registry
  * working, the wrapper captures the *real* app PID into a pidfile the adapter
  * reads back (on Windows we track the console PID instead — see the adapter).
  *

@@ -27,14 +27,14 @@ export interface RemoveSourceError {
 }
 
 /**
- * Quita una fuente del workspace por completo, componiendo servicios existentes
- * en orden idempotente: (1) detach de la visibilidad multi-root (4 hosts), (2)
- * poda del bloque WORKSPACE (Fuentes + working/qa branches), (3) detener los
- * procesos corriendo lanzados desde la fuente, (4) borrar `.workflow/launch/<alias>`.
+ * Removes a source from the workspace entirely, composing existing services in
+ * idempotent order: (1) detach multi-root visibility (4 hosts), (2) prune the
+ * WORKSPACE block (Fuentes + working/qa branches), (3) stop running processes
+ * launched from the source, (4) delete `.workflow/launch/<alias>`.
  *
- * NO borra el repo del filesystem: solo lo saca del workspace. Cada paso tolera
- * "ya no está", así que re-correrlo no falla. Permite dejar el workspace en 0
- * fuentes.
+ * Does NOT delete the repo from the filesystem: it only removes it from the
+ * workspace. Every step tolerates "already gone", so re-running never fails.
+ * Leaving the workspace with 0 sources is allowed.
  */
 export async function removeSource(
   deps: RemoveSourceDeps,
@@ -46,19 +46,19 @@ export async function removeSource(
     return { error: "alias_required" };
   }
 
-  // 1. Resolver alias → fuente desde el bloque WORKSPACE. Fail-fast si no existe.
+  // 1. Resolve alias → source from the WORKSPACE block. Fail fast when unknown.
   const fuente = await findFuente(fs, paths, alias);
   if (!fuente) {
     return { error: `unknown_source: ${alias}` };
   }
 
-  // 2. Quitar visibilidad multi-root (claude/codex/warp/oz). Idempotente por host.
+  // 2. Remove multi-root visibility (claude/codex/warp/oz). Idempotent per host.
   await runMultiroot(fs, env, paths, "detach", { paths: [fuente.path] });
 
-  // 3. Podar el bloque WORKSPACE: Fuentes + working_branches + qa_branches del alias.
+  // 3. Prune the WORKSPACE block: Fuentes + working_branches + qa_branches for the alias.
   await runProjectMdUpsertWrite(fs, env, paths, { op: "init", removeAliases: [alias] });
 
-  // 4. Detener los procesos corriendo lanzados desde esta fuente.
+  // 4. Stop running processes launched from this source.
   const registry = new ProcessRegistryService(fs, proc, paths.cwdProcessesFile());
   const running = (await registry.list()).filter(
     (r) => r.sourceAlias === alias && r.state === "running",
@@ -68,13 +68,13 @@ export async function removeSource(
     await registry.markStopped(record.id);
   }
 
-  // 5. Borrar los scripts de arranque generados (.workflow/launch/<alias>).
+  // 5. Delete the generated launch scripts (.workflow/launch/<alias>).
   await fs.remove(join(paths.cwdLaunchDir(), alias));
 
   return { alias, path: fuente.path, processesStopped: running.length };
 }
 
-/** Lee el bloque WORKSPACE (CLAUDE.md → AGENTS.md) y devuelve la fuente del alias. */
+/** Read the WORKSPACE block (CLAUDE.md → AGENTS.md) and return the source for the alias. */
 async function findFuente(
   fs: FileSystemPort,
   paths: PathsService,

@@ -43,7 +43,7 @@ export const releaseDataCommand: QtcCommand = {
     try {
       const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input, ctx.runtime);
       if ("error" in data) {
-        // Alias desconocido / bloque ilegible: error real, no un dump vacío "ok".
+        // Unknown alias / unreadable block: a real error, not an empty "ok" dump.
         return {
           ok: false,
           error: { code: "INVALID_INPUT", message: data.error },

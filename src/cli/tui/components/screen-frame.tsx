@@ -8,12 +8,13 @@ export interface ScreenFrameProps {
 }
 
 export function ScreenFrame({ children }: ScreenFrameProps) {
-  // Acota el frame al alto del viewport. Junto con el alt-screen (run.tsx) y el
-  // clip del contenido (app.tsx), evita que un tab alto (Workflow) empuje líneas
-  // al scrollback y deje huérfanas al volver a un tab corto.
+  // Bounds the frame to the viewport height. Together with the alt-screen
+  // (run.tsx) and the content clip (app.tsx), it prevents a tall tab
+  // (Workflow) from pushing lines into the scrollback and leaving orphans
+  // when returning to a short tab.
   //
-  // Sólo acota con alto real de TTY (rows > 0). En no-TTY (pipes, tests) el alto
-  // es desconocido: no hay viewport que acotar, así que se renderiza natural.
+  // Only bounds with a real TTY height (rows > 0). On non-TTY (pipes, tests)
+  // the height is unknown: no viewport to bound, so it renders naturally.
   const { rows } = useTerminalSize();
   const bounded = rows > 0;
   return (

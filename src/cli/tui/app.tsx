@@ -29,8 +29,8 @@ export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
   | { kind: "exit"; exitCode: ExitCode };
 
-// Orden y keymap derivados de TABS_LIST (única fuente). Agregar un tab allá lo
-// propaga acá sin tocar este archivo.
+// Order and keymap derive from TABS_LIST (single source). Adding a tab there
+// propagates here without touching this file.
 const TAB_ORDER: readonly TabId[] = TABS_LIST.map((t) => t.id);
 
 const TAB_BY_KEY: Record<string, TabId> = Object.fromEntries(TABS_LIST.map((t) => [t.key, t.id]));
@@ -39,7 +39,7 @@ export interface AppProps {
   version: string;
   ctx: CliContext;
   onResult: (result: TuiResult) => void;
-  /** Prefs cargadas en boot (run.tsx). Opcional para tests → defaults. */
+  /** Prefs loaded at boot (run.tsx). Optional for tests → defaults. */
   initialPrefs?: TuiPrefs;
 }
 
@@ -55,14 +55,13 @@ export function App(props: AppProps) {
 
 function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   const prefs0 = initialPrefs ?? DEFAULT_TUI_PREFS;
-  // Pestaña actual. Default = initialScreen de las prefs (antes hardcoded Status).
   const [activeTab, setActiveTab] = useState<TabId>(prefs0.initialScreen);
   const [prefs, setPrefs] = useState<TuiPrefs>(prefs0);
   const prefsSvc = useMemo(() => new TuiPrefsService(ctx.fs, ctx.paths), [ctx]);
 
-  // Cambio de pref desde el tab Config. Persiste + aplica vivo. El re-render por
-  // setPrefs hace que los hijos re-lean el `colors` ya mutado por applyAccent
-  // (sin memoización de por medio → propaga a todo el árbol).
+  // Pref change from the Config tab. Persists + applies live. The setPrefs
+  // re-render makes children re-read the `colors` already mutated by
+  // applyAccent (no memoization in between → propagates to the whole tree).
   const onChangePrefs = useCallback(
     (patch: Partial<TuiPrefs>) => {
       if (patch.accentColor) applyAccent(patch.accentColor);
@@ -71,24 +70,24 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     },
     [prefsSvc],
   );
-  // Persiste el namespace en el config file que lee NamespaceResolver
-  // (~/.config/agent-workflow/namespace). Aplica al próximo arranque.
+  // Persists the namespace to the config file NamespaceResolver reads
+  // (~/.config/agent-workflow/namespace). Takes effect on the next start.
   const onSaveNamespace = useCallback(
     (ns: string) => {
       void writeNamespacePin(ctx.fs, ctx.env.homeDir(), ns);
     },
     [ctx],
   );
-  // projectName se hidrata async desde el cwd (package.json#name o basename).
-  // Placeholder vacío para no parpadear con un brand incorrecto al boot.
+  // projectName hydrates async from the cwd (package.json#name or basename).
+  // Empty placeholder so the boot doesn't flash a wrong brand.
   const [projectName, setProjectName] = useState<string>("");
   const [workspaceCtx, setWorkspaceCtx] = useState<WorkspaceContext>({
     branchLabel: "— · loading",
     sessionsLabel: "— sessions",
   });
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  // Bumpeado por `r`: re-monta el tab activo (re-fetch de sus effects) y recarga
-  // los datos del shell (header + historial de logs del tab Status).
+  // Bumped by `r`: remounts the active tab (its effects re-fetch) and reloads
+  // the shell data (header + the Status tab's log history).
   const [refreshNonce, setRefreshNonce] = useState(0);
   const { exit } = useApp();
   const { locked: inputLocked } = useInputLock();
@@ -115,16 +114,16 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     void loadShellData();
   }, [loadShellData]);
 
-  // Update-available banner. Antes vivía dentro de StatusTab — ahora es
-  // responsabilidad del shell para que aparezca sin importar la tab activa.
+  // Update-available banner. Owned by the shell so it shows regardless of the
+  // active tab.
   //
-  // `manual` distingue el boot-check (silencioso) del recheck disparado por
-  // el usuario vía `r` action (feedback explícito "Checking…" / "Up to date").
+  // `manual` distinguishes the silent boot-check from the user-triggered
+  // recheck via the `r` action (explicit "Checking…" / "Up to date" feedback).
   const runUpdateCheck = useCallback(
     async (opts?: { manual?: boolean }) => {
       const manual = opts?.manual === true;
-      // Manual recheck: feedback explícito. Boot-check: un error de registry
-      // (offline, npm hiccup) es ruido benigno → al log diario, no toast rojo.
+      // Manual recheck: explicit feedback. Boot-check: a registry error
+      // (offline, npm hiccup) is benign noise → daily log, not a red toast.
       const reportFailure = (detail: string) => {
         if (manual) {
           pushToast({ tone: "err", title: "Update check failed", body: detail });
@@ -171,9 +170,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
           ),
           actions: [
             {
-              // 'u' y no 'i': ink despacha cada tecla a TODOS los useInput
-              // activos, e 'i' es el atajo empty-state de la administración por
-              // host — con el banner arriba dispararía install + update a la vez.
+              // 'u', not 'i': ink dispatches every key to ALL active useInput
+              // hooks, and 'i' is the host-admin empty-state shortcut — with
+              // the banner up it would fire install + update at once.
               key: "u",
               label: "apply",
               emphasis: true,
@@ -209,13 +208,13 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   }, [runUpdateCheck]);
 
   /**
-   * Despacha acciones provenientes de las tabs y la palette.
-   * Las acciones que requieren ejecutar un comando CLI con stdin (init, doctor,
-   * update) salen del TUI primero y se manejan en `dispatchMenuAction` del main.
+   * Dispatches actions coming from the tabs and the palette.
+   * Actions that must run a CLI command with stdin (init, doctor, update) exit
+   * the TUI first and are handled by main's `dispatchMenuAction`.
    */
   const runAction = useCallback(
     (id: string, _payload?: Record<string, unknown>) => {
-      // Exits-to-CLI vía MenuAction.
+      // Exits-to-CLI via MenuAction.
       if (id === "workspace-init") {
         onResult({ kind: "menu-action", action: "workspace-init" });
         exit();
@@ -251,7 +250,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
         exit();
         return;
       }
-      // Hints in-app (navegación + toasts).
+      // In-app hints (navigation + toasts).
       if (id === "mcp:add") {
         setActiveTab("mcp");
         pushToast({
@@ -288,9 +287,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     (input, key) => {
       if (inputLocked) return;
 
-      // Notif keys tienen prioridad: si hay notifs activas, `x` dismiss el top
-      // y las teclas de action (i/r/o/d/…) disparan la acción del item más
-      // nuevo que las tenga.
+      // Notif keys take priority: with active notifs, `x` dismisses the top
+      // one and action keys (i/r/o/d/…) trigger the action of the newest item
+      // carrying them.
       if (notifications.length > 0 && !key.ctrl && !key.meta) {
         if (input === "x" || input === "X") {
           if (dismissTop()) return;
@@ -308,9 +307,10 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
         exit();
         return;
       }
-      // Refresh: re-monta el tab activo (vía refreshNonce) y recarga el shell.
-      // Si una notif reclama `r` (recheck del update banner), gana arriba.
-      // En el tab Config, `r` lo consume ese tab (reset all) → no refrescar acá.
+      // Refresh: remounts the active tab (via refreshNonce) and reloads the
+      // shell. If a notif claims `r` (update-banner recheck), it wins above.
+      // In the Config tab, `r` is consumed by that tab (reset all) → no
+      // refresh here.
       if ((input === "r" || input === "R") && activeTab !== "config") {
         setRefreshNonce((n) => n + 1);
         void loadShellData();
@@ -331,9 +331,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
         <HomeHeader brand={projectName} version={version} workspaceContext={workspaceCtx} />
         <NotificationStack items={notifications} />
         <TabBar activeTabId={activeTab} />
-        {/* flexShrink + minHeight=0 + overflowY=hidden: el contenido del tab
-            activo clipea dentro de su región (no empuja el footer fuera de
-            pantalla). El scroll interno para tabs altos llega en T2. */}
+        {/* flexShrink + minHeight=0 + overflowY=hidden: the active tab's
+            content clips inside its region (never pushes the footer off
+            screen). Internal scrolling for tall tabs arrives in T2. */}
         <Box
           key={refreshNonce}
           flexDirection="column"
@@ -386,9 +386,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
 }
 
 /**
- * Resuelve el nombre del proyecto a mostrar en el header.
- * Prioridad: `package.json#name` (sin scope `@org/`) → `basename(cwd)`.
- * Cualquier error de lectura/parsing cae al fallback de basename.
+ * Resolves the project name shown in the header.
+ * Priority: `package.json#name` (without the `@org/` scope) → `basename(cwd)`.
+ * Any read/parse error falls back to basename.
  */
 async function resolveProjectName(ctx: CliContext): Promise<string> {
   const cwd = ctx.env.cwd();
@@ -404,7 +404,7 @@ async function resolveProjectName(ctx: CliContext): Promise<string> {
       }
     }
   } catch {
-    // fallback abajo
+    // fallback below
   }
   return basename(cwd) || "workspace";
 }

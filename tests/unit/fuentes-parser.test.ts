@@ -23,7 +23,7 @@ describe("parseFuentesSpecs", () => {
     });
   });
 
-  // Regresión: el colon de unidad de Windows colapsaba el path a "C".
+  // Regression: the Windows drive colon collapsed the path to "C".
   it("preserva rutas Windows con colon de unidad (sin rama)", () => {
     expect(ok("front:C:\\Source\\msextranet_front_angular")).toEqual({
       alias: "front",
@@ -58,9 +58,9 @@ describe("parseFuentesSpecs", () => {
     expect("error" in r).toBe(true);
   });
 
-  // El reporte de campo: re-pasar `C:\Source\x` por el shell se come los
-  // backslashes → llega `C:Sourcex` (unidad pegada al path). Hay que rechazarlo,
-  // no almacenar un path corrupto (que luego destruye el multiroot).
+  // The field report: re-passing `C:\Source\x` through the shell eats the
+  // backslashes → `C:Sourcex` arrives (drive glued to the path). It must be
+  // rejected, not stored as a corrupt path (which later destroys the multiroot).
   it("rechaza una ruta Windows corrupta (unidad sin separador tras el colon)", () => {
     const r = parseFuentesSpecs(["miscuotas:C:Sourcecore-frontend-miscuotas"]);
     expect("error" in r).toBe(true);

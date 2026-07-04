@@ -1,7 +1,6 @@
-// [Workflows] — administración por host del bundle `w` como sección principal
-// (HostAdminSection) + informativo mínimo: overview de 1 línea y strip compacto
-// de flows. Las FamilyCards/PhaseCards se retiraron en esta ronda (el detalle
-// doctrinal vive en el propio bundle, no en la TUI).
+// [Workflows] — per-host administration of the `w` bundle as the main section
+// (HostAdminSection) + minimal info: a 1-line overview and a compact flows
+// strip. Doctrinal detail lives in the bundle itself, not in the TUI.
 
 import { Box, Text } from "ink";
 import type { CliContext } from "../../types.js";
@@ -16,7 +15,7 @@ export interface WorkflowTabProps {
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
 }
 
-// Ids de los 3 flows dentro de WORKFLOW_CONTENT.phases (excluye bootstrap/export).
+// Ids of the 3 flows inside WORKFLOW_CONTENT.phases (excludes bootstrap/export).
 const FLOW_IDS: ReadonlySet<string> = new Set(["spec", "plan", "quick"]);
 
 export function WorkflowTab({ ctx, isActive, onToast }: WorkflowTabProps) {

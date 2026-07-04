@@ -10,22 +10,22 @@ import {
 } from "react";
 
 /**
- * NotificationCenter — estado global unificado para banners persistentes
- * (update available, doctor check) y mensajes efímeros (antes "toasts").
+ * NotificationCenter — unified global state for persistent banners (update
+ * available, doctor check) and ephemeral messages (toasts).
  *
- * - Items con `duration` definido se auto-dismiss tras `duration` ms (toasts).
- * - Items sin `duration` persisten hasta `dismiss(id)` o `x dismiss` del usuario.
- * - `push` es idempotente por `id`: re-pushear `update-available` reemplaza al
- *   item existente sin duplicar.
+ * - Items with a `duration` auto-dismiss after `duration` ms (toasts).
+ * - Items without one persist until `dismiss(id)` or the user's `x dismiss`.
+ * - `push` is idempotent per `id`: re-pushing `update-available` replaces the
+ *   existing item without duplicating.
  */
 
 export type NotificationTone = "ok" | "info" | "warn" | "err";
 
 export interface NotificationAction {
-  /** Tecla que dispara la acción (single char). */
+  /** Key that triggers the action (single char). */
   key: string;
   label: string;
-  /** Resalta como CTA primaria (inverse bold). Por default la primera. */
+  /** Highlights as the primary CTA (inverse bold). Defaults to the first one. */
   emphasis?: boolean;
   run: () => void;
 }
@@ -36,9 +36,9 @@ export interface NotificationItem {
   title: string | ReactNode;
   body?: string;
   actions?: NotificationAction[];
-  /** Si se define, auto-dismiss tras `duration` ms. */
+  /** When set, auto-dismisses after `duration` ms. */
   duration?: number;
-  /** Default true. Cuando false oculta `x dismiss` y no responde a 'x'. */
+  /** Default true. When false hides `x dismiss` and ignores 'x'. */
   dismissible?: boolean;
 }
 
@@ -52,7 +52,7 @@ export interface NotificationInput {
   dismissible?: boolean;
 }
 
-/** Firma legacy compatible con el viejo `useToasts.push`. */
+/** Legacy signature compatible with the old `useToasts.push`. */
 export interface ToastBridgeInput {
   tone?: "ok" | "info" | "err";
   title: string;
@@ -178,7 +178,7 @@ export function NotificationCenterProvider({ children, logger }: NotificationCen
   const dismissTop = useCallback((): boolean => {
     let didDismiss = false;
     setItems((prev) => {
-      // Top = el más nuevo y dismissible (último en el array).
+      // Top = newest dismissible item (last in the array).
       for (let i = prev.length - 1; i >= 0; i--) {
         const item = prev[i];
         if (item && item.dismissible !== false) {
@@ -195,14 +195,14 @@ export function NotificationCenterProvider({ children, logger }: NotificationCen
   const triggerAction = useCallback((key: string): boolean => {
     const normalized = key.toLowerCase();
     let actionRan = false;
-    // Buscar la acción en el item más nuevo primero (LIFO).
+    // Look up the action in the newest item first (LIFO).
     setItems((prev) => {
       for (let i = prev.length - 1; i >= 0; i--) {
         const item = prev[i];
         const match = item?.actions?.find((a) => a.key.toLowerCase() === normalized);
         if (match) {
           actionRan = true;
-          // Ejecutar fuera del setState callback para evitar side-effects en render.
+          // Run outside the setState callback to avoid side-effects in render.
           queueMicrotask(() => match.run());
           break;
         }

@@ -186,11 +186,11 @@ describe("readMcpEntry — Warp (.warp/.mcp.json, DEC-W3)", () => {
   });
 });
 
-// El reader debe poder LEER lo que el writer ESCRIBE, para cada host. OpenCode y
-// Crush guardan la entrada bajo la clave top-level `mcp` con shapes propias
-// (opencode: command como array + `environment`; crush: type=stdio) — no bajo
-// `mcpServers`. Sin este round-trip real, el reader se quedó leyendo `mcpServers`
-// y reportaba exists=false para opencode/crush aun tras un install correcto.
+// The reader must be able to READ what the writer WRITES, for every host. OpenCode
+// and Crush store the entry under the top-level `mcp` key with their own shapes
+// (opencode: command as array + `environment`; crush: type=stdio) — not under
+// `mcpServers`. Without this real round-trip, the reader kept reading `mcpServers`
+// and reported exists=false for opencode/crush even after a correct install.
 describe("readMcpEntry — round-trip real vs writeMcpEntry (todos los hosts JSON)", () => {
   let scopeDir: string;
   beforeEach(() => {

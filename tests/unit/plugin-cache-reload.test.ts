@@ -197,7 +197,7 @@ describe("selfReloadPluginCache", () => {
     const fs = new RealFs();
     const ctx = buildCtx(home, fs);
     await seedClaudeCacheWithSkills(home, "qtc-marketplace", "qtc", "2.3.0", ["rules", "session"]);
-    // Pre-instala algunas skills viejas en warp
+    // Pre-install some old skills in warp
     const oldWarpDir = join(home, ".warp", "skills", "qtc-old-skill");
     await mkdir(oldWarpDir, { recursive: true });
     await writeFile(join(oldWarpDir, "SKILL.md"), "---\nname: x\n---\n", "utf8");
@@ -206,7 +206,7 @@ describe("selfReloadPluginCache", () => {
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("reloaded");
-    expect(await fs.exists(oldWarpDir)).toBe(false); // viejo borrado
+    expect(await fs.exists(oldWarpDir)).toBe(false); // old one deleted
     expect(await fs.exists(join(home, ".warp", "skills", "qtc-rules"))).toBe(true);
     expect(await fs.exists(join(home, ".warp", "skills", "qtc-session"))).toBe(true);
     expect(result.data?.reinstalled.length).toBe(2);

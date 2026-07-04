@@ -1,8 +1,8 @@
-// [Skills] — administrador de skills sueltas (modelo skills.sh): lista única
-// con badges (installed → unmanaged → registered → recommended), detail con
-// acciones por estado (unmanaged = informativa) y wizard [a] fuente → picker
-// → warning de terceros → registrar.
-// Respaldado por skills-manager; la administración del bundle `w` vive en
+// [Skills] — loose-skills manager (skills.sh model): single list with badges
+// (installed → unmanaged → registered → recommended), detail with per-status
+// actions (unmanaged = informational) and an [a] wizard: source → picker →
+// third-party warning → register.
+// Backed by skills-manager; the `w` bundle administration lives in
 // [Workflows] (HostAdminSection).
 
 import { Box, Text, useInput, useStdout } from "ink";
@@ -64,9 +64,9 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
-  // Espejo de items para preservar la selección POR NOMBRE en refresh: la lista
-  // se re-ordena tras cada operación (installed→registered→recommended) y un
-  // cursor numérico saltaría a otra skill.
+  // Mirror of items to preserve the selection BY NAME across refresh: the
+  // list re-orders after every operation (installed→registered→recommended)
+  // and a numeric cursor would jump to another skill.
   const itemsRef = useRef<SkillListItem[]>([]);
   const startedRef = useRef(false);
   const { lock, unlock } = useInputLock();
@@ -106,11 +106,12 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const registeredCount = items.filter((s) => s.status === "registered").length;
   const recommendedCount = items.filter((s) => s.status === "recommended").length;
 
-  // Acciones del detail según estado (SPEC 003): recommended/registered →
-  // Install; installed → Update (solo git) / Reinstall / Uninstall; Remove para
-  // todo lo registrado (una recomendada vuelve a `recommended`). `unmanaged`
-  // (fuera del registro) no es operable: el guard de ownership del motor
-  // rechaza register/uninstall sobre dirs ajenos — fila informativa.
+  // Detail actions per status (SPEC 003): recommended/registered → Install;
+  // installed → Update (git only) / Reinstall / Uninstall; Remove for
+  // everything registered (a recommended one returns to `recommended`).
+  // `unmanaged` (outside the registry) is not operable: the engine's
+  // ownership guard rejects register/uninstall on foreign dirs —
+  // informational row.
   const detailActions = useMemo<{ id: ActionId; action: DetailAction }[]>(() => {
     if (!current || current.status === "unmanaged") return [];
     if (current.status === "recommended") {
@@ -139,8 +140,8 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         },
       ];
     }
-    // El clasificador canónico del motor (isAbsolute cubre paths Windows como
-    // C:\… que un startsWith("/") clasificaría mal como git).
+    // The engine's canonical classifier (isAbsolute covers Windows paths like
+    // C:\… that a startsWith("/") would misclassify as git).
     const resolved = resolveSkillSource(current.source, current.ref);
     const gitSource = !("error" in resolved) && resolved.kind === "git";
     return [
@@ -178,7 +179,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     ];
   }, [current]);
 
-  // Superficie TUI en EN (SPEC 007); los summaries del motor (ES) van al body.
+  // TUI surface is EN (SPEC 007); the engine's summaries (ES) go in the body.
   const runAction = useCallback(
     async (
       label: string,
@@ -217,7 +218,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       switch (id) {
         case "install":
           if (current.status === "recommended") {
-            // Registrar + instalar en un paso (la semilla ya trae la fuente).
+            // Register + install in one step (the seed already carries the source).
             void runAction(`installing ${name}…`, `Installed · ${name}`, async () => {
               const reg = await registerSkill(ctx, { source: current.source, pick: name });
               if (!reg.ok) return reg;
@@ -248,7 +249,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     [ctx, current, runAction],
   );
 
-  // input — list (↑↓ navega · ⏎ detail · a wizard)
+  // input — list (↑↓ navigate · ⏎ detail · a wizard)
   useInput(
     (input, key) => {
       if (!isActive || mode.kind !== "list") return;
@@ -272,7 +273,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     { isActive },
   );
 
-  // input — detail (↑↓ acciones · ⏎ ejecuta · esc cierra)
+  // input — detail (↑↓ actions · ⏎ run · esc close)
   useInput(
     (_input, key) => {
       if (!isActive || mode.kind !== "detail" || !current) return;
@@ -296,7 +297,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     { isActive },
   );
 
-  // input — confirm (y confirma · n/esc vuelve al detail)
+  // input — confirm (y confirm · n/esc back to detail)
   useInput(
     (input, key) => {
       if (!isActive || mode.kind !== "confirm" || !current) return;
@@ -325,7 +326,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     { isActive },
   );
 
-  // input — wizard-pick (↑↓ · ⏎ elige · esc cancela)
+  // input — wizard-pick (↑↓ · ⏎ choose · esc cancel)
   useInput(
     (_input, key) => {
       if (!isActive || mode.kind !== "wizard-pick") return;
@@ -349,7 +350,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     { isActive },
   );
 
-  // input — wizard-warning (r registra · ⏎ registra+instala · esc cancela)
+  // input — wizard-warning (r register · ⏎ register+install · esc cancel)
   useInput(
     (input, key) => {
       if (!isActive || mode.kind !== "wizard-warning") return;

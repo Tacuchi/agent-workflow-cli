@@ -373,7 +373,3 @@ export async function generateSourceLaunchArtifacts(
     outcomes: { launchJson, runSh, runPs1 },
   };
 }
-
-// The batch pregeneration helper (generateLaunchArtifacts) died with the
-// minimal init: descriptors are generated on demand per source at the first
-// launch (ensureDescriptor → generateSourceLaunchArtifacts).

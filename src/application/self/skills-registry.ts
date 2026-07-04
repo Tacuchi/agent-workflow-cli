@@ -1,7 +1,7 @@
-// Registro user-level de skills sueltas (las que administra [Skills], NO el
-// bundle `w` ni skills de plugins). Archivo separado del .skill-lock.json a
-// propósito: ciclos de vida distintos (el lock lo escribe install-skill del
-// bundle; este registro lo escribe skills-manager).
+// User-level registry of standalone skills (the ones [Skills] manages — NOT
+// the `w` bundle nor plugin skills). Kept as a separate file from
+// .skill-lock.json on purpose: distinct lifecycles (the lock is written by the
+// bundle's install-skill; this registry is written by skills-manager).
 
 import { join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
@@ -12,13 +12,13 @@ export const SKILLS_REGISTRY_REL = [".agents", ".skills-registry.json"] as const
 export type SkillReplicaMode = "symlink" | "copy";
 
 export interface SkillRegistryEntry {
-  /** Git URL, atajo `owner/repo` o path local absoluto. */
+  /** Git URL, `owner/repo` shorthand, or absolute local path. */
   source: string;
-  /** Ref git registrado (branch/tag); update siempre re-fetchea ESTE ref. */
+  /** Registered git ref (branch/tag); update always re-fetches THIS ref. */
   ref?: string;
-  /** Modo con que se materializó la réplica de Claude (fallback Windows = copy). */
+  /** Mode the Claude replica was materialized with (Windows fallback = copy). */
   mode?: SkillReplicaMode;
-  /** ISO timestamp del último install/update; ausente = registrada sin instalar. */
+  /** ISO timestamp of the last install/update; absent = registered, not installed. */
   installedAt?: string;
 }
 
@@ -29,7 +29,7 @@ export interface SkillsRegistry {
 export interface SkillsRegistryRead {
   registry: SkillsRegistry;
   path: string;
-  /** Presente si el archivo existía pero no parseó — se deja intacto (patrón lock). */
+  /** Present when the file existed but failed to parse — left untouched (lock pattern). */
   warning?: string;
 }
 
@@ -38,8 +38,8 @@ export function skillsRegistryPath(home: string): string {
 }
 
 /**
- * Un nombre de skill es un segmento de path seguro: el registro se joinea a
- * rutas que luego se borran recursivamente — "..", separadores o vacíos jamás.
+ * A skill name is a safe path segment: registry names are joined into paths
+ * that later get removed recursively — never "..", separators, or empty.
  */
 export function isValidSkillName(name: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/.test(name);
@@ -65,8 +65,8 @@ export async function readSkillsRegistry(ctx: CliContext): Promise<SkillsRegistr
   const skills: Record<string, SkillRegistryEntry> = {};
   if (rawSkills && typeof rawSkills === "object" && !Array.isArray(rawSkills)) {
     for (const [name, value] of Object.entries(rawSkills as Record<string, unknown>)) {
-      // Nombre inválido (p.ej. "..", con separadores) = entrada descartada: un
-      // registro editado a mano nunca convierte un remove en rm fuera del root.
+      // Invalid name (e.g. "..", with separators) = entry discarded: a
+      // hand-edited registry never turns a remove into an rm outside the root.
       if (!isValidSkillName(name)) continue;
       if (!value || typeof value !== "object" || Array.isArray(value)) continue;
       const v = value as Record<string, unknown>;
@@ -92,9 +92,9 @@ export async function writeSkillsRegistry(
   return path;
 }
 
-/** Lock compartido con skills.sh (mismo path que escribe el flujo install-skill
- *  del bundle — constante única en install-skill.ts). Este motor solo lo LEE:
- *  pista de fuente para canónicas fuera del registro. */
+/** Lock shared with skills.sh (same path the bundle's install-skill flow
+ *  writes — single constant in install-skill.ts). This engine only READS it:
+ *  a source hint for canonicals outside the registry. */
 export async function readSkillsShLockSources(ctx: CliContext): Promise<Record<string, string>> {
   const path = join(ctx.env.homeDir(), ...AGENTS_LOCK_REL);
   try {
@@ -110,7 +110,7 @@ export async function readSkillsShLockSources(ctx: CliContext): Promise<Record<s
     }
     return sources;
   } catch {
-    // Ausente o roto = sin pistas; el lock nunca bloquea el listado.
+    // Absent or broken = no hints; the lock never blocks listing.
     return {};
   }
 }

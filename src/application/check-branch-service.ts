@@ -137,7 +137,6 @@ async function resolveTarget(
     return target ?? null;
   }
   if (input.fileArg) {
-    // Match if fileArg starts with the source path.
     for (const s of sources) {
       if (input.fileArg.startsWith(s.path)) return s;
     }

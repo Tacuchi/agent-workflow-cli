@@ -194,7 +194,7 @@ async function run(argv: string[]): Promise<ExitCode> {
     return 1;
   }
 
-  // `<command> --help` muestra la ayuda del subcomando (su describe), no la global.
+  // `<command> --help` shows the subcommand's help (its describe), not the global help.
   if (hasHelp) {
     printCommandHelp(command);
     return 0;
@@ -250,10 +250,10 @@ async function dispatchMenuAction(
       // ink's stdin teardown and can phantom-cancel).
       return await run(["self", "update", "--yes"]);
     case "workspace-init": {
-      // Inicializa el directorio como workspace (1+ fuentes). Sin distinción
-      // project/hub. La forma interactiva con recolección de fuentes vive en el
-      // TUI (project-tab → WorkspaceInitForm); este path es el fallback CLI con la
-      // cwd como única fuente.
+      // Initializes the directory as a workspace (1+ sources). No project/hub
+      // distinction. The interactive form that collects sources lives in the
+      // TUI (project-tab → WorkspaceInitForm); this path is the CLI fallback
+      // with the cwd as the only source.
       const cwd = process.cwd();
       return await run(["workspace-init", "--source", `${basename(cwd)}:${cwd}`]);
     }

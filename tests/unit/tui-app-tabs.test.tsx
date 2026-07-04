@@ -81,15 +81,15 @@ describe("App (tab-home)", () => {
   it("boot muestra la Status tab por default (sin palette)", async () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
-    // Esperar a que el effect de boot resuelva projectName (basename del cwd mock).
+    // Wait for the boot effect to resolve projectName (basename of the mocked cwd).
     await new Promise((r) => setTimeout(r, 50));
     const frame = lastFrame() ?? "";
-    // post-v9.2.0: la palette es overlay opt-in (^K). El boot renderiza la
-    // TabBar + StatusTab directamente — no search input ni "Go to <Tab>".
+    // The palette is an opt-in overlay (^K). Boot renders the TabBar + StatusTab
+    // directly — no search input, no "Go to <Tab>".
     expect(frame).not.toContain("type to filter");
     expect(frame).not.toContain("Go to Status");
-    // Brand dinámico: en el mock cwd="/home/test/project" y fs.exists=false,
-    // por lo que resolveProjectName cae al basename "project".
+    // Dynamic brand: the mock has cwd="/home/test/project" and fs.exists=false,
+    // so resolveProjectName falls back to the basename "project".
     expect(frame).toContain("project");
     expect(frame).toContain("v9.9.9");
     expect(frame).toContain("Status");
@@ -101,8 +101,8 @@ describe("App (tab-home)", () => {
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     const frame = lastFrame() ?? "";
-    // HomeHeader renderiza brand dinámico (basename del cwd mock = "project")
-    // en línea 1 y branch + sessions placeholders en línea 2 mientras hidrata.
+    // HomeHeader renders the dynamic brand (basename of the mocked cwd = "project")
+    // on line 1, and branch + sessions placeholders on line 2 while hydrating.
     expect(frame).toContain("project");
     expect(frame).toMatch(/sessions/);
   });
@@ -113,8 +113,8 @@ describe("App (tab-home)", () => {
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("2");
     await new Promise((r) => setTimeout(r, 50));
-    // [Workflows] monta la administración por host (SectionHead "HOSTS") y el
-    // informativo compacto de flows.
+    // [Workflows] mounts the per-host administration (SectionHead "HOSTS") and
+    // the compact flows summary.
     expect(lastFrame()).toContain("HOSTS");
     expect(lastFrame()).toContain("Flows:");
   });
@@ -125,7 +125,7 @@ describe("App (tab-home)", () => {
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("5");
     await new Promise((r) => setTimeout(r, 100));
-    // [Skills] renderiza la lista única con las recomendadas de la semilla.
+    // [Skills] renders the single list with the seed's recommended skills.
     expect(lastFrame()).toContain("recommended");
     expect(lastFrame()).toContain("add skill");
   });
@@ -152,9 +152,9 @@ describe("App (tab-home)", () => {
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 60));
     const frame = lastFrame() ?? "";
-    // El check de arranque falló (offline) → NO hay toast rojo "Update check failed"…
+    // The boot check failed (offline) → NO red "Update check failed" toast…
     expect(frame).not.toContain("Update check failed");
-    // …pero sí queda una traza durable en el log operativo diario.
+    // …but a durable trace does land in the daily operational log.
     expect(logged.some((l) => l.level === "warn" && l.msg.includes("update check"))).toBe(true);
   });
 
@@ -167,13 +167,13 @@ describe("App (tab-home)", () => {
     await new Promise((r) => setTimeout(r, 60));
     const sessCall = calls.find((c) => c.args[0] === "sessions");
     expect(sessCall).toBeDefined();
-    // El env pasa AW_INTERNAL_CALL=1 (main.ts silencia el logger) y conserva el
-    // resto del entorno (PATH, etc.) para que el hijo `aw` pueda ejecutarse.
+    // The env passes AW_INTERNAL_CALL=1 (main.ts silences the logger) and keeps
+    // the rest of the environment (PATH, etc.) so the child `aw` can run.
     expect(sessCall?.env?.AW_INTERNAL_CALL).toBe("1");
     expect(Object.keys(sessCall?.env ?? {}).length).toBeGreaterThan(1);
   });
 
-  // ESC se referencia para asegurar el import del byte ESC en el test bundle.
+  // ESC is referenced to keep the ESC byte import alive in the test bundle.
   it("constante ESC del módulo está definida", () => {
     expect(ESC).toBeDefined();
     expect(ENTER).toBe("\r");

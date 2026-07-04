@@ -99,7 +99,7 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
       JSON.stringify(
         {
           permissions: { additionalDirectories: ["/some/path"] },
-          // Shape de la era legacy de esta tool (dbhub) — sí es nuestra.
+          // Shape from this tool's legacy era (dbhub) — it IS ours.
           mcpServers: { cert: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} } },
         },
         null,
@@ -135,8 +135,8 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
   });
 
   it("legacy cleanup conserva una entrada homónima ajena (guard de ownership)", () => {
-    // Mismo nombre 'cert', pero el server es del usuario (no menciona dbhub ni
-    // agent-workflow): a scope global ese archivo es ~/.claude/settings.json real.
+    // Same name 'cert', but the server is the user's (mentions neither dbhub nor
+    // agent-workflow): at global scope that file is the real ~/.claude/settings.json.
     const legacyPath = join(scopeDir, ".claude", "settings.json");
     mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     writeFileSync(

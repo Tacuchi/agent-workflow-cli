@@ -91,9 +91,9 @@ export async function gitClone(url: string, dest: string, ref?: string): Promise
   gitArgs.push(url, dest);
 
   await new Promise<void>((resolve, reject) => {
-    // Nunca prompts interactivos: bajo la TUI (alt-screen + raw mode) git
-    // preguntaría credenciales/host-key por /dev/tty invisible y colgaría el
-    // busy-lock para siempre (mismo fix que GitCliAdapter). Fallar rápido.
+    // Never allow interactive prompts: under the TUI (alt-screen + raw mode) git
+    // would ask for credentials/host-key on an invisible /dev/tty and hang the
+    // busy-lock forever (same fix as GitCliAdapter). Fail fast instead.
     const env = {
       ...process.env,
       GIT_TERMINAL_PROMPT: "0",

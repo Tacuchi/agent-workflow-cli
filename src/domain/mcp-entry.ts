@@ -120,9 +120,9 @@ export function buildMcpEntry(
   if (dsnVar !== undefined) {
     env.DBHUB_DSN_VAR = normalizeDsnVarName(dsnVar);
   }
-  // Windows: el bin npm global es un shim `agent-workflow.cmd`; los hosts que
-  // spawnean el server sin shell fallan (ENOENT/EINVAL) → envolver en `cmd /c`.
-  // El doctor compara contra esta misma forma en la misma máquina, sin drift.
+  // Windows: the global npm bin is an `agent-workflow.cmd` shim; hosts that
+  // spawn the server without a shell fail (ENOENT/EINVAL) → wrap in `cmd /c`.
+  // The doctor compares against this same shape on the same machine — no drift.
   const isWin = platform === "win32";
   return {
     name: mcpEntryNameFor(normalized),

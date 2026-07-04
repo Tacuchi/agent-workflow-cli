@@ -1,4 +1,4 @@
-// Launcher que resuelve DSN y spawnea `npx -y @bytebase/dbhub` con stdio inherit.
+// Launcher that resolves the DSN and spawns `npx -y @bytebase/dbhub` with stdio inherit.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import {

@@ -2,33 +2,33 @@ import { Text } from "ink";
 import type { ReactNode } from "react";
 import { colors, icons } from "../theme.js";
 
-// Overhead aproximado del chrome (ScreenFrame + content box: bordes + paddings)
-// para que el bg highlight llene el ancho de la fila sin pasarse del borde.
+// Approximate chrome overhead (ScreenFrame + content box: borders + paddings)
+// so the bg highlight fills the row width without spilling past the border.
 const FRAME_OVERHEAD = 12;
 const DEFAULT_LABEL_WIDTH = 16;
 
 export interface FocusRowProps {
-  /** Enfocada → barra de color al inicio + fondo highlight full-width. */
+  /** Focused → colored bar at the start + full-width highlight background. */
   focused: boolean;
-  /** Ancho de terminal. El contenedor lo provee (un solo `useTerminalSize`). */
+  /** Terminal width. Provided by the container (a single `useTerminalSize`). */
   cols: number;
   label: string;
   labelColor?: string | undefined;
-  /** Columnas que ocupan los `children` — dimensiona el spacer del fondo. */
+  /** Columns the `children` occupy — sizes the background spacer. */
   valueWidth: number;
   labelWidth?: number;
   children: ReactNode;
 }
 
 /**
- * Fila enfocable con barra de focus + resaltado de fondo full-width, alineada
- * con las listas de MCP/Skills/Workflows (`list-row`).
+ * Focusable row with a focus bar + full-width background highlight, aligned
+ * with the MCP/Skills/Workflows lists (`list-row`).
  *
- * La barra va AFUERA del fondo (como list-row). Todo el contenido vive en una
- * sola `Text` con `wrap="truncate-end"` (las `Text` anidadas heredan el
- * `backgroundColor`) y un spacer que llena el ancho restante. Esa estructura de
- * una sola `Text` evita que un spacer ancho dentro de una `Box`-row se trague la
- * barra (bug observado en la primera versión).
+ * The bar sits OUTSIDE the background (like list-row). All content lives in a
+ * single `Text` with `wrap="truncate-end"` (nested `Text` inherit the
+ * `backgroundColor`) plus a spacer that fills the remaining width. That
+ * single-`Text` structure prevents a wide spacer inside a `Box`-row from
+ * swallowing the bar.
  */
 export function FocusRow({
   focused,
@@ -40,7 +40,7 @@ export function FocusRow({
   children,
 }: FocusRowProps) {
   const bgProp = focused ? { backgroundColor: colors.bgHighlight } : {};
-  // Ancho ya usado dentro de la fila: barra(1) + gap(1) + innerpad(1) + label + value.
+  // Width already used inside the row: bar(1) + gap(1) + innerpad(1) + label + value.
   const spacerLen = Math.max(1, cols - FRAME_OVERHEAD - 3 - labelWidth - valueWidth);
   return (
     <Text wrap="truncate-end">

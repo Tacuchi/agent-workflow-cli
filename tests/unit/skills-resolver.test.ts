@@ -48,9 +48,9 @@ describe("resolveSkills (skills.toml cascade)", () => {
   });
 
   it("las convenciones genéricas NO son roles (las auto-descubre el host, no el workflow)", async () => {
-    // coding-standards/testing/writing salieron del sistema de roles: el workflow es
-    // indiferente y el host las auto-aplica si están instaladas. Nombrarlas en skills.toml
-    // → rol desconocido (warning), no rompe la resolución.
+    // coding-standards/testing/writing left the role system: the workflow is
+    // indifferent and the host auto-applies them if installed. Naming them in
+    // skills.toml → unknown role (warning), does not break resolution.
     writeWorkspace('[skills]\ncoding-standards = "x"\ntesting = "y"\nsql = "ws-sql"\n');
     const { skills, warnings } = await resolveSkills(fs, paths);
     expect(warnings.some((w) => w.includes("coding-standards"))).toBe(true);
@@ -69,7 +69,7 @@ describe("resolveSkills (skills.toml cascade)", () => {
       source: "workspace",
       enabled: true,
     });
-    // los demás siguen en default
+    // the rest stay on default
     expect(skills.sql.source).toBe("default");
   });
 
@@ -84,7 +84,7 @@ describe("resolveSkills (skills.toml cascade)", () => {
       source: "workspace",
       enabled: true,
     });
-    // git solo en global
+    // git only in global
     expect(skills.git).toEqual({
       role: "git",
       skill: "global-git",
@@ -107,7 +107,7 @@ describe("resolveSkills (skills.toml cascade)", () => {
   it("`tools` ya NO es un rol (se removió la capability)", async () => {
     const { skills } = await resolveSkills(fs, paths);
     expect(Object.keys(skills)).not.toContain("tools");
-    // Nombrarlo en skills.toml → rol desconocido (warning), no rompe la resolución.
+    // Naming it in skills.toml → unknown role (warning), does not break resolution.
     writeWorkspace('[skills]\ntools = "off"\nsql = "ws-sql"\n');
     const res = await resolveSkills(fs, paths);
     expect(res.warnings.some((w) => w.includes("tools"))).toBe(true);
@@ -120,7 +120,7 @@ describe("resolveSkills (skills.toml cascade)", () => {
     const { skills, warnings } = await resolveSkills(fs, paths);
     expect(warnings.some((w) => w.includes("frobnicate"))).toBe(true);
     expect(skills.sql.skill).toBe("ws-sql");
-    // ningún rol espurio aparece
+    // no spurious role appears
     expect(Object.keys(skills)).not.toContain("frobnicate");
   });
 

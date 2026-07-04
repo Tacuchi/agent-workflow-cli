@@ -11,7 +11,7 @@ describe("FocusRow", () => {
       </FocusRow>,
     );
     const f = lastFrame() ?? "";
-    expect(f).toContain("▎"); // barra de focus al inicio
+    expect(f).toContain("▎"); // focus bar at the start
     expect(f).toContain("Accent");
     expect(f).toContain("val");
   });

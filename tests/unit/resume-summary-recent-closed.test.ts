@@ -117,7 +117,7 @@ describe("runResumeSummary --include-recent-closed", () => {
   });
 
   it("detects closed session with CONCLUSIONS as complete", async () => {
-    const recentMtime = new Date(Date.now() - 1000 * 60 * 60); // 1 hora atrás
+    const recentMtime = new Date(Date.now() - 1000 * 60 * 60); // 1 hour ago
     const s1 = buildClosedSession("062", { conclusions: true });
     const fs = buildFs([{ ...s1, mtime: recentMtime }]);
     const result = await runResumeSummary(fs, new FakeEnv(), paths, {
@@ -162,7 +162,7 @@ describe("runResumeSummary --include-recent-closed", () => {
   });
 
   it("excludes sessions outside the recentDays window", async () => {
-    const oldMtime = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10); // 10 días atrás
+    const oldMtime = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10); // 10 days ago
     const s = buildClosedSession("062", { conclusions: true });
     const fs = buildFs([{ ...s, mtime: oldMtime }]);
     const result = await runResumeSummary(fs, new FakeEnv(), paths, {
@@ -173,7 +173,7 @@ describe("runResumeSummary --include-recent-closed", () => {
   });
 
   it("respects custom recentDays window", async () => {
-    const mtime = new Date(Date.now() - 1000 * 60 * 60 * 24 * 5); // 5 días atrás
+    const mtime = new Date(Date.now() - 1000 * 60 * 60 * 24 * 5); // 5 days ago
     const s = buildClosedSession("062", { conclusions: true });
     const fs = buildFs([{ ...s, mtime }]);
     const r1 = await runResumeSummary(fs, new FakeEnv(), paths, {

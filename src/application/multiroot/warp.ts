@@ -48,7 +48,6 @@ export function resolveWarpGlobalMcpPath(
         : spec.globalMcpPaths.win32;
 
   const raw = (channel === "preview" ? byPlatform.preview : null) ?? byPlatform.stable;
-  // Expand ~ and %LOCALAPPDATA%
   if (raw.startsWith("~")) return join(home, raw.slice(1));
   if (raw.includes("%LOCALAPPDATA%")) {
     const localAppData = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");

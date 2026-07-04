@@ -1,12 +1,12 @@
-// Paleta mono violet — handoff design_handoff_tui_simplified (v9.0.0).
-// Hex strings — Ink 5 acepta `Text color="#xxx"`.
+// Mono violet palette — handoff design_handoff_tui_simplified (v9.0.0).
+// Hex strings — Ink 5 accepts `Text color="#xxx"`.
 //
-// Convención:
-// - `accent` — único acento de marca (violet). Focus, selección, brand glyph.
+// Convention:
+// - `accent` — the single brand accent (violet). Focus, selection, brand glyph.
 // - `accentSoft` — hover state, sub-accent.
-// - Texto: 5 niveles (bright/text/dim/mute/faint).
-// - Border: 2 niveles (border/borderFaint).
-// - Semánticos: `ok / warn / err / info / purple`.
+// - Text: 5 levels (bright/text/dim/mute/faint).
+// - Border: 2 levels (border/borderFaint).
+// - Semantic: `ok / warn / err / info / purple`.
 
 export const palette = {
   // surfaces
@@ -16,7 +16,7 @@ export const palette = {
   bgElev3: "#0c0a14",
   bgHover: "#1a172a",
   bgSelected: "#3a2f5c",
-  // Highlight para filas focused — fondo violet visible tipo marker.
+  // Highlight for focused rows — visible marker-style violet background.
   bgHighlight: "#3a2f5c",
 
   // borders
@@ -25,7 +25,7 @@ export const palette = {
   borderStrong: "#4a4368",
   borderAccent: "#a78bfa",
 
-  // text (5 niveles)
+  // text (5 levels)
   bright: "#f4f1fc",
   text: "#d4d0e2",
   dim: "#9b94b8",
@@ -42,7 +42,7 @@ export const palette = {
   accent: "#a78bfa",
   accentSoft: "#c4b5fd",
 
-  // soportes (mantenidos para compat con codebase)
+  // supporting colors (kept for codebase compat)
   purple: "#a78bfa",
   purpleSoft: "#c4b5fd",
   blue: "#93c5fd",
@@ -53,16 +53,16 @@ export const palette = {
   orange: "#fbbf24",
   red: "#fb7185",
 
-  // semánticos
+  // semantic
   ok: "#6ee7b7",
   warn: "#fbbf24",
   err: "#fb7185",
   info: "#93c5fd",
 };
 
-// `colors.*` con nombres legacy + nombres canónicos del handoff.
+// `colors.*` with legacy names + the handoff's canonical names.
 export const colors = {
-  // legacy aliases (preservados para compat con tabs v8)
+  // legacy aliases (kept for compat with v8 tabs)
   primary: palette.accent,
   accent: palette.accent,
   accentSoft: palette.accentSoft,
@@ -91,7 +91,7 @@ export const colors = {
   bgSelected: palette.bgSelected,
   bgHighlight: palette.bgHighlight,
 
-  // canónicos del handoff (nuevos componentes)
+  // handoff canonical names (newer components)
   bright: palette.bright,
   text: palette.text,
   dim: palette.dim,
@@ -138,10 +138,10 @@ export const icons = {
   uninstall: "×",
   clean: "⊘",
   legacy: "⚒",
-  // NOTE: evitar el glyph "branch" U+2387. Varias fuentes de terminal (p. ej. la
-  // default de Warp, en Mac y Windows) no lo incluyen y usan un fallback de ancho 2,
-  // mientras Ink lo calcula como 1 → desalinea las columnas del tab Project (que lo
-  // usa por fila). U+21B3 (bloque Arrows) está mucho mejor soportado y mide 1 celda.
+  // NOTE: avoid the "branch" glyph U+2387. Several terminal fonts (e.g. Warp's
+  // default, on Mac and Windows) lack it and use a width-2 fallback while Ink
+  // measures it as 1 → misaligns the Project tab's columns (it renders one per
+  // row). U+21B3 (Arrows block) is far better supported and measures 1 cell.
   git: "↳",
   branch: "↳",
   commit: "●",
@@ -154,7 +154,7 @@ export const icons = {
   alertDot: "●",
   ring: "●",
   pin: "⌖",
-  // canónicos del handoff
+  // handoff canonical names
   focusBar: "▎",
   caret: "▍",
   expandCollapsed: "▸",
@@ -164,23 +164,24 @@ export const icons = {
 
 export type ColorName = (typeof colors)[keyof typeof colors];
 
-// ─── Accent configurable ────────────────────────────────────────────────────
-// El accent es el único color de marca (focus, selección, bordes activos, brand
-// glyph). `applyAccent` lo recolorea mutando `palette`/`colors` in-place: los 22
-// archivos que importan `colors` siguen igual; el re-render lo dispara el
-// `themeNonce` del shell (app.tsx). Default = violet (los literales de arriba).
+// ─── Configurable accent ────────────────────────────────────────────────────
+// The accent is the single brand color (focus, selection, active borders,
+// brand glyph). `applyAccent` recolors it by mutating `palette`/`colors`
+// in-place: every file importing `colors` stays untouched; the re-render is
+// triggered by the shell's prefs state (app.tsx). Default = violet (the
+// literals above).
 
 export type AccentColor = "violet" | "cyan" | "green" | "yellow" | "red";
 
 export const DEFAULT_ACCENT: AccentColor = "violet";
 
 interface AccentDef {
-  main: string; // acento principal
-  soft: string; // hover / sub-acento
-  selBg: string; // fondo de fila seleccionada (tinte oscuro del acento)
+  main: string; // primary accent
+  soft: string; // hover / sub-accent
+  selBg: string; // selected-row background (dark tint of the accent)
 }
 
-// Orden = orden de swatches en el tab Config.
+// Order = swatch order in the Config tab.
 export const ACCENTS: Record<AccentColor, AccentDef> = {
   violet: { main: "#a78bfa", soft: "#c4b5fd", selBg: "#3a2f5c" },
   cyan: { main: "#93c5fd", soft: "#bfdbfe", selBg: "#1e3a5c" },
@@ -198,8 +199,9 @@ export function getAccent(): AccentColor {
 }
 
 /**
- * Recolorea el theme in-place al accent dado. Idempotente. Tolera valores
- * inválidos (cae a violet). Llamar en boot (run.tsx) y on-change (Config tab).
+ * Recolors the theme in-place to the given accent. Idempotent. Tolerates
+ * invalid values (falls back to violet). Called at boot (run.tsx) and
+ * on-change (Config tab).
  */
 export function applyAccent(accent: AccentColor): void {
   const def = ACCENTS[accent] ?? ACCENTS[DEFAULT_ACCENT];

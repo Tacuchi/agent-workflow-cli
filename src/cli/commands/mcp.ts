@@ -277,16 +277,16 @@ async function runDoctorSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   };
 }
 
-/** Exportado para tests: la detección de host anfitrión debe cubrir los 6 hosts. */
+/** Exported for tests: host-harness detection must cover all 6 hosts. */
 export function resolveHosts(
   args: ParsedArgs,
   ctx: CliContext,
 ): { value: McpHost[] } | CommandResult {
   const flag = args.values.get("host");
   if (flag === undefined) {
-    // Sin --host: escribir solo en el harness anfitrión, data-driven desde el
-    // registro (los ifs hardcodeados dejaban afuera a gemini/opencode/crush →
-    // fan-out a los 6 hosts corriendo dentro de uno de ellos).
+    // No --host: write only to the host harness, data-driven from the registry
+    // (hardcoded ifs left out gemini/opencode/crush → fan-out to all 6 hosts
+    // while running inside one of them).
     const harness = runHarness((k) => ctx.env.get(k));
     const spec = harness.harness === "unknown" ? null : harnessById(harness.harness);
     if (spec?.mcpHostId) return { value: [spec.mcpHostId] };

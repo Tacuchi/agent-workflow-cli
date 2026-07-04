@@ -24,9 +24,9 @@ interface ClaudeFail {
 }
 export type ClaudeResult = ClaudeAttachOk | ClaudeDetachOk | ClaudeFail;
 
-// Visibilidad multi-root → `settings.local.json` (no `settings.json`): las rutas
-// son absolutas y machine-specific, así que viven en el archivo per-máquina que
-// Claude Code lee con precedencia y que se gitignorea. El doctor lee ambos.
+// Multi-root visibility goes in `settings.local.json` (NOT `settings.json`): the
+// paths are absolute and machine-specific, so they live in the per-machine file
+// that Claude Code reads with precedence and that is gitignored. The doctor reads both.
 export function claudeSettingsPath(scopeDir: string): string {
   return join(scopeDir, ".claude", "settings.local.json");
 }

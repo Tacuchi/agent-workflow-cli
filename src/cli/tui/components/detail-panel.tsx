@@ -38,21 +38,22 @@ export interface DetailPanelProps {
   /** If present, the actions block is replaced by this banner (e.g. ConfirmBanner). */
   banner?: ReactNode;
   /**
-   * Dibuja un marco (borde redondeado) alrededor del panel. El marco se suma por
-   * FUERA del ancho de contenido (no lo achica), así los cálculos internos no cambian;
-   * la fila del tab lo contempla vía {@link DETAIL_PANEL_ROW_OVERHEAD}.
+   * Draws a frame (rounded border) around the panel. The frame is added
+   * OUTSIDE the content width (does not shrink it), so the internal
+   * calculations stay the same; the tab row accounts for it via
+   * {@link DETAIL_PANEL_ROW_OVERHEAD}.
    */
   bordered?: boolean;
 }
 
 const DEFAULT_WIDTH = 38;
-/** Celdas que agrega el marco (1 por lado) cuando `bordered`. */
+/** Cells added by the frame (1 per side) when `bordered`. */
 const BORDER_WIDTH = 2;
 /**
- * Ancho que ocupa el panel en la fila del tab cuando está abierto: contenido +
- * marco + 1 de gap respecto de la lista. Lo consume `rowWidth()` para que la lista
- * no se solape con el panel. Vive acá, junto al ancho real del panel, para que no
- * se desincronicen (si cambia el ancho/marco, el overhead lo sigue).
+ * Width the panel occupies in the tab row when open: content + frame + 1 of
+ * gap from the list. Consumed by `rowWidth()` so the list does not overlap
+ * the panel. Lives here, next to the panel's real width, so they cannot
+ * desync (if the width/frame changes, the overhead follows).
  */
 export const DETAIL_PANEL_ROW_OVERHEAD = DEFAULT_WIDTH + BORDER_WIDTH + 1;
 const DEFAULT_FOOTER: DetailFooterEntry[] = [
@@ -61,7 +62,7 @@ const DEFAULT_FOOTER: DetailFooterEntry[] = [
   { key: "esc", label: "close" },
 ];
 
-// Separator entre name y description en la misma línea.
+// Separator between name and description on the same line.
 const NAME_DESC_SEP = " · ";
 
 function toneColor(tone?: DetailTone): string {
@@ -95,8 +96,8 @@ export function DetailPanel({
   banner,
   bordered = false,
 }: DetailPanelProps) {
-  // El marco se suma por fuera (outerWidth = width + marco) para no achicar el
-  // contenido: los cálculos internos (separador, action rows) siguen usando `width`.
+  // The frame is added outside (outerWidth = width + frame) so the content is
+  // not shrunk: internal calculations (separator, action rows) keep using `width`.
   return (
     <Box
       flexDirection="column"
@@ -147,7 +148,7 @@ export function DetailPanel({
   );
 }
 
-// Width interior del detail panel: DEFAULT_WIDTH - paddingLeft - safety.
+// Inner width of the detail panel: DEFAULT_WIDTH - paddingLeft - safety.
 const DETAIL_INNER_WIDTH = DEFAULT_WIDTH - 3;
 const ACTION_INNER_PAD = 1;
 
@@ -177,15 +178,15 @@ function DetailActionRow({
   const bgProp = bg ? { backgroundColor: bg } : {};
   const innerPad = " ".repeat(ACTION_INNER_PAD);
 
-  // Layout 1 línea: bar + gap + pad + name + sep + desc + spacer + pad.
-  // El focus bar va AFUERA del bg (como list-row); bg empieza en el inner pad.
+  // 1-line layout: bar + gap + pad + name + sep + desc + spacer + pad.
+  // The focus bar sits OUTSIDE the bg (like list-row); bg starts at the inner pad.
   const FOCUS_OUTER = 2; // bar + gap
   const nameLen = [...action.name].length;
   const sepLen = action.description ? NAME_DESC_SEP.length : 0;
   const fixedLen = FOCUS_OUTER + ACTION_INNER_PAD * 2 + nameLen;
   const availableForDesc = Math.max(
     0,
-    DETAIL_INNER_WIDTH - fixedLen - sepLen - 1, // -1 reserva spacer min
+    DETAIL_INNER_WIDTH - fixedLen - sepLen - 1, // -1 reserves the min spacer
   );
 
   let displayDesc = action.description ?? "";
@@ -205,12 +206,12 @@ function DetailActionRow({
 
   return (
     <Box flexDirection="row" marginTop={0}>
-      {/* Focus bar AFUERA del bg — barrita independiente */}
+      {/* Focus bar OUTSIDE the bg — independent bar */}
       <Text color={focusBarColor} bold={focused}>
         {focused ? icons.focusBar : " "}
       </Text>
       <Text> </Text>
-      {/* bg highlight empieza acá */}
+      {/* bg highlight starts here */}
       <Text {...bgProp}>{innerPad}</Text>
       <Text {...bgProp} color={nameColor} bold={focused}>
         {action.name}

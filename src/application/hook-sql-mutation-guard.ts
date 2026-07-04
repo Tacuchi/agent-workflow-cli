@@ -1,4 +1,4 @@
-// Patterns y display name son read del runtime config (Phase 3 agnostic CLI).
+// Patterns and display name are read from the runtime config (Phase 3 agnostic CLI).
 import type { EnvPort } from "../ports/env.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
 

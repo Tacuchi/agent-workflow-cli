@@ -1,17 +1,17 @@
-// Dimensiones de la terminal (filas/columnas) con re-render en `resize`.
+// Terminal dimensions (rows/columns) with re-render on `resize`.
 //
-// Ink expone `useStdout()` pero no re-renderiza al cambiar el tamaño de la
-// terminal. Este hook se suscribe al evento `resize` del stdout y fuerza el
-// re-render para que el frame se mantenga acotado al viewport (ver ScreenFrame).
+// Ink exposes `useStdout()` but does not re-render when the terminal size
+// changes. This hook subscribes to stdout's `resize` event and forces the
+// re-render so the frame stays bounded to the viewport (see ScreenFrame).
 
 import { useStdout } from "ink";
 import { useEffect, useState } from "react";
 
 export interface TerminalSize {
-  // `0` = alto desconocido (stdout no-TTY: pipes, CI, ink-testing-library).
-  // El consumidor NO debe acotar en ese caso (no hay viewport real que acotar).
+  // `0` = unknown height (non-TTY stdout: pipes, CI, ink-testing-library).
+  // Consumers must NOT clamp in that case (there is no real viewport to clamp to).
   rows: number;
-  // Fallback 80: sólo se usa para truncar ancho de texto, inocuo si es estimado.
+  // Fallback 80: only used to truncate text width, harmless when estimated.
   cols: number;
 }
 
@@ -31,7 +31,7 @@ export function useTerminalSize(): TerminalSize {
       setSize({ rows: stdout.rows ?? 0, cols: stdout.columns ?? FALLBACK_COLS });
     };
     stdout.on("resize", onResize);
-    // Re-sincroniza por si el tamaño cambió entre el primer render y el effect.
+    // Re-sync in case the size changed between the first render and the effect.
     onResize();
     return () => {
       stdout.off("resize", onResize);

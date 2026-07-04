@@ -1,10 +1,10 @@
-// Plugin doctor — health check del plugin (manifest, hooks, MCP, skills).
+// Plugin doctor — plugin health check (manifest, hooks, MCP, skills).
 //
-// Phase 3 agnostic CLI: los servidores MCP esperados se leen de
-// `runtime.expectedMcpServers` (vacio = no expectations).
+// Phase 3 agnostic CLI: the expected MCP servers are read from
+// `runtime.expectedMcpServers` (empty = no expectations).
 //
-// Estructura interna: `runPluginDoctor` orquesta 6 helpers self-contained
-// (skills/manifests/hooks/mcp/exported-skills), cada uno devuelve `{...result, findings}`.
+// Internal structure: `runPluginDoctor` orchestrates 6 self-contained helpers
+// (skills/manifests/hooks/mcp/exported-skills), each returning `{...result, findings}`.
 import { basename, join, resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";

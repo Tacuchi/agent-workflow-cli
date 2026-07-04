@@ -28,13 +28,13 @@ export interface ProjectMdUpsertInput {
   proyecto?: string;
   workingBranches?: Record<string, string>;
   qaBranches?: Record<string, string>;
-  /** `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repetible). */
+  /** `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repeatable). */
   fuentes?: ProjectMdUpsertFuente[];
-  /** Si true, las `fuentes` declaradas REEMPLAZAN a las existentes (no merge). workspace-init lo usa para ser autoritativo y soportar remover fuentes. */
+  /** When true, the declared `fuentes` REPLACE the existing ones (no merge). workspace-init uses it to be authoritative and support removing sources. */
   replaceFuentes?: boolean;
-  /** Aliases a podar del bloque: se quitan de `Fuentes` + `working_branches` + `qa_branches`. Lo usa remove-source. */
+  /** Aliases to prune from the block: removed from `Fuentes` + `working_branches` + `qa_branches`. Used by remove-source. */
   removeAliases?: string[];
-  /** Default rama principal applied to fuentes that do not declare one. */
+  /** Default main branch applied to fuentes that do not declare one. */
   mainBranch?: string;
   verbose?: boolean;
   /** Optional fixed `Última actividad` value. Used by golden tests to keep output deterministic. */
@@ -170,7 +170,7 @@ function mergeFuentes(existing: ProjectFuente[], input: ProjectMdUpsertInput): P
   if (!input.fuentes || input.fuentes.length === 0) return existing;
   const defaultRama = input.mainBranch ?? "certificacion";
   const byAlias = new Map<string, ProjectFuente>();
-  // replaceFuentes: el set declarado es autoritativo; no se preservan las existentes.
+  // replaceFuentes: the declared set is authoritative; existing ones are not preserved.
   if (!input.replaceFuentes) {
     for (const f of existing) byAlias.set(f.alias, f);
   }

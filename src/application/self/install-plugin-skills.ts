@@ -189,8 +189,8 @@ export async function copyDir(src: string, dest: string): Promise<void> {
   const entries = await readdir(src, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name === ".git") continue;
-    // Nunca seguir symlinks: un repo hostil puede commitear un link a un archivo
-    // del usuario (p.ej. ~/.ssh) y copyFile lo dereferenciaría al materializar.
+    // Never follow symlinks: a hostile repo can commit a link to a user file
+    // (e.g. ~/.ssh) and copyFile would dereference it when materializing.
     if (entry.isSymbolicLink()) continue;
     const srcPath = join(src, entry.name);
     const destPath = join(dest, entry.name);
@@ -202,8 +202,8 @@ export async function copyDir(src: string, dest: string): Promise<void> {
   }
 }
 
-// Exported: skills-manager valida con la misma regla qué es una skill (SKILL.md
-// con frontmatter name+description) al registrar fuentes de un solo directorio.
+// Exported: skills-manager applies the same rule for what counts as a skill
+// (SKILL.md with name+description frontmatter) when registering single-dir sources.
 export function hasValidFrontmatter(content: string): boolean {
   const match = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return false;

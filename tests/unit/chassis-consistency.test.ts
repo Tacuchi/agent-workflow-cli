@@ -3,26 +3,26 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 
-// Guards del chasis de loops (skills/w/loops/CHASSIS.md). El motor común de los
-// 5 loops vive en UN documento referenciado; cada heir agrega solo sus deltas.
-// Estos checks atrapan drift estructural: heirs fuera de la lista canónica,
-// heirs sin la referencia al chasis (el motor no entraría al contexto),
-// re-declaración de secciones del motor (duplicación que vuelve a divergir) y
-// un frontmatter accidental que haría al chasis parecer una skill.
+// Guards for the loop chassis (skills/w/loops/CHASSIS.md). The engine shared by
+// the 5 loops lives in ONE referenced document; each heir adds only its deltas.
+// These checks catch structural drift: heirs outside the canonical list, heirs
+// missing the chassis reference (the engine would never enter the context),
+// re-declared engine sections (duplication that diverges again), and an
+// accidental frontmatter that would make the chassis look like a skill.
 const LOOPS_ROOT = resolve(__dirname, "..", "..", "skills", "w", "loops");
 const CHASSIS_PATH = join(LOOPS_ROOT, "CHASSIS.md");
 
-// Secciones que el propio chasis delega a cada heir ("cada heir declara su
-// descriptor y su Type en su propio ## Internal sessions"; "los heirs son
-// instancias del mismo gate"; "cada heir define su marca de trabajo previo"):
-// los heirs las instancian legítimamente, no cuentan como re-declaración.
+// Sections the chassis itself delegates to each heir ("each heir declares its
+// descriptor and Type in its own ## Internal sessions"; "heirs are instances of
+// the same gate"; "each heir defines its prior-work marker"): heirs instantiate
+// them legitimately, so they do not count as re-declaration.
 const HEIR_INSTANCED_SECTIONS: ReadonlySet<string> = new Set([
   "Internal sessions (managed) — one session per run",
   "Compact / resume",
   "Convergence / exit",
 ]);
 
-/** Encabezados `## ` fuera de bloques de código cercados. */
+/** `## ` headings outside fenced code blocks. */
 function h2Headings(markdown: string): string[] {
   const out: string[] = [];
   let inFence = false;
@@ -38,7 +38,7 @@ function h2Headings(markdown: string): string[] {
   return out;
 }
 
-/** Bullets de la sección "## Heirs …" del chasis: `- [`<name>`](…)`. */
+/** Bullets of the chassis' "## Heirs …" section: `- [`<name>`](…)`. */
 function heirsDeclaredInChassis(chassis: string): string[] {
   const lines = chassis.split(/\r?\n/);
   const start = lines.findIndex((line) => /^## Heirs\b/.test(line));

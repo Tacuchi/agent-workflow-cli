@@ -31,11 +31,11 @@ const HOST_ORDER: readonly InstallTarget[] = [
   "crush",
 ];
 
-// Config dirs that do NOT follow the ~/.<target> convention. OpenCode y Crush
-// resuelven vía mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA);
-// Warp es platform-divergente (darwin ~/.warp, linux ~/.config/warp-terminal,
-// win32 %LOCALAPPDATA%/warp/Warp/config) y se deriva del registro vía
-// resolveWarpGlobalMcpPath — misma fuente que writer/reader MCP; el resto usa
+// Config dirs that do NOT follow the ~/.<target> convention. OpenCode and Crush
+// resolve via mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA);
+// Warp is platform-divergent (darwin ~/.warp, linux ~/.config/warp-terminal,
+// win32 %LOCALAPPDATA%/warp/Warp/config) and derives from the registry via
+// resolveWarpGlobalMcpPath — same source as the MCP writer/reader; the rest use
 // ~/.<target>.
 function overrideConfigDir(target: InstallTarget, home: string): string | null {
   if (target === "opencode") return dirname(opencodeGlobalMcpFile(home));

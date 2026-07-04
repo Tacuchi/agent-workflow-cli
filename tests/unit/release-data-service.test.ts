@@ -477,7 +477,7 @@ describe("listGraduatedBundles + listStandaloneSql (F7)", () => {
       session_code: null,
       slug: "export-scripts-2026-07-03",
       forward_count: 1,
-      rollback_count: 1, // 00-ROLLBACK.sql cuenta como rollback (naming moderno)
+      rollback_count: 1, // 00-ROLLBACK.sql counts as rollback (modern naming)
     });
   });
 

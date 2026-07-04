@@ -26,15 +26,15 @@ export interface ListRowProps {
   /** When true, the row is rendered dimmed (e.g. inline wizard backdrop). */
   dimmed?: boolean;
   /**
-   * Ancho disponible del row (en cells). Si se pasa, se usa exactamente.
-   * Pasalo desde el parent (que sabe si el detail panel está abierto).
+   * Available row width (in cells). When passed, used exactly.
+   * Pass it from the parent (which knows whether the detail panel is open).
    * Fallback: termCols - 36.
    */
   widthHint?: number;
 }
 
-// Padding interno (en cells) que se aplica DENTRO del marker bg, a cada lado
-// del contenido. Hace que el bg no se vea pegado a las letras.
+// Inner padding (in cells) applied INSIDE the marker bg, on each side of the
+// content. Keeps the bg from hugging the letters.
 const INNER_PAD = 1;
 
 function toneColor(tone?: MetaTone): string {
@@ -91,21 +91,21 @@ export function ListRow({
   const stateColor = dimmed ? colors.faint : focused ? colors.bright : toneColor(state?.tone);
   const chevronColor = dimmed ? colors.faint : focused ? colors.accent : colors.dim;
 
-  // Available: widthHint del parent o fallback (termCols - overhead).
+  // Available: the parent's widthHint or fallback (termCols - overhead).
   const fallbackOverhead = 36;
   const available =
     widthHint !== undefined ? widthHint : Math.max(8, (stdout?.columns ?? 100) - fallbackOverhead);
 
-  // RightLen — content alineado a la derecha. Siempre full (no truncar).
+  // RightLen — right-aligned content. Always full (never truncate).
   const rightLen =
     meta.reduce((a, m) => a + approxWidth(m.label) + 1, 0) +
     (state ? approxWidth(state.label) + 1 : 0) +
     (chevron ? 2 : 0) +
     INNER_PAD;
 
-  // Pre-truncar subtitle si excede el ancho disponible. Title se preserva.
-  // fixedLeft incluye el focus-bar (1) + gap (1) afuera del bg, + INNER_PAD
-  // (1) dentro del bg + icon (1) + space (1) + title.
+  // Pre-truncate subtitle when it exceeds the available width. Title is kept.
+  // fixedLeft includes the focus bar (1) + gap (1) outside the bg, + INNER_PAD
+  // (1) inside the bg + icon (1) + space (1) + title.
   const FOCUS_OUTER = 2; // bar + gap
   const fixedLeft = FOCUS_OUTER + INNER_PAD + 2 + approxWidth(title);
   const subtitleSpaceBefore = subtitle ? 1 : 0;
@@ -122,9 +122,9 @@ export function ListRow({
     }
   }
 
-  // LeftLen recalculado con el subtitle ya truncado.
-  // Incluye focus bar (1) + gap (1) afuera del bg + inner_pad + 2 (icon+space)
-  // + title + (space + subtitle)? para fines de spacer.
+  // LeftLen recomputed with the subtitle already truncated.
+  // Includes focus bar (1) + gap (1) outside the bg + inner_pad + 2 (icon+space)
+  // + title + (space + subtitle)? for spacer purposes.
   const leftLen =
     FOCUS_OUTER +
     INNER_PAD +
@@ -137,13 +137,13 @@ export function ListRow({
 
   return (
     <Box flexDirection="row" paddingX={0}>
-      {/* Focus bar AFUERA del bg — barrita independiente como indicador */}
+      {/* Focus bar OUTSIDE the bg — independent bar as the indicator */}
       <Text color={focusBarColor} bold={focused}>
         {focused ? icons.focusBar : " "}
       </Text>
-      {/* Gap entre la barrita y el bg highlight */}
+      {/* Gap between the bar and the bg highlight */}
       <Text> </Text>
-      {/* bg highlight empieza acá */}
+      {/* bg highlight starts here */}
       <Text {...bgProp}>{innerPad}</Text>
       <Text {...bgProp} color={iconColor} bold={focused}>
         {icon}

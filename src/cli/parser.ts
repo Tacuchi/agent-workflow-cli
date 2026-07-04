@@ -36,9 +36,7 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   "fuente",
   "working-branch",
   "qa-branch",
-  // Repeated `--path` (attach/detach-multiroot) and `--pattern` (code-scan);
-  // both previously re-scanned raw process.argv because the parser overwrote
-  // repeated non-multi values.
+  // Repeated `--path` (attach/detach-multiroot) and `--pattern` (code-scan).
   "path",
   "pattern",
 ]);

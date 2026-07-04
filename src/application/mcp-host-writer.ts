@@ -414,8 +414,8 @@ function removeCodexMcpEntry(
 
 /**
  * Warp file by scope: workspace = <scopeDir>/.warp/.mcp.json; global = the
- * per-platform registry path (Linux/Windows difieren de ~/.warp — DEC-W3).
- * scopeDir actúa de homedir en global, así los tests inyectan un tmpdir.
+ * per-platform registry path (Linux/Windows differ from ~/.warp — DEC-W3).
+ * scopeDir acts as homedir at global scope, so tests can inject a tmpdir.
  */
 function warpMcpFile(scope: ScopeInput): string {
   if (scope.kind === "global") {
@@ -552,7 +552,7 @@ function discardBackup(backupPath: string | null): void {
   try {
     if (existsSync(backupPath)) unlinkSync(backupPath);
   } catch {
-    // best-effort: nunca bloquear el write OK por un cleanup fallido
+    // best-effort: never fail the successful write over a failed cleanup
   }
 }
 

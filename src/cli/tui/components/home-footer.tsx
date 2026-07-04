@@ -3,7 +3,7 @@ import { colors } from "../theme.js";
 import type { KeymapEntry } from "./tabs-config.js";
 
 export interface HomeFooterProps {
-  /** Si true, inyecta `x dismiss` al footer para señalizar notifs activas. */
+  /** When true, injects `x dismiss` into the footer to signal active notifs. */
   showDismiss?: boolean;
 }
 

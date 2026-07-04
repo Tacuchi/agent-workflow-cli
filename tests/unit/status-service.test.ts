@@ -97,24 +97,24 @@ function fullWorkspace(): FakeFs {
   fs.file(
     "/cwd/docs/specs/003-spec-foo.md",
     "# Spec foo\n\n## Refinement decisions\n- d1\n\n## Q&A traceability\n- q→a\n\n## Open questions\nNone\n",
-    new Date(2026, 5, 13, 15, 0, 0), // 8 días → la semana pasada
+    new Date(2026, 5, 13, 15, 0, 0), // 8 days → "la semana pasada"
   );
   fs.file(
     "/cwd/docs/specs/004-spec-bar.md",
     "# Spec bar\n\n## Open questions\n- ¿qué pasa con XP?\n- ¿soporte ARM?\n",
-    new Date(2026, 5, 21, 9, 0, 0), // hoy en la mañana
+    new Date(2026, 5, 21, 9, 0, 0), // today, morning
   );
   // plan
   fs.file(
     "/cwd/docs/plans/007-plan-foo.md",
     "# Plan foo\n\n## Tasks\n- [x] T1\n- [x] T2\n- [ ] T3\n- [ ] T4\n- [ ] T5\n",
-    new Date(2026, 5, 19, 15, 0, 0), // hace 2 días
+    new Date(2026, 5, 19, 15, 0, 0), // 2 days ago
   );
   // active session: refine + BACKLOG Deferred
   fs.file(
     "/cwd/.workflow/sessions/001-spec-refine/SESSION.md",
     "# SESSION — 001-spec-refine\n\n## Objective\nRefinar spec\n\n## Origin\n- spec-refine-loop\n\n## Type\nrefine\n",
-    new Date(2026, 5, 21, 10, 0, 0), // hoy en la mañana
+    new Date(2026, 5, 21, 10, 0, 0), // today, morning
   );
   fs.file(
     "/cwd/.workflow/sessions/001-spec-refine/BACKLOG.md",
@@ -125,7 +125,7 @@ function fullWorkspace(): FakeFs {
   fs.file(
     "/cwd/.workflow/sessions/002-plan-exec/SESSION.md",
     "# SESSION — 002-plan-exec\n\n## Objective\nEjecutar plan\n\n## Type\nexec\n",
-    new Date(2026, 5, 20, 14, 0, 0), // ayer en la tarde
+    new Date(2026, 5, 20, 14, 0, 0), // yesterday afternoon
   );
   fs.file(
     "/cwd/.workflow/sessions/002-plan-exec/CHECKPOINT.md",

@@ -21,7 +21,7 @@ describe("backupFile — keep-latest (poda antes de copiar)", () => {
   it("escrituras sucesivas dejan UN solo .bak (el más reciente)", () => {
     const file = join(dir, "settings.local.json");
     writeFileSync(file, "v1");
-    // Simula backups viejos acumulados por versiones previas del CLI.
+    // Simulates old backups accumulated by previous CLI versions.
     writeFileSync(`${file}.bak.1700000000`, "v0");
     writeFileSync(`${file}.bak.1700000001`, "v0b");
 
@@ -34,7 +34,7 @@ describe("backupFile — keep-latest (poda antes de copiar)", () => {
     expect(second).not.toBeNull();
     const remaining = baks("settings.local.json");
     expect(remaining).toHaveLength(1);
-    // El .bak sobreviviente respalda el contenido previo a la última escritura.
+    // The surviving .bak backs up the content prior to the latest write.
     expect(readFileSync(join(dir, remaining[0] as string), "utf-8")).toBe("v2");
   });
 

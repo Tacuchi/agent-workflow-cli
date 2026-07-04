@@ -43,7 +43,7 @@ export async function listSessionsForRelease(
     includeClosed,
   };
 
-  // New model: enumerate every session folder (slug-named), not just legacy session###-.
+  // Enumerate every session folder — slug-named ones too, not just legacy session###-.
   const result: ReleaseSession[] = [];
   for (const folder of await listSessionFolders(fs, sessionsDir)) {
     const entry = (await buildSessionEntry(fs, folder.path, folder.name)) as ReleaseSession;

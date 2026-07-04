@@ -226,7 +226,6 @@ async function resolveTargetSession(
   code: string | undefined,
 ): Promise<string | null> {
   if (code) {
-    // Look for matching folder.
     const sessionsDir = paths.cwdSessionsDir();
     if (!(await fs.exists(sessionsDir))) return null;
     const entries = await fs.list(sessionsDir);
@@ -361,11 +360,11 @@ export async function runResumeSummary(
 }
 
 /**
- * Encuentra sesiones cerradas (sentinel `.closed` presente) dentro de la ventana
- * `recentDays` (mtime del folder) que tengan artefactos de cierre del nuevo modelo
- * (CONCLUSIONS.md o ANALYSIS-FILE.md). Type-agnóstico: ya no depende del flow.
+ * Finds closed sessions (`.closed` sentinel present) within the `recentDays`
+ * window (folder mtime) that carry new-model closure artifacts (CONCLUSIONS.md
+ * or ANALYSIS-FILE.md). Type-agnostic: no longer depends on the flow.
  *
- * Ordenado por código descendente (más reciente primero).
+ * Sorted by code descending (most recent first).
  */
 export async function findRecentClosedWithArtifacts(
   fs: FileSystemPort,
@@ -386,7 +385,6 @@ export async function findRecentClosedWithArtifacts(
     if (activeSet.has(folder.name)) continue;
     const { code } = parseSessionFolder(folder.name);
     if (code === null) continue;
-    // Closed = folder-local `.closed` sentinel present.
     if (!(await fs.exists(join(folder.path, CLOSED_MARKER)))) continue;
     let mtimeMs: number;
     try {

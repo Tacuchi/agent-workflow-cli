@@ -1,9 +1,9 @@
-// Preferencias persistidas del TUI (accent, initial screen, hosts).
+// Persisted TUI preferences (accent, initial screen, hosts).
 //
-// Vive en `~/.config/agent-workflow/lib/config/tui-prefs.json` (relativo al
-// userRoot del namespace activo). Si no existe se devuelven defaults. Las
-// escrituras son atómicas: lee, mergea, escribe. Cada campo se valida al cargar
-// (un valor inválido cae a su default, no rompe el TUI).
+// Lives in `~/.config/agent-workflow/lib/config/tui-prefs.json` (relative to
+// the active namespace's userRoot). Missing file yields defaults. Writes are
+// atomic: read, merge, write. Every field is validated on load (an invalid
+// value falls back to its default, never breaks the TUI).
 
 import { dirname, join } from "node:path";
 import type { PathsService } from "../../application/paths-service.js";
@@ -13,11 +13,11 @@ import { ACCENTS, type AccentColor, DEFAULT_ACCENT } from "./theme.js";
 
 export interface TuiPrefs {
   accentColor: AccentColor;
-  /** Tab donde aterriza `aw` al arrancar. */
+  /** Tab `aw` lands on at startup. */
   initialScreen: TabId;
-  /** Hosts excluidos del targeting (opt-out). Vacío = todos habilitados. */
+  /** Hosts excluded from targeting (opt-out). Empty = all enabled. */
   disabledHosts: string[];
-  /** Última app usada en "abrir con…" del historial de logs (memoria + prefill). */
+  /** Last app used in the log history's "open with…" (memory + prefill). */
   lastOpenApp?: string;
 }
 

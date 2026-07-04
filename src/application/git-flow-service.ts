@@ -195,8 +195,8 @@ function buildPlan(
   }
   if (action === "to-prod") {
     const dest = target ?? prod;
-    // syncPlan ya hizo checkout+pull de prod; al promover solo volvemos a prod y
-    // mergeamos work (no re-pull: nada lo cambió entremedio). Nunca qa→prod.
+    // syncPlan already checked out + pulled prod; promoting just goes back to
+    // prod and merges work (no re-pull: nothing changed it in between). Never qa→prod.
     return [
       ...syncPlan(prod, work),
       { kind: "checkout", branch: dest, label: `checkout ${dest}` },

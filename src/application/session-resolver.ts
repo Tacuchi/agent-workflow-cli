@@ -19,7 +19,7 @@ export interface SessionEntry {
   /** Absolute path to the session directory. */
   path: string;
   state: SessionState;
-  /** `## Type` del SESSION/OBJECTIVE. Ausente si no declarado. */
+  /** `## Type` from SESSION/OBJECTIVE. Absent when not declared. */
   type?: string;
   date?: string;
   summary?: string;

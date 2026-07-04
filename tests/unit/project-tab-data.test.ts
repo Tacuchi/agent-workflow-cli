@@ -154,8 +154,8 @@ describe("buildProjectTabData — GIT tile working branch", () => {
 
     const data = await buildProjectTabData(deps);
 
-    // La fuente primaria está checked out en "desarrollo", pero el workspace define
-    // "feature/mantenimiento-contratos" como rama de trabajo.
+    // The primary source is checked out on "desarrollo", but the workspace declares
+    // "feature/mantenimiento-contratos" as the working branch.
     expect(data.git?.branch).toBe("feature/mantenimiento-contratos");
     expect(data.git?.base).toBe("certificacion");
   });

@@ -136,7 +136,7 @@ export interface WorkspaceInitResult {
   scaffold: ScaffoldSummary;
   skills_toml: "created" | "exists";
   project_md: ProjectMdUpsertOutput | ProjectMdUpsertError;
-  /** Multi-root visibility only runs with 2+ sources; single-source skips it. */
+  /** Skipped when no source lives outside the workspace folder. */
   attach_multiroot: MultirootResult | MultirootError | { skipped: true; reason: string };
   /** Reconcile: detach of sources that were in the previous block and no longer are. */
   detached_removed?: MultirootResult | MultirootError;
@@ -195,8 +195,6 @@ export async function runWorkspaceInit(
 
   const projectMd = await runProjectMdUpsertWrite(fs, targetEnv, wsPaths, {
     op: "init",
-    // Block without `Mode:` line; Fuentes table holds N sources. Working branches
-    // render in the Status block.
     proyecto,
     fuentes: sources.map((s) => ({
       alias: s.alias,
@@ -225,7 +223,6 @@ export async function runWorkspaceInit(
     };
   }
 
-  // Multi-root visibility only matters with 2+ sources. Single source → no-op.
   const visibility = await reconcileVisibility(
     fs,
     targetEnv,

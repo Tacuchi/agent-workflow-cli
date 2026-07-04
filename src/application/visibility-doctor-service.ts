@@ -102,9 +102,9 @@ function inspectClaude(
   if (declared === null) {
     return baseNoBlock("claude", scope, target);
   }
-  // Claude Code lee settings.json y settings.local.json (local con precedencia);
-  // el doctor une additionalDirectories de ambos para no marcar falsos negativos
-  // cuando las rutas viven en el .local (la convención por-máquina, gitignored).
+  // Claude Code reads settings.json and settings.local.json (local takes precedence);
+  // the doctor merges additionalDirectories from both to avoid false negatives
+  // when the paths live in the .local file (the per-machine, gitignored convention).
   if (!existsSync(target) && !existsSync(localTarget)) {
     return {
       host: "claude",
@@ -260,7 +260,7 @@ function baseNoBlock(
   };
 }
 
-/** Une additionalDirectories de settings.json + settings.local.json (ambos los lee Claude Code). */
+/** Merges additionalDirectories from settings.json + settings.local.json (Claude Code reads both). */
 function readClaudeAdditionalDirsMerged(claudeDir: string): string[] {
   const out: string[] = [];
   for (const fname of ["settings.json", "settings.local.json"]) {

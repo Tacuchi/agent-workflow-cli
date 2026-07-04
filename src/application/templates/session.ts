@@ -12,8 +12,8 @@
  * `## Success criteria` is the run's done-condition, seeded at creation
  * (verification-first / generalized TDD): a falsifiable `[ ]` checklist the loop
  * fills BEFORE executing and persists toward — executable tests for code, a
- * by-inspection rubric for analysis/design. Emitted for EVERY type (was
- * research-only until verification-first became a chassis principle).
+ * by-inspection rubric for analysis/design. Emitted for EVERY type; the parent
+ * loop owns the actual criteria.
  * Components stays omitted: empty boilerplate that added no signal.
  */
 
@@ -42,10 +42,6 @@ function renderOriginSection(origin: string | undefined): string {
 }
 
 export function renderSessionMarkdown(values: SessionTemplateValues): string {
-  // verification-first: every session opens with its done-condition seeded as a
-  // blank, falsifiable `[ ]` checklist — the loop fills it BEFORE executing
-  // (tests for code, a by-inspection rubric for analysis/design) and persists
-  // until all items are green. The parent loop owns the actual criteria.
   return `# SESSION — ${values.name}
 
 ## Objective

@@ -82,16 +82,16 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
     void loadData();
   }, [loadData]);
 
-  // Mientras el wizard de init está abierto, bloquea las teclas globales para que
-  // sus inputs no naveguen entre tabs. La vista inicializada (Initialized) maneja
-  // su propio lock para el detail panel / flujo en curso.
+  // While the init wizard is open, block the global keys so its inputs don't
+  // navigate across tabs. The Initialized view manages its own lock for the
+  // detail panel / in-flight flow.
   useEffect(() => {
     if (initForm) lock();
     else unlock();
   }, [initForm, lock, unlock]);
   useEffect(() => () => unlock(), [unlock]);
 
-  // Teclas de la landing "no inicializado" (⏎ abre el wizard · g git status).
+  // Keys for the "not initialized" landing (⏎ opens the wizard · g git status).
   useInput(
     (input, key) => {
       if (!data || data.initialized) return;
@@ -141,12 +141,12 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   );
 }
 
-// ===== Helpers de presentación =====
+// ===== Presentation helpers =====
 
 /**
- * Deriva un nombre corto del `workspaceName`, que puede contener un párrafo
- * largo de descripción. Toma la primera línea no vacía, corta al primer
- * separador estructural (`·` / `:` / `.`) y trunca a ~40 chars.
+ * Derives a short name from `workspaceName`, which may carry a long
+ * description paragraph. Takes the first non-empty line, cuts at the first
+ * structural separator (`·` / `:` / `.`) and truncates to ~40 chars.
  */
 function deriveShortName(raw: string, fallback: string): string {
   const firstLine = raw
@@ -159,21 +159,21 @@ function deriveShortName(raw: string, fallback: string): string {
   return cut.length > 40 ? `${cut.slice(0, 39)}…` : cut;
 }
 
-/** Colapsa el `workspaceName` multilínea en una sola línea, truncada a 80 chars. */
+/** Collapses the multiline `workspaceName` into one line, truncated to 80 chars. */
 function deriveDescription(raw: string): string {
   const flat = raw.replace(/\s+/g, " ").trim();
   if (flat.length === 0) return "";
   return flat.length > 80 ? `${flat.slice(0, 79)}…` : flat;
 }
 
-/** `~/Git/foo` en lugar del path absoluto. */
+/** `~/Git/foo` instead of the absolute path. */
 function tildePath(path: string, home: string): string {
   if (path === home) return "~";
   if (path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
   return path;
 }
 
-// ===== Landing — workspace no inicializado =====
+// ===== Landing — uninitialized workspace =====
 
 function NotInitialized({ data }: { data: ProjectTabData }) {
   return (
@@ -224,15 +224,15 @@ function NotInitialized({ data }: { data: ProjectTabData }) {
   );
 }
 
-// ===== Inicializado — vista WORKSPACE =====
+// ===== Initialized — WORKSPACE view =====
 
-/** Centinela de target = "todas las fuentes". Alias imposible (no colisiona). */
+/** Target sentinel = "all sources". Impossible alias (cannot collide). */
 const ALL_SOURCES = " all-sources";
 
 /**
- * Las tres acciones git-flow por-fuente, en el orden que pidió el usuario.
- * Mapean 1:1 a {@link GitFlowAction}:
- *  - `sync`    → "Alinear con PROD" (merge prod→work: trae PROD a la rama de trabajo)
+ * The three per-source git-flow actions, in the order the user requested.
+ * They map 1:1 to {@link GitFlowAction}:
+ *  - `sync`    → "Alinear con PROD" (merge prod→work: brings PROD into the working branch)
  *  - `to-qa`   → "Enviar a QA"
  *  - `to-prod` → "Enviar a PROD"
  */
@@ -261,12 +261,12 @@ type Mode =
 const LAUNCH_ACTION = { id: "launch", name: "Lanzar en local" } as const;
 
 /**
- * Indentación (marginLeft) del contenedor de rows de SOURCES. Se pasa como `indent`
- * a {@link rowWidth} para que el ancho del row descuente ese marginLeft — si no, el
- * `ListRow` se construye más ancho que su contenedor → Yoga lo envuelve → línea en
- * blanco entre filas (visible solo con el panel cerrado). El `marginLeft` del JSX y
- * este `indent` comparten esta constante para no desincronizarse. El tab MCP no
- * indenta su lista (indent 0), por eso nunca sufrió este wrap.
+ * Indentation (marginLeft) of the SOURCES rows container. Passed as `indent`
+ * to {@link rowWidth} so the row width subtracts that marginLeft — otherwise
+ * the `ListRow` builds wider than its container → Yoga wraps it → blank line
+ * between rows (visible only with the panel closed). The JSX `marginLeft` and
+ * this `indent` share this constant so they cannot desync. The MCP tab does
+ * not indent its list (indent 0), which is why it never hit this wrap.
  */
 const SOURCES_ROWS_INDENT = 2;
 
@@ -293,7 +293,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const { stdout } = useStdout();
   const { lock, unlock } = useInputLock();
 
-  // Targets navegables: cada fuente + la fila centinela "all sources" al final.
+  // Navigable targets: each source + the sentinel "all sources" row at the end.
   const targets = useMemo(() => [...data.sources.map((s) => s.alias), ALL_SOURCES], [data.sources]);
   const hasSources = totalSources > 0;
   const [cursor, setCursor] = useState(0);
@@ -449,8 +449,8 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [ctx.fs],
   );
 
-  // El detail panel (y el flujo en curso) bloquean las teclas globales; la lista
-  // base las deja pasar.
+  // The detail panel (and the in-flight flow) block the global keys; the base
+  // list lets them through.
   useEffect(() => {
     if (mode.kind === "list") unlock();
     else lock();
@@ -511,8 +511,9 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [cursor, ctx, targets],
   );
 
-  // Quitar una fuente del workspace: orquesta detach + poda bloque + stop procesos
-  // + borra .workflow/launch/<alias> (vía el servicio); luego recarga la vista.
+  // Remove a source from the workspace: orchestrates detach + block pruning +
+  // stopping processes + deleting .workflow/launch/<alias> (via the service);
+  // then reloads the view.
   const doRemove = useCallback(
     async (alias: string) => {
       setMode({ kind: "busy", label: `Quitando ${alias}…` });
@@ -546,7 +547,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [ctx, onReload],
   );
 
-  // Atajos de la lista de sources (↑↓ navega · ⏎ abre panel · p procesos · g git status).
+  // Sources list shortcuts (↑↓ navigate · ⏎ open panel · p processes · g git status).
   const handleListKey = useCallback(
     (input: string, key: { upArrow?: boolean; downArrow?: boolean; return?: boolean }) => {
       if (input === "g") return void onRunAction?.("git:status");
@@ -565,7 +566,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [hasSources, onRunAction, targets.length, processes.length],
   );
 
-  // Acciones del panel lateral (↑↓ navega · ⏎ ejecuta · esc cierra).
+  // Side panel actions (↑↓ navigate · ⏎ run · esc close).
   const handleDetailKey = useCallback(
     (key: { upArrow?: boolean; downArrow?: boolean; return?: boolean; escape?: boolean }) => {
       if (key.upArrow) return setActionCursor((c) => Math.max(0, c - 1));
@@ -591,7 +592,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [actionCursor, detailItems, currentSource, runFlow, beginLaunch],
   );
 
-  // Modo "process": navega la sección de procesos lanzados (x stop · r relaunch · o log).
+  // "process" mode: navigates the launched-processes section (x stop · r relaunch · o log).
   const handleProcessKey = useCallback(
     (input: string, key: { upArrow?: boolean; downArrow?: boolean; escape?: boolean }) => {
       if (key.escape) return setMode({ kind: "list" });
@@ -606,7 +607,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [processes, processCursor, doStop, doRelaunch, doViewLog],
   );
 
-  // Colisión: detiene el proceso existente y lanza el pedido (con sus valores).
+  // Collision: stops the existing process and launches the requested one (with its values).
   const confirmRelaunch = useCallback(
     async (req: LaunchRequest, existing: ProcessRecord) => {
       setMode({ kind: "busy", label: `Re-lanzando ${req.alias}…` });
@@ -634,7 +635,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [launchDeps, onReload, ctx],
   );
 
-  // input — delega a cada handler según el modo activo.
+  // input — delegates to the handler of the active mode.
   useInput(
     (input, key) => {
       if (!isActive) return;
@@ -656,7 +657,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         return;
       }
       if (mode.kind === "result") {
-        // ⏎/r re-ejecuta (= resume on conflict) · esc vuelve a la lista.
+        // ⏎/r re-runs (= resume on conflict) · esc back to the list.
         if (key.escape) {
           setMode({ kind: "list" });
           void onReload?.();
@@ -672,8 +673,8 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         <SectionHead label="Git flow" hint={mode.label} />
         <Box marginLeft={2} marginTop={1} flexDirection="column">
           <Text color={colors.warn}>{icons.spinner} ejecutando…</Text>
-          {/* No cancelable: git corre sin prompts (GIT_TERMINAL_PROMPT=0) → falla
-              rápido en credenciales en vez de colgarse. Ctrl+C aborta el TUI. */}
+          {/* Not cancellable: git runs without prompts (GIT_TERMINAL_PROMPT=0)
+              → fails fast on credentials instead of hanging. Ctrl+C aborts the TUI. */}
           <Text color={colors.faint}>git corriendo · no interrumpible — Ctrl+C aborta el TUI</Text>
         </Box>
       </Box>
@@ -868,8 +869,8 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         />
       </Box>
 
-      {/* Layout con detail panel: lista (sources + ramas) a la izquierda, panel
-          de acciones a la derecha cuando hay una fuente seleccionada. */}
+      {/* Layout with detail panel: list (sources + branches) on the left,
+          actions panel on the right when a source is selected. */}
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
           {hasSources ? (
@@ -918,7 +919,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           />
         </Box>
 
-        {/* Detail panel — sólo cuando se seleccionó una fuente con ⏎. */}
+        {/* Detail panel — only once a source was selected with ⏎. */}
         {detailOpen ? (
           <SourceActionsPanel
             isAll={isAllTarget}
@@ -970,7 +971,7 @@ function SourceRow({
   );
 }
 
-/** Sección "Ramas …" — una fila `◆ alias  ↳ branch` por entrada del bloque WORKSPACE. */
+/** "Ramas …" section — one `◆ alias  ↳ branch` row per WORKSPACE block entry. */
 function BranchList({
   label,
   entries,
@@ -1005,7 +1006,7 @@ function BranchList({
   );
 }
 
-/** Panel lateral de acciones git-flow para la fuente (o "all sources") seleccionada. */
+/** Side panel of git-flow actions for the selected source (or "all sources"). */
 function SourceActionsPanel({
   isAll,
   name,
@@ -1042,8 +1043,8 @@ function SourceActionsPanel({
 
 function statGitSub(data: ProjectTabData): string {
   if (!data.git) return "—";
-  // Tile GIT: el `value` es la rama de trabajo; este `sub` es la rama principal
-  // (debajo). ahead/behind van como sufijo compacto sólo si difiere.
+  // GIT tile: `value` is the working branch; this `sub` is the main branch
+  // (below it). ahead/behind go as a compact suffix only when they differ.
   const base = `base ${data.git.base}`;
   const sync: string[] = [];
   if (data.git.ahead > 0) sync.push(`↑${data.git.ahead}`);

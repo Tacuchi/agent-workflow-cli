@@ -84,9 +84,9 @@ describe("formatConnectionsTable", () => {
 
   it("status icons mapean: drift→! y no→–, por columna independiente", () => {
     const out = formatConnectionsTable([
-      view("a", "DSN_A", { claude: "drift", warp: "drift" }), // resto = no
+      view("a", "DSN_A", { claude: "drift", warp: "drift" }), // rest = no
     ]);
-    // orden de columnas = orden del registro de hosts (claude, codex, warp, gemini, opencode, crush)
+    // column order = host registry order (claude, codex, warp, gemini, opencode, crush)
     expect(statusCells(out.split("\n")[3] ?? "")).toEqual(["!", "–", "!", "–", "–", "–"]);
   });
 

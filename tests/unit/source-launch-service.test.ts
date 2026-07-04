@@ -300,7 +300,7 @@ describe("source-launch-service — launch/stop/relaunch", () => {
   });
 
   it("launchSource regenera el descriptor on-demand cuando falta y hay resolver (primer launch)", async () => {
-    // Fuente real lanzable (npm run dev) SIN descriptor pregenerado (init mínimo).
+    // Real launchable source (npm run dev) WITHOUT a pregenerated descriptor (minimal init).
     const source = join(ws, "src-app");
     mkdirSync(source, { recursive: true });
     writeFileSync(
@@ -313,7 +313,7 @@ describe("source-launch-service — launch/stop/relaunch", () => {
     };
     const res = await launchSource(depsWithResolver, { alias: "app", profile: null, values: {} });
     expect(res.ok).toBe(true);
-    // El descriptor quedó materializado bajo .workflow/launch/<alias>/.
+    // The descriptor was materialized under .workflow/launch/<alias>/.
     const read = await readDescriptor(fs, join(ws, ".workflow", "launch"), "app");
     expect(read.status).toBe("ok");
     if (read.status === "ok") expect(read.descriptor.command).toBe("npm");
@@ -329,7 +329,7 @@ describe("source-launch-service — launch/stop/relaunch", () => {
     };
     const first = await launchSource(depsWithResolver, { alias: "app", profile: null, values: {} });
     if (!first.ok) throw new Error("launch failed");
-    // Se pierde el descriptor (p. ej. workspace clonado en otra máquina) → relaunch lo regenera.
+    // The descriptor is lost (e.g. workspace cloned on another machine) → relaunch regenerates it.
     rmSync(join(ws, ".workflow", "launch"), { recursive: true, force: true });
     const again = await relaunchProcess(depsWithResolver, first.record);
     expect(again.ok).toBe(true);
@@ -350,7 +350,7 @@ describe("source-launch-service — launch/stop/relaunch", () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error).toBe("corrupt_descriptor");
-    // El archivo corrupto sigue intacto (no fue clobbereado por una regeneración).
+    // The corrupt file is still intact (not clobbered by a regeneration).
     expect(readFileSync(join(launchDir, "app", "launch.json"), "utf-8")).toBe("{corrupto");
   });
 
@@ -362,22 +362,22 @@ describe("source-launch-service — launch/stop/relaunch", () => {
   });
 
   it("descriptor legacy PRISTINE con command:null se re-detecta al lanzar (fuente ahora lanzable)", async () => {
-    // Workspace de la era pregeneración: fuente sin script de arranque al init.
+    // Workspace from the pregeneration era: source had no start script at init time.
     const source = join(ws, "src-app");
     mkdirSync(source, { recursive: true });
-    writeFileSync(join(source, "package.json"), JSON.stringify({ name: "x" })); // no launchable
+    writeFileSync(join(source, "package.json"), JSON.stringify({ name: "x" })); // not launchable
     const launchDir = join(ws, ".workflow", "launch");
     const { generateSourceLaunchArtifacts } = await import(
       "../../src/application/source-launch-scripts-service.js"
     );
     const first = await generateSourceLaunchArtifacts(fs, launchDir, source, "app");
-    expect(first.launchable).toBe(false); // command:null pristine en disco
+    expect(first.launchable).toBe(false); // command:null pristine on disk
 
-    // El usuario agrega el script dev DESPUÉS del init.
+    // The user adds the dev script AFTER init.
     writeFileSync(join(source, "package.json"), JSON.stringify({ scripts: { dev: "vite" } }));
     const depsWithResolver: LaunchDeps = { ...deps, resolveSourcePath: async () => source };
     const res = await launchSource(depsWithResolver, { alias: "app", profile: null, values: {} });
-    expect(res.ok).toBe(true); // re-detectado, ya no es un callejón sin salida
+    expect(res.ok).toBe(true); // re-detected, no longer a dead end
   });
 
   it("descriptor command:null EDITADO por el usuario NO se regenera (writeIfPristine lo protege)", async () => {
@@ -385,7 +385,7 @@ describe("source-launch-service — launch/stop/relaunch", () => {
     mkdirSync(source, { recursive: true });
     writeFileSync(join(source, "package.json"), JSON.stringify({ scripts: { dev: "vite" } }));
     const launchDir = join(ws, ".workflow", "launch");
-    // Descriptor hand-authored (sin marker _generated) con command null deliberado.
+    // Hand-authored descriptor (no _generated marker) with a deliberate null command.
     mkdirSync(join(launchDir, "app"), { recursive: true });
     const handAuthored = JSON.stringify({
       version: 1,

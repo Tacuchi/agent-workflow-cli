@@ -3,19 +3,19 @@ import { colors } from "../theme.js";
 import { TABS_LIST, type TabConfig, type TabId } from "./tabs-config.js";
 
 export interface TabBarProps {
-  /** Tab activa actualmente; null cuando estamos en la palette home. */
+  /** Currently active tab; null when on the palette home. */
   activeTabId: TabId | null;
-  /** Override de la lista de tabs (default TABS_LIST). */
+  /** Override of the tab list (default TABS_LIST). */
   tabs?: readonly TabConfig[];
 }
 
 /**
- * TabBar — fila horizontal con la lista de tabs accesibles.
+ * TabBar — horizontal row with the accessible tabs.
  *
  * Layout: `<Status>  <Workflow>  <Project>  <MCP>  <Skills>`
  *
- * Activa: highlight inverse violet (estilo CTA pill).
- * Inactiva: `dim`.
+ * Active: inverse violet highlight (CTA pill style).
+ * Inactive: `dim`.
  */
 export function TabBar({ activeTabId, tabs = TABS_LIST }: TabBarProps) {
   return (

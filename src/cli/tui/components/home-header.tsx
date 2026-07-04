@@ -13,10 +13,10 @@ const DEFAULT_HANDLE = "@tacuchi";
 const DOT = "·";
 
 /**
- * Sync coloreado según estado:
- * - "in sync" → ok (verde)
- * - "dirty"   → warn (ámbar)
- * - "N↑ M↓"   → info (azul) — divergencia con upstream
+ * Sync colored by state:
+ * - "in sync" → ok (green)
+ * - "dirty"   → warn (amber)
+ * - "N↑ M↓"   → info (blue) — divergence from upstream
  * - fallback  → dim
  */
 function syncColor(sync: string): string {
@@ -41,7 +41,7 @@ export function HomeHeader({
   const { branch, sync } = parseBranchLabel(workspaceContext.branchLabel);
   return (
     <Box flexDirection="column" marginBottom={1}>
-      {/* Línea 1: brand + versión */}
+      {/* Line 1: brand + version */}
       <Text wrap="truncate-end">
         <Text color={colors.accent} bold>
           {icons.brand}
@@ -54,7 +54,7 @@ export function HomeHeader({
           {"  "}v{version}
         </Text>
       </Text>
-      {/* Línea 2: project · handle · branch · sync · sessions */}
+      {/* Line 2: project · handle · branch · sync · sessions */}
       <Text wrap="truncate-end">
         <Text color={colors.dim}>{brand || "—"}</Text>
         <Text color={colors.faint}>{`  ${DOT}  `}</Text>

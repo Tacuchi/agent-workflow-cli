@@ -27,8 +27,8 @@ class FakeEnv implements EnvPort {
   }
 }
 
-// El tab usa skills-manager de verdad contra un home sandbox (adapter real):
-// listSkills/register/install operan sobre tmpdir, nunca el HOME del dev.
+// The tab uses the real skills-manager against a sandbox home (real adapter):
+// listSkills/register/install operate on a tmpdir, never the dev's HOME.
 function buildCtx(home: string): CliContext {
   return { fs: new NodeFileSystem(), env: new FakeEnv(home) } as unknown as CliContext;
 }
@@ -82,7 +82,7 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     expect(frame).toContain(
       `0 installed · 1 registered · ${RECOMMENDED_SKILLS.length} recommended`,
     );
-    // Orden: la registrada primero (cursor arranca ahí).
+    // Order: the registered one first (cursor starts there).
     expect(frame.indexOf("mi-skill")).toBeLessThan(frame.indexOf("codebase-design"));
     unmount();
   });
@@ -105,11 +105,11 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     expect(frame).toContain("ajena");
     expect(frame).toContain("softaworks/agent-toolkit");
 
-    stdin.write(ENTER); // primera fila = la unmanaged (rank sobre registered/recommended)
+    stdin.write(ENTER); // first row = the unmanaged one (ranks above registered/recommended)
     await tick();
     const detail = (lastFrame() ?? "").replace(/\s+/g, " ");
     expect(detail).toContain("outside the registry");
-    // Informativa: ninguna acción del motor sobre dirs ajenos.
+    // Informational only: no engine actions on foreign dirs.
     expect(detail).not.toContain("Reinstall");
     expect(detail).not.toContain("Uninstall");
     expect(detail).not.toContain("Remove");
@@ -121,7 +121,7 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
       <SkillsTab ctx={buildCtx(home)} isActive={true} />,
     );
     await tick();
-    stdin.write(ENTER); // primera fila (recommended, orden alfabético)
+    stdin.write(ENTER); // first row (recommended, alphabetical order)
     await tick();
     const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
     expect(frame).toContain("Install");
@@ -151,13 +151,13 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
 
     const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
     await tick();
-    stdin.write(ENTER); // primera fila = la instalada (orden del manager)
+    stdin.write(ENTER); // first row = the installed one (manager order)
     await tick();
     const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
     expect(frame).toContain("Reinstall");
     expect(frame).toContain("Uninstall");
     expect(frame).toContain("Remove");
-    // Update es solo para fuentes git (clasificador canónico, no startsWith("/")).
+    // Update is git-sources-only (canonical classifier, not startsWith("/")).
     expect(frame).not.toContain("Update");
     unmount();
   });
@@ -170,7 +170,7 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
 
     const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
     await tick();
-    stdin.write(ENTER); // detail (acciones: Reinstall, Uninstall, Remove)
+    stdin.write(ENTER); // detail (actions: Reinstall, Uninstall, Remove)
     await tick();
     stdin.write(DOWN); // → Uninstall
     await tick(40);
@@ -189,13 +189,13 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
 
   it("Remove de una recomendada registrada la devuelve a recommended (AC6, a nivel tab)", async () => {
     const ctx = buildCtx(home);
-    // Fuente local cuyo skill-dir se llama como una recomendada de la semilla.
+    // Local source whose skill dir is named like one of the seed's recommended skills.
     const src = await makeSkillDir(workdir, "pdf");
     await registerSkill(ctx, { source: src });
 
     const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
     await tick();
-    stdin.write(ENTER); // detail de 'pdf' (registered → Install, Remove)
+    stdin.write(ENTER); // detail of 'pdf' (registered → Install, Remove)
     await tick();
     stdin.write(DOWN); // → Remove
     await tick(40);
@@ -206,7 +206,7 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     stdin.write("y");
     await tick(400);
     const after = (lastFrame() ?? "").replace(/\s+/g, " ");
-    // Nunca desaparece: vuelve al estado recommended de la semilla.
+    // It never disappears: it returns to the seed's recommended state.
     expect(after).toContain(
       `0 installed · 0 registered · ${RECOMMENDED_SKILLS.length} recommended`,
     );
@@ -221,15 +221,15 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     await tick();
     stdin.write("a");
     await tick();
-    stdin.write(src); // path absoluto de la fuente
+    stdin.write(src); // absolute path of the source
     await tick();
-    stdin.write(ENTER); // inspecciona (probe) → 1 candidata → warning directo
+    stdin.write(ENTER); // inspects (probe) → 1 candidate → straight to the warning
     await tick(300);
     const warning = (lastFrame() ?? "").replace(/\s+/g, " ");
     expect(warning).toContain("runs with your host's permissions");
     expect(warning).toContain("register + install");
 
-    stdin.write("r"); // registrar sin instalar
+    stdin.write("r"); // register without installing
     await tick(400);
     const after = (lastFrame() ?? "").replace(/\s+/g, " ");
     expect(after).toContain(`1 registered · ${RECOMMENDED_SKILLS.length} recommended`);

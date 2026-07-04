@@ -98,10 +98,10 @@ function buildCtx(
   } as unknown as CliContext;
 }
 
-// Réplica del overhead horizontal del frame real (ScreenFrame + Box del tab):
-// 12 cells (2 bordes + 2×2 paddingX, por 2 boxes). Sin este frame el tab dispone
-// de más ancho que el que asume `computeRowWidth`, y el bug de interlineado NO
-// aparece — por eso los tests que renderizan el tab "pelado" nunca lo detectaron.
+// Replica of the real frame's horizontal overhead (ScreenFrame + tab Box):
+// 12 cells (2 borders + 2×2 paddingX, times 2 boxes). Without this frame the tab
+// gets more width than `computeRowWidth` assumes and the line-spacing bug does NOT
+// show up — which is why tests rendering the "bare" tab never caught it.
 function Framed({ children }: { children: ReactNode }) {
   return (
     <Box borderStyle="bold" paddingX={2}>
@@ -127,7 +127,7 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
   it("abre el panel lateral con las 3 acciones al seleccionar una fuente (⏎)", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
-    stdin.write(ENTER); // abre detail sobre la fuente enfocada (alpha)
+    stdin.write(ENTER); // open detail on the focused source (alpha)
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("ACTIONS");
@@ -139,11 +139,11 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
   it("ejecuta 'Alinear con PROD' (sync) sobre la fuente y muestra el resultado", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
-    stdin.write(ENTER); // abre panel (acción 0 = Lanzar en local)
+    stdin.write(ENTER); // open panel (action 0 = "Lanzar en local")
     await tick();
-    stdin.write(DOWN); // baja a "Alinear con PROD" (sync)
+    stdin.write(DOWN); // move down to "Alinear con PROD" (sync)
     await tick();
-    stdin.write(ENTER); // ejecuta sync
+    stdin.write(ENTER); // run sync
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("completed");
@@ -154,11 +154,11 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     const logger = fakeLogger();
     const { stdin } = render(<ProjectTab ctx={buildCtx({ logger })} isActive />);
     await tick();
-    stdin.write(ENTER); // abre panel (acción 0 = Lanzar en local)
+    stdin.write(ENTER); // open panel (action 0 = "Lanzar en local")
     await tick();
-    stdin.write(DOWN); // baja a "Alinear con PROD" (sync)
+    stdin.write(DOWN); // move down to "Alinear con PROD" (sync)
     await tick();
-    stdin.write(ENTER); // ejecuta sync
+    stdin.write(ENTER); // run sync
     await tick();
     const flow = logger.lines.find((l) => l.msg.includes("git-flow sync"));
     expect(flow).toBeDefined();
@@ -170,11 +170,11 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     const logger = fakeLogger();
     const { lastFrame } = render(<ProjectTab ctx={buildCtx({ logger, failGit: true })} isActive />);
     await tick();
-    // 1) Cada warning de subfetch parcial se vuelca al log operativo (ctx.logger.warn).
+    // 1) Every partial-subfetch warning goes to the operational log (ctx.logger.warn).
     const warn = logger.lines.find((l) => l.level === "warn" && l.msg.includes("workspace data"));
     expect(warn).toBeDefined();
     expect(warn?.msg).toContain("git exploded");
-    // 2) El tab muestra un aviso visible de datos parciales (antes se descartaban).
+    // 2) The tab shows a visible partial-data notice (these used to be silently dropped).
     const f = lastFrame() ?? "";
     expect(f).toContain("advertencia");
     expect(f).toContain("datos parciales");
@@ -194,11 +194,11 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     stdin.write(DOWN); // alpha → beta
     stdin.write(DOWN); // beta → all sources
     await tick();
-    stdin.write(ENTER); // abre panel para "all sources"
+    stdin.write(ENTER); // open panel for "all sources"
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("ACTIONS");
-    expect(f).toContain("git flow"); // meta del panel: "git flow · 2 fuentes"
+    expect(f).toContain("git flow"); // panel meta: "git flow · 2 fuentes"
     expect(f).toContain("fuentes");
   });
 
@@ -210,19 +210,19 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     );
     await tick();
     const lines = (lastFrame() ?? "").split("\n");
-    // Primeras apariciones = los rows de la lista SOURCES (alpha arriba de beta).
+    // First occurrences = the SOURCES list rows (alpha above beta).
     const alphaIdx = lines.findIndex((l) => l.includes("alpha"));
     const betaIdx = lines.findIndex((l) => l.includes("beta"));
     expect(alphaIdx).toBeGreaterThanOrEqual(0);
     expect(betaIdx).toBeGreaterThan(alphaIdx);
-    // alpha y beta son source rows consecutivos. Si el row se construye más ancho
-    // que su contenedor, Yoga lo envuelve y mete una línea extra (diff 2). Sin el
-    // bug, son adyacentes (diff 1).
+    // alpha and beta are consecutive source rows. If a row is built wider than
+    // its container, Yoga wraps it and inserts an extra line (diff 2). Without
+    // the bug they are adjacent (diff 1).
     expect(betaIdx - alphaIdx).toBe(1);
   });
 });
 
-// ===== F3 — lanzamiento + administración de procesos =====
+// ===== F3 — launching + process administration =====
 
 const ALPHA_DESCRIPTOR = JSON.stringify({
   version: 1,
@@ -298,11 +298,11 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
   it("'Lanzar en local' aparece deshabilitada (no lanzable) en el panel de una fuente", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
-    stdin.write(ENTER); // abre el panel sobre alpha (sin descriptor ni fuente lanzable en este ctx)
+    stdin.write(ENTER); // open the panel on alpha (no descriptor nor launchable source in this ctx)
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("Lanzar en local");
-    // La descripción inline se trunca al ancho del panel; alcanza el prefijo.
+    // The inline description truncates to the panel width; the prefix is enough.
     expect(f).toContain("no lanzable");
   });
 
@@ -311,7 +311,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     await tick();
     stdin.write(ENTER); // panel
     await tick();
-    stdin.write(ENTER); // acción 0 = Lanzar en local (no launchable)
+    stdin.write(ENTER); // action 0 = "Lanzar en local" (not launchable)
     await tick();
     expect(lastFrame() ?? "").toContain("sin comando de arranque detectable");
   });
@@ -322,26 +322,26 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     let f = lastFrame() ?? "";
     expect(f).toContain("PID 4242");
     expect(f).toContain("running");
-    stdin.write("p"); // entra al modo procesos
+    stdin.write("p"); // enter processes mode
     await tick();
     f = lastFrame() ?? "";
-    expect(f).toContain("stop"); // hint de acciones del modo procesos
+    expect(f).toContain("stop"); // processes-mode actions hint
     expect(f).toContain("relaunch");
   });
 
   it("una fuente con descriptor habilita 'Lanzar en local'", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildLaunchCtx()} isActive />);
     await tick();
-    stdin.write(ENTER); // panel sobre alpha (launchable en este ctx)
+    stdin.write(ENTER); // panel on alpha (launchable in this ctx)
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("Lanzar en local");
-    // Habilitada: NO muestra la descripción de deshabilitada.
+    // Enabled: does NOT show the disabled description.
     expect(f).not.toContain("no lanzable");
   });
 
   it("lanzar una fuente ya en ejecución (mismo perfil) muestra la pantalla de colisión", async () => {
-    // alpha: descriptor sin perfiles/params (lanza directo, profile null) + proceso vivo profile null.
+    // alpha: descriptor without profiles/params (launches directly, profile null) + live process with profile null.
     const ctx = {
       fs: {
         exists: async (p: string) =>
@@ -398,9 +398,9 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
 
     const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
     await tick();
-    stdin.write(ENTER); // panel sobre alpha
+    stdin.write(ENTER); // panel on alpha
     await tick();
-    stdin.write(ENTER); // acción 0 = Lanzar en local → lanza directo (sin perfiles/params)
+    stdin.write(ENTER); // action 0 = "Lanzar en local" → launches directly (no profiles/params)
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("Ya corre alpha");
@@ -408,7 +408,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
   });
 
   it("sin workspace inicializado: NO ofrece Lanzar ni la sección de procesos (AC12)", async () => {
-    // fs.exists=false → no hay bloque WORKSPACE → landing NotInitialized.
+    // fs.exists=false → no WORKSPACE block → NotInitialized landing.
     const ctx = {
       fs: { exists: async () => false, readText: async () => "" },
       env: { cwd: () => "/ws", homeDir: () => "/home", get: () => undefined },

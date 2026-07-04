@@ -59,10 +59,6 @@ function joinTrim(lines: string[]): string {
  * or `heading` in {@link parseMdSection}). The first entry of each group is the
  * canonical form the runtime emits today (Spanish until R3 Sprint 1; English
  * variants are accepted now so legacy/migrated artifacts both parse).
- *
- * Precedent: `PHASE_INDEX` and `PLANNING_PHASES` already carry bilingual
- * `planning|planificacion|plan` aliases. R1 generalizes that pattern to all
- * heading-keywords the parsers consume.
  */
 const KEYWORD_GROUPS: ReadonlyArray<readonly string[]> = [
   ["Descripción", "Descripcion", "Description"],

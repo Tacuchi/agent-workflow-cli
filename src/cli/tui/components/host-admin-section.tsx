@@ -1,7 +1,6 @@
-// Administración por host del bundle `w` (list + detail + confirm + composite
-// clean-legacy → clean-cache → install-full). Extraída de skills-tab para que
-// [Workflows] la monte como sección principal; cualquier tab la reutiliza vía
-// props. La lógica es la misma que tenía el tab (sin cambio funcional).
+// Per-host administration of the `w` bundle (list + detail + confirm +
+// composite clean-legacy → clean-cache → install-full). [Workflows] mounts it
+// as its main section; any tab can reuse it via props.
 
 import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -207,7 +206,7 @@ export function HostAdminSection({
     [ctx, refresh, onToast],
   );
 
-  // input — list mode (↑↓ navega · ⏎ abre detail · Esc no-op · 'i' empty-state install)
+  // input — list mode (↑↓ navigate · ⏎ open detail · Esc no-op · 'i' empty-state install)
   useInput(
     (input, key) => {
       if (!isActive || busy || mode.kind !== "list") return;
@@ -240,7 +239,7 @@ export function HostAdminSection({
     { isActive },
   );
 
-  // input — detail mode (↑↓ navega actions · ⏎ ejecuta focused · Esc cierra)
+  // input — detail mode (↑↓ navigate actions · ⏎ run focused · Esc close)
   useInput(
     (_input, key) => {
       if (!isActive || busy || mode.kind !== "detail" || !focused) return;
@@ -270,7 +269,7 @@ export function HostAdminSection({
     { isActive },
   );
 
-  // input — confirm-uninstall (y confirma · n/esc cancela)
+  // input — confirm-uninstall (y confirm · n/esc cancel)
   useInput(
     (input, key) => {
       if (!isActive || mode.kind !== "confirm-uninstall") return;

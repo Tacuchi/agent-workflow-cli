@@ -1,7 +1,7 @@
-// Tras instalar un MCP en Warp escribiendo .warp/.mcp.json, el archivo existe
-// pero Warp solo lo spawnea si el toggle "File-based MCP Servers" está activo
-// en Settings. Este servicio construye el hint educativo que se entrega al
-// usuario desde el CLI y desde la TUI para cerrar ese gap de UX.
+// After installing an MCP in Warp by writing .warp/.mcp.json, the file exists
+// but Warp only spawns it when the "File-based MCP Servers" toggle is enabled
+// in Settings. This service builds the educational hint delivered to the user
+// from the CLI and the TUI to close that UX gap.
 
 export type WarpHintScope = "workspace" | "global";
 

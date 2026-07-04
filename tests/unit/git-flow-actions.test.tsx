@@ -79,7 +79,7 @@ describe("GitFlowActions", () => {
       <GitFlowActions ctx={buildCtx()} aliases={["alpha"]} isActive onClose={noop} />,
     );
     await tick();
-    stdin.write("a"); // Actualizar = sync
+    stdin.write("a"); // "Actualizar" = sync
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("completed");

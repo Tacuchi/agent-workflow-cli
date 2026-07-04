@@ -25,7 +25,7 @@ describe("useListCursor", () => {
       stdin.write(DOWN);
       await tick();
     }
-    expect(lastFrame()).toContain("cursor=2"); // clamp en count-1
+    expect(lastFrame()).toContain("cursor=2"); // clamps at count-1
   });
 
   it("moves up and clamps at 0", async () => {
@@ -37,6 +37,6 @@ describe("useListCursor", () => {
     await tick();
     stdin.write(UP);
     await tick();
-    expect(lastFrame()).toContain("cursor=0"); // clamp en 0
+    expect(lastFrame()).toContain("cursor=0"); // clamps at 0
   });
 });

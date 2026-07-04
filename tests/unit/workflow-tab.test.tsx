@@ -15,9 +15,8 @@ import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
 
-// [Workflows] monta HostAdminSection (fs.exists sobre ~/.<host>/skills/w), así
-// que el harness necesita un home sandbox real — mismo patrón que el test del
-// skills-tab.
+// [Workflows] mounts HostAdminSection (fs.exists over ~/.<host>/skills/w), so
+// the harness needs a real sandbox home — same pattern as the skills-tab test.
 class FakeEnv implements EnvPort {
   constructor(private home: string) {}
   get() {
@@ -122,7 +121,7 @@ describe("WorkflowTab ([Workflows] = admin + informativo mínimo)", () => {
     const frame = await renderFlat();
     expect(frame).toContain("Flows:");
     expect(frame).toContain("SPEC · PLAN · QUICK");
-    // Las secciones retiradas por el rediseño (U2) no deben renderizar.
+    // Sections retired by the redesign (U2) must not render.
     expect(frame).not.toContain("Command families");
     expect(frame).not.toContain("Workspace init");
   });
@@ -130,16 +129,16 @@ describe("WorkflowTab ([Workflows] = admin + informativo mínimo)", () => {
   it("administración por host montada: sección Hosts con TODOS los targets del registro", async () => {
     const frame = await renderFlat();
     expect(frame).toContain("HOSTS");
-    // Derivado de HOSTS (no lista hardcodeada): si el registro suma o pierde un
-    // host, este assert lo refleja — lección clean-legacy v14.5.1.
+    // Derived from HOSTS (not a hardcoded list): if the registry gains or loses
+    // a host, this assert follows — lesson from the clean-legacy v14.5.1 bug.
     for (const host of HOSTS) {
       expect(frame).toContain(host.name);
     }
     expect(frame).toContain("skills/w/");
   });
 
-  // Los tests de hooks-armed vivían en tui-skills-tab; la sección ahora se
-  // monta acá, así que su detección de ~/.claude/settings.json se fija acá.
+  // The hooks-armed section mounts here now, so its ~/.claude/settings.json
+  // detection is pinned here.
   it("muestra 'hooks armed' cuando ~/.claude/settings.json trae hooks", async () => {
     await mkdir(join(home, ".claude"), { recursive: true });
     await writeFile(

@@ -19,13 +19,13 @@ export interface StatusTabProps {
   isActive: boolean;
   onActivateTab?: (tab: "workflow" | "mcp" | "skills") => void;
   onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
-  /** Logs operativos diarios (global user-level). Si vacío, se renderiza empty-state. */
+  /** Daily operational logs (global user-level). Empty renders the empty-state. */
   logs?: LogEntry[];
-  /** Última app usada en "abrir con…" (prefill + memoria). */
+  /** Last app used in "open with…" (prefill + memory). */
   lastOpenApp?: string;
-  /** Persistir la última app elegida en "abrir con…". */
+  /** Persist the last app chosen in "open with…". */
   onSetLastApp?: (app: string) => void;
-  /** Hosts deshabilitados en Config: se excluyen del cómputo de cobertura. */
+  /** Hosts disabled in Config: excluded from the coverage computation. */
   disabledHosts?: string[];
 }
 
@@ -100,10 +100,10 @@ export function StatusTab({
     })();
   }, [ctx]);
 
-  // El update-check + banner ahora viven en el AppShell vía NotificationCenter.
-  // Esta tab navega tiles y delega `⏎` en hosts/mcp (cambiar de tab) y en logs
-  // (entrar al modo Logs). Mientras logsMode está activo, la LogsSection es dueña
-  // del teclado → esta captura se apaga para no pelear por las flechas.
+  // The update-check + banner live in the AppShell via NotificationCenter.
+  // This tab navigates tiles and delegates `⏎` on hosts/mcp (switch tab) and
+  // logs (enter Logs mode). While logsMode is active, the LogsSection owns the
+  // keyboard → this capture turns off so they don't fight over the arrows.
   useInput(
     (_input, key) => {
       if (!isActive) return;
@@ -122,7 +122,7 @@ export function StatusTab({
         return;
       }
       if (key.return) {
-        // La administración por host vive en [Workflows] desde esta ronda.
+        // Host administration lives in [Workflows].
         if (tileCursor === "hosts") onActivateTab?.("workflow");
         if (tileCursor === "mcp") onActivateTab?.("mcp");
         if (tileCursor === "logs") setLogsMode(true);
@@ -139,8 +139,8 @@ export function StatusTab({
     );
   }
 
-  // Cross-reference HOSTS con doctor.skill.targets. Los hosts deshabilitados en
-  // Config salen del cómputo de cobertura y de los chips (opt-out de targeting).
+  // Cross-reference HOSTS with doctor.skill.targets. Hosts disabled in Config
+  // leave the coverage computation and the chips (targeting opt-out).
   const disabled = new Set(disabledHosts);
   const activeHosts = HOSTS.filter((h) => !disabled.has(h.id));
   const installedByTarget = new Map<string, boolean>(
@@ -166,7 +166,6 @@ export function StatusTab({
         }}
       />
 
-      {/* Stat strip 4 tiles + WORKING TREE right */}
       <Box flexDirection="row" marginBottom={1}>
         <StatTile
           label="cli"

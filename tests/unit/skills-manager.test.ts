@@ -38,7 +38,7 @@ class FakeEnv implements EnvPort {
   }
 }
 
-/** Adapter real cuyo symlink falla — simula Windows sin links (fallback copy). */
+/** Real adapter whose symlink fails — simulates Windows without links (copy fallback). */
 class NoSymlinkFs extends NodeFileSystem {
   override async symlink(): Promise<void> {
     const err = new Error("EPERM: operation not permitted") as Error & { code: string };
@@ -148,7 +148,7 @@ describe("skills-manager (T3.3-T3.7)", () => {
     expect(dup.ok).toBe(false);
     expect(dup.error?.code).toBe("SKILL_ALREADY_REGISTERED");
 
-    // Dir canónico existente NO registrado (p.ej. el bundle `w`) → colisión.
+    // Existing canonical dir NOT in the registry (e.g. the `w` bundle) → collision.
     await mkdir(join(canonicalSkillsRoot(home), "w"), { recursive: true });
     const wDir = await makeSkillDir(join(root, "otra"), "w");
     const collision = await registerSkill(ctx, { source: wDir });
@@ -199,7 +199,7 @@ describe("skills-manager (T3.3-T3.7)", () => {
   it("install rehúsa pisar una réplica ajena en ~/.claude/skills (guard)", async () => {
     const dir = await makeSkillDir(root, "pdf");
     await registerSkill(ctx, { source: dir });
-    // Réplica ajena: dir real que este manager no creó.
+    // Foreign replica: a real dir this manager did not create.
     await makeSkillDir(claudeReplicaRoot(home), "pdf");
 
     const result = await installSkill(ctx, "pdf");
@@ -218,11 +218,11 @@ describe("skills-manager (T3.3-T3.7)", () => {
     expect(result.ok).toBe(true);
     const gemini = join(geminiReplicaRoot(home), "pdf");
     const stat = await ctx.fs.lstat(gemini);
-    expect(stat).toEqual({ type: "dir", isSymlink: false }); // copy, no symlink
+    expect(stat).toEqual({ type: "dir", isSymlink: false }); // copy, not a symlink
     expect(existsSync(join(gemini, "SKILL.md"))).toBe(true);
     expect(existsSync(join(gemini, REPLICA_MARKER_FILENAME))).toBe(true);
-    // El mode registrado sigue siendo el de la réplica Claude (symlink): el
-    // badge "(copy)" queda reservado a SU degradación, no al copy by-design.
+    // The registered mode is still the Claude replica's (symlink): the "(copy)"
+    // badge is reserved for ITS degradation, not for the by-design copy.
     const { registry } = await readSkillsRegistry(ctx);
     expect(registry.skills.pdf?.mode).toBe("symlink");
     expect(result.data?.replicas).toEqual([
@@ -241,7 +241,7 @@ describe("skills-manager (T3.3-T3.7)", () => {
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("FOREIGN_REPLICA");
     expect(existsSync(join(geminiReplicaRoot(home), "pdf", "SKILL.md"))).toBe(true);
-    // Nada se materializó a medias.
+    // Nothing was half-materialized.
     expect(existsSync(join(claudeReplicaRoot(home), "pdf"))).toBe(false);
   });
 
@@ -278,7 +278,7 @@ describe("skills-manager (T3.3-T3.7)", () => {
     expect(result.data?.status).toBe("updated");
     const canonical = join(canonicalSkillsRoot(home), "pdf");
     expect(await readFile(join(canonical, "SKILL.md"), "utf8")).toContain("v2");
-    // La réplica symlink apunta a la canónica → también ve v2.
+    // The symlink replica points at the canonical dir → it also sees v2.
     expect(await readFile(join(claudeReplicaRoot(home), "pdf", "SKILL.md"), "utf8")).toContain(
       "v2",
     );
@@ -313,8 +313,8 @@ describe("skills-manager (T3.3-T3.7)", () => {
     const dir = await makeSkillDir(root, "pdf");
     await registerSkill(ctx, { source: dir });
     await installSkill(ctx, "pdf");
-    await rm(dir, { recursive: true, force: true }); // fuente ya no existe
-    await ctx.fs.remove(join(claudeReplicaRoot(home), "pdf")); // réplica rota
+    await rm(dir, { recursive: true, force: true }); // source no longer exists
+    await ctx.fs.remove(join(claudeReplicaRoot(home), "pdf")); // broken replica
 
     const result = await reinstallSkill(ctx, "pdf");
 
@@ -439,12 +439,12 @@ describe("skills-manager (T3.3-T3.7)", () => {
     const repo = await makeGitSource(root, ["pdf"]);
     await registerSkill(ctx, { source: `file://${repo}`, pick: "pdf" });
     await installSkill(ctx, "pdf");
-    // El usuario reemplaza la réplica por SU symlink a sus dotfiles.
+    // The user replaces the replica with THEIR OWN symlink to their dotfiles.
     const userSkill = await makeSkillDir(root, "dotfiles-pdf");
     const replica = join(claudeReplicaRoot(home), "pdf");
     await ctx.fs.remove(replica);
     await new NodeFileSystem().symlink(userSkill, replica);
-    // La fuente avanza a v2.
+    // The source advances to v2.
     await writeFile(
       join(repo, "skills", "pdf", "SKILL.md"),
       "---\nname: pdf\ndescription: test skill pdf\n---\nv2\n",
@@ -457,17 +457,17 @@ describe("skills-manager (T3.3-T3.7)", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("FOREIGN_REPLICA");
-    // Ni la canónica se actualizó (pre-flight antes de materializar)…
+    // Neither did the canonical dir update (pre-flight before materializing)…
     const canonical = join(canonicalSkillsRoot(home), "pdf");
     expect(await readFile(join(canonical, "SKILL.md"), "utf8")).toContain("v1");
-    // …ni el symlink del usuario se re-apuntó.
+    // …nor was the user's symlink re-pointed.
     expect(await readFile(join(replica, "SKILL.md"), "utf8")).toContain("dotfiles-pdf");
   });
 
   it("canónica ajena bajo un nombre registrado-sin-instalar: install rehúsa y remove la conserva", async () => {
     const dir = await makeSkillDir(root, "docx");
-    await registerSkill(ctx, { source: dir }); // registrada, nunca instalada
-    // Otro actor (plugin, instalación manual) crea la canónica homónima.
+    await registerSkill(ctx, { source: dir }); // registered, never installed
+    // Another actor (plugin, manual install) creates the same-named canonical dir.
     await makeSkillDir(canonicalSkillsRoot(home), "docx");
 
     const install = await installSkill(ctx, "docx");
@@ -525,7 +525,7 @@ describe("skills-manager (T3.3-T3.7)", () => {
     await registerSkill(ctx, { source: inst });
     await installSkill(ctx, "instalada");
     await registerSkill(ctx, { source: reg });
-    // Canónica ajena (fuera del registro), p.ej. instalada por skills.sh.
+    // Foreign canonical dir (outside the registry), e.g. installed by skills.sh.
     await makeSkillDir(canonicalSkillsRoot(home), "fuera-registro");
 
     const list = await listSkills(ctx, seed);
@@ -546,7 +546,7 @@ describe("skills-manager (T3.3-T3.7)", () => {
     const canonRoot = canonicalSkillsRoot(home);
     await makeSkillDir(canonRoot, "con-lock");
     await makeSkillDir(canonRoot, "sin-lock");
-    // Ruido que el scan NO debe listar: dot-dir, dir sin SKILL.md, archivo suelto.
+    // Noise the scan must NOT list: dot-dir, dir without SKILL.md, loose file.
     await mkdir(join(canonRoot, ".staging-x"), { recursive: true });
     await mkdir(join(canonRoot, "sin-skill-md"), { recursive: true });
     await writeFile(join(canonRoot, "suelto.txt"), "x", "utf8");
@@ -556,14 +556,14 @@ describe("skills-manager (T3.3-T3.7)", () => {
       "utf8",
     );
 
-    // El bundle y su namespace NO son "de otro" (los administra [Workflows]).
+    // The bundle and its namespace are NOT "someone else's" ([Workflows] manages them).
     await makeSkillDir(canonRoot, "w");
     await makeSkillDir(canonRoot, "w-plan-exec-loop");
     await makeSkillDir(canonRoot, "agent-workflow");
-    // Nombre heredado de Object.prototype: exige hasOwn, no truthiness.
+    // Name inherited from Object.prototype: requires hasOwn, not truthiness.
     await makeSkillDir(canonRoot, "constructor");
 
-    // Semilla homónima: la fila unmanaged gana y no se duplica como recommended.
+    // Same-named seed: the unmanaged row wins and is not duplicated as recommended.
     const seed = [{ name: "con-lock", source: "a/b", description: "homónima" }];
     const list = await listSkills(ctx, seed);
 
@@ -579,12 +579,12 @@ describe("skills-manager (T3.3-T3.7)", () => {
 
   it("gate 016: registro corrupto apaga el scan; symlink-a-dir se lista; semilla con canónica inválida no ofrece Install", async () => {
     const canonRoot = canonicalSkillsRoot(home);
-    // Dev checkout linkeado al ancla: los hosts lo siguen, la tab debe verlo.
+    // Dev checkout linked to the anchor: hosts follow it, the tab must see it.
     const real = await makeSkillDir(root, "linked-real");
     await mkdir(canonRoot, { recursive: true });
     await symlink(real, join(canonRoot, "linkeada"));
-    // Canónica homónima de una semilla pero SIN frontmatter válido: ofrecer
-    // Install garantizaría SKILL_NAME_COLLISION → la semilla se oculta.
+    // Canonical dir named like a seed but WITHOUT valid frontmatter: offering
+    // Install would guarantee SKILL_NAME_COLLISION → the seed is hidden.
     await mkdir(join(canonRoot, "pdf"), { recursive: true });
     await writeFile(join(canonRoot, "pdf", "SKILL.md"), "sin frontmatter", "utf8");
 
@@ -592,8 +592,8 @@ describe("skills-manager (T3.3-T3.7)", () => {
     let list = await listSkills(ctx, seed);
     expect(list.map((s) => `${s.name}:${s.status}`)).toEqual(["linkeada:unmanaged"]);
 
-    // Registro ilegible: nada se clasifica unmanaged (podría ser del motor) y
-    // la lista no revienta.
+    // Unreadable registry: nothing gets classified unmanaged (it could be the
+    // engine's) and the list does not blow up.
     await mkdir(join(home, ".agents"), { recursive: true });
     await writeFile(join(home, ".agents", ".skills-registry.json"), "{roto", "utf8");
     list = await listSkills(ctx, seed);

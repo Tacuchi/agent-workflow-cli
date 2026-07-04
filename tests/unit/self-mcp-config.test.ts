@@ -277,8 +277,8 @@ describe("selfMcpConfig", () => {
   });
 
   it("remove conserva una entrada global homónima ajena (guard de ownership)", async () => {
-    // El usuario tiene SU PROPIO server 'reporting' en el settings global de
-    // Gemini — nunca lo escribió esta tool. Remove no debe tocarlo.
+    // The user has THEIR OWN 'reporting' server in Gemini's global settings —
+    // this tool never wrote it. Remove must not touch it.
     const foreign = {
       mcpServers: { reporting: { command: "node", args: ["my-server.js"], env: {} } },
     };
@@ -305,7 +305,7 @@ describe("selfMcpConfig", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok");
     expect(result.data.preserved_foreign).toEqual(["gemini"]);
-    // La entrada ajena sobrevive byte-relevante; la nuestra en claude sí se fue.
+    // The foreign entry survives with its relevant bytes intact; ours in claude is gone.
     const gemini = JSON.parse(readFileSync(join(home, ".gemini", "settings.json"), "utf-8"));
     expect(gemini.mcpServers.reporting.args).toEqual(["my-server.js"]);
     expect(readFileSync(join(home, ".claude.json"), "utf-8")).not.toContain('"reporting"');

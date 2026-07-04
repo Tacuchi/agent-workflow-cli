@@ -4,18 +4,19 @@ import { App, type TuiResult } from "./app.js";
 import { applyAccent } from "./theme.js";
 import { TuiPrefsService } from "./tui-prefs.js";
 
-// Secuencias ANSI del buffer alternativo de pantalla (alt-screen).
-// `?1049h` entra (guarda la pantalla actual), `?1049l` sale (la restaura). Es lo
-// que usan vim/htop/lazygit: el TUI vive en un lienzo aislado y al salir no deja
-// rastro en el scrollback — la causa raíz de las líneas huérfanas (image #1).
+// Alternate screen buffer (alt-screen) ANSI sequences.
+// `?1049h` enters (saves the current screen), `?1049l` leaves (restores it).
+// Same mechanism vim/htop/lazygit use: the TUI lives on an isolated canvas and
+// leaves no trace in the scrollback on exit — the root cause of orphan lines.
 const ALT_SCREEN_ENTER = "\x1b[?1049h";
 const ALT_SCREEN_LEAVE = "\x1b[?1049l";
 const CLEAR_HOME = "\x1b[2J\x1b[H";
 
 /**
- * Entra al alt-screen y devuelve un `restore()` idempotente. No-op si stdout no
- * es TTY (CI, pipes). Registra una red de seguridad en `exit`/`SIGTERM` para no
- * dejar la terminal atrapada en el buffer alternativo si el proceso muere.
+ * Enters the alt-screen and returns an idempotent `restore()`. No-op when
+ * stdout is not a TTY (CI, pipes). Registers a safety net on `exit`/`SIGTERM`
+ * so the terminal is not left trapped in the alternate buffer if the process
+ * dies.
  */
 function enterAltScreen(stdout: NodeJS.WriteStream): () => void {
   if (!stdout.isTTY) return () => {};
@@ -51,7 +52,7 @@ export async function runTui(version: string, ctx: CliContext): Promise<TuiResul
     resolveResult(result);
   };
 
-  // Carga prefs y aplica el accent ANTES del primer render (sin flash de color).
+  // Load prefs and apply the accent BEFORE the first render (no color flash).
   const prefs = await new TuiPrefsService(ctx.fs, ctx.paths).load();
   applyAccent(prefs.accentColor);
 
@@ -83,10 +84,10 @@ export async function runTui(version: string, ctx: CliContext): Promise<TuiResul
     // already logged above
   }
 
-  // Sale del alt-screen recién cuando Ink desmontó del todo: su último erase
-  // ocurre sobre el buffer alternativo y la pantalla del usuario vuelve limpia.
-  // Debe pasar antes de devolver para que acciones post-TUI (p.ej. `self update`
-  // con inquirer) corran sobre la pantalla principal.
+  // Leave the alt-screen only once Ink has fully unmounted: its final erase
+  // then happens on the alternate buffer and the user's screen comes back
+  // clean. Must happen before returning so post-TUI actions (e.g. `self
+  // update` with inquirer) run on the main screen.
   restoreScreen();
 
   return result;

@@ -33,9 +33,9 @@ function parseOneFuente(raw: string): FuenteSpec | { error: string } {
       error: `--fuente path corrupto '${raw}': la unidad '${rest.slice(0, 2)}' no tiene separador tras el colon (backslashes perdidos, probablemente por el shell). En Windows pasá forward-slash: ${alias}:C:/Source/...`,
     };
   }
-  // En Windows el path arranca con un prefijo de unidad (`C:\`, `\\?\C:\`). Ese
-  // colon de unidad NO es el separador de rama: hay que ignorarlo al buscar el
-  // colon que parte `path:rama`, si no `C:\Source\foo` colapsa a path="C".
+  // On Windows the path starts with a drive prefix (`C:\`, `\\?\C:\`). That
+  // drive colon is NOT the branch separator: ignore it when looking for the
+  // colon that splits `path:rama`, or `C:\Source\foo` collapses to path="C".
   const driveMatch = rest.match(/^(?:\\\\\?\\)?[A-Za-z]:[\\/]/);
   const driveColon = driveMatch ? driveMatch[0].indexOf(":") : -1;
   const lastColon = rest.lastIndexOf(":");

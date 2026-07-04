@@ -16,10 +16,10 @@ describe("humanizeRelativeEs", () => {
     { label: "1 min", at: new Date(2026, 5, 21, 14, 59, 0), expected: "hace un minuto" },
     { label: "5 min", at: new Date(2026, 5, 21, 14, 55, 0), expected: "hace 5 minutos" },
     { label: "59 min", at: new Date(2026, 5, 21, 14, 1, 0), expected: "hace 59 minutos" },
-    // today (franja)
+    // today (time-of-day band)
     { label: "hoy mañana", at: new Date(2026, 5, 21, 9, 0, 0), expected: "hoy en la mañana" },
     { label: "hoy tarde", at: new Date(2026, 5, 21, 12, 30, 0), expected: "hoy en la tarde" },
-    // yesterday (franja)
+    // yesterday (time-of-day band)
     { label: "ayer mañana", at: new Date(2026, 5, 20, 9, 0, 0), expected: "ayer en la mañana" },
     { label: "ayer tarde", at: new Date(2026, 5, 20, 14, 0, 0), expected: "ayer en la tarde" },
     { label: "ayer noche", at: new Date(2026, 5, 20, 20, 0, 0), expected: "ayer en la noche" },

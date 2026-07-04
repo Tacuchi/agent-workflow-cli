@@ -1,26 +1,26 @@
-// Test real de conexión MCP: ejecuta `npx -y @bytebase/dbhub` con el DSN
-// resuelto del shell env o del bootstrap file. Si dbhub arranca sin errores
-// fatales (queda esperando inputs MCP en stdio), se considera la conexión
-// válida. Si dbhub falla rápidamente con stderr, el test falla con el detalle.
+// Real MCP connection test: runs `npx -y @bytebase/dbhub` with the DSN
+// resolved from the shell env or the bootstrap file. If dbhub starts without
+// fatal errors (it sits waiting for MCP input on stdio), the connection is
+// considered valid. If dbhub fails quickly with stderr, the test fails with the detail.
 import { spawn } from "node:child_process";
 import { readBootstrapDsn } from "./dsn-reader-service.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface McpTestConnectionInput {
-  /** Nombre de la DSN env var (ej: DB_CERT_DSN). */
+  /** DSN env var name (e.g. DB_CERT_DSN). */
   dsnVar: string;
   env: Record<string, string | undefined>;
   paths: PathsService;
   platform: NodeJS.Platform;
-  /** Timeout en ms para asumir que dbhub arrancó OK. Default: 5000. */
+  /** Timeout in ms to assume dbhub started OK. Default: 5000. */
   timeoutMs?: number;
 }
 
 export interface McpTestConnectionResult {
   ok: boolean;
-  /** De dónde se resolvió el DSN. `null` si no se pudo resolver. */
+  /** Where the DSN was resolved from. `null` when it could not be resolved. */
   source: "env" | "dsn.env" | null;
-  /** Detalle del error cuando `ok=false`. */
+  /** Error detail when `ok=false`. */
   error?: string;
 }
 
@@ -90,8 +90,8 @@ function spawnDbhub(
         });
       }
     });
-    // Si dbhub sigue corriendo tras el timeout, asumimos que arrancó OK
-    // (conectó y está esperando inputs MCP en stdio). Lo matamos y reportamos OK.
+    // If dbhub is still running after the timeout, assume it started OK
+    // (it connected and is waiting for MCP input on stdio). Kill it and report OK.
     setTimeout(() => settle({ ok: true, source }), timeoutMs);
   });
 }

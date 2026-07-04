@@ -79,7 +79,7 @@ describe("selfInstallPluginSkills", () => {
   });
 
   it("retorna nothing si no hay skills válidos en --from", async () => {
-    // directorio vacío, sin subdirectorios
+    // empty directory, no subdirectories
     const result = await selfInstallPluginSkills(
       buildArgs({ from: fromDir, target: "warp" }),
       buildCtx(homeDir),
@@ -152,7 +152,7 @@ describe("selfInstallPluginSkills", () => {
 
   it("ignora subdirectorios sin SKILL.md válido", async () => {
     makeSkillDir(fromDir, "session");
-    mkdirSync(join(fromDir, "no-skill-dir")); // sin SKILL.md
+    mkdirSync(join(fromDir, "no-skill-dir")); // no SKILL.md
     const result = await selfInstallPluginSkills(
       buildArgs({ from: fromDir, target: "warp" }),
       buildCtx(homeDir),

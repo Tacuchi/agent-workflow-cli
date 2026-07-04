@@ -3,9 +3,8 @@ import type { SessionState, SessionType } from "./types.js";
 export type TaskStatus = "open" | "closed";
 
 /**
- * Lightweight descriptor of an internal session in the redesigned model.
- * Sessions are created by loops (Layer 2) and carry a {@link SessionType}
- * (research|refine|exec|quick) instead of the old Flow/Phase ceremony.
+ * Lightweight descriptor of an internal session. Sessions are created by loops
+ * (Layer 2) and carry a {@link SessionType} (research|refine|exec|quick).
  */
 export interface SessionRef {
   name: string;

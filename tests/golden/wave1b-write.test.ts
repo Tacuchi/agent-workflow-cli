@@ -90,7 +90,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
     const paths = makeWorkflowPaths(env);
-    // Lock vivo ajeno (pid del test, ts ISO vigente) → history-update devuelve lock ocupado.
+    // Live foreign lock (test's pid, current ISO ts) → history-update returns lock busy.
     await fs.writeText(
       join(clone.cwd, ".workflow", ".lock"),
       JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),

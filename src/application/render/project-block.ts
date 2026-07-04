@@ -93,12 +93,12 @@ function formatFuentesTable(fuentes: ProjectFuente[]): string {
 }
 
 function formatStackList(stack: ProjectStack): string {
-  // Mirror Python: si stack es null/undefined → "Edita manualmente si aplica."
-  // Si stack es dict con keys (incluso todos undefined) → "_Stack sin detectar._"
-  // En el flujo cmd_project_md_upsert, stack siempre llega con shape (no null), así
-  // que la primera rama es inalcanzable; nuestro detectStackDict simula el mismo
-  // comportamiento devolviendo el shape vacío `{}` SOLO cuando no hay archivos a
-  // detectar — en ese caso preservamos el mensaje corto que Python emite ahí.
+  // Mirror Python: if stack is null/undefined → "Edita manualmente si aplica."
+  // If stack is a dict with keys (even if all undefined) → "_Stack sin detectar._"
+  // In the cmd_project_md_upsert flow stack always arrives with a shape (never null),
+  // so the first branch is unreachable; our detectStackDict mimics that behavior by
+  // returning the empty shape `{}` ONLY when there are no files to detect — in that
+  // case we preserve the short message Python emits there.
   const lines: string[] = [];
   if (stack.language) lines.push(`- Lenguaje: ${stack.language}`);
   if (stack.framework) lines.push(`- Framework: ${stack.framework}`);

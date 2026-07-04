@@ -140,9 +140,9 @@ describe("resolveHosts — host anfitrión data-driven desde el registro", () =>
   });
 
   it("harness sin mcpHostId (oz) cae al fan-out completo", () => {
-    // runHarness tiene fallback por filesystem (detecta ~/.codex real de la
-    // máquina), así que el caso determinístico de fan-out es un harness
-    // detectado SIN archivo de config MCP propio: oz.
+    // runHarness has a filesystem fallback (detects the machine's real ~/.codex),
+    // so the deterministic fan-out case is a harness detected WITHOUT its own
+    // MCP config file: oz.
     const result = resolveHosts(argsNoHost(), ctxWithEnv({ OZ_RUN_ID: "1" }));
     if (!("value" in result)) throw new Error("expected value");
     expect(result.value.length).toBeGreaterThanOrEqual(6);

@@ -131,10 +131,10 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
   );
 
   /**
-   * Test connection — ejecuta `npx -y @bytebase/dbhub` con el DSN resuelto.
-   * Si dbhub arranca sin errores fatales en menos de 5s, asumimos que la
-   * conexión al motor de datos está OK. Si dbhub falla rápidamente (DSN
-   * inválido, host inalcanzable, credenciales malas), reportamos el stderr.
+   * Test connection — runs `npx -y @bytebase/dbhub` with the resolved DSN.
+   * If dbhub starts without fatal errors within 5s, the connection to the
+   * data engine is assumed OK. If dbhub fails fast (invalid DSN, unreachable
+   * host, bad credentials), the stderr is reported.
    */
   const runTestConnection = useCallback(
     async (name: string, dsnVar: string) => {
@@ -236,7 +236,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       ]
     : [];
 
-  // input — list mode (↑↓ navega · ⏎ abre detail · 'a' add wizard)
+  // input — list mode (↑↓ navigate · ⏎ open detail · 'a' add wizard)
   useInput(
     (input, key) => {
       if (!isActive || mode.kind !== "list") return;
@@ -260,7 +260,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     { isActive },
   );
 
-  // input — detail mode (↑↓ navega actions · ⏎ ejecuta focused · Esc cierra)
+  // input — detail mode (↑↓ navigate actions · ⏎ run focused · Esc close)
   useInput(
     (_input, key) => {
       if (!isActive || mode.kind !== "detail" || !current) return;
@@ -284,7 +284,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     { isActive },
   );
 
-  // input — confirm-delete (y confirma · n/esc vuelve al detail)
+  // input — confirm-delete (y confirm · n/esc back to detail)
   useInput(
     (input, key) => {
       if (!isActive || mode.kind !== "confirm-delete") return;
@@ -301,7 +301,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     { isActive },
   );
 
-  // input — esc en wizard
+  // input — esc in wizard
   useInput(
     (_input, key) => {
       if (!isActive) return;
@@ -400,8 +400,8 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
             </Box>
           )}
 
-          {/* Wizard inline — solo SectionHead + InputPrompt limpio (sin
-              duplicación con un decorative input box). */}
+          {/* Inline wizard — just a clean SectionHead + InputPrompt (no
+              duplication with a decorative input box). */}
           {mode.kind === "wizard-name" ? (
             <Box flexDirection="column" marginTop={1}>
               <SectionHead
@@ -518,7 +518,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           ) : null}
         </Box>
 
-        {/* Right: detail panel (sólo cuando se seleccionó un row con Enter) */}
+        {/* Right: detail panel (only after a row was selected with Enter) */}
         {current && (mode.kind === "detail" || mode.kind === "confirm-delete") ? (
           <DetailPanel
             bordered

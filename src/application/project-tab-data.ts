@@ -1,15 +1,8 @@
-// Data layer del tab WORKSPACE del TUI.
+// Data layer for the TUI's WORKSPACE tab.
 //
-// Agrega la información del workspace que el usuario necesita sin abrir ningún
-// host de IA:
-//
-// - git status del repo primario (branch, ahead/behind, dirty/staged/untracked, último commit)
-// - ramas recientes (con flag `current`)
-// - sources declaradas (alias / path / rama principal)
-// - ramas de trabajo actuales (working_branches por alias del bloque WORKSPACE)
-//
-// No hay distinción project/hub: un workspace simplemente tiene 1+ fuentes.
-// Read-only puro: ningún side-effect en disco ni en remoto.
+// Aggregates the workspace information the user needs without opening any AI
+// host. No project/hub distinction: a workspace simply has 1+ sources.
+// Purely read-only: no side effects on disk or on the remote.
 
 import { basename, join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
@@ -38,7 +31,7 @@ export interface ProjectCommit {
   author: string;
   /** ISO 8601 */
   whenIso: string;
-  /** Texto humano relativo, ej "hace 2 h" */
+  /** Human-readable relative text, e.g. "hace 2 h" */
   whenRel: string;
 }
 
@@ -46,7 +39,7 @@ export interface ProjectBranch {
   name: string;
   current: boolean;
   ahead: number;
-  /** Texto humano relativo del último commit */
+  /** Human-readable relative text of the last commit */
   whenRel: string | null;
 }
 
@@ -63,34 +56,34 @@ export interface ProjectSource {
 
 export interface ProjectTabData {
   workspaceName: string;
-  /** Path absoluto del workspace (cwd) */
+  /** Absolute workspace path (cwd) */
   workspacePath: string;
   /**
-   * True si el workspace tiene bloque WORKSPACE en CLAUDE.md/AGENTS.md
-   * (es decir, fue inicializado con workspace-init).
+   * True when the workspace has a WORKSPACE block in CLAUDE.md/AGENTS.md
+   * (i.e. it was initialized with workspace-init).
    *
-   * Cuando es false, el tab renderiza una landing con la opción de init
-   * en lugar del contenido completo.
+   * When false, the tab renders a landing with the init option instead of
+   * the full content.
    */
   initialized: boolean;
-  /** Git data del repo primario (cwd, o la primera fuente declarada) */
+  /** Git data for the primary repo (cwd, or the first declared source) */
   git: ProjectGitData | null;
-  /** Ramas recientes ordenadas por last-commit-date desc */
+  /** Recent branches sorted by last-commit-date desc */
   branches: ProjectBranch[];
-  /** Sources declaradas (alias / path / rama principal) */
+  /** Declared sources (alias / path / main branch) */
   sources: ProjectSource[];
-  /** Ramas de trabajo actuales por alias de fuente (bloque WORKSPACE > Status) */
+  /** Current working branches per source alias (WORKSPACE block > Status) */
   workingBranches: Record<string, string>;
-  /** Ramas QA actuales por alias de fuente (bloque WORKSPACE > Status > Ramas QA) */
+  /** Current QA branches per source alias (WORKSPACE block > Status > Ramas QA) */
   qaBranches: Record<string, string>;
   /** Procesos lanzados en segundo plano (registry reconciliado contra liveness). */
   processes: ProcessRecord[];
-  /** Si hubo error parcial fetcheando data */
+  /** Partial fetch failures, if any */
   warnings: string[];
 }
 
 interface BuildOptions {
-  /** Máximo de ramas a listar (default 5) */
+  /** Maximum number of branches to list (default 5) */
   branchLimit?: number;
 }
 
@@ -103,11 +96,11 @@ export interface ProjectTabDataDeps {
 }
 
 /**
- * Construye toda la data del tab Proyecto en una pasada.
+ * Builds all the Workspace tab data in one pass.
  *
- * Cada subfetch atrapa errores propios para no tumbar el render — si por
- * ejemplo `git log` falla, el resto del payload sigue válido y la falla queda
- * en `warnings[]`.
+ * Each subfetch catches its own errors so the render never goes down — if
+ * e.g. `git log` fails, the rest of the payload stays valid and the failure
+ * lands in `warnings[]`.
  */
 export async function buildProjectTabData(
   deps: ProjectTabDataDeps,
@@ -126,15 +119,14 @@ export async function buildProjectTabData(
 
   const workspaceName = block?.proyecto || basename(cwd);
 
-  // Repo primario: la primera fuente declarada (si hay), si no el cwd.
+  // Primary repo: the first declared source (if any), else the cwd.
   const primaryRepoPath = block && block.fuentes.length > 0 ? (block.fuentes[0]?.path ?? cwd) : cwd;
   const primaryMainBranch =
     block && block.fuentes.length > 0 ? (block.fuentes[0]?.main_branch ?? "main") : "main";
-  // El tile GIT debe mostrar la rama de trabajo DEFINIDA en el workspace para la
-  // fuente primaria, no la que el repo tenga checked out (puede ser cualquiera).
+  // The GIT tile must show the working branch DEFINED in the workspace for the
+  // primary source, not whatever branch the repo has checked out (could be any).
   const definedWorkingBranch = resolveDefinedWorkingBranch(block);
 
-  // ===== Git data del repo primario =====
   const gitData = await safeRun(
     "git",
     () => buildGitData(git, proc, primaryRepoPath, primaryMainBranch, definedWorkingBranch),
@@ -142,7 +134,6 @@ export async function buildProjectTabData(
     null,
   );
 
-  // ===== Ramas recientes =====
   const branches = await safeRun(
     "branches",
     () => buildBranches(proc, primaryRepoPath, options.branchLimit ?? 5),
@@ -150,7 +141,6 @@ export async function buildProjectTabData(
     [] as ProjectBranch[],
   );
 
-  // ===== Sources (todas las fuentes declaradas) =====
   const sources: ProjectSource[] = [];
   if (block) {
     for (const f of block.fuentes) {
@@ -192,7 +182,7 @@ export async function buildProjectTabData(
     }
   }
 
-  // Procesos en segundo plano — el registry reconcilia liveness en list().
+  // Background processes — the registry reconciles liveness in list().
   const registry = new ProcessRegistryService(fs, proc, paths.cwdProcessesFile());
   const processes = await safeRun(
     "processes",
@@ -256,12 +246,12 @@ async function buildGitData(
 ): Promise<ProjectGitData | null> {
   const isRepo = await git.isGitRepo(repoPath);
   if (!isRepo) return null;
-  // `workBranch` (rama de trabajo definida en el workspace) tiene prioridad sobre
-  // la rama checked out: el tile GIT representa el trabajo del workspace, no el
-  // HEAD accidental del source. ahead/behind se calcula contra la rama mostrada.
+  // `workBranch` (the workspace-defined working branch) takes precedence over
+  // the checked-out branch: the GIT tile represents the workspace's work, not
+  // the source's accidental HEAD. ahead/behind is computed against the branch shown.
   const branch = workBranch ?? (await git.currentBranch(repoPath)) ?? "(detached)";
 
-  // ahead/behind vs `origin/<mainBranch>` — fallback a 0/0 si fail
+  // ahead/behind vs `origin/<mainBranch>` — falls back to 0/0 on failure
   const aheadBehind = await runProc(
     proc,
     "git",
@@ -386,15 +376,15 @@ async function runProc(
 }
 
 /**
- * Rama de trabajo a mostrar en el tile GIT.
+ * Working branch to display in the GIT tile.
  *
- * El tile representa el repo primario (`fuentes[0]`), pero su label debe ser la
- * rama de trabajo DEFINIDA en el workspace (sección `## Status > Ramas de trabajo
- * actuales`), no la rama que la fuente tenga checked out. Así el tile no cambia
- * según en qué rama estén las fuentes.
+ * The tile represents the primary repo (`fuentes[0]`), but its label must be
+ * the working branch DEFINED in the workspace (section `## Status > Ramas de
+ * trabajo actuales`), not the branch the source has checked out. That way the
+ * tile does not change depending on which branch the sources are on.
  *
- * Devuelve `undefined` cuando no hay rama de trabajo declarada para la fuente
- * primaria → el caller cae a la rama actual del repo.
+ * Returns `undefined` when no working branch is declared for the primary
+ * source → the caller falls back to the repo's current branch.
  */
 export function resolveDefinedWorkingBranch(block: ParsedProjectBlock | null): string | undefined {
   if (!block) return undefined;
@@ -403,7 +393,7 @@ export function resolveDefinedWorkingBranch(block: ParsedProjectBlock | null): s
   return block.working_branches[primaryAlias];
 }
 
-// Helper local — refleja `readProjectBlock` privado de sources-service.ts.
+// Local helper — mirrors the private `readProjectBlock` in sources-service.ts.
 async function readProjectBlock(
   fs: FileSystemPort,
   cwd: string,

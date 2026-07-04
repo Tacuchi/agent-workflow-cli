@@ -82,8 +82,8 @@ export class NodeFileSystem implements FileSystemPort {
   }
 
   async remove(path: string): Promise<void> {
-    // recursive+force: borra archivo o directorio (con su contenido); force
-    // ignora ENOENT → idempotente. Antes solo unlink (archivos).
+    // recursive+force: removes a file or a directory (with its contents); force
+    // ignores ENOENT → idempotent.
     await rm(path, { recursive: true, force: true });
   }
 
@@ -115,8 +115,8 @@ export class NodeFileSystem implements FileSystemPort {
   }
 
   async symlink(target: string, path: string): Promise<void> {
-    // "junction" en Windows: enlaza dirs sin privilegios de admin (los symlink
-    // reales requieren Developer Mode). En POSIX el type se ignora.
+    // "junction" on Windows: links dirs without admin privileges (real symlinks
+    // require Developer Mode). On POSIX the type argument is ignored.
     await symlink(target, path, process.platform === "win32" ? "junction" : "dir");
   }
 

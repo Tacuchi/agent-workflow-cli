@@ -49,7 +49,6 @@ export function humanizeRelativeEs(then: Date, now: Date): string {
   // Just now / future skew.
   if (ms < MS_PER_MINUTE) return "recién";
 
-  // Minutes within the hour.
   const minutes = Math.floor(ms / MS_PER_MINUTE);
   if (minutes < 60) return minutes === 1 ? "hace un minuto" : `hace ${minutes} minutos`;
 

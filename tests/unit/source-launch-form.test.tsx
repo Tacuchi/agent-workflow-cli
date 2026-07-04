@@ -34,7 +34,7 @@ describe("SourceLaunchForm", () => {
     expect(lastFrame() ?? "").toContain("perfil");
     expect(lastFrame() ?? "").toContain("dev");
 
-    stdin.write(DOWN); // (sin perfil) → dev
+    stdin.write(DOWN); // "(sin perfil)" option → dev
     await tick();
     stdin.write(ENTER); // confirm profile → param step
     await tick();

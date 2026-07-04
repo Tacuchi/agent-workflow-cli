@@ -88,7 +88,6 @@ export async function selfInstallHooks(
     };
   }
 
-  // Resolve template
   const templatePathArg = args.values.get("template");
   const templatePath = templatePathArg ?? (await resolveTemplate());
   if (templatePath === null) {

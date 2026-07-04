@@ -1,6 +1,6 @@
 /**
- * Session type in the redesigned model — sessions are internal/ephemeral process
- * state created by loops (Layer 2), never by the user. Replaces the old `Flow`.
+ * Session type — sessions are internal/ephemeral process state created by loops
+ * (Layer 2), never by the user.
  * `control` is a synonym of the canonical `refine` (the loop-owner session).
  */
 export type SessionType = "research" | "refine" | "exec" | "quick";

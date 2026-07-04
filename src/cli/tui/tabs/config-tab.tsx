@@ -19,21 +19,21 @@ export interface ConfigTabProps {
   isActive: boolean;
   prefs: TuiPrefs;
   onChange: (patch: Partial<TuiPrefs>) => void;
-  /** Persiste el namespace (config file que lee NamespaceResolver). */
+  /** Persists the namespace (config file read by NamespaceResolver). */
   onSaveNamespace: (ns: string) => void;
 }
 
-// Tabs ofrecidos como pantalla inicial (Config no se ofrece — nadie arranca ahí).
+// Tabs offered as the initial screen (Config is not offered — nobody starts there).
 const INITIAL_SCREEN_OPTIONS = TABS_LIST.filter((t) => t.id !== "config");
 
-// Controles enfocables, en orden de navegación ↑↓.
+// Focusable controls, in ↑↓ navigation order.
 type Control =
   | { kind: "accent" }
   | { kind: "initialScreen" }
   | { kind: "namespace" }
   | { kind: "host"; id: string };
 
-/** Siguiente índice circular. */
+/** Next index, circular. */
 const cycleIndex = (len: number, current: number, dir: 1 | -1): number =>
   (current + dir + len) % len;
 
@@ -92,7 +92,7 @@ export function ConfigTab({ ctx, isActive, prefs, onChange, onSaveNamespace }: C
     unlock();
   };
 
-  // Navegación (off mientras se edita el namespace → el TextInput captura todo).
+  // Navigation (off while the namespace is being edited → the TextInput captures everything).
   useInput(
     (input, key) => {
       if (key.upArrow) moveUp();
@@ -105,7 +105,7 @@ export function ConfigTab({ ctx, isActive, prefs, onChange, onSaveNamespace }: C
     { isActive: isActive && !editingNs },
   );
 
-  // Esc cancela la edición del namespace.
+  // Esc cancels the namespace edit.
   useInput(
     (_input, key) => {
       if (key.escape) finishEdit();
@@ -201,7 +201,7 @@ export function ConfigTab({ ctx, isActive, prefs, onChange, onSaveNamespace }: C
   );
 }
 
-// ─── Value renderers (presentación + ancho co-localizado) ─────────────────────
+// ─── Value renderers (presentation + width co-located) ───────────────────────
 
 const ACCENT_VALUE_WIDTH = ACCENT_ORDER.length * 2 + 7; // swatches "X " + hex #rrggbb
 
@@ -237,7 +237,7 @@ function InitialScreenValue({ currentId }: { currentId: TabId }) {
   );
 }
 
-/** Estado de un host: etiqueta + color + ancho de render (icono + space + label). */
+/** Host state: label + color + render width (icon + space + label). */
 function hostState(
   backed: boolean,
   enabled: boolean,

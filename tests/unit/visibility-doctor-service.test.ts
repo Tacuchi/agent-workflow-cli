@@ -110,7 +110,7 @@ describe("runVisibilityDoctor", () => {
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
-    // Convención por-máquina: settings.local.json (gitignored), sin settings.json.
+    // Per-machine convention: settings.local.json (gitignored), no settings.json.
     mkdirSync(join(workspace, ".claude"), { recursive: true });
     writeFileSync(
       join(workspace, ".claude", "settings.local.json"),

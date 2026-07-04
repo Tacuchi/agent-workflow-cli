@@ -9,10 +9,10 @@ import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
-// Regression: los 4 export-* delegan la LECTURA de artefactos a session-artifacts,
-// pero el comando solo devolvía counts y el dump real (readSessionArtifacts) era
-// código muerto con un filtro de naming legacy (`session\d{3}-`) que jamás
-// encontraba las sessions del modelo nuevo (`NNN-<slug>-<flow>`).
+// Regression: the 4 export-* commands delegate artifact READING to
+// session-artifacts, but the command only returned counts and the real dump
+// (readSessionArtifacts) was dead code with a legacy naming filter
+// (`session\d{3}-`) that never matched new-model sessions (`NNN-<slug>-<flow>`).
 describe("session-artifacts --dump", () => {
   let workdir: string;
   let ctx: CliContext;

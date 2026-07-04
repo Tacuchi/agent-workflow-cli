@@ -1,10 +1,10 @@
-// Cursor de lista clampeado con navegación ↑↓. Extraído del patrón repetido en
-// los tabs (cursor + up/down + clamp). Reutilizable por cualquier lista del TUI.
+// Clamped list cursor with ↑↓ navigation (cursor + up/down + clamp), reusable
+// by any TUI list.
 
 import { useState } from "react";
 
 export interface ListCursor {
-  /** Índice activo, siempre en [0, count-1] (0 si count=0). */
+  /** Active index, always within [0, count-1] (0 when count=0). */
   cursor: number;
   moveUp: () => void;
   moveDown: () => void;

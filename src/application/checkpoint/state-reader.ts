@@ -28,8 +28,8 @@ export async function extractSessionState(
 ): Promise<SessionState> {
   const folder = sessionPath.split(/[\\/]/).pop() ?? "";
   const parsed = parseSessionFolder(folder);
-  // Sessions are no longer registered in the project block and branches are no
-  // longer tracked here.
+  // Intentionally empty: sessions are not registered in the project block, so
+  // there is no branch tracking at session level.
   const branches: string[] = [];
 
   const tasks = await countTasks(fs, sessionPath);

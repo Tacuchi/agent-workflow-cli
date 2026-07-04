@@ -1,25 +1,23 @@
-// Host registry compartido por toda la TUI.
+// Host registry shared by the whole TUI.
 //
-// Single source of truth para chips, listas, status. Los servicios backend
-// (install/uninstall/cache/detect) usan su propio `InstallTarget`. Desde la
-// ronda multi-host, gemini/opencode/crush tienen HarnessSpec real (registry +
-// MCP writer + detect + install a su skill dir), así que están `backed: true`.
-// Gemini cubre además Antigravity CLI (reusa ~/.gemini/).
+// Single source of truth for chips, lists, status. The backend services
+// (install/uninstall/cache/detect) use their own `InstallTarget`. Gemini also
+// covers Antigravity CLI (it reuses ~/.gemini/).
 //
-// El campo `backed` indica si el host tiene servicio de install/uninstall real.
-// Hosts con `backed: false` se renderizan en la lista pero la acción muestra
-// un toast "host no soportado todavía".
+// `backed` states whether the host has a real install/uninstall service.
+// Hosts with `backed: false` still render in the list, but the action shows a
+// "host not supported yet" toast.
 
 export interface HostMeta {
-  /** id estable usado en data + atajos */
+  /** Stable id used in data + shortcuts. */
   id: string;
-  /** label largo (mostrar en cards / detail panels) */
+  /** Long label (shown in cards / detail panels). */
   name: string;
-  /** glyph de 1 letra para chips compactos */
+  /** 1-letter glyph for compact chips. */
   glyph: string;
-  /** alias corto para textos densos */
+  /** Short alias for dense text. */
   short: string;
-  /** true si install/uninstall/detect ya soportan este host */
+  /** True when install/uninstall/detect already support this host. */
   backed: boolean;
 }
 
