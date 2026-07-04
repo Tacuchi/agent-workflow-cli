@@ -6,8 +6,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import {
+  REPLICA_MARKER_FILENAME,
   canonicalSkillsRoot,
   claudeReplicaRoot,
+  geminiReplicaRoot,
   installSkill,
   listSkills,
   materializeCanonical,
@@ -205,6 +207,56 @@ describe("skills-manager (T3.3-T3.7)", () => {
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("FOREIGN_REPLICA");
     expect(existsSync(join(claudeReplicaRoot(home), "pdf", "SKILL.md"))).toBe(true);
+  });
+
+  it("réplica gemini: install crea COPY con marker en ~/.gemini/skills (agy no lee el ancla ni se garantiza que siga symlinks)", async () => {
+    const dir = await makeSkillDir(root, "pdf");
+    await registerSkill(ctx, { source: dir });
+
+    const result = await installSkill(ctx, "pdf");
+
+    expect(result.ok).toBe(true);
+    const gemini = join(geminiReplicaRoot(home), "pdf");
+    const stat = await ctx.fs.lstat(gemini);
+    expect(stat).toEqual({ type: "dir", isSymlink: false }); // copy, no symlink
+    expect(existsSync(join(gemini, "SKILL.md"))).toBe(true);
+    expect(existsSync(join(gemini, REPLICA_MARKER_FILENAME))).toBe(true);
+    // El mode registrado sigue siendo el de la réplica Claude (symlink): el
+    // badge "(copy)" queda reservado a SU degradación, no al copy by-design.
+    const { registry } = await readSkillsRegistry(ctx);
+    expect(registry.skills.pdf?.mode).toBe("symlink");
+    expect(result.data?.replicas).toEqual([
+      { host: "claude", path: join(claudeReplicaRoot(home), "pdf"), mode: "symlink" },
+      { host: "gemini", path: gemini, mode: "copy" },
+    ]);
+  });
+
+  it("réplica gemini: dir ajeno homónimo (sin marker) bloquea el install y se preserva", async () => {
+    const dir = await makeSkillDir(root, "pdf");
+    await registerSkill(ctx, { source: dir });
+    await makeSkillDir(geminiReplicaRoot(home), "pdf");
+
+    const result = await installSkill(ctx, "pdf");
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("FOREIGN_REPLICA");
+    expect(existsSync(join(geminiReplicaRoot(home), "pdf", "SKILL.md"))).toBe(true);
+    // Nada se materializó a medias.
+    expect(existsSync(join(claudeReplicaRoot(home), "pdf"))).toBe(false);
+  });
+
+  it("uninstall desmonta también la réplica gemini (marker la autentica)", async () => {
+    const dir = await makeSkillDir(root, "pdf");
+    await registerSkill(ctx, { source: dir });
+    await installSkill(ctx, "pdf");
+    const gemini = join(geminiReplicaRoot(home), "pdf");
+    expect(existsSync(gemini)).toBe(true);
+
+    const result = await uninstallSkill(ctx, "pdf");
+
+    expect(result.ok).toBe(true);
+    expect(existsSync(gemini)).toBe(false);
+    expect(existsSync(join(claudeReplicaRoot(home), "pdf"))).toBe(false);
   });
 
   it("update re-fetchea el repo git registrado (staging+swap) y refleja el nuevo contenido", async () => {
@@ -485,9 +537,9 @@ describe("skills-manager (T3.3-T3.7)", () => {
       "alfa-rec:recommended",
       "zeta-rec:recommended",
     ]);
-    expect(list[0]?.replicas).toEqual({ agents: true, claude: true });
-    expect(list[1]?.replicas).toEqual({ agents: true, claude: false });
-    expect(list[2]?.replicas).toEqual({ agents: false, claude: false });
+    expect(list[0]?.replicas).toEqual({ agents: true, claude: true, gemini: true });
+    expect(list[1]?.replicas).toEqual({ agents: true, claude: false, gemini: false });
+    expect(list[2]?.replicas).toEqual({ agents: false, claude: false, gemini: false });
   });
 
   it("unmanaged: fuente desde el lock de skills.sh, ruido ignorado y sin fila recommended duplicada", async () => {

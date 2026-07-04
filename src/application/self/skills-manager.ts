@@ -57,8 +57,8 @@ export interface SkillListItem {
   installedAt?: string;
   description?: string;
   status: SkillStatus;
-  /** Réplicas materializadas: ancla .agents (canónica) y .claude. */
-  replicas: { agents: boolean; claude: boolean };
+  /** Réplicas materializadas: ancla .agents (canónica), .claude y .gemini. */
+  replicas: { agents: boolean; claude: boolean; gemini: boolean };
 }
 
 export interface RegisterInput {
@@ -82,8 +82,11 @@ export interface MaterializeData {
   status: "installed" | "updated" | "reinstalled";
   name: string;
   canonical: string;
+  /** Réplica primaria (Claude) — compat con consumidores previos. */
   replica: string;
   mode: SkillReplicaMode;
+  /** Todas las réplicas por host (claude symlink · gemini copy). */
+  replicas: { host: "claude" | "gemini"; path: string; mode: SkillReplicaMode }[];
   summary: string;
 }
 
@@ -109,6 +112,36 @@ export function canonicalSkillsRoot(home: string): string {
 export function claudeReplicaRoot(home: string): string {
   return join(home, ".claude", "skills");
 }
+
+export function geminiReplicaRoot(home: string): string {
+  return join(home, ".gemini", "skills");
+}
+
+// Marker de propiedad de las réplicas COPY (contraparte del symlink, que se
+// autentica apuntando a nuestra canónica): sin él, un dir real homónimo de
+// otro origen sería indistinguible de nuestra copia y el teardown/reinstall
+// podría pisarlo.
+export const REPLICA_MARKER_FILENAME = ".aw-replica";
+
+// Réplicas por host: los hosts que NO leen el ancla user-level
+// ~/.agents/skills reciben una réplica de cada suelta instalada.
+// - claude: solo lee ~/.claude/skills → symlink (fallback copy sin symlinks,
+//   p.ej. Windows sin Developer Mode).
+// - gemini/Antigravity (agy 1.0.16): tiers Workspace <repo>/.agents/skills ·
+//   Global ~/.gemini/antigravity-cli/skills · Shared ~/.gemini/skills — NO lee
+//   el ancla user-level (field-research 2026-07). Réplica en Shared, modo
+//   SIEMPRE copy: el walker de agy no es verificable (Go filepath.WalkDir no
+//   sigue symlinks de dir por default) — la copia garantiza el descubrimiento.
+interface ReplicaHost {
+  key: "claude" | "gemini";
+  root: (home: string) => string;
+  preferSymlink: boolean;
+}
+
+const REPLICA_HOSTS: readonly ReplicaHost[] = [
+  { key: "claude", root: claudeReplicaRoot, preferSymlink: true },
+  { key: "gemini", root: geminiReplicaRoot, preferSymlink: false },
+];
 
 /**
  * Normaliza la fuente del usuario: URL git (con `#ref`), atajo `owner/repo`
@@ -375,14 +408,18 @@ export async function installSkill(
   const home = ctx.env.homeDir();
   const canonical = join(canonicalSkillsRoot(home), name);
 
-  // Pre-flight ANTES de mutar nada: réplica ajena o colisión de canónica
-  // abortan sin tocar la instalación previa ni el dir ajeno.
-  const replicaState = await inspectReplica(ctx, name, entry.mode);
-  if (replicaState === "foreign") {
-    return fail(
-      "FOREIGN_REPLICA",
-      `ya existe ${join(claudeReplicaRoot(home), name)} y no lo creó este manager — resolvé la colisión a mano`,
-    );
+  // Pre-flight ANTES de mutar nada: réplica ajena (en cualquier host) o
+  // colisión de canónica abortan sin tocar la instalación previa ni el dir ajeno.
+  const replicaStates = new Map<ReplicaHost["key"], Exclude<ReplicaState, "foreign">>();
+  for (const host of REPLICA_HOSTS) {
+    const state = await inspectReplica(ctx, name, entry.mode, host);
+    if (state === "foreign") {
+      return fail(
+        "FOREIGN_REPLICA",
+        `ya existe ${join(host.root(home), name)} y no lo creó este manager — resolvé la colisión a mano`,
+      );
+    }
+    replicaStates.set(host.key, state);
   }
   if (opts.refetch && !entry.installedAt && (await ctx.fs.exists(canonical))) {
     return fail(
@@ -419,7 +456,14 @@ export async function installSkill(
     );
   }
 
-  const replica = await replicateToClaude(ctx, name, replicaState);
+  const replicas: Awaited<ReturnType<typeof replicateToHost>>[] = [];
+  for (const host of REPLICA_HOSTS) {
+    replicas.push(await replicateToHost(ctx, name, replicaStates.get(host.key) ?? "absent", host));
+  }
+  // El mode registrado sigue siendo el de la réplica Claude (la primaria):
+  // el badge "(copy)" de la TUI señala SU degradación (Windows sin symlinks);
+  // la copia gemini es by-design y se autentica por marker, no por mode.
+  const claudeReplica = replicas[0] ?? { path: canonical, mode: "symlink" as const };
 
   // Re-leer antes de escribir: el clone puede tardar y otra invocación pudo
   // tocar el registro en el medio — nunca escribir un snapshot viejo.
@@ -428,7 +472,7 @@ export async function installSkill(
   const current = fresh.registry.skills[name] ?? entry;
   fresh.registry.skills[name] = {
     ...current,
-    mode: replica.mode,
+    mode: claudeReplica.mode,
     ...(opts.refetch ? { installedAt: new Date().toISOString() } : {}),
   };
   await writeSkillsRegistry(ctx, fresh.registry);
@@ -439,9 +483,12 @@ export async function installSkill(
       status: opts.refetch ? "installed" : "reinstalled",
       name,
       canonical,
-      replica: replica.path,
-      mode: replica.mode,
-      summary: `Skill '${name}' materializada en ${canonical} (réplica Claude: ${replica.mode}).`,
+      replica: claudeReplica.path,
+      mode: claudeReplica.mode,
+      replicas: replicas.map((r) => ({ host: r.host, path: r.path, mode: r.mode })),
+      summary: `Skill '${name}' materializada en ${canonical} (réplicas: ${replicas
+        .map((r) => `${r.host} ${r.mode}`)
+        .join(" · ")}).`,
     },
     exitCode: 0,
   };
@@ -553,6 +600,7 @@ export async function listSkills(
   for (const [name, entry] of Object.entries(registry.skills)) {
     const canonical = await ctx.fs.exists(join(canonicalSkillsRoot(home), name));
     const replica = (await ctx.fs.lstat(join(claudeReplicaRoot(home), name))) !== null;
+    const gemini = (await ctx.fs.lstat(join(geminiReplicaRoot(home), name))) !== null;
     const description = seedByName.get(name)?.description;
     items.push({
       name,
@@ -562,7 +610,7 @@ export async function listSkills(
       ...(entry.installedAt ? { installedAt: entry.installedAt } : {}),
       ...(description ? { description } : {}),
       status: canonical ? "installed" : "registered",
-      replicas: { agents: canonical, claude: replica },
+      replicas: { agents: canonical, claude: replica, gemini },
     });
   }
 
@@ -588,11 +636,12 @@ export async function listSkills(
         if (!(await isSkillDir(join(root, entry.name)))) continue;
         unmanaged.add(entry.name);
         const replica = (await ctx.fs.lstat(join(claudeReplicaRoot(home), entry.name))) !== null;
+        const gemini = (await ctx.fs.lstat(join(geminiReplicaRoot(home), entry.name))) !== null;
         items.push({
           name: entry.name,
           source: lockSources[entry.name] ?? "",
           status: "unmanaged",
-          replicas: { agents: true, claude: replica },
+          replicas: { agents: true, claude: replica, gemini },
         });
       }
     } catch {
@@ -612,7 +661,7 @@ export async function listSkills(
       source: s.source,
       description: s.description,
       status: "recommended",
-      replicas: { agents: false, claude: false },
+      replicas: { agents: false, claude: false, gemini: false },
     });
   }
 
@@ -662,55 +711,64 @@ export async function materializeCanonical(
 
 type ReplicaState = "absent" | "ours" | "foreign";
 
-/** Ownership de la réplica: nuestra solo si es un symlink que apunta a NUESTRA
- *  canónica, o un dir real con mode:"copy" registrado. Un symlink del usuario
- *  hacia otro lado es ajeno — jamás se re-apunta. */
+/** Ownership de la réplica en un host: nuestra solo si es un symlink que
+ *  apunta a NUESTRA canónica, un dir real con marker `.aw-replica`, o — legacy
+ *  (copias pre-marker, Windows) — un dir real con mode:"copy" registrado. Un
+ *  symlink del usuario hacia otro lado es ajeno — jamás se re-apunta. */
 async function inspectReplica(
   ctx: CliContext,
   name: string,
   registeredMode: SkillReplicaMode | undefined,
+  host: ReplicaHost,
 ): Promise<ReplicaState> {
   const home = ctx.env.homeDir();
-  const replica = join(claudeReplicaRoot(home), name);
+  const replicaRoot = host.root(home);
+  const replica = join(replicaRoot, name);
   const existing = await ctx.fs.lstat(replica);
   if (!existing) return "absent";
   if (existing.isSymlink) {
     try {
       const target = await readlink(replica);
       const canonical = join(canonicalSkillsRoot(home), name);
-      return resolve(join(claudeReplicaRoot(home)), target) === resolve(canonical)
-        ? "ours"
-        : "foreign";
+      return resolve(replicaRoot, target) === resolve(canonical) ? "ours" : "foreign";
     } catch {
       return "foreign";
     }
   }
-  return registeredMode === "copy" ? "ours" : "foreign";
+  if (await ctx.fs.exists(join(replica, REPLICA_MARKER_FILENAME))) return "ours";
+  // Legacy: copias del host claude previas al marker se autenticaban solo por
+  // el mode registrado.
+  return host.key === "claude" && registeredMode === "copy" ? "ours" : "foreign";
 }
 
-/** Materializa la réplica (el pre-flight ya garantizó que no es ajena). */
-async function replicateToClaude(
+/** Materializa la réplica en un host (el pre-flight ya garantizó que no es ajena). */
+async function replicateToHost(
   ctx: CliContext,
   name: string,
   state: Exclude<ReplicaState, "foreign">,
-): Promise<{ path: string; mode: SkillReplicaMode }> {
+  host: ReplicaHost,
+): Promise<{ host: ReplicaHost["key"]; path: string; mode: SkillReplicaMode }> {
   const home = ctx.env.homeDir();
   const canonical = join(canonicalSkillsRoot(home), name);
-  const replica = join(claudeReplicaRoot(home), name);
+  const replicaRoot = host.root(home);
+  const replica = join(replicaRoot, name);
 
   if (state === "ours") await ctx.fs.remove(replica);
-  await ctx.fs.mkdirp(claudeReplicaRoot(home));
-  try {
-    await ctx.fs.symlink(canonical, replica);
-    return { path: replica, mode: "symlink" };
-  } catch {
-    // Sin symlinks (Windows sin Developer Mode / EPERM) → copia real.
-    await copyDir(canonical, replica);
-    return { path: replica, mode: "copy" };
+  await ctx.fs.mkdirp(replicaRoot);
+  if (host.preferSymlink) {
+    try {
+      await ctx.fs.symlink(canonical, replica);
+      return { host: host.key, path: replica, mode: "symlink" };
+    } catch {
+      // Sin symlinks (Windows sin Developer Mode / EPERM) → copia real.
+    }
   }
+  await copyDir(canonical, replica);
+  await ctx.fs.writeText(join(replica, REPLICA_MARKER_FILENAME), `${canonical}\n`);
+  return { host: host.key, path: replica, mode: "copy" };
 }
 
-/** Desmonta réplica y canónica respetando ownership; devuelve warning si algo
+/** Desmonta réplicas y canónica respetando ownership; devuelve warning si algo
  *  ajeno homónimo se conservó. */
 async function teardownSkill(
   ctx: CliContext,
@@ -720,11 +778,13 @@ async function teardownSkill(
   const home = ctx.env.homeDir();
   const warnings: string[] = [];
 
-  const replica = join(claudeReplicaRoot(home), name);
-  const replicaState = await inspectReplica(ctx, name, entry.mode);
-  if (replicaState === "ours") await ctx.fs.remove(replica);
-  else if (replicaState === "foreign") {
-    warnings.push(`se conservó ${replica}: existe pero no lo creó este manager`);
+  for (const host of REPLICA_HOSTS) {
+    const replica = join(host.root(home), name);
+    const replicaState = await inspectReplica(ctx, name, entry.mode, host);
+    if (replicaState === "ours") await ctx.fs.remove(replica);
+    else if (replicaState === "foreign") {
+      warnings.push(`se conservó ${replica}: existe pero no lo creó este manager`);
+    }
   }
 
   const canonical = join(canonicalSkillsRoot(home), name);

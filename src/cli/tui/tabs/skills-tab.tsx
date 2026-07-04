@@ -119,7 +119,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
           id: "install",
           action: {
             name: "Install",
-            description: "Register + install (canonical + Claude replica).",
+            description: "Register + install (canonical + host replicas: Claude, Gemini).",
           },
         },
       ];
@@ -128,7 +128,10 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       return [
         {
           id: "install",
-          action: { name: "Install", description: "Materialize canonical + Claude replica." },
+          action: {
+            name: "Install",
+            description: "Materialize canonical + host replicas (Claude, Gemini).",
+          },
         },
         {
           id: "remove",
@@ -154,7 +157,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         : []),
       {
         id: "reinstall",
-        action: { name: "Reinstall", description: "Repair the replica from the canonical." },
+        action: { name: "Reinstall", description: "Repair the host replicas from the canonical." },
       },
       {
         id: "uninstall",
@@ -581,7 +584,7 @@ function detailMeta(item: SkillListItem, home: string): string {
   const canonical = `${canonicalSkillsRoot(home)}/${item.name}`.replace(home, "~");
   const replicas = `agents ${item.replicas.agents ? "✓" : "·"} · claude ${item.replicas.claude ? "✓" : "·"}${
     item.mode === "copy" ? " (copy)" : ""
-  }`;
+  } · gemini ${item.replicas.gemini ? "✓" : "·"}`;
   if (item.status === "unmanaged") {
     return `${source === "" ? "unknown source" : source}\n${canonical}\n${replicas}\nInstalled outside the registry (e.g. skills.sh) — not operable from here.`;
   }
