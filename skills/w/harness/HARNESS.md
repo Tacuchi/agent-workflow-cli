@@ -50,7 +50,7 @@ Concrete mechanism per harness (**Jul-2026**, verified against official docs; `~
 | Capability | Claude Code | Codex | Gemini / Antigravity | OpenCode | Crush | Warp / Oz | Generic |
 |---|---|---|---|---|---|---|---|
 | command-invocation | `.claude/commands/` (slash) | skills only (`$` mention; no commands dir, prompts removed) | skills only in agy (system slash commands; `.gemini/commands/*.toml` = legacy Gemini CLI) | `.opencode/command/` | `.crush/commands` (palette) + user-invocable skills | skills as `/name` | text |
-| procedure-loading (skills) | `SKILL.md` `.claude/skills` | `SKILL.md` `.agents/skills` | `SKILL.md` (agentskills) | `SKILL.md` `.opencode`+`.claude`+`.agents` | `SKILL.md` `.agents`+`.crush`+`.claude` | `SKILL.md` `.agents`+`.warp`+`.claude` | read-and-follow `.md` |
+| procedure-loading (skills) | `SKILL.md` `.claude/skills` | `SKILL.md` `.agents/skills` | `SKILL.md` (agentskills) | `SKILL.md` `.opencode`+`.claude`+`.agents` | `SKILL.md` `~/.config/crush`+`.agents`+`.claude` (`.crush/skills` is project-only) | `SKILL.md` `.agents`+`.warp`+`.claude` | read-and-follow `.md` |
 | structured-choice | `AskUserQuestion` (**main-agent only**) | — | — | — | — | — | numbered markdown |
 | compaction | `/compact` | Pre/PostCompact hooks | ~ | `session.compacted` | ~ | ~ | CHECKPOINT + resume |
 | subagent-dispatch | `Task` (parallel) | `SubagentStart` / agents | agents (`.gemini/agents`) | `.opencode/agent/*.md` | ~ | ~ (cloud agents) | inline |

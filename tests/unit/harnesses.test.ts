@@ -22,7 +22,7 @@ describe("HARNESSES registry — shape invariants", () => {
   it("codex expone skills en .agents/skills (estándar abierto, no solo .codex/skills)", () => {
     const codex = HARNESSES.find((h) => h.id === "codex");
     expect(codex?.skillsDirs).toContain(".agents/skills");
-    // hooks bundled desde hooks/hooks.json en la raíz del plugin (env PLUGIN_ROOT)
+    // hooks bundled from hooks/hooks.json at the plugin root (PLUGIN_ROOT env)
     expect(codex?.pluginHooksDir).toBe("hooks");
   });
 
@@ -43,12 +43,18 @@ describe("HARNESSES registry — shape invariants", () => {
     expect(oc?.skillsDirs).toContain(".claude/skills");
   });
 
-  it("crush: mcpHostId + crush.json + lee .agents/.crush/.claude skills", () => {
+  it("crush: mcpHostId + crush.json + skills XDG (~/.config/crush) primero; .crush/skills solo proyecto", () => {
     const crush = HARNESSES.find((h) => h.id === "crush");
     expect(crush?.mcpHostId).toBe("crush");
     expect(crush?.installTarget).toBe("crush");
     expect(crush?.projectMcpPath).toBe("crush.json");
-    expect(crush?.skillsDirs).toContain(".agents/skills");
+    expect(crush?.skillsDirs).toEqual([
+      ".config/crush/skills",
+      ".config/agents/skills",
+      ".agents/skills",
+      ".crush/skills",
+      ".claude/skills",
+    ]);
   });
 
   it("cada harness tiene envMarkers no vacío", () => {

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
+import { TARGET_ROOTS } from "../../src/application/self/install-targets.js";
 import { selfUninstallSkill } from "../../src/application/self/uninstall-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -105,7 +106,9 @@ async function seedTarget(
   target: "claude" | "codex" | "agents" | "gemini" | "opencode" | "crush",
   skillName: string,
 ): Promise<string> {
-  const path = join(home, `.${target}`, "skills", skillName);
+  // Derive from TARGET_ROOTS so the seed can't drift from the installer
+  // (crush's root is XDG, not `.crush`).
+  const path = join(home, ...TARGET_ROOTS[target], skillName);
   await mkdir(path, { recursive: true });
   await writeFile(join(path, "SKILL.md"), `---\nname: ${skillName}\n---\nbody\n`, "utf8");
   return path;

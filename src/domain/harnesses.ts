@@ -181,7 +181,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // Crush (charmbracelet/crush). Config `crush.json` ($schema charm.land/crush.json);
     // MCP under `mcp` (type "stdio"). Reads .agents/skills + .claude/skills. Hooks are
     // preliminary; enforcement via `allowed_tools` allowlist — Phase 3.
-    // Global config verificado 2026-07 (README charmbracelet/crush): Unix XDG,
+    // Global config verified 2026-07 (README charmbracelet/crush): Unix XDG,
     // Windows %LOCALAPPDATA%\crush\crush.json (override CRUSH_GLOBAL_CONFIG).
     id: "crush",
     envMarkers: ["CRUSH", "CRUSH_CONFIG"],
@@ -194,7 +194,16 @@ export const HARNESSES: readonly HarnessSpec[] = [
     projectMcpPath: "crush.json",
     pluginManifest: null,
     pluginHooksDir: null,
-    skillsDirs: [".agents/skills", ".crush/skills", ".claude/skills"],
+    // Global roots are XDG (~/.config/crush + ~/.config/agents); .crush/skills
+    // is PROJECT-relative only (crush v0.81.0 GlobalSkillsDirs/projectSkillSubdirs).
+    // The resolver applies each dir under cwd AND home, so both scopes stay covered.
+    skillsDirs: [
+      ".config/crush/skills",
+      ".config/agents/skills",
+      ".agents/skills",
+      ".crush/skills",
+      ".claude/skills",
+    ],
     installTarget: "crush",
   },
 ] as const satisfies readonly HarnessSpec[];

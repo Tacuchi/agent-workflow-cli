@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -9,16 +9,18 @@ import {
   LEGACY_SKILL_NAMES,
   SKILL_DIR_NAME,
   TARGET_ROOTS,
+  isOwnedBundleDir,
   isOwnedSynthesizedDir,
+  removeDirIfEmpty,
 } from "./install-skill.js";
+import { COMMAND_SKILLS_HOSTS, LEGACY_SKILL_ROOTS_BY_TARGET } from "./install-targets.js";
 
-// Hosts que reciben skills sintetizadas `w-<command>` en install (ver
-// install-skill.ts COMMAND_SKILLS_HOSTS). El uninstall las limpia SOLO con
-// propiedad verificada (marker del wrapper o fingerprint del flatten ≤v18) —
-// los roots son namespaces compartidos (ancla ~/.agents/skills, sueltas):
-// jamás se borra un dir ajeno por prefijo. `agent-workflow-` cubre el
-// modelo pre-rename.
-const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["codex", "warp", "oz", "gemini"]);
+// Synthesized `w-<command>` skills are removed for the COMMAND_SKILLS_HOSTS
+// (shared value from install-targets.ts — install/uninstall symmetric by
+// construction) ONLY with verified ownership (wrapper marker or the ≤v18
+// flatten fingerprint) — the roots are shared namespaces (~/.agents/skills
+// anchor, loose skills): never delete a foreign dir by prefix alone.
+// `agent-workflow-` covers the pre-rename model.
 const SYNTHESIZED_SKILL_PREFIXES = ["w-", "agent-workflow-"] as const;
 
 export type UninstallTargetChoice = InstallTarget | "all";
@@ -51,10 +53,10 @@ const ALL_TARGETS: readonly InstallTarget[] = [
 ];
 const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"];
 
-const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
+export const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
   claude: ".claude/commands/w",
-  // codex: `.codex/commands/w` fue escrito por ≤v18 pero Codex nunca lo leyó;
-  // se limpia siempre igual (dir inerte nuestro).
+  // codex: `.codex/commands/w` was written by ≤v18 but Codex never read it;
+  // still cleaned every time (inert dir of ours).
   codex: ".codex/commands/w",
   warp: null,
   oz: null,
@@ -240,6 +242,25 @@ async function removeSkill(
       }
     }
   }
+  for (const legacyRoot of LEGACY_SKILL_ROOTS_BY_TARGET[target]) {
+    const root = join(home, ...legacyRoot);
+    const candidates = [SKILL_DIR_NAME, ...(includeLegacy ? LEGACY_SKILL_NAMES : [])];
+    for (const name of candidates) {
+      const dir = join(root, name);
+      // Legacy roots can be shared namespaces: only the bundle fingerprint
+      // (or the pre-rename names under --legacy) authorizes deletion.
+      if (name === SKILL_DIR_NAME && !(await isOwnedBundleDir(dir, ctx))) continue;
+      if (!(await ctx.fs.exists(dir))) continue;
+      if (!dryRun) await rm(dir, { recursive: true, force: true });
+      out.push({
+        target,
+        kind: name === SKILL_DIR_NAME ? "skill" : "legacy-skill",
+        path: dir,
+        status: dryRun ? "dry-run" : "removed",
+      });
+    }
+    if (!dryRun) await removeDirIfEmpty(root);
+  }
   return out;
 }
 
@@ -258,7 +279,10 @@ async function removeUserCommands(
     if (relpath === null) return;
     const dir = join(home, relpath);
     if (!(await ctx.fs.exists(dir))) return;
-    if (!dryRun) await rm(dir, { recursive: true, force: true });
+    if (!dryRun) {
+      await rm(dir, { recursive: true, force: true });
+      await removeDirIfEmpty(dirname(dir));
+    }
     out.push({ target, kind, path: dir, status: dryRun ? "dry-run" : "removed" });
   };
   await removeDir(USER_COMMANDS_RELPATH_BY_TARGET[target], "user-commands");

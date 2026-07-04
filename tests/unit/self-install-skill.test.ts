@@ -125,10 +125,10 @@ async function makeFakeRepo(root: string, withFrontmatter = true): Promise<void>
   await writeFile(join(root, ".git/HEAD"), "ref: refs/heads/main\n", "utf8");
 }
 
-// Fixture de comandos del bundle: dos commands/*.md con el binding Claude
-// (frontmatter description/argument-hint/allowed-tools) + referencias
-// bundle-relativas `../…`, un README.md que NUNCA debe instalarse como
-// comando, y el árbol de loops (LOOP.md — no SKILL.md, no indexable).
+// Bundle commands fixture: two commands/*.md with the Claude binding
+// (frontmatter description/argument-hint/allowed-tools) + bundle-relative
+// `../…` references, a README.md that must NEVER be installed as a command,
+// and the loops tree (LOOP.md — not SKILL.md, not indexable).
 const QUICK_COMMAND = `---
 description: Lightweight shortcut for scoped work. Starts quick-loop.
 argument-hint: <prompt with the scoped task>
@@ -222,7 +222,9 @@ describe("selfInstallSkill", () => {
       expect(codexDest?.dest).toBe(join(home, ".codex/skills", SKILL_DIR_NAME));
       expect(opencodeDest?.dest).toBe(join(home, ".opencode/skills", SKILL_DIR_NAME));
       expect(geminiDest?.dest).toBe(join(home, ".gemini/skills", SKILL_DIR_NAME));
-      expect(crushDest?.dest).toBe(join(home, ".crush/skills", SKILL_DIR_NAME));
+      // Crush global skills root is XDG (~/.config/crush/skills) on every OS;
+      // ~/.crush/skills is a dead root crush never reads (v0.81.0 load.go).
+      expect(crushDest?.dest).toBe(join(home, ".config/crush/skills", SKILL_DIR_NAME));
       expect(claudeDest?.overwrote_existing).toBe(false);
       expect(codexDest?.overwrote_existing).toBe(false);
       expect(claudeDest?.files_copied).toBeGreaterThan(0);
@@ -299,22 +301,22 @@ describe("selfInstallSkill", () => {
     await seedCommandsFixture(source);
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
-    // Resto del modelo anterior (flatten de loops ≤v18) que debe barrerse:
-    // fingerprint = dir `w-<name>` con frontmatter `name: <name>`.
+    // Leftover of the previous model (loop flatten ≤v18) that must be swept:
+    // fingerprint = dir `w-<name>` with frontmatter `name: <name>`.
     await mkdir(join(home, ".codex/skills/w-quick-loop"), { recursive: true });
     await writeFile(
       join(home, ".codex/skills/w-quick-loop/SKILL.md"),
       "---\nname: quick-loop\ndescription: stale flatten copy\n---\n",
       "utf8",
     );
-    // Skill AJENA cuyo nombre solo comparte el prefijo (name == dir): se preserva.
+    // FOREIGN skill whose name merely shares the prefix (name == dir): preserved.
     await mkdir(join(home, ".codex/skills/w-scraper"), { recursive: true });
     await writeFile(
       join(home, ".codex/skills/w-scraper/SKILL.md"),
       "---\nname: w-scraper\ndescription: user skill\n---\n",
       "utf8",
     );
-    // Dir de comandos inerte escrito por ≤v18 — Codex nunca lo leyó; se limpia.
+    // Inert commands dir written by ≤v18 — Codex never read it; cleaned up.
     await mkdir(join(home, ".codex/commands/w"), { recursive: true });
     await writeFile(join(home, ".codex/commands/w/quick.md"), "stale\n", "utf8");
 
@@ -323,9 +325,9 @@ describe("selfInstallSkill", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       const dest = result.data.dests[0];
-      expect(dest?.command_skills).toBe(2); // quick + status; README excluido
+      expect(dest?.command_skills).toBe(2); // quick + status; README excluded
       expect(dest?.command_skills_warnings).toBeUndefined();
-      // No hay commands dir en Codex: instala skills sintetizadas y lo explica.
+      // Codex has no commands dir: installs synthesized skills and says so.
       expect(dest?.user_commands_dest).toBeUndefined();
       expect(dest?.user_commands_warning).toContain("skill-as-command");
       expect(dest?.cleaned_legacy).toContain(join(home, ".codex/commands/w"));
@@ -334,19 +336,19 @@ describe("selfInstallSkill", () => {
     const synth = await readFile(join(home, ".codex/skills/w-quick/SKILL.md"), "utf8");
     expect(synth).toContain("name: w-quick");
     expect(synth).toContain("Lightweight shortcut for scoped work");
-    // Referencia bundle-relativa reescrita para resolver desde la skill hermana.
+    // Bundle-relative reference rewritten to resolve from the sibling skill.
     expect(synth).toContain("../w/loops/quick-loop/LOOP.md");
     expect(synth).not.toContain("`../loops/");
-    // El wrapper explica el binding de $ARGUMENTS para hosts sin sustitución.
+    // The wrapper explains the $ARGUMENTS binding for hosts without substitution.
     expect(synth).toContain("$ARGUMENTS");
-    // Barrido con propiedad: el flatten viejo desaparece, la skill ajena
-    // `w-scraper` se preserva; el bundle queda intacto.
+    // Ownership-aware sweep: the old flatten disappears, the foreign skill
+    // `w-scraper` is preserved; the bundle stays intact.
     expect(await fs.exists(join(home, ".codex/skills/w-quick-loop"))).toBe(false);
     expect(await fs.exists(join(home, ".codex/skills/w-scraper"))).toBe(true);
     expect(await fs.exists(join(home, ".codex/skills/w/loops/quick-loop/LOOP.md"))).toBe(true);
     expect(await fs.exists(join(home, ".codex/commands/w"))).toBe(false);
 
-    // Re-instalar barre y regenera los wrappers propios (marker) sin tocar lo ajeno.
+    // Re-installing sweeps and regenerates our own wrappers (marker) without touching foreign ones.
     const again = await selfInstallSkill(
       buildArgs({ from: source, target: "codex" }, ["--force"]),
       ctx,
@@ -394,9 +396,9 @@ describe("selfInstallSkill", () => {
     expect(gemini.ok).toBe(true);
     expect(await fs.exists(join(home, ".warp/skills/w-quick/SKILL.md"))).toBe(true);
     expect(await fs.exists(join(home, ".agents/skills/w-status/SKILL.md"))).toBe(true);
-    // Antigravity (agy) no lee ningún commands dir: su superficie de comandos
-    // son las skills sintetizadas en ~/.gemini/skills (tier "Shared"); el TOML
-    // queda solo como compat del Gemini CLI legacy.
+    // Antigravity (agy) reads no commands dir: its command surface is the
+    // synthesized skills in ~/.gemini/skills (tier "Shared"); the TOML remains
+    // only as legacy Gemini CLI compat.
     expect(await fs.exists(join(home, ".gemini/skills/w-quick/SKILL.md"))).toBe(true);
     expect(await fs.exists(join(home, ".gemini/commands/w/quick.toml"))).toBe(true);
   });
@@ -411,7 +413,7 @@ describe("selfInstallSkill", () => {
       expect(result.ok).toBe(true);
     }
 
-    // Gemini: /w:quick vía ~/.gemini/commands/w/quick.toml, $ARGUMENTS → {{args}}.
+    // Gemini: /w:quick via ~/.gemini/commands/w/quick.toml, $ARGUMENTS → {{args}}.
     const toml = await readFile(join(home, ".gemini/commands/w/quick.toml"), "utf8");
     expect(toml).toContain(
       'description = "Lightweight shortcut for scoped work. Starts quick-loop."',
@@ -419,30 +421,157 @@ describe("selfInstallSkill", () => {
     expect(toml).toContain('prompt = """');
     expect(toml).toContain("{{args}}");
     expect(toml).not.toContain("$ARGUMENTS");
-    // Escapes TOML: comillas y backslash de la description sobreviven.
+    // TOML escapes: the description's quotes and backslash survive.
     const statusToml = await readFile(join(home, ".gemini/commands/w/status.toml"), "utf8");
     expect(statusToml).toContain(
       'description = "Read-only dashboard with \\"quotes\\" and \\\\backslash."',
     );
-    // Y en el CUERPO (multi-line basic string): backslash escapado y toda
-    // corrida de `"""` neutralizada para no cerrar el string.
+    // And in the BODY (multi-line basic string): backslash escaped and every
+    // run of `"""` neutralized so it can't close the string.
     expect(statusToml).toContain("path C:\\\\temp");
     expect(statusToml).toContain('""\\"triple""\\"');
 
-    // OpenCode: /w/quick vía ~/.opencode/command/w/quick.md — solo description
-    // en el frontmatter (sin claves del binding Claude), $ARGUMENTS nativo.
+    // OpenCode: /w/quick via ~/.opencode/command/w/quick.md — description only
+    // in the frontmatter (no Claude-binding keys), native $ARGUMENTS.
     const oc = await readFile(join(home, ".opencode/command/w/quick.md"), "utf8");
     expect(oc).toContain("description: Lightweight shortcut");
     expect(oc).not.toContain("allowed-tools");
     expect(oc).toContain("$ARGUMENTS");
 
-    // Crush: user:w:quick vía ~/.crush/commands/w/quick.md — sin frontmatter.
+    // Crush: user:w:quick via ~/.crush/commands/w/quick.md — no frontmatter.
     const crush = await readFile(join(home, ".crush/commands/w/quick.md"), "utf8");
     expect(crush.startsWith("# quick — trampoline")).toBe(true);
     expect(crush).not.toContain("---");
     expect(crush).toContain("$ARGUMENTS");
-    // README.md nunca se instala como comando.
+    // README.md is never installed as a command.
     expect(await fs.exists(join(home, ".crush/commands/w/README.md"))).toBe(false);
+  });
+
+  it("claude: writes /w:* wrappers to ~/.claude/commands/w as-authored (claude-md)", async () => {
+    await seedCommandsFixture(source);
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "claude" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    // The claude-md format is a passthrough: byte-identical to the bundle source,
+    // Claude-binding frontmatter (description/argument-hint/allowed-tools) intact.
+    const quick = await readFile(join(home, ".claude/commands/w/quick.md"), "utf8");
+    expect(quick).toBe(QUICK_COMMAND);
+    expect(await fs.exists(join(home, ".claude/commands/w/status.md"))).toBe(true);
+    expect(await fs.exists(join(home, ".claude/commands/w/README.md"))).toBe(false);
+  });
+
+  it("crush: installs to ~/.config/crush/skills and migrates the dead ~/.crush/skills root (ownership-verified)", async () => {
+    await seedCommandsFixture(source);
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    // ≤v19.1.0 leftovers in the root crush never reads: our bundle (carries the
+    // fingerprint: SKILL.md `name: w` + harness manual) next to a FOREIGN skill.
+    const legacyRoot = join(home, ".crush/skills");
+    await mkdir(join(legacyRoot, "w", "harness"), { recursive: true });
+    await writeFile(
+      join(legacyRoot, "w", "SKILL.md"),
+      "---\nname: w\ndescription: bundle\n---\n",
+      "utf8",
+    );
+    await writeFile(join(legacyRoot, "w", "harness", "HARNESS.md"), "# harness\n", "utf8");
+    await mkdir(join(legacyRoot, "someones-w-skill"), { recursive: true });
+    await writeFile(
+      join(legacyRoot, "someones-w-skill", "SKILL.md"),
+      "---\nname: someones-w-skill\ndescription: foreign\n---\n",
+      "utf8",
+    );
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "crush" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(join(home, ".config/crush/skills", SKILL_DIR_NAME, "SKILL.md"))).toBe(
+      true,
+    );
+    // Owned legacy bundle migrated away; the foreign dir has no fingerprint and survives.
+    expect(await fs.exists(join(legacyRoot, "w"))).toBe(false);
+    expect(await fs.exists(join(legacyRoot, "someones-w-skill", "SKILL.md"))).toBe(true);
+  });
+
+  it("crush: migrates the pre-v19 bundle form (name: workflow + harness/SKILL.md) from the dead root", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    // v14.5–v18 shipped `name: workflow` and harness/SKILL.md — both renamed in v19.
+    const legacyBundle = join(home, ".crush/skills/w");
+    await mkdir(join(legacyBundle, "harness"), { recursive: true });
+    await writeFile(
+      join(legacyBundle, "SKILL.md"),
+      "---\nname: workflow\ndescription: old bundle\n---\n",
+      "utf8",
+    );
+    await writeFile(join(legacyBundle, "harness/SKILL.md"), "# old harness manual\n", "utf8");
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "crush" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(legacyBundle)).toBe(false);
+    expect(await fs.exists(join(home, ".crush/skills"))).toBe(false);
+  });
+
+  it("crush: a look-alike `w` without the bundle manual survives the install migration", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    const lookAlike = join(home, ".crush/skills/w");
+    await mkdir(lookAlike, { recursive: true });
+    await writeFile(
+      join(lookAlike, "SKILL.md"),
+      "---\nname: w\ndescription: user's own\n---\n",
+      "utf8",
+    );
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "crush" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(join(lookAlike, "SKILL.md"))).toBe(true);
+  });
+
+  it("crush: pre-rename names in the dead root are swept and the emptied root is reported", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    const legacyRoot = join(home, ".crush/skills");
+    await mkdir(join(legacyRoot, "agent-workflow"), { recursive: true });
+    await writeFile(join(legacyRoot, "agent-workflow/SKILL.md"), "# pre-rename\n", "utf8");
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "crush" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(legacyRoot)).toBe(false);
+    if (result.ok && result.data) {
+      expect(result.data.dests[0]?.cleaned_legacy).toContain(legacyRoot);
+    }
+  });
+
+  it("codex: drops the inert ~/.codex/commands parent when the legacy w/ cleanup leaves it empty", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    await mkdir(join(home, ".codex/commands/w"), { recursive: true });
+    await writeFile(join(home, ".codex/commands/w/quick.md"), "# stale ≤v18 wrapper\n", "utf8");
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "codex" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(join(home, ".codex/commands"))).toBe(false);
+  });
+
+  it("codex: keeps ~/.codex/commands when the user has own content next to the legacy w/", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    await mkdir(join(home, ".codex/commands/w"), { recursive: true });
+    await writeFile(join(home, ".codex/commands/w/quick.md"), "# stale ≤v18 wrapper\n", "utf8");
+    await writeFile(join(home, ".codex/commands/keep.md"), "# user file\n", "utf8");
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "codex" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(join(home, ".codex/commands/w"))).toBe(false);
+    expect(await fs.exists(join(home, ".codex/commands/keep.md"))).toBe(true);
   });
 
   it("--target=oz installs only to ~/.agents/skills/", async () => {

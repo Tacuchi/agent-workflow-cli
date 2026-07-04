@@ -310,3 +310,96 @@ describe("Doctrine guards — G3 · language policy (English doctrine)", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+// G8 — multi-host packaging contract: the installer's data tables and the
+// HARNESS.md "Command packaging" doc must describe the same reality. A path
+// typo here ships silently (hosts just don't list the commands), so the
+// tables are pinned literally and cross-checked against the doctrine.
+describe("doctrine guards — G8 multi-host packaging contract", () => {
+  it("TARGET_ROOTS pins every host's skill root (crush = XDG, its only global root)", async () => {
+    const { TARGET_ROOTS } = await import("../../src/application/self/install-targets.js");
+    expect(TARGET_ROOTS).toEqual({
+      claude: [".claude", "skills"],
+      codex: [".codex", "skills"],
+      agents: [".agents", "skills"],
+      warp: [".warp", "skills"],
+      oz: [".agents", "skills"],
+      gemini: [".gemini", "skills"],
+      opencode: [".opencode", "skills"],
+      crush: [".config", "crush", "skills"],
+    });
+  });
+
+  it("user-command wrapper relpaths agree between install and uninstall (codex asymmetry is the inert ≤v18 cleanup)", async () => {
+    const { USER_COMMANDS_BY_TARGET } = await import("../../src/application/self/install-skill.js");
+    const { USER_COMMANDS_RELPATH_BY_TARGET } = await import(
+      "../../src/application/self/uninstall.js"
+    );
+    const installRelpaths = Object.fromEntries(
+      Object.entries(USER_COMMANDS_BY_TARGET).map(([t, spec]) => [t, spec?.relpath ?? null]),
+    );
+    expect(installRelpaths).toEqual({
+      claude: ".claude/commands/w",
+      codex: null,
+      warp: null,
+      oz: null,
+      agents: null,
+      gemini: ".gemini/commands/w",
+      opencode: ".opencode/command/w",
+      crush: ".crush/commands/w",
+    });
+    expect(USER_COMMANDS_RELPATH_BY_TARGET).toEqual({
+      ...installRelpaths,
+      // Written by ≤v18 under a false assumption, never read by Codex —
+      // uninstall keeps clearing it although install no longer writes it.
+      codex: ".codex/commands/w",
+    });
+  });
+
+  it("HARNESS.md Command packaging table matches the installer tables (paths + invocation syntax)", async () => {
+    const harness = await readRel("harness/HARNESS.md");
+    const packaging = harness.slice(harness.indexOf("## Command packaging"));
+    for (const expected of [
+      "`~/.claude/commands/w/<cmd>.md`",
+      "`~/.codex/skills/w-<cmd>/SKILL.md`",
+      "`$w-<cmd>` mention",
+      "`~/.gemini/skills/w-<cmd>/SKILL.md`",
+      "`~/.gemini/commands/w/<cmd>.toml`",
+      "`~/.opencode/command/w/<cmd>.md`",
+      "`/w/<cmd>`",
+      "`~/.crush/commands/w/<cmd>.md`",
+      "palette `user:w:<cmd>`",
+      "`/w-<cmd>`",
+    ]) {
+      expect(packaging, expected).toContain(expected);
+    }
+  });
+});
+
+// G8b — the roots the CLI writes must be roots the host reads. clean-legacy's
+// scan table declares "dirs each host actually READS from"; if it misses the
+// install root (or a legacy root we migrate away from), `self clean-legacy`
+// silently skips the CLI's own dirs — the v14.5.1 lesson, table edition.
+describe("doctrine guards — G8b scan/install root containment", () => {
+  it("every target's install root and legacy roots are scanned by clean-legacy", async () => {
+    const { TARGET_ROOTS, LEGACY_SKILL_ROOTS_BY_TARGET } = await import(
+      "../../src/application/self/install-targets.js"
+    );
+    const { LEGACY_SCAN_PATHS_BY_TARGET } = await import(
+      "../../src/application/self/clean-legacy.js"
+    );
+    const asKey = (segments: readonly string[]) => segments.join("/");
+    for (const target of Object.keys(TARGET_ROOTS) as (keyof typeof TARGET_ROOTS)[]) {
+      const scanned = new Set(LEGACY_SCAN_PATHS_BY_TARGET[target].map(asKey));
+      expect(scanned, `${target}: install root scanned`).toContain(asKey(TARGET_ROOTS[target]));
+      for (const legacy of LEGACY_SKILL_ROOTS_BY_TARGET[target]) {
+        expect(scanned, `${target}: legacy root scanned`).toContain(asKey(legacy));
+      }
+    }
+  });
+
+  it("HARNESS.md capability matrix reflects crush's XDG skills root", async () => {
+    const harness = await readRel("harness/HARNESS.md");
+    expect(harness).toContain("`~/.config/crush`");
+  });
+});

@@ -9,7 +9,7 @@ import type { InstallTarget } from "./install-skill.js";
 // Codex v0.133.0+ reads from `~/.codex/skills/` AND `~/.agents/skills/`, so
 // `clean-legacy --target codex` must scan both. Warp historically read from
 // multiple dirs (see HARNESSES.skillsDirs in domain/harnesses.ts).
-const LEGACY_SCAN_PATHS_BY_TARGET: Record<InstallTarget, readonly (readonly string[])[]> = {
+export const LEGACY_SCAN_PATHS_BY_TARGET: Record<InstallTarget, readonly (readonly string[])[]> = {
   claude: [[".claude", "skills"]],
   codex: [
     [".codex", "skills"],
@@ -33,9 +33,13 @@ const LEGACY_SCAN_PATHS_BY_TARGET: Record<InstallTarget, readonly (readonly stri
     [".claude", "skills"],
   ],
   crush: [
+    // Global read roots are XDG (crush v0.81.0 GlobalSkillsDirs).
+    [".config", "crush", "skills"],
+    [".config", "agents", "skills"],
     [".agents", "skills"],
-    [".crush", "skills"],
     [".claude", "skills"],
+    // Dead root ≤v19.1 installs wrote; still scanned for leftovers.
+    [".crush", "skills"],
   ],
 };
 

@@ -38,7 +38,7 @@ agent-workflow self detect-hosts                # which hosts are present + alre
 agent-workflow self install --target claude --dry-run
 ```
 
-By default the CLI clears the target host's plugin cache before installing (opt out with `--keep-cache`) and removes legacy artifacts from a prior `agent-workflow`-named install — the old SKILL and the stale `/agent-workflow:*` slash commands (keep them with `--keep-legacy`).
+By default the CLI clears the target host's plugin cache before installing (opt out with `--keep-cache`) and removes legacy artifacts from prior installs — the old `agent-workflow`-named SKILL, the stale `/agent-workflow:*` slash commands, the inert `~/.codex/commands/w` dir ≤v18 wrote, the pre-rename `agent-workflow-*` flattened sub-skills, and skill roots the host never reads (`~/.crush/skills` ≤v19.1, ownership-verified) — keep them with `--keep-legacy`.
 
 ### Per-target install matrix
 
@@ -53,7 +53,7 @@ By default the CLI clears the target host's plugin cache before installing (opt 
 | `agents` | `~/.agents/skills/w/` | skipped (shared dir, not a host) | skipped |
 | `gemini` | `~/.gemini/skills/w/` | synthesized skills `~/.gemini/skills/w-<n>/` (Antigravity `agy`) + `~/.gemini/commands/w/<n>.toml` → `/w:<n>` (legacy Gemini CLI) | skipped |
 | `opencode` | `~/.opencode/skills/w/` | `~/.opencode/command/w/<n>.md` → `/w/<n>` | skipped |
-| `crush` | `~/.crush/skills/w/` | `~/.crush/commands/w/<n>.md` → palette `user:w:<n>` | skipped |
+| `crush` | `~/.config/crush/skills/w/` (XDG — the only global root Crush reads; `~/.crush` holds commands only) | `~/.crush/commands/w/<n>.md` → palette `user:w:<n>` | skipped |
 
 The bundle's internal manuals (`loops/*/LOOP.md`, `roles/*/ROLE.md`, `exports/*/EXPORT.md`, `harness/HARNESS.md`) are deliberately **not** `SKILL.md` files, so hosts that scan skill roots recursively (Codex, OpenCode, Crush) never list them as invocable skills — only the commands and the `w` orientation skill surface. Where a layer is skipped, the SKILL is sufficient — the AI reads it and invokes `agent-workflow <subcommand>` directly.
 

@@ -83,7 +83,7 @@ describe("selfDoctor", () => {
         "/home/u/.warp/skills/w",
         "/home/u/.gemini/skills/w",
         "/home/u/.opencode/skills/w",
-        "/home/u/.crush/skills/w",
+        "/home/u/.config/crush/skills/w",
       ]),
     );
     const ctx = {

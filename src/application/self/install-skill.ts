@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,7 +6,12 @@ import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { InstallTarget } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
-import { INSTALL_TARGETS, TARGET_ROOTS } from "./install-targets.js";
+import {
+  COMMAND_SKILLS_HOSTS,
+  INSTALL_TARGETS,
+  LEGACY_SKILL_ROOTS_BY_TARGET,
+  TARGET_ROOTS,
+} from "./install-targets.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 
 export const SKILL_DIR_NAME = "w";
@@ -80,9 +85,11 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
 // slash commands are system-only and skills are the only user-installable
 // invocable unit; it reads ~/.gemini/skills as its "Shared" tier, so the
 // synthesized wrappers land next to the bundle there.
-const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["codex", "warp", "oz", "gemini"]);
-// Exportado: es el namespace del bundle en los skill roots — el scan de sueltas
-// (skills-manager.listSkills) lo excluye para no listar `w-*` como unmanaged.
+// The set itself lives in install-targets.ts: uninstall.ts consumes the same
+// value so both sides stay symmetric by construction.
+export { COMMAND_SKILLS_HOSTS };
+// Exported: it is the bundle's namespace in the skill roots — the loose-skill
+// scan (skills-manager.listSkills) excludes it so `w-*` never lists as unmanaged.
 export const COMMAND_SKILL_PREFIX = "w-";
 
 // Native command-wrapper formats. Each host that DOES read a file-based
@@ -99,7 +106,7 @@ interface UserCommandsSpec {
   format: CommandWrapperFormat;
 }
 
-const USER_COMMANDS_BY_TARGET: Record<InstallTarget, UserCommandsSpec | null> = {
+export const USER_COMMANDS_BY_TARGET: Record<InstallTarget, UserCommandsSpec | null> = {
   claude: { relpath: ".claude/commands/w", format: "claude-md" },
   // codex/warp/oz: commands ship as synthesized `w-*` skills (COMMAND_SKILLS_HOSTS).
   codex: null,
@@ -128,11 +135,69 @@ const LEGACY_USER_COMMANDS_RELPATHS_BY_TARGET: Record<InstallTarget, readonly st
   crush: [],
 };
 
+/** rmdir succeeds only on empty dirs — clears purposeless leftovers (e.g. the
+ * inert ~/.codex/commands parent once its w/ subdir is gone) while anything
+ * holding user content survives untouched. */
+export async function removeDirIfEmpty(p: string): Promise<boolean> {
+  try {
+    await rmdir(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Ownership check before deleting a `w` dir from a LEGACY root: those roots
+ * can be shared namespaces, so require the bundle fingerprint — never rm by
+ * dir name alone. Historical forms count: v14.5–v18 bundles shipped
+ * `name: workflow` and `harness/SKILL.md` (renamed to `w`/HARNESS.md in v19),
+ * and the migration window starts at v14.5 (first crush install). */
+export async function isOwnedBundleDir(dir: string, ctx: CliContext): Promise<boolean> {
+  try {
+    const raw = await readFile(join(dir, "SKILL.md"), "utf8");
+    const name = raw.match(/^name:\s*["']?([\w-]+)["']?\s*$/m)?.[1];
+    if (name !== SKILL_DIR_NAME && name !== "workflow") return false;
+    return (
+      (await ctx.fs.exists(join(dir, "harness", "HARNESS.md"))) ||
+      (await ctx.fs.exists(join(dir, "harness", "SKILL.md")))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Sweep abandoned skill roots the host never reads
+ * (LEGACY_SKILL_ROOTS_BY_TARGET): pre-rename names, the ownership-verified
+ * bundle, and the root itself once emptied. Appends removed paths. */
+async function cleanLegacySkillRoots(
+  target: InstallTarget,
+  home: string,
+  ctx: CliContext,
+  tryRemove: (p: string) => Promise<void>,
+  removed: string[],
+): Promise<void> {
+  for (const legacyRoot of LEGACY_SKILL_ROOTS_BY_TARGET[target]) {
+    const root = join(home, ...legacyRoot);
+    for (const name of LEGACY_SKILL_NAMES) {
+      await tryRemove(join(root, name));
+    }
+    const legacyBundle = join(root, SKILL_DIR_NAME);
+    if (await isOwnedBundleDir(legacyBundle, ctx)) {
+      await tryRemove(legacyBundle);
+    }
+    if (await removeDirIfEmpty(root)) {
+      removed.push(root);
+    }
+  }
+}
+
 /**
- * Remove legacy artifacts from a prior install (before the `agent-workflow` → `w`
- * rename) for `target`: the old SKILL dirs (LEGACY_SKILL_NAMES), the old
- * user-commands dir (`/agent-workflow:*`), and — for COMMAND_SKILLS_HOSTS — the old
- * `agent-workflow-*` flattened sub-skills (pre-rename model). Returns the paths removed.
+ * Remove legacy artifacts from a prior install for `target`: the pre-rename
+ * SKILL dirs (LEGACY_SKILL_NAMES), the old user-commands dir
+ * (`/agent-workflow:*`), abandoned skill roots the host never reads
+ * (LEGACY_SKILL_ROOTS_BY_TARGET, ownership-verified), and — for
+ * COMMAND_SKILLS_HOSTS — the old `agent-workflow-*` flattened sub-skills.
+ * Returns the paths removed.
  */
 async function cleanLegacyArtifacts(
   target: InstallTarget,
@@ -151,8 +216,17 @@ async function cleanLegacyArtifacts(
     await tryRemove(join(skillsRoot, name));
   }
   for (const legacyCmd of LEGACY_USER_COMMANDS_RELPATHS_BY_TARGET[target]) {
-    await tryRemove(join(home, legacyCmd));
+    const cmdDir = join(home, legacyCmd);
+    if (!(await ctx.fs.exists(cmdDir))) continue;
+    await tryRemove(cmdDir);
+    // Prune the parent only when the legacy child was actually removed —
+    // otherwise --skill-only could rmdir a pre-existing empty live commands
+    // dir (e.g. ~/.claude/commands) that no wrapper install repopulates.
+    if (await removeDirIfEmpty(dirname(cmdDir))) {
+      removed.push(dirname(cmdDir));
+    }
   }
+  await cleanLegacySkillRoots(target, home, ctx, tryRemove, removed);
   if (COMMAND_SKILLS_HOSTS.has(target)) {
     try {
       for (const entry of await readdir(skillsRoot, { withFileTypes: true })) {
@@ -560,14 +634,14 @@ export function splitCommandDoc(raw: string): CommandDoc {
   return { description: value.length > 0 ? value : null, body };
 }
 
-// Para hosts sin commands dir (COMMAND_SKILLS_HOSTS): sintetiza cada
-// `commands/<cmd>.md` como skill top-level hermana del bundle,
-// `<root>/w-<cmd>/SKILL.md` (skill-as-command). El cuerpo del comando es el
-// cuerpo de la skill; las referencias bundle-relativas suben un nivel desde
-// `commands/`, así que reescribir `../` → `../w/` las hace resolver desde la
-// nueva ubicación. Antes de sintetizar barre los `w-*` DE SU PROPIEDAD
-// (marker/fingerprint — limpia loops aplanados ≤v18 y wrappers de comandos
-// removidos); un dir ajeno con prefijo `w-` se preserva siempre.
+// For hosts without a commands dir (COMMAND_SKILLS_HOSTS): synthesizes each
+// `commands/<cmd>.md` as a top-level skill sibling of the bundle,
+// `<root>/w-<cmd>/SKILL.md` (skill-as-command). The command body becomes the
+// skill body; bundle-relative references go one level up from `commands/`, so
+// rewriting `../` → `../w/` makes them resolve from the new location. Before
+// synthesizing, it sweeps the `w-*` dirs it OWNS (marker/fingerprint — cleans
+// ≤v18 flattened loops and wrappers of removed commands); a foreign dir with
+// the `w-` prefix is always preserved.
 async function synthesizeCommandSkills(
   target: InstallTarget,
   skillDest: string,

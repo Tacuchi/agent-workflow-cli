@@ -15,8 +15,39 @@ export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
   // .agents/skills, so `--target agents` is the cross-host alternative.
   gemini: [".gemini", "skills"],
   opencode: [".opencode", "skills"],
-  crush: [".crush", "skills"],
+  // Crush's global skill roots are ~/.config/crush/skills on EVERY OS (its
+  // home.Config() is $HOME/.config even on Windows; LOCALAPPDATA is only a
+  // legacy extra). ~/.crush is read for commands, and .crush/skills only
+  // project-relative — never from $HOME (crush v0.81.0 config/load.go
+  // GlobalSkillsDirs/projectSkillSubdirs). ≤v19.1.0 wrote ~/.crush/skills,
+  // a root crush ignores; see LEGACY_SKILL_ROOTS_BY_TARGET migration.
+  crush: [".config", "crush", "skills"],
 };
+
+// Skill roots written by prior releases that the host never (or no longer)
+// reads; install/uninstall migrate them away. Ownership is verified before
+// deleting — these can be shared namespaces.
+export const LEGACY_SKILL_ROOTS_BY_TARGET: Record<InstallTarget, readonly (readonly string[])[]> = {
+  claude: [],
+  codex: [],
+  agents: [],
+  warp: [],
+  oz: [],
+  gemini: [],
+  opencode: [],
+  crush: [[".crush", "skills"]],
+};
+
+// Hosts with NO file-based commands dir: their command surface is the
+// synthesized `w-<command>` skill-as-command wrappers, installed next to the
+// bundle. Single source for install-skill.ts AND uninstall.ts — the two sides
+// must stay symmetric or uninstall strands wrappers.
+export const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set([
+  "codex",
+  "warp",
+  "oz",
+  "gemini",
+]);
 
 /**
  * Every dir-backed install target, derived from the exhaustive TARGET_ROOTS

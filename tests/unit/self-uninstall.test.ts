@@ -344,7 +344,7 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     const ctx = buildCtx(home, fs);
     const geminiRoot = join(home, ...TARGET_ROOTS.gemini);
     const synth = join(geminiRoot, "w-quick");
-    const foreign = join(geminiRoot, "w-mia"); // skill del usuario — se preserva
+    const foreign = join(geminiRoot, "w-mia"); // user's own skill — preserved
     await seedDir(skillDir(home, "gemini"));
     await mkdir(synth, { recursive: true });
     await writeFile(
@@ -360,6 +360,123 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     expect(result.ok).toBe(true);
     expect(await fs.exists(synth)).toBe(false);
     expect(await fs.exists(foreign)).toBe(true);
+  });
+
+  it("sweeps w-* wrappers with ownership proof on EVERY command-skills host (install/uninstall symmetry)", async () => {
+    const { COMMAND_SKILLS_HOSTS } = await import("../../src/application/self/install-targets.js");
+    // The set is the single source both sides consume; pin its membership.
+    expect([...COMMAND_SKILLS_HOSTS].sort()).toEqual(["codex", "gemini", "oz", "warp"]);
+    const ctx = buildCtx(home, fs);
+    for (const target of COMMAND_SKILLS_HOSTS) {
+      const root = join(home, ...TARGET_ROOTS[target]);
+      const synth = join(root, "w-quick");
+      const foreign = join(root, "w-mia");
+      await seedDir(skillDir(home, target));
+      await mkdir(synth, { recursive: true });
+      await writeFile(
+        join(synth, "SKILL.md"),
+        `---\nname: w-quick\ndescription: x\n---\n\n> ${COMMAND_SKILL_MARKER}. …\n`,
+        "utf8",
+      );
+      await mkdir(foreign, { recursive: true });
+      await writeFile(join(foreign, "SKILL.md"), "---\nname: w-mia\ndescription: x\n---\n", "utf8");
+
+      const result = await selfUninstall(buildArgs({ target }, []), ctx);
+
+      expect(result.ok, target).toBe(true);
+      expect(await fs.exists(synth), `${target}: owned wrapper swept`).toBe(false);
+      expect(await fs.exists(foreign), `${target}: foreign w-* preserved`).toBe(true);
+      await rm(foreign, { recursive: true, force: true });
+    }
+  });
+
+  it("crush: removes the bundle from the XDG root AND the dead legacy ~/.crush/skills root", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "crush"));
+    const legacyBundle = join(home, ".crush/skills/w");
+    await mkdir(join(legacyBundle, "harness"), { recursive: true });
+    await writeFile(
+      join(legacyBundle, "SKILL.md"),
+      "---\nname: w\ndescription: bundle\n---\n",
+      "utf8",
+    );
+    await writeFile(join(legacyBundle, "harness/HARNESS.md"), "# harness\n", "utf8");
+
+    const result = await selfUninstall(buildArgs({ target: "crush" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(skillDir(home, "crush"))).toBe(false);
+    expect(await fs.exists(legacyBundle)).toBe(false);
+    // The emptied dead root is pruned too.
+    expect(await fs.exists(join(home, ".crush/skills"))).toBe(false);
+  });
+
+  it("crush: a foreign `w` dir in the legacy root (no bundle fingerprint) survives uninstall", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "crush"));
+    const foreignW = join(home, ".crush/skills/w");
+    await mkdir(foreignW, { recursive: true });
+    await writeFile(
+      join(foreignW, "SKILL.md"),
+      "---\nname: w\ndescription: user's own\n---\n",
+      "utf8",
+    );
+
+    const result = await selfUninstall(buildArgs({ target: "crush" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(foreignW)).toBe(true);
+  });
+
+  it("crush: --dry-run reports the legacy-root bundle but removes nothing", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "crush"));
+    const legacyBundle = join(home, ".crush/skills/w");
+    await mkdir(join(legacyBundle, "harness"), { recursive: true });
+    await writeFile(
+      join(legacyBundle, "SKILL.md"),
+      "---\nname: w\ndescription: bundle\n---\n",
+      "utf8",
+    );
+    await writeFile(join(legacyBundle, "harness/HARNESS.md"), "# harness\n", "utf8");
+
+    const result = await selfUninstall(buildArgs({ target: "crush" }, ["--dry-run"]), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(skillDir(home, "crush"))).toBe(true);
+    expect(await fs.exists(legacyBundle)).toBe(true);
+    if (result.ok && result.data) {
+      const legacyStep = result.data.steps.find((s) => s.path === legacyBundle);
+      expect(legacyStep?.status).toBe("dry-run");
+    }
+  });
+
+  it("crush: --legacy sweeps pre-rename names from the dead ~/.crush/skills root too", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "crush"));
+    const preRename = join(home, ".crush/skills/agent-workflow-manager");
+    await seedDir(preRename);
+
+    const withoutLegacy = await selfUninstall(buildArgs({ target: "crush" }, []), ctx);
+    expect(withoutLegacy.ok).toBe(true);
+    expect(await fs.exists(preRename)).toBe(true);
+
+    await seedDir(skillDir(home, "crush"));
+    const withLegacy = await selfUninstall(buildArgs({ target: "crush" }, ["--legacy"]), ctx);
+    expect(withLegacy.ok).toBe(true);
+    expect(await fs.exists(preRename)).toBe(false);
+  });
+
+  it("codex: prunes the emptied ~/.codex/commands parent on uninstall", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "codex"));
+    await mkdir(join(home, ".codex/commands/w"), { recursive: true });
+    await writeFile(join(home, ".codex/commands/w/quick.md"), "# stale\n", "utf8");
+
+    const result = await selfUninstall(buildArgs({ target: "codex" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(join(home, ".codex/commands"))).toBe(false);
   });
 
   it("removes user-commands by default but keeps them with --skill-only", async () => {
