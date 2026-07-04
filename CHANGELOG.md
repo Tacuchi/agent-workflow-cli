@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [19.0.0] — 2026-07-04
+
+**Superficie de comandos multi-host real.** En Codex el `$` popup mostraba los loops internos y ningún comando; OpenCode/Crush además indexaban los internos **cruzado** desde `~/.claude/skills`/`~/.agents/skills`; en Antigravity solo aparecía la skill `w`. Causa raíz verificada contra fuentes (openai/codex tag `rust-v0.142.5` con fact-check adversarial; binario `agy` 1.0.16 + sus docs embebidas): Codex no lee ningún commands dir (custom prompts removidos del runtime) y escanea skills **recursivo** ≤6 niveles; OpenCode/Crush también recursivos; agy **no tiene comandos de usuario** (slash solo de sistema, el TOML muere con Gemini CLI). Bundle `w` **13.0.0** (major en lockstep: manuales internos renombrados). Review gate adversarial de 18 agentes: 14 hallazgos confirmados corregidos pre-commit (incluye 2 high del propio fix). Verificado en disco en los 6 hosts + smoke del usuario en Claude/Codex/Warp/Antigravity.
+
+### Changed (⚠ breaking)
+
+- **Los manuales internos del bundle dejan de llamarse `SKILL.md`**: `loops/*/LOOP.md` · `roles/*/ROLE.md` · `exports/*/EXPORT.md` · `harness/HARNESS.md`. Ningún host — recursivo o no, presente o futuro — vuelve a indexarlos como skills invocables (cierra también el leak cruzado hacia OpenCode/Crush). Superficie canónica = **13 comandos + la skill `w`**. Referencias de doctrina y guard tests actualizados en lockstep.
+- **La skill de orientación pasa de `name: workflow` a `name: w`** (Crush rechaza skills cuyo `name` ≠ dir). `BUILTIN_DEFAULT_SKILLS.overview` = `"w"` — un binding explícito `overview = "workflow"` en `skills.toml` debe actualizarse a `"w"`.
+- **Murió el flatten de loops en Warp/Oz** (≤v18 exponía loops/exports/roles como skills top-level — violaba la doctrina "un loop no es invocable por nombre"). Reemplazo: **skill-as-command** — cada `commands/<cmd>.md` se sintetiza como skill hermana `w-<cmd>/SKILL.md` (descripción del comando, refs `../` → `../w/`, marker de propiedad) en codex/warp/oz/gemini.
+- **Codex ya no recibe `~/.codex/commands/w`** — el dir era inerte (Codex jamás lo leyó; la suposición "Claude + Codex misma convención" era falsa). Se limpia como legacy en install y uninstall.
+- **JSON del install**: `flattened_subskills`/`flattened_warnings` → `command_skills`/`command_skills_warnings`.
+
+### Added
+
+- **Wrappers nativos por host** donde sí existe commands dir: gemini `~/.gemini/commands/w/<cmd>.toml` → `/w:<cmd>` (`{{args}}`; queda como compat del **Gemini CLI legacy** — Antigravity lo ignora) · opencode `~/.opencode/command/w/<cmd>.md` → `/w/<cmd>` · crush `~/.crush/commands/w/<cmd>.md` sin frontmatter → palette `user:w:<cmd>`. Claude sin cambios (`/w:<cmd>`).
+- **Antigravity CLI (`agy`)**: `gemini` entra a COMMAND_SKILLS_HOSTS — las 13 `w-*` se sintetizan en `~/.gemini/skills/` (su tier *Shared*, junto al bundle); detección con los markers reales `ANTIGRAVITY_CONVERSATION_ID`/`ANTIGRAVITY_PROJECT_ID` (extraídos del binario).
+- **Sweep con propiedad verificada**: install/uninstall solo borran dirs `w-*`/`agent-workflow-*` **probados propios** (marker del wrapper sintetizado, o fingerprint del flatten ≤v18: `name` == dir sin prefijo) — los skill roots son namespaces compartidos (ancla `~/.agents/skills`, sueltas) y un dir ajeno jamás se toca. `registerSkill` rechaza el prefijo reservado `w-` (`RESERVED_SKILL_PREFIX`).
+- **Guards nuevos**: el único `SKILL.md` del bundle es el raíz (anti-regresión del rename) · `name` raíz == dir de instalación · toda description de comando parsea limpia (`splitCommandDoc` ahora soporta block scalars `>-`/`|` y quoted) · escapes TOML del cuerpo (`"""`, backslash) cubiertos por tests.
+- `--skill-only` / `--no-commands` gatean también las skills sintetizadas, en install y uninstall (los wrappers son la superficie de comandos de esos hosts).
+- **Canon**: `harness/HARNESS.md` § *Command packaging* con la tabla por host implementada; field research 2026-07 (matriz de descubrimiento comandos/skills por host, con citas a fuente) espejado en el workspace.
+
+### Fixed
+
+- **uninstall barría solo el prefijo viejo `agent-workflow-`** y dejaba huérfanos los `w-*` del modelo actual (bug latente desde el rename del bundle).
+- `explainSkipReason` de codex/warp/oz decía "user-level commands install not implemented yet"; ahora explica el modelo skill-as-command real.
+
 ## [18.0.0] — 2026-07-03
 
 **Workspace-init mínimo + exports completados** (spec 008 / plan 005 del workspace). El init deja de crear estructura por adelantado (todo nace on-demand desde el CLI), el `.gitignore` pasa a ser propiedad del CLI, `HISTORY.md` por fin se escribe, y la familia `export-*` quedó ejercitada sobre un corpus real con su formato fijado en el canon. Bundle `w` **12.0.0** (major en lockstep: doctrina de init/CHASSIS/exports reescrita). Review gate adversarial de 41 agentes sobre el diff: 17/17 hallazgos confirmados corregidos pre-commit.
