@@ -74,7 +74,9 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 33_000,
+      // Bumped +100 B when the hard-floor session-create signature was completed
+      // with the mandatory --objetivo (in both plan-new.md and the shared CHASSIS).
+      budget: 33_100,
     },
     {
       flow: "plan-refine",
@@ -262,6 +264,11 @@ describe("Doctrine guards — G7 · hard floor inline in the flow commands (info
       const text = await readRel(rel);
       expect(text, rel).toContain("Hard floor — applies even if you read nothing beyond this file");
       expect(text, rel).toContain("aw session-create --type");
+      // The signature must be runnable as written: --objetivo is mandatory
+      // (session-create-service rejects a missing objetivo). A hard floor that
+      // omits it fails on first run for the weakest models — the exact bug this
+      // guards against.
+      expect(text, rel).toContain("--objetivo");
       expect(text, rel).toContain("user's language");
     }
   });

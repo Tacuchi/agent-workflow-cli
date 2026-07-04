@@ -16,7 +16,7 @@ SPEC → PLAN bridge. Turns the "what" (refined spec) into the "how" (plan). Del
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
-> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-plan-new`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
+> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-plan-new --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 3. **Write boundary** — this flow writes only `docs/plans/…` (with confirmation if it exists); nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the plan's content) goes in the **user's language**.

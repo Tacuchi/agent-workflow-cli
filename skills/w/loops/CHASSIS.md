@@ -90,7 +90,7 @@ The **CLI owns the number**: `aw session-create` prepends a **global, sequential
 
 **CLI**:
 
-- `aw session-create --type <type> --name <slug>-<flow>` → creates `NNN-<slug>-<flow>` / `aw session-resume --code <…>` (detects `CHECKPOINT`).
+- `aw session-create --type <type> --name <slug>-<flow> --objetivo "<one-line objective>"` → creates `NNN-<slug>-<flow>` / `aw session-resume --code <…>` (detects `CHECKPOINT`).
 - `aw checkpoint-write` / `aw checkpoint-read` for resume.
 - `aw session-close` on close — also upserts the session's HISTORY.md row (the durable record; sessions/ is gitignored). Non-fatal: on `history_error` in its output, re-run `aw history-update --code <NNN> --state closed`. `aw session-artifacts` to inspect.
 - **Reopen to continue** (operating context, row 2): `aw session-resume --code <NNN> --reopen` reactivates a **closed** session (removes `.closed` → active) to keep working in it; without `--reopen`, resume is read-only. To detect the most recent closed one: `aw resume-summary --include-recent-closed` (or `aw sessions --state all`).

@@ -4,6 +4,15 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.2.1] — 2026-07-04
+
+**Fix: la firma de `session-create` en el hard-floor omitía `--objetivo` (obligatorio).** Copiada literal, fallaba en el primer intento con `--objetivo es obligatorio` — justo el modo de fallo que el hard-floor debe evitar en modelos débiles. Bundle `w` **13.2.1**.
+
+### Fixed
+
+- **Hard-floor de los comandos-trampolín** (`skills/w/commands/{quick,spec-refine,plan-new,plan-refine,plan-exec}.md`) y **`loops/CHASSIS.md`**: la firma `aw session-create --type … --name …` ahora incluye `--objetivo "<one-line objective>"`, alineada con el contrato del servicio (`--type`/`--name`/`--objetivo` obligatorios). `spec-new` no crea sesión (sin cambios).
+- **Guard G7** (`doctrine-guards`): antes solo exigía el prefijo `aw session-create --type`, por eso no cazó el `--objetivo` faltante; ahora exige también `--objetivo`. Budget de bytes de `plan-new` +100 B (contenido obligatorio, no bloat).
+
 ## [20.2.0] — 2026-07-04
 
 **+1 skill recomendada de comportamiento: `checklist-discipline`** (promovida de "por caso" a seed). Verificada instalando.
