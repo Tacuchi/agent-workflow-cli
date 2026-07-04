@@ -4,6 +4,16 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [19.1.0] — 2026-07-04
+
+**Réplicas gemini para las skills sueltas del motor [Skills].** Las sueltas se materializan en el ancla `~/.agents/skills` con réplica symlink a `~/.claude/skills` — pero Antigravity (agy) **no lee el ancla a nivel usuario** (sus tiers: Workspace `<repo>/.agents/skills` · Global `~/.gemini/antigravity-cli/skills` · Shared `~/.gemini/skills`), así que las sueltas eran invisibles ahí mientras Codex/Warp las veían directo del ancla. Bundle `w` sin cambios (sigue 13.0.0).
+
+### Added
+
+- **Réplica por host generalizada** (`REPLICA_HOSTS`): claude symlink-first como siempre + **gemini copy-siempre** a `~/.gemini/skills` (tier Shared de agy). Copia y no symlink a propósito: el walker de agy no es verificable y `filepath.WalkDir` de Go no sigue symlinks de dir por default — la copia garantiza el descubrimiento.
+- **Marker de propiedad `.aw-replica`** en las réplicas copy (contraparte del symlink, que se autentica apuntando a la canónica): install/uninstall/reinstall solo tocan réplicas probadas propias; un dir ajeno homónimo bloquea con `FOREIGN_REPLICA` (ahora por host) y se preserva. Las copias legacy de claude (pre-marker, Windows) se siguen autenticando por el `mode` registrado.
+- `MaterializeData.replicas[]` (host/path/mode por réplica); `SkillListItem.replicas.gemini` + render en el detail de la TUI (`agents ✓ · claude ✓ · gemini ✓`). El `mode` registrado sigue siendo el de la réplica Claude: el badge "(copy)" señala SU degradación, no el copy by-design de gemini.
+
 ## [19.0.0] — 2026-07-04
 
 **Superficie de comandos multi-host real.** En Codex el `$` popup mostraba los loops internos y ningún comando; OpenCode/Crush además indexaban los internos **cruzado** desde `~/.claude/skills`/`~/.agents/skills`; en Antigravity solo aparecía la skill `w`. Causa raíz verificada contra fuentes (openai/codex tag `rust-v0.142.5` con fact-check adversarial; binario `agy` 1.0.16 + sus docs embebidas): Codex no lee ningún commands dir (custom prompts removidos del runtime) y escanea skills **recursivo** ≤6 niveles; OpenCode/Crush también recursivos; agy **no tiene comandos de usuario** (slash solo de sistema, el TOML muere con Gemini CLI). Bundle `w` **13.0.0** (major en lockstep: manuales internos renombrados). Review gate adversarial de 18 agentes: 14 hallazgos confirmados corregidos pre-commit (incluye 2 high del propio fix). Verificado en disco en los 6 hosts + smoke del usuario en Claude/Codex/Warp/Antigravity.
