@@ -4,6 +4,29 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [19.2.0] — 2026-07-04
+
+**Crush lee skills solo de XDG + revisión integral multi-host.** Revisión de compatibilidad de los 6 hosts (workflow de 34 agentes: 52 checks, 11 hallazgos confirmados adversarialmente) tras el smoke completo del usuario. Hallazgo central, verificado contra `charmbracelet/crush` v0.81.0 (`config/load.go` `GlobalSkillsDirs`): los roots globales de skills de crush son **XDG** — `~/.config/crush/skills` + `~/.config/agents/skills` + ancla + `~/.claude/skills` — en todo OS; **`~/.crush/skills` no se lee jamás** (`.crush/skills` es solo de proyecto). ≤v19.1.0 instalaba el bundle en ese root muerto y crush veía `w` solo por el cross-read de `~/.claude/skills`. La paleta de crush (tab [User], `user:w:*`) quedó verificada como superficie correcta — el filtro es por-tab y abre en [System]. Bundle `w` **13.1.0** (matriz de capacidades de HARNESS.md corregida). Segundo review gate adversarial (15 agentes) sobre el propio fix: 11 confirmados corregidos pre-commit, incluida la ampliación del fingerprint a bundles v14.5–v18.
+
+### Fixed
+
+- **`TARGET_ROOTS.crush` → `~/.config/crush/skills`** (portable: el `home.Config()` de crush es `$HOME/.config` incluso en Windows; `LOCALAPPDATA` es solo un extra legacy). `~/.crush/commands` no cambia — sí es root real de comandos.
+- **Migración del root muerto `~/.crush/skills`** en install y uninstall con ownership verificada (`isOwnedBundleDir`): fingerprint del bundle en sus formas históricas — frontmatter `name: w`|`workflow` + manual `harness/HARNESS.md`|`SKILL.md` (v14.5–v18 incluidas) — nunca se borra un dir ajeno por nombre; el root vaciado se poda.
+- **Prune de parents vacíos, gated**: el inerte `~/.codex/commands` desaparece al vaciarse; un `~/.claude/commands` vivo ya no puede borrarse con `--skill-only` (el prune solo corre si el legacy child existía y se removió).
+- `clean-legacy --target crush` ahora escanea los roots XDG reales (antes solo el muerto + los compartidos).
+- `HARNESSES.crush.skillsDirs` refleja los roots XDG (alimenta el resolver de visibilidad).
+
+### Added
+
+- **Guard G8 — contrato de empaquetado multi-host**: pin literal de `TARGET_ROOTS`, simetría de relpaths de wrappers install↔uninstall (asimetría codex documentada) y tabla «Command packaging» de HARNESS.md contra el código.
+- **Guard G8b — contención scan⊇roots**: todo install/legacy root de cada target debe estar en la tabla de scan de clean-legacy (la lección v14.5.1, edición tablas).
+- `COMMAND_SKILLS_HOSTS` pasa a **fuente única** en `install-targets.ts` — install y uninstall simétricos por construcción — y el sweep `w-*` con ownership queda testeado en los 4 hosts.
+- Guard positivo de wrappers claude: `.claude/commands/w/<cmd>.md` passthrough byte-idéntico (antes solo había assert negativo bajo `--skill-only`).
+
+### Changed
+
+- **Limpieza de comentarios** en `src/` y `tests/` (dev-conventions): ~446 comentarios es→en + poda de narración/changelog-style/tombstones en 115 archivos; verificada **comment-only** (código byte-idéntico, 0 violaciones). Los comentarios de constraints/gotchas/invariantes se conservan.
+
 ## [19.1.0] — 2026-07-04
 
 **Réplicas gemini para las skills sueltas del motor [Skills].** Las sueltas se materializan en el ancla `~/.agents/skills` con réplica symlink a `~/.claude/skills` — pero Antigravity (agy) **no lee el ancla a nivel usuario** (sus tiers: Workspace `<repo>/.agents/skills` · Global `~/.gemini/antigravity-cli/skills` · Shared `~/.gemini/skills`), así que las sueltas eran invisibles ahí mientras Codex/Warp las veían directo del ancla. Bundle `w` sin cambios (sigue 13.0.0).
