@@ -21,13 +21,11 @@ export type InstallTarget =
   | "opencode"
   | "crush";
 
-export type HarnessChannel = "stable" | "preview";
-
 // Platform-specific global MCP config paths. `~` is a placeholder expanded at runtime.
 export interface HarnessGlobalMcpPaths {
-  darwin: { stable: string; preview?: string };
-  linux: { stable: string; preview?: string };
-  win32: { stable: string; preview?: string };
+  darwin: string;
+  linux: string;
+  win32: string;
 }
 
 export interface HarnessSpec {
@@ -58,9 +56,9 @@ export const HARNESSES: readonly HarnessSpec[] = [
     envMarkers: ["CLAUDECODE", "CLAUDE_PLUGIN_ROOT", "CLAUDE_AGENT_ID"],
     mcpHostId: "claude",
     globalMcpPaths: {
-      darwin: { stable: "~/.claude.json" },
-      linux: { stable: "~/.claude.json" },
-      win32: { stable: "~/.claude.json" },
+      darwin: "~/.claude.json",
+      linux: "~/.claude.json",
+      win32: "~/.claude.json",
     },
     projectMcpPath: ".mcp.json",
     pluginManifest: ".claude-plugin/plugin.json",
@@ -73,9 +71,9 @@ export const HARNESSES: readonly HarnessSpec[] = [
     envMarkers: ["CODEX_HOME", "CODEX_CLI", "CODEX_RUNTIME"],
     mcpHostId: "codex",
     globalMcpPaths: {
-      darwin: { stable: "~/.codex/config.toml" },
-      linux: { stable: "~/.codex/config.toml" },
-      win32: { stable: "~/.codex/config.toml" },
+      darwin: "~/.codex/config.toml",
+      linux: "~/.codex/config.toml",
+      win32: "~/.codex/config.toml",
     },
     projectMcpPath: ".codex/config.toml",
     pluginManifest: ".codex-plugin/plugin.json",
@@ -108,15 +106,11 @@ export const HARNESSES: readonly HarnessSpec[] = [
     mcpHostId: "warp",
     globalMcpPaths: {
       // DEC-W3: Warp uses .mcp.json (JSON), not settings.toml, for MCP config.
-      darwin: { stable: "~/.warp/.mcp.json", preview: "~/.warp-preview/.mcp.json" },
-      linux: {
-        stable: "~/.config/warp-terminal/.mcp.json",
-        preview: "~/.config/warp-terminal-preview/.mcp.json",
-      },
-      win32: {
-        stable: "%LOCALAPPDATA%/warp/Warp/config/.mcp.json",
-        preview: "%LOCALAPPDATA%/warp/WarpPreview/config/.mcp.json",
-      },
+      // Warp Preview builds (researched, unwired): ~/.warp-preview/.mcp.json ·
+      // ~/.config/warp-terminal-preview/.mcp.json · %LOCALAPPDATA%/warp/WarpPreview/config/.mcp.json
+      darwin: "~/.warp/.mcp.json",
+      linux: "~/.config/warp-terminal/.mcp.json",
+      win32: "%LOCALAPPDATA%/warp/Warp/config/.mcp.json",
     },
     projectMcpPath: ".warp/.mcp.json",
     pluginManifest: null, // DEC-W2: no plugin manifest convention for Warp
@@ -149,9 +143,9 @@ export const HARNESSES: readonly HarnessSpec[] = [
     ],
     mcpHostId: "gemini",
     globalMcpPaths: {
-      darwin: { stable: "~/.gemini/settings.json" },
-      linux: { stable: "~/.gemini/settings.json" },
-      win32: { stable: "~/.gemini/settings.json" },
+      darwin: "~/.gemini/settings.json",
+      linux: "~/.gemini/settings.json",
+      win32: "~/.gemini/settings.json",
     },
     projectMcpPath: ".gemini/settings.json",
     pluginManifest: null, // Gemini uses Extensions (gemini-extension.json) — Phase 2
@@ -167,9 +161,9 @@ export const HARNESSES: readonly HarnessSpec[] = [
     envMarkers: ["OPENCODE", "OPENCODE_BIN", "OPENCODE_CONFIG"],
     mcpHostId: "opencode",
     globalMcpPaths: {
-      darwin: { stable: "~/.config/opencode/opencode.json" },
-      linux: { stable: "~/.config/opencode/opencode.json" },
-      win32: { stable: "~/.config/opencode/opencode.json" },
+      darwin: "~/.config/opencode/opencode.json",
+      linux: "~/.config/opencode/opencode.json",
+      win32: "~/.config/opencode/opencode.json",
     },
     projectMcpPath: "opencode.json",
     pluginManifest: null, // JS/TS plugins in .opencode/plugin — Phase 2
@@ -187,9 +181,9 @@ export const HARNESSES: readonly HarnessSpec[] = [
     envMarkers: ["CRUSH", "CRUSH_CONFIG"],
     mcpHostId: "crush",
     globalMcpPaths: {
-      darwin: { stable: "~/.config/crush/crush.json" },
-      linux: { stable: "~/.config/crush/crush.json" },
-      win32: { stable: "%LOCALAPPDATA%/crush/crush.json" },
+      darwin: "~/.config/crush/crush.json",
+      linux: "~/.config/crush/crush.json",
+      win32: "%LOCALAPPDATA%/crush/crush.json",
     },
     projectMcpPath: "crush.json",
     pluginManifest: null,
@@ -209,22 +203,20 @@ export const HARNESSES: readonly HarnessSpec[] = [
 ] as const satisfies readonly HarnessSpec[];
 
 /**
- * Resolves the global MCP config path for a harness spec.
- * Expands %LOCALAPPDATA% on win32. Does NOT expand `~` (caller uses homedir()).
+ * Resolves the global MCP config path template for a harness spec. Does NOT
+ * expand `~` nor %LOCALAPPDATA% — expansion is the caller's job (see
+ * multiroot/warp.ts resolveWarpGlobalMcpPath).
  */
 export function resolveGlobalMcpRawPath(
   spec: HarnessSpec,
   platform: NodeJS.Platform = process.platform,
-  channel: HarnessChannel = "stable",
 ): string | null {
   if (!spec.globalMcpPaths) return null;
-  const byPlatform =
-    platform === "darwin"
-      ? spec.globalMcpPaths.darwin
-      : platform === "linux"
-        ? spec.globalMcpPaths.linux
-        : spec.globalMcpPaths.win32;
-  return (channel === "preview" ? byPlatform.preview : null) ?? byPlatform.stable;
+  return platform === "darwin"
+    ? spec.globalMcpPaths.darwin
+    : platform === "linux"
+      ? spec.globalMcpPaths.linux
+      : spec.globalMcpPaths.win32;
 }
 
 /** Returns the HarnessSpec for a given McpHost id, or null. */

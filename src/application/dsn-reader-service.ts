@@ -29,7 +29,5 @@ export function readBootstrapDsn(paths: PathsService): DsnReadResult {
 
 export function dsnKeyForInstance(instance: McpInstance): string {
   const normalized = normalizeMcpInstance(instance);
-  if (normalized === "cert") return "DB_CERT_DSN";
-  if (normalized === "prod") return "DB_PROD_DSN";
   return `DB_${normalized.toUpperCase().replace(/-/g, "_")}_DSN`;
 }

@@ -111,10 +111,10 @@ async function loadExportedSkills(
   exportsFile: string | undefined,
   pluginName: string,
 ): Promise<ExportedSkillEntry[]> {
-  const sources = exportsFile
+  const entries = exportsFile
     ? await readExportsFromCustomFile(fs, exportsFile)
     : await readExportsFromClaudeManifest(fs, pluginRoot);
-  return parseExportedSkillEntries(sources, pluginName);
+  return entries.flatMap((item) => parseExportedSkillItem(item, pluginName) ?? []);
 }
 
 async function readExportsFromCustomFile(
@@ -123,7 +123,8 @@ async function readExportsFromCustomFile(
 ): Promise<unknown[]> {
   if (!(await fs.exists(exportsFile))) return [];
   try {
-    return [JSON.parse(await fs.readText(exportsFile))];
+    const parsed: unknown = JSON.parse(await fs.readText(exportsFile));
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -138,24 +139,12 @@ async function readExportsFromClaudeManifest(
   try {
     const data = JSON.parse(await fs.readText(claudeManifest));
     if (isRecord(data) && Array.isArray(data.exportedSkills)) {
-      return [data.exportedSkills];
+      return data.exportedSkills;
     }
   } catch {
     // ignore
   }
   return [];
-}
-
-function parseExportedSkillEntries(sources: unknown[], pluginName: string): ExportedSkillEntry[] {
-  const out: ExportedSkillEntry[] = [];
-  for (const src of sources) {
-    if (!Array.isArray(src)) continue;
-    for (const item of src) {
-      const entry = parseExportedSkillItem(item, pluginName);
-      if (entry) out.push(entry);
-    }
-  }
-  return out;
 }
 
 function parseExportedSkillItem(item: unknown, pluginName: string): ExportedSkillEntry | null {

@@ -1,4 +1,4 @@
-import { type ReactNode, createContext, useCallback, useContext, useState } from "react";
+import { type ReactNode, createContext, useCallback, useContext, useEffect, useState } from "react";
 
 interface InputLockValue {
   locked: boolean;
@@ -25,4 +25,14 @@ export function InputLockProvider({ children }: { children: ReactNode }) {
 
 export function useInputLock(): InputLockValue {
   return useContext(InputLockContext);
+}
+
+/** Hold the global input lock while `locked` is true; always released on unmount. */
+export function useLockWhile(locked: boolean): void {
+  const { lock, unlock } = useInputLock();
+  useEffect(() => {
+    if (locked) lock();
+    else unlock();
+    return unlock;
+  }, [locked, lock, unlock]);
 }

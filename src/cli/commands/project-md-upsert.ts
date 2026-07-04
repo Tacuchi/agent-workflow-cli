@@ -8,6 +8,7 @@ import type { ParsedArgs } from "../parser.js";
 import { parseFuentesSpecs } from "../parsers/fuentes.js";
 import { parseWorkingBranches } from "../parsers/working-branches.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const projectMdUpsertCommand: QtcCommand = {
@@ -25,33 +26,17 @@ export const projectMdUpsertCommand: QtcCommand = {
     }
 
     if (!args.flags.has("--init")) {
-      return {
-        ok: false,
-        error: {
-          code: "INVALID_INPUT",
-          message: "Especifica una operación: --init | --read",
-        },
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", "Especifica una operación: --init | --read");
     }
 
     const inputResult = buildUpsertInput(args, verbose);
     if ("error" in inputResult) {
-      return {
-        ok: false,
-        error: { code: "INVALID_INPUT", message: inputResult.error },
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", inputResult.error);
     }
 
     const data = await runProjectMdUpsertWrite(ctx.fs, ctx.env, ctx.paths, inputResult.input);
     if ("error" in data) {
-      return {
-        ok: false,
-        error: { code: "INVALID_INPUT", message: data.error },
-        data,
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", data.error, data);
     }
     return { ok: data.ok, data, exitCode: data.ok ? 0 : 1 };
   },

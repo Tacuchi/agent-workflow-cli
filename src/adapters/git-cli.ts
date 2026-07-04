@@ -1,5 +1,5 @@
 import type { DiffNumstatEntry, GitPort, MergeResult } from "../ports/git.js";
-import type { ProcessPort, RunOptions } from "../ports/process.js";
+import type { ProcessPort, RunOptions, RunResult } from "../ports/process.js";
 
 /**
  * Non-interactive git env: `GIT_TERMINAL_PROMPT=0` makes git FAIL FAST instead of
@@ -24,6 +24,15 @@ export class GitCliAdapter implements GitPort {
     return { cwd: repoPath, env: nonInteractiveGitEnv(), ...extra };
   }
 
+  /** Run git, throwing `git <label> failed in <repo>: <stderr>` on non-zero exit. */
+  private async mustRun(label: string, args: string[], repoPath: string): Promise<RunResult> {
+    const result = await this.process.run("git", args, this.opts(repoPath));
+    if (result.code !== 0) {
+      throw new Error(`git ${label} failed in ${repoPath}: ${result.stderr.trim()}`);
+    }
+    return result;
+  }
+
   async isGitRepo(repoPath: string): Promise<boolean> {
     const result = await this.process.run("git", ["rev-parse", "--git-dir"], this.opts(repoPath));
     return result.code === 0;
@@ -43,18 +52,12 @@ export class GitCliAdapter implements GitPort {
   }
 
   async isDirty(repoPath: string): Promise<boolean> {
-    const result = await this.process.run("git", ["status", "--porcelain"], this.opts(repoPath));
-    if (result.code !== 0) {
-      throw new Error(`git status failed in ${repoPath}: ${result.stderr.trim()}`);
-    }
+    const result = await this.mustRun("status", ["status", "--porcelain"], repoPath);
     return result.stdout.trim().length > 0;
   }
 
   async changedFiles(repoPath: string): Promise<string[]> {
-    const result = await this.process.run("git", ["status", "--porcelain"], this.opts(repoPath));
-    if (result.code !== 0) {
-      throw new Error(`git status failed in ${repoPath}: ${result.stderr.trim()}`);
-    }
+    const result = await this.mustRun("status", ["status", "--porcelain"], repoPath);
     // NOTE: trim BEFORE splitting consumes the leading space of the first line
     // in porcelain format (e.g., ` M path` → `M path`, then [3:] would be off
     // by one). This quirk is preserved for back-compat with prior consumers.
@@ -63,14 +66,6 @@ export class GitCliAdapter implements GitPort {
       .split("\n")
       .filter((line) => line.length > 3)
       .map((line) => line.slice(3).trim());
-  }
-
-  async log(args: string[], repoPath: string): Promise<string> {
-    const result = await this.process.run("git", ["log", ...args], this.opts(repoPath));
-    if (result.code !== 0) {
-      throw new Error(`git log failed in ${repoPath}: ${result.stderr.trim()}`);
-    }
-    return result.stdout;
   }
 
   async diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]> {
@@ -100,17 +95,11 @@ export class GitCliAdapter implements GitPort {
   }
 
   async checkout(repoPath: string, branch: string): Promise<void> {
-    const result = await this.process.run("git", ["checkout", branch], this.opts(repoPath));
-    if (result.code !== 0) {
-      throw new Error(`git checkout ${branch} failed in ${repoPath}: ${result.stderr.trim()}`);
-    }
+    await this.mustRun(`checkout ${branch}`, ["checkout", branch], repoPath);
   }
 
   async pull(repoPath: string): Promise<void> {
-    const result = await this.process.run("git", ["pull"], this.opts(repoPath));
-    if (result.code !== 0) {
-      throw new Error(`git pull failed in ${repoPath}: ${result.stderr.trim()}`);
-    }
+    await this.mustRun("pull", ["pull"], repoPath);
   }
 
   async merge(repoPath: string, fromBranch: string): Promise<MergeResult> {
@@ -126,10 +115,7 @@ export class GitCliAdapter implements GitPort {
   }
 
   async push(repoPath: string, branch: string): Promise<void> {
-    const result = await this.process.run("git", ["push", "origin", branch], this.opts(repoPath));
-    if (result.code !== 0) {
-      throw new Error(`git push ${branch} failed in ${repoPath}: ${result.stderr.trim()}`);
-    }
+    await this.mustRun(`push ${branch}`, ["push", "origin", branch], repoPath);
   }
 
   async isMerging(repoPath: string): Promise<boolean> {

@@ -27,6 +27,7 @@ import {
 import type { CommandResult, ExitCode } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 // File-writing hosts derived from registry (excludes oz which has no file writer)
@@ -46,29 +47,20 @@ export const mcpCommand: QtcCommand = {
     if (subcommand === "remove") return runRemoveSub(args, ctx);
     if (subcommand === "doctor") return runDoctorSub(args, ctx);
     if (subcommand === "warp-status") return runWarpStatusSub(args, ctx);
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message:
-          "mcp requiere subcomando: dbhub <instance> | setup | remove | doctor | warp-status",
-      },
-      exitCode: 1,
-    };
+    return fail(
+      "INVALID_INPUT",
+      "mcp requiere subcomando: dbhub <instance> | setup | remove | doctor | warp-status",
+    );
   },
 };
 
 async function runDbhubSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
   const instance = args.rest[1];
   if (!instance) {
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message: "mcp dbhub requiere nombre de conexión. Ej: cert, prod o reporting",
-      },
-      exitCode: 1,
-    };
+    return fail(
+      "INVALID_INPUT",
+      "mcp dbhub requiere nombre de conexión. Ej: cert, prod o reporting",
+    );
   }
   try {
     const result = await runDbhubLauncher({
@@ -82,11 +74,7 @@ async function runDbhubSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
     return { ok: true, data: undefined, exitCode: clampExit(result.exitCode) };
   } catch (err) {
     if (err instanceof DbhubLauncherError) {
-      return {
-        ok: false,
-        error: { code: "DBHUB_LAUNCHER_FAILED", message: err.message },
-        exitCode: 1,
-      };
+      return fail("DBHUB_LAUNCHER_FAILED", err.message);
     }
     throw err;
   }
@@ -113,15 +101,7 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
   });
 
   if ("ok" in result) {
-    return {
-      ok: false,
-      error: {
-        code: "GLOBAL_REQUIRES_FORCE",
-        message: result.hint,
-      },
-      data: result,
-      exitCode: result.exitCode,
-    };
+    return fail("GLOBAL_REQUIRES_FORCE", result.hint, result, result.exitCode);
   }
 
   const hasErrors = result.errors.length > 0;
@@ -215,15 +195,7 @@ async function runRemoveSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   });
 
   if ("ok" in result) {
-    return {
-      ok: false,
-      error: {
-        code: "GLOBAL_REQUIRES_FORCE",
-        message: result.hint,
-      },
-      data: result,
-      exitCode: result.exitCode,
-    };
+    return fail("GLOBAL_REQUIRES_FORCE", result.hint, result, result.exitCode);
   }
 
   const hasErrors = result.errors.length > 0;
@@ -294,14 +266,7 @@ export function resolveHosts(
   }
   if (!HOST_VALUES.has(flag)) {
     const validList = [...FILE_HOSTS, "both", "all"].join(" | ");
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message: `--host inválido: '${flag}'. Valores válidos: ${validList}`,
-      },
-      exitCode: 1,
-    };
+    return fail("INVALID_INPUT", `--host inválido: '${flag}'. Valores válidos: ${validList}`);
   }
   if (flag === "both" || flag === "all") return { value: [...FILE_HOSTS] };
   return { value: [flag as McpHost] };
@@ -313,14 +278,7 @@ function resolveInstances(args: ParsedArgs): { value: McpInstance[] } | CommandR
   if (flag === "both") return { value: [...DEFAULT_MCP_INSTANCES] };
   const validation = validateMcpInstance(flag);
   if (!validation.ok) {
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message: `--instance inválido: '${flag}'. ${validation.error}`,
-      },
-      exitCode: 1,
-    };
+    return fail("INVALID_INPUT", `--instance inválido: '${flag}'. ${validation.error}`);
   }
   return { value: [validation.value] };
 }
@@ -332,25 +290,14 @@ function resolveDsnVars(
   const flag = args.values.get("dsn-var");
   if (flag === undefined) return { value: undefined };
   if (instances.length !== 1) {
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message: "--dsn-var requiere una sola conexión. Pasá también --instance <nombre>",
-      },
-      exitCode: 1,
-    };
+    return fail(
+      "INVALID_INPUT",
+      "--dsn-var requiere una sola conexión. Pasá también --instance <nombre>",
+    );
   }
   const validation = validateDsnVarName(flag);
   if (!validation.ok) {
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message: validation.error,
-      },
-      exitCode: 1,
-    };
+    return fail("INVALID_INPUT", validation.error);
   }
   const instance = instances[0];
   if (instance === undefined) return { value: undefined };

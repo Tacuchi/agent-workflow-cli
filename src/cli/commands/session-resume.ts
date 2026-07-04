@@ -2,6 +2,7 @@ import { runSessionResume } from "../../application/session-resume-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const sessionResumeCommand: QtcCommand = {
@@ -17,12 +18,7 @@ export const sessionResumeCommand: QtcCommand = {
       ...(reopen ? { reopen: true } : {}),
     });
     if ("error" in data) {
-      return {
-        ok: false,
-        error: { code: "SESSION_NOT_FOUND", message: data.error },
-        data,
-        exitCode: 1,
-      };
+      return fail("SESSION_NOT_FOUND", data.error, data);
     }
     return { ok: true, data, exitCode: 0 };
   },

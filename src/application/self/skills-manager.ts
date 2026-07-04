@@ -84,8 +84,6 @@ export interface MaterializeData {
   status: "installed" | "updated" | "reinstalled";
   name: string;
   canonical: string;
-  /** Primary replica (Claude) — compat with prior consumers. */
-  replica: string;
   mode: SkillReplicaMode;
   /** All per-host replicas (claude symlink · gemini copy). */
   replicas: { host: "claude" | "gemini"; path: string; mode: SkillReplicaMode }[];
@@ -486,7 +484,6 @@ export async function installSkill(
       status: opts.refetch ? "installed" : "reinstalled",
       name,
       canonical,
-      replica: claudeReplica.path,
       mode: claudeReplica.mode,
       replicas: replicas.map((r) => ({ host: r.host, path: r.path, mode: r.mode })),
       summary: `Skill '${name}' materializada en ${canonical} (réplicas: ${replicas

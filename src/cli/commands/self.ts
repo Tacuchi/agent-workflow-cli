@@ -15,6 +15,7 @@ import { selfUpdate } from "../../application/self/update-self.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 const SELF_SUBCOMMANDS = [
@@ -85,14 +86,10 @@ export const selfCommand: QtcCommand = {
           exitCode: 0,
         };
       default:
-        return {
-          ok: false,
-          error: {
-            code: "INVALID_INPUT",
-            message: `unknown self subcommand: '${sub}'. uso: self <${SELF_SUBCOMMANDS.join("|")}>`,
-          },
-          exitCode: 1,
-        };
+        return fail(
+          "INVALID_INPUT",
+          `unknown self subcommand: '${sub}'. uso: self <${SELF_SUBCOMMANDS.join("|")}>`,
+        );
     }
   },
 };

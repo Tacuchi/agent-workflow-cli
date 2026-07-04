@@ -9,21 +9,12 @@
 // - Semantic: `ok / warn / err / info / purple`.
 
 export const palette = {
-  // surfaces
-  bg: "#0c0a14",
-  bgElev1: "#0c0a14",
-  bgElev2: "#0c0a14",
-  bgElev3: "#0c0a14",
-  bgHover: "#1a172a",
-  bgSelected: "#3a2f5c",
   // Highlight for focused rows — visible marker-style violet background.
   bgHighlight: "#3a2f5c",
 
   // borders
   borderFaint: "#1a172a",
   border: "#2a2540",
-  borderStrong: "#4a4368",
-  borderAccent: "#a78bfa",
 
   // text (5 levels)
   bright: "#f4f1fc",
@@ -32,66 +23,29 @@ export const palette = {
   mute: "#6e6588",
   faint: "#4a4368",
 
-  // text legacy aliases
-  textBright: "#f4f1fc",
-  textDim: "#9b94b8",
-  textMute: "#6e6588",
-  textFaint: "#4a4368",
-
   // accent
   accent: "#a78bfa",
   accentSoft: "#c4b5fd",
 
-  // supporting colors (kept for codebase compat)
-  purple: "#a78bfa",
-  purpleSoft: "#c4b5fd",
-  blue: "#93c5fd",
-  cyan: "#93c5fd",
-  green: "#6ee7b7",
-  greenDim: "#34d399",
-  yellow: "#fbbf24",
-  orange: "#fbbf24",
-  red: "#fb7185",
-
   // semantic
+  purple: "#a78bfa",
   ok: "#6ee7b7",
   warn: "#fbbf24",
   err: "#fb7185",
   info: "#93c5fd",
 };
 
-// `colors.*` with legacy names + the handoff's canonical names.
 export const colors = {
-  // legacy aliases (kept for compat with v8 tabs)
-  primary: palette.accent,
   accent: palette.accent,
   accentSoft: palette.accentSoft,
-  secondary: palette.accentSoft,
 
-  success: palette.ok,
-  warning: palette.warn,
-  error: palette.err,
   info: palette.info,
   purple: palette.purple,
 
-  fg: palette.text,
-  fgBright: palette.bright,
-  fgSubtle: palette.dim,
-  fgMoreSubtle: palette.mute,
-  fgFaint: palette.faint,
-
   border: palette.border,
   borderFaint: palette.borderFaint,
-  borderStrong: palette.borderStrong,
-  borderActive: palette.accent,
-
-  bg: palette.bg,
-  bgElev: palette.bgElev2,
-  bgHover: palette.bgHover,
-  bgSelected: palette.bgSelected,
   bgHighlight: palette.bgHighlight,
 
-  // handoff canonical names (newer components)
   bright: palette.bright,
   text: palette.text,
   dim: palette.dim,
@@ -102,67 +56,39 @@ export const colors = {
   err: palette.err,
 };
 
+/**
+ * Resolves a semantic tone name (the `tone` props of list rows, pills, tiles,
+ * page heads) to its color. Looks up `colors` at render time so applyAccent's
+ * in-place mutation keeps working.
+ */
+export function toneColor(
+  tone?: "ok" | "warn" | "err" | "accent" | "dim" | "mute" | "purple" | "info",
+  fallback: string = colors.dim,
+): string {
+  return tone ? colors[tone] : fallback;
+}
+
 export const icons = {
   check: "✓",
   cross: "✗",
   pending: "●",
   spinner: "⋯",
   arrow: "→",
-  section: "─",
-  focusBullet: "▎",
-  dimBullet: " ",
   bullet: "·",
   diamond: "◆",
   brand: "◆",
   promptMark: "›",
-  tabActiveLeft: "",
-  tabActiveRight: "",
-  tabSeparator: "  ",
-  divider: "─",
-  chevron: "›",
-  star: "✦",
-  plug: "◇",
-  pkg: "◆",
-  db: "▤",
   refresh: "↻",
-  search: "⌕",
-  cmd: "⌘",
-  enter: "↵",
-  up: "↑",
-  down: "↓",
-  tab: "⇥",
-  esc: "⎋",
-  play: "▸",
-  stop: "■",
-  install: "↓",
-  uninstall: "×",
-  clean: "⊘",
-  legacy: "⚒",
+  chevron: "›",
   // NOTE: avoid the "branch" glyph U+2387. Several terminal fonts (e.g. Warp's
   // default, on Mac and Windows) lack it and use a width-2 fallback while Ink
   // measures it as 1 → misaligns the Project tab's columns (it renders one per
   // row). U+21B3 (Arrows block) is far better supported and measures 1 cell.
-  git: "↳",
   branch: "↳",
-  commit: "●",
-  edit: "✎",
-  tool: "⚙",
-  hook: "↪",
-  test: "✓",
-  todo: "□",
-  clock: "◷",
   alertDot: "●",
-  ring: "●",
   pin: "⌖",
-  // handoff canonical names
   focusBar: "▎",
-  caret: "▍",
-  expandCollapsed: "▸",
-  expandExpanded: "▾",
-  sectionDot: "·",
 } as const;
-
-export type ColorName = (typeof colors)[keyof typeof colors];
 
 // ─── Configurable accent ────────────────────────────────────────────────────
 // The accent is the single brand color (focus, selection, active borders,
@@ -209,18 +135,11 @@ export function applyAccent(accent: AccentColor): void {
 
   palette.accent = def.main;
   palette.accentSoft = def.soft;
-  palette.borderAccent = def.main;
   palette.purple = def.main;
-  palette.purpleSoft = def.soft;
-  palette.bgSelected = def.selBg;
   palette.bgHighlight = def.selBg;
 
-  colors.primary = def.main;
   colors.accent = def.main;
   colors.accentSoft = def.soft;
-  colors.secondary = def.soft;
   colors.purple = def.main;
-  colors.borderActive = def.main;
-  colors.bgSelected = def.selBg;
   colors.bgHighlight = def.selBg;
 }

@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { colors } from "../theme.js";
+import { colors, toneColor } from "../theme.js";
 
 export type PageHeadTone = "accent" | "ok" | "warn" | "err" | "dim" | "mute";
 
@@ -17,25 +17,6 @@ export interface PageHeadProps {
   compact?: boolean;
 }
 
-function toneColor(tone?: PageHeadTone): string {
-  switch (tone) {
-    case "accent":
-      return colors.accent;
-    case "ok":
-      return colors.ok;
-    case "warn":
-      return colors.warn;
-    case "err":
-      return colors.err;
-    case "dim":
-      return colors.dim;
-    case "mute":
-      return colors.mute;
-    default:
-      return colors.accent;
-  }
-}
-
 export function PageHead({ title, count, desc, action, compact = false }: PageHeadProps) {
   return (
     <Box marginBottom={compact ? 0 : 1} flexDirection="row">
@@ -45,7 +26,7 @@ export function PageHead({ title, count, desc, action, compact = false }: PageHe
       {count ? (
         <>
           <Text> </Text>
-          <Text color={toneColor(count.tone)} bold>
+          <Text color={toneColor(count.tone, colors.accent)} bold>
             {count.label}
           </Text>
         </>

@@ -9,14 +9,9 @@ export interface McpGuards {
 
 export interface SlashCommandHints {
   migrate?: string;
-  projectInit?: string;
-  resume?: string;
-  session?: string;
 }
 
 export interface AgentWorkflowRuntimeConfig {
-  /** Schema version. Currently 1. */
-  schemaVersion?: number;
   packageName: string;
   binName: string;
   envOverride: string;
@@ -30,7 +25,7 @@ export interface AgentWorkflowRuntimeConfig {
   slashCommands?: SlashCommandHints;
 }
 
-export type RuntimeSource = "env" | "user-config" | "core-config" | "default";
+export type RuntimeSource = "env" | "user-config" | "default";
 
 export interface ResolvedRuntime {
   packageName: string;
@@ -45,7 +40,6 @@ export interface ResolvedRuntime {
 }
 
 export const DEFAULT_RUNTIME_CONFIG: AgentWorkflowRuntimeConfig = {
-  schemaVersion: 1,
   packageName: "@tacuchi/agent-workflow-cli",
   binName: "agent-workflow",
   envOverride: "AW_AGENT_WORKFLOW_BIN",

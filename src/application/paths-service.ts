@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { Namespace } from "../runtime/namespace.js";
+import { localDateIso } from "./dates.js";
 
 export interface ProjectBlockMarkers {
   start: string;
@@ -47,10 +48,7 @@ export class PathsService {
    * LOCAL parts so it matches the user's "today".
    */
   userDailyLogFile(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return join(this.userLogsDir(), `agent-workflow-${y}-${m}-${d}.log`);
+    return join(this.userLogsDir(), `agent-workflow-${localDateIso(date)}.log`);
   }
   userLibConfigDir(): string {
     return join(this.userRoot(), "lib", "config");

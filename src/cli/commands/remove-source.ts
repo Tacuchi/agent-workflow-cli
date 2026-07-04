@@ -2,6 +2,7 @@ import { removeSource } from "../../application/source-remove-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const removeSourceCommand: QtcCommand = {
@@ -11,11 +12,7 @@ export const removeSourceCommand: QtcCommand = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const alias = args.rest[0];
     if (!alias) {
-      return {
-        ok: false,
-        error: { code: "INVALID_INPUT", message: "Usage: aw remove-source <alias>" },
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", "Usage: aw remove-source <alias>");
     }
 
     const data = await removeSource(
@@ -23,12 +20,7 @@ export const removeSourceCommand: QtcCommand = {
       alias,
     );
     if ("error" in data) {
-      return {
-        ok: false,
-        error: { code: "INVALID_INPUT", message: data.error },
-        data,
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", data.error, data);
     }
     return { ok: true, data, exitCode: 0 };
   },

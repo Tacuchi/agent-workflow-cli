@@ -122,8 +122,7 @@ async function removeInstalledEntry(
     return null;
   }
   const plugins = (data.plugins ?? {}) as Record<string, unknown>;
-  const keyPattern = new RegExp(`^${escapeRegExp(plugin)}@`);
-  const keysToRemove = Object.keys(plugins).filter((k) => keyPattern.test(k));
+  const keysToRemove = Object.keys(plugins).filter((k) => k.startsWith(`${plugin}@`));
   if (keysToRemove.length === 0) return null;
 
   if (!dryRun) {
@@ -137,7 +136,8 @@ async function removeInstalledEntry(
   };
 }
 
-async function listSafe(ctx: CliContext, path: string): Promise<{ name: string }[]> {
+// Exported: plugin-cache-reload shares the same tolerant listing.
+export async function listSafe(ctx: CliContext, path: string): Promise<{ name: string }[]> {
   try {
     return await ctx.fs.list(path);
   } catch {
@@ -174,10 +174,6 @@ async function clearSkillDirs(
   }
 
   return removals;
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildSummary(

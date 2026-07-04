@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { INSTALL_TARGETS, type InstallTarget, TARGET_ROOTS } from "./install-skill.js";
+import { INSTALL_TARGETS, type InstallTarget, TARGET_ROOTS } from "./install-targets.js";
 
 export interface PluginSkillResult {
   skillName: string;
@@ -183,10 +183,12 @@ async function patchFrontmatterName(skillMdPath: string, newName: string): Promi
   }
 }
 
-// Exported: shared with skills-manager (materializes canonical copies).
-export async function copyDir(src: string, dest: string): Promise<void> {
+// Exported: shared with skills-manager (materializes canonical copies) and
+// install-skill (bundle copy). Returns the number of files copied.
+export async function copyDir(src: string, dest: string): Promise<number> {
   await mkdir(dest, { recursive: true });
   const entries = await readdir(src, { withFileTypes: true });
+  let count = 0;
   for (const entry of entries) {
     if (entry.name === ".git") continue;
     // Never follow symlinks: a hostile repo can commit a link to a user file
@@ -195,11 +197,13 @@ export async function copyDir(src: string, dest: string): Promise<void> {
     const srcPath = join(src, entry.name);
     const destPath = join(dest, entry.name);
     if (entry.isDirectory()) {
-      await copyDir(srcPath, destPath);
+      count += await copyDir(srcPath, destPath);
     } else {
       await copyFile(srcPath, destPath);
+      count += 1;
     }
   }
+  return count;
 }
 
 // Exported: skills-manager applies the same rule for what counts as a skill

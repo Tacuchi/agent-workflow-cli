@@ -5,7 +5,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { DEFAULT_LOCK_TTL_MS, isExpired, parseLock } from "./lock-service.js";
 import { type MultirootError, type MultirootResult, runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
-import { parseProjectBlock } from "./parsers/project-block.js";
+import { readWorkspaceBlock } from "./parsers/project-block.js";
 import { PathsService } from "./paths-service.js";
 import {
   type ProjectMdUpsertError,
@@ -485,25 +485,18 @@ async function readExistingBlock(
   workspace: string,
   paths: PathsService,
 ): Promise<{ proyecto: string; fuentes: WorkspaceSource[] } | null> {
-  const markers = paths.blockMarkers();
-  for (const fname of ["CLAUDE.md", "AGENTS.md"]) {
-    const file = join(workspace, fname);
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), markers);
-    if (block) {
-      return {
-        proyecto: block.proyecto,
-        fuentes: block.fuentes
-          .filter((f) => f.path.length > 0)
-          .map((f) => ({
-            alias: f.alias,
-            path: f.path,
-            ...(f.main_branch ? { mainBranch: f.main_branch } : {}),
-          })),
-      };
-    }
-  }
-  return null;
+  const block = await readWorkspaceBlock(fs, workspace, paths.blockMarkers());
+  if (!block) return null;
+  return {
+    proyecto: block.proyecto,
+    fuentes: block.fuentes
+      .filter((f) => f.path.length > 0)
+      .map((f) => ({
+        alias: f.alias,
+        path: f.path,
+        ...(f.main_branch ? { mainBranch: f.main_branch } : {}),
+      })),
+  };
 }
 
 /** Project description: explicit arg wins, else preserve the existing block's,

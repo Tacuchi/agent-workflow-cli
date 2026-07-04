@@ -29,14 +29,12 @@ export interface NotificationBannerProps {
  *
  * If the item has actions, the first one (or the one with `emphasis: true`)
  * is highlighted as `inverse bold`. The rest render `dim` with the
- * `key label · key label` convention. If `dismissible !== false`, `x dismiss`
- * is appended.
+ * `key label · key label` convention, followed by `x dismiss`.
  */
 export function NotificationBanner({ item }: NotificationBannerProps) {
   const toneColor = TONE_COLOR[item.tone];
   const toneIcon = TONE_ICON[item.tone];
   const actions = item.actions ?? [];
-  const dismissible = item.dismissible !== false;
 
   // Primary CTA: the first action with emphasis, or the first in the array.
   const primaryIdx = actions.findIndex((a) => a.emphasis);
@@ -66,26 +64,20 @@ export function NotificationBanner({ item }: NotificationBannerProps) {
             </Text>
           </Box>
         ) : null}
-        {rest.length > 0 || dismissible ? (
-          <Box marginLeft={1}>
-            <Text color={colors.mute}>
-              {rest.map((a, idx) => (
-                <Text key={`${a.key}-${a.label}`}>
-                  {idx > 0 ? " · " : ""}
-                  <Text color={colors.accent}>{a.key}</Text>
-                  <Text color={colors.mute}> {a.label}</Text>
-                </Text>
-              ))}
-              {dismissible ? (
-                <>
-                  {rest.length > 0 ? <Text color={colors.mute}> · </Text> : null}
-                  <Text color={colors.accent}>x</Text>
-                  <Text color={colors.mute}> dismiss</Text>
-                </>
-              ) : null}
-            </Text>
-          </Box>
-        ) : null}
+        <Box marginLeft={1}>
+          <Text color={colors.mute}>
+            {rest.map((a, idx) => (
+              <Text key={`${a.key}-${a.label}`}>
+                {idx > 0 ? " · " : ""}
+                <Text color={colors.accent}>{a.key}</Text>
+                <Text color={colors.mute}> {a.label}</Text>
+              </Text>
+            ))}
+            {rest.length > 0 ? <Text color={colors.mute}> · </Text> : null}
+            <Text color={colors.accent}>x</Text>
+            <Text color={colors.mute}> dismiss</Text>
+          </Text>
+        </Box>
       </Box>
       {item.body ? (
         <Box marginLeft={4}>

@@ -54,13 +54,6 @@ export function attachClaude(paths: string[], scopeDir: string): ClaudeResult {
   })();
   if (!Array.isArray(perms.additionalDirectories)) perms.additionalDirectories = [];
   const additional = perms.additionalDirectories as unknown[];
-  if (!Array.isArray(additional)) {
-    return {
-      file: settingsFile,
-      error: "additionalDirectories_not_list",
-      skipped: true,
-    };
-  }
   const existingNorm = new Set(
     additional.filter((p): p is string => typeof p === "string").map(normalizePath),
   );

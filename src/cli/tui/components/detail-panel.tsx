@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { colors, icons } from "../theme.js";
+import { truncateCells } from "../row-width.js";
+import { colors, icons, toneColor } from "../theme.js";
 
 export type DetailTone = "ok" | "warn" | "accent" | "dim" | "err" | "purple" | "info";
 
@@ -22,19 +23,16 @@ export interface DetailAction {
   danger?: boolean;
 }
 
-export interface DetailFooterEntry {
+interface DetailFooterEntry {
   key: string;
   label: string;
 }
 
 export interface DetailPanelProps {
-  width?: number;
   header: DetailHeader;
   statePill?: DetailStatePill;
   actions: DetailAction[];
   focusedAction: number;
-  /** Structured footer entries with key + label. If omitted, uses default. */
-  footer?: DetailFooterEntry[];
   /** If present, the actions block is replaced by this banner (e.g. ConfirmBanner). */
   banner?: ReactNode;
   /**
@@ -65,43 +63,20 @@ const DEFAULT_FOOTER: DetailFooterEntry[] = [
 // Separator between name and description on the same line.
 const NAME_DESC_SEP = " · ";
 
-function toneColor(tone?: DetailTone): string {
-  switch (tone) {
-    case "ok":
-      return colors.ok;
-    case "warn":
-      return colors.warn;
-    case "accent":
-      return colors.accent;
-    case "err":
-      return colors.err;
-    case "dim":
-      return colors.dim;
-    case "purple":
-      return colors.purple;
-    case "info":
-      return colors.info;
-    default:
-      return colors.dim;
-  }
-}
-
 export function DetailPanel({
-  width = DEFAULT_WIDTH,
   header,
   statePill,
   actions,
   focusedAction,
-  footer = DEFAULT_FOOTER,
   banner,
   bordered = false,
 }: DetailPanelProps) {
   // The frame is added outside (outerWidth = width + frame) so the content is
-  // not shrunk: internal calculations (separator, action rows) keep using `width`.
+  // not shrunk: internal calculations (separator, action rows) keep using the width.
   return (
     <Box
       flexDirection="column"
-      width={bordered ? width + BORDER_WIDTH : width}
+      width={bordered ? DEFAULT_WIDTH + BORDER_WIDTH : DEFAULT_WIDTH}
       paddingLeft={1}
       borderStyle={bordered ? "round" : undefined}
       borderColor={bordered ? colors.border : undefined}
@@ -141,8 +116,8 @@ export function DetailPanel({
       </Box>
 
       <Box marginTop={1} flexDirection="column">
-        <Text color={colors.borderFaint}>{"─".repeat(width - 2)}</Text>
-        <DetailFooter entries={footer} />
+        <Text color={colors.borderFaint}>{"─".repeat(DEFAULT_WIDTH - 2)}</Text>
+        <DetailFooter entries={DEFAULT_FOOTER} />
       </Box>
     </Box>
   );
@@ -189,14 +164,7 @@ function DetailActionRow({
     DETAIL_INNER_WIDTH - fixedLen - sepLen - 1, // -1 reserves the min spacer
   );
 
-  let displayDesc = action.description ?? "";
-  if (action.description && [...action.description].length > availableForDesc) {
-    if (availableForDesc <= 1) {
-      displayDesc = "";
-    } else {
-      displayDesc = `${action.description.slice(0, availableForDesc - 1)}…`;
-    }
-  }
+  const displayDesc = truncateCells(action.description ?? "", availableForDesc);
 
   const descLen = displayDesc ? [...displayDesc].length : 0;
   const sepActualLen = displayDesc ? sepLen : 0;

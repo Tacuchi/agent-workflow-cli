@@ -4,16 +4,21 @@ import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import {
-  AGENTS_LOCK_REL,
   type InstallTarget,
   LEGACY_SKILL_NAMES,
   SKILL_DIR_NAME,
   TARGET_ROOTS,
+  USER_COMMANDS_BY_TARGET,
   isOwnedBundleDir,
   isOwnedSynthesizedDir,
   removeDirIfEmpty,
 } from "./install-skill.js";
-import { COMMAND_SKILLS_HOSTS, LEGACY_SKILL_ROOTS_BY_TARGET } from "./install-targets.js";
+import {
+  COMMAND_SKILLS_HOSTS,
+  INSTALL_TARGETS,
+  LEGACY_SKILL_ROOTS_BY_TARGET,
+} from "./install-targets.js";
+import { updateAgentsLock } from "./uninstall-skill.js";
 
 // Synthesized `w-<command>` skills are removed for the COMMAND_SKILLS_HOSTS
 // (shared value from install-targets.ts — install/uninstall symmetric by
@@ -41,29 +46,19 @@ export interface SelfUninstallData {
   lock_warning?: string;
 }
 
-const ALL_TARGETS: readonly InstallTarget[] = [
-  "claude",
-  "codex",
-  "agents",
-  "warp",
-  "oz",
-  "gemini",
-  "opencode",
-  "crush",
-];
+// Derived from TARGET_ROOTS (single source) so uninstall keeps round-trip
+// parity with install when a host is added — the clean-legacy v14.5.1 lesson.
+const ALL_TARGETS: readonly InstallTarget[] = INSTALL_TARGETS;
 const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"];
 
+// Derived from the install-side map so both sides stay symmetric by construction.
 export const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
-  claude: ".claude/commands/w",
+  ...(Object.fromEntries(
+    INSTALL_TARGETS.map((t) => [t, USER_COMMANDS_BY_TARGET[t]?.relpath ?? null]),
+  ) as Record<InstallTarget, string | null>),
   // codex: `.codex/commands/w` was written by ≤v18 but Codex never read it;
   // still cleaned every time (inert dir of ours).
   codex: ".codex/commands/w",
-  warp: null,
-  oz: null,
-  agents: null,
-  gemini: ".gemini/commands/w",
-  opencode: ".opencode/command/w",
-  crush: ".crush/commands/w",
 };
 
 // Pre-`w`-rename user-commands dirs (`/agent-workflow:*`), removed with `--legacy`.
@@ -343,22 +338,12 @@ async function tryParseSettings(path: string): Promise<Record<string, unknown> |
 
 function stripOurHookEvents(data: Record<string, unknown>): string[] {
   const hooks = data.hooks as Record<string, unknown>;
-  const removed: string[] = [];
-  for (const event of HOOK_EVENTS_WE_INSTALL) {
-    if (event in hooks) {
-      hooks[event] = undefined;
-      removed.push(event);
-    }
-  }
+  const removed = HOOK_EVENTS_WE_INSTALL.filter((event) => event in hooks);
   for (const event of removed) {
-    // Object.keys() drops undefined-valued keys in JSON.stringify; we want
-    // them actually removed from the object too to keep iteration clean.
     Reflect.deleteProperty(hooks, event);
   }
   if (Object.keys(hooks).length === 0) {
     Reflect.deleteProperty(data, "hooks");
-  } else {
-    data.hooks = hooks;
   }
   return removed;
 }
@@ -378,42 +363,4 @@ async function persistSettings(
     // best-effort backup
   }
   await writeFile(settingsPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
-}
-
-async function updateAgentsLock(
-  ctx: CliContext,
-  home: string,
-  includeLegacy: boolean,
-  dryRun: boolean,
-): Promise<{ updated: boolean; path?: string; warning?: string }> {
-  const lockPath = join(home, ...AGENTS_LOCK_REL);
-  if (!(await ctx.fs.exists(lockPath))) return { updated: false };
-
-  let parsed: { skills?: Record<string, unknown> } & Record<string, unknown>;
-  try {
-    parsed = JSON.parse(await ctx.fs.readText(lockPath));
-  } catch (err) {
-    return {
-      updated: false,
-      path: lockPath,
-      warning: `Could not parse ${lockPath}: ${(err as Error).message}. Lock left untouched.`,
-    };
-  }
-
-  const skills = (parsed.skills ?? {}) as Record<string, unknown>;
-  const before = Object.keys(skills);
-  const namesToRemove = [SKILL_DIR_NAME, ...(includeLegacy ? LEGACY_SKILL_NAMES : [])];
-  for (const name of namesToRemove) {
-    delete skills[name];
-  }
-  const after = Object.keys(skills);
-  const changed = before.length !== after.length;
-
-  if (!changed) return { updated: false, path: lockPath };
-
-  if (!dryRun) {
-    parsed.skills = skills;
-    await writeFile(lockPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
-  }
-  return { updated: true, path: lockPath };
 }

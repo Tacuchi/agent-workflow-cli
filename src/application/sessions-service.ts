@@ -78,7 +78,7 @@ export class SessionsService {
     const folders = await listSessionFolders(this.fs, dir);
     const result: SessionEntry[] = [];
     for (const folder of folders) {
-      const built = await buildSessionEntry(this.fs, folder.path, folder.name, { verbose });
+      const built = await buildSessionEntry(this.fs, folder.path, folder.name);
       result.push(serializeSessionEntry(built, cwd, { verbose }));
     }
     return result;

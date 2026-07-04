@@ -1,9 +1,8 @@
-import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { expectedWorkBranch } from "./branch-resolver.js";
-import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
+import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface CheckBranchInput {
@@ -11,7 +10,6 @@ export interface CheckBranchInput {
   pathArg?: string;
   fileArg?: string;
   sessionCode?: string;
-  strict?: boolean;
 }
 
 export interface CheckBranchOutput {
@@ -28,7 +26,6 @@ export interface CheckBranchOutput {
   main_branch?: string;
   session_code?: string | null;
   work_branch?: string | null;
-  exitCode?: number;
 }
 
 export async function runCheckBranch(
@@ -39,13 +36,13 @@ export async function runCheckBranch(
   input: CheckBranchInput,
 ): Promise<CheckBranchOutput> {
   const cwd = env.cwd();
-  const block = await readBlock(fs, cwd, paths);
+  const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
   const sources = block?.fuentes ?? [];
   if (sources.length === 0) {
     return { match: true, reason: "no_sources_declared" };
   }
 
-  const target = await resolveTarget(fs, sources, input);
+  const target = resolveTarget(sources, input);
   if (!target) {
     return { match: true, reason: "file_not_in_managed_source" };
   }
@@ -115,20 +112,7 @@ export async function runCheckBranch(
   };
 }
 
-async function readBlock(fs: FileSystemPort, cwd: string, paths: PathsService) {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block;
-  }
-  return null;
-}
-
-async function resolveTarget(
-  _fs: FileSystemPort,
-  sources: ProjectFuente[],
-  input: CheckBranchInput,
-): Promise<ProjectFuente | null> {
+function resolveTarget(sources: ProjectFuente[], input: CheckBranchInput): ProjectFuente | null {
   if (input.alias) {
     return sources.find((s) => s.alias === input.alias) ?? null;
   }

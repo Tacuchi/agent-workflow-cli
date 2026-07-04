@@ -5,6 +5,7 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const sessionCreateCommand: QtcCommand = {
@@ -24,12 +25,7 @@ export const sessionCreateCommand: QtcCommand = {
 
     const data = await runSessionCreate(ctx.fs, ctx.env, ctx.paths, input);
     if ("error" in data) {
-      return {
-        ok: false,
-        error: { code: data.code ?? "INVALID_INPUT", message: data.error },
-        data,
-        exitCode: 1,
-      };
+      return fail(data.code ?? "INVALID_INPUT", data.error, data);
     }
     return { ok: true, data: data.sessionCreate, exitCode: 0 };
   },

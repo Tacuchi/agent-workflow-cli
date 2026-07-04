@@ -67,7 +67,7 @@ export async function runCheckpointWrite(
     }
   }
 
-  const state = await extractSessionState(fs, git, cwd, paths, sessionPath);
+  const state = await extractSessionState(fs, git, cwd, sessionPath);
   const md = formatCheckpointMd(state);
   await fs.mkdirp(sessionPath);
   await fs.writeText(cpPath, md);
@@ -164,7 +164,7 @@ async function writeCheckpointForActive(
     }
   }
   try {
-    const state = await extractSessionState(fs, git, cwd, paths, sessionPath);
+    const state = await extractSessionState(fs, git, cwd, sessionPath);
     const md = formatCheckpointMd(state);
     await fs.mkdirp(sessionPath);
     await fs.writeText(cpPath, md);

@@ -9,8 +9,12 @@ export function parseMdValue(text: string, key: string): string | undefined {
   return value.length > 0 ? value : undefined;
 }
 
-export function parseMdSection(text: string, heading: string): string | undefined {
-  const target = heading.trim().toLowerCase();
+export function parseMdSection(
+  text: string,
+  heading: string,
+  normalizeName: (s: string) => string = (s) => s.trim().toLowerCase(),
+): string | undefined {
+  const target = normalizeName(heading);
   const lines = text.split("\n");
   const headingRe = /^(#{1,6})\s+(.+?)\s*$/;
 
@@ -22,7 +26,7 @@ export function parseMdSection(text: string, heading: string): string | undefine
     const match = line.match(headingRe);
     if (!match || !match[1] || !match[2]) continue;
     const level = match[1].length;
-    const name = match[2].trim().toLowerCase();
+    const name = normalizeName(match[2]);
     if (captureFrom === null) {
       if (name === target) {
         captureFrom = i + 1;

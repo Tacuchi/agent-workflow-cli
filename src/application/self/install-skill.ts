@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,7 @@ import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { InstallTarget } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
+import { copyDir, hasValidFrontmatter } from "./install-plugin-skills.js";
 import {
   COMMAND_SKILLS_HOSTS,
   INSTALL_TARGETS,
@@ -433,16 +434,10 @@ async function resolveSource(
 }
 
 function buildDestByTarget(home: string): Record<InstallTarget, string> {
-  return {
-    claude: join(home, ...TARGET_ROOTS.claude, SKILL_DIR_NAME),
-    codex: join(home, ...TARGET_ROOTS.codex, SKILL_DIR_NAME),
-    agents: join(home, ...TARGET_ROOTS.agents, SKILL_DIR_NAME),
-    warp: join(home, ...TARGET_ROOTS.warp, SKILL_DIR_NAME),
-    oz: join(home, ...TARGET_ROOTS.oz, SKILL_DIR_NAME),
-    gemini: join(home, ...TARGET_ROOTS.gemini, SKILL_DIR_NAME),
-    opencode: join(home, ...TARGET_ROOTS.opencode, SKILL_DIR_NAME),
-    crush: join(home, ...TARGET_ROOTS.crush, SKILL_DIR_NAME),
-  };
+  // Derived from INSTALL_TARGETS so a new host is install-covered by construction.
+  return Object.fromEntries(
+    INSTALL_TARGETS.map((t) => [t, join(home, ...TARGET_ROOTS[t], SKILL_DIR_NAME)]),
+  ) as Record<InstallTarget, string>;
 }
 
 async function validateSourceContents(
@@ -488,37 +483,6 @@ function looksLikeRemoteUrl(value: string): boolean {
   return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/)/.test(value);
 }
 
-function hasValidFrontmatter(content: string): boolean {
-  const match = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return false;
-  const block = match[1] ?? "";
-  return /^name:\s*\S/m.test(block) && /^description:\s*\S/m.test(block);
-}
-
-async function copyTree(src: string, dest: string): Promise<number> {
-  let count = 0;
-  await copyDirCounting(src, dest, () => {
-    count += 1;
-  });
-  return count;
-}
-
-async function copyDirCounting(src: string, dest: string, onFile: () => void): Promise<void> {
-  await mkdir(dest, { recursive: true });
-  const entries = await readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name === ".git") continue;
-    const srcPath = join(src, entry.name);
-    const destPath = join(dest, entry.name);
-    if (entry.isDirectory()) {
-      await copyDirCounting(srcPath, destPath, onFile);
-    } else {
-      await copyFile(srcPath, destPath);
-      onFile();
-    }
-  }
-}
-
 interface InstallOneFlags {
   force: boolean;
   keepCache: boolean;
@@ -538,7 +502,7 @@ async function installOneTarget(
   if (t.exists && flags.force) {
     await rm(dest, { recursive: true, force: true });
   }
-  const filesCopied = await copyTree(sourceArg, dest);
+  const filesCopied = await copyDir(sourceArg, dest);
   const entry: SelfInstallTargetResult = {
     target: t.target,
     dest,
@@ -842,14 +806,15 @@ async function preClearCache(
   }
 }
 
-export async function resolveBundledSkillPath(): Promise<string | null> {
-  const here = dirname(fileURLToPath(import.meta.url));
-  let current = here;
+/** Walk up (max 8 levels) from this module's dir until `<dir>/<rel>` exists.
+ * Both install-skill and install-hooks compile to dist/application/self/, so
+ * the shared start point resolves the same bundled paths for both. */
+export async function findUpward(rel: string): Promise<string | null> {
+  let current = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 8; i += 1) {
-    const candidate = join(current, BUNDLED_SKILL_REL_PATH);
-    const skillFile = join(candidate, "SKILL.md");
+    const candidate = join(current, rel);
     try {
-      await stat(skillFile);
+      await stat(candidate);
       return candidate;
     } catch {
       // not here, walk up
@@ -859,4 +824,9 @@ export async function resolveBundledSkillPath(): Promise<string | null> {
     current = parent;
   }
   return null;
+}
+
+export async function resolveBundledSkillPath(): Promise<string | null> {
+  const skillFile = await findUpward(join(BUNDLED_SKILL_REL_PATH, "SKILL.md"));
+  return skillFile === null ? null : dirname(skillFile);
 }

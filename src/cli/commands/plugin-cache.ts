@@ -3,6 +3,7 @@ import { selfReloadPluginCache } from "../../application/self/plugin-cache-reloa
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const pluginCacheCommand: QtcCommand = {
@@ -12,14 +13,7 @@ export const pluginCacheCommand: QtcCommand = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const subcommand = args.rest[0];
     if (!subcommand) {
-      return {
-        ok: false,
-        error: {
-          code: "INVALID_INPUT",
-          message: "plugin-cache requiere un subcomando: clear | reload",
-        },
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", "plugin-cache requiere un subcomando: clear | reload");
     }
     if (subcommand === "clear") {
       return await selfClearPluginCache(args, ctx);
@@ -27,13 +21,9 @@ export const pluginCacheCommand: QtcCommand = {
     if (subcommand === "reload") {
       return await selfReloadPluginCache(args, ctx);
     }
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message: `plugin-cache: subcomando desconocido '${subcommand}'. Usá: clear | reload`,
-      },
-      exitCode: 1,
-    };
+    return fail(
+      "INVALID_INPUT",
+      `plugin-cache: subcomando desconocido '${subcommand}'. Usá: clear | reload`,
+    );
   },
 };

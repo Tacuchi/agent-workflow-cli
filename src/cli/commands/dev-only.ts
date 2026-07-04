@@ -7,6 +7,7 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const harnessCommand: QtcCommand = {
@@ -49,12 +50,8 @@ export const nextNumberCommand: QtcCommand = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dir = args.rest[0];
     if (!dir) {
-      return {
-        ok: false,
-        error: { code: "INVALID_INPUT", message: "uso: next-number <directorio> [--dry-run]" },
-        data: { error: "uso: next-number <directorio> [--dry-run]" },
-        exitCode: 1,
-      };
+      const usage = "uso: next-number <directorio> [--dry-run]";
+      return fail("INVALID_INPUT", usage, { error: usage });
     }
     const data = await runNextNumber(ctx.fs, ctx.env, {
       directory: dir,

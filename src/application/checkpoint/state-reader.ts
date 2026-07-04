@@ -1,17 +1,13 @@
 import { join } from "node:path";
 import type { DirEntry, FileSystemPort } from "../../ports/file-system.js";
 import type { DiffNumstatEntry, GitPort } from "../../ports/git.js";
-import type { PathsService } from "../paths-service.js";
+import { localMinuteIso } from "../dates.js";
 import { findArtifact, listExistingArtifacts } from "../session-artifacts.js";
 
 export interface SessionState {
-  code: string | null;
-  name: string;
   folder: string;
-  branches: string[];
   tasks: { open: number; closed: number; total: number };
   progress_pct: number | null;
-  decisions_count: number;
   last_decision: { id: string; excerpt: string } | null;
   artefacts: Record<string, boolean | number>;
   files_touched: DiffNumstatEntry[];
@@ -23,46 +19,27 @@ export async function extractSessionState(
   fs: FileSystemPort,
   git: GitPort,
   cwd: string,
-  _paths: PathsService,
   sessionPath: string,
 ): Promise<SessionState> {
   const folder = sessionPath.split(/[\\/]/).pop() ?? "";
-  const parsed = parseSessionFolder(folder);
-  // Intentionally empty: sessions are not registered in the project block, so
-  // there is no branch tracking at session level.
-  const branches: string[] = [];
 
   const tasks = await countTasks(fs, sessionPath);
   const progressPct = tasks.total > 0 ? Math.round((100 * tasks.closed) / tasks.total) : null;
-  const decisions = await countDecisions(fs, sessionPath);
   const lastDecision = await readLastDecision(fs, sessionPath);
   const artefacts = await listArtefacts(fs, sessionPath);
   const filesTouched = await git.diffNumstat(cwd);
   const origen = await readOrigen(fs, sessionPath);
 
   return {
-    code: parsed.code,
-    name: parsed.name,
     folder,
-    branches,
     tasks,
     progress_pct: progressPct,
-    decisions_count: decisions,
     last_decision: lastDecision,
     artefacts,
     files_touched: filesTouched,
     origen,
-    timestamp: formatNowMinute(),
+    timestamp: localMinuteIso(),
   };
-}
-
-function parseSessionFolder(folder: string): {
-  code: string | null;
-  name: string;
-} {
-  const m = folder.match(/^session(\d{3})-(.+)/);
-  if (!m || !m[1] || !m[2]) return { code: null, name: folder };
-  return { code: m[1], name: m[2] };
 }
 
 async function countTasks(
@@ -75,13 +52,6 @@ async function countTasks(
   const open = (text.match(/^\s*[-*]\s*\[\s\]/gm) ?? []).length;
   const closed = (text.match(/^\s*[-*]\s*\[[xX]\]/gm) ?? []).length;
   return { open, closed, total: open + closed };
-}
-
-async function countDecisions(fs: FileSystemPort, sessionPath: string): Promise<number> {
-  const path = await findArtifact(sessionPath, "decisions", fs);
-  if (!path) return 0;
-  const text = await fs.readText(path);
-  return (text.match(/^#{2,3}\s+DEC[- ]\d+/gm) ?? []).length;
 }
 
 async function readLastDecision(
@@ -157,14 +127,4 @@ async function readOrigen(fs: FileSystemPort, sessionPath: string): Promise<stri
     }
   }
   return null;
-}
-
-function formatNowMinute(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mi = String(now.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }

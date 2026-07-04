@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { HARNESSES } from "../../domain/harnesses.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { type DoctorFinding, type HooksInfoValue, isRecord } from "./common.js";
+import { type DoctorFinding, type HooksInfoValue, isRecord, readJson } from "./common.js";
 
 export interface HooksResult {
   hooksInfo: Record<string, HooksInfoValue>;
@@ -32,28 +32,16 @@ async function parseHookFile(
     findings.push({ level: "warn", file: relPath, msg: "hooks file missing" });
     return { value: null, findings };
   }
-  let raw: string;
-  try {
-    raw = await fs.readText(hookPath);
-  } catch (e) {
+  const parsed = await readJson(fs, hookPath);
+  if ("error" in parsed) {
     findings.push({
       level: "error",
       file: relPath,
-      msg: `invalid JSON: ${(e as Error).message}`,
+      msg: `invalid JSON: ${parsed.error}`,
     });
     return { value: null, findings };
   }
-  let data: unknown;
-  try {
-    data = JSON.parse(raw);
-  } catch (e) {
-    findings.push({
-      level: "error",
-      file: relPath,
-      msg: `invalid JSON: ${(e as Error).message}`,
-    });
-    return { value: null, findings };
-  }
+  const data = parsed.data;
   if (!isRecord(data) || !("hooks" in data) || !isRecord(data.hooks)) {
     findings.push({
       level: "warn",

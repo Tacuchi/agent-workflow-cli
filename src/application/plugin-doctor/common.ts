@@ -1,4 +1,3 @@
-import { extname } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 
 export interface DoctorFinding {
@@ -29,22 +28,14 @@ export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-export async function collectMarkdownFiles(fs: FileSystemPort, dir: string): Promise<string[]> {
-  const out: string[] = [];
-  const stack: string[] = [dir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) break;
-    let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
-    try {
-      entries = await fs.list(current);
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (e.type === "dir") stack.push(e.path);
-      else if (e.type === "file" && extname(e.name).toLowerCase() === ".md") out.push(e.path);
-    }
+/** Read + JSON.parse; any failure (read or parse) collapses to one error string. */
+export async function readJson(
+  fs: FileSystemPort,
+  path: string,
+): Promise<{ data: unknown } | { error: string }> {
+  try {
+    return { data: JSON.parse(await fs.readText(path)) };
+  } catch (e) {
+    return { error: (e as Error).message };
   }
-  return out;
 }

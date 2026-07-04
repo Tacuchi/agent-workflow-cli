@@ -1,7 +1,6 @@
-import { join } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
+import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 /** The three per-source git-flow actions (see docs/design/git-flow-per-source.md). */
@@ -86,7 +85,7 @@ export async function runGitFlow(
     return errorResult(input.action, "Use --target with a single --source, not --all");
   }
 
-  const block = await readProjectBlock(fs, paths);
+  const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
   const sources = block?.fuentes ?? [];
   if (sources.length === 0) {
     return errorResult(input.action, "no_sources_declared");
@@ -342,14 +341,4 @@ function errorResult(action: string, message: string): GitFlowResult {
     results: [],
     error: message,
   };
-}
-
-async function readProjectBlock(fs: FileSystemPort, paths: PathsService) {
-  const cwd = paths.workspaceDir();
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block;
-  }
-  return null;
 }

@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
-import { type DoctorFinding, type McpServerInfo, isRecord } from "./common.js";
+import { type DoctorFinding, type McpServerInfo, isRecord, readJson } from "./common.js";
 
 export interface McpResult {
   mcpInfo: Record<string, McpServerInfo>;
@@ -22,17 +22,16 @@ export async function validateMcp(
   if (expectedMcpServers.length === 0 || !(await fs.exists(mcpPath))) {
     return { mcpInfo, findings };
   }
-  let mcpData: unknown = null;
-  try {
-    mcpData = JSON.parse(await fs.readText(mcpPath));
-  } catch (e) {
+  const parsed = await readJson(fs, mcpPath);
+  if ("error" in parsed) {
     findings.push({
       level: "error",
       file: ".mcp.json",
-      msg: `invalid JSON: ${(e as Error).message}`,
+      msg: `invalid JSON: ${parsed.error}`,
     });
     return { mcpInfo, findings };
   }
+  const mcpData = parsed.data;
   if (!isRecord(mcpData)) return { mcpInfo, findings };
   const servers = isRecord(mcpData.mcpServers) ? mcpData.mcpServers : {};
   for (const exp of expectedMcpServers) {

@@ -1,12 +1,11 @@
 // Launcher that resolves the DSN and spawns `npx -y @bytebase/dbhub` with stdio inherit.
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
 import {
   normalizeDsnVarName,
   validateDsnVarName,
   validateMcpInstance,
 } from "../domain/mcp-entry.js";
-import { dsnKeyForInstance } from "./dsn-reader-service.js";
+import { dsnKeyForInstance, readBootstrapDsn } from "./dsn-reader-service.js";
 import type { PathsService } from "./paths-service.js";
 
 export const DBHUB_DSN_VAR_ENV = "DBHUB_DSN_VAR";
@@ -32,17 +31,20 @@ export class DbhubLauncherError extends Error {
   }
 }
 
-export function dsnVarFor(instance: string): string {
-  return dsnKeyForInstance(instance);
-}
-
 export function resolveDsn(instance: string, deps: DbhubLauncherDeps): DbhubResolvedDsn {
   const dsnVar = resolveDsnVar(instance, deps);
   const fromEnv = deps.env[dsnVar];
   if (fromEnv && fromEnv.length > 0) {
     return { dsn: fromEnv, source: "env" };
   }
-  const fromFile = loadDsnFromFile(deps.paths.userDsnFile())[dsnVar];
+  // An unreadable dsn.env (e.g. it is a directory, or a permission/race error)
+  // falls through to the DbhubLauncherError below, not a raw fs throw.
+  let fromFile: string | undefined;
+  try {
+    fromFile = readBootstrapDsn(deps.paths).values[dsnVar];
+  } catch {
+    fromFile = undefined;
+  }
   if (fromFile && fromFile.length > 0) {
     return { dsn: fromFile, source: "dsn.env" };
   }
@@ -54,7 +56,7 @@ export function resolveDsn(instance: string, deps: DbhubLauncherDeps): DbhubReso
 function resolveDsnVar(instance: string, deps: DbhubLauncherDeps): string {
   const configured = deps.env[DBHUB_DSN_VAR_ENV];
   if (configured === undefined || configured.trim().length === 0) {
-    return dsnVarFor(instance);
+    return dsnKeyForInstance(instance);
   }
   const validation = validateDsnVarName(configured);
   if (!validation.ok) {
@@ -63,23 +65,6 @@ function resolveDsnVar(instance: string, deps: DbhubLauncherDeps): string {
     );
   }
   return normalizeDsnVarName(validation.value);
-}
-
-function loadDsnFromFile(file: string): Record<string, string> {
-  let raw: string;
-  try {
-    raw = readFileSync(file, "utf-8");
-  } catch {
-    return {};
-  }
-  const out: Record<string, string> = {};
-  for (const line of raw.split(/\r?\n/)) {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
-    if (m?.[1] && m[2] !== undefined) {
-      out[m[1]] = m[2];
-    }
-  }
-  return out;
 }
 
 export interface DbhubLauncherInput {

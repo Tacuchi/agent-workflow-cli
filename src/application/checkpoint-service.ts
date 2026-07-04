@@ -144,14 +144,7 @@ function sectionToField(header: string): string | null {
 }
 
 function stripAccentsLower(s: string): string {
-  let r = s.toLowerCase();
-  r = r.replace(/á/g, "a");
-  r = r.replace(/é/g, "e");
-  r = r.replace(/í/g, "i");
-  r = r.replace(/ó/g, "o");
-  r = r.replace(/ú/g, "u");
-  r = r.replace(/ü/g, "u");
-  return r;
+  return s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 }
 
 function parseActualizado(value: string | undefined): Date | null {
@@ -283,7 +276,8 @@ export async function runResumeSummary(
 ): Promise<ResumeSummaryOutput> {
   void env;
   const actives = await findActiveSessions(fs, paths);
-  if (actives.length === 0) {
+  const target = actives[0];
+  if (!target) {
     const baseEmpty: ResumeSummaryOutput = {
       active_sessions: [],
       primary_session: null,
@@ -301,18 +295,6 @@ export async function runResumeSummary(
       );
     }
     return baseEmpty;
-  }
-
-  const target = actives[0];
-  if (!target) {
-    return {
-      active_sessions: [],
-      primary_session: null,
-      checkpoint_present: false,
-      checkpoint_status: "missing",
-      unfilled_placeholders: [],
-      needs_ai_action: false,
-    };
   }
 
   const sessionPath = join(paths.cwdSessionsDir(), target.folder);

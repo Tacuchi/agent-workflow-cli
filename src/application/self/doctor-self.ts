@@ -1,8 +1,8 @@
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import { HARNESSES } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
+import { readPackageVersion } from "../../runtime/version.js";
 import {
   AGENTS_LOCK_REL,
   type InstallTarget,
@@ -173,14 +173,4 @@ async function reportAgentsTarget(
 
 function legacyWarning(legacyPath: string, skillPath: string): string {
   return `Skill legacy detectada en ${legacyPath}. Reemplazada por '${skillPath}' tras el rename de agent-workflow-manager → agent-workflow. Usá 'agent-workflow self uninstall-skill --legacy' para limpiar.`;
-}
-
-function readPackageVersion(): string {
-  try {
-    const require = createRequire(import.meta.url);
-    const pkg = require("../../../package.json") as { version?: string };
-    return pkg.version ?? "unknown";
-  } catch {
-    return "unknown";
-  }
 }

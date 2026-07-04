@@ -14,10 +14,12 @@ import {
 } from "../../../application/self/install-skill.js";
 import { selfClearPluginCache } from "../../../application/self/plugin-cache-clear.js";
 import { selfUninstall } from "../../../application/self/uninstall.js";
+import type { CommandResult } from "../../../domain/types.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
 import { HOSTS, type HostMeta } from "../hosts.js";
-import { useInputLock } from "../input-lock.js";
+import { useLockWhile } from "../input-lock.js";
+import type { ToastBridgeInput } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
 import { ConfirmBanner } from "./confirm-banner.js";
@@ -29,14 +31,12 @@ import { SectionHead } from "./section-head.js";
 export interface HostAdminSummary {
   installed: number;
   total: number;
-  backed: number;
-  pending: number;
 }
 
 export interface HostAdminSectionProps {
   ctx: CliContext;
   isActive: boolean;
-  onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
+  onToast?: (msg: ToastBridgeInput) => void;
   /** Notifies the mounting tab so it can render its own header counts. */
   onSummary?: (summary: HostAdminSummary) => void;
   /** Extra line for the detail panel meta of a host with hooks armed. */
@@ -72,15 +72,9 @@ export function HostAdminSection({
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [busy, setBusy] = useState<string | null>(null);
   const startedRef = useRef(false);
-  const { lock, unlock } = useInputLock();
   const { stdout } = useStdout();
 
-  useEffect(() => {
-    if (busy) lock();
-    else unlock();
-  }, [busy, lock, unlock]);
-
-  useEffect(() => () => unlock(), [unlock]);
+  useLockWhile(busy !== null);
 
   const refresh = useCallback(async () => {
     const home = ctx.env.homeDir();
@@ -103,12 +97,12 @@ export function HostAdminSection({
     const next: HostState[] = [];
     for (const host of HOSTS) {
       const path = pathForHost(host, home);
-      const installed = host.backed && path ? await ctx.fs.exists(path) : false;
+      const installed = path ? await ctx.fs.exists(path) : false;
       next.push({
         host,
         installed,
         hooks_installed: host.id === "claude" ? hooksInstalled : false,
-        path: installed ? friendlyPath(host) : host.backed ? "not installed" : "(not wired yet)",
+        path: installed ? friendlyPath(host) : "not installed",
       });
     }
     setSkills(next);
@@ -123,17 +117,10 @@ export function HostAdminSection({
 
   const installedCount = skills.filter((s) => s.installed).length;
   const totalCount = skills.length;
-  const backedHosts = HOSTS.filter((h) => h.backed).length;
-  const pendingHosts = HOSTS.length - backedHosts;
 
   useEffect(() => {
-    onSummary?.({
-      installed: installedCount,
-      total: totalCount,
-      backed: backedHosts,
-      pending: pendingHosts,
-    });
-  }, [onSummary, installedCount, totalCount, backedHosts, pendingHosts]);
+    onSummary?.({ installed: installedCount, total: totalCount });
+  }, [onSummary, installedCount, totalCount]);
 
   const focused: HostState | null = skills[cursor] ?? null;
   const isInstalled = focused?.installed === true;
@@ -178,8 +165,8 @@ export function HostAdminSection({
       setBusy(startLabel);
       try {
         for (const step of steps) {
-          setBusy(buildBusyLabel(step, host.name));
-          const result = await dispatchAction(step, target, ctx);
+          setBusy(ACTION_DEF[step].busy(host.name));
+          const result = await ACTION_DEF[step].run(buildArgsFor(step, target), ctx);
           if (!result.ok) {
             const failMsg = result.error?.message;
             onToast?.(
@@ -194,7 +181,7 @@ export function HostAdminSection({
           }
         }
         const finalAction: SkillAction = kind === "install" ? "install-full" : "uninstall-full";
-        onToast?.({ tone: "ok", title: buildSuccessMessage(finalAction, host.name) });
+        onToast?.({ tone: "ok", title: ACTION_DEF[finalAction].ok(host.name) });
         void ctx.logger?.info(formatTuiEvent(`skill ${kind} ${host.name}`, "ok"));
         await refresh();
       } catch (err) {
@@ -290,7 +277,6 @@ export function HostAdminSection({
       <SectionHead
         label="Hosts"
         count={totalCount}
-        hint={`backed ${backedHosts} · pending ${pendingHosts}`}
         {...(detailVisible ? { rightAction: "esc to close detail" } : {})}
         marginTop={0}
       />
@@ -310,8 +296,8 @@ export function HostAdminSection({
                   : []
               }
               state={{
-                label: s.installed ? "installed" : s.host.backed ? "backed" : "pending",
-                tone: s.installed ? "ok" : s.host.backed ? "dim" : "warn",
+                label: s.installed ? "installed" : "backed",
+                tone: s.installed ? "ok" : "dim",
               }}
               chevron
               active={cursor === i}
@@ -377,6 +363,43 @@ function friendlyPath(host: HostMeta): string {
   return `~/${root.join("/")}/${SKILL_DIR_NAME}/`;
 }
 
+// Everything an action needs (subcommand, busy/success labels, backend fn) in
+// one row per SkillAction so the pieces cannot drift apart.
+const ACTION_DEF: Record<
+  SkillAction,
+  {
+    sub: string;
+    busy: (host: string) => string;
+    ok: (host: string) => string;
+    run: (args: ParsedArgs, ctx: CliContext) => Promise<CommandResult>;
+  }
+> = {
+  "install-full": {
+    sub: "install-skill",
+    busy: (h) => `installing on ${h}…`,
+    ok: (h) => `Install complete OK on ${h}.`,
+    run: selfInstallSkill,
+  },
+  "uninstall-full": {
+    sub: "uninstall",
+    busy: (h) => `uninstalling from ${h}…`,
+    ok: (h) => `Uninstall complete OK on ${h}.`,
+    run: selfUninstall,
+  },
+  "clean-cache": {
+    sub: "clean-cache",
+    busy: (h) => `cleaning cache on ${h}…`,
+    ok: (h) => `Cache cleaned on ${h}.`,
+    run: selfClearPluginCache,
+  },
+  "clean-legacy": {
+    sub: "clean-legacy",
+    busy: (h) => `removing legacy skills from ${h}…`,
+    ok: (h) => `Legacy skills removed from ${h}.`,
+    run: selfCleanLegacy,
+  },
+};
+
 function buildArgsFor(action: SkillAction, target: InstallTarget): ParsedArgs {
   const flags = new Set<string>();
   const values = new Map<string, string>();
@@ -384,63 +407,10 @@ function buildArgsFor(action: SkillAction, target: InstallTarget): ParsedArgs {
   if (action === "install-full" || action === "uninstall-full") flags.add("--force");
   if (action === "clean-cache") values.set("plugin", SKILL_DIR_NAME);
   return {
-    rest: [actionToSubcommand(action)],
+    rest: [ACTION_DEF[action].sub],
     plugin: {},
     flags,
     values,
     valuesMulti: new Map(),
   };
-}
-
-function actionToSubcommand(action: SkillAction): string {
-  switch (action) {
-    case "install-full":
-      return "install-skill";
-    case "uninstall-full":
-      return "uninstall";
-    case "clean-cache":
-      return "clean-cache";
-    case "clean-legacy":
-      return "clean-legacy";
-  }
-}
-
-async function dispatchAction(action: SkillAction, target: InstallTarget, ctx: CliContext) {
-  const args = buildArgsFor(action, target);
-  switch (action) {
-    case "install-full":
-      return selfInstallSkill(args, ctx);
-    case "uninstall-full":
-      return selfUninstall(args, ctx);
-    case "clean-cache":
-      return selfClearPluginCache(args, ctx);
-    case "clean-legacy":
-      return selfCleanLegacy(args, ctx);
-  }
-}
-
-function buildBusyLabel(action: SkillAction, label: string): string {
-  switch (action) {
-    case "install-full":
-      return `installing on ${label}…`;
-    case "uninstall-full":
-      return `uninstalling from ${label}…`;
-    case "clean-cache":
-      return `cleaning cache on ${label}…`;
-    case "clean-legacy":
-      return `removing legacy skills from ${label}…`;
-  }
-}
-
-function buildSuccessMessage(action: SkillAction, label: string): string {
-  switch (action) {
-    case "install-full":
-      return `Install complete OK on ${label}.`;
-    case "uninstall-full":
-      return `Uninstall complete OK on ${label}.`;
-    case "clean-cache":
-      return `Cache cleaned on ${label}.`;
-    case "clean-legacy":
-      return `Legacy skills removed from ${label}.`;
-  }
 }

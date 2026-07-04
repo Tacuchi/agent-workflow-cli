@@ -6,7 +6,7 @@
 // [Workflows] (HostAdminSection).
 
 import { Box, Text, useInput, useStdout } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import {
   type SkillListItem,
@@ -26,19 +26,22 @@ import type { CliContext } from "../../types.js";
 import { ConfirmBanner } from "../components/confirm-banner.js";
 import { type DetailAction, DetailPanel } from "../components/detail-panel.js";
 import { InputPrompt } from "../components/input-prompt.js";
-import { ListRow } from "../components/list-row.js";
+import { ListRow, type MetaTone } from "../components/list-row.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { RECOMMENDED_SKILLS } from "../data/recommended-skills.js";
-import { useInputLock } from "../input-lock.js";
+import { useLockWhile } from "../input-lock.js";
+import type { ToastBridgeInput } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
+import { useListDetailKeys } from "../use-list-detail-keys.js";
+import { useOnMount } from "../use-on-mount.js";
 
 export interface SkillsTabProps {
   ctx: CliContext;
   isActive: boolean;
-  onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
+  onToast?: (msg: ToastBridgeInput) => void;
 }
 
 type ActionId = "install" | "update" | "reinstall" | "uninstall" | "remove";
@@ -52,32 +55,65 @@ type Mode =
   | { kind: "wizard-warning"; source: string; pick: string }
   | { kind: "busy"; label: string };
 
-const STATUS_GLYPH: Record<SkillListItem["status"], { glyph: string; active: boolean }> = {
-  installed: { glyph: "◆", active: true },
-  unmanaged: { glyph: "◈", active: true },
-  registered: { glyph: "◇", active: false },
-  recommended: { glyph: "·", active: false },
+const STATUS_GLYPH: Record<
+  SkillListItem["status"],
+  { glyph: string; active: boolean; tone: MetaTone }
+> = {
+  installed: { glyph: "◆", active: true, tone: "ok" },
+  unmanaged: { glyph: "◈", active: true, tone: "warn" },
+  registered: { glyph: "◇", active: false, tone: "dim" },
+  recommended: { glyph: "·", active: false, tone: "info" },
 };
 
 export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const [items, setItems] = useState<SkillListItem[]>([]);
-  const [cursor, setCursor] = useState(0);
-  const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   // Mirror of items to preserve the selection BY NAME across refresh: the
   // list re-orders after every operation (installed→registered→recommended)
   // and a numeric cursor would jump to another skill.
   const itemsRef = useRef<SkillListItem[]>([]);
-  const startedRef = useRef(false);
-  const { lock, unlock } = useInputLock();
   const { stdout } = useStdout();
 
-  useEffect(() => {
-    if (mode.kind === "list" || mode.kind === "detail") unlock();
-    else lock();
-  }, [mode, lock, unlock]);
+  useLockWhile(mode.kind !== "list" && mode.kind !== "detail");
 
-  useEffect(() => () => unlock(), [unlock]);
+  // `detailActions` needs `current` (→ the hook's cursor), so its length
+  // reaches the hook one render late via this ref. Safe: the list cannot
+  // change while the detail is open, so the value is always fresh by the
+  // time the detail phase reads it.
+  const actionsLenRef = useRef(0);
+
+  // Shared list/detail/confirm keys (↑↓ · ⏎ · esc · a add · y/n). The
+  // callbacks close over consts declared below — they only run on keystrokes.
+  const { cursor, setCursor, actionCursor } = useListDetailKeys({
+    isActive,
+    phase:
+      mode.kind === "list" || mode.kind === "detail"
+        ? mode.kind
+        : mode.kind === "confirm"
+          ? "confirm"
+          : "off",
+    listLen: items.length,
+    actionsLen: actionsLenRef.current,
+    onAdd: () => setMode({ kind: "wizard-source" }),
+    onOpenDetail: () => setMode({ kind: "detail" }),
+    onCloseDetail: () => setMode({ kind: "list" }),
+    onRunAction: (i) => {
+      const entry = detailActions[i];
+      if (entry) triggerAction(entry.id);
+    },
+    onConfirm: (yes) => {
+      if (mode.kind !== "confirm" || !current) return;
+      if (!yes) return setMode({ kind: "detail" });
+      const name = current.name;
+      if (mode.action === "uninstall") {
+        void runAction(`uninstalling ${name}…`, `Uninstalled · ${name}`, () =>
+          uninstallSkill(ctx, name),
+        );
+      } else {
+        void runAction(`removing ${name}…`, `Removed · ${name}`, () => removeSkill(ctx, name));
+      }
+    },
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -92,13 +128,9 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     } catch (err) {
       onToast?.({ tone: "err", title: "Error loading skills", body: (err as Error).message });
     }
-  }, [ctx, onToast]);
+  }, [ctx, onToast, setCursor]);
 
-  useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    void refresh();
-  }, [refresh]);
+  useOnMount(() => void refresh());
 
   const current = items[cursor] ?? null;
   const installedCount = items.filter((s) => s.status === "installed").length;
@@ -178,6 +210,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       },
     ];
   }, [current]);
+  actionsLenRef.current = detailActions.length;
 
   // TUI surface is EN (SPEC 007); the engine's summaries (ES) go in the body.
   const runAction = useCallback(
@@ -247,74 +280,6 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       }
     },
     [ctx, current, runAction],
-  );
-
-  // input — list (↑↓ navigate · ⏎ detail · a wizard)
-  useInput(
-    (input, key) => {
-      if (!isActive || mode.kind !== "list") return;
-      if (input === "a" || input === "A") {
-        setMode({ kind: "wizard-source" });
-        return;
-      }
-      if (key.upArrow) {
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      }
-      if (key.downArrow) {
-        setCursor((c) => (items.length === 0 ? 0 : Math.min(items.length - 1, c + 1)));
-        return;
-      }
-      if (key.return && current) {
-        setActionCursor(0);
-        setMode({ kind: "detail" });
-      }
-    },
-    { isActive },
-  );
-
-  // input — detail (↑↓ actions · ⏎ run · esc close)
-  useInput(
-    (_input, key) => {
-      if (!isActive || mode.kind !== "detail" || !current) return;
-      if (key.upArrow) {
-        setActionCursor((c) => Math.max(0, c - 1));
-        return;
-      }
-      if (key.downArrow) {
-        setActionCursor((c) => Math.min(Math.max(0, detailActions.length - 1), c + 1));
-        return;
-      }
-      if (key.escape) {
-        setMode({ kind: "list" });
-        return;
-      }
-      if (key.return) {
-        const entry = detailActions[actionCursor];
-        if (entry) triggerAction(entry.id);
-      }
-    },
-    { isActive },
-  );
-
-  // input — confirm (y confirm · n/esc back to detail)
-  useInput(
-    (input, key) => {
-      if (!isActive || mode.kind !== "confirm" || !current) return;
-      if (input === "y" || input === "Y") {
-        const name = current.name;
-        if (mode.action === "uninstall") {
-          void runAction(`uninstalling ${name}…`, `Uninstalled · ${name}`, () =>
-            uninstallSkill(ctx, name),
-          );
-        } else {
-          void runAction(`removing ${name}…`, `Removed · ${name}`, () => removeSkill(ctx, name));
-        }
-      } else if (key.escape || input === "n" || input === "N") {
-        setMode({ kind: "detail" });
-      }
-    },
-    { isActive },
   );
 
   // input — wizard-source esc
@@ -441,17 +406,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
                     : `${s.source}${s.ref ? ` #${s.ref}` : ""}`
                 }
                 meta={s.mode === "copy" ? [{ label: "copy", tone: "warn" }] : []}
-                state={{
-                  label: s.status,
-                  tone:
-                    s.status === "installed"
-                      ? "ok"
-                      : s.status === "unmanaged"
-                        ? "warn"
-                        : s.status === "registered"
-                          ? "dim"
-                          : "info",
-                }}
+                state={{ label: s.status, tone: glyph.tone }}
                 chevron
                 active={cursor === i}
                 dimmed={mode.kind.startsWith("wizard")}

@@ -1,8 +1,8 @@
 // Canonical list of every CLI command. This is the single source of truth for
 // "which commands exist": the help grouping guard test asserts each of these has
-// a real home in help-groups.ts (none fall into the catch-all "Other"), and the
-// global-help describe map is built from it. `main.ts` registers exactly this
-// set — keep the two in sync (the `help-groups` guard test fails otherwise).
+// a real home in help-groups.ts (none fall into the catch-all "Other"), the
+// global-help describe map is built from it, and `main.ts` registers this array
+// directly (order here = order in the grouped `--help` listing).
 
 import type { QtcCommand } from "../registry.js";
 import { bootstrapDsnCommand } from "./bootstrap-dsn.js";
@@ -30,8 +30,7 @@ import { sessionCloseCommand } from "./session-close.js";
 import { sessionCreateCommand } from "./session-create.js";
 import { sessionResumeCommand } from "./session-resume.js";
 import { sessionsCommand } from "./sessions.js";
-import { setQaBranchCommand } from "./set-qa-branch.js";
-import { setWorkingBranchCommand } from "./set-working-branch.js";
+import { setQaBranchCommand, setWorkingBranchCommand } from "./set-branch.js";
 import { skillIndexCommand } from "./skill-index.js";
 import { skillsCommand } from "./skills.js";
 import { sourcesCommand } from "./sources.js";

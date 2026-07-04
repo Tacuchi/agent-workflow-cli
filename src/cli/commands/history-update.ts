@@ -2,6 +2,7 @@ import { runHistoryUpdate } from "../../application/history-update-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const historyUpdateCommand: QtcCommand = {
@@ -30,12 +31,7 @@ export const historyUpdateCommand: QtcCommand = {
 
     const data = await runHistoryUpdate(ctx.fs, ctx.env, ctx.paths, input);
     if ("error" in data) {
-      return {
-        ok: false,
-        error: { code: "INVALID_INPUT", message: data.error },
-        data,
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", data.error, data);
     }
     return { ok: true, data, exitCode: 0 };
   },

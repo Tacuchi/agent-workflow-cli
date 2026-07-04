@@ -4,15 +4,16 @@
 // host. No project/hub distinction: a workspace simply has 1+ sources.
 // Purely read-only: no side effects on disk or on the remote.
 
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
-import { type ParsedProjectBlock, parseProjectBlock } from "./parsers/project-block.js";
+import { type ParsedProjectBlock, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
 import { detectLaunchDescriptor } from "./source-launch-scripts-service.js";
+import { readDescriptor } from "./source-launch-service.js";
 
 export interface ProjectGitData {
   branch: string;
@@ -22,25 +23,6 @@ export interface ProjectGitData {
   dirty: number;
   staged: number;
   untracked: number;
-  lastCommit: ProjectCommit | null;
-}
-
-export interface ProjectCommit {
-  sha: string;
-  title: string;
-  author: string;
-  /** ISO 8601 */
-  whenIso: string;
-  /** Human-readable relative text, e.g. "hace 2 h" */
-  whenRel: string;
-}
-
-export interface ProjectBranch {
-  name: string;
-  current: boolean;
-  ahead: number;
-  /** Human-readable relative text of the last commit */
-  whenRel: string | null;
 }
 
 export interface ProjectSource {
@@ -68,8 +50,6 @@ export interface ProjectTabData {
   initialized: boolean;
   /** Git data for the primary repo (cwd, or the first declared source) */
   git: ProjectGitData | null;
-  /** Recent branches sorted by last-commit-date desc */
-  branches: ProjectBranch[];
   /** Declared sources (alias / path / main branch) */
   sources: ProjectSource[];
   /** Current working branches per source alias (WORKSPACE block > Status) */
@@ -80,11 +60,6 @@ export interface ProjectTabData {
   processes: ProcessRecord[];
   /** Partial fetch failures, if any */
   warnings: string[];
-}
-
-interface BuildOptions {
-  /** Maximum number of branches to list (default 5) */
-  branchLimit?: number;
 }
 
 export interface ProjectTabDataDeps {
@@ -102,17 +77,14 @@ export interface ProjectTabDataDeps {
  * e.g. `git log` fails, the rest of the payload stays valid and the failure
  * lands in `warnings[]`.
  */
-export async function buildProjectTabData(
-  deps: ProjectTabDataDeps,
-  options: BuildOptions = {},
-): Promise<ProjectTabData> {
+export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<ProjectTabData> {
   const { fs, env, git, process: proc, paths } = deps;
   const cwd = env.cwd();
   const warnings: string[] = [];
 
   const block = await safeRun(
     "read-project-block",
-    () => readProjectBlock(fs, cwd, paths),
+    () => readWorkspaceBlock(fs, cwd, paths.blockMarkers()),
     warnings,
     null as ParsedProjectBlock | null,
   );
@@ -132,13 +104,6 @@ export async function buildProjectTabData(
     () => buildGitData(git, proc, primaryRepoPath, primaryMainBranch, definedWorkingBranch),
     warnings,
     null,
-  );
-
-  const branches = await safeRun(
-    "branches",
-    () => buildBranches(proc, primaryRepoPath, options.branchLimit ?? 5),
-    warnings,
-    [] as ProjectBranch[],
   );
 
   const sources: ProjectSource[] = [];
@@ -196,7 +161,6 @@ export async function buildProjectTabData(
     workspacePath: cwd,
     initialized: block !== null,
     git: gitData,
-    branches,
     sources,
     workingBranches: block?.working_branches ?? {},
     qaBranches: block?.qa_branches ?? {},
@@ -218,14 +182,14 @@ async function readLaunchable(
   alias: string,
   sourcePath: string,
 ): Promise<boolean> {
-  const file = join(launchDir, alias, "launch.json");
-  if (await fs.exists(file)) {
-    try {
-      const desc = JSON.parse(await fs.readText(file)) as { command?: unknown };
-      if (typeof desc.command === "string" && desc.command.length > 0) return true;
-    } catch {
-      // corrupt → fall through to stack detection (beginLaunch will diagnose)
-    }
+  const read = await readDescriptor(fs, launchDir, alias);
+  // absent/corrupt → fall through to stack detection (beginLaunch will diagnose)
+  if (
+    read.status === "ok" &&
+    typeof read.descriptor.command === "string" &&
+    read.descriptor.command.length > 0
+  ) {
+    return true;
   }
   if (!(await fs.exists(sourcePath))) return false;
   try {
@@ -284,26 +248,6 @@ async function buildGitData(
     }
   }
 
-  const last = await runProc(
-    proc,
-    "git",
-    ["log", "-1", "--pretty=%H%x09%s%x09%an%x09%aI%x09%ar"],
-    repoPath,
-  );
-  let lastCommit: ProjectCommit | null = null;
-  if (last.ok && last.stdout) {
-    const parts = last.stdout.trim().split("\t");
-    if (parts.length >= 5 && parts[0] && parts[1] && parts[2] && parts[3] && parts[4]) {
-      lastCommit = {
-        sha: parts[0].slice(0, 7),
-        title: parts[1],
-        author: parts[2],
-        whenIso: parts[3],
-        whenRel: parts[4],
-      };
-    }
-  }
-
   return {
     branch,
     base: mainBranch,
@@ -312,41 +256,7 @@ async function buildGitData(
     dirty,
     staged,
     untracked,
-    lastCommit,
   };
-}
-
-async function buildBranches(
-  proc: ProcessPort,
-  repoPath: string,
-  limit: number,
-): Promise<ProjectBranch[]> {
-  const out = await runProc(
-    proc,
-    "git",
-    [
-      "for-each-ref",
-      `--count=${limit + 4}`,
-      "--sort=-committerdate",
-      "--format=%(HEAD)%09%(refname:short)%09%(committerdate:iso8601)%09%(committerdate:relative)",
-      "refs/heads",
-    ],
-    repoPath,
-  );
-  if (!out.ok) return [];
-  const branches: ProjectBranch[] = [];
-  for (const line of out.stdout.split("\n")) {
-    if (!line) continue;
-    const parts = line.split("\t");
-    if (parts.length < 4) continue;
-    const head = parts[0]?.trim() === "*";
-    const name = parts[1]?.trim() ?? "";
-    const whenRel = parts[3]?.trim() ?? null;
-    if (!name) continue;
-    branches.push({ name, current: head, ahead: 0, whenRel });
-    if (branches.length >= limit) break;
-  }
-  return branches;
 }
 
 // ---------- utils ----------
@@ -391,18 +301,4 @@ export function resolveDefinedWorkingBranch(block: ParsedProjectBlock | null): s
   const primaryAlias = block.fuentes[0]?.alias;
   if (primaryAlias === undefined) return undefined;
   return block.working_branches[primaryAlias];
-}
-
-// Local helper — mirrors the private `readProjectBlock` in sources-service.ts.
-async function readProjectBlock(
-  fs: FileSystemPort,
-  cwd: string,
-  paths: PathsService,
-): Promise<ParsedProjectBlock | null> {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block;
-  }
-  return null;
 }

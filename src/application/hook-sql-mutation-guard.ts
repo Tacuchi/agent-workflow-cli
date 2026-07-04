@@ -1,6 +1,7 @@
 // Patterns and display name are read from the runtime config (Phase 3 agnostic CLI).
 import type { EnvPort } from "../ports/env.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
+import { parseHookPayload } from "./hook-common.js";
 
 const MUTATION_KEYWORDS = [
   "INSERT",
@@ -40,7 +41,7 @@ export function runSqlMutationGuard(input: SqlGuardInput): SqlGuardResult {
   if ((input.env.get("AW_SQL_GUARD") ?? "").toLowerCase() === "off") {
     return { exitCode: 0 };
   }
-  const payload = parsePayload(input.stdin);
+  const payload = parseHookPayload(input.stdin);
   if (!payload) return { exitCode: 0 };
 
   const compiled = compilePatterns(patterns);
@@ -63,19 +64,6 @@ export function runSqlMutationGuard(input: SqlGuardInput): SqlGuardResult {
   const display = input.runtime.displayName ?? "agent-workflow";
   const msg = formatBlockMessage(toolName, serverFull, keyword, display);
   return { exitCode: 2, stderr: msg };
-}
-
-function parsePayload(stdin: string): Record<string, unknown> | null {
-  const raw = stdin.trim();
-  if (raw.length === 0) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 function compilePatterns(patterns: {

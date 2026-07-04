@@ -1,10 +1,8 @@
-import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import type { ProcessPort } from "../ports/process.js";
 import { expectedWorkBranch } from "./branch-resolver.js";
-import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
+import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
@@ -49,7 +47,7 @@ export async function runSources(
   input: SourcesInput,
 ): Promise<SourcesOutput> {
   const cwd = env.cwd();
-  const block = await readProjectBlock(fs, cwd, paths);
+  const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
   const verbose = input.verbose === true;
 
   if (!block || block.fuentes.length === 0) {
@@ -104,15 +102,6 @@ export async function runSources(
     payload.session_code = input.sessionCode;
   }
   return payload;
-}
-
-async function readProjectBlock(fs: FileSystemPort, cwd: string, paths: PathsService) {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block;
-  }
-  return null;
 }
 
 async function checkSourceBranch(
@@ -192,6 +181,3 @@ function compactSourceEntry(
   }
   return e;
 }
-
-// Re-export for command needs
-export type { ProcessPort };

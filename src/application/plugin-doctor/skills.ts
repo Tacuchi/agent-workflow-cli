@@ -5,7 +5,8 @@ import {
   parseSkillFrontmatter,
 } from "../../domain/skill-frontmatter.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { type DoctorFinding, type SkillFrontmatterInfo, collectMarkdownFiles } from "./common.js";
+import { collectFilesByExt } from "../release-data/common.js";
+import type { DoctorFinding, SkillFrontmatterInfo } from "./common.js";
 
 const SESSION_SPECIFIC_MARKERS = [
   "session034",
@@ -98,7 +99,7 @@ export async function checkFrontendDesignGeneralization(
   const findings: DoctorFinding[] = [];
   const fdDir = join(skillsDir, "frontend-design");
   if (!(await fs.exists(skillsDir)) || !(await fs.exists(fdDir))) return findings;
-  const mdFiles = await collectMarkdownFiles(fs, fdDir);
+  const mdFiles = await collectFilesByExt(fs, fdDir, ".md");
   mdFiles.sort((a, b) => a.localeCompare(b));
   for (const mdFile of mdFiles) {
     let text: string;

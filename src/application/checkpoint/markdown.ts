@@ -68,7 +68,6 @@ function appendContext(lines: string[]): void {
 function appendRefs(lines: string[], state: SessionState): void {
   lines.push("", "## Refs", "");
   if (state.origen) lines.push(`- Origin: ${state.origen}`);
-  if (state.branches.length > 0) lines.push(`- Branches: ${state.branches.join(", ")}`);
   const present = collectArtefacts(state.artefacts);
   if (present.length > 0) {
     lines.push(`- Artifacts present: ${present.join(", ")}`);

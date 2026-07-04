@@ -34,12 +34,12 @@ export function InputPrompt(props: InputPromptProps) {
     <Box flexDirection="column">
       <Box>
         <Text color={colors.accent}>{icons.promptMark} </Text>
-        <Text color={colors.fg} bold>
+        <Text color={colors.text} bold>
           {message}
         </Text>
       </Box>
       <Box marginLeft={2} marginTop={1}>
-        <Text color={colors.fgMoreSubtle}>{icons.arrow} </Text>
+        <Text color={colors.mute}>{icons.arrow} </Text>
         <TextInput
           isDisabled={!isActive}
           {...(defaultValue !== undefined ? { defaultValue } : {})}
@@ -48,7 +48,7 @@ export function InputPrompt(props: InputPromptProps) {
       </Box>
       {error ? (
         <Box marginLeft={2} marginTop={1}>
-          <Text color={colors.error}>
+          <Text color={colors.err}>
             {icons.cross} {error}
           </Text>
         </Box>

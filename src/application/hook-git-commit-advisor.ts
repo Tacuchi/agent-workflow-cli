@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { parseHookPayload } from "./hook-common.js";
 import type { PathsService } from "./paths-service.js";
 import { CLOSED_MARKER, listSessionFolders, parseSessionFolder } from "./session-resolver.js";
 
@@ -30,7 +31,7 @@ export async function runGitCommitAdvisor(
     return { exitCode: 0 };
   }
 
-  const payload = parsePayload(input.stdin);
+  const payload = parseHookPayload(input.stdin);
   if (!payload) return { exitCode: 0 };
 
   const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
@@ -76,19 +77,6 @@ async function findUniqueActiveSession(
     active.push(folder.name);
   }
   return active.length === 1 ? (active[0] ?? null) : null;
-}
-
-function parsePayload(stdin: string): Record<string, unknown> | null {
-  const raw = stdin.trim();
-  if (raw.length === 0) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 function extractCommand(toolInput: unknown): string | null {

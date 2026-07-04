@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   type McpDriftReport,
   type McpHost,
@@ -9,6 +9,7 @@ import {
 import type { EnvPort } from "../ports/env.js";
 import { dsnKeyForInstance, readBootstrapDsn } from "./dsn-reader-service.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
+import { resolveScopeDir } from "./mcp-scope-common.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface McpDoctorInput {
@@ -143,35 +144,7 @@ function matchesEntry(
   entry: ReturnType<typeof buildMcpEntry>,
 ): boolean {
   if (snapshot.command !== entry.command) return false;
-  if (!arraysEqual(snapshot.args ?? [], entry.args)) return false;
-  if (!recordsEqual(snapshot.env ?? {}, entry.env)) return false;
+  if (!isDeepStrictEqual(snapshot.args ?? [], entry.args)) return false;
+  if (!isDeepStrictEqual(snapshot.env ?? {}, entry.env)) return false;
   return true;
-}
-
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
-function recordsEqual(a: Record<string, string>, b: Record<string, string>): boolean {
-  const keysA = Object.keys(a).sort();
-  const keysB = Object.keys(b).sort();
-  if (keysA.length !== keysB.length) return false;
-  for (let i = 0; i < keysA.length; i += 1) {
-    if (keysA[i] !== keysB[i]) return false;
-    const k = keysA[i] ?? "";
-    if (a[k] !== b[k]) return false;
-  }
-  return true;
-}
-
-function resolveScopeDir(env: EnvPort, input: McpDoctorInput): string {
-  // Global scope resolves through the port (not os.homedir()) so tests can
-  // inject a sandbox home instead of reading the developer's real configs.
-  if (input.scope === "global") return env.homeDir();
-  if (input.workspace) return resolve(input.workspace);
-  return resolve(env.cwd());
 }

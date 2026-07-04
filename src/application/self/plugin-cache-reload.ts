@@ -4,9 +4,9 @@ import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type PluginSkillResult, selfInstallPluginSkills } from "./install-plugin-skills.js";
 import {
-  CACHE_TARGETS,
   type CacheTarget,
   type PluginCacheRemoval,
+  listSafe,
   selfClearPluginCache,
 } from "./plugin-cache-clear.js";
 
@@ -24,9 +24,9 @@ export async function selfReloadPluginCache(
   args: ParsedArgs,
   ctx: CliContext,
 ): Promise<CommandResult<SelfReloadPluginCacheData>> {
-  const inputError = validateInput(args);
-  if (inputError) return inputError;
-
+  // Input validation (--plugin/--target) is delegated to selfClearPluginCache:
+  // its INVALID_INPUT error surfaces through the passthrough below, and the
+  // casts are only consumed after clearResult.ok.
   const plugin = args.values.get("plugin") as string;
   const targetArg = args.values.get("target") as CacheTarget;
   const fromArg = args.values.get("from");
@@ -64,31 +64,6 @@ export async function selfReloadPluginCache(
   }
 
   return await runReinstall(ctx, plugin, targetArg, source, removed, clearSummary);
-}
-
-function validateInput(args: ParsedArgs): CommandResult<SelfReloadPluginCacheData> | null {
-  const plugin = args.values.get("plugin");
-  if (!plugin) {
-    return {
-      ok: false,
-      error: { code: "INVALID_INPUT", message: "--plugin <namespace> es obligatorio." },
-      exitCode: 1,
-    };
-  }
-  const targetArg = args.values.get("target") as CacheTarget | undefined;
-  if (!targetArg || !CACHE_TARGETS.includes(targetArg)) {
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message: `--target debe ser uno de: ${CACHE_TARGETS.join(", ")}. Recibido: '${
-          targetArg ?? "(vacío)"
-        }'`,
-      },
-      exitCode: 1,
-    };
-  }
-  return null;
 }
 
 function buildHostReloadResult(
@@ -204,14 +179,6 @@ async function findSkillsDir(ctx: CliContext, pluginRoot: string): Promise<strin
   if (!latest) return null;
   const skillsDir = join(pluginRoot, latest, "skills");
   return (await ctx.fs.exists(skillsDir)) ? skillsDir : null;
-}
-
-async function listSafe(ctx: CliContext, path: string): Promise<{ name: string }[]> {
-  try {
-    return await ctx.fs.list(path);
-  } catch {
-    return [];
-  }
 }
 
 function pickLatestVersion(names: string[]): string | null {

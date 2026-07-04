@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import { HARNESSES } from "../../domain/harnesses.js";
@@ -12,7 +13,7 @@ import {
   validateMcpInstance,
 } from "../../domain/mcp-entry.js";
 import type { CommandResult } from "../../domain/types.js";
-import { readBootstrapDsn } from "../dsn-reader-service.js";
+import { dsnKeyForInstance, readBootstrapDsn } from "../dsn-reader-service.js";
 import {
   type McpConnection,
   deleteMcpConnection,
@@ -485,8 +486,8 @@ function installStatus(ctx: CliContext, connection: McpConnection, host: McpHost
   const snapshot = readMcpEntry(host, ctx.env.homeDir(), entry.name, "global");
   if (!snapshot.exists) return "no";
   if (snapshot.command !== entry.command) return "drift";
-  if (!arraysEqual(snapshot.args ?? [], entry.args)) return "drift";
-  if (!recordsEqual(snapshot.env ?? {}, entry.env)) return "drift";
+  if (!isDeepStrictEqual(snapshot.args ?? [], entry.args)) return "drift";
+  if (!isDeepStrictEqual(snapshot.env ?? {}, entry.env)) return "drift";
   return "si";
 }
 
@@ -609,7 +610,7 @@ async function resolveDsnVar(
   }
   const value = await prompts.input({
     message: "Variable de entorno con la DSN (UPPER_SNAKE_CASE)",
-    default: defaultDsnVar(name),
+    default: dsnKeyForInstance(name),
     validate: (input) => {
       const validation = validateDsnVarName(input);
       return validation.ok ? true : validation.error;
@@ -618,13 +619,6 @@ async function resolveDsnVar(
   const validation = validateDsnVarName(value);
   if (!validation.ok) throw new Error(validation.error);
   return validation.value;
-}
-
-function defaultDsnVar(name: McpInstance): string {
-  const normalized = name.toUpperCase().replace(/-/g, "_");
-  if (normalized === "CERT") return "DB_CERT_DSN";
-  if (normalized === "PROD") return "DB_PROD_DSN";
-  return `DB_${normalized}_DSN`;
 }
 
 function buildEnvHelp(
@@ -741,22 +735,4 @@ function refusal(
     data: { action, connection, summary: message },
     exitCode: 2,
   };
-}
-
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
-function recordsEqual(a: Record<string, string>, b: Record<string, string>): boolean {
-  const keysA = Object.keys(a).sort();
-  const keysB = Object.keys(b).sort();
-  if (!arraysEqual(keysA, keysB)) return false;
-  for (const key of keysA) {
-    if (a[key] !== b[key]) return false;
-  }
-  return true;
 }

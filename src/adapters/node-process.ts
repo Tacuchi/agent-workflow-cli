@@ -289,18 +289,12 @@ export class NodeProcess implements ProcessPort {
 
   async openPath(path: string, opts: { app?: string } = {}): Promise<void> {
     const plan = buildOpenCommand(this.platform, opts.app ? { path, app: opts.app } : { path });
-    let child: ReturnType<typeof spawn>;
-    try {
-      child = spawn(plan.cmd, plan.args, {
-        detached: true,
-        stdio: "ignore",
-        // GUI openers may want a window; do not hide it on Windows.
-        windowsHide: false,
-      });
-    } catch (err) {
-      // Synchronous spawn failure (rare) — surface it to the caller.
-      throw err instanceof Error ? err : new Error(String(err));
-    }
+    const child = spawn(plan.cmd, plan.args, {
+      detached: true,
+      stdio: "ignore",
+      // GUI openers may want a window; do not hide it on Windows.
+      windowsHide: false,
+    });
     // Make failure OBSERVABLE: reject on a spawn 'error' (ENOENT — opener missing)
     // or a fast non-zero exit (bad app), so the caller can show a real error and
     // NOT persist an invalid app. If the opener is still running after a short

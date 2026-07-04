@@ -86,34 +86,14 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "standalone-sql",
 ]);
 
-interface PluginFlagSpec {
-  flag: string;
-  apply(plugin: PluginArgs, value: string): void;
-  validate?(value: string): void;
-}
-
-const PLUGIN_FLAG_SPECS: readonly PluginFlagSpec[] = [
-  {
-    flag: "--plugin-root",
-    apply: (p, v) => {
-      p.pluginRoot = v;
-    },
-  },
-  {
-    flag: "--plugin-version",
-    apply: (p, v) => {
-      p.pluginVersion = v;
-    },
-  },
-  {
-    flag: "--compat",
-    apply: (p, v) => {
-      p.compat = v;
-    },
-  },
-];
-
-const PLUGIN_FLAGS: ReadonlySet<string> = new Set(PLUGIN_FLAG_SPECS.map((s) => s.flag));
+// Plugin flags always consume the next token as their value and land on
+// `plugin.<key>` instead of the generic `values` map. A Map (not a plain
+// object) so a token like `hasOwnProperty` never resolves via the prototype.
+const PLUGIN_FLAG_KEYS = new Map<string, keyof PluginArgs>([
+  ["--plugin-root", "pluginRoot"],
+  ["--plugin-version", "pluginVersion"],
+  ["--compat", "compat"],
+]);
 
 interface ParseState {
   argv: string[];
@@ -185,14 +165,13 @@ function consumeToken(state: ParseState): void {
 }
 
 function consumePluginFlag(state: ParseState, token: string): boolean {
-  const spec = PLUGIN_FLAG_SPECS.find((s) => s.flag === token);
-  if (!spec) return false;
+  const key = PLUGIN_FLAG_KEYS.get(token);
+  if (!key) return false;
   const value = state.argv[state.index + 1];
   if (value === undefined) {
-    throw new Error(`${spec.flag} requires a value`);
+    throw new Error(`${token} requires a value`);
   }
-  spec.validate?.(value);
-  spec.apply(state.plugin, value);
+  state.plugin[key] = value;
   state.index += 2;
   return true;
 }
@@ -217,7 +196,7 @@ function consumeOptionFlag(state: ParseState, token: string): boolean {
   if (
     next !== undefined &&
     !next.startsWith("-") &&
-    !PLUGIN_FLAGS.has(token) &&
+    !PLUGIN_FLAG_KEYS.has(token) &&
     !BOOLEAN_FLAGS.has(name)
   ) {
     setValue(state, name, next);

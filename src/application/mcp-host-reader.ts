@@ -55,7 +55,7 @@ export function readMcpEntry(
   // or .claude.json (global); warp uses .warp/.mcp.json (workspace) or the per-platform
   // global registry path (mirrors the writer — DEC-W3); gemini uses .gemini/settings.json.
   if (host === "warp" && kind === "global") {
-    const globalPath = resolveWarpGlobalMcpPath(process.platform, "stable", () => scopeDir);
+    const globalPath = resolveWarpGlobalMcpPath(process.platform, () => scopeDir);
     if (globalPath) return readJsonMcpEntry(host, globalPath, name);
   }
   const target =
@@ -65,22 +65,36 @@ export function readMcpEntry(
   return readJsonMcpEntry(host, target, name);
 }
 
-function readJsonMcpEntry(host: McpHost, target: string, name: string): McpEntrySnapshot {
-  if (!existsSync(target)) return { host, target, name, exists: false };
+// Shared preamble: exists check → read → empty check → try-parse → key extract →
+// entry validate. Returns the entry record, or null for every not-found/invalid case.
+function loadEntryObject(
+  target: string,
+  parse: (text: string) => unknown,
+  key: string,
+  name: string,
+): Record<string, unknown> | null {
+  if (!existsSync(target)) return null;
   const text = readFileSync(target, "utf-8");
-  if (text.trim().length === 0) return { host, target, name, exists: false };
+  if (text.trim().length === 0) return null;
   let data: Record<string, unknown>;
   try {
-    data = JSON.parse(text);
+    data = parse(text) as Record<string, unknown>;
   } catch {
-    return { host, target, name, exists: false };
+    return null;
   }
-  const mcpServers = (data.mcpServers ?? {}) as Record<string, unknown>;
-  const entry = mcpServers[name];
-  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-    return { host, target, name, exists: false };
-  }
-  const e = entry as Record<string, unknown>;
+  const servers = (data[key] ?? {}) as Record<string, unknown>;
+  const entry = servers[name];
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  return entry as Record<string, unknown>;
+}
+
+// Standard Claude-shaped snapshot: command/args/env fields on the entry.
+function stdSnapshot(
+  host: McpHost,
+  target: string,
+  name: string,
+  e: Record<string, unknown>,
+): McpEntrySnapshot {
   return {
     host,
     target,
@@ -95,26 +109,19 @@ function readJsonMcpEntry(host: McpHost, target: string, name: string): McpEntry
   };
 }
 
+function readJsonMcpEntry(host: McpHost, target: string, name: string): McpEntrySnapshot {
+  const e = loadEntryObject(target, JSON.parse, "mcpServers", name);
+  if (!e) return { host, target, name, exists: false };
+  return stdSnapshot(host, target, name, e);
+}
+
 // Reader for hosts that store the MCP entry under the top-level `mcp` key.
 // OpenCode: { type:"local", command:[cmd, ...args], environment }. The dbhub
 // command is the first array element and args are the rest; env lives under
 // `environment`. Crush: { type:"stdio", command, args, env } (Claude-like fields).
 function readMcpKeyEntry(host: McpHost, target: string, name: string): McpEntrySnapshot {
-  if (!existsSync(target)) return { host, target, name, exists: false };
-  const text = readFileSync(target, "utf-8");
-  if (text.trim().length === 0) return { host, target, name, exists: false };
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    return { host, target, name, exists: false };
-  }
-  const mcp = (data.mcp ?? {}) as Record<string, unknown>;
-  const entry = mcp[name];
-  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-    return { host, target, name, exists: false };
-  }
-  const e = entry as Record<string, unknown>;
+  const e = loadEntryObject(target, JSON.parse, "mcp", name);
+  if (!e) return { host, target, name, exists: false };
 
   if (host === "opencode") {
     const cmd = Array.isArray(e.command)
@@ -135,18 +142,7 @@ function readMcpKeyEntry(host: McpHost, target: string, name: string): McpEntryS
   }
 
   // crush: standard command/args/env fields under the `mcp` key.
-  return {
-    host,
-    target,
-    name,
-    exists: true,
-    ...(typeof e.command === "string" ? { command: e.command } : {}),
-    ...(Array.isArray(e.args)
-      ? { args: (e.args as unknown[]).filter((x): x is string => typeof x === "string") }
-      : {}),
-    ...(typeof e.env === "object" && e.env !== null ? { env: toStringRecord(e.env) } : {}),
-    raw: e,
-  };
+  return stdSnapshot(host, target, name, e);
 }
 
 function readTomlMcpEntry(
@@ -155,33 +151,9 @@ function readTomlMcpEntry(
   name: string,
   serversKey: string,
 ): McpEntrySnapshot {
-  if (!existsSync(target)) return { host, target, name, exists: false };
-  const text = readFileSync(target, "utf-8");
-  if (text.trim().length === 0) return { host, target, name, exists: false };
-  let data: Record<string, unknown>;
-  try {
-    data = parseToml(text) as Record<string, unknown>;
-  } catch {
-    return { host, target, name, exists: false };
-  }
-  const mcpServers = (data[serversKey] ?? {}) as Record<string, unknown>;
-  const entry = mcpServers[name];
-  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-    return { host, target, name, exists: false };
-  }
-  const e = entry as Record<string, unknown>;
-  return {
-    host,
-    target,
-    name,
-    exists: true,
-    ...(typeof e.command === "string" ? { command: e.command } : {}),
-    ...(Array.isArray(e.args)
-      ? { args: (e.args as unknown[]).filter((x): x is string => typeof x === "string") }
-      : {}),
-    ...(typeof e.env === "object" && e.env !== null ? { env: toStringRecord(e.env) } : {}),
-    raw: e,
-  };
+  const e = loadEntryObject(target, parseToml, serversKey, name);
+  if (!e) return { host, target, name, exists: false };
+  return stdSnapshot(host, target, name, e);
 }
 
 function toStringRecord(obj: unknown): Record<string, string> {

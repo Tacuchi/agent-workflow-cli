@@ -1,9 +1,9 @@
-import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { expectedWorkBranch, findOwningSource } from "./branch-resolver.js";
-import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
+import { parseHookPayload } from "./hook-common.js";
+import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 const TOOLS_OF_INTEREST = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -39,7 +39,7 @@ interface ResolvedTarget {
 }
 
 async function resolveBranchCheckTarget(input: BranchCheckInput): Promise<ResolvedTarget | null> {
-  const payload = parsePayload(input.stdin);
+  const payload = parseHookPayload(input.stdin);
   if (!payload) return null;
 
   const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
@@ -47,7 +47,7 @@ async function resolveBranchCheckTarget(input: BranchCheckInput): Promise<Resolv
   const filePath = extractFilePath(payload.tool_input);
   if (!filePath) return null;
 
-  const block = await readBlock(input.fs, input.env.cwd(), input.paths);
+  const block = await readWorkspaceBlock(input.fs, input.env.cwd(), input.paths.blockMarkers());
   if (!block) return null;
   const source = findOwningSource(block.fuentes, filePath);
   if (!source) return null;
@@ -57,16 +57,6 @@ async function resolveBranchCheckTarget(input: BranchCheckInput): Promise<Resolv
   const expected = expectedWorkBranch(source, block.working_branches);
   if (expected === null) return null;
   return { source, expected };
-}
-
-function parsePayload(stdin: string): Record<string, unknown> | null {
-  const raw = stdin.trim();
-  if (raw.length === 0) return null;
-  try {
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
 }
 
 async function verifyBranch(
@@ -107,15 +97,6 @@ function extractFilePath(toolInput: unknown): string | null {
   for (const key of ["file_path", "path", "notebook_path"]) {
     const v = obj[key];
     if (typeof v === "string" && v.length > 0) return v;
-  }
-  return null;
-}
-
-async function readBlock(fs: FileSystemPort, cwd: string, paths: PathsService) {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block;
   }
   return null;
 }

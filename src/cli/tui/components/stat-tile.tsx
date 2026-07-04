@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { colors, icons } from "../theme.js";
+import { colors, icons, toneColor } from "../theme.js";
 
 export type StatTone = "ok" | "warn" | "accent" | "dim" | "err";
 
@@ -15,23 +15,6 @@ export interface StatTileProps {
   active?: boolean;
   /** If true, aligns the tile to the right (used for WORKING TREE). */
   alignRight?: boolean;
-}
-
-function valueColor(tone?: StatTone, accent?: boolean): string {
-  switch (tone) {
-    case "ok":
-      return colors.ok;
-    case "warn":
-      return colors.warn;
-    case "err":
-      return colors.err;
-    case "accent":
-      return colors.accent;
-    case "dim":
-      return colors.dim;
-    default:
-      return accent ? colors.accent : colors.bright;
-  }
 }
 
 export function StatTile({
@@ -57,7 +40,7 @@ export function StatTile({
             </>
           ) : null}
         </Box>
-        <Text color={valueColor(tone, accent)} bold>
+        <Text color={toneColor(tone, accent ? colors.accent : colors.bright)} bold>
           {value}
         </Text>
         {sub ? <Text color={colors.dim}>{sub}</Text> : null}

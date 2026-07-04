@@ -3,7 +3,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { ProcessPort } from "../ports/process.js";
 import { runMultiroot } from "./multiroot-service.js";
-import { type ProjectFuente, parseProjectBlock } from "./parsers/project-block.js";
+import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { ProcessRegistryService } from "./process-registry-service.js";
 import { runProjectMdUpsertWrite } from "./project-md-upsert-service.js";
@@ -80,12 +80,8 @@ async function findFuente(
   paths: PathsService,
   alias: string,
 ): Promise<ProjectFuente | null> {
-  const cwd = paths.workspaceDir();
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    const fuente = block?.fuentes.find((f) => f.alias === alias);
-    if (fuente) return fuente;
-  }
-  return null;
+  const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers(), (b) =>
+    b.fuentes.some((f) => f.alias === alias),
+  );
+  return block?.fuentes.find((f) => f.alias === alias) ?? null;
 }

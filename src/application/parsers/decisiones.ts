@@ -9,29 +9,19 @@ export interface ParsedDecision {
 const DEC_HEADER_RE = /^##\s+(DEC-\d+)(?::\s*(.+))?$/gm;
 
 export function parseDecisiones(text: string, includeFull = false): ParsedDecision[] {
-  const headers: { id: string; title: string; bodyStart: number; bodyEnd: number }[] = [];
+  const headers: { id: string; title: string; start: number; bodyStart: number }[] = [];
 
   for (const m of text.matchAll(DEC_HEADER_RE)) {
     const id = m[1];
     if (!id) continue;
     const title = (m[2] ?? "").trim();
-    const bodyStart = (m.index ?? 0) + m[0].length;
-    headers.push({ id, title, bodyStart, bodyEnd: text.length });
+    const start = m.index ?? 0;
+    headers.push({ id, title, start, bodyStart: start + m[0].length });
   }
 
-  for (let i = 0; i < headers.length - 1; i++) {
-    const next = headers[i + 1];
-    const current = headers[i];
-    if (!next || !current) continue;
-    const nextStart = findHeaderStart(text, next.id, current.bodyStart);
-    if (nextStart >= 0) {
-      current.bodyEnd = nextStart;
-    }
-  }
-
-  const items: ParsedDecision[] = [];
-  for (const h of headers) {
-    const body = text.slice(h.bodyStart, h.bodyEnd).trim();
+  // Each body runs from its own header's end to the next header's start.
+  return headers.map((h, i) => {
+    const body = text.slice(h.bodyStart, headers[i + 1]?.start ?? text.length).trim();
     const preview = firstNonEmpty(body);
     const graduated = preview?.startsWith("→ docs/") === true;
     const item: ParsedDecision = {
@@ -43,16 +33,8 @@ export function parseDecisiones(text: string, includeFull = false): ParsedDecisi
     if (includeFull) {
       item.body = body;
     }
-    items.push(item);
-  }
-  return items;
-}
-
-function findHeaderStart(text: string, id: string, fromIndex: number): number {
-  const re = new RegExp(`^##\\s+${id.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}(?::|$| )`, "m");
-  const slice = text.slice(fromIndex);
-  const m = slice.match(re);
-  return m && m.index !== undefined ? fromIndex + m.index : -1;
+    return item;
+  });
 }
 
 function firstNonEmpty(text: string): string | null {

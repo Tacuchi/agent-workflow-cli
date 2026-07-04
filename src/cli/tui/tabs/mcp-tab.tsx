@@ -1,5 +1,5 @@
 import { Box, Text, useInput, useStdout } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { testMcpConnection } from "../../../application/mcp-test-connection-service.js";
 import {
@@ -9,7 +9,6 @@ import {
   selfMcpConfig,
 } from "../../../application/self/mcp-config.js";
 import type { CommandResult } from "../../../domain/types.js";
-import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
 import { ConfirmBanner } from "../components/confirm-banner.js";
 import { type DetailAction, DetailPanel } from "../components/detail-panel.js";
@@ -18,10 +17,14 @@ import { ListRow } from "../components/list-row.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
-import { useInputLock } from "../input-lock.js";
+import { useLockWhile } from "../input-lock.js";
+import type { ToastBridgeInput } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
+import { useListDetailKeys } from "../use-list-detail-keys.js";
+import { useOnMount } from "../use-on-mount.js";
 import {
+  buildArgs,
   installActionLabel,
   installDestination,
   installStatusPill,
@@ -46,20 +49,13 @@ type Mode =
 
 type ActionId = "install" | "test" | "edit" | "remove";
 
+// Detail panel action ids, in render order (paired 1:1 with `detailActions`).
+const DETAIL_ACTION_IDS: ActionId[] = ["install", "test", "edit", "remove"];
+
 export interface McpTabProps {
   ctx: CliContext;
   isActive: boolean;
-  onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
-}
-
-function buildArgs(action: string, values: Record<string, string> = {}): ParsedArgs {
-  return {
-    rest: ["mcp", action],
-    plugin: {},
-    flags: new Set(),
-    values: new Map(Object.entries(values)),
-    valuesMulti: new Map(),
-  };
+  onToast?: (msg: ToastBridgeInput) => void;
 }
 
 // Crash-safe DSN visibility check (env + bootstrap dsn file) for the review
@@ -74,19 +70,41 @@ function safeDsnVisible(ctx: CliContext, dsnVar: string): boolean {
 
 export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
   const [connections, setConnections] = useState<SelfMcpConnectionView[]>([]);
-  const [cursor, setCursor] = useState(0);
-  const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
-  const startedRef = useRef(false);
-  const { lock, unlock } = useInputLock();
   const { stdout } = useStdout();
 
-  useEffect(() => {
-    if (mode.kind === "list" || mode.kind === "detail") unlock();
-    else lock();
-  }, [mode, lock, unlock]);
+  useLockWhile(mode.kind !== "list" && mode.kind !== "detail");
 
-  useEffect(() => () => unlock(), [unlock]);
+  // Shared list/detail/confirm keys (↑↓ · ⏎ · esc · a add · y/n). The
+  // callbacks close over consts declared below — they only run on keystrokes.
+  const { cursor, setCursor, actionCursor } = useListDetailKeys({
+    isActive,
+    phase:
+      mode.kind === "list" || mode.kind === "detail"
+        ? mode.kind
+        : mode.kind === "confirm-delete"
+          ? "confirm"
+          : "off",
+    listLen: connections.length,
+    actionsLen: DETAIL_ACTION_IDS.length,
+    onAdd: () => setMode({ kind: "wizard-name" }),
+    onOpenDetail: () => setMode({ kind: "detail" }),
+    onCloseDetail: () => setMode({ kind: "list" }),
+    onRunAction: (i) => {
+      const id = DETAIL_ACTION_IDS[i];
+      if (id) triggerAction(id);
+    },
+    onConfirm: (yes) => {
+      if (mode.kind !== "confirm-delete") return;
+      if (!yes) return setMode({ kind: "detail" });
+      const name = mode.name;
+      void runRawAction("remove", name, `removing ${name}…`).then(async (ok) => {
+        if (ok) onToast?.({ tone: "ok", title: `Connection '${name}' removed` });
+        await refresh();
+        setMode({ kind: "list" });
+      });
+    },
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -97,13 +115,9 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     } catch (err) {
       onToast?.({ tone: "err", title: "Error loading MCP", body: (err as Error).message });
     }
-  }, [ctx, onToast]);
+  }, [ctx, onToast, setCursor]);
 
-  useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    void refresh();
-  }, [refresh]);
+  useOnMount(() => void refresh());
 
   const current = connections[cursor] ?? null;
 
@@ -219,7 +233,6 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
 
   // Detail panel actions (Install/Test/Edit/Remove). `Install` adapts its label
   // to the user-scope status: install · update (on drift) · reinstall.
-  const detailActionIds: ActionId[] = ["install", "test", "edit", "remove"];
   const detailActions: DetailAction[] = current
     ? [
         {
@@ -235,71 +248,6 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
         },
       ]
     : [];
-
-  // input — list mode (↑↓ navigate · ⏎ open detail · 'a' add wizard)
-  useInput(
-    (input, key) => {
-      if (!isActive || mode.kind !== "list") return;
-      if (input === "a" || input === "A") {
-        setMode({ kind: "wizard-name" });
-        return;
-      }
-      if (key.upArrow) {
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      }
-      if (key.downArrow) {
-        setCursor((c) => (connections.length === 0 ? 0 : Math.min(connections.length - 1, c + 1)));
-        return;
-      }
-      if (key.return && current) {
-        setActionCursor(0);
-        setMode({ kind: "detail" });
-      }
-    },
-    { isActive },
-  );
-
-  // input — detail mode (↑↓ navigate actions · ⏎ run focused · Esc close)
-  useInput(
-    (_input, key) => {
-      if (!isActive || mode.kind !== "detail" || !current) return;
-      if (key.upArrow) {
-        setActionCursor((c) => Math.max(0, c - 1));
-        return;
-      }
-      if (key.downArrow) {
-        setActionCursor((c) => Math.min(detailActions.length - 1, c + 1));
-        return;
-      }
-      if (key.escape) {
-        setMode({ kind: "list" });
-        return;
-      }
-      if (key.return) {
-        const id = detailActionIds[actionCursor];
-        if (id) triggerAction(id);
-      }
-    },
-    { isActive },
-  );
-
-  // input — confirm-delete (y confirm · n/esc back to detail)
-  useInput(
-    (input, key) => {
-      if (!isActive || mode.kind !== "confirm-delete") return;
-      if (input === "y" || input === "Y") {
-        void runRawAction("remove", mode.name, `removing ${mode.name}…`).then(async (ok) => {
-          if (ok) onToast?.({ tone: "ok", title: `Connection '${mode.name}' removed` });
-          await refresh();
-          setMode({ kind: "list" });
-        });
-      } else if (key.escape || input === "n" || input === "N") {
-        setMode({ kind: "detail" });
-      }
-    },
-    { isActive },
-  );
 
   // input — esc in wizard
   useInput(
@@ -335,6 +283,9 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     { isActive },
   );
 
+  const inWizard = mode.kind.startsWith("wizard");
+  const overlayOpen = mode.kind !== "list" && mode.kind !== "busy";
+
   return (
     <Box flexDirection="column">
       <PageHead
@@ -350,9 +301,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           <SectionHead
             label="Connections"
             count={connections.length}
-            {...(mode.kind === "wizard-name" ||
-            mode.kind === "wizard-dsn" ||
-            mode.kind === "wizard-review"
+            {...(inWizard
               ? { rightAction: "esc cancel" }
               : mode.kind === "detail" || mode.kind === "confirm-delete"
                 ? { rightAction: "esc to close detail" }
@@ -382,19 +331,8 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
                   state={installStatusPill(c.instalado.claude)}
                   chevron
                   active={i === cursor}
-                  dimmed={
-                    mode.kind === "wizard-name" ||
-                    mode.kind === "wizard-dsn" ||
-                    mode.kind === "wizard-review"
-                  }
-                  widthHint={rowWidth(
-                    stdout?.columns,
-                    mode.kind === "detail" ||
-                      mode.kind === "confirm-delete" ||
-                      mode.kind === "wizard-name" ||
-                      mode.kind === "wizard-dsn" ||
-                      mode.kind === "wizard-review",
-                  )}
+                  dimmed={inWizard}
+                  widthHint={rowWidth(stdout?.columns, overlayOpen)}
                 />
               ))}
             </Box>
@@ -538,9 +476,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
               ) : null
             }
           />
-        ) : mode.kind === "wizard-name" ||
-          mode.kind === "wizard-dsn" ||
-          mode.kind === "wizard-review" ? (
+        ) : inWizard ? (
           <Box flexDirection="column">
             <Text color={colors.borderFaint}>{"│"}</Text>
             <Box flexDirection="column" width={38} paddingLeft={1}>
@@ -686,14 +622,12 @@ function WizardStep({
   active,
   completed,
   value,
-  hint,
 }: {
   index: number;
   label: string;
   active: boolean;
   completed: boolean;
   value?: string | undefined;
-  hint?: string | undefined;
 }) {
   const glyph = completed ? icons.check : active ? "→" : " ";
   const color = completed ? colors.ok : active ? colors.accent : colors.dim;
@@ -708,11 +642,6 @@ function WizardStep({
       {value ? (
         <Box marginLeft={3}>
           <Text color={colors.ok}>{value}</Text>
-        </Box>
-      ) : null}
-      {hint ? (
-        <Box marginLeft={3}>
-          <Text color={colors.dim}>{hint}</Text>
         </Box>
       ) : null}
     </Box>

@@ -1,8 +1,9 @@
 import { basename, join, relative } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { localDateIso } from "./dates.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
-import { firstNonEmptyLine } from "./markdown.js";
+import { firstNonEmptyLine, parseMdSection } from "./markdown.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import { parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
@@ -364,7 +365,7 @@ async function resolveTimestamp(
   }
   const when = mtime ?? dateOnlyToNoon(fallbackDateOnly) ?? now;
   return {
-    date: formatDateOnly(when),
+    date: localDateIso(when),
     relative: humanizeRelativeEs(when, now),
   };
 }
@@ -374,13 +375,6 @@ function dateOnlyToNoon(dateStr: string | undefined): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
   if (!m) return null;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
-}
-
-function formatDateOnly(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 async function safeExists(fs: FileSystemPort, path: string): Promise<boolean> {
@@ -401,36 +395,11 @@ function relFromCwd(path: string, cwd: string): string {
 
 /**
  * Like `parseMdSection` but tolerant of the template heading annotations
- * (`## Excluded (list):`, `## Deferred (text):`) — matches a heading whose name
- * starts with `heading`, ignoring a trailing `(...)` / `:`. Kept local so
- * `markdown.ts` stays stable; needed for legacy artifacts that still carry the
- * suffix.
+ * (`## Excluded (list):`, `## Deferred (text):`) — ignores a trailing
+ * `(...)` / `:`; needed for legacy artifacts that still carry the suffix.
  */
-function parseMdSectionLoose(text: string, heading: string): string | undefined {
-  const target = heading.trim().toLowerCase();
-  const lines = text.split("\n");
-  const headingRe = /^(#{1,6})\s+(.+?)\s*$/;
-  let captureFrom: number | null = null;
-  let captureLevel = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line === undefined) continue;
-    const match = line.match(headingRe);
-    if (!match?.[1] || !match[2]) continue;
-    const level = match[1].length;
-    const name = normalizeHeading(match[2]);
-    if (captureFrom === null) {
-      if (name === target) {
-        captureFrom = i + 1;
-        captureLevel = level;
-      }
-    } else if (level <= captureLevel) {
-      return lines.slice(captureFrom, i).join("\n").trim();
-    }
-  }
-  if (captureFrom !== null) return lines.slice(captureFrom).join("\n").trim();
-  return undefined;
-}
+const parseMdSectionLoose = (text: string, heading: string): string | undefined =>
+  parseMdSection(text, heading, normalizeHeading);
 
 function normalizeHeading(raw: string): string {
   return raw

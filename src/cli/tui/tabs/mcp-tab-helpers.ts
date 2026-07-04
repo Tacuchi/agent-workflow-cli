@@ -4,16 +4,28 @@
 
 import { harnessForMcpHost, resolveGlobalMcpRawPath } from "../../../domain/harnesses.js";
 import type { McpHost } from "../../../domain/mcp-entry.js";
+import type { ParsedArgs } from "../../parser.js";
 import type { MetaTone } from "../components/list-row.js";
 
 /** Whether a connection is present in the host's user-scope (global) config.
  *  Mirror of the (unexported) `InstallStatus` in `self/mcp-config.ts`. */
 export type HostInstallStatus = "si" | "no" | "drift";
 
+/** `ParsedArgs` skeleton to drive `selfMcpConfig` actions from the TUI. */
+export function buildArgs(action: string, values: Record<string, string> = {}): ParsedArgs {
+  return {
+    rest: ["mcp", action],
+    plugin: {},
+    flags: new Set(),
+    values: new Map(Object.entries(values)),
+    valuesMulti: new Map(),
+  };
+}
+
 /**
  * Suggest a DSN env var name from a connection alias, mirroring the CLI's
- * `defaultDsnVar`: `cert` → `DB_CERT_DSN`, `my-db` → `DB_MY_DB_DSN`. Returns ""
- * for an empty alias (no suggestion to prefill).
+ * `dsnKeyForInstance`: `cert` → `DB_CERT_DSN`, `my-db` → `DB_MY_DB_DSN`.
+ * Returns "" for an empty alias (no suggestion to prefill).
  */
 export function suggestDsnVar(alias: string): string {
   const normalized = alias

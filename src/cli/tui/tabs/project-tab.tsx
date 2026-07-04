@@ -18,6 +18,7 @@ import type { LaunchDescriptor } from "../../../application/source-launch-script
 import {
   type LaunchDeps,
   type LaunchRequest,
+  type LaunchResult,
   ensureDescriptor,
   findCollision,
   launchSource,
@@ -41,21 +42,20 @@ import { SectionHead } from "../components/section-head.js";
 import { type LaunchFormValue, SourceLaunchForm } from "../components/source-launch-form.js";
 import { StatTile } from "../components/stat-tile.js";
 import { WorkspaceInitForm } from "../components/workspace-init-form.js";
-import { useInputLock } from "../input-lock.js";
+import { useLockWhile } from "../input-lock.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
 
 export interface ProjectTabProps {
   ctx: CliContext;
   isActive: boolean;
-  onRunAction?: (id: string, payload?: Record<string, unknown>) => void;
+  onRunAction?: (id: string) => void;
 }
 
 export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   const [data, setData] = useState<ProjectTabData | null>(null);
   const [loading, setLoading] = useState(true);
   const [initForm, setInitForm] = useState(false);
-  const { lock, unlock } = useInputLock();
 
   const loadData = useCallback(async () => {
     try {
@@ -85,11 +85,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   // While the init wizard is open, block the global keys so its inputs don't
   // navigate across tabs. The Initialized view manages its own lock for the
   // detail panel / in-flight flow.
-  useEffect(() => {
-    if (initForm) lock();
-    else unlock();
-  }, [initForm, lock, unlock]);
-  useEffect(() => () => unlock(), [unlock]);
+  useLockWhile(initForm);
 
   // Keys for the "not initialized" landing (⏎ opens the wizard · g git status).
   useInput(
@@ -274,7 +270,7 @@ interface InitializedProps {
   ctx: CliContext;
   data: ProjectTabData;
   isActive: boolean;
-  onRunAction?: ((id: string, payload?: Record<string, unknown>) => void) | undefined;
+  onRunAction?: ((id: string) => void) | undefined;
   onReload?: (() => void | Promise<void>) | undefined;
 }
 
@@ -291,7 +287,6 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const wsPath = tildePath(data.workspacePath, home);
 
   const { stdout } = useStdout();
-  const { lock, unlock } = useInputLock();
 
   // Navigable targets: each source + the sentinel "all sources" row at the end.
   const targets = useMemo(() => [...data.sources.map((s) => s.alias), ALL_SOURCES], [data.sources]);
@@ -411,14 +406,13 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [launchDeps, onReload, ctx],
   );
 
-  const doRelaunch = useCallback(
-    async (record: ProcessRecord) => {
-      setMode({ kind: "busy", label: `Re-lanzando ${record.sourceAlias}…` });
-      const res = await relaunchProcess(launchDeps, record);
+  // Shared tail of doRelaunch/confirmRelaunch: daily-log entry + notice + reload.
+  const finishRelaunch = useCallback(
+    async (alias: string, res: LaunchResult) => {
       void ctx.logger?.log(
         res.ok ? "info" : "error",
         formatTuiEvent(
-          `relaunch ${record.sourceAlias}`,
+          `relaunch ${alias}`,
           res.ok ? "ok" : "error",
           res.ok ? undefined : res.message,
         ),
@@ -428,13 +422,22 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           ? {
               kind: "notice",
               tone: "ok",
-              lines: [`Re-lanzado ${record.sourceAlias} (PID ${res.record.pid})`],
+              lines: [`Re-lanzado ${alias} (PID ${res.record.pid})`],
             }
           : { kind: "notice", tone: "err", lines: [res.message] },
       );
       await onReload?.();
     },
-    [launchDeps, onReload, ctx],
+    [ctx, onReload],
+  );
+
+  const doRelaunch = useCallback(
+    async (record: ProcessRecord) => {
+      setMode({ kind: "busy", label: `Re-lanzando ${record.sourceAlias}…` });
+      const res = await relaunchProcess(launchDeps, record);
+      await finishRelaunch(record.sourceAlias, res);
+    },
+    [launchDeps, finishRelaunch],
   );
 
   const doViewLog = useCallback(
@@ -451,11 +454,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
 
   // The detail panel (and the in-flight flow) block the global keys; the base
   // list lets them through.
-  useEffect(() => {
-    if (mode.kind === "list") unlock();
-    else lock();
-  }, [mode, lock, unlock]);
-  useEffect(() => () => unlock(), [unlock]);
+  useLockWhile(mode.kind !== "list");
 
   const detailOpen = mode.kind === "detail";
   const currentTarget = targets[cursor] ?? ALL_SOURCES;
@@ -613,26 +612,9 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       setMode({ kind: "busy", label: `Re-lanzando ${req.alias}…` });
       await stopProcess(launchDeps, existing);
       const res = await launchSource(launchDeps, req);
-      void ctx.logger?.log(
-        res.ok ? "info" : "error",
-        formatTuiEvent(
-          `relaunch ${req.alias}`,
-          res.ok ? "ok" : "error",
-          res.ok ? undefined : res.message,
-        ),
-      );
-      setMode(
-        res.ok
-          ? {
-              kind: "notice",
-              tone: "ok",
-              lines: [`Re-lanzado ${req.alias} (PID ${res.record.pid})`],
-            }
-          : { kind: "notice", tone: "err", lines: [res.message] },
-      );
-      await onReload?.();
+      await finishRelaunch(req.alias, res);
     },
-    [launchDeps, onReload, ctx],
+    [launchDeps, finishRelaunch],
   );
 
   // input — delegates to the handler of the active mode.

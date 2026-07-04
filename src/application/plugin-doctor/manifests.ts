@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { HARNESSES } from "../../domain/harnesses.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { type DoctorFinding, isRecord } from "./common.js";
+import { type DoctorFinding, isRecord, readJson } from "./common.js";
 
 export interface ManifestsResult {
   manifestsInfo: Record<string, string | null>;
@@ -76,28 +76,16 @@ async function parseManifestFile(
     findings.push({ level: "warn", file: relPath, msg: "manifest missing" });
     return { version: null, name: null, contractVersion: null, parseError: true, findings };
   }
-  let raw: string;
-  try {
-    raw = await fs.readText(manifestPath);
-  } catch (e) {
+  const parsed = await readJson(fs, manifestPath);
+  if ("error" in parsed) {
     findings.push({
       level: "error",
       file: relPath,
-      msg: `invalid JSON: ${(e as Error).message}`,
+      msg: `invalid JSON: ${parsed.error}`,
     });
     return { version: null, name: null, contractVersion: null, parseError: true, findings };
   }
-  let data: unknown;
-  try {
-    data = JSON.parse(raw);
-  } catch (e) {
-    findings.push({
-      level: "error",
-      file: relPath,
-      msg: `invalid JSON: ${(e as Error).message}`,
-    });
-    return { version: null, name: null, contractVersion: null, parseError: true, findings };
-  }
+  const data = parsed.data;
   if (!isRecord(data)) {
     return { version: null, name: null, contractVersion: null, parseError: false, findings };
   }

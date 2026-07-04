@@ -1,9 +1,15 @@
 import { copyFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { INSTALL_TARGETS, type InstallTarget, SKILL_DIR_NAME } from "./install-skill.js";
+import {
+  INSTALL_TARGETS,
+  type InstallTarget,
+  SKILL_DIR_NAME,
+  findUpward,
+} from "./install-skill.js";
 
 export interface HookEntry {
   matcher?: string;
@@ -174,7 +180,7 @@ async function installClaudeHooks(
   const merged: Record<string, unknown> = { ...existingHooks };
   for (const [event, entries] of Object.entries(template.hooks)) {
     const existing = existingHooks[event];
-    if (deepEqual(existing, entries)) {
+    if (isDeepStrictEqual(existing, entries)) {
       eventsAlreadyPresent.push(event);
     } else {
       eventsInstalled.push(event);
@@ -251,52 +257,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== typeof b) return false;
-  if (a === null || b === null) return a === b;
-  if (Array.isArray(a) || Array.isArray(b)) return arrayEqual(a, b);
-  if (typeof a === "object" && typeof b === "object") return objectEqual(a, b);
-  return false;
-}
-
-function arrayEqual(a: unknown, b: unknown): boolean {
-  if (!Array.isArray(a) || !Array.isArray(b)) return false;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (!deepEqual(a[i], b[i])) return false;
-  }
-  return true;
-}
-
-function objectEqual(a: unknown, b: unknown): boolean {
-  const ra = a as Record<string, unknown>;
-  const rb = b as Record<string, unknown>;
-  const ka = Object.keys(ra);
-  if (ka.length !== Object.keys(rb).length) return false;
-  for (const k of ka) {
-    if (!deepEqual(ra[k], rb[k])) return false;
-  }
-  return true;
-}
-
 export async function resolveBundledHookTemplate(): Promise<string | null> {
-  // Walk up from current module to find skills/w/hooks/hooks.template.json
-  const { fileURLToPath } = await import("node:url");
-  const { stat } = await import("node:fs/promises");
-  const here = dirname(fileURLToPath(import.meta.url));
-  let current = here;
-  for (let i = 0; i < 8; i += 1) {
-    const candidate = join(current, "skills", SKILL_DIR_NAME, "hooks", "hooks.template.json");
-    try {
-      await stat(candidate);
-      return candidate;
-    } catch {
-      // not here
-    }
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return null;
+  return findUpward(join("skills", SKILL_DIR_NAME, "hooks", "hooks.template.json"));
 }

@@ -40,12 +40,11 @@ const cycleIndex = (len: number, current: number, dir: 1 | -1): number =>
 export function ConfigTab({ ctx, isActive, prefs, onChange, onSaveNamespace }: ConfigTabProps) {
   const { cols } = useTerminalSize();
   const { lock, unlock } = useInputLock();
-  const backedHosts = HOSTS.filter((h) => h.backed);
   const controls: Control[] = [
     { kind: "accent" },
     { kind: "initialScreen" },
     { kind: "namespace" },
-    ...backedHosts.map((h) => ({ kind: "host" as const, id: h.id })),
+    ...HOSTS.map((h) => ({ kind: "host" as const, id: h.id })),
   ];
   const { cursor, moveUp, moveDown } = useListCursor(controls.length);
   const [editingNs, setEditingNs] = useState(false);
@@ -180,14 +179,13 @@ export function ConfigTab({ ctx, isActive, prefs, onChange, onSaveNamespace }: C
 
       <Box flexDirection="column">
         {HOSTS.map((h) => {
-          const st = hostState(h.backed, !prefs.disabledHosts.includes(h.id));
+          const st = hostState(!prefs.disabledHosts.includes(h.id));
           return (
             <FocusRow
               key={h.id}
               focused={isFocused({ kind: "host", id: h.id })}
               cols={cols}
               label={`${h.glyph} ${h.name}`}
-              labelColor={h.backed ? undefined : colors.faint}
               valueWidth={st.width}
             >
               <Text color={st.color}>
@@ -238,11 +236,8 @@ function InitialScreenValue({ currentId }: { currentId: TabId }) {
 }
 
 /** Host state: label + color + render width (icon + space + label). */
-function hostState(
-  backed: boolean,
-  enabled: boolean,
-): { label: string; color: string; width: number } {
-  const label = !backed ? "future" : enabled ? "on" : "off";
-  const color = !backed ? colors.faint : enabled ? colors.ok : colors.mute;
+function hostState(enabled: boolean): { label: string; color: string; width: number } {
+  const label = enabled ? "on" : "off";
+  const color = enabled ? colors.ok : colors.mute;
   return { label, color, width: 2 + label.length };
 }

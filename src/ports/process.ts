@@ -40,24 +40,17 @@ export interface SpawnInTerminalResult {
   mode: "terminal" | "background";
 }
 
+// SpawnDetachedOptions/Result describe NodeProcess.spawnDetached — an adapter
+// method used only as spawnInTerminal's internal headless fallback, so it is
+// deliberately NOT part of the port.
 export interface ProcessPort {
   run(cmd: string, args: string[], opts?: RunOptions): Promise<RunResult>;
   which(cmd: string): Promise<string | undefined>;
   /**
-   * Launch a process fully detached from the current process: its own
-   * group/session, stdout+stderr redirected to `logPath`, no stdin. The child
-   * survives the parent exiting (the parent `unref`s it). Returns the child PID.
-   */
-  spawnDetached(
-    cmd: string,
-    args: string[],
-    opts: SpawnDetachedOptions,
-  ): Promise<SpawnDetachedResult>;
-  /**
    * Launch a process in a *visible, persistent* OS terminal window (macOS
    * Terminal.app · Windows PowerShell console · Linux emulator): it stays open to
-   * monitor the app live, and closing the window stops the app. Falls back to
-   * {@link spawnDetached} (background + log) when no terminal is available
+   * monitor the app live, and closing the window stops the app. Falls back to a
+   * detached background process (+ log) when no terminal is available
    * (headless/CI). The returned `pid` is the real app pid on *nix and the console
    * pid on Windows; `mode` says which path was taken.
    */

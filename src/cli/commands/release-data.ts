@@ -3,6 +3,7 @@ import { runReleaseData } from "../../application/release-data-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const releaseDataCommand: QtcCommand = {
@@ -22,7 +23,7 @@ export const releaseDataCommand: QtcCommand = {
         input.sessions = parseSessionsCsv(sessionsRaw);
       } catch (e) {
         if (e instanceof SessionsCsvError) {
-          return { ok: false, error: { code: e.code, message: e.message }, exitCode: 1 };
+          return fail(e.code, e.message);
         }
         throw e;
       }
@@ -44,18 +45,13 @@ export const releaseDataCommand: QtcCommand = {
       const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input, ctx.runtime);
       if ("error" in data) {
         // Unknown alias / unreadable block: a real error, not an empty "ok" dump.
-        return {
-          ok: false,
-          error: { code: "INVALID_INPUT", message: data.error },
-          data,
-          exitCode: 1,
-        };
+        return fail("INVALID_INPUT", data.error, data);
       }
       const dataWithWarnings = warnings.length > 0 ? { ...data, warnings } : data;
       return { ok: true, data: dataWithWarnings, exitCode: 0 };
     } catch (e) {
       if (e instanceof SessionsCsvError) {
-        return { ok: false, error: { code: e.code, message: e.message }, exitCode: 1 };
+        return fail(e.code, e.message);
       }
       throw e;
     }

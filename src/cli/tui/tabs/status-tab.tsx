@@ -1,9 +1,8 @@
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { type SelfDoctorReport, selfDoctor } from "../../../application/self/doctor-self.js";
 import type { SelfMcpConnectionView } from "../../../application/self/mcp-config.js";
 import { selfMcpConfig } from "../../../application/self/mcp-config.js";
-import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
 import { LogsSection } from "../components/logs-section.js";
 import { PageHead } from "../components/page-head.js";
@@ -11,14 +10,17 @@ import { SectionHead } from "../components/section-head.js";
 import { StatTile } from "../components/stat-tile.js";
 import type { LogEntry } from "../data/logs.js";
 import { HOSTS } from "../hosts.js";
+import type { ToastBridgeInput } from "../notification-center.js";
 import { colors, icons } from "../theme.js";
+import { useOnMount } from "../use-on-mount.js";
+import { buildArgs } from "./mcp-tab-helpers.js";
 
 export interface StatusTabProps {
   ctx: CliContext;
   version: string;
   isActive: boolean;
   onActivateTab?: (tab: "workflow" | "mcp" | "skills") => void;
-  onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
+  onToast?: (msg: ToastBridgeInput) => void;
   /** Daily operational logs (global user-level). Empty renders the empty-state. */
   logs?: LogEntry[];
   /** Last app used in "open with…" (prefill + memory). */
@@ -60,7 +62,6 @@ export function StatusTab({
   // When true the Logs section owns the keyboard (↑↓/⏎/a/esc); the tiles strip
   // pauses its own nav so the two don't fight over arrows.
   const [logsMode, setLogsMode] = useState(false);
-  const dataStartedRef = useRef(false);
 
   const openEntry = useCallback(
     async (entry: LogEntry, app?: string) => {
@@ -83,9 +84,7 @@ export function StatusTab({
     [ctx, onToast, onSetLastApp],
   );
 
-  useEffect(() => {
-    if (dataStartedRef.current) return;
-    dataStartedRef.current = true;
+  useOnMount(() => {
     void (async () => {
       const doc = await selfDoctor(ctx).catch(() => null);
       const mcpRes = await selfMcpConfig(buildArgs("list"), ctx).catch(() => null);
@@ -98,29 +97,21 @@ export function StatusTab({
         loading: false,
       });
     })();
-  }, [ctx]);
+  });
 
   // The update-check + banner live in the AppShell via NotificationCenter.
   // This tab navigates tiles and delegates `⏎` on hosts/mcp (switch tab) and
   // logs (enter Logs mode). While logsMode is active, the LogsSection owns the
   // keyboard → this capture turns off so they don't fight over the arrows.
+  const move = (dir: 1 | -1) =>
+    setTileCursor(
+      (c) => TILE_IDS[(TILE_IDS.indexOf(c) + dir + TILE_IDS.length) % TILE_IDS.length] ?? "cli",
+    );
   useInput(
     (_input, key) => {
       if (!isActive) return;
-      if (key.upArrow || key.leftArrow) {
-        setTileCursor((c) => {
-          const idx = TILE_IDS.indexOf(c);
-          return TILE_IDS[(idx - 1 + TILE_IDS.length) % TILE_IDS.length] ?? "cli";
-        });
-        return;
-      }
-      if (key.downArrow || key.rightArrow) {
-        setTileCursor((c) => {
-          const idx = TILE_IDS.indexOf(c);
-          return TILE_IDS[(idx + 1) % TILE_IDS.length] ?? "cli";
-        });
-        return;
-      }
+      if (key.upArrow || key.leftArrow) return move(-1);
+      if (key.downArrow || key.rightArrow) return move(1);
       if (key.return) {
         // Host administration lives in [Workflows].
         if (tileCursor === "hosts") onActivateTab?.("workflow");
@@ -152,8 +143,6 @@ export function StatusTab({
   }));
   const installedHosts = hostsInstalled.filter((h) => h.installed).length;
   const supportedHosts = activeHosts.length;
-  const backedHosts = activeHosts.filter((h) => h.backed).length;
-  const pendingHosts = supportedHosts - backedHosts;
   const pct = supportedHosts > 0 ? Math.round((installedHosts / supportedHosts) * 100) : 0;
 
   return (
@@ -212,7 +201,6 @@ export function StatusTab({
       <SectionHead
         label="Skill coverage"
         count={`${installedHosts}/${supportedHosts}`}
-        hint={`${backedHosts} backed · ${pendingHosts} pending`}
         marginTop={1}
       />
       <Box marginLeft={2} marginTop={0} flexDirection="row">
@@ -224,7 +212,7 @@ export function StatusTab({
       </Box>
       <Box marginLeft={2} marginTop={0} flexDirection="row" flexWrap="wrap">
         {hostsInstalled.map(({ host, installed }) => (
-          <HostChip key={host.id} name={host.name} installed={installed} backed={host.backed} />
+          <HostChip key={host.id} name={host.name} installed={installed} />
         ))}
       </Box>
 
@@ -240,23 +228,9 @@ export function StatusTab({
   );
 }
 
-function HostChip({
-  name,
-  installed,
-  backed,
-}: {
-  name: string;
-  installed: boolean;
-  backed: boolean;
-}) {
-  let color: string = colors.dim;
-  let glyph = " ";
-  if (installed) {
-    color = colors.ok;
-    glyph = "✓";
-  } else if (!backed) {
-    color = colors.warn;
-  }
+function HostChip({ name, installed }: { name: string; installed: boolean }) {
+  const color = installed ? colors.ok : colors.dim;
+  const glyph = installed ? "✓" : " ";
   return (
     <Box marginRight={2}>
       <Text color={color}>{glyph}</Text>
@@ -287,14 +261,4 @@ function ProgressLine({ ratio }: { ratio: number }) {
       <Text color={colors.faint}>{"░".repeat(width - filled)}</Text>
     </Box>
   );
-}
-
-function buildArgs(action: string): ParsedArgs {
-  return {
-    rest: ["mcp", action],
-    plugin: {},
-    flags: new Set(),
-    values: new Map(),
-    valuesMulti: new Map(),
-  };
 }

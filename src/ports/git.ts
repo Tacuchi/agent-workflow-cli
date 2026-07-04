@@ -15,7 +15,6 @@ export interface GitPort {
   currentBranch(repoPath: string): Promise<string | undefined>;
   isDirty(repoPath: string): Promise<boolean>;
   changedFiles(repoPath: string): Promise<string[]>;
-  log(args: string[], repoPath: string): Promise<string>;
   /** Files touched in HEAD diff: `git diff --numstat HEAD`. */
   diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]>;
   /** `git checkout <branch>`. Throws on failure. */

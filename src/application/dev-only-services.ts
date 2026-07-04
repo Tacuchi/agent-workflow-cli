@@ -4,9 +4,8 @@ import { isAbsolute, join } from "node:path";
 import { HARNESSES, type Harness } from "../domain/harnesses.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { firstNonEmptyLine, parseMdSection, parseMdValue } from "./markdown.js";
+import { parseMdSection, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
-import { relpath } from "./paths.js";
 
 // ─── harness ────────────────────────────────────────────────────────────────
 
@@ -243,9 +242,3 @@ export async function runNextNumber(
     files,
   };
 }
-
-// Re-export firstNonEmptyLine to keep import surface stable; the helper isn't used
-// here yet but downstream services may need it.
-export { firstNonEmptyLine };
-// `relpath` is exported for future commands that need to relativize paths.
-export { relpath };

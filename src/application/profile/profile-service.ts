@@ -104,7 +104,8 @@ export async function resolveProfile(
     return loadOrFail(fs, workspacePath, "workspace");
   }
 
-  return { profile: cloneProfile(DEFAULT_PROFILE), source: "default", path: null };
+  // structuredClone also unfreezes the frozen DEFAULT_PROFILE for the caller.
+  return { profile: structuredClone(DEFAULT_PROFILE), source: "default", path: null };
 }
 
 async function loadOrFail(
@@ -273,18 +274,5 @@ function failSchema(field: string, expected: string, path?: string): ProfileErro
     message: `${field}: ${expected}`,
     field,
     ...(path !== undefined ? { path } : {}),
-  };
-}
-
-function cloneProfile(p: Profile): Profile {
-  return {
-    namespace: p.namespace,
-    company: p.company,
-    claude_md_block: p.claude_md_block,
-    mcp_databases: p.mcp_databases.map((d) => ({ ...d })),
-    lexicon_path: p.lexicon_path,
-    examples_path: p.examples_path,
-    migrate_legacy_rules: p.migrate_legacy_rules.map((r) => ({ ...r })),
-    custom_anchors: p.custom_anchors.map((a) => ({ ...a })),
   };
 }

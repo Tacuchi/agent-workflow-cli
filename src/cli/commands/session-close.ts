@@ -5,6 +5,7 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const sessionCloseCommand: QtcCommand = {
@@ -21,12 +22,7 @@ export const sessionCloseCommand: QtcCommand = {
 
     const data = await runSessionClose(ctx.fs, ctx.env, ctx.paths, input);
     if ("error" in data) {
-      return {
-        ok: false,
-        error: { code: "INVALID_INPUT", message: data.error },
-        data,
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", data.error, data);
     }
     return { ok: true, data: data.sessionClose, exitCode: 0 };
   },

@@ -5,6 +5,7 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const resumeSummaryCommand: QtcCommand = {
@@ -21,14 +22,10 @@ export const resumeSummaryCommand: QtcCommand = {
     if (recentDaysRaw !== undefined) {
       const n = Number.parseInt(recentDaysRaw, 10);
       if (!Number.isFinite(n) || n <= 0) {
-        return {
-          ok: false,
-          error: {
-            code: "INVALID_INPUT",
-            message: `--recent-days debe ser entero positivo (got '${recentDaysRaw}')`,
-          },
-          exitCode: 1,
-        };
+        return fail(
+          "INVALID_INPUT",
+          `--recent-days debe ser entero positivo (got '${recentDaysRaw}')`,
+        );
       }
       options.recentDays = n;
     }

@@ -38,8 +38,6 @@ export interface NotificationItem {
   actions?: NotificationAction[];
   /** When set, auto-dismisses after `duration` ms. */
   duration?: number;
-  /** Default true. When false hides `x dismiss` and ignores 'x'. */
-  dismissible?: boolean;
 }
 
 export interface NotificationInput {
@@ -49,7 +47,6 @@ export interface NotificationInput {
   body?: string;
   actions?: NotificationAction[];
   duration?: number;
-  dismissible?: boolean;
 }
 
 /** Legacy signature compatible with the old `useToasts.push`. */
@@ -139,7 +136,6 @@ export function NotificationCenterProvider({ children, logger }: NotificationCen
         ...(input.body !== undefined ? { body: input.body } : {}),
         ...(input.actions !== undefined ? { actions: input.actions } : {}),
         ...(input.duration !== undefined ? { duration: input.duration } : {}),
-        ...(input.dismissible !== undefined ? { dismissible: input.dismissible } : {}),
       };
       setItems((prev) => {
         const existingIdx = prev.findIndex((i) => i.id === id);
@@ -178,16 +174,12 @@ export function NotificationCenterProvider({ children, logger }: NotificationCen
   const dismissTop = useCallback((): boolean => {
     let didDismiss = false;
     setItems((prev) => {
-      // Top = newest dismissible item (last in the array).
-      for (let i = prev.length - 1; i >= 0; i--) {
-        const item = prev[i];
-        if (item && item.dismissible !== false) {
-          clearTimer(item.id);
-          didDismiss = true;
-          return prev.filter((_, idx) => idx !== i);
-        }
-      }
-      return prev;
+      // Top = newest item (last in the array).
+      const top = prev[prev.length - 1];
+      if (!top) return prev;
+      clearTimer(top.id);
+      didDismiss = true;
+      return prev.slice(0, -1);
     });
     return didDismiss;
   }, [clearTimer]);

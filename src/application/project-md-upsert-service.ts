@@ -1,13 +1,13 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { LockBusyError, acquireLock } from "./lock-service.js";
+import { withCwdLock } from "./lock-service.js";
 import {
   type ParsedProjectBlock,
   type ProjectBlockMarkers,
   type ProjectFuente,
   type ProjectStack,
-  parseProjectBlock,
+  readWorkspaceBlock,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
@@ -70,7 +70,7 @@ export async function runProjectMdUpsertWrite(
   const cwd = env.cwd();
   const files = [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")];
   const markers = paths.blockMarkers();
-  const existing = await readExistingBlock(fs, files, markers);
+  const existing = await readWorkspaceBlock(fs, cwd, markers);
 
   const renderInput = await buildRenderInput(fs, cwd, input, existing);
   renderInput.markers = markers;
@@ -79,37 +79,10 @@ export async function runProjectMdUpsertWrite(
   }
   const block = renderProjectBlock(renderInput);
 
-  let lock: import("./lock-service.js").LockHandle;
-  try {
-    lock = await acquireLock(paths.cwdLockFile(), fs);
-  } catch (err) {
-    if (err instanceof LockBusyError) {
-      return {
-        error: `lock ocupado (pid ${err.holder.pid} desde ${err.holder.ts}); reintenta o espera 5min`,
-      };
-    }
-    throw err;
-  }
-
-  try {
+  return withCwdLock(fs, paths, async () => {
     const writeResults = await writeAllFiles(fs, files, cwd, block, markers);
     return composePayload(input, writeResults, renderInput);
-  } finally {
-    await lock.release();
-  }
-}
-
-async function readExistingBlock(
-  fs: FileSystemPort,
-  files: string[],
-  markers: ProjectBlockMarkers,
-): Promise<ParsedProjectBlock | null> {
-  for (const f of files) {
-    if (!(await fs.exists(f))) continue;
-    const parsed = parseProjectBlock(await fs.readText(f), markers);
-    if (parsed) return parsed;
-  }
-  return null;
+  });
 }
 
 async function buildRenderInput(
@@ -199,7 +172,7 @@ async function writeAllFiles(
   const results: UpsertFileResult[] = [];
   let hasError = false;
   for (const f of files) {
-    const baseInfo = { file: pathBasename(f), path: relpath(f, cwd) };
+    const baseInfo = { file: basename(f), path: relpath(f, cwd) };
     try {
       const action = await upsertProjectBlockInFile(fs, f, block, markers);
       results.push({ ...baseInfo, action });
@@ -279,9 +252,4 @@ async function appendBlock(
   if (appended.length > 0 && !appended.endsWith("\n\n")) appended += "\n";
   await fs.writeText(filePath, `${appended}${block}\n`);
   return "appended";
-}
-
-function pathBasename(p: string): string {
-  const parts = p.split(/[\\/]/);
-  return parts[parts.length - 1] ?? p;
 }

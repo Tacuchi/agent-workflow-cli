@@ -7,6 +7,7 @@ import type { ParsedArgs } from "../parser.js";
 import { type FuenteSpec, parseFuentesSpecs } from "../parsers/fuentes.js";
 import { parseWorkingBranches } from "../parsers/working-branches.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const workspaceInitCommand: QtcCommand = {
@@ -23,7 +24,7 @@ export const workspaceInitCommand: QtcCommand = {
     // reconciles, preserving existing sources + description (so paths are never
     // re-passed through the shell). A genuinely empty workspace still errors.
     const parsed = parseFuentesSpecs(sourcesRaw);
-    if ("error" in parsed) return invalid(parsed.error);
+    if ("error" in parsed) return fail("INVALID_INPUT", parsed.error);
     const sources = parsed.fuentes.map(toWorkspaceSource);
 
     const proyecto = args.values.get("proyecto");
@@ -43,12 +44,7 @@ export const workspaceInitCommand: QtcCommand = {
     });
 
     if ("error" in data) {
-      return {
-        ok: false,
-        error: { code: "INVALID_INPUT", message: data.hint ?? data.error },
-        data,
-        exitCode: 1,
-      };
+      return fail("INVALID_INPUT", data.hint ?? data.error, data);
     }
 
     return {
@@ -73,13 +69,5 @@ function toWorkspaceSource(spec: FuenteSpec): WorkspaceSource {
     alias: spec.alias,
     path: spec.path,
     ...(spec.mainBranch !== undefined ? { mainBranch: spec.mainBranch } : {}),
-  };
-}
-
-function invalid(message: string): CommandResult {
-  return {
-    ok: false,
-    error: { code: "INVALID_INPUT", message },
-    exitCode: 1,
   };
 }

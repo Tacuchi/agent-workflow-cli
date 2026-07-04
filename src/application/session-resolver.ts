@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { SessionState } from "../domain/types.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { localDateIso } from "./dates.js";
 import { firstNonEmptyLine, parseMdSectionBilingual, parseMdValueBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
@@ -24,7 +25,6 @@ export interface SessionEntry {
   date?: string;
   summary?: string;
   branch?: string;
-  legacy_source?: string;
 }
 
 export function parseSessionFolder(folder: string): {
@@ -42,16 +42,10 @@ export function parseSessionFolder(folder: string): {
   return { code: m[1], name: m[2] };
 }
 
-export interface BuildEntryOptions {
-  legacySource?: string;
-  verbose?: boolean;
-}
-
 export async function buildSessionEntry(
   fs: FileSystemPort,
   sessionPath: string,
   folder: string,
-  options: BuildEntryOptions = {},
 ): Promise<SessionEntry> {
   const { code, name } = parseSessionFolder(folder);
 
@@ -73,7 +67,6 @@ export async function buildSessionEntry(
     ...(date ? { date } : {}),
     summary,
     ...(requirement.branch ? { branch: requirement.branch } : {}),
-    ...(options.legacySource ? { legacy_source: options.legacySource } : {}),
   };
   return entry;
 }
@@ -218,15 +211,8 @@ async function readRequirement(
 async function mtimeAsDate(fs: FileSystemPort, path: string): Promise<string | undefined> {
   try {
     const info = await fs.stat(path);
-    return formatDateOnly(info.mtime);
+    return localDateIso(info.mtime);
   } catch {
     return undefined;
   }
-}
-
-function formatDateOnly(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }

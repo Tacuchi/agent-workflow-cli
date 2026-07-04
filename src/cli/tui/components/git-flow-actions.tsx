@@ -1,178 +1,24 @@
-import { Box, Text, useInput } from "ink";
-import { useCallback, useMemo, useState } from "react";
-import {
-  type GitFlowAction,
-  type GitFlowInput,
-  type GitFlowResult,
-  type GitFlowSourceResult,
-  runGitFlow,
+import { Box, Text } from "ink";
+import type {
+  GitFlowAction,
+  GitFlowResult,
+  GitFlowSourceResult,
 } from "../../../application/git-flow-service.js";
-import type { CliContext } from "../../types.js";
 import { colors, icons } from "../theme.js";
 import { SectionHead } from "./section-head.js";
 
 /**
- * Per-source git-flow actions affordance for the Project tab.
- *
- * Renders a small target picker (one row per source + an "all sources" row) and
- * dispatches one of the three flows — `sync` (Actualizar), `to-qa` (→ QA),
- * `to-prod` (→ Prod) — against the selected target via {@link runGitFlow}. The
- * run executes real git through `ctx.git`; progress is rendered step-by-step and,
- * on a merge conflict, the paused branch + conflicted files + a "resolve and
- * re-run" hint are shown (re-running the same action resumes from git state).
- *
- * Keys: ↑/↓ move target · a Actualizar · q → QA · p → Prod · esc back.
+ * Read-only render of a git-flow run for the Project tab: overall status +
+ * per-source step sequence and, on a merge conflict, the paused branch +
+ * conflicted files + a "resolve and re-run" hint (re-running the same action
+ * resumes from git state).
  */
-export interface GitFlowActionsProps {
-  ctx: CliContext;
-  /** Source aliases declared in the WORKSPACE block. */
-  aliases: string[];
-  isActive?: boolean;
-  onClose: () => void;
-}
-
-type Phase =
-  | { kind: "pick" }
-  | { kind: "running"; action: GitFlowAction; label: string }
-  | { kind: "done"; action: GitFlowAction; result: GitFlowResult };
 
 const ACTION_LABEL: Record<GitFlowAction, string> = {
   sync: "Actualizar",
   "to-qa": "→ QA",
   "to-prod": "→ Prod",
 };
-
-/** Single-key shortcuts → action. */
-const ACTION_KEY: Record<string, GitFlowAction | undefined> = {
-  a: "sync",
-  q: "to-qa",
-  p: "to-prod",
-};
-
-/** Subset of ink's Key we read in this component. */
-interface GitFlowKey {
-  upArrow?: boolean;
-  downArrow?: boolean;
-  return?: boolean;
-  escape?: boolean;
-}
-
-export function GitFlowActions({ ctx, aliases, isActive = true, onClose }: GitFlowActionsProps) {
-  // Targets: each declared source, then an "all sources" sentinel (index = length).
-  const targets = useMemo(() => [...aliases, ALL_TARGET], [aliases]);
-  const [cursor, setCursor] = useState(0);
-  const [phase, setPhase] = useState<Phase>({ kind: "pick" });
-
-  const run = useCallback(
-    async (action: GitFlowAction) => {
-      const selected = targets[cursor] ?? ALL_TARGET;
-      const isAll = selected === ALL_TARGET;
-      const label = `${ACTION_LABEL[action]} · ${isAll ? "all sources" : selected}`;
-      setPhase({ kind: "running", action, label });
-      const input: GitFlowInput = isAll ? { action, all: true } : { action, source: selected };
-      try {
-        const result = await runGitFlow(ctx.fs, ctx.git, ctx.paths, input);
-        setPhase({ kind: "done", action, result });
-      } catch (err) {
-        setPhase({
-          kind: "done",
-          action,
-          result: {
-            action,
-            dry_run: false,
-            status: "error",
-            results: [],
-            error: (err as Error).message,
-          },
-        });
-      }
-    },
-    [cursor, ctx, targets],
-  );
-
-  const handlePick = useCallback(
-    (input: string, key: GitFlowKey) => {
-      if (key.upArrow) {
-        setCursor((c) => (c - 1 + targets.length) % targets.length);
-        return;
-      }
-      if (key.downArrow) {
-        setCursor((c) => (c + 1) % targets.length);
-        return;
-      }
-      const action = ACTION_KEY[input];
-      if (action) void run(action);
-    },
-    [run, targets.length],
-  );
-
-  const handleDone = useCallback(
-    (input: string, key: GitFlowKey, action: GitFlowAction) => {
-      // ⏎ / r re-runs the same action (resume on conflict); any nav key returns.
-      if (key.return || input === "r") {
-        void run(action);
-        return;
-      }
-      if (key.upArrow || key.downArrow) setPhase({ kind: "pick" });
-    },
-    [run],
-  );
-
-  useInput(
-    (input, key) => {
-      if (phase.kind === "running") return;
-      if (key.escape) {
-        if (phase.kind === "done") setPhase({ kind: "pick" });
-        else onClose();
-        return;
-      }
-      if (phase.kind === "done") handleDone(input, key, phase.action);
-      else handlePick(input, key);
-    },
-    { isActive },
-  );
-
-  if (phase.kind === "running") {
-    return (
-      <Box flexDirection="column">
-        <SectionHead label="Git flow" hint={phase.label} />
-        <Box marginLeft={2} marginTop={1}>
-          <Text color={colors.warn}>{icons.spinner} ejecutando…</Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  if (phase.kind === "done") {
-    return <FlowResultView action={phase.action} result={phase.result} />;
-  }
-
-  return (
-    <Box flexDirection="column">
-      <SectionHead
-        label="Git flow"
-        hint="pick target"
-        rightAction="↑↓ target · a Actualizar · q → QA · p → Prod · esc back"
-      />
-      <Box marginLeft={2} marginTop={1} flexDirection="column">
-        {targets.map((t, idx) => {
-          const focused = idx === cursor;
-          const isAll = t === ALL_TARGET;
-          return (
-            <Box key={t}>
-              <Text color={focused ? colors.accent : colors.faint}>
-                {focused ? icons.focusBar : " "}{" "}
-              </Text>
-              <Text color={focused ? colors.bright : colors.dim} bold={focused}>
-                {isAll ? "all sources" : t}
-              </Text>
-            </Box>
-          );
-        })}
-      </Box>
-    </Box>
-  );
-}
 
 export function FlowResultView({
   action,
@@ -272,5 +118,3 @@ function stepGlyph(status: GitFlowSourceResult["steps"][number]["status"]): stri
   if (status === "conflict") return icons.pending;
   return icons.bullet;
 }
-
-const ALL_TARGET = " all";

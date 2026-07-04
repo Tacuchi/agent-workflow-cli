@@ -1,5 +1,3 @@
-import { resolve } from "node:path";
-import { HARNESSES, resolveGlobalMcpRawPath } from "../domain/harnesses.js";
 import {
   type McpEntry,
   type McpHost,
@@ -10,7 +8,14 @@ import {
   normalizeMcpInstance,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
-import { McpWriterError, writeMcpEntry } from "./mcp-host-writer.js";
+import { writeMcpEntry } from "./mcp-host-writer.js";
+import {
+  type McpErrorRecord,
+  type McpScopeRefusal,
+  buildGlobalRefusal,
+  resolveScopeDir,
+  toErrorRecord,
+} from "./mcp-scope-common.js";
 
 export interface McpSetupInput {
   hosts: McpHost[];
@@ -28,24 +33,12 @@ export interface McpSetupResult {
   dry_run: boolean;
   applied: McpWriteResult[];
   skipped: McpWriteResult[];
-  errors: { host: McpHost; instance: McpInstance; target: string; message: string }[];
+  errors: McpErrorRecord[];
 }
 
-export interface McpSetupRefusal {
-  ok: false;
-  error: string;
-  hint: string;
-  exitCode: 2;
-}
-
-export function runMcpSetup(env: EnvPort, input: McpSetupInput): McpSetupResult | McpSetupRefusal {
+export function runMcpSetup(env: EnvPort, input: McpSetupInput): McpSetupResult | McpScopeRefusal {
   if (input.scope === "global" && !input.force && !input.dryRun) {
-    return {
-      ok: false,
-      error: "global_requires_force",
-      hint: buildGlobalHint(input.hosts),
-      exitCode: 2,
-    };
+    return buildGlobalRefusal(input.hosts);
   }
 
   const scopeDir = resolveScopeDir(env, input);
@@ -56,21 +49,24 @@ export function runMcpSetup(env: EnvPort, input: McpSetupInput): McpSetupResult 
 
   const applied: McpWriteResult[] = [];
   const skipped: McpWriteResult[] = [];
-  const errors: McpSetupResult["errors"] = [];
+  const errors: McpErrorRecord[] = [];
 
   for (const host of input.hosts) {
     for (const instance of input.instances) {
-      applyOne(
-        host,
+      const entry: McpEntry = buildMcpEntry(
         instance,
-        scopeDir,
-        input.scope,
-        opts,
-        input.dsnVars,
-        applied,
-        skipped,
-        errors,
+        input.dsnVars?.[normalizeMcpInstance(instance)],
       );
+      try {
+        const result = writeMcpEntry(host, entry, { scopeDir, kind: input.scope }, opts);
+        if (result.action === "skipped-idempotent") {
+          skipped.push(result);
+        } else {
+          applied.push(result);
+        }
+      } catch (err) {
+        errors.push(toErrorRecord(host, instance, scopeDir, err));
+      }
     }
   }
 
@@ -82,61 +78,4 @@ export function runMcpSetup(env: EnvPort, input: McpSetupInput): McpSetupResult 
     skipped,
     errors,
   };
-}
-
-function applyOne(
-  host: McpHost,
-  instance: McpInstance,
-  scopeDir: string,
-  scope: "workspace" | "global",
-  opts: McpWriteOpts,
-  dsnVars: Record<string, string> | undefined,
-  applied: McpWriteResult[],
-  skipped: McpWriteResult[],
-  errors: McpSetupResult["errors"],
-): void {
-  const entry: McpEntry = buildMcpEntry(instance, dsnVars?.[normalizeMcpInstance(instance)]);
-  try {
-    const result = writeMcpEntry(host, entry, { scopeDir, kind: scope }, opts);
-    if (result.action === "skipped-idempotent") {
-      skipped.push(result);
-    } else {
-      applied.push(result);
-    }
-  } catch (err) {
-    errors.push(toErrorRecord(host, instance, scopeDir, err));
-  }
-}
-
-function toErrorRecord(
-  host: McpHost,
-  instance: McpInstance,
-  scopeDir: string,
-  err: unknown,
-): McpSetupResult["errors"][number] {
-  if (err instanceof McpWriterError) {
-    return {
-      host,
-      instance,
-      target: err.target,
-      message: `${err.message}${err.cause ? ` (${err.cause})` : ""}`,
-    };
-  }
-  return { host, instance, target: scopeDir, message: (err as Error).message };
-}
-
-function resolveScopeDir(env: EnvPort, input: McpSetupInput): string {
-  // Global scope resolves through the port (not os.homedir()) so tests can
-  // inject a sandbox home instead of writing the developer's real configs.
-  if (input.scope === "global") return env.homeDir();
-  if (input.workspace) return resolve(input.workspace);
-  return resolve(env.cwd());
-}
-
-function buildGlobalHint(hosts: McpHost[]): string {
-  const paths = HARNESSES.filter((h) => hosts.includes(h.mcpHostId as McpHost))
-    .map((h) => resolveGlobalMcpRawPath(h))
-    .filter((p): p is string => p !== null);
-  const files = paths.length > 0 ? paths.join(", ") : "archivos de config globales";
-  return `Tocar ${files} afecta TODOS los proyectos. Reintentá con --force o usá --dry-run para previsualizar.`;
 }

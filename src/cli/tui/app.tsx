@@ -1,8 +1,9 @@
 import { basename } from "node:path";
 import { Box, Text, useApp, useInput } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatTuiEvent } from "../../application/logging/log-events.js";
 import { writeNamespacePin } from "../../application/self/namespace-info.js";
+import { SessionsService } from "../../application/sessions-service.js";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
@@ -24,6 +25,7 @@ import { StatusTab } from "./tabs/status-tab.js";
 import { WorkflowTab } from "./tabs/workflow-tab.js";
 import { applyAccent, colors } from "./theme.js";
 import { DEFAULT_TUI_PREFS, type TuiPrefs, TuiPrefsService } from "./tui-prefs.js";
+import { useOnMount } from "./use-on-mount.js";
 
 export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
@@ -34,6 +36,17 @@ export type TuiResult =
 const TAB_ORDER: readonly TabId[] = TABS_LIST.map((t) => t.id);
 
 const TAB_BY_KEY: Record<string, TabId> = Object.fromEntries(TABS_LIST.map((t) => [t.key, t.id]));
+
+// Action ids that exit the TUI and hand off to the CLI (main's
+// `dispatchMenuAction`) as the mapped MenuAction.
+const EXIT_ACTIONS: Record<string, MenuAction | undefined> = {
+  "workspace-init": "workspace-init",
+  "install-skill": "install-skill",
+  "self:doctor": "doctor",
+  "self:update": "update",
+  "self:help": "help",
+  "self:mcp-cli": "mcp",
+};
 
 export interface AppProps {
   version: string;
@@ -99,7 +112,6 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     dismissTop,
     triggerAction,
   } = useNotifications();
-  const updateCheckStartedRef = useRef(false);
 
   const loadShellData = useCallback(async () => {
     const name = await resolveProjectName(ctx);
@@ -201,11 +213,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     [ctx, version, pushNotification, pushToast, dismiss, onResult, exit],
   );
 
-  useEffect(() => {
-    if (updateCheckStartedRef.current) return;
-    updateCheckStartedRef.current = true;
-    void runUpdateCheck();
-  }, [runUpdateCheck]);
+  useOnMount(() => void runUpdateCheck());
 
   /**
    * Dispatches actions coming from the tabs and the palette.
@@ -213,35 +221,11 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
    * the TUI first and are handled by main's `dispatchMenuAction`.
    */
   const runAction = useCallback(
-    (id: string, _payload?: Record<string, unknown>) => {
+    (id: string) => {
       // Exits-to-CLI via MenuAction.
-      if (id === "workspace-init") {
-        onResult({ kind: "menu-action", action: "workspace-init" });
-        exit();
-        return;
-      }
-      if (id === "install-skill") {
-        onResult({ kind: "menu-action", action: "install-skill" });
-        exit();
-        return;
-      }
-      if (id === "self:doctor") {
-        onResult({ kind: "menu-action", action: "doctor" });
-        exit();
-        return;
-      }
-      if (id === "self:update") {
-        onResult({ kind: "menu-action", action: "update" });
-        exit();
-        return;
-      }
-      if (id === "self:help") {
-        onResult({ kind: "menu-action", action: "help" });
-        exit();
-        return;
-      }
-      if (id === "self:mcp-cli") {
-        onResult({ kind: "menu-action", action: "mcp" });
+      const menu = EXIT_ACTIONS[id];
+      if (menu) {
+        onResult({ kind: "menu-action", action: menu });
         exit();
         return;
       }
@@ -438,31 +422,11 @@ async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> 
     // keep default
   }
 
-  // Sessions count
+  // Sessions count — in-process, same service `aw sessions` wraps.
   let sessionsLabel = "— sessions";
   try {
-    // Re-entrant call: flag it internal so the spawned `aw` keeps its own
-    // invocation out of the daily log (main.ts gates the Logger on
-    // AW_INTERNAL_CALL). The child still needs the full env (PATH etc.), and the
-    // adapter replaces `env` wholesale, so merge rather than pass the flag alone.
-    const sessRes = await ctx.process.run(ctx.runtime.binName, ["sessions"], {
-      cwd,
-      env: {
-        ...Object.fromEntries(
-          Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
-        ),
-        AW_INTERNAL_CALL: "1",
-      },
-    });
-    if (sessRes.code === 0) {
-      const data = JSON.parse(sessRes.stdout) as {
-        active_count?: number;
-        total_count?: number;
-      };
-      const active = data.active_count ?? 0;
-      const total = data.total_count ?? 0;
-      sessionsLabel = `${total} sessions · ${active} active`;
-    }
+    const data = await new SessionsService(ctx.fs, ctx.env, ctx.paths).list();
+    sessionsLabel = `${data.total_count} sessions · ${data.active_count} active`;
   } catch {
     // keep default
   }

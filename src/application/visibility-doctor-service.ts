@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import type { McpHost } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { type ParsedProjectBlock, parseProjectBlock } from "./parsers/project-block.js";
+import { readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export type VisibilityDriftStatus =
@@ -79,16 +79,13 @@ async function readDeclaredFuentes(
   paths: PathsService,
   workspace: string,
 ): Promise<string[] | null> {
-  const markers = paths.blockMarkers();
-  for (const fname of ["CLAUDE.md", "AGENTS.md"]) {
-    const file = join(workspace, fname);
-    if (!(await fs.exists(file))) continue;
-    const block: ParsedProjectBlock | null = parseProjectBlock(await fs.readText(file), markers);
-    if (block && block.fuentes.length > 0) {
-      return block.fuentes.map((f) => f.path).filter((p) => p && p.length > 0);
-    }
-  }
-  return null;
+  const block = await readWorkspaceBlock(
+    fs,
+    workspace,
+    paths.blockMarkers(),
+    (b) => b.fuentes.length > 0,
+  );
+  return block ? block.fuentes.map((f) => f.path).filter((p) => p && p.length > 0) : null;
 }
 
 function inspectClaude(

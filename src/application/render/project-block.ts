@@ -1,3 +1,4 @@
+import { localMinuteIso } from "../dates.js";
 import type {
   ParsedProjectBlock,
   ProjectBlockMarkers,
@@ -22,7 +23,7 @@ export interface RenderProjectBlockInput {
 export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const markers = input.markers ?? LEGACY_QTC_MARKERS;
   const historicoPath = input.historicoPath ?? ".workflow/HISTORY.md";
-  const last = input.lastActivity ?? formatNowMinute();
+  const last = input.lastActivity ?? localMinuteIso();
   const proyectoSection =
     input.proyecto.trim().length > 0
       ? input.proyecto.trim()
@@ -126,14 +127,4 @@ function formatQaBranches(branches: Record<string, string> | undefined): string 
     lines.push(`  - ${alias}: ${branch}`);
   }
   return lines.join("\n");
-}
-
-function formatNowMinute(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mi = String(now.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }

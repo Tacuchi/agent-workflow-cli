@@ -121,7 +121,8 @@ function resolveStatus(dryRun: boolean, removedCount: number): SelfUninstallSkil
   return removedCount === 0 ? "noop" : "removed";
 }
 
-async function updateAgentsLock(
+// Exported: uninstall.ts shares the exact same lock-pruning step.
+export async function updateAgentsLock(
   ctx: CliContext,
   home: string,
   includeLegacy: boolean,

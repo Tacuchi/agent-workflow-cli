@@ -7,12 +7,13 @@ import type { CliContext } from "../../types.js";
 import { HostAdminSection } from "../components/host-admin-section.js";
 import { PageHead } from "../components/page-head.js";
 import { WORKFLOW_CONTENT } from "../data/workflow-content.js";
+import type { ToastBridgeInput } from "../notification-center.js";
 import { colors } from "../theme.js";
 
 export interface WorkflowTabProps {
   ctx: CliContext;
   isActive: boolean;
-  onToast?: (msg: { tone: "ok" | "info" | "err"; title: string; body?: string }) => void;
+  onToast?: (msg: ToastBridgeInput) => void;
 }
 
 // Ids of the 3 flows inside WORKFLOW_CONTENT.phases (excludes bootstrap/export).

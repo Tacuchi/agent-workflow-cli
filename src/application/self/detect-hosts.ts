@@ -3,7 +3,12 @@ import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
 import { resolveWarpGlobalMcpPath } from "../multiroot/warp.js";
-import { type InstallTarget, SKILL_DIR_NAME, TARGET_ROOTS } from "./install-skill.js";
+import {
+  INSTALL_TARGETS,
+  type InstallTarget,
+  SKILL_DIR_NAME,
+  TARGET_ROOTS,
+} from "./install-skill.js";
 
 export interface DetectedHost {
   target: InstallTarget;
@@ -20,17 +25,6 @@ export interface SelfDetectHostsData {
   summary: string;
 }
 
-const HOST_ORDER: readonly InstallTarget[] = [
-  "claude",
-  "codex",
-  "warp",
-  "oz",
-  "agents",
-  "gemini",
-  "opencode",
-  "crush",
-];
-
 // Config dirs that do NOT follow the ~/.<target> convention. OpenCode and Crush
 // resolve via mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA);
 // Warp is platform-divergent (darwin ~/.warp, linux ~/.config/warp-terminal,
@@ -41,7 +35,7 @@ function overrideConfigDir(target: InstallTarget, home: string): string | null {
   if (target === "opencode") return dirname(opencodeGlobalMcpFile(home));
   if (target === "crush") return dirname(crushGlobalMcpFile(home));
   if (target === "warp") {
-    const mcpFile = resolveWarpGlobalMcpPath(process.platform, "stable", () => home);
+    const mcpFile = resolveWarpGlobalMcpPath(process.platform, () => home);
     return mcpFile ? dirname(mcpFile) : null;
   }
   return null;
@@ -53,7 +47,7 @@ export async function selfDetectHosts(
   const home = ctx.env.homeDir();
   const hosts: DetectedHost[] = [];
 
-  for (const target of HOST_ORDER) {
+  for (const target of INSTALL_TARGETS) {
     const skillPath = join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
     const configDir = overrideConfigDir(target, home) ?? join(home, `.${target}`);
     const [configPresent, skillInstalled] = await Promise.all([

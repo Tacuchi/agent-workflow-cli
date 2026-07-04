@@ -1,5 +1,6 @@
 import { Box, Text, useStdout } from "ink";
-import { colors, icons } from "../theme.js";
+import { truncateCells } from "../row-width.js";
+import { colors, icons, toneColor } from "../theme.js";
 
 export type MetaTone = "ok" | "warn" | "accent" | "dim" | "err" | "purple" | "info";
 
@@ -36,25 +37,6 @@ export interface ListRowProps {
 // Inner padding (in cells) applied INSIDE the marker bg, on each side of the
 // content. Keeps the bg from hugging the letters.
 const INNER_PAD = 1;
-
-function toneColor(tone?: MetaTone): string {
-  switch (tone) {
-    case "ok":
-      return colors.ok;
-    case "warn":
-      return colors.warn;
-    case "accent":
-      return colors.accent;
-    case "err":
-      return colors.err;
-    case "purple":
-      return colors.purple;
-    case "info":
-      return colors.info;
-    default:
-      return colors.dim;
-  }
-}
 
 function approxWidth(s: string): number {
   return [...s].length;
@@ -113,14 +95,7 @@ export function ListRow({
     0,
     available - fixedLeft - subtitleSpaceBefore - rightLen - 1,
   );
-  let displaySubtitle = subtitle ?? "";
-  if (subtitle && approxWidth(subtitle) > availableForSubtitle) {
-    if (availableForSubtitle <= 1) {
-      displaySubtitle = "";
-    } else {
-      displaySubtitle = `${subtitle.slice(0, availableForSubtitle - 1)}…`;
-    }
-  }
+  const displaySubtitle = truncateCells(subtitle ?? "", availableForSubtitle);
 
   // LeftLen recomputed with the subtitle already truncated.
   // Includes focus bar (1) + gap (1) outside the bg + inner_pad + 2 (icon+space)

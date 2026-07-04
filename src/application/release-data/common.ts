@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { parseProjectBlock } from "../parsers/project-block.js";
+import { readWorkspaceBlock } from "../parsers/project-block.js";
 import type { PathsService } from "../paths-service.js";
 
 export function sessionCodeInt(code: string | null | undefined): number | null {
@@ -42,12 +42,8 @@ export async function readSources(
   cwd: string,
   paths: PathsService,
 ): Promise<{ alias: string; path: string }[]> {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-    if (block) return block.fuentes;
-  }
-  return [];
+  const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
+  return block?.fuentes ?? [];
 }
 
 export async function getDocsDir(

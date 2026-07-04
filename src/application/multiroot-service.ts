@@ -1,12 +1,12 @@
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type ClaudeResult, attachClaude, detachClaude } from "./multiroot/claude.js";
 import { type CodexResult, attachCodex, detachCodex } from "./multiroot/codex.js";
 import { type OzAttachNoop, attachOz, detachOz } from "./multiroot/oz.js";
 import { type WarpResult, attachWarp, detachWarp } from "./multiroot/warp.js";
-import { parseProjectBlock } from "./parsers/project-block.js";
+import { readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface MultirootInput {
@@ -128,13 +128,11 @@ async function readSourcesFromProject(
   env: EnvPort,
   pathsService: PathsService,
 ): Promise<string[]> {
-  const cwd = env.cwd();
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), pathsService.blockMarkers());
-    if (block && block.fuentes.length > 0) {
-      return block.fuentes.map((f) => f.path).filter((p) => p && p.length > 0);
-    }
-  }
-  return [];
+  const block = await readWorkspaceBlock(
+    fs,
+    env.cwd(),
+    pathsService.blockMarkers(),
+    (b) => b.fuentes.length > 0,
+  );
+  return block ? block.fuentes.map((f) => f.path).filter((p) => p && p.length > 0) : [];
 }

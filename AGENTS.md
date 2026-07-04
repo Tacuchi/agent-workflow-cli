@@ -1,10 +1,10 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents working with code in this repository (Claude Code loads it via `CLAUDE.md`'s `@AGENTS.md` import).
 
 ## What this is
 
-`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus a bundled universal `agent-workflow` SKILL that drives AI development workflows (stages + loops). Published to npm; the tarball ships `dist/` + `skills/`. `self install-skill` / `self install-hooks` copy the SKILL, slash commands, and hooks into host agent dirs (Claude/Codex/Warp/OZ).
+`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus the bundled universal `w` SKILL (`skills/w/`) that drives AI development workflows (stages + loops). Published to npm; the tarball ships `dist/` + `skills/`. `self install --target <claude|codex|warp|oz|agents|gemini|opencode|crush>` copies the SKILL, command wrappers, and hooks into the host agent dirs.
 
 ## Commands
 
@@ -25,14 +25,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## TypeScript / ESM gotchas
 
 - `module: NodeNext` — relative imports must include the explicit `.js` extension (e.g. `import { x } from "./foo.js"`), even from `.ts` source.
-- The `@` → `src` alias exists ONLY in `vitest.config.ts`. Do NOT use `@/...` imports in `src/` — `tsconfig.json` has no `paths` and `tsc` will fail. Use relative paths in source.
 - `exactOptionalPropertyTypes` is on — set optional properties with the spread idiom: `{ ...(x !== undefined ? { x } : {}) }`.
 
 ## Architecture
 
 - Hexagonal: `domain/` (pure types, no I/O) → `ports/` (interfaces) → `adapters/` (Node implementations). Business logic lives in `application/*-service.ts` and must be I/O-free — all fs/env/git/process access goes through ports injected via `CliContext`.
-- CLI: every subcommand is a `QtcCommand` in `src/cli/commands/`, registered in `src/cli/main.ts` and slotted into a family in `src/cli/help-groups.ts`. Adding a command means doing both.
-- Namespace abstraction: all workspace artifacts live under `.<namespace>/` (default `agent-workflow` → `.agent-workflow/`; fixtures use `.workflow/`). Resolved via `--namespace` flag → `AW_NAMESPACE` → user config → workspace auto-detect → default.
+- CLI: every subcommand is a `QtcCommand` in `src/cli/commands/`, declared in `ALL_COMMANDS` (`src/cli/commands/index.ts`, which `main.ts` registers) and slotted into a family in `src/cli/help-groups.ts`. Adding a command means doing both.
+- Namespace abstraction: all workspace artifacts live under `.<namespace>/` (default `workflow` → `.workflow/`). Resolved via `--namespace` flag → `AW_NAMESPACE` → workspace auto-detect → user config → default.
 - `skills/w/` is pure markdown + JSON — NOT compiled by `tsc` (which builds `src/` only). It ships in the npm tarball.
 
 ## Conventions / decisions

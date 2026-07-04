@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { parse as parseToml } from "smol-toml";
 import {
   type McpEntry,
@@ -110,7 +111,8 @@ export function writeMcpEntry(
   opts: McpWriteOpts = {},
 ): McpWriteResult {
   if (host === "claude") return writeClaudeMcpEntry(entry, scope, opts);
-  if (host === "warp") return writeWarpMcpEntry(entry, scope, opts);
+  if (host === "warp")
+    return writeJsonMcpEntry("warp", warpMcpFile(scope), "mcpServers", entry, opts);
   if (host === "codex") return writeCodexMcpEntry(entry, scope, opts);
   if (host === "gemini")
     return writeJsonMcpEntry("gemini", geminiMcpFile(scope), "mcpServers", entry, opts);
@@ -126,7 +128,8 @@ export function removeMcpEntry(
   opts: McpWriteOpts = {},
 ): McpWriteResult {
   if (host === "claude") return removeClaudeMcpEntry(entry, scope, opts);
-  if (host === "warp") return removeWarpMcpEntry(entry, scope, opts);
+  if (host === "warp")
+    return removeJsonMcpEntry("warp", warpMcpFile(scope), "mcpServers", entry, opts);
   if (host === "codex") return removeCodexMcpEntry(entry, scope, opts);
   if (host === "gemini")
     return removeJsonMcpEntry("gemini", geminiMcpFile(scope), "mcpServers", entry, opts);
@@ -193,7 +196,7 @@ function writeJsonMcpEntry(
   const existing = bag[entry.name];
   const expected = mcpShapeFor(host, entry);
 
-  if (deepEqual(existing, expected)) {
+  if (isDeepStrictEqual(existing, expected)) {
     return resultSkipped(host, file, entry.name);
   }
 
@@ -246,44 +249,19 @@ function removeJsonMcpEntry(
   return resultRemoved(host, file, entry.name, null);
 }
 
+// Claude = the generic JSON writer plus the legacy .claude/settings.json sweep,
+// which runs exactly when the original inline pipeline did: on idempotent skips
+// (respecting dry-run) and after a real write/remove — never on dry-run diffs.
 function writeClaudeMcpEntry(
   entry: McpEntry,
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
-  const settingsFile = claudeMcpFile(scope);
-  const data = readClaudeSettings(settingsFile);
-  const mcpServers = ensureRecord(data, "mcpServers");
-  const existing = mcpServers[entry.name];
-  const expected = expectedClaudeShape(entry);
-
-  if (deepEqual(existing, expected)) {
+  const res = writeJsonMcpEntry("claude", claudeMcpFile(scope), "mcpServers", entry, opts);
+  if (res.action === "skipped-idempotent")
     cleanupLegacyClaudeMcpEntry(scope, entry.name, opts.dryRun ?? false);
-    return resultSkipped("claude", settingsFile, entry.name);
-  }
-
-  mcpServers[entry.name] = expected;
-  data.mcpServers = mcpServers;
-
-  const newJson = `${JSON.stringify(data, null, 2)}\n`;
-  const oldJson = existsSync(settingsFile) ? readFileSync(settingsFile, "utf-8") : "";
-  if (newJson === oldJson) {
-    return resultSkipped("claude", settingsFile, entry.name);
-  }
-
-  if (opts.dryRun) {
-    return resultDryRun("claude", settingsFile, entry.name, [
-      `mcpServers.${entry.name}: ${existing ? "update" : "add"}`,
-    ]);
-  }
-
-  mkdirSync(dirname(settingsFile), { recursive: true });
-  purgeStaleBackups(settingsFile);
-  const backup = backupFile(settingsFile);
-  atomicWriteFileSync(settingsFile, newJson);
-  discardBackup(backup);
-  cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
-  return resultWritten("claude", settingsFile, entry.name, null);
+  if (res.action === "written") cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
+  return res;
 }
 
 function writeCodexMcpEntry(
@@ -307,9 +285,9 @@ function writeCodexMcpEntry(
 
   const mcpServers = (parsed.mcp_servers ?? {}) as Record<string, unknown>;
   const existing = mcpServers[entry.name];
-  const expected = expectedCodexShape(entry);
+  const expected = expectedClaudeShape(entry);
 
-  if (deepEqual(existing, expected)) {
+  if (isDeepStrictEqual(existing, expected)) {
     return resultSkipped("codex", configFile, entry.name);
   }
 
@@ -340,37 +318,11 @@ function removeClaudeMcpEntry(
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
-  const settingsFile = claudeMcpFile(scope);
-  const data = readClaudeSettings(settingsFile);
-  const mcpServers = ensureRecord(data, "mcpServers");
-  const existing = mcpServers[entry.name];
-  if (existing === undefined) {
+  const res = removeJsonMcpEntry("claude", claudeMcpFile(scope), "mcpServers", entry, opts);
+  if (res.action === "skipped-idempotent")
     cleanupLegacyClaudeMcpEntry(scope, entry.name, opts.dryRun ?? false);
-    return resultSkipped("claude", settingsFile, entry.name);
-  }
-
-  mcpServers[entry.name] = undefined;
-  const remaining = Object.fromEntries(
-    Object.entries(mcpServers).filter(([, v]) => v !== undefined),
-  );
-  if (Object.keys(remaining).length === 0) {
-    data.mcpServers = undefined;
-  } else {
-    data.mcpServers = remaining;
-  }
-
-  const newJson = `${JSON.stringify(data, null, 2)}\n`;
-  if (opts.dryRun) {
-    return resultDryRun("claude", settingsFile, entry.name, [`mcpServers.${entry.name}: remove`]);
-  }
-
-  mkdirSync(dirname(settingsFile), { recursive: true });
-  purgeStaleBackups(settingsFile);
-  const backup = backupFile(settingsFile);
-  atomicWriteFileSync(settingsFile, newJson);
-  discardBackup(backup);
-  cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
-  return resultRemoved("claude", settingsFile, entry.name, null);
+  if (res.action === "removed") cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
+  return res;
 }
 
 function removeCodexMcpEntry(
@@ -419,71 +371,10 @@ function removeCodexMcpEntry(
  */
 function warpMcpFile(scope: ScopeInput): string {
   if (scope.kind === "global") {
-    const globalPath = resolveWarpGlobalMcpPath(process.platform, "stable", () => scope.scopeDir);
+    const globalPath = resolveWarpGlobalMcpPath(process.platform, () => scope.scopeDir);
     if (globalPath) return globalPath;
   }
   return resolveWarpProjectMcpPath(scope.scopeDir);
-}
-
-function writeWarpMcpEntry(entry: McpEntry, scope: ScopeInput, opts: McpWriteOpts): McpWriteResult {
-  const settingsFile = warpMcpFile(scope);
-  const data = readJsonFile(settingsFile);
-  const mcpServers = ensureRecord(data, "mcpServers");
-  const existing = mcpServers[entry.name];
-  const expected = expectedClaudeShape(entry);
-
-  if (deepEqual(existing, expected)) {
-    return resultSkipped("warp", settingsFile, entry.name);
-  }
-
-  mcpServers[entry.name] = expected;
-  data.mcpServers = mcpServers;
-  const newJson = `${JSON.stringify(data, null, 2)}\n`;
-
-  if (opts.dryRun) {
-    return resultDryRun("warp", settingsFile, entry.name, [
-      `mcpServers.${entry.name}: ${existing ? "update" : "add"}`,
-    ]);
-  }
-
-  mkdirSync(dirname(settingsFile), { recursive: true });
-  purgeStaleBackups(settingsFile);
-  const backup = backupFile(settingsFile);
-  atomicWriteFileSync(settingsFile, newJson);
-  discardBackup(backup);
-  return resultWritten("warp", settingsFile, entry.name, null);
-}
-
-function removeWarpMcpEntry(
-  entry: McpEntry,
-  scope: ScopeInput,
-  opts: McpWriteOpts,
-): McpWriteResult {
-  const settingsFile = warpMcpFile(scope);
-  const data = readJsonFile(settingsFile);
-  const mcpServers = ensureRecord(data, "mcpServers");
-  const existing = mcpServers[entry.name];
-  if (existing === undefined) {
-    return resultSkipped("warp", settingsFile, entry.name);
-  }
-
-  mcpServers[entry.name] = undefined;
-  const remaining = Object.fromEntries(
-    Object.entries(mcpServers).filter(([, v]) => v !== undefined),
-  );
-  data.mcpServers = Object.keys(remaining).length === 0 ? undefined : remaining;
-  const newJson = `${JSON.stringify(data, null, 2)}\n`;
-
-  if (opts.dryRun) {
-    return resultDryRun("warp", settingsFile, entry.name, [`mcpServers.${entry.name}: remove`]);
-  }
-
-  mkdirSync(dirname(settingsFile), { recursive: true });
-  purgeStaleBackups(settingsFile);
-  const backup = backupFile(settingsFile);
-  atomicWriteFileSync(settingsFile, newJson);
-  discardBackup(backup);
-  return resultRemoved("warp", settingsFile, entry.name, null);
 }
 
 function readJsonFile(file: string): Record<string, unknown> {
@@ -499,10 +390,6 @@ function readJsonFile(file: string): Record<string, unknown> {
   } catch (err) {
     throw new McpWriterError(`JSON inválido en ${file}`, file, (err as Error).message);
   }
-}
-
-function readClaudeSettings(file: string): Record<string, unknown> {
-  return readJsonFile(file);
 }
 
 function ensureRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {
@@ -521,27 +408,6 @@ function expectedClaudeShape(entry: McpEntry): Record<string, unknown> {
     args: [...entry.args],
     env: { ...entry.env },
   };
-}
-
-function expectedCodexShape(entry: McpEntry): Record<string, unknown> {
-  return {
-    command: entry.command,
-    args: [...entry.args],
-    env: { ...entry.env },
-  };
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  return canonicalJson(a) === canonicalJson(b);
-}
-
-function canonicalJson(v: unknown): string {
-  if (v === null || v === undefined) return JSON.stringify(v ?? null);
-  if (typeof v !== "object") return JSON.stringify(v);
-  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
-  const obj = v as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`).join(",")}}`;
 }
 
 // backupFile/purgeStaleBackups/escapeRegex live in multiroot/paths.ts (single

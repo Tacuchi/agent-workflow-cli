@@ -229,32 +229,21 @@ async function scanSingleFile(
   // Mirror Python str.splitlines() — drop trailing empty.
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   for (let i = 0; i < lines.length; i++) {
-    scanLine(lines[i] ?? "", i + 1, filePath, compiled, counts, maxPerPattern, matches);
-  }
-}
-
-function scanLine(
-  line: string,
-  lineNumber: number,
-  filePath: string,
-  compiled: CompiledPattern[],
-  counts: Record<string, number>,
-  maxPerPattern: number,
-  matches: ScanMatch[],
-): void {
-  for (const { pattern, regex } of compiled) {
-    if (!regex) continue;
-    if ((counts[pattern.id] ?? 0) >= maxPerPattern) continue;
-    if (!regex.test(line)) continue;
-    counts[pattern.id] = (counts[pattern.id] ?? 0) + 1;
-    matches.push({
-      pattern_id: pattern.id,
-      severity: pattern.severity,
-      file: filePath,
-      line: lineNumber,
-      snippet: line.trim().slice(0, 200),
-      recommendation: pattern.recommendation,
-    });
+    const line = lines[i] ?? "";
+    for (const { pattern, regex } of compiled) {
+      if (!regex) continue;
+      if ((counts[pattern.id] ?? 0) >= maxPerPattern) continue;
+      if (!regex.test(line)) continue;
+      counts[pattern.id] = (counts[pattern.id] ?? 0) + 1;
+      matches.push({
+        pattern_id: pattern.id,
+        severity: pattern.severity,
+        file: filePath,
+        line: i + 1,
+        snippet: line.trim().slice(0, 200),
+        recommendation: pattern.recommendation,
+      });
+    }
   }
 }
 
@@ -288,28 +277,18 @@ async function* walkFiles(
   while (stack.length > 0) {
     const dir = stack.pop();
     if (!dir) break;
-    yield* visitDir(fs, dir, exSet, extSet, stack);
-  }
-}
-
-async function* visitDir(
-  fs: FileSystemPort,
-  dir: string,
-  exSet: Set<string>,
-  extSet: Set<string>,
-  stack: string[],
-): AsyncGenerator<string> {
-  let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
-  try {
-    entries = await fs.list(dir);
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.type === "dir" && !exSet.has(entry.name.toLowerCase())) {
-      stack.push(entry.path);
-    } else if (entry.type === "file" && extSet.has(extname(entry.name).toLowerCase())) {
-      yield entry.path;
+    let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
+    try {
+      entries = await fs.list(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.type === "dir" && !exSet.has(entry.name.toLowerCase())) {
+        stack.push(entry.path);
+      } else if (entry.type === "file" && extSet.has(extname(entry.name).toLowerCase())) {
+        yield entry.path;
+      }
     }
   }
 }

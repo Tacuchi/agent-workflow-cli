@@ -22,3 +22,13 @@ export function rowWidth(termCols: number | undefined, detailOpen: boolean, inde
   const detailOverhead = detailOpen ? DETAIL_PANEL_ROW_OVERHEAD : 0;
   return Math.max(16, cols - baseOverhead - detailOverhead);
 }
+
+/**
+ * Truncates `s` to at most `max` cells, appending `…` when cut. Measures in
+ * code points (matching the row layout math) while slicing in code units —
+ * the quirk `ListRow` and `DetailPanel` have always shared.
+ */
+export function truncateCells(s: string, max: number): string {
+  if ([...s].length <= max) return s;
+  return max <= 1 ? "" : `${s.slice(0, max - 1)}…`;
+}

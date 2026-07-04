@@ -2,6 +2,7 @@ import { runVisibilityDoctor } from "../../application/visibility-doctor-service
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const visibilityCommand: QtcCommand = {
@@ -11,14 +12,7 @@ export const visibilityCommand: QtcCommand = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const subcommand = args.rest[0];
     if (subcommand === "doctor") return runDoctorSub(args, ctx);
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_INPUT",
-        message: "visibility requiere subcomando: doctor",
-      },
-      exitCode: 1,
-    };
+    return fail("INVALID_INPUT", "visibility requiere subcomando: doctor");
   },
 };
 

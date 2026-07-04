@@ -6,8 +6,23 @@ export interface ErrorEnvelope {
   details?: Record<string, unknown>;
 }
 
-export function renderResult<T>(result: CommandResult<T>): string {
-  return `${JSON.stringify(result.data ?? { ok: result.ok, error: result.error }, null, 2)}\n`;
+/**
+ * Standard command error result. `emit()` in main.ts rebuilds the stdout
+ * payload from field values, so this is byte-identical to the inline literals
+ * it replaces. `data` is attached only when provided (error context payloads).
+ */
+export function fail(
+  code: string,
+  message: string,
+  data?: unknown,
+  exitCode: 1 | 2 = 1,
+): CommandResult {
+  return {
+    ok: false,
+    error: { code, message },
+    ...(data !== undefined ? { data } : {}),
+    exitCode,
+  };
 }
 
 export function renderRaw(payload: unknown): string {

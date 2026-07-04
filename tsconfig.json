@@ -8,8 +8,6 @@
     "jsxImportSource": "react",
     "outDir": "./dist",
     "rootDir": "./src",
-    "declaration": true,
-    "declarationMap": true,
     "sourceMap": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,

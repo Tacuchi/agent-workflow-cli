@@ -8,16 +8,11 @@ import {
   type SlashCommandHints,
 } from "./types.js";
 
-export interface RuntimeConfigServiceOptions {
-  coreConfigPath?: string;
-}
-
 export class RuntimeConfigService {
   constructor(
     private readonly fs: FileSystemPort,
     private readonly env: EnvPort,
     private readonly paths: PathsService,
-    private readonly options: RuntimeConfigServiceOptions = {},
   ) {}
 
   async resolveRuntime(): Promise<ResolvedRuntime> {
@@ -26,18 +21,9 @@ export class RuntimeConfigService {
       return fromEnv;
     }
 
-    const userConfigPath = this.userConfigPath();
-    const fromUserConfig = await this.tryReadConfig(userConfigPath, "user-config");
+    const fromUserConfig = await this.tryReadConfig(this.userConfigPath());
     if (fromUserConfig) {
       return fromUserConfig;
-    }
-
-    const coreConfigPath = this.options.coreConfigPath;
-    if (coreConfigPath) {
-      const fromCoreConfig = await this.tryReadConfig(coreConfigPath, "core-config");
-      if (fromCoreConfig) {
-        return fromCoreConfig;
-      }
     }
 
     return {
@@ -63,10 +49,7 @@ export class RuntimeConfigService {
     return this.paths.userRuntimeJson();
   }
 
-  private async tryReadConfig(
-    path: string,
-    source: "user-config" | "core-config",
-  ): Promise<ResolvedRuntime | undefined> {
+  private async tryReadConfig(path: string): Promise<ResolvedRuntime | undefined> {
     if (!(await this.fs.exists(path))) {
       return undefined;
     }
@@ -75,7 +58,7 @@ export class RuntimeConfigService {
     const resolved: ResolvedRuntime = {
       packageName: parsed.packageName,
       binName: parsed.binName,
-      source,
+      source: "user-config",
       configPath: path,
     };
     if (parsed.displayName !== undefined) resolved.displayName = parsed.displayName;
@@ -100,12 +83,15 @@ function parseConfig(raw: string, path: string): AgentWorkflowRuntimeConfig {
   }
   const packageName = requireString(json, "packageName", path);
   const binName = requireString(json, "binName", path);
-  const envOverride = requireString(json, "envOverride", path);
 
-  const config: AgentWorkflowRuntimeConfig = { packageName, binName, envOverride };
-  if (typeof json.schemaVersion === "number") {
-    config.schemaVersion = json.schemaVersion;
-  }
+  // envOverride is fixed to the built-in default: resolveFromEnv reads
+  // DEFAULT_RUNTIME_CONFIG.envOverride (before any file), so a file-provided
+  // value was never consumed and is ignored.
+  const config: AgentWorkflowRuntimeConfig = {
+    packageName,
+    binName,
+    envOverride: DEFAULT_RUNTIME_CONFIG.envOverride,
+  };
   if (typeof json.displayName === "string" && json.displayName.length > 0) {
     config.displayName = json.displayName;
   }
@@ -141,10 +127,7 @@ function parseExpectedMcpServers(value: unknown): string[] | undefined {
 function parseSlashCommands(value: unknown): SlashCommandHints | undefined {
   if (!isRecord(value)) return undefined;
   const hints: SlashCommandHints = {};
-  for (const key of ["migrate", "projectInit", "resume", "session"] as const) {
-    const v = value[key];
-    if (typeof v === "string") hints[key] = v;
-  }
+  if (typeof value.migrate === "string") hints.migrate = value.migrate;
   return hints;
 }
 

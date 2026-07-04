@@ -20,7 +20,6 @@ export const checkBranchCommand: QtcCommand = {
     if (pathArg !== undefined) input.pathArg = pathArg;
     if (fileArg !== undefined) input.fileArg = fileArg;
     if (session !== undefined) input.sessionCode = session;
-    if (strict) input.strict = true;
 
     const data = await runCheckBranch(ctx.fs, ctx.env, ctx.git, ctx.paths, input);
     const exit: 0 | 1 | 2 = strict && data.match === false ? 2 : 0;

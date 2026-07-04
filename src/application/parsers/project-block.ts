@@ -1,4 +1,26 @@
+import { join } from "node:path";
+import type { FileSystemPort } from "../../ports/file-system.js";
 import { parseMdSection } from "../markdown.js";
+
+/**
+ * Read the workspace project block from `<dir>/CLAUDE.md` or `<dir>/AGENTS.md`
+ * (first file whose parsed block satisfies `accept` wins) — the single home of
+ * the read loop previously pasted per service.
+ */
+export async function readWorkspaceBlock(
+  fs: FileSystemPort,
+  dir: string,
+  markers: ProjectBlockMarkers,
+  accept: (block: ParsedProjectBlock) => boolean = () => true,
+): Promise<ParsedProjectBlock | null> {
+  for (const name of ["CLAUDE.md", "AGENTS.md"]) {
+    const path = join(dir, name);
+    if (!(await fs.exists(path))) continue;
+    const block = parseProjectBlock(await fs.readText(path), markers);
+    if (block !== null && accept(block)) return block;
+  }
+  return null;
+}
 
 export interface ProjectFuente {
   alias: string;
