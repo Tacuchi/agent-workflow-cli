@@ -44,18 +44,18 @@ By default the CLI clears the target host's plugin cache before installing (opt 
 
 `self install --target <host>` installs **SKILL + user-level slash commands + hooks** in one shot, scaled to what the host supports:
 
-| Host | SKILL | User-level commands (`/w:*`) | Hooks |
+| Host | SKILL | User-level commands | Hooks |
 |---|---|---|---|
-| `claude` | `~/.claude/skills/w/` | `~/.claude/commands/w/<n>.md` | `~/.claude/settings.json` (JSON merge + backup) |
-| `codex` | `~/.codex/skills/w/` | `~/.codex/commands/w/<n>.md` | skipped (config.toml not yet wired) |
-| `warp` | `~/.warp/skills/w/` | skipped (uses rules/notebooks) | skipped (no hook system) |
-| `oz` | `~/.agents/skills/w/` | skipped | skipped |
-| `agents` | `~/.agents/skills/w/` | skipped | skipped |
-| `gemini` | `~/.gemini/skills/w/` | skipped (native `.toml` commands deferred) | skipped |
-| `opencode` | `~/.opencode/skills/w/` | skipped (deferred) | skipped |
-| `crush` | `~/.crush/skills/w/` | skipped (deferred) | skipped |
+| `claude` | `~/.claude/skills/w/` | `~/.claude/commands/w/<n>.md` → `/w:<n>` | `~/.claude/settings.json` (JSON merge + backup) |
+| `codex` | `~/.codex/skills/w/` | synthesized skills `~/.codex/skills/w-<n>/` → `$w-<n>` (Codex reads no commands dir) | skipped (config.toml not yet wired) |
+| `warp` | `~/.warp/skills/w/` | synthesized skills `~/.warp/skills/w-<n>/` → `/w-<n>` | skipped (no hook system) |
+| `oz` | `~/.agents/skills/w/` | synthesized skills `~/.agents/skills/w-<n>/` | skipped |
+| `agents` | `~/.agents/skills/w/` | skipped (shared dir, not a host) | skipped |
+| `gemini` | `~/.gemini/skills/w/` | `~/.gemini/commands/w/<n>.toml` → `/w:<n>` | skipped |
+| `opencode` | `~/.opencode/skills/w/` | `~/.opencode/command/w/<n>.md` → `/w/<n>` | skipped |
+| `crush` | `~/.crush/skills/w/` | `~/.crush/commands/w/<n>.md` → palette `user:w:<n>` | skipped |
 
-For hosts where a layer is skipped, the SKILL is sufficient — the AI reads it and invokes `agent-workflow <subcommand>` directly.
+The bundle's internal manuals (`loops/*/LOOP.md`, `roles/*/ROLE.md`, `exports/*/EXPORT.md`, `harness/HARNESS.md`) are deliberately **not** `SKILL.md` files, so hosts that scan skill roots recursively (Codex, OpenCode, Crush) never list them as invocable skills — only the commands and the `w` orientation skill surface. Where a layer is skipped, the SKILL is sufficient — the AI reads it and invokes `agent-workflow <subcommand>` directly.
 
 Opt-out flags: `--skill-only`, `--no-commands`, `--no-hooks`. Override the source with `--from /path/to/skills/w`. Other flags: `--confirm-all` (required with `--target all`), `--keep-cache`, `--force`, `--dry-run`.
 

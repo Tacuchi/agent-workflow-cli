@@ -69,10 +69,10 @@ describe("CHASSIS consistency — motor de loops vs heirs reales", () => {
     expect(declared).toEqual(await heirDirs());
   });
 
-  it("cada loops/*/SKILL.md referencia CHASSIS.md (sin la ref, el motor no entra al contexto)", async () => {
+  it("cada loops/*/LOOP.md referencia CHASSIS.md (sin la ref, el motor no entra al contexto)", async () => {
     const offenders: string[] = [];
     for (const dir of await heirDirs()) {
-      const text = await readFile(join(LOOPS_ROOT, dir, "SKILL.md"), "utf8");
+      const text = await readFile(join(LOOPS_ROOT, dir, "LOOP.md"), "utf8");
       if (!text.includes("CHASSIS.md")) offenders.push(dir);
     }
     expect(offenders).toEqual([]);
@@ -86,7 +86,7 @@ describe("CHASSIS consistency — motor de loops vs heirs reales", () => {
     expect(forbidden.size).toBeGreaterThan(0);
     const offenders: string[] = [];
     for (const dir of await heirDirs()) {
-      const text = await readFile(join(LOOPS_ROOT, dir, "SKILL.md"), "utf8");
+      const text = await readFile(join(LOOPS_ROOT, dir, "LOOP.md"), "utf8");
       for (const heading of h2Headings(text)) {
         if (forbidden.has(heading)) offenders.push(`${dir}: ## ${heading}`);
       }

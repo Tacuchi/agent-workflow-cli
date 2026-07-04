@@ -25,7 +25,7 @@ import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import { gitClone } from "./install-plugin-skills-git.js";
 import { copyDir, hasValidFrontmatter } from "./install-plugin-skills.js";
-import { FLATTEN_DEST_PREFIX, LEGACY_SKILL_NAMES, SKILL_DIR_NAME } from "./install-skill.js";
+import { COMMAND_SKILL_PREFIX, LEGACY_SKILL_NAMES, SKILL_DIR_NAME } from "./install-skill.js";
 import {
   type SkillRegistryEntry,
   type SkillReplicaMode,
@@ -295,6 +295,15 @@ export async function registerSkill(
         `'${picked.name}' ya está registrada (fuente: ${registry.skills[picked.name]?.source})`,
       );
     }
+    // `w-*` es el namespace de los wrappers sintetizados del bundle
+    // (install-skill.ts) — registrar una suelta ahí la dejaría a merced del
+    // sweep de install/uninstall en los mismos roots.
+    if (picked.name.startsWith(COMMAND_SKILL_PREFIX)) {
+      return fail(
+        "RESERVED_SKILL_PREFIX",
+        `'${picked.name}' usa el prefijo reservado '${COMMAND_SKILL_PREFIX}' (wrappers del bundle) — elegí otro nombre`,
+      );
+    }
     // Guard de ownership: un dir canónico existente NO registrado es de otro
     // (bundle `w`, skill de plugin, instalación manual) — nunca lo adoptamos.
     const canonical = join(canonicalSkillsRoot(ctx.env.homeDir()), picked.name);
@@ -561,7 +570,7 @@ export async function listSkills(
   // `unmanaged` para que la tab refleje TODO el ancla, sin volverlas operables
   // (guard de ownership intacto). La fuente sale del lock de skills.sh si la
   // conoce; "" cuando nadie la sabe. Excluidos: el bundle `w` y su namespace
-  // `w-*` del flatten + nombres legacy (los administra [Workflows], no son
+  // `w-*` sintetizadas (skill-as-command) + nombres legacy (los administra [Workflows], no son
   // "de otro"). Con registro ILEGIBLE no se clasifica nada: podrían ser del
   // motor y quedarían mal etiquetadas como ajenas.
   const bundleOwned = new Set<string>([SKILL_DIR_NAME, ...LEGACY_SKILL_NAMES]);
@@ -574,7 +583,7 @@ export async function listSkills(
         // Un symlink-a-dir se tipa "other" (Dirent no lo resuelve); solo se
         // descartan files — isSkillDir lee A TRAVÉS del link y decide.
         if (entry.type === "file" || entry.name.startsWith(".")) continue;
-        if (bundleOwned.has(entry.name) || entry.name.startsWith(FLATTEN_DEST_PREFIX)) continue;
+        if (bundleOwned.has(entry.name) || entry.name.startsWith(COMMAND_SKILL_PREFIX)) continue;
         if (Object.hasOwn(registry.skills, entry.name) || !isValidSkillName(entry.name)) continue;
         if (!(await isSkillDir(join(root, entry.name)))) continue;
         unmanaged.add(entry.name);

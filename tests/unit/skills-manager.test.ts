@@ -154,6 +154,13 @@ describe("skills-manager (T3.3-T3.7)", () => {
     expect(collision.error?.code).toBe("SKILL_NAME_COLLISION");
   });
 
+  it("register rechaza el prefijo reservado w- (namespace de wrappers del bundle)", async () => {
+    const dir = await makeSkillDir(root, "w-scraper");
+    const result = await registerSkill(ctx, { source: dir });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("RESERVED_SKILL_PREFIX");
+  });
+
   it("install materializa canónica + symlink a Claude y persiste mode/installedAt", async () => {
     const dir = await makeSkillDir(root, "pdf");
     await registerSkill(ctx, { source: dir });

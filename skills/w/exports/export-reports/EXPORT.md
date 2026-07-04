@@ -57,7 +57,7 @@ In plan mode it **describes**, never writes: the resolved audience/length, the c
 
 - `docs/specs`, `docs/plans`, `docs/reports/*` — context + collision avoidance.
 
-**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
+**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
 /w:export-reports [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
@@ -110,4 +110,4 @@ Functionally idempotent: each invocation takes the next `NNN`; it never overwrit
 - Design: `docs/referencias/workflow-exports/export-reports.md` · family: [`../README.md`](../README.md).
 - Writing: **ambient** convention (not a role) — the host auto-applies an installed writing skill when present.
 - Inputs: spec (`docs/specs`), `CONCLUSIONS`/`DECISION` (see `docs/referencias/workflow-artifacts/`), plan-doc (`docs/plans`).
-- Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md).
+- Siblings: [`../export-scripts/EXPORT.md`](../export-scripts/EXPORT.md) · [`../export-manuals/EXPORT.md`](../export-manuals/EXPORT.md) · [`../export-diagrams/EXPORT.md`](../export-diagrams/EXPORT.md).

@@ -122,11 +122,9 @@ export const HARNESSES: readonly HarnessSpec[] = [
     pluginManifest: null, // DEC-W2: no plugin manifest convention for Warp
     pluginHooksDir: null, // DEC-W4: no hooks system in Warp/Oz
     // Warp lists slash commands from top-level subdirectories of ~/.warp/skills/
-    // (each one must contain SKILL.md with `name:` frontmatter). Sub-skills
-    // nested deeper inside the universal SKILL (doctrine/*, specialties/*, etc.)
-    // are not visible by default; the installer flattens them to top-level dirs
-    // namespaced `agent-workflow-<sub>` at install time. See
-    // `application/self/install-skill.ts:flattenSubSkillsForHost`.
+    // (each one must contain SKILL.md with `name:` frontmatter). The installer
+    // synthesizes each bundle command as a top-level `w-<command>` skill
+    // (skill-as-command). See install-skill.ts:synthesizeCommandSkills.
     skillsDirs: [".warp/skills", ".agents/skills", ".claude/skills", ".codex/skills"],
     installTarget: "warp",
   },

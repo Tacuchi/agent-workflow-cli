@@ -6,11 +6,11 @@ This document is the **common engine** of the agent-workflow loops: the doctrine
 
 The **5 loops** run this engine; each adds only its deltas:
 
-- [`spec-refine-loop`](spec-refine-loop/SKILL.md) — refines the **spec** in place; deltas: spec gap taxonomy, analyze gate, `## UI spec` via the `ui-design` capability.
-- [`plan-new-loop`](plan-new-loop/SKILL.md) — generates the **plan** from the spec; deltas: rich plan + plan gap taxonomy (+ per-screen design SPECs when the plan includes UI).
-- [`plan-refine-loop`](plan-refine-loop/SKILL.md) — refines the **plan** in place (auxiliary, not mandatory); reuses the gap taxonomy + coherence gate of `plan-new-loop`. It is to `plan-new` what `spec-refine` is to `spec-new`.
-- [`plan-exec-loop`](plan-exec-loop/SKILL.md) — **executes** the plan: code/DB/git, a single session per run, per-phase progress in the plan-doc, no auto-export. Applies the policies in [`CODE-POLICIES.md`](CODE-POLICIES.md).
-- [`quick-loop`](quick-loop/SKILL.md) — the engine with **minimal ceremony** (the prompt *is* the objective); also applies [`CODE-POLICIES.md`](CODE-POLICIES.md) (proportional gate).
+- [`spec-refine-loop`](spec-refine-loop/LOOP.md) — refines the **spec** in place; deltas: spec gap taxonomy, analyze gate, `## UI spec` via the `ui-design` capability.
+- [`plan-new-loop`](plan-new-loop/LOOP.md) — generates the **plan** from the spec; deltas: rich plan + plan gap taxonomy (+ per-screen design SPECs when the plan includes UI).
+- [`plan-refine-loop`](plan-refine-loop/LOOP.md) — refines the **plan** in place (auxiliary, not mandatory); reuses the gap taxonomy + coherence gate of `plan-new-loop`. It is to `plan-new` what `spec-refine` is to `spec-new`.
+- [`plan-exec-loop`](plan-exec-loop/LOOP.md) — **executes** the plan: code/DB/git, a single session per run, per-phase progress in the plan-doc, no auto-export. Applies the policies in [`CODE-POLICIES.md`](CODE-POLICIES.md).
+- [`quick-loop`](quick-loop/LOOP.md) — the engine with **minimal ceremony** (the prompt *is* the objective); also applies [`CODE-POLICIES.md`](CODE-POLICIES.md) (proportional gate).
 
 ## Persistent objective
 
@@ -119,7 +119,7 @@ Investigation is **inline**: an activity **inside the run's current session**, n
 
 ## Structured-choice (design & batching)
 
-**Canonical rule (single source — the rest of the corpus only references it):** *structured-choice* = **≤3 content questions + 1 `flow` control**, always. Per-harness binding in [`../harness/SKILL.md`](../harness/SKILL.md) (Claude Code: `AskUserQuestion`, max 4 questions/call; without structured choice it degrades to **numbered markdown**).
+**Canonical rule (single source — the rest of the corpus only references it):** *structured-choice* = **≤3 content questions + 1 `flow` control**, always. Per-harness binding in [`../harness/HARNESS.md`](../harness/HARNESS.md) (Claude Code: `AskUserQuestion`, max 4 questions/call; without structured choice it degrades to **numbered markdown**).
 
 - Since the `flow` control is **always** present → **≤3 content questions + 1 `flow` control**.
 - **`flow` control** (lifecycle, always present): `Compactar` | `Cerrar`. Answering only the content questions (not touching `flow`) = keep iterating.
@@ -142,7 +142,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 > Each heir defines its **prior-work mark**: in the refine loops, the presence of `## Refinement decisions` + `## Q&A traceability` in the doc; in plan-exec, the plan-doc's `- [x]` checkboxes; quick has no doc (resume by CHECKPOINT only).
 
-> **`Compactar`** (the `flow` control, across all 3 cases) → write `CHECKPOINT.md` in the session (in-flight progress, remaining gaps, Q&A, `attempts`) → trigger the harness **compaction** (Claude Code: `/compact`; see [`../harness/SKILL.md`](../harness/SKILL.md)) → resume by reading the checkpoint.
+> **`Compactar`** (the `flow` control, across all 3 cases) → write `CHECKPOINT.md` in the session (in-flight progress, remaining gaps, Q&A, `attempts`) → trigger the harness **compaction** (Claude Code: `/compact`; see [`../harness/HARNESS.md`](../harness/HARNESS.md)) → resume by reading the checkpoint.
 
 ## Convergence / exit
 
@@ -162,7 +162,7 @@ The loops that **edit code** (`plan-exec-loop`, `quick-loop`) additionally run t
 Applies to **every** relative reference in the doctrine — never repeated per link:
 
 1. **Normal install** (the `w/` tree): the relative path resolves as-is (`../CHASSIS.md`, `../../commands/spec-new.md`).
-2. **Flattened install** (e.g. Warp/Oz): the shared `.md` files (`CHASSIS.md`, `CODE-POLICIES.md`) sit **next to the loop's `SKILL.md`**; another loop is a **sibling** skill `w-<loop>/` (e.g. `../spec-refine-loop/SKILL.md` → `../w-spec-refine-loop/SKILL.md`).
+2. **Synthesized command skills** (hosts without a commands dir — Codex/Warp/Oz): each command installs as a **sibling** skill `w-<command>/` with its references rewritten into the bundle (`../loops/…` → `../w/loops/…`); the `w/` tree stays intact, so loop-to-loop references resolve as a normal install.
 3. A reference that does not resolve = **optional deep-dive** — this engine's doctrine is self-contained.
 
 The chassis **is not a skill** (no frontmatter; never invoked nor bound via `.workflow/skills.toml`): it enters the context only because a loop orders it read from its `## Inherits`. It does not define flow, deliverable or gap taxonomy — that belongs to each heir.

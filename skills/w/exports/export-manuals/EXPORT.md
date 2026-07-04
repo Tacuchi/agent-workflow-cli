@@ -60,7 +60,7 @@ In plan mode it **describes**, never writes: the resolved mode, the detected top
 - `docs/manuals/INDEX.md` — re-generable (overwritable) in `complement` mode.
 - The declared sources' code — read to describe behavior.
 
-**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
+**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
 /w:export-manuals [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
@@ -124,4 +124,4 @@ With `--dry-run`: print the report; write nothing. Otherwise: `complement` → `
 - Design: `docs/referencias/workflow-exports/export-manuals.md` · family: [`../README.md`](../README.md).
 - Writing: **ambient** convention (not a role) — the host auto-applies an installed writing skill when present.
 - Source artifacts: `DECISION` + plan-doc (see `docs/referencias/workflow-artifacts/artifacts-exec/` and `docs/specs`/`docs/plans`).
-- Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).
+- Siblings: [`../export-scripts/EXPORT.md`](../export-scripts/EXPORT.md) · [`../export-diagrams/EXPORT.md`](../export-diagrams/EXPORT.md) · [`../export-reports/EXPORT.md`](../export-reports/EXPORT.md).

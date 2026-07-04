@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
-import { SKILL_DIR_NAME, TARGET_ROOTS } from "../../src/application/self/install-skill.js";
+import {
+  COMMAND_SKILL_MARKER,
+  SKILL_DIR_NAME,
+  TARGET_ROOTS,
+} from "../../src/application/self/install-skill.js";
 import type { InstallTarget } from "../../src/application/self/install-skill.js";
 import { selfUninstall } from "../../src/application/self/uninstall.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
@@ -231,16 +235,31 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     expect(after.hooks.SessionStart).toEqual(OUR_HOOK); // preserved
   });
 
-  it("sweeps flattened sub-skills (agent-workflow-*) on warp, leaving unrelated dirs", async () => {
+  it("sweeps flattened sub-skills (agent-workflow-*) on warp with ownership proof, leaving foreign dirs", async () => {
     const ctx = buildCtx(home, fs);
     const warpRoot = join(home, ...TARGET_ROOTS.warp);
     const canonical = join(warpRoot, SKILL_DIR_NAME);
+    // ≤v18 flatten fingerprint: dir `<prefix><name>` with frontmatter `name: <name>`.
     const flatA = join(warpRoot, "agent-workflow-writing");
     const flatB = join(warpRoot, "agent-workflow-git-conventions");
+    // Third-party skill whose name merely starts with the prefix: name == dir.
+    const foreign = join(warpRoot, "agent-workflow-helper");
     const unrelated = join(warpRoot, "someone-elses-skill");
     await seedDir(canonical);
     await mkdir(flatA, { recursive: true });
+    await writeFile(join(flatA, "SKILL.md"), "---\nname: writing\ndescription: x\n---\n", "utf8");
     await mkdir(flatB, { recursive: true });
+    await writeFile(
+      join(flatB, "SKILL.md"),
+      "---\nname: git-conventions\ndescription: x\n---\n",
+      "utf8",
+    );
+    await mkdir(foreign, { recursive: true });
+    await writeFile(
+      join(foreign, "SKILL.md"),
+      "---\nname: agent-workflow-helper\ndescription: x\n---\n",
+      "utf8",
+    );
     await mkdir(unrelated, { recursive: true });
 
     const result = await selfUninstall(buildArgs({ target: "warp" }, []), ctx);
@@ -249,7 +268,76 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     expect(await fs.exists(canonical)).toBe(false);
     expect(await fs.exists(flatA)).toBe(false);
     expect(await fs.exists(flatB)).toBe(false);
+    expect(await fs.exists(foreign)).toBe(true); // name == dir → not ours, preserved
     expect(await fs.exists(unrelated)).toBe(true); // not ours — preserved
+  });
+
+  it("sweeps synthesized w-* wrappers on codex (marker-proven), preserves foreign w-* dirs, removes the inert .codex/commands/w", async () => {
+    const ctx = buildCtx(home, fs);
+    const codexRoot = join(home, ...TARGET_ROOTS.codex);
+    const canonical = join(codexRoot, SKILL_DIR_NAME);
+    const synth = join(codexRoot, "w-quick");
+    const foreign = join(codexRoot, "w-scraper"); // user's own skill — never swept
+    const inertCommands = join(home, ".codex", "commands", "w");
+    await seedDir(canonical);
+    await mkdir(synth, { recursive: true });
+    await writeFile(
+      join(synth, "SKILL.md"),
+      `---\nname: w-quick\ndescription: x\n---\n\n> ${COMMAND_SKILL_MARKER}. …\n`,
+      "utf8",
+    );
+    await mkdir(foreign, { recursive: true });
+    await writeFile(
+      join(foreign, "SKILL.md"),
+      "---\nname: w-scraper\ndescription: x\n---\n",
+      "utf8",
+    );
+    await mkdir(inertCommands, { recursive: true });
+
+    const result = await selfUninstall(buildArgs({ target: "codex" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(canonical)).toBe(false);
+    expect(await fs.exists(synth)).toBe(false);
+    expect(await fs.exists(foreign)).toBe(true);
+    expect(await fs.exists(inertCommands)).toBe(false);
+  });
+
+  it("--skill-only keeps the synthesized w-* wrappers (they are the command surface on codex)", async () => {
+    const ctx = buildCtx(home, fs);
+    const codexRoot = join(home, ...TARGET_ROOTS.codex);
+    const canonical = join(codexRoot, SKILL_DIR_NAME);
+    const synth = join(codexRoot, "w-quick");
+    await seedDir(canonical);
+    await mkdir(synth, { recursive: true });
+    await writeFile(
+      join(synth, "SKILL.md"),
+      `---\nname: w-quick\ndescription: x\n---\n\n> ${COMMAND_SKILL_MARKER}. …\n`,
+      "utf8",
+    );
+
+    const result = await selfUninstall(buildArgs({ target: "codex" }, ["--skill-only"]), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(canonical)).toBe(false); // the bundle goes
+    expect(await fs.exists(synth)).toBe(true); // wrappers gated like commands
+  });
+
+  it("removes the native command wrappers dir per host (gemini/opencode/crush)", async () => {
+    const ctx = buildCtx(home, fs);
+    const dirs = [
+      { target: "gemini", rel: ".gemini/commands/w" },
+      { target: "opencode", rel: ".opencode/command/w" },
+      { target: "crush", rel: ".crush/commands/w" },
+    ] as const;
+    for (const { target, rel } of dirs) {
+      await seedDir(skillDir(home, target));
+      const cmdDir = join(home, rel);
+      await mkdir(cmdDir, { recursive: true });
+      const result = await selfUninstall(buildArgs({ target }, []), ctx);
+      expect(result.ok).toBe(true);
+      expect(await fs.exists(cmdDir), rel).toBe(false);
+    }
   });
 
   it("removes user-commands by default but keeps them with --skill-only", async () => {

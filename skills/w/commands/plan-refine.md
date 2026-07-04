@@ -36,7 +36,7 @@ The skill evaluates `$ARGUMENTS` (plans live in place — `docs/plans/PPP-plan-<
 
 `plan-refine-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
 
-1. **Read** `../loops/plan-refine-loop/SKILL.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
+1. **Read** `../loops/plan-refine-loop/LOOP.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
 2. **Follow** its instructions taking `$ARGUMENTS` as input: it detects state/resume, runs the gap-driven engine, creates and manages sessions, converges and reports.
 
 > Do not try `Skill: plan-refine-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
@@ -52,7 +52,7 @@ The skill detects prior state before starting, **keying off the `CHECKPOINT`** (
 
 ## UI → design SPECs
 
-If the refine **touches UI**, the loop composes `ui-design` and produces/updates **design SPECs** (`NNN-SPEC-<SLUG>.md`) in its own session — scoped to the new/changed screens — and re-points the plan references (see `../loops/plan-refine-loop/SKILL.md` § *Delta 4*).
+If the refine **touches UI**, the loop composes `ui-design` and produces/updates **design SPECs** (`NNN-SPEC-<SLUG>.md`) in its own session — scoped to the new/changed screens — and re-points the plan references (see `../loops/plan-refine-loop/LOOP.md` § *Delta 4*).
 
 ## Plan mode
 
@@ -60,5 +60,5 @@ The skill resolves the state and describes the actions the loop would run (gaps 
 
 ## Resources
 
-- Loop skill: `../loops/plan-refine-loop/SKILL.md`
+- Loop manual: `../loops/plan-refine-loop/LOOP.md`
 - Design reference: `docs/referencias/workflow-commands/plan-refine.md`

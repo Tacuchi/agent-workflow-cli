@@ -25,7 +25,7 @@ The key discriminator:
 | The question... | Action |
 |---|---|
 | can be answered by reading repo / data (objective system facts) | **investigate** |
-| depends on the user's preferences, priorities or decisions | **ask the human** via *structured-choice* (canonical rule: `../../loops/CHASSIS.md` § *Structured-choice*; per-harness binding: `../../harness/SKILL.md`) |
+| depends on the user's preferences, priorities or decisions | **ask the human** via *structured-choice* (canonical rule: `../../loops/CHASSIS.md` § *Structured-choice*; per-harness binding: `../../harness/HARNESS.md`) |
 | is partly in the repo and partly user intent | investigate first, then ask only about the uncertain part |
 
 ## Composed by

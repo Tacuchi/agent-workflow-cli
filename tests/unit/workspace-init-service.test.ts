@@ -68,7 +68,7 @@ describe("runWorkspaceInit", () => {
     const toml = readFileSync(join(workspace, ".workflow", "skills.toml"), "utf-8");
     expect(toml).toContain("[skills]");
     expect(toml).toContain('# ui-design = "ui-spec"');
-    expect(toml).toContain('# overview = "workflow"');
+    expect(toml).toContain('# overview = "w"');
 
     // block written, no Mode line, has the source
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");

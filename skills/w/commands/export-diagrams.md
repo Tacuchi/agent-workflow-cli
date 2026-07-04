@@ -13,7 +13,7 @@ allowed-tools:
 
 Reads the workspace sources' code + the plan-doc (`AS-IS`/`TO-BE` sections) and generates C4 / mermaid diagrams in `docs/diagrams/`. Single-pass, read-only over sessions.
 
-To run: **read** `../exports/export-diagrams/SKILL.md` and **follow** its instructions with `$ARGUMENTS` as input. This command is the entry and the sibling SKILL.md is its body. (Hosts that index bundle skills may also expose it directly as `w:export-diagrams` — same body either way.)
+To run: **read** `../exports/export-diagrams/EXPORT.md` and **follow** its instructions with `$ARGUMENTS` as input. This command is the entry and the sibling EXPORT.md is its body.
 
 ## What it produces
 
@@ -27,5 +27,5 @@ Describes the diagrams it would generate (type, covered components) without writ
 
 ## Resources
 
-- Export skill: `../exports/export-diagrams/SKILL.md`
+- Export manual: `../exports/export-diagrams/EXPORT.md`
 - Design reference: `docs/referencias/workflow-exports/README.md`

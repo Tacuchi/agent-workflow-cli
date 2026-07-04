@@ -25,7 +25,7 @@ PLAN
 `/w:plan-exec` — **resumable** (same chassis mechanism; here resume keys off the plan-doc checkboxes + CHECKPOINT, see Delta 1).
 
 ## Reads
-`docs/plans/PPP-plan-<slug>.md` (locate via the `docs/plans/PPP-plan-*.md` glob or the exact path from the command argument). It runs **any** plan, whether or not it passed through [`plan-refine-loop`](../plan-refine-loop/SKILL.md) — plan-refine is auxiliary, not mandatory; no gate requires it. If the plan includes UI, it also reads the **design SPECs** (`NNN-SPEC-<SLUG>.md`) its Tasks reference — artifacts of the plan-new/plan-refine session, read **read-only** as the design reference while implementing (see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
+`docs/plans/PPP-plan-<slug>.md` (locate via the `docs/plans/PPP-plan-*.md` glob or the exact path from the command argument). It runs **any** plan, whether or not it passed through [`plan-refine-loop`](../plan-refine-loop/LOOP.md) — plan-refine is auxiliary, not mandatory; no gate requires it. If the plan includes UI, it also reads the **design SPECs** (`NNN-SPEC-<SLUG>.md`) its Tasks reference — artifacts of the plan-new/plan-refine session, read **read-only** as the design reference while implementing (see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
 
 ## Writes
 - `docs/plans/PPP-plan-<slug>.md` (**read/update**, living doc: phase/task state, `Open questions`).

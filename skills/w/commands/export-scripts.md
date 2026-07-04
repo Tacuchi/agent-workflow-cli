@@ -13,7 +13,7 @@ allowed-tools:
 
 Promotes the `SCRIPTS.sql` artifacts (type B — migrations) of N sessions from `.workflow/sessions/` to `docs/scripts/`. Single-pass, read-only over sessions.
 
-To run: **read** `../exports/export-scripts/SKILL.md` and **follow** its instructions with `$ARGUMENTS` as input. This command is the entry and the sibling SKILL.md is its body. (Hosts that index bundle skills may also expose it directly as `w:export-scripts` — same body either way.)
+To run: **read** `../exports/export-scripts/EXPORT.md` and **follow** its instructions with `$ARGUMENTS` as input. This command is the entry and the sibling EXPORT.md is its body.
 
 ## What it produces
 
@@ -27,5 +27,5 @@ Describes the scripts it would consolidate and the `docs/scripts/` structure it 
 
 ## Resources
 
-- Export skill: `../exports/export-scripts/SKILL.md`
+- Export manual: `../exports/export-scripts/EXPORT.md`
 - Design reference: `docs/referencias/workflow-exports/README.md`

@@ -71,7 +71,7 @@ The plan absorbs the `TECHNICAL-NOTE` level **inline** (user decision) + the roa
 
 > **Scales with complexity:** the `(core)` sections go **always**; the `(opt.)` ones only when the plan warrants them — a small plan may omit `Dependencies`, AS-IS/TO-BE, `Risks`, `Assumptions`, `Estimated time`. Concise > exhaustive.
 
-> **Catalog implication:** `TECHNICAL-NOTE` stops being a session artifact and becomes **sections of the plan-doc**. Reconciled in [`plan-exec-loop`](../plan-exec-loop/SKILL.md): the single plan-exec session carries **no** `TECHNICAL-NOTE` nor its own `TASKS`; the technical detail and the progress live inline in the plan-doc (living).
+> **Catalog implication:** `TECHNICAL-NOTE` stops being a session artifact and becomes **sections of the plan-doc**. Reconciled in [`plan-exec-loop`](../plan-exec-loop/LOOP.md): the single plan-exec session carries **no** `TECHNICAL-NOTE` nor its own `TASKS`; the technical detail and the progress live inline in the plan-doc (living).
 
 ## Delta 2 — Gap taxonomy (of "plan")
 
@@ -95,7 +95,7 @@ The chassis' **inline** research specializes: mapping **code/impact** — affect
 
 ## Delta 4 — Design SPECs (when the plan includes UI)
 
-The **UI without design SPEC** gap is resolved by **composing** the **`ui-design`** capability (built-in default [`ui-spec`](../../roles/ui-spec/SKILL.md); rebindable via `.workflow/skills.toml`; `off` → degrades to human / `Open questions`):
+The **UI without design SPEC** gap is resolved by **composing** the **`ui-design`** capability (built-in default [`ui-spec`](../../roles/ui-spec/ROLE.md); rebindable via `.workflow/skills.toml`; `off` → degrades to human / `Open questions`):
 
 - It authors **one design SPEC per screen** as a session artifact: `NNN-SPEC-<SLUG>.md` (numbering local to the session — see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
 - It **derives** from the spec's `## UI spec` section when present (splits it per screen and raises it to executable detail); otherwise it authors from the `Requirement` (design system/theme/ambiguities via *structured-choice*, counts in the batch).
@@ -135,4 +135,4 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 - Passes → `Guardar plan` (writes with confirmation if it exists) → `finalize`.
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).
 
-> **After generating:** the plan can go straight to `plan-exec`, or — if changes arise before executing (new requirements, scope adjustments) — pass through [`plan-refine-loop`](../plan-refine-loop/SKILL.md) (`/w:plan-refine`, auxiliary and **not mandatory**), which refines it in place.
+> **After generating:** the plan can go straight to `plan-exec`, or — if changes arise before executing (new requirements, scope adjustments) — pass through [`plan-refine-loop`](../plan-refine-loop/LOOP.md) (`/w:plan-refine`, auxiliary and **not mandatory**), which refines it in place.

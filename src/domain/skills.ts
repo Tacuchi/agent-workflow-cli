@@ -23,7 +23,7 @@ export const BUILTIN_DEFAULT_SKILLS: Record<SkillRole, string> = {
   git: "git",
   research: "research",
   diagrams: "diagrams",
-  overview: "workflow",
+  overview: "w",
 };
 
 export type SkillBindingSource = "default" | "global" | "workspace";

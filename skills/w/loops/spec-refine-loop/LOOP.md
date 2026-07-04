@@ -27,7 +27,7 @@ SPEC
 ## Started by
 `/w:spec-refine` — **resumable**. Detects prior state (via CHECKPOINT) and starts accordingly (see *Compact / resume — SPEC keys*).
 
-It is also started by the **live escalation from `quick-loop`** (entry gate or mid-loop — see [`../quick-loop/SKILL.md`](../quick-loop/SKILL.md) § *QUICK delta*): quick materializes the draft (`spec-new` procedure) and **loads this loop** over that spec — same semantics as if the user had run `/w:spec-refine`.
+It is also started by the **live escalation from `quick-loop`** (entry gate or mid-loop — see [`../quick-loop/LOOP.md`](../quick-loop/LOOP.md) § *QUICK delta*): quick materializes the draft (`spec-new` procedure) and **loads this loop** over that spec — same semantics as if the user had run `/w:spec-refine`.
 
 ## Reads
 - `docs/specs/NNN-spec*.md` (glob — locates the spec by number; also catches the legacy `NNN-spec.md`), **or** the exact path passed as the command argument. **Always the spec itself**: this loop edits it in place; there is no separate "refined" file.
@@ -76,7 +76,7 @@ The spec is completed **in place**: the draft's sections get **completed** + two
 ## Assumptions            (declared)
 
 ## UI spec                (opt. — if UI is involved; via the ui-design capability / ui-spec skill)
-Structured Markdown description (screens → regions/components). See [`ui-spec`](../../roles/ui-spec/SKILL.md).
+Structured Markdown description (screens → regions/components). See [`ui-spec`](../../roles/ui-spec/ROLE.md).
 
 ## Refinement decisions   ← NEW (ADDED)
 What was defined while refining and why. Includes what inline research

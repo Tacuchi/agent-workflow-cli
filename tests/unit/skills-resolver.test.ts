@@ -42,7 +42,7 @@ describe("resolveSkills (skills.toml cascade)", () => {
       source: "default",
       enabled: true,
     });
-    expect(skills.overview.skill).toBe("workflow");
+    expect(skills.overview.skill).toBe("w");
     expect(skills.sql).toEqual({ role: "sql", skill: "sql", source: "default", enabled: true });
     expect(skills.git.skill).toBe("git");
   });

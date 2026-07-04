@@ -8,7 +8,7 @@
 
 ## What a loop is
 
-A loop is a **skill** that teaches the AI *how to iterate* until it produces a deliverable. **It is not invocable by name** as a standalone skill (it is not registered as such; in Claude Code, by-name invocation is the `Skill` tool — its binding, not a universal): it is the body of its `/w:…` command, which **loads it by reading `<loop>/SKILL.md`** and executes it inline.
+A loop is an **operating manual** that teaches the AI *how to iterate* until it produces a deliverable. **It is not invocable by name** as a standalone skill — its file is deliberately named `LOOP.md`, **not** `SKILL.md`, so no harness indexes it as a user-facing skill (several scan skill roots recursively): it is the body of its `/w:…` command, which **loads it by reading `<loop>/LOOP.md`** and executes it inline.
 
 The 5 loops run the same **common engine**, whose canon lives in [`CHASSIS.md`](CHASSIS.md): persistent objective + verification-first, gap-driven convergent, single session per run with inline research, structured-choice + `flow` control (`Compactar`/`Cerrar`, always present), compact/resume, artifacts as a live log, convergence gate and the `docs/` boundary. Each loop is an **heir**: its `## Inherits` orders the chassis read before its deltas — nothing of the engine is repeated here.
 
@@ -16,11 +16,11 @@ The 5 loops run the same **common engine**, whose canon lives in [`CHASSIS.md`](
 
 | Loop (`name:`) | Flow | Started by | Reads | Writes |
 |---|---|---|---|---|
-| [`spec-refine-loop`](spec-refine-loop/SKILL.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec*.md` (the spec itself) | `docs/specs/NNN-spec-<slug>.md` (in place) |
-| [`plan-new-loop`](plan-new-loop/SKILL.md) | PLAN | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md` |
-| [`plan-refine-loop`](plan-refine-loop/SKILL.md) | PLAN | `/w:plan-refine` *(aux, optional)* | `docs/plans/PPP-plan-*.md` (the plan itself) | `docs/plans/PPP-plan-<slug>.md` (in place) |
-| [`plan-exec-loop`](plan-exec-loop/SKILL.md) | PLAN | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update); the rest via `export-*` |
-| [`quick-loop`](quick-loop/SKILL.md) | QUICK | `/w:quick` | — (prompt) | edits code + light session; **no** `docs/` |
+| [`spec-refine-loop`](spec-refine-loop/LOOP.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec*.md` (the spec itself) | `docs/specs/NNN-spec-<slug>.md` (in place) |
+| [`plan-new-loop`](plan-new-loop/LOOP.md) | PLAN | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md` |
+| [`plan-refine-loop`](plan-refine-loop/LOOP.md) | PLAN | `/w:plan-refine` *(aux, optional)* | `docs/plans/PPP-plan-*.md` (the plan itself) | `docs/plans/PPP-plan-<slug>.md` (in place) |
+| [`plan-exec-loop`](plan-exec-loop/LOOP.md) | PLAN | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update); the rest via `export-*` |
+| [`quick-loop`](quick-loop/LOOP.md) | QUICK | `/w:quick` | — (prompt) | edits code + light session; **no** `docs/` |
 
 > `/w:spec-new` has no loop (single-pass). Hence **6 commands / 5 loops**.
 
@@ -57,7 +57,7 @@ Loops compose **capabilities by role**, never concrete skills; the skill fulfill
 | `sql` | `sql` | research · `plan-exec-loop` · `quick-loop` |
 | `git` | `git` | `plan-exec-loop` · `quick-loop` |
 | `research` | `research` | every loop (inline research) |
-| `overview` | `workflow` | anyone (orientation) |
+| `overview` | `w` | anyone (orientation) |
 
 > **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — the workflow neither binds nor depends on them. Full doctrine: [../roles/README.md](../roles/README.md).
 
@@ -67,8 +67,8 @@ Loops compose **capabilities by role**, never concrete skills; the skill fulfill
 
 - [`CHASSIS.md`](CHASSIS.md) — the common engine of the 5 loops (referenced doc; not a skill)
 - [`CODE-POLICIES.md`](CODE-POLICIES.md) — the code-editing loop policies (loaded only by plan-exec and quick)
-- [`spec-refine-loop/SKILL.md`](spec-refine-loop/SKILL.md)
-- [`plan-new-loop/SKILL.md`](plan-new-loop/SKILL.md)
-- [`plan-refine-loop/SKILL.md`](plan-refine-loop/SKILL.md) — aux, optional (refines the plan in place)
-- [`plan-exec-loop/SKILL.md`](plan-exec-loop/SKILL.md)
-- [`quick-loop/SKILL.md`](quick-loop/SKILL.md)
+- [`spec-refine-loop/LOOP.md`](spec-refine-loop/LOOP.md)
+- [`plan-new-loop/LOOP.md`](plan-new-loop/LOOP.md)
+- [`plan-refine-loop/LOOP.md`](plan-refine-loop/LOOP.md) — aux, optional (refines the plan in place)
+- [`plan-exec-loop/LOOP.md`](plan-exec-loop/LOOP.md)
+- [`quick-loop/LOOP.md`](quick-loop/LOOP.md)

@@ -30,15 +30,15 @@
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.
 >
-> **Transversal (no flow):** `status` and `fix-git` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*.
+> **Transversal (no flow):** `status` and `fix-git` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
 
 ## Schema of each command file
 
-Every `<command>.md` in this folder uses this frontmatter + body structure — the schema (including `allowed-tools:` and the `Skill` tool) is the **Claude Code binding**; other harnesses wrap the same contract in their format (see [`../harness/SKILL.md`](../harness/SKILL.md) § *Command packaging*):
+Every `<command>.md` in this folder uses this frontmatter + body structure — the schema (including `allowed-tools:`) is the **Claude Code binding**; other harnesses wrap the same contract in their format (see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*):
 
 | Field | Description |
 |---|---|
 | `description:` | One line: what + when (drives discovery in the `/`-picker) |
 | `argument-hint:` | Argument signature for the user |
 | `allowed-tools:` | YAML list (typically `Bash`/`Read`/`Write`/`Edit`). Loops/exports are **read-and-followed**, not invoked with `Skill:` — so `Skill` is **not** in `allowed-tools`. |
-| Body | 1-3 orienting lines, then the invocation: **read-and-follow** the sibling loop/export `SKILL.md`, or call the `aw` CLI; then `## Plan mode`, `## Resources` |
+| Body | 1-3 orienting lines, then the invocation: **read-and-follow** the sibling loop/export doc (`LOOP.md` / `EXPORT.md`), or call the `aw` CLI; then `## Plan mode`, `## Resources` |

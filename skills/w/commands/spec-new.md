@@ -57,7 +57,7 @@ Assumed facts.
 Pending doubts. ← the spec-refine-loop closes them.
 ```
 
-> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## UI spec` (if there is UI) + `## Refinement decisions` + `## Q&A traceability` (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/SKILL.md)). Same skeleton: the draft and the refined spec share the order.
+> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## UI spec` (if there is UI) + `## Refinement decisions` + `## Q&A traceability` (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md)). Same skeleton: the draft and the refined spec share the order.
 
 **Filling notes:**
 
@@ -69,7 +69,7 @@ Pending doubts. ← the spec-refine-loop closes them.
 - The **gaps** the loop detects = weak sections of the schema (vague Requirement, Scope without `Out`, untestable criteria, open questions, undeclared assumptions, contradictions) **+ UI unspecified** when the requirement involves UI.
 - Equivalent alternative: the user creates the draft by hand. Both paths produce the same `docs/specs/NNN-spec-<slug>.md`.
 
-> **Reuse by escalation:** the live escalation from `/w:quick` (see [`../loops/quick-loop/SKILL.md`](../loops/quick-loop/SKILL.md) § *QUICK delta*) materializes its draft following **this same procedure** (steps 1-3: same schema, same NO RESEARCH single-pass hard rule), with `## Origin` = "escalated from `/w:quick`" + the original prompt. No need to type `/w:spec-new`: the consent in the structured-choice equals invoking it.
+> **Reuse by escalation:** the live escalation from `/w:quick` (see [`../loops/quick-loop/LOOP.md`](../loops/quick-loop/LOOP.md) § *QUICK delta*) materializes its draft following **this same procedure** (steps 1-3: same schema, same NO RESEARCH single-pass hard rule), with `## Origin` = "escalated from `/w:quick`" + the original prompt. No need to type `/w:spec-new`: the consent in the structured-choice equals invoking it.
 
 ## Plan mode
 
@@ -78,4 +78,4 @@ Resolves `NNN` by reading `docs/specs/`, describes the draft it would generate w
 ## Resources
 
 - Design reference: `docs/referencias/workflow-commands/spec-new.md`
-- Loop that refines this draft: `../loops/spec-refine-loop/SKILL.md`
+- Loop that refines this draft: `../loops/spec-refine-loop/LOOP.md`

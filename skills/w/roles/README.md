@@ -12,12 +12,12 @@ All 6 roles, their built-in defaults, their tier, and which loops/exports compos
 
 | Role | Default built-in | Tier | Composed by |
 |---|---|---|---|
-| `ui-design` | [`ui-spec`](ui-spec/SKILL.md) | must | `spec-refine-loop` (when requirement involves UI) · `plan-new-loop` / `plan-refine-loop` (per-screen design SPECs) |
+| `ui-design` | [`ui-spec`](ui-spec/ROLE.md) | must | `spec-refine-loop` (when requirement involves UI) · `plan-new-loop` / `plan-refine-loop` (per-screen design SPECs) |
 | `sql` | `sql` | must | inline research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
-| `research` | [`research`](research/SKILL.md) | should | all loops (on-demand investigation) |
-| `diagrams` | [`diagrams`](diagrams/SKILL.md) | should | `export-diagrams` |
-| `overview` | `workflow` | should | any loop (orientation about the workflow itself) |
+| `research` | [`research`](research/ROLE.md) | should | all loops (on-demand investigation) |
+| `diagrams` | [`diagrams`](diagrams/ROLE.md) | should | `export-diagrams` |
+| `overview` | `w` | should | any loop (orientation about the workflow itself) |
 
 **Tiers:**
 - `must` — core to almost every session; built-in always active unless explicitly `off`.
@@ -61,7 +61,7 @@ built-in default
 # git              = "git"
 # research         = "research"
 # diagrams         = "diagrams"
-# overview         = "workflow"
+# overview         = "w"
 
 # Override examples:
 ui-design        = "acme/figma-spec"    # third-party skill installed via skills.sh
@@ -116,7 +116,7 @@ sql               sql                     built-in
 git               git                     built-in
 research          research                built-in
 diagrams          mermaid-only            global      (~/.workflow/skills.toml)
-overview          workflow                built-in
+overview          w                       built-in
 ```
 
 ---
@@ -124,13 +124,13 @@ overview          workflow                built-in
 ## Adding a new role
 
 1. Define the role in this README (name, default built-in, tier, composed by).
-2. Author the built-in skill under `roles/<name>/SKILL.md` following the schema.
+2. Author the built-in skill under `roles/<name>/ROLE.md` following the schema.
 3. Register it in the CLI resolver so `aw skills` lists it.
 4. Document the binding key in the `skills.toml` reference above.
 
 ## Authoring a built-in skill
 
-Each `SKILL.md` follows this schema:
+Each `ROLE.md` follows this schema:
 
 | Section | Content |
 |---|---|
@@ -143,4 +143,4 @@ Each `SKILL.md` follows this schema:
 | `## Output` | what it produces and where (if any) |
 | `## Source` | recycled from (if applicable) |
 
-See [`research/SKILL.md`](research/SKILL.md) as a reference implementation.
+See [`research/ROLE.md`](research/ROLE.md) as a reference implementation.

@@ -59,7 +59,7 @@ In plan mode it **describes**, never writes: the resolved `NNN`, the detected so
 
 - Standalone `docs/scripts/*.sql` (top-level only, via `--standalone-sql`), **excluding** any `docs/scripts/NNN-export-scripts-*/` (previous outputs of this export).
 
-**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
+**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
 /w:export-scripts [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
@@ -133,4 +133,4 @@ Functionally idempotent: each invocation takes the next `NNN` and **never overwr
 - Design: `docs/referencias/workflow-exports/export-scripts.md` · family: [`../README.md`](../README.md).
 - Composed capability: `sql` (built-in default; see `docs/referencias/workflow-roles/`).
 - Source artifact: `SCRIPTS.sql` (see `docs/referencias/workflow-artifacts/artifacts-core/`).
-- Siblings: [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-diagrams/SKILL.md`](../export-diagrams/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).
+- Siblings: [`../export-manuals/EXPORT.md`](../export-manuals/EXPORT.md) · [`../export-diagrams/EXPORT.md`](../export-diagrams/EXPORT.md) · [`../export-reports/EXPORT.md`](../export-reports/EXPORT.md).

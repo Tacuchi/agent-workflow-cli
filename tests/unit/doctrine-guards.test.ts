@@ -60,7 +60,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
       flow: "quick",
       files: [
         "commands/quick.md",
-        "loops/quick-loop/SKILL.md",
+        "loops/quick-loop/LOOP.md",
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
@@ -68,20 +68,20 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
     },
     {
       flow: "spec-refine",
-      files: ["commands/spec-refine.md", "loops/spec-refine-loop/SKILL.md", "loops/CHASSIS.md"],
+      files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
       budget: 35_500,
     },
     {
       flow: "plan-new",
-      files: ["commands/plan-new.md", "loops/plan-new-loop/SKILL.md", "loops/CHASSIS.md"],
+      files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
       budget: 33_000,
     },
     {
       flow: "plan-refine",
       files: [
         "commands/plan-refine.md",
-        "loops/plan-refine-loop/SKILL.md",
-        "loops/plan-new-loop/SKILL.md",
+        "loops/plan-refine-loop/LOOP.md",
+        "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
       budget: 43_000,
@@ -90,7 +90,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
       flow: "plan-exec",
       files: [
         "commands/plan-exec.md",
-        "loops/plan-exec-loop/SKILL.md",
+        "loops/plan-exec-loop/LOOP.md",
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
@@ -152,11 +152,11 @@ describe("Doctrine guards — G4 · frontmatter description budgets", () => {
     if (rel.startsWith("loops/")) return 600;
     if (rel.startsWith("roles/")) return 800;
     if (rel.startsWith("exports/")) return 1000;
-    return 650; // root SKILL.md · harness/SKILL.md
+    return 650; // root SKILL.md · harness/HARNESS.md
   }
 
   it("every description stays within its area budget", async () => {
-    const rels: string[] = ["SKILL.md", join("harness", "SKILL.md")];
+    const rels: string[] = ["SKILL.md", join("harness", "HARNESS.md")];
     for (const sub of ["commands", "loops", "exports", "roles"]) {
       const files = await listMdFiles(join(SKILL_ROOT, sub));
       rels.push(...files.map((f) => f.slice(SKILL_ROOT.length + 1)));
@@ -183,7 +183,7 @@ describe("Doctrine guards — G5 · canonical ## Inherits form", () => {
 
   it("document loops carry the exact canonical Inherits (chassis only)", async () => {
     for (const loop of DOC_LOOPS) {
-      const text = await readRel(join("loops", loop, "SKILL.md"));
+      const text = await readRel(join("loops", loop, "LOOP.md"));
       expect(text, loop).toContain(DOC_LOOP_INHERITS);
       expect(text, loop).not.toContain("CODE-POLICIES.md");
     }
@@ -191,7 +191,7 @@ describe("Doctrine guards — G5 · canonical ## Inherits form", () => {
 
   it("code loops carry the exact canonical Inherits (chassis + code policies)", async () => {
     for (const loop of CODE_LOOPS) {
-      const text = await readRel(join("loops", loop, "SKILL.md"));
+      const text = await readRel(join("loops", loop, "LOOP.md"));
       expect(text, loop).toContain(CODE_LOOP_INHERITS);
     }
   });
@@ -199,7 +199,7 @@ describe("Doctrine guards — G5 · canonical ## Inherits form", () => {
   it("the global layout-resolution rule lives in the chassis (single source)", async () => {
     const chassis = await readRel(join("loops", "CHASSIS.md"));
     expect(chassis).toContain("Reference resolution");
-    expect(chassis).toContain("w-<loop>");
+    expect(chassis).toContain("w-<command>");
   });
 });
 

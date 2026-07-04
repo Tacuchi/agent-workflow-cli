@@ -48,7 +48,7 @@ Full doctrine in the chassis (§ *Internal sessions* + *Numbering*). This loop's
 
 ## Delta 1 — Deliverable: the PLAN, edited in place
 
-The plan uses the **same skeleton** [`plan-new-loop`](../plan-new-loop/SKILL.md) produces (§ *Delta 1 — RICH PLAN*: `Summary`/`Solution`/`Impacted`/`Phases`/`Tasks`/`Validations`/`Final behavior`/… with `(core)` sections always and `(opt.)` by complexity). plan-refine does **not** change the schema: it **completes/adjusts** the existing sections **in place** and **adds** two trace sections:
+The plan uses the **same skeleton** [`plan-new-loop`](../plan-new-loop/LOOP.md) produces (§ *Delta 1 — RICH PLAN*: `Summary`/`Solution`/`Impacted`/`Phases`/`Tasks`/`Validations`/`Final behavior`/… with `(core)` sections always and `(opt.)` by complexity). plan-refine does **not** change the schema: it **completes/adjusts** the existing sections **in place** and **adds** two trace sections:
 
 ```markdown
 ## Refinement decisions   ← NEW (ADDED)
@@ -66,7 +66,7 @@ Every doubt asked to the human + the chosen answer.
 
 ## Delta 2 — Gap taxonomy (of "plan")
 
-Reuses plan-new-loop's gap taxonomy **in full** ([`plan-new-loop`](../plan-new-loop/SKILL.md) § *Delta 2*): vague Approach/Solution, components unidentified, AS-IS wiring unknown, phase too large, task not atomic, missing deps, spec criteria uncovered, unaddressed risks, UI without design SPEC. **Focus difference:** plan-new **builds** the plan from scratch; plan-refine **detects what changed** against the written plan (or against the spec, if the spec was re-refined) and closes **those** gaps — typically fewer and more localized. One extra re-refine gap:
+Reuses plan-new-loop's gap taxonomy **in full** ([`plan-new-loop`](../plan-new-loop/LOOP.md) § *Delta 2*): vague Approach/Solution, components unidentified, AS-IS wiring unknown, phase too large, task not atomic, missing deps, spec criteria uncovered, unaddressed risks, UI without design SPEC. **Focus difference:** plan-new **builds** the plan from scratch; plan-refine **detects what changed** against the written plan (or against the spec, if the spec was re-refined) and closes **those** gaps — typically fewer and more localized. One extra re-refine gap:
 
 | Gap | Signal | Resolved by |
 |---|---|---|
@@ -78,7 +78,7 @@ Same as plan-new (maps code/impact: FE/BE/DB components, AS-IS wiring, deps), bu
 
 ## Delta 4 — Design SPECs (when the refine touches UI)
 
-Same mechanism as [`plan-new-loop`](../plan-new-loop/SKILL.md) (§ *Delta 4*: the **`ui-design`** capability → per-screen `NNN-SPEC-<SLUG>.md`, see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)), **scoped to the delta**: only the screens **new or changed** by the refine get a design SPEC. The updated SPEC is written in **plan-refine's own session** (each loop manages ITS session's artifacts — it never edits plan-new's) and the plan **re-points** the UI Task reference to the current SPEC. Untouched screens keep their original SPEC.
+Same mechanism as [`plan-new-loop`](../plan-new-loop/LOOP.md) (§ *Delta 4*: the **`ui-design`** capability → per-screen `NNN-SPEC-<SLUG>.md`, see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)), **scoped to the delta**: only the screens **new or changed** by the refine get a design SPEC. The updated SPEC is written in **plan-refine's own session** (each loop manages ITS session's artifacts — it never edits plan-new's) and the plan **re-points** the UI Task reference to the current SPEC. Untouched screens keep their original SPEC.
 
 ## Compact / resume
 

@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,8 +42,9 @@ export interface SelfInstallTargetResult {
   cleaned_legacy?: string[];
   hooks_status?: string;
   hooks_warning?: string;
-  flattened_subskills?: number;
-  flattened_warnings?: string[];
+  /** Synthesized `w-<command>` skill-as-command wrappers (COMMAND_SKILLS_HOSTS). */
+  command_skills?: number;
+  command_skills_warnings?: string[];
   error?: string;
 }
 
@@ -66,57 +67,65 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
   "agents",
 ]);
 
-// Hosts que listan slash commands solo desde directorios top-level de
-// ~/<host>/skills/. Para estos hosts, los sub-skills anidados del SKILL
-// universal (loops/*, exports/*, roles/*) NO son visibles por default —
-// el flatten copia cada sub-skill a su propio directorio top-level con
-// prefix `w-` para evitar colisiones con otros plugins.
-// Hosts no incluidos (claude, codex) cargan sub-skills via su propia
-// resolución (Skill tool / SKILL.md frontmatter recursivo).
-const FLATTEN_SUBSKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["warp", "oz"]);
-const FLATTEN_PARENT_DIRS = ["loops", "exports", "roles"] as const;
-// Exportado: es el namespace del bundle en el ancla — el scan de sueltas
+// Hosts whose user-invocable unit is the SKILL (no file-based commands dir):
+// each `commands/<cmd>.md` is synthesized as a top-level sibling skill
+// `w-<cmd>/SKILL.md` (skill-as-command — harness/HARNESS.md § Command
+// packaging). Bundle-relative references (`../loops/…`) are rewritten to
+// `../w/…` so they resolve from the synthesized location.
+// Codex reads NO commands dir and its custom prompts are deprecated/removed
+// (verified vs openai/codex rust-v0.142.5 source, 2026-07); Warp/Oz derive
+// slash commands from the `name:` frontmatter of each top-level SKILL.md.
+const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["codex", "warp", "oz"]);
+// Exportado: es el namespace del bundle en los skill roots — el scan de sueltas
 // (skills-manager.listSkills) lo excluye para no listar `w-*` como unmanaged.
-export const FLATTEN_DEST_PREFIX = "w-";
+export const COMMAND_SKILL_PREFIX = "w-";
 
-// Per-target user-level commands directory (subdir = namespace).
-// File `<base>/<filename>.md` is invoked as `/w:<filename>`.
-// Claude Code + Codex follow the same convention. Warp/Oz do not use a
-// file-based user-commands dir — they list slash commands from the `name:`
-// frontmatter of each SKILL.md found in top-level subdirs of ~/<host>/skills/.
-// The installer applies flattenSubSkillsForHost() below to expose nested
-// sub-skills (loops/*, exports/*, roles/*) at the level Warp/Oz can see.
-const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
-  claude: ".claude/commands/w",
-  codex: ".codex/commands/w",
+// Native command-wrapper formats. Each host that DOES read a file-based
+// commands dir gets the bundle commands transformed into its dialect
+// (field research 2026-07, verified against each host's source/docs):
+//   claude-md    ~/.claude/commands/w/<cmd>.md   → /w:<cmd>   (as-authored)
+//   gemini-toml  ~/.gemini/commands/w/<cmd>.toml → /w:<cmd>   (description + prompt, {{args}})
+//   opencode-md  ~/.opencode/command/w/<cmd>.md  → /w/<cmd>   (description frontmatter + body)
+//   crush-md     ~/.crush/commands/w/<cmd>.md    → user:w:<cmd> (plain body — Crush parses no frontmatter)
+type CommandWrapperFormat = "claude-md" | "gemini-toml" | "opencode-md" | "crush-md";
+
+interface UserCommandsSpec {
+  relpath: string;
+  format: CommandWrapperFormat;
+}
+
+const USER_COMMANDS_BY_TARGET: Record<InstallTarget, UserCommandsSpec | null> = {
+  claude: { relpath: ".claude/commands/w", format: "claude-md" },
+  // codex/warp/oz: commands ship as synthesized `w-*` skills (COMMAND_SKILLS_HOSTS).
+  codex: null,
   warp: null,
   oz: null,
   agents: null,
-  // gemini uses .gemini/commands/*.toml (not .md), opencode .opencode/command/*.md,
-  // crush n/a — native command install deferred to Phase 3; skills-as-command meanwhile.
-  gemini: null,
-  opencode: null,
-  crush: null,
+  gemini: { relpath: ".gemini/commands/w", format: "gemini-toml" },
+  opencode: { relpath: ".opencode/command/w", format: "opencode-md" },
+  crush: { relpath: ".crush/commands/w", format: "crush-md" },
 };
 
-// Pre-`w`-rename user-commands dirs (slash namespace `/agent-workflow:*`). Removed
-// on install so an upgrade from the old plugin doesn't leave stale slash commands.
-const LEGACY_USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
-  claude: ".claude/commands/agent-workflow",
-  codex: ".codex/commands/agent-workflow",
-  warp: null,
-  oz: null,
-  agents: null,
-  gemini: null,
-  opencode: null,
-  crush: null,
+// Stale user-commands dirs from prior releases, removed on install/uninstall:
+// the pre-`w`-rename namespace (`/agent-workflow:*`) everywhere, plus the
+// Codex dir that ≤v18 wrote under the false "Claude Code + Codex follow the
+// same convention" assumption — Codex never read it.
+const LEGACY_USER_COMMANDS_RELPATHS_BY_TARGET: Record<InstallTarget, readonly string[]> = {
+  claude: [".claude/commands/agent-workflow"],
+  codex: [".codex/commands/agent-workflow", ".codex/commands/w"],
+  warp: [],
+  oz: [],
+  agents: [],
+  gemini: [],
+  opencode: [],
+  crush: [],
 };
 
 /**
  * Remove legacy artifacts from a prior install (before the `agent-workflow` → `w`
  * rename) for `target`: the old SKILL dirs (LEGACY_SKILL_NAMES), the old
- * user-commands dir (`/agent-workflow:*`), and — for flatten hosts — the old
- * `agent-workflow-*` flattened sub-skills. Returns the paths removed.
+ * user-commands dir (`/agent-workflow:*`), and — for COMMAND_SKILLS_HOSTS — the old
+ * `agent-workflow-*` flattened sub-skills (pre-rename model). Returns the paths removed.
  */
 async function cleanLegacyArtifacts(
   target: InstallTarget,
@@ -134,9 +143,10 @@ async function cleanLegacyArtifacts(
   for (const name of LEGACY_SKILL_NAMES) {
     await tryRemove(join(skillsRoot, name));
   }
-  const legacyCmd = LEGACY_USER_COMMANDS_RELPATH_BY_TARGET[target];
-  if (legacyCmd !== null) await tryRemove(join(home, legacyCmd));
-  if (FLATTEN_SUBSKILLS_HOSTS.has(target)) {
+  for (const legacyCmd of LEGACY_USER_COMMANDS_RELPATHS_BY_TARGET[target]) {
+    await tryRemove(join(home, legacyCmd));
+  }
+  if (COMMAND_SKILLS_HOSTS.has(target)) {
     try {
       for (const entry of await readdir(skillsRoot, { withFileTypes: true })) {
         if (entry.isDirectory() && entry.name.startsWith("agent-workflow-")) {
@@ -157,10 +167,10 @@ const HOOKS_AUTOINSTALL_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]
 
 function explainSkipReason(target: InstallTarget, kind: "commands" | "hooks"): string {
   if (kind === "commands") {
-    if (target === "warp" || target === "oz") {
-      return `${target}: file-based user-commands dir is not used by this host. Slash commands derive from each SKILL.md frontmatter (top-level dirs under ~/${target === "warp" ? ".warp" : ".agents"}/skills/); sub-skills are exposed via flatten at install time.`;
+    if (COMMAND_SKILLS_HOSTS.has(target)) {
+      return `${target}: this host reads no file-based commands dir — commands are installed as synthesized 'w-<command>' skills next to the bundle (skill-as-command).`;
     }
-    return `${target}: user-level commands install not implemented yet. SKILL is installed; CLI invocations work from within the host.`;
+    return `${target}: shared cross-host skills dir, not a host — no command wrapper to install.`;
   }
   // hooks
   if (target === "warp" || target === "oz") {
@@ -457,12 +467,14 @@ async function installOneTarget(
     cache_cleared: cacheOutcome.cleared,
   };
   if (cacheOutcome.warning !== undefined) entry.cache_clear_warning = cacheOutcome.warning;
-  if (FLATTEN_SUBSKILLS_HOSTS.has(t.target)) {
-    const flatten = await flattenSubSkillsForHost(t.target, dest, sourceArg, flags.force);
-    entry.flattened_subskills = flatten.count;
-    if (flatten.warnings.length > 0) entry.flattened_warnings = flatten.warnings;
-  }
   if (!flags.skipCommands) {
+    // Synthesized w-* wrappers ARE the command surface on COMMAND_SKILLS_HOSTS,
+    // so --skill-only / --no-commands skips them exactly like native wrappers.
+    if (COMMAND_SKILLS_HOSTS.has(t.target)) {
+      const synth = await synthesizeCommandSkills(t.target, dest, sourceArg);
+      entry.command_skills = synth.count;
+      if (synth.warnings.length > 0) entry.command_skills_warnings = synth.warnings;
+    }
     const cmdResult = await installUserCommands(t.target, sourceArg, ctx);
     if (cmdResult.dest !== null) entry.user_commands_dest = cmdResult.dest;
     if (cmdResult.installed) entry.user_commands_files = cmdResult.files_copied;
@@ -480,76 +492,167 @@ async function installOneTarget(
   return entry;
 }
 
-// Para hosts que solo listan top-level (Warp/Oz): copia cada sub-skill
-// (`<src>/doctrine/<X>/`, `<src>/specialties/<X>/`, …) a un directorio
-// hermano top-level del SKILL universal, namespaced con `agent-workflow-`.
-// El frontmatter `name:` del SKILL.md interno define el slash command que
-// el host lista (ej. `name: doctor` → `/doctor`); el directorio solo
-// resuelve la unicidad en filesystem. Los .md sueltos del parentDir (docs
-// compartidos entre sub-skills hermanos, ej. `loops/CHASSIS.md`) se copian
-// dentro de cada sub-skill aplanado para que la referencia relativa
-// "CHASSIS.md junto a este archivo" siga resolviendo.
-async function flattenSubSkillsForHost(
+interface CommandDoc {
+  description: string | null;
+  body: string;
+}
+
+// Marker line every synthesized wrapper carries. It doubles as the OWNERSHIP
+// fingerprint: sweeps only delete `w-*` dirs proven ours (this marker, or the
+// ≤v18 flatten fingerprint) — the skill roots are shared namespaces
+// (~/.agents/skills anchor, loose skills), never swept by prefix alone.
+export const COMMAND_SKILL_MARKER =
+  "Skill-as-command wrapper (installed by `aw self install-skill`)";
+
+/**
+ * True when `<dirPath>/SKILL.md` proves the dir is CLI-synthesized: it carries
+ * the wrapper marker, or the ≤v18 flatten fingerprint (the flatten copied
+ * sub-skill `<name>` into dir `<prefix><name>` keeping `name: <name>` — a
+ * user's own skill has `name:` equal to its dir, not to a de-prefixed one).
+ */
+export async function isOwnedSynthesizedDir(dirPath: string, prefix: string): Promise<boolean> {
+  let text: string;
+  try {
+    text = await readFile(join(dirPath, "SKILL.md"), "utf8");
+  } catch {
+    return false; // no SKILL.md — not ours, preserve.
+  }
+  if (text.includes(COMMAND_SKILL_MARKER)) return true;
+  const dirName = dirPath.split(/[\\/]/).pop() ?? "";
+  const fmName = text.match(/^name:[ \t]*(\S.*)$/m)?.[1]?.trim();
+  return fmName !== undefined && `${prefix}${fmName}` === dirName;
+}
+
+// Splits a bundle command file (Claude-binding frontmatter + body). The
+// frontmatter schema is the Claude Code wrapper; other hosts re-wrap the
+// same contract (harness/HARNESS.md § Command packaging). Handles plain,
+// quoted and block-scalar (`>-` / `|`) description values — the bundle's own
+// SKILL.md models the folded style, so authors will reuse it in commands.
+export function splitCommandDoc(raw: string): CommandDoc {
+  const match = raw.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/);
+  if (!match) return { description: null, body: raw };
+  const block = match[1] ?? "";
+  const body = raw.slice(match[0].length).replace(/^\s*\n/, "");
+  const descMatch = block.match(/^description:[ \t]*(.*)$/m);
+  if (!descMatch) return { description: null, body };
+  let value = (descMatch[1] ?? "").trim();
+  if (/^[>|][+-]?$/.test(value)) {
+    const after = block.slice((descMatch.index ?? 0) + descMatch[0].length).replace(/^\r?\n/, "");
+    const parts: string[] = [];
+    for (const line of after.split(/\r?\n/)) {
+      if (!/^[ \t]+\S/.test(line)) break;
+      parts.push(line.trim());
+    }
+    value = parts.join(" ");
+  } else if (
+    (value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
+    (value.startsWith("'") && value.endsWith("'") && value.length > 1)
+  ) {
+    value = value.slice(1, -1);
+  }
+  return { description: value.length > 0 ? value : null, body };
+}
+
+// Para hosts sin commands dir (COMMAND_SKILLS_HOSTS): sintetiza cada
+// `commands/<cmd>.md` como skill top-level hermana del bundle,
+// `<root>/w-<cmd>/SKILL.md` (skill-as-command). El cuerpo del comando es el
+// cuerpo de la skill; las referencias bundle-relativas suben un nivel desde
+// `commands/`, así que reescribir `../` → `../w/` las hace resolver desde la
+// nueva ubicación. Antes de sintetizar barre los `w-*` DE SU PROPIEDAD
+// (marker/fingerprint — limpia loops aplanados ≤v18 y wrappers de comandos
+// removidos); un dir ajeno con prefijo `w-` se preserva siempre.
+async function synthesizeCommandSkills(
   target: InstallTarget,
   skillDest: string,
   sourceSkillPath: string,
-  force: boolean,
 ): Promise<{ count: number; warnings: string[] }> {
-  if (!FLATTEN_SUBSKILLS_HOSTS.has(target)) return { count: 0, warnings: [] };
+  if (!COMMAND_SKILLS_HOSTS.has(target)) return { count: 0, warnings: [] };
   const targetRoot = dirname(skillDest);
-  let count = 0;
   const warnings: string[] = [];
-  for (const parentDir of FLATTEN_PARENT_DIRS) {
-    const parentPath = join(sourceSkillPath, parentDir);
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await readdir(parentPath, { withFileTypes: true });
-    } catch {
-      continue;
+  try {
+    for (const entry of await readdir(targetRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith(COMMAND_SKILL_PREFIX)) continue;
+      const dirPath = join(targetRoot, entry.name);
+      if (await isOwnedSynthesizedDir(dirPath, COMMAND_SKILL_PREFIX)) {
+        await rm(dirPath, { recursive: true, force: true });
+      }
     }
-    const sharedDocs = entries.filter(
-      (e) => e.isFile() && e.name.endsWith(".md") && e.name !== "README.md",
-    );
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const subSkillPath = join(parentPath, entry.name);
-      const skillMdPath = join(subSkillPath, "SKILL.md");
-      try {
-        await stat(skillMdPath);
-      } catch {
-        continue;
-      }
-      const destDir = join(targetRoot, `${FLATTEN_DEST_PREFIX}${entry.name}`);
-      try {
-        await rm(destDir, { recursive: true, force: true });
-        await copyTree(subSkillPath, destDir);
-        await copySharedSiblingDocs(parentPath, sharedDocs, destDir);
-        count += 1;
-      } catch (err) {
-        if (!force) {
-          warnings.push(`flatten failed for ${entry.name}: ${(err as Error).message}`);
-        }
-      }
+  } catch {
+    // target root absent/unreadable — nothing to sweep.
+  }
+  const srcDir = join(sourceSkillPath, "commands");
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await readdir(srcDir, { withFileTypes: true });
+  } catch {
+    return { count: 0, warnings: [`source commands dir not found: ${srcDir}`] };
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".md") || entry.name === "README.md") continue;
+    const cmd = entry.name.slice(0, -".md".length);
+    try {
+      const raw = await readFile(join(srcDir, entry.name), "utf8");
+      const skillName = `${COMMAND_SKILL_PREFIX}${cmd}`;
+      const destDir = join(targetRoot, skillName);
+      await mkdir(destDir, { recursive: true });
+      await writeFile(join(destDir, "SKILL.md"), renderCommandSkill(skillName, raw), "utf8");
+      count += 1;
+    } catch (err) {
+      warnings.push(`command skill failed for ${cmd}: ${(err as Error).message}`);
     }
   }
   return { count, warnings };
 }
 
-// Copia los docs compartidos del parentDir dentro de un sub-skill aplanado,
-// sin pisar un archivo homónimo propio del sub-skill.
-async function copySharedSiblingDocs(
-  parentPath: string,
-  docs: readonly import("node:fs").Dirent[],
-  destDir: string,
-): Promise<void> {
-  for (const doc of docs) {
-    const target = join(destDir, doc.name);
-    try {
-      await stat(target);
-    } catch {
-      await copyFile(join(parentPath, doc.name), target);
-    }
+function renderCommandSkill(skillName: string, raw: string): string {
+  const { description, body } = splitCommandDoc(raw);
+  const desc = description ?? `agent-workflow command ${skillName} (see body).`;
+  const rewired = body.split("../").join("../w/");
+  return [
+    "---",
+    `name: ${skillName}`,
+    "description: >-",
+    `  ${desc}`,
+    "---",
+    "",
+    `> ${COMMAND_SKILL_MARKER}. Treat the text accompanying this invocation as \`$ARGUMENTS\`. The full \`w\` bundle lives in the sibling directory \`../w/\`.`,
+    "",
+    rewired,
+  ].join("\n");
+}
+
+// TOML string escaping for the Gemini command wrapper. The prompt goes in a
+// multi-line BASIC string ("""…"""), so backslashes and quote runs must be
+// escaped to round-trip the markdown body verbatim.
+function tomlBasicString(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function tomlMultilineBasicString(value: string): string {
+  const escaped = value.replace(/\\/g, "\\\\").replace(/"""/g, '""\\"');
+  return `"""\n${escaped}\n"""`;
+}
+
+function renderCommandWrapper(format: CommandWrapperFormat, raw: string): string {
+  if (format === "claude-md") return raw;
+  const { description, body } = splitCommandDoc(raw);
+  if (format === "gemini-toml") {
+    const prompt = body.split("$ARGUMENTS").join("{{args}}");
+    const lines: string[] = [];
+    if (description !== null) lines.push(`description = ${tomlBasicString(description)}`);
+    lines.push(`prompt = ${tomlMultilineBasicString(prompt)}`);
+    return `${lines.join("\n")}\n`;
   }
+  if (format === "opencode-md") {
+    // OpenCode supports $ARGUMENTS natively; re-emit only the frontmatter
+    // keys its schema knows (description) to avoid Claude-binding leakage.
+    const fm = description === null ? [] : ["---", `description: ${description}`, "---", ""];
+    return [...fm, body].join("\n");
+  }
+  // crush-md: Crush parses no frontmatter — ship the body only. $ARGUMENTS
+  // matches its ^\$[A-Z]+ named-argument rule, so Crush prompts for it.
+  return body;
 }
 
 async function installUserCommands(
@@ -557,8 +660,8 @@ async function installUserCommands(
   sourceSkillPath: string,
   ctx: CliContext,
 ): Promise<{ installed: boolean; dest: string | null; files_copied: number; warning?: string }> {
-  const relpath = USER_COMMANDS_RELPATH_BY_TARGET[target];
-  if (relpath === null) {
+  const spec = USER_COMMANDS_BY_TARGET[target];
+  if (spec === null) {
     return {
       installed: false,
       dest: null,
@@ -566,7 +669,7 @@ async function installUserCommands(
       warning: explainSkipReason(target, "commands"),
     };
   }
-  const destDir = join(ctx.env.homeDir(), relpath);
+  const destDir = join(ctx.env.homeDir(), spec.relpath);
   const srcDir = join(sourceSkillPath, "commands");
   if (!(await ctx.fs.exists(srcDir))) {
     return {
@@ -584,7 +687,10 @@ async function installUserCommands(
     if (!entry.isFile()) continue;
     if (!entry.name.endsWith(".md")) continue;
     if (entry.name === "README.md") continue;
-    await copyFile(join(srcDir, entry.name), join(destDir, entry.name));
+    const raw = await readFile(join(srcDir, entry.name), "utf8");
+    const destName =
+      spec.format === "gemini-toml" ? entry.name.replace(/\.md$/, ".toml") : entry.name;
+    await writeFile(join(destDir, destName), renderCommandWrapper(spec.format, raw), "utf8");
     copied += 1;
   }
   return { installed: true, dest: destDir, files_copied: copied };

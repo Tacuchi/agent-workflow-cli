@@ -49,7 +49,7 @@ Concrete mechanism per harness (**Jul-2026**, verified against official docs; `~
 
 | Capability | Claude Code | Codex | Gemini / Antigravity | OpenCode | Crush | Warp / Oz | Generic |
 |---|---|---|---|---|---|---|---|
-| command-invocation | `.claude/commands/` (slash) | slash + skills | `.gemini/commands/*.toml` | `.opencode/command/` | user-invocable skills | Workflows (Drive) | text |
+| command-invocation | `.claude/commands/` (slash) | skills only (`$` mention; no commands dir, prompts removed) | `.gemini/commands/*.toml` | `.opencode/command/` | `.crush/commands` (palette) + user-invocable skills | skills as `/name` | text |
 | procedure-loading (skills) | `SKILL.md` `.claude/skills` | `SKILL.md` `.agents/skills` | `SKILL.md` (agentskills) | `SKILL.md` `.opencode`+`.claude`+`.agents` | `SKILL.md` `.agents`+`.crush`+`.claude` | `SKILL.md` `.agents`+`.warp`+`.claude` | read-and-follow `.md` |
 | structured-choice | `AskUserQuestion` (**main-agent only**) | — | — | — | — | — | numbered markdown |
 | compaction | `/compact` | Pre/PostCompact hooks | ~ | `session.compacted` | ~ | ~ | CHECKPOINT + resume |
@@ -61,7 +61,7 @@ Concrete mechanism per harness (**Jul-2026**, verified against official docs; `~
 
 > **Notes (field research Jul-2026):** **`SKILL.md` skills** are the **universal** portable unit — **all six** harnesses support them (Codex added them Dec-2025; **`.agents/skills` is the cross-host anchor**, read by Codex/OpenCode/Crush/Warp). **Structured choice** (`AskUserQuestion`) remains **Claude Code / main-agent only** → elsewhere `structured-choice` degrades to numbered markdown. The **enforcement layer** (new row) is **NO longer Claude-exclusive**: Codex + Gemini use a near-identical protocol (`permissionDecision:deny` / exit 2) and OpenCode blocks via `throw` in a JS plugin; Crush/Warp only offer **coarse** allow/deny (no custom per-command logic) → there, conventions stay **advisory** + allow/deny lists. Enforced **plan mode** is never trusted for safety; git-safe (invariant #5) is our own. **MCP** is universal (each host its file/key). The **guaranteed floor** (last column) runs the full model.
 
-> **Oz (Warp's cloud sibling).** `oz agent run` is a cloud agent orchestrator that **reuses Warp's surfaces**: same skills (`.agents/skills`, flattened to top level like Warp) and `AGENTS.md`, with `structured-choice` equally degraded to numbered markdown. It differs in three points: **detection** via `OZ_RUN_ID` (takes priority over Warp when both markers coexist); **MCP without a config file** — the JSON is passed via the `--mcp` flag of `oz agent run` (or the `OZ_MCP_CONFIG` env), it never writes `.warp/.mcp.json`; and **no plugin or hooks** (advisory enforcement, like Warp). Hence it shares the **Warp / Oz** column with that MCP caveat.
+> **Oz (Warp's cloud sibling).** `oz agent run` is a cloud agent orchestrator that **reuses Warp's surfaces**: same skills (`.agents/skills`, top-level dirs like Warp) and `AGENTS.md`, with `structured-choice` equally degraded to numbered markdown. It differs in three points: **detection** via `OZ_RUN_ID` (takes priority over Warp when both markers coexist); **MCP without a config file** — the JSON is passed via the `--mcp` flag of `oz agent run` (or the `OZ_MCP_CONFIG` env), it never writes `.warp/.mcp.json`; and **no plugin or hooks** (advisory enforcement, like Warp). Hence it shares the **Warp / Oz** column with that MCP caveat.
 
 ## Leverage installed skills
 
@@ -72,7 +72,7 @@ Concrete mechanism per harness (**Jul-2026**, verified against official docs; `~
 
 ## Convention for the rest of the corpus
 
-- Loops/commands reference the **capability** by name (e.g. "*structured-choice* (see `harness/SKILL.md`)"), **never** the concrete tool.
+- Loops/commands reference the **capability** by name (e.g. "*structured-choice* (see `harness/HARNESS.md`)"), **never** the concrete tool.
 - The historical name `AskUserQuestion` survives **only** as the Claude-Code binding of `structured-choice` (this table), never as doctrine vocabulary.
 - The `flow` lifecycle control (`Compactar`/`Cerrar`) belongs to the `structured-choice` capability, not to a tool: on harnesses without structured choice it is offered as one more textual option.
 
@@ -82,7 +82,18 @@ Proven pattern (Spec Kit, 30+ agents): **one canonical source** + generate/symli
 
 ## Command packaging (harness-specific)
 
-Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The **file** the harness executes wraps that contract in its native format: Claude Code = slash command with frontmatter (`description`, `argument-hint`, `allowed-tools`) + a body that invokes the skill or the `aw` CLI; Codex = slash command or skill; Gemini/Antigravity = `.gemini/commands/*.toml`; OpenCode = `.opencode/command/*.md`; Crush/Warp = the invocable **skill itself**. The **universal fallback** is *skill-as-command*: since all six harnesses load skills, the doctrine always runs even without native commands. The contract never changes; the wrapper does (another column).
+Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The **file** the harness executes wraps that contract in its native format — the installer (`aw self install-skill`) emits the right wrapper per host:
+
+| Host | Wrapper installed | Invoked as |
+|---|---|---|
+| Claude Code | `~/.claude/commands/w/<cmd>.md` (frontmatter `description`/`argument-hint`/`allowed-tools`) | `/w:<cmd>` |
+| Codex | synthesized skill `~/.codex/skills/w-<cmd>/SKILL.md` (Codex reads no commands dir; custom prompts deprecated/removed since 0.14x) | `$w-<cmd>` mention |
+| Gemini/Antigravity | `~/.gemini/commands/w/<cmd>.toml` (`description` + `prompt`, `{{args}}`) | `/w:<cmd>` |
+| OpenCode | `~/.opencode/command/w/<cmd>.md` | `/w/<cmd>` |
+| Crush | `~/.crush/commands/w/<cmd>.md` (plain body — Crush parses no frontmatter) | palette `user:w:<cmd>` |
+| Warp/Oz | synthesized skill `w-<cmd>/SKILL.md` next to the bundle (Warp lists skills as `/name`) | `/w-<cmd>` |
+
+*Skill-as-command* (a synthesized `w-<cmd>` skill whose body is the command, with bundle references rewritten to `../w/…`) is the **universal fallback** for any host without a native commands surface. The loop/role/export manuals are deliberately **not** `SKILL.md` files (`LOOP.md`/`ROLE.md`/`EXPORT.md`/`HARNESS.md`): hosts that scan skill roots **recursively** (Codex ≤6 levels; OpenCode and Crush — which also cross-read `~/.claude/skills` and `~/.agents/skills`) must never index the internals as invocable skills. The contract never changes; the wrapper does (another column).
 
 ## Status
 

@@ -1,6 +1,6 @@
 # CODE-POLICIES — policies for code-editing loops
 
-They apply to **`plan-exec-loop`** (per plan phase) and **`quick-loop`** (the single task; **proportional** gate): each orders this doc read from its `## Inherits`, **together with the chassis** ([`CHASSIS.md`](CHASSIS.md)). The document loops (spec-refine, plan-new, plan-refine) edit no code and do **not** load this doc — that is why it lives apart from the chassis. These policies materialize the **DB scripts-only** and **safe git** invariants — which also stay summarized **inline** (1-2 lines) in each code-editing loop's `SKILL.md`, because advisory hosts do not follow Reads; the full normative text lives here.
+They apply to **`plan-exec-loop`** (per plan phase) and **`quick-loop`** (the single task; **proportional** gate): each orders this doc read from its `## Inherits`, **together with the chassis** ([`CHASSIS.md`](CHASSIS.md)). The document loops (spec-refine, plan-new, plan-refine) edit no code and do **not** load this doc — that is why it lives apart from the chassis. These policies materialize the **DB scripts-only** and **safe git** invariants — which also stay summarized **inline** (1-2 lines) in each code-editing loop's `LOOP.md`, because advisory hosts do not follow Reads; the full normative text lives here.
 
 ## Safe git — verified branch + proposed commits
 
@@ -31,4 +31,4 @@ Only with the gate green are the commits proposed.
 
 ## Location
 
-Same as the chassis: code-editing loops reference it as `../CODE-POLICIES.md` (normal install, `w/loops/` tree); in **flattened** installs it may sit as `CODE-POLICIES.md` **next to the loop's `SKILL.md`** (chassis § *Reference resolution*).
+Same as the chassis: code-editing loops reference it as `../CODE-POLICIES.md` — the `w/loops/` tree is installed intact on every host (chassis § *Reference resolution*).

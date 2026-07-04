@@ -25,7 +25,7 @@ For scoped, direct tasks that do not justify going through SPEC or PLAN. Creates
 
 `quick-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
 
-1. **Read** `../loops/quick-loop/SKILL.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
+1. **Read** `../loops/quick-loop/LOOP.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
 2. **Follow** its instructions taking `$ARGUMENTS` as the task: it evaluates the size gate, creates the light session, works with minimal ceremony (git-safe), escalates if the task exceeds or grows (SPEC live / PLAN deferred), and reports.
 
 > Do not try `Skill: quick-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
@@ -34,9 +34,9 @@ For scoped, direct tasks that do not justify going through SPEC or PLAN. Creates
 
 - Edits code in the workspace sources.
 - Minimal session artifacts (lazy DECISION, proposed commit).
-- **Proportional closing review gate** before proposing the single commit: re-reads the diff applying the installed ambient conventions and fixes or defers (see `../loops/quick-loop/SKILL.md` § *Sequence*).
+- **Proportional closing review gate** before proposing the single commit: re-reads the diff applying the installed ambient conventions and fixes or defers (see `../loops/quick-loop/LOOP.md` § *Sequence*).
 - **Never touches `docs/`** and exports nothing.
-- **Escalates** when complexity emerges — **entry size gate** (before creating the session) and mid-loop (many files, ≥2 sources, needs architecture, or the change is a feature/refactor). Accepting **SPEC** = **live** transition into the SPEC flow (draft via the spec-new procedure + spec-refine-loop); **PLAN** stays seeded for later. See `../loops/quick-loop/SKILL.md` § *QUICK delta*.
+- **Escalates** when complexity emerges — **entry size gate** (before creating the session) and mid-loop (many files, ≥2 sources, needs architecture, or the change is a feature/refactor). Accepting **SPEC** = **live** transition into the SPEC flow (draft via the spec-new procedure + spec-refine-loop); **PLAN** stays seeded for later. See `../loops/quick-loop/LOOP.md` § *QUICK delta*.
 
 ## Plan mode
 
@@ -44,5 +44,5 @@ The skill describes the changes it would apply and the files it would touch, wit
 
 ## Resources
 
-- Loop skill: `../loops/quick-loop/SKILL.md`
+- Loop manual: `../loops/quick-loop/LOOP.md`
 - Design reference: `docs/referencias/workflow-commands/quick.md`

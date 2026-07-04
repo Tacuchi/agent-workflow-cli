@@ -1,6 +1,6 @@
 # NNN-SPEC-<SLUG>.md — design SPEC (UI)
 
-> What it is: the **design specification of ONE screen** (modal, dashboard, form, …), produced by composing the **`ui-design`** capability (built-in default [`ui-spec`](../../roles/ui-spec/SKILL.md)) when the **plan includes UI**. It is a **session artifact** of the PLAN loops (`plan-new-loop` · `plan-refine-loop`) — process-facing, internal — and `plan-exec-loop` reads it as the **design reference** when implementing the UI tasks.
+> What it is: the **design specification of ONE screen** (modal, dashboard, form, …), produced by composing the **`ui-design`** capability (built-in default [`ui-spec`](../../roles/ui-spec/ROLE.md)) when the **plan includes UI**. It is a **session artifact** of the PLAN loops (`plan-new-loop` · `plan-refine-loop`) — process-facing, internal — and `plan-exec-loop` reads it as the **design reference** when implementing the UI tasks.
 >
 > **It is NOT the spec.** The requirement-spec (`docs/specs/NNN-spec-<slug>.md`) and the plan remain **documents** (invariant 3). The design SPEC is a different thing: the per-screen UI design detail, ephemeral and process-facing, living inside the session. Spelling disambiguates: `SPEC` (UPPERCASE, artifact) vs `spec` (lowercase, document).
 
@@ -16,7 +16,7 @@ Examples: `001-SPEC-MODAL-EXPORT.md` · `002-SPEC-ADMIN-DASHBOARD.md`.
 
 ## Schema
 
-Trace header (blockquote) + the [`ui-spec`](../../roles/ui-spec/SKILL.md) Markdown render (same structure, vocabulary and exact render rules; **a single screen**):
+Trace header (blockquote) + the [`ui-spec`](../../roles/ui-spec/ROLE.md) Markdown render (same structure, vocabulary and exact render rules; **a single screen**):
 
 ```markdown
 > Design SPEC · generated via the ui-design capability

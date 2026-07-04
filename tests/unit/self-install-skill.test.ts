@@ -125,22 +125,62 @@ async function makeFakeRepo(root: string, withFrontmatter = true): Promise<void>
   await writeFile(join(root, ".git/HEAD"), "ref: refs/heads/main\n", "utf8");
 }
 
-// Fixture para el flatten de hosts top-level (warp/oz): un sub-skill bajo
-// loops/ + docs .md hermanos compartidos a nivel de loops/ (como el
-// loops/CHASSIS.md real). README.md del parentDir NO debe copiarse y un
-// homónimo propio del sub-skill NO debe pisarse.
-async function seedFlattenFixture(root: string): Promise<void> {
+// Fixture de comandos del bundle: dos commands/*.md con el binding Claude
+// (frontmatter description/argument-hint/allowed-tools) + referencias
+// bundle-relativas `../…`, un README.md que NUNCA debe instalarse como
+// comando, y el árbol de loops (LOOP.md — no SKILL.md, no indexable).
+const QUICK_COMMAND = `---
+description: Lightweight shortcut for scoped work. Starts quick-loop.
+argument-hint: <prompt with the scoped task>
+allowed-tools:
+  [
+    "Bash",
+  ]
+---
+
+# quick — trampoline
+
+Read \`../loops/quick-loop/LOOP.md\` and follow it taking \`$ARGUMENTS\` as the task.
+`;
+
+async function seedCommandsFixture(root: string): Promise<void> {
+  await mkdir(join(root, "commands"), { recursive: true });
   await mkdir(join(root, "loops/quick-loop"), { recursive: true });
-  await writeFile(join(root, "loops/CHASSIS.md"), "# CHASSIS compartido\n", "utf8");
-  await writeFile(join(root, "loops/README.md"), "# loops readme\n", "utf8");
-  await writeFile(join(root, "loops/NOTES.md"), "# notes compartido\n", "utf8");
+  await writeFile(join(root, "commands/quick.md"), QUICK_COMMAND, "utf8");
   await writeFile(
-    join(root, "loops/quick-loop/SKILL.md"),
+    join(root, "commands/status.md"),
+    '---\ndescription: Read-only dashboard with "quotes" and \\backslash.\n---\n\n# status\n\nRun `aw status` with `$ARGUMENTS`.\nBody edge cases: path C:\\temp and a """triple""" run.\n',
+    "utf8",
+  );
+  await writeFile(join(root, "commands/README.md"), "# commands index\n", "utf8");
+  await writeFile(
+    join(root, "loops/quick-loop/LOOP.md"),
     "---\nname: quick-loop\ndescription: Quick loop.\n---\n\n# quick-loop\n",
     "utf8",
   );
-  await writeFile(join(root, "loops/quick-loop/NOTES.md"), "# notes propio\n", "utf8");
 }
+
+describe("splitCommandDoc", () => {
+  it("parses plain, quoted and block-scalar descriptions", async () => {
+    const { splitCommandDoc } = await import("../../src/application/self/install-skill.js");
+    expect(splitCommandDoc("---\ndescription: plain one\n---\n\nbody\n")).toEqual({
+      description: "plain one",
+      body: "body\n",
+    });
+    expect(
+      splitCommandDoc('---\ndescription: "quoted: with colon"\n---\n\nbody\n').description,
+    ).toBe("quoted: with colon");
+    expect(
+      splitCommandDoc(
+        "---\ndescription: >-\n  folded line one\n  and two\nargument-hint: x\n---\n\nbody\n",
+      ).description,
+    ).toBe("folded line one and two");
+    expect(splitCommandDoc("no frontmatter\n")).toEqual({
+      description: null,
+      body: "no frontmatter\n",
+    });
+  });
+});
 
 describe("selfInstallSkill", () => {
   let workdir: string;
@@ -255,45 +295,147 @@ describe("selfInstallSkill", () => {
     expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
   });
 
-  it("flatten (warp): w-quick-loop/ recibe los .md hermanos compartidos (CHASSIS.md) sin pisar homónimos", async () => {
-    await seedFlattenFixture(source);
+  it("skill-as-command (codex): sintetiza w-<cmd>/SKILL.md con refs reescritas y barre w-* previos", async () => {
+    await seedCommandsFixture(source);
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
+    // Resto del modelo anterior (flatten de loops ≤v18) que debe barrerse:
+    // fingerprint = dir `w-<name>` con frontmatter `name: <name>`.
+    await mkdir(join(home, ".codex/skills/w-quick-loop"), { recursive: true });
+    await writeFile(
+      join(home, ".codex/skills/w-quick-loop/SKILL.md"),
+      "---\nname: quick-loop\ndescription: stale flatten copy\n---\n",
+      "utf8",
+    );
+    // Skill AJENA cuyo nombre solo comparte el prefijo (name == dir): se preserva.
+    await mkdir(join(home, ".codex/skills/w-scraper"), { recursive: true });
+    await writeFile(
+      join(home, ".codex/skills/w-scraper/SKILL.md"),
+      "---\nname: w-scraper\ndescription: user skill\n---\n",
+      "utf8",
+    );
+    // Dir de comandos inerte escrito por ≤v18 — Codex nunca lo leyó; se limpia.
+    await mkdir(join(home, ".codex/commands/w"), { recursive: true });
+    await writeFile(join(home, ".codex/commands/w/quick.md"), "stale\n", "utf8");
 
-    const result = await selfInstallSkill(buildArgs({ from: source, target: "warp" }, []), ctx);
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "codex" }, []), ctx);
 
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
-      // Solo el sub-skill directorio se aplana; CHASSIS.md (archivo) no cuenta.
-      expect(result.data.dests[0]?.flattened_subskills).toBe(1);
-      expect(result.data.dests[0]?.flattened_warnings).toBeUndefined();
+      const dest = result.data.dests[0];
+      expect(dest?.command_skills).toBe(2); // quick + status; README excluido
+      expect(dest?.command_skills_warnings).toBeUndefined();
+      // No hay commands dir en Codex: instala skills sintetizadas y lo explica.
+      expect(dest?.user_commands_dest).toBeUndefined();
+      expect(dest?.user_commands_warning).toContain("skill-as-command");
+      expect(dest?.cleaned_legacy).toContain(join(home, ".codex/commands/w"));
     }
 
-    const flatDir = join(home, ".warp/skills", "w-quick-loop");
-    const skill = await readFile(join(flatDir, "SKILL.md"), "utf8");
-    expect(skill).toContain("name: quick-loop");
-    // Doc compartido copiado junto al SKILL.md — la referencia tolerante
-    // "CHASSIS.md junto a este archivo" resuelve en la instalación aplanada.
-    const chassis = await readFile(join(flatDir, "CHASSIS.md"), "utf8");
-    expect(chassis).toBe("# CHASSIS compartido\n");
-    // Homónimo del sub-skill NO se pisa con el hermano compartido.
-    const notes = await readFile(join(flatDir, "NOTES.md"), "utf8");
-    expect(notes).toBe("# notes propio\n");
-    // README.md del parentDir queda excluido.
-    expect(await fs.exists(join(flatDir, "README.md"))).toBe(false);
+    const synth = await readFile(join(home, ".codex/skills/w-quick/SKILL.md"), "utf8");
+    expect(synth).toContain("name: w-quick");
+    expect(synth).toContain("Lightweight shortcut for scoped work");
+    // Referencia bundle-relativa reescrita para resolver desde la skill hermana.
+    expect(synth).toContain("../w/loops/quick-loop/LOOP.md");
+    expect(synth).not.toContain("`../loops/");
+    // El wrapper explica el binding de $ARGUMENTS para hosts sin sustitución.
+    expect(synth).toContain("$ARGUMENTS");
+    // Barrido con propiedad: el flatten viejo desaparece, la skill ajena
+    // `w-scraper` se preserva; el bundle queda intacto.
+    expect(await fs.exists(join(home, ".codex/skills/w-quick-loop"))).toBe(false);
+    expect(await fs.exists(join(home, ".codex/skills/w-scraper"))).toBe(true);
+    expect(await fs.exists(join(home, ".codex/skills/w/loops/quick-loop/LOOP.md"))).toBe(true);
+    expect(await fs.exists(join(home, ".codex/commands/w"))).toBe(false);
+
+    // Re-instalar barre y regenera los wrappers propios (marker) sin tocar lo ajeno.
+    const again = await selfInstallSkill(
+      buildArgs({ from: source, target: "codex" }, ["--force"]),
+      ctx,
+    );
+    expect(again.ok).toBe(true);
+    expect(await fs.exists(join(home, ".codex/skills/w-quick/SKILL.md"))).toBe(true);
+    expect(await fs.exists(join(home, ".codex/skills/w-scraper"))).toBe(true);
   });
 
-  it("flatten (oz): mismo comportamiento — CHASSIS.md junto al sub-skill aplanado", async () => {
-    await seedFlattenFixture(source);
+  it("--skill-only omite los wrappers: ni skills sintetizadas (codex) ni commands dir (claude)", async () => {
+    await seedCommandsFixture(source);
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
 
-    const result = await selfInstallSkill(buildArgs({ from: source, target: "oz" }, []), ctx);
+    const codex = await selfInstallSkill(
+      buildArgs({ from: source, target: "codex" }, ["--skill-only"]),
+      ctx,
+    );
+    const claude = await selfInstallSkill(
+      buildArgs({ from: source, target: "claude" }, ["--skill-only"]),
+      ctx,
+    );
 
-    expect(result.ok).toBe(true);
-    const flatDir = join(home, ".agents/skills", "w-quick-loop");
-    expect(await fs.exists(join(flatDir, "SKILL.md"))).toBe(true);
-    expect(await fs.exists(join(flatDir, "CHASSIS.md"))).toBe(true);
+    expect(codex.ok).toBe(true);
+    expect(claude.ok).toBe(true);
+    if (codex.ok && codex.data) {
+      expect(codex.data.dests[0]?.command_skills).toBeUndefined();
+    }
+    expect(await fs.exists(join(home, ".codex/skills/w"))).toBe(true);
+    expect(await fs.exists(join(home, ".codex/skills/w-quick"))).toBe(false);
+    expect(await fs.exists(join(home, ".claude/commands/w"))).toBe(false);
+  });
+
+  it("skill-as-command (warp + oz): mismas skills sintetizadas junto al bundle", async () => {
+    await seedCommandsFixture(source);
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+
+    const warp = await selfInstallSkill(buildArgs({ from: source, target: "warp" }, []), ctx);
+    const oz = await selfInstallSkill(buildArgs({ from: source, target: "oz" }, []), ctx);
+
+    expect(warp.ok).toBe(true);
+    expect(oz.ok).toBe(true);
+    expect(await fs.exists(join(home, ".warp/skills/w-quick/SKILL.md"))).toBe(true);
+    expect(await fs.exists(join(home, ".agents/skills/w-status/SKILL.md"))).toBe(true);
+  });
+
+  it("native wrappers: gemini TOML ({{args}}), opencode description-only, crush body-only", async () => {
+    await seedCommandsFixture(source);
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+
+    for (const target of ["gemini", "opencode", "crush"]) {
+      const result = await selfInstallSkill(buildArgs({ from: source, target }, []), ctx);
+      expect(result.ok).toBe(true);
+    }
+
+    // Gemini: /w:quick vía ~/.gemini/commands/w/quick.toml, $ARGUMENTS → {{args}}.
+    const toml = await readFile(join(home, ".gemini/commands/w/quick.toml"), "utf8");
+    expect(toml).toContain(
+      'description = "Lightweight shortcut for scoped work. Starts quick-loop."',
+    );
+    expect(toml).toContain('prompt = """');
+    expect(toml).toContain("{{args}}");
+    expect(toml).not.toContain("$ARGUMENTS");
+    // Escapes TOML: comillas y backslash de la description sobreviven.
+    const statusToml = await readFile(join(home, ".gemini/commands/w/status.toml"), "utf8");
+    expect(statusToml).toContain(
+      'description = "Read-only dashboard with \\"quotes\\" and \\\\backslash."',
+    );
+    // Y en el CUERPO (multi-line basic string): backslash escapado y toda
+    // corrida de `"""` neutralizada para no cerrar el string.
+    expect(statusToml).toContain("path C:\\\\temp");
+    expect(statusToml).toContain('""\\"triple""\\"');
+
+    // OpenCode: /w/quick vía ~/.opencode/command/w/quick.md — solo description
+    // en el frontmatter (sin claves del binding Claude), $ARGUMENTS nativo.
+    const oc = await readFile(join(home, ".opencode/command/w/quick.md"), "utf8");
+    expect(oc).toContain("description: Lightweight shortcut");
+    expect(oc).not.toContain("allowed-tools");
+    expect(oc).toContain("$ARGUMENTS");
+
+    // Crush: user:w:quick vía ~/.crush/commands/w/quick.md — sin frontmatter.
+    const crush = await readFile(join(home, ".crush/commands/w/quick.md"), "utf8");
+    expect(crush.startsWith("# quick — trampoline")).toBe(true);
+    expect(crush).not.toContain("---");
+    expect(crush).toContain("$ARGUMENTS");
+    // README.md nunca se instala como comando.
+    expect(await fs.exists(join(home, ".crush/commands/w/README.md"))).toBe(false);
   });
 
   it("--target=oz installs only to ~/.agents/skills/", async () => {

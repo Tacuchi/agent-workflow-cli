@@ -60,7 +60,7 @@ In plan mode it **describes**, never writes: the resolved engine, the levels/sec
 
 **Read-only MCP** (optional, only with a data-model request and configuration): `\d <table>`, `SELECT count(*)`, FK relations for the `erDiagram`. With the cost guard.
 
-**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
+**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
 /w:export-diagrams [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
@@ -122,4 +122,4 @@ Functionally idempotent: each invocation takes the next `NNN`; it never overwrit
 - Design: `docs/referencias/workflow-exports/export-diagrams.md` · family: [`../README.md`](../README.md).
 - Composed capability: `diagrams` (built-in default; see `docs/referencias/workflow-roles/`).
 - Input: plan-doc `AS-IS`/`TO-BE`/`Impacted` (see `docs/plans`).
-- Siblings: [`../export-scripts/SKILL.md`](../export-scripts/SKILL.md) · [`../export-manuals/SKILL.md`](../export-manuals/SKILL.md) · [`../export-reports/SKILL.md`](../export-reports/SKILL.md).
+- Siblings: [`../export-scripts/EXPORT.md`](../export-scripts/EXPORT.md) · [`../export-manuals/EXPORT.md`](../export-manuals/EXPORT.md) · [`../export-reports/EXPORT.md`](../export-reports/EXPORT.md).

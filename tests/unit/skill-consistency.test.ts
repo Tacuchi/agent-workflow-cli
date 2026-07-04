@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DESCRIPTION_MAX } from "../../src/application/plugin-doctor/skills.js";
+import { SKILL_DIR_NAME, splitCommandDoc } from "../../src/application/self/install-skill.js";
 import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 
 // Consistency guards for the `w` skill bundle. These catch CROSS-SKILL drift —
@@ -37,6 +38,38 @@ async function bundleMdFiles(): Promise<string[]> {
   return all.map((f) => f.slice(SKILL_ROOT.length + 1));
 }
 
+describe("bundle shape — internals are manuals, not skills (multi-host ronda 2026-07)", () => {
+  // Codex/OpenCode/Crush scan skill roots RECURSIVELY (and OpenCode/Crush also
+  // cross-read ~/.claude/skills + ~/.agents/skills), so any nested SKILL.md in
+  // the bundle surfaces as a user-invocable skill on those hosts. The internal
+  // manuals are LOOP/ROLE/EXPORT/HARNESS.md precisely so that never happens.
+  it("the ONLY SKILL.md in the bundle is the root one", async () => {
+    const nested = (await bundleMdFiles()).filter((f) => f.endsWith("SKILL.md"));
+    expect(nested).toEqual([]);
+  });
+
+  it("root SKILL.md frontmatter name equals the install dir name (Crush rejects mismatches)", async () => {
+    const root = await readFile(join(SKILL_ROOT, "SKILL.md"), "utf8");
+    const fm = parseSkillFrontmatter(root);
+    expect(fm?.fields.name).toBe(SKILL_DIR_NAME);
+  });
+
+  it("every command yields a clean description through the installer's parser (all host wrappers depend on it)", async () => {
+    const commandsDir = join(SKILL_ROOT, "commands");
+    const offenders: string[] = [];
+    for (const entry of await readdir(commandsDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".md") || entry.name === "README.md") continue;
+      const { description } = splitCommandDoc(
+        await readFile(join(commandsDir, entry.name), "utf8"),
+      );
+      if (description === null || description.length === 0 || /^[>|'"]/.test(description)) {
+        offenders.push(`${entry.name}: ${JSON.stringify(description)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("SKILL consistency — cross-skill contracts", () => {
   it("the diagrams engine flag is `--engine` bundle-wide (never the legacy `--diagrams`)", async () => {
     // `export-diagrams` exposes `--engine mermaid|c4`; the `diagrams` role it
@@ -51,8 +84,8 @@ describe("SKILL consistency — cross-skill contracts", () => {
   });
 
   it("export-diagrams and the diagrams role agree on the engine contract (--engine, default mermaid)", async () => {
-    const role = await readFile(join(SKILL_ROOT, "roles/diagrams/SKILL.md"), "utf8");
-    const exp = await readFile(join(SKILL_ROOT, "exports/export-diagrams/SKILL.md"), "utf8");
+    const role = await readFile(join(SKILL_ROOT, "roles/diagrams/ROLE.md"), "utf8");
+    const exp = await readFile(join(SKILL_ROOT, "exports/export-diagrams/EXPORT.md"), "utf8");
     // Both must name the shared flag.
     expect(role).toContain("--engine");
     expect(exp).toContain("--engine");
@@ -61,11 +94,14 @@ describe("SKILL consistency — cross-skill contracts", () => {
     expect(exp).not.toMatch(/structurizr.{0,20}(default|por defecto)/i);
   });
 
-  it("every bundle SKILL.md respects the Agent Skills description cap the doctor enforces on third parties", async () => {
-    // On flatten hosts (warp/oz) every sub-skill description enters the per-session
-    // skill listing, so overflow is both a standard violation and a token tax.
-    const files = (await bundleMdFiles()).filter((f) => f.endsWith("SKILL.md"));
-    files.push("SKILL.md", join("harness", "SKILL.md"));
+  it("every bundle skill/manual description respects the Agent Skills cap the doctor enforces on third parties", async () => {
+    // The root SKILL.md description enters every host's skill listing; the
+    // internal manuals (LOOP/ROLE/EXPORT/HARNESS.md) keep skill-shaped
+    // frontmatter as metadata, so they honor the same standard cap.
+    const files = (await bundleMdFiles()).filter((f) =>
+      /(?:SKILL|LOOP|ROLE|EXPORT|HARNESS)\.md$/.test(f),
+    );
+    files.push("SKILL.md", join("harness", "HARNESS.md"));
     const offenders: string[] = [];
     for (const relpath of files) {
       const text = await readFile(join(SKILL_ROOT, relpath), "utf8");
@@ -83,21 +119,21 @@ describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec
   // Live QUICK→SPEC escalation spans three docs: quick-loop (the gate + live
   // transition), spec-new (the draft procedure it reuses) and spec-refine-loop
   // (the loop it hands off to). These pins keep the composing trio in agreement.
-  const QUICK_LOOP = "loops/quick-loop/SKILL.md";
+  const QUICK_LOOP = "loops/quick-loop/LOOP.md";
 
-  it("quick-loop names both escalation targets, in both layouts (normal tree + flattened w- prefix)", async () => {
+  it("quick-loop names both escalation targets (the loop tree is installed intact on every host)", async () => {
     const quick = await readFile(join(SKILL_ROOT, QUICK_LOOP), "utf8");
-    // The refs are load-bearing (the transition loads these docs), and the
-    // flattened spelling must survive for warp/oz installs where loops live
-    // as sibling `w-<loop>/` skills.
-    expect(quick).toContain("spec-refine-loop/SKILL.md");
+    // The refs are load-bearing (the transition loads these docs). Since the
+    // flatten model died (loops ship inside `w/` everywhere; commands are the
+    // synthesized skills), no flattened `w-<loop>` alias spelling may remain.
+    expect(quick).toContain("spec-refine-loop/LOOP.md");
     expect(quick).toContain("spec-new.md");
-    expect(quick).toContain("w-spec-refine-loop");
+    expect(quick).not.toContain("w-spec-refine-loop");
   });
 
   it("the escalation targets exist on disk (anti-rename guard)", async () => {
     await expect(
-      readFile(join(SKILL_ROOT, "loops/spec-refine-loop/SKILL.md"), "utf8"),
+      readFile(join(SKILL_ROOT, "loops/spec-refine-loop/LOOP.md"), "utf8"),
     ).resolves.toBeTruthy();
     await expect(readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8")).resolves.toBeTruthy();
   });
@@ -113,7 +149,7 @@ describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec
   });
 
   it("spec-refine-loop declares the quick escalation as a second Started-by path", async () => {
-    const refine = await readFile(join(SKILL_ROOT, "loops/spec-refine-loop/SKILL.md"), "utf8");
+    const refine = await readFile(join(SKILL_ROOT, "loops/spec-refine-loop/LOOP.md"), "utf8");
     const startedBy = refine.match(/## Started by[\s\S]*?(?=\n## )/)?.[0] ?? "";
     expect(startedBy).toMatch(/quick/);
     expect(startedBy).toMatch(/escalation/i);
@@ -184,7 +220,7 @@ describe("lazy workspace-init contract — code ↔ doctrine (spec 008)", () => 
 
   it("every export SKILL routes plan-mode numbering through `aw next-number --dry-run`", async () => {
     for (const name of ["export-scripts", "export-manuals", "export-diagrams", "export-reports"]) {
-      const skill = await readFile(join(SKILL_ROOT, `exports/${name}/SKILL.md`), "utf8");
+      const skill = await readFile(join(SKILL_ROOT, `exports/${name}/EXPORT.md`), "utf8");
       expect(skill, `${name} must use --dry-run in plan mode`).toContain(
         "aw next-number --dry-run",
       );

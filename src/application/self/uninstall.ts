@@ -9,12 +9,17 @@ import {
   LEGACY_SKILL_NAMES,
   SKILL_DIR_NAME,
   TARGET_ROOTS,
+  isOwnedSynthesizedDir,
 } from "./install-skill.js";
 
-// Hosts que reciben sub-skills flattened en install (ver install-skill.ts).
-// El uninstall debe limpiarlos por prefix para dejar el filesystem limpio.
-const FLATTEN_HOSTS: ReadonlySet<InstallTarget> = new Set(["warp", "oz"]);
-const FLATTEN_DEST_PREFIX = "agent-workflow-";
+// Hosts que reciben skills sintetizadas `w-<command>` en install (ver
+// install-skill.ts COMMAND_SKILLS_HOSTS). El uninstall las limpia SOLO con
+// propiedad verificada (marker del wrapper o fingerprint del flatten ≤v18) —
+// los roots son namespaces compartidos (ancla ~/.agents/skills, sueltas):
+// jamás se borra un dir ajeno por prefijo. `agent-workflow-` cubre el
+// modelo pre-rename.
+const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["codex", "warp", "oz"]);
+const SYNTHESIZED_SKILL_PREFIXES = ["w-", "agent-workflow-"] as const;
 
 export type UninstallTargetChoice = InstallTarget | "all";
 
@@ -48,13 +53,15 @@ const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"]
 
 const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
   claude: ".claude/commands/w",
+  // codex: `.codex/commands/w` fue escrito por ≤v18 pero Codex nunca lo leyó;
+  // se limpia siempre igual (dir inerte nuestro).
   codex: ".codex/commands/w",
   warp: null,
   oz: null,
   agents: null,
-  gemini: null,
-  opencode: null,
-  crush: null,
+  gemini: ".gemini/commands/w",
+  opencode: ".opencode/command/w",
+  crush: ".crush/commands/w",
 };
 
 // Pre-`w`-rename user-commands dirs (`/agent-workflow:*`), removed with `--legacy`.
@@ -155,8 +162,10 @@ async function uninstallOneTarget(
 ): Promise<UninstallStep[]> {
   const steps: UninstallStep[] = [];
   steps.push(...(await removeSkill(ctx, home, target, flags.includeLegacy, flags.dryRun)));
-  steps.push(...(await removeFlattenedSubSkills(ctx, home, target, flags.dryRun)));
   if (!flags.skipCommands) {
+    // Synthesized w-* wrappers ARE the command surface on codex/warp/oz —
+    // gated like the native command dirs (mirror of installOneTarget).
+    steps.push(...(await removeSynthesizedCommandSkills(ctx, home, target, flags.dryRun)));
     steps.push(...(await removeUserCommands(ctx, home, target, flags.includeLegacy, flags.dryRun)));
   }
   if (flags.withHooks && !flags.skillOnly) {
@@ -166,13 +175,13 @@ async function uninstallOneTarget(
   return steps;
 }
 
-async function removeFlattenedSubSkills(
+async function removeSynthesizedCommandSkills(
   ctx: CliContext,
   home: string,
   target: InstallTarget,
   dryRun: boolean,
 ): Promise<UninstallStep[]> {
-  if (!FLATTEN_HOSTS.has(target)) return [];
+  if (!COMMAND_SKILLS_HOSTS.has(target)) return [];
   const targetRoot = join(home, ...TARGET_ROOTS[target]);
   if (!(await ctx.fs.exists(targetRoot))) return [];
   let entries: import("node:fs").Dirent[];
@@ -184,8 +193,10 @@ async function removeFlattenedSubSkills(
   const steps: UninstallStep[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    if (!entry.name.startsWith(FLATTEN_DEST_PREFIX)) continue;
+    const prefix = SYNTHESIZED_SKILL_PREFIXES.find((p) => entry.name.startsWith(p));
+    if (prefix === undefined) continue;
     const path = join(targetRoot, entry.name);
+    if (!(await isOwnedSynthesizedDir(path, prefix))) continue;
     if (!dryRun) await rm(path, { recursive: true, force: true });
     steps.push({
       target,

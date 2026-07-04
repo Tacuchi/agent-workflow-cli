@@ -46,7 +46,7 @@ And **always** forbidden, even when the user asks for a commit: `--no-verify` (r
 
 ### Read-only operations (always allowed, no asking)
 
-`status` · `log` · `diff` · `branch --show-current` · `rev-parse` · `show`. `git checkout` (branch switch) is **not** read-only: it requires *structured-choice* (canonical rule: `../../loops/CHASSIS.md` § *Structured-choice*; per-harness binding: `../../harness/SKILL.md`) even though it is not destructive (see branch verification).
+`status` · `log` · `diff` · `branch --show-current` · `rev-parse` · `show`. `git checkout` (branch switch) is **not** read-only: it requires *structured-choice* (canonical rule: `../../loops/CHASSIS.md` § *Structured-choice*; per-harness binding: `../../harness/HARNESS.md`) even though it is not destructive (see branch verification).
 
 ### Branch verification (before editing)
 

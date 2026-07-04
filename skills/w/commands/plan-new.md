@@ -35,7 +35,7 @@ The skill evaluates `$ARGUMENTS` (specs live in place — `docs/specs/NNN-spec-<
 
 `plan-new-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
 
-1. **Read** `../loops/plan-new-loop/SKILL.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
+1. **Read** `../loops/plan-new-loop/LOOP.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
 2. **Follow** its instructions taking `$ARGUMENTS` as input (resolved per the 3 rules above): it detects state/resume, runs the gap-driven engine, creates and manages sessions, converges and reports.
 
 > Do not try `Skill: plan-new-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
@@ -46,7 +46,7 @@ The plan is named `docs/plans/PPP-plan-<slug>.md`. `aw next-number docs/plans` r
 
 ## UI → design SPECs
 
-If the plan **includes UI**, the loop composes the `ui-design` capability and produces per-screen **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts of its session — the plan's UI Tasks reference them (see `../loops/plan-new-loop/SKILL.md` § *Delta 4* and `../artifacts/artifacts-design/SPEC.md`).
+If the plan **includes UI**, the loop composes the `ui-design` capability and produces per-screen **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts of its session — the plan's UI Tasks reference them (see `../loops/plan-new-loop/LOOP.md` § *Delta 4* and `../artifacts/artifacts-design/SPEC.md`).
 
 ## Plan mode
 
@@ -54,5 +54,5 @@ The skill resolves the input per the 3 rules above and describes the loop action
 
 ## Resources
 
-- Loop skill: `../loops/plan-new-loop/SKILL.md`
+- Loop manual: `../loops/plan-new-loop/LOOP.md`
 - Design reference: `docs/referencias/workflow-commands/plan-new.md`

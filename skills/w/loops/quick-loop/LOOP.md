@@ -59,7 +59,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
   - **Anti-duplicate** (the `create_or_resume` spirit): if a spec whose `## Origin` references this same objective already exists (or an equivalent `*-spec-refine` session), the recommended option becomes **resuming that spec** (`/w:spec-refine` semantics) — never a second draft.
 - **Live transition to SPEC** (shared by the gate and mid-loop escalation). On acceptance, the work line **moves to the SPEC flow**: the explicit consent in the structured-choice **equals invoking the destination command** (*consented exception* — rule 3 of the *Continuity rule*, [`../../SKILL.md`](../../SKILL.md) § *Operating context*). On the SPEC side:
   1. **Materialize the draft** via the [`../../commands/spec-new.md`](../../commands/spec-new.md) procedure: `aw next-number docs/specs`, slug, schema, single-pass **NO RESEARCH**. `## Origin` = "escalated from `/w:quick`" + the original prompt (+ the origin quick session if it exists).
-  2. **Load and execute** [`../spec-refine-loop/SKILL.md`](../spec-refine-loop/SKILL.md) — flattened: `../w-spec-refine-loop/SKILL.md` — over that spec (trampoline pattern).
+  2. **Load and execute** [`../spec-refine-loop/LOOP.md`](../spec-refine-loop/LOOP.md) — over that spec (trampoline pattern).
   3. The run's session is that loop's **normal** `NNN-<slug>-spec-refine` (the CLI numbers it; its `## Origin` records the escalation). **Invariant 2 intact**: quick, while it is quick, never writes `docs/` — the draft is written by the SPEC flow, post-consent.
 - **Mid-loop escalation + handoff**: if the task grows (same gate signals) → propose moving up to **SPEC/PLAN** (structured-choice, recommendation first). If the user accepts:
   1. The **already-edited code stays** in the working tree (never reverted) and is **recorded** in `CHECKPOINT` + `BACKLOG`: "uncommitted changes in `<source>` — decide commit/discard on resume" (the "rejected commit" pattern, [`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Safe git*).
@@ -87,7 +87,7 @@ quick-loop(prompt):
     structured_choice(content: [Cambiar a SPEC (recommended), Seguir en quick, Recortar alcance],
                       flow: [Compactar, Cerrar])           # Cerrar here = abort (nothing created yet)
     Cambiar a SPEC   → live transition (see delta): draft (spec-new procedure) +
-                       load and execute ../spec-refine-loop/SKILL.md → END (no quick session)
+                       load and execute ../spec-refine-loop/LOOP.md → END (no quick session)
     Recortar alcance → objective = the proposed sub-task; the rest → BACKLOG when the session is created
     Seguir en quick  → continue
   s = create_or_resume("<slug>-quick")      # CLI prepends global NNN; always a light session

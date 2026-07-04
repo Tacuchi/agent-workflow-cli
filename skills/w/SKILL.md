@@ -1,5 +1,5 @@
 ---
-name: workflow
+name: w
 description: >-
   Orientation skill for the whole agent-workflow harness — built-in default for the
   `overview` role. Load this to understand the model end-to-end: the 3-layer
@@ -11,7 +11,7 @@ description: >-
   skill to reach for.
 ---
 
-# workflow — agent-workflow overview
+# w — agent-workflow overview
 
 ## Role
 
@@ -65,7 +65,7 @@ USER invokes
 
 Typical chain: prompt → `spec-new` generates `docs/specs/NNN-spec-<slug>.md` → `spec-refine` runs the loop and refines **that same spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(optional)* `plan-refine` adjusts **that same plan in place** if changes arise before executing → `plan-exec` executes and updates the plan (living doc) + artifacts in sessions. Promoting anything else to `docs/` is **always** a separate step via `export-*`.
 
-QUICK can **escalate live to SPEC** when the objective exceeds a quick (entry size gate) or the task grows mid-loop: with consent via structured-choice, the work line moves to the SPEC flow (draft via the `spec-new` procedure + `spec-refine-loop` directly); escalation to PLAN stays **deferred** (seed + pointer). See `loops/quick-loop/SKILL.md` § *QUICK delta*.
+QUICK can **escalate live to SPEC** when the objective exceeds a quick (entry size gate) or the task grows mid-loop: with consent via structured-choice, the work line moves to the SPEC flow (draft via the `spec-new` procedure + `spec-refine-loop` directly); escalation to PLAN stays **deferred** (seed + pointer). See `loops/quick-loop/LOOP.md` § *QUICK delta*.
 
 ### Operating context — where everything lands
 
@@ -87,7 +87,7 @@ Before any loop, the AI resolves its **operating context** on **every prompt** w
 5. Only if the prompt is clearly **unrelated**: offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to "no flow".
 6. **Convergence closes** the session; a later related prompt **reopens** it (resume removes `.closed`).
 
-It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+resume, applied to the next prompt) — agnostic doctrine, not a host hook. It applies to **every artifact** (`SCRIPTS.sql` is the worked example; QUICK case: `loops/quick-loop/SKILL.md`).
+It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+resume, applied to the next prompt) — agnostic doctrine, not a host hook. It applies to **every artifact** (`SCRIPTS.sql` is the worked example; QUICK case: `loops/quick-loop/LOOP.md`).
 
 ### The commands (`/w:` namespace)
 
@@ -151,7 +151,7 @@ Role catalog and defaults:
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `research` | `research` | should | every loop (inline capability) |
 | `diagrams` | `diagrams` | should | `export-diagrams` |
-| `overview` | `workflow` | should | anyone (orientation) |
+| `overview` | `w` | should | anyone (orientation) |
 
 > **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — the workflow neither binds nor depends on them. Full doctrine: [roles/README.md](roles/README.md).
 
@@ -159,7 +159,7 @@ The **loop chassis** is NOT bound: it is the common engine of the 5 loops ([`loo
 
 ### Harness (harness-agnostic)
 
-The doctrine names abstract **capabilities**, never a concrete harness tool. A single doc —`harness/SKILL.md`— binds each capability to each harness's mechanism (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp, generic). Two principles: **capability-not-tool** (loops/commands reference the capability by name) and **progressive-enhancement** (use the harness's richest mechanism; degrade to a universal fallback when it does not exist).
+The doctrine names abstract **capabilities**, never a concrete harness tool. A single doc —`harness/HARNESS.md`— binds each capability to each harness's mechanism (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp, generic). Two principles: **capability-not-tool** (loops/commands reference the capability by name) and **progressive-enhancement** (use the harness's richest mechanism; degrade to a universal fallback when it does not exist).
 
 Key capabilities:
 
@@ -167,7 +167,7 @@ Key capabilities:
 - **compaction** — shrink the context without losing the thread. Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
 - **command-invocation** · **procedure-loading** · **subagent-dispatch** (opt.) · **persistent-context** · **external-data** (MCP) · **dry-run/preview**.
 
-The only `must` capabilities for a loop's cycle are **structured-choice** and **compaction**, and both degrade to text → any harness with chat + files runs the full model. Detail, binding matrix and distribution (canonical `AGENTS.md` + `CLAUDE.md` symlink): see `harness/SKILL.md`.
+The only `must` capabilities for a loop's cycle are **structured-choice** and **compaction**, and both degrade to text → any harness with chat + files runs the full model. Detail, binding matrix and distribution (canonical `AGENTS.md` + `CLAUDE.md` symlink): see `harness/HARNESS.md`.
 
 ### Language policy (per surface)
 

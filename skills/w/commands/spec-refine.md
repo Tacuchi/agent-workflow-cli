@@ -25,7 +25,7 @@ This command does not refine the spec itself: it delegates to `spec-refine-loop`
 
 `spec-refine-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
 
-1. **Read** `../loops/spec-refine-loop/SKILL.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
+1. **Read** `../loops/spec-refine-loop/LOOP.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
 2. **Follow** its instructions taking `$ARGUMENTS` as input: it detects state/resume, runs the gap-driven engine, creates and manages sessions, converges and reports.
 
 > Do not try `Skill: spec-refine-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
@@ -47,5 +47,5 @@ The skill resolves the state and describes the actions the loop would run (gaps 
 
 ## Resources
 
-- Loop skill: `../loops/spec-refine-loop/SKILL.md`
+- Loop manual: `../loops/spec-refine-loop/LOOP.md`
 - Design reference: `docs/referencias/workflow-commands/spec-refine.md`
