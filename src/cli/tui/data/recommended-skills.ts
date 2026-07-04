@@ -89,4 +89,31 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
     source: "softaworks/agent-toolkit",
     description: "Evaluate SKILL.md design quality.",
   },
+  // Stack gaps (research 001) — on-stack coverage the QTC plugins do not provide
+  {
+    name: "spring-boot-testing",
+    source: "github/awesome-copilot",
+    description: "Spring Boot testing: slices, MockMvc, DataJpaTest, Testcontainers.",
+  },
+  {
+    name: "postgresql-optimization",
+    source: "github/awesome-copilot",
+    description: "Postgres query performance: EXPLAIN, indexing, pagination anti-patterns.",
+  },
+  {
+    name: "prometheus",
+    source: "grafana/skills",
+    description: "PromQL, metrics and alerting for Prometheus at runtime.",
+  },
+  // Agent behavior (research 002) — portable behaviors the harness doctrine does not enforce
+  {
+    name: "condition-based-waiting",
+    source: "obra/superpowers-skills",
+    description: "Forbid guessed sleep(); poll the actual state with a bounded timeout.",
+  },
+  {
+    name: "filesystem-context",
+    source: "muratcankoylan/agent-skills-for-context-engineering",
+    description: "Offload context to files and re-read on demand to keep the window lean.",
+  },
 ] as const;
