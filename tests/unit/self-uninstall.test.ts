@@ -340,6 +340,28 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     }
   });
 
+  it("sweeps the synthesized w-* wrappers on gemini (agy Shared tier) with ownership proof", async () => {
+    const ctx = buildCtx(home, fs);
+    const geminiRoot = join(home, ...TARGET_ROOTS.gemini);
+    const synth = join(geminiRoot, "w-quick");
+    const foreign = join(geminiRoot, "w-mia"); // skill del usuario — se preserva
+    await seedDir(skillDir(home, "gemini"));
+    await mkdir(synth, { recursive: true });
+    await writeFile(
+      join(synth, "SKILL.md"),
+      `---\nname: w-quick\ndescription: x\n---\n\n> ${COMMAND_SKILL_MARKER}. …\n`,
+      "utf8",
+    );
+    await mkdir(foreign, { recursive: true });
+    await writeFile(join(foreign, "SKILL.md"), "---\nname: w-mia\ndescription: x\n---\n", "utf8");
+
+    const result = await selfUninstall(buildArgs({ target: "gemini" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(synth)).toBe(false);
+    expect(await fs.exists(foreign)).toBe(true);
+  });
+
   it("removes user-commands by default but keeps them with --skill-only", async () => {
     const ctx = buildCtx(home, fs);
     await seedDir(skillDir(home, "claude"));

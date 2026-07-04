@@ -129,12 +129,24 @@ export const HARNESSES: readonly HarnessSpec[] = [
     installTarget: "warp",
   },
   {
-    // Gemini CLI + Antigravity CLI (successor; reuses ~/.gemini/). envMarkers are
-    // best-effort (detection also keys off the ~/.gemini config dir); Antigravity
-    // markers are treated as a Gemini alias. MCP in settings.json (mcpServers,
-    // Claude-compatible shape). Skills = open agentskills standard.
+    // Gemini CLI (deprecated mid-2026) + Antigravity CLI (`agy`, successor;
+    // reuses ~/.gemini/). agy 1.0.16 (verified vs binary + bundled
+    // agy-customizations doc): NO user commands — slash commands are
+    // system-only, the ~/.gemini/commands/*.toml dir is legacy Gemini CLI
+    // only; skills are the invocable unit, tiers Workspace <repo>/.agents/
+    // skills · Global ~/.gemini/antigravity-cli/skills · Shared
+    // ~/.gemini/skills (agy does NOT read user-level ~/.agents/skills).
+    // ANTIGRAVITY_* markers are the env vars agy exports to subprocesses.
+    // MCP in settings.json (mcpServers, Claude-compatible shape).
     id: "gemini",
-    envMarkers: ["GEMINI_CLI", "GEMINI_SANDBOX", "ANTIGRAVITY", "ANTIGRAVITY_CLI"],
+    envMarkers: [
+      "GEMINI_CLI",
+      "GEMINI_SANDBOX",
+      "ANTIGRAVITY",
+      "ANTIGRAVITY_CLI",
+      "ANTIGRAVITY_CONVERSATION_ID",
+      "ANTIGRAVITY_PROJECT_ID",
+    ],
     mcpHostId: "gemini",
     globalMcpPaths: {
       darwin: { stable: "~/.gemini/settings.json" },

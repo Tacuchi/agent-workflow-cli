@@ -18,7 +18,7 @@ import {
 // los roots son namespaces compartidos (ancla ~/.agents/skills, sueltas):
 // jamás se borra un dir ajeno por prefijo. `agent-workflow-` cubre el
 // modelo pre-rename.
-const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["codex", "warp", "oz"]);
+const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["codex", "warp", "oz", "gemini"]);
 const SYNTHESIZED_SKILL_PREFIXES = ["w-", "agent-workflow-"] as const;
 
 export type UninstallTargetChoice = InstallTarget | "all";

@@ -51,7 +51,7 @@ By default the CLI clears the target host's plugin cache before installing (opt 
 | `warp` | `~/.warp/skills/w/` | synthesized skills `~/.warp/skills/w-<n>/` → `/w-<n>` | skipped (no hook system) |
 | `oz` | `~/.agents/skills/w/` | synthesized skills `~/.agents/skills/w-<n>/` | skipped |
 | `agents` | `~/.agents/skills/w/` | skipped (shared dir, not a host) | skipped |
-| `gemini` | `~/.gemini/skills/w/` | `~/.gemini/commands/w/<n>.toml` → `/w:<n>` | skipped |
+| `gemini` | `~/.gemini/skills/w/` | synthesized skills `~/.gemini/skills/w-<n>/` (Antigravity `agy`) + `~/.gemini/commands/w/<n>.toml` → `/w:<n>` (legacy Gemini CLI) | skipped |
 | `opencode` | `~/.opencode/skills/w/` | `~/.opencode/command/w/<n>.md` → `/w/<n>` | skipped |
 | `crush` | `~/.crush/skills/w/` | `~/.crush/commands/w/<n>.md` → palette `user:w:<n>` | skipped |
 

@@ -75,7 +75,12 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
 // Codex reads NO commands dir and its custom prompts are deprecated/removed
 // (verified vs openai/codex rust-v0.142.5 source, 2026-07); Warp/Oz derive
 // slash commands from the `name:` frontmatter of each top-level SKILL.md.
-const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["codex", "warp", "oz"]);
+// Gemini's successor Antigravity CLI (agy 1.0.16, verified vs its binary +
+// bundled agy-customizations doc, 2026-07) dropped user commands entirely —
+// slash commands are system-only and skills are the only user-installable
+// invocable unit; it reads ~/.gemini/skills as its "Shared" tier, so the
+// synthesized wrappers land next to the bundle there.
+const COMMAND_SKILLS_HOSTS: ReadonlySet<InstallTarget> = new Set(["codex", "warp", "oz", "gemini"]);
 // Exportado: es el namespace del bundle en los skill roots — el scan de sueltas
 // (skills-manager.listSkills) lo excluye para no listar `w-*` como unmanaged.
 export const COMMAND_SKILL_PREFIX = "w-";
@@ -101,6 +106,8 @@ const USER_COMMANDS_BY_TARGET: Record<InstallTarget, UserCommandsSpec | null> = 
   warp: null,
   oz: null,
   agents: null,
+  // Legacy Gemini CLI compat only — Antigravity (agy) ignores this dir; its
+  // command surface is the synthesized `w-*` skills (COMMAND_SKILLS_HOSTS).
   gemini: { relpath: ".gemini/commands/w", format: "gemini-toml" },
   opencode: { relpath: ".opencode/command/w", format: "opencode-md" },
   crush: { relpath: ".crush/commands/w", format: "crush-md" },

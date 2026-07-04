@@ -49,7 +49,7 @@ Concrete mechanism per harness (**Jul-2026**, verified against official docs; `~
 
 | Capability | Claude Code | Codex | Gemini / Antigravity | OpenCode | Crush | Warp / Oz | Generic |
 |---|---|---|---|---|---|---|---|
-| command-invocation | `.claude/commands/` (slash) | skills only (`$` mention; no commands dir, prompts removed) | `.gemini/commands/*.toml` | `.opencode/command/` | `.crush/commands` (palette) + user-invocable skills | skills as `/name` | text |
+| command-invocation | `.claude/commands/` (slash) | skills only (`$` mention; no commands dir, prompts removed) | skills only in agy (system slash commands; `.gemini/commands/*.toml` = legacy Gemini CLI) | `.opencode/command/` | `.crush/commands` (palette) + user-invocable skills | skills as `/name` | text |
 | procedure-loading (skills) | `SKILL.md` `.claude/skills` | `SKILL.md` `.agents/skills` | `SKILL.md` (agentskills) | `SKILL.md` `.opencode`+`.claude`+`.agents` | `SKILL.md` `.agents`+`.crush`+`.claude` | `SKILL.md` `.agents`+`.warp`+`.claude` | read-and-follow `.md` |
 | structured-choice | `AskUserQuestion` (**main-agent only**) | — | — | — | — | — | numbered markdown |
 | compaction | `/compact` | Pre/PostCompact hooks | ~ | `session.compacted` | ~ | ~ | CHECKPOINT + resume |
@@ -88,7 +88,7 @@ Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The *
 |---|---|---|
 | Claude Code | `~/.claude/commands/w/<cmd>.md` (frontmatter `description`/`argument-hint`/`allowed-tools`) | `/w:<cmd>` |
 | Codex | synthesized skill `~/.codex/skills/w-<cmd>/SKILL.md` (Codex reads no commands dir; custom prompts deprecated/removed since 0.14x) | `$w-<cmd>` mention |
-| Gemini/Antigravity | `~/.gemini/commands/w/<cmd>.toml` (`description` + `prompt`, `{{args}}`) | `/w:<cmd>` |
+| Gemini/Antigravity | synthesized skill `~/.gemini/skills/w-<cmd>/SKILL.md` (agy reads NO commands dir — slash commands are system-only; verified vs agy 1.0.16 binary) + `~/.gemini/commands/w/<cmd>.toml` kept for legacy Gemini CLI | skill (agy) · `/w:<cmd>` (legacy CLI) |
 | OpenCode | `~/.opencode/command/w/<cmd>.md` | `/w/<cmd>` |
 | Crush | `~/.crush/commands/w/<cmd>.md` (plain body — Crush parses no frontmatter) | palette `user:w:<cmd>` |
 | Warp/Oz | synthesized skill `w-<cmd>/SKILL.md` next to the bundle (Warp lists skills as `/name`) | `/w-<cmd>` |

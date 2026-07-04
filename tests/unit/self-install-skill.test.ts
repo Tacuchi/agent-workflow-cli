@@ -380,18 +380,25 @@ describe("selfInstallSkill", () => {
     expect(await fs.exists(join(home, ".claude/commands/w"))).toBe(false);
   });
 
-  it("skill-as-command (warp + oz): mismas skills sintetizadas junto al bundle", async () => {
+  it("skill-as-command (warp + oz + gemini): mismas skills sintetizadas junto al bundle", async () => {
     await seedCommandsFixture(source);
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
 
     const warp = await selfInstallSkill(buildArgs({ from: source, target: "warp" }, []), ctx);
     const oz = await selfInstallSkill(buildArgs({ from: source, target: "oz" }, []), ctx);
+    const gemini = await selfInstallSkill(buildArgs({ from: source, target: "gemini" }, []), ctx);
 
     expect(warp.ok).toBe(true);
     expect(oz.ok).toBe(true);
+    expect(gemini.ok).toBe(true);
     expect(await fs.exists(join(home, ".warp/skills/w-quick/SKILL.md"))).toBe(true);
     expect(await fs.exists(join(home, ".agents/skills/w-status/SKILL.md"))).toBe(true);
+    // Antigravity (agy) no lee ningún commands dir: su superficie de comandos
+    // son las skills sintetizadas en ~/.gemini/skills (tier "Shared"); el TOML
+    // queda solo como compat del Gemini CLI legacy.
+    expect(await fs.exists(join(home, ".gemini/skills/w-quick/SKILL.md"))).toBe(true);
+    expect(await fs.exists(join(home, ".gemini/commands/w/quick.toml"))).toBe(true);
   });
 
   it("native wrappers: gemini TOML ({{args}}), opencode description-only, crush body-only", async () => {
