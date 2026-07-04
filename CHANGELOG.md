@@ -4,6 +4,16 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.1.0] — 2026-07-04
+
+**5 skills externas recomendadas nuevas en la tab [Skills].** Curación con workflows multi-agente (descubrimiento + verificación adversarial de encaje/conflicto/portabilidad) sobre skills.sh, cruzada contra la cobertura interna (dev-conventions/qtc-conventions/harness). Detalle en `docs/research/001` (stack) y `002` (comportamiento) del proyecto agent-workflow. Bundle `w` sin cambios.
+
+### Added
+
+- **Seed `recommended-skills.ts` (+5)**, espejadas en el README del marketplace (§ Skills externas recomendadas):
+  - Stack: `github/awesome-copilot@spring-boot-testing`, `@postgresql-optimization`, `grafana/skills@prometheus`.
+  - Comportamiento: `obra/superpowers-skills@condition-based-waiting`, `muratcankoylan/agent-skills-for-context-engineering@filesystem-context`.
+
 ## [20.0.0] — 2026-07-04
 
 **Revisión final ponytail: −5.2k líneas netas sin cambio de conducta.** Auditoría de over-engineering de todo el proyecto (CLI + marketplace) con `/ponytail` + `/ponytail-review`: workflow de 16 finders × verificación adversarial (135 hallazgos confirmados) → aplicación en 8+6 agentes → segundo gate adversarial de 7 revisores buscando deriva de conducta que los tests no cachan. **204 archivos, +1.9k/−7.1k (neto −5.2k).** Suite 1049→**1099** (helpers de test compartidos + poda de tests redundantes), biome 36→**35 warnings**, tsc limpio. **BREAKING**: se retira la entrada de librería npm (`main`/`types`/`exports` + `src/index.ts` + tipos `domain/{session,project,plugin}.ts`) — el paquete es un CLI puro (bins `agent-workflow`/`aw`), sin consumidores programáticos conocidos; nada del uso por línea de comandos cambia. Bundle `w` **13.2.0** (limpieza de docs de doctrina).
