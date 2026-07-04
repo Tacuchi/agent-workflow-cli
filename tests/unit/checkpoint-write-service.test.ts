@@ -1,50 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { runCheckpointWrite } from "../../src/application/checkpoint-write-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
+import type { DirEntry } from "../../src/ports/file-system.js";
 import type { DiffNumstatEntry, GitPort } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
-class FakeEnv implements EnvPort {
-  get() {
-    return undefined;
+// Rebuilds the old FakeFs(files, dirs) shape on the shared MemFs: seed files and
+// explicit dir listings; `.writes` covers the write-overlay assertions.
+function makeFs(
+  files: Map<string, string> = new Map(),
+  dirs: Map<string, DirEntry[]> = new Map(),
+): MemFs {
+  const fs = new MemFs();
+  for (const [p, content] of files) fs.file(p, content);
+  for (const [dir, entries] of dirs) {
+    fs.dir(dir);
+    for (const e of entries) {
+      if (e.type === "dir") fs.dir(e.path);
+      else fs.file(e.path, files.get(e.path) ?? "");
+    }
   }
-  homeDir() {
-    return "/home/u";
-  }
-  cwd() {
-    return "/cwd";
-  }
-}
-
-class FakeFs implements FileSystemPort {
-  public writes: Map<string, string> = new Map();
-  constructor(
-    private files: Map<string, string> = new Map(),
-    private dirs: Map<string, DirEntry[]> = new Map(),
-  ) {}
-  async readText(p: string) {
-    if (this.writes.has(p)) return this.writes.get(p) ?? "";
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(p: string, content: string): Promise<void> {
-    this.writes.set(p, content);
-  }
-  async exists(p: string) {
-    return this.files.has(p) || this.dirs.has(p) || this.writes.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const v = this.dirs.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async mkdirp(): Promise<void> {}
-  async stat(): Promise<FileStat> {
-    throw new Error("nyi");
-  }
+  return fs;
 }
 
 class FakeGit implements GitPort {
@@ -59,9 +37,6 @@ class FakeGit implements GitPort {
   }
   async changedFiles() {
     return [];
-  }
-  async log() {
-    return "";
   }
   async diffNumstat(): Promise<DiffNumstatEntry[]> {
     return [];
@@ -121,11 +96,16 @@ ${sessLines}
 
 describe("runCheckpointWrite", () => {
   it("skips when no active sessions in QTC-PROJECT.Status", async () => {
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([["/cwd/CLAUDE.md", workflowProjectBlock({ proyecto: "p", sessions: [] })]]),
       new Map([["/cwd/.workflow/sessions", []]]),
     );
-    const result = await runCheckpointWrite(fs, new FakeEnv(), new FakeGit(), paths);
+    const result = await runCheckpointWrite(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      new FakeGit(),
+      paths,
+    );
     expect("skipped" in result && result.skipped).toBe(true);
     if ("skipped" in result && result.skipped) {
       expect(result.reason).toContain("no hay sesiones activas");
@@ -135,7 +115,7 @@ describe("runCheckpointWrite", () => {
   it("writes CHECKPOINT.md for the only active session (no --code) post-flag-day WORKFLOW markers", async () => {
     const sessionFolder = "session010-dev-test-coverage";
     const sessionPath = `/cwd/.workflow/sessions/${sessionFolder}`;
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         [
           "/cwd/CLAUDE.md",
@@ -152,7 +132,12 @@ describe("runCheckpointWrite", () => {
         [sessionPath, []],
       ]),
     );
-    const result = await runCheckpointWrite(fs, new FakeEnv(), new FakeGit(), paths);
+    const result = await runCheckpointWrite(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      new FakeGit(),
+      paths,
+    );
     if (!("checkpoint_path" in result) || "skipped" in result) {
       throw new Error(`expected success, got: ${JSON.stringify(result)}`);
     }
@@ -164,7 +149,7 @@ describe("runCheckpointWrite", () => {
   });
 
   it("skips with helpful reason when ≥2 active sessions and no --code", async () => {
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         [
           "/cwd/CLAUDE.md",
@@ -195,7 +180,12 @@ describe("runCheckpointWrite", () => {
         ],
       ]),
     );
-    const result = await runCheckpointWrite(fs, new FakeEnv(), new FakeGit(), paths);
+    const result = await runCheckpointWrite(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      new FakeGit(),
+      paths,
+    );
     expect("skipped" in result && result.skipped).toBe(true);
     if ("skipped" in result && result.skipped) {
       expect(result.reason).toContain("múltiples sesiones activas");
@@ -206,7 +196,7 @@ describe("runCheckpointWrite", () => {
   it("--code resolves to specific session and writes CHECKPOINT.md", async () => {
     const sessionFolder = "session042-dev-target";
     const sessionPath = `/cwd/.workflow/sessions/${sessionFolder}`;
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         ["/cwd/CLAUDE.md", workflowProjectBlock({ proyecto: "p", sessions: [] })],
         [`${sessionPath}/OBJETIVO.md`, "# Objetivo\nfoo\n"],
@@ -216,9 +206,15 @@ describe("runCheckpointWrite", () => {
         [sessionPath, []],
       ]),
     );
-    const result = await runCheckpointWrite(fs, new FakeEnv(), new FakeGit(), paths, {
-      code: "042",
-    });
+    const result = await runCheckpointWrite(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      new FakeGit(),
+      paths,
+      {
+        code: "042",
+      },
+    );
     if (!("checkpoint_path" in result) || "skipped" in result) {
       throw new Error(`expected success, got: ${JSON.stringify(result)}`);
     }
@@ -226,13 +222,19 @@ describe("runCheckpointWrite", () => {
   });
 
   it("--code returns null folder when no matching session exists (falls through to skip)", async () => {
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([["/cwd/CLAUDE.md", workflowProjectBlock({ proyecto: "p", sessions: [] })]]),
       new Map([["/cwd/.workflow/sessions", []]]),
     );
-    const result = await runCheckpointWrite(fs, new FakeEnv(), new FakeGit(), paths, {
-      code: "999",
-    });
+    const result = await runCheckpointWrite(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      new FakeGit(),
+      paths,
+      {
+        code: "999",
+      },
+    );
     expect("skipped" in result && result.skipped).toBe(true);
   });
 
@@ -261,7 +263,7 @@ _Stack sin detectar._
 - Histórico: \`.qtc/HISTORY.md\`
 <!-- QTC-PROJECT-END -->
 `;
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         ["/cwd/CLAUDE.md", legacyBlock],
         [`${sessionPath}/OBJETIVO.md`, "# Objetivo\nfoo\n"],
@@ -272,7 +274,12 @@ _Stack sin detectar._
         [sessionPath, []],
       ]),
     );
-    const result = await runCheckpointWrite(fs, new FakeEnv(), new FakeGit(), paths);
+    const result = await runCheckpointWrite(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      new FakeGit(),
+      paths,
+    );
     if (!("checkpoint_path" in result) || "skipped" in result) {
       throw new Error(`expected success, got: ${JSON.stringify(result)}`);
     }
@@ -282,7 +289,7 @@ _Stack sin detectar._
   it("idempotency — re-write produces same content (no placeholders)", async () => {
     const sessionFolder = "session001-dev-idem";
     const sessionPath = `/cwd/.workflow/sessions/${sessionFolder}`;
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         [
           "/cwd/CLAUDE.md",
@@ -298,14 +305,14 @@ _Stack sin detectar._
         [sessionPath, []],
       ]),
     );
-    const r1 = await runCheckpointWrite(fs, new FakeEnv(), new FakeGit(), paths);
+    const r1 = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), new FakeGit(), paths);
     if (!("checkpoint_path" in r1) || "skipped" in r1) throw new Error("first call should write");
     const content1 = fs.writes.get(`${sessionPath}/CHECKPOINT.md`) ?? "";
 
     // Second call: existing CHECKPOINT.md has placeholders → re-writes (placeholders are part of draft).
     // To test true idempotency post-AI-fill, we'd need to manually strip placeholders. For now we
     // verify that re-write returns success again (not skip-because-synthesized).
-    const r2 = await runCheckpointWrite(fs, new FakeEnv(), new FakeGit(), paths);
+    const r2 = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), new FakeGit(), paths);
     expect("checkpoint_path" in r2 || "skipped" in r2).toBe(true);
     // Sanity: content is non-empty markdown.
     expect(content1.length).toBeGreaterThan(50);

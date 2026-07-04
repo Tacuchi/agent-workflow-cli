@@ -74,10 +74,6 @@ export class RecordingGit implements GitPort {
     return this.opts.changed ?? [];
   }
 
-  async log(_args: string[], _repo: string): Promise<string> {
-    return "";
-  }
-
   async diffNumstat(_repo: string): Promise<DiffNumstatEntry[]> {
     return [];
   }

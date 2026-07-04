@@ -8,24 +8,11 @@ import { installSkill, registerSkill } from "../../src/application/self/skills-m
 import { RECOMMENDED_SKILLS } from "../../src/cli/tui/data/recommended-skills.js";
 import { SkillsTab } from "../../src/cli/tui/tabs/skills-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
+import { FakeEnv } from "../helpers/fake-env.js";
 
 const ENTER = "\r";
 const DOWN = "\x1B[B";
 const tick = (ms = 120) => new Promise((r) => setTimeout(r, ms));
-
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
 
 // The tab uses the real skills-manager against a sandbox home (real adapter):
 // listSkills/register/install operate on a tmpdir, never the dev's HOME.

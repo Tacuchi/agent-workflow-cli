@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
-import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
+import { type McpHost, buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
 describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
   let scopeDir: string;
@@ -38,15 +38,6 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     });
   });
 
-  it("idempotencia: re-ejecutar con misma entrada retorna skipped-idempotent y no crea backup nuevo", () => {
-    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
-    const second = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
-    expect(second.action).toBe("skipped-idempotent");
-    expect(second.backup).toBeNull();
-    const baks = readdirSync(scopeDir).filter((f) => f.startsWith(".mcp.json.bak."));
-    expect(baks).toHaveLength(0);
-  });
-
   it("preserva otras entradas existentes en .mcp.json", () => {
     const mcpJsonPath = join(scopeDir, ".mcp.json");
     const initial = {
@@ -57,15 +48,6 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     const content = JSON.parse(readFileSync(mcpJsonPath, "utf-8"));
     expect(content.mcpServers.other).toBeDefined();
     expect(content.mcpServers.prod).toBeDefined();
-  });
-
-  it("dry-run no escribe el archivo aunque haya cambios", () => {
-    const mcpJsonPath = join(scopeDir, ".mcp.json");
-    expect(existsSync(mcpJsonPath)).toBe(false);
-    const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
-    expect(result.action).toBe("dry-run");
-    expect(result.diff).toBeDefined();
-    expect(existsSync(mcpJsonPath)).toBe(false);
   });
 
   it("backup transitorio: tras write OK no quedan .bak.<ts> en disco y result.backup es null", () => {
@@ -203,13 +185,6 @@ describe("writeMcpEntry — Codex (config.toml)", () => {
     expect(mcp.env).toEqual({ MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" });
   });
 
-  it("idempotencia en Codex: misma entrada → skipped-idempotent", () => {
-    writeMcpEntry("codex", buildMcpEntry("cert"), { scopeDir });
-    const second = writeMcpEntry("codex", buildMcpEntry("cert"), { scopeDir });
-    expect(second.action).toBe("skipped-idempotent");
-    expect(second.backup).toBeNull();
-  });
-
   it("preserva sección anterior no relacionada (additional_writable_roots)", () => {
     const configPath = join(scopeDir, ".codex", "config.toml");
     mkdirSync(join(scopeDir, ".codex"), { recursive: true });
@@ -220,15 +195,6 @@ describe("writeMcpEntry — Codex (config.toml)", () => {
     expect(text).toContain('"/path/a"');
     expect(text).toContain('"/path/b"');
     expect(text).toContain("[mcp_servers.prod]");
-  });
-
-  it("dry-run no escribe config.toml", () => {
-    const configPath = join(scopeDir, ".codex", "config.toml");
-    expect(existsSync(configPath)).toBe(false);
-    const result = writeMcpEntry("codex", buildMcpEntry("prod"), { scopeDir }, { dryRun: true });
-    expect(result.action).toBe("dry-run");
-    expect(result.diff).toBeDefined();
-    expect(existsSync(configPath)).toBe(false);
   });
 
   it("ambas instancias coexisten en el mismo config.toml", () => {
@@ -266,13 +232,6 @@ describe("writeMcpEntry — Warp (.warp/.mcp.json, project scope)", () => {
     });
   });
 
-  it("idempotencia: segunda corrida retorna skipped-idempotent", () => {
-    writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir });
-    const second = writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir });
-    expect(second.action).toBe("skipped-idempotent");
-    expect(second.backup).toBeNull();
-  });
-
   it("preserva otras entradas existentes en .warp/.mcp.json", () => {
     const mcpPath = join(scopeDir, ".warp", ".mcp.json");
     mkdirSync(join(scopeDir, ".warp"), { recursive: true });
@@ -284,15 +243,6 @@ describe("writeMcpEntry — Warp (.warp/.mcp.json, project scope)", () => {
     const content = JSON.parse(readFileSync(mcpPath, "utf-8"));
     expect(content.mcpServers.other).toBeDefined();
     expect(content.mcpServers.prod).toBeDefined();
-  });
-
-  it("dry-run no escribe el archivo", () => {
-    const mcpPath = join(scopeDir, ".warp", ".mcp.json");
-    expect(existsSync(mcpPath)).toBe(false);
-    const result = writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
-    expect(result.action).toBe("dry-run");
-    expect(result.diff).toBeDefined();
-    expect(existsSync(mcpPath)).toBe(false);
   });
 
   it("cert y prod coexisten en .warp/.mcp.json", () => {
@@ -327,12 +277,6 @@ describe("writeMcpEntry — Gemini (.gemini/settings.json, mcpServers)", () => {
     });
   });
 
-  it("idempotencia: segunda corrida → skipped-idempotent", () => {
-    writeMcpEntry("gemini", buildMcpEntry("cert"), { scopeDir });
-    const second = writeMcpEntry("gemini", buildMcpEntry("cert"), { scopeDir });
-    expect(second.action).toBe("skipped-idempotent");
-  });
-
   it("preserva otras claves de settings.json (no solo mcpServers)", () => {
     const file = join(scopeDir, ".gemini", "settings.json");
     mkdirSync(join(scopeDir, ".gemini"), { recursive: true });
@@ -341,13 +285,6 @@ describe("writeMcpEntry — Gemini (.gemini/settings.json, mcpServers)", () => {
     const content = JSON.parse(readFileSync(file, "utf-8"));
     expect(content.theme).toBe("dark");
     expect(content.mcpServers.prod).toBeDefined();
-  });
-
-  it("dry-run no escribe", () => {
-    const file = join(scopeDir, ".gemini", "settings.json");
-    const result = writeMcpEntry("gemini", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
-    expect(result.action).toBe("dry-run");
-    expect(existsSync(file)).toBe(false);
   });
 });
 
@@ -375,12 +312,6 @@ describe("writeMcpEntry — OpenCode (opencode.json, mcp: type local)", () => {
     });
   });
 
-  it("idempotencia: segunda corrida → skipped-idempotent", () => {
-    writeMcpEntry("opencode", buildMcpEntry("cert"), { scopeDir });
-    const second = writeMcpEntry("opencode", buildMcpEntry("cert"), { scopeDir });
-    expect(second.action).toBe("skipped-idempotent");
-  });
-
   it("preserva otras claves + otras entradas mcp", () => {
     const file = join(scopeDir, "opencode.json");
     writeFileSync(
@@ -392,13 +323,6 @@ describe("writeMcpEntry — OpenCode (opencode.json, mcp: type local)", () => {
     expect(content.model).toBe("x");
     expect(content.mcp.other).toBeDefined();
     expect(content.mcp.prod).toBeDefined();
-  });
-
-  it("dry-run no escribe", () => {
-    const file = join(scopeDir, "opencode.json");
-    const result = writeMcpEntry("opencode", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
-    expect(result.action).toBe("dry-run");
-    expect(existsSync(file)).toBe(false);
   });
 
   it("scope global → ~/.config/opencode/opencode.json (XDG)", () => {
@@ -436,12 +360,6 @@ describe("writeMcpEntry — Crush (crush.json, mcp: type stdio)", () => {
     });
   });
 
-  it("idempotencia: segunda corrida → skipped-idempotent", () => {
-    writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir });
-    const second = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir });
-    expect(second.action).toBe("skipped-idempotent");
-  });
-
   it("preserva $schema + otras entradas mcp", () => {
     const file = join(scopeDir, "crush.json");
     writeFileSync(
@@ -462,17 +380,49 @@ describe("writeMcpEntry — Crush (crush.json, mcp: type stdio)", () => {
     expect(content.mcp.prod).toBeDefined();
   });
 
-  it("dry-run no escribe", () => {
-    const file = join(scopeDir, "crush.json");
-    const result = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
-    expect(result.action).toBe("dry-run");
-    expect(existsSync(file)).toBe(false);
-  });
-
   it("scope global → ~/.config/crush/crush.json (XDG)", () => {
     const result = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir, kind: "global" });
     expect(result.target).toBe(join(scopeDir, ".config", "crush", "crush.json"));
     const content = JSON.parse(readFileSync(result.target, "utf-8"));
     expect(content.mcp.cert.type).toBe("stdio");
   });
+});
+
+// writeMcpEntry returns one shared result shape across hosts, so idempotencia
+// (write twice → skipped-idempotent, no backup) and dry-run (no target on disk)
+// are identical per host and collapse into a single host→target-path table loop.
+// Per-host shape/preserve/legacy/backup coverage stays in the describes above.
+describe("writeMcpEntry — idempotencia y dry-run (todos los hosts)", () => {
+  const HOSTS: { host: McpHost; targetRel: string[] }[] = [
+    { host: "claude", targetRel: [".mcp.json"] },
+    { host: "codex", targetRel: [".codex", "config.toml"] },
+    { host: "warp", targetRel: [".warp", ".mcp.json"] },
+    { host: "gemini", targetRel: [".gemini", "settings.json"] },
+    { host: "opencode", targetRel: ["opencode.json"] },
+    { host: "crush", targetRel: ["crush.json"] },
+  ];
+
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-table-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  for (const { host, targetRel } of HOSTS) {
+    it(`${host}: segunda corrida con misma entrada → skipped-idempotent (sin backup)`, () => {
+      writeMcpEntry(host, buildMcpEntry("cert"), { scopeDir });
+      const second = writeMcpEntry(host, buildMcpEntry("cert"), { scopeDir });
+      expect(second.action).toBe("skipped-idempotent");
+      expect(second.backup).toBeNull();
+    });
+
+    it(`${host}: dry-run no escribe el archivo destino`, () => {
+      const target = join(scopeDir, ...targetRel);
+      const result = writeMcpEntry(host, buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
+      expect(result.action).toBe("dry-run");
+      expect(existsSync(target)).toBe(false);
+    });
+  }
 });

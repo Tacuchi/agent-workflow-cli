@@ -120,28 +120,20 @@ describe("resolveGlobalMcpRawPath", () => {
       throw new Error("oz not found");
     })();
 
-  it("warp darwin stable → ~/.warp/.mcp.json", () => {
-    expect(resolveGlobalMcpRawPath(warpSpec, "darwin", "stable")).toBe("~/.warp/.mcp.json");
+  it("warp darwin → ~/.warp/.mcp.json", () => {
+    expect(resolveGlobalMcpRawPath(warpSpec, "darwin")).toBe("~/.warp/.mcp.json");
   });
 
-  it("warp darwin preview → ~/.warp-preview/.mcp.json", () => {
-    expect(resolveGlobalMcpRawPath(warpSpec, "darwin", "preview")).toBe(
-      "~/.warp-preview/.mcp.json",
-    );
+  it("warp linux → ~/.config/warp-terminal/.mcp.json", () => {
+    expect(resolveGlobalMcpRawPath(warpSpec, "linux")).toBe("~/.config/warp-terminal/.mcp.json");
   });
 
-  it("warp linux stable → ~/.config/warp-terminal/.mcp.json", () => {
-    expect(resolveGlobalMcpRawPath(warpSpec, "linux", "stable")).toBe(
-      "~/.config/warp-terminal/.mcp.json",
-    );
-  });
-
-  it("claude darwin stable → ~/.claude.json (plataforma uniforme)", () => {
-    expect(resolveGlobalMcpRawPath(claudeSpec, "darwin", "stable")).toBe("~/.claude.json");
+  it("claude darwin → ~/.claude.json (plataforma uniforme)", () => {
+    expect(resolveGlobalMcpRawPath(claudeSpec, "darwin")).toBe("~/.claude.json");
   });
 
   it("oz retorna null (sin globalMcpPaths)", () => {
-    expect(resolveGlobalMcpRawPath(ozSpec, "darwin", "stable")).toBeNull();
+    expect(resolveGlobalMcpRawPath(ozSpec, "darwin")).toBeNull();
   });
 });
 

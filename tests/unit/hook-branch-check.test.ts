@@ -5,22 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runBranchCheckHook } from "../../src/application/hook-branch-check.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import type { GitPort } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private readonly _cwd: string) {}
-  get(): string | undefined {
-    return undefined;
-  }
-  homeDir(): string {
-    return this._cwd;
-  }
-  cwd(): string {
-    return this._cwd;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 function fakeGit(opts: {
   current: string;
@@ -78,7 +65,7 @@ describe("runBranchCheckHook — expected = WORKSPACE working branch", () => {
     workspace = mkdtempSync(join(tmpdir(), "branch-check-"));
     sourcePath = join(workspace, "acme");
     mkdirSync(sourcePath, { recursive: true });
-    env = new FakeEnv(workspace);
+    env = new FakeEnv(workspace, workspace);
     paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
     fs = new NodeFileSystem();
   });

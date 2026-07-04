@@ -23,20 +23,7 @@ import {
 } from "../../src/application/self/skills-manager.js";
 import { readSkillsRegistry } from "../../src/application/self/skills-registry.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private readonly home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 /** Real adapter whose symlink fails — simulates Windows without links (copy fallback). */
 class NoSymlinkFs extends NodeFileSystem {

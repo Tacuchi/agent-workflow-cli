@@ -5,24 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
+  type WorkspaceInitInput,
   pruneReleasedLock,
   runWorkspaceInit,
 } from "../../src/application/workspace-init-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private readonly _cwd: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this._cwd;
-  }
-  cwd() {
-    return this._cwd;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 const DOCS_FOLDERS = ["specs", "plans", "manuals", "scripts", "diagrams", "reports"];
 
@@ -42,14 +30,26 @@ describe("runWorkspaceInit", () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("single source EXTERNA: scaffold + skills.toml + bloque SIN Mode + visibilidad", async () => {
+  // Default happy-path arrange (one source + fixed timestamp); `over` layers
+  // option deltas on top. Throws if init returns an error result, so callers
+  // get the narrowed success type. The 2 error-expecting tests and the
+  // custom-env test below call runWorkspaceInit directly instead.
+  async function init(over: Partial<WorkspaceInitInput> = {}) {
     const result = await runWorkspaceInit(fs, env, paths, {
-      proyecto: "Solo",
-      sources: [{ alias: "app", path: "/tmp/app-fake" }],
+      sources: [{ alias: "app", path: "/tmp/app" }],
       workspace,
       lastActivity: "2026-01-01 00:00",
+      ...over,
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    return result;
+  }
+
+  it("single source EXTERNA: scaffold + skills.toml + bloque SIN Mode + visibilidad", async () => {
+    const result = await init({
+      proyecto: "Solo",
+      sources: [{ alias: "app", path: "/tmp/app-fake" }],
+    });
     expect(result.ok).toBe(true);
     expect(result.sources).toBe(1);
 
@@ -96,23 +96,14 @@ describe("runWorkspaceInit", () => {
   });
 
   it("runtime gitignore se agrega incluso para fuente única dentro del workspace", async () => {
-    await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "self", path: workspace }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
+    await init({ sources: [{ alias: "self", path: workspace }] });
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     expect(gitignore).toContain(".workflow/processes.json");
     expect(gitignore).toContain("docs/logs/");
   });
 
   it("fuente única DENTRO del workspace: omite visibilidad (la fuente ES el workspace)", async () => {
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "self", path: workspace }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    const result = await init({ sources: [{ alias: "self", path: workspace }] });
     expect(result.attach_multiroot).toEqual({ skipped: true, reason: "no_external_sources" });
     expect(existsSync(join(workspace, ".claude"))).toBe(false);
   });
@@ -124,12 +115,7 @@ describe("runWorkspaceInit", () => {
         join(source, "package.json"),
         JSON.stringify({ dependencies: { react: "^18" }, devDependencies: { typescript: "^5" } }),
       );
-      const result = await runWorkspaceInit(fs, env, paths, {
-        sources: [{ alias: "app", path: source }],
-        workspace,
-        lastActivity: "2026-01-01 00:00",
-      });
-      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+      await init({ sources: [{ alias: "app", path: source }] });
       const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
       expect(claude).toContain("## Stack");
       expect(claude).toContain("Lenguaje: TypeScript");
@@ -147,12 +133,7 @@ describe("runWorkspaceInit", () => {
         join(source, "package.json"),
         JSON.stringify({ scripts: { dev: "vite" }, devDependencies: { typescript: "^5" } }),
       );
-      const result = await runWorkspaceInit(fs, env, paths, {
-        sources: [{ alias: "app", path: source }],
-        workspace,
-        lastActivity: "2026-01-01 00:00",
-      });
-      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+      await init({ sources: [{ alias: "app", path: source }] });
 
       expect(existsSync(join(workspace, "docs", "logs"))).toBe(false);
       expect(existsSync(join(workspace, ".workflow", "launch"))).toBe(false);
@@ -175,12 +156,7 @@ describe("runWorkspaceInit", () => {
       mkdirSync(join(workspace, "docs", "tools", "keepme"), { recursive: true });
       writeFileSync(join(workspace, "docs", "tools", "keepme", "README.md"), "# keepme tool\n");
 
-      const result = await runWorkspaceInit(fs, env, paths, {
-        sources: [{ alias: "app", path: source }],
-        workspace,
-        lastActivity: "2026-01-01 00:00",
-      });
-      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+      await init({ sources: [{ alias: "app", path: source }] });
 
       // the legacy folder is relocated and removed
       expect(existsSync(join(workspace, "docs", "tools", "app"))).toBe(false);
@@ -197,14 +173,11 @@ describe("runWorkspaceInit", () => {
   });
 
   it("qaBranches: renderiza la sección 'Ramas QA actuales' en el bloque", async () => {
-    const result = await runWorkspaceInit(fs, env, paths, {
+    await init({
       sources: [{ alias: "app", path: "/tmp/app-fake" }],
       workingBranches: { app: "feature/x" },
       qaBranches: { app: "desarrollo" },
-      workspace,
-      lastActivity: "2026-01-01 00:00",
     });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
     expect(claude).toContain("- Ramas de trabajo actuales:");
     expect(claude).toContain("  - app: feature/x");
@@ -213,15 +186,13 @@ describe("runWorkspaceInit", () => {
   });
 
   it("multi source: configura visibilidad multi-root + .gitignore", async () => {
-    const result = await runWorkspaceInit(fs, env, paths, {
+    const result = await init({
       proyecto: "Multi",
       sources: [
         { alias: "a", path: "/tmp/a-fake" },
         { alias: "b", path: "/tmp/b-fake" },
       ],
-      workspace,
     });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.ok).toBe(true);
     expect(result.sources).toBe(2);
     expect(existsSync(join(workspace, ".claude", "settings.local.json"))).toBe(true);
@@ -237,28 +208,14 @@ describe("runWorkspaceInit", () => {
   });
 
   it("proyecto por defecto = basename del workspace", async () => {
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    if ("error" in result) throw new Error("unexpected error");
+    await init();
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
     expect(claude).toContain(join(workspace).split("/").pop() as string);
   });
 
   it("idempotente: re-correr no duplica scaffold y respeta skills.toml existente", async () => {
-    await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    const second = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    if ("error" in second) throw new Error("unexpected error");
+    await init();
+    const second = await init();
     // second run: dirs already exist, skills.toml preserved
     expect(second.scaffold.created).toHaveLength(0);
     expect(second.scaffold.existing.length).toBeGreaterThan(0);
@@ -266,21 +223,18 @@ describe("runWorkspaceInit", () => {
   });
 
   it("reconcile multi-source: re-correr con una fuente removida la detachea", async () => {
-    await runWorkspaceInit(fs, env, paths, {
+    await init({
       sources: [
         { alias: "a", path: "/tmp/a" },
         { alias: "b", path: "/tmp/b" },
       ],
-      workspace,
     });
-    const second = await runWorkspaceInit(fs, env, paths, {
+    const second = await init({
       sources: [
         { alias: "a", path: "/tmp/a" },
         { alias: "c", path: "/tmp/c" },
       ],
-      workspace,
     });
-    if ("error" in second) throw new Error("unexpected error");
     const settings = JSON.parse(
       readFileSync(join(workspace, ".claude", "settings.local.json"), "utf-8"),
     );
@@ -292,22 +246,15 @@ describe("runWorkspaceInit", () => {
   });
 
   it("reconcile SIN --source: preserva las fuentes y la descripción existentes", async () => {
-    await runWorkspaceInit(fs, env, paths, {
+    await init({
       proyecto: "Mi Proyecto",
       sources: [
         { alias: "app", path: "/tmp/app-fake" },
         { alias: "lib", path: "/tmp/lib-fake" },
       ],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
     });
     // Re-run to reconcile the schema, without re-passing sources or description.
-    const second = await runWorkspaceInit(fs, env, paths, {
-      sources: [],
-      workspace,
-      lastActivity: "2026-01-02 00:00",
-    });
-    if ("error" in second) throw new Error(`unexpected error: ${second.error}`);
+    const second = await init({ sources: [], lastActivity: "2026-01-02 00:00" });
     expect(second.sources).toBe(2); // preserved, no no_sources error
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
     expect(claude).toContain("Mi Proyecto"); // description preserved (not the basename)
@@ -316,12 +263,7 @@ describe("runWorkspaceInit", () => {
   });
 
   it("--dry-run no escribe nada y devuelve preview", async () => {
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      dryRun: true,
-    });
-    if ("error" in result) throw new Error("unexpected error");
+    const result = await init({ dryRun: true });
     expect(result.dry_run).toBe(true);
     expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(false);
     expect(existsSync(join(workspace, ".workflow"))).toBe(false);
@@ -386,12 +328,7 @@ describe("runWorkspaceInit", () => {
     writeFileSync(join(workspace, ".workflow", "sessions", ".gitkeep"), "");
     writeFileSync(join(workspace, ".workflow", ".lock"), ""); // released marker (0 bytes)
 
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    const result = await init();
 
     // .gitkeep-only → folder pruned.
     for (const f of ["manuals", "diagrams", "scripts"]) {
@@ -414,12 +351,7 @@ describe("runWorkspaceInit", () => {
       join(workspace, ".workflow", ".lock"),
       JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
     );
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    await init();
     // The block upsert fails because the lock is held (by someone else) and init does NOT delete the live lock.
     expect(existsSync(join(workspace, ".workflow", ".lock"))).toBe(true);
   });
@@ -440,12 +372,7 @@ describe("runWorkspaceInit", () => {
         "",
       ].join("\n"),
     );
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    await init();
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     const headerCount = gitignore
       .split("\n")
@@ -468,12 +395,7 @@ describe("runWorkspaceInit", () => {
       join(workspace, ".gitignore"),
       [".workflow/sessions/", ".workflow/.lock", ""].join("\n"),
     );
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    await init();
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     const sessionsCount = gitignore
       .split("\n")
@@ -492,12 +414,7 @@ describe("runWorkspaceInit", () => {
         "",
       ].join("\r\n"),
     );
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      lastActivity: "2026-01-01 00:00",
-    });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    await init();
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     expect(gitignore).toContain("\r\n");
     expect(gitignore).toContain(".workflow/sessions/");
@@ -509,12 +426,7 @@ describe("runWorkspaceInit", () => {
     mkdirSync(join(workspace, "docs", "manuals"), { recursive: true });
     writeFileSync(join(workspace, "docs", "manuals", ".gitkeep"), "");
     mkdirSync(join(workspace, "docs", "logs"), { recursive: true });
-    const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
-      workspace,
-      dryRun: true,
-    });
-    if ("error" in result) throw new Error("unexpected error");
+    const result = await init({ dryRun: true });
     expect(result.dry_run).toBe(true);
     expect(result.scaffold.pruned).toContain(join(workspace, "docs", "manuals"));
     expect(result.scaffold.pruned).toContain(join(workspace, "docs", "logs"));

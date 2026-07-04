@@ -1,61 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { runCodeScan } from "../../src/application/code-scan-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
+import type { DirEntry } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class FakeEnv implements EnvPort {
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return "/home/u";
-  }
-  cwd() {
-    return "/cwd";
-  }
-}
-
-class FakeFs implements FileSystemPort {
-  constructor(
-    private files: Map<string, string> = new Map(),
-    private dirs: Map<string, DirEntry[]> = new Map(),
-  ) {}
-  async readText(p: string) {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(): Promise<void> {}
-  async exists(p: string) {
-    return this.files.has(p) || this.dirs.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const v = this.dirs.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async mkdirp(): Promise<void> {}
-  async stat(): Promise<FileStat> {
-    throw new Error("nyi");
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
 const ns = normalizeNamespace("workflow");
 const paths = new PathsService(ns, "/home/u", "/cwd");
 
-function makeFs(setup: { files?: Record<string, string>; dirs?: Record<string, DirEntry[]> }) {
-  return new FakeFs(
-    new Map(Object.entries(setup.files ?? {})),
-    new Map(Object.entries(setup.dirs ?? {})),
-  );
+function makeFs(setup: {
+  files?: Record<string, string>;
+  dirs?: Record<string, DirEntry[]>;
+}): MemFs {
+  const fs = new MemFs();
+  for (const [dir, entries] of Object.entries(setup.dirs ?? {})) {
+    fs.dir(dir);
+    for (const e of entries) if (e.type === "dir") fs.dir(e.path);
+  }
+  for (const [p, content] of Object.entries(setup.files ?? {})) fs.file(p, content);
+  return fs;
 }
 
 describe("runCodeScan", () => {
   it("returns root_not_found when root does not exist", async () => {
     const fs = makeFs({});
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/does-not-exist" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/does-not-exist",
+    });
     if ("error" in result) {
       expect(result.error).toBe("root_not_found");
       expect(result.root).toBe("/does-not-exist");
@@ -73,7 +45,9 @@ describe("runCodeScan", () => {
         "/cwd/proj/main.ts": "function add(a: number, b: number) {\n  return a + b;\n}\n",
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/cwd/proj" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/cwd/proj",
+    });
     if ("error" in result) throw new Error("unexpected error");
     expect(result.total_matches).toBe(0);
     expect(result.by_severity).toEqual({ alta: 0, media: 0, baja: 0 });
@@ -88,7 +62,9 @@ describe("runCodeScan", () => {
         "/cwd/proj/config.ts": 'const password = "secret123abc";\n',
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/cwd/proj" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/cwd/proj",
+    });
     if ("error" in result) throw new Error("unexpected error");
     expect(result.total_matches).toBe(1);
     expect(result.matches[0]?.pattern_id).toBe("hardcoded-secret");
@@ -105,7 +81,9 @@ describe("runCodeScan", () => {
         "/cwd/proj/main.ts": "// TODO: refactor this\nfunction noop() {}\n",
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/cwd/proj" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/cwd/proj",
+    });
     if ("error" in result) throw new Error("unexpected error");
     expect(result.total_matches).toBe(1);
     expect(result.matches[0]?.pattern_id).toBe("todo-fixme");
@@ -121,7 +99,9 @@ describe("runCodeScan", () => {
         "/cwd/proj/config.ts": 'const API = "http://localhost:8080";\n',
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/cwd/proj" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/cwd/proj",
+    });
     if ("error" in result) throw new Error("unexpected error");
     expect(result.total_matches).toBeGreaterThanOrEqual(1);
     const localhostMatch = result.matches.find((m) => m.pattern_id === "localhost");
@@ -137,7 +117,9 @@ describe("runCodeScan", () => {
         "/cwd/proj/main.ts": 'console.log("hi");\n',
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/cwd/proj" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/cwd/proj",
+    });
     if ("error" in result) throw new Error("unexpected error");
     const consoleMatch = result.matches.find((m) => m.pattern_id === "console-log");
     expect(consoleMatch?.severity).toBe("baja");
@@ -162,7 +144,9 @@ describe("runCodeScan", () => {
         "/cwd/proj/dist/leak.ts": 'const password = "leakedfromdist123";\n',
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/cwd/proj" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/cwd/proj",
+    });
     if ("error" in result) throw new Error("unexpected error");
     // Only the main.ts console.log match should appear; the node_modules/dist secrets are excluded.
     const secretsFound = result.matches.filter((m) => m.pattern_id === "hardcoded-secret");
@@ -185,7 +169,9 @@ describe("runCodeScan", () => {
         "/cwd/proj/.workflow/leak.ts": 'const password = "leakedfromworkflow123";\n',
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/cwd/proj" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/cwd/proj",
+    });
     if ("error" in result) throw new Error("unexpected error");
     expect(result.matches.filter((m) => m.pattern_id === "hardcoded-secret")).toHaveLength(0);
   });
@@ -199,7 +185,7 @@ describe("runCodeScan", () => {
         "/cwd/proj/main.ts": "// TODO 1\n// TODO 2\n// TODO 3\n// TODO 4\n",
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, {
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       root: "/cwd/proj",
       maxPerPattern: 2,
     });
@@ -218,7 +204,7 @@ describe("runCodeScan", () => {
         "/cwd/proj/main.ts": "let x = MAGIC_TOKEN_42;\n",
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, {
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       root: "/cwd/proj",
       inlinePatterns: [
         {
@@ -248,7 +234,9 @@ describe("runCodeScan", () => {
         "/cwd/proj/README.md": "TODO: write docs\n",
       },
     });
-    const result = await runCodeScan(fs, new FakeEnv(), paths, { root: "/cwd/proj" });
+    const result = await runCodeScan(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      root: "/cwd/proj",
+    });
     if ("error" in result) throw new Error("unexpected error");
     // README.md is not in default extensions; TODO inside it should be ignored.
     const todos = result.matches.filter((m) => m.pattern_id === "todo-fixme");

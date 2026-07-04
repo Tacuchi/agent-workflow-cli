@@ -6,51 +6,13 @@ import {
   isExpired,
   parseLock,
 } from "../../src/application/lock-service.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-
-class FakeFs implements FileSystemPort {
-  files = new Map<string, string>();
-  dirs = new Map<string, DirEntry[]>();
-
-  async readText(p: string): Promise<string> {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(p: string, content: string): Promise<void> {
-    this.files.set(p, content);
-  }
-  async writeTextExclusive(p: string, content: string): Promise<{ created: boolean }> {
-    if (this.files.has(p)) return { created: false };
-    this.files.set(p, content);
-    return { created: true };
-  }
-  async remove(p: string): Promise<void> {
-    this.files.delete(p);
-  }
-  async exists(p: string): Promise<boolean> {
-    return this.files.has(p) || this.dirs.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const v = this.dirs.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async mkdirp(p: string): Promise<void> {
-    if (!this.dirs.has(p)) this.dirs.set(p, []);
-  }
-  async stat(p: string): Promise<FileStat> {
-    if (this.files.has(p)) return { mtime: new Date(0), size: 0, type: "file" };
-    if (this.dirs.has(p)) return { mtime: new Date(0), size: 0, type: "dir" };
-    throw new Error(`ENOENT: ${p}`);
-  }
-}
+import { MemFs } from "../helpers/mem-fs.js";
 
 const LOCK_PATH = "/cwd/.workflow/.lock";
 
 describe("acquireLock — happy path", () => {
   it("claims an empty path, writes JSON {pid, ts}, returns handle", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     const now = () => 1700000000000;
     const handle = await acquireLock(LOCK_PATH, fs, { pid: 42, now });
 
@@ -58,7 +20,7 @@ describe("acquireLock — happy path", () => {
     expect(handle.pid).toBe(42);
     expect(handle.ts).toBe(1700000000000);
 
-    const raw = fs.files.get(LOCK_PATH) ?? "";
+    const raw = fs.writes.get(LOCK_PATH) ?? "";
     const parsed = JSON.parse(raw);
     expect(parsed.pid).toBe(42);
     expect(parsed.ts).toBe(new Date(1700000000000).toISOString());
@@ -71,7 +33,7 @@ describe("acquireLock — happy path", () => {
 
 describe("acquireLock — concurrent acquire", () => {
   it("fails with LockBusyError if a fresh lock exists", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     const now1 = () => 1700000000000;
     await acquireLock(LOCK_PATH, fs, { pid: 100, now: now1 });
 
@@ -82,7 +44,7 @@ describe("acquireLock — concurrent acquire", () => {
   });
 
   it("LockBusyError exposes holder pid and timestamp", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     await acquireLock(LOCK_PATH, fs, { pid: 100, now: () => 1700000000000 });
 
     try {
@@ -98,7 +60,7 @@ describe("acquireLock — concurrent acquire", () => {
 
 describe("acquireLock — stale lock steal", () => {
   it("steals a lock older than TTL", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     await acquireLock(LOCK_PATH, fs, { pid: 100, now: () => 1700000000000 });
 
     const sixMinutesLater = 1700000000000 + 6 * 60 * 1000;
@@ -108,12 +70,12 @@ describe("acquireLock — stale lock steal", () => {
     });
 
     expect(handle.pid).toBe(200);
-    const raw = fs.files.get(LOCK_PATH) ?? "";
+    const raw = fs.writes.get(LOCK_PATH) ?? "";
     expect(JSON.parse(raw).pid).toBe(200);
   });
 
   it("does not steal a lock at exactly TTL boundary", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     await acquireLock(LOCK_PATH, fs, { pid: 100, now: () => 1700000000000 });
 
     const exactlyTtl = 1700000000000 + DEFAULT_LOCK_TTL_MS;
@@ -125,8 +87,8 @@ describe("acquireLock — stale lock steal", () => {
 
 describe("acquireLock — corrupt lock", () => {
   it("steals lock with malformed JSON", async () => {
-    const fs = new FakeFs();
-    fs.files.set(LOCK_PATH, "not valid json {");
+    const fs = new MemFs();
+    fs.file(LOCK_PATH, "not valid json {");
     const handle = await acquireLock(LOCK_PATH, fs, {
       pid: 200,
       now: () => 1700000000000,
@@ -135,8 +97,8 @@ describe("acquireLock — corrupt lock", () => {
   });
 
   it("steals lock with empty content (release marker)", async () => {
-    const fs = new FakeFs();
-    fs.files.set(LOCK_PATH, "");
+    const fs = new MemFs();
+    fs.file(LOCK_PATH, "");
     const handle = await acquireLock(LOCK_PATH, fs, {
       pid: 200,
       now: () => 1700000000000,
@@ -145,8 +107,8 @@ describe("acquireLock — corrupt lock", () => {
   });
 
   it("steals lock with structurally invalid JSON (missing pid)", async () => {
-    const fs = new FakeFs();
-    fs.files.set(LOCK_PATH, JSON.stringify({ ts: new Date().toISOString() }));
+    const fs = new MemFs();
+    fs.file(LOCK_PATH, JSON.stringify({ ts: new Date().toISOString() }));
     const handle = await acquireLock(LOCK_PATH, fs, {
       pid: 200,
       now: () => 1700000000000,
@@ -157,13 +119,13 @@ describe("acquireLock — corrupt lock", () => {
 
 describe("release", () => {
   it("writes empty marker enabling next acquire", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     const handle = await acquireLock(LOCK_PATH, fs, {
       pid: 100,
       now: () => 1700000000000,
     });
     await handle.release();
-    expect(fs.files.get(LOCK_PATH)).toBe("");
+    expect(fs.writes.get(LOCK_PATH)).toBe("");
 
     const next = await acquireLock(LOCK_PATH, fs, {
       pid: 200,
@@ -173,7 +135,7 @@ describe("release", () => {
   });
 
   it("is idempotent on double release", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     const handle = await acquireLock(LOCK_PATH, fs, {
       pid: 100,
       now: () => 1700000000000,

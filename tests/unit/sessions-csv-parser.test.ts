@@ -4,46 +4,7 @@ import {
   parseSessionsCsv,
   validateSessionsExist,
 } from "../../src/application/parsers/sessions-csv.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-
-class FakeFs implements FileSystemPort {
-  files = new Map<string, string>();
-  dirs = new Map<string, DirEntry[]>();
-
-  constructor(initialDirs: Record<string, string[]> = {}) {
-    for (const [parent, names] of Object.entries(initialDirs)) {
-      this.dirs.set(
-        parent,
-        names.map((name) => ({ name, path: `${parent}/${name}`, type: "dir" as const })),
-      );
-    }
-  }
-
-  async readText(p: string): Promise<string> {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(p: string, content: string): Promise<void> {
-    this.files.set(p, content);
-  }
-  async exists(p: string): Promise<boolean> {
-    return this.files.has(p) || this.dirs.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const v = this.dirs.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async mkdirp(p: string): Promise<void> {
-    if (!this.dirs.has(p)) this.dirs.set(p, []);
-  }
-  async stat(p: string): Promise<FileStat> {
-    if (this.dirs.has(p)) return { mtime: new Date(0), size: 0, type: "dir" };
-    if (this.files.has(p)) return { mtime: new Date(0), size: 0, type: "file" };
-    throw new Error(`ENOENT: ${p}`);
-  }
-}
+import { MemFs as FakeFs } from "../helpers/mem-fs.js";
 
 describe("parseSessionsCsv", () => {
   it("returns single code padded to 3 digits", () => {
@@ -101,16 +62,15 @@ describe("validateSessionsExist", () => {
   const DIR = "/cwd/.workflow/sessions";
 
   it("passes when all codes have matching session folders", async () => {
-    const fs = new FakeFs({
-      [DIR]: ["session055-dev-foo", "session057-analyze-bar", "session061-dev-baz"],
-    });
+    const fs = new FakeFs()
+      .dir(`${DIR}/session055-dev-foo`)
+      .dir(`${DIR}/session057-analyze-bar`)
+      .dir(`${DIR}/session061-dev-baz`);
     await expect(validateSessionsExist(fs, DIR, ["055", "057"])).resolves.toBeUndefined();
   });
 
   it("throws UNKNOWN_SESSION listing missing codes", async () => {
-    const fs = new FakeFs({
-      [DIR]: ["session055-dev-foo"],
-    });
+    const fs = new FakeFs().dir(`${DIR}/session055-dev-foo`);
     try {
       await validateSessionsExist(fs, DIR, ["055", "999"]);
       throw new Error("should have thrown");
@@ -123,14 +83,15 @@ describe("validateSessionsExist", () => {
   });
 
   it("throws UNKNOWN_SESSION when sessions dir is empty", async () => {
-    const fs = new FakeFs({ [DIR]: [] });
+    const fs = new FakeFs().dir(DIR);
     await expect(validateSessionsExist(fs, DIR, ["055"])).rejects.toThrow(/no encontrados.*055/);
   });
 
   it("ignores folders that don't match the sessionNNN- pattern", async () => {
-    const fs = new FakeFs({
-      [DIR]: ["session055-dev-foo", "scratch-folder", "session_legacy"],
-    });
+    const fs = new FakeFs()
+      .dir(`${DIR}/session055-dev-foo`)
+      .dir(`${DIR}/scratch-folder`)
+      .dir(`${DIR}/session_legacy`);
     await expect(validateSessionsExist(fs, DIR, ["055"])).resolves.toBeUndefined();
   });
 });

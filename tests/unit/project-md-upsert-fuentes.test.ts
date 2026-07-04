@@ -5,23 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runProjectMdUpsertWrite } from "../../src/application/project-md-upsert-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
 
 const FIXED_TS = "2026-05-07 12:00";
-
-class TestEnv implements EnvPort {
-  constructor(private readonly cwdValue: string) {}
-  get(): undefined {
-    return undefined;
-  }
-  homeDir(): string {
-    return this.cwdValue;
-  }
-  cwd(): string {
-    return this.cwdValue;
-  }
-}
 
 function makePaths(home: string): PathsService {
   const ns = normalizeNamespace("agent-workflow");
@@ -31,9 +18,13 @@ function makePaths(home: string): PathsService {
 describe("project-md-upsert --init with --fuente / --main-branch", () => {
   const fs = new NodeFileSystem();
   let cwd: string;
+  let env: FakeEnv;
+  let paths: PathsService;
 
   beforeEach(async () => {
     cwd = await mkdtemp(join(tmpdir(), "aw-pmu-fuentes-"));
+    env = new FakeEnv(cwd);
+    paths = makePaths(cwd);
   });
 
   afterEach(async () => {
@@ -41,8 +32,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("renders 1 fuente from --fuente alias:path:rama", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
@@ -54,8 +43,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("renders 2 fuentes with shared --main-branch fallback", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
@@ -72,8 +59,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("renders 3 fuentes with mixed per-fuente rama and --main-branch fallback", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
@@ -92,8 +77,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("falls back to 'certificacion' when neither per-fuente rama nor --main-branch are given", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [{ alias: "core", path: "/repo/core" }],
@@ -105,8 +88,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("merges --working-branch entries (multi-flag) into Status", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
@@ -126,8 +107,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("merges --qa-branch entries (multi-flag) into Status", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
@@ -146,8 +125,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("preserves existing qa_branches and merges new ones on re-init", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [{ alias: "core", path: "/repo/core" }],
@@ -166,8 +143,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("preserves existing fuentes and overrides matching alias on re-init", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
@@ -189,8 +164,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("removeAliases prunes a source from fuentes + working + qa branches", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
@@ -217,8 +190,6 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   });
 
   it("removeAliases of the last source leaves an empty fuentes table", async () => {
-    const env = new TestEnv(cwd);
-    const paths = makePaths(cwd);
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],

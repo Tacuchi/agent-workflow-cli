@@ -10,21 +10,9 @@ import { removeSource } from "../../src/application/source-remove-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
 
 const FIXED_TS = "2026-05-07 12:00";
-
-class TestEnv implements EnvPort {
-  constructor(private readonly cwdValue: string) {}
-  get(): undefined {
-    return undefined;
-  }
-  homeDir(): string {
-    return this.cwdValue;
-  }
-  cwd(): string {
-    return this.cwdValue;
-  }
-}
 
 class FakeProc implements ProcessPort {
   killed: number[] = [];
@@ -78,7 +66,7 @@ describe("removeSource", () => {
   }
 
   it("prunes the block, stops its processes, and deletes .workflow/launch/<alias>", async () => {
-    const env = new TestEnv(cwd);
+    const env = new FakeEnv(cwd);
     const paths = makePaths(cwd);
     const proc = new FakeProc();
     await seedBlock(env, paths);
@@ -112,7 +100,7 @@ describe("removeSource", () => {
   });
 
   it("returns an error for an unknown alias", async () => {
-    const env = new TestEnv(cwd);
+    const env = new FakeEnv(cwd);
     const paths = makePaths(cwd);
     await seedBlock(env, paths);
     const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "ghost");
@@ -120,7 +108,7 @@ describe("removeSource", () => {
   });
 
   it("is idempotent: no processes and no tools dir still succeeds", async () => {
-    const env = new TestEnv(cwd);
+    const env = new FakeEnv(cwd);
     const paths = makePaths(cwd);
     await seedBlock(env, paths);
     const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "core");

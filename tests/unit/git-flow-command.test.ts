@@ -9,22 +9,9 @@ import { renderProjectBlock } from "../../src/application/render/project-block.j
 import { gitFlowCommand } from "../../src/cli/commands/git-flow.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
-
-class TestEnv implements EnvPort {
-  constructor(private readonly cwdValue: string) {}
-  get(): undefined {
-    return undefined;
-  }
-  homeDir(): string {
-    return this.cwdValue;
-  }
-  cwd(): string {
-    return this.cwdValue;
-  }
-}
 
 interface ArgOpts {
   rest?: string[];
@@ -66,7 +53,7 @@ describe("git-flow command", () => {
 
   function ctx(git: RecordingGit): CliContext {
     const paths = new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd);
-    return { fs, env: new TestEnv(cwd), paths, git } as unknown as CliContext;
+    return { fs, env: new FakeEnv(cwd), paths, git } as unknown as CliContext;
   }
 
   it("rejects a missing/invalid action with INVALID_INPUT", async () => {

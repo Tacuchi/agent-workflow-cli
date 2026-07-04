@@ -18,11 +18,15 @@ function loadGoldenFile(scenario: string, relativePath: string): string {
 
 const fs = new NodeFileSystem();
 
+function setup() {
+  const cwd = cloneFixture(FIXTURE);
+  const env = new TestEnv(cwd);
+  return { cwd, env, paths: makeWorkflowPaths(env) };
+}
+
 describe("Wave 1B write commands — golden parity (new model)", () => {
   it("history-update --code 001 --state closed --summary 'tarea cerrada via test'", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { cwd, env, paths } = setup();
     const result = await runHistoryUpdate(fs, env, paths, {
       code: "001",
       state: "closed",
@@ -31,16 +35,14 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     // Sessions no longer carry a `flow` segment; the output flow is always null
     // and the legacy HISTORY.md "Flujo" column renders "—".
     expect(result).toEqual({ code: "001", flow: null, action: "updated", state: "closed" });
-    expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(
+    expect(readFile(join(cwd, ".workflow", "HISTORY.md"))).toEqual(
       loadGoldenFile("history-update-001-closed", ".workflow/HISTORY.md"),
     );
   });
 
   it("session-close --code 001 writes the .closed sentinel AND upserts the HISTORY row", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
-    const historyBefore = readFile(join(clone.cwd, ".workflow", "HISTORY.md"));
+    const { cwd, env, paths } = setup();
+    const historyBefore = readFile(join(cwd, ".workflow", "HISTORY.md"));
 
     const result = await runSessionClose(fs, env, paths, { code: "001" });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
@@ -49,7 +51,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(result.sessionClose.closed).toBe(true);
 
     // Folder-local `.closed` sentinel persisted.
-    const sessionDir = join(clone.cwd, ".workflow", "sessions", "session001-dev-foo");
+    const sessionDir = join(cwd, ".workflow", "sessions", "session001-dev-foo");
     expect(existsSync(join(sessionDir, ".closed"))).toBe(true);
     // CHECKPOINT.md is created (resume safety net) and persists in the folder.
     expect(result.sessionClose.checkpoint_path).toContain("CHECKPOINT.md");
@@ -63,7 +65,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     // HISTORY is the durable record — reverses the old "release bookkeeping only"
     // decoupling, ratified in spec 008 Q2).
     expect(result.sessionClose.history).toEqual({ action: "updated", state: "closed" });
-    const historyAfter = readFile(join(clone.cwd, ".workflow", "HISTORY.md"));
+    const historyAfter = readFile(join(cwd, ".workflow", "HISTORY.md"));
     expect(historyAfter).not.toEqual(historyBefore);
     const row = historyAfter.split("\n").find((l) => l.startsWith("| 001 |"));
     expect(row).toBeDefined();
@@ -71,9 +73,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-close --refs lands the refs (free text included) in the HISTORY row", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { cwd, env, paths } = setup();
     const result = await runSessionClose(fs, env, paths, {
       code: "001",
       refs: "see docs/decisiones/001-foo.md",
@@ -81,47 +81,41 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.sessionClose.refs).toBe("see docs/decisiones/001-foo.md");
     // Free-form refs (no `kind:`) render as plain text in the row, never dropped.
-    const historyAfter = readFile(join(clone.cwd, ".workflow", "HISTORY.md"));
+    const historyAfter = readFile(join(cwd, ".workflow", "HISTORY.md"));
     const row = historyAfter.split("\n").find((l) => l.startsWith("| 001 |"));
     expect(row).toContain("see docs/decisiones/001-foo.md");
   });
 
   it("session-close es no-fatal ante HISTORY bloqueado: cierra igual y reporta history_error", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { cwd, env, paths } = setup();
     // Live foreign lock (test's pid, current ISO ts) → history-update returns lock busy.
     await fs.writeText(
-      join(clone.cwd, ".workflow", ".lock"),
+      join(cwd, ".workflow", ".lock"),
       JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
     );
-    const historyBefore = readFile(join(clone.cwd, ".workflow", "HISTORY.md"));
+    const historyBefore = readFile(join(cwd, ".workflow", "HISTORY.md"));
 
     const result = await runSessionClose(fs, env, paths, { code: "001" });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.sessionClose.closed).toBe(true);
-    expect(
-      existsSync(join(clone.cwd, ".workflow", "sessions", "session001-dev-foo", ".closed")),
-    ).toBe(true);
+    expect(existsSync(join(cwd, ".workflow", "sessions", "session001-dev-foo", ".closed"))).toBe(
+      true,
+    );
     expect(result.sessionClose.history).toBeUndefined();
     expect(result.sessionClose.history_error).toMatch(/lock ocupado/);
-    expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);
+    expect(readFile(join(cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);
   });
 
   it("session-close error si la sesión no existe", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { env, paths } = setup();
     const result = await runSessionClose(fs, env, paths, { code: "999" });
     if (!("error" in result)) throw new Error("expected error");
     expect(result.error).toMatch(/Sesión no encontrada/);
   });
 
   it("session-create --type exec --name ... --objetivo ... --from ... writes SESSION.md (no HISTORY, no project-block)", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
-    const historyBefore = readFile(join(clone.cwd, ".workflow", "HISTORY.md"));
+    const { cwd, env, paths } = setup();
+    const historyBefore = readFile(join(cwd, ".workflow", "HISTORY.md"));
     const result = await runSessionCreate(fs, env, paths, {
       type: "exec",
       name: "session004-dev-nueva-tarea",
@@ -140,7 +134,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
 
     // Descriptor is SESSION.md (replaces the old per-flow OBJECTIVE.md).
     const sessionPath = join(
-      clone.cwd,
+      cwd,
       ".workflow",
       "sessions",
       "001-session004-dev-nueva-tarea",
@@ -151,16 +145,14 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(readFile(sessionPath)).toEqual(loadGoldenFile("session-create-exec", "SESSION.md"));
 
     // session-create no longer writes a per-session HISTORY row.
-    expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);
+    expect(readFile(join(cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);
     // session-create no longer touches the project block (sessions are internal/light).
-    const claudeAfter = readFile(join(clone.cwd, "CLAUDE.md"));
+    const claudeAfter = readFile(join(cwd, "CLAUDE.md"));
     expect(claudeAfter).not.toContain("session004-dev-nueva-tarea");
   });
 
   it("session-create numbers sessions globally & sequentially, regardless of type", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { env, paths } = setup();
 
     const first = await runSessionCreate(fs, env, paths, {
       type: "refine",
@@ -197,9 +189,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create without --from renders the Origin placeholder", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { cwd, env, paths } = setup();
     const result = await runSessionCreate(fs, env, paths, {
       type: "research",
       name: "investiga-x",
@@ -210,7 +200,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(result.sessionCreate.origin).toBeUndefined();
 
     expect(result.sessionCreate.folder).toBe("001-investiga-x");
-    const obj = readFile(join(clone.cwd, ".workflow", "sessions", "001-investiga-x", "SESSION.md"));
+    const obj = readFile(join(cwd, ".workflow", "sessions", "001-investiga-x", "SESSION.md"));
     expect(obj).toContain("# SESSION — investiga-x");
     expect(obj).toContain("## Objective\nInvestigar el patrón X");
     expect(obj).toContain("## Type\nresearch");
@@ -218,9 +208,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create requires --type (research|refine|exec|quick)", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { env, paths } = setup();
     const result = await runSessionCreate(fs, env, paths, {
       name: "x",
       objetivo: "y",
@@ -231,9 +219,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create rejects an invalid --type", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { env, paths } = setup();
     const result = await runSessionCreate(fs, env, paths, {
       type: "feature",
       name: "x",
@@ -244,9 +230,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create requires --objetivo", async () => {
-    const clone = cloneFixture(FIXTURE);
-    const env = new TestEnv(clone.cwd);
-    const paths = makeWorkflowPaths(env);
+    const { env, paths } = setup();
     const result = await runSessionCreate(fs, env, paths, {
       type: "exec",
       name: "x",

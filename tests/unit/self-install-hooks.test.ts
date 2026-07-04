@@ -6,86 +6,11 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { selfInstallHooks } from "../../src/application/self/install-hooks.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
-
-class RealFs implements FileSystemPort {
-  async readText(path: string): Promise<string> {
-    return readFile(path, "utf8");
-  }
-  async writeText(path: string, content: string): Promise<void> {
-    await writeFile(path, content, "utf8");
-  }
-  async writeTextExclusive(path: string, content: string): Promise<{ created: boolean }> {
-    try {
-      await stat(path);
-      return { created: false };
-    } catch {
-      await writeFile(path, content, "utf8");
-      return { created: true };
-    }
-  }
-  async remove(path: string): Promise<void> {
-    try {
-      await rm(path, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
-  }
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async list(): Promise<DirEntry[]> {
-    return [];
-  }
-  async mkdirp(path: string): Promise<void> {
-    await mkdir(path, { recursive: true });
-  }
-  async stat(): Promise<FileStat> {
-    throw new Error("nyi");
-  }
-}
-
-class FakeProcess implements ProcessPort {
-  async run() {
-    return { code: 0, stdout: "", stderr: "" };
-  }
-  async which() {
-    return undefined;
-  }
-
-  async spawnDetached() {
-    throw new Error("spawnDetached not implemented in this fake");
-  }
-  async spawnInTerminal() {
-    throw new Error("spawnInTerminal not implemented in this fake");
-  }
-  async killTree(): Promise<void> {}
-  async isAlive() {
-    return false;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
+import { NoScanFs } from "../helpers/real-fs.js";
 
 const VALID_TEMPLATE = {
   hooks: {
@@ -128,9 +53,9 @@ function buildCtx(home: string): CliContext {
     source: "default",
   };
   return {
-    fs: new RealFs(),
+    fs: new NoScanFs(),
     env: new FakeEnv(home),
-    process: new FakeProcess(),
+    process: new FakeProcess({ run: () => ({ code: 0, stdout: "", stderr: "" }) }),
     git: {} as never,
     namespace: { namespace: ns, source: "default" },
     runtime,
@@ -170,42 +95,10 @@ describe("selfInstallHooks", () => {
     if (!result.ok) expect(result.error.code).toBe("INVALID_TARGET");
   });
 
-  it("--target codex → unsupported (warning, ok:true)", async () => {
-    const result = await selfInstallHooks(
-      buildArgs({ target: "codex", template: templatePath }),
-      buildCtx(home),
-    );
-    expect(result.ok).toBe(true);
-    if (result.ok && result.data) {
-      expect(result.data.status).toBe("unsupported");
-      expect(result.data.warning).toContain("codex");
-      expect(result.data.config_path).toBeNull();
-    }
-  });
-
-  it("--target warp → unsupported (warning, ok:true)", async () => {
-    const result = await selfInstallHooks(
-      buildArgs({ target: "warp", template: templatePath }),
-      buildCtx(home),
-    );
-    expect(result.ok).toBe(true);
-    if (result.ok && result.data) {
-      expect(result.data.status).toBe("unsupported");
-    }
-  });
-
-  it("--target oz → unsupported", async () => {
-    const result = await selfInstallHooks(
-      buildArgs({ target: "oz", template: templatePath }),
-      buildCtx(home),
-    );
-    expect(result.ok).toBe(true);
-    if (result.ok && result.data) expect(result.data.status).toBe("unsupported");
-  });
-
-  // New registry hosts must resolve to the explanatory "unsupported" result, not
-  // a generic INVALID_TARGET (the daily-status documents them as valid hosts).
-  it.each(["gemini", "opencode", "crush"])(
+  // Every non-claude target resolves to the explanatory "unsupported" result
+  // (warning + null config_path), not a generic INVALID_TARGET — the
+  // daily-status documents them as valid hosts.
+  it.each(["codex", "warp", "oz", "gemini", "opencode", "crush"])(
     "--target %s → unsupported (not INVALID_TARGET)",
     async (target) => {
       const result = await selfInstallHooks(
@@ -216,6 +109,7 @@ describe("selfInstallHooks", () => {
       if (result.ok && result.data) {
         expect(result.data.status).toBe("unsupported");
         expect(result.data.warning).toContain(target);
+        expect(result.data.config_path).toBeNull();
       }
     },
   );

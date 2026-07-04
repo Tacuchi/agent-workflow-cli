@@ -8,22 +8,9 @@ import { renderProjectBlock } from "../../src/application/render/project-block.j
 import { removeSourceCommand } from "../../src/cli/commands/remove-source.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class TestEnv implements EnvPort {
-  constructor(private readonly cwdValue: string) {}
-  get(): undefined {
-    return undefined;
-  }
-  homeDir(): string {
-    return this.cwdValue;
-  }
-  cwd(): string {
-    return this.cwdValue;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 class FakeProc implements ProcessPort {
   async run() {
@@ -79,7 +66,7 @@ describe("remove-source command", () => {
 
   function ctx(): CliContext {
     const paths = new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd);
-    return { fs, env: new TestEnv(cwd), paths, process: new FakeProc() } as unknown as CliContext;
+    return { fs, env: new FakeEnv(cwd), paths, process: new FakeProc() } as unknown as CliContext;
   }
 
   it("errors with usage when no alias is given", async () => {

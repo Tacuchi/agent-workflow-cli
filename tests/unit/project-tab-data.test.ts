@@ -71,14 +71,6 @@ function buildDeps({ claudeMd, currentBranch }: FakeDepsOptions) {
     process: {
       run: async (_cmd: string, args: string[]) => {
         if (args.includes("rev-list")) return { code: 0, stdout: "0\t5", stderr: "" };
-        if (args.includes("for-each-ref")) return { code: 0, stdout: "", stderr: "" };
-        if (args.includes("log")) {
-          return {
-            code: 0,
-            stdout: "abc1234\tfix\tme\t2026-01-01T00:00:00Z\thace 1 día",
-            stderr: "",
-          };
-        }
         return { code: 0, stdout: "", stderr: "" };
       },
       which: async () => undefined,

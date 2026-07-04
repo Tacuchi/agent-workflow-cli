@@ -3,22 +3,10 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { selfCommand } from "../../src/cli/commands/self.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return "/home/u";
-  }
-  cwd() {
-    return "/cwd";
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 function buildArgs(rest: string[]): ParsedArgs {
   return {
@@ -48,7 +36,7 @@ function buildCtx(): CliContext {
   };
   return {
     fs: {} as never,
-    env: new FakeEnv(),
+    env: new FakeEnv("/home/u", "/cwd"),
     process: proc,
     git: {} as never,
     namespace: { namespace: ns, source: "default" },
@@ -59,10 +47,6 @@ function buildCtx(): CliContext {
 
 describe("selfCommand — without subcommand (H-07)", () => {
   it("returns ok:true with subcommands list and help_hint, exit 0", async () => {
-    const result = await selfCommand.execute(buildArgs(["self"]), buildCtx());
-    // rest[0] === "self" is not a subcommand of self; the dispatcher reads rest[0] which
-    // for the actual self command call is the SUBCOMMAND. Simulate a "no sub" call by
-    // passing rest = [] explicitly.
     const noSub = await selfCommand.execute(buildArgs([]), buildCtx());
     expect(noSub.ok).toBe(true);
     if (noSub.ok) {
@@ -87,8 +71,6 @@ describe("selfCommand — without subcommand (H-07)", () => {
       expect(data.help_hint).toContain("aw self");
       expect(noSub.exitCode).toBe(0);
     }
-    // First call (rest=["self"]) is treated as unknown subcommand "self" → error envelope.
-    expect(result.ok).toBe(false);
   });
 
   it("rejects unknown subcommand with INVALID_INPUT (preserves prior contract)", async () => {

@@ -4,21 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runMcpRemove } from "../../src/application/mcp-remove-service.js";
 import { runMcpSetup } from "../../src/application/mcp-setup-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private readonly _cwd: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    // Sandboxed under the test workspace: global-scope paths never leave tmp.
-    return join(this._cwd, "home");
-  }
-  cwd() {
-    return this._cwd;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 describe("runMcpRemove", () => {
   let workspace: string;
@@ -26,7 +12,8 @@ describe("runMcpRemove", () => {
 
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "mcp-remove-svc-"));
-    env = new FakeEnv(workspace);
+    // Sandboxed under the test workspace: global-scope paths never leave tmp.
+    env = new FakeEnv(join(workspace, "home"), workspace);
   });
   afterEach(() => {
     rmSync(workspace, { recursive: true, force: true });

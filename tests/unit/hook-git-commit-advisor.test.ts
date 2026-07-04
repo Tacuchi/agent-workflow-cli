@@ -5,24 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runGitCommitAdvisor } from "../../src/application/hook-git-commit-advisor.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class FakeEnv implements EnvPort {
-  constructor(
-    private readonly _cwd: string,
-    private readonly _vars: Record<string, string> = {},
-  ) {}
-  get(name: string): string | undefined {
-    return this._vars[name];
-  }
-  homeDir(): string {
-    return this._cwd;
-  }
-  cwd(): string {
-    return this._cwd;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 function buildBlock(opts: {
   sessions?: string[];
@@ -76,7 +60,7 @@ describe("runGitCommitAdvisor", () => {
 
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "git-commit-advisor-"));
-    env = new FakeEnv(workspace);
+    env = new FakeEnv(workspace, workspace);
     paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
     fs = new NodeFileSystem();
   });
@@ -167,7 +151,7 @@ describe("runGitCommitAdvisor", () => {
 
   it("caso E: AW_COMMIT_ADVISOR=off bypass → exit 0 silent aunque haya sesión sin tag", async () => {
     mkActiveSession("session053-dev-foo");
-    const envOff = new FakeEnv(workspace, { AW_COMMIT_ADVISOR: "off" });
+    const envOff = new FakeEnv(workspace, workspace, { AW_COMMIT_ADVISOR: "off" });
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "fix algo"' },

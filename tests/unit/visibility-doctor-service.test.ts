@@ -5,21 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runVisibilityDoctor } from "../../src/application/visibility-doctor-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private readonly _cwd: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this._cwd;
-  }
-  cwd() {
-    return this._cwd;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 function writeProjectBlock(workspace: string, fuentes: { alias: string; path: string }[]): void {
   const start = "<!-- WORKFLOW-PROJECT-START -->";

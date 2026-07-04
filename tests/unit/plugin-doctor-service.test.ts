@@ -1,46 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runPluginDoctor } from "../../src/application/plugin-doctor-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
+import type { DirEntry } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
+import { FakeEnv } from "../helpers/fake-env.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
-class FakeEnv implements EnvPort {
-  get() {
-    return undefined;
+// Rebuilds the old FakeFs(files, dirs) shape on the shared MemFs: seed files and
+// the explicit dir listings the doctor walks. Strict on unregistered paths
+// (list throws ENOENT) — matching the original fake.
+function makeFs(
+  files: Map<string, string> = new Map(),
+  dirs: Map<string, DirEntry[]> = new Map(),
+): MemFs {
+  const fs = new MemFs();
+  for (const [p, content] of files) fs.file(p, content);
+  for (const [dir, entries] of dirs) {
+    fs.dir(dir);
+    for (const e of entries) {
+      if (e.type === "dir") fs.dir(e.path);
+      else fs.file(e.path, files.get(e.path) ?? "");
+    }
   }
-  homeDir() {
-    return "/home/u";
-  }
-  cwd() {
-    return "/cwd";
-  }
-}
-
-class FakeFs implements FileSystemPort {
-  constructor(
-    private files: Map<string, string> = new Map(),
-    private dirs: Map<string, DirEntry[]> = new Map(),
-  ) {}
-  async readText(p: string) {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(): Promise<void> {}
-  async exists(p: string) {
-    return this.files.has(p) || this.dirs.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const v = this.dirs.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async mkdirp(): Promise<void> {}
-  async stat(): Promise<FileStat> {
-    throw new Error("nyi");
-  }
+  return fs;
 }
 
 const ns = normalizeNamespace("workflow");
@@ -76,8 +59,8 @@ Test content.
 `;
 }
 
-function singleSkillFs(dir: string, skillMd: string, pluginRoot = "/cwd/p"): FakeFs {
-  return new FakeFs(
+function singleSkillFs(dir: string, skillMd: string, pluginRoot = "/cwd/p"): MemFs {
+  return makeFs(
     new Map([[`${pluginRoot}/skills/${dir}/SKILL.md`, skillMd]]),
     new Map([
       [pluginRoot, []],
@@ -94,7 +77,7 @@ function warns(data: { findings: { level: string; msg: string }[] }, needle: str
 describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
   it("derives plugin name from manifest.name", async () => {
     const pluginRoot = "/cwd/acme-plugin";
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
         [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
@@ -103,7 +86,7 @@ describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
       ]),
       new Map([[pluginRoot, []]]),
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(data.plugin).toBe("acme");
@@ -112,8 +95,8 @@ describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
 
   it("falls back to basename(pluginRoot) when manifest is missing (H-04)", async () => {
     const pluginRoot = "/cwd/no-manifest-plugin";
-    const fs = new FakeFs(new Map(), new Map([[pluginRoot, []]]));
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const fs = makeFs(new Map(), new Map([[pluginRoot, []]]));
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(data.plugin).toBe("no-manifest-plugin"); // basename of pluginRoot
@@ -122,8 +105,8 @@ describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
 
   it("falls back to `${ns}-${flow}` when basename is empty (e.g., pluginRoot='/')", async () => {
     const pluginRoot = "/";
-    const fs = new FakeFs(new Map(), new Map([[pluginRoot, []]]));
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const fs = makeFs(new Map(), new Map([[pluginRoot, []]]));
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(data.plugin).toBe("workflow-core");
@@ -131,14 +114,14 @@ describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
 
   it("respects explicit input.pluginName over manifest", async () => {
     const pluginRoot = "/cwd/acme-plugin";
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
         [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
       ]),
       new Map([[pluginRoot, []]]),
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
       pluginName: "explicit-override",
     });
@@ -149,8 +132,8 @@ describe("runPluginDoctor — plugin name from manifest (B-17 fix)", () => {
 describe("runPluginDoctor — skills frontmatter", () => {
   it("reports skills_count=0 and no findings when no skills/ dir", async () => {
     const pluginRoot = "/cwd/empty-plugin";
-    const fs = new FakeFs(new Map(), new Map([[pluginRoot, []]]));
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const fs = makeFs(new Map(), new Map([[pluginRoot, []]]));
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(data.skills_count).toBe(0);
@@ -159,7 +142,7 @@ describe("runPluginDoctor — skills frontmatter", () => {
 
   it("reports skills with valid frontmatter", async () => {
     const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         [`${pluginRoot}/skills/foo/SKILL.md`, skillFrontmatter("foo", "1.0.0")],
         [`${pluginRoot}/skills/bar/SKILL.md`, skillFrontmatter("bar", "2.1.0")],
@@ -177,7 +160,7 @@ describe("runPluginDoctor — skills frontmatter", () => {
         [`${pluginRoot}/skills/bar`, []],
       ]),
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(data.skills_count).toBe(2);
@@ -188,49 +171,23 @@ describe("runPluginDoctor — skills frontmatter", () => {
   });
 
   it("emits error finding when skill missing 'name' in frontmatter", async () => {
-    const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
-      new Map([
-        [
-          `${pluginRoot}/skills/broken/SKILL.md`,
-          "---\ndescription: missing name field\nversion: 1.0.0\n---\n",
-        ],
-      ]),
-      new Map([
-        [pluginRoot, []],
-        [
-          `${pluginRoot}/skills`,
-          [{ name: "broken", path: `${pluginRoot}/skills/broken`, type: "dir" }],
-        ],
-        [`${pluginRoot}/skills/broken`, []],
-      ]),
+    const fs = singleSkillFs(
+      "broken",
+      "---\ndescription: missing name field\nversion: 1.0.0\n---\n",
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
-      pluginRoot,
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
+      pluginRoot: "/cwd/p",
     });
     expect(data.findings.some((f) => f.level === "error" && f.msg.includes("name"))).toBe(true);
   });
 
   it("emits warn finding when skill version is not semver", async () => {
-    const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
-      new Map([
-        [
-          `${pluginRoot}/skills/badver/SKILL.md`,
-          "---\nname: badver\ndescription: bad ver\nversion: not-semver\n---\n",
-        ],
-      ]),
-      new Map([
-        [pluginRoot, []],
-        [
-          `${pluginRoot}/skills`,
-          [{ name: "badver", path: `${pluginRoot}/skills/badver`, type: "dir" }],
-        ],
-        [`${pluginRoot}/skills/badver`, []],
-      ]),
+    const fs = singleSkillFs(
+      "badver",
+      "---\nname: badver\ndescription: bad ver\nversion: not-semver\n---\n",
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
-      pluginRoot,
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
+      pluginRoot: "/cwd/p",
     });
     expect(
       data.findings.some((f) => f.level === "warn" && f.msg.includes("not semver-compatible")),
@@ -238,25 +195,12 @@ describe("runPluginDoctor — skills frontmatter", () => {
   });
 
   it("emits warn finding when skill name differs from directory", async () => {
-    const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
-      new Map([
-        [
-          `${pluginRoot}/skills/dirname/SKILL.md`,
-          "---\nname: different-name\ndescription: x\nversion: 1.0.0\n---\n",
-        ],
-      ]),
-      new Map([
-        [pluginRoot, []],
-        [
-          `${pluginRoot}/skills`,
-          [{ name: "dirname", path: `${pluginRoot}/skills/dirname`, type: "dir" }],
-        ],
-        [`${pluginRoot}/skills/dirname`, []],
-      ]),
+    const fs = singleSkillFs(
+      "dirname",
+      "---\nname: different-name\ndescription: x\nversion: 1.0.0\n---\n",
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
-      pluginRoot,
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
+      pluginRoot: "/cwd/p",
     });
     expect(
       data.findings.some((f) => f.level === "warn" && f.msg.includes("differs from directory")),
@@ -271,7 +215,7 @@ describe("runPluginDoctor — Agent Skills standard limits", () => {
       "big",
       `---\nname: big\ndescription: ${longDesc}\nmetadata:\n  version: 1.0.0\n---\n`,
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(warns(data, "caps it at 1024")).toBe(true);
@@ -283,7 +227,7 @@ describe("runPluginDoctor — Agent Skills standard limits", () => {
       "okdesc",
       `---\nname: okdesc\ndescription: ${okDesc}\nmetadata:\n  version: 1.0.0\n---\n`,
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(warns(data, "caps it at 1024")).toBe(false);
@@ -295,7 +239,7 @@ describe("runPluginDoctor — Agent Skills standard limits", () => {
       longName,
       `---\nname: ${longName}\ndescription: x\nmetadata:\n  version: 1.0.0\n---\n`,
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(warns(data, "caps it at 64")).toBe(true);
@@ -306,7 +250,7 @@ describe("runPluginDoctor — Agent Skills standard limits", () => {
       "Bad_Name",
       "---\nname: Bad_Name\ndescription: x\nmetadata:\n  version: 1.0.0\n---\n",
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(warns(data, "not lowercase alphanumeric")).toBe(true);
@@ -317,7 +261,7 @@ describe("runPluginDoctor — Agent Skills standard limits", () => {
       "extrakey",
       "---\nname: extrakey\ndescription: x\nauthor: someone\nmetadata:\n  version: 1.0.0\n---\n",
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(warns(data, "unknown top-level frontmatter key 'author'")).toBe(true);
@@ -328,7 +272,7 @@ describe("runPluginDoctor — Agent Skills standard limits", () => {
       "rich",
       "---\nname: rich\ndescription: x\nlicense: MIT\ncompatibility: Requires git\nallowed-tools: Read\nmetadata:\n  version: 1.0.0\n---\n",
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(warns(data, "unknown top-level frontmatter key")).toBe(false);
@@ -341,7 +285,7 @@ describe("runPluginDoctor — version under metadata (Agent Skills standard)", (
       "metaver",
       "---\nname: metaver\ndescription: x\nmetadata:\n  version: 1.2.3\n---\n",
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(data.skills.find((s) => s.dir === "metaver")?.version).toBe("1.2.3");
@@ -354,7 +298,7 @@ describe("runPluginDoctor — version under metadata (Agent Skills standard)", (
       "legacyver",
       "---\nname: legacyver\ndescription: x\nversion: 1.0.0\n---\n",
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(warns(data, "move it to metadata.version")).toBe(true);
@@ -364,7 +308,7 @@ describe("runPluginDoctor — version under metadata (Agent Skills standard)", (
 
   it("does not warn when version is absent (version is optional per the standard)", async () => {
     const fs = singleSkillFs("noversion", "---\nname: noversion\ndescription: x\n---\n");
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot: "/cwd/p",
     });
     expect(warns(data, "missing version")).toBe(false);
@@ -376,14 +320,14 @@ describe("runPluginDoctor — version under metadata (Agent Skills standard)", (
 describe("runPluginDoctor — manifest version drift", () => {
   it("emits error when claude vs codex manifests have different versions", async () => {
     const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
         [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("acme", "1.0.1")],
       ]),
       new Map([[pluginRoot, []]]),
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(data.findings.some((f) => f.level === "error" && f.msg.includes("version drift"))).toBe(
@@ -393,14 +337,14 @@ describe("runPluginDoctor — manifest version drift", () => {
 
   it("does not emit drift error when both manifests match", async () => {
     const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([
         [`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
         [`${pluginRoot}/.codex-plugin/plugin.json`, manifestJson("acme", "1.0.0")],
       ]),
       new Map([[pluginRoot, []]]),
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(data.findings.some((f) => f.msg.includes("version drift"))).toBe(false);
@@ -408,11 +352,11 @@ describe("runPluginDoctor — manifest version drift", () => {
 
   it("emits warn for missing manifest", async () => {
     const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([[`${pluginRoot}/.claude-plugin/plugin.json`, manifestJson("acme", "1.0.0")]]),
       new Map([[pluginRoot, []]]),
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(
@@ -424,11 +368,11 @@ describe("runPluginDoctor — manifest version drift", () => {
 describe("runPluginDoctor — hooks JSON", () => {
   it("reports hook keys when JSON is valid", async () => {
     const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([[`${pluginRoot}/hooks/hooks.json`, validHooksJson]]),
       new Map([[pluginRoot, []]]),
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(data.hooks["hooks/hooks.json"]).toEqual(["PreToolUse", "SessionStart"]);
@@ -436,11 +380,11 @@ describe("runPluginDoctor — hooks JSON", () => {
 
   it("emits error when hooks JSON is malformed", async () => {
     const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(
+    const fs = makeFs(
       new Map([[`${pluginRoot}/hooks/hooks.json`, "{not valid json"]]),
       new Map([[pluginRoot, []]]),
     );
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(
@@ -454,8 +398,8 @@ describe("runPluginDoctor — hooks JSON", () => {
 
   it("emits warn when hooks file is missing", async () => {
     const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(new Map(), new Map([[pluginRoot, []]]));
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const fs = makeFs(new Map(), new Map([[pluginRoot, []]]));
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(
@@ -469,8 +413,8 @@ describe("runPluginDoctor — hooks JSON", () => {
 describe("runPluginDoctor — overall status", () => {
   it("returns DoctorOutput.status field as 'ok' | 'warn' | 'error'", async () => {
     const pluginRoot = "/cwd/p";
-    const fs = new FakeFs(new Map(), new Map([[pluginRoot, []]]));
-    const { data } = await runPluginDoctor(fs, new FakeEnv(), paths, runtime, {
+    const fs = makeFs(new Map(), new Map([[pluginRoot, []]]));
+    const { data } = await runPluginDoctor(fs, new FakeEnv("/home/u", "/cwd"), paths, runtime, {
       pluginRoot,
     });
     expect(["ok", "warn", "error"]).toContain(data.status);

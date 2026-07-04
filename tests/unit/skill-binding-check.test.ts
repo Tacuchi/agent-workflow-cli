@@ -8,24 +8,8 @@ import {
   checkInstalledBindings,
   resolveSkills,
 } from "../../src/application/skills-resolver-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class FakeEnv implements EnvPort {
-  constructor(
-    private readonly h: string,
-    private readonly c: string,
-  ) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.h;
-  }
-  cwd() {
-    return this.c;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 describe("checkInstalledBindings (advisory binding validation)", () => {
   let home: string;

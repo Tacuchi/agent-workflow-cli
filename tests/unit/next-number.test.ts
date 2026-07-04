@@ -4,20 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
-import type { EnvPort } from "../../src/ports/env.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private readonly _cwd: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this._cwd;
-  }
-  cwd() {
-    return this._cwd;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 describe("runNextNumber", () => {
   let workspace: string;
@@ -26,7 +13,7 @@ describe("runNextNumber", () => {
 
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "next-number-"));
-    env = new FakeEnv(workspace);
+    env = new FakeEnv(workspace, workspace);
     fs = new NodeFileSystem();
   });
   afterEach(() => {

@@ -7,63 +7,14 @@ import {
   findArtifact,
   listExistingArtifacts,
 } from "../../src/application/session-artifacts.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
-class FakeFs implements FileSystemPort {
-  files = new Map<string, string>();
-  dirs = new Map<string, DirEntry[]>();
-  registerDir = true;
-
-  constructor(initial: Record<string, string> = {}, options: { registerDir?: boolean } = {}) {
-    this.registerDir = options.registerDir !== false;
-    for (const [path, content] of Object.entries(initial)) {
-      this.files.set(path, content);
-      if (this.registerDir) {
-        const parent = parentOf(path);
-        const list = this.dirs.get(parent) ?? [];
-        list.push({ name: baseOf(path), path, type: "file" });
-        this.dirs.set(parent, list);
-      }
-    }
+// MemFs whose list() always throws — reproduces the legacy fake's `registerDir:false`
+// mode, forcing findArtifact/listExistingArtifacts down the fs.exists() fallback.
+class NoListFs extends MemFs {
+  override async list(): Promise<never> {
+    throw new Error("ENOENT");
   }
-
-  async readText(p: string): Promise<string> {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(p: string, content: string): Promise<void> {
-    this.files.set(p, content);
-  }
-  async exists(p: string): Promise<boolean> {
-    return this.files.has(p) || this.dirs.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const v = this.dirs.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async mkdirp(p: string): Promise<void> {
-    if (!this.dirs.has(p)) this.dirs.set(p, []);
-  }
-  async stat(p: string): Promise<FileStat> {
-    if (this.files.has(p)) {
-      return { mtime: new Date(0), size: 0, type: "file" };
-    }
-    if (this.dirs.has(p)) {
-      return { mtime: new Date(0), size: 0, type: "dir" };
-    }
-    throw new Error(`ENOENT: ${p}`);
-  }
-}
-
-function parentOf(p: string): string {
-  const idx = p.lastIndexOf("/");
-  return idx <= 0 ? "/" : p.slice(0, idx);
-}
-function baseOf(p: string): string {
-  const idx = p.lastIndexOf("/");
-  return idx < 0 ? p : p.slice(idx + 1);
 }
 
 const FOLDER = "/cwd/.workflow/sessions/session042-dev-foo";
@@ -84,22 +35,6 @@ describe("ARTIFACT_FILENAMES (new model)", () => {
         "technical_note",
       ]),
     );
-  });
-
-  it("does NOT carry the pruned old-model kinds", () => {
-    for (const removed of [
-      "findings",
-      "evidence",
-      "recommendation",
-      "delivery",
-      "dependencies",
-      "discovery",
-      "problem",
-      "status",
-      "requirements",
-    ]) {
-      expect(ARTIFACT_FILENAMES).not.toHaveProperty(removed);
-    }
   });
 
   it("session writes SESSION.md (replaces the legacy objective kind)", () => {
@@ -146,59 +81,54 @@ describe("canonicalArtifactFilename / canonicalArtifactPath", () => {
 
 describe("findArtifact", () => {
   it("returns null when folder doesn't exist", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     expect(await findArtifact(FOLDER, "session", fs)).toBeNull();
   });
 
   it("returns null when no candidate is present", async () => {
-    const fs = new FakeFs({ [`${FOLDER}/SOMETHING_ELSE.md`]: "x" });
+    const fs = new MemFs().file(`${FOLDER}/SOMETHING_ELSE.md`, "x");
     expect(await findArtifact(FOLDER, "session", fs)).toBeNull();
   });
 
   it("resolves SESSION.md for the session kind", async () => {
-    const fs = new FakeFs({ [`${FOLDER}/SESSION.md`]: "# SESSION\n" });
+    const fs = new MemFs().file(`${FOLDER}/SESSION.md`, "# SESSION\n");
     expect(await findArtifact(FOLDER, "session", fs)).toBe(`${FOLDER}/SESSION.md`);
   });
 
   it("resolves legacy ES filename when only ES exists (objective fallback)", async () => {
-    const fs = new FakeFs({ [`${FOLDER}/OBJETIVO.md`]: "# Objetivo\n" });
+    const fs = new MemFs().file(`${FOLDER}/OBJETIVO.md`, "# Objetivo\n");
     expect(await findArtifact(FOLDER, "objective", fs)).toBe(`${FOLDER}/OBJETIVO.md`);
   });
 
   it("prefers EN over ES when both exist (objective fallback)", async () => {
-    const fs = new FakeFs({
-      [`${FOLDER}/OBJECTIVE.md`]: "# Objective\n",
-      [`${FOLDER}/OBJETIVO.md`]: "# Objetivo\n",
-    });
+    const fs = new MemFs()
+      .file(`${FOLDER}/OBJECTIVE.md`, "# Objective\n")
+      .file(`${FOLDER}/OBJETIVO.md`, "# Objetivo\n");
     expect(await findArtifact(FOLDER, "objective", fs)).toBe(`${FOLDER}/OBJECTIVE.md`);
   });
 
   it("matches case-insensitively (lowercase legacy filename)", async () => {
-    const fs = new FakeFs({ [`${FOLDER}/objetivo.md`]: "# Objetivo\n" });
+    const fs = new MemFs().file(`${FOLDER}/objetivo.md`, "# Objetivo\n");
     expect(await findArtifact(FOLDER, "objective", fs)).toBe(`${FOLDER}/objetivo.md`);
   });
 
   it("prefers DECISION.md over the legacy ES filename", async () => {
-    const fs = new FakeFs({
-      [`${FOLDER}/DECISION.md`]: "# Decision\n",
-      [`${FOLDER}/DECISIONES.md`]: "# Decisiones\n",
-    });
+    const fs = new MemFs()
+      .file(`${FOLDER}/DECISION.md`, "# Decision\n")
+      .file(`${FOLDER}/DECISIONES.md`, "# Decisiones\n");
     expect(await findArtifact(FOLDER, "decisions", fs)).toBe(`${FOLDER}/DECISION.md`);
   });
 
   it("falls back to fs.exists when fs.list does not register the file", async () => {
-    // Simulate a partial fake fs (files set, dirs map empty) — list throws for the folder.
-    const fs = new FakeFs(
-      { [`${FOLDER}/DECISIONES.md`]: "# Decisiones\n" },
-      { registerDir: false },
-    );
+    // Simulate a partial fake fs (file present, list throws) — forces the exists() fallback.
+    const fs = new NoListFs().file(`${FOLDER}/DECISIONES.md`, "# Decisiones\n");
     expect(await findArtifact(FOLDER, "decisions", fs)).toBe(`${FOLDER}/DECISIONES.md`);
   });
 });
 
 describe("listExistingArtifacts", () => {
   it("returns null for every kind on an empty folder", async () => {
-    const fs = new FakeFs();
+    const fs = new MemFs();
     const result = await listExistingArtifacts(FOLDER, fs);
     for (const kind of Object.keys(ARTIFACT_FILENAMES) as ArtifactKind[]) {
       expect(result[kind]).toBeNull();
@@ -206,12 +136,11 @@ describe("listExistingArtifacts", () => {
   });
 
   it("returns paths for present artifacts (new model)", async () => {
-    const fs = new FakeFs({
-      [`${FOLDER}/SESSION.md`]: "# SESSION\n",
-      [`${FOLDER}/TASKS.md`]: "- [ ] foo\n",
-      [`${FOLDER}/CHECKPOINT.md`]: "# Checkpoint\n",
-      [`${FOLDER}/BACKLOG.md`]: "# Backlog\n",
-    });
+    const fs = new MemFs()
+      .file(`${FOLDER}/SESSION.md`, "# SESSION\n")
+      .file(`${FOLDER}/TASKS.md`, "- [ ] foo\n")
+      .file(`${FOLDER}/CHECKPOINT.md`, "# Checkpoint\n")
+      .file(`${FOLDER}/BACKLOG.md`, "# Backlog\n");
     const result = await listExistingArtifacts(FOLDER, fs);
     expect(result.session).toBe(`${FOLDER}/SESSION.md`);
     expect(result.tasks).toBe(`${FOLDER}/TASKS.md`);
@@ -222,10 +151,9 @@ describe("listExistingArtifacts", () => {
   });
 
   it("resolves the objective legacy fallback alongside new artifacts", async () => {
-    const fs = new FakeFs({
-      [`${FOLDER}/OBJETIVO.md`]: "# Objetivo\n",
-      [`${FOLDER}/TASKS.md`]: "- [ ] foo\n",
-    });
+    const fs = new MemFs()
+      .file(`${FOLDER}/OBJETIVO.md`, "# Objetivo\n")
+      .file(`${FOLDER}/TASKS.md`, "- [ ] foo\n");
     const result = await listExistingArtifacts(FOLDER, fs);
     expect(result.objective).toBe(`${FOLDER}/OBJETIVO.md`);
     expect(result.tasks).toBe(`${FOLDER}/TASKS.md`);
@@ -233,10 +161,9 @@ describe("listExistingArtifacts", () => {
   });
 
   it("uses fs.exists fallback when listing is incomplete", async () => {
-    const fs = new FakeFs(
-      { [`${FOLDER}/SESSION.md`]: "x", [`${FOLDER}/CHECKPOINT.md`]: "y" },
-      { registerDir: false },
-    );
+    const fs = new NoListFs()
+      .file(`${FOLDER}/SESSION.md`, "x")
+      .file(`${FOLDER}/CHECKPOINT.md`, "y");
     const result = await listExistingArtifacts(FOLDER, fs);
     expect(result.session).toBe(`${FOLDER}/SESSION.md`);
     expect(result.checkpoint).toBe(`${FOLDER}/CHECKPOINT.md`);

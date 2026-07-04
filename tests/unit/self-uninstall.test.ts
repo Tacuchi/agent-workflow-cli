@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -12,69 +12,12 @@ import type { InstallTarget } from "../../src/application/self/install-skill.js"
 import { selfUninstall } from "../../src/application/self/uninstall.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-import type { ProcessPort, RunOptions, RunResult } from "../../src/ports/process.js";
+import type { FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
-
-class RealFs implements FileSystemPort {
-  async readText(path: string): Promise<string> {
-    return readFile(path, "utf8");
-  }
-  async writeText(path: string, content: string): Promise<void> {
-    await writeFile(path, content, "utf8");
-  }
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async list(_path: string): Promise<DirEntry[]> {
-    return [];
-  }
-  async mkdirp(path: string): Promise<void> {
-    await mkdir(path, { recursive: true });
-  }
-  async stat(_path: string): Promise<FileStat> {
-    throw new Error("nyi");
-  }
-}
-
-class FakeProcess implements ProcessPort {
-  async run(_cmd: string, _args: string[], _opts?: RunOptions): Promise<RunResult> {
-    return { code: 1, stdout: "", stderr: "" };
-  }
-  async which(_cmd: string): Promise<string | undefined> {
-    return undefined;
-  }
-  async spawnDetached() {
-    throw new Error("spawnDetached not implemented in this fake");
-  }
-  async spawnInTerminal() {
-    throw new Error("spawnInTerminal not implemented in this fake");
-  }
-  async killTree(): Promise<void> {}
-  async isAlive() {
-    return false;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
+import { NoScanFs as RealFs } from "../helpers/real-fs.js";
 
 function buildArgs(values: Record<string, string>, flags: string[]): ParsedArgs {
   return {
@@ -272,37 +215,6 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     expect(await fs.exists(unrelated)).toBe(true); // not ours — preserved
   });
 
-  it("sweeps synthesized w-* wrappers on codex (marker-proven), preserves foreign w-* dirs, removes the inert .codex/commands/w", async () => {
-    const ctx = buildCtx(home, fs);
-    const codexRoot = join(home, ...TARGET_ROOTS.codex);
-    const canonical = join(codexRoot, SKILL_DIR_NAME);
-    const synth = join(codexRoot, "w-quick");
-    const foreign = join(codexRoot, "w-scraper"); // user's own skill — never swept
-    const inertCommands = join(home, ".codex", "commands", "w");
-    await seedDir(canonical);
-    await mkdir(synth, { recursive: true });
-    await writeFile(
-      join(synth, "SKILL.md"),
-      `---\nname: w-quick\ndescription: x\n---\n\n> ${COMMAND_SKILL_MARKER}. …\n`,
-      "utf8",
-    );
-    await mkdir(foreign, { recursive: true });
-    await writeFile(
-      join(foreign, "SKILL.md"),
-      "---\nname: w-scraper\ndescription: x\n---\n",
-      "utf8",
-    );
-    await mkdir(inertCommands, { recursive: true });
-
-    const result = await selfUninstall(buildArgs({ target: "codex" }, []), ctx);
-
-    expect(result.ok).toBe(true);
-    expect(await fs.exists(canonical)).toBe(false);
-    expect(await fs.exists(synth)).toBe(false);
-    expect(await fs.exists(foreign)).toBe(true);
-    expect(await fs.exists(inertCommands)).toBe(false);
-  });
-
   it("--skill-only keeps the synthesized w-* wrappers (they are the command surface on codex)", async () => {
     const ctx = buildCtx(home, fs);
     const codexRoot = join(home, ...TARGET_ROOTS.codex);
@@ -338,28 +250,6 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
       expect(result.ok).toBe(true);
       expect(await fs.exists(cmdDir), rel).toBe(false);
     }
-  });
-
-  it("sweeps the synthesized w-* wrappers on gemini (agy Shared tier) with ownership proof", async () => {
-    const ctx = buildCtx(home, fs);
-    const geminiRoot = join(home, ...TARGET_ROOTS.gemini);
-    const synth = join(geminiRoot, "w-quick");
-    const foreign = join(geminiRoot, "w-mia"); // user's own skill — preserved
-    await seedDir(skillDir(home, "gemini"));
-    await mkdir(synth, { recursive: true });
-    await writeFile(
-      join(synth, "SKILL.md"),
-      `---\nname: w-quick\ndescription: x\n---\n\n> ${COMMAND_SKILL_MARKER}. …\n`,
-      "utf8",
-    );
-    await mkdir(foreign, { recursive: true });
-    await writeFile(join(foreign, "SKILL.md"), "---\nname: w-mia\ndescription: x\n---\n", "utf8");
-
-    const result = await selfUninstall(buildArgs({ target: "gemini" }, []), ctx);
-
-    expect(result.ok).toBe(true);
-    expect(await fs.exists(synth)).toBe(false);
-    expect(await fs.exists(foreign)).toBe(true);
   });
 
   it("sweeps w-* wrappers with ownership proof on EVERY command-skills host (install/uninstall symmetry)", async () => {

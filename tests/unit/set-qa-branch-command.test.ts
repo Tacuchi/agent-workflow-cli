@@ -4,24 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { setQaBranchCommand } from "../../src/cli/commands/set-qa-branch.js";
+import { setQaBranchCommand } from "../../src/cli/commands/set-branch.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class TestEnv implements EnvPort {
-  constructor(private readonly cwdValue: string) {}
-  get(): undefined {
-    return undefined;
-  }
-  homeDir(): string {
-    return this.cwdValue;
-  }
-  cwd(): string {
-    return this.cwdValue;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 function args(rest: string[]): ParsedArgs {
   return {
@@ -46,7 +33,7 @@ describe("set-qa-branch command", () => {
 
   function ctx(): CliContext {
     const paths = new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd);
-    return { fs, env: new TestEnv(cwd), paths } as unknown as CliContext;
+    return { fs, env: new FakeEnv(cwd), paths } as unknown as CliContext;
   }
 
   it("rejects missing alias/branch with INVALID_INPUT", async () => {

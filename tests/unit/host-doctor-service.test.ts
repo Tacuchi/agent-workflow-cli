@@ -1,97 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { runHostDoctor } from "../../src/application/host-doctor-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-import type { ProcessPort, RunResult } from "../../src/ports/process.js";
-
-class FakeFs implements FileSystemPort {
-  constructor(
-    private files: Map<string, string> = new Map(),
-    private dirs: Map<string, DirEntry[]> = new Map(),
-  ) {}
-  async readText(p: string) {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(): Promise<void> {}
-  async writeTextExclusive(): Promise<{ created: boolean }> {
-    return { created: true };
-  }
-  async remove(): Promise<void> {}
-  async exists(p: string) {
-    return this.files.has(p) || this.dirs.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    return this.dirs.get(p) ?? [];
-  }
-  async mkdirp(): Promise<void> {}
-  async stat(): Promise<FileStat> {
-    return { mtime: new Date(0), size: 0, type: "file" };
-  }
-}
-
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get(): string | undefined {
-    return undefined;
-  }
-  homeDir(): string {
-    return this.home;
-  }
-  cwd(): string {
-    return "/cwd";
-  }
-}
-
-class FakeProcess implements ProcessPort {
-  constructor(private jqPath: string | undefined) {}
-  async run(): Promise<RunResult> {
-    return { code: 0, stdout: "", stderr: "" };
-  }
-  async which(cmd: string): Promise<string | undefined> {
-    if (cmd === "jq") return this.jqPath;
-    return undefined;
-  }
-
-  async spawnDetached() {
-    throw new Error("spawnDetached not implemented in this fake");
-  }
-  async spawnInTerminal() {
-    throw new Error("spawnInTerminal not implemented in this fake");
-  }
-  async killTree(): Promise<void> {}
-  async isAlive() {
-    return false;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
 function buildScenario(opts: {
   jqInPath: boolean;
   plugins: Array<{ marketplace: string; pluginDir: string; name: string }>;
-}): { fs: FakeFs; env: FakeEnv; proc: FakeProcess } {
+}): { fs: MemFs; env: FakeEnv; proc: FakeProcess } {
   const home = "/home/u";
   const marketplacesRoot = `${home}/.claude/plugins/marketplaces`;
-  const files = new Map<string, string>();
-  const dirs = new Map<string, DirEntry[]>();
+  // Lenient: the old fake returned [] / a canned file-stat for unseeded paths.
+  const fs = new MemFs({ lenient: true });
 
-  const marketplaceEntries: DirEntry[] = [];
   for (const p of opts.plugins) {
-    const mpPath = `${marketplacesRoot}/${p.marketplace}`;
-    marketplaceEntries.push({ name: p.marketplace, path: mpPath, type: "dir" });
-    const pluginsDir = `${mpPath}/plugins`;
-    dirs.set(pluginsDir, [
-      { name: p.pluginDir, path: `${pluginsDir}/${p.pluginDir}`, type: "dir" },
-    ]);
-    const pluginJson = `${pluginsDir}/${p.pluginDir}/.claude-plugin/plugin.json`;
-    files.set(pluginJson, JSON.stringify({ name: p.name }));
+    const pluginDirPath = `${marketplacesRoot}/${p.marketplace}/plugins/${p.pluginDir}`;
+    fs.dir(pluginDirPath);
+    fs.file(`${pluginDirPath}/.claude-plugin/plugin.json`, JSON.stringify({ name: p.name }));
   }
-  dirs.set(marketplacesRoot, marketplaceEntries);
 
   return {
-    fs: new FakeFs(files, dirs),
-    env: new FakeEnv(home),
-    proc: new FakeProcess(opts.jqInPath ? "/usr/bin/jq" : undefined),
+    fs,
+    env: new FakeEnv(home, "/cwd"),
+    proc: new FakeProcess({
+      which: (cmd) => (cmd === "jq" && opts.jqInPath ? "/usr/bin/jq" : undefined),
+    }),
   };
 }
 
@@ -157,9 +90,9 @@ describe("runHostDoctor", () => {
   });
 
   it("survives missing marketplaces root (fresh install)", async () => {
-    const fs = new FakeFs(); // empty
-    const env = new FakeEnv("/nonexistent");
-    const proc = new FakeProcess(undefined);
+    const fs = new MemFs({ lenient: true }); // empty
+    const env = new FakeEnv("/nonexistent", "/cwd");
+    const proc = new FakeProcess();
     const r = await runHostDoctor(fs, env, proc);
     expect(r.status).toBe("ok");
     expect(r.findings).toHaveLength(0);

@@ -4,13 +4,9 @@ import type { SessionState } from "../../src/application/checkpoint/state-reader
 
 function baseState(overrides: Partial<SessionState> = {}): SessionState {
   return {
-    code: "042",
-    name: "dev-foo",
     folder: "session042-dev-foo",
-    branches: [],
     tasks: { open: 0, closed: 0, total: 0 },
     progress_pct: null,
-    decisions_count: 0,
     last_decision: null,
     artefacts: {},
     files_touched: [],
@@ -86,16 +82,14 @@ describe("formatCheckpointMd — EN headings", () => {
     expect(md).toContain("- _… and 5 more_");
   });
 
-  it("renders Refs with EN labels (Origin/Branches/Artifacts present/Skills used)", () => {
+  it("renders Refs with EN labels (Origin/Artifacts present/Skills used)", () => {
     const md = formatCheckpointMd(
       baseState({
         origen: "analyze:016",
-        branches: ["agent-workflow:feature/r3"],
         artefacts: { tasks: true, conclusions: true, scripts_count: 2 },
       }),
     );
     expect(md).toContain("- Origin: analyze:016");
-    expect(md).toContain("- Branches: agent-workflow:feature/r3");
     expect(md).toContain("- Artifacts present: tasks, conclusions, scripts(2)");
     expect(md).toContain("- Skills used: _[AI: list the skills invoked during the session]_");
   });

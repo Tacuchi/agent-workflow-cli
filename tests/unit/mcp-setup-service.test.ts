@@ -3,23 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runMcpSetup } from "../../src/application/mcp-setup-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-
-class FakeEnv implements EnvPort {
-  constructor(
-    private readonly _cwd: string,
-    private readonly _home: string,
-  ) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this._home;
-  }
-  cwd() {
-    return this._cwd;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 describe("runMcpSetup", () => {
   let workspace: string;
@@ -29,7 +13,7 @@ describe("runMcpSetup", () => {
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "mcp-setup-svc-"));
     home = join(workspace, "home");
-    env = new FakeEnv(workspace, home);
+    env = new FakeEnv(home, workspace);
   });
   afterEach(() => {
     rmSync(workspace, { recursive: true, force: true });

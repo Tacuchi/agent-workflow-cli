@@ -2,72 +2,12 @@ import { describe, expect, it } from "vitest";
 import { runMergeState } from "../../src/application/merge-state-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { renderProjectBlock } from "../../src/application/render/project-block.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
+import { MemFs as FakeFs } from "../helpers/mem-fs.js";
 
-// ── minimal in-memory fs (block read only) ──────────────────────────────────
-
-class FakeFs implements FileSystemPort {
-  private files = new Map<string, string>();
-  private dirs = new Set<string>();
-  private children = new Map<string, Map<string, DirEntry>>();
-
-  file(path: string, content: string): this {
-    this.files.set(path, content);
-    this.register(path, "file");
-    return this;
-  }
-  private register(path: string, type: DirEntry["type"]): void {
-    const parent = path.slice(0, path.lastIndexOf("/")) || "/";
-    if (parent === path) return;
-    const kids = this.children.get(parent) ?? new Map<string, DirEntry>();
-    kids.set(path.slice(path.lastIndexOf("/") + 1), {
-      name: path.slice(path.lastIndexOf("/") + 1),
-      path,
-      type,
-    });
-    this.children.set(parent, kids);
-    this.dirs.add(parent);
-    this.register(parent, "dir");
-  }
-  async readText(p: string): Promise<string> {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(p: string, c: string): Promise<void> {
-    this.file(p, c);
-  }
-  async writeTextExclusive(p: string, c: string): Promise<{ created: boolean }> {
-    if (this.files.has(p)) return { created: false };
-    this.file(p, c);
-    return { created: true };
-  }
-  async remove(p: string): Promise<void> {
-    this.files.delete(p);
-  }
-  async exists(p: string): Promise<boolean> {
-    return this.files.has(p) || this.dirs.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const kids = this.children.get(p);
-    if (kids === undefined) throw new Error(`ENOENT: ${p}`);
-    return [...kids.values()];
-  }
-  async mkdirp(p: string): Promise<void> {
-    this.dirs.add(p);
-  }
-  async stat(p: string): Promise<FileStat> {
-    if (this.files.has(p))
-      return { mtime: new Date(0), size: (this.files.get(p) ?? "").length, type: "file" };
-    if (this.dirs.has(p)) return { mtime: new Date(0), size: 0, type: "dir" };
-    throw new Error(`ENOENT: ${p}`);
-  }
-}
-
-const env: EnvPort = { get: () => undefined, homeDir: () => "/home", cwd: () => "/cwd" };
+const env = new FakeEnv("/home", "/cwd");
 
 function paths(): PathsService {
   return new PathsService(normalizeNamespace("agent-workflow"), "/cwd", "/cwd");

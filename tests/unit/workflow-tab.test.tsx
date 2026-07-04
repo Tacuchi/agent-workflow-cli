@@ -1,5 +1,4 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { readFile, stat, writeFile as writeFileAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render } from "ink-testing-library";
@@ -9,66 +8,14 @@ import { WORKFLOW_CONTENT } from "../../src/cli/tui/data/workflow-content.js";
 import { HOSTS } from "../../src/cli/tui/hosts.js";
 import { WorkflowTab } from "../../src/cli/tui/tabs/workflow-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
 // [Workflows] mounts HostAdminSection (fs.exists over ~/.<host>/skills/w), so
-// the harness needs a real sandbox home — same pattern as the skills-tab test.
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
-
-class RealFs implements FileSystemPort {
-  async readText(path: string): Promise<string> {
-    return readFile(path, "utf8");
-  }
-  async writeText(path: string, content: string): Promise<void> {
-    await writeFileAsync(path, content, "utf8");
-  }
-  async writeTextExclusive(): Promise<{ created: boolean }> {
-    return { created: true };
-  }
-  async appendText(): Promise<void> {}
-  async remove(): Promise<void> {}
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async list(): Promise<DirEntry[]> {
-    return [];
-  }
-  async mkdirp(path: string): Promise<void> {
-    await mkdir(path, { recursive: true });
-  }
-  async stat(): Promise<FileStat> {
-    throw new Error("nyi");
-  }
-}
-
-class FakeProcess implements ProcessPort {
-  async run() {
-    return { code: 0, stdout: "", stderr: "" };
-  }
-  async which() {
-    return undefined;
-  }
-}
+// the harness needs a real sandbox home; NoScanFs keeps everything real but
+// stubs list()→[] — same pattern as the skills-tab test.
+import { NoScanFs as RealFs } from "../helpers/real-fs.js";
 
 function buildCtx(home: string): CliContext {
   const ns = normalizeNamespace("agent-workflow");
@@ -80,7 +27,7 @@ function buildCtx(home: string): CliContext {
   return {
     fs: new RealFs(),
     env: new FakeEnv(home),
-    process: new FakeProcess() as unknown as ProcessPort,
+    process: new FakeProcess({ run: () => ({ code: 0, stdout: "", stderr: "" }) }),
     git: {} as never,
     namespace: { namespace: ns, source: "default" },
     runtime,

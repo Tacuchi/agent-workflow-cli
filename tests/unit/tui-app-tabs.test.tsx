@@ -16,12 +16,6 @@ interface CtxOpts {
   };
   /** When true, `npm view` (the boot update-check) rejects as if offline. */
   npmThrows?: boolean;
-  /** Observe every process.run call (cmd/args/opts) — used to assert spawn env. */
-  onRun?: (
-    cmd: string,
-    args: string[],
-    opts?: { cwd?: string; env?: Record<string, string> },
-  ) => void;
 }
 
 function buildCtx(opts: CtxOpts = {}): CliContext {
@@ -39,12 +33,7 @@ function buildCtx(opts: CtxOpts = {}): CliContext {
       get: () => undefined,
     },
     process: {
-      run: async (
-        cmd: string,
-        args: string[] = [],
-        runOpts?: { cwd?: string; env?: Record<string, string> },
-      ) => {
-        opts.onRun?.(cmd, args, runOpts);
+      run: async (cmd: string) => {
         if (opts.npmThrows && cmd === "npm") {
           throw new Error("getaddrinfo ENOTFOUND registry.npmjs.org");
         }
@@ -158,20 +147,9 @@ describe("App (tab-home)", () => {
     expect(logged.some((l) => l.level === "warn" && l.msg.includes("update check"))).toBe(true);
   });
 
-  it("marca el spawn re-entrante de `aw sessions` como interno (finding sessions-reentrant-log)", async () => {
-    const calls: { cmd: string; args: string[]; env?: Record<string, string> }[] = [];
-    const ctx = buildCtx({
-      onRun: (cmd, args, runOpts) => calls.push({ cmd, args, env: runOpts?.env }),
-    });
-    render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
-    await new Promise((r) => setTimeout(r, 60));
-    const sessCall = calls.find((c) => c.args[0] === "sessions");
-    expect(sessCall).toBeDefined();
-    // The env passes AW_INTERNAL_CALL=1 (main.ts silences the logger) and keeps
-    // the rest of the environment (PATH, etc.) so the child `aw` can run.
-    expect(sessCall?.env?.AW_INTERNAL_CALL).toBe("1");
-    expect(Object.keys(sessCall?.env ?? {}).length).toBeGreaterThan(1);
-  });
+  // Retired: "sessions-reentrant-log" — the header's sessions count is now
+  // computed in-process via SessionsService (no `aw sessions` spawn, so no
+  // AW_INTERNAL_CALL env to pin).
 
   // ESC is referenced to keep the ESC byte import alive in the test bundle.
   it("constante ESC del módulo está definida", () => {

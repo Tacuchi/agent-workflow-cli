@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,78 +6,13 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { selfCleanLegacy } from "../../src/application/self/clean-legacy.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileSystemPort } from "../../src/ports/file-system.js";
-import type { ProcessPort, RunOptions, RunResult } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
-
-// Only exists()+list() are exercised by clean-legacy (removal uses node:fs rm directly).
-class RealFs implements FileSystemPort {
-  async readText(path: string): Promise<string> {
-    return (await import("node:fs/promises")).readFile(path, "utf8");
-  }
-  async writeText(): Promise<void> {}
-  async appendText(): Promise<void> {}
-  async writeTextExclusive(): Promise<{ created: boolean }> {
-    return { created: true };
-  }
-  async remove(): Promise<void> {}
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async list(path: string): Promise<DirEntry[]> {
-    const ents = await readdir(path, { withFileTypes: true });
-    return ents.map((e) => ({
-      name: e.name,
-      path: join(path, e.name),
-      type: e.isDirectory() ? "dir" : e.isFile() ? "file" : "other",
-    }));
-  }
-  async mkdirp(path: string): Promise<void> {
-    await mkdir(path, { recursive: true });
-  }
-  async stat(): Promise<never> {
-    throw new Error("nyi");
-  }
-}
-
-class FakeProcess implements ProcessPort {
-  async run(_c: string, _a: string[], _o?: RunOptions): Promise<RunResult> {
-    return { code: 1, stdout: "", stderr: "" };
-  }
-  async which(): Promise<string | undefined> {
-    return undefined;
-  }
-  async spawnDetached(): Promise<never> {
-    throw new Error("nyi");
-  }
-  async spawnInTerminal(): Promise<never> {
-    throw new Error("nyi");
-  }
-  async killTree(): Promise<void> {}
-  async isAlive(): Promise<boolean> {
-    return false;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
+// clean-legacy scans real dirs via fs.list, so it needs the real adapter (not a
+// list()-stubbed NoScanFs); removal itself uses node:fs rm directly.
+import { NodeFileSystem as RealFs } from "../helpers/real-fs.js";
 
 function buildArgs(values: Record<string, string>, flags: string[] = []): ParsedArgs {
   return {

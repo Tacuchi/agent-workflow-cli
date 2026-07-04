@@ -10,20 +10,7 @@ import {
   writeSkillsRegistry,
 } from "../../src/application/self/skills-registry.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private readonly home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 function buildCtx(home: string): CliContext {
   return { fs: new NodeFileSystem(), env: new FakeEnv(home) } as unknown as CliContext;

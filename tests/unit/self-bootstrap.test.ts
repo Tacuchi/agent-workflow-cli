@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,70 +7,13 @@ import { selfBootstrap } from "../../src/application/self/bootstrap.js";
 import { resolveBundledSkillPath } from "../../src/application/self/install-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-import type { ProcessPort, RunOptions, RunResult } from "../../src/ports/process.js";
+import type { FileSystemPort } from "../../src/ports/file-system.js";
+import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
-
-class RealFs implements FileSystemPort {
-  async readText(path: string): Promise<string> {
-    return readFile(path, "utf8");
-  }
-  async writeText(path: string, content: string): Promise<void> {
-    await writeFile(path, content, "utf8");
-  }
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async list(_path: string): Promise<DirEntry[]> {
-    return [];
-  }
-  async mkdirp(path: string): Promise<void> {
-    await mkdir(path, { recursive: true });
-  }
-  async stat(_path: string): Promise<FileStat> {
-    throw new Error("nyi");
-  }
-}
-
-class FakeProcess implements ProcessPort {
-  async run(_cmd: string, _args: string[], _opts?: RunOptions): Promise<RunResult> {
-    return { code: 1, stdout: "", stderr: "" };
-  }
-  async which(_cmd: string): Promise<string | undefined> {
-    return undefined;
-  }
-
-  async spawnDetached() {
-    throw new Error("spawnDetached not implemented in this fake");
-  }
-  async spawnInTerminal() {
-    throw new Error("spawnInTerminal not implemented in this fake");
-  }
-  async killTree(): Promise<void> {}
-  async isAlive() {
-    return false;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
+import { NoScanFs } from "../helpers/real-fs.js";
 
 function buildArgs(flags: string[]): ParsedArgs {
   return {
@@ -116,7 +59,7 @@ describe("selfBootstrap", () => {
   });
 
   it("clean install on empty machine: doctor → skip uninstall → install → next-steps", async () => {
-    const fs = new RealFs();
+    const fs = new NoScanFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
     // Bundled skill must be resolvable from this checkout for install to succeed.
     const bundled = await resolveBundledSkillPath();
@@ -140,7 +83,7 @@ describe("selfBootstrap", () => {
   });
 
   it("dirty machine with legacy: doctor → uninstall-legacy ok → install ok", async () => {
-    const fs = new RealFs();
+    const fs = new NoScanFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
 
     // Seed a legacy skill in .claude
@@ -168,7 +111,7 @@ describe("selfBootstrap", () => {
   });
 
   it("--dry-run preserves filesystem and reports dry-run sub-steps", async () => {
-    const fs = new RealFs();
+    const fs = new NoScanFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
 
     const legacyPath = join(home, ".claude/skills/agent-workflow-manager");

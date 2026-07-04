@@ -50,8 +50,8 @@ describe("mcp-host-paths — global config resolution (writer/reader/detect sing
   it("registry: crush win32 global points to %LOCALAPPDATA%, opencode stays ~/.config", () => {
     const crush = HARNESSES.find((h) => h.id === "crush");
     const opencode = HARNESSES.find((h) => h.id === "opencode");
-    expect(crush?.globalMcpPaths?.win32.stable).toContain("%LOCALAPPDATA%");
-    expect(opencode?.globalMcpPaths?.win32.stable).toBe("~/.config/opencode/opencode.json");
+    expect(crush?.globalMcpPaths?.win32).toContain("%LOCALAPPDATA%");
+    expect(opencode?.globalMcpPaths?.win32).toBe("~/.config/opencode/opencode.json");
   });
 });
 

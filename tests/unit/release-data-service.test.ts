@@ -1,106 +1,63 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
+  listGraduatedBundles,
   listSessionsForRelease,
+  listStandaloneSql,
   readSessionArtifacts,
+  runReleaseData,
 } from "../../src/application/release-data-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
+import type { DirEntry } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-
-class FakeEnv implements EnvPort {
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return "/home/u";
-  }
-  cwd() {
-    return "/cwd";
-  }
-}
-
-class FakeFs implements FileSystemPort {
-  constructor(
-    private files: Map<string, string> = new Map(),
-    private dirs: Map<string, DirEntry[]> = new Map(),
-  ) {}
-  async readText(p: string) {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(): Promise<void> {}
-  async exists(p: string) {
-    return this.files.has(p) || this.dirs.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const v = this.dirs.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async mkdirp(): Promise<void> {}
-  async stat(p: string): Promise<FileStat> {
-    if (this.files.has(p)) {
-      return {
-        mtime: new Date("2026-01-01"),
-        size: (this.files.get(p) ?? "").length,
-        type: "file",
-      };
-    }
-    return { mtime: new Date("2026-01-01"), size: 0, type: "dir" };
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { MemFs as FakeFs } from "../helpers/mem-fs.js";
 
 const ns = normalizeNamespace("workflow");
 const paths = new PathsService(ns, "/home/u", "/cwd");
+const baseSessionsDir = "/cwd/.workflow/sessions";
 
-function statusMd(state: "active" | "closed", phase: string): string {
-  return `# Status\n\n- State: ${state}\n- Phase: ${phase}\n`;
+/**
+ * Builds a sessions-dir FakeFs keyed by FULL folder name. Each folder maps to its
+ * files (name → content); `extraTopLevel` adds sibling entries (e.g. a top-level
+ * README.md) that must show up in the sessions-dir listing but are not folders.
+ */
+function sessionsFs(
+  sessions: Record<string, Record<string, string>>,
+  extraTopLevel: DirEntry[] = [],
+): FakeFs {
+  const fs = new FakeFs({ lenient: true }).dir(baseSessionsDir);
+  for (const [folder, files] of Object.entries(sessions)) {
+    const path = `${baseSessionsDir}/${folder}`;
+    fs.dir(path);
+    for (const [name, content] of Object.entries(files)) {
+      fs.file(`${path}/${name}`, content);
+    }
+  }
+  for (const e of extraTopLevel) {
+    if (e.type === "dir") fs.dir(e.path);
+    else fs.file(e.path, "");
+  }
+  return fs;
 }
 
 describe("listSessionsForRelease", () => {
   it("returns empty array when sessions dir does not exist", async () => {
-    const fs = new FakeFs(new Map(), new Map());
+    const fs = new FakeFs({ lenient: true });
     const result = await listSessionsForRelease(fs, "/cwd", paths);
     expect(result).toEqual([]);
   });
 
   it("returns empty array when sessions dir exists but is empty", async () => {
-    const fs = new FakeFs(new Map(), new Map([["/cwd/.workflow/sessions", []]]));
+    const fs = new FakeFs({ lenient: true }).dir(baseSessionsDir);
     const result = await listSessionsForRelease(fs, "/cwd", paths);
     expect(result).toEqual([]);
   });
 
   it("returns sessions sorted by code", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const fs = new FakeFs(
-      new Map([
-        [`${baseSessionsDir}/session001-dev-foo/STATUS.md`, statusMd("closed", "closure")],
-        [`${baseSessionsDir}/session001-dev-foo/OBJETIVO.md`, "# foo"],
-        [`${baseSessionsDir}/session002-dev-bar/STATUS.md`, statusMd("active", "execution")],
-        [`${baseSessionsDir}/session002-dev-bar/OBJETIVO.md`, "# bar"],
-      ]),
-      new Map([
-        [
-          baseSessionsDir,
-          [
-            {
-              name: "session001-dev-foo",
-              path: `${baseSessionsDir}/session001-dev-foo`,
-              type: "dir",
-            },
-            {
-              name: "session002-dev-bar",
-              path: `${baseSessionsDir}/session002-dev-bar`,
-              type: "dir",
-            },
-          ],
-        ],
-        [`${baseSessionsDir}/session001-dev-foo`, []],
-        [`${baseSessionsDir}/session002-dev-bar`, []],
-      ]),
-    );
+    const fs = sessionsFs({
+      "session001-dev-foo": { "OBJETIVO.md": "# foo" },
+      "session002-dev-bar": { "OBJETIVO.md": "# bar" },
+    });
     const result = await listSessionsForRelease(fs, "/cwd", paths);
     expect(result).toHaveLength(2);
     expect(result[0]?.code).toBe("001");
@@ -108,39 +65,11 @@ describe("listSessionsForRelease", () => {
   });
 
   it("filters by since (excludes sessions <= since code)", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const fs = new FakeFs(
-      new Map([
-        [`${baseSessionsDir}/session001-dev-foo/OBJETIVO.md`, "# foo"],
-        [`${baseSessionsDir}/session002-dev-bar/OBJETIVO.md`, "# bar"],
-        [`${baseSessionsDir}/session003-dev-baz/OBJETIVO.md`, "# baz"],
-      ]),
-      new Map([
-        [
-          baseSessionsDir,
-          [
-            {
-              name: "session001-dev-foo",
-              path: `${baseSessionsDir}/session001-dev-foo`,
-              type: "dir",
-            },
-            {
-              name: "session002-dev-bar",
-              path: `${baseSessionsDir}/session002-dev-bar`,
-              type: "dir",
-            },
-            {
-              name: "session003-dev-baz",
-              path: `${baseSessionsDir}/session003-dev-baz`,
-              type: "dir",
-            },
-          ],
-        ],
-        [`${baseSessionsDir}/session001-dev-foo`, []],
-        [`${baseSessionsDir}/session002-dev-bar`, []],
-        [`${baseSessionsDir}/session003-dev-baz`, []],
-      ]),
-    );
+    const fs = sessionsFs({
+      "session001-dev-foo": { "OBJETIVO.md": "# foo" },
+      "session002-dev-bar": { "OBJETIVO.md": "# bar" },
+      "session003-dev-baz": { "OBJETIVO.md": "# baz" },
+    });
     const result = await listSessionsForRelease(fs, "/cwd", paths, { since: "001" });
     expect(result).toHaveLength(2);
     expect(result[0]?.code).toBe("002");
@@ -148,18 +77,9 @@ describe("listSessionsForRelease", () => {
   });
 
   it("flags legacy format when REQUIREMENTS.md exists without OBJETIVO.md", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const sessionPath = `${baseSessionsDir}/session001-dev-legacy`;
-    const fs = new FakeFs(
-      new Map([
-        [`${sessionPath}/REQUIREMENTS.md`, "# Legacy\nOld format"],
-        // No OBJETIVO.md
-      ]),
-      new Map([
-        [baseSessionsDir, [{ name: "session001-dev-legacy", path: sessionPath, type: "dir" }]],
-        [sessionPath, []],
-      ]),
-    );
+    const fs = sessionsFs({
+      "session001-dev-legacy": { "REQUIREMENTS.md": "# Legacy\nOld format" },
+    });
     const result = await listSessionsForRelease(fs, "/cwd", paths);
     expect(result).toHaveLength(1);
     expect(result[0]?.is_legacy_format).toBe(true);
@@ -167,61 +87,20 @@ describe("listSessionsForRelease", () => {
   });
 
   it("does NOT flag legacy when both REQUIREMENTS.md and OBJETIVO.md exist (transitional)", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const sessionPath = `${baseSessionsDir}/session001-dev-trans`;
-    const fs = new FakeFs(
-      new Map([
-        [`${sessionPath}/REQUIREMENTS.md`, "# Legacy"],
-        [`${sessionPath}/OBJETIVO.md`, "# Migrated"],
-      ]),
-      new Map([
-        [baseSessionsDir, [{ name: "session001-dev-trans", path: sessionPath, type: "dir" }]],
-        [sessionPath, []],
-      ]),
-    );
+    const fs = sessionsFs({
+      "session001-dev-trans": { "REQUIREMENTS.md": "# Legacy", "OBJETIVO.md": "# Migrated" },
+    });
     const result = await listSessionsForRelease(fs, "/cwd", paths);
     expect(result[0]?.is_legacy_format).toBe(false);
     expect(result[0]?.release_eligible).toBe(true);
   });
 
   it("filters out active sessions when includeOpen is false", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const fs = new FakeFs(
-      new Map([
-        [`${baseSessionsDir}/session001-dev-active/OBJETIVO.md`, "# active"],
-        // Closed state is derived from the folder-local `.closed` sentinel.
-        [`${baseSessionsDir}/session002-dev-closed/.closed`, ""],
-        [`${baseSessionsDir}/session002-dev-closed/OBJETIVO.md`, "# closed"],
-      ]),
-      new Map([
-        [
-          baseSessionsDir,
-          [
-            {
-              name: "session001-dev-active",
-              path: `${baseSessionsDir}/session001-dev-active`,
-              type: "dir",
-            },
-            {
-              name: "session002-dev-closed",
-              path: `${baseSessionsDir}/session002-dev-closed`,
-              type: "dir",
-            },
-          ],
-        ],
-        [`${baseSessionsDir}/session001-dev-active`, []],
-        [
-          `${baseSessionsDir}/session002-dev-closed`,
-          [
-            {
-              name: ".closed",
-              path: `${baseSessionsDir}/session002-dev-closed/.closed`,
-              type: "file",
-            },
-          ],
-        ],
-      ]),
-    );
+    // Closed state is derived from the folder-local `.closed` sentinel.
+    const fs = sessionsFs({
+      "session001-dev-active": { "OBJETIVO.md": "# active" },
+      "session002-dev-closed": { ".closed": "", "OBJETIVO.md": "# closed" },
+    });
     const result = await listSessionsForRelease(fs, "/cwd", paths, { includeOpen: false });
     expect(result).toHaveLength(1);
     expect(result[0]?.code).toBe("002");
@@ -231,46 +110,19 @@ describe("listSessionsForRelease", () => {
   it("lists every session folder (slug-named), skipping files", async () => {
     // New model: any directory under .workflow/sessions/ is a session (slug-named);
     // only files (and dotfile dirs) are skipped.
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const fs = new FakeFs(
-      new Map([[`${baseSessionsDir}/003-spec-spec-refine/SESSION.md`, "# ok"]]),
-      new Map([
-        [
-          baseSessionsDir,
-          [
-            {
-              name: "003-spec-spec-refine",
-              path: `${baseSessionsDir}/003-spec-spec-refine`,
-              type: "dir",
-            },
-            { name: "README.md", path: `${baseSessionsDir}/README.md`, type: "file" },
-          ],
-        ],
-        [`${baseSessionsDir}/003-spec-spec-refine`, []],
-      ]),
-    );
+    const fs = sessionsFs({ "003-spec-spec-refine": { "SESSION.md": "# ok" } }, [
+      { name: "README.md", path: `${baseSessionsDir}/README.md`, type: "file" },
+    ]);
     const result = await listSessionsForRelease(fs, "/cwd", paths);
     expect(result).toHaveLength(1);
     expect(result[0]?.code).toBe("003-spec-spec-refine");
   });
 
   describe("--sessions discrete filter", () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-
     function fsWithSessions(codes: string[]): FakeFs {
-      const files = new Map<string, string>();
-      const dirEntries: DirEntry[] = [];
-      for (const c of codes) {
-        const folder = `session${c}-dev-foo`;
-        const path = `${baseSessionsDir}/${folder}`;
-        files.set(`${path}/OBJETIVO.md`, `# ${c}`);
-        dirEntries.push({ name: folder, path, type: "dir" });
-      }
-      const dirs = new Map<string, DirEntry[]>([[baseSessionsDir, dirEntries]]);
-      for (const c of codes) {
-        dirs.set(`${baseSessionsDir}/session${c}-dev-foo`, []);
-      }
-      return new FakeFs(files, dirs);
+      return sessionsFs(
+        Object.fromEntries(codes.map((c) => [`session${c}-dev-foo`, { "OBJETIVO.md": `# ${c}` }])),
+      );
     }
 
     it("filters by discrete codes (order from dir, not from input)", async () => {
@@ -309,46 +161,31 @@ describe("listSessionsForRelease", () => {
 
 describe("readSessionArtifacts", () => {
   it("returns session_not_found when sessions dir is missing", async () => {
-    const fs = new FakeFs();
-    const result = await readSessionArtifacts(fs, new FakeEnv(), paths, "001");
+    const fs = new FakeFs({ lenient: true });
+    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001");
     expect(result.error).toBe("session_not_found:001");
   });
 
   it("returns session_not_found when no folder matches the code", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const fs = new FakeFs(new Map(), new Map([[baseSessionsDir, []]]));
-    const result = await readSessionArtifacts(fs, new FakeEnv(), paths, "001");
+    const fs = new FakeFs({ lenient: true }).dir(baseSessionsDir);
+    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001");
     expect(result.error).toBe("session_not_found:001");
   });
 
   it("returns legacy_format error when only REQUIREMENTS.md exists", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const sessionPath = `${baseSessionsDir}/session001-dev-old`;
-    const fs = new FakeFs(
-      new Map([[`${sessionPath}/REQUIREMENTS.md`, "# old"]]),
-      new Map([
-        [baseSessionsDir, [{ name: "session001-dev-old", path: sessionPath, type: "dir" }]],
-        [sessionPath, []],
-      ]),
-    );
-    const result = await readSessionArtifacts(fs, new FakeEnv(), paths, "001");
+    const fs = sessionsFs({ "session001-dev-old": { "REQUIREMENTS.md": "# old" } });
+    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001");
     expect(result.error).toBe("legacy_format");
     expect(result.session).toBe("session001-dev-old");
     expect(result.hint).toContain("REQUIREMENTS.md");
   });
 
   it("returns content for OBJETIVO.md when present", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const sessionPath = `${baseSessionsDir}/session042-dev-target`;
     const objetivoContent = "# Objetivo\n## Requerimiento\nTest content\n";
-    const fs = new FakeFs(
-      new Map([[`${sessionPath}/OBJETIVO.md`, objetivoContent]]),
-      new Map([
-        [baseSessionsDir, [{ name: "session042-dev-target", path: sessionPath, type: "dir" }]],
-        [sessionPath, []],
-      ]),
-    );
-    const result = await readSessionArtifacts(fs, new FakeEnv(), paths, "042", ["objetivo"]);
+    const fs = sessionsFs({ "session042-dev-target": { "OBJETIVO.md": objetivoContent } });
+    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "042", [
+      "objetivo",
+    ]);
     expect(result.error).toBeUndefined();
     expect(result.session).toBe("session042-dev-target");
     const objetivo = (result as Record<string, unknown>).objetivo as { content: string };
@@ -356,16 +193,8 @@ describe("readSessionArtifacts", () => {
   });
 
   it("returns null for missing artifact kinds", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const sessionPath = `${baseSessionsDir}/session001-dev-min`;
-    const fs = new FakeFs(
-      new Map([[`${sessionPath}/OBJETIVO.md`, "# bare"]]),
-      new Map([
-        [baseSessionsDir, [{ name: "session001-dev-min", path: sessionPath, type: "dir" }]],
-        [sessionPath, []],
-      ]),
-    );
-    const result = await readSessionArtifacts(fs, new FakeEnv(), paths, "001", [
+    const fs = sessionsFs({ "session001-dev-min": { "OBJETIVO.md": "# bare" } });
+    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001", [
       "decisiones",
       "tasks",
     ]);
@@ -374,32 +203,18 @@ describe("readSessionArtifacts", () => {
   });
 
   it("returns scripts list (empty when scripts/ dir absent)", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const sessionPath = `${baseSessionsDir}/session001-dev-noscripts`;
-    const fs = new FakeFs(
-      new Map([[`${sessionPath}/OBJETIVO.md`, "# bare"]]),
-      new Map([
-        [baseSessionsDir, [{ name: "session001-dev-noscripts", path: sessionPath, type: "dir" }]],
-        [sessionPath, []],
-      ]),
-    );
-    const result = await readSessionArtifacts(fs, new FakeEnv(), paths, "001", ["scripts"]);
+    const fs = sessionsFs({ "session001-dev-noscripts": { "OBJETIVO.md": "# bare" } });
+    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001", [
+      "scripts",
+    ]);
     expect(result.scripts).toEqual([]);
   });
 
   it("normalizes session code with 'session' prefix and pads to 3 digits", async () => {
-    const baseSessionsDir = "/cwd/.workflow/sessions";
-    const sessionPath = `${baseSessionsDir}/session007-dev-norm`;
-    const fs = new FakeFs(
-      new Map([[`${sessionPath}/OBJETIVO.md`, "# norm"]]),
-      new Map([
-        [baseSessionsDir, [{ name: "session007-dev-norm", path: sessionPath, type: "dir" }]],
-        [sessionPath, []],
-      ]),
-    );
-    const r1 = await readSessionArtifacts(fs, new FakeEnv(), paths, "7");
+    const fs = sessionsFs({ "session007-dev-norm": { "OBJETIVO.md": "# norm" } });
+    const r1 = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "7");
     expect(r1.session).toBe("session007-dev-norm");
-    const r2 = await readSessionArtifacts(fs, new FakeEnv(), paths, "session007");
+    const r2 = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "session007");
     expect(r2.session).toBe("session007-dev-norm");
   });
 });
@@ -410,57 +225,18 @@ describe("listGraduatedBundles + listStandaloneSql (F7)", () => {
   function scriptsFs(): FakeFs {
     const modern = `${scripts}/002-export-scripts-2026-07-03`;
     const legacy = `${scripts}/001-session003-fix-indices`;
-    return new FakeFs(
-      new Map([
-        [`${modern}/01-alter.sql`, "ALTER TABLE t ADD c int;"],
-        [`${modern}/00-ROLLBACK.sql`, "ALTER TABLE t DROP COLUMN c;"],
-        [`${legacy}/01-fix.sql`, "CREATE INDEX ix ON t(c);"],
-        [`${legacy}/01-fix.rollback.sql`, "DROP INDEX ix;"],
-        [`${scripts}/suelto-limpieza.sql`, "DELETE FROM tmp;"],
-        [`${scripts}/suelto-limpieza-rollback.sql`, "-- restore tmp"],
-        [`${scripts}/notas.md`, "# no sql"],
-      ]),
-      new Map([
-        [
-          scripts,
-          [
-            { name: "002-export-scripts-2026-07-03", path: modern, type: "dir" },
-            { name: "001-session003-fix-indices", path: legacy, type: "dir" },
-            {
-              name: "cualquier-otra-carpeta",
-              path: `${scripts}/cualquier-otra-carpeta`,
-              type: "dir",
-            },
-            { name: "suelto-limpieza.sql", path: `${scripts}/suelto-limpieza.sql`, type: "file" },
-            {
-              name: "suelto-limpieza-rollback.sql",
-              path: `${scripts}/suelto-limpieza-rollback.sql`,
-              type: "file",
-            },
-            { name: "notas.md", path: `${scripts}/notas.md`, type: "file" },
-          ],
-        ],
-        [
-          modern,
-          [
-            { name: "01-alter.sql", path: `${modern}/01-alter.sql`, type: "file" },
-            { name: "00-ROLLBACK.sql", path: `${modern}/00-ROLLBACK.sql`, type: "file" },
-          ],
-        ],
-        [
-          legacy,
-          [
-            { name: "01-fix.sql", path: `${legacy}/01-fix.sql`, type: "file" },
-            { name: "01-fix.rollback.sql", path: `${legacy}/01-fix.rollback.sql`, type: "file" },
-          ],
-        ],
-        [`${scripts}/cualquier-otra-carpeta`, []],
-      ]),
-    );
+    return new FakeFs({ lenient: true })
+      .file(`${modern}/01-alter.sql`, "ALTER TABLE t ADD c int;")
+      .file(`${modern}/00-ROLLBACK.sql`, "ALTER TABLE t DROP COLUMN c;")
+      .file(`${legacy}/01-fix.sql`, "CREATE INDEX ix ON t(c);")
+      .file(`${legacy}/01-fix.rollback.sql`, "DROP INDEX ix;")
+      .file(`${scripts}/suelto-limpieza.sql`, "DELETE FROM tmp;")
+      .file(`${scripts}/suelto-limpieza-rollback.sql`, "-- restore tmp")
+      .file(`${scripts}/notas.md`, "# no sql")
+      .dir(`${scripts}/cualquier-otra-carpeta`);
   }
 
   it("reconoce el naming moderno NNN-export-scripts-YYYY-MM-DD y el legacy NNN-sessionNNN-slug", async () => {
-    const { listGraduatedBundles } = await import("../../src/application/release-data-service.js");
     const bundles = await listGraduatedBundles(scriptsFs(), "/cwd", paths);
     expect(bundles).toHaveLength(2);
     const legacy = bundles.find((b) => b.kind === "legacy");
@@ -482,14 +258,12 @@ describe("listGraduatedBundles + listStandaloneSql (F7)", () => {
   });
 
   it("el filtro por sessionCode aplica solo a bundles legacy (los modernos son cross-session)", async () => {
-    const { listGraduatedBundles } = await import("../../src/application/release-data-service.js");
     const bundles = await listGraduatedBundles(scriptsFs(), "/cwd", paths, { sessionCode: "003" });
     expect(bundles).toHaveLength(1);
     expect(bundles[0]?.kind).toBe("legacy");
   });
 
   it("listStandaloneSql: solo .sql top-level, con is_rollback y size; ignora dirs y no-sql", async () => {
-    const { listStandaloneSql } = await import("../../src/application/release-data-service.js");
     const items = await listStandaloneSql(scriptsFs(), "/cwd", paths);
     expect(items.map((i) => i.name)).toEqual([
       "suelto-limpieza-rollback.sql",
@@ -505,30 +279,21 @@ describe("listGraduatedBundles + listStandaloneSql (F7)", () => {
   });
 
   it("is_rollback es case-insensitive (convención de casa 00-ROLLBACK.sql)", async () => {
-    const { listStandaloneSql } = await import("../../src/application/release-data-service.js");
-    const fs = new FakeFs(
-      new Map([[`${scripts}/005-ROLLBACK.sql`, "-- restore"]]),
-      new Map([
-        [
-          scripts,
-          [{ name: "005-ROLLBACK.sql", path: `${scripts}/005-ROLLBACK.sql`, type: "file" }],
-        ],
-      ]),
-    );
+    const fs = new FakeFs({ lenient: true }).file(`${scripts}/005-ROLLBACK.sql`, "-- restore");
     const items = await listStandaloneSql(fs, "/cwd", paths);
     expect(items[0]).toMatchObject({ name: "005-ROLLBACK.sql", is_rollback: true });
   });
 
   it("runReleaseData: alias desconocido devuelve {error} (el comando lo mapea a INVALID_INPUT exit 1)", async () => {
-    const { runReleaseData } = await import("../../src/application/release-data-service.js");
-    const fs = new FakeFs(new Map(), new Map());
-    const result = await runReleaseData(fs, new FakeEnv(), paths, { sourceAlias: "fantasma" });
+    const fs = new FakeFs({ lenient: true });
+    const result = await runReleaseData(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      sourceAlias: "fantasma",
+    });
     expect("error" in result).toBe(true);
   });
 
   it("runReleaseData: --standalone-sql agrega standalone_sql al payload", async () => {
-    const { runReleaseData } = await import("../../src/application/release-data-service.js");
-    const result = await runReleaseData(scriptsFs(), new FakeEnv(), paths, {
+    const result = await runReleaseData(scriptsFs(), new FakeEnv("/home/u", "/cwd"), paths, {
       includeStandaloneSql: true,
     });
     if ("error" in result) throw new Error(result.error);

@@ -154,3 +154,21 @@ describe("single-dash help alias", () => {
     expect(parsed.rest).toEqual([]);
   });
 });
+
+describe("plugin-flag lookup never resolves via the prototype chain", () => {
+  // Regression: PLUGIN_FLAG_KEYS was a plain object, so a command token equal
+  // to an Object.prototype member (hasOwnProperty/constructor/toString/…) was
+  // falsely treated as a plugin flag and swallowed the next token.
+  it("treats an Object.prototype-named token as a normal command, not a plugin flag", () => {
+    const parsed = parseArgv(["hasOwnProperty", "extra"]);
+    expect(parsed.command).toBe("hasOwnProperty");
+    expect(parsed.rest).toEqual(["extra"]);
+    expect(parsed.plugin).toEqual({});
+  });
+
+  it("does not consume the next token for a `constructor` command", () => {
+    const parsed = parseArgv(["constructor", "--dry-run"]);
+    expect(parsed.command).toBe("constructor");
+    expect(parsed.flags.has("--dry-run")).toBe(true);
+  });
+});

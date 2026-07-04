@@ -6,30 +6,13 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { type SelfMcpPrompts, selfMcpConfig } from "../../src/application/self/mcp-config.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
+import { FakeEnv } from "../helpers/fake-env.js";
 
 // home ≠ cwd on purpose: install/remove/doctor operate on the user scope (home),
 // so a write landing under the project dir is a regression these tests catch.
-class FakeEnv implements EnvPort {
-  constructor(
-    private readonly home: string,
-    private readonly project: string,
-    private readonly values: Record<string, string | undefined> = {},
-  ) {}
-  get(name: string) {
-    return this.values[name];
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.project;
-  }
-}
-
 function buildArgs(rest: string[], values: Record<string, string> = {}): ParsedArgs {
   return {
     rest,

@@ -3,22 +3,10 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { selfUpdate } from "../../src/application/self/update-self.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
 import type { ProcessPort, RunOptions, RunResult } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return "/home/u";
-  }
-  cwd() {
-    return "/cwd";
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
 
 class ThrowingProcess implements ProcessPort {
   async run(_cmd: string, _args: string[], _opts?: RunOptions): Promise<RunResult> {
@@ -82,7 +70,7 @@ function buildCtx(process: ProcessPort): CliContext {
   };
   return {
     fs: {} as never,
-    env: new FakeEnv(),
+    env: new FakeEnv("/home/u", "/cwd"),
     process,
     git: {} as never,
     namespace: { namespace: ns, source: "default" },
@@ -101,12 +89,6 @@ describe("selfUpdate — --dry-run (H-05)", () => {
       expect(result.data.command).toBe("npm install -g @tacuchi/agent-workflow-cli@latest");
       expect(result.data.exit_code).toBe(0);
       expect(result.exitCode).toBe(0);
-    }
-  });
-
-  it("dry-run preserves stdout/stderr empty (no execution happened)", async () => {
-    const result = await selfUpdate(buildArgs(["--dry-run"]), buildCtx(new ThrowingProcess()));
-    if (result.ok) {
       expect(result.data.stdout).toBe("");
       expect(result.data.stderr).toBe("");
     }

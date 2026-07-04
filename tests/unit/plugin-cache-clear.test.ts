@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,95 +6,13 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { selfClearPluginCache } from "../../src/application/self/plugin-cache-clear.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-import type { ProcessPort, RunOptions, RunResult } from "../../src/ports/process.js";
+import type { FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
-
-class RealFs implements FileSystemPort {
-  async readText(path: string): Promise<string> {
-    return readFile(path, "utf8");
-  }
-  async writeText(path: string, content: string): Promise<void> {
-    await writeFile(path, content, "utf8");
-  }
-  async writeTextExclusive(path: string, content: string): Promise<{ created: boolean }> {
-    try {
-      await writeFile(path, content, { encoding: "utf8", flag: "wx" });
-      return { created: true };
-    } catch {
-      return { created: false };
-    }
-  }
-  async remove(path: string): Promise<void> {
-    await rm(path, { force: true });
-  }
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async list(path: string): Promise<DirEntry[]> {
-    try {
-      const entries = await readdir(path, { withFileTypes: true });
-      return entries.map((e) => ({
-        name: e.name,
-        path: join(path, e.name),
-        type: e.isDirectory() ? "dir" : e.isFile() ? "file" : "other",
-      }));
-    } catch {
-      return [];
-    }
-  }
-  async mkdirp(path: string): Promise<void> {
-    await mkdir(path, { recursive: true });
-  }
-  async stat(path: string): Promise<FileStat> {
-    const s = await stat(path);
-    return {
-      mtime: s.mtime,
-      size: s.size,
-      type: s.isDirectory() ? "dir" : s.isFile() ? "file" : "other",
-    };
-  }
-}
-
-class FakeProcess implements ProcessPort {
-  async run(_cmd: string, _args: string[], _opts?: RunOptions): Promise<RunResult> {
-    return { code: 1, stdout: "", stderr: "" };
-  }
-  async which(_cmd: string): Promise<string | undefined> {
-    return undefined;
-  }
-
-  async spawnDetached() {
-    throw new Error("spawnDetached not implemented in this fake");
-  }
-  async spawnInTerminal() {
-    throw new Error("spawnInTerminal not implemented in this fake");
-  }
-  async killTree(): Promise<void> {}
-  async isAlive() {
-    return false;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
+// Bare NodeFileSystem on purpose: these tests seed real cache dirs and need real listings.
+import { NodeFileSystem } from "../helpers/real-fs.js";
 
 function buildArgs(values: Record<string, string>, flags: string[] = []): ParsedArgs {
   return {
@@ -172,7 +90,7 @@ describe("selfClearPluginCache", () => {
   });
 
   it("rejects missing --plugin", async () => {
-    const fs = new RealFs();
+    const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
     const result = await selfClearPluginCache(buildArgs({ target: "claude" }), ctx);
     expect(result.ok).toBe(false);
@@ -180,7 +98,7 @@ describe("selfClearPluginCache", () => {
   });
 
   it("rejects invalid --target", async () => {
-    const fs = new RealFs();
+    const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
     const result = await selfClearPluginCache(buildArgs({ plugin: "qtc", target: "linux" }), ctx);
     expect(result.ok).toBe(false);
@@ -188,7 +106,7 @@ describe("selfClearPluginCache", () => {
   });
 
   it("claude target with no cache → status nothing", async () => {
-    const fs = new RealFs();
+    const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
     const result = await selfClearPluginCache(buildArgs({ plugin: "qtc", target: "claude" }), ctx);
     expect(result.ok).toBe(true);
@@ -197,7 +115,7 @@ describe("selfClearPluginCache", () => {
   });
 
   it("claude target removes cache dirs + installed_plugins entry", async () => {
-    const fs = new RealFs();
+    const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
     const cacheDir = await seedClaudeCache(home, "qtc-marketplace", "qtc", "2.3.0");
     const installedPath = await seedClaudeInstalledPlugins(home, {
@@ -219,7 +137,7 @@ describe("selfClearPluginCache", () => {
   });
 
   it("--dry-run does not touch filesystem but reports planned removals", async () => {
-    const fs = new RealFs();
+    const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
     const cacheDir = await seedClaudeCache(home, "qtc-marketplace", "qtc", "2.3.0");
     await seedClaudeInstalledPlugins(home, { "qtc@qtc-marketplace": [{}] });
@@ -236,7 +154,7 @@ describe("selfClearPluginCache", () => {
   });
 
   it("warp target removes skill dirs that match the namespace prefix", async () => {
-    const fs = new RealFs();
+    const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
     const qtcSession = await seedWarpSkill(home, "qtc-session");
     const qtcRules = await seedWarpSkill(home, "qtc-rules");
@@ -253,7 +171,7 @@ describe("selfClearPluginCache", () => {
   });
 
   it("warp target with no matching skills → status nothing", async () => {
-    const fs = new RealFs();
+    const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
     await seedWarpSkill(home, "other-skill");
 
@@ -264,7 +182,7 @@ describe("selfClearPluginCache", () => {
   });
 
   it("codex target removes cache + installed_plugins entry (sibling of claude)", async () => {
-    const fs = new RealFs();
+    const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
     const codexCacheDir = join(home, ".codex", "plugins", "cache", "qtc-marketplace", "qtc");
     await mkdir(join(codexCacheDir, "2.3.0", "skills"), { recursive: true });

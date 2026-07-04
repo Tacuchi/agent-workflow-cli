@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeCheckpointStatus } from "../../src/application/checkpoint-service.js";
-import type { FileSystemPort } from "../../src/ports/file-system.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
 const EN_CHECKPOINT = `# Checkpoint — session042-dev-foo
 
@@ -33,36 +33,10 @@ _[AI: 2-3 paragraphs.]_
 - Branches: feature/last
 `;
 
-class FakeFs implements FileSystemPort {
-  constructor(private readonly files: Record<string, string>) {}
-  async exists(path: string): Promise<boolean> {
-    return path in this.files;
-  }
-  async readText(path: string): Promise<string> {
-    const f = this.files[path];
-    if (f === undefined) throw new Error(`ENOENT: ${path}`);
-    return f;
-  }
-  async writeText(): Promise<void> {
-    throw new Error("not implemented");
-  }
-  async list(): Promise<{ name: string; path: string; type: "file" | "dir" }[]> {
-    return [];
-  }
-  async stat(): Promise<{ mtime: Date; size: number; isDir: boolean }> {
-    return { mtime: new Date(), size: 0, isDir: false };
-  }
-  async mkdirp(): Promise<void> {}
-  async remove(): Promise<void> {}
-  async rename(): Promise<void> {}
-  async copy(): Promise<void> {}
-  async chmod(): Promise<void> {}
-}
-
 describe("computeCheckpointStatus — EN canon (R3 reader gap fix)", () => {
   it("detects unfilled placeholders in EN headings (## Last action, ## Next step, ## Files touched, ## Critical context)", async () => {
     const path = "/fake/session042/CHECKPOINT.md";
-    const fs = new FakeFs({ [path]: EN_CHECKPOINT });
+    const fs = new MemFs({ lenient: true }).file(path, EN_CHECKPOINT);
     const result = await computeCheckpointStatus(fs, "/fake/session042", {
       now: new Date("2026-05-08T12:00:00Z"),
     });
@@ -79,7 +53,7 @@ describe("computeCheckpointStatus — EN canon (R3 reader gap fix)", () => {
 
   it("parses 'Updated:' EN value for actualizado timestamp (returns non-null age)", async () => {
     const path = "/fake/session042/CHECKPOINT.md";
-    const fs = new FakeFs({ [path]: EN_CHECKPOINT });
+    const fs = new MemFs({ lenient: true }).file(path, EN_CHECKPOINT);
     // Pick a "now" far enough in the future to be timezone-agnostic.
     const result = await computeCheckpointStatus(fs, "/fake/session042", {
       now: new Date(2026, 4, 9, 12, 0, 0),

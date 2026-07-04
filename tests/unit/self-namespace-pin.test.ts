@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,67 +11,14 @@ import {
 import { selfCommand } from "../../src/cli/commands/self.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { NamespaceResolver } from "../../src/runtime/namespace-resolver.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  constructor(
-    private home: string,
-    private cwdDir: string,
-  ) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.cwdDir;
-  }
-}
-
-class RealFs implements FileSystemPort {
-  async readText(path: string): Promise<string> {
-    return readFile(path, "utf8");
-  }
-  async writeText(path: string, content: string): Promise<void> {
-    await writeFile(path, content, "utf8");
-  }
-  async writeTextExclusive(path: string, content: string): Promise<{ created: boolean }> {
-    try {
-      await stat(path);
-      return { created: false };
-    } catch {
-      await writeFile(path, content, "utf8");
-      return { created: true };
-    }
-  }
-  async remove(path: string): Promise<void> {
-    await rm(path, { recursive: true, force: true });
-  }
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  // Empty cwd → workspace auto-detect never matches, so resolve() reaches the config file.
-  async list(): Promise<DirEntry[]> {
-    return [];
-  }
-  async mkdirp(path: string): Promise<void> {
-    await mkdir(path, { recursive: true });
-  }
-  async stat(): Promise<FileStat> {
-    throw new Error("nyi");
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+// NoScanFs stubs list()→[] so workspace auto-detect never matches the sandbox,
+// letting resolve() reach the config file (the whole point of these tests).
+import { NoScanFs as RealFs } from "../helpers/real-fs.js";
 
 function buildCtx(home: string, cwdDir: string): CliContext {
   const ns = normalizeNamespace("agent-workflow");

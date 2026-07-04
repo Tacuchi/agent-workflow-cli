@@ -6,54 +6,8 @@ import {
   validateProfile,
 } from "../../src/application/profile/profile-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-
-class FakeFs implements FileSystemPort {
-  constructor(public files: Map<string, string> = new Map()) {}
-  async readText(p: string): Promise<string> {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(p: string, c: string): Promise<void> {
-    this.files.set(p, c);
-  }
-  async writeTextExclusive(p: string, c: string): Promise<{ created: boolean }> {
-    if (this.files.has(p)) return { created: false };
-    this.files.set(p, c);
-    return { created: true };
-  }
-  async remove(p: string): Promise<void> {
-    this.files.delete(p);
-  }
-  async exists(p: string): Promise<boolean> {
-    return this.files.has(p);
-  }
-  async list(): Promise<DirEntry[]> {
-    return [];
-  }
-  async mkdirp(): Promise<void> {}
-  async stat(): Promise<FileStat> {
-    return { mtime: new Date(0), size: 0, type: "file" };
-  }
-}
-
-class FakeEnv implements EnvPort {
-  constructor(
-    private vars: Record<string, string> = {},
-    private home = "/home/u",
-    private workdir = "/cwd",
-  ) {}
-  get(name: string): string | undefined {
-    return this.vars[name];
-  }
-  homeDir(): string {
-    return this.home;
-  }
-  cwd(): string {
-    return this.workdir;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
 const VALID_PROFILE_JSON = JSON.stringify({
   namespace: "acme",
@@ -69,8 +23,8 @@ const VALID_PROFILE_JSON = JSON.stringify({
 describe("resolveProfile — cascade", () => {
   it("resolves layer 1: --profile flag (absolute path)", async () => {
     const path = "/explicit/profile.json";
-    const fs = new FakeFs(new Map([[path, VALID_PROFILE_JSON]]));
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true }).file(path, VALID_PROFILE_JSON);
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env, { flagPath: path });
     if ("code" in result) throw new Error(`unexpected: ${result.message}`);
     expect(result.source).toBe("flag");
@@ -79,8 +33,8 @@ describe("resolveProfile — cascade", () => {
   });
 
   it("resolves layer 1: --profile flag (relative path absolutized via cwd)", async () => {
-    const fs = new FakeFs(new Map([["/cwd/rel/profile.json", VALID_PROFILE_JSON]]));
-    const env = new FakeEnv({}, "/home/u", "/cwd");
+    const fs = new MemFs({ lenient: true }).file("/cwd/rel/profile.json", VALID_PROFILE_JSON);
+    const env = new FakeEnv("/home/u", "/cwd", {});
     const result = await resolveProfile(fs, env, { flagPath: "rel/profile.json" });
     if ("code" in result) throw new Error(`unexpected: ${result.message}`);
     expect(result.source).toBe("flag");
@@ -89,8 +43,8 @@ describe("resolveProfile — cascade", () => {
 
   it("resolves layer 2: AW_PROFILE env var", async () => {
     const path = "/env/profile.json";
-    const fs = new FakeFs(new Map([[path, VALID_PROFILE_JSON]]));
-    const env = new FakeEnv({ [ENV_VAR_PROFILE]: path });
+    const fs = new MemFs({ lenient: true }).file(path, VALID_PROFILE_JSON);
+    const env = new FakeEnv("/home/u", "/cwd", { [ENV_VAR_PROFILE]: path });
     const result = await resolveProfile(fs, env);
     if ("code" in result) throw new Error(`unexpected: ${result.message}`);
     expect(result.source).toBe("env");
@@ -99,8 +53,8 @@ describe("resolveProfile — cascade", () => {
 
   it("resolves layer 3: ~/.config/agent-workflow/profile.json", async () => {
     const userPath = "/home/u/.config/agent-workflow/profile.json";
-    const fs = new FakeFs(new Map([[userPath, VALID_PROFILE_JSON]]));
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true }).file(userPath, VALID_PROFILE_JSON);
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env);
     if ("code" in result) throw new Error(`unexpected: ${result.message}`);
     expect(result.source).toBe("user-config");
@@ -109,8 +63,8 @@ describe("resolveProfile — cascade", () => {
 
   it("resolves layer 4: <cwd>/.agent-workflow/profile.json", async () => {
     const wsPath = "/cwd/.agent-workflow/profile.json";
-    const fs = new FakeFs(new Map([[wsPath, VALID_PROFILE_JSON]]));
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true }).file(wsPath, VALID_PROFILE_JSON);
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env);
     if ("code" in result) throw new Error(`unexpected: ${result.message}`);
     expect(result.source).toBe("workspace");
@@ -119,8 +73,8 @@ describe("resolveProfile — cascade", () => {
 
   it("resolves layer 4 with custom workspace namespace: <cwd>/.qtc/profile.json", async () => {
     const wsPath = "/cwd/.qtc/profile.json";
-    const fs = new FakeFs(new Map([[wsPath, VALID_PROFILE_JSON]]));
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true }).file(wsPath, VALID_PROFILE_JSON);
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env, { workspaceNamespace: "qtc" });
     if ("code" in result) throw new Error(`unexpected: ${result.message}`);
     expect(result.source).toBe("workspace");
@@ -128,8 +82,8 @@ describe("resolveProfile — cascade", () => {
   });
 
   it("resolves layer 5: defaults to DEFAULT_PROFILE when nothing exists", async () => {
-    const fs = new FakeFs();
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true });
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env);
     if ("code" in result) throw new Error(`unexpected: ${result.message}`);
     expect(result.source).toBe("default");
@@ -147,43 +101,40 @@ describe("resolveProfile — cascade", () => {
     const envJson = JSON.stringify({ ...JSON.parse(VALID_PROFILE_JSON), company: "ENV" });
     const userJson = JSON.stringify({ ...JSON.parse(VALID_PROFILE_JSON), company: "USER" });
     const wsJson = JSON.stringify({ ...JSON.parse(VALID_PROFILE_JSON), company: "WS" });
-    const fs = new FakeFs(
-      new Map([
-        [flagPath, flagJson],
-        [envPath, envJson],
-        [userPath, userJson],
-        [wsPath, wsJson],
-      ]),
-    );
+    const fs = new MemFs({ lenient: true })
+      .file(flagPath, flagJson)
+      .file(envPath, envJson)
+      .file(userPath, userJson)
+      .file(wsPath, wsJson);
 
     // 1. flag wins
-    let env: EnvPort = new FakeEnv({ [ENV_VAR_PROFILE]: envPath });
+    let env: EnvPort = new FakeEnv("/home/u", "/cwd", { [ENV_VAR_PROFILE]: envPath });
     let result = await resolveProfile(fs, env, { flagPath });
     if ("code" in result) throw new Error("unexpected");
     expect(result.profile.company).toBe("FLAG");
 
     // 2. env wins when no flag
-    env = new FakeEnv({ [ENV_VAR_PROFILE]: envPath });
+    env = new FakeEnv("/home/u", "/cwd", { [ENV_VAR_PROFILE]: envPath });
     result = await resolveProfile(fs, env);
     if ("code" in result) throw new Error("unexpected");
     expect(result.profile.company).toBe("ENV");
 
     // 3. user-config wins when no flag/env
-    env = new FakeEnv();
+    env = new FakeEnv("/home/u", "/cwd");
     result = await resolveProfile(fs, env);
     if ("code" in result) throw new Error("unexpected");
     expect(result.profile.company).toBe("USER");
 
     // 4. workspace wins when only it exists
-    fs.files.delete(userPath);
+    await fs.remove(userPath);
     result = await resolveProfile(fs, env);
     if ("code" in result) throw new Error("unexpected");
     expect(result.profile.company).toBe("WS");
   });
 
   it("flag path missing → PROFILE_NOT_FOUND", async () => {
-    const fs = new FakeFs();
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true });
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env, { flagPath: "/missing/profile.json" });
     if (!("code" in result)) throw new Error("expected error");
     expect(result.code).toBe("PROFILE_NOT_FOUND");
@@ -191,8 +142,8 @@ describe("resolveProfile — cascade", () => {
   });
 
   it("env path missing → PROFILE_NOT_FOUND", async () => {
-    const fs = new FakeFs();
-    const env = new FakeEnv({ [ENV_VAR_PROFILE]: "/missing/profile.json" });
+    const fs = new MemFs({ lenient: true });
+    const env = new FakeEnv("/home/u", "/cwd", { [ENV_VAR_PROFILE]: "/missing/profile.json" });
     const result = await resolveProfile(fs, env);
     if (!("code" in result)) throw new Error("expected error");
     expect(result.code).toBe("PROFILE_NOT_FOUND");
@@ -200,8 +151,8 @@ describe("resolveProfile — cascade", () => {
 
   it("invalid JSON → PROFILE_INVALID_JSON", async () => {
     const path = "/p/profile.json";
-    const fs = new FakeFs(new Map([[path, "{not valid json"]]));
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true }).file(path, "{not valid json");
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env, { flagPath: path });
     if (!("code" in result)) throw new Error("expected error");
     expect(result.code).toBe("PROFILE_INVALID_JSON");

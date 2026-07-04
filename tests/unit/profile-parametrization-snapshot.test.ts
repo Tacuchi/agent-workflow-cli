@@ -4,55 +4,8 @@ import {
   resolveProfile,
   validateProfile,
 } from "../../src/application/profile/profile-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-
-class FakeFs implements FileSystemPort {
-  constructor(public files: Map<string, string> = new Map()) {}
-  async readText(p: string): Promise<string> {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v;
-  }
-  async writeText(p: string, c: string): Promise<void> {
-    this.files.set(p, c);
-  }
-  async writeTextExclusive(p: string, c: string): Promise<{ created: boolean }> {
-    if (this.files.has(p)) return { created: false };
-    this.files.set(p, c);
-    return { created: true };
-  }
-  async remove(p: string): Promise<void> {
-    this.files.delete(p);
-  }
-  async exists(p: string): Promise<boolean> {
-    return this.files.has(p);
-  }
-  async list(): Promise<DirEntry[]> {
-    return [];
-  }
-  async mkdirp(): Promise<void> {}
-  async stat(): Promise<FileStat> {
-    return { mtime: new Date(0), size: 0, type: "file" };
-  }
-}
-
-class FakeEnv implements EnvPort {
-  constructor(
-    private vars: Record<string, string> = {},
-    private home = "/home/u",
-    private workdir = "/cwd",
-  ) {}
-  get(name: string): string | undefined {
-    return this.vars[name];
-  }
-  homeDir(): string {
-    return this.home;
-  }
-  cwd(): string {
-    return this.workdir;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
 const QTC_PROFILE = {
   namespace: "qtc",
@@ -103,8 +56,8 @@ const ACME_PROFILE = {
 
 describe("profile parametrization snapshots (T2.9 golden coverage)", () => {
   it("default (empty) profile shape matches DEFAULT_PROFILE", async () => {
-    const fs = new FakeFs();
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true });
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env);
     if ("code" in result) throw new Error(result.message);
     expect(result.source).toBe("default");
@@ -137,8 +90,11 @@ describe("profile parametrization snapshots (T2.9 golden coverage)", () => {
   });
 
   it("ACME profile (hypothetical multi-empresa) validates and rounds-trip", async () => {
-    const fs = new FakeFs(new Map([["/cwd/.acme/profile.json", JSON.stringify(ACME_PROFILE)]]));
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true }).file(
+      "/cwd/.acme/profile.json",
+      JSON.stringify(ACME_PROFILE),
+    );
+    const env = new FakeEnv("/home/u", "/cwd");
     const result = await resolveProfile(fs, env, { workspaceNamespace: "acme" });
     if ("code" in result) throw new Error(result.message);
     expect(result.source).toBe("workspace");
@@ -157,8 +113,8 @@ describe("profile parametrization snapshots (T2.9 golden coverage)", () => {
   });
 
   it("cloned default does not share array references with DEFAULT_PROFILE", async () => {
-    const fs = new FakeFs();
-    const env = new FakeEnv();
+    const fs = new MemFs({ lenient: true });
+    const env = new FakeEnv("/home/u", "/cwd");
     const r1 = await resolveProfile(fs, env);
     const r2 = await resolveProfile(fs, env);
     if ("code" in r1 || "code" in r2) throw new Error("unexpected error");

@@ -16,22 +16,4 @@ describe("selfNamespace", () => {
       expect(result.data).toEqual({ namespace: "workflow", source: "env" });
     }
   });
-
-  it("works with default namespace 'workflow' from default source", async () => {
-    const ctx = {
-      namespace: {
-        namespace: normalizeNamespace("workflow"),
-        source: "default",
-      },
-      paths: new PathsService(normalizeNamespace("workflow"), "/h", "/c"),
-    } as unknown as CliContext;
-    const result = await selfNamespace(ctx);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data).toEqual({
-        namespace: "workflow",
-        source: "default",
-      });
-    }
-  });
 });

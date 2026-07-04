@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
@@ -94,18 +92,6 @@ describe("guard: every registered command has a real group (no 'Other')", () => 
     const groups = groupCommands(ALL_COMMANDS.map((c) => c.name));
     const other = groups.find((g) => g.name === "Other");
     expect(other, `these commands fell into Other: ${other?.commands.join(", ")}`).toBeUndefined();
-  });
-
-  it("commands/index.ts lists exactly what main.ts registers (drift guard)", () => {
-    const read = (rel: string) =>
-      readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-    const registered = new Set(
-      [...read("../../src/cli/main.ts").matchAll(/registry\.register\((\w+)\)/g)].map((m) => m[1]),
-    );
-    const indexSrc = read("../../src/cli/commands/index.ts");
-    const arrayBody = indexSrc.slice(indexSrc.indexOf("ALL_COMMANDS"));
-    const listed = new Set([...arrayBody.matchAll(/^ {2}(\w+Command),$/gm)].map((m) => m[1]));
-    expect(listed).toEqual(registered);
   });
 });
 

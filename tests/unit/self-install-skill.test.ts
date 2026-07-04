@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,72 +6,13 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { SKILL_DIR_NAME, selfInstallSkill } from "../../src/application/self/install-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
-import type { ProcessPort, RunOptions, RunResult } from "../../src/ports/process.js";
+import type { FileSystemPort } from "../../src/ports/file-system.js";
+import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
-
-class FakeEnv implements EnvPort {
-  constructor(private home: string) {}
-  get() {
-    return undefined;
-  }
-  homeDir() {
-    return this.home;
-  }
-  cwd() {
-    return this.home;
-  }
-}
-
-class RealFs implements FileSystemPort {
-  async readText(path: string): Promise<string> {
-    return readFile(path, "utf8");
-  }
-  async writeText(path: string, content: string): Promise<void> {
-    await writeFile(path, content, "utf8");
-  }
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  async list(_path: string): Promise<DirEntry[]> {
-    return [];
-  }
-  async mkdirp(path: string): Promise<void> {
-    await mkdir(path, { recursive: true });
-  }
-  async stat(_path: string): Promise<FileStat> {
-    throw new Error("nyi");
-  }
-}
-
-class FakeProcess implements ProcessPort {
-  public lastInvocation: { cmd: string; args: string[] } | undefined;
-  async run(cmd: string, args: string[], _opts?: RunOptions): Promise<RunResult> {
-    this.lastInvocation = { cmd, args };
-    return { code: 1, stdout: "", stderr: `unexpected: ${cmd} ${args.join(" ")}` };
-  }
-  async which(_cmd: string): Promise<string | undefined> {
-    return undefined;
-  }
-
-  async spawnDetached() {
-    throw new Error("spawnDetached not implemented in this fake");
-  }
-  async spawnInTerminal() {
-    throw new Error("spawnInTerminal not implemented in this fake");
-  }
-  async killTree(): Promise<void> {}
-  async isAlive() {
-    return false;
-  }
-}
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
+import { NoScanFs as RealFs } from "../helpers/real-fs.js";
 
 function buildArgs(values: Record<string, string>, flags: string[]): ParsedArgs {
   return {
@@ -248,53 +189,27 @@ describe("selfInstallSkill", () => {
     expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME, ".git"))).toBe(false);
   });
 
-  it("--target=claude installs only to ~/.claude/skills/", async () => {
+  // Single-target install: only its own root gets the skill, no sibling host.
+  // Field-wise dest assertions (dest entries also carry status/files_copied/…).
+  it.each([
+    ["claude", ".claude/skills", ".codex/skills"],
+    ["codex", ".codex/skills", ".claude/skills"],
+    ["warp", ".warp/skills", ".claude/skills"],
+    ["oz", ".agents/skills", ".warp/skills"],
+  ] as const)("--target=%s installs only under %s", async (target, root, otherRoot) => {
     const fs = new RealFs();
-    const proc = new FakeProcess();
-    const ctx = buildCtx(home, fs, proc);
+    const ctx = buildCtx(home, fs, new FakeProcess());
 
-    const result = await selfInstallSkill(buildArgs({ from: source, target: "claude" }, []), ctx);
+    const result = await selfInstallSkill(buildArgs({ from: source, target }, []), ctx);
 
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.dests).toHaveLength(1);
-      expect(result.data.dests[0]?.target).toBe("claude");
+      expect(result.data.dests[0]?.target).toBe(target);
+      expect(result.data.dests[0]?.dest).toBe(join(home, root, SKILL_DIR_NAME));
     }
-    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(true);
-    expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME))).toBe(false);
-  });
-
-  it("--target=codex installs only to ~/.codex/skills/", async () => {
-    const fs = new RealFs();
-    const proc = new FakeProcess();
-    const ctx = buildCtx(home, fs, proc);
-
-    const result = await selfInstallSkill(buildArgs({ from: source, target: "codex" }, []), ctx);
-
-    expect(result.ok).toBe(true);
-    if (result.ok && result.data) {
-      expect(result.data.dests).toHaveLength(1);
-      expect(result.data.dests[0]?.target).toBe("codex");
-    }
-    expect(await fs.exists(join(home, ".codex/skills", SKILL_DIR_NAME))).toBe(true);
-    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
-  });
-
-  it("--target=warp installs only to ~/.warp/skills/", async () => {
-    const fs = new RealFs();
-    const proc = new FakeProcess();
-    const ctx = buildCtx(home, fs, proc);
-
-    const result = await selfInstallSkill(buildArgs({ from: source, target: "warp" }, []), ctx);
-
-    expect(result.ok).toBe(true);
-    if (result.ok && result.data) {
-      expect(result.data.dests).toHaveLength(1);
-      expect(result.data.dests[0]?.target).toBe("warp");
-      expect(result.data.dests[0]?.dest).toBe(join(home, ".warp/skills", SKILL_DIR_NAME));
-    }
-    expect(await fs.exists(join(home, ".warp/skills", SKILL_DIR_NAME))).toBe(true);
-    expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
+    expect(await fs.exists(join(home, root, SKILL_DIR_NAME))).toBe(true);
+    expect(await fs.exists(join(home, otherRoot, SKILL_DIR_NAME))).toBe(false);
   });
 
   it("skill-as-command (codex): sintetiza w-<cmd>/SKILL.md con refs reescritas y barre w-* previos", async () => {
@@ -574,23 +489,6 @@ describe("selfInstallSkill", () => {
     expect(await fs.exists(join(home, ".codex/commands/keep.md"))).toBe(true);
   });
 
-  it("--target=oz installs only to ~/.agents/skills/", async () => {
-    const fs = new RealFs();
-    const proc = new FakeProcess();
-    const ctx = buildCtx(home, fs, proc);
-
-    const result = await selfInstallSkill(buildArgs({ from: source, target: "oz" }, []), ctx);
-
-    expect(result.ok).toBe(true);
-    if (result.ok && result.data) {
-      expect(result.data.dests).toHaveLength(1);
-      expect(result.data.dests[0]?.target).toBe("oz");
-      expect(result.data.dests[0]?.dest).toBe(join(home, ".agents/skills", SKILL_DIR_NAME));
-    }
-    expect(await fs.exists(join(home, ".agents/skills", SKILL_DIR_NAME))).toBe(true);
-    expect(await fs.exists(join(home, ".warp/skills", SKILL_DIR_NAME))).toBe(false);
-  });
-
   it("--target=invalid is rejected with INVALID_TARGET", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
@@ -738,7 +636,7 @@ describe("selfInstallSkill", () => {
       expect(result.error.code).toBe("INVALID_SOURCE");
       expect(result.error.message).toContain("bundled");
     }
-    expect(proc.lastInvocation).toBeUndefined();
+    expect(proc.calls).toHaveLength(0);
   });
 
   it("rejects --from git@... ssh URL with INVALID_SOURCE", async () => {
@@ -784,7 +682,7 @@ describe("selfInstallSkill", () => {
     );
     expect(installed).toContain("name: agent-workflow");
 
-    expect(proc.lastInvocation).toBeUndefined();
+    expect(proc.calls).toHaveLength(0);
   });
 
   it("returns BUNDLED_NOT_FOUND when bundled is missing and --from omitted", async () => {
@@ -805,7 +703,7 @@ describe("selfInstallSkill", () => {
       expect(result.error.message).toContain("--from");
       expect(result.error.message).not.toContain("http");
     }
-    expect(proc.lastInvocation).toBeUndefined();
+    expect(proc.calls).toHaveLength(0);
   });
 
   it("SKILL_DIR_NAME points to the bundled skill name", () => {

@@ -1,83 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
-import type { EnvPort } from "../../src/ports/env.js";
-import type { DirEntry, FileStat, FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
+import { MemFs as FakeFs } from "../helpers/mem-fs.js";
 
-// ── fakes ──────────────────────────────────────────────────────────────────
+// ── fixtures ─────────────────────────────────────────────────────────────────
 
-class FakeFs implements FileSystemPort {
-  private files = new Map<string, { content: string; mtime: Date }>();
-  private dirMtime = new Map<string, Date>();
-  private children = new Map<string, Map<string, DirEntry>>();
-
-  file(path: string, content: string, mtime = new Date(0)): this {
-    this.files.set(path, { content, mtime });
-    this.register(path, "file");
-    return this;
-  }
-
-  private register(path: string, type: DirEntry["type"]): void {
-    const parent = parentOf(path);
-    if (parent === path) return;
-    const kids = this.children.get(parent) ?? new Map<string, DirEntry>();
-    kids.set(baseOf(path), { name: baseOf(path), path, type });
-    this.children.set(parent, kids);
-    if (!this.dirMtime.has(parent)) this.dirMtime.set(parent, new Date(0));
-    this.register(parent, "dir");
-  }
-
-  async readText(p: string): Promise<string> {
-    const v = this.files.get(p);
-    if (v === undefined) throw new Error(`ENOENT: ${p}`);
-    return v.content;
-  }
-  async writeText(p: string, content: string): Promise<void> {
-    this.file(p, content);
-  }
-  async writeTextExclusive(p: string, content: string): Promise<{ created: boolean }> {
-    if (this.files.has(p)) return { created: false };
-    this.file(p, content);
-    return { created: true };
-  }
-  async remove(p: string): Promise<void> {
-    this.files.delete(p);
-  }
-  async exists(p: string): Promise<boolean> {
-    return this.files.has(p) || this.dirMtime.has(p) || this.children.has(p);
-  }
-  async list(p: string): Promise<DirEntry[]> {
-    const kids = this.children.get(p);
-    if (kids === undefined) throw new Error(`ENOENT: ${p}`);
-    return [...kids.values()];
-  }
-  async mkdirp(p: string): Promise<void> {
-    if (!this.dirMtime.has(p)) this.dirMtime.set(p, new Date(0));
-  }
-  async stat(p: string): Promise<FileStat> {
-    const f = this.files.get(p);
-    if (f) return { mtime: f.mtime, size: f.content.length, type: "file" };
-    const d = this.dirMtime.get(p);
-    if (d) return { mtime: d, size: 0, type: "dir" };
-    throw new Error(`ENOENT: ${p}`);
-  }
-}
-
-function parentOf(p: string): string {
-  const idx = p.lastIndexOf("/");
-  return idx <= 0 ? "/" : p.slice(0, idx);
-}
-function baseOf(p: string): string {
-  const idx = p.lastIndexOf("/");
-  return idx < 0 ? p : p.slice(idx + 1);
-}
-
-const fakeEnv: EnvPort = {
-  get: () => undefined,
-  homeDir: () => "/home",
-  cwd: () => "/cwd",
-};
+const fakeEnv = new FakeEnv("/home", "/cwd");
 
 function paths(): PathsService {
   return new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");
