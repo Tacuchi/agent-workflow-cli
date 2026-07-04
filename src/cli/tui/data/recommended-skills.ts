@@ -116,4 +116,9 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
     source: "muratcankoylan/agent-skills-for-context-engineering",
     description: "Offload context to files and re-read on demand to keep the window lean.",
   },
+  {
+    name: "checklist-discipline",
+    source: "erichowens/some_claude_skills",
+    description: "Guard against skipping steps in long multi-step procedures/runbooks.",
+  },
 ] as const;

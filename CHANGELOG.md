@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.2.0] — 2026-07-04
+
+**+1 skill recomendada de comportamiento: `checklist-discipline`** (promovida de "por caso" a seed). Verificada instalando.
+
+### Added
+
+- **Seed `recommended-skills.ts`**: `erichowens/some_claude_skills@checklist-discipline` — guarda contra omitir pasos en procedimientos/runbooks largos. Portable, sin conflicto con la doctrina. Espejada en el README del marketplace.
+
 ## [20.1.1] — 2026-07-04
 
 **Fix: 2 skills recomendadas del seed no instalaban** (mismatch pick-vs-slug de skills.sh, detectado con instalación real). Sin cambios de conducta.
