@@ -1,14 +1,12 @@
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
   type McpEntry,
@@ -19,6 +17,7 @@ import {
   isDbhubManagedEntry,
 } from "../domain/mcp-entry.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
+import { backupFile, escapeRegex, purgeStaleBackups } from "./multiroot/paths.js";
 import { resolveWarpGlobalMcpPath, resolveWarpProjectMcpPath } from "./multiroot/warp.js";
 
 export interface ScopeInput {
@@ -545,13 +544,8 @@ function canonicalJson(v: unknown): string {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`).join(",")}}`;
 }
 
-function backupFile(path: string): string | null {
-  if (!existsSync(path)) return null;
-  const ts = Math.floor(Date.now() / 1000);
-  const backupPath = `${path}.bak.${ts}`;
-  copyFileSync(path, backupPath);
-  return backupPath;
-}
+// backupFile/purgeStaleBackups/escapeRegex live in multiroot/paths.ts (single
+// backup mechanism for host-config files: keep-latest, purge-then-copy).
 
 function discardBackup(backupPath: string | null): void {
   if (backupPath === null) return;
@@ -560,31 +554,6 @@ function discardBackup(backupPath: string | null): void {
   } catch {
     // best-effort: nunca bloquear el write OK por un cleanup fallido
   }
-}
-
-function purgeStaleBackups(filePath: string): void {
-  const dir = dirname(filePath);
-  if (!existsSync(dir)) return;
-  const base = basename(filePath);
-  const re = new RegExp(`^${escapeRegex(base)}\\.bak\\.\\d+$`);
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (!re.test(entry)) continue;
-    try {
-      unlinkSync(join(dir, entry));
-    } catch {
-      // ignore individual failure
-    }
-  }
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function removeCodexMcpBlocks(text: string, name: string): string {

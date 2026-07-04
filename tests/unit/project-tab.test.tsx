@@ -295,26 +295,25 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     expect(f).toContain("sin procesos");
   });
 
-  it("'Lanzar en local' aparece deshabilitada (sin descriptor) en el panel de una fuente", async () => {
+  it("'Lanzar en local' aparece deshabilitada (no lanzable) en el panel de una fuente", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
-    stdin.write(ENTER); // abre el panel sobre alpha (sin descriptor en este ctx)
+    stdin.write(ENTER); // abre el panel sobre alpha (sin descriptor ni fuente lanzable en este ctx)
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("Lanzar en local");
-    // El hint inline se trunca al ancho del panel ("sin descrip…"); el hint completo
-    // aparece en el aviso al activarla (ver test siguiente).
-    expect(f).toContain("sin descrip");
+    // La descripción inline se trunca al ancho del panel; alcanza el prefijo.
+    expect(f).toContain("no lanzable");
   });
 
-  it("intentar lanzar sin descriptor muestra el hint /w:workspace-init", async () => {
+  it("intentar lanzar una fuente no lanzable avisa 'sin comando de arranque detectable'", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
     stdin.write(ENTER); // panel
     await tick();
     stdin.write(ENTER); // acción 0 = Lanzar en local (no launchable)
     await tick();
-    expect(lastFrame() ?? "").toContain("/w:workspace-init");
+    expect(lastFrame() ?? "").toContain("sin comando de arranque detectable");
   });
 
   it("lista un proceso en ejecución, muestra el tile en 1 y entra al modo procesos con 'p'", async () => {
@@ -337,8 +336,8 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("Lanzar en local");
-    // Habilitada: NO muestra el hint de "sin descriptor" (la desc se trunca al ancho del panel).
-    expect(f).not.toContain("sin descriptor");
+    // Habilitada: NO muestra la descripción de deshabilitada.
+    expect(f).not.toContain("no lanzable");
   });
 
   it("lanzar una fuente ya en ejecución (mismo perfil) muestra la pantalla de colisión", async () => {

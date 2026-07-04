@@ -403,3 +403,135 @@ describe("readSessionArtifacts", () => {
     expect(r2.session).toBe("session007-dev-norm");
   });
 });
+
+describe("listGraduatedBundles + listStandaloneSql (F7)", () => {
+  const scripts = "/cwd/docs/scripts";
+
+  function scriptsFs(): FakeFs {
+    const modern = `${scripts}/002-export-scripts-2026-07-03`;
+    const legacy = `${scripts}/001-session003-fix-indices`;
+    return new FakeFs(
+      new Map([
+        [`${modern}/01-alter.sql`, "ALTER TABLE t ADD c int;"],
+        [`${modern}/00-ROLLBACK.sql`, "ALTER TABLE t DROP COLUMN c;"],
+        [`${legacy}/01-fix.sql`, "CREATE INDEX ix ON t(c);"],
+        [`${legacy}/01-fix.rollback.sql`, "DROP INDEX ix;"],
+        [`${scripts}/suelto-limpieza.sql`, "DELETE FROM tmp;"],
+        [`${scripts}/suelto-limpieza-rollback.sql`, "-- restore tmp"],
+        [`${scripts}/notas.md`, "# no sql"],
+      ]),
+      new Map([
+        [
+          scripts,
+          [
+            { name: "002-export-scripts-2026-07-03", path: modern, type: "dir" },
+            { name: "001-session003-fix-indices", path: legacy, type: "dir" },
+            {
+              name: "cualquier-otra-carpeta",
+              path: `${scripts}/cualquier-otra-carpeta`,
+              type: "dir",
+            },
+            { name: "suelto-limpieza.sql", path: `${scripts}/suelto-limpieza.sql`, type: "file" },
+            {
+              name: "suelto-limpieza-rollback.sql",
+              path: `${scripts}/suelto-limpieza-rollback.sql`,
+              type: "file",
+            },
+            { name: "notas.md", path: `${scripts}/notas.md`, type: "file" },
+          ],
+        ],
+        [
+          modern,
+          [
+            { name: "01-alter.sql", path: `${modern}/01-alter.sql`, type: "file" },
+            { name: "00-ROLLBACK.sql", path: `${modern}/00-ROLLBACK.sql`, type: "file" },
+          ],
+        ],
+        [
+          legacy,
+          [
+            { name: "01-fix.sql", path: `${legacy}/01-fix.sql`, type: "file" },
+            { name: "01-fix.rollback.sql", path: `${legacy}/01-fix.rollback.sql`, type: "file" },
+          ],
+        ],
+        [`${scripts}/cualquier-otra-carpeta`, []],
+      ]),
+    );
+  }
+
+  it("reconoce el naming moderno NNN-export-scripts-YYYY-MM-DD y el legacy NNN-sessionNNN-slug", async () => {
+    const { listGraduatedBundles } = await import("../../src/application/release-data-service.js");
+    const bundles = await listGraduatedBundles(scriptsFs(), "/cwd", paths);
+    expect(bundles).toHaveLength(2);
+    const legacy = bundles.find((b) => b.kind === "legacy");
+    const modern = bundles.find((b) => b.kind === "export");
+    expect(legacy).toMatchObject({
+      nnn: "001",
+      session_code: "003",
+      slug: "fix-indices",
+      forward_count: 1,
+      rollback_count: 1,
+    });
+    expect(modern).toMatchObject({
+      nnn: "002",
+      session_code: null,
+      slug: "export-scripts-2026-07-03",
+      forward_count: 1,
+      rollback_count: 1, // 00-ROLLBACK.sql cuenta como rollback (naming moderno)
+    });
+  });
+
+  it("el filtro por sessionCode aplica solo a bundles legacy (los modernos son cross-session)", async () => {
+    const { listGraduatedBundles } = await import("../../src/application/release-data-service.js");
+    const bundles = await listGraduatedBundles(scriptsFs(), "/cwd", paths, { sessionCode: "003" });
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.kind).toBe("legacy");
+  });
+
+  it("listStandaloneSql: solo .sql top-level, con is_rollback y size; ignora dirs y no-sql", async () => {
+    const { listStandaloneSql } = await import("../../src/application/release-data-service.js");
+    const items = await listStandaloneSql(scriptsFs(), "/cwd", paths);
+    expect(items.map((i) => i.name)).toEqual([
+      "suelto-limpieza-rollback.sql",
+      "suelto-limpieza.sql",
+    ]);
+    expect(items.find((i) => i.name === "suelto-limpieza.sql")).toMatchObject({
+      is_rollback: false,
+    });
+    expect(items.find((i) => i.name === "suelto-limpieza-rollback.sql")).toMatchObject({
+      is_rollback: true,
+    });
+    expect(items.every((i) => typeof i.size === "number")).toBe(true);
+  });
+
+  it("is_rollback es case-insensitive (convención de casa 00-ROLLBACK.sql)", async () => {
+    const { listStandaloneSql } = await import("../../src/application/release-data-service.js");
+    const fs = new FakeFs(
+      new Map([[`${scripts}/005-ROLLBACK.sql`, "-- restore"]]),
+      new Map([
+        [
+          scripts,
+          [{ name: "005-ROLLBACK.sql", path: `${scripts}/005-ROLLBACK.sql`, type: "file" }],
+        ],
+      ]),
+    );
+    const items = await listStandaloneSql(fs, "/cwd", paths);
+    expect(items[0]).toMatchObject({ name: "005-ROLLBACK.sql", is_rollback: true });
+  });
+
+  it("runReleaseData: alias desconocido devuelve {error} (el comando lo mapea a INVALID_INPUT exit 1)", async () => {
+    const { runReleaseData } = await import("../../src/application/release-data-service.js");
+    const fs = new FakeFs(new Map(), new Map());
+    const result = await runReleaseData(fs, new FakeEnv(), paths, { sourceAlias: "fantasma" });
+    expect("error" in result).toBe(true);
+  });
+
+  it("runReleaseData: --standalone-sql agrega standalone_sql al payload", async () => {
+    const { runReleaseData } = await import("../../src/application/release-data-service.js");
+    const result = await runReleaseData(scriptsFs(), new FakeEnv(), paths, {
+      includeStandaloneSql: true,
+    });
+    if ("error" in result) throw new Error(result.error);
+    expect(result.standalone_sql).toHaveLength(2);
+  });
+});

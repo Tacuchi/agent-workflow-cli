@@ -43,7 +43,7 @@ The report's prose follows the **ambient** writing conventions: the host auto-ap
 
 ## Read-only sandbox
 
-In plan mode it **describes**, never writes: the resolved audience/length, the corpus sessions that would enter after the filters, the sections that would appear, the R-items that would consolidate (and detected conflicts), and the estimated length. It does **not** run `Write` or effectful `aw next-number`.
+In plan mode it **describes**, never writes: the resolved audience/length, the corpus sessions that would enter after the filters, the sections that would appear, the R-items that would consolidate (and detected conflicts), and the estimated length. It does **not** run `Write`; numbering queries use `aw next-number --dry-run` (pure).
 
 ## Inputs
 

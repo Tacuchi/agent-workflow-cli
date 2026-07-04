@@ -12,7 +12,7 @@ import type { CliContext } from "../types.js";
 export const workspaceInitCommand: QtcCommand = {
   name: "workspace-init",
   describe:
-    "Initialize the current directory as an agent-workflow workspace (unifies the legacy hub-init + project-init; no project/hub distinction). Scaffolds .workflow/sessions + docs/ taxonomy, seeds .workflow/skills.toml, and writes the WORKSPACE block. With 2+ sources it also configures multi-root visibility. Idempotent. Flags: --source alias:path[:rama] (repeatable, 1+), [--working-branch alias:rama (repeatable)], [--qa-branch alias:rama (repeatable)], [--proyecto], [--main-branch], [--workspace], [--dry-run].",
+    "Initialize the current directory as an agent-workflow workspace (unifies the legacy hub-init + project-init; no project/hub distinction). Minimal scaffold: .workflow/sessions + skills.toml + WORKSPACE block + CLI-owned .gitignore; docs/ folders are born on demand (aw next-number). With external sources it also configures multi-root visibility. Idempotent; re-running reconciles and prunes the legacy upfront scaffold. Flags: --source alias:path[:rama] (repeatable, 1+), [--working-branch alias:rama (repeatable)], [--qa-branch alias:rama (repeatable)], [--proyecto], [--main-branch], [--workspace], [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     // Canonical flag is --source; --fuente kept as a back-compat alias.
     const sourcesRaw = [

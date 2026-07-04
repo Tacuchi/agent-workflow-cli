@@ -10,8 +10,8 @@ export const releaseDataCommand: QtcCommand = {
   describe:
     "Dump consolidado del corpus de sesiones para la familia export-* " +
     "(scripts/manuals/diagrams/reports). Usage: aw release-data [--sessions <csv>] " +
-    "[--since sessionNNN] [--source <alias>] [--include-graduated] [--no-open] " +
-    "[--no-closed] [--skip-content] [--verbose].",
+    "[--since sessionNNN] [--source <alias>] [--include-graduated] " +
+    "[--standalone-sql] [--no-open] [--no-closed] [--verbose].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: Parameters<typeof runReleaseData>[3] = {};
     const sessionsRaw = args.values.get("sessions");
@@ -35,13 +35,22 @@ export const releaseDataCommand: QtcCommand = {
     const source = flagValue(args, "source");
     if (source !== undefined) input.sourceAlias = source;
     if (args.flags.has("--include-graduated")) input.includeGraduated = true;
+    if (args.flags.has("--standalone-sql")) input.includeStandaloneSql = true;
     if (args.flags.has("--no-open")) input.includeOpen = false;
     if (args.flags.has("--no-closed")) input.includeClosed = false;
-    if (args.flags.has("--skip-content")) input.skipContent = true;
     if (args.flags.has("--verbose")) input.verbose = true;
 
     try {
       const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input, ctx.runtime);
+      if ("error" in data) {
+        // Alias desconocido / bloque ilegible: error real, no un dump vacío "ok".
+        return {
+          ok: false,
+          error: { code: "INVALID_INPUT", message: data.error },
+          data,
+          exitCode: 1,
+        };
+      }
       const dataWithWarnings = warnings.length > 0 ? { ...data, warnings } : data;
       return { ok: true, data: dataWithWarnings, exitCode: 0 };
     } catch (e) {

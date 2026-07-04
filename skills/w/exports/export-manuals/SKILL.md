@@ -44,7 +44,7 @@ The manual's prose follows the **ambient** writing conventions: the host auto-ap
 
 ## Read-only sandbox
 
-In plan mode it **describes**, never writes: the resolved mode, the detected topics (with origin sessions), the manuals already present in `docs/manuals/`, and — per mode — the `INDEX.md` structure it would overwrite or the count of manuals the dossier would generate. It does **not** run `Write` or effectful `aw next-number`.
+In plan mode it **describes**, never writes: the resolved mode, the detected topics (with origin sessions), the manuals already present in `docs/manuals/`, and — per mode — the `INDEX.md` structure it would overwrite or the count of manuals the dossier would generate. It does **not** run `Write`; numbering queries use `aw next-number --dry-run` (pure).
 
 ## Inputs
 

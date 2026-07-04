@@ -8,7 +8,7 @@
 
 ## Bootstrap
 
-[`/w:workspace-init`](workspace-init.md) turns the current folder into a **workspace** (`.workflow/` + `docs/` + `WORKSPACE` block + `.workflow/skills.toml`). No project/hub distinction; run once before any flow.
+[`/w:workspace-init`](workspace-init.md) turns the current folder into a **workspace** (minimal scaffold: `.workflow/sessions/` + `.workflow/skills.toml` + `WORKSPACE` block + CLI-owned `.gitignore`; `docs/` folders are born on demand). No project/hub distinction; run once before any flow.
 
 ## Index
 

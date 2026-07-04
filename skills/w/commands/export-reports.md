@@ -13,7 +13,7 @@ allowed-tools:
 
 Consolidates the full session corpus (`CONCLUSIONS`, `DECISION`, spec) + plan-doc (state) + `docs/` and generates an executive or functional report in `docs/reports/`. Single-pass, read-only over sessions.
 
-To run: **read** `../exports/export-reports/SKILL.md` and **follow** its instructions with `$ARGUMENTS` as input. Do not try `Skill: export-reports` (it is not registered by name); the sibling SKILL.md is this export's body.
+To run: **read** `../exports/export-reports/SKILL.md` and **follow** its instructions with `$ARGUMENTS` as input. This command is the entry and the sibling SKILL.md is its body. (Hosts that index bundle skills may also expose it directly as `w:export-reports` — same body either way.)
 
 ## What it produces
 

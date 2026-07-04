@@ -374,29 +374,6 @@ export async function generateSourceLaunchArtifacts(
   };
 }
 
-export interface LaunchArtifactsSummary {
-  generated: SourceArtifactResult[];
-  skipped: { alias: string; reason: "path_not_found" }[];
-}
-
-/**
- * Generate launch artifacts for every source under `launchDir/<alias>/`. Always
- * generates (no capability gate); a source whose path is missing is skipped
- * rather than producing junk.
- */
-export async function generateLaunchArtifacts(
-  fs: FileSystemPort,
-  launchDir: string,
-  sources: { alias: string; path: string }[],
-): Promise<LaunchArtifactsSummary> {
-  const generated: SourceArtifactResult[] = [];
-  const skipped: LaunchArtifactsSummary["skipped"] = [];
-  for (const s of sources) {
-    if (!(await fs.exists(s.path))) {
-      skipped.push({ alias: s.alias, reason: "path_not_found" });
-      continue;
-    }
-    generated.push(await generateSourceLaunchArtifacts(fs, launchDir, s.path, s.alias));
-  }
-  return { generated, skipped };
-}
+// The batch pregeneration helper (generateLaunchArtifacts) died with the
+// minimal init: descriptors are generated on demand per source at the first
+// launch (ensureDescriptor → generateSourceLaunchArtifacts).

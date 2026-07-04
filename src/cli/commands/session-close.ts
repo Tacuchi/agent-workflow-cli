@@ -10,7 +10,7 @@ import type { CliContext } from "../types.js";
 export const sessionCloseCommand: QtcCommand = {
   name: "session-close",
   describe:
-    "Close a session: write the .closed marker in the session folder. " +
+    "Close a session: write the .closed marker and upsert its HISTORY.md row. " +
     "Usage: aw session-close [--code <session>] [--refs <csv>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionCloseInput = {};

@@ -1,5 +1,7 @@
 # agent-workflow — Análisis técnico de flujos y arquitectura
 
+> ⚠️ **HISTÓRICO (pre-rediseño).** Describe el sistema **viejo** (CLI v11.0.1, modelo project/hub, flows core/dev/design/analyze). El modelo vigente es etapas+loops (canon en `docs/referencias/` del workspace). En particular, los exports que menciona (`export-report`, `export-arq`, `export-tech-manuals`, `export-plan`, `export-conclusions`, `export-qa-note`, `export-requirement`, `export-tech-note`) **ya no existen**: la familia vigente es `export-scripts` / `export-manuals` / `export-diagrams` / `export-reports` (ver `skills/w/exports/README.md`). Se conserva como registro.
+
 > **Qué es este documento.** Referencia técnica comprensiva del harness `@tacuchi/agent-workflow-cli`: su arquitectura, el lifecycle universal de sesiones, los flujos posibles (core/dev/design/analyze), el catálogo de comandos y skills, el modelo de artefactos, la graduación a `docs/`, los modos project/hub y los hooks. Todos los diagramas son **Mermaid** (renderizan nativo en GitHub).
 >
 > **Audiencia.** Mantenedores y contribuidores del harness.

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { HARNESSES, type Harness } from "../domain/harnesses.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -191,20 +191,37 @@ export async function runLogs(
 
 export interface NextNumberOutput {
   directory: string;
+  /** Pre-call state: whether the directory already existed. */
   exists: boolean;
+  /** True when this call created the directory (never with dryRun). */
+  created: boolean;
   current_max: number;
   next: string;
   files: string[];
 }
 
+export interface NextNumberInput {
+  directory: string;
+  /** Pure query: never creates the directory (plan/dry-run mode). */
+  dryRun?: boolean;
+}
+
 export async function runNextNumber(
   fs: FileSystemPort,
   env: EnvPort,
-  directory: string,
+  input: NextNumberInput,
 ): Promise<NextNumberOutput> {
   const cwd = env.cwd();
-  const target = directory.startsWith("/") ? directory : join(cwd, directory);
+  const { directory, dryRun = false } = input;
+  const target = isAbsolute(directory) ? directory : join(cwd, directory);
   const exists = await fs.exists(target);
+  let created = false;
+  if (!exists && !dryRun) {
+    // On-demand creation: the CLI owns docs/<category> dirs — workspace-init no
+    // longer scaffolds them upfront, they are born at the first numbered write.
+    await fs.mkdirp(target);
+    created = true;
+  }
   const files: string[] = [];
   const numbers: number[] = [];
   if (exists) {
@@ -220,6 +237,7 @@ export async function runNextNumber(
   return {
     directory: target.split("\\").join("/"),
     exists,
+    created,
     current_max: currentMax,
     next: String(currentMax + 1).padStart(3, "0"),
     files,

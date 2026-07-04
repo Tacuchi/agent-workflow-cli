@@ -63,11 +63,11 @@ Mirrors `docs/referencias/workflow-exports/` and the old export SKILLs. Frontmat
 Exports read the corpus through the CLI — **never hard-coded paths**:
 
 - `aw sessions` — list sessions (counts + next correlative) to enumerate the corpus.
-- `aw release-data [--since sessionNNN] [--source alias]` — consolidated dump of sessions (corpus enumeration).
+- `aw release-data [--since sessionNNN] [--source alias] [--include-graduated] [--standalone-sql]` — consolidated dump of sessions (corpus enumeration). `--include-graduated` lists previous `docs/scripts` bundles (modern `NNN-export-scripts-YYYY-MM-DD` and legacy naming); `--standalone-sql` lists loose top-level `docs/scripts/*.sql` (export-scripts' source B).
 - `aw session-artifacts --code <NNN> [--dump [kinds]]` — counts by default; `--dump` returns `{path, content, size}` per artifact (objetivo, decisiones, conclusiones, tasks, checkpoint, backlog, scripts).
-- `aw next-number docs/<category>` — deterministic numbering of the output.
+- `aw next-number docs/<category>` — deterministic numbering of the output. It also **creates the category folder when missing** (workspace-init no longer scaffolds docs/ upfront) — this is what makes destination resolution a CLI guarantee. In plan/dry-run mode call it with `--dry-run` (pure query, creates nothing).
 
-> The destination-folder resolution (workspace root, single- vs multi-source) is handled by the CLI internally. If a specific flag is uncertain at implementation time, it is noted inline in each SKILL.
+> The destination-folder resolution (workspace root, single- vs multi-source, on-demand creation) is handled by the CLI internally. If a specific flag is uncertain at implementation time, it is noted inline in each SKILL.
 
 ## 6 Hard invariants (never violate)
 

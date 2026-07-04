@@ -19,6 +19,7 @@ import type { ProcessPort } from "../ports/process.js";
 import { type ParsedProjectBlock, parseProjectBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
+import { detectLaunchDescriptor } from "./source-launch-scripts-service.js";
 
 export interface ProjectGitData {
   branch: string;
@@ -175,7 +176,7 @@ export async function buildProjectTabData(
       );
       const launchable = await safeRun(
         `launchable:${f.alias}`,
-        () => readLaunchable(fs, paths.cwdLaunchDir(), f.alias),
+        () => readLaunchable(fs, paths.cwdLaunchDir(), f.alias, f.path),
         warnings,
         false,
       );
@@ -214,17 +215,31 @@ export async function buildProjectTabData(
   };
 }
 
-/** True when .workflow/launch/<alias>/launch.json exists and declares a command. */
+/**
+ * True when the source can be launched: its descriptor declares a command, or —
+ * without one (minimal init defers generation to the first launch; legacy
+ * pregenerated descriptors may carry command:null; corrupt files count as
+ * missing) — the stack detected from the source path is launchable. Mirrors
+ * ensureDescriptor: activating the action regenerates/diagnoses precisely.
+ */
 async function readLaunchable(
   fs: FileSystemPort,
   launchDir: string,
   alias: string,
+  sourcePath: string,
 ): Promise<boolean> {
   const file = join(launchDir, alias, "launch.json");
-  if (!(await fs.exists(file))) return false;
+  if (await fs.exists(file)) {
+    try {
+      const desc = JSON.parse(await fs.readText(file)) as { command?: unknown };
+      if (typeof desc.command === "string" && desc.command.length > 0) return true;
+    } catch {
+      // corrupt → fall through to stack detection (beginLaunch will diagnose)
+    }
+  }
+  if (!(await fs.exists(sourcePath))) return false;
   try {
-    const desc = JSON.parse(await fs.readText(file)) as { command?: unknown };
-    return typeof desc.command === "string" && desc.command.length > 0;
+    return (await detectLaunchDescriptor(fs, sourcePath, alias)).command !== null;
   } catch {
     return false;
   }

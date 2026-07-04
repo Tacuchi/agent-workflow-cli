@@ -44,7 +44,7 @@ The **`sql`** capability (built-in default `sql`), resolved via `.workflow/skill
 
 ## Read-only sandbox
 
-In plan mode it **describes**, never writes: the resolved `NNN`, the detected sources (sessions + standalone), the categories with content, the files that would appear at the bundle root and the approximate README content. It does **not** run `Write`, effectful `aw next-number`, or mutations.
+In plan mode it **describes**, never writes: the resolved `NNN`, the detected sources (sessions + standalone), the categories with content, the files that would appear at the bundle root and the approximate README content. It does **not** run `Write` or mutations; numbering queries use `aw next-number --dry-run` (pure).
 
 ## Inputs
 
@@ -52,11 +52,12 @@ In plan mode it **describes**, never writes: the resolved `NNN`, the detected so
 
 - `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the session corpus.
 - `aw session-artifacts --code <NNN> --dump scripts` — lists the session's `.sql` files with path and size (content is read by path). No scripts → empty list, silent skip.
-- `aw next-number docs/scripts` — deterministic numbering of the bundle directory (the CLI handles destination-folder resolution).
+- `aw release-data --standalone-sql` — lists the loose top-level `docs/scripts/*.sql` (source B) deterministically, with `is_rollback` flag; `--include-graduated` lists previous bundles (modern `NNN-export-scripts-YYYY-MM-DD` and legacy naming) for the exclusion/dedup step.
+- `aw next-number docs/scripts` — deterministic numbering of the bundle directory; it also creates `docs/scripts` when missing (the CLI guarantees destination resolution). In plan mode use `--dry-run` (pure query).
 
 **Filesystem**:
 
-- Standalone `docs/scripts/*.sql` (top-level only), **excluding** any `docs/scripts/NNN-export-scripts-*/` (previous outputs of this export).
+- Standalone `docs/scripts/*.sql` (top-level only, via `--standalone-sql`), **excluding** any `docs/scripts/NNN-export-scripts-*/` (previous outputs of this export).
 
 **Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/SKILL.md`](../../harness/SKILL.md)):
 

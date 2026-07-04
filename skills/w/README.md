@@ -23,4 +23,4 @@ It implements the **stages + loops + artifacts** model. The design source lives 
 
 ## Bootstrap
 
-Run [`/w:workspace-init`](commands/workspace-init.md) once to turn a folder into a workspace (`.workflow/` + `docs/` taxonomy + `WORKSPACE` block + `.workflow/skills.toml`). No project/hub distinction — a workspace has 1+ sources.
+Run [`/w:workspace-init`](commands/workspace-init.md) once to turn a folder into a workspace (minimal scaffold: `.workflow/sessions/` + `.workflow/skills.toml` + `WORKSPACE` block + CLI-owned `.gitignore`; `docs/` folders are born on demand). No project/hub distinction — a workspace has 1+ sources.

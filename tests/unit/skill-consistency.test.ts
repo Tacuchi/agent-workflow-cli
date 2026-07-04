@@ -138,3 +138,70 @@ describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec
     expect(root).toMatch(/accepted escalation|explicit consent/i);
   });
 });
+
+describe("lazy workspace-init contract — code ↔ doctrine (spec 008)", () => {
+  // Init went minimal (docs/ born on demand at `aw next-number`); the gitignore
+  // set became CLI-owned; session-close now feeds HISTORY.md. These pins keep
+  // the doctrine describing what the code actually does — the drift class that
+  // left `aw history-update` orphaned for 18 sessions.
+  it("every CLI-owned gitignore entry is documented in workspace-init.md", async () => {
+    const { VISIBILITY_GITIGNORE, runtimeGitignoreEntries } = await import(
+      "../../src/application/workspace-init-service.js"
+    );
+    const doc = await readFile(join(SKILL_ROOT, "commands/workspace-init.md"), "utf8");
+    for (const entry of [...runtimeGitignoreEntries("workflow"), ...VISIBILITY_GITIGNORE]) {
+      expect(doc, `workspace-init.md must document gitignore entry ${entry}`).toContain(entry);
+    }
+  });
+
+  it("workspace-init.md prescribes the minimal scaffold, on-demand docs/ and the reconcile prune", async () => {
+    const doc = await readFile(join(SKILL_ROOT, "commands/workspace-init.md"), "utf8");
+    expect(doc).toMatch(/minimal/i);
+    expect(doc).toContain("aw next-number");
+    expect(doc).toMatch(/on demand/i);
+    expect(doc).toMatch(/prune/i);
+    expect(doc).toContain("HISTORY.md");
+  });
+
+  it("no orientation surface still teaches the OLD upfront docs/ scaffold", async () => {
+    // Root SKILL.md is the built-in overview role — the first doc an agent loads;
+    // the two READMEs echo the same claim. All three must say on-demand.
+    for (const rel of ["SKILL.md", "README.md", "commands/README.md"]) {
+      const text = await readFile(join(SKILL_ROOT, rel), "utf8");
+      expect(text, `${rel} must not claim init scaffolds docs/ upfront`).not.toMatch(
+        /`\.workflow\/` \+ `docs\/`/,
+      );
+      expect(text, `${rel} must describe the on-demand model`).toMatch(/born on demand/i);
+    }
+  });
+
+  it("exports/README documents next-number's on-demand creation, --dry-run and --standalone-sql", async () => {
+    const readme = await readFile(join(SKILL_ROOT, "exports/README.md"), "utf8");
+    expect(readme).toContain("--dry-run");
+    expect(readme).toContain("--standalone-sql");
+    expect(readme).toMatch(/creates the category folder/i);
+  });
+
+  it("every export SKILL routes plan-mode numbering through `aw next-number --dry-run`", async () => {
+    for (const name of ["export-scripts", "export-manuals", "export-diagrams", "export-reports"]) {
+      const skill = await readFile(join(SKILL_ROOT, `exports/${name}/SKILL.md`), "utf8");
+      expect(skill, `${name} must use --dry-run in plan mode`).toContain(
+        "aw next-number --dry-run",
+      );
+      // Drift fix pinned: in Claude the bundle exposes these as w:<name>, so the
+      // command wrapper must not claim they are unreachable by name.
+      const command = await readFile(join(SKILL_ROOT, `commands/${name}.md`), "utf8");
+      expect(command, `${name}.md must not claim it is unregistered by name`).not.toContain(
+        "it is not registered by name",
+      );
+    }
+  });
+
+  it("CHASSIS documents that session-close upserts the HISTORY row (no extra AI step)", async () => {
+    const chassis = await readFile(join(SKILL_ROOT, "loops/CHASSIS.md"), "utf8");
+    const closeLine = chassis
+      .split("\n")
+      .find((l) => l.includes("`aw session-close`") && l.includes("HISTORY.md"));
+    expect(closeLine).toBeDefined();
+  });
+});

@@ -19,7 +19,13 @@ export function renderRefs(refsRaw: string | undefined | null): string {
   const parts: string[] = [];
   for (const itemRaw of refsRaw.split(",")) {
     const item = itemRaw.trim();
-    if (!item || !item.includes(":")) continue;
+    if (!item) continue;
+    if (!item.includes(":") || /^[a-z][a-z0-9+.-]*:\/\//i.test(item)) {
+      // Free-form ref (no kind) or a URL — keep it as plain text instead of
+      // mangling it through the kind:val split ("https://x" ≠ kind "https").
+      parts.push(item);
+      continue;
+    }
     const colon = item.indexOf(":");
     const kind = item.slice(0, colon).trim().toLowerCase();
     const val = item.slice(colon + 1).trim();

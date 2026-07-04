@@ -3,7 +3,12 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
-import { type GraduatedBundle, listGraduatedBundles } from "./release-data/bundles.js";
+import {
+  type GraduatedBundle,
+  type StandaloneSql,
+  listGraduatedBundles,
+  listStandaloneSql,
+} from "./release-data/bundles.js";
 import { getDocsDir, getReleaseDir } from "./release-data/common.js";
 import {
   type ReleaseSession,
@@ -12,19 +17,20 @@ import {
 } from "./release-data/sessions.js";
 
 export type { ReleaseSession } from "./release-data/sessions.js";
-export type { GraduatedBundle } from "./release-data/bundles.js";
+export type { GraduatedBundle, StandaloneSql } from "./release-data/bundles.js";
 export type { SessionArtifactsResult } from "./release-data/artifacts.js";
 export { listSessionsForRelease } from "./release-data/sessions.js";
 export { readSessionArtifacts } from "./release-data/artifacts.js";
-export { listGraduatedBundles } from "./release-data/bundles.js";
+export { listGraduatedBundles, listStandaloneSql } from "./release-data/bundles.js";
 
 export interface ReleaseDataInput {
   since?: string;
   sourceAlias?: string;
   includeGraduated?: boolean;
+  /** Loose .sql at docs/scripts top level (export-scripts "source B"). */
+  includeStandaloneSql?: boolean;
   includeOpen?: boolean;
   includeClosed?: boolean;
-  skipContent?: boolean;
   verbose?: boolean;
   sessions?: string[];
 }
@@ -38,6 +44,7 @@ export interface ReleaseDataOutput {
   legacy_sessions?: string[];
   since?: string;
   graduated_bundles?: GraduatedBundle[];
+  standalone_sql?: StandaloneSql[];
 }
 
 export interface ReleaseDataError {
@@ -91,10 +98,13 @@ export async function runReleaseData(
   if (verbose || legacy.length > 0) payload.legacy_sessions = legacy;
   if (input.since !== undefined) payload.since = input.since;
 
+  const scanOpts: { sourceAlias?: string } = {};
+  if (input.sourceAlias !== undefined) scanOpts.sourceAlias = input.sourceAlias;
   if (input.includeGraduated === true) {
-    const opts: { sourceAlias?: string } = {};
-    if (input.sourceAlias !== undefined) opts.sourceAlias = input.sourceAlias;
-    payload.graduated_bundles = await listGraduatedBundles(fs, cwd, paths, opts);
+    payload.graduated_bundles = await listGraduatedBundles(fs, cwd, paths, scanOpts);
+  }
+  if (input.includeStandaloneSql === true) {
+    payload.standalone_sql = await listStandaloneSql(fs, cwd, paths, scanOpts);
   }
   return payload;
 }

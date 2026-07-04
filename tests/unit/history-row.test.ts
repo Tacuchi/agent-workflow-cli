@@ -66,4 +66,20 @@ describe("renderRefs — BUILTIN_RENDERERS (post R5)", () => {
       "[DEC](../docs/decisiones/001-stack.md), [MANUAL](../docs/manuales/002-mcp.md), [CONCLUSION](../docs/conclusiones/003-audit.md)",
     );
   });
+
+  it("ref libre sin 'kind:' se conserva como texto plano (antes se perdía a '—')", () => {
+    expect(renderRefs("ver el informe 003")).toBe("ver el informe 003");
+    expect(renderRefs("dec:001-stack, nota suelta")).toBe(
+      "[DEC](../docs/decisiones/001-stack.md), nota suelta",
+    );
+  });
+
+  it("una URL pasa entera como texto plano (no se mutila por el split kind:val)", () => {
+    expect(renderRefs("https://github.com/org/repo/pull/42")).toBe(
+      "https://github.com/org/repo/pull/42",
+    );
+    expect(renderRefs("dec:001-x, https://ci.example.com/run/9")).toBe(
+      "[DEC](../docs/decisiones/001-x.md), https://ci.example.com/run/9",
+    );
+  });
 });

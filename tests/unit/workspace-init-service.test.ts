@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runWorkspaceInit } from "../../src/application/workspace-init-service.js";
+import {
+  pruneReleasedLock,
+  runWorkspaceInit,
+} from "../../src/application/workspace-init-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
@@ -50,14 +53,13 @@ describe("runWorkspaceInit", () => {
     expect(result.ok).toBe(true);
     expect(result.sources).toBe(1);
 
-    // scaffold: .workflow/sessions + docs/*
+    // scaffold MÍNIMO: solo .workflow/sessions (marca de activación), sin .gitkeep.
     expect(existsSync(join(workspace, ".workflow", "sessions"))).toBe(true);
+    expect(existsSync(join(workspace, ".workflow", "sessions", ".gitkeep"))).toBe(false);
+    // docs/* NO se scaffoldea: cada categoría nace on-demand en `aw next-number docs/<cat>`.
     for (const f of DOCS_FOLDERS) {
-      expect(existsSync(join(workspace, "docs", f))).toBe(true);
-      expect(existsSync(join(workspace, "docs", f, ".gitkeep"))).toBe(true);
+      expect(existsSync(join(workspace, "docs", f))).toBe(false);
     }
-    // docs/tools NO se scaffoldea: lo crea on-demand la skill creating-tools (marketplace),
-    // el workflow es indiferente a esa capacidad extraída.
     expect(existsSync(join(workspace, "docs", "tools"))).toBe(false);
 
     // skills.toml seeded
@@ -82,8 +84,12 @@ describe("runWorkspaceInit", () => {
     );
     expect(settings.permissions.additionalDirectories).toContain("/tmp/app-fake");
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
-    expect(gitignore).toContain(".claude/settings.local.json");
-    // Source-launch runtime artifacts are always gitignored.
+    // Visibilidad con patrón: cubre también los backups .bak.<epoch>.
+    expect(gitignore).toContain(".claude/settings.local.json*");
+    expect(gitignore).toContain(".codex/config.toml*");
+    // Set CLI-owned completo: sesiones + lock + runtime.
+    expect(gitignore).toContain(".workflow/sessions/");
+    expect(gitignore).toContain(".workflow/.lock");
     expect(gitignore).toContain(".workflow/processes.json");
     expect(gitignore).toContain(".workflow/launch/");
     expect(gitignore).toContain("docs/logs/");
@@ -134,7 +140,7 @@ describe("runWorkspaceInit", () => {
     }
   });
 
-  it("genera launch.json + run.sh/run.ps1 por source y scaffolda docs/logs", async () => {
+  it("NO pregenera launch artifacts ni docs/logs (nacen on-demand en el primer launch)", async () => {
     const source = mkdtempSync(join(tmpdir(), "ws-init-src-"));
     try {
       writeFileSync(
@@ -148,20 +154,8 @@ describe("runWorkspaceInit", () => {
       });
       if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
 
-      // docs/logs scaffolded (gitignored, no .gitkeep).
-      expect(existsSync(join(workspace, "docs", "logs"))).toBe(true);
-
-      // descriptor + per-OS scripts emitted under .workflow/launch/<alias>/
-      const toolDir = join(workspace, ".workflow", "launch", "app");
-      expect(existsSync(join(toolDir, "launch.json"))).toBe(true);
-      expect(existsSync(join(toolDir, "run.sh"))).toBe(true);
-      expect(existsSync(join(toolDir, "run.ps1"))).toBe(true);
-      const desc = JSON.parse(readFileSync(join(toolDir, "launch.json"), "utf-8"));
-      expect(desc.command).toBe("npm");
-      expect(desc.args).toEqual(["run", "dev"]);
-
-      expect(result.launch_artifacts.generated.map((g) => g.alias)).toEqual(["app"]);
-      expect(result.launch_artifacts.generated[0]?.launchable).toBe(true);
+      expect(existsSync(join(workspace, "docs", "logs"))).toBe(false);
+      expect(existsSync(join(workspace, ".workflow", "launch"))).toBe(false);
     } finally {
       rmSync(source, { recursive: true, force: true });
     }
@@ -349,7 +343,7 @@ describe("runWorkspaceInit", () => {
       if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
       expect(existsSync(join(target, "CLAUDE.md"))).toBe(true);
       expect(existsSync(join(target, ".workflow", "skills.toml"))).toBe(true);
-      expect(existsSync(join(target, "docs", "specs"))).toBe(true);
+      expect(existsSync(join(target, ".workflow", "sessions"))).toBe(true);
       expect(existsSync(join(callerCwd, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(callerCwd, ".workflow"))).toBe(false);
     } finally {
@@ -376,5 +370,179 @@ describe("runWorkspaceInit", () => {
     expect("error" in result).toBe(true);
     if (!("error" in result)) throw new Error("expected error");
     expect(result.error).toBe("duplicate_alias");
+  });
+
+  it("prune reconcile: poda .gitkeep-only, docs/logs vacía, sessions/.gitkeep y .lock liberado; preserva contenido", async () => {
+    // Workspace de la era upfront-scaffold: taxonomía vacía con .gitkeep + una con contenido.
+    for (const f of ["manuals", "diagrams", "scripts"]) {
+      mkdirSync(join(workspace, "docs", f), { recursive: true });
+      writeFileSync(join(workspace, "docs", f, ".gitkeep"), "");
+    }
+    mkdirSync(join(workspace, "docs", "specs"), { recursive: true });
+    writeFileSync(join(workspace, "docs", "specs", ".gitkeep"), "");
+    writeFileSync(join(workspace, "docs", "specs", "001-spec.md"), "# spec");
+    mkdirSync(join(workspace, "docs", "logs"), { recursive: true });
+    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
+    writeFileSync(join(workspace, ".workflow", "sessions", ".gitkeep"), "");
+    writeFileSync(join(workspace, ".workflow", ".lock"), ""); // marker liberado (0 bytes)
+
+    const result = await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "app", path: "/tmp/app" }],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+
+    // .gitkeep-only → carpeta fuera.
+    for (const f of ["manuals", "diagrams", "scripts"]) {
+      expect(existsSync(join(workspace, "docs", f))).toBe(false);
+    }
+    // Con contenido → queda, pero sin el .gitkeep suelto.
+    expect(existsSync(join(workspace, "docs", "specs", "001-spec.md"))).toBe(true);
+    expect(existsSync(join(workspace, "docs", "specs", ".gitkeep"))).toBe(false);
+    // docs/logs vacía + sessions/.gitkeep + .lock liberado → fuera.
+    expect(existsSync(join(workspace, "docs", "logs"))).toBe(false);
+    expect(existsSync(join(workspace, ".workflow", "sessions", ".gitkeep"))).toBe(false);
+    expect(existsSync(join(workspace, ".workflow", ".lock"))).toBe(false);
+    expect(result.scaffold.pruned.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("prune reconcile: NO toca un .lock vigente (pid vivo, no expirado)", async () => {
+    mkdirSync(join(workspace, ".workflow"), { recursive: true });
+    // Lock genuinamente tomado: {pid, ts ISO} vigente (un ts numérico parsea null = corrupto robable).
+    writeFileSync(
+      join(workspace, ".workflow", ".lock"),
+      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
+    );
+    const result = await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "app", path: "/tmp/app" }],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    // El upsert del bloque falla por lock ocupado (ajeno) y el init NO borra el lock vivo.
+    expect(existsSync(join(workspace, ".workflow", ".lock"))).toBe(true);
+  });
+
+  it("gitignore block-aware: entradas nuevas se insertan bajo el header existente, sin duplicarlo", async () => {
+    // .gitignore de un workspace inicializado con un CLI viejo (set incompleto).
+    writeFileSync(
+      join(workspace, ".gitignore"),
+      [
+        "node_modules/",
+        "",
+        "# agent-workflow runtime (machine-specific — do not commit)",
+        ".workflow/processes.json",
+        "docs/logs/",
+        "",
+        "# user section",
+        "*.tmp",
+        "",
+      ].join("\n"),
+    );
+    const result = await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "app", path: "/tmp/app" }],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
+    const headerCount = gitignore
+      .split("\n")
+      .filter(
+        (l) => l.trim() === "# agent-workflow runtime (machine-specific — do not commit)",
+      ).length;
+    expect(headerCount).toBe(1);
+    // Las faltantes quedaron dentro del bloque del header (antes de "# user section").
+    const runtimeBlock = gitignore.split("# user section")[0] as string;
+    expect(runtimeBlock).toContain(".workflow/sessions/");
+    expect(runtimeBlock).toContain(".workflow/.lock");
+    expect(runtimeBlock).toContain(".workflow/launch/");
+    // Lo del usuario queda intacto.
+    expect(gitignore).toContain("node_modules/");
+    expect(gitignore).toContain("*.tmp");
+  });
+
+  it("gitignore: líneas hand-authored existentes no se duplican (dedupe global por línea)", async () => {
+    writeFileSync(
+      join(workspace, ".gitignore"),
+      [".workflow/sessions/", ".workflow/.lock", ""].join("\n"),
+    );
+    const result = await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "app", path: "/tmp/app" }],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
+    const sessionsCount = gitignore
+      .split("\n")
+      .filter((l) => l.trim() === ".workflow/sessions/").length;
+    expect(sessionsCount).toBe(1);
+  });
+
+  it("gitignore CRLF: el merge bajo header preserva el EOL (no reescribe el archivo a LF)", async () => {
+    writeFileSync(
+      join(workspace, ".gitignore"),
+      [
+        "node_modules/",
+        "",
+        "# agent-workflow runtime (machine-specific — do not commit)",
+        ".workflow/processes.json",
+        "",
+      ].join("\r\n"),
+    );
+    const result = await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "app", path: "/tmp/app" }],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
+    expect(gitignore).toContain("\r\n");
+    expect(gitignore).toContain(".workflow/sessions/");
+    // La línea del usuario conserva su terminador original.
+    expect(gitignore).toContain("node_modules/\r\n");
+  });
+
+  it("--dry-run PREVISUALIZA el prune (read-only): reporta qué borraría sin borrar nada", async () => {
+    mkdirSync(join(workspace, "docs", "manuals"), { recursive: true });
+    writeFileSync(join(workspace, "docs", "manuals", ".gitkeep"), "");
+    mkdirSync(join(workspace, "docs", "logs"), { recursive: true });
+    const result = await runWorkspaceInit(fs, env, paths, {
+      sources: [{ alias: "app", path: "/tmp/app" }],
+      workspace,
+      dryRun: true,
+    });
+    if ("error" in result) throw new Error("unexpected error");
+    expect(result.dry_run).toBe(true);
+    expect(result.scaffold.pruned).toContain(join(workspace, "docs", "manuals"));
+    expect(result.scaffold.pruned).toContain(join(workspace, "docs", "logs"));
+    // Nada se borró realmente.
+    expect(existsSync(join(workspace, "docs", "manuals", ".gitkeep"))).toBe(true);
+    expect(existsSync(join(workspace, "docs", "logs"))).toBe(true);
+  });
+
+  it("pruneReleasedLock directo: vivo intocable · liberado y expirado removibles (guard real)", async () => {
+    const lockPath = join(workspace, ".workflow", ".lock");
+    mkdirSync(join(workspace, ".workflow"), { recursive: true });
+    const wsPaths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+
+    // Vivo (pid real + ts ISO vigente) → jamás se toca.
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }));
+    expect(await pruneReleasedLock(fs, wsPaths)).toEqual([]);
+    expect(existsSync(lockPath)).toBe(true);
+
+    // Expirado (ts viejo) → removible.
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: "2020-01-01T00:00:00.000Z" }));
+    expect(await pruneReleasedLock(fs, wsPaths)).toEqual([lockPath]);
+    expect(existsSync(lockPath)).toBe(false);
+
+    // Marker liberado (vacío) → removible; con apply=false solo detecta.
+    writeFileSync(lockPath, "");
+    expect(await pruneReleasedLock(fs, wsPaths, false)).toEqual([lockPath]);
+    expect(existsSync(lockPath)).toBe(true);
+    expect(await pruneReleasedLock(fs, wsPaths)).toEqual([lockPath]);
+    expect(existsSync(lockPath)).toBe(false);
   });
 });

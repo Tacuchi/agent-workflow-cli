@@ -43,7 +43,7 @@ The **`diagrams`** capability (built-in default `diagrams`), resolved via `.work
 
 ## Read-only sandbox
 
-In plan mode it **describes**, never writes: the resolved engine, the levels/sections that would appear (resolved by args), the sources to inspect + detected integrations, and — with a data-model request — the proposed MCP queries with their estimated cost. It does **not** run `Write`, MCP mutations, or effectful `aw next-number`.
+In plan mode it **describes**, never writes: the resolved engine, the levels/sections that would appear (resolved by args), the sources to inspect + detected integrations, and — with a data-model request — the proposed MCP queries with their estimated cost. It does **not** run `Write` or MCP mutations; numbering queries use `aw next-number --dry-run` (pure).
 
 ## Inputs
 

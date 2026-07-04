@@ -44,18 +44,22 @@ export const logsCommand: QtcCommand = {
 
 export const nextNumberCommand: QtcCommand = {
   name: "next-number",
-  describe: "Compute next NNN correlative for a directory. Usage: aw next-number <directorio>.",
+  describe:
+    "Compute next NNN correlative for a directory, creating it when missing. Usage: aw next-number <directorio> [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dir = args.rest[0];
     if (!dir) {
       return {
         ok: false,
-        error: { code: "INVALID_INPUT", message: "uso: next-number <directorio>" },
-        data: { error: "uso: next-number <directorio>" },
+        error: { code: "INVALID_INPUT", message: "uso: next-number <directorio> [--dry-run]" },
+        data: { error: "uso: next-number <directorio> [--dry-run]" },
         exitCode: 1,
       };
     }
-    const data = await runNextNumber(ctx.fs, ctx.env, dir);
+    const data = await runNextNumber(ctx.fs, ctx.env, {
+      directory: dir,
+      dryRun: args.flags.has("--dry-run"),
+    });
     return { ok: true, data, exitCode: 0 };
   },
 };

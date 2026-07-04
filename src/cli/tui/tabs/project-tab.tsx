@@ -18,9 +18,9 @@ import type { LaunchDescriptor } from "../../../application/source-launch-script
 import {
   type LaunchDeps,
   type LaunchRequest,
+  ensureDescriptor,
   findCollision,
   launchSource,
-  readDescriptor,
   relaunchProcess,
   stopProcess,
   tailLog,
@@ -309,6 +309,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
 
   // Deps for the source-launch service. `baseEnv` = the real process env so the
   // child inherits PATH etc.; params/profile are layered on at resolve time.
+  // `resolveSourcePath` enables on-demand descriptor generation (first launch).
   const launchDeps = useMemo<LaunchDeps>(
     () => ({
       fs: ctx.fs,
@@ -317,8 +318,10 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       baseEnv: Object.fromEntries(
         Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
       ),
+      resolveSourcePath: async (alias: string) =>
+        data.sources.find((s) => s.alias === alias)?.path ?? null,
     }),
-    [ctx],
+    [ctx, data.sources],
   );
 
   // Launch a source: collision-check first, then open a terminal (or background fallback) + register.
@@ -360,27 +363,41 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [processes, launchDeps, onReload, ctx],
   );
 
-  // Entry from the "Lanzar en local" detail action: open the form if the
-  // descriptor has profiles/params, otherwise launch directly.
+  // Entry from the "Lanzar en local" detail action: ensure the descriptor
+  // (generated on demand at the first launch), then open the form if it has
+  // profiles/params, otherwise launch directly.
   const beginLaunch = useCallback(
     async (alias: string) => {
-      const descriptor = await readDescriptor(ctx.fs, ctx.paths.cwdLaunchDir(), alias);
-      if (!descriptor || !descriptor.command) {
+      const read = await ensureDescriptor(
+        ctx.fs,
+        ctx.paths.cwdLaunchDir(),
+        alias,
+        launchDeps.resolveSourcePath,
+      );
+      if (read.status === "corrupt") {
         return setMode({
           kind: "notice",
           tone: "err",
           lines: [
-            `Sin descriptor de arranque para ${alias}.`,
-            "Generá scripts con /w:workspace-init.",
+            `launch.json corrupto para ${alias}.`,
+            "Corregilo o borralo: se regenera en el próximo lanzamiento.",
           ],
         });
       }
+      if (read.status !== "ok" || !read.descriptor.command) {
+        return setMode({
+          kind: "notice",
+          tone: "err",
+          lines: [`${alias}: sin comando de arranque detectable en la fuente.`],
+        });
+      }
+      const descriptor = read.descriptor;
       if (descriptor.profiles.length === 0 && descriptor.params.length === 0) {
         return void doLaunch({ alias, profile: null, values: {} });
       }
       setMode({ kind: "launch-form", alias, descriptor });
     },
-    [ctx, doLaunch],
+    [ctx, doLaunch, launchDeps],
   );
 
   const doStop = useCallback(
@@ -558,15 +575,11 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         const item = detailItems[actionCursor];
         if (!item) return;
         if (item.kind === "launch") {
-          if (currentSource?.launchable) return void beginLaunch(currentSource.alias);
-          return setMode({
-            kind: "notice",
-            tone: "err",
-            lines: [
-              `${currentSource?.alias ?? "source"}: sin descriptor de arranque.`,
-              "Generá scripts con /w:workspace-init.",
-            ],
-          });
+          // Always route through beginLaunch: it diagnoses precisely (regenerates
+          // on demand, distinguishes corrupt vs not-launchable) — `launchable`
+          // only drives the inline description.
+          if (currentSource) return void beginLaunch(currentSource.alias);
+          return;
         }
         if (item.kind === "remove") {
           if (currentSource) return setMode({ kind: "confirm-remove", alias: currentSource.alias });
@@ -783,7 +796,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     if (it.kind === "launch") {
       return currentSource?.launchable
         ? { name: LAUNCH_ACTION.name, description: "abre una terminal" }
-        : { name: LAUNCH_ACTION.name, description: "sin descriptor — /w:workspace-init" };
+        : { name: LAUNCH_ACTION.name, description: "no lanzable — sin comando detectado" };
     }
     if (it.kind === "remove") {
       return { name: "Quitar del workspace", description: "detach + poda bloque + scripts" };

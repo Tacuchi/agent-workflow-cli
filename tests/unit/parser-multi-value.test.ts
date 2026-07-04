@@ -134,6 +134,15 @@ describe("boolean flags never consume the following positional", () => {
     expect(parsed.rest).toEqual(["sync"]);
     expect(parsed.valuesMulti.get("source")).toEqual(["core"]);
   });
+
+  it("keeps the trailing token for `release-data --standalone-sql <x>` (gate F1-F8)", () => {
+    // Regression class caught by the review gate: the flag was read via
+    // flags.has() but missing from BOOLEAN_FLAGS, so it swallowed the next token.
+    const parsed = parseArgv(["release-data", "--standalone-sql", "extra"]);
+    expect(parsed.flags.has("--standalone-sql")).toBe(true);
+    expect(parsed.rest).toEqual(["extra"]);
+    expect(parsed.values.has("standalone-sql")).toBe(false);
+  });
 });
 
 describe("single-dash help alias", () => {

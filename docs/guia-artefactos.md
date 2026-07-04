@@ -1,5 +1,7 @@
 # Guía de artefactos — agent-workflow
 
+> ⚠️ **HISTÓRICO (pre-rediseño).** Describe los artefactos del sistema **viejo** (CLI v11.0.1). El modelo vigente (etapas+loops) tiene su catálogo en `skills/w/artifacts/`; los exports que menciona (p. ej. `export-plan`) ya no existen — la familia vigente es `export-scripts`/`export-manuals`/`export-diagrams`/`export-reports`. Se conserva como registro.
+
 > **Qué es.** Referencia práctica de los artefactos de sesión del harness `@tacuchi/agent-workflow-cli`: su estructura, semántica de campos y ejemplos. Cubre **todos los artefactos de sesión**, agrupados por fase y flow. Complementa el panorama de flujos en [`agent-workflow-flujos.md`](agent-workflow-flujos.md) (§3 lifecycle, §5 modelo de artefactos).
 >
 > **Fuentes de verdad.** Templates en `src/application/templates/objetivo.ts`; parsers en `src/application/parsers/{objetivo,tasks}.ts`. Verificado contra CLI v11.0.1.

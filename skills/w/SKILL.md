@@ -29,7 +29,7 @@ Anyone needing orientation — a loop at start, a new agent in the workspace, or
 
 ### Workspace (no modes)
 
-A single concept: **workspace**. There is no project/hub split. The folder where the agent starts becomes a workspace with `/w:workspace-init` (scaffolding `.workflow/` + `docs/` + the `WORKSPACE` block in CLAUDE.md + `.workflow/skills.toml`). It has 1+ sources (repos); "standalone" = a single source.
+A single concept: **workspace**. There is no project/hub split. The folder where the agent starts becomes a workspace with `/w:workspace-init` (minimal scaffold: `.workflow/sessions/` + `.workflow/skills.toml` + the `WORKSPACE` block in CLAUDE.md + the CLI-owned `.gitignore`; each `docs/<cat>` folder is born on demand at `aw next-number`). It has 1+ sources (repos); "standalone" = a single source.
 
 ### The 3-layer architecture + `docs/` zone
 

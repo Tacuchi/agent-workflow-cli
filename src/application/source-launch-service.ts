@@ -3,7 +3,11 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { ProcessPort } from "../ports/process.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
-import { type LaunchDescriptor, winLaunchCommand } from "./source-launch-scripts-service.js";
+import {
+  type LaunchDescriptor,
+  generateSourceLaunchArtifacts,
+  winLaunchCommand,
+} from "./source-launch-scripts-service.js";
 
 export interface LaunchRequest {
   alias: string;
@@ -29,6 +33,12 @@ export interface LaunchDeps {
   paths: PathsService;
   /** Base environment the child inherits (the caller passes the real process env). */
   baseEnv: Record<string, string>;
+  /**
+   * Resolve a source alias to its repo path (from the WORKSPACE block). Enables
+   * on-demand descriptor generation at the first launch (init no longer
+   * pregenerates launch artifacts).
+   */
+  resolveSourcePath?: (alias: string) => Promise<string | null>;
   /** Injected clock for deterministic tests; defaults to the wall clock. */
   now?: () => string;
   /** Injected platform for deterministic tests; defaults to the real one. */
@@ -37,21 +47,58 @@ export interface LaunchDeps {
 
 export type LaunchResult =
   | { ok: true; record: ProcessRecord }
-  | { ok: false; error: "no_descriptor" | "not_launchable" | "spawn_failed"; message: string };
+  | {
+      ok: false;
+      error: "no_descriptor" | "corrupt_descriptor" | "not_launchable" | "spawn_failed";
+      message: string;
+    };
 
-/** Read a source's launch descriptor, or null when absent/corrupt. */
+export type DescriptorRead =
+  | { status: "ok"; descriptor: LaunchDescriptor }
+  | { status: "absent" }
+  | { status: "corrupt" };
+
+/**
+ * Read a source's launch descriptor. Absent and corrupt are distinguished on
+ * purpose: regenerating over a corrupt file would loop (writeIfPristine
+ * preserves files without a valid marker), so corruption must surface instead.
+ */
 export async function readDescriptor(
   fs: FileSystemPort,
   launchDir: string,
   alias: string,
-): Promise<LaunchDescriptor | null> {
+): Promise<DescriptorRead> {
   const file = join(launchDir, alias, "launch.json");
-  if (!(await fs.exists(file))) return null;
+  if (!(await fs.exists(file))) return { status: "absent" };
   try {
-    return JSON.parse(await fs.readText(file)) as LaunchDescriptor;
+    return { status: "ok", descriptor: JSON.parse(await fs.readText(file)) as LaunchDescriptor };
   } catch {
-    return null;
+    return { status: "corrupt" };
   }
+}
+
+/**
+ * Read the descriptor, generating it on demand when absent (first launch) or
+ * re-detecting when it exists WITHOUT a command — legacy pregenerated
+ * descriptors carry `command: null` for sources that were not launchable at
+ * init time; writeIfPristine re-detects pristine ones and never touches
+ * user-edited files. Corrupt descriptors are never regenerated (see
+ * readDescriptor).
+ */
+export async function ensureDescriptor(
+  fs: FileSystemPort,
+  launchDir: string,
+  alias: string,
+  resolveSourcePath?: (alias: string) => Promise<string | null>,
+): Promise<DescriptorRead> {
+  const read = await readDescriptor(fs, launchDir, alias);
+  const needsGeneration =
+    read.status === "absent" || (read.status === "ok" && read.descriptor.command === null);
+  if (!needsGeneration || !resolveSourcePath) return read;
+  const sourcePath = await resolveSourcePath(alias);
+  if (!sourcePath || !(await fs.exists(sourcePath))) return read;
+  await generateSourceLaunchArtifacts(fs, launchDir, sourcePath, alias);
+  return readDescriptor(fs, launchDir, alias);
 }
 
 /** Log file for a source+profile, under docs/logs/. */
@@ -100,11 +147,25 @@ function registry(deps: LaunchDeps): ProcessRegistryService {
   return new ProcessRegistryService(deps.fs, deps.proc, deps.paths.cwdProcessesFile());
 }
 
-/** Launch a source: resolve → open log dir → spawnInTerminal (terminal or background fallback) → register. */
+/** Launch a source: ensure descriptor (on-demand gen) → resolve → spawnInTerminal → register. */
 export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promise<LaunchResult> {
-  const desc = await readDescriptor(deps.fs, deps.paths.cwdLaunchDir(), req.alias);
-  if (!desc)
+  const read = await ensureDescriptor(
+    deps.fs,
+    deps.paths.cwdLaunchDir(),
+    req.alias,
+    deps.resolveSourcePath,
+  );
+  if (read.status === "corrupt") {
+    return {
+      ok: false,
+      error: "corrupt_descriptor",
+      message: `launch.json corrupto para ${req.alias} — corregilo o borralo y se regenera en el próximo lanzamiento`,
+    };
+  }
+  if (read.status === "absent") {
     return { ok: false, error: "no_descriptor", message: `Sin descriptor para ${req.alias}` };
+  }
+  const desc = read.descriptor;
   const logsDir = deps.paths.cwdDocsLogsDir();
   const resolved = resolveLaunch(desc, req, logsDir, deps.baseEnv, deps.platform);
   if (!resolved) {

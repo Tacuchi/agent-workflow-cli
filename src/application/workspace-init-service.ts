@@ -2,6 +2,7 @@ import { basename, join, resolve } from "node:path";
 import { BUILTIN_DEFAULT_SKILLS, SKILL_ROLES } from "../domain/skills.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { DEFAULT_LOCK_TTL_MS, isExpired, parseLock } from "./lock-service.js";
 import { type MultirootError, type MultirootResult, runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
@@ -11,20 +12,34 @@ import {
   type ProjectMdUpsertOutput,
   runProjectMdUpsertWrite,
 } from "./project-md-upsert-service.js";
-import {
-  type LaunchArtifactsSummary,
-  generateLaunchArtifacts,
-} from "./source-launch-scripts-service.js";
 
-/** docs/ taxonomy scaffolded for every workspace (one folder per export category). */
+/**
+ * docs/ taxonomy owned by the workflow (one folder per category). NOT scaffolded
+ * anymore: each folder is born on demand at the first numbered write
+ * (`aw next-number docs/<cat>` mkdirps it). The list drives the reconcile prune.
+ */
 const DOCS_FOLDERS = ["specs", "plans", "manuals", "scripts", "diagrams", "reports"] as const;
 
-/** Visibility files (machine-specific absolute roots) — gitignored when external sources exist. */
-const VISIBILITY_GITIGNORE = [".claude/settings.local.json", ".codex/config.toml"];
+/**
+ * Visibility files (machine-specific absolute roots) — gitignored when external
+ * sources exist. Trailing `*` also covers the timestamped `.bak.<epoch>` backups.
+ * Exported for the code↔doctrine guard test (workspace-init.md documents the set).
+ */
+export const VISIBILITY_GITIGNORE = [".claude/settings.local.json*", ".codex/config.toml*"];
 
-/** Runtime artifacts of the source-launch feature — machine-specific, never committed. */
-function runtimeGitignoreEntries(ns: string): string[] {
-  return [`.${ns}/processes.json`, `.${ns}/launch/`, "docs/logs/"];
+/**
+ * Machine-local workflow artifacts — never committed. Sessions are the live log
+ * (HISTORY.md is the durable, committable record); .lock/processes/launch/logs
+ * are runtime. Exported for the code↔doctrine guard test.
+ */
+export function runtimeGitignoreEntries(ns: string): string[] {
+  return [
+    `.${ns}/sessions/`,
+    `.${ns}/.lock`,
+    `.${ns}/processes.json`,
+    `.${ns}/launch/`,
+    "docs/logs/",
+  ];
 }
 
 /**
@@ -109,6 +124,8 @@ export interface WorkspaceInitInputError {
 export interface ScaffoldSummary {
   created: string[];
   existing: string[];
+  /** Reconcile: legacy upfront-scaffold leftovers removed on re-run (lazy model). */
+  pruned: string[];
 }
 
 export interface WorkspaceInitResult {
@@ -123,8 +140,6 @@ export interface WorkspaceInitResult {
   attach_multiroot: MultirootResult | MultirootError | { skipped: true; reason: string };
   /** Reconcile: detach of sources that were in the previous block and no longer are. */
   detached_removed?: MultirootResult | MultirootError;
-  /** Per-source launch descriptor + scripts generated under .workflow/launch/ (always). */
-  launch_artifacts: LaunchArtifactsSummary;
 }
 
 /**
@@ -159,7 +174,7 @@ export async function runWorkspaceInit(
   if (validation) return validation;
 
   if (input.dryRun) {
-    return buildDryRunResult(workspace, paths.namespace, sources);
+    return buildDryRunResult(fs, workspace, wsPaths, paths.namespace, sources);
   }
 
   // Everything is scoped to `workspace` (which may differ from the process cwd).
@@ -167,20 +182,13 @@ export async function runWorkspaceInit(
 
   const scaffold = await scaffoldDirs(fs, workspace, wsPaths);
   const skillsToml = await seedSkillsToml(fs, wsPaths);
-  // Runtime artifacts (process registry + launch logs) are machine-specific — gitignore always.
+  // Machine-local workflow artifacts (sessions, lock, runtime) — gitignore always.
   await ensureRuntimeGitignore(fs, workspace, wsPaths.namespace);
 
-  // Migrate legacy launch folders (docs/tools/<alias>/) to .workflow/launch/ BEFORE
-  // (re)generating, so any user-edited scripts survive the idempotent rewrite.
+  // Migrate legacy launch folders (docs/tools/<alias>/) to .workflow/launch/ so any
+  // user-edited scripts survive. Launch artifacts themselves are NOT pregenerated
+  // anymore: the launch flow regenerates them on demand at the first launch.
   await migrateLegacyLaunchDirs(fs, join(workspace, "docs", "tools"), wsPaths.cwdLaunchDir());
-
-  // Per-source launch artifacts under .workflow/launch/ (descriptor + run.sh/run.ps1),
-  // always generated and idempotent (preserves user-edited scripts).
-  const launchArtifacts = await generateLaunchArtifacts(
-    fs,
-    wsPaths.cwdLaunchDir(),
-    sources.map((s) => ({ alias: s.alias, path: s.path })),
-  );
 
   // Previous sources (to detach removed ones) come from the same existing block.
   const previousPaths = (existing?.fuentes ?? []).map((f) => f.path).filter((p) => p.length > 0);
@@ -214,7 +222,6 @@ export async function runWorkspaceInit(
       skills_toml: skillsToml,
       project_md: projectMd,
       attach_multiroot: { skipped: true, reason: "project_md_failed" },
-      launch_artifacts: launchArtifacts,
     };
   }
 
@@ -228,6 +235,10 @@ export async function runWorkspaceInit(
     previousPaths,
   );
 
+  // Last: the project-md upsert above just released its lock leaving the empty
+  // marker — clean the leftover so init never ends with a stray .lock.
+  scaffold.pruned.push(...(await pruneReleasedLock(fs, wsPaths)));
+
   return {
     ok: projectMd.ok && visibility.ok,
     dry_run: false,
@@ -238,40 +249,49 @@ export async function runWorkspaceInit(
     project_md: projectMd,
     attach_multiroot: visibility.attach,
     ...(visibility.detached !== undefined ? { detached_removed: visibility.detached } : {}),
-    launch_artifacts: launchArtifacts,
   };
 }
 
+/** Minimal activation scaffold: sessions/ is the operating-context marker. */
 function plannedScaffold(workspace: string, ns: string): string[] {
-  const out = [join(workspace, `.${ns}`, "sessions")];
-  for (const f of DOCS_FOLDERS) out.push(join(workspace, "docs", f));
-  return out;
+  return [join(workspace, `.${ns}`, "sessions")];
 }
 
-function buildDryRunResult(
+async function buildDryRunResult(
+  fs: FileSystemPort,
   workspace: string,
+  wsPaths: PathsService,
   namespace: string,
   sources: WorkspaceSource[],
-): WorkspaceInitResult {
+): Promise<WorkspaceInitResult> {
   const anyExternal = sources.some((s) => isExternalToWorkspace(s.path, workspace));
+  // The prune preview is read-only but REAL: a re-run deletes git-tracked
+  // .gitkeep files, so plan mode must show exactly what would be removed.
+  const pruned = [
+    ...(await pruneLegacyScaffold(fs, workspace, wsPaths, false)),
+    ...(await pruneReleasedLock(fs, wsPaths, false)),
+  ];
   return {
     ok: true,
     dry_run: true,
     workspace,
     sources: sources.length,
-    scaffold: { created: plannedScaffold(workspace, namespace), existing: [] },
+    scaffold: { created: plannedScaffold(workspace, namespace), existing: [], pruned },
     skills_toml: "created",
     project_md: { ok: true, action: "init" },
     attach_multiroot: anyExternal
       ? { skipped: true, reason: "dry_run" }
       : { skipped: true, reason: "no_external_sources" },
-    launch_artifacts: {
-      generated: [],
-      skipped: sources.map((s) => ({ alias: s.alias, reason: "path_not_found" as const })),
-    },
   };
 }
 
+/**
+ * Minimal scaffold + reconcile. Creates only `.workflow/sessions/` (the marker that
+ * activates the operating context); docs/<cat> folders are born on demand at the
+ * first `aw next-number docs/<cat>`. On re-run it PRUNES the legacy upfront
+ * scaffold: .gitkeep-only taxonomy dirs, stray .gitkeep files, an empty docs/logs
+ * and an empty/expired `.workflow/.lock` leftover.
+ */
 async function scaffoldDirs(
   fs: FileSystemPort,
   workspace: string,
@@ -279,27 +299,88 @@ async function scaffoldDirs(
 ): Promise<ScaffoldSummary> {
   const created: string[] = [];
   const existing: string[] = [];
-  const dirs = [wsPaths.cwdSessionsDir(), ...DOCS_FOLDERS.map((f) => join(workspace, "docs", f))];
-  for (const dir of dirs) {
-    if (await fs.exists(dir)) {
-      existing.push(dir);
+  const sessionsDir = wsPaths.cwdSessionsDir();
+  if (await fs.exists(sessionsDir)) {
+    existing.push(sessionsDir);
+  } else {
+    await fs.mkdirp(sessionsDir);
+    created.push(sessionsDir);
+  }
+  const pruned = await pruneLegacyScaffold(fs, workspace, wsPaths);
+  return { created, existing, pruned };
+}
+
+/** True when the dir's only content is a `.gitkeep` (or nothing at all). */
+async function isGitkeepOnly(fs: FileSystemPort, dir: string): Promise<boolean> {
+  const entries = await fs.list(dir);
+  return entries.every((e) => e.type === "file" && e.name === ".gitkeep");
+}
+
+/**
+ * Legacy upfront-scaffold leftovers. With `apply=false` it only DETECTS (the
+ * dry-run preview must show what a real run would delete — these are often
+ * git-tracked files).
+ */
+async function pruneLegacyScaffold(
+  fs: FileSystemPort,
+  workspace: string,
+  wsPaths: PathsService,
+  apply = true,
+): Promise<string[]> {
+  const pruned: string[] = [];
+  // Taxonomy dirs from the upfront-scaffold era: drop the empty ones, and the
+  // now-meaningless .gitkeep inside the ones that already have content.
+  for (const f of DOCS_FOLDERS) {
+    const dir = join(workspace, "docs", f);
+    if (!(await fs.exists(dir))) continue;
+    if (await isGitkeepOnly(fs, dir)) {
+      if (apply) await fs.remove(dir);
+      pruned.push(dir);
       continue;
     }
-    await fs.mkdirp(dir);
-    // .gitkeep so the empty taxonomy folders survive in git.
     const keep = join(dir, ".gitkeep");
-    if (!(await fs.exists(keep))) await fs.writeText(keep, "");
-    created.push(dir);
+    if (await fs.exists(keep)) {
+      if (apply) await fs.remove(keep);
+      pruned.push(keep);
+    }
   }
-  // Runtime launch logs — created (no .gitkeep: the folder is gitignored).
+  // docs/logs: recreated on demand by the launch flow; drop it when empty.
   const logsDir = join(workspace, "docs", "logs");
-  if (await fs.exists(logsDir)) {
-    existing.push(logsDir);
-  } else {
-    await fs.mkdirp(logsDir);
-    created.push(logsDir);
+  if ((await fs.exists(logsDir)) && (await fs.list(logsDir)).length === 0) {
+    if (apply) await fs.remove(logsDir);
+    pruned.push(logsDir);
   }
-  return { created, existing };
+  // sessions/.gitkeep: pointless now that sessions/ is gitignored.
+  const sessionsKeep = join(wsPaths.cwdSessionsDir(), ".gitkeep");
+  if (await fs.exists(sessionsKeep)) {
+    if (apply) await fs.remove(sessionsKeep);
+    pruned.push(sessionsKeep);
+  }
+  return pruned;
+}
+
+/**
+ * Remove a released/expired `.workflow/.lock` leftover. release() intentionally
+ * leaves an empty marker file (lock-service protocol), so this must run at the
+ * END of init — after the project-md upsert released its lock. A live lock
+ * (non-empty, not expired) is never touched. Exported for direct unit tests of
+ * the live-lock guard (unreachable through runWorkspaceInit: a busy lock makes
+ * the upsert fail before this runs).
+ */
+export async function pruneReleasedLock(
+  fs: FileSystemPort,
+  wsPaths: PathsService,
+  apply = true,
+): Promise<string[]> {
+  const lockFile = wsPaths.cwdLockFile();
+  if (!(await fs.exists(lockFile))) return [];
+  const raw = await fs.readText(lockFile);
+  const lock = parseLock(raw);
+  const removable =
+    raw.trim().length === 0 || (lock !== null && isExpired(lock, Date.now(), DEFAULT_LOCK_TTL_MS));
+  if (!removable) return [];
+  if (apply) await fs.remove(lockFile);
+  return [lockFile];
 }
 
 /** Seed `.workflow/skills.toml` with a commented template. Never clobbers an existing file. */
@@ -440,7 +521,12 @@ function resolveProyecto(
   return basename(workspace);
 }
 
-/** Append any missing entries under a header to the workspace `.gitignore` (idempotent). */
+/**
+ * Ensure the entries exist in the workspace `.gitignore` under the given header
+ * (idempotent, block-aware): missing entries are inserted at the end of the
+ * existing header's block — never as a second block with a duplicate header.
+ * User lines are never touched; dedupe is per trimmed line across the whole file.
+ */
 async function appendGitignoreEntries(
   fs: FileSystemPort,
   workspace: string,
@@ -449,14 +535,23 @@ async function appendGitignoreEntries(
 ): Promise<void> {
   const file = join(workspace, ".gitignore");
   const existing = (await fs.exists(file)) ? await fs.readText(file) : "";
-  const present = new Set(
-    existing
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0),
-  );
+  const lines = existing.split(/\r?\n/);
+  const present = new Set(lines.map((l) => l.trim()).filter((l) => l.length > 0));
   const missing = entries.filter((e) => !present.has(e));
   if (missing.length === 0) return;
+
+  const headerIdx = lines.findIndex((l) => l.trim() === header);
+  if (headerIdx >= 0) {
+    // End of the header's block = last consecutive non-empty line after it.
+    let end = headerIdx + 1;
+    while (end < lines.length && (lines[end] ?? "").trim().length > 0) end++;
+    lines.splice(end, 0, ...missing);
+    // Preserve the file's dominant EOL: a CRLF .gitignore must not be rewritten
+    // wholesale to LF (that would churn every user line in the diff).
+    const eol = existing.includes("\r\n") ? "\r\n" : "\n";
+    await fs.writeText(file, lines.join(eol));
+    return;
+  }
   const block = `${header}\n${missing.join("\n")}\n`;
   const body = existing.replace(/\s+$/, "");
   await fs.writeText(file, body.length === 0 ? block : `${body}\n\n${block}`);

@@ -85,7 +85,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "skip-codex",
   "skip-warp",
   "skip-oz",
-  "skip-content",
+  "standalone-sql",
 ]);
 
 interface PluginFlagSpec {

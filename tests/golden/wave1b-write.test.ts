@@ -36,7 +36,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     );
   });
 
-  it("session-close --code 001 writes the .closed sentinel (no project-block, no HISTORY)", async () => {
+  it("session-close --code 001 writes the .closed sentinel AND upserts the HISTORY row", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
     const paths = makeWorkflowPaths(env);
@@ -59,11 +59,18 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(result.sessionClose.backlog_path).toContain("BACKLOG.md");
     expect(existsSync(join(sessionDir, "BACKLOG.md"))).toBe(false);
 
-    // HISTORY.md is no longer touched by session-close (release bookkeeping only).
-    expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);
+    // Close now upserts the session's HISTORY.md row (sessions are gitignored;
+    // HISTORY is the durable record — reverses the old "release bookkeeping only"
+    // decoupling, ratified in spec 008 Q2).
+    expect(result.sessionClose.history).toEqual({ action: "updated", state: "closed" });
+    const historyAfter = readFile(join(clone.cwd, ".workflow", "HISTORY.md"));
+    expect(historyAfter).not.toEqual(historyBefore);
+    const row = historyAfter.split("\n").find((l) => l.startsWith("| 001 |"));
+    expect(row).toBeDefined();
+    expect(row).toContain("closed");
   });
 
-  it("session-close --refs persists a free-form refs string", async () => {
+  it("session-close --refs lands the refs (free text included) in the HISTORY row", async () => {
     const clone = cloneFixture(FIXTURE);
     const env = new TestEnv(clone.cwd);
     const paths = makeWorkflowPaths(env);
@@ -73,6 +80,32 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.sessionClose.refs).toBe("see docs/decisiones/001-foo.md");
+    // Free-form refs (no `kind:`) render as plain text in the row, never dropped.
+    const historyAfter = readFile(join(clone.cwd, ".workflow", "HISTORY.md"));
+    const row = historyAfter.split("\n").find((l) => l.startsWith("| 001 |"));
+    expect(row).toContain("see docs/decisiones/001-foo.md");
+  });
+
+  it("session-close es no-fatal ante HISTORY bloqueado: cierra igual y reporta history_error", async () => {
+    const clone = cloneFixture(FIXTURE);
+    const env = new TestEnv(clone.cwd);
+    const paths = makeWorkflowPaths(env);
+    // Lock vivo ajeno (pid del test, ts ISO vigente) → history-update devuelve lock ocupado.
+    await fs.writeText(
+      join(clone.cwd, ".workflow", ".lock"),
+      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
+    );
+    const historyBefore = readFile(join(clone.cwd, ".workflow", "HISTORY.md"));
+
+    const result = await runSessionClose(fs, env, paths, { code: "001" });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.sessionClose.closed).toBe(true);
+    expect(
+      existsSync(join(clone.cwd, ".workflow", "sessions", "session001-dev-foo", ".closed")),
+    ).toBe(true);
+    expect(result.sessionClose.history).toBeUndefined();
+    expect(result.sessionClose.history_error).toMatch(/lock ocupado/);
+    expect(readFile(join(clone.cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);
   });
 
   it("session-close error si la sesión no existe", async () => {
