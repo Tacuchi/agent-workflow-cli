@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.1.1] — 2026-07-04
+
+**Fix: 2 skills recomendadas del seed no instalaban** (mismatch pick-vs-slug de skills.sh, detectado con instalación real). Sin cambios de conducta.
+
+### Fixed
+
+- **`recommended-skills.ts`**: `condition-based-waiting` movida de `obra/superpowers-skills` (cuyo pick es el display name `"Condition-Based Waiting"`, no un slug) a `nickcrew/claude-ctx-plugin`; `filesystem-context` → `context-engineering-collection` (el pick real de `muratcankoylan/agent-skills-for-context-engineering`, que empaqueta una sola skill). Ambas verificadas instalando; espejadas en el README del marketplace.
+
 ## [20.1.0] — 2026-07-04
 
 **5 skills externas recomendadas nuevas en la tab [Skills].** Curación con workflows multi-agente (descubrimiento + verificación adversarial de encaje/conflicto/portabilidad) sobre skills.sh, cruzada contra la cobertura interna (dev-conventions/qtc-conventions/harness). Detalle en `docs/research/001` (stack) y `002` (comportamiento) del proyecto agent-workflow. Bundle `w` sin cambios.

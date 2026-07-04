@@ -108,11 +108,11 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
   // Agent behavior (research 002) — portable behaviors the harness doctrine does not enforce
   {
     name: "condition-based-waiting",
-    source: "obra/superpowers-skills",
+    source: "nickcrew/claude-ctx-plugin",
     description: "Forbid guessed sleep(); poll the actual state with a bounded timeout.",
   },
   {
-    name: "filesystem-context",
+    name: "context-engineering-collection",
     source: "muratcankoylan/agent-skills-for-context-engineering",
     description: "Offload context to files and re-read on demand to keep the window lean.",
   },
