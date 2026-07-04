@@ -23,6 +23,7 @@
 | [`quick`](quick.md) | Lightweight shortcut for scoped work; never touches `docs/` | starts `quick-loop` |
 | [`status`](status.md) | Read-only workspace dashboard | single-pass (transversal) |
 | [`fix-git`](fix-git.md) | Resolves an in-progress merge, git-safe | single-pass (transversal) |
+| [`generate-launch`](generate-launch.md) | (Re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) | single-pass (transversal) |
 | [`export-scripts`](export-scripts.md) | Promotes session SQL migrations to `docs/scripts/` | single-pass, read-only |
 | [`export-manuals`](export-manuals.md) | Generates manuals in `docs/manuals/` | single-pass, read-only |
 | [`export-diagrams`](export-diagrams.md) | Generates C4/mermaid diagrams in `docs/diagrams/` | single-pass, read-only |
@@ -30,7 +31,7 @@
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.
 >
-> **Transversal (no flow):** `status` and `fix-git` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
+> **Transversal (no flow):** `status`, `fix-git` and `generate-launch` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
 
 ## Schema of each command file
 

@@ -4,6 +4,19 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.3.0] — 2026-07-04
+
+**Nuevo comando transversal `/w:generate-launch`**: (re)genera/actualiza los scripts de lanzamiento de las fuentes (`.workflow/launch/<alias>/`) sin esperar al primer "Lanzar". Bundle `w` **13.3.0** (14 wrappers en los hosts skill-as-command).
+
+### Added
+
+- **Comando `aw generate-launch`** (+ skill `/w:generate-launch`): lee las fuentes del bloque WORKSPACE y (re)genera `launch.json` + `run.sh` + `run.ps1` detectando el stack de cada una. Transversal (sin flujo/sesión, no toca `docs/`); complementa la generación on-demand del primer lanzamiento. Flags: `--source <alias>` (repetible), `--force` (sobrescribe scripts editados a mano), `--dry-run`, `--workspace <dir>`. Fuentes sin comando de arranque (`launchable:false`) o con path ausente se reportan y saltan.
+- **Doctrina `w`**: manual `commands/generate-launch.md` + entradas en la sección transversal de `SKILL.md` y `commands/README.md`. Se auto-empaqueta a los 8 hosts (el instalador itera `commands/*.md`).
+
+### Changed
+
+- **`source-launch-scripts-service`**: separada la *decisión* de la *escritura* (`classifyWrite`/`writeArtifact`) para soportar `--dry-run` y `--force` sin duplicar lógica; nuevo outcome `overwritten` (edición de usuario sobrescrita por `--force`). El camino on-demand del lanzamiento no cambia de comportamiento.
+
 ## [20.2.1] — 2026-07-04
 
 **Fix: la firma de `session-create` en el hard-floor omitía `--objetivo` (obligatorio).** Copiada literal, fallaba en el primer intento con `--objetivo es obligatorio` — justo el modo de fallo que el hard-floor debe evitar en modelos débiles. Bundle `w` **13.2.1**.

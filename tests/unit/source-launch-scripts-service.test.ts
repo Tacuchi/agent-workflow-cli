@@ -182,4 +182,58 @@ describe("source-launch-scripts-service", () => {
       expect(readFileSync(join(appLaunch, "run.sh"), "utf-8")).toContain("hand-written");
     });
   });
+
+  describe("generateSourceLaunchArtifacts (dry-run + force)", () => {
+    it("dry-run classifies as created but writes nothing to disk", async () => {
+      const dir = source("app", { "package.json": JSON.stringify({ scripts: { dev: "vite" } }) });
+      const launchDir = join(root, "ws", ".workflow", "launch");
+
+      const out = await generateSourceLaunchArtifacts(fs, launchDir, dir, "app", { dryRun: true });
+      expect(out.outcomes).toEqual({
+        launchJson: "created",
+        runSh: "created",
+        runPs1: "created",
+      });
+      expect(await fs.exists(join(launchDir, "app"))).toBe(false);
+    });
+
+    it("dry-run over a user-edited file reports preserved and leaves it untouched", async () => {
+      const dir = source("app", { "package.json": JSON.stringify({ scripts: { dev: "vite" } }) });
+      const launchDir = join(root, "ws", ".workflow", "launch");
+      await generateSourceLaunchArtifacts(fs, launchDir, dir, "app");
+      const runShPath = join(launchDir, "app", "run.sh");
+      const edited = `${readFileSync(runShPath, "utf-8")}\n# tweak\n`;
+      writeFileSync(runShPath, edited);
+
+      const out = await generateSourceLaunchArtifacts(fs, launchDir, dir, "app", { dryRun: true });
+      expect(out.outcomes.runSh).toBe("preserved");
+      expect(out.outcomes.launchJson).toBe("regenerated");
+      expect(readFileSync(runShPath, "utf-8")).toBe(edited);
+    });
+
+    it("force overwrites a user-edited file (reported overwritten)", async () => {
+      const dir = source("app", { "package.json": JSON.stringify({ scripts: { dev: "vite" } }) });
+      const launchDir = join(root, "ws", ".workflow", "launch");
+      await generateSourceLaunchArtifacts(fs, launchDir, dir, "app");
+      const runShPath = join(launchDir, "app", "run.sh");
+      writeFileSync(runShPath, `${readFileSync(runShPath, "utf-8")}\n# tweak\n`);
+
+      const out = await generateSourceLaunchArtifacts(fs, launchDir, dir, "app", { force: true });
+      expect(out.outcomes.runSh).toBe("overwritten");
+      expect(readFileSync(runShPath, "utf-8")).not.toContain("# tweak"); // clobbered
+    });
+
+    it("force on a pristine file still reports regenerated (nothing to clobber)", async () => {
+      const dir = source("app", { "package.json": JSON.stringify({ scripts: { dev: "vite" } }) });
+      const launchDir = join(root, "ws", ".workflow", "launch");
+      await generateSourceLaunchArtifacts(fs, launchDir, dir, "app");
+
+      const out = await generateSourceLaunchArtifacts(fs, launchDir, dir, "app", { force: true });
+      expect(out.outcomes).toEqual({
+        launchJson: "regenerated",
+        runSh: "regenerated",
+        runPs1: "regenerated",
+      });
+    });
+  });
 });

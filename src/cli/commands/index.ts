@@ -11,6 +11,7 @@ import { checkpointReadCommand } from "./checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-write.js";
 import { codeScanCommand } from "./code-scan.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
+import { generateLaunchCommand } from "./generate-launch.js";
 import { gitFlowCommand } from "./git-flow.js";
 import { historyUpdateCommand } from "./history-update.js";
 import { hookCommand } from "./hook.js";
@@ -51,6 +52,7 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   skillIndexCommand,
   skillsCommand,
   sourcesCommand,
+  generateLaunchCommand,
   setWorkingBranchCommand,
   setQaBranchCommand,
   removeSourceCommand,

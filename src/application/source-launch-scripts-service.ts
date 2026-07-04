@@ -286,31 +286,54 @@ function ps1Quote(v: string): string {
 
 // --- Idempotent writes -----------------------------------------------------
 
-export type WriteOutcome = "created" | "regenerated" | "preserved";
+export type WriteOutcome = "created" | "regenerated" | "preserved" | "overwritten";
+
+/** Options for a (re)generation pass: overwrite hand-edited files / preview only. */
+export interface GenerateArtifactsOptions {
+  /** Overwrite user-edited scripts too (default preserves them). */
+  force?: boolean;
+  /** Classify every file without writing anything (preview). */
+  dryRun?: boolean;
+}
 
 /**
- * Write `content` to `path` only if the on-disk file is still pristine (its
- * recorded hash matches its current body). A user-edited file is preserved.
- * `extractRecorded` returns the recorded hash + the hash of the current body,
- * or null when the file has no marker (treated as user-owned → preserved).
+ * Decide the write outcome for one file WITHOUT performing it. A pristine file
+ * (its recorded hash matches its current body) is regenerated; a user-edited or
+ * marker-less file is preserved unless `force` is set (then overwritten). Kept
+ * pure so `dryRun` and the real write share one decision (no drift).
  */
-async function writeIfPristine(
+function classifyWrite(
+  exists: boolean,
+  existing: string | null,
+  recompute: (existing: string) => { recorded: string; actual: string } | null,
+  force: boolean,
+): { outcome: WriteOutcome; write: boolean } {
+  if (!exists) return { outcome: "created", write: true };
+  const check = existing !== null ? recompute(existing) : null;
+  const pristine = check !== null && check.recorded === check.actual;
+  if (pristine) return { outcome: "regenerated", write: true };
+  // User-edited (or no marker): preserve by default; `force` clobbers it.
+  if (force) return { outcome: "overwritten", write: true };
+  return { outcome: "preserved", write: false };
+}
+
+/**
+ * Classify `path` against `content` and write when the decision says so and we
+ * are not in dry-run. Preserves user-edited files unless `opts.force`. Returns
+ * the outcome regardless of whether a write happened (dry-run reports the same).
+ */
+async function writeArtifact(
   fs: FileSystemPort,
   path: string,
   content: string,
   recompute: (existing: string) => { recorded: string; actual: string } | null,
+  opts: { force: boolean; dryRun: boolean },
 ): Promise<WriteOutcome> {
-  if (!(await fs.exists(path))) {
-    await fs.writeText(path, content);
-    return "created";
-  }
-  const existing = await fs.readText(path);
-  const check = recompute(existing);
-  if (check && check.recorded === check.actual) {
-    await fs.writeText(path, content);
-    return "regenerated";
-  }
-  return "preserved";
+  const exists = await fs.exists(path);
+  const existing = exists ? await fs.readText(path) : null;
+  const { outcome, write } = classifyWrite(exists, existing, recompute, opts.force);
+  if (write && !opts.dryRun) await fs.writeText(path, content);
+  return outcome;
 }
 
 function shellRecompute(existing: string): { recorded: string; actual: string } | null {
@@ -343,28 +366,42 @@ export interface SourceArtifactResult {
   outcomes: { launchJson: WriteOutcome; runSh: WriteOutcome; runPs1: WriteOutcome };
 }
 
-/** Generate (idempotently) the descriptor + per-OS scripts for one source. */
+/**
+ * Generate (idempotently) the descriptor + per-OS scripts for one source.
+ * Pristine files are regenerated, hand-edited ones preserved; `opts.force`
+ * overwrites the latter, `opts.dryRun` classifies without writing.
+ */
 export async function generateSourceLaunchArtifacts(
   fs: FileSystemPort,
   launchDir: string,
   sourcePath: string,
   alias: string,
+  opts: GenerateArtifactsOptions = {},
 ): Promise<SourceArtifactResult> {
+  const writeOpts = { force: opts.force ?? false, dryRun: opts.dryRun ?? false };
   const desc = await detectLaunchDescriptor(fs, sourcePath, alias);
   const dir = join(launchDir, alias);
-  await fs.mkdirp(dir);
-  const launchJson = await writeIfPristine(
+  if (!writeOpts.dryRun) await fs.mkdirp(dir);
+  const launchJson = await writeArtifact(
     fs,
     join(dir, "launch.json"),
     renderLaunchJson(desc),
     jsonRecompute,
+    writeOpts,
   );
-  const runSh = await writeIfPristine(fs, join(dir, "run.sh"), renderRunSh(desc), shellRecompute);
-  const runPs1 = await writeIfPristine(
+  const runSh = await writeArtifact(
+    fs,
+    join(dir, "run.sh"),
+    renderRunSh(desc),
+    shellRecompute,
+    writeOpts,
+  );
+  const runPs1 = await writeArtifact(
     fs,
     join(dir, "run.ps1"),
     renderRunPs1(desc),
     shellRecompute,
+    writeOpts,
   );
   return {
     alias,
