@@ -49,7 +49,7 @@ In plan mode it **describes**, never writes: the resolved audience/length, the c
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates + filters the corpus.
+- `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates + filters the corpus (ALL sessions, closed + active, with `release_eligible`). `aw sessions` alone lists only ACTIVE sessions — never use it as the corpus.
 - `aw session-artifacts --code <NNN> --dump objetivo,conclusiones,decisiones` — returns `{path, content, size}` for `SESSION` (referenced spec), `CONCLUSIONS` and `DECISION`; the plan-doc state is read by its path.
 - `aw next-number docs/reports` — deterministic numbering (the CLI handles destination-folder resolution).
 
@@ -79,7 +79,7 @@ No args: the whole corpus, executive audience by default.
 
 ### Step 1 — Resolve context and filter the corpus
 
-`aw sessions` / `release-data` applying `--sessions`/`--since`/`--source`. If the resulting set is empty → **abort** with an explicit message (no sessions in the declared range). The CLI handles destination-folder resolution.
+`aw release-data` applying `--sessions`/`--since`/`--source`. If the resulting set is empty → **abort** with an explicit message (no sessions in the declared range). The CLI handles destination-folder resolution.
 
 ### Step 2 — Collect per-session inputs
 
@@ -91,7 +91,7 @@ Extract the R-items from `CONCLUSIONS`/`DECISION` (pending, deferred, "next step
 
 ### Step 4 — Synthesize (prose: ambient conventions)
 
-Render applying the ambient writing conventions (host): Executive summary · What was done (grouped by business capability, **not** by session) · Impacted components (table) · Key decisions · Results/conclusions · Pending/Roadmap (only with R-items). Technical→executive translation and length cap per `--audience`. Optional: a simple synthesis `flowchart LR` (with a `mermaid.ink` link); the detailed technical diagram belongs to `export-diagrams`.
+Render applying the ambient writing conventions (host): Executive summary · What was done (grouped by business capability, **not** by session) · Impacted components (table) · Key decisions · Results/conclusions · Pending/Roadmap (only with R-items). Technical→executive translation and length cap per `--audience`. Optional: a simple synthesis `flowchart LR` (inline; a `mermaid.ink` link is OPTIONAL — it encodes the diagram source into a public-service URL, omit it for private corpora); the detailed technical diagram belongs to `export-diagrams`.
 
 ### Step 5 — Write or report
 

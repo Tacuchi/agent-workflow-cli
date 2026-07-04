@@ -50,7 +50,7 @@ In plan mode it **describes**, never writes: the resolved mode, the detected top
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the corpus.
+- `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the corpus (ALL sessions, closed + active). `aw sessions` alone lists only ACTIVE sessions — never use it as the corpus.
 - `aw session-artifacts --code <NNN> --dump objetivo,decisiones` — returns `{path, content, size}` per artifact (`SESSION` with its `## Objective`, `DECISION`); the plan-doc is read by its path.
 - `aw next-number docs/manuals` — deterministic numbering (`regenerate` mode only).
 
@@ -89,7 +89,7 @@ No args: `--mode complement` over the whole corpus.
 
 ### Step 1 — Resolve context and corpus
 
-`aw sessions` / `release-data` applying `--sessions`/`--since`/`--source`. The CLI handles destination-folder resolution.
+`aw release-data` applying `--sessions`/`--since`/`--source`. The CLI handles destination-folder resolution.
 
 ### Step 2 — Inspect the present manuals
 

@@ -50,7 +50,7 @@ In plan mode it **describes**, never writes: the resolved `NNN`, the detected so
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the session corpus.
+- `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the session corpus (ALL sessions, closed + active, with `release_eligible`). `aw sessions` alone lists only ACTIVE sessions — never use it as the corpus.
 - `aw session-artifacts --code <NNN> --dump scripts` — lists the session's `.sql` files with path and size (content is read by path). No scripts → empty list, silent skip.
 - `aw release-data --standalone-sql` — lists the loose top-level `docs/scripts/*.sql` (source B) deterministically, with `is_rollback` flag; `--include-graduated` lists previous bundles (modern `NNN-export-scripts-YYYY-MM-DD` and legacy naming) for the exclusion/dedup step.
 - `aw next-number docs/scripts` — deterministic numbering of the bundle directory; it also creates `docs/scripts` when missing (the CLI guarantees destination resolution). In plan mode use `--dry-run` (pure query).
@@ -80,7 +80,7 @@ No args: every corpus session + every standalone `.sql` (excluding previous bund
 
 ### Step 1 — Collect SQL sources
 
-**Source A — sessions**: for every corpus session (`aw sessions` / `release-data` + `session-artifacts --code <NNN> --dump scripts`), read the `.sql` files the dump lists (per-script path). Take **only** type-B statements (deliverable DDL/DML migrations); ignore read-only type-A (diagnostic queries). Expected per-statement markers: `-- @category: <01-04>` + `-- @stmt: NNN-verb-target` (format defined by the `sql` capability).
+**Source A — sessions**: for every corpus session (`aw release-data` + `session-artifacts --code <NNN> --dump scripts`), read the `.sql` files the dump lists (per-script path). Take **only** type-B statements (deliverable DDL/DML migrations); ignore read-only type-A (diagnostic queries). Expected per-statement markers: `-- @category: <01-04>` + `-- @stmt: NNN-verb-target` (format defined by the `sql` capability).
 
 **Source B — standalone** (unless `--skip-standalone`): list top-level `docs/scripts/*.sql`, **excluding** `docs/scripts/NNN-export-scripts-*/`. Per file: honor `@category` markers when present; otherwise infer the category from content (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). If the filename contains `rollback` → skip (it never enters a forward).
 

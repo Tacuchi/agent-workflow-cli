@@ -49,7 +49,7 @@ In plan mode it **describes**, never writes: the resolved engine, the levels/sec
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw sessions` / `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the corpus (input for the AS-IS/TO-BE delta).
+- `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the corpus (ALL sessions; input for the AS-IS/TO-BE delta). `aw sessions` alone lists only ACTIVE sessions — never use it as the corpus.
 - `aw session-artifacts --code <NNN> --dump objetivo` — locates the session and its plan-doc reference; `AS-IS`/`TO-BE`/`Impacted` are read from the plan-doc by its path.
 - `aw next-number docs/diagrams` — deterministic numbering (the CLI handles destination-folder resolution).
 
@@ -82,7 +82,7 @@ No args: `--engine mermaid --scope todo`. The system **snapshot** is always the 
 
 ### Step 1 — Resolve context and corpus
 
-`aw sessions` / `release-data` applying `--sessions`/`--since`/`--source`. The CLI handles destination-folder resolution.
+`aw release-data` applying `--sessions`/`--since`/`--source`. The CLI handles destination-folder resolution.
 
 ### Step 2 — Inspect the sources
 
@@ -98,7 +98,7 @@ If `--scope` includes `data` and read-only MCP exists: `\d <table>`, `count(*)`,
 
 ### Step 5 — Render (composes `diagrams`)
 
-Per `--engine`: `mermaid` → native Mermaid C4 blocks (`C4Context`/`C4Container`/`C4Component`) and `flowchart` for flows; `c4` → a separate Structurizr `workspace.dsl` + auxiliary embedded Mermaid for offline reading. For every ```` ```mermaid ```` block, add immediately after the closing fence a blockquote with the preview link: `> Ver diagrama renderizado: <https://mermaid.ink/img/BASE64>` (URL-safe base64 of the plain code). Not applicable to `workspace.dsl`.
+Per `--engine`: `mermaid` → native Mermaid C4 blocks (`C4Context`/`C4Container`/`C4Component`) and `flowchart` for flows; `c4` → a separate Structurizr `workspace.dsl` + auxiliary embedded Mermaid for offline reading. Keep block labels ASCII (no accents) for render robustness; prose keeps them. OPTIONALLY add after each closing fence a preview blockquote `> Ver diagrama renderizado: <https://mermaid.ink/img/BASE64>` (URL-safe base64, keep padding) — the link encodes the diagram source into a public-service URL, omit it for private corpora (GitHub renders the blocks natively). Not applicable to `workspace.dsl`.
 
 ### Step 6 — Write or report
 

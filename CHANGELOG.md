@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [18.0.0] — 2026-07-03
+
+**Workspace-init mínimo + exports completados** (spec 008 / plan 005 del workspace). El init deja de crear estructura por adelantado (todo nace on-demand desde el CLI), el `.gitignore` pasa a ser propiedad del CLI, `HISTORY.md` por fin se escribe, y la familia `export-*` quedó ejercitada sobre un corpus real con su formato fijado en el canon. Bundle `w` **12.0.0** (major en lockstep: doctrina de init/CHASSIS/exports reescrita). Review gate adversarial de 41 agentes sobre el diff: 17/17 hallazgos confirmados corregidos pre-commit.
+
+### Changed (⚠ breaking)
+
+- **`aw workspace-init` es MÍNIMO**: crea solo `.workflow/sessions/` (marca de activación del contexto operativo), `.workflow/skills.toml`, el bloque `WORKSPACE` y el `.gitignore`. Ya **no** crea las 6 carpetas `docs/*` ni sus `.gitkeep`, ni `docs/logs/`, ni pregenera `.workflow/launch/<alias>/`. Cada `docs/<categoría>` nace on-demand en `aw next-number docs/<cat>`; los artefactos de launch los genera el primer lanzamiento.
+- **Re-run de init = reconcile con prune**: poda el scaffold legado (carpetas de taxonomía `.gitkeep`-only, `.gitkeep` sueltos, `docs/logs/` vacía, `.workflow/.lock` liberado/expirado — un lock vivo jamás se toca). `--dry-run` previsualiza el prune read-only (campo `scaffold.pruned`).
+- **`aw next-number` crea el directorio destino cuando falta** (campo `created` en el JSON) y gana `--dry-run` (consulta pura, para plan-mode). Resolución de paths absolutos con `isAbsolute` (fix Windows).
+- **`aw session-close` upserta la fila de la sesión en `.workflow/HISTORY.md`** (in-process, no-fatal: `history`/`history_error` en el JSON; un lock ocupado no bloquea el cierre). Revierte el desacople deliberado del modelo "internal/light": las sesiones quedan gitignoradas y HISTORY es el registro durable que el bloque anuncia.
+- **`.gitignore` CLI-owned completo**: `.workflow/sessions/`, `.workflow/.lock`, `.workflow/processes.json`, `.workflow/launch/`, `docs/logs/` (siempre) + `.claude/settings.local.json*` / `.codex/config.toml*` con fuentes externas (los patrones cubren los `.bak.<epoch>`). El append es block-aware (mergea bajo el header existente, nunca lo duplica) y preserva el EOL del archivo (CRLF intacto).
+- **`aw release-data`**: se removió el flag muerto `--skip-content`; un `--source` con alias desconocido ahora es `INVALID_INPUT` exit 1 (antes ok:true con `{error}` embebido).
+
+### Added
+
+- **Launch on-demand**: sin descriptor, el lanzamiento lo genera en el momento (resolver alias→path del bloque); un descriptor legacy pristine con `command:null` se re-detecta (writeIfPristine protege ediciones del usuario); descriptor corrupto = error explícito `corrupt_descriptor` (nunca se regenera encima). La TUI detecta lanzabilidad por stack cuando no hay descriptor y diagnostica siempre vía beginLaunch.
+- **`aw release-data --standalone-sql`**: lista los `.sql` sueltos de `docs/scripts` (source B de export-scripts) con `is_rollback` (case-insensitive) y size; `--include-graduated` reconoce el naming moderno `NNN-export-scripts-YYYY-MM-DD` además del legacy (campo `kind`).
+- **Backups keep-latest**: los `.bak.<epoch>` de los configs de host se podan al escribir (queda solo el más reciente); mecanismo único compartido entre multiroot y mcp-host-writer.
+- **refs de HISTORY**: texto libre y URLs se conservan tal cual en la fila (antes se perdían o mutilaban).
+- **Doctrina/canon**: `workspace-init.md` reescrito (mínimo + política de versionado por artefacto + reconcile), CHASSIS documenta el close→HISTORY, las 4 SKILLs de exports fijan `release-data` como enumerador del corpus (no `aw sessions`), plan-mode vía `next-number --dry-run`, mermaid.ink opcional con advertencia de privacidad; banners HISTÓRICO en los análisis pre-rediseño; guard tests nuevos (contrato código↔doctrina de gitignore/init/exports). Formato fino de los 4 exports **fijado** en el canon tras ejercicio real aceptado.
+
+### Fixed
+
+- `--standalone-sql` registrado en `BOOLEAN_FLAGS` del parser (sin esto, el flag se tragaba el token siguiente y desaparecía en silencio).
+- El init ya no deja `.workflow/.lock` huérfano de 0 bytes (limpieza al final, respetando el protocolo del marker).
+
 ## [17.1.0] — 2026-07-03
 
 ### Added
