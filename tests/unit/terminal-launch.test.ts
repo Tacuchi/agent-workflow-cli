@@ -60,6 +60,14 @@ describe("terminal-launch — *nix wrapper", () => {
     expect(w).toContain("cd '/My Src/app' || exit 1");
     expect(w).toContain("'./run me.sh' > >(tee -a /logs/app.log) 2>&1 &");
   });
+
+  it("runs the build step (tee'd to the log) before the app, keeping the window open on build failure", () => {
+    const w = buildNixWrapper({ ...base, build: { command: "npm", args: ["run", "build"] } });
+    expect(w).toContain("npm run build 2>&1 | tee -a /logs/app.log");
+    expect(w).toContain('if [ "${PIPESTATUS[0]}" -ne 0 ];');
+    // Build precedes the backgrounded app launch.
+    expect(w.indexOf("npm run build")).toBeLessThan(w.indexOf("npm run dev >"));
+  });
 });
 
 describe("terminal-launch — per-OS command", () => {
@@ -112,6 +120,17 @@ describe("terminal-launch — per-OS command", () => {
     const cmd = buildTerminalCommand("win32", { ...opts, cwd: "C:/O'Brien/app" });
     if (cmd.kind !== "terminal") throw new Error("expected terminal");
     expect(cmd.args[4]).toContain("Set-Location 'C:/O''Brien/app';");
+  });
+
+  it("Windows bakes the build step (with an exit guard) before the launch command", () => {
+    const cmd = buildTerminalCommand("win32", {
+      ...opts,
+      build: { command: "npm", args: ["run", "build"] },
+    });
+    if (cmd.kind !== "terminal") throw new Error("expected terminal");
+    expect(cmd.args[4]).toBe(
+      "Set-Location '/src/app'; & 'npm' 'run' 'build'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & 'npm' 'run' 'dev'",
+    );
   });
 
   it("Linux picks the first available emulator by priority and runs the wrapper", () => {

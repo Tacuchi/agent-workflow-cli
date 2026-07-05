@@ -24,6 +24,8 @@ export interface SpawnDetachedResult {
 
 export interface SpawnInTerminalOptions {
   cwd: string;
+  /** Optional build/compile step run (from `cwd`) before the launch command. */
+  build?: { command: string; args: string[] } | undefined;
   /** Full child environment (base + params + PROFILE) — used for the background fallback and Windows console inheritance. */
   env: Record<string, string>;
   /** Deltas over the inherited base env (params + PROFILE) — baked into the *nix wrapper so they survive terminals that don't inherit our env. */

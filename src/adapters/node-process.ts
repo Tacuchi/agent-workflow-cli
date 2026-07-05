@@ -148,6 +148,7 @@ export class NodeProcess implements ProcessPort {
       const plan = buildTerminalCommand("win32", {
         wrapperPath: "",
         cwd: opts.cwd,
+        build: opts.build,
         command: cmd,
         args,
         title: opts.title,
@@ -186,6 +187,7 @@ export class NodeProcess implements ProcessPort {
     const plan = buildTerminalCommand(this.platform, {
       wrapperPath,
       cwd: opts.cwd,
+      build: opts.build,
       command: cmd,
       args,
       title: opts.title,
@@ -198,6 +200,7 @@ export class NodeProcess implements ProcessPort {
           wrapperPath,
           buildNixWrapper({
             cwd: opts.cwd,
+            build: opts.build,
             command: cmd,
             args,
             envDelta: opts.envDelta,
@@ -250,6 +253,14 @@ export class NodeProcess implements ProcessPort {
     args: string[],
     opts: SpawnInTerminalOptions,
   ): Promise<SpawnInTerminalResult> {
+    // Build first (best-effort) so the headless run executes fresh output.
+    if (opts.build) {
+      try {
+        await this.run(opts.build.command, opts.build.args, { cwd: opts.cwd, env: opts.env });
+      } catch {
+        // build unavailable/failed — proceed; the app spawn surfaces it in the log.
+      }
+    }
     const { pid } = await this.spawnDetached(cmd, args, {
       cwd: opts.cwd,
       env: opts.env,

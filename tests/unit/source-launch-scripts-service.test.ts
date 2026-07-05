@@ -50,10 +50,60 @@ describe("source-launch-scripts-service", () => {
       expect(d.args).toEqual(["start"]);
     });
 
-    it("npm without dev/start → no command (not launchable)", async () => {
+    it("npm with only a build script and no entry (bin/main) → not launchable", async () => {
       const dir = source("app", { "package.json": JSON.stringify({ scripts: { build: "tsc" } }) });
       const d = await detectLaunchDescriptor(fs, dir, "app");
       expect(d.command).toBeNull();
+      expect(d.build).toBeNull();
+    });
+
+    it("npm with a serve script → npm run serve", async () => {
+      const dir = source("app", {
+        "package.json": JSON.stringify({ scripts: { serve: "http-server" } }),
+      });
+      const d = await detectLaunchDescriptor(fs, dir, "app");
+      expect(d.args).toEqual(["run", "serve"]);
+      expect(d.build).toBeNull();
+    });
+
+    it("npm CLI (object bin) with a build script → build first, then node <first entry>", async () => {
+      const dir = source("cli", {
+        "package.json": JSON.stringify({
+          bin: { mytool: "dist/main.js", mt: "dist/main.js" },
+          scripts: { build: "tsc" },
+        }),
+      });
+      const d = await detectLaunchDescriptor(fs, dir, "cli");
+      expect(d.command).toBe("node");
+      expect(d.args).toEqual(["dist/main.js"]);
+      expect(d.build).toEqual({ command: "npm", args: ["run", "build"] });
+    });
+
+    it("npm CLI with a string bin and no build script → node <bin>, no build", async () => {
+      const dir = source("cli", { "package.json": JSON.stringify({ bin: "cli.js" }) });
+      const d = await detectLaunchDescriptor(fs, dir, "cli");
+      expect(d.command).toBe("node");
+      expect(d.args).toEqual(["cli.js"]);
+      expect(d.build).toBeNull();
+    });
+
+    it("npm with a main entry + build script (no bin) → build then node <main>", async () => {
+      const dir = source("app", {
+        "package.json": JSON.stringify({ main: "dist/index.js", scripts: { build: "tsc" } }),
+      });
+      const d = await detectLaunchDescriptor(fs, dir, "app");
+      expect(d.command).toBe("node");
+      expect(d.args).toEqual(["dist/index.js"]);
+      expect(d.build).toEqual({ command: "npm", args: ["run", "build"] });
+    });
+
+    it("a run script wins over bin (dev server is self-contained → no build step)", async () => {
+      const dir = source("app", {
+        "package.json": JSON.stringify({ bin: "cli.js", scripts: { dev: "vite", build: "tsc" } }),
+      });
+      const d = await detectLaunchDescriptor(fs, dir, "app");
+      expect(d.args).toEqual(["run", "dev"]);
+      expect(d.build).toBeNull();
     });
 
     it("gradle with wrapper → ./gradlew bootRun", async () => {
@@ -106,6 +156,31 @@ describe("source-launch-scripts-service", () => {
       expect(lines[0]).toBe("#!/usr/bin/env bash");
       expect(lines[1]).toMatch(/^# agent-workflow:generated v1 sha256=[a-f0-9]{64}$/);
       expect(sh).toContain("exec npm run dev");
+    });
+
+    it("run.sh runs the build step before exec when the descriptor has one", async () => {
+      const dir = source("cli", {
+        "package.json": JSON.stringify({ bin: "dist/main.js", scripts: { build: "tsc" } }),
+      });
+      const d = await detectLaunchDescriptor(fs, dir, "cli");
+      const sh = renderRunSh(d);
+      expect(sh).toContain("npm run build");
+      expect(sh).toContain("exec node dist/main.js");
+      expect(sh.indexOf("npm run build")).toBeLessThan(sh.indexOf("exec node"));
+    });
+
+    it("run.ps1 runs the build step (with an exit-code guard) before the launch", async () => {
+      const { renderRunPs1 } = await import(
+        "../../src/application/source-launch-scripts-service.js"
+      );
+      const dir = source("cli", {
+        "package.json": JSON.stringify({ bin: "dist/main.js", scripts: { build: "tsc" } }),
+      });
+      const d = await detectLaunchDescriptor(fs, dir, "cli");
+      const ps1 = renderRunPs1(d);
+      expect(ps1).toContain("& npm run build");
+      expect(ps1).toContain("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }");
+      expect(ps1.indexOf("npm run build")).toBeLessThan(ps1.indexOf("& node dist/main.js"));
     });
   });
 

@@ -11,6 +11,12 @@ export interface LaunchParam {
   secret: boolean;
 }
 
+/** A command + args pair — a build/prep step or the run step. */
+export interface LaunchStep {
+  command: string;
+  args: string[];
+}
+
 /**
  * Machine-readable launch descriptor for one source (`.workflow/launch/<alias>/launch.json`).
  * The TUI reads this; it never parses the shell scripts.
@@ -22,6 +28,11 @@ export interface LaunchDescriptor {
   stack: string;
   /** Working directory the command runs from (the source's absolute path). */
   cwd: string;
+  /**
+   * Optional build/compile step run before `command` (e.g. `npm run build` for a
+   * CLI/app that runs from its compiled output). null when the run needs none.
+   */
+  build: LaunchStep | null;
   /** Launch command, or null when no runnable command was detected (→ TUI disables "Lanzar"). */
   command: string | null;
   args: string[];
@@ -50,9 +61,26 @@ export async function detectLaunchDescriptor(
 ): Promise<LaunchDescriptor> {
   const detected = await detectStackDict(fs, sourcePath);
   const stack = stackKey(detected);
-  const { command, args } = await deriveCommand(fs, sourcePath, stack);
+  const { build, command, args } = await deriveCommand(fs, sourcePath, stack);
   const { params, profiles } = await parseConfig(fs, sourcePath);
-  return { version: 1, source: alias, stack, cwd: sourcePath, command, args, params, profiles };
+  return {
+    version: 1,
+    source: alias,
+    stack,
+    cwd: sourcePath,
+    build,
+    command,
+    args,
+    params,
+    profiles,
+  };
+}
+
+/** The build + run steps for a source; command=null when nothing runnable was found. */
+interface DerivedLaunch {
+  build: LaunchStep | null;
+  command: string | null;
+  args: string[];
 }
 
 function stackKey(detected: { build?: string; framework?: string }): string {
@@ -68,42 +96,71 @@ async function deriveCommand(
   fs: FileSystemPort,
   sourcePath: string,
   stack: string,
-): Promise<{ command: string | null; args: string[] }> {
+): Promise<DerivedLaunch> {
   switch (stack) {
-    case "npm": {
-      const script = await pickNpmScript(fs, sourcePath);
-      if (script === "start") return { command: "npm", args: ["start"] };
-      if (script) return { command: "npm", args: ["run", script] };
-      return { command: null, args: [] };
-    }
+    case "npm":
+      return deriveNpm(fs, sourcePath);
     case "angular":
-      return { command: "npm", args: ["start"] };
+      return { build: null, command: "npm", args: ["start"] };
     case "gradle": {
       const wrapper = (await fs.exists(join(sourcePath, "gradlew"))) ? "./gradlew" : "gradle";
-      return { command: wrapper, args: ["bootRun"] };
+      return { build: null, command: wrapper, args: ["bootRun"] };
     }
     case "maven": {
       const wrapper = (await fs.exists(join(sourcePath, "mvnw"))) ? "./mvnw" : "mvn";
-      return { command: wrapper, args: ["spring-boot:run"] };
+      return { build: null, command: wrapper, args: ["spring-boot:run"] };
     }
     default:
-      return { command: null, args: [] };
+      return { build: null, command: null, args: [] };
   }
 }
 
-/** Prefer a `dev` script, then `start`; null when package.json has neither. */
-async function pickNpmScript(fs: FileSystemPort, sourcePath: string): Promise<string | null> {
+interface NpmPackage {
+  scripts?: Record<string, string>;
+  bin?: string | Record<string, string>;
+  main?: string;
+}
+
+/**
+ * Derive how to run an npm project locally, in priority order:
+ *  1. a run script — `dev` > `start` > `serve` (self-contained; no build needed).
+ *  2. else a CLI/app entry — `bin` > `main` — run via `node`, building first when
+ *     a `build` script exists (a TypeScript CLI runs from its compiled output).
+ * command=null only when there is genuinely nothing to run (no script, no entry).
+ */
+async function deriveNpm(fs: FileSystemPort, sourcePath: string): Promise<DerivedLaunch> {
+  const pkg = await readPackageJson(fs, sourcePath);
+  if (!pkg) return { build: null, command: null, args: [] };
+  const scripts = pkg.scripts ?? {};
+  if (scripts.dev) return { build: null, command: "npm", args: ["run", "dev"] };
+  if (scripts.start) return { build: null, command: "npm", args: ["start"] };
+  if (scripts.serve) return { build: null, command: "npm", args: ["run", "serve"] };
+  const entry = binEntry(pkg) ?? (typeof pkg.main === "string" ? pkg.main : null);
+  if (entry) {
+    const build: LaunchStep | null = scripts.build
+      ? { command: "npm", args: ["run", "build"] }
+      : null;
+    return { build, command: "node", args: [entry] };
+  }
+  return { build: null, command: null, args: [] };
+}
+
+async function readPackageJson(fs: FileSystemPort, sourcePath: string): Promise<NpmPackage | null> {
   try {
-    const pkg = JSON.parse(await fs.readText(join(sourcePath, "package.json"))) as {
-      scripts?: Record<string, string>;
-    };
-    const scripts = pkg.scripts ?? {};
-    if (scripts.dev) return "dev";
-    if (scripts.start) return "start";
-    return null;
+    return JSON.parse(await fs.readText(join(sourcePath, "package.json"))) as NpmPackage;
   } catch {
     return null;
   }
+}
+
+/** First bin target: a string bin IS the entry; an object bin uses its first path. */
+function binEntry(pkg: NpmPackage): string | null {
+  const bin = pkg.bin;
+  if (typeof bin === "string" && bin.length > 0) return bin;
+  if (bin && typeof bin === "object") {
+    return Object.values(bin).find((v) => typeof v === "string" && v.length > 0) ?? null;
+  }
+  return null;
 }
 
 /** Parse `.env*` (and detect Spring `application-<profile>.*`) into params + profiles. */
@@ -227,6 +284,10 @@ export function renderRunSh(desc: LaunchDescriptor): string {
     after.push(`export ${p.name}="\${${p.name}:-${shEscape(p.default)}}"`);
   }
   if (desc.command) {
+    if (desc.build) {
+      // Build before running; `set -e` (above) aborts on a failed build.
+      after.push(`${desc.build.command} ${desc.build.args.map(shQuote).join(" ")}`.trimEnd());
+    }
     after.push(`exec ${desc.command} ${desc.args.map(shQuote).join(" ")}`.trimEnd());
   } else {
     after.push(
@@ -261,6 +322,11 @@ export function renderRunPs1(desc: LaunchDescriptor): string {
     after.push(`if (-not $env:${p.name}) { $env:${p.name} = "${ps1Escape(p.default)}" }`);
   }
   if (winCommand) {
+    if (desc.build) {
+      const winBuild = winLaunchCommand(desc.build.command) ?? desc.build.command;
+      after.push(`& ${ps1Quote(winBuild)} ${desc.build.args.map(ps1Quote).join(" ")}`.trimEnd());
+      after.push("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }");
+    }
     after.push(`& ${ps1Quote(winCommand)} ${desc.args.map(ps1Quote).join(" ")}`.trimEnd());
   } else {
     after.push(
@@ -363,7 +429,17 @@ export interface SourceArtifactResult {
   alias: string;
   stack: string;
   launchable: boolean;
+  /** Human-readable run command for the summary (`build && run`), or null when not launchable. */
+  run: string | null;
   outcomes: { launchJson: WriteOutcome; runSh: WriteOutcome; runPs1: WriteOutcome };
+}
+
+/** The detected command as one line (`npm run build && node dist/main.js`); null when not launchable. */
+function formatRun(desc: LaunchDescriptor): string | null {
+  if (!desc.command) return null;
+  const run = [desc.command, ...desc.args].join(" ").trim();
+  if (!desc.build) return run;
+  return `${[desc.build.command, ...desc.build.args].join(" ").trim()} && ${run}`;
 }
 
 /**
@@ -407,6 +483,7 @@ export async function generateSourceLaunchArtifacts(
     alias,
     stack: desc.stack,
     launchable: desc.command !== null,
+    run: formatRun(desc),
     outcomes: { launchJson, runSh, runPs1 },
   };
 }

@@ -17,9 +17,15 @@ Rebuilds the launch artifacts the local-run flow uses (`.workflow/launch/<alias>
 ## Run
 
 1. Run `aw generate-launch [--source <alias>] [--force] [--dry-run]` (backed by `generate-launch-service`; reads the sources from the WORKSPACE block).
-2. Render a readable summary from the JSON — per source: `stack`, whether it is `launchable`, and the per-file outcome (`created` / `regenerated` / `preserved` / `overwritten`). Do **not** dump raw JSON.
-3. Call out the non-launchable sources: a `launchable: false` (descriptor `command: null`) means no start command was detected — `dev`/`start` (npm), `bootRun` (gradle) or `spring-boot:run` (maven). The generated `run.sh` is then a stub the user completes.
+2. Render a readable summary from the JSON — per source: `stack`, whether it is `launchable`, the detected `run` command (e.g. `npm run build && node dist/cli/main.js`), and the per-file outcome (`created` / `regenerated` / `preserved` / `overwritten`). Do **not** dump raw JSON.
+3. Call out the non-launchable sources: `launchable: false` (descriptor `command: null`) means nothing runnable was detected. The generated `run.sh` is then a stub the user completes. A source is a genuine non-app (e.g. a docs/plugins repo with no run target); a real app that lands here is a detection gap worth reporting.
 4. Report `unknown_aliases` (a `--source` that matches no declared source) and `missing_sources` (a declared path absent on disk — skipped) when present.
+
+Detection (how "run the project locally" is derived):
+
+- **npm** — a run script first (`dev` > `start` > `serve`); else a CLI/app entry (`bin` > `main`) run with `node`, **building first** (`npm run build`) when a `build` script exists — a TypeScript CLI runs from its compiled output.
+- **gradle** / **maven** — `./gradlew bootRun` / `./mvnw spring-boot:run`. **angular** — `npm start`.
+- When a `build` step is detected, `run.sh`/`run.ps1` run it before the launch (and the TUI "Lanzar" does too).
 
 Behavior:
 

@@ -4,6 +4,19 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.4.0] — 2026-07-04
+
+**`generate-launch` detecta CLIs y apps compiladas, no solo dev-servers.** Reportaba `Lanzable: No` (stub `exit 1`) para un proyecto que corre localmente sin problema (p.ej. este CLI: `bin` → `dist/cli/main.js` + script `build`). Bundle `w` **13.4.0**.
+
+### Fixed
+
+- **Detección npm** (`source-launch-scripts-service`): además de `dev`/`start` reconoce `serve` y, sin script de arranque, la **entrada `bin`/`main`** ejecutada con `node`, **compilando antes** (`npm run build`) cuando existe script `build` — un CLI TypeScript corre desde su `dist/`. Antes esos proyectos quedaban como stub.
+
+### Added
+
+- **Paso `build` en el descriptor de lanzamiento**: lo ejecutan antes del comando tanto los scripts generados (`run.sh`/`run.ps1`, fail-fast si el build falla) como el spawn del TUI (wrapper *nix, consola win32, fallback headless) — consistencia entre ambos caminos.
+- **Campo `run` en el resumen por fuente**: muestra el comando detectado (`npm run build && node dist/cli/main.js`), no solo `launchable` sí/no.
+
 ## [20.3.0] — 2026-07-04
 
 **Nuevo comando transversal `/w:generate-launch`**: (re)genera/actualiza los scripts de lanzamiento de las fuentes (`.workflow/launch/<alias>/`) sin esperar al primer "Lanzar". Bundle `w` **13.3.0** (14 wrappers en los hosts skill-as-command).

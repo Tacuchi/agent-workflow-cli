@@ -20,6 +20,8 @@ export type TerminalCommand = { kind: "terminal"; cmd: string; args: string[] } 
 export interface NixWrapperSpec {
   /** Working directory the command runs from. */
   cwd: string;
+  /** Optional build/compile step run (from `cwd`, with the same env) before the launch. */
+  build?: { command: string; args: string[] } | undefined;
   /** Launch command + args (already resolved from the descriptor). */
   command: string;
   args: string[];
@@ -43,6 +45,8 @@ export interface TerminalCommandOptions {
   wrapperPath: string;
   /** Working directory (Windows bakes it via `Set-Location`). */
   cwd: string;
+  /** Optional build step (Windows bakes it into `-Command` before the launch). */
+  build?: { command: string; args: string[] } | undefined;
   /** Launch command + args (Windows bakes them into `-Command`). */
   command: string;
   args: string[];
@@ -83,6 +87,15 @@ export function buildNixWrapper(spec: NixWrapperSpec): string {
   ];
   for (const key of Object.keys(spec.envDelta).sort()) {
     lines.push(`export ${key}=${shSingleQuote(spec.envDelta[key] ?? "")}`);
+  }
+  // Build before launching (same env, output tee'd to the log). On failure, keep
+  // the window open with an interactive shell instead of running a stale/absent build.
+  if (spec.build) {
+    const buildLine = [spec.build.command, ...spec.build.args].map(shQuote).join(" ");
+    lines.push(`${buildLine} 2>&1 | tee -a ${shQuote(spec.logPath)}`);
+    lines.push(
+      `if [ "\${PIPESTATUS[0]}" -ne 0 ]; then printf '\\n[build fallido — %s · cerrá esta ventana]\\n' ${shQuote(spec.title)}; exec "\${SHELL:-bash}"; fi`,
+    );
   }
   const cmdline = [spec.command, ...spec.args].map(shQuote).join(" ");
   // Background the app so we can grab its pid, tee its output to the log, and
@@ -125,17 +138,7 @@ export function buildTerminalCommand(
       ],
     };
   }
-  if (platform === "win32") {
-    // `-NoExit` keeps the console open after the command finishes (crash
-    // visibility); the adapter spawns it `detached` (own console) + `windowsHide:false`.
-    const psArgs = opts.args.map(psSingleQuote).join(" ");
-    const command = `Set-Location ${psSingleQuote(opts.cwd)}; & ${psSingleQuote(opts.command)}${psArgs ? ` ${psArgs}` : ""}`;
-    return {
-      kind: "terminal",
-      cmd: "powershell",
-      args: ["-NoExit", "-ExecutionPolicy", "Bypass", "-Command", command],
-    };
-  }
+  if (platform === "win32") return buildWin32Command(opts);
   if (platform === "linux") {
     if (!opts.hasDisplay) return { kind: "none" };
     for (const t of LINUX_TERMINALS) {
@@ -146,6 +149,29 @@ export function buildTerminalCommand(
     return { kind: "none" };
   }
   return { kind: "none" };
+}
+
+/** PowerShell invocation `& 'cmd' 'arg1' 'arg2'` (call operator, single-quoted). */
+function psInvoke(command: string, args: string[]): string {
+  const quoted = args.map(psSingleQuote).join(" ");
+  return `& ${psSingleQuote(command)}${quoted ? ` ${quoted}` : ""}`;
+}
+
+/**
+ * Windows: a persistent PowerShell console (`-NoExit` keeps it open after the
+ * command finishes → crash visibility; the adapter spawns it `detached` with its
+ * own console). Builds first when a build step is present, aborting on failure.
+ */
+function buildWin32Command(opts: TerminalCommandOptions): TerminalCommand {
+  const buildPart = opts.build
+    ? `${psInvoke(opts.build.command, opts.build.args)}; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; `
+    : "";
+  const command = `Set-Location ${psSingleQuote(opts.cwd)}; ${buildPart}${psInvoke(opts.command, opts.args)}`;
+  return {
+    kind: "terminal",
+    cmd: "powershell",
+    args: ["-NoExit", "-ExecutionPolicy", "Bypass", "-Command", command],
+  };
 }
 
 // --- quoting helpers -------------------------------------------------------

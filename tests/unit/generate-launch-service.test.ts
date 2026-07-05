@@ -71,7 +71,7 @@ describe("runGenerateLaunch", () => {
     expect(existsSync(launchJson("app"))).toBe(true);
   });
 
-  it("marks a source with no start script as not launchable", async () => {
+  it("marks a source with no runnable entry (only a build script) as not launchable", async () => {
     const svc = makeSource("svc", {
       "package.json": JSON.stringify({ scripts: { build: "tsc" } }),
     });
@@ -80,6 +80,26 @@ describe("runGenerateLaunch", () => {
     const res = await runGenerateLaunch(fs, env, paths, {});
     if ("error" in res) throw new Error(res.error);
     expect(res.sources[0]?.launchable).toBe(false);
+  });
+
+  it("a CLI source (bin + build script) IS launchable — the run-locally case", async () => {
+    const cli = makeSource("cli", {
+      "package.json": JSON.stringify({
+        bin: { mytool: "dist/main.js" },
+        scripts: { build: "tsc" },
+      }),
+    });
+    await initWorkspace([{ alias: "cli", path: cli }]);
+
+    const res = await runGenerateLaunch(fs, env, paths, {});
+    if ("error" in res) throw new Error(res.error);
+    expect(res.sources[0]?.launchable).toBe(true);
+    // The summary exposes the detected command (build && run).
+    expect(res.sources[0]?.run).toBe("npm run build && node dist/main.js");
+    // The generated run.sh builds first, then runs the entry.
+    const runSh = readFileSync(runShPath("cli"), "utf-8");
+    expect(runSh).toContain("npm run build");
+    expect(runSh).toContain("exec node dist/main.js");
   });
 
   it("filters by --source and reports unknown aliases", async () => {

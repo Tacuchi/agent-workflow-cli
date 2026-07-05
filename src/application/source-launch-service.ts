@@ -5,6 +5,7 @@ import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
 import {
   type LaunchDescriptor,
+  type LaunchStep,
   generateSourceLaunchArtifacts,
   winLaunchCommand,
 } from "./source-launch-scripts-service.js";
@@ -20,6 +21,8 @@ export interface ResolvedLaunch {
   command: string;
   args: string[];
   cwd: string;
+  /** Optional build step run before `command` (platform-translated). null when none. */
+  build: LaunchStep | null;
   /** Full child env: base + params + PROFILE. */
   env: Record<string, string>;
   /** Deltas over the base env (params + PROFILE) — what a terminal must bake in when it doesn't inherit our env. */
@@ -117,6 +120,15 @@ export function resolveLaunch(
   if (!desc.command) return null;
   const command = platform === "win32" ? winLaunchCommand(desc.command) : desc.command;
   if (!command) return null;
+  const build: LaunchStep | null = desc.build
+    ? {
+        command:
+          platform === "win32"
+            ? (winLaunchCommand(desc.build.command) ?? desc.build.command)
+            : desc.build.command,
+        args: desc.build.args,
+      }
+    : null;
   const envDelta: Record<string, string> = {};
   for (const p of desc.params) {
     envDelta[p.name] = req.values[p.name] ?? p.default;
@@ -126,6 +138,7 @@ export function resolveLaunch(
     command,
     args: desc.args,
     cwd: desc.cwd,
+    build,
     env: { ...baseEnv, ...envDelta },
     envDelta,
     logPath: logFileFor(logsDir, req.alias, req.profile),
@@ -185,6 +198,7 @@ export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promis
       envDelta: resolved.envDelta,
       logPath: resolved.logPath,
       title: req.profile ? `${req.alias} · ${req.profile}` : req.alias,
+      ...(resolved.build ? { build: resolved.build } : {}),
     });
     const startedAt = (deps.now ?? (() => new Date().toISOString()))();
     // Persist only NON-secret entered values so a relaunch can reuse them; secrets
