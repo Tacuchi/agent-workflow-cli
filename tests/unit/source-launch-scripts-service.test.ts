@@ -64,6 +64,7 @@ describe("source-launch-scripts-service", () => {
       const d = await detectLaunchDescriptor(fs, dir, "app");
       expect(d.args).toEqual(["run", "serve"]);
       expect(d.build).toBeNull();
+      expect(d.mode).toBe("server"); // a (dev) server → background + log
     });
 
     it("npm CLI (object bin) with a build script → build first, then node <first entry>", async () => {
@@ -77,6 +78,7 @@ describe("source-launch-scripts-service", () => {
       expect(d.command).toBe("node");
       expect(d.args).toEqual(["dist/main.js"]);
       expect(d.build).toEqual({ command: "npm", args: ["run", "build"] });
+      expect(d.mode).toBe("interactive"); // a CLI/app entry owns the terminal
     });
 
     it("npm CLI with a string bin and no build script → node <bin>, no build", async () => {
@@ -104,6 +106,26 @@ describe("source-launch-scripts-service", () => {
       const d = await detectLaunchDescriptor(fs, dir, "app");
       expect(d.args).toEqual(["run", "dev"]);
       expect(d.build).toBeNull();
+      expect(d.mode).toBe("server");
+    });
+
+    it("--mode override forces the launch mode over the heuristic", async () => {
+      const dir = source("app", {
+        "package.json": JSON.stringify({ scripts: { dev: "vite" } }), // heuristic → server
+      });
+      const d = await detectLaunchDescriptor(fs, dir, "app", { mode: "interactive" });
+      expect(d.mode).toBe("interactive");
+      expect(d.args).toEqual(["run", "dev"]); // command unchanged
+    });
+
+    it("--command override replaces command+args and drops the auto build", async () => {
+      const dir = source("cli", {
+        "package.json": JSON.stringify({ bin: "dist/main.js", scripts: { build: "tsc" } }),
+      });
+      const d = await detectLaunchDescriptor(fs, dir, "cli", { command: "node dist/cli/main.js" });
+      expect(d.command).toBe("node");
+      expect(d.args).toEqual(["dist/cli/main.js"]);
+      expect(d.build).toBeNull(); // custom command is self-contained
     });
 
     it("gradle with wrapper → ./gradlew bootRun", async () => {

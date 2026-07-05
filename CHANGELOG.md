@@ -4,6 +4,20 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.5.0] — 2026-07-04
+
+**`generate-launch` distingue modo interactivo (TUI) de servidor — la TUI ahora levanta al lanzar.** El wrapper backgroundeaba + redirigía stdout a `tee` (no-TTY), así que una app interactiva (Ink) caía a su salida de comando/help en vez de la UI. Bundle `w` **13.5.0**.
+
+### Fixed
+
+- **Modo de lanzamiento** (`source-launch-scripts-service` + `terminal-launch`): el descriptor gana `mode: "interactive" | "server"`. `interactive` corre la app en **foreground dueño del TTY** (`exec`, sin tee/background) — la TUI aparece; `server` mantiene el comportamiento actual (background + tee al log + ventana monitoreable). Heurística: entrada `bin`/`main` (CLI) → `interactive`; `dev`/`start`/`serve`/`bootRun`/`spring-boot:run` → `server`. El modo fluye por `resolveLaunch` → `spawnInTerminal` → wrapper *nix.
+
+### Added
+
+- **Overrides** `aw generate-launch --mode interactive|server` y `--command "<cmd>"` (un solo source; reemplaza command+args, descarta el build auto).
+- **Structured-choice al generar** (skill `/w:generate-launch`): el manual instruye confirmar el modo/comando por fuente lanzable antes de escribir (recomendado = el detectado), con la advertencia del fallo TUI-como-server.
+- **Campo `mode`** en el resumen por fuente (`SourceArtifactResult`).
+
 ## [20.4.0] — 2026-07-04
 
 **`generate-launch` detecta CLIs y apps compiladas, no solo dev-servers.** Reportaba `Lanzable: No` (stub `exit 1`) para un proyecto que corre localmente sin problema (p.ej. este CLI: `bin` → `dist/cli/main.js` + script `build`). Bundle `w` **13.4.0**.

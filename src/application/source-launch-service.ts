@@ -5,6 +5,7 @@ import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
 import {
   type LaunchDescriptor,
+  type LaunchMode,
   type LaunchStep,
   generateSourceLaunchArtifacts,
   winLaunchCommand,
@@ -21,6 +22,8 @@ export interface ResolvedLaunch {
   command: string;
   args: string[];
   cwd: string;
+  /** How to own the terminal: interactive (foreground TTY) vs server (background + log). */
+  mode: LaunchMode;
   /** Optional build step run before `command` (platform-translated). null when none. */
   build: LaunchStep | null;
   /** Full child env: base + params + PROFILE. */
@@ -138,6 +141,7 @@ export function resolveLaunch(
     command,
     args: desc.args,
     cwd: desc.cwd,
+    mode: desc.mode,
     build,
     env: { ...baseEnv, ...envDelta },
     envDelta,
@@ -198,6 +202,7 @@ export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promis
       envDelta: resolved.envDelta,
       logPath: resolved.logPath,
       title: req.profile ? `${req.alias} · ${req.profile}` : req.alias,
+      mode: resolved.mode,
       ...(resolved.build ? { build: resolved.build } : {}),
     });
     const startedAt = (deps.now ?? (() => new Date().toISOString()))();

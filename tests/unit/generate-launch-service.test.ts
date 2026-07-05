@@ -94,12 +94,50 @@ describe("runGenerateLaunch", () => {
     const res = await runGenerateLaunch(fs, env, paths, {});
     if ("error" in res) throw new Error(res.error);
     expect(res.sources[0]?.launchable).toBe(true);
-    // The summary exposes the detected command (build && run).
+    // The summary exposes the detected command (build && run) + mode.
     expect(res.sources[0]?.run).toBe("npm run build && node dist/main.js");
+    expect(res.sources[0]?.mode).toBe("interactive"); // a CLI owns the terminal (TUI)
     // The generated run.sh builds first, then runs the entry.
     const runSh = readFileSync(runShPath("cli"), "utf-8");
     expect(runSh).toContain("npm run build");
     expect(runSh).toContain("exec node dist/main.js");
+  });
+
+  it("--mode override forces a CLI source to server", async () => {
+    const cli = makeSource("cli", {
+      "package.json": JSON.stringify({ bin: "dist/main.js", scripts: { build: "tsc" } }),
+    });
+    await initWorkspace([{ alias: "cli", path: cli }]);
+
+    const res = await runGenerateLaunch(fs, env, paths, { aliases: ["cli"], mode: "server" });
+    if ("error" in res) throw new Error(res.error);
+    expect(res.sources[0]?.mode).toBe("server");
+  });
+
+  it("--command override sets a custom run for a single source (drops the auto build)", async () => {
+    const cli = makeSource("cli", {
+      "package.json": JSON.stringify({ bin: "dist/main.js", scripts: { build: "tsc" } }),
+    });
+    await initWorkspace([{ alias: "cli", path: cli }]);
+
+    const res = await runGenerateLaunch(fs, env, paths, {
+      aliases: ["cli"],
+      command: "node dist/cli/main.js --tui",
+    });
+    if ("error" in res) throw new Error(res.error);
+    expect(res.sources[0]?.run).toBe("node dist/cli/main.js --tui");
+  });
+
+  it("--command with more than one selected source errors", async () => {
+    const a = makeSource("a", { "package.json": JSON.stringify({ bin: "a.js" }) });
+    const b = makeSource("b", { "package.json": JSON.stringify({ bin: "b.js" }) });
+    await initWorkspace([
+      { alias: "a", path: a },
+      { alias: "b", path: b },
+    ]);
+
+    const res = await runGenerateLaunch(fs, env, paths, { command: "node x.js" });
+    expect("error" in res && res.error).toBe("command_needs_single_source");
   });
 
   it("filters by --source and reports unknown aliases", async () => {

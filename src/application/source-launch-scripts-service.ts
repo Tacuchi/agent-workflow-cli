@@ -18,6 +18,15 @@ export interface LaunchStep {
 }
 
 /**
+ * How the launch owns the terminal:
+ *  - `interactive` — foreground, owns the TTY (stdin+stdout). Required by TUIs/REPLs/
+ *    interactive CLIs (Ink checks `stdout.isTTY`). No tee, no backgrounding.
+ *  - `server` — backgrounded, output tee'd to the log, window kept open to monitor
+ *    live and closed-to-stop. For dev servers and long-running services.
+ */
+export type LaunchMode = "interactive" | "server";
+
+/**
  * Machine-readable launch descriptor for one source (`.workflow/launch/<alias>/launch.json`).
  * The TUI reads this; it never parses the shell scripts.
  */
@@ -26,6 +35,8 @@ export interface LaunchDescriptor {
   source: string;
   /** "npm" | "gradle" | "maven" | "angular" | "unknown". */
   stack: string;
+  /** How to run it: interactive (owns the TTY) vs server (background + log). */
+  mode: LaunchMode;
   /** Working directory the command runs from (the source's absolute path). */
   cwd: string;
   /**
@@ -53,20 +64,33 @@ function isSecretName(name: string): boolean {
   return SECRET_RE.test(name);
 }
 
+/** User overrides for detection (from `aw generate-launch --command/--mode`). */
+export interface LaunchOverride {
+  /** Full run command string; whitespace-split into command+args, drops the auto build. */
+  command?: string;
+  /** Force the launch mode (interactive vs server). */
+  mode?: LaunchMode;
+}
+
 /** Detect the launch descriptor for a source by inspecting its files. Pure (read-only). */
 export async function detectLaunchDescriptor(
   fs: FileSystemPort,
   sourcePath: string,
   alias: string,
+  override?: LaunchOverride,
 ): Promise<LaunchDescriptor> {
   const detected = await detectStackDict(fs, sourcePath);
   const stack = stackKey(detected);
-  const { build, command, args } = await deriveCommand(fs, sourcePath, stack);
+  const { build, command, args, mode } = applyOverride(
+    await deriveCommand(fs, sourcePath, stack),
+    override,
+  );
   const { params, profiles } = await parseConfig(fs, sourcePath);
   return {
     version: 1,
     source: alias,
     stack,
+    mode,
     cwd: sourcePath,
     build,
     command,
@@ -81,6 +105,25 @@ interface DerivedLaunch {
   build: LaunchStep | null;
   command: string | null;
   args: string[];
+  mode: LaunchMode;
+}
+
+/** Apply a `--command`/`--mode` override on top of the auto-detected launch. */
+function applyOverride(derived: DerivedLaunch, override?: LaunchOverride): DerivedLaunch {
+  if (!override) return derived;
+  let result = derived;
+  if (override.command !== undefined) {
+    const parts = override.command
+      .trim()
+      .split(/\s+/)
+      .filter((p) => p.length > 0);
+    if (parts.length > 0) {
+      // A custom command is self-contained: replaces command+args, drops the auto build.
+      result = { ...result, build: null, command: parts[0] as string, args: parts.slice(1) };
+    }
+  }
+  if (override.mode !== undefined) result = { ...result, mode: override.mode };
+  return result;
 }
 
 function stackKey(detected: { build?: string; framework?: string }): string {
@@ -101,17 +144,17 @@ async function deriveCommand(
     case "npm":
       return deriveNpm(fs, sourcePath);
     case "angular":
-      return { build: null, command: "npm", args: ["start"] };
+      return { build: null, command: "npm", args: ["start"], mode: "server" };
     case "gradle": {
       const wrapper = (await fs.exists(join(sourcePath, "gradlew"))) ? "./gradlew" : "gradle";
-      return { build: null, command: wrapper, args: ["bootRun"] };
+      return { build: null, command: wrapper, args: ["bootRun"], mode: "server" };
     }
     case "maven": {
       const wrapper = (await fs.exists(join(sourcePath, "mvnw"))) ? "./mvnw" : "mvn";
-      return { build: null, command: wrapper, args: ["spring-boot:run"] };
+      return { build: null, command: wrapper, args: ["spring-boot:run"], mode: "server" };
     }
     default:
-      return { build: null, command: null, args: [] };
+      return { build: null, command: null, args: [], mode: "server" };
   }
 }
 
@@ -130,19 +173,21 @@ interface NpmPackage {
  */
 async function deriveNpm(fs: FileSystemPort, sourcePath: string): Promise<DerivedLaunch> {
   const pkg = await readPackageJson(fs, sourcePath);
-  if (!pkg) return { build: null, command: null, args: [] };
+  if (!pkg) return { build: null, command: null, args: [], mode: "server" };
   const scripts = pkg.scripts ?? {};
-  if (scripts.dev) return { build: null, command: "npm", args: ["run", "dev"] };
-  if (scripts.start) return { build: null, command: "npm", args: ["start"] };
-  if (scripts.serve) return { build: null, command: "npm", args: ["run", "serve"] };
+  // Run scripts start a (dev) server → background + log.
+  if (scripts.dev) return { build: null, command: "npm", args: ["run", "dev"], mode: "server" };
+  if (scripts.start) return { build: null, command: "npm", args: ["start"], mode: "server" };
+  if (scripts.serve) return { build: null, command: "npm", args: ["run", "serve"], mode: "server" };
   const entry = binEntry(pkg) ?? (typeof pkg.main === "string" ? pkg.main : null);
   if (entry) {
     const build: LaunchStep | null = scripts.build
       ? { command: "npm", args: ["run", "build"] }
       : null;
-    return { build, command: "node", args: [entry] };
+    // A CLI/app entry (bin/main) likely owns the terminal (TUI/interactive CLI).
+    return { build, command: "node", args: [entry], mode: "interactive" };
   }
-  return { build: null, command: null, args: [] };
+  return { build: null, command: null, args: [], mode: "server" };
 }
 
 async function readPackageJson(fs: FileSystemPort, sourcePath: string): Promise<NpmPackage | null> {
@@ -360,6 +405,8 @@ export interface GenerateArtifactsOptions {
   force?: boolean;
   /** Classify every file without writing anything (preview). */
   dryRun?: boolean;
+  /** User overrides for the detected command/mode (`--command`/`--mode`). */
+  override?: LaunchOverride;
 }
 
 /**
@@ -429,6 +476,8 @@ export interface SourceArtifactResult {
   alias: string;
   stack: string;
   launchable: boolean;
+  /** How it will launch: interactive (owns the TTY) vs server (background + log). */
+  mode: LaunchMode;
   /** Human-readable run command for the summary (`build && run`), or null when not launchable. */
   run: string | null;
   outcomes: { launchJson: WriteOutcome; runSh: WriteOutcome; runPs1: WriteOutcome };
@@ -455,7 +504,7 @@ export async function generateSourceLaunchArtifacts(
   opts: GenerateArtifactsOptions = {},
 ): Promise<SourceArtifactResult> {
   const writeOpts = { force: opts.force ?? false, dryRun: opts.dryRun ?? false };
-  const desc = await detectLaunchDescriptor(fs, sourcePath, alias);
+  const desc = await detectLaunchDescriptor(fs, sourcePath, alias, opts.override);
   const dir = join(launchDir, alias);
   if (!writeOpts.dryRun) await fs.mkdirp(dir);
   const launchJson = await writeArtifact(
@@ -483,6 +532,7 @@ export async function generateSourceLaunchArtifacts(
     alias,
     stack: desc.stack,
     launchable: desc.command !== null,
+    mode: desc.mode,
     run: formatRun(desc),
     outcomes: { launchJson, runSh, runPs1 },
   };

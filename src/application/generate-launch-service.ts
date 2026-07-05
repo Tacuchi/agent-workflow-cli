@@ -1,9 +1,11 @@
 import { resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { readWorkspaceBlock } from "./parsers/project-block.js";
+import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import { PathsService } from "./paths-service.js";
 import {
+  type LaunchMode,
+  type LaunchOverride,
   type SourceArtifactResult,
   generateSourceLaunchArtifacts,
 } from "./source-launch-scripts-service.js";
@@ -17,6 +19,10 @@ export interface GenerateLaunchInput {
   dryRun?: boolean;
   /** Override the target workspace dir (defaults to cwd). */
   workspace?: string;
+  /** Force the launch mode (interactive vs server) for the selected source(s). */
+  mode?: LaunchMode;
+  /** Override the run command; requires the selection to resolve to a single source. */
+  command?: string;
 }
 
 export interface GenerateLaunchInputError {
@@ -63,21 +69,18 @@ export async function runGenerateLaunch(
     };
   }
 
-  // Optional alias filter: keep declared order, report unknown aliases.
-  let selected = declared;
-  let unknown: string[] = [];
-  if (input.aliases && input.aliases.length > 0) {
-    const declaredAliases = new Set(declared.map((f) => f.alias));
-    unknown = input.aliases.filter((a) => !declaredAliases.has(a));
-    const wanted = new Set(input.aliases);
-    selected = declared.filter((f) => wanted.has(f.alias));
-    if (selected.length === 0) {
-      return {
-        error: "no_matching_sources",
-        hint: `no declared source matches --source; unknown: ${unknown.join(", ")}`,
-      };
-    }
+  const selection = selectSources(declared, input.aliases);
+  if ("error" in selection) return selection;
+  const { selected, unknown } = selection;
+
+  // A custom command targets one source's run line — refuse to write it to many.
+  if (input.command !== undefined && selected.length !== 1) {
+    return {
+      error: "command_needs_single_source",
+      hint: "--command overrides one source's run command; use --source <alias> to target exactly one",
+    };
   }
+  const override = buildOverride(input);
 
   const dryRun = input.dryRun ?? false;
   const force = input.force ?? false;
@@ -94,6 +97,7 @@ export async function runGenerateLaunch(
       await generateSourceLaunchArtifacts(fs, launchDir, sourcePath, fuente.alias, {
         force,
         dryRun,
+        ...(override ? { override } : {}),
       }),
     );
   }
@@ -105,5 +109,33 @@ export async function runGenerateLaunch(
     sources,
     ...(unknown.length > 0 ? { unknown_aliases: unknown } : {}),
     ...(missing.length > 0 ? { missing_sources: missing } : {}),
+  };
+}
+
+/** Filter declared sources by the requested aliases (declared order preserved). */
+function selectSources(
+  declared: ProjectFuente[],
+  aliases: string[] | undefined,
+): { selected: ProjectFuente[]; unknown: string[] } | GenerateLaunchInputError {
+  if (!aliases || aliases.length === 0) return { selected: declared, unknown: [] };
+  const declaredAliases = new Set(declared.map((f) => f.alias));
+  const unknown = aliases.filter((a) => !declaredAliases.has(a));
+  const wanted = new Set(aliases);
+  const selected = declared.filter((f) => wanted.has(f.alias));
+  if (selected.length === 0) {
+    return {
+      error: "no_matching_sources",
+      hint: `no declared source matches --source; unknown: ${unknown.join(", ")}`,
+    };
+  }
+  return { selected, unknown };
+}
+
+/** Build the detection override object from `--mode`/`--command`, or undefined when neither is set. */
+function buildOverride(input: GenerateLaunchInput): LaunchOverride | undefined {
+  if (input.mode === undefined && input.command === undefined) return undefined;
+  return {
+    ...(input.mode !== undefined ? { mode: input.mode } : {}),
+    ...(input.command !== undefined ? { command: input.command } : {}),
   };
 }

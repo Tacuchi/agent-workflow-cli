@@ -200,6 +200,7 @@ export class NodeProcess implements ProcessPort {
           wrapperPath,
           buildNixWrapper({
             cwd: opts.cwd,
+            mode: opts.mode,
             build: opts.build,
             command: cmd,
             args,

@@ -65,6 +65,7 @@ function descriptor(over: Partial<LaunchDescriptor> = {}): LaunchDescriptor {
     version: 1,
     source: "app",
     stack: "npm",
+    mode: "server",
     cwd: "/src/app",
     build: null,
     command: "npm",

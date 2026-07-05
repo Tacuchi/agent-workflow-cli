@@ -24,6 +24,8 @@ export interface SpawnDetachedResult {
 
 export interface SpawnInTerminalOptions {
   cwd: string;
+  /** `interactive` runs the app in the foreground owning the TTY (TUIs); `server` (default) backgrounds + logs it. */
+  mode?: "interactive" | "server" | undefined;
   /** Optional build/compile step run (from `cwd`) before the launch command. */
   build?: { command: string; args: string[] } | undefined;
   /** Full child environment (base + params + PROFILE) — used for the background fallback and Windows console inheritance. */

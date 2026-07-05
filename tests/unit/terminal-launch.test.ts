@@ -68,6 +68,43 @@ describe("terminal-launch — *nix wrapper", () => {
     // Build precedes the backgrounded app launch.
     expect(w.indexOf("npm run build")).toBeLessThan(w.indexOf("npm run dev >"));
   });
+
+  it("interactive mode execs the app in the foreground (owns the TTY), no tee/background/trap", () => {
+    const w = buildNixWrapper({
+      ...base,
+      mode: "interactive",
+      command: "node",
+      args: ["dist/x.js"],
+    });
+    // exec replaces the shell → the app inherits the terminal TTY (Ink needs it).
+    expect(w).toContain("exec node dist/x.js");
+    // pidfile holds the exec'd process pid ($$ survives exec).
+    expect(w).toContain("printf '%s' \"$$\" > /tmp/aw.pid");
+    // None of the server machinery: no job control, no tee-to-pipe, no group-kill trap.
+    expect(w).not.toContain("set -m");
+    expect(w).not.toContain("> >(tee");
+    expect(w).not.toContain("trap ");
+    expect(w).not.toContain("__aw_pid=$!");
+  });
+
+  it("interactive mode still builds first (tee'd) when a build step is present", () => {
+    const w = buildNixWrapper({
+      ...base,
+      mode: "interactive",
+      command: "node",
+      args: ["dist/x.js"],
+      build: { command: "npm", args: ["run", "build"] },
+    });
+    expect(w).toContain("npm run build 2>&1 | tee -a /logs/app.log");
+    expect(w.indexOf("npm run build")).toBeLessThan(w.indexOf("exec node dist/x.js"));
+  });
+
+  it("omitting mode defaults to server (background + tee + keep-open)", () => {
+    const w = buildNixWrapper(base); // no mode
+    expect(w).toContain("set -m");
+    expect(w).toContain("npm run dev > >(tee -a /logs/app.log) 2>&1 &");
+    expect(w).toContain("trap ");
+  });
 });
 
 describe("terminal-launch — per-OS command", () => {

@@ -20,6 +20,12 @@ export type TerminalCommand = { kind: "terminal"; cmd: string; args: string[] } 
 export interface NixWrapperSpec {
   /** Working directory the command runs from. */
   cwd: string;
+  /**
+   * `interactive` — the app owns the TTY (foreground `exec`, no tee); required by
+   * TUIs/REPLs. `server` (default) — backgrounded + tee'd to the log, window kept
+   * open to monitor and close-to-stop. Defaults to `server` when omitted.
+   */
+  mode?: "interactive" | "server" | undefined;
   /** Optional build/compile step run (from `cwd`, with the same env) before the launch. */
   build?: { command: string; args: string[] } | undefined;
   /** Launch command + args (already resolved from the descriptor). */
@@ -77,33 +83,55 @@ export const LINUX_TERMINALS: { bin: string; toArgs: (wrapper: string) => string
 
 /** Assemble the bash wrapper that runs inside the *nix terminal window. */
 export function buildNixWrapper(spec: NixWrapperSpec): string {
+  const interactive = spec.mode === "interactive";
+  const cmdline = [spec.command, ...spec.args].map(shQuote).join(" ");
   const lines: string[] = [
     "#!/usr/bin/env bash",
     "# agent-workflow: wrapper efímero de lanzamiento en terminal (se autoelimina).",
-    // Job control: the backgrounded app becomes its own process group, so both
-    // the trap and the TUI's killTree(-pid) take down its whole tree (npm→node…).
-    "set -m",
-    `cd ${shQuote(spec.cwd)} || exit 1`,
   ];
+  // Server mode backgrounds the app into its own process group → the trap and the
+  // TUI's killTree(-pid) take down its whole tree (npm→node…). Interactive owns the
+  // TTY in the foreground, so no job control.
+  if (!interactive) lines.push("set -m");
+  lines.push(`cd ${shQuote(spec.cwd)} || exit 1`);
   for (const key of Object.keys(spec.envDelta).sort()) {
     lines.push(`export ${key}=${shSingleQuote(spec.envDelta[key] ?? "")}`);
   }
-  // Build before launching (same env, output tee'd to the log). On failure, keep
-  // the window open with an interactive shell instead of running a stale/absent build.
-  if (spec.build) {
-    const buildLine = [spec.build.command, ...spec.build.args].map(shQuote).join(" ");
-    lines.push(`${buildLine} 2>&1 | tee -a ${shQuote(spec.logPath)}`);
-    lines.push(
-      `if [ "\${PIPESTATUS[0]}" -ne 0 ]; then printf '\\n[build fallido — %s · cerrá esta ventana]\\n' ${shQuote(spec.title)}; exec "\${SHELL:-bash}"; fi`,
-    );
-  }
-  const cmdline = [spec.command, ...spec.args].map(shQuote).join(" ");
-  // Background the app so we can grab its pid, tee its output to the log, and
-  // still keep this shell (→ the window) alive after it exits.
+  appendBuildStep(lines, spec);
+  if (interactive) appendInteractiveLaunch(lines, spec, cmdline);
+  else appendServerLaunch(lines, spec, cmdline);
+  return `${lines.join("\n")}\n`;
+}
+
+/** Build before launch (same env, output tee'd to the log); keep the window open on failure. Shared by both modes. */
+function appendBuildStep(lines: string[], spec: NixWrapperSpec): void {
+  if (!spec.build) return;
+  const buildLine = [spec.build.command, ...spec.build.args].map(shQuote).join(" ");
+  lines.push(`${buildLine} 2>&1 | tee -a ${shQuote(spec.logPath)}`);
+  lines.push(
+    `if [ "\${PIPESTATUS[0]}" -ne 0 ]; then printf '\\n[build fallido — %s · cerrá esta ventana]\\n' ${shQuote(spec.title)}; exec "\${SHELL:-bash}"; fi`,
+  );
+}
+
+/**
+ * Interactive: the app OWNS the terminal — foreground with a real TTY on stdin+
+ * stdout (Ink checks `stdout.isTTY`), no tee, no backgrounding. `exec` preserves
+ * this shell's PID, so the pidfile (written first) already holds the app's pid for
+ * the registry. The window closes when the app exits (you quit the TUI → done).
+ */
+function appendInteractiveLaunch(lines: string[], spec: NixWrapperSpec, cmdline: string): void {
+  lines.push(`printf '%s' "$$" > ${shQuote(spec.pidFile)}`);
+  lines.push(`exec ${cmdline}`);
+}
+
+/**
+ * Server/long-running: background so we grab its pid, tee output to the log, and
+ * keep the window alive after it exits. Closing it (SIGHUP) — or any exit — kills
+ * the app's whole process group (npm→node…).
+ */
+function appendServerLaunch(lines: string[], spec: NixWrapperSpec, cmdline: string): void {
   lines.push(`${cmdline} > >(tee -a ${shQuote(spec.logPath)}) 2>&1 &`);
   lines.push("__aw_pid=$!");
-  // Tie the app to this window: closing it (SIGHUP) — or any exit — kills the app's
-  // whole process group (npm→node…); non-interactive bash won't forward it for us.
   lines.push(
     `trap 'kill -TERM -"$__aw_pid" 2>/dev/null || kill -TERM "$__aw_pid" 2>/dev/null' EXIT HUP TERM INT`,
   );
@@ -114,7 +142,6 @@ export function buildNixWrapper(spec: NixWrapperSpec): string {
     `printf '\\n[%s — código %s · cerrá esta ventana para detener]\\n' ${shQuote(spec.title)} "$__aw_ec"`,
   );
   lines.push('exec "${SHELL:-bash}"');
-  return `${lines.join("\n")}\n`;
 }
 
 /** Build the OS-specific command that opens the persistent terminal window. */
