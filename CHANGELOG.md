@@ -4,6 +4,18 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.6.0] — 2026-07-05
+
+**El registro de skills soporta el layout canónico `.claude/skills/` y ya no clona el repo entero para descubrirlas.** Instalar `checklist-discipline` desde `erichowens/some_claude_skills` fallaba con `la fuente no contiene la skill` (disponibles: solo un suelto): el repo movió sus ~200 skills a `.claude/skills/<skill>/` y el scanner ignoraba todo dot-dir. Además ese repo pesa ~670 MB, así que aun encontrándola el clone traía todo. Solo CLI (bundle `w` sin cambios).
+
+### Fixed
+
+- **Scanner de fuentes** (`skills-manager` `walkSkillDirs`): desciende a `.claude` — el home canónico de skills de Claude (`.claude/skills/<skill>`) — manteniendo excluidos los demás dot-dirs (`.git`, `.github`, estado de editores) y `node_modules`. Un repo que empaqueta sus skills de la forma estándar vuelve a ser descubrible.
+
+### Changed
+
+- **Descubrimiento sin bajar el repo** (`fetchSourceCandidates` + `install-plugin-skills-git`): el clone de una fuente git ahora es *blobless + sparse* (`--filter=blob:none --no-checkout` + `sparse-checkout` de solo los `SKILL.md`). Descubrir las skills de una fuente cuesta unos MB en vez del repo completo (verificado: `erichowens/some_claude_skills` pasó de ~670 MB / timeout a ~2 MB en segundos). El directorio completo de la skill elegida (con sus `references/`/assets) se baja bajo demanda al instalar, vía `sparse-checkout add`; una fuente cuyo repo raíz **es** la skill restaura el árbol completo. Un servidor que rechaza el partial/sparse clone cae a un clone completo (sigue siendo correcto).
+
 ## [20.5.0] — 2026-07-04
 
 **`generate-launch` distingue modo interactivo (TUI) de servidor — la TUI ahora levanta al lanzar.** El wrapper backgroundeaba + redirigía stdout a `tee` (no-TTY), así que una app interactiva (Ink) caía a su salida de comando/help en vez de la UI. Bundle `w` **13.5.0**.

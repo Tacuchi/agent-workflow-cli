@@ -22,10 +22,15 @@ import type { Dirent } from "node:fs";
 import { readFile, readdir, readlink, rename } from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { gitClone } from "./install-plugin-skills-git.js";
+import {
+  gitClone,
+  gitCloneSkillManifests,
+  gitSparseAddSkillDir,
+  gitSparseDisable,
+} from "./install-plugin-skills-git.js";
 import { copyDir, hasValidFrontmatter } from "./install-plugin-skills.js";
 import { COMMAND_SKILL_PREFIX, LEGACY_SKILL_NAMES, SKILL_DIR_NAME } from "./install-skill.js";
 import {
@@ -187,7 +192,9 @@ function frontmatterName(content: string): string | null {
 }
 
 /** Bounded walk: nested skills up to skills/<category>/<skill>; skips
- *  dot-dirs, node_modules and symlinks (a link's Dirent is not isDirectory). */
+ *  node_modules, symlinks (a link's Dirent is not isDirectory) and dot-dirs —
+ *  EXCEPT `.claude`, the canonical Claude skills home, so a repo that packages
+ *  its skills the standard way (`.claude/skills/<skill>`) stays discoverable. */
 async function walkSkillDirs(dir: string, depth: number): Promise<SkillCandidate[]> {
   if (depth >= MAX_SCAN_DEPTH) return [];
   let entries: Dirent[];
@@ -199,7 +206,8 @@ async function walkSkillDirs(dir: string, depth: number): Promise<SkillCandidate
   const out: SkillCandidate[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    if (entry.name === "node_modules") continue;
+    if (entry.name.startsWith(".") && entry.name !== ".claude") continue;
     const full = join(dir, entry.name);
     if (await isSkillDir(full)) {
       out.push({ name: entry.name, path: full });
@@ -227,30 +235,62 @@ async function collectCandidates(dir: string): Promise<SkillCandidate[]> {
   return [...byName.values()];
 }
 
-/** Brings the source into a readable dir and lists its skills (temp clone for git). */
+type FetchedSource = {
+  candidates: SkillCandidate[];
+  /** Readies a picked candidate's dir with its FULL contents and returns the
+   *  path to copy from: identity for a local or fully-cloned source, an
+   *  on-demand sparse expansion for a manifest-only git clone. */
+  prepare: (candidate: SkillCandidate) => Promise<string>;
+  cleanup: () => Promise<void>;
+};
+
+/** Brings the source into a readable dir and lists its skills (temp clone for
+ *  git). The git clone is manifest-only (just the SKILL.md files) so DISCOVERY
+ *  never downloads unrelated repo content; the picked skill's full directory is
+ *  fetched later in `prepare`. */
 async function fetchSourceCandidates(
   resolved: ResolvedSource,
   ctx: CliContext,
-): Promise<
-  { candidates: SkillCandidate[]; cleanup: () => Promise<void> } | { code: string; error: string }
-> {
+): Promise<FetchedSource | { code: string; error: string }> {
   if (resolved.kind === "local") {
     if (!(await ctx.fs.exists(resolved.path))) {
       return { code: "SOURCE_NOT_FOUND", error: `el path local '${resolved.path}' no existe` };
     }
-    return { candidates: await collectCandidates(resolved.path), cleanup: async () => {} };
+    return {
+      candidates: await collectCandidates(resolved.path),
+      prepare: async (c) => c.path,
+      cleanup: async () => {},
+    };
   }
   const temp = await mkdtemp(join(tmpdir(), "aw-skill-fetch-"));
   const cleanup = async () => {
     await rm(temp, { recursive: true, force: true }).catch(() => {});
   };
+  // A server that rejects the partial/sparse clone falls back to a plain full
+  // clone (then `prepare` is identity — everything is already checked out).
+  let sparse: boolean;
   try {
-    await gitClone(resolved.url, temp, resolved.ref);
-  } catch (err) {
-    await cleanup();
-    return { code: "GIT_CLONE_FAILED", error: `git clone falló: ${(err as Error).message}` };
+    await gitCloneSkillManifests(resolved.url, temp, resolved.ref);
+    sparse = true;
+  } catch {
+    await rm(temp, { recursive: true, force: true }).catch(() => {});
+    try {
+      await gitClone(resolved.url, temp, resolved.ref);
+      sparse = false;
+    } catch (err) {
+      await cleanup();
+      return { code: "GIT_CLONE_FAILED", error: `git clone falló: ${(err as Error).message}` };
+    }
   }
-  return { candidates: await collectCandidates(temp), cleanup };
+  const prepare = async (c: SkillCandidate): Promise<string> => {
+    if (!sparse) return c.path;
+    const rel = relative(temp, c.path);
+    // Root-is-skill: the whole repo is the payload → restore the full tree.
+    if (rel === "" || rel === ".") await gitSparseDisable(temp);
+    else await gitSparseAddSkillDir(temp, rel);
+    return c.path;
+  };
+  return { candidates: await collectCandidates(temp), prepare, cleanup };
 }
 
 /** Read preceding a mutation: an unreadable registry ABORTS — the first write
@@ -442,7 +482,8 @@ export async function installSkill(
           `la fuente '${entry.source}' ya no contiene la skill '${name}'`,
         );
       }
-      await materializeCanonical(ctx, skillDir.path, canonical, name);
+      const srcDir = await fetched.prepare(skillDir);
+      await materializeCanonical(ctx, srcDir, canonical, name);
     } catch (err) {
       return fail("MATERIALIZE_FAILED", (err as Error).message);
     } finally {

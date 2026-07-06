@@ -401,6 +401,58 @@ describe("skills-manager (T3.3-T3.7)", () => {
     expect(installed.ok).toBe(true);
   });
 
+  it("descubre skills en el layout canónico .claude/skills/<skill> (repo estilo erichowens), sin listar otros dot-dirs", async () => {
+    const source = join(root, "dot-claude");
+    await makeSkillDir(join(source, ".claude", "skills"), "checklist-discipline");
+    // Other dot-dirs stay noise: `.git`, `.github/skills`, editor state, etc.
+    await makeSkillDir(join(source, ".github", "skills"), "should-not-appear");
+
+    const probe = await probeSkillSource(ctx, { source });
+    expect(probe.ok).toBe(true);
+    expect(probe.data?.candidates).toEqual(["checklist-discipline"]);
+
+    const registered = await registerSkill(ctx, { source, pick: "checklist-discipline" });
+    expect(registered.ok).toBe(true);
+    const installed = await installSkill(ctx, "checklist-discipline");
+    expect(installed.ok).toBe(true);
+    expect(existsSync(join(canonicalSkillsRoot(home), "checklist-discipline", "SKILL.md"))).toBe(
+      true,
+    );
+  });
+
+  it("git manifest-only: install materializa el dir completo con assets bundleados (references/), no solo el SKILL.md", async () => {
+    const repo = join(root, "assets-repo");
+    const skillDir = join(repo, ".claude", "skills", "checklist-discipline");
+    await mkdir(join(skillDir, "references"), { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      "---\nname: checklist-discipline\ndescription: d\n---\nbody\n",
+      "utf8",
+    );
+    await writeFile(join(skillDir, "references", "note.md"), "bundled asset\n", "utf8");
+    // Unrelated bulk the manifest-only discovery must never need.
+    await writeFile(join(repo, "huge.bin"), "X".repeat(200000), "utf8");
+    git(repo, "init", "-b", "main");
+    git(repo, "config", "user.email", "test@test");
+    git(repo, "config", "user.name", "test");
+    git(repo, "add", "-A");
+    git(repo, "commit", "-m", "v1");
+
+    const registered = await registerSkill(ctx, {
+      source: `file://${repo}`,
+      pick: "checklist-discipline",
+    });
+    expect(registered.ok).toBe(true);
+    const installed = await installSkill(ctx, "checklist-discipline");
+    expect(installed.ok).toBe(true);
+    const canonical = join(canonicalSkillsRoot(home), "checklist-discipline");
+    expect(existsSync(join(canonical, "SKILL.md"))).toBe(true);
+    // The sparse expansion must pull the WHOLE skill dir, not just the manifest.
+    expect(await readFile(join(canonical, "references", "note.md"), "utf8")).toContain(
+      "bundled asset",
+    );
+  });
+
   it("registro corrupto aborta toda mutación y el archivo queda intacto (nunca se pisa)", async () => {
     const dir = await makeSkillDir(root, "pdf");
     await registerSkill(ctx, { source: dir });

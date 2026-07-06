@@ -84,32 +84,69 @@ export async function installPluginSkillsFromGit(
   }
 }
 
-// Exported: skills-manager reuses the same shallow clone for register/update.
-export async function gitClone(url: string, dest: string, ref?: string): Promise<void> {
-  const gitArgs = ["clone", "--depth=1"];
-  if (ref) gitArgs.push("--branch", ref);
-  gitArgs.push(url, dest);
-
-  await new Promise<void>((resolve, reject) => {
-    // Never allow interactive prompts: under the TUI (alt-screen + raw mode) git
-    // would ask for credentials/host-key on an invisible /dev/tty and hang the
-    // busy-lock forever (same fix as GitCliAdapter). Fail fast instead.
+/** Runs a git subcommand, failing fast. Never allows interactive prompts:
+ *  under the TUI (alt-screen + raw mode) git would ask for credentials/host-key
+ *  on an invisible /dev/tty and hang the busy-lock forever (same fix as
+ *  GitCliAdapter). */
+function runGit(args: string[], cwd?: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const env = {
       ...process.env,
       GIT_TERMINAL_PROMPT: "0",
       GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes",
     };
-    const proc = spawn("git", gitArgs, { stdio: "pipe", env });
+    const proc = spawn("git", args, { stdio: "pipe", env, ...(cwd ? { cwd } : {}) });
     let stderr = "";
     proc.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
     proc.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`git clone falló (exit ${code}): ${stderr.trim()}`));
+      else reject(new Error(`git ${args[0]} falló (exit ${code}): ${stderr.trim()}`));
     });
     proc.on("error", reject);
   });
+}
+
+// Exported: skills-manager reuses the same shallow clone for register/update.
+export async function gitClone(url: string, dest: string, ref?: string): Promise<void> {
+  const gitArgs = ["clone", "--depth=1"];
+  if (ref) gitArgs.push("--branch", ref);
+  gitArgs.push(url, dest);
+  await runGit(gitArgs);
+}
+
+/** Blobless + sparse clone that materializes ONLY the SKILL.md manifests of a
+ *  source — enough to DISCOVER its skills without downloading unrelated repo
+ *  content (a 4 KB skill in a 600 MB repo costs a few MB, not the whole repo).
+ *  On servers that ignore the filter it degrades to a full fetch, still correct.
+ *  Expand a picked skill's full directory later with gitSparseAddSkillDir. */
+export async function gitCloneSkillManifests(
+  url: string,
+  dest: string,
+  ref?: string,
+): Promise<void> {
+  const gitArgs = ["clone", "--depth=1", "--filter=blob:none", "--no-checkout"];
+  if (ref) gitArgs.push("--branch", ref);
+  gitArgs.push(url, dest);
+  await runGit(gitArgs);
+  // Non-cone so a bare filename pattern matches SKILL.md at any depth (gitignore
+  // semantics); the `set` writes patterns, the `checkout` populates the tree.
+  await runGit(["sparse-checkout", "set", "--no-cone", "SKILL.md"], dest);
+  await runGit(["checkout"], dest);
+}
+
+/** Expands the sparse working tree to include one skill's full directory (its
+ *  SKILL.md plus any bundled references/assets), fetching just that dir's blobs. */
+export async function gitSparseAddSkillDir(dest: string, relDir: string): Promise<void> {
+  const clean = relDir.replace(/^\/+/, "").replace(/\/+$/, "");
+  await runGit(["sparse-checkout", "add", `/${clean}/`], dest);
+}
+
+/** Restores the full working tree — for a source whose repo root IS the skill,
+ *  the whole repo is its payload. */
+export async function gitSparseDisable(dest: string): Promise<void> {
+  await runGit(["sparse-checkout", "disable"], dest);
 }
 
 async function resolvePluginDir(cloneDir: string, namespace: string): Promise<string | null> {
