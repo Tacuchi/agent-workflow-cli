@@ -115,7 +115,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 
 ### The loops (Layer 2)
 
-A loop is a skill that teaches the AI **how to iterate** to a deliverable: detect gaps, resolve them (human via structured-choice, inline research or a composed capability), integrate and repeat until convergence. The 5 loops run the same **common engine** — persistent objective + verification-first, gap-driven convergent, single session per run, structured-choice + `flow` control (`Compactar`/`Cerrar`), compact/resume, artifacts as a live log, convergence gate — whose canon lives in [`loops/CHASSIS.md`](loops/CHASSIS.md); each loop is an **heir** adding only its deltas.
+A loop is a skill that teaches the AI **how to iterate** to a deliverable: detect gaps, resolve them (human via structured-choice, inline research, a small probe/PoC or a composed capability), integrate and repeat until convergence. The 5 loops run the same **common engine** — persistent objective + verification-first, gap-driven convergent, single session per run, structured-choice + `flow` control (`Compactar`/`Cerrar`), compact/resume, artifacts as a live log, convergence gate — whose canon lives in [`loops/CHASSIS.md`](loops/CHASSIS.md); each loop is an **heir** adding only its deltas.
 
 The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply the *code-editing loop policies*: safe git, DB scripts-only and the pre-commit **closing review gate** (nothing reaches a proposed commit unreviewed) — see [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (the chassis' sibling doc; document loops do not load it).
 

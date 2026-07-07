@@ -51,6 +51,10 @@ The plan is named `docs/plans/PPP-plan-<slug>.md`. `aw next-number docs/plans` r
 
 If the plan **includes UI**, the loop composes the `ui-design` capability and produces per-screen **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts of its session — the plan's UI Tasks reference them (see `../loops/plan-new-loop/LOOP.md` § *Delta 4* and `../artifacts/artifacts-design/SPEC.md`).
 
+## Risky assumptions → probe (PoC) tasks
+
+When the plan rests on a runnable unknown (external connection, SDK, UI behavior), the loop encodes an **early probe task** — or runs an inline probe if the solution itself depends on the answer (see `../loops/plan-new-loop/LOOP.md` § *Delta 5*; doctrine: `../loops/CHASSIS.md` § *Proof of concept*).
+
 ## Plan mode
 
 The skill resolves the input per the 4 rules above and describes the loop actions it would run (mode 4: the plan-doc it would materialize), without starting the iteration or writing files.

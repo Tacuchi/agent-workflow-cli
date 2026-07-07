@@ -51,7 +51,7 @@ Full doctrine in the chassis (§ *Internal sessions* + *Numbering*). This loop's
 
 ## Composes
 
-The **UI unspecified** gap (when the requirement involves UI; see *Gap taxonomy*) is resolved by **composing** the **`ui-design`** capability (built-in default `ui-spec`; rebindable via `.workflow/skills.toml`): it authors the UI spec natively (structure, vocabulary, Markdown format). It is a third gap-resolution mode (next to *research* and *human*): the loop contributes iteration/Q&A (design system, theme, variants, disambiguation) **via the same structured-choice**, and integrates the result as the spec's `## UI spec` section.
+The **UI unspecified** gap (when the requirement involves UI; see *Gap taxonomy*) is resolved by **composing** the **`ui-design`** capability (built-in default `ui-spec`; rebindable via `.workflow/skills.toml`): it authors the UI spec natively (structure, vocabulary, Markdown format). It is the chassis' composed-capability resolution mode (next to *research*, *probe* and *human*): the loop contributes iteration/Q&A (design system, theme, variants, disambiguation) **via the same structured-choice**, and integrates the result as the spec's `## UI spec` section.
 
 > **Two levels of the same capability:** here (SPEC) it produces `## UI spec` — the UI's *what*, coarse grain; in PLAN the plan loops produce **per-screen design SPECs** derived from that section (see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
 
@@ -72,7 +72,8 @@ The spec is completed **in place**: the draft's sections get **completed** + two
 ## Requirement            (sharpened, unambiguous)
 ## Context                (complete)
 ## Scope                  (clear In / Out)
-## Acceptance criteria    (testable, - [ ]; EARS / Given-When-Then style recommended)
+## Acceptance criteria    (testable, - [ ]; EARS style; behavioral ones expand in ## Scenarios)
+## Scenarios              (opt. — GIVEN/WHEN/THEN/AND blocks; each traces to ≥1 criterion)
 ## Assumptions            (declared)
 
 ## UI spec                (opt. — if UI is involved; via the ui-design capability / ui-spec skill)
@@ -101,7 +102,8 @@ Every doubt asked to the human + the chosen answer.
 | Vague requirement | the what/why is ambiguous | **human** |
 | Incomplete context | systems/components unidentified | **research** |
 | Blurry scope | `Out` missing, or In/Out overlap | **human** |
-| Untestable criteria | acceptance not verifiable | **human** (derive + confirm) |
+| Untestable criteria | acceptance not verifiable | **human** (derive + confirm — often as a `### Scenario`) |
+| Scenario missing | behavioral criterion without a `### Scenario` | the AI drafts GIVEN/WHEN/THEN + **human** confirms |
 | Open questions pending | explicit doubts | by nature |
 | Hidden assumptions | the spec assumes unstated things | **research** validates / **human** confirms |
 | Internal contradiction | sections contradict each other | **human** |
@@ -140,7 +142,7 @@ spec-refine-loop(spec):
         Cerrar    → goto finalize
       work = integrate(work, ans)            # → Q&A traceability / Open questions
   # no material gaps → analyze gate = Success criteria green (read-only) before offering Guardar:
-  issues = analyze(work)   # criteria trace to the Requirement · no contradictions · coherent Scope · Open questions closed/deferred
+  issues = analyze(work)   # criteria trace to the Requirement · no contradictions · coherent Scope · Open questions closed/deferred · scenarios↔criteria
   if issues: gaps += issues ; continue            # findings come back into the loop as gaps
   ans = structured_choice(content: [Guardar refinada, Preguntar algo más],
                         flow: [Compactar, Cerrar])
@@ -162,7 +164,7 @@ Full mechanism (3 cases, `Compactar`, re-run on demand with `--reopen`) in the c
 
 ## Convergence / exit
 
-- **No material gaps** → **analyze gate** (read-only) = **`Success criteria` green** (*verification-first*; the SPEC instance of the chassis convergence gate): every acceptance criterion traces to the `Requirement`, no internal contradictions, coherent `Scope` In/Out, `Open questions` closed or explicitly deferred. Whatever fails **comes back as a gap**; if it passes → offer `Guardar especificación refinada`.
+- **No material gaps** → **analyze gate** (read-only) = **`Success criteria` green** (*verification-first*; the SPEC instance of the chassis convergence gate): every acceptance criterion traces to the `Requirement`, no internal contradictions, coherent `Scope` In/Out, `Open questions` closed or explicitly deferred. Scenarios must trace to ≥1 criterion — and behavioral criteria to ≥1 scenario — without contradicting `Scope`. Whatever fails **comes back as a gap**; if it passes → offer `Guardar especificación refinada`.
 - `Guardar` → `edit_in_place_with_confirm(spec)` and `finalize`.
 - `Cerrar` → the chassis `finalize` (always persists `CHECKPOINT`; `BACKLOG` **only if** something is deferred — here: close reason + deferred `Open questions`).
 

@@ -48,8 +48,18 @@ Systems / components / sources involved. Known constraints.
 - Out: what is NOT included
 
 ## Acceptance criteria
-- [ ] verifiable criterion 1 (EARS / Given-When-Then style recommended)
+- [ ] verifiable criterion 1 (EARS style recommended; behavioral ones expand in ## Scenarios)
 - [ ] verifiable criterion 2
+
+## Scenarios         (opt.)
+Behavior made concrete — GIVEN/WHEN/THEN/AND blocks; each traces to ≥1 acceptance criterion.
+
+### Scenario: <name>
+GIVEN <precondition>
+  AND <precondition>
+WHEN <action>
+THEN <observable outcome>
+  AND <outcome>
 
 ## Assumptions       (opt.)
 Assumed facts.
@@ -66,6 +76,7 @@ Pending doubts. ← the spec-refine-loop closes them.
 - No `Type` field — `plan-new` infers the how.
 - `Scope` always carries `Out` (what stays out).
 - **Acceptance criteria = static testable criteria** (the "what"): `plan-exec` validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]` in the spec; the spec never mutates by execution, only by a re-refine.
+- **Scenarios = behavior made concrete** (uppercase GIVEN/WHEN/THEN/AND): draft them only when the prompt already describes behavior — deriving the rest is spec-refine work, not this command's.
 - If **UI** is involved, mention it in `Requirement`/`Context`; the `## UI spec` is authored in `spec-refine` (via the `ui-design` capability). "UI unspecified" is a first-class refinement gap.
 - The **gaps** the loop detects = weak sections of the schema (vague Requirement, Scope without `Out`, untestable criteria, open questions, undeclared assumptions, contradictions) **+ UI unspecified** when the requirement involves UI.
 - Equivalent alternative: the user creates the draft by hand. Both paths produce the same `docs/specs/NNN-spec-<slug>.md`.

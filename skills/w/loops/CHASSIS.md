@@ -69,7 +69,7 @@ The common cycle — each heir instantiates it in its `## Sequence` with its own
 1. `detect_gaps(work)`, minus the *exhausted* gaps (see *Research*).
 2. If `∅` → **convergence gate** (see *Convergence / exit*).
 3. If there are gaps: take a batch (≤3) and **seed** `CHECKPOINT.Pending/Next` (*artifact-first*).
-4. Resolve each gap with its **resolver** per the *ask-vs-research rule*: human (structured-choice) · inline research · a composed capability (e.g. `ui-design`).
+4. Resolve each gap with its **resolver** per the *ask-vs-research rule*: human (structured-choice) · inline research · a probe (PoC) · a composed capability (e.g. `ui-design`).
 5. **Integrate**, update `CHECKPOINT` → repeat.
 
 ## Internal sessions (managed) — one session per run
@@ -101,6 +101,7 @@ For every gap, a single question picks the resolver:
 
 > *"Was this already established in the current conversation?"* → **adopt it** (see *Adopted context*) — never re-ask or re-research settled conclusions.
 > *"Can I answer this by reading the repo/data?"* → **research** (autonomous).
+> *"Can I only answer it by RUNNING a small experiment?"* → **probe** (see *Proof of concept*).
 > *"Does it depend on what the user wants?"* → **ask the human** (structured-choice).
 
 ## Adopted context (host as producer)
@@ -126,6 +127,15 @@ Investigation is **inline**: an activity **inside the run's current session**, n
   - The investigation closes with status **`inconclusive`** in `CONCLUSIONS` and reports why.
   - The loop **degrades** the gap: to a **human question** (next batch → the flow's Q&A record: `Q&A traceability` in refine loops, `DECISION` in code-editing ones) or, failing that, **defers** it to the flow doc's `## Open questions` (spec/plan) — or the session's `BACKLOG` when the flow has no doc (quick).
   - The gap is marked **"already tried via research"** (`attempts[gap]++`, `MAX` cap) so `detect_gaps` does **not** re-fire it in a loop → guarantees convergence.
+
+## Proof of concept (probe)
+
+A **probe** (PoC / spike) is the resolver for **executable doubt**: research *reads*, a probe *runs* — an **atomic, throwaway-by-default** experiment answering **one falsifiable question** (does this connection / SDK / UI behavior work as assumed?). De-risk atomic parts **early**, never everything at the end.
+
+- **When**: risky assumption + not answerable by reading + failure would invalidate downstream work. Proposed via **structured-choice**.
+- **Lifecycle** (verification-first applies to the probe): seed question + pass/fail check **BEFORE** → run minimal → verdict in `CONCLUSIONS` (consequences → `DECISION`) → **discard** or promote to a real task/test.
+- **Isolation**: probe code lives in the **session folder** (gitignored) — never the source tree, **never committed**; DB probes are read-only (never DDL/DML).
+- A **failed probe is a finding, not a failure** — report it; the human decides if the plan reshapes.
 
 ## Structured-choice (design & batching)
 

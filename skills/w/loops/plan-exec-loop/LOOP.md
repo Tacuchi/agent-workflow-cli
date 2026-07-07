@@ -61,7 +61,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 - Executes the phase's `Tasks`; **skips** the ones already `- [x]` in the plan (the plan-doc is the per-task source of truth). Marks `- [x]` + state **in the plan** (living doc; never in a separate `TASKS`).
 - At **every phase boundary**: validate, run the **closing review gate** (Delta 5), update the `CHECKPOINT` (Completed += Phase N, Next = Phase N+1) and propose commits.
 - Records in `DECISION` only the **non-obvious**, **as it is decided** (per-phase decisions accumulate in the SINGLE `DECISION`, tagged by phase/task — e.g. `Origin: T2 (F1)`).
-- The chassis **gap-driven** engine applies here **inside a task**: facing a non-obvious decision/doubt → inline research OR structured-choice.
+- The chassis **gap-driven** engine applies here **inside a task**: facing a non-obvious decision/doubt → inline research, a probe (Delta 7) OR structured-choice.
 
 ## Delta 2 — Git policy: **safe branch + proposed commits**
 
@@ -73,7 +73,7 @@ Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *DB scripts-only
 
 ## Delta 4 — Validation
 
-- After executing (per phase and at the end): run tests/checks against `Validations` + `Final behavior` + the spec's acceptance/success criteria.
+- After executing (per phase and at the end): run tests/checks against `Validations` + `Final behavior` + the spec's acceptance/success criteria (its `## Scenarios`, if present, are ready-made test cases: GIVEN=arrange · WHEN=act · THEN=assert).
 - A validation that **runs and fails** → back to the task (gap); no advancing.
 - **Validation depending on an unapplied migration**: since the AI never executes the DML, it **cannot run it read-only** → it is **deferred** (handoff to a DBA), it does **not block progress**. Recorded in the plan's `Open questions` + `BACKLOG`, marked "verification pending until the SQL is applied". (Reuses the chassis degrade/defer pattern + `MAX` cap → avoids the "back to the task" loop.)
 
@@ -88,6 +88,14 @@ Full gate in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Closing review ga
 - A phase closes **done** when its tasks are `- [x]` and its validation passed **or** was deferred (SQL handoff). Possible state: **"done — SQL pending application"**.
 - All phases done → final *structured-choice* (content: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`).
 - **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.
+
+## Delta 7 — Probe (PoC) tasks
+
+Chassis § *Proof of concept (probe)*, instantiated for execution — for a plan's explicit probe task or a runnable doubt inside a task:
+
+- Seed the question + pass/fail check → run **throwaway code in the session folder** (never the source tree, never committed; DB probe = read-only) → verdict in `CONCLUSIONS`, consequences in `DECISION` (tagged by task) → mark the task with its verdict.
+- A **failed probe does not fail the phase** — it de-risked it: surface it (structured-choice); reshaping the plan goes to `Open questions` + `BACKLOG` (or `/w:plan-refine`).
+- **Promotion**: probe code reaches the sources only as a normal task edit (branch-check + review gate) — never by committing the probe.
 
 ## Sequence
 
@@ -108,7 +116,9 @@ plan-exec-loop(PPP-plan-<slug>.md):
         if read-only DB query → SCRIPTS.sql + execute read-only
         if DB change (DDL/DML) → draft in SCRIPTS.sql (session artifact, DO NOT execute)
         if non-obvious decision → DECISION (tagged by phase/task, in the SINGLE DECISION)
-        if doubt/gap → inline research OR structured-choice    # chassis
+        if probe (PoC) task / runnable doubt → seed check → run throwaway code in the
+            session folder → verdict → CONCLUSIONS/DECISION; failed → structured-choice (Delta 7)
+        if doubt/gap → inline research, probe OR structured-choice   # chassis
       mark Task - [x] + state IN THE PLAN                  # AFTER completing the Task (the plan-doc is the per-task source of truth)
     phase validation:
         what runs and fails → back to the task

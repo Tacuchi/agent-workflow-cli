@@ -60,6 +60,12 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // plan-new gained input mode 4 (external-plan adoption), plan-refine the
   // spec-less degradation, quick the adopted-context seeding. ~0.5-1 KB of
   // headroom per flow over the measured totals.
+  // Raised again in v20.8.0 (probe/PoC doctrine + spec Scenarios): the chassis
+  // gained § Proof of concept (+ the fourth ask-vs-research resolver: runnable
+  // doubt → probe), plan-new gained Delta 5 (early probe tasks), plan-exec
+  // Delta 7 (probe execution) + Scenarios-as-test-cases, spec-refine the
+  // ## Scenarios schema + gate clause, quick/plan-refine one resolver line
+  // each. Same ~1 KB headroom over the measured totals.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -69,17 +75,17 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 43_000,
+      budget: 44_600,
     },
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 37_300,
+      budget: 39_200,
     },
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 36_700,
+      budget: 39_100,
     },
     {
       flow: "plan-refine",
@@ -89,7 +95,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 46_100,
+      budget: 48_200,
     },
     {
       flow: "plan-exec",
@@ -99,7 +105,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 41_200,
+      budget: 44_000,
     },
   ];
 
@@ -111,6 +117,36 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
       if (total > budget) offenders.push(`${flow}: ${total} B > budget ${budget} B`);
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("Doctrine guards — G9 · probe (PoC) + spec Scenarios pins", () => {
+  // Pin the v20.8.0 concepts so a future compression pass cannot silently
+  // drop the fourth resolver or desynchronize the draft/refined spec schemas.
+  it("the chassis keeps § Proof of concept and the fourth resolver line", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    expect(chassis).toContain("## Proof of concept (probe)");
+    expect(chassis).toMatch(/research \*reads\*, a probe \*runs\*/);
+    expect(chassis).toContain("RUNNING a small experiment");
+  });
+
+  it("the plan loops instantiate the probe (Delta 5 planning / Delta 7 execution)", async () => {
+    const planNew = await readRel("loops/plan-new-loop/LOOP.md");
+    const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
+    expect(planNew).toContain("## Delta 5 — Probe (PoC) tasks — de-risk early");
+    expect(planExec).toContain("## Delta 7 — Probe (PoC) tasks");
+  });
+
+  it("spec draft and refined schemas agree on ## Scenarios (GIVEN/WHEN/THEN/AND)", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
+    for (const doc of [specNew, specRefine]) {
+      expect(doc).toContain("## Scenarios");
+      expect(doc).toContain("GIVEN/WHEN/THEN/AND");
+    }
+    // Shared skeleton: both schemas carry the same criterion↔scenario anchor.
+    expect(specNew).toContain("behavioral ones expand in ## Scenarios");
+    expect(specRefine).toContain("behavioral ones expand in ## Scenarios");
   });
 });
 

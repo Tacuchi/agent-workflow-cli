@@ -100,7 +100,7 @@ plan-refine-loop(plan):
     gaps = detect_gaps(work)  (plan-new taxonomy + plan↔spec drift)  minus the exhausted ones
     if gaps == ∅: break
     batch ≤3 → seed CHECKPOINT.Pending/Next → resolve each gap:
-      research (scoped to the delta — Delta 3) · human (structured-choice) ·
+      research (scoped to the delta — Delta 3) · human (structured-choice) · probe (chassis) ·
       ui-design (Delta 4, only new/changed screens)
     integrate + update CHECKPOINT                              # artifact-first cycle
   coherence gate (read-only) = Success criteria green:

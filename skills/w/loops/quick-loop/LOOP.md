@@ -102,7 +102,7 @@ quick-loop(prompt):
     if read-only DB query → SCRIPTS.sql + execute read-only
     if DB change (DDL/DML) → SCRIPTS.sql (session artifact, DO NOT execute)
     if non-obvious decision → DECISION
-    if doubt/gap → inline research OR structured-choice      # chassis
+    if doubt/gap → inline research, a probe OR structured-choice   # chassis § Proof of concept
     if the task GROWS → propose escalating to SPEC/PLAN      # structured-choice, recommendation first
         accepts PLAN → handoff (progress stays; BACKLOG→seeded plan — resume there, deferred) → goto finalize
         accepts SPEC → handoff (progress stays; BACKLOG→"continued live") → finalize →

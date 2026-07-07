@@ -88,7 +88,7 @@ Replaces the spec gap taxonomy with a planning-oriented one:
 | Task not atomic | complexity > XS | the AI re-splits |
 | Missing deps | order unclear | research / human |
 | Spec criteria uncovered | tasks don't trace to acceptance criteria | the AI derives + human confirms |
-| Unaddressed risks | technical risks unmitigated/undeclared | human |
+| Unaddressed risks | technical risks unmitigated/undeclared | human / **probe** (Delta 5) |
 | UI without design SPEC *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## UI spec` in the spec, or UI tasks) without `NNN-SPEC-*.md` in the session | **`ui-design` capability** |
 
 ## Delta 3 — What research investigates here
@@ -102,7 +102,14 @@ The **UI without design SPEC** gap is resolved by **composing** the **`ui-design
 - It authors **one design SPEC per screen** as a session artifact: `NNN-SPEC-<SLUG>.md` (numbering local to the session — see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
 - It **derives** from the spec's `## UI spec` section when present (splits it per screen and raises it to executable detail); otherwise it authors from the `Requirement` (design system/theme/ambiguities via *structured-choice*, counts in the batch).
 - The plan's **UI Tasks reference** their SPEC's path — that reference is the **source of truth** — and `plan-exec-loop` reads them as the design reference.
-- It is the same third gap-resolution mode of the chassis (next to *research* and *human*).
+- It is the chassis' composed-capability resolution mode (next to *research*, *probe* and *human*).
+
+## Delta 5 — Probe (PoC) tasks — de-risk early
+
+Chassis § *Proof of concept (probe)*, instantiated for planning. Two placements:
+
+- **Plan-shaping unknown** (the `Solution` itself depends on the answer) → run the probe **inline now**; the verdict (`CONCLUSIONS`) feeds `Solution` / `Risks / impact`.
+- **Execution-time risk** (a task will build on a risky, runnable assumption) → encode an explicit **probe task**, placed **early** — before the tasks that depend on its verdict; the matching `Risks / impact` entry references it.
 
 ## Sequence
 
@@ -118,7 +125,7 @@ plan-new-loop(spec):
     gaps = detect_gaps(work)  (Delta 2 taxonomy)  minus the exhausted ones
     if gaps == ∅: break
     batch ≤3 → seed CHECKPOINT.Pending/Next → resolve each gap:
-      research (maps code/impact — Delta 3) · human (structured-choice) · ui-design (Delta 4)
+      research (maps code/impact — Delta 3) · human (structured-choice) · probe (Delta 5) · ui-design (Delta 4)
     integrate + update CHECKPOINT                              # artifact-first cycle
   coherence gate (read-only) = Success criteria green:
     - every spec acceptance criterion traces to a phase/task
