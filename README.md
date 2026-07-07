@@ -1,6 +1,6 @@
 # @tacuchi/agent-workflow-cli
 
-Agnostic runtime CLI for AI development workflows. Bundles the universal **`w`** skill set — a **stages + loops + artifacts** harness — and pairs with optional company-specific plugins for multi-empresa parametrization.
+Agnostic runtime CLI for **Workline** — the **stages + loops + artifacts** system for agent work. Bundles the universal **`w`** skill set (`w` = *workline*) and pairs with optional company-specific plugins for multi-empresa parametrization.
 
 The CLI exposes two binaries: `agent-workflow` (canonical) and `aw` (short alias).
 
@@ -12,7 +12,7 @@ npm install -g @tacuchi/agent-workflow-cli
 
 ## The model — stages + loops + artifacts
 
-The harness has three layers plus a permanent `docs/` zone:
+Workline has three layers plus a permanent `docs/` zone:
 
 - **Layer 1 · Commands** (`/w:*`) — the only thing the user invokes:
   - **SPEC** — `/w:spec-new` (single-pass draft) → `/w:spec-refine` (gap-driven loop) → `docs/specs/`.
@@ -20,10 +20,11 @@ The harness has three layers plus a permanent `docs/` zone:
   - **QUICK** — `/w:quick` — lightweight shortcut; escalates live to SPEC when the goal outgrows a quick.
   - **EXPORTS** — `/w:export-scripts` · `export-manuals` · `export-diagrams` · `export-reports` (the only path that promotes artifacts to `docs/`).
   - **Bootstrap** — `/w:workspace-init` turns any folder into a workspace (1+ sources; no project/hub distinction).
+  - **Transversal** — `/w:status` · `/w:fix-git` · `/w:generate-launch` · `/w:persist` (persists in-conversation work into `docs/` — classify → `docs/research` · spec draft · plan adoption; the host→`docs/` counterpart of `export-*`).
 - **Layer 2 · Loops** — the AI runs them whole: `spec-refine-loop` · `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` · `quick-loop` — all heirs of the shared engine `skills/w/loops/CHASSIS.md` (+ `CODE-POLICIES.md` for the code-editing loops). Each loop is a **persistent goal** that runs until its success criteria are green (verification-first); gap-driven, with **structured-choice** lifecycle control (compact/close — `AskUserQuestion` on Claude Code, numbered markdown elsewhere) and resumable `CHECKPOINT`.
 - **Layer 3 · Sessions + artifacts** — internal, ephemeral process state under `.workflow/sessions/` (`SESSION` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` · `ANALYSIS-FILE` · `CONCLUSIONS` · `DECISION` · …). Sessions are slug-named folders, created by loops, never by the user.
 
-**Pluggable capabilities.** Loops compose capability **roles** (`ui-design`, `sql`, `git`, `research`, `diagrams`, `overview`); the concrete skill bound to each role is resolved via `.workflow/skills.toml` (cascade: built-in default → `~/.workflow/skills.toml` → workspace). Inspect bindings with `aw skills` (advisory: it also warns when a bound skill is not installed in the standard skill roots — the binding itself is not auto-validated). Code/testing/writing conventions **and tool authoring** (`creating-tools`) are **not** roles — they're ambient skills the host auto-applies when present, independent of the workflow. Per-source launch scripts live under `.workflow/launch/` (machine-specific, gitignored); created tools live under `docs/tools/`.
+**Pluggable capabilities.** Loops compose capability **roles** (`ui-design`, `sql`, `git`, `research`, `diagrams`, `overview`); the concrete skill bound to each role is resolved via `.workflow/skills.toml` (cascade: built-in default → `~/.workflow/skills.toml` → workspace). Inspect bindings with `aw skills` (advisory: it also warns when a bound skill is not installed in the standard skill roots — the binding itself is not auto-validated). Code/testing/writing conventions **and tool authoring** (`creating-tools`) are **not** roles — they're ambient skills the host auto-applies when present, independent of Workline. Per-source launch scripts live under `.workflow/launch/` (machine-specific, gitignored); created tools live under `docs/tools/`.
 
 **Invariants.** No auto-export (only `export-*` writes `docs/`); the spec and plan are documents, not artifacts; DB scripts-only (never executes DML/DDL); git-safe (verifies the per-source working branch before edits; proposes commits).
 
@@ -65,8 +66,8 @@ Running `agent-workflow` (or `aw`) with no arguments opens the tab-based TUI:
 
 | Tab | What it does |
 |---|---|
-| **Status** | Doctor dashboard: CLI / hosts / hooks / MCP tiles + daily operational logs. The hosts tile jumps to [Workflows]. |
-| **Workflows** | Per-host administration of the bundled `w` SKILL (install / reinstall / uninstall, `hooks armed` state) plus a compact flows overview. |
+| **Status** | Doctor dashboard: CLI / hosts / hooks / MCP tiles + daily operational logs. The hosts tile jumps to [Workline]. |
+| **Workline** | Per-host administration of the bundled `w` SKILL (install / reinstall / uninstall, `hooks armed` state) plus a compact flows overview. |
 | **Project** | Workspace sources, branches and git-flow actions. |
 | **MCP** | dbhub connections. **Install writes the host's user-scope config** (e.g. `~/.claude.json`, `~/.codex/config.toml`) — never the project `.mcp.json`; install once, use it in every project. `aw mcp setup` remains the workspace-capable CLI path (workspace by default; `--workspace <dir>` / `--global --force`). |
 | **Skills** | Standalone third-party skills manager (skills.sh model): register from `owner/repo`, a git URL (`#ref` supported) or an absolute local path; install materializes a canonical copy in `~/.agents/skills/<name>` (the open-standard dir every non-Claude host scans) plus a symlink replica in `~/.claude/skills/<name>` (copy fallback where symlinks are unavailable). Seeded with the recommended external skills from the companion marketplace README — keep both lists in sync. |

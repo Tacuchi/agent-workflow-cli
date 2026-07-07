@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents working with code in this reposi
 
 ## What this is
 
-`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus the bundled universal `w` SKILL (`skills/w/`) that drives AI development workflows (stages + loops). Published to npm; the tarball ships `dist/` + `skills/`. `self install --target <claude|codex|warp|oz|agents|gemini|opencode|crush>` copies the SKILL, command wrappers, and hooks into the host agent dirs.
+`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus the bundled universal `w` SKILL (`skills/w/`) implementing **Workline** (`w` = *workline*), the stages + loops + artifacts system for agent work. Published to npm; the tarball ships `dist/` + `skills/`. `self install --target <claude|codex|warp|oz|agents|gemini|opencode|crush>` copies the SKILL, command wrappers, and hooks into the host agent dirs.
 
 ## Commands
 

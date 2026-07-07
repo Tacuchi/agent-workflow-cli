@@ -4,6 +4,23 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.7.0] — 2026-07-06
+
+**El sistema se llama Workline (`w` = *workline*) y los flujos adoptan trabajo nacido en el host (host-as-producer).** Dos colisiones resueltas: "workflow(s)" chocaba con la feature homónima de Claude Code y "harness" estaba doble-reservado (sistema vs host) — desde ahora *harness* nombra SOLO al host. Re-gloss sin breaking: `/w:`, skill `w`, npm, bins `aw`/`agent-workflow` y `.workflow/` intactos. Y la doctrina deja de ser "componible por omisión": el host pasa de ejecutor sustituible a **productor legítimo de insumos** (spec 009 del workspace). Bundle `w` **13.6.0**.
+
+### Added
+
+- **`/w:persist`** (transversal, solo-doc — cero código por host): persiste trabajo **ya hecho en la conversación** (análisis, conclusiones, un plan) hacia `docs/`, clasificando por forma: análisis → `docs/research/NNN-research-<slug>.md` · requisito → draft de spec (procedimiento `spec-new`) · plan → adopción (`plan-new` modo 4). Con `## Origin` + atribución (host · modelo · fecha), anti-duplicado (structured-choice `Actualizar` / `Agregar perspectiva` / `Documento nuevo`) y hard floor propio (adopt-don't-re-derive, confirmar antes de escribir, `aw next-number`, nunca sesiones). Es la contraparte host→`docs/` de `export-*` (que sigue siendo la única vía sesión→`docs/`).
+- **`docs/research`** — categoría nueva del zone `docs/`, dueña de análisis standalone (ni spec ni plan). Declarada en SKILL.md (diagrama + invariante 2), `artifacts/README`, `exports/README`. Schema fijo con `## Perspectives` para vistas multi-agente.
+- **Patrón multi-host docs-mediado** (persist § *Multi-host cross-analysis*): N hosts analizan lo mismo → cada uno persiste su perspectiva atribuida (carve-out del anti-duplicado: misma pregunta + perspectiva declarada ≠ duplicado) → un host fuerte cruza los N docs y persiste la síntesis referenciando fuentes. Las sesiones (gitignored, machine-local) quedan fuera del intercambio — sin doctrina de concurrencia.
+- **`plan-new` modo 4 — adopción de plan externo**: contenido que *ya es un plan* (plan mode del host, hand-written, otro agente) se materializa single-pass NO RESEARCH como `docs/plans/PPP-plan-<slug>.md` (`## Origin` = "adopted from <source>" + atribución), sin regenerar sobre planes existentes; luego ofrece `plan-refine`/`plan-exec`. `plan-refine` gana paridad con spec-refine (procedencia irrelevante: generado, hand-written o adoptado) y **degradación spec-less** del gate de coherencia (los criterios anclan al `## Final behavior` propio del plan; "spec criteria uncovered" y "plan↔spec drift" no aplican).
+- **Doctrina adopted-context** (chasis § *Adopted context* + SKILL.md § *Host as producer*): lo ya establecido en la conversación (análisis con feature nativa del host, respuestas ya dadas) cuenta como **research completado** — se adopta (transcripción con procedencia, verificada por gate integrity), nunca se re-deriva ni se re-pregunta. Tercer resolutor de la regla ask-vs-research; scope de research incluye la conversación; quick lo reconoce en Reads/secuencia y el size gate no dispara señales ya resueltas por contexto adoptado; `spec-new` documenta la reutilización por adopción.
+
+### Changed
+
+- **Naming Workline** (re-gloss, sin breaking): prosa de doctrina ("the workflow"/"agent-workflow harness" → Workline), tab del TUI `[2] Workflows` → `[2] Workline`, header del TUI `WORKLINE`, subtítulo "stages + loops + artifacts **system**", README/AGENTS/package.json reposicionados (Workline = el sistema; `agent-workflow` = el runtime que lo implementa). "harness" queda reservado para el host en todo el corpus.
+- **Guard G1** (presupuestos de carga por flujo): subidos conscientemente (+~1.5-3.6 KB por flujo) por la doctrina host-as-producer; comentario en la tabla documenta el porqué.
+
 ## [20.6.0] — 2026-07-05
 
 **El registro de skills soporta el layout canónico `.claude/skills/` y ya no clona el repo entero para descubrirlas.** Instalar `checklist-discipline` desde `erichowens/some_claude_skills` fallaba con `la fuente no contiene la skill` (disponibles: solo un suelto): el repo movió sus ~200 skills a `.claude/skills/<skill>/` y el scanner ignoraba todo dot-dir. Además ese repo pesa ~670 MB, así que aun encontrándola el clone traía todo. Solo CLI (bundle `w` sin cambios).
