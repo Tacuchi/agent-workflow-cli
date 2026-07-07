@@ -14,7 +14,7 @@ export interface TabConfig {
 /** Canonical tab list in presentation order + numeric shortcut. */
 export const TABS_LIST: readonly TabConfig[] = [
   { id: "status", key: "1", label: "Status" },
-  { id: "workflow", key: "2", label: "Workflows" },
+  { id: "workflow", key: "2", label: "Workline" },
   { id: "project", key: "3", label: "Project" },
   { id: "mcp", key: "4", label: "MCP" },
   { id: "skills", key: "5", label: "Skills" },

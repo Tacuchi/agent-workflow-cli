@@ -1,4 +1,4 @@
-// [Workflows] tab data — hardcoded to avoid I/O during render.
+// [Workline] tab data — hardcoded to avoid I/O during render.
 // Kept in sync with the redesigned model (stages + loops + artifacts):
 //   - skills/w/commands/   (/w: slash commands — 1 per .md file)
 //   - skills/w/README.md   (3 flows: SPEC / PLAN / QUICK)
@@ -29,7 +29,7 @@ export interface WorkflowContent {
 }
 
 export const WORKFLOW_CONTENT: WorkflowContent = {
-  // Single line: [Workflows] renders it with truncate — the doctrinal detail
+  // Single line: [Workline] renders it with truncate — the doctrinal detail
   // lives in the `w` bundle, not in the TUI.
   overview:
     "3 flows (SPEC · PLAN · QUICK) drive convergent loops — each a persistent goal that runs until its Success criteria are green (verification-first).",
@@ -55,6 +55,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     "/w:status",
     "/w:fix-git",
     "/w:generate-launch",
+    "/w:persist",
     "/w:export-scripts",
     "/w:export-manuals",
     "/w:export-diagrams",

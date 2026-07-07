@@ -184,7 +184,7 @@ async function dispatchMenuAction(
 
 function printHelp(commands: string[]): void {
   const lines = [
-    "agent-workflow — generic session-lifecycle CLI",
+    "agent-workflow — Workline runtime CLI (session lifecycle)",
     "",
     "Usage:",
     "  agent-workflow [--namespace <name>]",

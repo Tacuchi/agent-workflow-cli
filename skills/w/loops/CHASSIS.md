@@ -1,6 +1,6 @@
 # CHASSIS — the loop engine
 
-This document is the **common engine** of the agent-workflow loops: the doctrine every loop runs underneath its deltas. **It is not a skill** — it is a referenced document: every loop orders it read from its `## Inherits`, **always, before its deltas**. If you edit the engine, edit it **here** — heirs never repeat it, they only reference it.
+This document is the **common engine** of the Workline loops: the doctrine every loop runs underneath its deltas. **It is not a skill** — it is a referenced document: every loop orders it read from its `## Inherits`, **always, before its deltas**. If you edit the engine, edit it **here** — heirs never repeat it, they only reference it.
 
 ## Heirs (canonical list)
 
@@ -99,15 +99,25 @@ The **CLI owns the number**: `aw session-create` prepends a **global, sequential
 
 For every gap, a single question picks the resolver:
 
+> *"Was this already established in the current conversation?"* → **adopt it** (see *Adopted context*) — never re-ask or re-research settled conclusions.
 > *"Can I answer this by reading the repo/data?"* → **research** (autonomous).
 > *"Does it depend on what the user wants?"* → **ask the human** (structured-choice).
+
+## Adopted context (host as producer)
+
+The host is not only the loop's executor — it is a legitimate **producer** of input. Conclusions **already established in the current conversation** (a host-native analysis, answers the user already gave, a plan built with the host's planner) count as **completed research**: on entry, **adopt** them — seed `SESSION.Objective`/`Success criteria`, reference them in `CONCLUSIONS`, record provenance (`## Origin` = adopted from the host conversation) — never re-derive or re-ask them.
+
+- Adoption is **transcription, not trust**: the convergence gate still verifies adopted conclusions (*gate integrity*); anti-duplicate still applies.
+- Materialization pattern = the quick escalation's (single-pass, **NO RESEARCH**), inverted: **host → flow**.
+- Gap signals already resolved by adopted context do **not** fire (e.g. "ambiguous requirements" after a host pre-analysis).
+- To persist finished work without a loop: [`/w:persist`](../commands/persist.md) (transversal).
 
 ## Research: autonomy, scope & failure
 
 Investigation is **inline**: an activity **inside the run's current session**, never a separate session. It writes its artifacts (`ANALYSIS-FILE` → `CONCLUSIONS`, + read-only `SCRIPTS.sql` if it queries DB) into the **session's own folder**.
 
 - **Autonomous**: the AI investigates inline and reports **without asking permission**. The human learns of it at integration time (in the flow's decision record — e.g. `## Refinement decisions` in the refine loops, `DECISION` in the code-editing ones) and keeps control via the `flow` control.
-- **Scope**: workspace + associated repos (sources) + DB MCPs.
+- **Scope**: the current conversation (*adopted context* — settled conclusions are reused, never re-derived) + workspace + associated repos (sources) + DB MCPs.
 - **DB rule** (the single exception to autonomy):
   1. **MCP choice**: if the gap needs DB and there is **>1 candidate MCP with no configured default**, the AI asks which one to use. That question goes through the **same structured-choice** as a **content question** (counts inside the ≤3 + `flow` limit), **before** running queries. A single MCP or a default → no question.
   2. Write the queries **first** into the session's `SCRIPTS.sql`.
@@ -137,7 +147,7 @@ Investigation is **inline**: an activity **inside the run's current session**, n
 Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of a separate file. Three cases when the flow's command runs over an input:
 
 1. **In progress** (a `CHECKPOINT.md` exists in the session) → resume from the recorded progress (resolved gaps, Q&A, `attempts`, in-flight inline research).
-2. **No progress** (no CHECKPOINT and the input doc does **not** have the flow's prior-work mark) → start from zero reading the input doc.
+2. **No progress** (no CHECKPOINT and the input doc does **not** have the flow's prior-work mark) → start from zero reading the input doc (plus any *adopted context* — settled in-conversation conclusions are input, not something to re-derive).
 3. **Already converged / re-run on demand** (no open CHECKPOINT but the doc **already has** the mark) → **first-class operation**: while the flow stays in its stage, re-running the command over the same input **as many times as needed** is supported. `create_or_resume` finds the existing session — typically **closed** after convergence — by descriptor + `## Origin` and **reopens** it (see *Internal sessions*: detection via `aw sessions --state all` / `aw resume-summary --include-recent-closed`, reopening via `aw session-resume --code <NNN> --reopen`); incremental work reading the **doc itself**.
 
 > Each heir defines its **prior-work mark**: in the refine loops, the presence of `## Refinement decisions` + `## Q&A traceability` in the doc; in plan-exec, the plan-doc's `- [x]` checkboxes; quick has no doc (resume by CHECKPOINT only).
@@ -151,7 +161,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 ## docs/ boundary — no auto-export (hard rule)
 
-A loop writes into `docs/` **only** its own flow's doc (spec-refine: `docs/specs` · plan-new/plan-refine/plan-exec: `docs/plans` · quick: **none** — it never touches `docs/`). No loop **graduates/promotes artifacts** into `docs/`: everything else (migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams`, …) is done by the separate **`export-*`** skills, as an explicit later step. Artifacts stay in their sessions until then. If a task creates a tool/utility, the ambient skill `creating-tools` documents it in `docs/tools` (auto-discovered by its `description`; the workflow is **indifferent** — it does not bind it).
+A loop writes into `docs/` **only** its own flow's doc (spec-refine: `docs/specs` · plan-new/plan-refine/plan-exec: `docs/plans` · quick: **none** — it never touches `docs/`). No loop **graduates/promotes artifacts** into `docs/`: everything else (migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams`, …) is done by the separate **`export-*`** skills, as an explicit later step. Artifacts stay in their sessions until then. If a task creates a tool/utility, the ambient skill `creating-tools` documents it in `docs/tools` (auto-discovered by its `description`; Workline is **indifferent** — it does not bind it).
 
 ## Code-editing loop policies → CODE-POLICIES.md
 

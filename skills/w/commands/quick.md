@@ -33,6 +33,7 @@ For scoped, direct tasks that do not justify going through SPEC or PLAN. Creates
 ## What the loop does
 
 - Edits code in the workspace sources.
+- **Adopts prior context**: analysis/conclusions already established in this conversation (e.g. via a host-native feature) are **input** — seeded into the session with `## Origin` = adopted, never re-derived or re-asked (chassis § *Adopted context*).
 - Minimal session artifacts (lazy DECISION, proposed commit).
 - **Proportional closing review gate** before proposing the single commit: re-reads the diff applying the installed ambient conventions and fixes or defers (see `../loops/quick-loop/LOOP.md` § *Sequence*).
 - **Never touches `docs/`** and exports nothing.

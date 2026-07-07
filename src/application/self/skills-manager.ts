@@ -660,7 +660,7 @@ export async function listSkills(
   // (ownership guard intact). The source comes from the skills.sh lock when it
   // knows it; "" when nobody does. Excluded: the `w` bundle and its
   // synthesized `w-*` namespace (skill-as-command) + legacy names (managed by
-  // [Workflows], not "someone else's"). With an UNREADABLE registry nothing is
+  // [Workline], not "someone else's"). With an UNREADABLE registry nothing is
   // classified: entries could belong to this engine and would be mislabeled as
   // foreign.
   const bundleOwned = new Set<string>([SKILL_DIR_NAME, ...LEGACY_SKILL_NAMES]);

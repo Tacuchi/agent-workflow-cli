@@ -123,7 +123,7 @@ export class PathsService {
  * regardless of how many sources the workspace declares.
  *
  * Walks up from `env.cwd()` looking for the nearest directory that contains
- * `.<ns>/` (the workflow marker). This guarantees that even when the user has
+ * `.<ns>/` (the workspace marker). This guarantees that even when the user has
  * `cd`-ed into a source subdirectory of the workspace before invoking
  * `graduate`, the destination still resolves to the workspace root rather than
  * the source.

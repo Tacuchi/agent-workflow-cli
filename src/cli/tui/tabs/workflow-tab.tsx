@@ -1,4 +1,4 @@
-// [Workflows] — per-host administration of the `w` bundle as the main section
+// [Workline] — per-host administration of the `w` bundle as the main section
 // (HostAdminSection) + minimal info: a 1-line overview and a compact flows
 // strip. Doctrinal detail lives in the bundle itself, not in the TUI.
 
@@ -28,12 +28,12 @@ export function WorkflowTab({ ctx, isActive, onToast }: WorkflowTabProps) {
   return (
     <Box flexDirection="column">
       <PageHead
-        title="Workflows"
+        title="Workline"
         count={{
           label: `${w.slashCommands.length} slash commands · ${w.hooks.length} hooks`,
           tone: "accent",
         }}
-        action={<Text color={colors.mute}>stages + loops + artifacts harness</Text>}
+        action={<Text color={colors.mute}>stages + loops + artifacts system</Text>}
       />
 
       <Box>

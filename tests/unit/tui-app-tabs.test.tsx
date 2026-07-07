@@ -82,7 +82,7 @@ describe("App (tab-home)", () => {
     expect(frame).toContain("project");
     expect(frame).toContain("v9.9.9");
     expect(frame).toContain("Status");
-    expect(frame).toContain("Workflows");
+    expect(frame).toContain("Workline");
   });
 
   it("HomeHeader expone workspace context", async () => {
@@ -96,13 +96,13 @@ describe("App (tab-home)", () => {
     expect(frame).toMatch(/sessions/);
   });
 
-  it("número 2 desde la Status tab salta a Workflows tab (admin por host + strip de flows)", async () => {
+  it("número 2 desde la Status tab salta a la Workline tab (admin por host + strip de flows)", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("2");
     await new Promise((r) => setTimeout(r, 50));
-    // [Workflows] mounts the per-host administration (SectionHead "HOSTS") and
+    // [Workline] mounts the per-host administration (SectionHead "HOSTS") and
     // the compact flows summary.
     expect(lastFrame()).toContain("HOSTS");
     expect(lastFrame()).toContain("Flows:");

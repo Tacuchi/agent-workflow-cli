@@ -1,6 +1,6 @@
-# w — agent-workflow skill bundle
+# w — Workline skill bundle
 
-> The `w` bundle (`w` = *workflow*) packages the agent-workflow harness as Claude Code skills + `/w:` slash commands. Runtime: [`@tacuchi/agent-workflow-cli`](../../README.md) (`agent-workflow` / `aw`).
+> The `w` bundle (`w` = *workline*) packages **Workline** — the stages + loops + artifacts system for agent work — as Claude Code skills + `/w:` slash commands. Runtime: [`@tacuchi/agent-workflow-cli`](../../README.md) (`agent-workflow` / `aw`).
 
 It implements the **stages + loops + artifacts** model. The design source lives under `docs/referencias/` in the agent-workflow hub. This README is the bundle index; the normative text lives in its canonical docs:
 

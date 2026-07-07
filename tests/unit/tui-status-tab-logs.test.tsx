@@ -90,7 +90,7 @@ describe("StatusTab — Logs section", () => {
     expect(opened).toEqual(["/home/u/.agent-workflow/logs/agent-workflow-2026-07-01.log"]);
   });
 
-  it("Enter on the hosts tile activates the Workflows tab (admin moved there)", async () => {
+  it("Enter on the hosts tile activates the Workline tab (admin moved there)", async () => {
     const activated: string[] = [];
     const { stdin } = render(
       <StatusTab

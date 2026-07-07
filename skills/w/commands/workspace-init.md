@@ -12,7 +12,7 @@ allowed-tools:
 
 # workspace-init — workspace bootstrap
 
-Runs `aw workspace-init` to turn the current folder into an agent-workflow workspace. A workspace has **1+ sources** (repos); "standalone" = a single source. There are no project/hub modes — the model is unified.
+Runs `aw workspace-init` to turn the current folder into a Workline workspace. A workspace has **1+ sources** (repos); "standalone" = a single source. There are no project/hub modes — the model is unified.
 
 ```bash
 aw workspace-init --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run]

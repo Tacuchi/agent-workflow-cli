@@ -22,7 +22,7 @@ export interface FocusRowProps {
 
 /**
  * Focusable row with a focus bar + full-width background highlight, aligned
- * with the MCP/Skills/Workflows lists (`list-row`).
+ * with the MCP/Skills/Workline lists (`list-row`).
  *
  * The bar sits OUTSIDE the background (like list-row). All content lives in a
  * single `Text` with `wrap="truncate-end"` (nested `Text` inherit the

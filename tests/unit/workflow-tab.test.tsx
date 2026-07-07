@@ -12,7 +12,7 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { FakeProcess } from "../helpers/fake-process.js";
-// [Workflows] mounts HostAdminSection (fs.exists over ~/.<host>/skills/w), so
+// [Workline] mounts HostAdminSection (fs.exists over ~/.<host>/skills/w), so
 // the harness needs a real sandbox home; NoScanFs keeps everything real but
 // stubs list()→[] — same pattern as the skills-tab test.
 import { NoScanFs as RealFs } from "../helpers/real-fs.js";
@@ -35,7 +35,7 @@ function buildCtx(home: string): CliContext {
   };
 }
 
-describe("WorkflowTab ([Workflows] = admin + informativo mínimo)", () => {
+describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
   let workdir: string;
   let home: string;
 
@@ -57,9 +57,9 @@ describe("WorkflowTab ([Workflows] = admin + informativo mínimo)", () => {
     return frame;
   }
 
-  it("header: título Workflows + counts derivados de los data modules (.length)", async () => {
+  it("header: título Workline + counts derivados de los data modules (.length)", async () => {
     const frame = await renderFlat();
-    expect(frame).toContain("Workflows");
+    expect(frame).toContain("Workline");
     expect(frame).toContain(`${WORKFLOW_CONTENT.slashCommands.length} slash commands`);
     expect(frame).toContain(`${WORKFLOW_CONTENT.hooks.length} hooks`);
   });

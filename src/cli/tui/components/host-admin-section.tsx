@@ -1,5 +1,5 @@
 // Per-host administration of the `w` bundle (list + detail + confirm +
-// composite clean-legacy → clean-cache → install-full). [Workflows] mounts it
+// composite clean-legacy → clean-cache → install-full). [Workline] mounts it
 // as its main section; any tab can reuse it via props.
 
 import { Box, Text, useInput, useStdout } from "ink";

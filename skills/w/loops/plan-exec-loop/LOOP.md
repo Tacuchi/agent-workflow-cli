@@ -44,7 +44,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 
 `git` (safe branch + proposed commits) · `sql` (DB rule). Both resolved via `.workflow/skills.toml`; `off` → the loop continues without the capability and, if it was needed, says so or asks.
 
-> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — the workflow neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
+> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
 
 ## Internal sessions (managed)
 

@@ -1,7 +1,7 @@
 ---
 name: quick-loop
 description: >-
-  The agent-workflow lightweight shortcut: solves a scoped task (fix, small
+  The Workline lightweight shortcut: solves a scoped task (fix, small
   tweak) straight from the prompt, with minimal ceremony and a single commit.
   Heir of the chassis (loops/CHASSIS.md + CODE-POLICIES.md). Deltas: no
   plan-doc (the prompt IS the task), single light session <slug>-quick, an
@@ -25,7 +25,7 @@ QUICK
 `/w:quick` — **resumable** (same chassis resume mechanism).
 
 ## Reads
-— (the user's prompt; there is no input document).
+— (the user's prompt **plus any analysis already established in this conversation** — *adopted context*, chassis § *Adopted context*: adopted, never re-derived. There is no input document).
 
 ## Writes
 - **Deliverable per task:** edits code in the sources (minimal change) **or** produces a scoped **analysis/design** (non-code deliverable, lives in the session artifacts — never in `docs/`).
@@ -44,7 +44,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 
 `git` · `sql` (DB rule) · `research` (inline). Resolved via `.workflow/skills.toml`.
 
-> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — the workflow neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
+> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
 
 ## QUICK delta — minimal ceremony
 
@@ -52,7 +52,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 - **Proportional verification-first** (minimal ceremony): even here the check is **seeded before**, sized to the task. Code: one test (bug repro → fix) or "existing build/lint/tests stay green" (chore). **Analysis/design**: a **short falsifiable rubric**, *ratified by the user* before pursuing it. It is the run's `SESSION.Success criteria` (see [chassis § *Verification-first*](../CHASSIS.md)).
 - **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, verify each source's expected branch (`aw check-branch`); **proposed** commit (approve first) — never `push`/`--amend`/`--no-verify`. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql` (read-only queries do run, via MCP).
 - **One session. One commit** proposed at the end (only if there were code changes), **after the proportional closing review gate** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate*): diff re-read + ambient conventions; fix or defer; nothing reaches the commit unreviewed.
-- **Entry SIZE GATE** (before creating the session): on receiving the objective, evaluate whether it **exceeds a quick**. It fires **only on clear signals** (≥2 of: needs architecture · ≥2 sources · multiple deliverables · large feature/refactor · ambiguous requirements needing elicitation); borderline → **continue in quick without asking** (if it later grows, mid-loop escalation covers it). A **resume** of an existing quick does **not** re-fire the gate. If it fires → **structured-choice** (1 content question, recommendation first + `flow` control; `Cerrar` here = abort, nothing created yet):
+- **Entry SIZE GATE** (before creating the session): on receiving the objective, evaluate whether it **exceeds a quick**. It fires **only on clear signals** (≥2 of: needs architecture · ≥2 sources · multiple deliverables · large feature/refactor · ambiguous requirements needing elicitation); signals already resolved by *adopted context* do **not** fire (e.g. a host pre-analysis in this conversation that removed the ambiguity — chassis § *Adopted context*); borderline → **continue in quick without asking** (if it later grows, mid-loop escalation covers it). A **resume** of an existing quick does **not** re-fire the gate. If it fires → **structured-choice** (1 content question, recommendation first + `flow` control; `Cerrar` here = abort, nothing created yet):
   - **`Cambiar a SPEC`** (recommended) → **no quick session is created**: run the *Live transition to SPEC* (next bullet).
   - **`Seguir en quick`** → continue normally (`create_or_resume` + loop).
   - **`Recortar alcance`** → the AI proposes the **sub-task that DOES fit** a quick; the loop continues with it (`SESSION.Objective` = the sub-task; the original prompt goes into the session's `## Origin`) and the rest is deferred to `BACKLOG` ("trimmed at the gate — may warrant its own spec, `/w:spec-new`").
@@ -92,6 +92,8 @@ quick-loop(prompt):
     Seguir en quick  → continue
   s = create_or_resume("<slug>-quick")      # CLI prepends global NNN; always a light session
   seed SESSION.Objective = the prompt
+  if the conversation already established analysis/conclusions →                 # adopted context (chassis)
+    adopt them (SESSION.Origin = "adopted from host conversation"; reference in CONCLUSIONS) — never re-derive/re-ask
   seed SESSION.Success criteria = the deliverable's check   # verification-first, BEFORE: test(s) if code · short RATIFIED rubric if analysis/design
   seed CHECKPOINT.Pending/Next = the task (s)               # BEFORE: seed the intent (artifact-first)
   work the task (minimal loop):

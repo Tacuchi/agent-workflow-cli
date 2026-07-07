@@ -14,7 +14,7 @@ import {
 } from "./project-md-upsert-service.js";
 
 /**
- * docs/ taxonomy owned by the workflow (one folder per category). NOT scaffolded
+ * docs/ taxonomy owned by Workline (one folder per category). NOT scaffolded
  * anymore: each folder is born on demand at the first numbered write
  * (`aw next-number docs/<cat>` mkdirps it). The list drives the reconcile prune.
  */

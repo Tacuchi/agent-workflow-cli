@@ -1,6 +1,6 @@
 # workflow-artifacts — Artifact catalog (Layer 3)
 
-> Reference for the agent-workflow model (current, deployed). This folder contains the **artifact templates**: process files managed by **sessions** inside `.workflow/sessions/`.
+> Reference for the Workline model (current, deployed). This folder contains the **artifact templates**: process files managed by **sessions** inside `.workflow/sessions/`.
 > Siblings: [`../commands/`](../commands/) (Layer 1) · [`../loops/`](../loops/) (Layer 2) · [`../roles/`](../roles/) (pluggable skills).
 
 ---
@@ -15,11 +15,11 @@ Central distinction of the model:
 | Location | `.workflow/sessions/NNN-…/` | `docs/<category>/` |
 | Who manages it | a **loop**, through a **session** | produced by a loop/command at "save" time |
 | User-facing | No (internal) | Yes |
-| Examples | `CHECKPOINT`, `ANALYSIS-FILE`, `CONCLUSIONS`, `SCRIPTS.sql`, `TASKS`, `DECISION`, `NNN-SPEC-<SLUG>.md` | `specs`, `plans`, `manuals`, `scripts`, `diagrams`, `reports` |
+| Examples | `CHECKPOINT`, `ANALYSIS-FILE`, `CONCLUSIONS`, `SCRIPTS.sql`, `TASKS`, `DECISION`, `NNN-SPEC-<SLUG>.md` | `specs`, `plans`, `research`, `manuals`, `scripts`, `diagrams`, `reports` |
 
 > An artifact may be **promoted** to a `docs/` document (e.g. `SCRIPTS.sql` → `docs/scripts/`) — but **only via dedicated `export-*` skills**, **never** automatically by the loops. The spec and the plan **are not** artifacts: they are documents.
 
-> **Routing by operating context** (canonical rules: [`../SKILL.md`](../SKILL.md) § *Operating context*): inside a flow → the **active/continued** session (a prompt with no command edits the most recent session's artifacts); workspace without flow → `docs/` by convention + numbering; no workspace → vanilla. Session→`docs/` promotion is still **only** via `export-*`.
+> **Routing by operating context** (canonical rules: [`../SKILL.md`](../SKILL.md) § *Operating context*): inside a flow → the **active/continued** session (a prompt with no command edits the most recent session's artifacts); workspace without flow → `docs/` by convention + numbering (or explicitly via [`/w:persist`](../commands/persist.md), which classifies in-conversation work and routes it — `docs/research` · spec draft · plan adoption); no workspace → vanilla. Session→`docs/` promotion is still **only** via `export-*`; persist is the **host→`docs/`** path (it never reads sessions).
 
 ---
 

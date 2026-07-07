@@ -1,6 +1,6 @@
 # w — Command map (Layer 1)
 
-> README of the `/w:` namespace (`w` = *workflow*): everything listed here is the **only thing the user invokes** directly. Commands are **Layer 1** — single-pass or they start a loop; no iteration logic.
+> README of the `/w:` namespace (`w` = *workline*): everything listed here is the **only thing the user invokes** directly. Commands are **Layer 1** — single-pass or they start a loop; no iteration logic.
 >
 > **Canon**: the full model (3 layers + `docs/` zone, the 3 flows, hard invariants) lives in [`../SKILL.md`](../SKILL.md); the **loop engine** in [`../loops/CHASSIS.md`](../loops/CHASSIS.md). This README is only the folder index.
 
@@ -24,6 +24,7 @@
 | [`status`](status.md) | Read-only workspace dashboard | single-pass (transversal) |
 | [`fix-git`](fix-git.md) | Resolves an in-progress merge, git-safe | single-pass (transversal) |
 | [`generate-launch`](generate-launch.md) | (Re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) | single-pass (transversal) |
+| [`persist`](persist.md) | Persists in-conversation work into `docs/` (classify → `research` · spec draft · plan adoption) | single-pass (transversal) |
 | [`export-scripts`](export-scripts.md) | Promotes session SQL migrations to `docs/scripts/` | single-pass, read-only |
 | [`export-manuals`](export-manuals.md) | Generates manuals in `docs/manuals/` | single-pass, read-only |
 | [`export-diagrams`](export-diagrams.md) | Generates C4/mermaid diagrams in `docs/diagrams/` | single-pass, read-only |
@@ -31,7 +32,7 @@
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.
 >
-> **Transversal (no flow):** `status`, `fix-git` and `generate-launch` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
+> **Transversal (no flow):** `status`, `fix-git`, `generate-launch` and `persist` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
 
 ## Schema of each command file
 

@@ -1,6 +1,6 @@
 # exports — `export-*` family (Layer 1)
 
-> This is the **bundle README** for the `export-*` family: the **only** path that promotes session artifacts to permanent `docs/` documents. Each export is invoked by the **user** (never by a loop) as a separate, explicit step.
+> This is the **bundle README** for the `export-*` family: the **only** path that promotes session artifacts to permanent `docs/` documents. Each export is invoked by the **user** (never by a loop) as a separate, explicit step. *(Host→`docs/` ingestion is a different plane: [`/w:persist`](../commands/persist.md) persists in-conversation work — it reads the conversation, never sessions, and owns `docs/research`.)*
 > Related layers: [`../commands/`](../commands/) (Layer 1 flows) · [`../loops/`](../loops/) (Layer 2, AI-driven) · artifacts live in `.workflow/sessions/` (Layer 3). Design reference: `docs/referencias/workflow-exports/`.
 >
 > **Namespace:** each export body is an **operating manual** (`EXPORT.md` — deliberately not a `SKILL.md`, so no host indexes it as a standalone skill). The user-invocable surface is the `/w:export-*` commands authored under [`../commands/`](../commands/), which read-and-follow the sibling `EXPORT.md` (per-host wrapper: see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*).

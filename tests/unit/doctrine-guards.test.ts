@@ -55,6 +55,11 @@ function descriptionLength(text: string): number {
 describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // command + loop + chassis (+ CODE-POLICIES for code loops) (+ declared
   // reuse: plan-refine loads plan-new-loop for its taxonomy and skeleton).
+  // Budgets consciously raised in v20.7.0 (host-as-producer doctrine): the
+  // chassis gained § Adopted context (+ the ask-vs-research third resolver),
+  // plan-new gained input mode 4 (external-plan adoption), plan-refine the
+  // spec-less degradation, quick the adopted-context seeding. ~0.5-1 KB of
+  // headroom per flow over the measured totals.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -64,19 +69,17 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 40_500,
+      budget: 43_000,
     },
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 35_500,
+      budget: 37_300,
     },
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      // Bumped +100 B when the hard-floor session-create signature was completed
-      // with the mandatory --objetivo (in both plan-new.md and the shared CHASSIS).
-      budget: 33_100,
+      budget: 36_700,
     },
     {
       flow: "plan-refine",
@@ -86,7 +89,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 43_000,
+      budget: 46_100,
     },
     {
       flow: "plan-exec",
@@ -96,7 +99,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 39_500,
+      budget: 41_200,
     },
   ];
 

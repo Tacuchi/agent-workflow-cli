@@ -3,7 +3,7 @@
 // actions (unmanaged = informational) and an [a] wizard: source → picker →
 // third-party warning → register.
 // Backed by skills-manager; the `w` bundle administration lives in
-// [Workflows] (HostAdminSection).
+// [Workline] (HostAdminSection).
 
 import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useMemo, useRef, useState } from "react";

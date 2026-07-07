@@ -34,7 +34,8 @@ Generates `docs/specs/NNN-spec-<slug>.md` in a single pass from the prompt in `$
 # Spec NNN — <slug>
 
 ## Origin            (opt.)
-Original prompt / prior doc / reference that originated the spec.
+Original prompt / prior doc / reference that originated the spec
+(e.g. "adopted from host conversation" when it captures an analysis already established there).
 
 ## Requirement
 The what + why (brief). In the user's language.
@@ -70,6 +71,8 @@ Pending doubts. ← the spec-refine-loop closes them.
 - Equivalent alternative: the user creates the draft by hand. Both paths produce the same `docs/specs/NNN-spec-<slug>.md`.
 
 > **Reuse by escalation:** the live escalation from `/w:quick` (see [`../loops/quick-loop/LOOP.md`](../loops/quick-loop/LOOP.md) § *QUICK delta*) materializes its draft following **this same procedure** (steps 1-3: same schema, same NO RESEARCH single-pass hard rule), with `## Origin` = "escalated from `/w:quick`" + the original prompt. No need to type `/w:spec-new`: the consent in the structured-choice equals invoking it.
+>
+> **Reuse by adoption:** [`/w:persist`](persist.md) (requirement-shaped content) materializes its spec draft with this same procedure, with `## Origin` = "adopted from host conversation" + attribution. Paraphrasing conclusions **already established in this conversation** is still single-pass — adoption is transcription, not investigation (chassis § *Adopted context*).
 
 ## Plan mode
 

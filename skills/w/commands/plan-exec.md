@@ -34,7 +34,7 @@ Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase
 
 - Reads and updates `docs/plans/PPP-plan-<slug>.md` (living doc: phase/task state).
 - Edits code in the workspace sources (a single execution session per run; execution is still phase by phase, there is just no session per phase).
-- If it creates a tool/utility, the ambient `creating-tools` skill documents it in `docs/tools/` (auto-discovered; the workflow does not bind it).
+- If it creates a tool/utility, the ambient `creating-tools` skill documents it in `docs/tools/` (auto-discovered; Workline does not bind it).
 - **Closing review gate** at every phase boundary, **before proposing the commits**: re-reads the diff (independent pass) applying the **installed ambient conventions** and fixes or defers findings — nothing reaches a commit unreviewed (see `../loops/plan-exec-loop/LOOP.md` § *Delta 5*).
 - Proposes commits per source (git-safe: verifies the branch, proposes, never push/--amend/--no-verify).
 - Generates session artifacts (`DECISION`, `SCRIPTS.sql`) under `.workflow/sessions/`.

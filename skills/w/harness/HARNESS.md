@@ -1,10 +1,10 @@
 ---
 name: harness
 description: >-
-  Harness-agnostic capability layer for agent-workflow. Read-and-follow doc (not
+  Harness-agnostic capability layer for Workline. Read-and-follow doc (not
   invocable by name): defines the contract that keeps the tool harness-agnostic
   (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp/Oz, generic) without
-  giving up each harness's rich capabilities. Catalogs the capabilities the workflow
+  giving up each harness's rich capabilities. Catalogs the capabilities Workline
   depends on, binds each to the concrete mechanism of every harness (binding matrix),
   and fixes the two principles (capability-not-tool · progressive-enhancement).
   Referenced from SKILL.md (overview) and the loops when they name structured-choice /
@@ -13,7 +13,7 @@ description: >-
 
 # harness — harness-agnostic capability layer (cross-cutting)
 
-**Read-and-follow** doc (never invoked by name). Here lives the contract that keeps agent-workflow **harness-agnostic** (Claude Code, Codex, opencode, Gemini CLI, …) without giving up each harness's rich capabilities. Referenced from `../SKILL.md` (overview) and from the loops when they name a capability (`structured-choice`, `compaction`, …).
+**Read-and-follow** doc (never invoked by name). Here lives the contract that keeps Workline **harness-agnostic** (Claude Code, Codex, opencode, Gemini CLI, …) without giving up each harness's rich capabilities. Referenced from `../SKILL.md` (overview) and from the loops when they name a capability (`structured-choice`, `compaction`, …).
 
 ## The problem
 
@@ -30,7 +30,7 @@ The doctrine (commands + loops + artifacts) describes **what** the AI does, neve
 
 The capabilities the harness layer depends on, with their universal fallback (what is used when the harness offers nothing better):
 
-| Capability | What the workflow needs | Universal fallback (lowest common) |
+| Capability | What Workline needs | Universal fallback (lowest common) |
 |---|---|---|
 | **command-invocation** | the user triggers a flow by name (`spec-new`, `plan-exec`, …) | the user writes "run the `<cmd>` procedure" and the AI reads its doc |
 | **procedure-loading** | load a loop's/command's doctrine | the AI **reads the `.md`** of the loop and follows it (read-and-follow) |
@@ -59,7 +59,7 @@ Concrete mechanism per harness (**Jul-2026**, verified against official docs; `~
 | **enforcement (deny tool)** | `PreToolUse` → `permissionDecision:deny` / exit 2 | `PreToolUse` (**≈same protocol**) | `BeforeTool` → `decision:deny` / exit 2 | plugin `tool.execute.before` (`throw`) | `allowed_tools` (+ preliminary hooks) | allow/deny lists (**coarse**) | doctrine (git-safe #5) |
 | plugin / dist | `.claude-plugin` + marketplace | `.codex-plugin` + `/plugins` marketplace | Extension `gemini-extension.json` | JS/TS plugin (npm) | MCP + skills + config | Warp Drive | — |
 
-> **Notes (field research Jul-2026):** **`SKILL.md` skills** are the **universal** portable unit — **all six** harnesses support them (Codex added them Dec-2025; **`.agents/skills` is the cross-host anchor**, read by Codex/OpenCode/Crush/Warp). **Structured choice** (`AskUserQuestion`) remains **Claude Code / main-agent only** → elsewhere `structured-choice` degrades to numbered markdown. The **enforcement layer** (new row) is **NO longer Claude-exclusive**: Codex + Gemini use a near-identical protocol (`permissionDecision:deny` / exit 2) and OpenCode blocks via `throw` in a JS plugin; Crush/Warp only offer **coarse** allow/deny (no custom per-command logic) → there, conventions stay **advisory** + allow/deny lists. Enforced **plan mode** is never trusted for safety; git-safe (invariant #5) is our own. **MCP** is universal (each host its file/key). The **guaranteed floor** (last column) runs the full model.
+> **Notes (field research Jul-2026):** **`SKILL.md` skills** are the **universal** portable unit — **all six** harnesses support them (Codex added them Dec-2025; **`.agents/skills` is the cross-host anchor**, read by Codex/OpenCode/Crush/Warp). **Structured choice** (`AskUserQuestion`) remains **Claude Code / main-agent only** → elsewhere `structured-choice` degrades to numbered markdown. The **enforcement layer** (new row) is **NO longer Claude-exclusive**: Codex + Gemini use a near-identical protocol (`permissionDecision:deny` / exit 2) and OpenCode blocks via `throw` in a JS plugin; Crush/Warp only offer **coarse** allow/deny (no custom per-command logic) → there, conventions stay **advisory** + allow/deny lists. Enforced **plan mode** is never trusted for safety; git-safe (invariant #5) is our own — though a host-planner's *output* (the plan it built) is adoptable input (`../commands/plan-new.md` § *Input resolution*, mode 4). **MCP** is universal (each host its file/key). The **guaranteed floor** (last column) runs the full model.
 
 > **Oz (Warp's cloud sibling).** `oz agent run` is a cloud agent orchestrator that **reuses Warp's surfaces**: same skills (`.agents/skills`, top-level dirs like Warp) and `AGENTS.md`, with `structured-choice` equally degraded to numbered markdown. It differs in three points: **detection** via `OZ_RUN_ID` (takes priority over Warp when both markers coexist); **MCP without a config file** — the JSON is passed via the `--mcp` flag of `oz agent run` (or the `OZ_MCP_CONFIG` env), it never writes `.warp/.mcp.json`; and **no plugin or hooks** (advisory enforcement, like Warp). Hence it shares the **Warp / Oz** column with that MCP caveat.
 
@@ -78,7 +78,7 @@ Concrete mechanism per harness (**Jul-2026**, verified against official docs; `~
 
 ## Distribution (install-time)
 
-Proven pattern (Spec Kit, 30+ agents): **one canonical source** + generate/symlink into the per-harness dirs at install (`.claude/`, `.codex/`, `.gemini/`, …). agent-workflow already does this via `aw self install-skill`. Recommended convention: **canonical `AGENTS.md` + `CLAUDE.md` symlink** (Claude Code does not read `AGENTS.md` natively; the rest do).
+Proven pattern (Spec Kit, 30+ agents): **one canonical source** + generate/symlink into the per-harness dirs at install (`.claude/`, `.codex/`, `.gemini/`, …). Workline already does this via `aw self install-skill`. Recommended convention: **canonical `AGENTS.md` + `CLAUDE.md` symlink** (Claude Code does not read `AGENTS.md` natively; the rest do).
 
 ## Command packaging (harness-specific)
 

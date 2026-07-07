@@ -595,7 +595,7 @@ describe("skills-manager (T3.3-T3.7)", () => {
       "utf8",
     );
 
-    // The bundle and its namespace are NOT "someone else's" ([Workflows] manages them).
+    // The bundle and its namespace are NOT "someone else's" ([Workline] manages them).
     await makeSkillDir(canonRoot, "w");
     await makeSkillDir(canonRoot, "w-plan-exec-loop");
     await makeSkillDir(canonRoot, "agent-workflow");

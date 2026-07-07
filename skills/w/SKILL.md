@@ -1,8 +1,8 @@
 ---
 name: w
 description: >-
-  Orientation skill for the whole agent-workflow harness — built-in default for the
-  `overview` role. Load this to understand the model end-to-end: the 3-layer
+  Orientation skill for Workline (`w` = *workline*), the whole system — built-in
+  default for the `overview` role. Load this to understand the model end-to-end: the 3-layer
   architecture (commands → loops → sessions/artifacts) plus the docs/ zone, the 3
   flows (SPEC / PLAN / QUICK), the `/w:` commands, the 5 loops and their chassis, the
   `export-*` family, the composable capability skills + `.workflow/skills.toml`
@@ -11,7 +11,7 @@ description: >-
   skill to reach for.
 ---
 
-# w — agent-workflow overview
+# w — Workline overview
 
 ## Role
 
@@ -19,7 +19,7 @@ description: >-
 
 ## Purpose
 
-Explain the **complete model** of agent-workflow so an agent knows: what the user invokes, what the AI runs, where every deliverable lands, and which rules never break. This is the map; the fine detail lives in each loop/command/export/role.
+Explain the **complete model** of Workline so an agent knows: what the user invokes, what the AI runs, where every deliverable lands, and which rules never break. This is the map; the fine detail lives in each loop/command/export/role.
 
 ## Composed by
 
@@ -48,7 +48,7 @@ USER invokes
         │ the export-* read the artifacts
         ▼
   docs/ ZONE — permanent, user-facing documents
-    specs · plans (flows) · scripts · manuals · diagrams · reports (export-*) · tools (ambient)
+    specs · plans (flows) · research (persist / no-flow) · scripts · manuals · diagrams · reports (export-*) · tools (ambient)
 ```
 
 - **Layer 1** — high level. Single-pass or starts a loop. No iteration logic.
@@ -75,7 +75,7 @@ Before any loop, the AI resolves its **operating context** on **every prompt** w
 |---|---|---|
 | **Yes** | **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → creates a **new** session (except re-running the same flow over the same input: `create_or_resume` reopens the existing one), starts the loop → artifacts go to **that** session (`SCRIPTS.sql`, …) |
 | **Yes** | **prompt with no command** (related) | **continues/reopens the most recent session** → scripts edit **its** `SCRIPTS.sql` (no new session) |
-| **Yes** | **prompt with no command** (unrelated / no session) | **no flow**: direct work → writes into `docs/` by convention + numbering (`aw next-number`) |
+| **Yes** | **prompt with no command** (unrelated / no session) | **no flow**: direct work → writes into `docs/` by convention + numbering (`aw next-number`). To persist work already done in this conversation, `/w:persist` classifies and routes it (`docs/research` · spec draft · plan adoption) |
 | **No** | anything | **vanilla** — no workspace, no flow; the AI is free (native) |
 
 **Continuity rule** (single source — the chassis and the loops reference here):
@@ -89,6 +89,10 @@ Before any loop, the AI resolves its **operating context** on **every prompt** w
 
 It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+resume, applied to the next prompt) — agnostic doctrine, not a host hook. It applies to **every artifact** (`SCRIPTS.sql` is the worked example; QUICK case: `loops/quick-loop/LOOP.md`).
 
+### Host as producer — adopted context
+
+The flows are **composable with host-native work, never exclusive**. The host is not only the executor of the loops: it is a legitimate **producer** of input. Work products born in the host conversation — an analysis reached with a host feature, a plan built in the host's plan mode, settled conclusions — are first-class flow input via **adoption**: transcribe with provenance (`## Origin` = adopted from the host conversation), verify like any other input (gate integrity), and never re-derive or re-ask what is already settled. Entry points: any loop start (adopted context — `loops/CHASSIS.md` § *Adopted context*), `plan-new` input mode 4 (adopt an external plan), and `/w:persist` (classify + persist finished work into `docs/`).
+
 ### The commands (`/w:` namespace)
 
 - `/w:workspace-init` — initializes the workspace.
@@ -100,13 +104,14 @@ It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+r
 - `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promote artifacts to `docs/`.
 
-### Transversal skills (no flow) — `/w:status` · `/w:fix-git` · `/w:generate-launch`
+### Transversal skills (no flow) — `/w:status` · `/w:fix-git` · `/w:generate-launch` · `/w:persist`
 
 **Flow-independent invocable** skills: triggered with `/w:` like any command, but they do **not** belong to SPEC/PLAN/QUICK, do **not** manage `docs/`, and do **not** count in **6 flow commands / 5 loops**. *(In the bundle they are packaged under `commands/` so `/w:` can invoke them; in the design they are the `workflow-skills/` category.)*
 
 - `/w:status` — read-only workspace dashboard (Done/Missing/Discarded, dates humanized in the user's language). Writes nothing; backed by `aw status`.
 - `/w:fix-git` — resolves an in-progress merge's conflicts in any repo (identifies origin↔destination, analyzes intent, *structured-choice* on ambiguity). No session, never touches `docs/`; git-safe; backed by `aw merge-state`.
 - `/w:generate-launch` — (re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) by detecting each source's stack; idempotent (preserves hand-edited scripts, `--force` overwrites). Complements the launch flow's on-demand generation. No session, never touches `docs/`; backed by `aw generate-launch`.
+- `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Never creates sessions; the host→`docs/` counterpart of `export-*` (which stays the only session→`docs/` path).
 
 ### The loops (Layer 2)
 
@@ -154,7 +159,7 @@ Role catalog and defaults:
 | `diagrams` | `diagrams` | should | `export-diagrams` |
 | `overview` | `w` | should | anyone (orientation) |
 
-> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — the workflow neither binds nor depends on them. Full doctrine: [roles/README.md](roles/README.md).
+> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [roles/README.md](roles/README.md).
 
 The **loop chassis** is NOT bound: it is the common engine of the 5 loops ([`loops/CHASSIS.md`](loops/CHASSIS.md), a referenced doc), not a pluggable capability.
 
@@ -185,7 +190,7 @@ One language per plane — never mix them:
 ### The 6 hard invariants
 
 1. **No auto-export** — loops never graduate/export to `docs/`. Only `export-*` does, explicitly.
-2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` belongs to no flow: the ambient skill `creating-tools` writes it.)
+2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` and `docs/research` belong to no flow: `docs/tools` is written by the ambient skill `creating-tools`; `docs/research` by `/w:persist` or direct no-flow authoring.)
 3. **The spec and the plan are documents** (`docs/`), not session artifacts. *(Not to be confused with the **design SPECs** `NNN-SPEC-<SLUG>.md`: **per-screen** UI design artifacts that PLAN sessions produce via the `ui-design` capability when the plan includes UI — see `artifacts/artifacts-design/` — they are not the requirement-spec.)*
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations stay in `SCRIPTS.sql` and the user applies them. Only read-only reads via MCP.
 5. **Safe git** — expected branch verified before editing; proposed commits per source; never `push`/`--amend`/`--no-verify`.
