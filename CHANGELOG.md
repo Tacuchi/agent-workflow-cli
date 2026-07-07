@@ -4,6 +4,23 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.8.0] — 2026-07-07
+
+**Los loops saben proponer pruebas de concepto (probe/PoC) y los SPECs ganan escenarios GIVEN/WHEN/THEN/AND.** El riesgo deja de ser algo que solo se declara: cuando una suposición es ejecutable (conexión externa, SDK, comportamiento UI) el agente propone sondearla temprano con un experimento atómico, en vez de descubrir la falla al final. Y el comportamiento de un spec puede concretarse en escenarios Gherkin trazados a sus criterios. Solo doctrina (cero código de runtime). Bundle `w` **13.7.0**.
+
+### Added
+
+- **Doctrina probe (PoC)** — chasis § *Proof of concept (probe)*: **cuarto resolutor** de la regla ask-vs-research (adopt · research · **probe** · ask) — research *lee*, un probe *ejecuta*: experimento atómico, descartable por defecto, que responde **una** pregunta falsable. Verification-first aplica al probe (pregunta + check pass/fail sembrados ANTES); el código vive en la **carpeta de sesión** (gitignored — nunca el source tree, nunca commiteado; DB probe = solo lectura); **probe fallido = hallazgo, no fallo**.
+- **plan-new Delta 5 — probe tasks tempranas**: unknown que moldea el plan → probe **inline ahora** (el veredicto alimenta `Solution`/`Risks / impact`); riesgo de ejecución → **probe task explícita temprana**, antes de las tareas que dependen de su veredicto. El gap "Unaddressed risks" gana probe como resolutor (deja de ser humano-only). Surfacing en `commands/plan-new.md` (§ *Risky assumptions → probe (PoC) tasks*).
+- **plan-exec Delta 7 — ejecución de probes**: seed check → código descartable en la sesión → veredicto en `CONCLUSIONS`/`DECISION` (tagged por task); un probe fallido **no falla la fase** (structured-choice; reshape → `Open questions` + `BACKLOG` o `/w:plan-refine`); **promoción** solo como edición normal de tarea (branch-check + review gate). quick y plan-refine ganan probe en su línea de resolutores.
+- **`## Scenarios` en los SPECs** (draft + refined schema, **opcional**, tras `Acceptance criteria`): bloques **GIVEN/WHEN/THEN/AND** que concretan los criterios conductuales. Trazabilidad bidireccional como cláusula nueva del analyze gate (escenario → ≥1 criterio · criterio conductual → ≥1 escenario · sin contradecir `Scope`) + gap "Scenario missing". Los criterios siguen siendo el checklist que anclan los gates (plan-new los cubre transitivamente, sin cambios). `plan-exec` los usa como test cases listos: GIVEN=arrange · WHEN=act · THEN=assert.
+- **Guard G9**: pins del probe (sección del chasis + cuarto resolutor + Delta 5/7) y del acuerdo draft↔refined del schema `## Scenarios`.
+
+### Changed
+
+- **Guard G1** (presupuestos de carga por flujo): subidos conscientemente (+~1.6-2.9 KB por flujo) por la doctrina probe + Scenarios; comentario en la tabla documenta el porqué.
+- **Ordinales de resolutores** corregidos ("the same third gap-resolution mode" → modo de capacidad compuesta, junto a *research*, *probe* y *human*) en plan-new Delta 4 y spec-refine § Composes — la clase de deriva que el cuarto resolutor destapó.
+
 ## [20.7.0] — 2026-07-06
 
 **El sistema se llama Workline (`w` = *workline*) y los flujos adoptan trabajo nacido en el host (host-as-producer).** Dos colisiones resueltas: "workflow(s)" chocaba con la feature homónima de Claude Code y "harness" estaba doble-reservado (sistema vs host) — desde ahora *harness* nombra SOLO al host. Re-gloss sin breaking: `/w:`, skill `w`, npm, bins `aw`/`agent-workflow` y `.workflow/` intactos. Y la doctrina deja de ser "componible por omisión": el host pasa de ejecutor sustituible a **productor legítimo de insumos** (spec 009 del workspace). Bundle `w` **13.6.0**.
