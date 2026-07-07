@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.8.1] — 2026-07-07
+
+**Las descripciones de los comandos `/w:` ganan una cláusula "Use when…" de intención y un seam explícito entre comandos hermanos.** Antes decían solo el QUÉ; ahora front-loadean el CUÁNDO (los contextos y keywords que las disparan) y marcan el límite contra el comando vecino (spec-new↔spec-refine, plan-new↔plan-refine↔plan-exec), mejorando el ruteo por intención. Refinamiento de wording alineado con el best-practice oficial + comunidad de autoría de skills (research 004 del workspace); solo doctrina, dentro del cap G4 (≤500 chars). Bundle `w` **13.7.1**.
+
+### Changed
+
+- **Descripciones de los comandos `/w:`** — los 10 comandos de flujo y transversales (`quick`, `spec-new`, `spec-refine`, `plan-new`, `plan-refine`, `plan-exec`, `fix-git`, `persist`, `status`, `workspace-init`) anteponen una cláusula **"Use when…"** con los disparadores de intención y un **scope negativo** contra el comando hermano. Sin cambios en el comportamiento del loop; mejora la activación por intención. Guards G1-G9 verdes.
+
 ## [20.8.0] — 2026-07-07
 
 **Los loops saben proponer pruebas de concepto (probe/PoC) y los SPECs ganan escenarios GIVEN/WHEN/THEN/AND.** El riesgo deja de ser algo que solo se declara: cuando una suposición es ejecutable (conexión externa, SDK, comportamiento UI) el agente propone sondearla temprano con un experimento atómico, en vez de descubrir la falla al final. Y el comportamiento de un spec puede concretarse en escenarios Gherkin trazados a sus criterios. Solo doctrina (cero código de runtime). Bundle `w` **13.7.0**.
