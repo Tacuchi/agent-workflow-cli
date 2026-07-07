@@ -1,5 +1,5 @@
 ---
-description: Persists work already done in this conversation (analysis, conclusions, a plan) into docs/ — classifies its shape and routes it. analysis → docs/research/ · requirement → spec draft (docs/specs) · plan → plan adoption (docs/plans). Transversal (no flow, no loop, no session); records ## Origin + attribution (host · model · date); anti-duplicate aware (update vs sibling perspective). The host→docs/ counterpart of export-*.
+description: Use when work already produced in this conversation (analysis, conclusions, a plan) should be saved into docs/ — classifies its shape and routes it. analysis → docs/research/ · requirement → spec draft (docs/specs) · plan → plan adoption (docs/plans). Transversal (no flow, no loop, no session); records ## Origin + attribution (host · model · date); anti-duplicate aware (update vs sibling perspective). The host→docs/ counterpart of export-*.
 argument-hint: [what to persist — empty = the conversation's latest finished deliverable]
 allowed-tools:
   [

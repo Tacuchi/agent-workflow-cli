@@ -1,5 +1,5 @@
 ---
-description: Resolves the conflicts of an in-progress merge for a given or detected source. Identifies origin (theirs) and destination (ours), analyzes both sides' intent and resolves; asks (structured-choice) on ambiguity or incoherence. Git-safe — proposes the merge commit, never push/--amend/--no-verify. Transversal (not a flow), no loop, no session, never touches docs/. Works in any git repo, no initialized workspace required.
+description: Use when a merge or rebase left conflicts to resolve. Resolves the conflicts of an in-progress merge for a given or detected source. Identifies origin (theirs) and destination (ours), analyzes both sides' intent and resolves; asks (structured-choice) on ambiguity or incoherence. Git-safe — proposes the merge commit, never push/--amend/--no-verify. Transversal (not a flow), no loop, no session, never touches docs/. Works in any git repo, no initialized workspace required.
 argument-hint: "[<source path | alias>]"
 allowed-tools:
   [

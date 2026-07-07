@@ -1,5 +1,5 @@
 ---
-description: Read-only workspace dashboard — what got done / what is missing / what was discarded, with dates humanized in the user's language. Backed by `aw status`. Transversal command (not a flow); writes nothing.
+description: Use when the user asks "what's the state", "what got done", or "where are we". Read-only workspace dashboard — what got done / what is missing / what was discarded, with dates humanized in the user's language. Backed by `aw status`. Transversal command (not a flow); writes nothing.
 argument-hint: (no arguments)
 allowed-tools:
   [

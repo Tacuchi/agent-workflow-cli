@@ -1,5 +1,5 @@
 ---
-description: Generates a specification draft (docs/specs/NNN-spec-<slug>.md) from a prompt, in a single pass. Step 1 of the SPEC flow; starts no loop.
+description: Use when the user wants to capture a NEW requirement, idea or wish as a spec — not to refine an existing draft (that's spec-refine). Generates a specification draft (docs/specs/NNN-spec-<slug>.md) from a prompt, in a single pass. Step 1 of the SPEC flow; starts no loop.
 argument-hint: <prompt with the requirement or idea>
 allowed-tools:
   [

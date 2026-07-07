@@ -1,5 +1,5 @@
 ---
-description: Starts or resumes the specification refinement loop (spec-refine-loop). Input: docs/specs/NNN-spec-<slug>.md (a draft — from spec-new, hand-written, or materialized by the quick escalation). Updates docs/specs/NNN-spec-<slug>.md in place.
+description: Use when a spec draft exists and needs disambiguating or completing before planning (close open questions, sharpen criteria) — not for the first draft (that's spec-new). Starts or resumes the specification refinement loop (spec-refine-loop). Input: docs/specs/NNN-spec-<slug>.md (from spec-new, hand-written, or the quick escalation). Updates it in place.
 argument-hint: <docs/specs/NNN-spec-<slug>.md>
 allowed-tools:
   [

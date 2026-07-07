@@ -1,5 +1,5 @@
 ---
-description: Starts or resumes the execution loop (plan-exec-loop) over an existing plan. The real work happens here - code edits, proposed SQL scripts, created tools. Git-safe.
+description: Use when a plan is ready to implement — this is where the real work happens: code edits, proposed SQL scripts, created tools. Starts or resumes the execution loop (plan-exec-loop) over an existing plan. Git-safe (proposes commits, never push/--amend/--no-verify). Not for creating or refining the plan (plan-new / plan-refine).
 argument-hint: <docs/plans/PPP-plan-<slug>.md>
 allowed-tools:
   [

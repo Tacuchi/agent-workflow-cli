@@ -1,5 +1,5 @@
 ---
-description: Turns the current folder into an agent-workflow workspace (minimal scaffold — .workflow/sessions + skills.toml + WORKSPACE block + CLI-owned .gitignore; docs/ folders are born on demand). Replaces hub-init + project-init — no project/hub distinction. Run once before any flow; idempotent, re-running reconciles (prunes legacy empty scaffold).
+description: Use when starting Workline in a folder that has no workspace yet. Turns the current folder into an agent-workflow workspace (minimal scaffold — .workflow/sessions + skills.toml + WORKSPACE block + CLI-owned .gitignore; docs/ folders are born on demand). Replaces hub-init + project-init — no project/hub distinction. Run once before any flow; idempotent, re-running reconciles (prunes legacy empty scaffold).
 argument-hint: --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run]
 allowed-tools:
   [

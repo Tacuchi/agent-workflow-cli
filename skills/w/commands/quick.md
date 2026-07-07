@@ -1,5 +1,5 @@
 ---
-description: Lightweight shortcut for scoped work (fix, tweak, chore) that warrants no spec or plan. Starts quick-loop. Never touches docs/. If the objective exceeds a quick or the task grows, it escalates — to SPEC live (with consent), to PLAN deferred.
+description: Use when the user asks for a scoped, direct task — a fix, tweak, chore or small change that warrants no spec or plan (e.g. "fix this bug", "rename X", "tidy up Y"). Starts quick-loop with minimal ceremony; never touches docs/. If the objective exceeds a quick or the task grows, it escalates — to SPEC live (with consent), to PLAN deferred.
 argument-hint: <prompt with the scoped task>
 allowed-tools:
   [

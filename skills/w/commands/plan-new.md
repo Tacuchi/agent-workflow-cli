@@ -1,5 +1,5 @@
 ---
-description: Starts or resumes the planning loop (plan-new-loop) from a spec. Turns the "what" (spec) into the "how" (plan). Ideal input: an already refined docs/specs/NNN-spec-<slug>.md. Also adopts an externally-built plan (host plan mode, hand-written, another agent) as the plan-doc — mode 4 of its input resolution.
+description: Use when a spec is ready to become an executable plan — not to refine an existing plan (plan-refine) nor execute one (plan-exec). Starts or resumes the planning loop (plan-new-loop) from a spec. Turns the "what" (spec) into the "how" (plan). Ideal input: an already refined docs/specs/NNN-spec-<slug>.md. Also adopts an externally-built plan (host plan mode, hand-written, another agent) as the plan-doc — mode 4 of its input resolution.
 argument-hint: <docs/specs/NNN-spec-<slug>.md | prompt>
 allowed-tools:
   [
