@@ -121,4 +121,10 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
     source: "erichowens/some_claude_skills",
     description: "Guard against skipping steps in long multi-step procedures/runbooks.",
   },
+  // Architecture as code — Tacuchi/structurizr-c4-skill
+  {
+    name: "structurizr-c4",
+    source: "Tacuchi/structurizr-c4-skill",
+    description: "C4 diagrams as code with Structurizr DSL: viewer, validate, export. No Docker.",
+  },
 ] as const;
