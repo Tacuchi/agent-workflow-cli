@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.9.0] — 2026-07-08
+
+**+1 skill recomendada de arquitectura: `structurizr-c4`** (diagramas C4 as-code con la DSL de Structurizr, sin Docker). Publicada como repo/paquete propio `Tacuchi/structurizr-c4-skill` y sembrada en el catálogo del TUI. Bundle `w` sin cambios.
+
+### Added
+
+- **Seed `recommended-skills.ts`**: `Tacuchi/structurizr-c4-skill@structurizr-c4` — genera, valida y visualiza diagramas C4 as-code con la DSL de Structurizr (viewer local, validación, export a Mermaid/PlantUML), sin Docker. Complementa la doctrina `w` (no la duplica): dónde aterriza un diagrama lo decide `/w:export-diagrams`, esta skill provee el motor DSL.
+
 ## [20.8.1] — 2026-07-07
 
 **Las descripciones de los comandos `/w:` ganan una cláusula "Use when…" de intención y un seam explícito entre comandos hermanos.** Antes decían solo el QUÉ; ahora front-loadean el CUÁNDO (los contextos y keywords que las disparan) y marcan el límite contra el comando vecino (spec-new↔spec-refine, plan-new↔plan-refine↔plan-exec), mejorando el ruteo por intención. Refinamiento de wording alineado con el best-practice oficial + comunidad de autoría de skills (research 004 del workspace); solo doctrina, dentro del cap G4 (≤500 chars). Bundle `w` **13.7.1**.
