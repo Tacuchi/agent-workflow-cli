@@ -107,6 +107,7 @@ Every doubt asked to the human + the chosen answer.
 | Open questions pending | explicit doubts | by nature |
 | Hidden assumptions | the spec assumes unstated things | **research** validates / **human** confirms |
 | Internal contradiction | sections contradict each other | **human** |
+| Over-specified requirement | scope/criteria gold-plated — beyond the actual need (chassis § *Minimality*) | **human** (AI proposes the cut, human ratifies) |
 | UI unspecified *(if it applies)* | the requirement involves UI but `## UI spec` is missing | **`ui-design` capability** |
 
 ## Sequence
@@ -142,7 +143,7 @@ spec-refine-loop(spec):
         Cerrar    → goto finalize
       work = integrate(work, ans)            # → Q&A traceability / Open questions
   # no material gaps → analyze gate = Success criteria green (read-only) before offering Guardar:
-  issues = analyze(work)   # criteria trace to the Requirement · no contradictions · coherent Scope · Open questions closed/deferred · scenarios↔criteria
+  issues = analyze(work)   # criteria trace to the Requirement · no contradictions · coherent Scope · Open questions closed/deferred · scenarios↔criteria · no gold-plating (minimality)
   if issues: gaps += issues ; continue            # findings come back into the loop as gaps
   ans = structured_choice(content: [Guardar refinada, Preguntar algo más],
                         flow: [Compactar, Cerrar])
@@ -164,7 +165,7 @@ Full mechanism (3 cases, `Compactar`, re-run on demand with `--reopen`) in the c
 
 ## Convergence / exit
 
-- **No material gaps** → **analyze gate** (read-only) = **`Success criteria` green** (*verification-first*; the SPEC instance of the chassis convergence gate): every acceptance criterion traces to the `Requirement`, no internal contradictions, coherent `Scope` In/Out, `Open questions` closed or explicitly deferred. Scenarios must trace to ≥1 criterion — and behavioral criteria to ≥1 scenario — without contradicting `Scope`. Whatever fails **comes back as a gap**; if it passes → offer `Guardar especificación refinada`.
+- **No material gaps** → **analyze gate** (read-only) = **`Success criteria` green** (*verification-first*; the SPEC instance of the chassis convergence gate): every acceptance criterion traces to the `Requirement`, no internal contradictions, coherent `Scope` In/Out, `Open questions` closed or explicitly deferred. **Minimality** — no gold-plating: every criterion and scope item earns its place (chassis § *Minimality*); speculative scope is cut or deferred. Scenarios must trace to ≥1 criterion — and behavioral criteria to ≥1 scenario — without contradicting `Scope`. Whatever fails **comes back as a gap**; if it passes → offer `Guardar especificación refinada`.
 - `Guardar` → `edit_in_place_with_confirm(spec)` and `finalize`.
 - `Cerrar` → the chassis `finalize` (always persists `CHECKPOINT`; `BACKLOG` **only if** something is deferred — here: close reason + deferred `Open questions`).
 

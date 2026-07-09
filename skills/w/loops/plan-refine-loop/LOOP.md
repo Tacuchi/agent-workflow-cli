@@ -74,6 +74,8 @@ Reuses plan-new-loop's gap taxonomy **in full** ([`plan-new-loop`](../plan-new-l
 
 > **Spec-less degradation (hand-written / adopted plans).** When the plan has **no source spec** (`## Origin` = adopted / hand-written), the spec-anchored checks **degrade gracefully**: "spec criteria uncovered" and "plan↔spec drift" do **not** apply — criterion→task traceability anchors to the plan's **own** `## Final behavior` / `## Validations` instead. The rest of the taxonomy (atomicity, deps, Impacted↔Solution, UI→SPEC) applies unchanged. Normalizing an adopted plan to the full Delta 1 schema **is** this loop's job (missing `(core)` sections are gaps).
 
+> **Adjust the Solution the laziest-that-works way** (chassis § *Minimality*, generative side): reuse what already exists before adding abstractions, layers or dependencies — the coherence gate only *confirms* minimality, and a re-refine is a chance to *remove* over-building, not add it.
+
 ## Delta 3 — What research investigates here
 
 Same as plan-new (maps code/impact: FE/BE/DB components, AS-IS wiring, deps), but **scoped to the delta**: it re-verifies only what the change touches (never re-maps the whole plan). Chassis DB rule unchanged (read-only into `SCRIPTS.sql`, MCP via a question when >1 without default).
@@ -104,7 +106,7 @@ plan-refine-loop(plan):
       ui-design (Delta 4, only new/changed screens)
     integrate + update CHECKPOINT                              # artifact-first cycle
   coherence gate (read-only) = Success criteria green:
-    - plan-new checklist (criterion→task · Final behavior · XS–S/XS · deps · Impacted↔Solution · UI→current SPEC)
+    - plan-new checklist (criterion→task · Final behavior · XS–S/XS · deps · Impacted↔Solution · UI→current SPEC · minimality)
       # spec-less plan (adopted/hand-written): criteria anchor to the plan's own Final behavior/Validations (see Delta 2)
     - re-refine's own check: the plan is REALIGNED with what changed
     whatever fails → comes back as a gap

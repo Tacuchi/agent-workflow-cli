@@ -86,10 +86,13 @@ Replaces the spec gap taxonomy with a planning-oriented one:
 | AS-IS wiring unknown | current state unknown | **research** |
 | Phase too large | complexity > S | human (re-split) |
 | Task not atomic | complexity > XS | the AI re-splits |
+| Over-engineered solution | approach heavier than the criteria need — needless abstraction/layer/dependency, or a phase/task not required to meet the spec (chassis § *Minimality*) | AI proposes the lighter path + **human** confirms (**probe** if "lighter works" is a runnable doubt) |
 | Missing deps | order unclear | research / human |
 | Spec criteria uncovered | tasks don't trace to acceptance criteria | the AI derives + human confirms |
 | Unaddressed risks | technical risks unmitigated/undeclared | human / **probe** (Delta 5) |
 | UI without design SPEC *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## UI spec` in the spec, or UI tasks) without `NNN-SPEC-*.md` in the session | **`ui-design` capability** |
+
+> **Author the Solution the laziest-that-works way** (chassis § *Minimality*, generative side): reuse what the codebase/stdlib/platform already provides before proposing new abstractions, layers or dependencies — the coherence gate then only *confirms* minimality, never repairs over-engineering after the fact.
 
 ## Delta 3 — What research investigates here
 
@@ -131,6 +134,7 @@ plan-new-loop(spec):
     - every spec acceptance criterion traces to a phase/task
     - Final behavior covers the criteria
     - phases XS–S · tasks XS · deps without cycles · Impacted consistent with Solution
+    - minimality (chassis § *Minimality*): the Solution is the lightest that meets Final behavior; no phase/task/abstraction the criteria don't require
     - (UI) every screen/UI task traces to its design SPEC and does not contradict ## UI spec
     whatever fails → comes back as a gap
   structured_choice(content: [Guardar plan, Preguntar algo más], flow: [Compactar, Cerrar])

@@ -50,6 +50,14 @@ The persistent objective needs a **checkable done-condition** — otherwise the 
 
 Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration**: when the deliverable warrants it, the final verification is an **independent** pass (subagent or clean re-read) that does not assume the implementation is correct — *only command output counts*.
 
+**Minimality (anti-over-engineering).** Passing the criteria is **necessary, not sufficient**: the gate also rejects a deliverable **heavier than its `Success criteria` require** — YAGNI at the deliverable's altitude. A spec can be coherent yet over-specified; a plan sound yet over-engineered; a diff green yet padded with reinvented stdlib, speculative abstractions or dead flexibility. At its own altitude the gate asks the laziest-that-works questions:
+
+- **does each part need to exist at all?** — speculative → cut it (the strongest lever, cheapest at spec/plan altitude);
+- **is it already there?** — in the codebase, the stdlib or the platform → reuse it, never reinvent;
+- **could it be smaller?** — same behavior, fewer moving parts → shrink it.
+
+This is a **built-in floor** owed by every gate with **no external skill**; the code-editing loops *raise* it with the installed ambient conventions (`CODE-POLICIES.md` § *Closing review gate*) but never fall below it. Bounded by *Gate integrity*: never trim validation at trust boundaries, error handling, security, accessibility or anything the spec explicitly requires — minimality cuts over-building, never correctness. Each heir instantiates the lens: **spec** = over-specified/gold-plated scope · **plan** = over-engineered solution / needless phase-task · **code** = the `delete`/`stdlib`/`native`/`yagni`/`shrink` diff lens.
+
 ## Artifacts as a live log — the artifact-first cycle
 
 The loop works **artifact-first**: the artifact is **seeded before** executing and **updated after**, not only on close. Every gap/phase/task runs the **3-beat** cycle:

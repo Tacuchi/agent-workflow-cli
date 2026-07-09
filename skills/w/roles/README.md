@@ -25,7 +25,7 @@ All 6 roles, their built-in defaults, their tier, and which loops/exports compos
 
 > **Ambient conventions (not roles).** Code, testing and writing standards **and tool authoring** (`creating-tools`, which writes `docs/tools`) are **not Workline roles** and are never bound: they are **standalone skills the host auto-discovers by `description`** and applies when relevant. Workline is **indifferent** (it neither reads nor looks for them). Useful families live in marketplace plugins (`dev-conventions`, `tool-builder`), but Workline does **not depend** on them.
 >
-> **The closing review is not a role either** (deliberate decision — a `conventions`/`rules`/`review` role was evaluated and discarded): the pre-commit **closing review gate** of `plan-exec-loop`/`quick-loop` is a **loop step**; the loop creates the **moment** and the installed ambient conventions fill it. A role that "points at the marketplace skills" would re-couple what this extraction decoupled.
+> **The closing review is not a role either** (deliberate decision — a `conventions`/`rules`/`review` role was evaluated and discarded): the pre-commit **closing review gate** of `plan-exec-loop`/`quick-loop` is a **loop step**; the loop creates the **moment** and the installed ambient conventions fill it. A role that "points at the marketplace skills" would re-couple what this extraction decoupled. The **minimality / anti-over-engineering** lens is **not a role either**: it is a built-in property of the convergence gate (chassis § *Minimality*), owed with no external skill and merely *raised* by whatever ambient review skills are installed — internal essence without the coupling a role would reintroduce.
 
 ---
 

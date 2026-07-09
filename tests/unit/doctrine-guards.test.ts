@@ -66,6 +66,10 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // Delta 7 (probe execution) + Scenarios-as-test-cases, spec-refine the
   // ## Scenarios schema + gate clause, quick/plan-refine one resolver line
   // each. Same ~1 KB headroom over the measured totals.
+  // Raised again (minimality-gate round): the chassis gained § Minimality (a
+  // shared gate property next to Gate integrity), each heir instantiates the
+  // lens (spec gap+gate, plan gap+gate+generative note, CODE-POLICIES floor).
+  // ~0.8 KB headroom over the measured totals.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -75,17 +79,17 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 44_600,
+      budget: 46_400,
     },
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 39_200,
+      budget: 41_000,
     },
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 39_100,
+      budget: 41_300,
     },
     {
       flow: "plan-refine",
@@ -95,7 +99,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 48_200,
+      budget: 50_700,
     },
     {
       flow: "plan-exec",
@@ -105,7 +109,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 44_000,
+      budget: 45_900,
     },
   ];
 
@@ -147,6 +151,40 @@ describe("Doctrine guards — G9 · probe (PoC) + spec Scenarios pins", () => {
     // Shared skeleton: both schemas carry the same criterion↔scenario anchor.
     expect(specNew).toContain("behavioral ones expand in ## Scenarios");
     expect(specRefine).toContain("behavioral ones expand in ## Scenarios");
+  });
+});
+
+describe("Doctrine guards — G10 · minimality (anti-over-engineering) pins", () => {
+  // Pin the minimality-gate round so a future compression pass cannot silently
+  // drop the shared gate property or a heir's instantiation of the lens.
+  it("the chassis keeps § Minimality as a shared gate property (bold subsection, not an H2)", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    expect(chassis).toContain("**Minimality (anti-over-engineering).**");
+    expect(chassis).toContain("**necessary, not sufficient**");
+    // Bold subsection under ## Verification-first, never an H2 (keeps chassis-consistency green).
+    expect(chassis).not.toContain("## Minimality");
+  });
+
+  it("spec-refine instantiates the lens (over-specified gap + analyze gate)", async () => {
+    const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
+    expect(specRefine).toContain("Over-specified requirement");
+    expect(specRefine).toContain("no gold-plating");
+  });
+
+  it("the plan loops instantiate the lens (over-engineered gap + coherence gate)", async () => {
+    const planNew = await readRel("loops/plan-new-loop/LOOP.md");
+    const planRefine = await readRel("loops/plan-refine-loop/LOOP.md");
+    expect(planNew).toContain("Over-engineered solution");
+    expect(planNew).toMatch(/minimality/i);
+    expect(planRefine).toMatch(/minimality/i);
+  });
+
+  it("the closing review gate carries the minimality floor (holds with no external skill)", async () => {
+    const codePolicies = await readRel("loops/CODE-POLICIES.md");
+    expect(codePolicies).toContain("Minimality lens");
+    for (const tag of ["`delete`", "`stdlib`", "`native`", "`yagni`", "`shrink`"]) {
+      expect(codePolicies, tag).toContain(tag);
+    }
   });
 });
 
