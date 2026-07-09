@@ -104,14 +104,15 @@ The flows are **composable with host-native work, never exclusive**. The host is
 - `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promote artifacts to `docs/`.
 
-### Transversal skills (no flow) — `/w:status` · `/w:fix-git` · `/w:generate-launch` · `/w:persist`
+### Transversal skills (no flow) — `/w:status` · `/w:fix-git` · `/w:generate-launch` · `/w:persist` · `/w:resume`
 
 **Flow-independent invocable** skills: triggered with `/w:` like any command, but they do **not** belong to SPEC/PLAN/QUICK, do **not** manage `docs/`, and do **not** count in **6 flow commands / 5 loops**. *(In the bundle they are packaged under `commands/` so `/w:` can invoke them; in the design they are the `workflow-skills/` category.)*
 
-- `/w:status` — read-only workspace dashboard (Done/Missing/Discarded, dates humanized in the user's language). Writes nothing; backed by `aw status`.
+- `/w:status` — read-only workspace dashboard (Done/Missing/Discarded, dates humanized in the user's language), opportunistically enriched with host context when the host exposes cheap memory. Writes nothing; backed by `aw status`.
 - `/w:fix-git` — resolves an in-progress merge's conflicts in any repo (identifies origin↔destination, analyzes intent, *structured-choice* on ambiguity). No session, never touches `docs/`; git-safe; backed by `aw merge-state`.
 - `/w:generate-launch` — (re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) by detecting each source's stack; idempotent (preserves hand-edited scripts, `--force` overwrites). Complements the launch flow's on-demand generation. No session, never touches `docs/`; backed by `aw generate-launch`.
 - `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Never creates sessions; the host→`docs/` counterpart of `export-*` (which stays the only session→`docs/` path).
+- `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (workline signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen). Writes nothing; the actionable sibling of `/w:status`.
 
 ### The loops (Layer 2)
 

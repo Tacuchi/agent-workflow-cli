@@ -4,6 +4,19 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.10.0] — 2026-07-08
+
+**Nuevo comando transversal `/w:resume` (hermano accionable de `/w:status`) + `/w:status` entiende también el historial del host.** `/w:resume` compone `/w:status` para el resumen priorizado de lo pendiente (señales workline + contexto del host) y propone cómo continuar vía structured-choice, enrutado al comando destino. `/w:status` gana una sección "CONTEXTO DEL HOST" oportunista (cheap tier; se omite en silencio si el host no expone memoria barata). Ambos read-only. Capability nueva compartida `host-memory`. Solo doctrina (cero código de runtime). Bundle `w` **13.8.0**.
+
+### Added
+
+- **`/w:resume`** — comando transversal read-only: compone `/w:status` para el resumen priorizado (orden fijo: sesión con CHECKPOINT > plan a medias > spec sin refinar > contexto de host) y propone retomar vía structured-choice (`Retomar` recomendada + `Descartar`/`Cerrar`), enrutado a `spec-refine`/`plan-new`/`plan-exec`/reopen. Nunca ejecuta el trabajo ni escribe `docs/` o `.workflow/`; respaldado por `aw status` + `aw resume-summary` (sin CLI nueva — auto-empaquetado a los 8 hosts por el glob del instalador).
+- **Capability `host-memory`** (`harness/HARNESS.md`, catálogo + matriz binding, 2 tiers): recuperar estado/pendientes desde el historial que el host expone. Cheap (Claude Code: auto-memory `MEMORY.md`) + deep (transcripts/`--resume`); fallback universal (git/`docs/` + preguntar). Consumida por `/status` (cheap, oportunista, nunca pregunta) y `/resume` (compone `/status`; escala a propuesta solo si workline no explica lo pendiente).
+
+### Changed
+
+- **`/w:status`** — el dashboard read-only gana una sección "CONTEXTO DEL HOST" **oportunista y aditiva** (solo cheap tier; se omite en silencio si no hay memoria barata; nunca pregunta ni ralentiza el dashboard por defecto). Antes era `aw status` puro; ahora compone la capability `host-memory`. Divergencia consciente con el spec 002 (que lo dejaba intacto), incorporada en el plan 001 (refine).
+
 ## [20.9.0] — 2026-07-08
 
 **+1 skill recomendada de arquitectura: `structurizr-c4`** (diagramas C4 as-code con la DSL de Structurizr, sin Docker). Publicada como repo/paquete propio `Tacuchi/structurizr-c4-skill` y sembrada en el catálogo del TUI. Bundle `w` sin cambios.

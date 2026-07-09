@@ -1,5 +1,5 @@
 ---
-description: Use when the user asks "what's the state", "what got done", or "where are we". Read-only workspace dashboard — what got done / what is missing / what was discarded, with dates humanized in the user's language. Backed by `aw status`. Transversal command (not a flow); writes nothing.
+description: Use when the user asks "what's the state", "what got done", or "where are we". Read-only workspace dashboard — what got done / what is missing / what was discarded, with dates humanized in the user's language, optionally enriched with host context when the host exposes cheap memory. Backed by `aw status`. Transversal command (not a flow); writes nothing.
 argument-hint: (no arguments)
 allowed-tools:
   [
@@ -10,7 +10,7 @@ allowed-tools:
 
 # status — workspace state (read-only)
 
-Shows, simple and direct, the workspace state grouped as **Done / Missing / Discarded**. Single-pass, read-only: no loop, no sessions, writes nothing in `docs/` or `.workflow/`. **Transversal** command (belongs to no flow).
+Shows, simple and direct, the workspace state grouped as **Done / Missing / Discarded**. Single-pass, read-only: no loop, no sessions, writes nothing in `docs/` or `.workflow/`. **Transversal** command (belongs to no flow). When the host exposes cheap memory it *opportunistically* adds a host-context section — additive, never blocking, never asked.
 
 ## Run
 
@@ -22,6 +22,7 @@ Shows, simple and direct, the workspace state grouped as **Done / Missing / Disc
    - `▸ DESCARTÓ` — every item in `discarded[]` (`kind: deferred` = deferred in BACKLOG; `kind: excluded` = excluded in CHECKPOINT), with its `text`.
 4. Every line ends with its relative date after ` · ` (e.g. `· ayer en la mañana`). An empty section shows `— (nada)`. Never invent data not present in the JSON.
 5. If `workspace.initialized` is `false` and everything is empty → say the folder is not an agent-workflow workspace (no `.workflow/`) and suggest `/w:workspace-init`.
+6. **Host context (opportunistic, read-only).** After the dashboard, if the host exposes *cheap* host-memory (see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *host-memory* — e.g. the auto-memory `MEMORY.md` on Claude Code), append a `▸ CONTEXTO DEL HOST` section with a few signals of recent focus relevant to this workspace. If there is no cheap host memory, **omit the section silently**. Never run an expensive transcript scan here and **never ask** — this is a read-only dashboard; the enrichment is additive and must not slow the default output.
 
 Suggested format (plain text; user-facing labels in Spanish):
 
@@ -40,6 +41,9 @@ Workspace: <name>
 
 ▸ DESCARTÓ
   • <text> (<kind>) · <relative>
+
+▸ CONTEXTO DEL HOST   (solo si hay memoria barata; se omite si no)
+  • <foco reciente / hilo relevante>
 ```
 
 ## Plan mode
@@ -49,4 +53,7 @@ Same as execution: run `aw status` (read-only) and show the summary. There are n
 ## Resources
 
 - CLI: `aw status` (service `status-service`; dates via `humanize-es`)
+- Capability: `host-memory` ([`../harness/HARNESS.md`](../harness/HARNESS.md)) — cheap tier only, opportunistic, silent-omit, never asks
 - Design reference: `docs/referencias/workflow-skills/status.md`
+
+> **Note:** the host-context section is an opportunistic addendum — originally `/status` was a pure `aw status` dashboard. It composes the `host-memory` capability and is purely additive (the fast dashboard is unchanged).

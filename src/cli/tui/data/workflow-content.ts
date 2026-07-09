@@ -56,6 +56,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     "/w:fix-git",
     "/w:generate-launch",
     "/w:persist",
+    "/w:resume",
     "/w:export-scripts",
     "/w:export-manuals",
     "/w:export-diagrams",
