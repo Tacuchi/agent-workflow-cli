@@ -4,6 +4,21 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.11.0] — 2026-07-09
+
+**Las puertas de convergencia ganan un lente de minimalidad (anti-over-engineering) internalizado, sin depender de skills externas.** Hasta ahora los gates verificaban correctness (tests) y coherencia (trazabilidad), pero nada chequeaba si el entregable estaba sobre-especificado o sobre-ingenierizado; y donde esa revisión medio existía (el closing review gate) dependía de convenciones ambientales externas. Ahora es piso built-in: la esencia de `ponytail-review` (`delete`/`stdlib`/`native`/`yagni`/`shrink`) internalizada como propiedad compartida del gate — no como skill ni rol nuevo, sino como un lente en las puertas que ya existen. Solo doctrina + guards (cero código de runtime). Bundle `w` **13.9.0**.
+
+### Added
+
+- **Propiedad compartida `Minimality (anti-over-engineering)`** en el chasis (`loops/CHASSIS.md` § Verification-first, junto a `Gate integrity`): pasar los `Success criteria` es necesario pero **no suficiente** — la puerta rechaza un entregable más pesado de lo que exigen, a la altitud del entregable (escalera lazy: ¿existe? / ¿ya está? / ¿más chico?). Piso built-in con cero skills externas; las ambientales solo lo **elevan**. Acotado por `Gate integrity` (nunca recorta correctness/seguridad/validación).
+- **Instanciación por heredero**: `spec-refine` (gap "over-specified requirement" + analyze gate), `plan-new`/`plan-refine` (gap "over-engineered solution / needless phase-task" + coherence gate + nota generativa "build-lazy"), `plan-exec`/`quick` (piso "Minimality lens" con tags `delete`/`stdlib`/`native`/`yagni`/`shrink` en el closing review gate de `CODE-POLICIES.md`).
+- **Guard `G10 · minimality pins`** (`doctrine-guards.test.ts`): fija `§ Minimality` en el chasis + su instanciación por heredero, para que una compresión futura no lo tire en silencio.
+
+### Changed
+
+- **`roles/README`**: aclara que la minimalidad **no es un rol** — es propiedad built-in del convergence gate; no reabre el rol `review` descartado.
+- **G1 byte-budgets** subidos para acomodar `§ Minimality` (que cargan los 5 flujos): quick 46400 · spec-refine 41000 · plan-new 41300 · plan-refine 50700 · plan-exec 45900.
+
 ## [20.10.0] — 2026-07-08
 
 **Nuevo comando transversal `/w:resume` (hermano accionable de `/w:status`) + `/w:status` entiende también el historial del host.** `/w:resume` compone `/w:status` para el resumen priorizado de lo pendiente (señales workline + contexto del host) y propone cómo continuar vía structured-choice, enrutado al comando destino. `/w:status` gana una sección "CONTEXTO DEL HOST" oportunista (cheap tier; se omite en silencio si el host no expone memoria barata). Ambos read-only. Capability nueva compartida `host-memory`. Solo doctrina (cero código de runtime). Bundle `w` **13.8.0**.
