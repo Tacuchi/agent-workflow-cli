@@ -409,7 +409,18 @@ function renderSkillsTomlTemplate(): string {
     "[skills]",
   ];
   const roleLines = SKILL_ROLES.map((role) => `# ${role} = "${BUILTIN_DEFAULT_SKILLS[role]}"`);
-  return `${[...header, ...roleLines].join("\n")}\n`;
+  const compactionLines = [
+    "",
+    "# Context self-regulation of the loops (see the chassis' Self-regulation subsection):",
+    '#   "confirm" (default, also with no config) = the loop proposes `Compactar`, the user ratifies',
+    '#   "auto" = checkpoint + compact without asking (hosts with a non-interactive mechanism',
+    '#            only; elsewhere it degrades to "confirm")',
+    '# "confirm" is already the default; the real opt-in is "auto". To switch,',
+    "# uncomment BOTH lines and set the value:",
+    "# [compaction]",
+    '# mode = "confirm"',
+  ];
+  return `${[...header, ...roleLines, ...compactionLines].join("\n")}\n`;
 }
 
 interface VisibilityOutcome {

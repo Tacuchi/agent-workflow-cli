@@ -69,6 +69,10 @@ describe("runWorkspaceInit", () => {
     expect(toml).toContain("[skills]");
     expect(toml).toContain('# ui-design = "ui-spec"');
     expect(toml).toContain('# overview = "w"');
+    // commented [compaction] opt-in section: adjacent pair, after the [skills] roles
+    // (uncommenting both must land `mode` inside [compaction], never inside [skills])
+    expect(toml).toContain('# [compaction]\n# mode = "confirm"');
+    expect(toml.indexOf("# [compaction]")).toBeGreaterThan(toml.indexOf("[skills]"));
 
     // block written, no Mode line, has the source
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
