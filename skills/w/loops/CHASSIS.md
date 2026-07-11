@@ -151,6 +151,7 @@ A **probe** (PoC / spike) is the resolver for **executable doubt**: research *re
 
 - Since the `flow` control is **always** present → **≤3 content questions + 1 `flow` control**.
 - **`flow` control** (lifecycle, always present): `Compactar` | `Cerrar`. Answering only the content questions (not touching `flow`) = keep iterating.
+- **Proactive raise**: under context pressure the loop does not wait for the next content batch — it raises the structured-choice itself, with `Compactar` as the recommended action (see *Compact / resume* → *Self-regulation (proactive compaction)*).
 - **Content questions** can be:
   - human doubts (non-factual gaps);
   - MCP choice (DB rule) — before running queries;
@@ -171,6 +172,16 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 > Each heir defines its **prior-work mark**: in the refine loops, the presence of `## Refinement decisions` + `## Q&A traceability` in the doc; in plan-exec, the plan-doc's `- [x]` checkboxes; quick has no doc (resume by CHECKPOINT only).
 
 > **`Compactar`** (the `flow` control, across all 3 cases) → write `CHECKPOINT.md` in the session (in-flight progress, remaining gaps, Q&A, `attempts`) → trigger the harness **compaction** (Claude Code: `/compact`; see [`../harness/HARNESS.md`](../harness/HARNESS.md)) → resume by reading the checkpoint.
+
+### Self-regulation (proactive compaction)
+
+`Compactar` is not only reactive: the loop **watches its own context pressure** and raises compaction itself.
+
+- **Signal**: the host's context-pressure signal when it exists (see the *compaction* capability in [`../harness/HARNESS.md`](../harness/HARNESS.md)); with no signal the fallback is **qualitative** — at batch/phase boundaries of an already-long run, ask *"would a fresh reader need the CHECKPOINT to continue?"*. Doctrine fixes **no numeric thresholds** (harness-agnostic).
+- **Modes** — config `[compaction]` table in `.workflow/skills.toml`, key `mode` (values `confirm` | `auto`):
+  - **`confirm`** (default, also with no config): raise a **proactive structured-choice** whose `flow` control carries `Compactar` as the recommended action — the human ratifies; consent is never skipped.
+  - **`auto`** (opt-in): write `CHECKPOINT.md`, then trigger the host's compaction binding **without asking**. Viable only where the host has a **non-interactive** mechanism (see the *Harness binding matrix*); otherwise it **degrades to `confirm`**.
+- **Invariant — CHECKPOINT before compacting**: in every mode, `CHECKPOINT.md` is written (or verified fresh) **before** any compaction fires; resume keys off it (the 3 cases above).
 
 ## Convergence / exit
 
