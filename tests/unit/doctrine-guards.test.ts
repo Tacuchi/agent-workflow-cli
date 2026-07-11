@@ -70,6 +70,10 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // shared gate property next to Gate integrity), each heir instantiates the
   // lens (spec gap+gate, plan gap+gate+generative note, CODE-POLICIES floor).
   // ~0.8 KB headroom over the measured totals.
+  // Raised again (spec 004 self-regulation round): the chassis gained the
+  // § Compact / resume → Self-regulation (proactive compaction) subsection
+  // + the proactive-raise line in § Structured-choice (all 5 heirs inherit;
+  // no per-loop edits). ~0.8 KB headroom over the measured totals.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -79,17 +83,17 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 46_400,
+      budget: 47_900,
     },
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 41_000,
+      budget: 42_500,
     },
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 41_300,
+      budget: 42_800,
     },
     {
       flow: "plan-refine",
@@ -99,7 +103,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 50_700,
+      budget: 52_200,
     },
     {
       flow: "plan-exec",
@@ -109,7 +113,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 45_900,
+      budget: 47_300,
     },
   ];
 

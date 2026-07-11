@@ -100,3 +100,66 @@ describe("CHASSIS consistency — motor de loops vs heirs reales", () => {
     expect(parseSkillFrontmatter(chassis)).toBeNull();
   });
 });
+
+describe("Self-regulation (proactive compaction) — chasis ↔ harness (spec 004)", () => {
+  const HARNESS_PATH = resolve(__dirname, "..", "..", "skills", "w", "harness", "HARNESS.md");
+
+  /** The `### Self-regulation …` subsection of § Compact / resume, up to the next `## `. */
+  async function selfRegulationSubsection(): Promise<string> {
+    const chassis = await readFile(CHASSIS_PATH, "utf8");
+    const start = chassis.indexOf("### Self-regulation (proactive compaction)");
+    expect(start).toBeGreaterThan(-1);
+    const rest = chassis.slice(start);
+    const end = rest.indexOf("\n## ");
+    return end === -1 ? rest : rest.slice(0, end);
+  }
+
+  it("el chasis fija los dos modos, la config [compaction] y la degradación a confirm", async () => {
+    const sub = await selfRegulationSubsection();
+    expect(sub).toContain("`[compaction]`");
+    expect(sub).toContain("`confirm` | `auto`");
+    expect(sub).toMatch(/degrades to `confirm`/);
+    expect(sub).toContain("`Compactar`");
+  });
+
+  it("CHECKPOINT-antes-de-compactar es invariante explícita en todos los modos", async () => {
+    const sub = await selfRegulationSubsection();
+    expect(sub).toContain("CHECKPOINT before compacting");
+    expect(sub).toContain("**before** any compaction fires");
+  });
+
+  it("sin umbrales numéricos: la detección es señal del host + fallback cualitativo (D4)", async () => {
+    const sub = await selfRegulationSubsection();
+    expect(sub).toContain("no numeric thresholds");
+    expect(sub).toMatch(/qualitative/i);
+    expect(sub).not.toMatch(/\d+\s*%/);
+    expect(sub).not.toMatch(/\d+k?\s*tokens/i);
+  });
+
+  it("presupuesto de tokens del chasis: la subsección se mantiene acotada (≤15 líneas no vacías)", async () => {
+    const sub = await selfRegulationSubsection();
+    const nonEmpty = sub.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    expect(nonEmpty.length).toBeLessThanOrEqual(15);
+  });
+
+  it("§ Structured-choice levanta el flow control proactivamente bajo presión de contexto", async () => {
+    const chassis = await readFile(CHASSIS_PATH, "utf8");
+    const start = chassis.indexOf("## Structured-choice");
+    const end = chassis.indexOf("## Compact / resume");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const section = chassis.slice(start, end);
+    expect(section).toContain("Proactive raise");
+    expect(section).toContain("`Compactar`");
+  });
+
+  it("HARNESS carga los hechos por-host (señal, viabilidad de auto, degradación) y delega la semántica de modos al chasis", async () => {
+    const harness = await readFile(HARNESS_PATH, "utf8");
+    expect(harness).toContain("compaction (signal & self-regulation)");
+    expect(harness).toContain("context-pressure");
+    expect(harness).toMatch(/degrades to `confirm`/);
+    // Single source: the config/mode semantics live ONLY in the chassis subsection.
+    expect(harness).toContain("the chassis' subsection — single source");
+    expect(harness).not.toMatch(/\[compaction\] mode = /);
+  });
+});

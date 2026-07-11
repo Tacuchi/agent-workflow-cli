@@ -175,6 +175,33 @@ describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec
   });
 });
 
+describe("directed resume contract — resume.md optional argument (spec 004)", () => {
+  const RESUME = "commands/resume.md";
+
+  it("declares the optional artifact argument (no longer '(no arguments)')", async () => {
+    const text = await readFile(join(SKILL_ROOT, RESUME), "utf8");
+    expect(text).not.toContain("(no arguments)");
+    expect(text).toMatch(/argument-hint:\s*"?\[docs\/specs/);
+  });
+
+  it("keeps the read-only hard floor, argument or not", async () => {
+    const text = await readFile(join(SKILL_ROOT, RESUME), "utf8");
+    expect(text).toContain("never write `docs/` or `.workflow/`");
+    expect(text).toContain("with or without an argument");
+  });
+
+  it("directed mode resolves via existing CLI + ## Origin and routes through ## Routing (no new helper)", async () => {
+    const text = await readFile(join(SKILL_ROOT, RESUME), "utf8");
+    const start = text.indexOf("## Directed resume");
+    expect(start).toBeGreaterThan(-1);
+    const directed = text.slice(start, text.indexOf("\n## Run\n"));
+    expect(directed).toContain("aw sessions --state all");
+    expect(directed).toContain("--include-recent-closed");
+    expect(directed).toContain("## Origin");
+    expect(directed).toContain("`## Routing`");
+  });
+});
+
 describe("lazy workspace-init contract — code ↔ doctrine (spec 008)", () => {
   // Init went minimal (docs/ born on demand at `aw next-number`); the gitignore
   // set became CLI-owned; session-close now feeds HISTORY.md. These pins keep
