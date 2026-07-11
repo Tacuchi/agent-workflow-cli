@@ -112,7 +112,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 - `/w:fix-git` — resolves an in-progress merge's conflicts in any repo (identifies origin↔destination, analyzes intent, *structured-choice* on ambiguity). No session, never touches `docs/`; git-safe; backed by `aw merge-state`.
 - `/w:generate-launch` — (re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) by detecting each source's stack; idempotent (preserves hand-edited scripts, `--force` overwrites). Complements the launch flow's on-demand generation. No session, never touches `docs/`; backed by `aw generate-launch`.
 - `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Never creates sessions; the host→`docs/` counterpart of `export-*` (which stays the only session→`docs/` path).
-- `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (workline signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen). Writes nothing; the actionable sibling of `/w:status`.
+- `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (workline signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen); an optional artifact argument (spec/plan/session) skips the survey and gets its exact re-entry route. Writes nothing; the actionable sibling of `/w:status`.
 
 ### The loops (Layer 2)
 
@@ -171,7 +171,7 @@ The doctrine names abstract **capabilities**, never a concrete harness tool. A s
 Key capabilities:
 
 - **structured-choice** — ask the human ≤3 content questions + 1 `flow` control. Claude Code: `AskUserQuestion`. Fallback: numbered markdown.
-- **compaction** — shrink the context without losing the thread. Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
+- **compaction** — shrink the context without losing the thread; its context-pressure signal feeds the loops' self-regulation (chassis § *Compact / resume*). Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
 - **command-invocation** · **procedure-loading** · **subagent-dispatch** (opt.) · **persistent-context** · **external-data** (MCP) · **dry-run/preview**.
 
 The only `must` capabilities for a loop's cycle are **structured-choice** and **compaction**, and both degrade to text → any harness with chat + files runs the full model. Detail, binding matrix and distribution (canonical `AGENTS.md` + `CLAUDE.md` symlink): see `harness/HARNESS.md`.
