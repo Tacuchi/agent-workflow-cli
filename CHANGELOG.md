@@ -4,6 +4,23 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.12.0] — 2026-07-11
+
+**Los loops se autorregulan: compactación proactiva de contexto (modos `confirm`/`auto`) + `/w:resume` dirigido por artefacto.** Hasta ahora `Compactar` era puramente reactivo (solo se disparaba si el humano lo elegía en la structured-choice) y `/w:resume` no aceptaba argumentos. El delta es proactividad sobre mecánica existente: el loop detecta la presión de contexto y levanta (o ejecuta) la compactación él mismo, con CHECKPOINT garantizado antes; y el reenganche se dirige por artefacto. Solo doctrina + plantilla + guards (cero código de runtime nuevo, cero CLI nueva, cero cambios de resolver). Bundle `w` **13.10.0**.
+
+### Added
+
+- **Subsección `Self-regulation (proactive compaction)`** en el chasis (`loops/CHASSIS.md` § Compact / resume): señal del host + fallback cualitativo en fronteras de batch/fase (sin umbrales numéricos — doctrina agnóstica), modos `confirm` (default, también sin config: structured-choice proactiva con `Compactar` recomendada; el consentimiento nunca se salta) / `auto` (opt-in: CHECKPOINT + binding del host sin preguntar; **degrada a `confirm`** si el host no tiene mecanismo no-interactivo), e invariante CHECKPOINT-antes-de-compactar. Heredan los 5 loops; cero ediciones por-loop. Nota de levantamiento proactivo del `flow` control en § Structured-choice.
+- **Nota `compaction (signal & self-regulation)`** en `harness/HARNESS.md` (+ señal en la fila del catálogo): hechos por-host — señal de presión de contexto, viabilidad de `auto` (mecanismo no-interactivo) y degradación; ejemplo Claude Code (el agente no puede invocar `/compact` él mismo → `auto` degrada; el auto-compact nativo ya está amortiguado por los hooks Pre/PostCompact). La semántica de modos queda single-source en el chasis.
+- **`/w:resume <artefacto>` — reenganche dirigido**: argumento opcional (spec `docs/specs/…`, plan `docs/plans/…` o sesión `NNN`) — deriva el slug → `aw sessions --state all` / `aw resume-summary --include-recent-closed` → confirma la asociación por el `## Origin` de las SESSION.md → propone la ruta exacta vía structured-choice según la tabla `## Routing`. Hard floor read-only intacto (con o sin argumento); sin argumento, el flujo de siempre. Cero CLI nueva.
+- **Scaffold `[compaction]`** comentado en la plantilla de `.workflow/skills.toml` (`mode = "confirm" | "auto"`, par adyacente tras los roles de `[skills]`): el resolver ya tolera tablas top-level extra — cero cambios de resolver; `confirm` es el default sin tocar el TOML (el opt-in real es `auto`).
+- **Guards nuevos**: `chassis-consistency` (subsección + modos + checkpoint-antes + sin umbral numérico + presupuesto ≤15 líneas + harness single-source) · `skill-consistency` (resume: argumento opcional declarado, hard floor read-only conservado, resolución vía CLI existente + `## Origin` + `## Routing`) · `workspace-init-service` (adyacencia y orden de la sección `[compaction]` en la plantilla).
+
+### Changed
+
+- **G1 byte-budgets** recalibrados para acomodar la subsección (cargan los 5 flujos; ~0.8 KB de holgura sobre lo medido): quick 47900 · spec-refine 42500 · plan-new 42800 · plan-refine 52200 · plan-exec 47300.
+- **Orientación raíz (`SKILL.md`)**: el one-liner de `/w:resume` menciona el argumento opcional y la capability `compaction` la señal que alimenta la autorregulación.
+
 ## [20.11.0] — 2026-07-09
 
 **Las puertas de convergencia ganan un lente de minimalidad (anti-over-engineering) internalizado, sin depender de skills externas.** Hasta ahora los gates verificaban correctness (tests) y coherencia (trazabilidad), pero nada chequeaba si el entregable estaba sobre-especificado o sobre-ingenierizado; y donde esa revisión medio existía (el closing review gate) dependía de convenciones ambientales externas. Ahora es piso built-in: la esencia de `ponytail-review` (`delete`/`stdlib`/`native`/`yagni`/`shrink`) internalizada como propiedad compartida del gate — no como skill ni rol nuevo, sino como un lente en las puertas que ya existen. Solo doctrina + guards (cero código de runtime). Bundle `w` **13.9.0**.
