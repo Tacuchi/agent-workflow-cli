@@ -74,6 +74,10 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // § Compact / resume → Self-regulation (proactive compaction) subsection
   // + the proactive-raise line in § Structured-choice (all 5 heirs inherit;
   // no per-loop edits). ~0.8 KB headroom over the measured totals.
+  // Raised again (creativity-gate round): spec-refine's LOOP gained the
+  // § Ideation gate (gap row + sequence branch + integration line) and the
+  // harness the optional web-research capability; chassis untouched —
+  // spec-only tax, so only this flow's budget moves. ~0.8 KB headroom.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -88,7 +92,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 42_500,
+      budget: 45_300,
     },
     {
       flow: "plan-new",
@@ -189,6 +193,38 @@ describe("Doctrine guards — G10 · minimality (anti-over-engineering) pins", (
     for (const tag of ["`delete`", "`stdlib`", "`native`", "`yagni`", "`shrink`"]) {
       expect(codePolicies, tag).toContain(tag);
     }
+  });
+});
+
+describe("Doctrine guards — G11 · creativity/ideation gate pins", () => {
+  // Pin the creativity-gate round so a future compression pass cannot silently
+  // drop the divergent gate, leak it into the shared chassis (spec-only tax),
+  // or relax spec-new's single-pass web prohibition.
+  it("spec-refine keeps the ideation gate (gap row + section + web-research consumer)", async () => {
+    const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
+    expect(specRefine).toContain("## Ideation gate (creativity)");
+    expect(specRefine).toContain("Unexplored solution space");
+    expect(specRefine).toContain("web-research");
+    // Canonical product labels of the offer (G7 precedent: pin verbatim strings).
+    expect(specRefine).toContain("`Explorar ideas`");
+    expect(specRefine).toContain("`Seguir sin ideación`");
+  });
+
+  it("the harness declares web-research as an optional capability with a declared degrade", async () => {
+    const harness = await readRel("harness/HARNESS.md");
+    expect(harness).toContain("**web-research**");
+    expect(harness).toContain("web-research (consumer & consent)");
+  });
+
+  it("the chassis stays clean — the gate never migrates to the shared engine", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    expect(chassis).not.toMatch(/web-research|ideation/i);
+  });
+
+  it("spec-new keeps its single-pass web prohibition", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    expect(specNew).toContain("FORBIDDEN");
+    expect(specNew).toContain("web searches");
   });
 });
 

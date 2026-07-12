@@ -4,6 +4,20 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.13.0] — 2026-07-11
+
+**`spec-refine-loop` gana su primera puerta divergente: la puerta de creatividad (ideation gate), con búsqueda web opcional.** Hasta ahora el loop solo convergía (cada resolutor cierra gaps) y la doctrina era 100% offline: si la spec nació casada con el primer enfoque, nadie proponía alternativas. Ahora el loop detecta esa señal y ofrece — con consentimiento explícito — una ronda de brainstorming que propone y combina ideas, buscando en la web donde el host lo permita. Solo doctrina + guards (cero código de runtime, cero config nueva); el chasis queda intocado — impuesto solo-SPEC. Bundle `w` **13.11.0**.
+
+### Added
+
+- **Gap `Unexplored solution space` + sección `## Ideation gate (creativity)`** en `loops/spec-refine-loop/LOOP.md`: oferta como content question (`Explorar ideas` | `Seguir sin ideación`) con recomendación y anti-refire (declinar = exhausted; a demanda siempre disponible; alternativas ya adoptadas de la conversación suprimen el disparo) · ronda de ideación consentida (ideas nuevas + combinadas; hallazgos y fuentes → `CONCLUSIONS`) · veredictos top ≤3 (`Adoptar` → integra + traza en `## Refinement decisions` con fuente · `Descartar` → una línea + motivo · `Aparcar` → `## Open questions`) · divergencia acotada por Minimality; solo fase SPEC (`spec-new` sigue single-pass sin web; plan/quick no heredan nada). Rama en § Sequence + línea en § Integration + apunte en el esquema del entregable.
+- **Capability opcional `web-research`** en `harness/HARNESS.md` (patrón `host-memory`): fila de catálogo + fila de matriz (Claude Code `WebSearch`/`WebFetch`; Codex `web_search` opt-in; Gemini `google_web_search`+`web_fetch`; resto `~`) + nota de consumidores — el consentimiento va empaquetado en la aceptación de la puerta (nunca browsing libre fuera de una ronda consentida); en degradación el loop idea offline y **lo declara** (a diferencia del silent-omit de host-memory).
+- **Guard `G11 · creativity/ideation gate pins`** (`doctrine-guards.test.ts`): fija la puerta en el LOOP, la capability en HARNESS, el **scoping** (el chasis no contiene `web-research` ni ideación) y la prohibición de web de `spec-new`.
+
+### Changed
+
+- **G1 byte-budget de spec-refine** recalibrado 42500 → 45300 (solo ese flujo se mueve — el chasis no ganó bytes): carga medida 44525 B + ~0,8 KB de holgura.
+
 ## [20.12.0] — 2026-07-11
 
 **Los loops se autorregulan: compactación proactiva de contexto (modos `confirm`/`auto`) + `/w:resume` dirigido por artefacto.** Hasta ahora `Compactar` era puramente reactivo (solo se disparaba si el humano lo elegía en la structured-choice) y `/w:resume` no aceptaba argumentos. El delta es proactividad sobre mecánica existente: el loop detecta la presión de contexto y levanta (o ejecuta) la compactación él mismo, con CHECKPOINT garantizado antes; y el reenganche se dirige por artefacto. Solo doctrina + plantilla + guards (cero código de runtime nuevo, cero CLI nueva, cero cambios de resolver). Bundle `w` **13.10.0**.

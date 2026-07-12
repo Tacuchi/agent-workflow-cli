@@ -3,7 +3,8 @@ name: spec-refine-loop
 description: >-
   Refines a draft spec (docs/specs/NNN-spec-<slug>.md) by editing it IN PLACE
   until it is unambiguous. Heir of the chassis (loops/CHASSIS.md). Deltas:
-  spec gap taxonomy, analyze gate, ## UI spec section via the ui-design
+  spec gap taxonomy, analyze gate, ideation gate (consented brainstorming,
+  optional web-research), ## UI spec section via the ui-design
   capability, and adds Refinement decisions + Q&A traceability — the refined
   mark plan-new detects. Started by /w:spec-refine (or the live escalation
   from quick-loop); resumable via CHECKPOINT and re-runnable on demand.
@@ -81,7 +82,7 @@ Structured Markdown description (screens → regions/components). See [`ui-spec`
 
 ## Refinement decisions   ← NEW (ADDED)
 What was defined while refining and why. Includes what inline research
-resolved (with a reference to the session's CONCLUSIONS).
+resolved (ref. the session's CONCLUSIONS) and the ideation verdicts (§ Ideation gate).
 
 ## Q&A traceability       ← NEW (ADDED)
 Every doubt asked to the human + the chosen answer.
@@ -108,7 +109,17 @@ Every doubt asked to the human + the chosen answer.
 | Hidden assumptions | the spec assumes unstated things | **research** validates / **human** confirms |
 | Internal contradiction | sections contradict each other | **human** |
 | Over-specified requirement | scope/criteria gold-plated — beyond the actual need (chassis § *Minimality*) | **human** (AI proposes the cut, human ratifies) |
+| Unexplored solution space | the spec settles on the first conceivable approach — no alternatives weighed nor adopted from the conversation | **human consents** → **ideation** (see *Ideation gate*) |
 | UI unspecified *(if it applies)* | the requirement involves UI but `## UI spec` is missing | **`ui-design` capability** |
+
+## Ideation gate (creativity)
+
+The loop's one **divergent** gate: every other resolver closes a gap; this one widens the option space before the spec hardens around its first idea. It resolves **Unexplored solution space** in two consented steps:
+
+1. **Offer & consent.** The gap enters the batch as a content question — `Explorar ideas` vs `Seguir sin ideación` — carrying the AI's recommendation like any other. Declining marks the gap **exhausted** (never re-offered this run); an explicit user request for ideas at any point counts as an accepted offer (on-demand entry). Alternatives already weighed in the conversation are *adopted context* — the gap does not fire.
+2. **Ideation round** (one per consent). Propose fresh ideas and **combinations** (the user's + found ones). If the host exposes **web-research** ([`../../harness/HARNESS.md`](../../harness/HARNESS.md)), the accepted offer also authorizes that round's web searches — no per-search consent; findings + sources land in the session's `CONCLUSIONS`, like inline research. Without the capability, ideate offline (own knowledge + workspace + repos) and **declare it** — never silently.
+
+**Verdicts (back to convergence).** Present the top ≤3 ideas via the same structured-choice, each with a recommended verdict: `Adoptar` → integrate into `Requirement`/`Scope`/criteria + trace in `## Refinement decisions` (idea, rationale, source/URL when web-found) · `Descartar` → one line + reason there · `Aparcar` → `## Open questions`. Ideas beyond the top 3 stay summarized in `CONCLUSIONS`. Divergence is bounded by *Minimality* (chassis): nothing enters the spec without an explicit `Adoptar`; the analyze gate keeps pruning gold-plating. This gate exists **only** in this loop — `spec-new` stays single-pass (no research, no web) and the plan/quick loops inherit none of it.
 
 ## Sequence
 
@@ -128,6 +139,8 @@ spec-refine-loop(spec):
       if gap = UI (requirement involves UI, ## UI spec missing):
         compose ui-design → author ## UI spec    # design-system/theme via structured-choice (counts in the batch)
         work = integrate(work, ui)               # → ## UI spec
+      else if gap = Unexplored solution space (creativity):
+        pending_human.push("ideation offer")     # offer with AI recommendation: `Explorar ideas` | `Seguir sin ideación`
       else if factual(gap) and attempts[gap] < MAX:
         if it needs DB and >1 MCP without default → queue "MCP choice" in pending_human
         res = research_inline(gap)           # in the current session: ANALYSIS-FILE → CONCLUSIONS (+read-only SCRIPTS.sql)
@@ -142,6 +155,8 @@ spec-refine-loop(spec):
         Compactar → write CHECKPOINT (refine_session) ; compact(harness) ; continue
         Cerrar    → goto finalize
       work = integrate(work, ans)            # → Q&A traceability / Open questions
+      ideation offer accepted → run the round NOW, then its verdicts as a NEW ≤3+flow batch (§ Ideation gate) → integrate
+      ideation offer declined → mark that gap exhausted    # anti re-fire; on-demand entry stays open
   # no material gaps → analyze gate = Success criteria green (read-only) before offering Guardar:
   issues = analyze(work)   # criteria trace to the Requirement · no contradictions · coherent Scope · Open questions closed/deferred · scenarios↔criteria · no gold-plating (minimality)
   if issues: gaps += issues ; continue            # findings come back into the loop as gaps
@@ -172,6 +187,7 @@ Full mechanism (3 cases, `Compactar`, re-run on demand with `--reopen`) in the c
 ## Integration (where each resolution lands)
 
 - Resolved via **inline research** → the spec's `## Refinement decisions` (+ ref to the session's `CONCLUSIONS`).
+- Resolved via **ideation** → per verdict (§ *Ideation gate*): `Adoptar` → the spec's sections + `## Refinement decisions` · `Descartar` → there · `Aparcar` → `## Open questions`.
 - Resolved via **human** → the spec's `## Q&A traceability`.
 - Resolved via the **`ui-design` capability** (UI gap) → the spec's `## UI spec` section.
 - **Inconclusive or unresolved research** → the spec's `## Open questions` (deferred) + the refine session's `BACKLOG.md` (only if something is deferred).
