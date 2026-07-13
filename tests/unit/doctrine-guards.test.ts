@@ -78,6 +78,12 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // § Ideation gate (gap row + sequence branch + integration line) and the
   // harness the optional web-research capability; chassis untouched —
   // spec-only tax, so only this flow's budget moves. ~0.8 KB headroom.
+  // Raised again (split-gate round): plan-new-loop gained § Split gate
+  // (multi-plan) (gap row + sequence branch + convergence line) and
+  // plan-refine-loop the refine-split semantics (references the canonical
+  // gate, never redefines it); spec-new gained its own multi-spec gate but
+  // stays unbudgeted (no loop), and the chassis is untouched — only the two
+  // plan flows move. ~0.8 KB headroom over the measured totals.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -97,7 +103,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 42_800,
+      budget: 46_200,
     },
     {
       flow: "plan-refine",
@@ -107,7 +113,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 52_200,
+      budget: 57_600,
     },
     {
       flow: "plan-exec",
@@ -225,6 +231,56 @@ describe("Doctrine guards — G11 · creativity/ideation gate pins", () => {
     const specNew = await readRel("commands/spec-new.md");
     expect(specNew).toContain("FORBIDDEN");
     expect(specNew).toContain("web searches");
+  });
+});
+
+describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins", () => {
+  // Pin the split-gate round so a future compression pass cannot silently drop
+  // a gate, dilute its canonical labels, or leak it into the shared chassis.
+  it("spec-new keeps the multi-spec split gate (section + labels + write ordering)", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    expect(specNew).toContain("## Split gate (multi-spec)");
+    expect(specNew).toContain("before writing anything");
+    expect(specNew).toContain("NO RESEARCH");
+    // Canonical product labels of the offer (G7 precedent: pin verbatim strings).
+    expect(specNew).toContain("`Dividir en varias specs`");
+    expect(specNew).toContain("`Una sola spec`");
+  });
+
+  it("the multi-spec gate stays scoped to raw prompts (escalation/adoption never re-ask)", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    const section = specNew.slice(specNew.indexOf("## Split gate (multi-spec)"));
+    const gate = section.slice(0, section.indexOf("\n## "));
+    expect(gate).toMatch(/escalat/i);
+    expect(gate).toMatch(/adopt/i);
+    expect(gate).toContain("nothing is written yet");
+  });
+
+  it("plan-new-loop defines the canonical multi-plan gate (gap row + partition + labels)", async () => {
+    const planNew = await readRel("loops/plan-new-loop/LOOP.md");
+    expect(planNew).toContain("## Split gate (multi-plan)");
+    expect(planNew).toContain("Plan splittable");
+    expect(planNew).toMatch(/traces to \*\*exactly one\*\*/);
+    expect(planNew).toMatch(/partition/i);
+    expect(planNew).toContain("`Dividir en varios planes`");
+    expect(planNew).toContain("`Un solo plan`");
+    expect(planNew).toContain("`Guardar planes`");
+    // The single-plan branch survives the split round untouched.
+    expect(planNew).toContain("`Guardar plan`");
+  });
+
+  it("plan-refine-loop adds only the refine semantics (original keeps path; [x] anchored)", async () => {
+    const planRefine = await readRel("loops/plan-refine-loop/LOOP.md");
+    expect(planRefine).toContain("## Split gate — refine semantics");
+    expect(planRefine).toContain("keeps its number/path");
+    expect(planRefine).toContain("Completed tasks (`- [x]`) never move to a sibling");
+    expect(planRefine).toContain("`Guardar planes`");
+    expect(planRefine).toContain("`Guardar plan refinado`");
+  });
+
+  it("the chassis stays clean — the split gates never migrate to the shared engine", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    expect(chassis).not.toMatch(/split gate|multi-spec|multi-plan|Dividir/i);
   });
 });
 

@@ -67,6 +67,8 @@ Typical chain: prompt → `spec-new` generates `docs/specs/NNN-spec-<slug>.md` �
 
 QUICK can **escalate live to SPEC** when the objective exceeds a quick (entry size gate) or the task grows mid-loop: with consent via structured-choice, the work line moves to the SPEC flow (draft via the `spec-new` procedure + `spec-refine-loop` directly); escalation to PLAN stays **deferred** (seed + pointer). See `loops/quick-loop/LOOP.md` § *QUICK delta*.
 
+Both authoring entry points can **split** with consent: `spec-new` may split a multi-part prompt into **sibling specs** (its split gate — one structured-choice before writing anything), and the plan loops may split a plan into independently deliverable **sibling plans** (`plan-new-loop` § *Split gate (multi-plan)*; plan-refine adds the in-place semantics). Siblings cross-reference **by path**; a split stays inside the same work line — it is not an escalation.
+
 ### Operating context — where everything lands
 
 Before any loop, the AI resolves its **operating context** on **every prompt** with two detections: **workspace?** (`.<ns>/sessions/` exists) + **session to continue?** (an active one, or a recent one this prompt continues). That decides the behavior and **where artifacts land** (SQL, scripts, decisions, …):

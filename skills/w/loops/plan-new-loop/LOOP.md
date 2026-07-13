@@ -27,7 +27,7 @@ PLAN
 `docs/specs/NNN-spec-*.md` (glob — locates the spec by number; or the exact path from the command argument). **Refined vs draft** is distinguished by the **presence** of `## Refinement decisions` / `## Q&A traceability` in the spec: if missing → **soft-suggest** running `/w:spec-refine` first (planning over a solid spec produces better plans), but the user may proceed.
 
 ## Writes
-`docs/plans/PPP-plan-<slug>.md` (`generate`; **overwrites with confirmation** if it exists). It writes only `docs/plans` — never other `docs/` folders, no auto-export. If the plan **includes UI**, it also produces **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts **of its session** (see *Delta 4* — they are not `docs/`, no auto-export).
+`docs/plans/PPP-plan-<slug>.md` (`generate`; **overwrites with confirmation** if it exists) — or **several sibling plans** when an accepted split applies (§ *Split gate (multi-plan)*). It writes only `docs/plans` — never other `docs/` folders, no auto-export. If the plan **includes UI**, it also produces **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts **of its session** (see *Delta 4* — they are not `docs/`, no auto-export).
 
 > **slug**: short kebab-case derived from the spec's Requirement — only `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars. `aw next-number docs/plans` returns JSON (field `next` = `PPP`); the loop builds the full name. To locate plans, glob `docs/plans/PPP-plan-*.md`.
 
@@ -85,6 +85,7 @@ Replaces the spec gap taxonomy with a planning-oriented one:
 | Components unidentified | FE/BE/DB impact unknown | **research** (maps the code) |
 | AS-IS wiring unknown | current state unknown | **research** |
 | Phase too large | complexity > S | human (re-split) |
+| Plan splittable | independently deliverable tranches — different moments/priorities, no shared deps/risk | **human consents** → split (see *Split gate (multi-plan)*) |
 | Task not atomic | complexity > XS | the AI re-splits |
 | Over-engineered solution | approach heavier than the criteria need — needless abstraction/layer/dependency, or a phase/task not required to meet the spec (chassis § *Minimality*) | AI proposes the lighter path + **human** confirms (**probe** if "lighter works" is a runnable doubt) |
 | Missing deps | order unclear | research / human |
@@ -114,6 +115,17 @@ Chassis § *Proof of concept (probe)*, instantiated for planning. Two placements
 - **Plan-shaping unknown** (the `Solution` itself depends on the answer) → run the probe **inline now**; the verdict (`CONCLUSIONS`) feeds `Solution` / `Risks / impact`.
 - **Execution-time risk** (a task will build on a risky, runnable assumption) → encode an explicit **probe task**, placed **early** — before the tasks that depend on its verdict; the matching `Risks / impact` entry references it.
 
+## Split gate (multi-plan)
+
+Resolves the **Plan splittable** gap (Delta 2) — the canonical definition for **both** plan loops (`plan-refine-loop` references it, never redefines it). It fires **only on clear signals** (≥2 of: tranches independently executable/deliverable · no shared deps/risk between tranches · different requested moments/priorities · the plan far exceeds S-complexity phases · the user asked for staging); borderline → **one plan, no question**. It can be assessed during decomposition or at the coherence gate, always **before** `Guardar`.
+
+- **The offer** enters the batch as a **content question** (counts in the ≤3): the body shows the proposed cut in the **user's language** — per sibling, a name + slug, a 1-line scope, the phase mapping and the order. Labels: `Dividir en varios planes` (recommended when the signals hold) | `Un solo plan`. Declining marks the gap **exhausted** (no re-offer this run); a free-form answer adjusts the cut. The accepted cut is seeded into `CHECKPOINT` — a resume does **not** re-ask.
+- **Anti-duplicate** (the `create_or_resume` spirit): if sibling plans whose `## Origin` references this same spec/split already exist, the recommended option becomes resuming them (`/w:plan-refine` / `/w:plan-exec` semantics) — never a second set.
+- **On acceptance** — same run, same session (one session per run, one HISTORY row): **all N siblings are elaborated complete** in this run — each gets the full Delta 1 schema and is immediately executable (`plan-exec` runs any plan; a seed without `## Tasks` would break that contract). Context pressure is absorbed by self-regulation (chassis § *Compact / resume*). Numbering: `aw next-number docs/plans` **immediately before each write** — numbers come out consecutive, so every sibling path is known after the first mint.
+- **Sibling contract**: each `## Origin` records the shared source spec + `split (part i/N)` + the **siblings by path** + the order; `## Dependencies` (the existing optional section) carries the inter-plan order — **acyclic and advisory** (`plan-exec` does not enforce it; it only orients what to attack first).
+- **Coherence gate, re-framed**: every spec acceptance criterion traces to **exactly one** sibling — a **complete, disjoint partition**; each sibling's `Final behavior` covers its subset; the union covers the spec. Spec-less plans anchor the partition to their own `Final behavior` / `Validations`.
+- **Closing action** on the split branch: `Guardar planes` (the single-plan branch keeps `Guardar plan`).
+
 ## Sequence
 
 ```
@@ -132,13 +144,18 @@ plan-new-loop(spec):
     integrate + update CHECKPOINT                              # artifact-first cycle
   coherence gate (read-only) = Success criteria green:
     - every spec acceptance criterion traces to a phase/task
+      (split: each criterion → exactly one sibling — complete, disjoint partition)
     - Final behavior covers the criteria
     - phases XS–S · tasks XS · deps without cycles · Impacted consistent with Solution
     - minimality (chassis § *Minimality*): the Solution is the lightest that meets Final behavior; no phase/task/abstraction the criteria don't require
     - (UI) every screen/UI task traces to its design SPEC and does not contradict ## UI spec
     whatever fails → comes back as a gap
-  structured_choice(content: [Guardar plan, Preguntar algo más], flow: [Compactar, Cerrar])
-  Guardar → write docs/plans/PPP-plan-<slug>.md (confirmation if it exists)
+  if split accepted (§ Split gate (multi-plan)): work = the N sibling plans (same session; cut in CHECKPOINT)
+    structured_choice(content: [Guardar planes, Preguntar algo más], flow: [Compactar, Cerrar])
+    Guardar planes → per sibling: aw next-number docs/plans → write (confirmation if it exists)
+  else:
+    structured_choice(content: [Guardar plan, Preguntar algo más], flow: [Compactar, Cerrar])
+    Guardar → write docs/plans/PPP-plan-<slug>.md (confirmation if it exists)
 finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close session + report
 ```
 
@@ -146,6 +163,7 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 
 - **No material gaps** → **coherence gate** (the *Sequence* checklist; the PLAN-new instance of the chassis convergence gate). Criterion→task traceability is a **checked invariant**, never a separate section.
 - Passes → `Guardar plan` (writes with confirmation if it exists) → `finalize`.
+- **Split branch**: `Guardar planes` writes the N siblings sequentially (mint before each write) → `finalize` — one session, one HISTORY row.
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).
 
 > **After generating:** the plan can go straight to `plan-exec`, or — if changes arise before executing (new requirements, scope adjustments) — pass through [`plan-refine-loop`](../plan-refine-loop/LOOP.md) (`/w:plan-refine`, auxiliary and **not mandatory**), which refines it in place.

@@ -15,8 +15,8 @@ npm install -g @tacuchi/agent-workflow-cli
 Workline has three layers plus a permanent `docs/` zone:
 
 - **Layer 1 · Commands** (`/w:*`) — the only thing the user invokes:
-  - **SPEC** — `/w:spec-new` (single-pass draft) → `/w:spec-refine` (gap-driven loop) → `docs/specs/`.
-  - **PLAN** — `/w:plan-new` → (`/w:plan-refine` — aux, optional) → `/w:plan-exec` → `docs/plans/`.
+  - **SPEC** — `/w:spec-new` (single-pass draft; may split into sibling specs) → `/w:spec-refine` (gap-driven loop) → `docs/specs/`.
+  - **PLAN** — `/w:plan-new` → (`/w:plan-refine` — aux, optional) → `/w:plan-exec` → `docs/plans/` (the plan loops may split into sibling plans).
   - **QUICK** — `/w:quick` — lightweight shortcut; escalates live to SPEC when the goal outgrows a quick.
   - **EXPORTS** — `/w:export-scripts` · `export-manuals` · `export-diagrams` · `export-reports` (the only path that promotes artifacts to `docs/`).
   - **Bootstrap** — `/w:workspace-init` turns any folder into a workspace (1+ sources; no project/hub distinction).

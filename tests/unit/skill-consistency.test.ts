@@ -175,6 +175,58 @@ describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec
   });
 });
 
+describe("Split contract — spec-new ↔ plan-new-loop ↔ plan-refine-loop", () => {
+  // The split gates span three docs: spec-new (multi-spec, pre-write),
+  // plan-new-loop (the canonical multi-plan gate) and plan-refine-loop (the
+  // in-place refine semantics). These pins keep the composing trio in
+  // agreement (same shape as the QUICK escalation contract above).
+  it("spec-new offers the split as its ONLY interaction, before any write", async () => {
+    const specNew = await readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8");
+    expect(specNew).toMatch(/ONE structured-choice/);
+    expect(specNew).toContain("before writing anything");
+  });
+
+  it("the multi-plan gate is defined once — plan-refine references, never redefines", async () => {
+    const planRefine = await readFile(join(SKILL_ROOT, "loops/plan-refine-loop/LOOP.md"), "utf8");
+    expect(planRefine).toContain("Split gate (multi-plan)");
+    // The gap row and the offer labels live ONLY in plan-new-loop.
+    expect(planRefine).not.toMatch(/^\| Plan splittable/m);
+    expect(planRefine).not.toContain("`Dividir en varios planes`");
+  });
+
+  it("both producers speak the sibling contract (cross-reference by path)", async () => {
+    const specNew = await readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8");
+    const planNew = await readFile(join(SKILL_ROOT, "loops/plan-new-loop/LOOP.md"), "utf8");
+    expect(specNew).toContain("siblings by path");
+    expect(planNew).toContain("siblings by path");
+  });
+
+  it("the multi-plan coherence gate checks a complete, disjoint partition", async () => {
+    const planNew = await readFile(join(SKILL_ROOT, "loops/plan-new-loop/LOOP.md"), "utf8");
+    expect(planNew).toMatch(/traces to \*\*exactly one\*\*/);
+    expect(planNew).toContain("partition");
+  });
+
+  it("refine-split anchors execution history (completed tasks never move)", async () => {
+    const planRefine = await readFile(join(SKILL_ROOT, "loops/plan-refine-loop/LOOP.md"), "utf8");
+    expect(planRefine).toContain("Completed tasks (`- [x]`) never move to a sibling");
+    expect(planRefine).toContain("keeps its number/path");
+  });
+
+  it("both plan Sequences carry the split closing branch (Guardar planes)", async () => {
+    for (const rel of ["loops/plan-new-loop/LOOP.md", "loops/plan-refine-loop/LOOP.md"]) {
+      const text = await readFile(join(SKILL_ROOT, rel), "utf8");
+      const seq = text.slice(text.indexOf("## Sequence"));
+      expect(seq, rel).toContain("Guardar planes");
+    }
+  });
+
+  it("the root orientation records the split capability", async () => {
+    const root = await readFile(join(SKILL_ROOT, "SKILL.md"), "utf8");
+    expect(root).toMatch(/split/i);
+  });
+});
+
 describe("directed resume contract — resume.md optional argument (spec 004)", () => {
   const RESUME = "commands/resume.md";
 
