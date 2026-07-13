@@ -3,6 +3,7 @@ import {
   LINUX_TERMINALS,
   buildNixWrapper,
   buildTerminalCommand,
+  buildWinCommandBody,
 } from "../../src/application/terminal-launch.js";
 
 describe("terminal-launch — *nix wrapper", () => {
@@ -107,13 +108,79 @@ describe("terminal-launch — *nix wrapper", () => {
   });
 });
 
+describe("terminal-launch — Windows inline body", () => {
+  const base = {
+    cwd: "C:/src/app",
+    command: "./mvnw.cmd",
+    args: ["spring-boot:run"],
+    envDelta: { API_TOKEN: "sk-secret" } as Record<string, string>,
+    pidFile: "C:/Temp/aw.pid",
+    logPath: "C:/logs/app.log",
+    title: "app · dev",
+  };
+
+  it("writes its own console PID to the pidfile FIRST, then titles and cd's to the source", () => {
+    const w = buildWinCommandBody(base);
+    // The adapter polls the pidfile: it must be the very first statement.
+    expect(w.startsWith("Set-Content -LiteralPath 'C:/Temp/aw.pid' -Value $PID; ")).toBe(true);
+    expect(w).toContain("$Host.UI.RawUI.WindowTitle = 'app · dev'");
+    expect(w).toContain("Set-Location -LiteralPath 'C:/src/app'");
+    expect(w).toContain("& './mvnw.cmd' 'spring-boot:run'");
+  });
+
+  it("stays one line, with no double quotes and no double spaces (survives the child's command-line re-join)", () => {
+    const w = buildWinCommandBody({ ...base, build: { command: "npm", args: ["run", "build"] } });
+    expect(w).not.toContain("\n");
+    expect(w).not.toContain('"');
+    expect(w).not.toMatch(/ {2}/);
+  });
+
+  it("aborts (with a message) instead of launching when the adapter left the abort marker", () => {
+    const w = buildWinCommandBody(base);
+    expect(w).toContain("if (Test-Path -LiteralPath 'C:/Temp/aw.pid.abort')");
+    expect(w).toContain(
+      "Remove-Item -LiteralPath 'C:/Temp/aw.pid.abort','C:/Temp/aw.pid' -ErrorAction SilentlyContinue",
+    );
+    // The check guards the launch itself: it must sit right before the app command.
+    expect(w.indexOf("Test-Path")).toBeLessThan(w.indexOf("& './mvnw.cmd'"));
+  });
+
+  it("reports the exit code when the app finishes", () => {
+    const w = buildWinCommandBody(base);
+    expect(w).toContain(
+      "Write-Host ('[{0} — código {1} · cerrá esta ventana]' -f 'app · dev', $LASTEXITCODE)",
+    );
+  });
+
+  it("never bakes env deltas — secrets ride via the inherited env, not disk", () => {
+    const w = buildWinCommandBody(base);
+    expect(w).not.toContain("API_TOKEN");
+    expect(w).not.toContain("sk-secret");
+    expect(w).not.toContain("$env:");
+  });
+
+  it("builds first (before the abort check), guarding failure with `return` (never `exit`, which would defeat -NoExit)", () => {
+    const w = buildWinCommandBody({ ...base, build: { command: "npm", args: ["run", "build"] } });
+    expect(w).toContain("& 'npm' 'run' 'build'");
+    expect(w).toContain(
+      "if ($LASTEXITCODE -ne 0) { Write-Host ('[build fallido — {0} · cerrá esta ventana]' -f 'app · dev'); return }",
+    );
+    expect(w).not.toContain("exit ");
+    expect(w.indexOf("'build'")).toBeLessThan(w.indexOf("Test-Path"));
+    expect(w.indexOf("Test-Path")).toBeLessThan(w.indexOf("& './mvnw.cmd'"));
+  });
+
+  it("single-quote-escapes apostrophes in title/cwd", () => {
+    const w = buildWinCommandBody({ ...base, title: "O'Brien", cwd: "C:/O'Brien/app" });
+    expect(w).toContain("$Host.UI.RawUI.WindowTitle = 'O''Brien'");
+    expect(w).toContain("Set-Location -LiteralPath 'C:/O''Brien/app'");
+  });
+});
+
 describe("terminal-launch — per-OS command", () => {
   const opts = {
     wrapperPath: "/tmp/aw-launch.sh",
     cwd: "/src/app",
-    command: "npm",
-    args: ["run", "dev"],
-    title: "app · dev",
     linuxTerminals: [] as string[],
     hasDisplay: true,
   };
@@ -140,34 +207,34 @@ describe("terminal-launch — per-OS command", () => {
     );
   });
 
-  it("Windows opens a persistent PowerShell console (-NoExit) that runs the command", () => {
-    const cmd = buildTerminalCommand("win32", opts);
+  it("Windows launches via a hidden Start-Process hop passing the body inline (a detached spawn alone gets NO console)", () => {
+    const winBody = "Set-Content -LiteralPath 'C:/T/aw.pid' -Value $PID; & 'npm' 'run' 'dev'";
+    const cmd = buildTerminalCommand("win32", { ...opts, winBody });
     if (cmd.kind !== "terminal") throw new Error("expected terminal");
     expect(cmd.cmd).toBe("powershell");
     expect(cmd.args).toEqual([
-      "-NoExit",
+      "-NoProfile",
       "-ExecutionPolicy",
       "Bypass",
       "-Command",
-      "Set-Location '/src/app'; & 'npm' 'run' 'dev'",
+      // The body rides -ArgumentList as one single-quoted element ('' = escaped
+      // quote); -Command as the last args re-join without loss (no double quotes).
+      "$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell' -ArgumentList '-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-Command','Set-Content -LiteralPath ''C:/T/aw.pid'' -Value $PID; & ''npm'' ''run'' ''dev''' -WorkingDirectory '/src/app'",
     ]);
   });
 
-  it("Windows single-quote-escapes a path containing an apostrophe", () => {
-    const cmd = buildTerminalCommand("win32", { ...opts, cwd: "C:/O'Brien/app" });
-    if (cmd.kind !== "terminal") throw new Error("expected terminal");
-    expect(cmd.args[4]).toContain("Set-Location 'C:/O''Brien/app';");
-  });
-
-  it("Windows bakes the build step (with an exit guard) before the launch command", () => {
+  it("Windows single-quote-escapes apostrophes in the cwd", () => {
     const cmd = buildTerminalCommand("win32", {
       ...opts,
-      build: { command: "npm", args: ["run", "build"] },
+      winBody: "& 'x'",
+      cwd: "C:/O'Brien/app",
     });
     if (cmd.kind !== "terminal") throw new Error("expected terminal");
-    expect(cmd.args[4]).toBe(
-      "Set-Location '/src/app'; & 'npm' 'run' 'build'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & 'npm' 'run' 'dev'",
-    );
+    expect(cmd.args[4]).toContain("-WorkingDirectory 'C:/O''Brien/app'");
+  });
+
+  it("Windows without an inline body yields kind:none (caller falls back to background)", () => {
+    expect(buildTerminalCommand("win32", opts).kind).toBe("none");
   });
 
   it("Linux picks the first available emulator by priority and runs the wrapper", () => {

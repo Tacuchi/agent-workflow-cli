@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Mock spawn so the win32 branches run on any host without launching real
@@ -96,18 +99,54 @@ describe("NodeProcess — win32 branches", () => {
     );
   });
 
-  it("spawnInTerminal() opens a PowerShell console on win32 (mode=terminal)", async () => {
-    spawnMock.mockImplementation(() => makeChild({ pid: 999 }));
+  it("spawnInTerminal() launches via the hidden Start-Process hop and reads the console PID from the pidfile", async () => {
+    let pidFilePath = "";
+    spawnMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "powershell") {
+        // Mimic the real chain: Start-Process opens a console whose inline body
+        // writes its own $PID to the pidfile (path baked into the payload,
+        // with '' = escaped quote inside the single-quoted body element).
+        pidFilePath =
+          /Set-Content -LiteralPath ''([^']+)'' -Value \$PID/.exec(args[4] ?? "")?.[1] ?? "";
+        if (pidFilePath) writeFileSync(pidFilePath, "999");
+      }
+      return makeChild({ pid: 555 });
+    });
+    const logPath = join(tmpdir(), "aw-win32-test.log");
     const res = await winProc().spawnInTerminal("npm", ["run", "dev"], {
       cwd: "C:\\app",
       env: { PATH: "C:\\bin" },
       envDelta: {},
-      logPath: "C:\\app\\run.log",
+      logPath,
       title: "app",
     });
+    // The registered pid is the visible console's (from the pidfile), never the launcher's.
     expect(res).toEqual({ pid: 999, mode: "terminal" });
-    const [cmd, args] = spawnMock.mock.calls[0] ?? [];
+    const [cmd, args, spawnOpts] = spawnMock.mock.calls[0] ?? [];
     expect(cmd).toBe("powershell");
-    expect(args).toContain("-NoExit");
+    expect(args[4]).toContain("Start-Process");
+    expect(args[4]).toContain("'-NoProfile','-NoExit'");
+    // Env (with the launch deltas) travels via spawn — the chain inherits it.
+    expect(spawnOpts).toMatchObject({ env: { PATH: "C:\\bin" } });
+    // No wrapper file on Windows: the body is inline (GPO ExecutionPolicy-proof).
+    expect(existsSync(pidFilePath.replace(/\.pid$/, ""))).toBe(false);
+    // Terminal mode leaves a marker so "Ver log" never shows a stale run as current.
+    expect(readFileSync(logPath, "utf8")).toBe(
+      "[lanzado en consola — la salida vive en la ventana]\n",
+    );
+  });
+
+  it("spawnInTerminal() falls back to a background process when the launcher fails", async () => {
+    spawnMock.mockImplementation((cmd: string) =>
+      makeChild(cmd === "powershell" ? { code: 1, pid: 555 } : { pid: 777 }),
+    );
+    const res = await winProc().spawnInTerminal("npm", ["run", "dev"], {
+      cwd: "C:\\app",
+      env: { PATH: "C:\\bin" },
+      envDelta: {},
+      logPath: join(tmpdir(), "aw-win32-test.log"),
+      title: "app",
+    });
+    expect(res).toEqual({ pid: 777, mode: "background" });
   });
 });
