@@ -55,6 +55,8 @@ USER invokes
 - **Layer 2** — the AI iterates end to end until convergence. No direct human invocation.
 - **Layer 3** — ephemeral, internal, process-only. Nobody invokes it by hand.
 
+> **Tools pointer:** auxiliary tooling has its home under `docs/tools/<slug>/` (README + run/output structure per the skill's contract; index row in `docs/tools/README.md`), authored by the **ambient `creating-tools` skill** — the host auto-discovers it when authoring any support tool, and the code loops' closing gate catches the miss (`loops/CODE-POLICIES.md` § *Closing review gate*). A ready implementation ships in the `tool-builder@qtc-marketplace` plugin; Workline does **not** depend on it (ambient, never bound).
+
 ### The 3 flows
 
 | Flow | Commands | Own docs/ | Loops |

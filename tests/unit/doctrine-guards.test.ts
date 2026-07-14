@@ -84,6 +84,11 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // gate, never redefines it); spec-new gained its own multi-spec gate but
   // stays unbudgeted (no loop), and the chassis is untouched — only the two
   // plan flows move. ~0.8 KB headroom over the measured totals.
+  // Raised again (tooling-gate round): CODE-POLICIES' closing review gate
+  // gained the Tooling check bullet (docs/tools routing + no-skill
+  // degradation) — quick and plan-exec load it; SKILL.md's Tools pointer is
+  // unbudgeted (orientation, not a flow load). ~0.8 KB headroom over the
+  // measured totals.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -93,7 +98,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 47_900,
+      budget: 48_500,
     },
     {
       flow: "spec-refine",
@@ -123,7 +128,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 47_300,
+      budget: 48_000,
     },
   ];
 
@@ -281,6 +286,38 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
   it("the chassis stays clean — the split gates never migrate to the shared engine", async () => {
     const chassis = await readRel("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/split gate|multi-spec|multi-plan|Dividir/i);
+  });
+});
+
+describe("Doctrine guards — G13 · tooling gate (docs/tools) pins", () => {
+  // Pin the tooling-gate round: the closing review gate must keep steering
+  // reusable auxiliary tooling to docs/tools (the family-rag silent-miss
+  // lesson — spec 007), and the orientation must keep the human-findable
+  // pointer. The ambient framing is part of the pin: no binding verb, no
+  // plugin coupling in the gate — the marketplace id lives ONLY in the
+  // pointer, as a non-binding locator; the degraded path defers (declared
+  // gap), it never has the loop write docs/tools itself (invariant 2).
+  it("CODE-POLICIES' closing review gate carries the Tooling check (ambient framing + declared-gap degradation)", async () => {
+    const policies = await readRel("loops/CODE-POLICIES.md");
+    const section = policies.slice(policies.indexOf("## Closing review gate"));
+    const gate = section.slice(0, section.indexOf("\n## "));
+    expect(gate).toContain("**Tooling check**");
+    expect(gate).toContain("`creating-tools`");
+    expect(gate).toContain("auto-discovered");
+    expect(gate).toContain("docs/tools/<slug>/");
+    expect(gate).toContain("never writes `docs/tools` itself");
+    expect(gate).toContain("declare the gap");
+    // The gate stays unbound — the marketplace id belongs to the pointer only.
+    expect(gate).not.toContain("qtc-marketplace");
+  });
+
+  it("the w orientation keeps the user-findable Tools pointer (skill + non-binding plugin locator + gate reference)", async () => {
+    const skill = await readRel("SKILL.md");
+    const pointer = skill.split("\n").find((l) => l.includes("**Tools pointer:**")) ?? "";
+    expect(pointer).toContain("`creating-tools`");
+    expect(pointer).toContain("tool-builder@qtc-marketplace");
+    expect(pointer).toContain("Closing review gate");
+    expect(pointer).toContain("does **not** depend");
   });
 });
 
