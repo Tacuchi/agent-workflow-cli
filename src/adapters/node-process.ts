@@ -10,6 +10,7 @@ import {
   buildNixWrapper,
   buildTerminalCommand,
   buildWinCommandBody,
+  buildWinHops,
 } from "../application/terminal-launch.js";
 import type {
   ProcessPort,
@@ -39,6 +40,11 @@ function needsWinShell(cmd: string): boolean {
 /** Monotonic suffix for ephemeral wrapper/pid files (avoids Date.now/random). */
 let terminalSeq = 0;
 
+/** How long a terminal attempt waits for the wrapper-reported pid (*nix: single attempt). */
+const NIX_PIDFILE_TIMEOUT_MS = 10000;
+/** Windows waits less per attempt — up to two hops run before the background fallback. */
+const WIN_HOP_PIDFILE_TIMEOUT_MS = 7000;
+
 function safeUnlink(path: string): void {
   try {
     unlinkSync(path);
@@ -47,11 +53,21 @@ function safeUnlink(path: string): void {
   }
 }
 
+/** Outcome of one terminal-launcher attempt: the reported pid, or why it failed. */
+interface LauncherAttempt {
+  pid: number | null;
+  error?: string | undefined;
+  /** True when the launcher looked fine but the pidfile never appeared (the console may still be coming). */
+  timedOut?: boolean | undefined;
+}
+
 export class NodeProcess implements ProcessPort {
-  /** Platform/env are injectable so the terminal-launch fallback is testable without opening real windows. */
+  /** Platform/env are injectable so the terminal-launch fallback is testable without opening
+   * real windows; `pidfilePollMs` overrides the per-attempt pidfile wait (tests only). */
   constructor(
     private readonly platform: NodeJS.Platform = process.platform,
     private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly pidfilePollMs?: number,
   ) {}
 
   async run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
@@ -148,21 +164,102 @@ export class NodeProcess implements ProcessPort {
     opts: SpawnInTerminalOptions,
   ): Promise<SpawnInTerminalResult> {
     // A terminal window needs a launcher — Terminal.app (macOS), an emulator
-    // (Linux) or a hidden Start-Process hop (Windows: a `detached` spawn alone
-    // gets DETACHED_PROCESS — no console, no window). The launcher runs an
-    // ephemeral wrapper (*nix: a bash file; Windows: an inline -Command body —
-    // no file, so GPO ExecutionPolicy and unlink races don't apply) that
-    // captures the real app pid into a pidfile we read back (on Windows, the
-    // visible console's own $PID).
-    const isWin = this.platform === "win32";
+    // (Linux) or the Windows hop cascade (a `detached` spawn alone gets
+    // DETACHED_PROCESS — no console, no window). The launcher runs an ephemeral
+    // wrapper (*nix: a bash file; Windows: an inline -Command body — no file,
+    // so GPO ExecutionPolicy and unlink races don't apply) that captures the
+    // real app pid into a pidfile we read back (on Windows, the visible
+    // console's own $PID).
+    if (this.platform === "win32") return this.spawnInWindowsTerminal(cmd, args, opts);
     const hasDisplay =
-      isWin || this.platform === "darwin" || Boolean(this.env.DISPLAY || this.env.WAYLAND_DISPLAY);
+      this.platform === "darwin" || Boolean(this.env.DISPLAY || this.env.WAYLAND_DISPLAY);
     const linuxTerminals =
       this.platform === "linux" && hasDisplay ? await this.resolveLinuxTerminals() : [];
     const seq = terminalSeq++;
     const wrapperPath = join(tmpdir(), `aw-launch-${process.pid}-${seq}.sh`);
     const pidFile = `${wrapperPath}.pid`;
-    const spec = {
+    const plan = buildTerminalCommand(this.platform, { wrapperPath, linuxTerminals, hasDisplay });
+    // No terminal available at all (headless/CI): expected, not an error.
+    if (plan.kind !== "terminal") return this.backgroundFallback(cmd, args, opts);
+    let attempt: LauncherAttempt;
+    try {
+      writeFileSync(wrapperPath, buildNixWrapper(this.wrapperSpec(cmd, args, opts, pidFile)), {
+        mode: 0o700,
+      });
+      attempt = await this.spawnLauncherAndPoll(
+        plan,
+        pidFile,
+        opts,
+        this.pidfilePollMs ?? NIX_PIDFILE_TIMEOUT_MS,
+      );
+    } catch (err) {
+      attempt = { pid: null, error: (err as Error).message };
+    }
+    // A timed-out fallback cannot double-launch on *nix: unlinking the wrapper
+    // stops a not-yet-started bash; an already-started one keeps the unlinked
+    // script fd open and has already written (or is about to write) the pidfile.
+    safeUnlink(wrapperPath);
+    safeUnlink(pidFile);
+    if (attempt.pid !== null) return { pid: attempt.pid, mode: "terminal" };
+    const fallback = await this.backgroundFallback(cmd, args, opts);
+    return { ...fallback, terminalError: attempt.error };
+  }
+
+  /**
+   * Windows: try each launcher hop (see buildWinHops) with its OWN pidfile and
+   * inline body, then fall back to a background process carrying the per-hop
+   * failure reasons (surfaced in the TUI + operational log).
+   */
+  private async spawnInWindowsTerminal(
+    cmd: string,
+    args: string[],
+    opts: SpawnInTerminalOptions,
+  ): Promise<SpawnInTerminalResult> {
+    const errors: string[] = [];
+    // Bounded by buildWinHops' list (each attempt needs its own pidfile → body → hops).
+    for (let hopIndex = 0; ; hopIndex++) {
+      const seq = terminalSeq++;
+      const pidFile = join(tmpdir(), `aw-launch-${process.pid}-${seq}.pid`);
+      const body = buildWinCommandBody(this.wrapperSpec(cmd, args, opts, pidFile));
+      const hop = buildWinHops(body, opts.cwd)[hopIndex];
+      if (!hop) break;
+      const attempt = await this.spawnLauncherAndPoll(
+        hop,
+        pidFile,
+        opts,
+        this.pidfilePollMs ?? WIN_HOP_PIDFILE_TIMEOUT_MS,
+      );
+      if (attempt.pid !== null) {
+        // Consumed: a leftover pidfile would be read as a FUTURE launch's console
+        // under a recycled process.pid + restarted seq (→ taskkill on a foreign pid).
+        safeUnlink(pidFile);
+        this.markTerminalLog(opts.logPath);
+        return { pid: attempt.pid, mode: "terminal" };
+      }
+      // A very late console must NOT start the app after we move on (double
+      // launch): the marker makes ITS body self-abort right before launching.
+      if (attempt.timedOut) {
+        try {
+          writeFileSync(abortFileFor(pidFile), "1");
+        } catch {
+          // best-effort — worst case the late console still opens and runs the app
+        }
+      }
+      safeUnlink(pidFile);
+      errors.push(`${hop.label}: ${attempt.error}`);
+    }
+    const fallback = await this.backgroundFallback(cmd, args, opts);
+    return { ...fallback, terminalError: errors.join(" · ") };
+  }
+
+  /** The launch description every wrapper/body builder consumes. */
+  private wrapperSpec(
+    cmd: string,
+    args: string[],
+    opts: SpawnInTerminalOptions,
+    pidFile: string,
+  ): WrapperSpec {
+    return {
       cwd: opts.cwd,
       mode: opts.mode,
       build: opts.build,
@@ -173,83 +270,50 @@ export class NodeProcess implements ProcessPort {
       logPath: opts.logPath,
       title: opts.title,
     };
-    const plan = buildTerminalCommand(this.platform, {
-      wrapperPath,
-      cwd: opts.cwd,
-      ...(isWin ? { winBody: buildWinCommandBody(spec) } : {}),
-      linuxTerminals,
-      hasDisplay,
-    });
-    if (plan.kind === "terminal") {
-      const pid = await this.openTerminalAndAwaitPid(plan, spec, {
-        isWin,
-        wrapperPath,
-        pidFile,
-        env: opts.env,
-      });
-      if (pid !== null) {
-        if (isWin) this.markTerminalLog(opts.logPath);
-        return { pid, mode: "terminal" };
-      }
-    }
-    // No terminal opened (headless/CI, or it failed): the app MUST still run.
-    return this.backgroundFallback(cmd, args, opts);
   }
 
-  /** Spawn the terminal launcher and wait for the wrapper-reported pid; null → caller falls back. */
-  private async openTerminalAndAwaitPid(
+  /** Spawn a terminal launcher and wait for the wrapper-reported pid; on failure, say why. */
+  private async spawnLauncherAndPoll(
     plan: { cmd: string; args: string[] },
-    spec: WrapperSpec,
-    ctx: { isWin: boolean; wrapperPath: string; pidFile: string; env: Record<string, string> },
-  ): Promise<number | null> {
-    const { isWin, wrapperPath, pidFile } = ctx;
-    try {
-      if (!isWin) writeFileSync(wrapperPath, buildNixWrapper(spec), { mode: 0o700 });
-      // Track launcher failure so we can fall back fast (e.g. osascript with no
-      // GUI, or an emulator that can't open a display, exit non-zero), WITHOUT
-      // mistaking a slow-but-succeeding cold start for "no terminal".
-      let launcherFailed = false;
-      // The full launch env (params + PROFILE + secrets) rides the launcher spawn:
-      // on Windows the whole chain (hop → Start-Process → console) inherits it.
-      const child = spawn(plan.cmd, plan.args, {
-        cwd: spec.cwd,
-        env: ctx.env,
-        detached: true,
-        stdio: "ignore",
-      });
-      child.on("error", () => {
-        launcherFailed = true;
-      });
-      // Launchers (osascript, the gnome-terminal client, the hidden
-      // Start-Process hop) exit right after handoff; a NON-zero exit means
-      // the window never opened.
-      child.on("exit", (code) => {
-        if (code !== 0 && code !== null) launcherFailed = true;
-      });
-      child.unref();
-      // Wait for the wrapper to report the real app pid. The window may cold-start
-      // slowly (Terminal.app / a fresh emulator), so poll generously — but bail
-      // early the moment the launcher itself failed. On *nix a timed-out fallback
-      // cannot double-launch (unlinking the wrapper stops a not-yet-started bash;
-      // an already-started one keeps the unlinked script fd open). On Windows
-      // there is no file to unlink: the abort marker below makes a very late
-      // console self-abort right before it would launch the app.
-      const pid = await this.readPidFile(pidFile, 10000, () => launcherFailed);
-      if (pid === null && isWin && !launcherFailed) {
-        try {
-          writeFileSync(abortFileFor(pidFile), "1");
-        } catch {
-          // best-effort — worst case the late console still opens and runs the app
-        }
-      }
-      if (!isWin) safeUnlink(wrapperPath);
-      safeUnlink(pidFile);
-      return pid;
-    } catch {
-      if (!isWin) safeUnlink(wrapperPath);
-      safeUnlink(pidFile);
-      return null;
-    }
+    pidFile: string,
+    opts: SpawnInTerminalOptions,
+    timeoutMs: number,
+  ): Promise<LauncherAttempt> {
+    // Stale files from an old session under a recycled process.pid (seq restarts
+    // at 0) would be read as THIS attempt's: a stale pidfile registers a foreign
+    // pid; a stale abort marker makes a healthy console self-abort. Clean first.
+    safeUnlink(pidFile);
+    safeUnlink(abortFileFor(pidFile));
+    // Track launcher failure so we can fall back fast (osascript with no GUI, an
+    // emulator that can't open a display, a blocked hop — all exit non-zero or
+    // error), WITHOUT mistaking a slow-but-succeeding cold start for "no terminal".
+    let failure: string | null = null;
+    // The full launch env (params + PROFILE + secrets) rides the launcher spawn:
+    // on Windows the whole chain (hop → console) inherits it.
+    const child = spawn(plan.cmd, plan.args, {
+      cwd: opts.cwd,
+      env: opts.env,
+      detached: true,
+      stdio: "ignore",
+    });
+    child.on("error", (err) => {
+      failure = `${plan.cmd}: ${err.message}`;
+    });
+    // Launchers exit right after handoff; a NON-zero exit means the window never opened.
+    child.on("exit", (code) => {
+      if (code !== 0 && code !== null) failure ??= `${plan.cmd} salió con código ${code}`;
+    });
+    child.unref();
+    // The window may cold-start slowly, so poll generously — but bail early the
+    // moment the launcher itself failed.
+    const pid = await this.readPidFile(pidFile, timeoutMs, () => failure !== null);
+    if (pid !== null) return { pid };
+    if (failure !== null) return { pid: null, error: failure };
+    return {
+      pid: null,
+      error: `timeout esperando el pid de la consola (${Math.round(timeoutMs / 1000)}s)`,
+      timedOut: true,
+    };
   }
 
   /** Terminal mode doesn't tee on Windows (see buildWinCommandBody): leave a

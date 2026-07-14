@@ -346,11 +346,14 @@ export function renderRunSh(desc: LaunchDescriptor): string {
 /**
  * Windows form of a launch command: the JVM wrappers are bash scripts without
  * extension; PowerShell/cmd need their `.bat`/`.cmd` twins (shipped alongside
- * by the same wrapper). Non-wrapper commands pass through untouched.
+ * by the same wrapper). Backslash-relative on purpose: `.\x.cmd` works both in
+ * PowerShell (`&` needs the path prefix) AND in cmd.exe (the background
+ * fallback runs through `cmd /c`, where `./x.cmd` dies with «"." no se
+ * reconoce…»). Non-wrapper commands pass through untouched.
  */
 export function winLaunchCommand(command: string | null): string | null {
-  if (command === "./gradlew") return "./gradlew.bat";
-  if (command === "./mvnw") return "./mvnw.cmd";
+  if (command === "./gradlew") return ".\\gradlew.bat";
+  if (command === "./mvnw") return ".\\mvnw.cmd";
   return command;
 }
 

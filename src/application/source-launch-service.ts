@@ -52,7 +52,12 @@ export interface LaunchDeps {
 }
 
 export type LaunchResult =
-  | { ok: true; record: ProcessRecord }
+  | {
+      ok: true;
+      record: ProcessRecord;
+      /** Why the terminal attempt(s) failed when the launch fell back to background (surfaced in the TUI + log). */
+      terminalError?: string | undefined;
+    }
   | {
       ok: false;
       error: "no_descriptor" | "corrupt_descriptor" | "not_launchable" | "spawn_failed";
@@ -196,15 +201,19 @@ export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promis
   try {
     // Open a visible, persistent terminal window (monitor live + close-to-stop);
     // the adapter falls back to a background+log process when no terminal exists.
-    const { pid, mode } = await deps.proc.spawnInTerminal(resolved.command, resolved.args, {
-      cwd: resolved.cwd,
-      env: resolved.env,
-      envDelta: resolved.envDelta,
-      logPath: resolved.logPath,
-      title: req.profile ? `${req.alias} · ${req.profile}` : req.alias,
-      mode: resolved.mode,
-      ...(resolved.build ? { build: resolved.build } : {}),
-    });
+    const { pid, mode, terminalError } = await deps.proc.spawnInTerminal(
+      resolved.command,
+      resolved.args,
+      {
+        cwd: resolved.cwd,
+        env: resolved.env,
+        envDelta: resolved.envDelta,
+        logPath: resolved.logPath,
+        title: req.profile ? `${req.alias} · ${req.profile}` : req.alias,
+        mode: resolved.mode,
+        ...(resolved.build ? { build: resolved.build } : {}),
+      },
+    );
     const startedAt = (deps.now ?? (() => new Date().toISOString()))();
     // Persist only NON-secret entered values so a relaunch can reuse them; secrets
     // are never written to the registry.
@@ -223,7 +232,7 @@ export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promis
       values: persistedValues,
       launchMode: mode,
     });
-    return { ok: true, record };
+    return { ok: true, record, terminalError };
   } catch (err) {
     return { ok: false, error: "spawn_failed", message: (err as Error).message };
   }

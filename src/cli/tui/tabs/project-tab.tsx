@@ -52,6 +52,38 @@ export interface ProjectTabProps {
   onRunAction?: (id: string) => void;
 }
 
+/**
+ * Operational-log line for a launch/relaunch: ok · fallback background (warn,
+ * carrying WHY the window never opened — the exported log is the
+ * remote-diagnosis channel) · error.
+ */
+function logLaunchOutcome(logger: CliContext["logger"], action: string, res: LaunchResult): void {
+  if (!res.ok) {
+    void logger?.log("error", formatTuiEvent(action, "error", res.message));
+    return;
+  }
+  if (res.record.launchMode === "terminal") {
+    void logger?.log("info", formatTuiEvent(action, "ok"));
+    return;
+  }
+  void logger?.log(
+    res.terminalError ? "warn" : "info",
+    formatTuiEvent(action, "fallback background", res.terminalError),
+  );
+}
+
+/** Notice lines for a successful launch/relaunch, aware of the terminal-vs-background mode. */
+function launchNoticeLines(head: string, res: Extract<LaunchResult, { ok: true }>): string[] {
+  if (res.record.launchMode === "terminal") {
+    return [`${head} en una terminal (PID ${res.record.pid}).`];
+  }
+  return [
+    `${head} en segundo plano (PID ${res.record.pid}) — sin terminal disponible.`,
+    ...(res.terminalError ? [`Motivo: ${res.terminalError}`] : []),
+    res.record.logPath,
+  ];
+}
+
 export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   const [data, setData] = useState<ProjectTabData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -327,14 +359,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       setMode({ kind: "busy", label: `Lanzando ${req.alias}…` });
       const res = await launchSource(launchDeps, req);
       const target = `${req.alias}${req.profile ? ` · ${req.profile}` : ""}`;
-      void ctx.logger?.log(
-        res.ok ? "info" : "error",
-        formatTuiEvent(
-          `launch ${target}`,
-          res.ok ? "ok" : "error",
-          res.ok ? undefined : res.message,
-        ),
-      );
+      logLaunchOutcome(ctx.logger, `launch ${target}`, res);
       setMode(
         res.ok
           ? {
@@ -346,10 +371,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
                       `Lanzado ${req.alias} en una terminal (PID ${res.record.pid}).`,
                       "Monitoreá en esa ventana; cerrala para detener.",
                     ]
-                  : [
-                      `Lanzado ${req.alias} en segundo plano (PID ${res.record.pid}) — sin terminal disponible.`,
-                      res.record.logPath,
-                    ],
+                  : launchNoticeLines(`Lanzado ${req.alias}`, res),
             }
           : { kind: "notice", tone: "err", lines: [res.message] },
       );
@@ -409,21 +431,12 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   // Shared tail of doRelaunch/confirmRelaunch: daily-log entry + notice + reload.
   const finishRelaunch = useCallback(
     async (alias: string, res: LaunchResult) => {
-      void ctx.logger?.log(
-        res.ok ? "info" : "error",
-        formatTuiEvent(
-          `relaunch ${alias}`,
-          res.ok ? "ok" : "error",
-          res.ok ? undefined : res.message,
-        ),
-      );
+      // Same mode-aware surfacing as doLaunch: the retry path is exactly where a
+      // silent background fallback would otherwise go unnoticed.
+      logLaunchOutcome(ctx.logger, `relaunch ${alias}`, res);
       setMode(
         res.ok
-          ? {
-              kind: "notice",
-              tone: "ok",
-              lines: [`Re-lanzado ${alias} (PID ${res.record.pid})`],
-            }
+          ? { kind: "notice", tone: "ok", lines: launchNoticeLines(`Re-lanzado ${alias}`, res) }
           : { kind: "notice", tone: "err", lines: [res.message] },
       );
       await onReload?.();

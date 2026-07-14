@@ -32,6 +32,7 @@ class FakeProc implements ProcessPort {
   nextPid = 5000;
   /** What the (impure) adapter would report — the service just records it. */
   mode: "terminal" | "background" = "terminal";
+  terminalError: string | undefined;
   async run() {
     return { code: 0, stdout: "", stderr: "" };
   }
@@ -49,7 +50,7 @@ class FakeProc implements ProcessPort {
     const pid = this.nextPid++;
     this.terminalSpawns.push({ cmd, args, opts });
     this.alive.add(pid);
-    return { pid, mode: this.mode };
+    return { pid, mode: this.mode, terminalError: this.terminalError };
   }
   async killTree(pid: number): Promise<void> {
     this.killed.push(pid);
@@ -118,7 +119,7 @@ describe("source-launch-service — pure logic", () => {
   it("resolveLaunch translates the JVM wrapper to its .bat twin on win32 only", () => {
     const desc = descriptor({ command: "./gradlew", args: ["bootRun"] });
     const req = { alias: "app", profile: null, values: {} };
-    expect(resolveLaunch(desc, req, "/logs", {}, "win32")?.command).toBe("./gradlew.bat");
+    expect(resolveLaunch(desc, req, "/logs", {}, "win32")?.command).toBe(".\\gradlew.bat");
     expect(resolveLaunch(desc, req, "/logs", {}, "darwin")?.command).toBe("./gradlew");
     expect(resolveLaunch(desc, req, "/logs", {}, "linux")?.command).toBe("./gradlew");
   });
@@ -230,10 +231,13 @@ describe("source-launch-service — launch/stop/relaunch", () => {
   it("launchSource records background mode when the adapter fell back (no terminal)", async () => {
     writeDescriptor("app", descriptor({ profiles: [], params: [] }));
     proc.mode = "background";
+    proc.terminalError = "Start-Process: powershell salió con código 1";
     const res = await launchSource(deps, { alias: "app", profile: null, values: {} });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.record.launchMode).toBe("background");
+    // The failure reason travels to the caller (TUI notice + operational log).
+    expect(res.terminalError).toBe("Start-Process: powershell salió con código 1");
   });
 
   it("launchSource errors when no descriptor exists", async () => {

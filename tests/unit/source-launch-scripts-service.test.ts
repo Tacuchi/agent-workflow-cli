@@ -214,8 +214,10 @@ describe("source-launch-scripts-service", () => {
       const { winLaunchCommand } = await import(
         "../../src/application/source-launch-scripts-service.js"
       );
-      expect(winLaunchCommand("./gradlew")).toBe("./gradlew.bat");
-      expect(winLaunchCommand("./mvnw")).toBe("./mvnw.cmd");
+      // Backslash-relative: `.\x.cmd` runs both under PowerShell (& needs the
+      // path prefix) and cmd.exe (`./x.cmd` dies in the background fallback).
+      expect(winLaunchCommand("./gradlew")).toBe(".\\gradlew.bat");
+      expect(winLaunchCommand("./mvnw")).toBe(".\\mvnw.cmd");
       expect(winLaunchCommand("npm")).toBe("npm");
       expect(winLaunchCommand(null)).toBeNull();
     });
@@ -227,7 +229,7 @@ describe("source-launch-scripts-service", () => {
       const dir = source("svc", { "build.gradle.kts": "", gradlew: "#!/bin/sh\n" });
       const d = await detectLaunchDescriptor(fs, dir, "svc");
       expect(renderRunSh(d)).toContain("exec ./gradlew bootRun");
-      expect(renderRunPs1(d)).toContain("& ./gradlew.bat bootRun");
+      expect(renderRunPs1(d)).toContain('& ".\\gradlew.bat" bootRun');
     });
   });
 

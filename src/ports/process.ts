@@ -42,6 +42,8 @@ export interface SpawnInTerminalResult {
   pid: number;
   /** "terminal" when a visible window was opened; "background" when it fell back to a detached process (no terminal available). */
   mode: "terminal" | "background";
+  /** Why the terminal attempt failed (spawn error · launcher exit code · pidfile timeout; per-hop on Windows). Only when mode is "background" AND a terminal was actually tried. */
+  terminalError?: string | undefined;
 }
 
 // SpawnDetachedOptions/Result describe NodeProcess.spawnDetached — an adapter

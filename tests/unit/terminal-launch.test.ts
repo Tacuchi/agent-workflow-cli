@@ -4,6 +4,7 @@ import {
   buildNixWrapper,
   buildTerminalCommand,
   buildWinCommandBody,
+  buildWinHops,
 } from "../../src/application/terminal-launch.js";
 
 describe("terminal-launch — *nix wrapper", () => {
@@ -111,7 +112,7 @@ describe("terminal-launch — *nix wrapper", () => {
 describe("terminal-launch — Windows inline body", () => {
   const base = {
     cwd: "C:/src/app",
-    command: "./mvnw.cmd",
+    command: ".\\mvnw.cmd",
     args: ["spring-boot:run"],
     envDelta: { API_TOKEN: "sk-secret" } as Record<string, string>,
     pidFile: "C:/Temp/aw.pid",
@@ -125,7 +126,7 @@ describe("terminal-launch — Windows inline body", () => {
     expect(w.startsWith("Set-Content -LiteralPath 'C:/Temp/aw.pid' -Value $PID; ")).toBe(true);
     expect(w).toContain("$Host.UI.RawUI.WindowTitle = 'app · dev'");
     expect(w).toContain("Set-Location -LiteralPath 'C:/src/app'");
-    expect(w).toContain("& './mvnw.cmd' 'spring-boot:run'");
+    expect(w).toContain("& '.\\mvnw.cmd' 'spring-boot:run'");
   });
 
   it("stays one line, with no double quotes and no double spaces (survives the child's command-line re-join)", () => {
@@ -142,7 +143,7 @@ describe("terminal-launch — Windows inline body", () => {
       "Remove-Item -LiteralPath 'C:/Temp/aw.pid.abort','C:/Temp/aw.pid' -ErrorAction SilentlyContinue",
     );
     // The check guards the launch itself: it must sit right before the app command.
-    expect(w.indexOf("Test-Path")).toBeLessThan(w.indexOf("& './mvnw.cmd'"));
+    expect(w.indexOf("Test-Path")).toBeLessThan(w.indexOf("& '.\\mvnw.cmd'"));
   });
 
   it("reports the exit code when the app finishes", () => {
@@ -167,7 +168,7 @@ describe("terminal-launch — Windows inline body", () => {
     );
     expect(w).not.toContain("exit ");
     expect(w.indexOf("'build'")).toBeLessThan(w.indexOf("Test-Path"));
-    expect(w.indexOf("Test-Path")).toBeLessThan(w.indexOf("& './mvnw.cmd'"));
+    expect(w.indexOf("Test-Path")).toBeLessThan(w.indexOf("& '.\\mvnw.cmd'"));
   });
 
   it("single-quote-escapes apostrophes in title/cwd", () => {
@@ -177,10 +178,50 @@ describe("terminal-launch — Windows inline body", () => {
   });
 });
 
+describe("terminal-launch — Windows hops", () => {
+  const body = "Set-Content -LiteralPath 'C:/T/aw.pid' -Value $PID; & 'npm' 'run' 'dev'";
+
+  it("hop 1 is a hidden Start-Process hop passing the body inline (a detached spawn alone gets NO console)", () => {
+    const hop = buildWinHops(body, "/src/app")[0];
+    expect(hop?.label).toBe("Start-Process");
+    expect(hop?.cmd).toBe("powershell");
+    expect(hop?.args).toEqual([
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      // The body rides -ArgumentList as one single-quoted element ('' = escaped
+      // quote); -Command as the last args re-join without loss (no double quotes).
+      "$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell' -ArgumentList '-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-Command','Set-Content -LiteralPath ''C:/T/aw.pid'' -Value $PID; & ''npm'' ''run'' ''dev''' -WorkingDirectory '/src/app'",
+    ]);
+  });
+
+  it("hop 2 hosts the inner PowerShell under conhost.exe (plain CreateProcess, no ShellExecute, no ps→ps)", () => {
+    const hop = buildWinHops(body, "/src/app")[1];
+    expect(hop?.label).toBe("conhost");
+    expect(hop?.cmd).toBe("conhost.exe");
+    // The body rides argv untouched — libuv's quoting is safe because the body
+    // carries no double quotes (buildWinCommandBody invariant).
+    expect(hop?.args).toEqual([
+      "powershell",
+      "-NoProfile",
+      "-NoExit",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      body,
+    ]);
+  });
+
+  it("hop 1 single-quote-escapes apostrophes in the cwd", () => {
+    const hop = buildWinHops("& 'x'", "C:/O'Brien/app")[0];
+    expect(hop?.args[4]).toContain("-WorkingDirectory 'C:/O''Brien/app'");
+  });
+});
+
 describe("terminal-launch — per-OS command", () => {
   const opts = {
     wrapperPath: "/tmp/aw-launch.sh",
-    cwd: "/src/app",
     linuxTerminals: [] as string[],
     hasDisplay: true,
   };
@@ -207,33 +248,7 @@ describe("terminal-launch — per-OS command", () => {
     );
   });
 
-  it("Windows launches via a hidden Start-Process hop passing the body inline (a detached spawn alone gets NO console)", () => {
-    const winBody = "Set-Content -LiteralPath 'C:/T/aw.pid' -Value $PID; & 'npm' 'run' 'dev'";
-    const cmd = buildTerminalCommand("win32", { ...opts, winBody });
-    if (cmd.kind !== "terminal") throw new Error("expected terminal");
-    expect(cmd.cmd).toBe("powershell");
-    expect(cmd.args).toEqual([
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-Command",
-      // The body rides -ArgumentList as one single-quoted element ('' = escaped
-      // quote); -Command as the last args re-join without loss (no double quotes).
-      "$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell' -ArgumentList '-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-Command','Set-Content -LiteralPath ''C:/T/aw.pid'' -Value $PID; & ''npm'' ''run'' ''dev''' -WorkingDirectory '/src/app'",
-    ]);
-  });
-
-  it("Windows single-quote-escapes apostrophes in the cwd", () => {
-    const cmd = buildTerminalCommand("win32", {
-      ...opts,
-      winBody: "& 'x'",
-      cwd: "C:/O'Brien/app",
-    });
-    if (cmd.kind !== "terminal") throw new Error("expected terminal");
-    expect(cmd.args[4]).toContain("-WorkingDirectory 'C:/O''Brien/app'");
-  });
-
-  it("Windows without an inline body yields kind:none (caller falls back to background)", () => {
+  it("win32 is not dispatched here (the adapter drives the hop cascade) → kind:none", () => {
     expect(buildTerminalCommand("win32", opts).kind).toBe("none");
   });
 

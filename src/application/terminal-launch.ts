@@ -51,10 +51,6 @@ export interface WrapperSpec {
 export interface TerminalCommandOptions {
   /** *nix: absolute path to the wrapper file (run via `bash <wrapper>`). */
   wrapperPath: string;
-  /** Working directory (Windows: `Start-Process -WorkingDirectory`). */
-  cwd: string;
-  /** Windows: the inline `-Command` body (from `buildWinCommandBody`). */
-  winBody?: string | undefined;
   /** Linux: emulator basenames found on PATH (adapter resolves via `which`). */
   linuxTerminals: string[];
   /** Linux: whether a GUI display is present (DISPLAY / WAYLAND_DISPLAY). */
@@ -162,7 +158,8 @@ export function buildTerminalCommand(
       ],
     };
   }
-  if (platform === "win32") return buildWin32Command(opts);
+  // win32 is NOT dispatched here: Windows tries an ordered hop cascade — see
+  // buildWinHops — driven by the adapter, so it falls through to kind:"none".
   if (platform === "linux") {
     if (!opts.hasDisplay) return { kind: "none" };
     for (const t of LINUX_TERMINALS) {
@@ -197,8 +194,8 @@ export function abortFileFor(pidFile: string): string {
  * of consecutive spaces — everything is single-quoted via psSingleQuote.
  *
  * Ignores `envDelta` on purpose: unlike Terminal.app / gnome-terminal-server,
- * the whole Windows chain (hidden launcher → Start-Process) inherits our env,
- * so secrets never touch disk. `mode` is also moot here: both modes run the app
+ * the whole Windows chain (launcher hop → console, see buildWinHops) inherits
+ * our env, so secrets never touch disk. `mode` is also moot here: both modes run the app
  * in the foreground of its own console (a real TTY), kept open by `-NoExit`;
  * the server-mode log tee is not implemented (PS 5.1 Tee-Object writes UTF-16,
  * which would garble the TUI's log viewer).
@@ -221,7 +218,7 @@ export function buildWinCommandBody(spec: WrapperSpec): string {
   // As late as possible before the launch: if the adapter already fell back to a
   // background process (pidfile poll timed out), abort instead of double-launching.
   statements.push(
-    `if (Test-Path -LiteralPath ${psSingleQuote(abortFileFor(spec.pidFile))}) { Remove-Item -LiteralPath ${psSingleQuote(abortFileFor(spec.pidFile))},${psSingleQuote(spec.pidFile)} -ErrorAction SilentlyContinue; Write-Host ('[{0} — reemplazado por proceso en segundo plano · cerrá esta ventana]' -f ${title}); return }`,
+    `if (Test-Path -LiteralPath ${psSingleQuote(abortFileFor(spec.pidFile))}) { Remove-Item -LiteralPath ${psSingleQuote(abortFileFor(spec.pidFile))},${psSingleQuote(spec.pidFile)} -ErrorAction SilentlyContinue; Write-Host ('[{0} — este intento fue reemplazado · cerrá esta ventana]' -f ${title}); return }`,
   );
   statements.push(psInvoke(spec.command, spec.args));
   statements.push(
@@ -230,30 +227,46 @@ export function buildWinCommandBody(spec: WrapperSpec): string {
   return statements.join("; ");
 }
 
+/** One way to open the visible Windows console; the adapter tries them in order. */
+export interface WinHop {
+  /** Diagnostic label for the operational log ("Start-Process" | "conhost"). */
+  label: string;
+  cmd: string;
+  args: string[];
+}
+
 /**
- * Windows: Node cannot ask CreateProcess for a new console — a `detached` spawn
- * maps to DETACHED_PROCESS, which starts the child with NO console at all (the
- * "own console window" in the Node docs is a myth), so spawning `powershell
- * -NoExit …` directly runs it invisibly. Instead, a short-lived hidden
- * PowerShell calls `Start-Process` (ShellExecute), which DOES create a visible
- * console for the persistent inner PowerShell (`-NoProfile` for a fast,
- * deterministic start; `-NoExit` keeps it open after the app exits → crash
- * visibility). The body rides -ArgumentList as its last element: PS 5.1 joins
- * the list with bare spaces and powershell.exe -Command re-joins the tail, so
- * it round-trips under the buildWinCommandBody invariants.
+ * Ordered launcher hops for Windows. Node cannot ask CreateProcess for a new
+ * console — a `detached` spawn maps to DETACHED_PROCESS, which starts the child
+ * with NO console at all (the "own console window" in the Node docs is a myth) —
+ * so something else must create the window:
+ *  1. `Start-Process` (ShellExecute) from a hidden short-lived PowerShell. The
+ *     body rides -ArgumentList as its last element: PS 5.1 joins the list with
+ *     bare spaces and powershell.exe -Command re-joins the tail, so it
+ *     round-trips under the buildWinCommandBody invariants.
+ *  2. `conhost.exe` hosting the inner PowerShell directly — plain CreateProcess,
+ *     no ShellExecute and no powershell-spawns-powershell chain, for
+ *     environments where hop 1 is blocked (EDR/AppLocker-style rules).
+ * Both open the same persistent inner PowerShell (`-NoProfile` deterministic
+ * start · `-NoExit` crash visibility) running `body` inline. The caller gives
+ * each attempt its OWN pidfile/body so one hop's abort marker can never cancel
+ * the next hop's console.
  */
-function buildWin32Command(opts: TerminalCommandOptions): TerminalCommand {
-  if (!opts.winBody) return { kind: "none" };
+export function buildWinHops(body: string, cwd: string): WinHop[] {
+  const inner = ["-NoProfile", "-NoExit", "-ExecutionPolicy", "Bypass", "-Command"];
   // 'Stop' turns a Start-Process failure into a non-zero launcher exit → fast fallback.
-  const argList = ["-NoProfile", "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", opts.winBody]
-    .map(psSingleQuote)
-    .join(",");
-  const command = `$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell' -ArgumentList ${argList} -WorkingDirectory ${psSingleQuote(opts.cwd)}`;
-  return {
-    kind: "terminal",
-    cmd: "powershell",
-    args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
-  };
+  const argList = [...inner, body].map(psSingleQuote).join(",");
+  const startProcess = `$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell' -ArgumentList ${argList} -WorkingDirectory ${psSingleQuote(cwd)}`;
+  return [
+    {
+      label: "Start-Process",
+      cmd: "powershell",
+      args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", startProcess],
+    },
+    // conhost hands its tail to CreateProcess verbatim; the body survives libuv's
+    // quoting because it contains no double quotes (buildWinCommandBody invariant).
+    { label: "conhost", cmd: "conhost.exe", args: ["powershell", ...inner, body] },
+  ];
 }
 
 // --- quoting helpers -------------------------------------------------------

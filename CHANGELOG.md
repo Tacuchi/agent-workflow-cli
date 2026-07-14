@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Windows: el fallback background ejecutaba mal los wrappers JVM** — `winLaunchCommand` emitía `./mvnw.cmd`, válido en PowerShell pero no en cmd.exe (el fallback corre por `cmd /c` → «"." no se reconoce…» y el servicio nunca arrancaba, ni siquiera invisible). Ahora emite `.\mvnw.cmd`/`.\gradlew.bat`, válido en **ambos** intérpretes (afecta también `run.ps1`).
+- **Windows: cascada de lanzadores** — si el hop `Start-Process` no logra abrir la consola (EDR/AppLocker sobre la cadena powershell→powershell, u otro bloqueo ambiental), se intenta un segundo hop vía `conhost.exe` (CreateProcess directo, sin ShellExecute) antes de caer a background. Cada hop usa pidfile y abort-marker propios (7 s por hop); los archivos stale de sesiones previas se limpian antes de cada intento (los nombres `aw-launch-<pid>-<seq>` se repiten cuando Windows recicla PIDs) y el pidfile se consume también en el éxito.
+- **Diagnóstico del fallback visible** — cuando el lanzamiento cae a background, la TUI muestra «Motivo: …» (error de spawn · «salió con código N» · timeout del pidfile, por hop) y el log operativo registra `launch/relaunch X → fallback background: <motivo>` como `warn`; el relanzamiento (tecla `r` y resolución de colisión) ahora reporta el modo y el motivo igual que el lanzamiento.
+
 ## [20.14.1] — 2026-07-13
 
 ### Fixed

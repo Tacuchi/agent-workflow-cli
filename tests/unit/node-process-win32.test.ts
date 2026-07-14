@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -44,7 +44,8 @@ function makeChild({ code = 0, stdout = "", stderr = "", pid = 4242 }: ChildOpts
   return child;
 }
 
-const winProc = () => new NodeProcess("win32", { PATH: "C:\\bin" });
+const winProc = (pidfilePollMs?: number) =>
+  new NodeProcess("win32", { PATH: "C:\\bin" }, pidfilePollMs);
 
 afterEach(() => spawnMock.mockReset());
 
@@ -99,7 +100,7 @@ describe("NodeProcess — win32 branches", () => {
     );
   });
 
-  it("spawnInTerminal() launches via the hidden Start-Process hop and reads the console PID from the pidfile", async () => {
+  it("spawnInTerminal() launches via the Start-Process hop and reads the console PID from the pidfile", async () => {
     let pidFilePath = "";
     spawnMock.mockImplementation((cmd: string, args: string[]) => {
       if (cmd === "powershell") {
@@ -128,17 +129,72 @@ describe("NodeProcess — win32 branches", () => {
     expect(args[4]).toContain("'-NoProfile','-NoExit'");
     // Env (with the launch deltas) travels via spawn — the chain inherits it.
     expect(spawnOpts).toMatchObject({ env: { PATH: "C:\\bin" } });
-    // No wrapper file on Windows: the body is inline (GPO ExecutionPolicy-proof).
-    expect(existsSync(pidFilePath.replace(/\.pid$/, ""))).toBe(false);
+    // The pidfile is consumed on success: a leftover would be read as a FUTURE
+    // launch's console under a recycled process.pid (→ taskkill on a foreign pid).
+    expect(existsSync(pidFilePath)).toBe(false);
     // Terminal mode leaves a marker so "Ver log" never shows a stale run as current.
     expect(readFileSync(logPath, "utf8")).toBe(
       "[lanzado en consola — la salida vive en la ventana]\n",
     );
   });
 
-  it("spawnInTerminal() falls back to a background process when the launcher fails", async () => {
+  it("spawnInTerminal() drops the abort marker on a silent hop-1 timeout and still cascades to conhost", async () => {
+    let hop1PidFile = "";
+    spawnMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "powershell") {
+        // Launcher "succeeds" (exit 0) but no console ever writes the pidfile.
+        hop1PidFile =
+          /Set-Content -LiteralPath ''([^']+)'' -Value \$PID/.exec(args[4] ?? "")?.[1] ?? "";
+        return makeChild({ code: 0, pid: 555 });
+      }
+      if (cmd === "conhost.exe") {
+        const pidFilePath =
+          /Set-Content -LiteralPath '([^']+)' -Value \$PID/.exec(args[6] ?? "")?.[1] ?? "";
+        if (pidFilePath) writeFileSync(pidFilePath, "888");
+      }
+      return makeChild({ pid: 556 });
+    });
+    const res = await winProc(150).spawnInTerminal("npm", ["run", "dev"], {
+      cwd: "C:\\app",
+      env: { PATH: "C:\\bin" },
+      envDelta: {},
+      logPath: join(tmpdir(), "aw-win32-test.log"),
+      title: "app",
+    });
+    expect(res).toEqual({ pid: 888, mode: "terminal" });
+    // The double-launch guard: hop 1's timed-out attempt leaves ITS abort marker
+    // so a very late console self-aborts instead of starting the app again.
+    expect(existsSync(`${hop1PidFile}.abort`)).toBe(true);
+    rmSync(`${hop1PidFile}.abort`, { force: true });
+  });
+
+  it("spawnInTerminal() cascades to the conhost hop when Start-Process fails", async () => {
+    spawnMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "powershell") return makeChild({ code: 1, pid: 555 });
+      if (cmd === "conhost.exe") {
+        // The body rides argv verbatim on this hop (its OWN pidfile, un-doubled quotes).
+        const pidFilePath =
+          /Set-Content -LiteralPath '([^']+)' -Value \$PID/.exec(args[6] ?? "")?.[1] ?? "";
+        if (pidFilePath) writeFileSync(pidFilePath, "888");
+      }
+      return makeChild({ pid: 556 });
+    });
+    const res = await winProc().spawnInTerminal("npm", ["run", "dev"], {
+      cwd: "C:\\app",
+      env: { PATH: "C:\\bin" },
+      envDelta: {},
+      logPath: join(tmpdir(), "aw-win32-test.log"),
+      title: "app",
+    });
+    expect(res).toEqual({ pid: 888, mode: "terminal" });
+    expect(spawnMock.mock.calls.map((c) => c[0])).toEqual(["powershell", "conhost.exe"]);
+  });
+
+  it("spawnInTerminal() falls back to background with the per-hop reasons when every hop fails", async () => {
     spawnMock.mockImplementation((cmd: string) =>
-      makeChild(cmd === "powershell" ? { code: 1, pid: 555 } : { pid: 777 }),
+      cmd === "powershell" || cmd === "conhost.exe"
+        ? makeChild({ code: 1, pid: 555 })
+        : makeChild({ pid: 777 }),
     );
     const res = await winProc().spawnInTerminal("npm", ["run", "dev"], {
       cwd: "C:\\app",
@@ -147,6 +203,11 @@ describe("NodeProcess — win32 branches", () => {
       logPath: join(tmpdir(), "aw-win32-test.log"),
       title: "app",
     });
-    expect(res).toEqual({ pid: 777, mode: "background" });
+    expect(res).toEqual({
+      pid: 777,
+      mode: "background",
+      terminalError:
+        "Start-Process: powershell salió con código 1 · conhost: conhost.exe salió con código 1",
+    });
   });
 });
