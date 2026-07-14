@@ -11,7 +11,7 @@ allowed-tools:
 
 # export-manuals — export manuals
 
-Consolidates sessions + `DECISION` artifacts + plan-doc (`Final behavior`) + source code and generates user/operations documentation in `docs/manuals/`. Single-pass, read-only over sessions.
+Consolidates sessions + `DECISION` artifacts + plan-doc (the Final behavior block of `Solution`) + source code and generates user/operations documentation in `docs/manuals/`. Single-pass, read-only over sessions.
 
 To run: **read** `../exports/export-manuals/EXPORT.md` and **follow** its instructions with `$ARGUMENTS` as input. This command is the entry and the sibling EXPORT.md is its body.
 

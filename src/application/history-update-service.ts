@@ -46,19 +46,18 @@ export async function runHistoryUpdate(
   const codeNum = normalizeCode(code);
 
   return withCwdLock(fs, paths, async () => {
-    const action = await upsertRow(fs, paths.cwdHistoryFile(), codeNum, (hasFlow) =>
+    const action = await upsertRow(fs, paths.cwdHistoryFile(), codeNum, () =>
       buildRow({
         code: codeNum,
-        flow: fields.flow,
         sesionName: fields.sesionName,
         date: fields.date,
         state,
-        summary: fields.summary,
         refs: refsRendered,
-        hasFlow,
       }),
     );
-    return { code: codeNum, flow: fields.flow, action, state };
+    // `flow` stays in the output shape for consumer compat; sessions carry no
+    // flow segment anymore, so it is always null.
+    return { code: codeNum, flow: null, action, state };
   });
 }
 
@@ -71,10 +70,8 @@ function validate(input: HistoryUpdateInput): HistoryUpdateError | null {
 }
 
 interface ResolvedFields {
-  flow: string | null;
   sesionName: string;
   date: string;
-  summary: string;
 }
 
 function mergeFields(
@@ -84,10 +81,7 @@ function mergeFields(
 ): ResolvedFields {
   const sesionName = input.sesionName || session?.name || code;
   const date = input.date || session?.date || localDateIso(new Date());
-  const summary = input.summary || session?.summary || sesionName.replace(/-/g, " ");
-  // Sessions no longer carry a `flow` segment (removed from the model). The
-  // HISTORY.md "Flujo" column is preserved for legacy tables and renders "—".
-  return { flow: null, sesionName, date, summary };
+  return { sesionName, date };
 }
 
 function normalizeCode(code: string): string {

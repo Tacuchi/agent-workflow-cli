@@ -53,3 +53,58 @@ describe("resolveSession — numeric code word-boundary", () => {
     expect(entry).toBeNull();
   });
 });
+
+describe("resolveSession — type fallback by folder suffix (SESSION.md without ## Type)", () => {
+  // New-model SESSION.md no longer renders ## Type; the resolver derives it
+  // from the descriptor's <slug>-<flow> suffix. Legacy artifacts with the
+  // section keep winning (buildFs above renders ## Type and stays covered).
+  function slimFs(folder: string): FakeFs {
+    const fs = new FakeFs({ lenient: true });
+    fs.file(
+      `${sessionsDir}/${folder}/SESSION.md`,
+      `# SESSION — ${folder}\n\n## Objective\nx\n\n## Success criteria\n- [ ]\n`,
+    );
+    return fs;
+  }
+
+  it.each([
+    ["004-otp-spec-refine", "refine"],
+    ["005-otp-plan-new", "refine"],
+    ["006-otp-plan-refine", "refine"],
+    ["007-otp-plan-exec", "exec"],
+    ["008-otp-quick", "quick"],
+  ])("%s → type %s", async (folder, expected) => {
+    const entry = await resolveSession(
+      slimFs(folder),
+      new FakeEnv("/home/u", "/cwd"),
+      paths,
+      folder,
+    );
+    expect(entry?.type).toBe(expected);
+  });
+
+  it("unknown suffix leaves type absent (as before)", async () => {
+    const entry = await resolveSession(
+      slimFs("009-libre"),
+      new FakeEnv("/home/u", "/cwd"),
+      paths,
+      "009-libre",
+    );
+    expect(entry?.type).toBeUndefined();
+  });
+
+  it("a legacy ## Type section still wins over the suffix", async () => {
+    const fs = new FakeFs({ lenient: true });
+    fs.file(
+      `${sessionsDir}/010-x-plan-exec/SESSION.md`,
+      "# SESSION — 010-x-plan-exec\n\n## Type\nquick\n",
+    );
+    const entry = await resolveSession(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      paths,
+      "010-x-plan-exec",
+    );
+    expect(entry?.type).toBe("quick");
+  });
+});

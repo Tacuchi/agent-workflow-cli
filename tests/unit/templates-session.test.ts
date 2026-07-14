@@ -10,17 +10,19 @@ describe("renderSessionMarkdown — SESSION.md descriptor (new model)", () => {
     });
     expect(md).toContain("# SESSION — investiga-x");
     expect(md).toContain("## Objective\nInvestigar el patrón X");
-    expect(md).toContain("## Type\nresearch");
     expect(md).toContain("## Origin");
     // Components is never rendered; Success criteria is seeded for all types (verification-first).
     expect(md).not.toContain("## Components");
     expect(md).toContain("## Success criteria");
   });
 
-  it("never emits a Components section, for any type", () => {
+  it("never emits a Components or Type section, for any type", () => {
+    // Type is derivable from the session name's <slug>-<flow> suffix — the
+    // --type value is accepted but no longer rendered (artifact-slim round).
     for (const type of ["research", "refine", "exec", "quick"]) {
       const md = renderSessionMarkdown({ name: "s", type, objetivo: "do it" });
       expect(md).not.toContain("## Components");
+      expect(md).not.toContain("## Type");
     }
   });
 

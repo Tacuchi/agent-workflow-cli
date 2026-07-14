@@ -68,7 +68,7 @@ The loop works **artifact-first**: the artifact is **seeded before** executing a
 
 > The artifact expresses the **intent** (Pending/Next, before) and then the **result** (Completed/DECISION, after), at **every** gap/phase boundary — not only on `Compactar`/`Cerrar`. Session artifacts are the run's live log; the spec/plan is the **guiding base**.
 
-> **Fixed form (hard rule):** an artifact keeps its template's `##` headings **exactly** and is updated **in place** — appending a **duplicate heading** is a contract violation. When a scaffolded section is filled, its `<!-- … -->` guidance comment is **replaced** by the real content. Canonical headings per artifact: its template under [`../artifacts/`](../artifacts/) (CHECKPOINT contract: `Completed` · `Pending / Next` · `Open questions`).
+> **Fixed form (hard rule):** an artifact keeps its template's `##` headings **exactly** and is updated **in place** — appending a **duplicate heading** is a contract violation. When a scaffolded section is filled, its `<!-- … -->` guidance comment is **replaced** by the real content. Canonical headings per artifact: its template under [`../artifacts/`](../artifacts/) (CHECKPOINT contract: `Completed` · `Pending / Next`; `Open questions` only while live doubts exist).
 
 ## Gap-driven convergent engine
 
@@ -133,7 +133,7 @@ Investigation is **inline**: an activity **inside the run's current session**, n
   3. Execute them **read-only** via MCP (respect `sql-mutation-guard`: never DML/DDL).
 - **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap):
   - The investigation closes with status **`inconclusive`** in `CONCLUSIONS` and reports why.
-  - The loop **degrades** the gap: to a **human question** (next batch → the flow's Q&A record: `Q&A traceability` in refine loops, `DECISION` in code-editing ones) or, failing that, **defers** it to the flow doc's `## Open questions` (spec/plan) — or the session's `BACKLOG` when the flow has no doc (quick).
+  - The loop **degrades** the gap: to a **human question** (next batch → the flow's Q&A record: a `Q:` entry in `## Refinement decisions` in refine loops, `DECISION` in code-editing ones) or, failing that, **defers** it to the flow doc's `## Open questions` (spec/plan) — or the session's `BACKLOG` when the flow has no doc (quick).
   - The gap is marked **"already tried via research"** (`attempts[gap]++`, `MAX` cap) so `detect_gaps` does **not** re-fire it in a loop → guarantees convergence.
 
 ## Proof of concept (probe)
@@ -169,7 +169,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 2. **No progress** (no CHECKPOINT and the input doc does **not** have the flow's prior-work mark) → start from zero reading the input doc (plus any *adopted context* — settled in-conversation conclusions are input, not something to re-derive).
 3. **Already converged / re-run on demand** (no open CHECKPOINT but the doc **already has** the mark) → **first-class operation**: while the flow stays in its stage, re-running the command over the same input **as many times as needed** is supported. `create_or_resume` finds the existing session — typically **closed** after convergence — by descriptor + `## Origin` and **reopens** it (see *Internal sessions*: detection via `aw sessions --state all` / `aw resume-summary --include-recent-closed`, reopening via `aw session-resume --code <NNN> --reopen`); incremental work reading the **doc itself**.
 
-> Each heir defines its **prior-work mark**: in the refine loops, the presence of `## Refinement decisions` + `## Q&A traceability` in the doc; in plan-exec, the plan-doc's `- [x]` checkboxes; quick has no doc (resume by CHECKPOINT only).
+> Each heir defines its **prior-work mark**: in the refine loops, the presence of `## Refinement decisions` in the doc (legacy docs may also carry `## Q&A traceability`); in plan-exec, the plan-doc's `- [x]` checkboxes; quick has no doc (resume by CHECKPOINT only).
 
 > **`Compactar`** (the `flow` control, across all 3 cases) → write `CHECKPOINT.md` in the session (in-flight progress, remaining gaps, Q&A, `attempts`) → trigger the harness **compaction** (Claude Code: `/compact`; see [`../harness/HARNESS.md`](../harness/HARNESS.md)) → resume by reading the checkpoint.
 

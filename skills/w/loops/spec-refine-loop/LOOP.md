@@ -5,8 +5,8 @@ description: >-
   until it is unambiguous. Heir of the chassis (loops/CHASSIS.md). Deltas:
   spec gap taxonomy, analyze gate, ideation gate (consented brainstorming,
   optional web-research), ## UI spec section via the ui-design
-  capability, and adds Refinement decisions + Q&A traceability — the refined
-  mark plan-new detects. Started by /w:spec-refine (or the live escalation
+  capability, and adds Refinement decisions — the refined mark plan-new
+  detects. Started by /w:spec-refine (or the live escalation
   from quick-loop); resumable via CHECKPOINT and re-runnable on demand.
   Invoke to refine/disambiguate a specification before planning.
 ---
@@ -34,7 +34,7 @@ It is also started by the **live escalation from `quick-loop`** (entry gate or m
 - `docs/specs/NNN-spec*.md` (glob — locates the spec by number; also catches the legacy `NNN-spec.md`), **or** the exact path passed as the command argument. **Always the spec itself**: this loop edits it in place; there is no separate "refined" file.
 
 ## Writes
-Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Guardar especificación refinada`): completes sections and **adds** `## Refinement decisions` + `## Q&A traceability`, closing `Open questions` as they get resolved. Since it overwrites an existing doc, it asks the user's **confirmation**.
+Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Guardar especificación refinada`): completes sections and **adds** `## Refinement decisions`, closing `Open questions` as they get resolved. Since it overwrites an existing doc, it asks the user's **confirmation**.
 
 > **Boundary invariant:** this loop writes **only** into `docs/specs`. It never graduates/exports other artifacts to `docs/` — that is separate `export-*` work (chassis § *docs/ boundary*).
 
@@ -62,7 +62,7 @@ Other transversal capabilities the engine always uses: `research` (**inline** �
 
 ## Deliverable schema (the spec, edited in place)
 
-The spec is completed **in place**: the draft's sections get **completed** + two new ones are **added** (`Refinement decisions`, `Q&A traceability`). NO separate file is created.
+The spec is completed **in place**: the draft's sections get **completed** + one new one is **added** (`Refinement decisions`). NO separate file is created.
 
 ```markdown
 # Spec NNN — <slug>
@@ -74,23 +74,24 @@ The spec is completed **in place**: the draft's sections get **completed** + two
 ## Context                (complete)
 ## Scope                  (clear In / Out)
 ## Acceptance criteria    (testable, - [ ]; EARS style; behavioral ones expand in ## Scenarios)
-## Scenarios              (opt. — GIVEN/WHEN/THEN/AND blocks; each traces to ≥1 criterion)
+## Scenarios              (opt. — GIVEN/WHEN/THEN/AND blocks; each traces to ≥1 criterion.
+                           Only when it adds GIVEN setup or edge semantics the criterion
+                           does not capture — NEVER a 1:1 restatement of a criterion)
 ## Assumptions            (declared)
 
 ## UI spec                (opt. — if UI is involved; via the ui-design capability / ui-spec skill)
 Structured Markdown description (screens → regions/components). See [`ui-spec`](../../roles/ui-spec/ROLE.md).
 
-## Refinement decisions   ← NEW (ADDED)
+## Refinement decisions   ← NEW (ADDED) — the run's single trace
 What was defined while refining and why. Includes what inline research
-resolved (ref. the session's CONCLUSIONS) and the ideation verdicts (§ Ideation gate).
+resolved (ref. the session's CONCLUSIONS), the ideation verdicts (§ Ideation
+gate) and every doubt asked to the human, as entries
+`Q: <question> → <chosen answer> — <rationale>`.
 
-## Q&A traceability       ← NEW (ADDED)
-Every doubt asked to the human + the chosen answer.
-
-## Open questions         (ideally "None"; whatever remains is deferred)
+## Open questions         (whatever remains is deferred; OMIT the section when empty)
 ```
 
-> **Refined mark (contract with PLAN):** the presence of `## Refinement decisions` + `## Q&A traceability` distinguishes a refined spec from a draft — plan-new detects it this way, NOT by filename; without those 2 sections plan-new soft-suggests spec-refine.
+> **Refined mark (contract with PLAN):** the presence of `## Refinement decisions` distinguishes a refined spec from a draft — plan-new detects it this way, NOT by filename; without that section plan-new soft-suggests spec-refine. *(Legacy specs also carry `## Q&A traceability` — they still count as refined; new runs never write it.)*
 
 > **Acceptance criteria = static testable criteria** (the "what"): plan-exec validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]` in the spec; the spec never mutates by execution, only by a re-refine.
 
@@ -104,7 +105,7 @@ Every doubt asked to the human + the chosen answer.
 | Incomplete context | systems/components unidentified | **research** |
 | Blurry scope | `Out` missing, or In/Out overlap | **human** |
 | Untestable criteria | acceptance not verifiable | **human** (derive + confirm — often as a `### Scenario`) |
-| Scenario missing | behavioral criterion without a `### Scenario` | the AI drafts GIVEN/WHEN/THEN + **human** confirms |
+| Scenario missing | behavioral criterion whose behavior is NOT captured by its WHEN/THEN (needs GIVEN setup or edge semantics; a criterion a scenario would only restate 1:1 is not a gap) | the AI drafts GIVEN/WHEN/THEN + **human** confirms |
 | Open questions pending | explicit doubts | by nature |
 | Hidden assumptions | the spec assumes unstated things | **research** validates / **human** confirms |
 | Internal contradiction | sections contradict each other | **human** |
@@ -154,7 +155,7 @@ spec-refine-loop(spec):
       switch(flow):
         Compactar → write CHECKPOINT (refine_session) ; compact(harness) ; continue
         Cerrar    → goto finalize
-      work = integrate(work, ans)            # → Q&A traceability / Open questions
+      work = integrate(work, ans)            # → Refinement decisions (Q: entries) / Open questions
       ideation offer accepted → run the round NOW, then its verdicts as a NEW ≤3+flow batch (§ Ideation gate) → integrate
       ideation offer declined → mark that gap exhausted    # anti re-fire; on-demand entry stays open
   # no material gaps → analyze gate = Success criteria green (read-only) before offering Guardar:
@@ -162,7 +163,7 @@ spec-refine-loop(spec):
   if issues: gaps += issues ; continue            # findings come back into the loop as gaps
   ans = structured_choice(content: [Guardar refinada, Preguntar algo más],
                         flow: [Compactar, Cerrar])
-  Guardar            → edit_in_place_with_confirm(spec)  # completes sections + inserts UI spec/Refinement decisions/Q&A ; goto finalize
+  Guardar            → edit_in_place_with_confirm(spec)  # completes sections + inserts UI spec/Refinement decisions ; goto finalize
   Preguntar algo más → continue
   flow Compactar/Cerrar → handle the same way
 finalize:
@@ -175,12 +176,12 @@ finalize:
 
 Full mechanism (3 cases, `Compactar`, re-run on demand with `--reopen`) in the chassis (§ *Compact / resume*). SPEC keys:
 
-- The **prior-work mark** is the presence of `## Refinement decisions` + `## Q&A traceability` in the spec (the *refined mark*, see *Deliverable schema*).
+- The **prior-work mark** is the presence of `## Refinement decisions` in the spec (the *refined mark*, see *Deliverable schema*; legacy specs may also carry `## Q&A traceability`).
 - Re-refining on demand is a **first-class operation** while the flow stays in SPEC (new requirements, scope changes, after re-reading the spec): it always reads the **spec itself**, incremental re-refinement; on `Guardar`, edits in place with confirmation.
 
 ## Convergence / exit
 
-- **No material gaps** → **analyze gate** (read-only) = **`Success criteria` green** (*verification-first*; the SPEC instance of the chassis convergence gate): every acceptance criterion traces to the `Requirement`, no internal contradictions, coherent `Scope` In/Out, `Open questions` closed or explicitly deferred. **Minimality** — no gold-plating: every criterion and scope item earns its place (chassis § *Minimality*); speculative scope is cut or deferred. Scenarios must trace to ≥1 criterion — and behavioral criteria to ≥1 scenario — without contradicting `Scope`. Whatever fails **comes back as a gap**; if it passes → offer `Guardar especificación refinada`.
+- **No material gaps** → **analyze gate** (read-only) = **`Success criteria` green** (*verification-first*; the SPEC instance of the chassis convergence gate): every acceptance criterion traces to the `Requirement`, no internal contradictions, coherent `Scope` In/Out, `Open questions` closed or explicitly deferred. **Minimality** — no gold-plating: every criterion and scope item earns its place (chassis § *Minimality*); speculative scope is cut or deferred. Scenarios must trace to ≥1 criterion — and add GIVEN setup or edge semantics beyond it (a 1:1 restatement of a criterion is gold-plating: cut it) — without contradicting `Scope`. Whatever fails **comes back as a gap**; if it passes → offer `Guardar especificación refinada`.
 - `Guardar` → `edit_in_place_with_confirm(spec)` and `finalize`.
 - `Cerrar` → the chassis `finalize` (always persists `CHECKPOINT`; `BACKLOG` **only if** something is deferred — here: close reason + deferred `Open questions`).
 
@@ -188,6 +189,6 @@ Full mechanism (3 cases, `Compactar`, re-run on demand with `--reopen`) in the c
 
 - Resolved via **inline research** → the spec's `## Refinement decisions` (+ ref to the session's `CONCLUSIONS`).
 - Resolved via **ideation** → per verdict (§ *Ideation gate*): `Adoptar` → the spec's sections + `## Refinement decisions` · `Descartar` → there · `Aparcar` → `## Open questions`.
-- Resolved via **human** → the spec's `## Q&A traceability`.
+- Resolved via **human** → the same `## Refinement decisions`, as a `Q: <question> → <chosen answer> — <rationale>` entry.
 - Resolved via the **`ui-design` capability** (UI gap) → the spec's `## UI spec` section.
 - **Inconclusive or unresolved research** → the spec's `## Open questions` (deferred) + the refine session's `BACKLOG.md` (only if something is deferred).

@@ -6,8 +6,12 @@
  *   # SESSION — <name>
  *   ## Objective         (from --objetivo)
  *   ## Origin            (list derived from a plain origin string; placeholder when absent)
- *   ## Type              (the --type value, set by the parent loop)
  *   ## Success criteria  (blank `[ ]` checklist) — the verification-first done-condition
+ *
+ * `## Type` is no longer rendered: the type is derivable from the session
+ * name's `<slug>-<flow>` suffix (the resolver falls back to it). The --type
+ * flag stays mandatory at the CLI (loop hard floors pin it) but the value is
+ * not written into the artifact.
  *
  * `## Success criteria` is the run's done-condition, seeded at creation
  * (verification-first / generalized TDD): a falsifiable `[ ]` checklist the loop
@@ -20,7 +24,7 @@
 export interface SessionTemplateValues {
   /** Folder/name of the session (verbatim --name). */
   name: string;
-  /** Session type set by the loop: research | refine | exec | quick. */
+  /** Session type set by the loop: research | refine | exec | quick. Accepted but not rendered. */
   type: string;
   /** What this session resolves (from --objetivo). */
   objetivo: string;
@@ -49,9 +53,6 @@ ${values.objetivo}
 
 ## Origin
 ${renderOriginSection(values.origin)}
-
-## Type
-${values.type}
 
 ## Success criteria
 <!-- Verification-first done-condition, seeded BEFORE executing: falsifiable [ ] items (tests for code, a by-inspection rubric for analysis/design). The loop persists until all are green and flips each to [x] at the convergence gate; replace this comment when filling. -->

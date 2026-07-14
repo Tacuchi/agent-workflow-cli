@@ -20,7 +20,10 @@ export interface SessionEntry {
   /** Absolute path to the session directory. */
   path: string;
   state: SessionState;
-  /** `## Type` from SESSION/OBJECTIVE. Absent when not declared. */
+  /**
+   * `## Type` from SESSION/OBJECTIVE (legacy artifacts), else derived from the
+   * folder's `<slug>-<flow>` suffix. Absent when neither declares it.
+   */
   type?: string;
   date?: string;
   summary?: string;
@@ -56,6 +59,7 @@ export async function buildSessionEntry(
   const requirement = await readRequirement(fs, sessionPath);
   const date = requirement.date ?? (await mtimeAsDate(fs, sessionPath));
   const summary = requirement.summary ?? (name ? name.replace(/-/g, " ") : folder);
+  const type = requirement.type ?? typeFromNameSuffix(folder);
 
   const entry: SessionEntry = {
     code,
@@ -63,7 +67,7 @@ export async function buildSessionEntry(
     folder,
     path: sessionPath,
     state,
-    ...(requirement.type ? { type: requirement.type } : {}),
+    ...(type ? { type } : {}),
     ...(date ? { date } : {}),
     summary,
     ...(requirement.branch ? { branch: requirement.branch } : {}),
@@ -161,6 +165,18 @@ function normalizeCode(input: string): string {
     return input.replace("session", "").split("-")[0] ?? "";
   }
   return input;
+}
+
+/**
+ * Fallback when SESSION.md carries no `## Type` (no longer rendered): derive
+ * the type from the descriptor's `<slug>-<flow>` suffix. Unknown suffix →
+ * undefined (same as before: type stays absent).
+ */
+function typeFromNameSuffix(folder: string): string | undefined {
+  if (/-(spec-refine|plan-new|plan-refine)$/.test(folder)) return "refine";
+  if (folder.endsWith("-plan-exec")) return "exec";
+  if (folder.endsWith("-quick")) return "quick";
+  return undefined;
 }
 
 /**

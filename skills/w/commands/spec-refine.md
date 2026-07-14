@@ -16,7 +16,7 @@ This command does not refine the spec itself: it delegates to `spec-refine-loop`
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
-> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-spec-refine --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
+> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-spec-refine --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 3. **Write boundary** — this flow edits only `docs/specs/…` (in place, with confirmation); nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the doc's content) goes in the **user's language**.
@@ -36,8 +36,8 @@ The skill detects prior state before starting, **keying off the `CHECKPOINT`** (
 
 1. Find the spec's refinement session under `.workflow/sessions/` and its `CHECKPOINT.md`.
 2. **In progress** (a CHECKPOINT exists) → continue from the recorded progress (resolved gaps, Q&A).
-3. **No progress** (no CHECKPOINT and the spec does **not** have `## Refinement decisions`/`## Q&A traceability`) → start from zero reading the spec (`NNN-spec*.md`).
-4. **Already refined / re-refine on demand** (no open CHECKPOINT but the spec **already has** the 2 sections) → **first-class operation**: while the flow stays in SPEC you can re-run this command over the same spec **as many times as needed** (new requirements, scope changes, re-reads). The loop does `create_or_resume` — it locates the existing refine session (even closed) and **reopens** it instead of duplicating — and re-refines reading the **spec itself**; on `Guardar`, edits in place with confirmation.
+3. **No progress** (no CHECKPOINT and the spec does **not** have `## Refinement decisions`) → start from zero reading the spec (`NNN-spec*.md`).
+4. **Already refined / re-refine on demand** (no open CHECKPOINT but the spec **already has** that section) → **first-class operation**: while the flow stays in SPEC you can re-run this command over the same spec **as many times as needed** (new requirements, scope changes, re-reads). The loop does `create_or_resume` — it locates the existing refine session (even closed) and **reopens** it instead of duplicating — and re-refines reading the **spec itself**; on `Guardar`, edits in place with confirmation.
 
 > **Compat (legacy):** the `NNN-spec*.md` glob also catches old `NNN-spec.md` / `NNN-spec-refined.md` specs. Re-running spec-refine edits them in place from then on.
 

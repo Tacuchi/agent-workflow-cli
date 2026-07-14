@@ -6,7 +6,7 @@
 
 ## Contract (hard rules)
 
-1. **Fixed headings, exactly these three**: `## Completed` · `## Pending / Next` · `## Open questions` (plus the optional ones below).
+1. **Fixed headings**: `## Completed` · `## Pending / Next` — always; `## Open questions` **only while live doubts exist** (omit it when there are none — never write a "None" placeholder) (plus the optional ones below).
 2. **Update in place — NEVER duplicate a section.** Every update edits the existing section's content; appending a second `## <same heading>` is a contract violation.
 3. New entries go at the top of their section (most recent first) or extend an existing bullet — each section stays a single block.
 
@@ -17,7 +17,7 @@ What already happened: finished phases/tasks/gaps with their outcome (ref: plan-
 The intent: what remains and what comes immediately next (seeded BEFORE executing — artifact-first). A resume starts here.
 
 ## Open questions
-Live doubts not yet resolved (ideally "None"). Deferred ones move to the session's `BACKLOG` or the flow doc's `## Open questions`.
+Live doubts not yet resolved — the section exists only while there are any (rule 1). Deferred ones move to the session's `BACKLOG` or the flow doc's `## Open questions`.
 
 ### Optional sections
 

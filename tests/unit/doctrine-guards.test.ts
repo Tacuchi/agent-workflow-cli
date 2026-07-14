@@ -89,6 +89,14 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // degradation) — quick and plan-exec load it; SKILL.md's Tools pointer is
   // unbudgeted (orientation, not a flow load). ~0.8 KB headroom over the
   // measured totals.
+  // Recalibrated (artifact-slim round, G14): the deliverable schemas shrank
+  // (single Refinement decisions trace, plan-doc consolidated into
+  // Solution/Tasks, Estimated time gone) while the doctrine gained the
+  // checkbox-only + never-duplicate exec rules, the single done-status line
+  // and the legacy-compat notes — spec-refine/plan-new net down, quick/
+  // plan-exec net slightly up. Budgets re-anchored to measured + ~0.8 KB
+  // (measured: quick 47 839 · spec-refine 45 028 · plan-new 45 769 ·
+  // plan-refine 57 207 · plan-exec 48 283).
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -98,17 +106,17 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 48_500,
+      budget: 48_600,
     },
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 45_300,
+      budget: 45_800,
     },
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 46_200,
+      budget: 46_600,
     },
     {
       flow: "plan-refine",
@@ -118,7 +126,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 57_600,
+      budget: 58_000,
     },
     {
       flow: "plan-exec",
@@ -128,7 +136,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 48_000,
+      budget: 49_100,
     },
   ];
 
@@ -321,6 +329,72 @@ describe("Doctrine guards — G13 · tooling gate (docs/tools) pins", () => {
   });
 });
 
+describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated plan, checkbox-only exec) pins", () => {
+  // Pin the artifact-slim round so a future compression pass cannot silently
+  // resurrect the removed duplication (two-notation traces, 4x delta
+  // narration, Phases table, exec residue) or drop the new hard rules.
+  /**
+   * The `## Delta 1 …` section of plan-new-loop, up to `## Delta 2` (the
+   * schema's fenced block carries `## <section>` lines of its own, so a
+   * generic next-`## ` cut would stop inside the fence).
+   */
+  async function planNewDelta1(): Promise<string> {
+    const planNew = await readRel("loops/plan-new-loop/LOOP.md");
+    const start = planNew.indexOf("## Delta 1");
+    const end = planNew.indexOf("## Delta 2");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return planNew.slice(start, end);
+  }
+
+  it("the refined mark is ## Refinement decisions alone (with the legacy tolerance note)", async () => {
+    const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
+    expect(specRefine).toContain(
+      "the presence of `## Refinement decisions` distinguishes a refined spec from a draft",
+    );
+    // The human Q&A folds into the same section — no second notation.
+    expect(specRefine).toContain("Q: <question> → <chosen answer> — <rationale>");
+    // Legacy specs (both sections) must keep counting as refined.
+    expect(specRefine).toMatch(/legacy specs.*`## Q&A traceability`.*still count as refined/i);
+  });
+
+  it("Scenarios never restate a criterion 1:1 (draft and refined schemas agree)", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
+    expect(specNew).toContain("**never restate a criterion 1:1**");
+    expect(specRefine).toContain("NEVER a 1:1 restatement");
+  });
+
+  it("plan-new's Delta 1 schema is consolidated — no Summary/AS-IS/TO-BE/Final behavior/Phases/Estimated time sections", async () => {
+    const delta1 = await planNewDelta1();
+    for (const gone of [
+      "## Summary",
+      "## Current state",
+      "## Target state",
+      "## Final behavior",
+      "## Phases",
+      "## Estimated time",
+      "## Q&A traceability",
+    ]) {
+      expect(delta1, `${gone} must not survive in the Delta 1 schema`).not.toContain(gone);
+    }
+    // The absorbed blocks live inside Solution/Tasks.
+    expect(delta1).toContain("AS-IS → TO-BE");
+    expect(delta1).toContain('"Final behavior" block');
+    expect(delta1).toContain("### Fn");
+    expect(delta1).toContain("ONLY source of phases");
+    expect(delta1).toContain("OMIT the section when empty");
+  });
+
+  it("plan-exec keeps the checkbox-only residue rule and the single done-status line", async () => {
+    const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
+    expect(planExec).toContain("**Checkbox-only residue (hard rule):**");
+    expect(planExec).toContain("NEVER append a duplicate `### Fn` block");
+    expect(planExec).toContain("**Marking done = ONE line in the plan-doc**");
+    expect(planExec).toContain("> Estado: done — YYYY-MM-DD · sesión NNN");
+  });
+});
+
 describe("Doctrine guards — G2 · readability caps in the hot path", () => {
   // Generous ceilings: they catch only the worst 5% (norm+rationale+exception
   // chained into one giant sentence), not style preferences.
@@ -425,6 +499,9 @@ describe("Doctrine guards — G6 · artifact contract (informe 003, wave 3)", ()
     expect(tpl).toContain("## Completed");
     expect(tpl).toContain("## Pending / Next");
     expect(tpl).toContain("## Open questions");
+    // Open questions is conditional (artifact-slim round): present only while
+    // live doubts exist — never a "None" placeholder.
+    expect(tpl).toContain("only while live doubts exist");
     expect(tpl).toContain("NEVER duplicate");
   });
 

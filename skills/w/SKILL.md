@@ -132,7 +132,7 @@ The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply t
 |---|---|---|
 | `export-scripts` | `SCRIPTS.sql` (migrations) from N sessions | `docs/scripts/` (numbered forwards + `00-ROLLBACK.sql`) |
 | `export-manuals` | sessions + decisions + plan + code | `docs/manuals/` |
-| `export-diagrams` | source code + plan (AS-IS/TO-BE) | `docs/diagrams/` (C4 / mermaid) |
+| `export-diagrams` | source code + plan (Solution's AS-IS → TO-BE delta) | `docs/diagrams/` (C4 / mermaid) |
 | `export-reports` | session corpus + plan + `docs/` | `docs/reports/` (executive/functional report) |
 
 Common: Layer 1, explicit (user-invoked, never by a loop) · single-pass, read-only over sessions · cross-session (consolidate N sessions + `docs/`) · no loop, no internal sessions (options via args).

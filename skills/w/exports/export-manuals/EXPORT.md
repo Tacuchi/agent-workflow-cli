@@ -1,6 +1,6 @@
 ---
 name: export-manuals
-description: "Operations / onboarding manuals (operator/support audience). Synthesizes the workspace's technical manuals into `docs/manuals/` consolidating N sessions (`exec`/`quick`) + `docs/`. Reads each session's `DECISION` and the plan-doc (`Solution`, `Final behavior`, `Validations`) + the touched code in the sources (how what was built operates/works). Two modes: `complement` (default, overwrites `INDEX.md` pointing at the detected manuals) and `regenerate` (produces a `NNN-export-manuals-YYYY-MM-DD/` dossier with 1 manual per topic). Audience: operators / support / onboarding. Read-only/report: it never commits nor mutates sessions. The prose follows the ambient writing conventions (the host auto-applies an installed writing skill when present). Use for 'operations manual', 'how what we shipped works', 'technical onboarding pack', 'manuals index'. User-invoked via `/w:export-manuals`."
+description: "Operations / onboarding manuals (operator/support audience). Synthesizes the workspace's technical manuals into `docs/manuals/` consolidating N sessions (`exec`/`quick`) + `docs/`. Reads each session's `DECISION` and the plan-doc (`Solution` — including its Final behavior block —, `Validations`) + the touched code in the sources (how what was built operates/works). Two modes: `complement` (default, overwrites `INDEX.md` pointing at the detected manuals) and `regenerate` (produces a `NNN-export-manuals-YYYY-MM-DD/` dossier with 1 manual per topic). Audience: operators / support / onboarding. Read-only/report: it never commits nor mutates sessions. The prose follows the ambient writing conventions (the host auto-applies an installed writing skill when present). Use for 'operations manual', 'how what we shipped works', 'technical onboarding pack', 'manuals index'. User-invoked via `/w:export-manuals`."
 ---
 
 # export-manuals — technical manuals from sessions + `docs/`
@@ -26,7 +26,7 @@ The manual's prose follows the **ambient** writing conventions: the host auto-ap
 
 ## What it does
 
-1. Reads the session corpus (`exec`/`quick`): per session, `DECISION` + the plan-doc (`Solution`, `Final behavior`, `Validations`).
+1. Reads the session corpus (`exec`/`quick`): per session, `DECISION` + the plan-doc (`Solution` — including its Final behavior block; legacy plans: a separate `## Final behavior` section —, `Validations`).
 2. Inspects the touched code in the sources (how what was built operates/works) — read-only.
 3. Detects topics (declared in `SESSION` — its `## Objective` —, or inferred by operational keywords).
 4. Resolves the mode (`complement` or `regenerate`).
@@ -97,13 +97,13 @@ List `docs/manuals/*.md` (excluding `INDEX.md` and `NNN-export-manuals-*/` subdi
 
 ### Step 3 — Detect topics
 
-For every filtered corpus session (`aw session-artifacts --code <NNN> --dump objetivo,decisiones`): take the dump's `DECISION` + the plan-doc (`Solution`/`Final behavior`/`Validations`) + the touched code. **Primary** topic: the topic in `SESSION` (its `## Objective`). **Secondary**: inference by operational keywords ("configure", "install", "step by step", "how to …" — in the user's language). Filter by `--topics` when present. List (slug, confidence, origin sessions).
+For every filtered corpus session (`aw session-artifacts --code <NNN> --dump objetivo,decisiones`): take the dump's `DECISION` + the plan-doc (`Solution` with its Final behavior block/`Validations`) + the touched code. **Primary** topic: the topic in `SESSION` (its `## Objective`). **Secondary**: inference by operational keywords ("configure", "install", "step by step", "how to …" — in the user's language). Filter by `--topics` when present. List (slug, confidence, origin sessions).
 
 ### Step 4 — Synthesize (prose: ambient conventions)
 
 **`complement` mode** — one `INDEX.md`: header + manual count + table (Topic · Slug · Manual present/`[pending]` · Origin sessions) + "Next steps" when there are pending topics.
 
-**`regenerate` mode** — 1 `.md` per topic in the dossier, each with: Purpose · Prerequisites · Numbered steps (how to operate) · Final behavior (from the plan-doc) · Post-use validation · Relevant decisions (`DECISION`) · Troubleshooting · References. Every manual must let the operator complete the task **without** calling the development team. Plus a dossier `README.md` with the index. The prose follows the ambient writing conventions (host).
+**`regenerate` mode** — 1 `.md` per topic in the dossier, each with: Purpose · Prerequisites · Numbered steps (how to operate) · Final behavior (from the plan-doc's `Solution`) · Post-use validation · Relevant decisions (`DECISION`) · Troubleshooting · References. Every manual must let the operator complete the task **without** calling the development team. Plus a dossier `README.md` with the index. The prose follows the ambient writing conventions (host).
 
 ### Step 5 — Write or report
 

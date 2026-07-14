@@ -37,13 +37,13 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 
 > **Inline design (PLAN sessions):** when the plan **includes UI**, `plan-new-loop`/`plan-refine-loop` compose the **`ui-design`** capability and produce **design SPECs** — `NNN-SPEC-<SLUG>.md`, one **per screen** (`001-SPEC-MODAL-EXPORT.md`, `002-SPEC-ADMIN-DASHBOARD.md`), numbering local to the session — inside their own session. The plan-doc **references** them (UI Tasks) and `plan-exec-loop` reads them as the design reference. They are **not** the requirement-spec (invariant 3): they are process artifacts. See [`artifacts-design/`](artifacts-design/).
 
-> **PLAN note (rich plan):** the plan-doc (`docs/plans/PPP-plan.md`) absorbs inline the `TECHNICAL-NOTE` level (Solution/Impacted/AS-IS/TO-BE/Validations…) **and** the `Phases`/`Tasks`. Therefore exec sessions do **not** carry a `TECHNICAL-NOTE` or own `TASKS` artifact: the technical detail and progress live in the plan-doc (living). `TASKS` remains as an optional artifact for sessions that need their own internal breakdown.
+> **PLAN note (rich plan):** the plan-doc (`docs/plans/PPP-plan.md`) absorbs inline the `TECHNICAL-NOTE` level (`Solution` — summary + AS-IS → TO-BE delta + Final behavior block —, `Impacted`, `Validations`…) **and** the phased `Tasks` (`### Fn` blocks). Therefore exec sessions do **not** carry a `TECHNICAL-NOTE` or own `TASKS` artifact: the technical detail and progress live in the plan-doc (living). `TASKS` remains as an optional artifact for sessions that need their own internal breakdown.
 
 ---
 
 ## Common artifacts (any session)
 
-`SESSION` (descriptor: Objective / Origin / Type / **Success criteria** — the verification-first done-condition; the convergence gate flips them green) · `CHECKPOINT` (resume — **fixed headings, updated in place, never duplicated**; see its contract) · `SCRIPTS.sql` (read-only queries **executable** + DDL/DML migrations **deliverable**, not executed) · `TASKS` · `BACKLOG` (only when there's something to defer).
+`SESSION` (descriptor: Objective / Origin / **Success criteria** — the verification-first done-condition; the convergence gate flips them green. The type is derivable from the folder-name suffix, not a section) · `CHECKPOINT` (resume — **fixed headings, updated in place, never duplicated**; see its contract) · `SCRIPTS.sql` (read-only queries **executable** + DDL/DML migrations **deliverable**, not executed) · `TASKS` · `BACKLOG` (only when there's something to defer).
 
 ---
 

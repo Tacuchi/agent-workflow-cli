@@ -32,8 +32,10 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
       state: "closed",
       summary: "tarea cerrada via test",
     });
-    // Sessions no longer carry a `flow` segment; the output flow is always null
-    // and the legacy HISTORY.md "Flujo" column renders "—".
+    // Sessions no longer carry a `flow` segment; the output flow is always
+    // null. The upsert also migrates the fixture's legacy 7-column table to
+    // the slim `| Sesión | Fecha | Estado | Refs |` shape (the Sesión cell is
+    // re-keyed with its `#` prefix so future upserts keep matching).
     expect(result).toEqual({ code: "001", flow: null, action: "updated", state: "closed" });
     expect(readFile(join(cwd, ".workflow", "HISTORY.md"))).toEqual(
       loadGoldenFile("history-update-001-closed", ".workflow/HISTORY.md"),
@@ -67,7 +69,8 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(result.sessionClose.history).toEqual({ action: "updated", state: "closed" });
     const historyAfter = readFile(join(cwd, ".workflow", "HISTORY.md"));
     expect(historyAfter).not.toEqual(historyBefore);
-    const row = historyAfter.split("\n").find((l) => l.startsWith("| 001 |"));
+    // Slim table: the row key is the `NNN-<name>` Sesión cell.
+    const row = historyAfter.split("\n").find((l) => l.startsWith("| 001-dev-foo |"));
     expect(row).toBeDefined();
     expect(row).toContain("closed");
   });
@@ -82,7 +85,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(result.sessionClose.refs).toBe("see docs/decisiones/001-foo.md");
     // Free-form refs (no `kind:`) render as plain text in the row, never dropped.
     const historyAfter = readFile(join(cwd, ".workflow", "HISTORY.md"));
-    const row = historyAfter.split("\n").find((l) => l.startsWith("| 001 |"));
+    const row = historyAfter.split("\n").find((l) => l.startsWith("| 001-dev-foo |"));
     expect(row).toContain("see docs/decisiones/001-foo.md");
   });
 
@@ -203,7 +206,8 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     const obj = readFile(join(cwd, ".workflow", "sessions", "001-investiga-x", "SESSION.md"));
     expect(obj).toContain("# SESSION — investiga-x");
     expect(obj).toContain("## Objective\nInvestigar el patrón X");
-    expect(obj).toContain("## Type\nresearch");
+    // Type is no longer rendered (derivable from the name suffix).
+    expect(obj).not.toContain("## Type");
     expect(obj).toContain("Who created it and from where");
   });
 
