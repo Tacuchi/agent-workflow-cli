@@ -4,6 +4,21 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.15.0] — 2026-07-14
+
+**El gate de cierre gana el `Tooling check` y la orientación el `Tools pointer`: el tooling auxiliar reutilizable deja de morir sin casa en las sesiones.** Origen (spec 007): en family-rag las tools de medición/soporte nacieron dentro de `.workflow/sessions/` o como scripts de repo sin ficha — la skill ambient `creating-tools` existía y estaba habilitada, pero nada la disparaba de forma fiable (la mención in-flight vive solo en plan-exec) y nada user-visible apuntaba a ella («no lo encuentro»). Ahora el cierre de los dos loops code-editing atrapa el miss como red de seguridad, y la orientación dice dónde viven las tools y quién las escribe. Encuadre estrictamente ambient (auto-descubierta; Workline no la enlaza — el review adversarial del propio release cazó y corrigió el acoplamiento inicial) y degradación **declarar-y-diferir**: en hosts sin la skill el loop **nunca** escribe `docs/tools` — la carencia va declarada a `Open questions` + `BACKLOG` (invariante 2 intacto). Solo doctrina + guards (cero código de runtime); chasis intocado — el impuesto cae solo en los dos flujos code-editing. Bundle `w` **13.13.0**.
+
+### Added
+
+- **Bullet `Tooling check`** en `loops/CODE-POLICIES.md` § *Closing review gate* (6º, tras la minimality lens): ¿la corrida creó tooling auxiliar reutilizable (scripts/CLIs/generadores/configs de soporte — no código de producto, no probes de sesión)? → el host aplica la skill ambient `creating-tools` (auto-descubierta por su `description`; Workline no la enlaza) y la tool obtiene su casa `docs/tools/<slug>/` (README + estructura de runs/output según el contrato de la skill + fila de índice). Host sin la skill → el loop nunca escribe `docs/tools`: carencia declarada y diferida — nunca silenciosa.
+- **`Tools pointer`** en `SKILL.md` § *The 3-layer architecture + `docs/` zone*: el puntero user-visible que faltaba — casa `docs/tools/<slug>/`, autora la skill ambient `creating-tools`, el gate de cierre como red; el plugin `tool-builder@qtc-marketplace` se menciona **solo como locator no vinculante** («Workline does not depend on it»).
+- **Guard `G13 · tooling gate pins`** (`doctrine-guards.test.ts`): el bullet anclado a la sección del gate (`Tooling check` · `creating-tools` · `auto-discovered` · `docs/tools/<slug>/` · `never writes docs/tools itself` · `declare the gap`) + **pin negativo** `not.toContain("qtc-marketplace")` en el gate (el id de marketplace vive solo en el pointer) + asserts del pointer anclados a su blockquote, no whole-file (un contain global era tautológico: `creating-tools` preexistía en la orientación).
+
+### Changed
+
+- **G1 byte-budgets** de los dos flujos code-editing recalibrados (solo ellos cargan CODE-POLICIES; el chasis no ganó bytes): quick 47 900 → 48 500 (carga medida 47 735 B) · plan-exec 47 300 → 48 000 (medida 47 199 B); ~0,8 KB de holgura.
+- **Bullet de convenciones del gate acotado**: «Workline names and binds no concrete **conventions** skill» — deja de ser el absoluto que el nuevo Tooling check habría contradicho en la misma sección.
+
 ## [20.14.2] — 2026-07-13
 
 ### Fixed
