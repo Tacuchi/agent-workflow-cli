@@ -55,25 +55,39 @@ function isLegacyHeader(cells: string[]): boolean {
  * drop `#`/`Flujo`/`Resumen`, and prefix the Sesión cell with its `#` when it
  * does not already carry it (the code is the durable row key — losing it would
  * orphan the row for future upserts).
+ *
+ * Scoped to the history table ONLY: rewriting stops at the first blank/non-pipe
+ * line after the header, so a second markdown table further down the file is
+ * left untouched. Returns `null` when the table cannot be safely mapped (no
+ * separator row, or the Sesión column is missing) — the caller then leaves the
+ * file as-is and falls back to append-only. HISTORY.md is the workspace's
+ * durable git-tracked record: never rewrite what we cannot parse.
  */
-function migrateLegacyTable(text: string, cells: string[]): string {
+function migrateLegacyTable(text: string, cells: string[]): string | null {
   const idx = (name: string) => cells.indexOf(name);
   const iCode = idx("#");
   const iSesion = idx("sesión") !== -1 ? idx("sesión") : idx("sesion");
   const iFecha = idx("fecha");
   const iEstado = idx("estado");
   const iRefs = idx("refs");
+  if (iSesion === -1 && iCode === -1) return null; // no row key → unmappable
 
   const out: string[] = [];
   let headerDone = false;
+  let tableClosed = false;
   for (const line of text.split("\n")) {
-    if (!/^\|/.test(line.trim())) {
+    const trimmed = line.trim();
+    const isPipeLine = trimmed.startsWith("|");
+    if (headerDone && !tableClosed && !isPipeLine) {
+      tableClosed = true; // the history table ended — everything below is verbatim
+    }
+    if (tableClosed || !isPipeLine) {
       out.push(line);
       continue;
     }
     if (!headerDone) {
       // Header + separator collapse into the slim template's pair.
-      if (/^\|[\s|:-]+\|$/.test(line.trim())) {
+      if (/^\|[\s|:-]+\|?$/.test(trimmed)) {
         headerDone = true;
         out.push("| Sesión | Fecha | Estado | Refs |");
         out.push("|--------|-------|--------|------|");
@@ -95,6 +109,7 @@ function migrateLegacyTable(text: string, cells: string[]): string {
       }),
     );
   }
+  if (!headerDone) return null; // separator never matched → do not touch the file
   return out.join("\n");
 }
 
@@ -107,13 +122,22 @@ export async function upsertRow(
   await ensureHistoryFile(fs, historyFile);
   let text = await fs.readText(historyFile);
   const cells = headerCells(text);
-  const migrated = isLegacyHeader(cells);
-  if (migrated) {
-    text = migrateLegacyTable(text, cells);
+  let migrated = false;
+  if (isLegacyHeader(cells)) {
+    const rewritten = migrateLegacyTable(text, cells);
+    if (rewritten !== null) {
+      text = rewritten;
+      migrated = true;
+    }
+    // Unmappable legacy table (hand-edited, no separator): leave it verbatim and
+    // append below it — losing rows would be worse than a mixed-shape table.
   }
   const newRow = buildNewRow();
 
   // Match by the first cell: exactly the code, or the `NNN-<slug>-<flow>` key.
+  // `code` is never empty (validated upstream); an empty one would let the
+  // optional `-…` branch match the separator row.
+  if (code.trim() === "") throw new Error("upsertRow: code must not be empty");
   const rowRegex = new RegExp(`^\\|\\s*${escapeRegex(code)}(-[^|]*)?\\s*\\|.*$`, "m");
   const existing = text.match(rowRegex);
   if (existing) {

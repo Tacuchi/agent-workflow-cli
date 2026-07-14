@@ -16,13 +16,37 @@ describe("renderSessionMarkdown — SESSION.md descriptor (new model)", () => {
     expect(md).toContain("## Success criteria");
   });
 
-  it("never emits a Components or Type section, for any type", () => {
-    // Type is derivable from the session name's <slug>-<flow> suffix — the
-    // --type value is accepted but no longer rendered (artifact-slim round).
+  it("never emits a Components section, for any type", () => {
     for (const type of ["research", "refine", "exec", "quick"]) {
       const md = renderSessionMarkdown({ name: "s", type, objetivo: "do it" });
       expect(md).not.toContain("## Components");
-      expect(md).not.toContain("## Type");
+    }
+  });
+
+  it("omits Type when the loop descriptor already encodes it (artifact-slim round)", () => {
+    // The 5 loop suffixes: the type is chrome there — the resolver derives it.
+    const derivable: ReadonlyArray<[string, string]> = [
+      ["042-foo-spec-refine", "refine"],
+      ["042-foo-plan-new", "refine"],
+      ["042-foo-plan-refine", "refine"],
+      ["043-foo-plan-exec", "exec"],
+      ["044-foo-quick", "quick"],
+    ];
+    for (const [name, type] of derivable) {
+      const md = renderSessionMarkdown({ name, type, objetivo: "do it" });
+      expect(md, name).not.toContain("## Type");
+    }
+  });
+
+  it("keeps Type when the name does not encode it (write↔read must round-trip)", () => {
+    // A free-form descriptor has no <slug>-<flow> suffix to read back: dropping
+    // the declared type here would silently lose it (e.g. --type research).
+    for (const [name, type] of [
+      ["investiga-x", "research"],
+      ["s", "exec"],
+    ] as const) {
+      const md = renderSessionMarkdown({ name, type, objetivo: "do it" });
+      expect(md, name).toContain(`## Type\n${type}`);
     }
   });
 

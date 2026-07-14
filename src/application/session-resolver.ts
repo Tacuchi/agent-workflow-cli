@@ -172,7 +172,7 @@ function normalizeCode(input: string): string {
  * the type from the descriptor's `<slug>-<flow>` suffix. Unknown suffix →
  * undefined (same as before: type stays absent).
  */
-function typeFromNameSuffix(folder: string): string | undefined {
+export function typeFromNameSuffix(folder: string): string | undefined {
   if (/-(spec-refine|plan-new|plan-refine)$/.test(folder)) return "refine";
   if (folder.endsWith("-plan-exec")) return "exec";
   if (folder.endsWith("-quick")) return "quick";

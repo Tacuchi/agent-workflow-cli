@@ -12,7 +12,6 @@ export interface HistoryUpdateInput {
   state?: string;
   sesionName?: string;
   date?: string;
-  summary?: string;
   refs?: string;
 }
 

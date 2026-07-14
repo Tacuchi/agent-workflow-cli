@@ -95,4 +95,87 @@ describe("history-table — legacy table migration on upsert", () => {
     const text = await fs.readText(HISTORY);
     expect(text.match(/^\| 001-/gm)).toHaveLength(1);
   });
+
+  it("persists the migration even when the upserted row is unchanged", async () => {
+    const fs = new FakeFs({ lenient: true });
+    await fs.mkdirp("/cwd/.workflow");
+    await fs.writeText(HISTORY, LEGACY_7COL);
+    const same = () => row("002", "002-bar-quick", "closed");
+    // The legacy 002 row migrates to exactly this shape → "unchanged"…
+    const action = await upsertRow(fs, HISTORY, "002", () =>
+      buildRow({
+        code: "002",
+        sesionName: "002-bar-quick",
+        date: "2026-01-02",
+        state: "closed",
+        refs: "docs/x.md",
+      }),
+    );
+    expect(action).toBe("unchanged");
+    // …but the migrated table must still hit disk.
+    const text = await fs.readText(HISTORY);
+    expect(text).toContain(SLIM_HEADER);
+    expect(text).not.toContain("Flujo");
+    void same;
+  });
+});
+
+// HISTORY.md is the workspace's durable, git-tracked, hand-editable record: a
+// table the migration cannot safely map must be left alone, never rewritten.
+describe("history-table — migration never destroys unmappable content", () => {
+  it("tolerates a hand-edited separator (no trailing pipe) — migrates, loses no row", async () => {
+    const fs = new FakeFs({ lenient: true });
+    await fs.mkdirp("/cwd/.workflow");
+    await fs.writeText(
+      HISTORY,
+      "# Session History\n\n" +
+        "| # | Flujo | Sesión | Fecha | Estado | Resumen | Refs |\n" +
+        "|---|-------|--------|-------|--------|---------|------\n" + // no trailing pipe
+        "| 001 | — | 001-alpha-plan-exec | 2026-07-01 | closed | alpha | — |\n",
+    );
+    const action = await upsertRow(fs, HISTORY, "058", () => row("058", "058-nueva-plan-exec"));
+    expect(action).toBe("added");
+    const text = await fs.readText(HISTORY);
+    expect(text).toContain(SLIM_HEADER);
+    expect(text).toContain("| 001-alpha-plan-exec | 2026-07-01 | closed | — |");
+    expect(text).toContain("| 058-nueva-plan-exec | 2026-07-01 | active | — |");
+  });
+
+  it("refuses to rewrite a legacy table with no separator row at all (append-only)", async () => {
+    const fs = new FakeFs({ lenient: true });
+    await fs.mkdirp("/cwd/.workflow");
+    await fs.writeText(
+      HISTORY,
+      "# Session History\n\n" +
+        "| # | Flujo | Sesión | Fecha | Estado | Resumen | Refs |\n" +
+        "| 001 | — | 001-alpha-plan-exec | 2026-07-01 | closed | alpha | — |\n",
+    );
+    const action = await upsertRow(fs, HISTORY, "058", () => row("058", "058-nueva-plan-exec"));
+    expect(action).toBe("added");
+    const text = await fs.readText(HISTORY);
+    // Unmappable → left verbatim. Losing the row would be worse than a mixed table.
+    expect(text).toContain("| 001 | — | 001-alpha-plan-exec | 2026-07-01 | closed | alpha | — |");
+    expect(text).toContain("| 058-nueva-plan-exec | 2026-07-01 | active | — |");
+  });
+
+  it("migrates only the history table, leaving a second table below it intact", async () => {
+    const fs = new FakeFs({ lenient: true });
+    await fs.mkdirp("/cwd/.workflow");
+    await fs.writeText(
+      HISTORY,
+      "# Session History\n\n" +
+        "| # | Flujo | Sesión | Fecha | Estado | Resumen | Refs |\n" +
+        "|---|-------|--------|-------|--------|---------|------|\n" +
+        "| 001 | — | 001-alpha-plan-exec | 2026-07-01 | closed | alpha | — |\n" +
+        "\n## Notas\n\n" +
+        "| Tema | Dueño |\n|------|-------|\n| deploy | ana |\n",
+    );
+    await upsertRow(fs, HISTORY, "058", () => row("058", "058-nueva-plan-exec"));
+    const text = await fs.readText(HISTORY);
+    expect(text).toContain(SLIM_HEADER);
+    expect(text).toContain("| 001-alpha-plan-exec | 2026-07-01 | closed | — |");
+    // The unrelated table keeps its own columns.
+    expect(text).toContain("| Tema | Dueño |");
+    expect(text).toContain("| deploy | ana |");
+  });
 });

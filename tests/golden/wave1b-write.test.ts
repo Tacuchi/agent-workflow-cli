@@ -206,8 +206,9 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     const obj = readFile(join(cwd, ".workflow", "sessions", "001-investiga-x", "SESSION.md"));
     expect(obj).toContain("# SESSION — investiga-x");
     expect(obj).toContain("## Objective\nInvestigar el patrón X");
-    // Type is no longer rendered (derivable from the name suffix).
-    expect(obj).not.toContain("## Type");
+    // `investiga-x` has no <slug>-<flow> suffix to read the type back from, so
+    // the declared type is persisted (loop descriptors omit the heading).
+    expect(obj).toContain("## Type\nresearch");
     expect(obj).toContain("Who created it and from where");
   });
 

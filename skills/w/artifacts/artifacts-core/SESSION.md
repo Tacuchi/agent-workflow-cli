@@ -1,7 +1,7 @@
 # SESSION.md — internal session descriptor (common)
 
 > What it is: the brief descriptor of an **internal session** (Layer 3). Created by a **loop**, not by the user.
-> The session **type** is not rendered here: it is derivable from the folder-name suffix (`<slug>-<flow>` — the loop still passes `--type` to `aw session-create`). Authoritative type catalog: `../README.md` (table "Sessions & their artifacts").
+> The session **type** is normally not rendered: a loop descriptor ends in `<slug>-<flow>`, so the type is derivable from the folder name (the loop still passes `--type` to `aw session-create`). Authoritative type catalog: `../README.md` (table "Sessions & their artifacts").
 
 ## Objective
 What this session resolves: the gap, the question, or the concrete block of work.
@@ -11,6 +11,9 @@ Who created it and from where:
 - Parent loop (e.g. `spec-refine-loop`)
 - Source document (e.g. `docs/specs/003-spec.md`)
 - Trigger (e.g. gap "Context incomplete")
+
+## Type
+**Only when the folder name does not encode it** (a free-form descriptor with no `<slug>-<flow>` suffix). Loop sessions omit this heading — their name carries the flow.
 
 > `research` is **not** a session type the loops create. Research is an **inline** activity: ANALYSIS-FILE / CONCLUSIONS are written into whatever session is active (`refine`/`exec`/`quick`) when it does investigation.
 

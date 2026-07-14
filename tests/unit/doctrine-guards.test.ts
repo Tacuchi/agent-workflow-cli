@@ -89,14 +89,17 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // degradation) — quick and plan-exec load it; SKILL.md's Tools pointer is
   // unbudgeted (orientation, not a flow load). ~0.8 KB headroom over the
   // measured totals.
-  // Recalibrated (artifact-slim round, G14): the deliverable schemas shrank
-  // (single Refinement decisions trace, plan-doc consolidated into
-  // Solution/Tasks, Estimated time gone) while the doctrine gained the
-  // checkbox-only + never-duplicate exec rules, the single done-status line
-  // and the legacy-compat notes — spec-refine/plan-new net down, quick/
-  // plan-exec net slightly up. Budgets re-anchored to measured + ~0.8 KB
-  // (measured: quick 47 839 · spec-refine 45 028 · plan-new 45 769 ·
-  // plan-refine 57 207 · plan-exec 48 283).
+  // Recalibrated (artifact-slim round, G14) — budgets RAISED, deliberately:
+  // this round slims the GENERATED artifacts (single Refinement decisions
+  // trace, plan-doc consolidated into Solution/Tasks, Estimated time gone),
+  // not the doctrine that describes them. The loaded doctrine grew in every
+  // flow — the legacy-compat notes, the checkbox-only + never-duplicate exec
+  // rules and the single done-status line outweigh the schema lines removed:
+  // quick +104 B · spec-refine +606 B · plan-new +372 B · plan-refine +444 B ·
+  // plan-exec +1 084 B vs the previous round. The savings land in the
+  // workspaces' specs/plans/sessions, NOT in skills/w. Budgets re-anchored to
+  // measured + ~0.8 KB (measured: quick 47 839 · spec-refine 45 028 ·
+  // plan-new 45 769 · plan-refine 57 207 · plan-exec 48 283).
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -392,6 +395,46 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     expect(planExec).toContain("NEVER append a duplicate `### Fn` block");
     expect(planExec).toContain("**Marking done = ONE line in the plan-doc**");
     expect(planExec).toContain("> Estado: done — YYYY-MM-DD · sesión NNN");
+  });
+
+  it("the checkbox-only rule carves out the Open-questions deferrals it coexists with", async () => {
+    // The hard rule must not contradict the loop's own degrade/defer path
+    // (Delta 4 unapplied migration · Delta 5 deferred finding · Delta 7 failed
+    // probe all write the plan's `## Open questions`).
+    const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
+    const rule = planExec.slice(planExec.indexOf("**Checkbox-only residue (hard rule):**"));
+    const sentence = rule.slice(0, rule.indexOf("\n"));
+    expect(sentence).toContain("## Open questions");
+    expect(sentence).toMatch(/deferral/i);
+  });
+
+  it("the schemas that dropped ## Q&A traceability cannot resurrect it", async () => {
+    // Negative pins where the section actually lived (the plan-new Delta 1 pin
+    // above covers neither). Scoped to the fenced SCHEMA block: the surrounding
+    // prose names `## Q&A traceability` on purpose (legacy tolerance note).
+    const fencedSchema = (doc: string, from: string, to: string): string => {
+      const section = doc.slice(doc.indexOf(from), doc.indexOf(to));
+      const open = section.indexOf("```markdown");
+      const close = section.indexOf("```", open + 3);
+      expect(open, `${from}: fenced schema block`).toBeGreaterThan(-1);
+      return section.slice(open, close);
+    };
+
+    const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
+    const refinedSchema = fencedSchema(specRefine, "## Deliverable schema", "## Gap taxonomy");
+    expect(refinedSchema).not.toContain("## Q&A traceability");
+    expect(refinedSchema).toContain("## Refinement decisions");
+
+    const planRefine = await readRel("loops/plan-refine-loop/LOOP.md");
+    const planRefineDelta1 = fencedSchema(planRefine, "## Delta 1", "## Delta 2");
+    expect(planRefineDelta1).not.toContain("## Q&A traceability");
+    expect(planRefineDelta1).toContain("## Refinement decisions");
+  });
+
+  it("BACKLOG keeps ## Deferred (aw status parses it) and never regrows ## Followups", async () => {
+    const backlog = await readRel(join("artifacts", "artifacts-core", "BACKLOG.md"));
+    expect(backlog).toContain("## Deferred");
+    expect(backlog).not.toContain("## Followups");
   });
 });
 
