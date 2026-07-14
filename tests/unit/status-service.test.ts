@@ -134,6 +134,43 @@ describe("runStatusCommand — full dashboard", () => {
     });
   });
 
+  it("refined mark = ## Refinement decisions alone; legacy specs with both sections stay refined", async () => {
+    const fs = new FakeFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    // New-model refined spec: single trace section, no Q&A traceability.
+    fs.file(
+      "/cwd/docs/specs/005-spec-slim.md",
+      "# Spec slim\n\n## Refinement decisions\n- d1\n- Q: ¿alcance? → mínimo — menos riesgo\n",
+      NOW,
+    );
+    // Legacy refined spec: both sections — must keep counting as refined.
+    fs.file(
+      "/cwd/docs/specs/006-spec-legacy.md",
+      "# Spec legacy\n\n## Refinement decisions\n- d1\n\n## Q&A traceability\n- q→a\n",
+      NOW,
+    );
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(out.specs.find((s) => s.number === "005")?.refined).toBe(true);
+    expect(out.specs.find((s) => s.number === "006")?.refined).toBe(true);
+    expect(out.counts.specs_refined).toBe(2);
+    // Omitted ## Open questions counts as zero (slim schema drops it when empty).
+    expect(out.specs.find((s) => s.number === "005")?.open_questions).toBe(0);
+  });
+
+  it("session type falls back to the folder suffix when SESSION.md has no ## Type", async () => {
+    const fs = new FakeFs();
+    fs.file(
+      "/cwd/.workflow/sessions/003-otp-plan-exec/SESSION.md",
+      "# SESSION — 003-otp-plan-exec\n\n## Objective\nEjecutar plan\n\n## Success criteria\n- [ ]\n",
+      NOW,
+    );
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(out.sessions.active[0]).toMatchObject({
+      folder: "003-otp-plan-exec",
+      type: "exec",
+    });
+  });
+
   it("drops legacy NNN-spec-refined.md when the base spec exists", async () => {
     const fs = fullWorkspace();
     fs.file(

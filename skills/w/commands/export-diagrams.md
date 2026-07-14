@@ -1,5 +1,5 @@
 ---
-description: Generates C4/mermaid diagrams in docs/diagrams/ from the source code and the plan-doc (AS-IS/TO-BE). Single-pass, explicit.
+description: Generates C4/mermaid diagrams in docs/diagrams/ from the source code and the plan-doc (the AS-IS → TO-BE delta in Solution). Single-pass, explicit.
 argument-hint: [--engine <mermaid|c4>] [--sessions <ids>] [--dry-run]
 allowed-tools:
   [
@@ -11,7 +11,7 @@ allowed-tools:
 
 # export-diagrams — export diagrams
 
-Reads the workspace sources' code + the plan-doc (`AS-IS`/`TO-BE` sections) and generates C4 / mermaid diagrams in `docs/diagrams/`. Single-pass, read-only over sessions.
+Reads the workspace sources' code + the plan-doc (the AS-IS → TO-BE delta in `## Solution`; legacy plans: separate AS-IS/TO-BE sections) and generates C4 / mermaid diagrams in `docs/diagrams/`. Single-pass, read-only over sessions.
 
 To run: **read** `../exports/export-diagrams/EXPORT.md` and **follow** its instructions with `$ARGUMENTS` as input. This command is the entry and the sibling EXPORT.md is its body.
 

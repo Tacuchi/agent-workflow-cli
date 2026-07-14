@@ -1,7 +1,7 @@
 # SESSION.md — internal session descriptor (common)
 
 > What it is: the brief descriptor of an **internal session** (Layer 3). Created by a **loop**, not by the user.
-> The `Type` is set by the owning loop. Authoritative type catalog: `../README.md` (table "Sessions & their artifacts").
+> The session **type** is normally not rendered: a loop descriptor ends in `<slug>-<flow>`, so the type is derivable from the folder name (the loop still passes `--type` to `aw session-create`). Authoritative type catalog: `../README.md` (table "Sessions & their artifacts").
 
 ## Objective
 What this session resolves: the gap, the question, or the concrete block of work.
@@ -13,10 +13,7 @@ Who created it and from where:
 - Trigger (e.g. gap "Context incomplete")
 
 ## Type
-Session type, **set by the parent loop** (not the user). Authoritative catalog: `../README.md`.
-- `refine` — owns a spec-refine / plan-new / plan-refine loop run (SESSION + CHECKPOINT; + BACKLOG on close; + `NNN-SPEC-<SLUG>.md` in PLAN sessions with UI — see [`../artifacts-design/`](../artifacts-design/))
-- `exec` — execute work; a single per-run session (PLAN), not one per phase
-- `quick` — lightweight execution (≈ `exec`: single session, single commit) (QUICK)
+**Only when the folder name does not encode it** (a free-form descriptor with no `<slug>-<flow>` suffix). Loop sessions omit this heading — their name carries the flow.
 
 > `research` is **not** a session type the loops create. Research is an **inline** activity: ANALYSIS-FILE / CONCLUSIONS are written into whatever session is active (`refine`/`exec`/`quick`) when it does investigation.
 

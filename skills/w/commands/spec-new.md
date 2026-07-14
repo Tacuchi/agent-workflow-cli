@@ -80,7 +80,7 @@ Assumed facts.
 Pending doubts. ← the spec-refine-loop closes them.
 ```
 
-> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## UI spec` (if there is UI) + `## Refinement decisions` + `## Q&A traceability` (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md)). Same skeleton: the draft and the refined spec share the order.
+> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## UI spec` (if there is UI) + `## Refinement decisions` (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md); the refine drops `Open questions` when it empties). Same skeleton: the draft and the refined spec share the order.
 
 **Filling notes:**
 
@@ -88,7 +88,7 @@ Pending doubts. ← the spec-refine-loop closes them.
 - No `Type` field — `plan-new` infers the how.
 - `Scope` always carries `Out` (what stays out).
 - **Acceptance criteria = static testable criteria** (the "what"): `plan-exec` validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]` in the spec; the spec never mutates by execution, only by a re-refine.
-- **Scenarios = behavior made concrete** (uppercase GIVEN/WHEN/THEN/AND): draft them only when the prompt already describes behavior — deriving the rest is spec-refine work, not this command's.
+- **Scenarios = behavior made concrete** (uppercase GIVEN/WHEN/THEN/AND): draft them only when the prompt already describes behavior — deriving the rest is spec-refine work, not this command's. A scenario earns its place only when it adds GIVEN setup or edge semantics the criterion does not capture — **never restate a criterion 1:1**.
 - If **UI** is involved, mention it in `Requirement`/`Context`; the `## UI spec` is authored in `spec-refine` (via the `ui-design` capability). "UI unspecified" is a first-class refinement gap.
 - The **gaps** the loop detects = weak sections of the schema (vague Requirement, Scope without `Out`, untestable criteria, open questions, undeclared assumptions, contradictions) **+ UI unspecified** when the requirement involves UI.
 - Equivalent alternative: the user creates the draft by hand. Both paths produce the same `docs/specs/NNN-spec-<slug>.md`.

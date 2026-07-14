@@ -1,6 +1,6 @@
 ---
 name: export-diagrams
-description: "Generates the workspace's architecture and flow diagrams in `docs/diagrams/` consolidating the sources' code + the plan-doc (`Current state (AS-IS)` / `Target state (TO-BE)`, `Impacted`) of N sessions. Produces context, containers, components, integrations and data model (when read-only MCP is available). Default `mermaid` (renders on GitHub, `mermaid.ink` link for preview); `c4`/structurizr opt-in via `--engine`. Output in `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/` (or `.md`). Read-only/report: emits only the diagram source (the reader renders it); never commits nor mutates anything; MCP reads only. Composes the `diagrams` capability. Use for 'system diagram', 'workspace C4', 'architecture/flow map'. User-invoked via `/w:export-diagrams`."
+description: "Generates the workspace's architecture and flow diagrams in `docs/diagrams/` consolidating the sources' code + the plan-doc (the AS-IS → TO-BE delta in `## Solution`, `Impacted`) of N sessions. Produces context, containers, components, integrations and data model (when read-only MCP is available). Default `mermaid` (renders on GitHub, `mermaid.ink` link for preview); `c4`/structurizr opt-in via `--engine`. Output in `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/` (or `.md`). Read-only/report: emits only the diagram source (the reader renders it); never commits nor mutates anything; MCP reads only. Composes the `diagrams` capability. Use for 'system diagram', 'workspace C4', 'architecture/flow map'. User-invoked via `/w:export-diagrams`."
 ---
 
 # export-diagrams — architecture and flow diagrams from code + plan-doc
@@ -26,7 +26,7 @@ The **`diagrams`** capability (built-in default `diagrams`), resolved via `.work
 ## What it does
 
 1. Inspects the workspace sources' code (structure, wiring, integrations, technologies).
-2. Reads the plan-doc from the sessions: `Current state (AS-IS)` / `Target state (TO-BE)` and `Impacted` (what changed and where).
+2. Reads the plan-doc from the sessions: the AS-IS → TO-BE delta in `## Solution` (legacy plans: separate `Current state (AS-IS)` / `Target state (TO-BE)` sections) and `Impacted` (what changed and where).
 3. (Optional) With read-only MCP available and a data-model request: queries DB schemas (reads only).
 4. Resolves the engine (`--engine`) and consolidates the architecture/flows touched by the N sessions.
 5. Renders the diagrams (composes `diagrams`): context, containers, components, integrations, data model (when it applies).
@@ -50,7 +50,7 @@ In plan mode it **describes**, never writes: the resolved engine, the levels/sec
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
 - `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the corpus (ALL sessions; input for the AS-IS/TO-BE delta). `aw sessions` alone lists only ACTIVE sessions — never use it as the corpus.
-- `aw session-artifacts --code <NNN> --dump objetivo` — locates the session and its plan-doc reference; `AS-IS`/`TO-BE`/`Impacted` are read from the plan-doc by its path.
+- `aw session-artifacts --code <NNN> --dump objetivo` — locates the session and its plan-doc reference; the AS-IS → TO-BE delta and `Impacted` are read from the plan-doc by its path.
 - `aw next-number docs/diagrams` — deterministic numbering (the CLI handles destination-folder resolution).
 
 **Filesystem / code**:
@@ -90,7 +90,7 @@ Per source: basic structure, internal components (modules, services, commands, h
 
 ### Step 3 — Read the corpus delta
 
-Per filtered session (`aw session-artifacts --code <NNN> --dump objetivo`): follow the plan-doc reference and read `Current state (AS-IS)` / `Target state (TO-BE)` and `Impacted`. Used to highlight what changed over the current snapshot.
+Per filtered session (`aw session-artifacts --code <NNN> --dump objetivo`): follow the plan-doc reference and read the AS-IS → TO-BE delta in `## Solution` (legacy plans: separate AS-IS/TO-BE sections) and `Impacted`. Used to highlight what changed over the current snapshot.
 
 ### Step 4 — Inspect MCP (optional)
 
@@ -121,5 +121,5 @@ Functionally idempotent: each invocation takes the next `NNN`; it never overwrit
 
 - Design: `docs/referencias/workflow-exports/export-diagrams.md` · family: [`../README.md`](../README.md).
 - Composed capability: `diagrams` (built-in default; see `docs/referencias/workflow-roles/`).
-- Input: plan-doc `AS-IS`/`TO-BE`/`Impacted` (see `docs/plans`).
+- Input: plan-doc `## Solution` (AS-IS → TO-BE delta) + `Impacted` (see `docs/plans`).
 - Siblings: [`../export-scripts/EXPORT.md`](../export-scripts/EXPORT.md) · [`../export-manuals/EXPORT.md`](../export-manuals/EXPORT.md) · [`../export-reports/EXPORT.md`](../export-reports/EXPORT.md).

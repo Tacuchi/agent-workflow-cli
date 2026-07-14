@@ -7,10 +7,12 @@ import type { CliContext } from "../types.js";
 
 export const historyUpdateCommand: QtcCommand = {
   name: "history-update",
+  // `--summary` is gone with the slim table (the Resumen column was the slug
+  // re-spaced). An older caller still passing it is ignored, not rejected.
   describe:
     "Upsert a row in the workspace history file. " +
     "Usage: aw history-update [--code <session>] [--session <n>] [--state <estado>] " +
-    "[--summary <text>] [--refs <csv>] [--date <iso>].",
+    "[--refs <csv>] [--date <iso>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const state = args.values.get("state");
@@ -18,7 +20,6 @@ export const historyUpdateCommand: QtcCommand = {
     // as a legacy alias so any older caller keeps working.
     const sesion = args.values.get("session") ?? args.values.get("sesion");
     const date = args.values.get("date");
-    const summary = args.values.get("summary");
     const refs = args.values.get("refs");
 
     const input: Parameters<typeof runHistoryUpdate>[3] = {};
@@ -26,7 +27,6 @@ export const historyUpdateCommand: QtcCommand = {
     if (state !== undefined) input.state = state;
     if (sesion !== undefined) input.sesionName = sesion;
     if (date !== undefined) input.date = date;
-    if (summary !== undefined) input.summary = summary;
     if (refs !== undefined) input.refs = refs;
 
     const data = await runHistoryUpdate(ctx.fs, ctx.env, ctx.paths, input);

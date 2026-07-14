@@ -21,7 +21,7 @@ export interface StatusSpec {
   file: string; // relpath from workspace, e.g. docs/specs/003-spec-foo.md
   number: string; // "003"
   slug: string; // "foo" ("" for legacy NNN-spec.md)
-  /** has `## Refinement decisions` AND `## Q&A traceability` */
+  /** has `## Refinement decisions` (the refined mark; legacy specs also carry `## Q&A traceability`) */
   refined: boolean;
   open_questions: number;
   date: string; // YYYY-MM-DD (fs mtime)
@@ -155,9 +155,7 @@ async function readSpecs(fs: FileSystemPort, cwd: string, now: Date): Promise<St
   for (const f of deduped) {
     try {
       const text = await fs.readText(f.path);
-      const refined =
-        parseMdSectionLoose(text, "Refinement decisions") !== undefined &&
-        parseMdSectionLoose(text, "Q&A traceability") !== undefined;
+      const refined = parseMdSectionLoose(text, "Refinement decisions") !== undefined;
       const ts = await resolveTimestamp(fs, f.path, undefined, now);
       out.push({
         file: relFromCwd(f.path, cwd),

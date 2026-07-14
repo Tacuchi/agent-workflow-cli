@@ -56,9 +56,10 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 
 ## Delta 1 — One session per run; per-phase progress in the plan-doc
 
-- Walks the plan's `Phases` in order (respecting deps) **inside the run's single session** (no session-per-phase).
+- Walks the plan's `### Fn` blocks under `## Tasks` in order (respecting deps) **inside the run's single session** (no session-per-phase). *(Legacy plans: a separate `## Phases` table — walk it the same way.)*
 - **Per-phase progress lives in the plan-doc** (`- [x]`) and in the single `CHECKPOINT` (Completed/Pending/Next): **artifact-first** — `CHECKPOINT.Next` is set to the imminent phase **before** starting it; the plan-doc's `- [x]` checkbox is flipped **after** completing the task.
-- Executes the phase's `Tasks`; **skips** the ones already `- [x]` in the plan (the plan-doc is the per-task source of truth). Marks `- [x]` + state **in the plan** (living doc; never in a separate `TASKS`).
+- Executes the phase's tasks; **skips** the ones already `- [x]` in the plan (the plan-doc is the per-task source of truth). Marks `- [x]` **in the plan** (living doc; never in a separate `TASKS`).
+- **Checkbox-only residue (hard rule):** execution writes into the plan-doc **only** three things — checkbox flips (`- [ ]` → `- [x]`), deferrals appended to its `## Open questions` (the declared-gap escape hatch: Delta 4's unapplied migration, Delta 5's deferred findings, Delta 7's failed probe), and, on close, the single status line (Delta 6). Per-phase results, review-gate findings and metrics go to the session's `DECISION`/`CHECKPOINT` — **never** into the plan-doc. Phase blocks are updated **in place — NEVER append a duplicate `### Fn` block** (same contract as CHECKPOINT sections).
 - At **every phase boundary**: validate, run the **closing review gate** (Delta 5), update the `CHECKPOINT` (Completed += Phase N, Next = Phase N+1) and propose commits.
 - Records in `DECISION` only the **non-obvious**, **as it is decided** (per-phase decisions accumulate in the SINGLE `DECISION`, tagged by phase/task — e.g. `Origin: T2 (F1)`).
 - The chassis **gap-driven** engine applies here **inside a task**: facing a non-obvious decision/doubt → inline research, a probe (Delta 7) OR structured-choice.
@@ -73,7 +74,7 @@ Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *DB scripts-only
 
 ## Delta 4 — Validation
 
-- After executing (per phase and at the end): run tests/checks against `Validations` + `Final behavior` + the spec's acceptance/success criteria (its `## Scenarios`, if present, are ready-made test cases: GIVEN=arrange · WHEN=act · THEN=assert).
+- After executing (per phase and at the end): run tests/checks against `Validations` + the Final behavior block of `## Solution` (legacy plans: the `## Final behavior` section) + the spec's acceptance/success criteria (its `## Scenarios`, if present, are ready-made test cases: GIVEN=arrange · WHEN=act · THEN=assert).
 - A validation that **runs and fails** → back to the task (gap); no advancing.
 - **Validation depending on an unapplied migration**: since the AI never executes the DML, it **cannot run it read-only** → it is **deferred** (handoff to a DBA), it does **not block progress**. Recorded in the plan's `Open questions` + `BACKLOG`, marked "verification pending until the SQL is applied". (Reuses the chassis degrade/defer pattern + `MAX` cap → avoids the "back to the task" loop.)
 
@@ -87,6 +88,7 @@ Full gate in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Closing review ga
 
 - A phase closes **done** when its tasks are `- [x]` and its validation passed **or** was deferred (SQL handoff). Possible state: **"done — SQL pending application"**.
 - All phases done → final *structured-choice* (content: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`).
+- **Marking done = ONE line in the plan-doc**, under the title's blockquote: `> Estado: done — YYYY-MM-DD · sesión NNN` (or `done — SQL pendiente de aplicar`), updated in place on a re-run. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
 - **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.
 
 ## Delta 7 — Probe (PoC) tasks
@@ -103,7 +105,7 @@ Chassis § *Proof of concept (probe)*, instantiated for execution — for a plan
 plan-exec-loop(PPP-plan-<slug>.md):
   session = create_or_resume("<slug>-plan-exec")           # <slug> from the plan-doc; ONE session per run; CLI prepends global NNN; CHECKPOINT, resume
   plan = read(PPP-plan-<slug>.md)
-  for each Phase in plan (in order, respecting deps):
+  for each Phase (### Fn block in ## Tasks; legacy: ## Phases table) in plan (in order, respecting deps):
     if Phase done (all its Tasks - [x] in the plan): skip  # resume via plan-doc checkboxes
     seed CHECKPOINT.Next = Phase N (Pending = its Tasks)   # BEFORE starting the phase: seed the intent (artifact-first)
     for each Task of the Phase:
@@ -119,7 +121,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
         if probe (PoC) task / runnable doubt → seed check → run throwaway code in the
             session folder → verdict → CONCLUSIONS/DECISION; failed → structured-choice (Delta 7)
         if doubt/gap → inline research, probe OR structured-choice   # chassis
-      mark Task - [x] + state IN THE PLAN                  # AFTER completing the Task (the plan-doc is the per-task source of truth)
+      mark Task - [x] IN THE PLAN                          # AFTER completing the Task; checkbox flip ONLY — results go to DECISION/CHECKPOINT
     phase validation:
         what runs and fails → back to the task
         what depends on an unapplied migration → defer (Open questions + BACKLOG)
@@ -132,7 +134,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
     next-phase precondition: working tree clean or acknowledged
   final validation (whatever can run; the SQL-dependent part stays as a handoff)
   structured_choice(content: [Marcar plan done, Preguntar algo más], flow: [Compactar, Cerrar])
-  mark plan done (or "done — SQL pending application")
+  mark plan done → ONE status line under the title blockquote (Delta 6), updated in place
   # NO export: artifacts stay in the session; a separate export-* promotes them
 finalize: CHECKPOINT (+ BACKLOG if something is deferred) + close session + report
 ```

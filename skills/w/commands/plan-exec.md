@@ -16,7 +16,7 @@ Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
-> 1. **Session first** — create/resume the run's session before touching code: `aw session-create --type exec --name <slug>-plan-exec --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
+> 1. **Session first** — create/resume the run's session before touching code: `aw session-create --type exec --name <slug>-plan-exec --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 2. **Git/DB** — verify each source's expected branch before editing (`aw check-branch`); commits are **proposed**, never executed without approval; **never** `push`/`--amend`/`--no-verify`; never execute DML/DDL (SQL goes to the session's `SCRIPTS.sql`).
 > 3. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.

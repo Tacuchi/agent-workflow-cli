@@ -18,14 +18,14 @@ This command does not refine the plan itself: it delegates to `plan-refine-loop`
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
-> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-plan-refine --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next` · `## Open questions`).
+> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-plan-refine --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 3. **Write boundary** — this flow edits only `docs/plans/…` (in place, with confirmation); nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the plan's content) goes in the **user's language**.
 
 > **Not mandatory.** `plan-exec` runs **any** plan, refined or not — no gate requires passing through here. Use it only when the plan needs adjustments before executing.
 >
-> **Spec-less plans (hand-written / adopted).** A plan with no source spec is legitimate input. The coherence gate **degrades gracefully**: criteria trace to the plan's own `## Final behavior` / acceptance criteria instead of spec criteria — the "spec criteria uncovered" gap does not apply (see `../loops/plan-refine-loop/LOOP.md`).
+> **Spec-less plans (hand-written / adopted).** A plan with no source spec is legitimate input. The coherence gate **degrades gracefully**: criteria trace to the plan's own Final behavior block (in `## Solution`) / acceptance criteria instead of spec criteria — the "spec criteria uncovered" gap does not apply (see `../loops/plan-refine-loop/LOOP.md`).
 
 ## Input resolution
 
@@ -49,8 +49,8 @@ The skill detects prior state before starting, **keying off the `CHECKPOINT`** (
 
 1. Find the plan's refinement session under `.workflow/sessions/` (descriptor `<slug>-plan-refine` + `## Origin`) and its `CHECKPOINT.md`.
 2. **In progress** (a CHECKPOINT exists) → continue from the recorded progress (resolved gaps, Q&A).
-3. **No progress** (no CHECKPOINT and the plan does **not** have `## Refinement decisions`/`## Q&A traceability`) → start from zero reading the plan (`PPP-plan-*.md`).
-4. **Already refined / re-refine on demand** (no open CHECKPOINT but the plan **already has** the 2 sections) → **first-class operation**: while the flow stays in PLAN you can re-run `/w:plan-refine` over the same plan **as many times as needed** (new requirements, scope changes, re-reads). The loop does `create_or_resume` — it locates the existing refine session (even closed) and **reopens** it instead of duplicating — and re-refines reading the **plan itself**; on `Guardar`, edits in place with confirmation.
+3. **No progress** (no CHECKPOINT and the plan does **not** have `## Refinement decisions`) → start from zero reading the plan (`PPP-plan-*.md`).
+4. **Already refined / re-refine on demand** (no open CHECKPOINT but the plan **already has** that section) → **first-class operation**: while the flow stays in PLAN you can re-run `/w:plan-refine` over the same plan **as many times as needed** (new requirements, scope changes, re-reads). The loop does `create_or_resume` — it locates the existing refine session (even closed) and **reopens** it instead of duplicating — and re-refines reading the **plan itself**; on `Guardar`, edits in place with confirmation.
 
 ## UI → design SPECs
 
