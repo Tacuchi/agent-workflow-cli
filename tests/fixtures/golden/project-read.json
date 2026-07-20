@@ -9,6 +9,7 @@
       }
     ],
     "stack": {},
+    "default_branches": {},
     "working_branches": {
       "sample": "main"
     },

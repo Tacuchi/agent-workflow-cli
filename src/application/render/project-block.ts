@@ -1,5 +1,6 @@
 import { localMinuteIso } from "../dates.js";
 import type {
+  DefaultBranches,
   ParsedProjectBlock,
   ProjectBlockMarkers,
   ProjectFuente,
@@ -12,6 +13,7 @@ export interface RenderProjectBlockInput {
   fuentes: ProjectFuente[];
   stack: ProjectStack;
   lastActivity?: string;
+  defaultBranches?: DefaultBranches;
   workingBranches?: Record<string, string>;
   qaBranches?: Record<string, string>;
   /** Path used in the "Histórico:" line. Default `.workflow/HISTORY.md`. */
@@ -30,6 +32,10 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
       : "_Describe el proyecto aquí: qué es y por qué existe._";
 
   const statusLines: string[] = [];
+  // Defaults go FIRST: an older parser ignores an unknown `- ` line only while no
+  // branch section is open — after one, it would swallow them as branch entries.
+  const defaults = formatDefaultBranches(input.defaultBranches);
+  if (defaults !== null) statusLines.push(defaults);
   const wb = formatWorkingBranches(input.workingBranches);
   if (wb !== null) statusLines.push(wb);
   const qa = formatQaBranches(input.qaBranches);
@@ -66,6 +72,7 @@ export function blockFromParsed(
     proyecto: overrides.proyecto ?? parsed.proyecto,
     fuentes: overrides.fuentes ?? parsed.fuentes,
     stack: overrides.stack ?? parsed.stack,
+    defaultBranches: overrides.defaultBranches ?? parsed.default_branches,
     workingBranches: overrides.workingBranches ?? parsed.working_branches,
     qaBranches: overrides.qaBranches ?? parsed.qa_branches,
   };
@@ -87,7 +94,9 @@ function formatFuentesTable(fuentes: ProjectFuente[]): string {
   for (const f of fuentes) {
     const alias = f.alias;
     const path = f.path;
-    const main = f.main_branch || "certificacion";
+    // Undeclared base branch → empty cell (round-trips back to null; the
+    // workspace default `principal` is what resolves it, not a literal here).
+    const main = f.main_branch ?? "";
     lines.push(`| ${alias} | ${path} | ${main} |`);
   }
   return lines.join("\n");
@@ -109,6 +118,19 @@ function formatStackList(stack: ProjectStack): string {
     return "_Stack sin detectar._";
   }
   return lines.join("\n");
+}
+
+const DEFAULT_BRANCH_ROLES = ["principal", "desarrollo", "qa"] as const;
+
+function formatDefaultBranches(defaults: DefaultBranches | undefined): string | null {
+  if (!defaults) return null;
+  const lines: string[] = [];
+  for (const role of DEFAULT_BRANCH_ROLES) {
+    const branch = defaults[role];
+    if (branch) lines.push(`  - ${role}: ${branch}`);
+  }
+  if (lines.length === 0) return null;
+  return ["- Ramas por defecto:", ...lines].join("\n");
 }
 
 function formatWorkingBranches(branches: Record<string, string> | undefined): string | null {

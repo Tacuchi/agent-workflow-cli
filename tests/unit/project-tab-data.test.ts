@@ -140,6 +140,43 @@ describe("buildProjectTabData — workspace view", () => {
   });
 });
 
+describe("buildProjectTabData — rama principal resuelta", () => {
+  // Fuentes cell empty → the workspace default `principal` must resolve it, both
+  // for the source row and for the GIT tile's base.
+  function blockWithDefault(): string {
+    return [
+      MARKERS.start,
+      "## Proyecto",
+      "",
+      "WS",
+      "",
+      "## Fuentes",
+      "",
+      "| Alias | Path | Rama principal |",
+      "|---|---|---|",
+      "| core | /src/core |  |",
+      "",
+      "## Status",
+      "",
+      "- Ramas por defecto:",
+      "  - principal: trunk",
+      "- Ramas de trabajo actuales:",
+      "  - core: feature/x",
+      "- Última actividad: 2026-05-26 14:19",
+      MARKERS.end,
+    ].join("\n");
+  }
+
+  it("aplica el default `principal` del workspace a una celda «Rama principal» vacía", async () => {
+    const deps = buildDeps({ claudeMd: blockWithDefault(), currentBranch: "feature/x" });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.sources[0]?.mainBranch).toBe("trunk");
+    expect(data.git?.base).toBe("trunk");
+  });
+});
+
 describe("buildProjectTabData — GIT tile working branch", () => {
   it("muestra la rama de trabajo DEFINIDA en el workspace, no la rama actual del source", async () => {
     const deps = buildDeps({ claudeMd: workspaceBlock(true), currentBranch: "desarrollo" });
@@ -169,6 +206,7 @@ function block(overrides: Partial<ParsedProjectBlock>): ParsedProjectBlock {
       { alias: "beta", path: "/src/beta", main_branch: "certificacion" },
     ],
     stack: {},
+    default_branches: {},
     working_branches: {},
     qa_branches: {},
     last_activity: null,

@@ -23,7 +23,8 @@ export interface CheckBranchOutput {
   changed_files?: string[];
   is_repo?: boolean;
   error?: string | null;
-  main_branch?: string;
+  /** Base branch DECLARED for the source; null when the Fuentes cell is empty. */
+  main_branch?: string | null;
   session_code?: string | null;
   work_branch?: string | null;
 }

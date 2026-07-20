@@ -25,7 +25,19 @@ export async function readWorkspaceBlock(
 export interface ProjectFuente {
   alias: string;
   path: string;
-  main_branch: string;
+  /** Declared base branch. `null` when the Fuentes cell is empty → the workspace default applies. */
+  main_branch: string | null;
+}
+
+/**
+ * Workspace-level branch defaults (`## Status > Ramas por defecto`). Each role
+ * falls back to these when a source declares no value of its own; see
+ * `branch-resolver.ts` for the resolution chain.
+ */
+export interface DefaultBranches {
+  principal?: string;
+  desarrollo?: string;
+  qa?: string;
 }
 
 export interface ProjectStack {
@@ -39,6 +51,7 @@ export interface ParsedProjectBlock {
   proyecto: string;
   fuentes: ProjectFuente[];
   stack: ProjectStack;
+  default_branches: DefaultBranches;
   working_branches: Record<string, string>;
   qa_branches: Record<string, string>;
   last_activity: string | null;
@@ -95,6 +108,7 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
     proyecto: stripLegacyModeLine(proyectoText),
     fuentes,
     stack,
+    default_branches: status.defaultBranches,
     working_branches: status.workingBranches,
     qa_branches: status.qaBranches,
     last_activity: status.lastActivity,
@@ -127,7 +141,8 @@ function parseFuentesTable(text: string): ProjectFuente[] {
     fuentes.push({
       alias,
       path,
-      main_branch: mainBranch ?? "certificacion",
+      // Empty cell = undeclared: the workspace default applies at resolution time.
+      main_branch: mainBranch !== undefined && mainBranch.length > 0 ? mainBranch : null,
     });
   }
   return fuentes;
@@ -149,14 +164,18 @@ function parseStackList(text: string): ProjectStack {
 }
 
 interface StatusBlock {
+  defaultBranches: DefaultBranches;
   workingBranches: Record<string, string>;
   qaBranches: Record<string, string>;
   lastActivity: string | null;
 }
 
-type StatusSection = "none" | "working" | "qa";
+type StatusSection = "none" | "defaults" | "working" | "qa";
+
+const DEFAULT_BRANCH_KEYS: ReadonlySet<string> = new Set(["principal", "desarrollo", "qa"]);
 
 function parseStatusBlock(text: string): StatusBlock {
+  const defaultBranches: DefaultBranches = {};
   const workingBranches: Record<string, string> = {};
   const qaBranches: Record<string, string> = {};
   let lastActivity: string | null = null;
@@ -174,14 +193,16 @@ function parseStatusBlock(text: string): StatusBlock {
     }
     if (!stripped.startsWith("- ")) continue;
     const entry = stripped.slice(2).trim();
-    if (section === "working") {
+    if (section === "defaults") {
+      addDefaultBranch(defaultBranches, entry);
+    } else if (section === "working") {
       addWorkingBranch(workingBranches, entry);
     } else if (section === "qa") {
       addWorkingBranch(qaBranches, entry);
     }
   }
 
-  return { workingBranches, qaBranches, lastActivity };
+  return { defaultBranches, workingBranches, qaBranches, lastActivity };
 }
 
 function transitionSection(stripped: string): {
@@ -189,6 +210,7 @@ function transitionSection(stripped: string): {
   next: StatusSection;
   lastActivity?: string | null;
 } {
+  if (stripped.startsWith("- Ramas por defecto:")) return { handled: true, next: "defaults" };
   if (stripped.startsWith("- Ramas de trabajo actuales:"))
     return { handled: true, next: "working" };
   if (stripped.startsWith("- Ramas QA actuales:")) return { handled: true, next: "qa" };
@@ -204,6 +226,16 @@ function transitionSection(stripped: string): {
     return { handled: true, next: "none" };
   }
   return { handled: false, next: "none" };
+}
+
+/** `principal: main` → `{ principal: "main" }`. Unknown roles are ignored. */
+function addDefaultBranch(out: DefaultBranches, entry: string): void {
+  const colon = entry.indexOf(":");
+  if (colon <= 0) return;
+  const role = entry.slice(0, colon).trim().toLowerCase();
+  const branch = entry.slice(colon + 1).trim();
+  if (!branch || !DEFAULT_BRANCH_KEYS.has(role)) return;
+  out[role as keyof DefaultBranches] = branch;
 }
 
 function addWorkingBranch(out: Record<string, string>, entry: string): void {

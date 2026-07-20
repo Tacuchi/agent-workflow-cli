@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runGitFlow } from "../../src/application/git-flow-service.js";
+import type { DefaultBranches } from "../../src/application/parsers/project-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { renderProjectBlock } from "../../src/application/render/project-block.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -19,7 +20,7 @@ interface SourceSpec {
   qa?: string;
 }
 
-function blockFor(sources: SourceSpec[]): string {
+function blockFor(sources: SourceSpec[], defaults?: DefaultBranches): string {
   const workingBranches: Record<string, string> = {};
   const qaBranches: Record<string, string> = {};
   for (const s of sources) {
@@ -31,6 +32,7 @@ function blockFor(sources: SourceSpec[]): string {
     fuentes: sources.map((s) => ({ alias: s.alias, path: s.path, main_branch: s.main })),
     stack: {},
     lastActivity: "2026-01-01 00:00",
+    ...(defaults ? { defaultBranches: defaults } : {}),
     workingBranches,
     qaBranches,
   });
@@ -72,8 +74,8 @@ describe("git-flow service", () => {
     return new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd);
   }
 
-  async function writeBlock(sources: SourceSpec[]): Promise<void> {
-    await writeFile(join(cwd, "CLAUDE.md"), blockFor(sources), "utf8");
+  async function writeBlock(sources: SourceSpec[], defaults?: DefaultBranches): Promise<void> {
+    await writeFile(join(cwd, "CLAUDE.md"), blockFor(sources, defaults), "utf8");
   }
 
   it("sync: pull work → checkout prod+pull → checkout work + merge prod", async () => {
@@ -429,7 +431,22 @@ describe("git-flow service", () => {
     expect(repos.has("/repo/ui")).toBe(false);
   });
 
-  it("validation: to-qa without a declared QA branch errors clearly (no git calls)", async () => {
+  it("to-qa without a declared QA branch falls back to the workspace default", async () => {
+    await writeBlock(
+      [{ alias: "core", path: "/repo/core", main: "certificacion", work: "feature/x" }], // no qa
+      { qa: "release/qa" },
+    );
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "to-qa", source: "core" });
+
+    expect(result.status).toBe("ok");
+    const ops = opLog(git.calls);
+    expect(ops).toContain("checkout release/qa");
+    expect(ops).toContain("push release/qa");
+  });
+
+  it("to-qa with no QA anywhere uses the hardcoded 'qa' fallback", async () => {
     await writeBlock([
       { alias: "core", path: "/repo/core", main: "certificacion", work: "feature/x" },
     ]);
@@ -437,19 +454,62 @@ describe("git-flow service", () => {
 
     const result = await runGitFlow(fs, git, paths(), { action: "to-qa", source: "core" });
 
-    expect(result.status).toBe("error");
-    expect(result.results[0]?.error).toMatch(/QA branch/i);
-    expect(git.calls).toEqual([]);
+    expect(result.status).toBe("ok");
+    expect(opLog(git.calls)).toContain("push qa");
   });
 
-  it("validation: missing working branch errors clearly", async () => {
-    await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }]);
+  it("a source with no working branch resolves work to the workspace 'desarrollo' default", async () => {
+    await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
+      desarrollo: "develop",
+    });
     const git = new RecordingGit({ currentBranch: "certificacion" });
 
     const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
 
-    expect(result.status).toBe("error");
-    expect(result.results[0]?.error).toMatch(/working branch/i);
+    expect(result.status).toBe("ok");
+    expect(opLog(git.calls)).toEqual([
+      "checkout develop",
+      "pull develop",
+      "checkout certificacion",
+      "pull certificacion",
+      "checkout develop",
+      "merge certificacion",
+    ]);
+  });
+
+  it("a declared per-source branch wins over the workspace default", async () => {
+    await writeBlock(
+      [
+        {
+          alias: "core",
+          path: "/repo/core",
+          main: "certificacion",
+          work: "feature/x",
+          qa: "staging",
+        },
+      ],
+      { qa: "release/qa" },
+    );
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "to-qa", source: "core" });
+
+    expect(result.status).toBe("ok");
+    const ops = opLog(git.calls);
+    expect(ops).toContain("push staging");
+    expect(ops).not.toContain("push release/qa");
+  });
+
+  it("an empty 'Rama principal' cell resolves prod to the workspace 'principal' default", async () => {
+    await writeBlock([{ alias: "core", path: "/repo/core", main: "", work: "feature/x" }], {
+      principal: "trunk",
+    });
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+    expect(result.status).toBe("ok");
+    expect(opLog(git.calls)).toContain("checkout trunk");
   });
 
   it("errors on an unknown source alias", async () => {

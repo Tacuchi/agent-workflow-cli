@@ -9,6 +9,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
+import { resolveSourceBranches } from "./branch-resolver.js";
 import { type ParsedProjectBlock, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
@@ -93,8 +94,10 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
 
   // Primary repo: the first declared source (if any), else the cwd.
   const primaryRepoPath = block && block.fuentes.length > 0 ? (block.fuentes[0]?.path ?? cwd) : cwd;
-  const primaryMainBranch =
-    block && block.fuentes.length > 0 ? (block.fuentes[0]?.main_branch ?? "main") : "main";
+  const primarySource = block?.fuentes[0];
+  const primaryMainBranch = primarySource
+    ? resolveSourceBranches(primarySource, block).prod
+    : "main";
   // The GIT tile must show the working branch DEFINED in the workspace for the
   // primary source, not whatever branch the repo has checked out (could be any).
   const definedWorkingBranch = resolveDefinedWorkingBranch(block);
@@ -139,7 +142,7 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
         alias: f.alias,
         path: f.path,
         branch: branch ?? null,
-        mainBranch: f.main_branch,
+        mainBranch: resolveSourceBranches(f, block).prod,
         dirty: changed.length > 0,
         changedFiles: changed.length,
         launchable,

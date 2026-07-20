@@ -3,6 +3,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { withCwdLock } from "./lock-service.js";
 import {
+  type DefaultBranches,
   type ParsedProjectBlock,
   type ProjectBlockMarkers,
   type ProjectFuente,
@@ -26,6 +27,8 @@ export interface ProjectMdUpsertFuente {
 export interface ProjectMdUpsertInput {
   op: UpsertOp;
   proyecto?: string;
+  /** Workspace branch defaults; merged per role over the existing ones. */
+  defaultBranches?: DefaultBranches;
   workingBranches?: Record<string, string>;
   qaBranches?: Record<string, string>;
   /** `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repeatable). */
@@ -98,6 +101,10 @@ async function buildRenderInput(
     existing?.stack && Object.keys(existing.stack).length > 0
       ? existing.stack
       : await detectStackFromSources(fs, input.fuentes ?? [], cwd);
+  const defaultBranches: DefaultBranches = {
+    ...(existing?.default_branches ?? {}),
+    ...(input.defaultBranches ?? {}),
+  };
   const workingBranches: Record<string, string> = {
     ...(existing?.working_branches ?? {}),
     ...(input.workingBranches ?? {}),
@@ -110,7 +117,7 @@ async function buildRenderInput(
     delete workingBranches[alias];
     delete qaBranches[alias];
   }
-  return { proyecto, fuentes, stack, workingBranches, qaBranches };
+  return { proyecto, fuentes, stack, defaultBranches, workingBranches, qaBranches };
 }
 
 /**

@@ -42,6 +42,37 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     expect(claude).toContain("| core | /repo/core | main |");
   });
 
+  it("writes defaultBranches and merges them per role across calls", async () => {
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      defaultBranches: { principal: "main", desarrollo: "development", qa: "qa" },
+      lastActivity: FIXED_TS,
+    });
+    // Second call touches ONE role: the other two must survive (field merge).
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      defaultBranches: { qa: "release/qa" },
+      lastActivity: FIXED_TS,
+    });
+
+    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("  - principal: main");
+    expect(claude).toContain("  - desarrollo: development");
+    expect(claude).toContain("  - qa: release/qa");
+    expect(claude).not.toContain("  - qa: qa\n");
+  });
+
+  it("leaves the block without a defaults entry when none is given", async () => {
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      lastActivity: FIXED_TS,
+    });
+    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(claude).not.toContain("Ramas por defecto");
+  });
+
   it("renders 2 fuentes with shared --main-branch fallback", async () => {
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",

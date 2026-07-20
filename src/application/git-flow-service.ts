@@ -1,5 +1,6 @@
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
+import { type SourceBranchRoles, resolveSourceBranches } from "./branch-resolver.js";
 import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
@@ -48,13 +49,6 @@ export interface GitFlowResult {
   error?: string;
 }
 
-/** Resolved branch roles for one source. */
-interface SourceBranches {
-  prod: string;
-  qa: string | null;
-  work: string | null;
-}
-
 /**
  * A planned operation. `merge` ops carry `onto` (the branch the merge lands on)
  * for the paused-at report. Resume is stateless: after a conflict the user
@@ -101,18 +95,7 @@ export async function runGitFlow(
   let overall: GitFlowResult["status"] = "ok";
 
   for (const source of selected.sources) {
-    const branches = resolveBranches(
-      source,
-      block?.working_branches ?? {},
-      block?.qa_branches ?? {},
-    );
-    const validation = validateBranches(input.action, branches, input.target);
-    if (validation) {
-      results.push({ source: source.alias, status: "error", steps: [], error: validation });
-      overall = "error";
-      break; // fail-stop: do not start remaining sources.
-    }
-
+    const branches = resolveSourceBranches(source, block);
     const ops = buildPlan(input.action, branches, input.target);
     if (dryRun) {
       results.push({ source: source.alias, status: "ok", steps: ops.map(toDryStep) });
@@ -149,45 +132,20 @@ function selectSources(
   return { sources: [match] };
 }
 
-function resolveBranches(
-  source: ProjectFuente,
-  workingBranches: Record<string, string>,
-  qaBranches: Record<string, string>,
-): SourceBranches {
-  const work = workingBranches[source.alias];
-  const qa = qaBranches[source.alias];
-  return {
-    prod: source.main_branch,
-    qa: qa && qa.length > 0 ? qa : null,
-    work: work && work.length > 0 ? work : null,
-  };
-}
-
-function validateBranches(
-  action: GitFlowAction,
-  branches: SourceBranches,
-  target: string | undefined,
-): string | null {
-  if (!branches.work) {
-    return "No working branch declared for this source (Status → Ramas de trabajo actuales)";
-  }
-  // --target overrides the qa destination, so a declared qa branch isn't required then.
-  if (action === "to-qa" && !branches.qa && !target) {
-    return "No QA branch declared for this source (Status → Ramas QA actuales). Pass --target to override.";
-  }
-  return null;
-}
-
 // --- plan construction --------------------------------------------------------
 
-/** Build the ordered op list for an action. `work` is guaranteed by validation. */
+/**
+ * Build the ordered op list for an action. Every role is already resolved
+ * (per-source value → workspace default → fallback), so no branch can be
+ * missing here — that is why no validation step precedes this.
+ */
 function buildPlan(
   action: GitFlowAction,
-  branches: SourceBranches,
+  branches: SourceBranchRoles,
   target: string | undefined,
 ): PlannedOp[] {
   const prod = branches.prod;
-  const work = branches.work as string;
+  const work = branches.work;
 
   if (action === "sync") {
     return syncPlan(prod, target ?? work);
@@ -209,7 +167,7 @@ function buildPlan(
     ];
   }
   // to-qa
-  const qa = (target ?? branches.qa) as string;
+  const qa = target ?? branches.qa;
   return [
     ...syncPlan(prod, work),
     { kind: "checkout", branch: qa, label: `checkout ${qa}` },
@@ -231,7 +189,7 @@ function syncPlan(prod: string, workDest: string): PlannedOp[] {
   ];
 }
 
-function qaLabel(resolved: string, declared: string | null): string {
+function qaLabel(resolved: string, declared: string): string {
   return resolved === declared ? "qa" : resolved;
 }
 
