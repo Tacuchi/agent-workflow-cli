@@ -579,7 +579,92 @@ describe("git-flow service", () => {
     expect(repos).toContain("/repo/ui");
   });
 
-  it("--all is fail-stop: a conflict in source 1 prevents source 2 from starting", async () => {
+  it("--all continúa tras un conflicto: la fuente 2 se procesa igualmente", async () => {
+    await writeBlock([
+      { alias: "core", path: "/repo/core", main: "certificacion", work: "feat-a" },
+      { alias: "ui", path: "/repo/ui", main: "main", work: "feat-b" },
+    ]);
+    const git = new RecordingGit({
+      currentBranch: "feat-a",
+      conflicts: { certificacion: ["c.ts"] }, // solo la 1ª fuente mergea `certificacion`
+    });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "sync", all: true });
+
+    // Entrada por CADA fuente declarada, y la 2ª realmente se ejecutó.
+    expect(result.results.map((r) => r.source)).toEqual(["core", "ui"]);
+    expect(result.results[0]?.status).toBe("conflict");
+    expect(result.results[1]?.status).toBe("ok");
+    expect(new Set(git.calls.map((c) => c.repo)).has("/repo/ui")).toBe(true);
+    // Solo conflictos → el global es conflict (exit 2).
+    expect(result.status).toBe("conflict");
+  });
+
+  it("--all: 3 fuentes, la 2ª con el árbol sucio — la 1ª y la 3ª se alinean igual (escenario spec 008)", async () => {
+    await writeBlock([
+      { alias: "core", path: "/repo/core", main: "main", work: "feat-a" },
+      { alias: "ui", path: "/repo/ui", main: "main", work: "feat-b" },
+      { alias: "api", path: "/repo/api", main: "main", work: "feat-c" },
+    ]);
+    const git = new RecordingGit({ currentBranch: "feat-a", dirtyRepos: ["/repo/ui"] });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "sync", all: true });
+
+    // Una entrada por cada fuente, con su estado y su motivo.
+    expect(result.results.map((r) => r.source)).toEqual(["core", "ui", "api"]);
+    expect(result.results.map((r) => r.status)).toEqual(["ok", "error", "ok"]);
+    expect(result.results[1]?.error).toMatch(/uncommitted|commit or stash/i);
+    // La 1ª y la 3ª SÍ hicieron trabajo real.
+    const repos = new Set(git.calls.filter((c) => c.op === "checkout").map((c) => c.repo));
+    expect(repos.has("/repo/core")).toBe(true);
+    expect(repos.has("/repo/api")).toBe(true);
+    // Peor caso = error, aunque la última fuente termine ok.
+    expect(result.status).toBe("error");
+  });
+
+  it("--all: un error NO queda tapado por un conflicto posterior", async () => {
+    await writeBlock([
+      { alias: "core", path: "/repo/core", main: "certificacion", work: "feat-a" }, // error
+      { alias: "ui", path: "/repo/ui", main: "main", work: "feat-b" }, // conflict
+    ]);
+    const git = new RecordingGit({
+      currentBranch: "feat-a",
+      dirtyRepos: ["/repo/core"],
+      conflicts: { main: ["d.ts"] },
+    });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "sync", all: true });
+
+    expect(result.results.map((r) => r.status)).toEqual(["error", "conflict"]);
+    expect(result.status).toBe("error"); // error > conflict
+  });
+
+  it("--all: un error en la 1ª fuente domina sobre un ok posterior (peor caso)", async () => {
+    await writeBlock([
+      { alias: "core", path: "/repo/core", main: "certificacion", work: "feat-a" },
+      { alias: "ui", path: "/repo/ui", main: "main", work: "feat-b" },
+    ]);
+    // checkout revienta en TODAS las fuentes → error en ambas; el global es error.
+    const gitErr = new RecordingGit({ currentBranch: "feat-a", throwOn: "checkout" });
+    const errored = await runGitFlow(fs, gitErr, paths(), { action: "sync", all: true });
+    expect(errored.results.map((r) => r.source)).toEqual(["core", "ui"]);
+    expect(errored.status).toBe("error");
+
+    // Y un conflicto NO degrada un error previo a conflict.
+    const gitMixed = new RecordingGit({
+      currentBranch: "feat-a",
+      conflicts: { main: ["d.ts"] }, // la 2ª fuente conflicta
+      throwOn: "push", // nadie hace push en sync → no afecta
+    });
+    const mixed = await runGitFlow(fs, gitMixed, paths(), { action: "sync", all: true });
+    expect(mixed.results[0]?.status).toBe("ok");
+    expect(mixed.results[1]?.status).toBe("conflict");
+    expect(mixed.status).toBe("conflict");
+  });
+
+  it("--all: el mid-merge de una fuente no contamina a las demás", async () => {
+    // Regresión del fake compartido: con continue-on-failure, un conflicto en la
+    // 1ª dejaba a la 2ª «con merge en curso», un cascadeo imposible entre repos.
     await writeBlock([
       { alias: "core", path: "/repo/core", main: "certificacion", work: "feat-a" },
       { alias: "ui", path: "/repo/ui", main: "main", work: "feat-b" },
@@ -591,12 +676,8 @@ describe("git-flow service", () => {
 
     const result = await runGitFlow(fs, git, paths(), { action: "sync", all: true });
 
-    expect(result.status).toBe("conflict");
-    // Only the first source ran; the second was never started.
-    expect(result.results.map((r) => r.source)).toEqual(["core"]);
-    const repos = new Set(git.calls.map((c) => c.repo));
-    expect(repos.has("/repo/core")).toBe(true);
-    expect(repos.has("/repo/ui")).toBe(false);
+    expect(result.results[1]?.error).toBeUndefined();
+    expect(result.results[1]?.status).toBe("ok");
   });
 
   it("to-qa without a declared QA branch falls back to the workspace default", async () => {

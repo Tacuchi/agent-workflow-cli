@@ -11,7 +11,10 @@ export interface GitFlowInput {
   action: GitFlowAction;
   /** Single source alias to run against. Mutually informative with `all`. */
   source?: string;
-  /** Run against every declared source (fail-stop on the first conflict). */
+  /**
+   * Run against every declared source. Continue-on-failure: every source is
+   * attempted and reported; the batch status is the worst outcome seen.
+   */
   all?: boolean;
   /** Override the action's destination branch (work for sync, dev/qa/prod for promote). */
   target?: string;
@@ -117,13 +120,20 @@ export async function runGitFlow(
 
     const sourceResult = await executePlan(git, source, ops);
     results.push(sourceResult);
-    if (sourceResult.status !== "ok") {
-      overall = sourceResult.status;
-      break; // fail-stop on conflict/error: leave remaining sources untouched.
-    }
+    // Continue-on-failure: one source failing must not strand the rest. Each
+    // source is independent (its own repo), so the batch reports every one and
+    // the overall status is the WORST case seen.
+    overall = worst(overall, sourceResult.status);
   }
 
   return { action: input.action, dry_run: dryRun, status: overall, results };
+}
+
+/** Severity order of the batch status: a later ok never masks an earlier failure. */
+const STATUS_SEVERITY: Record<GitFlowResult["status"], number> = { ok: 0, conflict: 1, error: 2 };
+
+function worst(a: GitFlowResult["status"], b: GitFlowResult["status"]): GitFlowResult["status"] {
+  return STATUS_SEVERITY[b] > STATUS_SEVERITY[a] ? b : a;
 }
 
 // --- source selection ---------------------------------------------------------

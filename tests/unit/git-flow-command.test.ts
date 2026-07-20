@@ -134,6 +134,72 @@ describe("git-flow command", () => {
     expect(data.status).toBe("conflict");
   });
 
+  /**
+   * Two sources whose bases differ, so a scripted conflict hits ONLY the second.
+   * The failure must never be first: otherwise `results[0].status` coincides with
+   * the aggregate and a CLI reading the head instead of `data.status` passes.
+   */
+  async function writeTwoSources(): Promise<void> {
+    const block = renderProjectBlock({
+      proyecto: "Test",
+      fuentes: [
+        { alias: "core", path: "/repo/core", main_branch: "main" },
+        { alias: "ui", path: "/repo/ui", main_branch: "release" },
+      ],
+      stack: {},
+      lastActivity: "2026-01-01 00:00",
+      workingBranches: { core: "feat-a", ui: "feat-b" },
+    });
+    await writeFile(join(cwd, "CLAUDE.md"), block, "utf8");
+  }
+
+  it("--all con TODAS las fuentes en ok: exit 0", async () => {
+    await writeTwoSources();
+    const git = new RecordingGit({ currentBranch: "feat-a" });
+
+    const result = await gitFlowCommand.execute(
+      args({ rest: ["sync"], flags: ["--all"] }),
+      ctx(git),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect((result.data as GitFlowResult).results.map((r) => r.status)).toEqual(["ok", "ok"]);
+  });
+
+  it("--all: un error en la SEGUNDA fuente da exit 1 (el agregado manda, no la primera)", async () => {
+    await writeTwoSources();
+    const git = new RecordingGit({ currentBranch: "feat-a", dirtyRepos: ["/repo/ui"] });
+
+    const result = await gitFlowCommand.execute(
+      args({ rest: ["sync"], flags: ["--all"] }),
+      ctx(git),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(1);
+    const data = result.data as GitFlowResult;
+    expect(data.results.map((r) => r.status)).toEqual(["ok", "error"]);
+    expect(data.status).toBe("error");
+  });
+
+  it("--all: un conflicto en la SEGUNDA fuente da exit 2 (el agregado manda, no la primera)", async () => {
+    await writeTwoSources();
+    // Solo `ui` mergea `release`: la 1ª fuente termina ok.
+    const git = new RecordingGit({ currentBranch: "feat-a", conflicts: { release: ["c.ts"] } });
+
+    const result = await gitFlowCommand.execute(
+      args({ rest: ["sync"], flags: ["--all"] }),
+      ctx(git),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(2);
+    const data = result.data as GitFlowResult;
+    expect(data.results.map((r) => r.status)).toEqual(["ok", "conflict"]);
+    expect(data.status).toBe("conflict");
+  });
+
   it("returns a failing result with exitCode 1 on a validation/error status", async () => {
     const git = new RecordingGit({ currentBranch: "feature/x" });
     const result = await gitFlowCommand.execute(

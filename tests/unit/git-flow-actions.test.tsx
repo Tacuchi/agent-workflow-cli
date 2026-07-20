@@ -27,6 +27,36 @@ describe("FlowResultView", () => {
     expect(f).toContain("push work");
   });
 
+  it("pinta TODAS las fuentes de un batch mixto, no solo hasta la que falla", () => {
+    const result: GitFlowResult = {
+      action: "sync",
+      dry_run: false,
+      status: "error",
+      results: [
+        { source: "core", status: "ok", steps: [{ step: "merge prod→work", status: "ok" }] },
+        {
+          source: "ui",
+          status: "error",
+          steps: [],
+          error: "Working tree has uncommitted changes",
+        },
+        {
+          source: "api",
+          status: "conflict",
+          steps: [{ step: "merge prod→work", status: "conflict" }],
+          paused_at: "feat-c",
+          conflicted_files: ["src/A.java"],
+        },
+      ],
+    };
+    const { lastFrame } = render(<FlowResultView action="sync" result={result} />);
+    const f = lastFrame() ?? "";
+    for (const alias of ["core", "ui", "api"]) expect(f).toContain(alias);
+    expect(f).toContain("uncommitted"); // motivo de la fallida
+    expect(f).toContain("src/A.java"); // conflicto de la tercera
+    expect(f).toContain("merge conflict on feat-c");
+  });
+
   it("rotula cada acción, to-dev incluida", () => {
     const result: GitFlowResult = {
       action: "to-dev",
