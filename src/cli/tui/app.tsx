@@ -2,6 +2,8 @@ import { basename } from "node:path";
 import { Box, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatTuiEvent } from "../../application/logging/log-events.js";
+import type { DefaultBranches } from "../../application/parsers/project-block.js";
+import { runProjectMdUpsertWrite } from "../../application/project-md-upsert-service.js";
 import { writeNamespacePin } from "../../application/self/namespace-info.js";
 import { SessionsService } from "../../application/sessions-service.js";
 import type { ExitCode } from "../../domain/types.js";
@@ -112,6 +114,29 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     dismissTop,
     triggerAction,
   } = useNotifications();
+
+  // Branch defaults live in the WORKSPACE block of CLAUDE.md/AGENTS.md (the same
+  // "database" git-flow reads), never in the user-global TUI prefs. The upsert
+  // merges per role, so one edited role never clears the others.
+  //
+  // The service REPORTS failure (busy cwd lock, unwritable file) by RESOLVING
+  // with an error payload instead of throwing, so the outcome must be inspected
+  // and handed back: the tab only adopts the new value when the write landed.
+  const onSaveBranchDefaults = useCallback(
+    async (defaultBranches: DefaultBranches): Promise<boolean> => {
+      const res = await runProjectMdUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
+        op: "init",
+        defaultBranches,
+      });
+      const detail = "error" in res ? res.error : res.ok ? null : "CLAUDE.md/AGENTS.md";
+      if (detail !== null) {
+        pushToast({ tone: "err", title: "No se guardaron las ramas", body: detail });
+        return false;
+      }
+      return true;
+    },
+    [ctx, pushToast],
+  );
 
   const loadShellData = useCallback(async () => {
     const name = await resolveProjectName(ctx);
@@ -360,6 +385,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
               prefs={prefs}
               onChange={onChangePrefs}
               onSaveNamespace={onSaveNamespace}
+              onSaveBranchDefaults={onSaveBranchDefaults}
             />
           ) : null}
         </Box>
