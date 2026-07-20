@@ -128,6 +128,174 @@ describe("git-flow service", () => {
       "merge feature/x",
       "push desarrollo",
     ]);
+    // Las ETIQUETAS son contractuales (docs/design/git-flow-per-source.md) y se
+    // pintan en FlowResultView: el refactor a promotePlan debía preservarlas.
+    expect(result.results[0]?.steps.map((s) => s.step)).toEqual([
+      "pull feature/x",
+      "checkout certificacion",
+      "pull certificacion",
+      "checkout feature/x",
+      "merge prod→work",
+      "checkout desarrollo",
+      "pull desarrollo",
+      "merge prod→qa",
+      "merge work→qa",
+      "push desarrollo",
+    ]);
+  });
+
+  it("to-qa con --target etiqueta con la rama literal, no con el rol", async () => {
+    await writeBlock([
+      {
+        alias: "core",
+        path: "/repo/core",
+        main: "certificacion",
+        work: "feature/x",
+        qa: "desarrollo",
+      },
+    ]);
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+
+    const result = await runGitFlow(fs, git, paths(), {
+      action: "to-qa",
+      source: "core",
+      target: "release/2026",
+    });
+
+    const steps = result.results[0]?.steps.map((s) => s.step) ?? [];
+    expect(steps).toContain("merge work→release/2026");
+    expect(steps).not.toContain("merge work→qa");
+  });
+
+  it("to-qa NO se salta cuando la rama qa coincide con la de trabajo (el guard es solo de to-dev)", async () => {
+    await writeBlock([
+      {
+        alias: "core",
+        path: "/repo/core",
+        main: "certificacion",
+        work: "desarrollo",
+        qa: "desarrollo",
+      },
+    ]);
+    const git = new RecordingGit({ currentBranch: "desarrollo" });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "to-qa", source: "core" });
+
+    expect(result.status).toBe("ok");
+    expect(opLog(git.calls)).toContain("push desarrollo");
+    expect(result.results[0]?.steps.some((s) => s.detail?.includes("nada que enviar"))).toBe(false);
+  });
+
+  it("to-dev: sync + checkout dev+pull + merge prod→dev + merge work→dev + push dev", async () => {
+    await writeBlock(
+      [{ alias: "core", path: "/repo/core", main: "certificacion", work: "feature/x" }],
+      { desarrollo: "develop" },
+    );
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "to-dev", source: "core" });
+
+    expect(result.status).toBe("ok");
+    expect(opLog(git.calls)).toEqual([
+      // sync
+      "checkout feature/x",
+      "pull feature/x",
+      "checkout certificacion",
+      "pull certificacion",
+      "checkout feature/x",
+      "merge certificacion",
+      // promote to dev — espejo de to-qa
+      "checkout develop",
+      "pull develop",
+      "merge certificacion",
+      "merge feature/x",
+      "push develop",
+    ]);
+  });
+
+  it("to-dev termina ok SIN merges cuando la rama de trabajo ya es la de desarrollo", async () => {
+    // Sin rama de trabajo declarada, work y dev resuelven ambos al default.
+    await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
+      desarrollo: "develop",
+    });
+    const git = new RecordingGit({ currentBranch: "develop" });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "to-dev", source: "core" });
+
+    expect(result.status).toBe("ok");
+    expect(result.results[0]?.status).toBe("ok");
+    expect(result.results[0]?.steps[0]?.detail).toMatch(/nada que enviar/i);
+    expect(git.calls).toEqual([]); // ni siquiera se toca el repo
+  });
+
+  it("to-dev con --target SÍ promociona aunque work coincida con el default de desarrollo", async () => {
+    // El guard mira el destino EFECTIVO: sin `target ??` una promoción legítima
+    // se convertiría en un salto silencioso.
+    await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
+      desarrollo: "develop",
+    });
+    const git = new RecordingGit({ currentBranch: "develop" });
+
+    const result = await runGitFlow(fs, git, paths(), {
+      action: "to-dev",
+      source: "core",
+      target: "integration",
+    });
+
+    expect(result.status).toBe("ok");
+    const ops = opLog(git.calls);
+    expect(ops).toContain("checkout integration");
+    expect(ops).toContain("push integration");
+    expect(result.results[0]?.steps.some((s) => s.detail?.includes("nada que enviar"))).toBe(false);
+  });
+
+  it("to-dev --all: una fuente degenerada no impide procesar el resto", async () => {
+    await writeBlock(
+      [
+        { alias: "core", path: "/repo/core", main: "certificacion" }, // sin work → no-op
+        { alias: "ui", path: "/repo/ui", main: "main", work: "feature/y" },
+      ],
+      { desarrollo: "develop" },
+    );
+    const git = new RecordingGit({ currentBranch: "feature/y" });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "to-dev", all: true });
+
+    expect(result.status).toBe("ok");
+    expect(result.results.map((r) => r.source)).toEqual(["core", "ui"]);
+    expect(result.results[0]?.steps[0]?.detail).toMatch(/nada que enviar/i);
+    expect(git.calls.some((c) => c.op === "push" && c.repo === "/repo/ui")).toBe(true);
+  });
+
+  it("to-dev respeta --target por encima del default de desarrollo", async () => {
+    await writeBlock(
+      [{ alias: "core", path: "/repo/core", main: "certificacion", work: "feature/x" }],
+      { desarrollo: "develop" },
+    );
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+
+    const result = await runGitFlow(fs, git, paths(), {
+      action: "to-dev",
+      source: "core",
+      target: "integration",
+    });
+
+    expect(result.status).toBe("ok");
+    const ops = opLog(git.calls);
+    expect(ops).toContain("push integration");
+    expect(ops).not.toContain("push develop");
+  });
+
+  it("invariante: to-dev nunca lleva dev a prod", async () => {
+    await writeBlock(
+      [{ alias: "core", path: "/repo/core", main: "certificacion", work: "feature/x" }],
+      { desarrollo: "develop" },
+    );
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+
+    await runGitFlow(fs, git, paths(), { action: "to-dev", source: "core" });
+
+    expect(mergesQaOntoProd(git.calls, "develop", "certificacion")).toBe(false);
   });
 
   it("to-prod: sync + checkout prod + merge work→prod + push prod (no qa→prod)", async () => {

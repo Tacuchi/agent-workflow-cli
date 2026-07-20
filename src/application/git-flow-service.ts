@@ -4,8 +4,8 @@ import { type SourceBranchRoles, resolveSourceBranches } from "./branch-resolver
 import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
-/** The three per-source git-flow actions (see docs/design/git-flow-per-source.md). */
-export type GitFlowAction = "sync" | "to-qa" | "to-prod";
+/** The per-source git-flow actions (see docs/design/git-flow-per-source.md). */
+export type GitFlowAction = "sync" | "to-dev" | "to-qa" | "to-prod";
 
 export interface GitFlowInput {
   action: GitFlowAction;
@@ -13,7 +13,7 @@ export interface GitFlowInput {
   source?: string;
   /** Run against every declared source (fail-stop on the first conflict). */
   all?: boolean;
-  /** Override the action's destination branch (work for sync, qa/prod for promote). */
+  /** Override the action's destination branch (work for sync, dev/qa/prod for promote). */
   target?: string;
   /** Preview the ordered step list without touching git. */
   dryRun?: boolean;
@@ -64,7 +64,7 @@ type PlannedOp =
   | { kind: "merge"; from: string; onto: string; label: string }
   | { kind: "push"; branch: string; label: string };
 
-const VALID_ACTIONS: ReadonlySet<string> = new Set(["sync", "to-qa", "to-prod"]);
+const VALID_ACTIONS: ReadonlySet<string> = new Set(["sync", "to-dev", "to-qa", "to-prod"]);
 
 export async function runGitFlow(
   fs: FileSystemPort,
@@ -96,6 +96,19 @@ export async function runGitFlow(
 
   for (const source of selected.sources) {
     const branches = resolveSourceBranches(source, block);
+
+    // Promoting work→dev when they are the same branch would merge a branch onto
+    // itself: report it as done instead of running redundant merges.
+    const noop = noopReason(input.action, branches, input.target);
+    if (noop !== null) {
+      results.push({
+        source: source.alias,
+        status: "ok",
+        steps: [{ step: input.action, status: "skipped", detail: noop }],
+      });
+      continue;
+    }
+
     const ops = buildPlan(input.action, branches, input.target);
     if (dryRun) {
       results.push({ source: source.alias, status: "ok", steps: ops.map(toDryStep) });
@@ -132,6 +145,21 @@ function selectSources(
   return { sources: [match] };
 }
 
+/**
+ * Why this action has nothing to do for this source, or null when it does.
+ * Only `to-dev` can degenerate: work and dev share the `desarrollo` default, so
+ * a source that declares no working branch resolves both roles to it.
+ */
+function noopReason(
+  action: GitFlowAction,
+  branches: SourceBranchRoles,
+  target: string | undefined,
+): string | null {
+  if (action !== "to-dev") return null;
+  const dest = target ?? branches.dev;
+  return dest === branches.work ? `nada que enviar: work ya es ${dest}` : null;
+}
+
 // --- plan construction --------------------------------------------------------
 
 /**
@@ -166,15 +194,34 @@ function buildPlan(
       { kind: "push", branch: dest, label: `push ${dest}` },
     ];
   }
+  if (action === "to-dev") {
+    return promotePlan(prod, work, target ?? branches.dev, "dev", branches.dev);
+  }
   // to-qa
-  const qa = target ?? branches.qa;
+  return promotePlan(prod, work, target ?? branches.qa, "qa", branches.qa);
+}
+
+/**
+ * sync, then land prod and work onto a promotion branch and push it. Shared by
+ * to-dev and to-qa — they differ only in which role names the destination.
+ * `roleName` keeps the step labels role-shaped ("merge work→qa") while a
+ * `--target` override shows the literal branch instead.
+ */
+function promotePlan(
+  prod: string,
+  work: string,
+  dest: string,
+  roleName: string,
+  roleBranch: string,
+): PlannedOp[] {
+  const label = dest === roleBranch ? roleName : dest;
   return [
     ...syncPlan(prod, work),
-    { kind: "checkout", branch: qa, label: `checkout ${qa}` },
-    { kind: "pull", label: `pull ${qa}` },
-    { kind: "merge", from: prod, onto: qa, label: `merge prod→${qaLabel(qa, branches.qa)}` },
-    { kind: "merge", from: work, onto: qa, label: `merge work→${qaLabel(qa, branches.qa)}` },
-    { kind: "push", branch: qa, label: `push ${qa}` },
+    { kind: "checkout", branch: dest, label: `checkout ${dest}` },
+    { kind: "pull", label: `pull ${dest}` },
+    { kind: "merge", from: prod, onto: dest, label: `merge prod→${label}` },
+    { kind: "merge", from: work, onto: dest, label: `merge work→${label}` },
+    { kind: "push", branch: dest, label: `push ${dest}` },
   ];
 }
 
@@ -187,10 +234,6 @@ function syncPlan(prod: string, workDest: string): PlannedOp[] {
     { kind: "checkout", branch: workDest, label: `checkout ${workDest}` },
     { kind: "merge", from: prod, onto: workDest, label: "merge prod→work" },
   ];
-}
-
-function qaLabel(resolved: string, declared: string): string {
-  return resolved === declared ? "qa" : resolved;
 }
 
 // --- execution ----------------------------------------------------------------

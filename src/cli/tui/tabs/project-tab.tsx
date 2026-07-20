@@ -258,14 +258,16 @@ function NotInitialized({ data }: { data: ProjectTabData }) {
 const ALL_SOURCES = " all-sources";
 
 /**
- * The three per-source git-flow actions, in the order the user requested.
+ * The per-source git-flow actions, in the order the user requested.
  * They map 1:1 to {@link GitFlowAction}:
  *  - `sync`    → "Alinear con PROD" (merge prod→work: brings PROD into the working branch)
+ *  - `to-dev`  → "Enviar a Desarrollo"
  *  - `to-qa`   → "Enviar a QA"
  *  - `to-prod` → "Enviar a PROD"
  */
 const FLOW_ACTIONS: { id: GitFlowAction; name: string; description: string }[] = [
   { id: "sync", name: "Alinear con PROD", description: "merge prod→work" },
+  { id: "to-dev", name: "Enviar a Desarrollo", description: "sync + prod/work→dev + push" },
   { id: "to-qa", name: "Enviar a QA", description: "sync + prod/work→qa + push" },
   { id: "to-prod", name: "Enviar a PROD", description: "sync + work→prod + push" },
 ];

@@ -27,6 +27,17 @@ describe("FlowResultView", () => {
     expect(f).toContain("push work");
   });
 
+  it("rotula cada acción, to-dev incluida", () => {
+    const result: GitFlowResult = {
+      action: "to-dev",
+      dry_run: false,
+      status: "ok",
+      results: [{ source: "alpha", status: "ok", steps: [{ step: "push develop", status: "ok" }] }],
+    };
+    const { lastFrame } = render(<FlowResultView action="to-dev" result={result} />);
+    expect(lastFrame() ?? "").toContain("GIT FLOW · → DEV"); // SectionHead uppercases
+  });
+
   it("renders a conflict as paused with the conflicted files and the re-run hint", () => {
     const result: GitFlowResult = {
       action: "sync",

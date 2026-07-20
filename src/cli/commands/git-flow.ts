@@ -9,19 +9,19 @@ import type { QtcCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-const ACTIONS: ReadonlySet<string> = new Set(["sync", "to-qa", "to-prod"]);
+const ACTIONS: ReadonlySet<string> = new Set(["sync", "to-dev", "to-qa", "to-prod"]);
 
 export const gitFlowCommand: QtcCommand = {
   name: "git-flow",
   describe:
-    "Run a per-source git flow. Usage: aw git-flow <sync|to-qa|to-prod> " +
+    "Run a per-source git flow. Usage: aw git-flow <sync|to-dev|to-qa|to-prod> " +
     "[--source <alias>] [--all] [--target <branch>] [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const action = args.rest[0];
     if (!action || !ACTIONS.has(action)) {
       return fail(
         "INVALID_INPUT",
-        "Usage: aw git-flow <sync|to-qa|to-prod> [--source <alias>] [--all] [--target <branch>] [--dry-run]",
+        "Usage: aw git-flow <sync|to-dev|to-qa|to-prod> [--source <alias>] [--all] [--target <branch>] [--dry-run]",
       );
     }
 

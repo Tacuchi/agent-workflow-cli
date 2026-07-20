@@ -16,6 +16,7 @@ import { SectionHead } from "./section-head.js";
 
 const ACTION_LABEL: Record<GitFlowAction, string> = {
   sync: "Actualizar",
+  "to-dev": "→ Dev",
   "to-qa": "→ QA",
   "to-prod": "→ Prod",
 };

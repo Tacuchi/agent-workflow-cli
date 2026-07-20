@@ -172,16 +172,18 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     expect(rowOf(lastFrame() ?? "", "alpha")).toMatch(/\+0\s+in sync/);
   });
 
-  it("abre el panel lateral con las 3 acciones al seleccionar una fuente (⏎)", async () => {
+  it("abre el panel lateral con las 4 acciones, en orden, al seleccionar una fuente (⏎)", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
     stdin.write(ENTER); // open detail on the focused source (alpha)
     await tick();
     const f = lastFrame() ?? "";
     expect(f).toContain("ACTIONS");
-    expect(f).toContain("Alinear con PROD");
-    expect(f).toContain("Enviar a QA");
-    expect(f).toContain("Enviar a PROD");
+    const ACTIONS = ["Alinear con PROD", "Enviar a Desarrollo", "Enviar a QA", "Enviar a PROD"];
+    for (const a of ACTIONS) expect(f).toContain(a);
+    // El orden es contractual (design SPEC 002): prod → dev → qa → prod.
+    const positions = ACTIONS.map((a) => f.indexOf(a));
+    expect(positions).toEqual([...positions].sort((x, y) => x - y));
   });
 
   it("ejecuta 'Alinear con PROD' (sync) sobre la fuente y muestra el resultado", async () => {
@@ -196,6 +198,24 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     const f = lastFrame() ?? "";
     expect(f).toContain("completed");
     expect(f).toContain("merge prod→work");
+  });
+
+  it("«Enviar a Desarrollo» despacha to-dev (no basta con que se llame así)", async () => {
+    // El panel muestra NOMBRES pero despacha IDs: sin ejecutar la acción, cablearla
+    // a `to-qa` renderiza idéntico y empujaría a la rama QA sin que nadie se entere.
+    const logger = fakeLogger();
+    const { stdin } = render(<ProjectTab ctx={buildCtx({ logger })} isActive />);
+    await tick();
+    stdin.write(ENTER); // abre el panel (acción 0 = "Lanzar en local")
+    await tick();
+    stdin.write(DOWN); // → Alinear con PROD
+    await tick();
+    stdin.write(DOWN); // → Enviar a Desarrollo
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(logger.lines.find((l) => l.msg.includes("git-flow to-dev"))).toBeDefined();
+    expect(logger.lines.find((l) => l.msg.includes("git-flow to-qa"))).toBeUndefined();
   });
 
   it("loguea el outcome de git-flow en el log operativo (finding tui-actions-not-logged)", async () => {

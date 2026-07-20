@@ -107,6 +107,18 @@ describe("git-flow command", () => {
     expect(git.calls.some((c) => c.op === "push" && c.arg === "release/9")).toBe(true);
   });
 
+  it("accepts to-dev and promotes onto the workspace development branch", async () => {
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+    const result = await gitFlowCommand.execute(
+      args({ rest: ["to-dev"], valuesMulti: { source: ["core"] } }),
+      ctx(git),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.exitCode ?? 0).toBe(0);
+    // Sin default declarado en el bloque, dev cae al piso `development`.
+    expect(git.calls.some((c) => c.op === "push" && c.arg === "development")).toBe(true);
+  });
+
   it("returns exitCode 2 (paused, not error) on a merge conflict", async () => {
     const git = new RecordingGit({
       currentBranch: "feature/x",
