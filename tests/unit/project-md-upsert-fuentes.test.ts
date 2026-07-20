@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import { resolveSourceBranches } from "../../src/application/branch-resolver.js";
+import { parseProjectBlock } from "../../src/application/parsers/project-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runProjectMdUpsertWrite } from "../../src/application/project-md-upsert-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -107,7 +109,10 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     expect(claude).toContain("| marketplace | /repo/marketplace | stable |");
   });
 
-  it("falls back to 'certificacion' when neither per-fuente rama nor --main-branch are given", async () => {
+  it("deja la celda VACÍA cuando no hay ni rama por fuente ni --main-branch", async () => {
+    // Una celda vacía significa «resuélveme por el default `principal` del
+    // workspace». Estampar un literal aquí (antes `certificacion`) volvía
+    // inalcanzable ese default y pisaba lo que el usuario fija en [Config].
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [{ alias: "core", path: "/repo/core" }],
@@ -115,7 +120,17 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/core | certificacion |");
+    expect(claude).toContain("| core | /repo/core |  |");
+    expect(claude).not.toContain("certificacion");
+
+    // Y la fuente resuelve entonces por el default del workspace.
+    const parsed = parseProjectBlock(claude, paths.blockMarkers());
+    const fuente = parsed?.fuentes[0];
+    if (!fuente || !parsed) throw new Error("expected a parsed fuente");
+    expect(fuente.main_branch).toBeNull();
+    expect(
+      resolveSourceBranches(fuente, { ...parsed, default_branches: { principal: "trunk" } }).prod,
+    ).toBe("trunk");
   });
 
   it("merges --working-branch entries (multi-flag) into Status", async () => {

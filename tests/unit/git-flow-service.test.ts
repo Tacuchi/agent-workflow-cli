@@ -662,6 +662,49 @@ describe("git-flow service", () => {
     expect(mixed.status).toBe("conflict");
   });
 
+  it("--all: una fuente cuyo repo no es usable NO tumba el lote", async () => {
+    // Las precondiciones (isMerging/isDirty) LANZAN en el adaptador real cuando el
+    // path no es un repo usable: sin capturarlo, la excepción se llevaba por
+    // delante todas las fuentes restantes.
+    await writeBlock([
+      { alias: "core", path: "/repo/core", main: "main", work: "feat-a" },
+      { alias: "ghost", path: "/repo/ghost", main: "main", work: "feat-b" },
+      { alias: "ui", path: "/repo/ui", main: "main", work: "feat-c" },
+    ]);
+    const git = new RecordingGit({ currentBranch: "feat-a", throwOnRepos: ["/repo/ghost"] });
+
+    const result = await runGitFlow(fs, git, paths(), { action: "sync", all: true });
+
+    expect(result.results.map((r) => r.source)).toEqual(["core", "ghost", "ui"]);
+    expect(result.results.map((r) => r.status)).toEqual(["ok", "error", "ok"]);
+    expect(result.results[1]?.error).toMatch(/not a git repository/i);
+    expect(result.status).toBe("error");
+  });
+
+  it("--all: el peor caso y el exit se agregan igual en las CUATRO acciones", async () => {
+    for (const action of ["sync", "to-dev", "to-qa", "to-prod"] as const) {
+      await writeBlock(
+        [
+          { alias: "core", path: "/repo/core", main: "main", work: "feat-a", qa: "qa-a" },
+          { alias: "ui", path: "/repo/ui", main: "main", work: "feat-b", qa: "qa-b" },
+        ],
+        { desarrollo: "develop" },
+      );
+      const git = new RecordingGit({ currentBranch: "feat-a", dirtyRepos: ["/repo/ui"] });
+
+      const result = await runGitFlow(fs, git, paths(), { action, all: true });
+
+      // La 1ª trabaja, la 2ª falla su precondición, y el global es el peor caso.
+      expect(
+        result.results.map((r) => r.source),
+        `acción ${action}`,
+      ).toEqual(["core", "ui"]);
+      expect(result.results[0]?.status, `acción ${action}`).toBe("ok");
+      expect(result.results[1]?.status, `acción ${action}`).toBe("error");
+      expect(result.status, `acción ${action}`).toBe("error");
+    }
+  });
+
   it("--all: el mid-merge de una fuente no contamina a las demás", async () => {
     // Regresión del fake compartido: con continue-on-failure, un conflicto en la
     // 1ª dejaba a la 2ª «con merge en curso», un cascadeo imposible entre repos.

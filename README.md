@@ -71,7 +71,7 @@ Running `agent-workflow` (or `aw`) with no arguments opens the tab-based TUI:
 | **Project** | Workspace sources, branches and git-flow actions. |
 | **MCP** | dbhub connections. **Install writes the host's user-scope config** (e.g. `~/.claude.json`, `~/.codex/config.toml`) — never the project `.mcp.json`; install once, use it in every project. `aw mcp setup` remains the workspace-capable CLI path (workspace by default; `--workspace <dir>` / `--global --force`). |
 | **Skills** | Standalone third-party skills manager (skills.sh model): register from `owner/repo`, a git URL (`#ref` supported) or an absolute local path; install materializes a canonical copy in `~/.agents/skills/<name>` (the open-standard dir every non-Claude host scans) plus a symlink replica in `~/.claude/skills/<name>` (copy fallback where symlinks are unavailable). Seeded with the recommended external skills from the companion marketplace README — keep both lists in sync. |
-| **Config** | Namespace + host-targeting preferences. |
+| **Config** | Namespace, host-targeting preferences, and the workspace branch defaults (written to the WORKSPACE block). |
 
 ## Multi-empresa via profile.json
 
@@ -102,7 +102,7 @@ Workspace artifacts live under `.<namespace>/`. Resolution order (first match wi
 - `sessions` / `session-create --type <research|refine|exec|quick>` / `session-close` / `session-resume` / `session-artifacts` — internal session lifecycle (used by the loops).
 - `checkpoint-read` / `checkpoint-write` — `CHECKPOINT.md` handling.
 - `sources` / `check-branch` / `set-working-branch` / `set-qa-branch` — multi-source git-safety (per-source base / working / QA branches).
-- `git-flow <sync|to-qa|to-prod> [--source|--all] [--target] [--dry-run]` — run the per-source branch flows (sync working ← base, promote to QA, promote to prod) with conflict-pause; also surfaced as Project-tab actions.
+- `git-flow <sync|to-dev|to-qa|to-prod> [--source|--all] [--target] [--dry-run]` — run the per-source branch flows (sync working ← base, promote to dev/QA/prod) with conflict-pause; `--all` processes every source and reports each one. Also surfaced as Project-tab actions.
 - `release-data` — corpus reader backing the `export-*` skills.
 - `self install-skill` / `self doctor` / `self update` / `mcp` — CLI maintenance.
 

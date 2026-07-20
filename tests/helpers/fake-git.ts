@@ -29,8 +29,14 @@ export interface RecordingGitOptions {
   dirty?: boolean;
   /** Repos whose working tree is dirty. Lets a batch mix healthy and failing sources. */
   dirtyRepos?: string[];
-  /** Git op name (`checkout`/`pull`/`push`/`merge`) that throws when invoked. */
-  throwOn?: "checkout" | "pull" | "push" | "merge";
+  /**
+   * Git op that throws when invoked. The precondition probes are included on
+   * purpose: the real adapter's `isDirty`/`isMerging` reject when the path is
+   * not a usable repo, and a batch must survive that.
+   */
+  throwOn?: "checkout" | "pull" | "push" | "merge" | "isDirty" | "isMerging";
+  /** Repos whose precondition probes throw (path missing / not a git repo). */
+  throwOnRepos?: string[];
   /** Start mid-merge (MERGE_HEAD present) without calling `merge()` first. */
   merging?: boolean;
   /** Conflicted files returned by `conflictedFiles()` while mid-merge. */
@@ -82,8 +88,17 @@ export class RecordingGit implements GitPort {
   }
 
   async isDirty(repo: string): Promise<boolean> {
+    this.maybeThrowForRepo("isDirty", repo);
     if (this.opts.dirtyRepos?.includes(repo)) return true;
     return this.opts.dirty ?? false;
+  }
+
+  /** Mirrors the real adapter: the probe rejects for an unusable repo path. */
+  private maybeThrowForRepo(op: RecordingGitOptions["throwOn"], repo: string): void {
+    if (this.opts.throwOnRepos?.includes(repo)) {
+      throw new Error(`git ${op} failed in ${repo}: not a git repository`);
+    }
+    this.maybeThrow(op);
   }
 
   async changedFiles(_repo: string): Promise<string[]> {
@@ -136,6 +151,7 @@ export class RecordingGit implements GitPort {
 
   async isMerging(repo: string): Promise<boolean> {
     this.calls.push({ op: "isMerging", repo });
+    this.maybeThrowForRepo("isMerging", repo);
     return this.isMergingIn(repo);
   }
 

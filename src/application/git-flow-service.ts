@@ -118,7 +118,12 @@ export async function runGitFlow(
       continue;
     }
 
-    const sourceResult = await executePlan(git, source, ops);
+    // Any throw belongs to THIS source, never to the batch: the precondition
+    // probes (isMerging/isDirty) reject when the path is not a usable repo, and
+    // an uncaught one would strand every remaining source.
+    const sourceResult = await executePlan(git, source, ops).catch((err) =>
+      sourceError(source.alias, err instanceof Error ? err.message : String(err)),
+    );
     results.push(sourceResult);
     // Continue-on-failure: one source failing must not strand the rest. Each
     // source is independent (its own repo), so the batch reports every one and

@@ -183,6 +183,26 @@ describe("git-flow command", () => {
     expect(data.status).toBe("error");
   });
 
+  it("--all: exit 1 por el agregado en las CUATRO acciones", async () => {
+    for (const action of ["sync", "to-dev", "to-qa", "to-prod"]) {
+      await writeTwoSources();
+      const git = new RecordingGit({ currentBranch: "feat-a", dirtyRepos: ["/repo/ui"] });
+
+      const result = await gitFlowCommand.execute(
+        args({ rest: [action], flags: ["--all"] }),
+        ctx(git),
+      );
+
+      expect(result.ok, `acción ${action}`).toBe(false);
+      expect(result.exitCode, `acción ${action}`).toBe(1);
+      const data = result.data as GitFlowResult;
+      expect(
+        data.results.map((r) => r.status),
+        `acción ${action}`,
+      ).toEqual(["ok", "error"]);
+    }
+  });
+
   it("--all: un conflicto en la SEGUNDA fuente da exit 2 (el agregado manda, no la primera)", async () => {
     await writeTwoSources();
     // Solo `ui` mergea `release`: la 1ª fuente termina ok.

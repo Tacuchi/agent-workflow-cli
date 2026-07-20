@@ -20,7 +20,7 @@ export type UpsertOp = "init";
 export interface ProjectMdUpsertFuente {
   alias: string;
   path: string;
-  /** Falls back to `ProjectMdUpsertInput.mainBranch` then to `"certificacion"` at render. */
+  /** Falls back to `ProjectMdUpsertInput.mainBranch`, else the cell is left empty. */
   mainBranch?: string;
 }
 
@@ -142,13 +142,16 @@ async function detectStackFromSources(
 
 /**
  * Merge CLI-declared fuentes over existing ones (alias-keyed, last wins). Fills
- * `main_branch` for new fuentes from `input.mainBranch` then defaults to
- * "certificacion" — same fallback the renderer applies, but resolved here so
- * the parsed block round-trips deterministically.
+ * `main_branch` from the per-fuente value, then `input.mainBranch`.
+ *
+ * With NEITHER the cell is left empty (null) on purpose: an undeclared base now
+ * means "resolve me through the workspace `principal` default". Stamping a
+ * literal here would make that default unreachable — and silently override what
+ * the user set in [Config].
  */
 function mergeFuentes(existing: ProjectFuente[], input: ProjectMdUpsertInput): ProjectFuente[] {
   if (!input.fuentes || input.fuentes.length === 0) return existing;
-  const defaultRama = input.mainBranch ?? "certificacion";
+  const defaultRama = input.mainBranch ?? null;
   const byAlias = new Map<string, ProjectFuente>();
   // replaceFuentes: the declared set is authoritative; existing ones are not preserved.
   if (!input.replaceFuentes) {

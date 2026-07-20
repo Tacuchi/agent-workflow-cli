@@ -45,6 +45,35 @@ describe("runWorkspaceInit", () => {
     return result;
   }
 
+  it("NO estampa rama principal cuando el usuario no la declara (la celda queda vacía)", async () => {
+    // Estampar un literal aquí haría que el valor por-source ganase siempre al
+    // default `principal` del workspace → el control de [Config] sería inerte,
+    // y un re-init pisaría una celda dejada vacía a propósito.
+    await init();
+    const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("| app | /tmp/app |  |");
+    expect(claude).not.toMatch(/\| app \| \/tmp\/app \| \S+ \|/);
+  });
+
+  it("--main-branch explícito SÍ se escribe, y un re-init no pisa la celda vacía", async () => {
+    await init({ mainBranch: "trunk" });
+    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf8")).toContain(
+      "| app | /tmp/app | trunk |",
+    );
+
+    // Workspace nuevo: celda vacía, y el reconcile (sin --source) la preserva.
+    rmSync(join(workspace, "CLAUDE.md"), { force: true });
+    await init();
+    await runWorkspaceInit(fs, env, paths, {
+      sources: [],
+      workspace,
+      lastActivity: "2026-01-01 00:00",
+    });
+    const after = readFileSync(join(workspace, "CLAUDE.md"), "utf8");
+    expect(after).toContain("| app | /tmp/app |  |");
+    expect(after).not.toContain("| app | /tmp/app | main |");
+  });
+
   it("single source EXTERNA: scaffold + skills.toml + bloque SIN Mode + visibilidad", async () => {
     const result = await init({
       proyecto: "Solo",

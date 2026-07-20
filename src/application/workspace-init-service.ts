@@ -90,8 +90,6 @@ async function migrateLegacyLaunchDirs(
   return migrated;
 }
 
-const DEFAULT_MAIN_BRANCH = "main";
-
 export interface WorkspaceSource {
   alias: string;
   path: string;
@@ -103,7 +101,7 @@ export interface WorkspaceInitInput {
   proyecto?: string;
   /** 1+ sources (repos). A single source is just a workspace with one source. */
   sources: WorkspaceSource[];
-  /** Default main branch for sources that do not declare one. Defaults to "main". */
+  /** Base branch for sources that do not declare one. Absent = leave the cell empty (the workspace `principal` default resolves it). */
   mainBranch?: string;
   /** Working branches per source alias (rendered in the WORKSPACE Status block). */
   workingBranches?: Record<string, string>;
@@ -158,7 +156,10 @@ export async function runWorkspaceInit(
   input: WorkspaceInitInput,
 ): Promise<WorkspaceInitResult | WorkspaceInitInputError> {
   const workspace = input.workspace ? resolve(input.workspace) : resolve(env.cwd());
-  const mainBranch = input.mainBranch ?? DEFAULT_MAIN_BRANCH;
+  // No default here on purpose: stamping a base branch into every Fuentes cell
+  // would outrank — and on a re-init silently overwrite — the workspace
+  // `principal` default the user sets in [Config]. Undeclared stays undeclared.
+  const mainBranch = input.mainBranch;
   const wsPaths = new PathsService(paths.namespace, env.homeDir(), workspace);
 
   // Reconcile: re-running on an initialized workspace PRESERVES the existing
@@ -203,7 +204,7 @@ export async function runWorkspaceInit(
     })),
     // Declared set is authoritative (supports removing a source by re-running).
     replaceFuentes: true,
-    mainBranch,
+    ...(mainBranch !== undefined ? { mainBranch } : {}),
     ...(input.workingBranches !== undefined ? { workingBranches: input.workingBranches } : {}),
     ...(input.qaBranches !== undefined ? { qaBranches: input.qaBranches } : {}),
     verbose: true,
