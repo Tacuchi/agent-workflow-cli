@@ -29,7 +29,7 @@ function workspaceBlock(withWorkingBranches: boolean): string {
     "| Alias | Path | Rama principal |",
     "|---|---|---|",
     "| autoservicio-solicitud-spring | /src/autoservicio | certificacion |",
-    "| pefectivo-solicitud-spring | /src/pefectivo | certificacion |",
+    "| pefectivo-solicitud-spring | /src/pefectivo | main |",
     "",
     "## Stack",
     "",
@@ -47,9 +47,25 @@ function workspaceBlock(withWorkingBranches: boolean): string {
 interface FakeDepsOptions {
   claudeMd: string;
   currentBranch: string;
+  /**
+   * stdout of the own-commit counter (`rev-list --count --no-merges`) keyed by
+   * BASE ref. A base that is absent here exits non-zero, like a ref git does not
+   * know. Default: no base resolves → the counter is null.
+   */
+  ownCommits?: Record<string, string>;
+  /** Collects every `git` argv the data layer issues. */
+  calls?: string[][];
+  /** Make the counter's subprocess THROW (vs. exit non-zero) to exercise safeRun. */
+  throwOnCounter?: boolean;
 }
 
-function buildDeps({ claudeMd, currentBranch }: FakeDepsOptions) {
+function buildDeps({
+  claudeMd,
+  currentBranch,
+  ownCommits,
+  calls,
+  throwOnCounter,
+}: FakeDepsOptions) {
   return {
     fs: {
       exists: async (p: string) => p === "/ws/CLAUDE.md",
@@ -70,7 +86,19 @@ function buildDeps({ claudeMd, currentBranch }: FakeDepsOptions) {
     } as never,
     process: {
       run: async (_cmd: string, args: string[]) => {
-        if (args.includes("rev-list")) return { code: 0, stdout: "0\t5", stderr: "" };
+        calls?.push(args);
+        // ahead/behind of the GIT tile — a different rev-list from the counter's
+        if (args.includes("rev-list") && args.includes("--left-right")) {
+          return { code: 0, stdout: "0\t5", stderr: "" };
+        }
+        if (args.includes("rev-list")) {
+          if (throwOnCounter) throw new Error("git spawn failed");
+          const base = (args[args.length - 1] ?? "").split("..")[0] ?? "";
+          const stdout = ownCommits?.[base];
+          return stdout === undefined
+            ? { code: 128, stdout: "", stderr: `unknown revision ${base}` }
+            : { code: 0, stdout, stderr: "" };
+        }
         return { code: 0, stdout: "", stderr: "" };
       },
       which: async () => undefined,
@@ -140,6 +168,128 @@ describe("buildProjectTabData — workspace view", () => {
   });
 });
 
+describe("buildProjectTabData — contador de commits propios", () => {
+  const FEATURE = "feature/mantenimiento-contratos";
+
+  it("cuenta contra la rama principal local, excluyendo merges", async () => {
+    const calls: string[][] = [];
+    const deps = buildDeps({
+      claudeMd: workspaceBlock(true),
+      currentBranch: FEATURE,
+      ownCommits: { certificacion: "3\n" },
+      calls,
+    });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.sources[0]?.commitCount).toBe(3);
+    const counter = calls.find((a) => a.includes("--count") && a.includes("--no-merges"));
+    // --no-merges es la semántica: sin él, un merge de la principal hacia la rama contaría.
+    expect(counter).toEqual(["rev-list", "--count", "--no-merges", `certificacion..${FEATURE}`]);
+    // Cada fuente cuenta contra SU base: la 2ª declara `main`, que aquí no resuelve.
+    expect(data.sources[1]?.commitCount).toBeNull();
+    expect(calls).toContainEqual(["rev-list", "--count", "--no-merges", `main..${FEATURE}`]);
+  });
+
+  it("cuenta 0 cuando la rama no aporta commits propios (distinto de «no medible»)", async () => {
+    const deps = buildDeps({
+      claudeMd: workspaceBlock(true),
+      currentBranch: FEATURE,
+      ownCommits: { certificacion: "0\n" },
+    });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.sources[0]?.commitCount).toBe(0);
+  });
+
+  it("da null en HEAD desacoplado, sin preguntarle a git", async () => {
+    // `git rev-parse --abbrev-ref HEAD` imprime el literal "HEAD" (exit 0) en
+    // detached: si no se trata como centinela, `<base>..HEAD` cuenta igual y
+    // durante un rebase muestra un número parcial.
+    const calls: string[][] = [];
+    const deps = buildDeps({
+      claudeMd: workspaceBlock(true),
+      currentBranch: "HEAD",
+      ownCommits: { certificacion: "3\n", "origin/certificacion": "3\n" },
+      calls,
+    });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.sources[0]?.commitCount).toBeNull();
+    expect(calls.some((a) => a.includes("--no-merges"))).toBe(false);
+  });
+
+  it("cae a origin/<principal> cuando la base local no existe", async () => {
+    const deps = buildDeps({
+      claudeMd: workspaceBlock(true),
+      currentBranch: FEATURE,
+      ownCommits: { "origin/certificacion": "7\n" },
+    });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.sources[0]?.commitCount).toBe(7);
+  });
+
+  it("da null EN SILENCIO cuando no hay base ni local ni remota", async () => {
+    const deps = buildDeps({ claudeMd: workspaceBlock(true), currentBranch: FEATURE });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.sources[0]?.commitCount).toBeNull();
+    // Una base inexistente es el caso ordinario (clon recién hecho): un warning
+    // por fuente sería ruido, no información.
+    expect(data.warnings.some((w) => w.startsWith("commits:"))).toBe(false);
+  });
+
+  it("degrada a null y SÍ avisa cuando el subproceso de git revienta", async () => {
+    const deps = buildDeps({
+      claudeMd: workspaceBlock(true),
+      currentBranch: FEATURE,
+      ownCommits: { certificacion: "3\n" },
+      throwOnCounter: true,
+    });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.sources[0]?.commitCount).toBeNull();
+    expect(data.warnings.some((w) => w.startsWith("commits:"))).toBe(true);
+  });
+
+  it("da null —sin preguntarle a git— cuando la rama actual ES la principal", async () => {
+    const calls: string[][] = [];
+    const deps = buildDeps({
+      claudeMd: workspaceBlock(true),
+      currentBranch: "certificacion",
+      ownCommits: { certificacion: "9\n" },
+      calls,
+    });
+
+    const data = await buildProjectTabData(deps);
+
+    expect(data.sources[0]?.commitCount).toBeNull();
+    // Para ESA fuente no se le pregunta a git (la 2ª declara otra base y sí cuenta).
+    expect(calls.some((a) => a.some((x) => x.startsWith("certificacion..")))).toBe(false);
+  });
+
+  it("no confunde el contador con el ahead/behind del tile GIT", async () => {
+    const deps = buildDeps({
+      claudeMd: workspaceBlock(true),
+      currentBranch: FEATURE,
+      ownCommits: { certificacion: "3\n" },
+    });
+
+    const data = await buildProjectTabData(deps);
+
+    // ahead/behind sigue leyendo "0\t5"; el contador es otro número.
+    expect(data.git?.behind).toBe(0);
+    expect(data.git?.ahead).toBe(5);
+    expect(data.sources[0]?.commitCount).toBe(3);
+  });
+});
+
 describe("buildProjectTabData — rama principal resuelta", () => {
   // Fuentes cell empty → the workspace default `principal` must resolve it, both
   // for the source row and for the GIT tile's base.
@@ -168,12 +318,18 @@ describe("buildProjectTabData — rama principal resuelta", () => {
   }
 
   it("aplica el default `principal` del workspace a una celda «Rama principal» vacía", async () => {
-    const deps = buildDeps({ claudeMd: blockWithDefault(), currentBranch: "feature/x" });
+    const deps = buildDeps({
+      claudeMd: blockWithDefault(),
+      currentBranch: "feature/x",
+      ownCommits: { trunk: "2\n" },
+    });
 
     const data = await buildProjectTabData(deps);
 
     expect(data.sources[0]?.mainBranch).toBe("trunk");
     expect(data.git?.base).toBe("trunk");
+    // El contador cuenta contra la base RESUELTA, no contra la celda cruda (vacía).
+    expect(data.sources[0]?.commitCount).toBe(2);
   });
 });
 

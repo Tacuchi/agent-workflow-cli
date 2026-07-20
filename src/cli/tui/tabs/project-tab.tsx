@@ -34,7 +34,7 @@ import {
   type DetailStatePill,
 } from "../components/detail-panel.js";
 import { FlowResultView } from "../components/git-flow-actions.js";
-import { ListRow } from "../components/list-row.js";
+import { ListRow, type MetaChip } from "../components/list-row.js";
 import { PageHead } from "../components/page-head.js";
 import { ProcessList } from "../components/process-list.js";
 import { QuickActions } from "../components/quick-actions.js";
@@ -951,13 +951,20 @@ function SourceRow({
 }) {
   const status = source.dirty ? `${source.changedFiles} dirty` : "in sync";
   const branch = source.branch ?? source.mainBranch;
+  // Commits carried by the branch itself; "—" when it cannot be measured (on
+  // the main branch, no local base). Sits next to the dirty/in-sync chip: one
+  // says what is committed, the other what is not.
+  const commits: MetaChip =
+    source.commitCount === null
+      ? { label: "—", tone: "dim" }
+      : { label: `+${source.commitCount}`, tone: "accent" };
   return (
     <ListRow
       icon={icons.diamond}
       iconActive={true}
       title={source.alias}
       subtitle={`main ${source.mainBranch}`}
-      meta={[{ label: status, tone: source.dirty ? "warn" : "ok" }]}
+      meta={[commits, { label: status, tone: source.dirty ? "warn" : "ok" }]}
       state={{ label: `${icons.branch} ${branch}`, tone: "dim" }}
       chevron
       active={active}

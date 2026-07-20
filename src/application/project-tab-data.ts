@@ -31,6 +31,12 @@ export interface ProjectSource {
   path: string;
   branch: string | null;
   mainBranch: string;
+  /**
+   * Commits made ON the current branch: reachable from it but not from the
+   * resolved main branch, merges excluded. `null` when it cannot be measured
+   * (branch IS the main one, no local base, detached HEAD, git failure).
+   */
+  commitCount: number | null;
   dirty: boolean;
   changedFiles: number;
   /** True when a launch descriptor (.workflow/launch/<alias>/launch.json) exists with a command. */
@@ -138,11 +144,19 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
         warnings,
         false,
       );
+      const roles = resolveSourceBranches(f, block);
+      const commitCount = await safeRun(
+        `commits:${f.alias}`,
+        () => countOwnCommits(proc, repoPath, branch ?? null, roles.prod),
+        warnings,
+        null,
+      );
       sources.push({
         alias: f.alias,
         path: f.path,
         branch: branch ?? null,
-        mainBranch: resolveSourceBranches(f, block).prod,
+        mainBranch: roles.prod,
+        commitCount,
         dirty: changed.length > 0,
         changedFiles: changed.length,
         launchable,
@@ -260,6 +274,43 @@ async function buildGitData(
     staged,
     untracked,
   };
+}
+
+/** What `git rev-parse --abbrev-ref HEAD` prints when HEAD is not on a branch. */
+const DETACHED_HEAD = "HEAD";
+
+/**
+ * Count the commits the branch itself carries: `<base>..<branch>` with merges
+ * excluded, so neither the history inherited from the base nor a later merge of
+ * the base back into the branch is counted.
+ *
+ * Local refs only (no fetch): tries `<main>` and falls back to `origin/<main>`.
+ * A non-zero exit is the ordinary "that base ref does not exist here" case, so
+ * it resolves to `null` silently — warning per source would be noise on any
+ * fresh clone. Only a thrown error reaches the caller's `safeRun`.
+ */
+async function countOwnCommits(
+  proc: ProcessPort,
+  repoPath: string,
+  branch: string | null,
+  mainBranch: string,
+): Promise<number | null> {
+  // `rev-parse --abbrev-ref HEAD` prints the literal "HEAD" (exit 0) when
+  // detached, so that is the detachment sentinel — not a null. Without this the
+  // range `<base>..HEAD` counts happily and reports a partial number mid-rebase.
+  if (branch === null || branch === DETACHED_HEAD || branch === mainBranch) return null;
+  for (const base of [mainBranch, `origin/${mainBranch}`]) {
+    const res = await runProc(
+      proc,
+      "git",
+      ["rev-list", "--count", "--no-merges", `${base}..${branch}`],
+      repoPath,
+    );
+    if (!res.ok) continue;
+    const count = Number.parseInt(res.stdout.trim(), 10);
+    if (Number.isFinite(count)) return count;
+  }
+  return null;
 }
 
 // ---------- utils ----------

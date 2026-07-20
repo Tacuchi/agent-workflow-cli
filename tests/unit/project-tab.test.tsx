@@ -54,7 +54,13 @@ function fakeLogger(): FakeLogger {
 }
 
 function buildCtx(
-  opts: { conflictOn?: string; logger?: FakeLogger; failGit?: boolean } = {},
+  opts: {
+    conflictOn?: string;
+    logger?: FakeLogger;
+    failGit?: boolean;
+    /** stdout of the own-commit counter per BASE ref; absent base = unknown revision. */
+    ownCommits?: Record<string, string>;
+  } = {},
 ): CliContext {
   return {
     logger: opts.logger,
@@ -86,7 +92,16 @@ function buildCtx(
       conflictedFiles: async () => ["src/Foo.java"],
     },
     process: {
-      run: async () => ({ code: 0, stdout: "", stderr: "" }),
+      run: async (_cmd: string, args: string[]) => {
+        if (args.includes("rev-list") && args.includes("--no-merges")) {
+          const base = (args[args.length - 1] ?? "").split("..")[0] ?? "";
+          const stdout = opts.ownCommits?.[base];
+          return stdout === undefined
+            ? { code: 128, stdout: "", stderr: "unknown revision" }
+            : { code: 0, stdout, stderr: "" };
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
     },
     paths: {
       workspaceDir: () => "/ws",
@@ -122,6 +137,39 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     expect(f).toContain("alpha");
     expect(f).toContain("beta");
     expect(f).toContain("all sources");
+  });
+
+  /** The rendered row of a source, so assertions cannot pass on chrome elsewhere. */
+  function rowOf(frame: string, alias: string): string {
+    return frame.split("\n").find((l) => l.includes(alias)) ?? "";
+  }
+
+  it("pinta el contador de commits propios ANTES del chip dirty/in sync", async () => {
+    // alpha está sobre `certificacion` (resuelve); beta sobre `main` (no resuelve).
+    const { lastFrame } = render(
+      <ProjectTab ctx={buildCtx({ ownCommits: { certificacion: "4\n" } })} isActive />,
+    );
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(rowOf(f, "alpha")).toMatch(/\+4\s+in sync/);
+    expect(rowOf(f, "beta")).toMatch(/—\s+in sync/);
+  });
+
+  it("pinta «—» en ambas filas cuando el contador no se puede medir", async () => {
+    const { lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(rowOf(f, "alpha")).toMatch(/—\s+in sync/);
+    expect(rowOf(f, "beta")).toMatch(/—\s+in sync/);
+    expect(rowOf(f, "alpha")).not.toContain("+");
+  });
+
+  it("pinta «+0» cuando la rama no aporta commits (distinto de «no medible»)", async () => {
+    const { lastFrame } = render(
+      <ProjectTab ctx={buildCtx({ ownCommits: { certificacion: "0\n" } })} isActive />,
+    );
+    await tick();
+    expect(rowOf(lastFrame() ?? "", "alpha")).toMatch(/\+0\s+in sync/);
   });
 
   it("abre el panel lateral con las 3 acciones al seleccionar una fuente (⏎)", async () => {
