@@ -25,14 +25,14 @@ SPEC → PLAN bridge. Turns the "what" (refined spec) into the "how" (plan). Del
 
 The skill evaluates `$ARGUMENTS` (specs live in place — `docs/specs/NNN-spec-<slug>.md`; locate via the `docs/specs/NNN-spec-*.md` glob or the exact path):
 
-1. **Refined spec** (`docs/specs/NNN-spec-<slug>.md` that **already has** `## Refinement decisions`) → ideal. Proceed straight to `plan-new-loop`.
-2. **Draft spec** (same file, but **without** that section) → **soft-suggest** running `/w:spec-refine` first; planning over a solid spec produces better plans (the user may proceed anyway).
+1. **Ready spec** (`docs/specs/NNN-spec-<slug>.md` whose frontmatter declares `status: ready-for-plan`) → ideal. Proceed straight to `plan-new-loop`.
+2. **Spec not ready** (`status: draft` / `refining`, or no mark at all) → **soft-suggest** running `/w:spec-refine` first; planning over a solid spec produces better plans. It is a suggestion, **never a block**: the user may proceed. Questions the spec left with destination `PLAN` are this flow's **input**, not a reason to send it back.
 3. **prompt** (no spec referenced) → propose using the SPEC flow; **by default launch `/w:spec-new`** with that prompt to create the draft, and continue the natural flow from there.
 4. **External plan content** — the argument/conversation carries an **already-built plan** (host plan mode output, hand-written, another agent's) → **adopt it**. Single pass, **NO RESEARCH**: materialize as `docs/plans/PPP-plan-<slug>.md` (`aw next-number docs/plans`), normalized to the rich-plan schema (`../loops/plan-new-loop/LOOP.md` § *Delta 1*) with only what the source provides. `## Origin` = "adopted from <source>" + attribution (host · model · date). Then offer `/w:plan-refine` (closes schema gaps) or `/w:plan-exec`. Anti-duplicate: a plan whose `## Origin` matches this objective → recommend resuming it, never a second one. Adoption **never regenerates over** an existing plan-doc.
 
 > **Mode 3 vs 4:** a prompt that *describes a wish* → SPEC (mode 3); content that *already is a plan* → adopt (mode 4). Doctrine: `../loops/CHASSIS.md` § *Adopted context*.
 
-> **Refined vs draft** is distinguished by the **presence** of `## Refinement decisions` in the spec, never by the filename (there is no `-refined` anymore). Legacy specs may also carry `## Q&A traceability` — they count as refined the same way.
+> **Ready vs not** is read from the spec's frontmatter `status`, never from the filename (there is no `-refined` anymore). **Legacy compat:** a spec with no frontmatter that carries `## Refinement decisions` — or the older `## Q&A traceability` — counts as ready the same way.
 
 ## Run the loop
 

@@ -17,11 +17,18 @@ export interface StatusWorkspace {
   initialized: boolean;
 }
 
+const SPEC_STATUSES = ["draft", "refining", "ready-for-plan"] as const;
+
+/** Spec maturity: how ready the spec is for `plan-new` to design against it. */
+export type SpecStatus = (typeof SPEC_STATUSES)[number];
+
 export interface StatusSpec {
   file: string; // relpath from workspace, e.g. docs/specs/003-spec-foo.md
   number: string; // "003"
   slug: string; // "foo" ("" for legacy NNN-spec.md)
-  /** has `## Refinement decisions` (the refined mark; legacy specs also carry `## Q&A traceability`) */
+  /** frontmatter `status:` when declared, else inferred from the legacy trace sections */
+  status: SpecStatus;
+  /** derived alias of `status === "ready-for-plan"`; kept for existing consumers */
   refined: boolean;
   open_questions: number;
   date: string; // YYYY-MM-DD (fs mtime)
@@ -155,13 +162,14 @@ async function readSpecs(fs: FileSystemPort, cwd: string, now: Date): Promise<St
   for (const f of deduped) {
     try {
       const text = await fs.readText(f.path);
-      const refined = parseMdSectionLoose(text, "Refinement decisions") !== undefined;
+      const status = resolveSpecStatus(text);
       const ts = await resolveTimestamp(fs, f.path, undefined, now);
       out.push({
         file: relFromCwd(f.path, cwd),
         number: f.number,
         slug: f.slug,
-        refined,
+        status,
+        refined: status === "ready-for-plan",
         open_questions: countOpenQuestions(text),
         date: ts.date,
         relative: ts.relative,
@@ -171,6 +179,50 @@ async function readSpecs(fs: FileSystemPort, cwd: string, now: Date): Promise<St
     }
   }
   return sortByNumber(out);
+}
+
+/**
+ * Trace sections that marked a spec as worked-through before frontmatter `status`
+ * existed. Any of them still means `ready-for-plan` so legacy specs keep parsing.
+ */
+const LEGACY_READY_MARKS = ["Refinement decisions", "Q&A traceability", "Decisions"];
+
+/**
+ * Spec maturity, most explicit source first: a declared frontmatter `status`
+ * wins; an absent or unrecognized value falls back to the legacy marks; a spec
+ * with neither is a draft.
+ */
+function resolveSpecStatus(text: string): SpecStatus {
+  const declared = parseFrontmatterScalar(text, "status")?.toLowerCase();
+  if (declared !== undefined && isSpecStatus(declared)) return declared;
+  const legacy = LEGACY_READY_MARKS.some((h) => parseMdSectionLoose(text, h) !== undefined);
+  return legacy ? "ready-for-plan" : "draft";
+}
+
+function isSpecStatus(value: string): value is SpecStatus {
+  return (SPEC_STATUSES as readonly string[]).includes(value);
+}
+
+const FRONTMATTER_FENCE = "---";
+const FRONTMATTER_ENTRY = /^([A-Za-z0-9_-]+):\s*(.*)$/;
+
+/**
+ * Read one scalar key from a closed `---` block at the top of the file. Specs
+ * only carry flat scalars there, so this stays a few lines instead of pulling a
+ * YAML dependency into the CLI. An unterminated block is not frontmatter.
+ */
+function parseFrontmatterScalar(text: string, key: string): string | undefined {
+  const lines = text.split(/\r?\n/);
+  if ((lines[0] ?? "").trim() !== FRONTMATTER_FENCE) return undefined;
+  const end = lines.findIndex((l, i) => i > 0 && l.trim() === FRONTMATTER_FENCE);
+  if (end === -1) return undefined;
+  for (const line of lines.slice(1, end)) {
+    const m = FRONTMATTER_ENTRY.exec(line);
+    if (m?.[1] !== key) continue;
+    const value = (m[2] ?? "").trim().replace(/^["']|["']$/g, "");
+    return value.length > 0 ? value : undefined;
+  }
+  return undefined;
 }
 
 // ── plans ────────────────────────────────────────────────────────────────────

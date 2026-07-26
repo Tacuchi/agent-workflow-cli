@@ -260,6 +260,60 @@ describe("Reconnaissance contract — spec-new ↔ quick-loop ↔ persist ↔ sp
   });
 });
 
+describe("SPEC readiness contract — spec-new ↔ spec-refine ↔ plan-new ↔ the transversal surfaces", () => {
+  // The maturity mark spans five docs: spec-new emits it, spec-refine promotes
+  // it, plan-new reads it, status/resume render it. A producer and a consumer
+  // that disagree on the mark break the SPEC→PLAN handoff silently — same shape
+  // as the QUICK escalation / Split / Reconnaissance contracts above.
+  it("spec-new emits the draft status and never promotes it", async () => {
+    const specNew = await readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8");
+    expect(specNew).toContain("status: draft");
+    expect(specNew).toContain("only the `spec-refine` gate promotes a spec to `ready-for-plan`");
+  });
+
+  it("spec-refine is the only promoter, and it stamps on save", async () => {
+    const cmd = await readFile(join(SKILL_ROOT, "commands/spec-refine.md"), "utf8");
+    const loop = await readFile(join(SKILL_ROOT, "loops/spec-refine-loop/LOOP.md"), "utf8");
+    expect(cmd).toContain("status: ready-for-plan");
+    expect(loop).toContain("stamps the frontmatter `status: ready-for-plan`");
+  });
+
+  it("plan-new reads the mark, tolerates the legacy one and never blocks", async () => {
+    const cmd = await readFile(join(SKILL_ROOT, "commands/plan-new.md"), "utf8");
+    const loop = await readFile(join(SKILL_ROOT, "loops/plan-new-loop/LOOP.md"), "utf8");
+    for (const doc of [cmd, loop]) {
+      expect(doc).toContain("status: ready-for-plan");
+      expect(doc).toContain("## Refinement decisions"); // legacy tolerance
+      expect(doc).toMatch(/never a block/i);
+    }
+    // A question the spec handed to PLAN is input, not a reason to bounce it.
+    expect(loop).toContain("input to this loop");
+  });
+
+  it("the escalated draft is born a draft too — quick never skips the SPEC gate", async () => {
+    const quick = await readFile(join(SKILL_ROOT, "loops/quick-loop/LOOP.md"), "utf8");
+    expect(quick).toContain("born `status: draft`");
+  });
+
+  it("the transversal surfaces speak the same vocabulary", async () => {
+    const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
+    const resume = await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8");
+    expect(status).toContain("`ready-for-plan`");
+    expect(status).toContain("`refined: true` as its boolean mirror");
+    expect(resume).toContain("`ready-for-plan`");
+    expect(resume).not.toContain("spec unrefined");
+  });
+
+  it("the naming asymmetry with plan-refine is deliberate and declared", async () => {
+    const specLoop = await readFile(join(SKILL_ROOT, "loops/spec-refine-loop/LOOP.md"), "utf8");
+    const planLoop = await readFile(join(SKILL_ROOT, "loops/plan-refine-loop/LOOP.md"), "utf8");
+    expect(specLoop).toContain("stays the name of plan-refine's audit trace");
+    // plan-refine keeps `## Refinement decisions`: it has no status to take over.
+    expect(planLoop).toContain("## Refinement decisions");
+    expect(planLoop).not.toContain("ready-for-plan");
+  });
+});
+
 describe("directed resume contract — resume.md optional argument (spec 004)", () => {
   const RESUME = "commands/resume.md";
 

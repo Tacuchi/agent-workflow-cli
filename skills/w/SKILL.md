@@ -65,7 +65,7 @@ USER invokes
 | **PLAN** (the *how* + execute) | `plan-new` · `plan-refine` *(aux, optional)* · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` |
 | **QUICK** (lightweight shortcut) | `quick` | — | `quick-loop` |
 
-Typical chain: prompt → `spec-new` generates `docs/specs/NNN-spec-<slug>.md` → `spec-refine` runs the loop and refines **that same spec in place** → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(optional)* `plan-refine` adjusts **that same plan in place** if changes arise before executing → `plan-exec` executes and updates the plan (living doc) + artifacts in sessions. Promoting anything else to `docs/` is **always** a separate step via `export-*`.
+Typical chain: prompt → `spec-new` generates `docs/specs/NNN-spec-<slug>.md` → `spec-refine` runs the loop and refines **that same spec in place** until PLAN can design without inventing behavior, stamping `status: ready-for-plan` → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(optional)* `plan-refine` adjusts **that same plan in place** if changes arise before executing → `plan-exec` executes and updates the plan (living doc) + artifacts in sessions. Promoting anything else to `docs/` is **always** a separate step via `export-*`.
 
 QUICK can **escalate live to SPEC** when the objective exceeds a quick (entry size gate) or the task grows mid-loop: with consent via structured-choice, the work line moves to the SPEC flow (draft via the `spec-new` procedure + `spec-refine-loop` directly); escalation to PLAN stays **deferred** (seed + pointer). See `loops/quick-loop/LOOP.md` § *QUICK delta*.
 
@@ -101,8 +101,8 @@ The flows are **composable with host-native work, never exclusive**. The host is
 
 - `/w:workspace-init` — initializes the workspace.
 - `/w:spec-new` — generates an initial spec (single-pass, no loop; a bounded reconnaissance of the sources precedes the scope decision).
-- `/w:spec-refine` — starts `spec-refine-loop` to refine the spec.
-- `/w:plan-new` — starts `plan-new-loop` to derive an executable plan from the refined spec.
+- `/w:spec-refine` — starts `spec-refine-loop` to refine the spec until it is `ready-for-plan`: the blocking functional decisions closed, the architecture/implementation ones declared for PLAN.
+- `/w:plan-new` — starts `plan-new-loop` to derive an executable plan from the ready spec.
 - `/w:plan-refine` — starts `plan-refine-loop` to refine the plan in place (auxiliary, **not mandatory**) before executing.
 - `/w:plan-exec` — starts `plan-exec-loop` to execute and maintain the plan.
 - `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
