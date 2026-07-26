@@ -43,6 +43,10 @@ The skill evaluates `$ARGUMENTS` (specs live in place — `docs/specs/NNN-spec-<
 
 > Do not try `Skill: plan-new-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
 
+## Phases are functional states
+
+The plan is born with `### Fn` phases that each leave a **verifiable state of the system** — each with its `> Estado:` line, its primary evidence and its exit condition — never a list of files, classes or layers. Contract: `../loops/plan-new-loop/LOOP.md` § *Phase contract (canonical)*.
+
 ## Numbering notes
 
 The plan is named `docs/plans/PPP-plan-<slug>.md`. `aw next-number docs/plans` returns JSON (field `next` = `PPP`); the loop builds the full name (slug = short kebab-case from the Requirement: `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars). It does **not inherit the spec's `NNN`**. The link to the spec is established by reference (`## Origin` / "Derived from") in the plan, never by number.

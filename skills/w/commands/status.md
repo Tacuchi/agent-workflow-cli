@@ -17,12 +17,14 @@ Shows, simple and direct, the workspace state grouped as **Done / Missing / Disc
 1. Run `aw status` (returns JSON; backed by `status-service`).
 2. Render a readable summary from the JSON — do **not** show the raw JSON. Use the `relative` field verbatim (it comes pre-humanized in the user's language — Spanish). Head it with `workspace.name`.
 3. Group into three blocks (the dashboard is user-facing → render it in the user's language; the canonical Spanish labels below):
-   - `▸ HECHO` — specs whose `status` is `ready-for-plan` (the JSON keeps `refined: true` as its boolean mirror); plans with their progress (`tasks_done`/`tasks_total`, `progress_pct`); `closed` sessions.
-   - `▸ FALTA` — `active` sessions; plans with pending tasks (`tasks_total − tasks_done`); specs whose `status` is `draft` or `refining`; specs with `open_questions > 0`.
+   - `▸ HECHO` — specs whose `status` is `ready-for-plan` (the JSON keeps `refined: true` as its boolean mirror); plans with their progress (`tasks_done`/`tasks_total`, `progress_pct`) **and** their validated phases (`phases_validated`/`phases_total`); `closed` sessions.
+   - `▸ FALTA` — `active` sessions; plans with pending tasks (`tasks_total − tasks_done`) or phases still to validate (`phases_total − phases_validated`); specs whose `status` is `draft` or `refining`; specs with `open_questions > 0`.
    - `▸ DESCARTÓ` — every item in `discarded[]` (`kind: deferred` = deferred in BACKLOG; `kind: excluded` = excluded in CHECKPOINT), with its `text`.
 4. Every line ends with its relative date after ` · ` (e.g. `· ayer en la mañana`). An empty section shows `— (nada)`. Never invent data not present in the JSON.
 5. If `workspace.initialized` is `false` and everything is empty → say the folder is not an agent-workflow workspace (no `.workflow/`) and suggest `/w:workspace-init`.
 6. **Host context (opportunistic, read-only).** After the dashboard, if the host exposes *cheap* host-memory (see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *host-memory* — e.g. the auto-memory `MEMORY.md` on Claude Code), append a `▸ CONTEXTO DEL HOST` section with a few signals of recent focus relevant to this workspace. If there is no cheap host memory, **omit the section silently**. Never run an expensive transcript scan here and **never ask** — this is a read-only dashboard; the enrichment is additive and must not slow the default output.
+
+> **Checkboxes measure work; phases measure state.** `progress_pct` stays checkbox-derived — it never reads the phase marks. A validated phase (`> Estado: validada` in the plan-doc) is the real signal of functional state, so a plan at 100% with `phases_validated: 0` is **work implemented, not validated**: report it in both blocks and say so. `phases_total: 0` means a legacy plan with no phase marks — show only its checkbox progress, never a `0/0`.
 
 Suggested format (plain text; user-facing labels in Spanish):
 
@@ -30,13 +32,13 @@ Suggested format (plain text; user-facing labels in Spanish):
 Workspace: <name>
 
 ▸ HECHO
-  • plan <slug> — <done>/<total> tareas (<pct>%) · <relative>
+  • plan <slug> — <done>/<total> tareas (<pct>%) · <validadas>/<fases> fases validadas · <relative>
   • spec <slug> — lista para plan · <relative>
   • <folder> (<type>) — cerrada · <relative>
 
 ▸ FALTA
   • <folder> (<type>) — activa · <relative>
-  • plan <slug> — <pendientes> tareas pendientes
+  • plan <slug> — <pendientes> tareas pendientes · <sin validar> fases sin validar
   • spec <slug> — borrador · <relative>
   • spec <slug> — <n> preguntas abiertas
 

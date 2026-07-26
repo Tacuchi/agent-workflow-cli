@@ -16,7 +16,7 @@ Workline has three layers plus a permanent `docs/` zone:
 
 - **Layer 1 · Commands** (`/w:*`) — the only thing the user invokes:
   - **SPEC** — `/w:spec-new` (single-pass draft after a bounded reconnaissance of the sources; may split into sibling specs) → `/w:spec-refine` (gap-driven loop; converges at `status: ready-for-plan` — the blocking functional decisions closed, the technical ones declared for PLAN) → `docs/specs/`.
-  - **PLAN** — `/w:plan-new` → (`/w:plan-refine` — aux, optional) → `/w:plan-exec` → `docs/plans/` (the plan loops may split into sibling plans).
+  - **PLAN** — `/w:plan-new` → (`/w:plan-refine` — aux, optional) → `/w:plan-exec` → `docs/plans/` (the plan loops may split into sibling plans). A plan is a sequence of **functional states**: every phase names a verifiable state, carries its own primary proof, and declares where a temporary simulation lives and when it retires — ticking every checkbox is not validation.
   - **QUICK** — `/w:quick` — lightweight shortcut; escalates live to SPEC when the goal outgrows a quick.
   - **EXPORTS** — `/w:export-scripts` · `export-manuals` · `export-diagrams` · `export-reports` (the only path that promotes artifacts to `docs/`).
   - **Bootstrap** — `/w:workspace-init` turns any folder into a workspace (1+ sources; no project/hub distinction).
@@ -27,6 +27,27 @@ Workline has three layers plus a permanent `docs/` zone:
 **Pluggable capabilities.** Loops compose capability **roles** (`ui-design`, `sql`, `git`, `research`, `diagrams`, `overview`); the concrete skill bound to each role is resolved via `.workflow/skills.toml` (cascade: built-in default → `~/.workflow/skills.toml` → workspace). Inspect bindings with `aw skills` (advisory: it also warns when a bound skill is not installed in the standard skill roots — the binding itself is not auto-validated). Code/testing/writing conventions **and tool authoring** (`creating-tools`) are **not** roles — they're ambient skills the host auto-applies when present, independent of Workline. Per-source launch scripts live under `.workflow/launch/` (machine-specific, gitignored); created tools live under `docs/tools/`.
 
 **Invariants.** No auto-export (only `export-*` writes `docs/`); the spec and plan are documents, not artifacts; DB scripts-only (never executes DML/DDL); git-safe (verifies the per-source working branch before edits; proposes commits).
+
+### PLAN — a plan is a sequence of functional states
+
+A `### Fn` phase is a **verifiable state of the system**, not a batch of technical tasks. It answers one question: *what can the system do or demonstrate at the end that it could not at the start?* The contract is defined **once** in `skills/w/loops/plan-new-loop/LOOP.md` (§ *Phase contract*); the other two plan loops reference it and never redefine it.
+
+- **Phase shape** — always `Resultado` · `Trabajo` · `Validación de fase` · `Condición de salida`; conditionally `Estado inicial`, `Recorrido afectado`, `Límite de simulación`, `Diferido` and `Dependencias`. Granularity is semantic: a task is a unit of purpose that may touch several files, never an edit operation ("create class X").
+- **Phase state** — one `> Estado:` line per phase (`pendiente` | `en ejecución` | `bloqueada` | `validada`), machine state that `aw status` parses. A phase reaches `validada` only with its proof green, its exit condition true and the closing review gate passed — **never** because its checkboxes are ticked.
+- **Temporary simulation** — planned with a lifecycle: where it is born, how it moves (`antes → después`), which phase retires it, and what prevents it from being selected in a production runtime. A stub still live on the main path with no declared removal is a review finding.
+- **Evidence** — one primary proof per phase; focused tests only where a layer owns rules, transformation, persistence or integration; risk tests on top of those. Tests that only mirror structure are flagged `overtest` at the closing review gate.
+
+The authoring side and the execution side share one gate, seen from both ends:
+
+```
+  plan-new ──┐
+             ├──▶ executability gate ──▶ plan-exec ──▶ phase cycle ──▶ validada
+  plan-refine ┘                              │
+                                             ├─ structural deviation ─▶ plan-refine
+                                             └─ functional change ────▶ spec-refine
+```
+
+`plan-refine` converges when the plan is executable; `plan-exec` re-checks that same shape on entry, normalizes only minor gaps with consent, and returns the work instead of redesigning it silently. Progress is reported on **two** axes: `progress_pct` (checkbox-derived, unchanged) and `phases_validated`/`phases_total`. A plan at 100% of checkboxes with zero validated phases is work implemented, not validated — and both `/w:status` and `/w:resume` say so.
 
 ## Bundled SKILL
 

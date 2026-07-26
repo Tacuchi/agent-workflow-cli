@@ -122,6 +122,22 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // inside existing headroom and only this budget moves. Measured after:
   // quick 47 895 · spec-new 13 769 · plan-new 46 055 · plan-refine 57 309 ·
   // plan-exec 48 348.
+  // Functional-phases round — the three PLAN flows move together, by design.
+  // The plan stops being a task list and becomes a sequence of verifiable
+  // states, so the cost lands where the model lives: plan-new gains the
+  // CANONICAL phase contract (+ the reference incremental strategy), plan-refine
+  // the journey map, simulation lifecycle, evidence-by-behavior, executability
+  // gate and replanning of executed work, plan-exec the executability entry
+  // gate, the phase cycle with its marking order and the deviation gate.
+  // plan-refine pays twice (it loads plan-new-loop too) — 71 075 B makes it, by
+  // a wide margin, the heaviest flow in the bundle; that is the conscious price
+  // of defining the contract once instead of in both plan loops. quick moves
+  // only for CODE-POLICIES' two new floor lenses (test value + temporary
+  // simulation), which it inherits without asking. spec-new and spec-refine are
+  // untouched: the chassis did NOT grow this round — the deviation gate stayed
+  // in plan-exec-loop precisely so the other flows would not pay for it.
+  // Measured after: quick 48 882 · spec-new 13 769 · spec-refine 55 174 ·
+  // plan-new 51 287 · plan-refine 71 075 · plan-exec 60 066.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -131,7 +147,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 48_600,
+      budget: 49_700,
     },
     {
       flow: "spec-new",
@@ -146,7 +162,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 46_600,
+      budget: 52_100,
     },
     {
       flow: "plan-refine",
@@ -156,7 +172,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 58_000,
+      budget: 71_900,
     },
     {
       flow: "plan-exec",
@@ -166,7 +182,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 49_100,
+      budget: 60_900,
     },
   ];
 
@@ -359,7 +375,7 @@ describe("Doctrine guards — G13 · tooling gate (docs/tools) pins", () => {
   });
 });
 
-describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated plan, checkbox-only exec) pins", () => {
+describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated plan, bounded exec residue) pins", () => {
   // Pin the artifact-slim round so a future compression pass cannot silently
   // resurrect the removed duplication (two-notation traces, 4x delta
   // narration, Phases table, exec residue) or drop the new hard rules.
@@ -419,23 +435,30 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     expect(delta1).toContain("OMIT the section when empty");
   });
 
-  it("plan-exec keeps the checkbox-only residue rule and the single done-status line", async () => {
+  it("plan-exec keeps the plan-doc residue rule and the single done-status line", async () => {
+    // Renamed from "Checkbox-only residue" by the functional-phases round: the
+    // rule now admits a fourth write (the phase's own `> Estado:` line), so the
+    // old name was no longer true. The bound itself is what G14 protects.
     const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
-    expect(planExec).toContain("**Checkbox-only residue (hard rule):**");
+    expect(planExec).toContain("**Plan-doc residue (hard rule):**");
+    expect(planExec).not.toContain("**Checkbox-only residue (hard rule):**");
     expect(planExec).toContain("NEVER append a duplicate `### Fn` block");
     expect(planExec).toContain("**Marking done = ONE line in the plan-doc**");
     expect(planExec).toContain("> Estado: done — YYYY-MM-DD · sesión NNN");
   });
 
-  it("the checkbox-only rule carves out the Open-questions deferrals it coexists with", async () => {
+  it("the residue rule carves out the Open-questions deferrals and the phase state line", async () => {
     // The hard rule must not contradict the loop's own degrade/defer path
     // (Delta 4 unapplied migration · Delta 5 deferred finding · Delta 7 failed
-    // probe all write the plan's `## Open questions`).
+    // probe all write the plan's `## Open questions`) nor the phase state the
+    // functional-phases round made machine-readable.
     const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
-    const rule = planExec.slice(planExec.indexOf("**Checkbox-only residue (hard rule):**"));
+    const rule = planExec.slice(planExec.indexOf("**Plan-doc residue (hard rule):**"));
     const sentence = rule.slice(0, rule.indexOf("\n"));
     expect(sentence).toContain("## Open questions");
     expect(sentence).toMatch(/deferral/i);
+    expect(sentence).toContain("> Estado:");
+    expect(sentence).toMatch(/four things/);
   });
 
   it("the schemas that dropped ## Q&A traceability cannot resurrect it", async () => {
@@ -608,6 +631,147 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
     expect(chassis).not.toMatch(/ready-for-plan|change-shape/i);
     // The engine names no heir's own sections anymore — each heir declares them.
     expect(chassis).not.toContain("in the refine loops");
+  });
+});
+
+describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", () => {
+  // Pin the functional-phases round. The regression this guards against is a
+  // quiet slide back to "a plan is a task list": the phase contract redefined
+  // per loop instead of referenced once, the mechanical XS/S criterion back as
+  // the gate, `validada` inferred from the checkboxes again, a simulation left
+  // with no retirement, or the deviation gate migrating into the shared engine
+  // so all five flows pay for a PLAN-only rule.
+  const PLAN_NEW = "loops/plan-new-loop/LOOP.md";
+  const PLAN_REFINE = "loops/plan-refine-loop/LOOP.md";
+  const PLAN_EXEC = "loops/plan-exec-loop/LOOP.md";
+
+  /** The `## Phase contract (canonical)` section, up to the next `## ` heading. */
+  async function phaseContract(): Promise<string> {
+    const planNew = await readRel(PLAN_NEW);
+    const start = planNew.indexOf("## Phase contract (canonical)");
+    expect(start).toBeGreaterThan(-1);
+    const rest = planNew.slice(start);
+    const end = rest.indexOf("\n## ");
+    return end === -1 ? rest : rest.slice(0, end);
+  }
+
+  it("plan-new owns the canonical contract: a phase is a verifiable state, not a list of layers", async () => {
+    const contract = await phaseContract();
+    expect(contract).toContain("**verifiable state of the system**");
+    expect(contract).toContain("never a list of layers, files or classes");
+    for (const section of [
+      "`Resultado`",
+      "`Trabajo`",
+      "`Validaci\u00f3n de fase`",
+      "`Condici\u00f3n de salida`",
+    ]) {
+      expect(contract, section).toContain(section);
+    }
+  });
+
+  it("the phase state is machine state, and `validada` never follows from the checkboxes", async () => {
+    const contract = await phaseContract();
+    expect(contract).toContain("**Phase state = machine state.**");
+    expect(contract).toContain("> Estado: <value>");
+    expect(contract).toContain("**Never** because all its checkboxes are ticked.");
+    // Additive by design: the round adds a signal, it does not replace progress.
+    expect(contract).toContain("**alongside \u2014 not instead of \u2014**");
+    expect(contract).toContain("nothing is back-filled");
+  });
+
+  it("runtime and doctrine share one vocabulary (the code\u2194doctrine drift class)", async () => {
+    const { PHASE_STATES } = await import("../../src/application/parsers/phases.js");
+    expect(PHASE_STATES).toEqual(["pendiente", "en ejecuci\u00f3n", "bloqueada", "validada"]);
+    const contract = await phaseContract();
+    for (const state of PHASE_STATES) {
+      expect(contract, state).toContain(`\`${state}\``);
+    }
+  });
+
+  it("the other two plan loops reference the contract and never redefine it", async () => {
+    const refine = await readRel(PLAN_REFINE);
+    const exec = await readRel(PLAN_EXEC);
+    for (const [name, doc] of [
+      ["plan-refine", refine],
+      ["plan-exec", exec],
+    ] as const) {
+      expect(doc, name).toContain("Phase contract (canonical)");
+      expect(doc, name).not.toContain("\n## Phase contract");
+    }
+    expect(refine).toContain("**applies** it and never redefines it");
+    expect(exec).toContain("it never redefines it");
+  });
+
+  it("granularity is semantic \u2014 the mechanical complexity criterion is gone", async () => {
+    const planNew = await readRel(PLAN_NEW);
+    expect(planNew).not.toContain("complexity > S");
+    expect(planNew).not.toContain("complexity > XS");
+    const contract = await phaseContract();
+    expect(contract).toContain("**Granularity is semantic, not mechanical.**");
+    expect(contract).toContain("**micro step**");
+  });
+
+  it("the reference sequence stays a reference, never a mandatory shape", async () => {
+    // The design's whole point: adapt to the real architecture (backend-only,
+    // CLI, batch, library, DB-only) instead of inventing layers to fill a template.
+    const planNew = await readRel(PLAN_NEW);
+    expect(planNew).toContain("## Incremental strategy (reference, never a template)");
+    expect(planNew).toContain("Reference to adapt, never a mandatory shape.");
+  });
+
+  it("plan-refine converges on an executable plan and plan-exec re-checks it on entry", async () => {
+    const refine = await readRel(PLAN_REFINE);
+    const exec = await readRel(PLAN_EXEC);
+    expect(refine).toContain("## Objective \u2014 an executable sequence of functional states");
+    expect(refine).toContain("## Executability gate");
+    expect(refine).toContain("without inventing");
+    expect(exec).toContain("## Entry gate \u2014 executability");
+    expect(exec).toContain("no longer accepts in silence");
+    // Near-executable normalizes WITH consent; a structural gap goes back.
+    expect(exec).toContain("`Normalizar y ejecutar`");
+    expect(exec).toContain("`Ir a plan-refine`");
+  });
+
+  it("the deviation gate lives only in plan-exec, with its three destinations", async () => {
+    const exec = await readRel(PLAN_EXEC);
+    expect(exec).toContain("## Deviation gate");
+    expect(exec).toContain("**Marking order (hard rule):**");
+    expect(exec).toContain("**Local decision \u2014 `plan-exec` continues.**");
+    expect(exec).toContain("**Structural deviation \u2014 stop and return to `plan-refine`.**");
+    expect(exec).toContain("**Functional change \u2014 return to `spec-refine`.**");
+    expect(exec).toContain("This gate lives **only** in this loop");
+    // A structural deviation cannot be absorbed by a DECISION entry.
+    const decision = await readRel(join("artifacts", "artifacts-exec", "DECISION.md"));
+    expect(decision).toContain("**Local decisions only.**");
+    expect(decision).toContain("Deviation gate");
+  });
+
+  it("the temporary simulation has a declared lifecycle and a retirement gate", async () => {
+    const refine = await readRel(PLAN_REFINE);
+    expect(refine).toContain("## Simulation lifecycle");
+    expect(refine).toContain("**Displacement rule**");
+    expect(refine).toContain("**Removal gate**");
+    const policies = await readRel("loops/CODE-POLICIES.md");
+    expect(policies).toContain("**Temporary simulation check**");
+    expect(policies).toContain("no configuration can select them in a production runtime");
+  });
+
+  it("evidence is chosen by behavior, and over-testing is a finding, not an auto-rejection", async () => {
+    const policies = await readRel("loops/CODE-POLICIES.md");
+    expect(policies).toContain("**Test-value lens**");
+    expect(policies).toContain("`overtest`");
+    expect(policies).toContain("prunes redundancy");
+    const refine = await readRel(PLAN_REFINE);
+    const exec = await readRel(PLAN_EXEC);
+    expect(refine).toContain("## Evidence by behavior");
+    expect(refine).toContain("**Necessity gate**");
+    expect(exec).toContain("never an automatic rejection");
+  });
+
+  it("the model never migrates to the shared engine \u2014 only PLAN pays for it", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    expect(chassis).not.toMatch(/deviation gate|phase contract|executability/i);
+    expect(chassis).not.toContain("> Estado:");
   });
 });
 

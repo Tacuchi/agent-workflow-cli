@@ -314,6 +314,57 @@ describe("SPEC readiness contract — spec-new ↔ spec-refine ↔ plan-new ↔ 
   });
 });
 
+describe("Phase contract — plan loops ↔ the transversal surfaces ↔ the runtime", () => {
+  // The phase mark spans a producer (plan-exec writes `> Estado:`), a parser
+  // (`parsePhases`) and two readers (status, resume). A producer and a reader
+  // that disagree on the mark break the signal silently — the plan would look
+  // finished at 100% of checkboxes with nothing validated. Same shape as the
+  // SPEC readiness contract above. The round's own pins live in G17; this group
+  // only checks that the composing docs agree.
+  it("the writer and the readers speak the same mark", async () => {
+    const exec = await readFile(join(SKILL_ROOT, "loops/plan-exec-loop/LOOP.md"), "utf8");
+    const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
+    const resume = await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8");
+    expect(exec).toContain("> Estado: validada");
+    for (const [name, doc] of [
+      ["status", status],
+      ["resume", resume],
+    ] as const) {
+      expect(doc, name).toContain("phases_validated");
+      expect(doc, name).toContain("phases_total");
+      expect(doc, name).toContain("validada");
+    }
+  });
+
+  it("the two progress signals stay separate on every surface", async () => {
+    // Additive, not a replacement: checkboxes measure work, phases measure state.
+    const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
+    const resume = await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8");
+    expect(status).toContain("`progress_pct` stays checkbox-derived");
+    expect(status).toContain("work implemented, not validated");
+    expect(resume).toContain("Every box ticked is not a finished plan");
+    expect(resume).toContain("`/w:plan-exec`");
+  });
+
+  it("a legacy plan with no phase marks degrades the same way everywhere", async () => {
+    const exec = await readFile(join(SKILL_ROOT, "loops/plan-exec-loop/LOOP.md"), "utf8");
+    const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
+    const resume = await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8");
+    expect(exec).toContain("a missing line reads `pendiente`");
+    expect(status).toContain("`phases_total: 0`");
+    expect(resume).toContain("`phases_total: 0`");
+  });
+
+  it("plan-refine's exit gate and plan-exec's entry gate are the same gate", async () => {
+    const refine = await readFile(join(SKILL_ROOT, "loops/plan-refine-loop/LOOP.md"), "utf8");
+    const exec = await readFile(join(SKILL_ROOT, "loops/plan-exec-loop/LOOP.md"), "utf8");
+    expect(refine).toContain("re-checks this same gate on entry");
+    expect(exec).toContain("\u00a7 *Entry gate \u2014 executability*");
+    // plan-refine stays auxiliary: exec runs any plan that is already executable.
+    expect(exec).toContain("plan-refine is auxiliary, not mandatory");
+  });
+});
+
 describe("directed resume contract — resume.md optional argument (spec 004)", () => {
   const RESUME = "commands/resume.md";
 
