@@ -3,7 +3,8 @@ name: plan-new-loop
 description: >-
   Generates a rich implementation plan (docs/plans/PPP-plan-<slug>.md) from a
   spec. Heir of the chassis (loops/CHASSIS.md). Deltas: the plan absorbs the
-  TECHNICAL-NOTE level + phased Tasks (### Fn blocks) with live state,
+  TECHNICAL-NOTE level + Tasks phased by verifiable functional state
+  (### Fn blocks with live state),
   code/impact-mapping research, planning gap taxonomy, and per-screen design
   SPECs via ui-design
   when the plan includes UI. If the spec is not refined it suggests
@@ -62,10 +63,12 @@ The plan absorbs the `TECHNICAL-NOTE` level **inline** (user decision) + the roa
                        aligned with the spec criteria. One narration, not four.
 ## Impacted            FE · BE · DB (schemas/tables/functions) · APIs · integr. (core)
 ## Dependencies        docs / sources / databases / sessions · inter-plan order on a split (opt.)
-## Tasks               (core) `### Fn — <name>` blocks — 1-line objective +
-                       complexity XS–S — each holding its `- [ ] Tn.m` tasks
-                       (≤XS, deps and live state). The `### Fn` headers are the
-                       ONLY source of phases; there is no separate Phases table.
+## Tasks               (core) `### Fn — <name>` blocks per the phase contract
+                       below: each one a verifiable functional state with its
+                       `> Estado:` line, its evidence and its `- [ ] Tn.m`
+                       units of purpose — never a list of layers or files.
+                       The `### Fn` headers are the ONLY source of phases;
+                       there is no separate Phases table.
 ## Validations         validations / constraints / business logic              (core)
 ## Risks / impact      technical risks and impacts                             (opt.)
 ## Assumptions         assumptions — only the delta over the spec, never re-imported (opt.)
@@ -76,6 +79,44 @@ The plan absorbs the `TECHNICAL-NOTE` level **inline** (user decision) + the roa
 
 > **Catalog implication:** `TECHNICAL-NOTE` stops being a session artifact and becomes **sections of the plan-doc**. Reconciled in [`plan-exec-loop`](../plan-exec-loop/LOOP.md): the single plan-exec session carries **no** `TECHNICAL-NOTE` nor its own `TASKS`; the technical detail and the progress live inline in the plan-doc (living).
 
+## Phase contract (canonical)
+
+A `### Fn` block is a **verifiable state of the system**, never a list of layers, files or classes. It answers one question: *what can the system do or demonstrate at the end that it could not at the start?* The contract is defined **once** here — [`plan-refine-loop`](../plan-refine-loop/LOOP.md) and [`plan-exec-loop`](../plan-exec-loop/LOOP.md) reference it and never redefine it.
+
+```markdown
+### F1 — <result-oriented name>
+
+> Estado: pendiente
+
+**Resultado:** <the new verifiable state of the system>
+
+**Recorrido afectado:** <consumer → components → current boundary>
+
+**Trabajo:**
+- [ ] T1.1 — <coherent unit of work>
+
+**Límite de simulación:** antes <where it is> → después <where it lands, or removed>
+
+**Validación de fase:** <the primary proof that the promised state was reached>
+
+**Condición de salida:** <falsifiable result · contract preserved · simulation located or removed>
+
+**Diferido:** <work consciously reserved for another phase>
+```
+
+- **Always**: `Resultado` · `Trabajo` · `Validación de fase` · `Condición de salida`.
+- **Conditional**: `Estado inicial` (when it is not obvious) · `Recorrido afectado` (distributed change) · `Límite de simulación` (temporary behavior exists) · `Diferido` · `Dependencias` (the phase cannot run in direct sequence).
+
+**Phase state = machine state.** One `> Estado: <value>` line directly under the `### Fn` heading; vocabulary `pendiente` | `en ejecución` | `bloqueada` | `validada`, updated **in place**, never duplicated. It is what `aw status` counts (`phases_validated` / `phases_total`), **alongside — not instead of —** the checkbox progress. A phase reaches `validada` only when its work is done, its `Condición de salida` holds, its validation ran or was explicitly deferred, and the closing review gate passed. **Never** because all its checkboxes are ticked. *(Legacy plans carry no line: they read as `pendiente` and nothing is back-filled.)*
+
+> Position disambiguates the two marks: the plan-level `> Estado: done — …` line lives under the title (plan-exec § *Delta 6*); the phase-level one lives inside its `### Fn` block.
+
+**Granularity is semantic, not mechanical.** A phase earns its place when it leaves a demonstrable state, can be reviewed as a unit, and moves or retires a simulation. A task is a **coherent unit of purpose** and may touch several files. Naming an edit operation — "create class X", "add method Y", "update the import" — describes a **micro step**: internal to execution, recorded in `CHECKPOINT` when a resume needs it, never a plan entry. `XS–S` stays an orientation of risk and scope; it never mandates splitting a semantic task into mechanical operations.
+
+## Incremental strategy (reference, never a template)
+
+A change spread over consumer, service and data often lands well as: consumer shell → minimal real integration → vertical skeleton → real implementation from the source outwards → hardening → finish. **Reference to adapt, never a mandatory shape.** Backend-only, CLI, batch, library and database-only changes have their own journey, and inserting a layer the project does not have fails the minimality lens. A small change may be **one phase**, when that phase already is a coherent verifiable state.
+
 ## Delta 2 — Gap taxonomy (of "plan")
 
 Replaces the spec gap taxonomy with a planning-oriented one:
@@ -85,9 +126,13 @@ Replaces the spec gap taxonomy with a planning-oriented one:
 | Approach/Solution undefined | the how is vague | research / human |
 | Components unidentified | FE/BE/DB impact unknown | **research** (maps the code) |
 | AS-IS wiring unknown | current state unknown | **research** |
-| Phase too large | complexity > S | human (re-split) |
+| Journey unmapped | the observable contract, the participating components or the repo/process boundaries are unknown — the phases cannot be ordered | **research** |
+| Phase without a state | a `### Fn` mixes unrelated functional states, or nothing can be validated until the very end | the AI re-shapes it by state (**human** confirms an order change) |
 | Plan splittable | independently deliverable tranches — different moments/priorities, no shared deps/risk | **human consents** → split (see *Split gate (multi-plan)*) |
-| Task not atomic | complexity > XS | the AI re-splits |
+| Task named as an edit | the name states an edit operation ("create class X", "add method Y") instead of a purpose | the AI re-states it by purpose |
+| Structural micro-tasks | the plan enumerates files, classes or methods as entries | the AI groups them by purpose |
+| Simulation without lifecycle | temporary behavior exists with no phase that displaces it and no phase that retires it | the AI derives both / **human** |
+| Phase without evidence | the block declares no `Validación de fase` | the AI derives it from the criteria / **human** |
 | Over-engineered solution | approach heavier than the criteria need — needless abstraction/layer/dependency, or a phase/task not required to meet the spec (chassis § *Minimality*) | AI proposes the lighter path + **human** confirms (**probe** if "lighter works" is a runnable doubt) |
 | Missing deps | order unclear | research / human |
 | Spec criteria uncovered | tasks don't trace to acceptance criteria | the AI derives + human confirms |
@@ -147,7 +192,11 @@ plan-new-loop(spec):
     - every spec acceptance criterion traces to a phase/task
       (split: each criterion → exactly one sibling — complete, disjoint partition)
     - the Final behavior block of ## Solution covers the criteria
-    - ### Fn phases XS–S · tasks XS · deps without cycles · Impacted consistent with Solution
+    - every ### Fn leaves a verifiable state with its own exit condition — never a list of layers or files
+    - the order allows early integration · deps without cycles · Impacted consistent with Solution
+    - the simulation boundary is located, its displacement planned, and one phase owns its retirement
+    - every phase declares its primary evidence; per-layer tests are justified, never automatic
+    - resumable: a stop between phases leaves a stable state and a legible next intent
     - minimality (chassis § *Minimality*): the Solution is the lightest that meets its Final behavior block; no phase/task/abstraction the criteria don't require
     - (UI) every screen/UI task traces to its design SPEC and does not contradict ## UI spec
     whatever fails → comes back as a gap
@@ -163,6 +212,7 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 ## Convergence / exit
 
 - **No material gaps** → **coherence gate** (the *Sequence* checklist; the PLAN-new instance of the chassis convergence gate). Criterion→task traceability is a **checked invariant**, never a separate section.
+- **The gate judges functional states, not size.** A plan converges when every `### Fn` is a verifiable state with its exit condition, its primary evidence and its simulation boundary located; a phase that only enumerates layers or files comes back as a gap, however small it is.
 - Passes → `Guardar plan` (writes with confirmation if it exists) → `finalize`.
 - **Split branch**: `Guardar planes` writes the N siblings sequentially (mint before each write) → `finalize` — one session, one HISTORY row.
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).

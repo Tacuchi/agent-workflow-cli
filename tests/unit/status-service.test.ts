@@ -286,6 +286,57 @@ describe("runStatusCommand — spec maturity", () => {
   });
 });
 
+describe("runStatusCommand — phase progress", () => {
+  it("a legacy plan keeps its checkbox progress and reports no phases", async () => {
+    const out = await runStatusCommand(fullWorkspace(), fakeEnv, paths(), { now: NOW });
+    expect(out.plans[0]).toMatchObject({
+      tasks_total: 5,
+      tasks_done: 2,
+      progress_pct: 40,
+      phases_total: 0,
+      phases_validated: 0,
+    });
+  });
+
+  // The whole point of the second axis: every box ticked is work implemented,
+  // not a plan validated. The percentage stays checkbox-derived.
+  it("100% checkboxes with unvalidated phases still reports 1 of 3 phases validated", async () => {
+    const fs = new FakeFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    fs.file(
+      "/cwd/docs/plans/009-plan-checkout.md",
+      [
+        "# Plan 009 — checkout",
+        "",
+        "> Estado: done — 2026-06-01 · sesión 120",
+        "",
+        "## Tasks",
+        "",
+        "### F1 — El carrito acepta un cupón",
+        "> Estado: validada",
+        "- [x] T1.1",
+        "",
+        "### F2 — El descuento viaja al backend",
+        "> Estado: en ejecución",
+        "- [x] T2.1",
+        "",
+        "### F3 — El descuento se persiste",
+        "- [x] T3.1",
+        "",
+      ].join("\n"),
+      NOW,
+    );
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(out.plans[0]).toMatchObject({
+      tasks_total: 3,
+      tasks_done: 3,
+      progress_pct: 100,
+      phases_total: 3,
+      phases_validated: 1,
+    });
+  });
+});
+
 describe("runStatusCommand — edge cases", () => {
   it("uninitialized workspace: initialized=false, everything empty, name from basename", async () => {
     const out = await runStatusCommand(new FakeFs(), fakeEnv, paths(), { now: NOW });

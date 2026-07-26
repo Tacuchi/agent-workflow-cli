@@ -4,6 +4,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection } from "./markdown.js";
+import { parsePhases } from "./parsers/phases.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
 import { parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
@@ -41,7 +42,12 @@ export interface StatusPlan {
   slug: string;
   tasks_total: number;
   tasks_done: number;
+  /** checkbox-derived work progress; the phase counts below never feed it */
   progress_pct: number;
+  /** `### Fn` blocks in the plan-doc; `0` on a legacy plan with no phases */
+  phases_total: number;
+  /** phases marked `> Estado: validada` — functional state, not work done */
+  phases_validated: number;
   date: string;
   relative: string;
 }
@@ -237,6 +243,7 @@ async function readPlans(fs: FileSystemPort, cwd: string, now: Date): Promise<St
     try {
       const text = await fs.readText(f.path);
       const t = parseTasks(text);
+      const p = parsePhases(text);
       const ts = await resolveTimestamp(fs, f.path, undefined, now);
       out.push({
         file: relFromCwd(f.path, cwd),
@@ -245,6 +252,8 @@ async function readPlans(fs: FileSystemPort, cwd: string, now: Date): Promise<St
         tasks_total: t.total,
         tasks_done: t.closed,
         progress_pct: t.progress_pct,
+        phases_total: p.total,
+        phases_validated: p.validated,
         date: ts.date,
         relative: ts.relative,
       });

@@ -1,5 +1,5 @@
 ---
-description: Use when a plan is ready to implement — this is where the real work happens: code edits, proposed SQL scripts, created tools. Starts or resumes the execution loop (plan-exec-loop) over an existing plan. Git-safe (proposes commits, never push/--amend/--no-verify). Not for creating or refining the plan (plan-new / plan-refine).
+description: Use when a plan is ready to implement — this is where the real work happens: code edits, proposed SQL scripts, created tools. Starts or resumes the execution loop (plan-exec-loop) over an existing plan, phase by phase, validating each phase before closing it. Checks executability on entry; structural or functional deviations return to plan-refine / spec-refine. Git-safe (proposes commits, never push/--amend/--no-verify). Not for creating or refining the plan (plan-new / plan-refine).
 argument-hint: <docs/plans/PPP-plan-<slug>.md>
 allowed-tools:
   [
@@ -12,7 +12,7 @@ allowed-tools:
 
 # plan-exec — trampoline to the execution loop
 
-Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase by phase. The plan (`docs/plans/PPP-plan-<slug>.md`) is a living document the loop keeps updated (phase and task state).
+Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase by phase — each phase a **verifiable state of the system**, not a batch of technical chores. The plan (`docs/plans/PPP-plan-<slug>.md`) is a living document the loop keeps updated: each `### Fn` carries its own `> Estado:` line (`pendiente` | `en ejecución` | `bloqueada` | `validada`) next to its task checkboxes.
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
@@ -32,7 +32,10 @@ Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase
 
 ## What the loop does (summary)
 
-- Reads and updates `docs/plans/PPP-plan-<slug>.md` (living doc: phase/task state).
+- **Executability check on entry**: reads the plan **and its spec** and verifies each phase declares its result, its exit condition and its proof, and that the simulation boundary is identifiable. A minor gap is normalized **with your consent** (`Normalizar y ejecutar` | `Ir a plan-refine`); a structural one is recorded and handed off to `/w:plan-refine` — it never invents the plan's structure (see `../loops/plan-exec-loop/LOOP.md` § *Entry gate — executability*).
+- **Deviation gate**: local detail (a name, a helper, internal layout) is resolved inline. A **structural** deviation — a contract, the participating components, the phase order, the simulation boundary — stops execution and returns to `/w:plan-refine`; a **functional** change (result, scope, business rule, acceptance criterion) returns to `/w:spec-refine` (§ *Deviation gate*).
+- **Validation before closing each phase**: the phase's own proof plus the justified focused tests run first; the phase flips to `validada` only with the exit condition true and the review gate green — **never** just because its checkboxes are ticked (§ *Delta 4*).
+- Reads and updates `docs/plans/PPP-plan-<slug>.md` (living doc: phase state, task checkboxes, deferrals).
 - Edits code in the workspace sources (a single execution session per run; execution is still phase by phase, there is just no session per phase).
 - If it creates a tool/utility, the ambient `creating-tools` skill documents it in `docs/tools/` (auto-discovered; Workline does not bind it).
 - **Closing review gate** at every phase boundary, **before proposing the commits**: re-reads the diff (independent pass) applying the **installed ambient conventions** and fixes or defers findings — nothing reaches a commit unreviewed (see `../loops/plan-exec-loop/LOOP.md` § *Delta 5*).
