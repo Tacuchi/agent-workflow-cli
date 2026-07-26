@@ -73,6 +73,10 @@ Right after the reconnaissance and **before writing anything**, assess whether t
 ## Draft schema (`NNN-spec-<slug>.md`)
 
 ```markdown
+---
+status: draft
+---
+
 # Spec NNN — <slug>
 
 ## Origin            (opt.)
@@ -111,12 +115,13 @@ Assumed facts.
 Pending doubts. ← the spec-refine-loop closes them.
 ```
 
-> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## UI spec` (if there is UI) + `## Refinement decisions` (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md); the refine drops `Open questions` when it empties). Same skeleton: the draft and the refined spec share the order.
+> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## UI spec` (if there is UI) + `## Decisions`, and may add `## Affected capabilities` / `## Behavioral changes` right after `Context` when the change touches behavior that already exists (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md); the refine drops `Open questions` when it empties). Same skeleton: the draft and the refined spec share the order.
 
 **Filling notes:**
 
 - The draft's **content** is written in the **user's language** (the schema headings stay as-is).
 - No `Type` field — `plan-new` infers the how.
+- **`status: draft`** in the frontmatter is the draft's maturity mark. This command writes no other value: only the `spec-refine` gate promotes a spec to `ready-for-plan`.
 - `Scope` always carries `Out` (what stays out).
 - **Where the reconnaissance lands** — `Context`: the facts that place the request (sources apparently involved, a module's observed responsibility, the relevant technology), with **at most one path per component** as an anchor; never a technical inventory. `Assumptions`: the inferences that let the draft advance. `Open questions`: what would need walking the implementation, a human decision, or a source that is not available.
 - **The code found never widens `Scope`** and never becomes a requirement: **acceptance criteria derive from the user's intent**. The reconnaissance may lend the right vocabulary, name existing actors and boundaries, and avoid obvious contradictions. It must not invent behavior nobody asked for, turn a current technical decision into a user requirement, or impose an implementation as a criterion.

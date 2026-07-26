@@ -25,7 +25,7 @@ PLAN
 `/w:plan-new` — **resumable** (same chassis mechanism, keyed off CHECKPOINT).
 
 ## Reads
-`docs/specs/NNN-spec-*.md` (glob — locates the spec by number; or the exact path from the command argument). **Refined vs draft** is distinguished by the **presence** of `## Refinement decisions` in the spec (legacy specs may also carry `## Q&A traceability`): if missing → **soft-suggest** running `/w:spec-refine` first (planning over a solid spec produces better plans), but the user may proceed.
+`docs/specs/NNN-spec-*.md` (glob — locates the spec by number; or the exact path from the command argument). **Ready vs not** is read from the spec's frontmatter `status`: `ready-for-plan` → proceed (legacy compat: a frontmatter-less spec carrying `## Refinement decisions`, or the older `## Q&A traceability`, counts as ready). Otherwise → **soft-suggest** running `/w:spec-refine` first (planning over a solid spec produces better plans), **never a block**: the user may proceed. Questions the spec left with destination `PLAN` are **input to this loop**, not a reason to send it back.
 
 ## Writes
 `docs/plans/PPP-plan-<slug>.md` (`generate`; **overwrites with confirmation** if it exists) — or **several sibling plans** when an accepted split applies (§ *Split gate (multi-plan)*). It writes only `docs/plans` — never other `docs/` folders, no auto-export. If the plan **includes UI**, it also produces **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts **of its session** (see *Delta 4* — they are not `docs/`, no auto-export).
@@ -132,8 +132,8 @@ Resolves the **Plan splittable** gap (Delta 2) — the canonical definition for 
 ```
 plan-new-loop(spec):
   input = glob(docs/specs/NNN-spec-*.md) | argument path
-  if the spec does NOT have ## Refinement decisions:
-    soft-suggest /w:spec-refine (the user may proceed anyway)
+  if the spec is not status: ready-for-plan (nor a legacy mark):
+    soft-suggest /w:spec-refine    # never blocks — the user may proceed anyway
   session = create_or_resume("<slug>-plan-new")               # CLI prepends global NNN
   seed SESSION.Success criteria = coherence-gate checklist      # verification-first, BEFORE
   work = plan skeleton (Delta 1) derived from the spec (+ checkpoint progress if resuming)

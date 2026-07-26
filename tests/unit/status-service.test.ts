@@ -80,12 +80,18 @@ describe("runStatusCommand — full dashboard", () => {
     const bar = out.specs.find((s) => s.number === "004");
     expect(foo).toMatchObject({
       slug: "foo",
+      status: "ready-for-plan",
       refined: true,
       open_questions: 0,
       file: "docs/specs/003-spec-foo.md",
       relative: "la semana pasada",
     });
-    expect(bar).toMatchObject({ slug: "bar", refined: false, open_questions: 2 });
+    expect(bar).toMatchObject({
+      slug: "bar",
+      status: "draft",
+      refined: false,
+      open_questions: 2,
+    });
     expect(bar?.relative).toBe("hoy en la mañana");
 
     // plans
@@ -134,10 +140,10 @@ describe("runStatusCommand — full dashboard", () => {
     });
   });
 
-  it("refined mark = ## Refinement decisions alone; legacy specs with both sections stay refined", async () => {
+  it("legacy mark = ## Refinement decisions alone; legacy specs with both sections stay refined", async () => {
     const fs = new FakeFs();
     fs.file("/cwd/.workflow/sessions/.keep", "");
-    // New-model refined spec: single trace section, no Q&A traceability.
+    // Pre-frontmatter refined spec: single trace section, no Q&A traceability.
     fs.file(
       "/cwd/docs/specs/005-spec-slim.md",
       "# Spec slim\n\n## Refinement decisions\n- d1\n- Q: ¿alcance? → mínimo — menos riesgo\n",
@@ -155,6 +161,9 @@ describe("runStatusCommand — full dashboard", () => {
     expect(out.counts.specs_refined).toBe(2);
     // Omitted ## Open questions counts as zero (slim schema drops it when empty).
     expect(out.specs.find((s) => s.number === "005")?.open_questions).toBe(0);
+    // A legacy mark now reads as the frontmatter-era `ready-for-plan`.
+    expect(out.specs.find((s) => s.number === "005")?.status).toBe("ready-for-plan");
+    expect(out.specs.find((s) => s.number === "006")?.status).toBe("ready-for-plan");
   });
 
   it("session type falls back to the folder suffix when SESSION.md has no ## Type", async () => {
@@ -181,6 +190,99 @@ describe("runStatusCommand — full dashboard", () => {
     const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
     expect(out.specs.filter((s) => s.number === "003")).toHaveLength(1);
     expect(out.specs.find((s) => s.number === "003")?.slug).toBe("foo");
+  });
+});
+
+describe("runStatusCommand — spec maturity", () => {
+  /** Workspace holding only the given `NNN-spec-*.md` bodies, keyed by number. */
+  async function specStatuses(bodies: Record<string, string>) {
+    const fs = new FakeFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    for (const [number, text] of Object.entries(bodies)) {
+      fs.file(`/cwd/docs/specs/${number}-spec-x.md`, text, NOW);
+    }
+    return runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+  }
+
+  const spec = (out: Awaited<ReturnType<typeof specStatuses>>, number: string) =>
+    out.specs.find((s) => s.number === number);
+
+  it("frontmatter declares the three maturities", async () => {
+    const out = await specStatuses({
+      "010": "---\nstatus: draft\n---\n# Spec\n",
+      "011": "---\nstatus: refining\n---\n# Spec\n",
+      "012": "---\nstatus: ready-for-plan\n---\n# Spec\n",
+    });
+    expect(spec(out, "010")?.status).toBe("draft");
+    expect(spec(out, "011")?.status).toBe("refining");
+    expect(spec(out, "012")?.status).toBe("ready-for-plan");
+    expect(out.counts.specs_refined).toBe(1);
+  });
+
+  it("refined mirrors status === ready-for-plan", async () => {
+    const out = await specStatuses({
+      "010": "---\nstatus: draft\n---\n# Spec\n",
+      "011": "---\nstatus: refining\n---\n# Spec\n",
+      "012": "---\nstatus: ready-for-plan\n---\n# Spec\n",
+      "013": "# Spec\n\n## Decisions\n- d1\n",
+      "014": "# Spec\n",
+    });
+    expect(out.specs).toHaveLength(5);
+    for (const s of out.specs) {
+      expect(s.refined).toBe(s.status === "ready-for-plan");
+    }
+    expect(out.counts.specs_refined).toBe(out.specs.filter((s) => s.refined).length);
+  });
+
+  it("frontmatter wins over a legacy trace section", async () => {
+    const out = await specStatuses({
+      "010": "---\nstatus: draft\n---\n# Spec\n\n## Refinement decisions\n- d1\n",
+      "011": "---\nstatus: refining\n---\n# Spec\n\n## Decisions\n- d1\n",
+    });
+    expect(spec(out, "010")).toMatchObject({ status: "draft", refined: false });
+    expect(spec(out, "011")).toMatchObject({ status: "refining", refined: false });
+    expect(out.counts.specs_refined).toBe(0);
+  });
+
+  it("the status value is trimmed and case-insensitive", async () => {
+    const out = await specStatuses({
+      "010": "---\nstatus:   Ready-For-Plan   \n---\n# Spec\n",
+      "011": "---\nstatus: DRAFT\n---\n# Spec\n\n## Refinement decisions\n- d1\n",
+    });
+    expect(spec(out, "010")?.status).toBe("ready-for-plan");
+    expect(spec(out, "011")?.status).toBe("draft");
+  });
+
+  it("an unknown or unterminated frontmatter falls back to the legacy mark", async () => {
+    const out = await specStatuses({
+      "010": "---\nstatus: foo\n---\n# Spec\n\n## Refinement decisions\n- d1\n",
+      "011": "---\nstatus: foo\n---\n# Spec\n",
+      "012": "---\nstatus: draft\n# Spec\n\n## Decisions\n- d1\n",
+    });
+    expect(spec(out, "010")?.status).toBe("ready-for-plan");
+    expect(spec(out, "011")?.status).toBe("draft");
+    expect(spec(out, "012")?.status).toBe("ready-for-plan");
+  });
+
+  it("## Decisions and ## Q&A traceability are legacy ready-for-plan marks", async () => {
+    const out = await specStatuses({
+      "010": "# Spec\n\n## Decisions\n- d1\n",
+      "011": "# Spec\n\n## Q&A traceability\n- q→a\n",
+      "012": "# Spec\n\n## Requirement\n- r1\n",
+    });
+    expect(spec(out, "010")).toMatchObject({ status: "ready-for-plan", refined: true });
+    expect(spec(out, "011")).toMatchObject({ status: "ready-for-plan", refined: true });
+    expect(spec(out, "012")).toMatchObject({ status: "draft", refined: false });
+    expect(out.counts.specs_refined).toBe(2);
+  });
+
+  it("frontmatter does not shadow ## section parsing, CRLF included", async () => {
+    const out = await specStatuses({
+      "010": "---\nstatus: ready-for-plan\n---\n# Spec\n\n## Open questions\n- ¿ARM?\n- ¿XP?\n",
+      "011": "---\r\nstatus: refining\r\n---\r\n# Spec\r\n\r\n## Open questions\r\n- ¿ARM?\r\n",
+    });
+    expect(spec(out, "010")).toMatchObject({ status: "ready-for-plan", open_questions: 2 });
+    expect(spec(out, "011")).toMatchObject({ status: "refining", open_questions: 1 });
   });
 });
 

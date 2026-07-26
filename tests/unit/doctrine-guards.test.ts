@@ -107,6 +107,21 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // independence criterion and where the findings may land). spec-refine moves
   // too (the boundary note with spec-new: measured 45 410); quick absorbs its
   // one-line note inside the existing headroom, so its budget stays put.
+  // Ready-for-plan round — the biggest single-flow raise so far, declared as
+  // such: spec-refine 46 200 → 56 000 (measured 55 192). The LOOP goes
+  // 16 425 → 25 575 B for FIVE doctrine features, not one: the convergence
+  // target (READY FOR PLAN, NOT PERFECTLY CLOSED), the current-behavior
+  // baseline, the change-shape gate with its in-place split semantics, the
+  // destination axis in the gap taxonomy (+ the PLAN-owned rows), and the
+  // status/Decisions contract with its legacy migration. ~1.5x the per-feature
+  // cost of the split-gate round, spread over 5. Anchor for whether this is
+  // proportionate: plan-refine already loads 57 309 B, so spec-refine stays
+  // BELOW the heaviest flow in the bundle. The chassis SHRANK (25 392 →
+  // 25 272: the decision-record and prior-work-mark lines stopped enumerating
+  // per-heir names), which is why the other four flows absorb their own edits
+  // inside existing headroom and only this budget moves. Measured after:
+  // quick 47 895 · spec-new 13 769 · plan-new 46 055 · plan-refine 57 309 ·
+  // plan-exec 48 348.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -126,7 +141,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 46_200,
+      budget: 56_000,
     },
     {
       flow: "plan-new",
@@ -362,15 +377,18 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     return planNew.slice(start, end);
   }
 
-  it("the refined mark is ## Refinement decisions alone (with the legacy tolerance note)", async () => {
+  it("each refine loop keeps ONE trace section — spec `## Decisions`, plan `## Refinement decisions`", async () => {
     const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
-    expect(specRefine).toContain(
-      "the presence of `## Refinement decisions` distinguishes a refined spec from a draft",
-    );
-    // The human Q&A folds into the same section — no second notation.
-    expect(specRefine).toContain("Q: <question> → <chosen answer> — <rationale>");
-    // Legacy specs (both sections) must keep counting as refined.
-    expect(specRefine).toMatch(/legacy specs.*`## Q&A traceability`.*still count as refined/i);
+    const planRefine = await readRel("loops/plan-refine-loop/LOOP.md");
+    // Ready-for-plan round: the spec's trace became contract, not transcript.
+    expect(specRefine).toContain("**`## Decisions` is contract, not expedient.**");
+    expect(specRefine).toContain("Not** a `Q:` transcript");
+    // The Q&A notation survives where it IS still audit trace: plan-refine.
+    expect(planRefine).toContain("Q: <question> → <chosen answer> — <rationale>");
+    // The naming asymmetry is declared, never accidental.
+    expect(specRefine).toMatch(/plan-refine's audit trace/);
+    // Legacy specs must keep counting as ready.
+    expect(specRefine).toMatch(/`## Q&A traceability`.*still count as ready/i);
   });
 
   it("Scenarios never restate a criterion 1:1 (draft and refined schemas agree)", async () => {
@@ -435,7 +453,10 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
     const refinedSchema = fencedSchema(specRefine, "## Deliverable schema", "## Gap taxonomy");
     expect(refinedSchema).not.toContain("## Q&A traceability");
-    expect(refinedSchema).toContain("## Refinement decisions");
+    // Ready-for-plan round: the spec's trace is `## Decisions`. The old heading
+    // survives ONLY in the surrounding legacy-compat prose, never in the schema.
+    expect(refinedSchema).not.toContain("## Refinement decisions");
+    expect(refinedSchema).toContain("## Decisions");
 
     const planRefine = await readRel("loops/plan-refine-loop/LOOP.md");
     const planRefineDelta1 = fencedSchema(planRefine, "## Delta 1", "## Delta 2");
@@ -503,6 +524,90 @@ describe("Doctrine guards — G15 · bounded reconnaissance pins", () => {
   it("the pass never migrates to the shared engine", async () => {
     const chassis = await readRel("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/bounded reconnaissance/i);
+  });
+});
+
+describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () => {
+  // Pin the OpenSpec-inspired round. The regression this guards against is a
+  // silent return to "close every gap": the convergence target watered down,
+  // the destination axis dropped so PLAN-owned questions block again, ideation
+  // back to a universal gap, or the maturity mark sliding back from machine
+  // state into a narrative section.
+  const LOOP = "loops/spec-refine-loop/LOOP.md";
+
+  it("spec-refine declares the convergence target verbatim", async () => {
+    const loop = await readRel(LOOP);
+    expect(loop).toContain("## Convergence target");
+    expect(loop).toContain("READY FOR PLAN, NOT PERFECTLY CLOSED");
+    expect(loop).toContain("without inventing functional decisions");
+  });
+
+  it("the taxonomy classifies by destination, and PLAN-owned questions never fail the gate", async () => {
+    const loop = await readRel(LOOP);
+    expect(loop).toContain("## Gap taxonomy — signal, resolver, destination");
+    expect(loop).toContain("classified by destination before its resolver is chosen");
+    expect(loop).toContain("declare, never close here");
+    expect(loop).toContain("**never** fails the gate");
+  });
+
+  it("the phases stay ordered: baseline → change-shape → taxonomy", async () => {
+    // The order is the point: judging the shape after closing the details would
+    // mean re-litigating a contract already hardened around the wrong cut.
+    const loop = await readRel(LOOP);
+    const baseline = loop.indexOf("## Current-behavior baseline");
+    const shape = loop.indexOf("## Change-shape gate");
+    const taxonomy = loop.indexOf("## Gap taxonomy");
+    expect(baseline).toBeGreaterThan(-1);
+    expect(shape).toBeGreaterThan(baseline);
+    expect(taxonomy).toBeGreaterThan(shape);
+    expect(loop).toContain("**before** closing details");
+  });
+
+  it("the baseline is bounded (brownfield only, stops at the functional change)", async () => {
+    const loop = await readRel(LOOP);
+    expect(loop).toContain(
+      "**Stop when the baseline is enough to state and accept the functional change**",
+    );
+    expect(loop).toContain("not when the system is documented");
+    expect(loop).toContain("Greenfield has no baseline");
+  });
+
+  it("ideation is conditional — triggers AND non-triggers are both declared", async () => {
+    const loop = await readRel(LOOP);
+    expect(loop).toContain("**Unexplored solution space is not a universal gap**");
+    expect(loop).toContain("**Triggers (≥1).**");
+    expect(loop).toContain("**Not triggers.**");
+    expect(loop).toContain("Purely technical alternatives belong to `PLAN`");
+  });
+
+  it("the change-shape gate reuses spec-new's split criterion and splits in place", async () => {
+    const loop = await readRel(LOOP);
+    expect(loop).toContain("never a different one");
+    expect(loop).toContain("keeps its number/path");
+    expect(loop).toContain("`Guardar specs`");
+    // Siblings are born drafts: the run keeps refining the reduced original.
+    expect(loop).toContain("born **`status: draft`**");
+  });
+
+  it("the maturity mark is machine state, tolerant of legacy and never a gate bypass", async () => {
+    const loop = await readRel(LOOP);
+    expect(loop).toContain("It is machine state, never prose");
+    expect(loop).toContain("A legacy mark does NOT skip the gate on a re-refine");
+    // The rename never leaves a spec with no mark at all.
+    expect(loop).toContain("in the same write that stamps `status`");
+  });
+
+  it("`refining` is read but never written — no partial spec writes", async () => {
+    const loop = await readRel(LOOP);
+    expect(loop).toContain("this loop never writes a partial spec");
+    expect(loop).toMatch(/`refining` is understood \*\*on read\*\*/);
+  });
+
+  it("the SPEC gate never migrates to the shared engine", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    expect(chassis).not.toMatch(/ready-for-plan|change-shape/i);
+    // The engine names no heir's own sections anymore — each heir declares them.
+    expect(chassis).not.toContain("in the refine loops");
   });
 });
 

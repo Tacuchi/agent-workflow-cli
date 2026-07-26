@@ -16,7 +16,7 @@
 |---|---|---|
 | [`workspace-init`](workspace-init.md) | Workspace bootstrap | single-pass, interactive |
 | [`spec-new`](spec-new.md) | Generates the spec draft (`docs/specs/NNN-spec-<slug>.md`) | single-pass, no loop |
-| [`spec-refine`](spec-refine.md) | Refines the spec **in place** until unambiguous | starts `spec-refine-loop` |
+| [`spec-refine`](spec-refine.md) | Refines the spec **in place** until it is `ready-for-plan` | starts `spec-refine-loop` |
 | [`plan-new`](plan-new.md) | Derives the executable plan (`docs/plans/PPP-plan-<slug>.md`) from the spec | starts `plan-new-loop` |
 | [`plan-refine`](plan-refine.md) | Refines the plan **in place** before executing (aux, optional) | starts `plan-refine-loop` |
 | [`plan-exec`](plan-exec.md) | Executes the plan (code/DB/git) and maintains it as a living doc | starts `plan-exec-loop` |

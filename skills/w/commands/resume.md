@@ -35,20 +35,20 @@ Same hard floor: this mode **proposes** the route — it never starts the target
 ## Run
 
 1. **Workline level — compose `/w:status`.** Read-and-follow [`status.md`](status.md) to produce the prioritized summary (it already renders `aw status` and, when available, the host-context section). Do **not** re-implement the summary. For deeper session detail, `aw resume-summary [--include-recent-closed]` gives the primary session's CHECKPOINT state, and `aw session-resume --code <NNN>` the full checkpoint of any other active or closed session.
-2. **Interpret the stage marks.** Map each signal to its stage: spec `refined` / `open_questions`; plan checkbox progress (`tasks_done` / `tasks_total`); session `checkpoint_present` / `status`. Associate a session to its plan or spec by **slug** — there is no linkage field in the `aw status` output, so infer it from `folder` / `slug`; when precision matters, confirm by the session's `## Origin` (§ *Directed resume*).
-3. **Build the prioritized pending list** — fixed order: **session with CHECKPOINT > plan half-done > spec unrefined > host context**.
+2. **Interpret the stage marks.** Map each signal to its stage: the spec's `status` (`draft`/`refining` = SPEC work still open · `ready-for-plan` = it can go to PLAN) + `open_questions`; plan checkbox progress (`tasks_done` / `tasks_total`); session `checkpoint_present`. Associate a session to its plan or spec by **slug** — there is no linkage field in the `aw status` output, so infer it from `folder` / `slug`; when precision matters, confirm by the session's `## Origin` (§ *Directed resume*).
+3. **Build the prioritized pending list** — fixed order: **session with CHECKPOINT > plan half-done > spec not ready > host context**.
 4. **Host level (second source).** If the workline level does not explain the pending work (or no Workline flow was used), rely on the host-context already surfaced by `/w:status`; escalate it to a proposal and, only if needed, use the host-memory *deep* tier or ask the user (universal fallback: git / `docs/` signals + a question). See [`../harness/HARNESS.md`](../harness/HARNESS.md) § *host-memory*.
 5. **Propose (only when ≥1 pending).** One structured-choice with the top ≤3 options by the priority order; each option **routes** to its command (table below). Every proposal carries `Retomar` (recommended) and `Descartar` / `Cerrar` (secondary).
 6. **Nothing pending.** Show the `/w:status` summary and state clearly that there is nothing pending — **do not ask**.
 
 ## Routing (stage → command)
 
-Priority: **session+CHECKPOINT > plan half-done > spec unrefined > host context**.
+Priority: **session+CHECKPOINT > plan half-done > spec not ready > host context**.
 
 | Pending detected | `Retomar` (recommended) | Secondary |
 |---|---|---|
-| spec unrefined | `/w:spec-refine` | `Descartar` |
-| spec refined, no plan | `/w:plan-new` | `Descartar` |
+| spec not ready (`draft` / `refining`) | `/w:spec-refine` | `Descartar` |
+| spec `ready-for-plan`, no plan | `/w:plan-new` | `Descartar` |
 | plan half-done (checkboxes) | `/w:plan-exec` | `Cerrar` |
 | active session with CHECKPOINT | continue / reopen (`aw session-resume --reopen`) | `Cerrar` |
 | host context only (no workline) | best next step for what was found | `Descartar` |
