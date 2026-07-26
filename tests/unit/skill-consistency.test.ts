@@ -304,6 +304,31 @@ describe("SPEC readiness contract — spec-new ↔ spec-refine ↔ plan-new ↔ 
     expect(resume).not.toContain("spec unrefined");
   });
 
+  it("the legacy tolerance is exactly two marks \u2014 code and doctrine list the same pair", async () => {
+    // The drift that shipped: the runtime also accepted `## Decisions`, a
+    // section of the CURRENT schema, so a spec nobody refined read as ready and
+    // `/w:resume` routed it to PLAN. The list is a contract, not an implementation
+    // detail — the docs that describe it and the code that applies it must match.
+    const { LEGACY_READY_MARKS } = await import("../../src/application/status-service.js");
+    expect(LEGACY_READY_MARKS).toEqual(["Refinement decisions", "Q&A traceability"]);
+    for (const rel of [
+      "loops/spec-refine-loop/LOOP.md",
+      "loops/plan-new-loop/LOOP.md",
+      "commands/plan-new.md",
+      "commands/spec-refine.md",
+      "commands/status.md",
+    ]) {
+      const doc = await readFile(join(SKILL_ROOT, rel), "utf8");
+      for (const mark of LEGACY_READY_MARKS) {
+        expect(doc, `${rel} must name the legacy mark ## ${mark}`).toContain(`## ${mark}`);
+      }
+    }
+    // And the frontmatter is what governs when it exists.
+    const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
+    expect(status).toContain("**The frontmatter governs spec maturity.**");
+    expect(status).toContain("A `status` that is absent, empty or unknown reads `draft`");
+  });
+
   it("the naming asymmetry with plan-refine is deliberate and declared", async () => {
     const specLoop = await readFile(join(SKILL_ROOT, "loops/spec-refine-loop/LOOP.md"), "utf8");
     const planLoop = await readFile(join(SKILL_ROOT, "loops/plan-refine-loop/LOOP.md"), "utf8");
@@ -362,6 +387,91 @@ describe("Phase contract — plan loops ↔ the transversal surfaces ↔ the run
     expect(exec).toContain("\u00a7 *Entry gate \u2014 executability*");
     // plan-refine stays auxiliary: exec runs any plan that is already executable.
     expect(exec).toContain("plan-refine is auxiliary, not mandatory");
+  });
+
+  it("a blocked phase reads the same to the writer and to both readers", async () => {
+    // `bloqueada` is the state the correction round put to work: it is where a
+    // phase whose proof could not run now waits. A reader that ignores it would
+    // report the plan as merely half-done and lose WHY it stopped.
+    const exec = await readFile(join(SKILL_ROOT, "loops/plan-exec-loop/LOOP.md"), "utf8");
+    const checkpoint = await readFile(
+      join(SKILL_ROOT, "artifacts/artifacts-core/CHECKPOINT.md"),
+      "utf8",
+    );
+    expect(exec).toContain("> Bloqueo:");
+    for (const [name, doc] of [
+      ["status", await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8")],
+      ["resume", await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8")],
+      ["checkpoint", checkpoint],
+    ] as const) {
+      expect(doc, name).toContain("`bloqueada`");
+    }
+    expect(checkpoint).toContain("**what is missing to validate it**");
+  });
+
+  it("`## Tasks` is the single source of phases, in the doctrine and in the parser", async () => {
+    const planNew = await readFile(join(SKILL_ROOT, "loops/plan-new-loop/LOOP.md"), "utf8");
+    const exec = await readFile(join(SKILL_ROOT, "loops/plan-exec-loop/LOOP.md"), "utf8");
+    expect(planNew).toContain("ONLY source of phases");
+    expect(exec).toContain("`### Fn` blocks under `## Tasks`");
+    const { parsePhases } = await import("../../src/application/parsers/phases.js");
+    const quoted = [
+      "## Solution",
+      "### F9 \u2014 ejemplo citado en la soluci\u00f3n",
+      "> Estado: validada",
+      "",
+      "## Tasks",
+      "### F1 \u2014 El carrito acepta un cup\u00f3n",
+      "> Estado: validada",
+    ].join("\n");
+    expect(parsePhases(quoted)).toMatchObject({ total: 1, validated: 1 });
+  });
+});
+
+describe("Simulation is conditional \u2014 one rule across every producer and consumer", () => {
+  // Eight docs used to state the simulation requirement in their own words, and
+  // several of them stated it unconditionally, so a config change or a direct
+  // migration could be pushed into inventing a stub to satisfy the template.
+  // ONE test for ONE rule, instead of eight `toContain` scattered per round.
+  const CARRIERS = [
+    "SKILL.md",
+    "loops/CODE-POLICIES.md",
+    "loops/plan-new-loop/LOOP.md",
+    "loops/plan-refine-loop/LOOP.md",
+    "loops/plan-exec-loop/LOOP.md",
+    "commands/plan-exec.md",
+    "commands/plan-refine.md",
+    "artifacts/artifacts-core/CHECKPOINT.md",
+  ];
+
+  /** The canonical qualifiers. `CODE-POLICIES.md` owns the reference wording. */
+  const CONDITIONAL =
+    /only when the change carries|if temporary behavior exists|only when the journey introduces temporary behavior/;
+
+  it("every doc that demands a simulation boundary qualifies the demand", async () => {
+    const offenders: string[] = [];
+    for (const rel of CARRIERS) {
+      const doc = await readFile(join(SKILL_ROOT, rel), "utf8");
+      if (!CONDITIONAL.test(doc)) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the unconditional forms cannot come back", async () => {
+    const exec = await readFile(join(SKILL_ROOT, "loops/plan-exec-loop/LOOP.md"), "utf8");
+    const planNew = await readFile(join(SKILL_ROOT, "loops/plan-new-loop/LOOP.md"), "utf8");
+    expect(exec).not.toContain("the simulation boundary in force is identifiable");
+    expect(planNew).not.toContain("the simulation boundary is located");
+  });
+
+  it("conditional never means optional: an active simulation still blocks", async () => {
+    // The relaxation is about ABSENCE. Where temporary behavior exists, the
+    // retirement and the anti-production rule stay exactly as strict.
+    const refine = await readFile(join(SKILL_ROOT, "loops/plan-refine-loop/LOOP.md"), "utf8");
+    const policies = await readFile(join(SKILL_ROOT, "loops/CODE-POLICIES.md"), "utf8");
+    expect(refine).toContain("one phase owns the retirement");
+    expect(refine).toContain("**Removal gate**");
+    expect(policies).toContain("no configuration can select them in a production runtime");
   });
 });
 

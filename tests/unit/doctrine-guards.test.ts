@@ -138,6 +138,23 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // in plan-exec-loop precisely so the other flows would not pay for it.
   // Measured after: quick 48 882 · spec-new 13 769 · spec-refine 55 174 ·
   // plan-new 51 287 · plan-refine 71 075 · plan-exec 60 066.
+  // Correction round — four flows move, and none of it buys a new feature: it
+  // pays for saying precisely what the previous three rounds said loosely. The
+  // spend is concentrated where the ambiguity was. spec-refine (+1 719 B in the
+  // LOOP) gets the `replace` branch its change-shape gate always claimed to
+  // have but never offered — a third shape with an offer of its own instead of
+  // borrowing the split question. plan-exec (+999 B) turns "deferred" into
+  // `bloqueada` across the phase cycle, Delta 4, Delta 6, the sequence and the
+  // convergence rule; that one rule appears five times because execution reads
+  // those five places at five different moments. plan-new (+393 B) gains the
+  // bare-value rule of the state line, and plan-refine (+810 B on its own file,
+  // plus what it inherits from plan-new-loop) the mutation frontier and the
+  // conditional simulation. quick and spec-new do not move: the chassis and
+  // CODE-POLICIES are untouched — CODE-POLICIES already carried the canonical
+  // conditional wording this round propagated to everyone else, which is why it
+  // was the reference and not a cost. Re-anchored to measured + ~0.8 KB
+  // (measured: quick 48 882 · spec-new 13 769 · spec-refine 56 893 ·
+  // plan-new 51 680 · plan-refine 72 332 · plan-exec 61 396).
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -157,12 +174,12 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 56_000,
+      budget: 57_700,
     },
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 52_100,
+      budget: 52_500,
     },
     {
       flow: "plan-refine",
@@ -172,7 +189,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 71_900,
+      budget: 73_200,
     },
     {
       flow: "plan-exec",
@@ -182,7 +199,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 60_900,
+      budget: 62_200,
     },
   ];
 
@@ -447,18 +464,21 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     expect(planExec).toContain("> Estado: done — YYYY-MM-DD · sesión NNN");
   });
 
-  it("the residue rule carves out the Open-questions deferrals and the phase state line", async () => {
+  it("the residue rule carves out the Open-questions deferrals, the phase state and its blocker line", async () => {
     // The hard rule must not contradict the loop's own degrade/defer path
     // (Delta 4 unapplied migration · Delta 5 deferred finding · Delta 7 failed
     // probe all write the plan's `## Open questions`) nor the phase state the
-    // functional-phases round made machine-readable.
+    // functional-phases round made machine-readable. The correction round adds
+    // the fifth write: the `> Bloqueo:` line that keeps the reason OFF the
+    // machine state line.
     const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
     const rule = planExec.slice(planExec.indexOf("**Plan-doc residue (hard rule):**"));
     const sentence = rule.slice(0, rule.indexOf("\n"));
     expect(sentence).toContain("## Open questions");
     expect(sentence).toMatch(/deferral/i);
     expect(sentence).toContain("> Estado:");
-    expect(sentence).toMatch(/four things/);
+    expect(sentence).toContain("> Bloqueo:");
+    expect(sentence).toMatch(/five things/);
   });
 
   it("the schemas that dropped ## Q&A traceability cannot resurrect it", async () => {
@@ -555,8 +575,18 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   // silent return to "close every gap": the convergence target watered down,
   // the destination axis dropped so PLAN-owned questions block again, ideation
   // back to a universal gap, or the maturity mark sliding back from machine
-  // state into a narrative section.
+  // state into a narrative section. The correction round adds the third shape
+  // of the change-shape gate: `replace`, with an offer of its own.
   const LOOP = "loops/spec-refine-loop/LOOP.md";
+
+  /** A bolded lead-in and the prose that follows it, up to the next `## ` heading. */
+  function section(doc: string, lead: string): string {
+    const start = doc.indexOf(lead);
+    expect(start, lead).toBeGreaterThan(-1);
+    const rest = doc.slice(start);
+    const end = rest.indexOf("\n## ");
+    return end === -1 ? rest : rest.slice(0, end);
+  }
 
   it("spec-refine declares the convergence target verbatim", async () => {
     const loop = await readRel(LOOP);
@@ -612,6 +642,34 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
     expect(loop).toContain("born **`status: draft`**");
   });
 
+  it("the gate has three shapes, and `replace` never borrows the split question", async () => {
+    // Correction round: `split` and `replace` used to share one offer, so the
+    // question asked about cardinality when what changed was the purpose.
+    const loop = await readRel(LOOP);
+    expect(loop).toContain("`same` | `split` | `replace`");
+    expect(loop).toContain("**Replace semantics.**");
+    const replace = section(loop, "**Replace semantics.**");
+    expect(replace).toContain("`Crear una nueva spec`");
+    expect(replace).toContain("`Reformular esta spec`");
+    expect(replace).toContain("**never** the split labels");
+    expect(replace).not.toContain("Dividir en varias specs");
+  });
+
+  it("a replacement mints a draft with its origin, and reformulating re-runs the gate", async () => {
+    const replace = section(await readRel(LOOP), "**Replace semantics.**");
+    expect(replace).toContain("born **`status: draft`**");
+    expect(replace).toContain("`## Origin` recording the origin spec");
+    // Reformulating keeps the identity but never inherits the old approval.
+    expect(replace).toContain("the *ready-for-plan gate* run again");
+    expect(replace).toContain("stamped only on the save that follows the passing gate");
+  });
+
+  it("the round adds no archival state — `superseded` stays out of the vocabulary", async () => {
+    const loop = await readRel(LOOP);
+    expect(loop).toContain("Neither branch adds a `superseded` status");
+    expect(loop).not.toContain("status: superseded");
+  });
+
   it("the maturity mark is machine state, tolerant of legacy and never a gate bypass", async () => {
     const loop = await readRel(LOOP);
     expect(loop).toContain("It is machine state, never prose");
@@ -641,6 +699,10 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
   // the gate, `validada` inferred from the checkboxes again, a simulation left
   // with no retirement, or the deviation gate migrating into the shared engine
   // so all five flows pay for a PLAN-only rule.
+  // The correction round closes the escape hatch the first one left open: an
+  // annotated `validada — SQL pendiente de aplicar` let a phase whose proof
+  // nobody ran count as demonstrated, which is the same inference the round
+  // exists to forbid, wearing a suffix.
   const PLAN_NEW = "loops/plan-new-loop/LOOP.md";
   const PLAN_REFINE = "loops/plan-refine-loop/LOOP.md";
   const PLAN_EXEC = "loops/plan-exec-loop/LOOP.md";
@@ -677,6 +739,55 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     // Additive by design: the round adds a signal, it does not replace progress.
     expect(contract).toContain("**alongside \u2014 not instead of \u2014**");
     expect(contract).toContain("nothing is back-filled");
+    // Nor from a validation that was merely declared: it has to have run.
+    expect(contract).toContain("its validation **ran and passed**");
+  });
+
+  it("the state line carries a bare value \u2014 the reason lives on its own line", async () => {
+    // The parser reads the value as an exact match, so an annotation does not
+    // qualify a state, it destroys it. Doctrine and runtime say the same thing.
+    const contract = await phaseContract();
+    expect(contract).toContain("**The state line carries its value alone**");
+    expect(contract).toContain("an annotated value reads as `pendiente`");
+    expect(contract).toContain("> Bloqueo: <reason>");
+
+    const { parsePhases } = await import("../../src/application/parsers/phases.js");
+    const annotated = [
+      "## Tasks",
+      "### F1 \u2014 El esquema soporta el cup\u00f3n",
+      "> Estado: validada \u2014 SQL pendiente de aplicar",
+      "> Bloqueo: falta aplicar la migraci\u00f3n.",
+      "- [x] T1.1",
+    ].join("\n");
+    expect(parsePhases(annotated)).toMatchObject({ total: 1, validated: 0 });
+  });
+
+  it("a proof nobody could run leaves the phase `bloqueada`, and the plan open", async () => {
+    const exec = await readRel(PLAN_EXEC);
+    expect(exec).toContain("**stays `bloqueada`**");
+    expect(exec).toContain("A deferred check never counts as a passed one");
+    expect(exec).toContain("a blocker is never deferred into `validada`");
+    expect(exec).toContain("`Marcar plan done` is offered under no other condition");
+    // The old escape hatch cannot come back anywhere in the bundle.
+    for (const file of await listMdFiles(SKILL_ROOT)) {
+      const rel = file.slice(SKILL_ROOT.length + 1);
+      const text = await readFile(file, "utf8");
+      expect(text, rel).not.toContain("SQL pendiente de aplicar");
+      expect(text, rel).not.toContain("SQL pending application");
+    }
+  });
+
+  it("execution owns progress, refinement owns structure \u2014 stated, not implied", async () => {
+    // plan-refine used to claim the plan "never mutates by execution" while
+    // plan-exec flipped checkboxes and phase states in it. The frontier is the
+    // fix: not WHETHER execution writes, but WHAT it is allowed to write.
+    const refine = await readRel(PLAN_REFINE);
+    expect(refine).toContain("**Execution updates progress; refinement changes structure.**");
+    expect(refine).not.toContain("never mutates by execution");
+    for (const owned of ["contracts", "phase shape or order", "simulation boundaries"]) {
+      expect(refine, owned).toContain(owned);
+    }
+    expect(refine).toContain("belongs to `spec-refine`");
   });
 
   it("runtime and doctrine share one vocabulary (the code\u2194doctrine drift class)", async () => {
@@ -754,6 +865,10 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     const policies = await readRel("loops/CODE-POLICIES.md");
     expect(policies).toContain("**Temporary simulation check**");
     expect(policies).toContain("no configuration can select them in a production runtime");
+    // …and the lifecycle only exists when there is something to retire.
+    expect(refine).toContain(
+      "**This section applies only when the journey introduces temporary behavior**",
+    );
   });
 
   it("evidence is chosen by behavior, and over-testing is a finding, not an auto-rejection", async () => {

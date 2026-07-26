@@ -46,7 +46,7 @@ Closing *every* gap turns the spec into a premature plan. Close what changes **w
 **Adopt, do not repeat.** `spec-new`'s **facts** are reused; its **assumptions** are re-validated **only when one blocks a gap**; its `Open questions` are re-classified by destination; its one-vs-many hypothesis is re-judged at the *Change-shape gate*. The shallow sweep is never re-run wholesale. Keep the labels distinct — a spec that blurs them cannot be gated: **fact** (backed by repo, data or docs) · **inference** (unproven) · **user decision** · **deferred decision** (owner declared) · **open question** (can still move the contract).
 
 ## Writes
-Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Guardar especificación refinada`): completes sections, **adds** `## Decisions`, closes `Open questions` as they get resolved, and stamps the frontmatter `status: ready-for-plan`. Since it overwrites an existing doc, it asks the user's **confirmation**. An accepted split also **creates** the extracted sibling specs (§ *Change-shape gate*).
+Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Guardar especificación refinada`): completes sections, **adds** `## Decisions`, closes `Open questions` as they get resolved, and stamps the frontmatter `status: ready-for-plan`. Since it overwrites an existing doc, it asks the user's **confirmation**. An accepted split — or an accepted replacement — also **creates** new spec files (§ *Change-shape gate*).
 
 > **Boundary invariant:** this loop writes **only** into `docs/specs`. It never graduates/exports other artifacts to `docs/` — that is separate `export-*` work (chassis § *docs/ boundary*).
 
@@ -80,17 +80,24 @@ When the project already exists, establish the current behavior the change rests
 
 ## Change-shape gate
 
-Runs once the baseline exists and **before** closing details: the investigation can reveal the draft's shape was wrong. Does the spec still carry **one** functional outcome, did its purpose survive, can the delivery be accepted as a unit?
+Runs once the baseline exists and **before** closing details: the investigation can reveal the draft's shape was wrong. Does the spec still carry **one** functional outcome, did its purpose survive, can the delivery be accepted as a unit? The verdict is **one of three shapes** — `same` | `split` | `replace` — each with its own branch; only the last two ask anything.
 
-- same outcome — more clarity, or more technical components → **one spec**;
-- independent functional outcomes discovered → **propose the split** (below);
-- purpose fundamentally changed → propose a **new spec**; this one is reduced or closed;
+- same outcome — more clarity, or more technical components → **`same`**: no shape question, keep refining this spec;
+- independent functional outcomes discovered → **`split`** (below);
+- purpose fundamentally changed → **`replace`** (below);
 - refactor indispensable to the outcome → a consideration for `PLAN`, never its own spec; refactor with no functional change → out of the contract;
-- evidence insufficient → **one spec** + the uncertainty recorded. Thin evidence never justifies a cut.
+- evidence insufficient → **`same`** + the uncertainty recorded. Thin evidence never justifies a cut.
 
 **Split criterion** — the one `spec-new` already uses ([`../../commands/spec-new.md`](../../commands/spec-new.md) § *Split gate (multi-spec)*), never a different one: divide **only** when each part can be refined, accepted and planned on its own. Repos, technologies, layers or teams are **secondary evidence**, never the reason.
 
 **Split semantics (in place).** The offer enters the batch as a content question — `Dividir en varias specs` | `Una sola spec`; declining marks it **exhausted** for the run. On acceptance: the original **keeps its number/path**, rewritten reduced to its remaining outcome; each extracted outcome is minted with `aw next-number docs/specs` right before its write and is born **`status: draft`**. Siblings are **not** elaborated here — unlike the multi-plan gate, where `plan-exec` would break on a plan with no `## Tasks`; a draft spec is legitimate input to this very loop — so the run keeps refining the **reduced original** and reports `/w:spec-refine` as each sibling's next step. Every `## Origin` records "split from `docs/specs/NNN-spec-<slug>.md`" + the siblings **by path**. Closing action on this branch: `Guardar specs`.
+
+**Replace semantics.** Its offer is its own — `Crear una nueva spec` | `Reformular esta spec`, **never** the split labels: what gets decided is which identity carries the new purpose. Recommend **a new spec** when the main functional outcome or the actor/consumer changed; **reformulating** when the user confirms this file is still the same unit of work and wants to keep its identity.
+
+- **New spec:** this one is **preserved**, its purpose never silently rewritten; the new one is minted with `aw next-number docs/specs`, born **`status: draft`**, its `## Origin` recording the origin spec, the replaced purpose and the user's decision. Its path goes to the `CHECKPOINT`; the run closes reporting `/w:spec-refine <new path>` as the next step.
+- **Reformulate:** same number/path, the work treated as `refining` while rewritten; baseline, gap classification and the *ready-for-plan gate* run again over the new purpose; `status` is stamped only on the save that follows the passing gate, and the material decision lands in `## Decisions`.
+
+Neither branch adds a `superseded` status or archives the replaced spec: a historical close needs its own runtime contract, out of scope here.
 
 ## Deliverable schema (the spec, edited in place)
 
@@ -185,8 +192,9 @@ spec-refine-loop(spec):
   work = read(input)  (+ apply checkpoint progress if resuming)
   adopt(spec-new facts + assumptions + open questions + conversation)  # never re-derive (§ Reads)
   baseline = resolve_current_behavior(work)      # inline research, ONLY what the change rests on
-  shape = change_shape_gate(work, baseline)      # BEFORE closing details
-  if shape.split or shape.replace: pending_human.push(shape offer)   # `Dividir en varias specs` | `Una sola spec`
+  shape = change_shape_gate(work, baseline)      # BEFORE closing details → same | split | replace
+  if shape == split:   pending_human.push(split offer)     # `Dividir en varias specs` | `Una sola spec`
+  if shape == replace: pending_human.push(replace offer)   # `Crear una nueva spec` | `Reformular esta spec`
   attempts = {}                                          # anti re-fire per gap
   repeat:
     gaps = classify_by_destination(detect_gaps(work)) minus the "exhausted" gaps
@@ -214,7 +222,9 @@ spec-refine-loop(spec):
       switch(flow):
         Compactar → write CHECKPOINT (refine_session) ; compact(harness) ; continue
         Cerrar    → goto finalize
-      work = integrate(work, ans)            # → Decisions / Open questions / the accepted split shape
+      work = integrate(work, ans)            # → Decisions / Open questions / the accepted shape
+      accepted `Crear una nueva spec`  → mint draft (## Origin) ; this one untouched ; CHECKPOINT.Next = refine it ; goto finalize
+      accepted `Reformular esta spec`  → same number/path ; re-run baseline + gaps + ready-for-plan gate before any stamp
       ideation offer accepted → run the round NOW, then its verdicts as a NEW ≤3+flow batch (§ Ideation gate)
       ideation offer declined → mark that gap exhausted    # anti re-fire; on-demand entry stays open
   # no BLOCKING gaps → ready-for-plan gate = Success criteria green (read-only) before offering Guardar:

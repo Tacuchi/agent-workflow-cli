@@ -59,7 +59,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 **Before touching code**, read the plan and its spec and check the shape execution depends on:
 
 1. every phase declares its `Resultado`, its `Condición de salida` and its `Validación de fase`;
-2. the simulation boundary in force is identifiable;
+2. if temporary behavior exists, its current boundary and retirement phase are identifiable; otherwise the simulation check is not applicable;
 3. the primary proof of the first `pendiente` phase is identifiable;
 4. no structural contradiction is evident (a phase that undoes an earlier one, evidence nobody can produce).
 
@@ -75,10 +75,10 @@ Execution **no longer accepts in silence** a plan that would force it to invent 
 - Walks the plan's `### Fn` blocks under `## Tasks` in order (respecting deps) **inside the run's single session** (no session-per-phase). *(Legacy plans: a separate `## Phases` table — walk it the same way.)*
 - **Phase cycle** (artifact-first, one per `### Fn`): read `Resultado` + `Condición de salida` → confirm the initial state → flip `> Estado: en ejecución` and seed `CHECKPOINT.Next` → execute its tasks → run the phase proof plus the justified focused tests (Delta 4). Then: closing review gate over the phase's whole diff (Delta 5) → confirm the `Condición de salida` → flip `> Estado: validada` → update `CHECKPOINT` and propose commits (Delta 2).
 - Executes the phase's tasks; **skips** the ones already `- [x]` in the plan (the plan-doc is the per-task source of truth). **Micro steps stay internal** (canonical contract): they reach `CHECKPOINT` only when a resume needs them, never the plan.
-- **Marking order (hard rule):** a task is marked `- [x]` when its local work is finished. A phase reaches `validada` **only** when its primary proof passed, the needed focused checks passed, its `Condición de salida` is true, the review gate is green and every allowed blocker is explicitly deferred. **Never** because all its checkboxes are ticked.
-- **Intermediate states:** `bloqueada` = the phase is stopped on a live blocker — recorded in `CHECKPOINT` + the plan's `## Open questions`, back to `en ejecución` when it clears; it counts as **not validated**. A phase whose work is complete but whose operative check the AI **cannot run** (an unapplied migration — Delta 3) closes as `> Estado: validada — SQL pendiente de aplicar`. The suffix keeps it counted as `validada` and names what is pending; the deferral is **also** recorded in `## Open questions` + `BACKLOG` (Delta 4), symmetric with the plan-level line of Delta 6. Never a silent `validada`.
-- **Plan-doc residue (hard rule):** execution writes into the plan-doc **only** four things — checkbox flips (`- [ ]` → `- [x]`), the phase's own `> Estado:` line (in place), deferrals appended to its `## Open questions` (the declared-gap hatch: Deltas 4, 5 and 7), and, on close, the single plan status line (Delta 6). Per-phase results, review-gate findings and metrics go to the session's `DECISION`/`CHECKPOINT` — **never** into the plan-doc. Phase blocks are updated **in place — NEVER append a duplicate `### Fn` block** (same contract as CHECKPOINT sections). The entry gate's consented normalization is the single exception, and it lands before execution starts.
-- **CHECKPOINT per phase:** on closing a phase record the **functional state reached**, the **simulation boundary in force**, the tests run and their result, the non-obvious decisions, the deferrals and the next state being pursued. Enumerating every file touched is not required unless it helps a resume.
+- **Marking order (hard rule):** a task is marked `- [x]` when its local work is finished. A phase reaches `validada` **only** when its primary proof **ran and passed**, the needed focused checks passed, its `Condición de salida` is true, the review gate is green and every remaining review finding is explicitly deferred — a blocker is never deferred into `validada`. **Never** because all its checkboxes are ticked.
+- **Intermediate states:** `bloqueada` = the phase is stopped on a live blocker — recorded in `CHECKPOINT` + the plan's `## Open questions`, back to `en ejecución` when it clears; it counts as **not validated**. A phase whose work is complete but whose operative check the AI **cannot run** (an unapplied migration — Delta 3) **stays `bloqueada`**: its finished tasks keep their boxes ticked, and the reason goes on its own `> Bloqueo:` line, dropped when the blocker clears. It counts as **not validated** until the check runs and passes. Never a silent `validada`.
+- **Plan-doc residue (hard rule):** execution writes into the plan-doc **only** five things — checkbox flips (`- [ ]` → `- [x]`), the phase's own `> Estado:` line, its `> Bloqueo:` line while blocked, deferrals appended to its `## Open questions`, and, on close, the single plan status line (Delta 6). The declared-gap hatch is Deltas 4, 5 and 7. Per-phase results, review-gate findings and metrics go to the session's `DECISION`/`CHECKPOINT` — **never** into the plan-doc. Phase blocks are updated **in place — NEVER append a duplicate `### Fn` block** (same contract as CHECKPOINT sections). The entry gate's consented normalization is the single exception, and it lands before execution starts.
+- **CHECKPOINT per phase:** on closing a phase record the **functional state reached**, the simulation boundary in force **only when the change carries one**, the tests run and their result, the non-obvious decisions, the deferrals and the next state being pursued. Enumerating every file touched is not required unless it helps a resume.
 - Records in `DECISION` only the **non-obvious**, **as it is decided** (per-phase decisions accumulate in the SINGLE `DECISION`, tagged by phase/task — e.g. `Origin: T2 (F1)`). A structural deviation is **not** settled with an entry there (§ *Deviation gate*).
 - The chassis **gap-driven** engine applies here **inside a task**: facing a non-obvious decision/doubt → inline research, a probe (Delta 7) OR structured-choice.
 
@@ -122,9 +122,9 @@ Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *DB scripts-only
 - Each added test is re-weighed at the closing review gate ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate* → *Test-value lens*, tag `overtest`): over-testing is a **finding to fix or justify**, never an automatic rejection.
 - Also run the plan's `## Validations` (cross-cutting rules and constraints) + the Final behavior block of `## Solution` (legacy plans: the `## Final behavior` section) + the spec's acceptance/success criteria (its `## Scenarios`, if present, are ready-made test cases: GIVEN=arrange · WHEN=act · THEN=assert).
 - A validation that **runs and fails** → back into the phase (gap): no advancing, no `validada`.
-- **Validation depending on an unapplied migration**: since the AI never executes the DML, it **cannot run it read-only** → it is **deferred** (handoff to a DBA), it does **not block progress**. Recorded in the plan's `## Open questions` + `BACKLOG`, marked "verification pending until the SQL is applied". (Reuses the chassis degrade/defer pattern + `MAX` cap → avoids the "back to the task" loop.)
+- **Validation depending on an unapplied migration**: since the AI never executes the DML, it **cannot run it read-only** → the check is **deferred** (handoff to a DBA) and the phase **stays `bloqueada`**. A phase whose implementation is finished but whose operative proof cannot run does not become `validada`: the work may be complete and its boxes ticked, but the state waits until the proof runs and passes. The reason goes on its `> Bloqueo:` line, in `CHECKPOINT`, in the plan's `## Open questions` and in `BACKLOG`, marked "verification pending until the SQL is applied". (Reuses the chassis degrade/defer pattern + `MAX` cap → avoids the "back to the task" loop.)
 
-> The **final validation** is PLAN-exec's **convergence gate** = **`Success criteria` green** (*verification-first*; analogous to SPEC's *analyze gate* and plan-new's *coherence gate*): the plan is not marked *done* until it passes or is explicitly deferred (SQL handoff). For code these are **runnable tests** (TDD); for non-executable DB migrations, a **rubric** (SCRIPTS.sql valid + reviewed).
+> The **final validation** is PLAN-exec's **convergence gate** = **`Success criteria` green** (*verification-first*; analogous to SPEC's *analyze gate* and plan-new's *coherence gate*): the plan is not marked *done* until it passes. A deferred check never counts as a passed one — it keeps its phase `bloqueada` and the plan open. For code these are **runnable tests** (TDD); for non-executable DB migrations, a **rubric** (SCRIPTS.sql valid + reviewed).
 
 ## Delta 5 — Closing review gate (conventions, pre-commit)
 
@@ -132,9 +132,9 @@ Full gate in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Closing review ga
 
 ## Delta 6 — Completion / close
 
-- A phase closes when its `> Estado:` reads `validada`: work done, `Condición de salida` true, proof passed **or** deferred with a declared handoff (SQL). Possible state: **"done — SQL pending application"**.
-- All phases `validada` → final *structured-choice* (content: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`).
-- **Marking done = ONE line in the plan-doc**, under the title's blockquote: `> Estado: done — YYYY-MM-DD · sesión NNN` (or `done — SQL pendiente de aplicar`), updated in place on a re-run. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
+- A phase closes when its `> Estado:` reads `validada`: work done, `Condición de salida` true, proof **run and passed**. A proof still waiting on an operative handoff leaves it `bloqueada`.
+- **Every phase `validada` + the final validation passed** → final *structured-choice* (content: `Marcar plan done` / `Preguntar algo más`; flow: `Compactar`/`Cerrar`). `Marcar plan done` is offered under no other condition: one `bloqueada` phase keeps the plan open, however many of its tasks are ticked.
+- **Marking done = ONE line in the plan-doc**, under the title's blockquote: `> Estado: done — YYYY-MM-DD · sesión NNN`, updated in place on a re-run. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
 - **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.
 
 ## Delta 7 — Probe (PoC) tasks
@@ -151,7 +151,7 @@ Chassis § *Proof of concept (probe)*, instantiated for execution — for a plan
 plan-exec-loop(PPP-plan-<slug>.md):
   session = create_or_resume("<slug>-plan-exec")           # <slug> from the plan-doc; ONE session per run; CLI prepends global NNN; CHECKPOINT, resume
   plan = read(PPP-plan-<slug>.md, its spec, checkpoint)
-  entry gate (executability): result · exit condition · phase proof · simulation boundary · no structural contradiction
+  entry gate (executability): result · exit condition · phase proof · simulation boundary if any · no structural contradiction
       minor gap      → structured-choice [Normalizar y ejecutar | Ir a plan-refine] → normalize in place + DECISION
       structural gap → CHECKPOINT(blocker) → hand off to /w:plan-refine → stop
   for each Phase (### Fn block in ## Tasks; legacy: ## Phases table) in plan (in order, respecting deps):
@@ -178,28 +178,30 @@ plan-exec-loop(PPP-plan-<slug>.md):
       mark Task - [x] IN THE PLAN                          # AFTER its local work; checkbox flip ONLY — results go to DECISION/CHECKPOINT
     phase proof (Validación de fase) + the justified focused tests:   # Delta 4 levels 1→3
         what runs and fails → back into the phase (no validada)
-        what depends on an unapplied migration → defer (Open questions + BACKLOG)
+        what cannot run (unapplied migration) → defer the CHECK, never the validation: the phase stays bloqueada
     closing review gate (pre-commit):                      # Delta 5: CHECKPOINT.Next = "review phase N"
         INDEPENDENT re-read of the WHOLE phase diff + installed ambient conventions
         + floor lenses: minimality · test value (overtest) · temporary simulation · tooling
         findings → fix (and re-validate the phase) OR defer justified (Open questions + BACKLOG)
-    confirm the Condición de salida → set > Estado: validada  # NEVER from the checkboxes alone
-        blocker still live      → set > Estado: bloqueada + CHECKPOINT + Open questions
-        check deferred (SQL)    → set > Estado: validada — SQL pendiente de aplicar
-    update CHECKPOINT (functional state reached · simulation boundary · tests + result · decisions · deferrals · next state)
+    confirm the Condición de salida → set > Estado: validada  # ONLY with the proof run and passed; NEVER from the checkboxes alone
+        blocker still live       → set > Estado: bloqueada + > Bloqueo: <reason> + CHECKPOINT + Open questions
+        check not runnable (SQL) → set > Estado: bloqueada + > Bloqueo: <reason> + CHECKPOINT + Open questions + BACKLOG
+    update CHECKPOINT (functional state reached · simulation boundary if any · tests + result · decisions · deferrals · next state)
     propose commit(s) per source (approve first)           # never push/amend/--no-verify; only after the gate is green
         if rejected → changes stay; record "phase uncommitted"
     next-phase precondition: working tree clean or acknowledged
-  final validation (whatever can run; the SQL-dependent part stays as a handoff)
-  structured_choice(content: [Marcar plan done, Preguntar algo más], flow: [Compactar, Cerrar])
-  mark plan done → ONE status line under the title blockquote (Delta 6), updated in place
+  final validation (whatever can run; a deferred check keeps its phase bloqueada)
+  if every phase validada AND the final validation passed:
+    structured_choice(content: [Marcar plan done, Preguntar algo más], flow: [Compactar, Cerrar])
+    mark plan done → ONE status line under the title blockquote (Delta 6), updated in place
+  else: the plan stays open → CHECKPOINT.Next = run the pending validation of the blocked phase(s)
   # NO export: artifacts stay in the session; a separate export-* promotes them
 finalize: CHECKPOINT (+ BACKLOG if something is deferred) + close session + report
 ```
 
 ## Convergence / exit
 
-- **Every phase `validada`** + final validation OK (or deferred with a handoff) + **every phase passed its closing review gate** before committing → `Marcar plan done`. A phase left `pendiente`, `en ejecución` or `bloqueada` keeps the plan open, whatever its checkboxes say.
+- **Every phase `validada`** + final validation **run and passed** + **every phase passed its closing review gate** before committing → `Marcar plan done`. A phase left `pendiente`, `en ejecución` or `bloqueada` keeps the plan open, whatever its checkboxes say — a proof waiting on an operative handoff (an unapplied migration) is exactly that case.
 - A **structural deviation** or a **functional change** exits this loop without converging (§ *Deviation gate*): `CHECKPOINT` + `finalize`, and the work continues in `plan-refine` / `spec-refine`. Same exit when the entry gate finds a structural gap.
 - `Cerrar` (`flow` control, at any time) → `finalize` persists `CHECKPOINT` (and `BACKLOG` only if something remained unexecuted / uncommitted / unapplied), closes the session, reports.
 - Promoting artifacts to `docs/` (via `export-*`) is **always** a later, explicit step outside this loop.
