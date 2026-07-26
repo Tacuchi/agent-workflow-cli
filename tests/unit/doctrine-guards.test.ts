@@ -100,6 +100,13 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // workspaces' specs/plans/sessions, NOT in skills/w. Budgets re-anchored to
   // measured + ~0.8 KB (measured: quick 47 839 · spec-refine 45 028 ·
   // plan-new 45 769 · plan-refine 57 207 · plan-exec 48 283).
+  // Bounded-reconnaissance round: `spec-new` enters the table with a row of its
+  // own. It has no loop, so its guaranteed load IS the command file, and until
+  // now that made it the only unbudgeted hot-path doc — exactly where this
+  // round spends (8 289 → 13 444 B: the reconnaissance pass, the functional
+  // independence criterion and where the findings may land). spec-refine moves
+  // too (the boundary note with spec-new: measured 45 410); quick absorbs its
+  // one-line note inside the existing headroom, so its budget stays put.
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -112,9 +119,14 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
       budget: 48_600,
     },
     {
+      flow: "spec-new",
+      files: ["commands/spec-new.md"],
+      budget: 14_300,
+    },
+    {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 45_800,
+      budget: 46_200,
     },
     {
       flow: "plan-new",
@@ -435,6 +447,62 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     const backlog = await readRel(join("artifacts", "artifacts-core", "BACKLOG.md"));
     expect(backlog).toContain("## Deferred");
     expect(backlog).not.toContain("## Followups");
+  });
+});
+
+describe("Doctrine guards — G15 · bounded reconnaissance pins", () => {
+  // Pin the reconnaissance round so a future compression pass cannot silently
+  // drop the pass, un-order it against the split gate, or turn the ceiling back
+  // into the old blanket prohibition. The ORDER is the whole point: looking
+  // after deciding the cut would be theater.
+  it("spec-new carries the reconnaissance section and its bounded contract", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    expect(specNew).toContain("## Bounded reconnaissance");
+    expect(specNew).toContain("BOUNDED RECONNAISSANCE, NO DEEP RESEARCH");
+    expect(specNew).toContain("**Budget: ≤5 reads + ≤3 searches.**");
+    expect(specNew).toContain("**cap, never a target**");
+    expect(specNew).toContain("**Stop at the first of these:**");
+    // The web prohibition survives the reframing (G11 guards it too).
+    expect(specNew).toContain("web searches");
+  });
+
+  it("the reconnaissance runs BEFORE the split gate", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    const recon = specNew.indexOf("## Bounded reconnaissance");
+    const gate = specNew.indexOf("## Split gate (multi-spec)");
+    expect(recon).toBeGreaterThan(-1);
+    expect(gate).toBeGreaterThan(recon);
+    expect(specNew).toContain("Right after the reconnaissance");
+  });
+
+  it("the cut follows functional independence — technical boundaries are secondary evidence", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    expect(specNew).toContain("refined, accepted and planned on its own");
+    expect(specNew).toContain("**secondary evidence**");
+  });
+
+  it("thin evidence degrades to a single spec, never to a speculative split", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    expect(specNew).toContain("justify a speculative cut");
+    expect(specNew).toContain("**one spec, no question**");
+  });
+
+  it("the scope hypothesis stays internal (no artifact, no new spec section)", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    expect(specNew).toContain("**reasoning, not an artifact**");
+    expect(specNew).not.toContain("## Scope hypothesis");
+  });
+
+  it("the findings have declared landing sites (Context anchored, Scope untouched)", async () => {
+    const specNew = await readRel("commands/spec-new.md");
+    expect(specNew).toContain("**at most one path per component**");
+    expect(specNew).toContain("**The code found never widens `Scope`**");
+    expect(specNew).toContain("**acceptance criteria derive from the user's intent**");
+  });
+
+  it("the pass never migrates to the shared engine", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    expect(chassis).not.toMatch(/bounded reconnaissance/i);
   });
 });
 

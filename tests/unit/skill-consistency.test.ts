@@ -227,6 +227,39 @@ describe("Split contract — spec-new ↔ plan-new-loop ↔ plan-refine-loop", (
   });
 });
 
+describe("Reconnaissance contract — spec-new ↔ quick-loop ↔ persist ↔ spec-refine-loop", () => {
+  // The bounded reconnaissance is scoped to a RAW prompt. The reuse entries keep
+  // the strict NO RESEARCH contract (their context arrives adopted, so looking
+  // again would re-derive settled work), and the deep investigation keeps living
+  // in spec-refine. Same shape as the QUICK escalation / Split contracts above.
+  it("spec-new scopes the pass to a raw prompt and keeps its single interaction", async () => {
+    const specNew = await readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8");
+    expect(specNew).toMatch(/ONE structured-choice/);
+    expect(specNew).toContain("only on a raw user prompt");
+  });
+
+  it("the reuse entries skip the pass and keep NO RESEARCH", async () => {
+    const specNew = await readFile(join(SKILL_ROOT, "commands/spec-new.md"), "utf8");
+    const quick = await readFile(join(SKILL_ROOT, "loops/quick-loop/LOOP.md"), "utf8");
+    const persist = await readFile(join(SKILL_ROOT, "commands/persist.md"), "utf8");
+    for (const doc of [specNew, quick, persist]) expect(doc).toContain("NO RESEARCH");
+    // quick-loop's live transition states the skip where it materializes the draft.
+    expect(quick).toContain("does **not** re-fire");
+    expect(specNew).toContain("no reconnaissance");
+  });
+
+  it("spec-refine-loop declares the boundary and owns the deep investigation", async () => {
+    const refine = await readFile(join(SKILL_ROOT, "loops/spec-refine-loop/LOOP.md"), "utf8");
+    expect(refine).toContain("Boundary with `spec-new`");
+    expect(refine).toContain("Deep investigation is this loop's");
+  });
+
+  it("the root orientation records the pass before the scope decision", async () => {
+    const root = await readFile(join(SKILL_ROOT, "SKILL.md"), "utf8");
+    expect(root).toMatch(/bounded reconnaissance/i);
+  });
+});
+
 describe("directed resume contract — resume.md optional argument (spec 004)", () => {
   const RESUME = "commands/resume.md";
 

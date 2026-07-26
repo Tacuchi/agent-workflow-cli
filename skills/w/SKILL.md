@@ -69,7 +69,7 @@ Typical chain: prompt → `spec-new` generates `docs/specs/NNN-spec-<slug>.md` �
 
 QUICK can **escalate live to SPEC** when the objective exceeds a quick (entry size gate) or the task grows mid-loop: with consent via structured-choice, the work line moves to the SPEC flow (draft via the `spec-new` procedure + `spec-refine-loop` directly); escalation to PLAN stays **deferred** (seed + pointer). See `loops/quick-loop/LOOP.md` § *QUICK delta*.
 
-Both authoring entry points can **split** with consent: `spec-new` may split a multi-part prompt into **sibling specs** (its split gate — one structured-choice before writing anything), and the plan loops may split a plan into independently deliverable **sibling plans** (`plan-new-loop` § *Split gate (multi-plan)*; plan-refine adds the in-place semantics). Siblings cross-reference **by path**; a split stays inside the same work line — it is not an escalation.
+Both authoring entry points can **split** with consent: `spec-new` may split a multi-part prompt into **sibling specs** (its split gate — one structured-choice before writing anything, decided **after** its bounded reconnaissance of the sources), and the plan loops may split a plan into independently deliverable **sibling plans** (`plan-new-loop` § *Split gate (multi-plan)*; plan-refine adds the in-place semantics). Siblings cross-reference **by path**; a split stays inside the same work line — it is not an escalation. The cut follows the **independent functional outcome**: distinct repos or technologies are evidence, never the reason.
 
 ### Operating context — where everything lands
 
@@ -100,7 +100,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 ### The commands (`/w:` namespace)
 
 - `/w:workspace-init` — initializes the workspace.
-- `/w:spec-new` — generates an initial spec (single-pass, no loop).
+- `/w:spec-new` — generates an initial spec (single-pass, no loop; a bounded reconnaissance of the sources precedes the scope decision).
 - `/w:spec-refine` — starts `spec-refine-loop` to refine the spec.
 - `/w:plan-new` — starts `plan-new-loop` to derive an executable plan from the refined spec.
 - `/w:plan-refine` — starts `plan-refine-loop` to refine the plan in place (auxiliary, **not mandatory**) before executing.

@@ -33,6 +33,8 @@ It is also started by the **live escalation from `quick-loop`** (entry gate or m
 ## Reads
 - `docs/specs/NNN-spec*.md` (glob — locates the spec by number; also catches the legacy `NNN-spec.md`), **or** the exact path passed as the command argument. **Always the spec itself**: this loop edits it in place; there is no separate "refined" file.
 
+> **Boundary with `spec-new`:** the draft arrives from a **bounded reconnaissance** of the surface ([`../../commands/spec-new.md`](../../commands/spec-new.md) § *Bounded reconnaissance*) — hypotheses, not verified facts. **Deep investigation is this loop's**: walk the dependencies, check those hypotheses, and close the doubts parked in `## Open questions`.
+
 ## Writes
 Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Guardar especificación refinada`): completes sections and **adds** `## Refinement decisions`, closing `Open questions` as they get resolved. Since it overwrites an existing doc, it asks the user's **confirmation**.
 
@@ -120,7 +122,7 @@ The loop's one **divergent** gate: every other resolver closes a gap; this one w
 1. **Offer & consent.** The gap enters the batch as a content question — `Explorar ideas` vs `Seguir sin ideación` — carrying the AI's recommendation like any other. Declining marks the gap **exhausted** (never re-offered this run); an explicit user request for ideas at any point counts as an accepted offer (on-demand entry). Alternatives already weighed in the conversation are *adopted context* — the gap does not fire.
 2. **Ideation round** (one per consent). Propose fresh ideas and **combinations** (the user's + found ones). If the host exposes **web-research** ([`../../harness/HARNESS.md`](../../harness/HARNESS.md)), the accepted offer also authorizes that round's web searches — no per-search consent; findings + sources land in the session's `CONCLUSIONS`, like inline research. Without the capability, ideate offline (own knowledge + workspace + repos) and **declare it** — never silently.
 
-**Verdicts (back to convergence).** Present the top ≤3 ideas via the same structured-choice, each with a recommended verdict: `Adoptar` → integrate into `Requirement`/`Scope`/criteria + trace in `## Refinement decisions` (idea, rationale, source/URL when web-found) · `Descartar` → one line + reason there · `Aparcar` → `## Open questions`. Ideas beyond the top 3 stay summarized in `CONCLUSIONS`. Divergence is bounded by *Minimality* (chassis): nothing enters the spec without an explicit `Adoptar`; the analyze gate keeps pruning gold-plating. This gate exists **only** in this loop — `spec-new` stays single-pass (no research, no web) and the plan/quick loops inherit none of it.
+**Verdicts (back to convergence).** Present the top ≤3 ideas via the same structured-choice, each with a recommended verdict: `Adoptar` → integrate into `Requirement`/`Scope`/criteria + trace in `## Refinement decisions` (idea, rationale, source/URL when web-found) · `Descartar` → one line + reason there · `Aparcar` → `## Open questions`. Ideas beyond the top 3 stay summarized in `CONCLUSIONS`. Divergence is bounded by *Minimality* (chassis): nothing enters the spec without an explicit `Adoptar`; the analyze gate keeps pruning gold-plating. This gate exists **only** in this loop — `spec-new` stays single-pass (bounded reconnaissance at most, no web) and the plan/quick loops inherit none of it.
 
 ## Sequence
 
