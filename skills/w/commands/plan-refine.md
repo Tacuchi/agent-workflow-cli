@@ -35,7 +35,7 @@ The skill evaluates `$ARGUMENTS` (plans live in place — `docs/plans/PPP-plan-<
 2. **No plan** (the arg references no plan, or none exists) → **soft-suggest** running `/w:plan-new` first (there is nothing to refine yet); the user decides.
 3. **Returned by `plan-exec`** (its entry check found the plan unexecutable, or execution stopped on a structural deviation) → proceed to `plan-refine-loop` carrying that finding: phases already `validada` stay, only pending work is re-designed (see `../loops/plan-refine-loop/LOOP.md` § *Replanning executed work*).
 
-> **Expected output: an executable plan.** The loop converges on its **executability gate** — each phase a verifiable state with its evidence, its exit condition and its simulation boundary — so `plan-exec` implements it without inventing contracts, observable states, order or evidence.
+> **Expected output: an executable plan.** The loop converges on its **executability gate** — each phase a verifiable state with its evidence, its exit condition and, **only when the change carries temporary behavior**, its simulation boundary — so `plan-exec` implements it without inventing contracts, observable states, order or evidence.
 
 ## Run the loop
 

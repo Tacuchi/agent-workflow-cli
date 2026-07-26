@@ -44,9 +44,9 @@ export interface StatusPlan {
   tasks_done: number;
   /** checkbox-derived work progress; the phase counts below never feed it */
   progress_pct: number;
-  /** `### Fn` blocks in the plan-doc; `0` on a legacy plan with no phases */
+  /** `### Fn` blocks inside the plan-doc's `## Tasks`; `0` on a plan with no phases */
   phases_total: number;
-  /** phases marked `> Estado: validada` — functional state, not work done */
+  /** phases whose exact mark is `> Estado: validada` — never inferred from the checkboxes */
   phases_validated: number;
   date: string;
   relative: string;
@@ -188,21 +188,34 @@ async function readSpecs(fs: FileSystemPort, cwd: string, now: Date): Promise<St
 }
 
 /**
- * Trace sections that marked a spec as worked-through before frontmatter `status`
- * existed. Any of them still means `ready-for-plan` so legacy specs keep parsing.
+ * The only two trace sections that marked a spec as worked-through before the
+ * frontmatter `status` existed. `## Decisions` is NOT one of them: it belongs
+ * to the current spec schema and proves nothing about the refine gate.
+ *
+ * Exported so the doctrine guard can check this list against the marks the
+ * bundle documents — the two drifted apart once, and a spec nobody refined
+ * reached PLAN because of it.
  */
-const LEGACY_READY_MARKS = ["Refinement decisions", "Q&A traceability", "Decisions"];
+export const LEGACY_READY_MARKS = ["Refinement decisions", "Q&A traceability"];
 
 /**
- * Spec maturity, most explicit source first: a declared frontmatter `status`
- * wins; an absent or unrecognized value falls back to the legacy marks; a spec
- * with neither is a draft.
+ * Spec maturity. A declared frontmatter governs alone: an empty, unknown or
+ * unterminated declaration reads `draft` — never a legacy inference, which
+ * would send work to PLAN on a gate `spec-refine` never ran. Legacy
+ * compatibility runs only on a spec that carries no frontmatter at all.
  */
 function resolveSpecStatus(text: string): SpecStatus {
-  const declared = parseFrontmatterScalar(text, "status")?.toLowerCase();
-  if (declared !== undefined && isSpecStatus(declared)) return declared;
-  const legacy = LEGACY_READY_MARKS.some((h) => parseMdSectionLoose(text, h) !== undefined);
-  return legacy ? "ready-for-plan" : "draft";
+  const frontmatter = parseSpecFrontmatter(text);
+  if (frontmatter.kind === "malformed") return "draft";
+  if (frontmatter.kind === "present") {
+    const declared = (frontmatter.status ?? "").toLowerCase();
+    return isSpecStatus(declared) ? declared : "draft";
+  }
+  return hasLegacyReadyMark(text) ? "ready-for-plan" : "draft";
+}
+
+function hasLegacyReadyMark(text: string): boolean {
+  return LEGACY_READY_MARKS.some((h) => parseMdSectionLoose(text, h) !== undefined);
 }
 
 function isSpecStatus(value: string): value is SpecStatus {
@@ -213,16 +226,29 @@ const FRONTMATTER_FENCE = "---";
 const FRONTMATTER_ENTRY = /^([A-Za-z0-9_-]+):\s*(.*)$/;
 
 /**
- * Read one scalar key from a closed `---` block at the top of the file. Specs
- * only carry flat scalars there, so this stays a few lines instead of pulling a
- * YAML dependency into the CLI. An unterminated block is not frontmatter.
+ * `absent` (no block at the top) · `present` (block opened and closed) ·
+ * `malformed` (opened, never closed). The three are not interchangeable: a
+ * broken declaration is a declaration, and only `absent` may fall back.
  */
-function parseFrontmatterScalar(text: string, key: string): string | undefined {
+type SpecFrontmatter =
+  | { kind: "absent" | "malformed" }
+  | { kind: "present"; status: string | undefined };
+
+/**
+ * Classify the `---` block at the top of the file and read its `status` scalar.
+ * Specs only carry flat scalars there, so this stays a few lines instead of
+ * pulling a YAML dependency into the CLI.
+ */
+function parseSpecFrontmatter(text: string): SpecFrontmatter {
   const lines = text.split(/\r?\n/);
-  if ((lines[0] ?? "").trim() !== FRONTMATTER_FENCE) return undefined;
+  if ((lines[0] ?? "").trim() !== FRONTMATTER_FENCE) return { kind: "absent" };
   const end = lines.findIndex((l, i) => i > 0 && l.trim() === FRONTMATTER_FENCE);
-  if (end === -1) return undefined;
-  for (const line of lines.slice(1, end)) {
+  if (end === -1) return { kind: "malformed" };
+  return { kind: "present", status: readScalar(lines.slice(1, end), "status") };
+}
+
+function readScalar(lines: string[], key: string): string | undefined {
+  for (const line of lines) {
     const m = FRONTMATTER_ENTRY.exec(line);
     if (m?.[1] !== key) continue;
     const value = (m[2] ?? "").trim().replace(/^["']|["']$/g, "");

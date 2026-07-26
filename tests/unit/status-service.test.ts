@@ -253,26 +253,33 @@ describe("runStatusCommand — spec maturity", () => {
     expect(spec(out, "011")?.status).toBe("draft");
   });
 
-  it("an unknown or unterminated frontmatter falls back to the legacy mark", async () => {
+  // The precedence bug this guards: a declared-but-broken frontmatter used to
+  // fall through to a trace section and promote the spec straight into PLAN.
+  it("a present frontmatter never falls back — unknown, empty and unterminated all read draft", async () => {
     const out = await specStatuses({
       "010": "---\nstatus: foo\n---\n# Spec\n\n## Refinement decisions\n- d1\n",
-      "011": "---\nstatus: foo\n---\n# Spec\n",
+      "011": "---\nstatus:\n---\n# Spec\n\n## Q&A traceability\n- q→a\n",
       "012": "---\nstatus: draft\n# Spec\n\n## Decisions\n- d1\n",
+      "013": "---\nstatus: ready-for-plan\n# Spec\n\n## Refinement decisions\n- d1\n",
     });
-    expect(spec(out, "010")?.status).toBe("ready-for-plan");
-    expect(spec(out, "011")?.status).toBe("draft");
-    expect(spec(out, "012")?.status).toBe("ready-for-plan");
+    for (const number of ["010", "011", "012", "013"]) {
+      expect(spec(out, number), number).toMatchObject({ status: "draft", refined: false });
+    }
+    expect(out.counts.specs_refined).toBe(0);
   });
 
-  it("## Decisions and ## Q&A traceability are legacy ready-for-plan marks", async () => {
+  it("without frontmatter, only the two historical trace sections read as ready-for-plan", async () => {
     const out = await specStatuses({
       "010": "# Spec\n\n## Decisions\n- d1\n",
-      "011": "# Spec\n\n## Q&A traceability\n- q→a\n",
-      "012": "# Spec\n\n## Requirement\n- r1\n",
+      "011": "# Spec\n\n## Refinement decisions\n- d1\n",
+      "012": "# Spec\n\n## Q&A traceability\n- q→a\n",
+      "013": "# Spec\n\n## Requirement\n- r1\n",
     });
-    expect(spec(out, "010")).toMatchObject({ status: "ready-for-plan", refined: true });
+    // `## Decisions` is a section of the current schema: it proves no gate ran.
+    expect(spec(out, "010")).toMatchObject({ status: "draft", refined: false });
     expect(spec(out, "011")).toMatchObject({ status: "ready-for-plan", refined: true });
-    expect(spec(out, "012")).toMatchObject({ status: "draft", refined: false });
+    expect(spec(out, "012")).toMatchObject({ status: "ready-for-plan", refined: true });
+    expect(spec(out, "013")).toMatchObject({ status: "draft", refined: false });
     expect(out.counts.specs_refined).toBe(2);
   });
 
@@ -334,6 +341,79 @@ describe("runStatusCommand — phase progress", () => {
       phases_total: 3,
       phases_validated: 1,
     });
+  });
+
+  // The operational handoff: the work is written, the proof waits on a migration
+  // the agent cannot apply. The plan stays open and keeps showing pending work.
+  it("a phase blocked on an unapplied migration keeps 100% of the boxes and an incomplete validation", async () => {
+    const fs = new FakeFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    fs.file(
+      "/cwd/docs/plans/010-plan-cupon.md",
+      [
+        "# Plan 010 — cupón",
+        "",
+        "## Tasks",
+        "",
+        "### F1 — El carrito acepta un cupón",
+        "> Estado: validada",
+        "- [x] T1.1 — aplica el descuento",
+        "",
+        "### F2 — El descuento se persiste",
+        "> Estado: bloqueada",
+        "> Bloqueo: verificación pendiente después de aplicar la migración SQL.",
+        "- [x] T2.1 — prepara la migración",
+        "- [x] T2.2 — conecta el adaptador de persistencia",
+        "",
+      ].join("\n"),
+      NOW,
+    );
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(out.plans[0]).toMatchObject({
+      tasks_total: 3,
+      tasks_done: 3,
+      progress_pct: 100,
+      phases_total: 2,
+      phases_validated: 1,
+    });
+    const pending = out.plans.filter((p) => p.phases_validated < p.phases_total);
+    expect(pending.map((p) => p.number)).toEqual(["010"]);
+  });
+
+  it("no shape of pending SQL ever yields a fully validated plan", async () => {
+    const fs = new FakeFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    const shapes = [
+      "validada — SQL pendiente de aplicar",
+      "validada · SQL pendiente de aplicar",
+      "validada (SQL pendiente de aplicar)",
+      "validada, falta aplicar el SQL",
+    ];
+    shapes.forEach((state, i) => {
+      fs.file(
+        `/cwd/docs/plans/02${i}-plan-sql.md`,
+        [
+          "# Plan — cupón",
+          "",
+          "## Tasks",
+          "",
+          "### F1 — El esquema soporta el cupón",
+          `> Estado: ${state}`,
+          "- [x] T1.1 — prepara la migración",
+          "",
+        ].join("\n"),
+        NOW,
+      );
+    });
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(out.plans).toHaveLength(shapes.length);
+    for (const plan of out.plans) {
+      expect(plan, plan.file).toMatchObject({
+        progress_pct: 100,
+        phases_total: 1,
+        phases_validated: 0,
+      });
+    }
   });
 });
 

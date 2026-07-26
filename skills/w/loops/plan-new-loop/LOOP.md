@@ -99,7 +99,7 @@ A `### Fn` block is a **verifiable state of the system**, never a list of layers
 
 **Validación de fase:** <the primary proof that the promised state was reached>
 
-**Condición de salida:** <falsifiable result · contract preserved · simulation located or removed>
+**Condición de salida:** <falsifiable result · contract preserved · simulation, if any, located or removed>
 
 **Diferido:** <work consciously reserved for another phase>
 ```
@@ -107,11 +107,13 @@ A `### Fn` block is a **verifiable state of the system**, never a list of layers
 - **Always**: `Resultado` · `Trabajo` · `Validación de fase` · `Condición de salida`.
 - **Conditional**: `Estado inicial` (when it is not obvious) · `Recorrido afectado` (distributed change) · `Límite de simulación` (temporary behavior exists) · `Diferido` · `Dependencias` (the phase cannot run in direct sequence).
 
-**Phase state = machine state.** One `> Estado: <value>` line directly under the `### Fn` heading; vocabulary `pendiente` | `en ejecución` | `bloqueada` | `validada`, updated **in place**, never duplicated. It is what `aw status` counts (`phases_validated` / `phases_total`), **alongside — not instead of —** the checkbox progress. A phase reaches `validada` only when its work is done, its `Condición de salida` holds, its validation ran or was explicitly deferred, and the closing review gate passed. **Never** because all its checkboxes are ticked. *(Legacy plans carry no line: they read as `pendiente` and nothing is back-filled.)*
+**Phase state = machine state.** One `> Estado: <value>` line directly under the `### Fn` heading; vocabulary `pendiente` | `en ejecución` | `bloqueada` | `validada`, updated **in place**, never duplicated. It is what `aw status` counts (`phases_validated` / `phases_total`), **alongside — not instead of —** the checkbox progress. A phase reaches `validada` only when its work is done, its `Condición de salida` holds, its validation **ran and passed**, and the closing review gate passed. **Never** because all its checkboxes are ticked. *(Legacy plans carry no line: they read as `pendiente` and nothing is back-filled.)*
+
+**The state line carries its value alone** — no comment, no suffix, no annotation; an annotated value reads as `pendiente`. A blocker's reason lives on its own `> Bloqueo: <reason>` line inside the block, and in `CHECKPOINT`, `## Open questions` and `BACKLOG`.
 
 > Position disambiguates the two marks: the plan-level `> Estado: done — …` line lives under the title (plan-exec § *Delta 6*); the phase-level one lives inside its `### Fn` block.
 
-**Granularity is semantic, not mechanical.** A phase earns its place when it leaves a demonstrable state, can be reviewed as a unit, and moves or retires a simulation. A task is a **coherent unit of purpose** and may touch several files. Naming an edit operation — "create class X", "add method Y", "update the import" — describes a **micro step**: internal to execution, recorded in `CHECKPOINT` when a resume needs it, never a plan entry. `XS–S` stays an orientation of risk and scope; it never mandates splitting a semantic task into mechanical operations.
+**Granularity is semantic, not mechanical.** A phase earns its place when it leaves a demonstrable state, can be reviewed as a unit, and — when the change carries temporary behavior — moves or retires a simulation. A task is a **coherent unit of purpose** and may touch several files. Naming an edit operation — "create class X", "add method Y", "update the import" — describes a **micro step**: internal to execution, recorded in `CHECKPOINT` when a resume needs it, never a plan entry. `XS–S` stays an orientation of risk and scope; it never mandates splitting a semantic task into mechanical operations.
 
 ## Incremental strategy (reference, never a template)
 
@@ -194,7 +196,7 @@ plan-new-loop(spec):
     - the Final behavior block of ## Solution covers the criteria
     - every ### Fn leaves a verifiable state with its own exit condition — never a list of layers or files
     - the order allows early integration · deps without cycles · Impacted consistent with Solution
-    - the simulation boundary is located, its displacement planned, and one phase owns its retirement
+    - the simulation boundary, ONLY when the change carries one, is located, its displacement planned, and one phase owns its retirement
     - every phase declares its primary evidence; per-layer tests are justified, never automatic
     - resumable: a stop between phases leaves a stable state and a legible next intent
     - minimality (chassis § *Minimality*): the Solution is the lightest that meets its Final behavior block; no phase/task/abstraction the criteria don't require
@@ -212,7 +214,7 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 ## Convergence / exit
 
 - **No material gaps** → **coherence gate** (the *Sequence* checklist; the PLAN-new instance of the chassis convergence gate). Criterion→task traceability is a **checked invariant**, never a separate section.
-- **The gate judges functional states, not size.** A plan converges when every `### Fn` is a verifiable state with its exit condition, its primary evidence and its simulation boundary located; a phase that only enumerates layers or files comes back as a gap, however small it is.
+- **The gate judges functional states, not size.** A plan converges when every `### Fn` is a verifiable state with its exit condition and its primary evidence — plus its simulation boundary located, **only when the change carries one**; a phase that only enumerates layers or files comes back as a gap, however small it is.
 - Passes → `Guardar plan` (writes with confirmation if it exists) → `finalize`.
 - **Split branch**: `Guardar planes` writes the N siblings sequentially (mint before each write) → `finalize` — one session, one HISTORY row.
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).

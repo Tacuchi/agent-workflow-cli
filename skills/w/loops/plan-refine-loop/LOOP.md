@@ -71,7 +71,7 @@ question that changed nothing, is NOT transcribed.
 
 > **No gating contract** (unlike spec↔plan): the presence of `## Refinement decisions` in the plan is **audit trace only** — `plan-exec` neither requires nor checks it (it runs any plan). It serves to (a) distinguish a re-refined plan from a freshly generated one on resume, and (b) record what changed and why. *(Legacy plans may also carry `## Q&A traceability`; new runs never write it.)*
 
-> The plan **never mutates by execution** (plan-exec tracks that in the plan-doc's Tasks) — only by a (re-)refine.
+> **Execution updates progress; refinement changes structure.** `plan-exec` updates the plan's operational state in place — task checkboxes, the phase `> Estado:` line with its `> Bloqueo:` line while blocked, declared deferrals and the final plan status line. It does **not** redesign contracts, phase shape or order, participating components, evidence or simulation boundaries: those structural changes are this loop's, and a change of functional behavior belongs to `spec-refine`.
 
 ## Delta 2 — Gap taxonomy (of "plan")
 
@@ -99,14 +99,14 @@ Before re-shaping phases, the plan must answer what execution would otherwise ha
 
 - **Observable contract** — who starts the operation, what inputs it provides, what successful result and what errors or states it observes, which contracts are created or changed, and what must stay compatible.
 - **Technical journey** — participating components and their approximate order, boundaries between repos or processes, where persistence and external integrations sit, what already exists and what must be wired.
-- **Incremental strategy** — the first demonstrable journey, where a safe simulation can live, how it is displaced, and which phase retires it (reference shapes: [`plan-new-loop`](../plan-new-loop/LOOP.md) § *Incremental strategy*).
+- **Incremental strategy** — the first demonstrable journey and, **only when the change carries temporary behavior**, where a safe simulation can live, how it is displaced and which phase retires it (reference shapes: [`plan-new-loop`](../plan-new-loop/LOOP.md) § *Incremental strategy*).
 - **Evidence** — the primary proof of each phase, which rules deserve an isolated test, which integrations need a real one, and what cannot be validated because of operational constraints (that one goes to `## Open questions`).
 
 > **Bounded research** (Delta 3, sharpened): investigate **only** what is needed to order the phases — journey, boundaries, existing contracts, where the simulation can live, risks that change the plan's design. What `plan-exec` resolves locally is **not** pre-investigated here.
 
 ## Simulation lifecycle
 
-Temporary behavior is planned, never improvised. Every simulation the plan carries declares **purpose · location · the contract it stands for · the phase where it appears · the phase where it moves or disappears · what prevents its accidental selection in a production runtime · the minimum proof needed while it exists**.
+**This section applies only when the journey introduces temporary behavior** — a stub, fake, in-memory adapter, controlled fixture or temporary response. None in the change → no `Límite de simulación`, and no artificial phase invented to retire one. When there is, it is planned, never improvised: every simulation declares **purpose · location · the contract it stands for · the phase where it appears · the phase where it moves or disappears · what prevents its accidental selection in a production runtime · the minimum proof needed while it exists**.
 
 - **Explicit over hidden**: `Stub…` / `Fake…`, in-memory adapter, temporary provider or controlled fixture — never a hardcode buried inside production code.
 - **Displacement rule**: each affected phase writes its `Límite de simulación` as normalized prose — `antes <where it is>` → `después <where it lands, or removed>` — never as an implicit assumption.
@@ -131,7 +131,7 @@ This loop's instance of the chassis convergence gate — the same one `plan-exec
 - **Contract** — relevant inputs, outputs and observable states identified; the final behavior matches the spec; no functional criterion invented here.
 - **Journey** — main components identified, order reasonable, repo/process boundaries visible, the described architecture the one the project actually has.
 - **Phases** — each leaves a verifiable state with its exit condition, none is a list of layers or files, the order allows early integration, deferrals are explicit.
-- **Simulation** — initial boundary identified, every displacement foreseen, one phase owns the retirement, nothing can stay active by accident.
+- **Simulation** *(only when the change carries one)* — initial boundary identified, every displacement foreseen, one phase owns the retirement, nothing can stay active by accident. No temporary behavior → the check does not apply, and no empty `Límite de simulación` is required.
 - **Evidence** — every phase declares its primary proof, per-layer tests are justified, the same scenario is not duplicated by default, declared risks have evidence or an explicit deferral.
 - **Resumability** — tasks legible enough for a `CHECKPOINT`, intermediate states stable, pending work distinguishable from work already `validada`.
 
@@ -168,7 +168,7 @@ plan-refine-loop(plan):
   seed SESSION.Success criteria = executability-gate checklist # verification-first, BEFORE
   work = read(plan) (+ the spec if realignment is needed; + checkpoint/exec history if resuming or returning from plan-exec)
   journey = map(observable contract, technical journey, incremental strategy, evidence)  # bounded research
-  work = phases grouped by verifiable state (phase contract) + simulation lifecycle + primary proof each
+  work = phases grouped by verifiable state (phase contract) + simulation lifecycle if any + primary proof each
   keep validated phases and their completed tasks; redesign ONLY pending work
   repeat:                                                      # chassis engine
     gaps = detect_gaps(work)  (plan-new taxonomy + plan↔spec drift)  minus the exhausted ones
