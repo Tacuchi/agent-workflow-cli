@@ -32,10 +32,30 @@ describe("parsePhases — the machine state is one exact value", () => {
     ]);
   });
 
-  it("a legacy plan with no state line reads every phase as `pendiente`", () => {
+  // A finished pre-contract plan must not read as "implemented, not validated":
+  // without any `> Estado:` line the phase contract is not in force, so the
+  // plan reports zero phases and keeps measuring progress by checkboxes.
+  it("a plan with no state line at all predates the contract and reports zero phases", () => {
     const legacy = planWithTasks("### F1 — Modelo", "- [x] T1.1", "", "### F2 — API", "- [x] T2.1");
-    expect(parsePhases(legacy)).toMatchObject({ total: 2, validated: 0 });
-    expect(states(legacy)).toEqual(["pendiente", "pendiente"]);
+    expect(parsePhases(legacy)).toEqual({ total: 0, validated: 0, items: [] });
+  });
+
+  it("a missing line among stated blocks reads `pendiente`, never zero phases", () => {
+    const plan = planWithTasks(
+      "### F1 — Modelo",
+      "> Estado: validada",
+      "- [x] T1.1",
+      "",
+      "### F2 — API",
+      "- [x] T2.1",
+    );
+    expect(parsePhases(plan)).toMatchObject({ total: 2, validated: 1 });
+    expect(states(plan)).toEqual(["validada", "pendiente"]);
+  });
+
+  it("the first `> Estado:` line of a block wins; a later one is prose", () => {
+    const plan = planWithTasks("### F1 — Cupón", "> Estado: en ejecución", "> Estado: validada");
+    expect(states(plan)).toEqual(["en ejecución"]);
   });
 
   // Written work and demonstrated result are two different things: the boxes
@@ -149,6 +169,60 @@ describe("parsePhases — `## Tasks` is the only source of phases", () => {
       "> Estado: validada",
       "",
       "### Notas de ejecución",
+      "> Estado: validada",
+      "",
+    ].join("\n");
+
+    const out = parsePhases(plan);
+    expect(out).toMatchObject({ total: 1, validated: 1 });
+    expect(out.items.map((p) => p.n)).toEqual([1]);
+  });
+
+  it("tolerates `## Tasks:` with a bare colon", () => {
+    const plan = ["# P", "", "## Tasks:", "", "### F1 — Cupón", "> Estado: validada", ""].join(
+      "\n",
+    );
+    expect(parsePhases(plan)).toMatchObject({ total: 1, validated: 1 });
+  });
+
+  // A sibling non-phase heading closes the block in force: the `> Estado:`
+  // under it belongs to nobody and must not land on the previous phase.
+  it("a `> Estado:` under a sibling non-phase heading never reaches the open phase", () => {
+    const plan = planWithTasks(
+      "### F1 — Cupón",
+      "- [ ] T1.1",
+      "",
+      "### Notas de ejecución",
+      "> Estado: validada",
+      "",
+      "### F2 — Descuento",
+      "> Estado: en ejecución",
+    );
+    expect(parsePhases(plan)).toMatchObject({ total: 2, validated: 0 });
+    expect(states(plan)).toEqual(["pendiente", "en ejecución"]);
+  });
+
+  it("a fence closes only with its own marker: nested examples never leak phases", () => {
+    const plan = [
+      "# Plan 011",
+      "",
+      "## Tasks",
+      "",
+      "````markdown",
+      "```",
+      "### F9 — ejemplo dentro de un fence de 4 backticks",
+      "> Estado: validada",
+      "```",
+      "````",
+      "",
+      "```markdown",
+      "~~~",
+      "### F8 — ejemplo con marcador tilde dentro",
+      "> Estado: validada",
+      "~~~",
+      "```",
+      "",
+      "### F1 — El carrito acepta un cupón",
       "> Estado: validada",
       "",
     ].join("\n");

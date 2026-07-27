@@ -18,7 +18,7 @@ export interface ParsedPhases {
 const HEADING_RE = /^(#{1,6})\s+(\S.*)$/;
 const PHASE_NAME_RE = /^F(\d+)\s*(?:[—–-]\s*)?(.*)$/;
 const STATE_RE = /^>\s*Estado\s*:\s*(.+)$/i;
-const FENCE_RE = /^(?:```|~~~)/;
+const FENCE_RE = /^(`{3,}|~{3,})/;
 const TASKS_SECTION = "tasks";
 
 interface Scan {
@@ -29,6 +29,8 @@ interface Scan {
   stated: boolean;
   /** the scan is inside the `## Tasks` section */
   inTasks: boolean;
+  /** some block declared a `> Estado:` line — the phase contract is in force */
+  anyStated: boolean;
 }
 
 interface Heading {
@@ -47,6 +49,11 @@ interface Heading {
  * phases. A plan with no `## Tasks` reports zero phases and keeps measuring
  * progress by checkboxes.
  *
+ * A plan whose blocks declare no `> Estado:` line at all predates the phase
+ * contract: it also reports zero phases — its finished work must not read as
+ * "implemented, not validated". A missing line among stated blocks reads
+ * `pendiente`, and nothing is back-filled.
+ *
  * The state is an exact value of the vocabulary once case, accents and inner
  * spacing are folded. An absent, annotated (`validada — SQL pendiente de
  * aplicar`) or unknown value degrades to `pendiente`: a phase is never counted
@@ -54,7 +61,7 @@ interface Heading {
  * `> Bloqueo:` line, which this parser has no need to read.
  */
 export function parsePhases(text: string): ParsedPhases {
-  const scan: Scan = { items: [], current: null, stated: false, inTasks: false };
+  const scan: Scan = { items: [], current: null, stated: false, inTasks: false, anyStated: false };
 
   for (const line of visibleLines(text)) {
     const heading = readHeading(line);
@@ -65,6 +72,7 @@ export function parsePhases(text: string): ParsedPhases {
     if (scan.inTasks) applyStateLine(scan, line);
   }
 
+  if (!scan.anyStated) return { total: 0, validated: 0, items: [] };
   return {
     total: scan.items.length,
     validated: scan.items.filter((p) => p.state === "validada").length,
@@ -74,15 +82,25 @@ export function parsePhases(text: string): ParsedPhases {
 
 /** Trimmed lines outside fenced blocks — a quoted example is never document content. */
 function* visibleLines(text: string): Generator<string> {
-  let fenced = false;
+  let fence: string | null = null;
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    if (FENCE_RE.test(line)) {
-      fenced = !fenced;
+    const marker = FENCE_RE.exec(line)?.[1] ?? null;
+    if (fence === null) {
+      if (marker) {
+        fence = marker;
+        continue;
+      }
+      yield line;
       continue;
     }
-    if (!fenced) yield line;
+    if (marker && closesFence(fence, marker, line)) fence = null;
   }
+}
+
+/** CommonMark closing fence: same character, at least as long, the bare marker alone. */
+function closesFence(open: string, marker: string, line: string): boolean {
+  return marker[0] === open[0] && marker.length >= open.length && line === marker;
 }
 
 function readHeading(line: string): Heading | null {
@@ -131,6 +149,7 @@ function applyStateLine(scan: Scan, line: string): void {
   if (!match?.[1]) return;
   current.state = normalizeState(match[1]);
   scan.stated = true;
+  scan.anyStated = true;
 }
 
 /** Case- and accent-insensitive: `en ejecucion` is the same mark as `en ejecución`. */

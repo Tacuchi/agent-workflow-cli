@@ -44,7 +44,7 @@ export interface StatusPlan {
   tasks_done: number;
   /** checkbox-derived work progress; the phase counts below never feed it */
   progress_pct: number;
-  /** `### Fn` blocks inside the plan-doc's `## Tasks`; `0` on a plan with no phases */
+  /** `### Fn` blocks inside the plan-doc's `## Tasks`; `0` on a plan with no phases or none stated (pre-contract) */
   phases_total: number;
   /** phases whose exact mark is `> Estado: validada` — never inferred from the checkboxes */
   phases_validated: number;
