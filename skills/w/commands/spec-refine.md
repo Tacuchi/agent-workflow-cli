@@ -21,6 +21,18 @@ This command does not refine the spec itself: it delegates to `spec-refine-loop`
 > 3. **Write boundary** — this flow edits only `docs/specs/…` (in place, with confirmation), stamping the spec's frontmatter `status: ready-for-plan` on save; nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the doc's content) goes in the **user's language**.
 > 5. **Converge, do not close everything** — the target is `ready-for-plan`, not a spec without unknowns: close what can change **what** gets built; hand architecture and implementation questions to `PLAN`, recorded in `## Open questions` with their destination.
+> 6. **Shape before gaps** — if the investigation shows the spec must be **split** or **replaced**, ask and resolve that **before** the gap questions, in its own question, and record the answer in `CHECKPOINT`. Never mix it into the gap batch.
+
+## The two shape branches are not the same question
+
+The loop's *change-shape gate* can find that one spec is the wrong container. `split` and `replace` are different findings, so they ask different things and do different things — reusing one for the other asks about cardinality when what changed was purpose:
+
+| Finding | What it asks | What it writes |
+|---|---|---|
+| **`split`** — independent functional outcomes discovered | `Dividir en varias specs` \| `Una sola spec` | the original, rewritten reduced, **plus** one new file per extracted outcome |
+| **`replace`** — the purpose itself changed | `Crear una nueva spec` \| `Reformular esta spec` | `Crear` → one **new** file, this spec untouched · `Reformular` → **no new file**: this same file, same number, same path |
+
+Both branches keep the `Cerrar` control, which closes the run **without applying the change**. No file — new or overwritten — is written without confirmation.
 
 ## Run the loop
 

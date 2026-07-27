@@ -26,9 +26,9 @@ describe("parsePhases — the machine state is one exact value", () => {
     const out = parsePhases(plan);
     expect(out).toMatchObject({ total: 3, validated: 1 });
     expect(out.items).toEqual([
-      { n: 1, name: "El carrito acepta un cupón", state: "validada" },
-      { n: 2, name: "El descuento viaja al backend", state: "en ejecución" },
-      { n: 3, name: "El descuento se persiste", state: "pendiente" },
+      { n: 1, name: "El carrito acepta un cupón", state: "validada", blocker: null },
+      { n: 2, name: "El descuento viaja al backend", state: "en ejecución", blocker: null },
+      { n: 3, name: "El descuento se persiste", state: "pendiente", blocker: null },
     ]);
   });
 
@@ -37,7 +37,7 @@ describe("parsePhases — the machine state is one exact value", () => {
   // plan reports zero phases and keeps measuring progress by checkboxes.
   it("a plan with no state line at all predates the contract and reports zero phases", () => {
     const legacy = planWithTasks("### F1 — Modelo", "- [x] T1.1", "", "### F2 — API", "- [x] T2.1");
-    expect(parsePhases(legacy)).toEqual({ total: 0, validated: 0, items: [] });
+    expect(parsePhases(legacy)).toEqual({ total: 0, validated: 0, blocked: 0, items: [] });
   });
 
   it("a missing line among stated blocks reads `pendiente`, never zero phases", () => {
@@ -92,6 +92,66 @@ describe("parsePhases — the machine state is one exact value", () => {
     );
     expect(parsePhases(plan)).toMatchObject({ total: 3, validated: 0 });
     expect(states(plan)).toEqual(["pendiente", "pendiente", "pendiente"]);
+  });
+});
+
+describe("parsePhases — the blocker reason lives on its own line", () => {
+  const blockers = (text: string) => parsePhases(text).items.map((p) => p.blocker);
+
+  it("reads the reason without ever letting it qualify the state", () => {
+    const plan = planWithTasks(
+      "### F1 — El descuento se persiste",
+      "> Estado: bloqueada",
+      "> Bloqueo: falta aplicar la migración 014.",
+      "- [x] T1.1",
+    );
+    expect(parsePhases(plan)).toMatchObject({ total: 1, validated: 0, blocked: 1 });
+    expect(blockers(plan)).toEqual(["falta aplicar la migración 014."]);
+  });
+
+  it("a block with no reason keeps `blocker: null` — nothing is invented", () => {
+    const plan = planWithTasks("### F1 — Persistencia", "> Estado: bloqueada", "- [x] T1.1");
+    expect(blockers(plan)).toEqual([null]);
+    expect(parsePhases(plan).blocked).toBe(1);
+  });
+
+  it("the first reason of a block wins, and it never leaks into the next phase", () => {
+    const plan = planWithTasks(
+      "### F1 — Persistencia",
+      "> Estado: bloqueada",
+      "> Bloqueo: la primera razón.",
+      "> Bloqueo: la segunda es prosa.",
+      "",
+      "### F2 — Reporte",
+      "> Estado: pendiente",
+    );
+    expect(blockers(plan)).toEqual(["la primera razón.", null]);
+  });
+
+  it("a reason quoted inside a fence is an example, not a blocker", () => {
+    const plan = planWithTasks(
+      "### F1 — Persistencia",
+      "> Estado: bloqueada",
+      "```markdown",
+      "> Bloqueo: un ejemplo del contrato",
+      "```",
+    );
+    expect(blockers(plan)).toEqual([null]);
+  });
+
+  it("counts blocked phases apart from validated ones", () => {
+    const plan = planWithTasks(
+      "### F1 — Carrito",
+      "> Estado: validada",
+      "",
+      "### F2 — Persistencia",
+      "> Estado: bloqueada",
+      "> Bloqueo: falta la migración.",
+      "",
+      "### F3 — Reporte",
+      "> Estado: pendiente",
+    );
+    expect(parsePhases(plan)).toMatchObject({ total: 3, validated: 1, blocked: 1 });
   });
 });
 
@@ -156,7 +216,7 @@ describe("parsePhases — `## Tasks` is the only source of phases", () => {
       "> Estado: validada",
       "",
     ].join("\n");
-    expect(parsePhases(legacy)).toEqual({ total: 0, validated: 0, items: [] });
+    expect(parsePhases(legacy)).toEqual({ total: 0, validated: 0, blocked: 0, items: [] });
   });
 
   it("tolerates an annotated section heading and closes the block at a sibling heading", () => {
@@ -236,6 +296,7 @@ describe("parsePhases — `## Tasks` is the only source of phases", () => {
     expect(parsePhases("# Plan 001\n\n## Tasks\n- [ ] T1 — algo\n")).toEqual({
       total: 0,
       validated: 0,
+      blocked: 0,
       items: [],
     });
   });

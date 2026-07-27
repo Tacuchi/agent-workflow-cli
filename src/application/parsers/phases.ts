@@ -1,3 +1,5 @@
+import { type MarkdownHeading, scanMarkdown } from "../markdown.js";
+
 export const PHASE_STATES = ["pendiente", "en ejecución", "bloqueada", "validada"] as const;
 
 /** Machine state of a plan phase, declared as `> Estado:` inside its `### Fn` block. */
@@ -7,18 +9,20 @@ export interface PhaseItem {
   n: number;
   name: string;
   state: PhaseState;
+  /** first `> Bloqueo:` line of the block, whatever the state; `null` when absent */
+  blocker: string | null;
 }
 
 export interface ParsedPhases {
   total: number;
   validated: number;
+  blocked: number;
   items: PhaseItem[];
 }
 
-const HEADING_RE = /^(#{1,6})\s+(\S.*)$/;
 const PHASE_NAME_RE = /^F(\d+)\s*(?:[—–-]\s*)?(.*)$/;
 const STATE_RE = /^>\s*Estado\s*:\s*(.+)$/i;
-const FENCE_RE = /^(`{3,}|~{3,})/;
+const BLOCKER_RE = /^>\s*Bloqueo\s*:\s*(.+)$/i;
 const TASKS_SECTION = "tasks";
 
 interface Scan {
@@ -31,11 +35,6 @@ interface Scan {
   inTasks: boolean;
   /** some block declared a `> Estado:` line — the phase contract is in force */
   anyStated: boolean;
-}
-
-interface Heading {
-  level: number;
-  name: string;
 }
 
 /**
@@ -58,55 +57,31 @@ interface Heading {
  * spacing are folded. An absent, annotated (`validada — SQL pendiente de
  * aplicar`) or unknown value degrades to `pendiente`: a phase is never counted
  * as validated by deference. The reason for a stop lives in its own
- * `> Bloqueo:` line, which this parser has no need to read.
+ * `> Bloqueo:` line, read here as opaque text so a blocked phase can say what
+ * it waits on without that reason ever qualifying the machine state.
  */
 export function parsePhases(text: string): ParsedPhases {
   const scan: Scan = { items: [], current: null, stated: false, inTasks: false, anyStated: false };
+  const { lines, fenced, headings } = scanMarkdown(text);
+  const headingByLine = new Map(headings.map((h) => [h.line, h]));
 
-  for (const line of visibleLines(text)) {
-    const heading = readHeading(line);
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced[i]) continue;
+    const heading = headingByLine.get(i);
     if (heading) {
       applyHeading(scan, heading);
       continue;
     }
-    if (scan.inTasks) applyStateLine(scan, line);
+    if (scan.inTasks) applyBlockLine(scan, (lines[i] ?? "").trim());
   }
 
-  if (!scan.anyStated) return { total: 0, validated: 0, items: [] };
+  if (!scan.anyStated) return { total: 0, validated: 0, blocked: 0, items: [] };
   return {
     total: scan.items.length,
     validated: scan.items.filter((p) => p.state === "validada").length,
+    blocked: scan.items.filter((p) => p.state === "bloqueada").length,
     items: scan.items,
   };
-}
-
-/** Trimmed lines outside fenced blocks — a quoted example is never document content. */
-function* visibleLines(text: string): Generator<string> {
-  let fence: string | null = null;
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    const marker = FENCE_RE.exec(line)?.[1] ?? null;
-    if (fence === null) {
-      if (marker) {
-        fence = marker;
-        continue;
-      }
-      yield line;
-      continue;
-    }
-    if (marker && closesFence(fence, marker, line)) fence = null;
-  }
-}
-
-/** CommonMark closing fence: same character, at least as long, the bare marker alone. */
-function closesFence(open: string, marker: string, line: string): boolean {
-  return marker[0] === open[0] && marker.length >= open.length && line === marker;
-}
-
-function readHeading(line: string): Heading | null {
-  const match = HEADING_RE.exec(line);
-  if (!match?.[1] || !match[2]) return null;
-  return { level: match[1].length, name: match[2].trim() };
 }
 
 /**
@@ -114,15 +89,15 @@ function readHeading(line: string): Heading | null {
  * a level-3 one opens a phase or closes the previous block; a deeper one is a
  * subsection of the phase in force and leaves it open.
  */
-function applyHeading(scan: Scan, heading: Heading): void {
+function applyHeading(scan: Scan, heading: MarkdownHeading): void {
   if (heading.level > 3) return;
   scan.current = null;
   if (heading.level <= 2) {
-    scan.inTasks = heading.level === 2 && isTasksHeading(heading.name);
+    scan.inTasks = heading.level === 2 && isTasksHeading(heading.title);
     return;
   }
   if (!scan.inTasks) return;
-  const phase = readPhaseHeading(heading.name);
+  const phase = readPhaseHeading(heading.title);
   if (!phase) return;
   scan.items.push(phase);
   scan.current = phase;
@@ -138,18 +113,32 @@ function isTasksHeading(name: string): boolean {
 function readPhaseHeading(name: string): PhaseItem | null {
   const match = PHASE_NAME_RE.exec(name);
   if (!match?.[1]) return null;
-  return { n: Number(match[1]), name: (match[2] ?? "").trim(), state: "pendiente" };
+  return { n: Number(match[1]), name: (match[2] ?? "").trim(), state: "pendiente", blocker: null };
 }
 
-function applyStateLine(scan: Scan, line: string): void {
+/**
+ * The two machine lines of a phase block: its state (first one wins, the rest
+ * is prose) and its blocker reason (likewise). A block with no `> Bloqueo:`
+ * keeps `blocker: null` — legacy plans stopped before the line existed, and a
+ * missing reason is never invented.
+ */
+function applyBlockLine(scan: Scan, line: string): void {
   const current = scan.current;
-  if (!current || scan.stated) return;
+  if (!current) return;
   // `**` tolerated: authors bold the label (`> **Estado:** validada`).
-  const match = STATE_RE.exec(line.replace(/\*/g, ""));
-  if (!match?.[1]) return;
-  current.state = normalizeState(match[1]);
-  scan.stated = true;
-  scan.anyStated = true;
+  const bare = line.replace(/\*/g, "");
+  if (!scan.stated) {
+    const state = STATE_RE.exec(bare);
+    if (state?.[1]) {
+      current.state = normalizeState(state[1]);
+      scan.stated = true;
+      scan.anyStated = true;
+      return;
+    }
+  }
+  if (current.blocker !== null) return;
+  const blocker = BLOCKER_RE.exec(bare)?.[1]?.trim();
+  if (blocker) current.blocker = blocker;
 }
 
 /** Case- and accent-insensitive: `en ejecucion` is the same mark as `en ejecución`. */

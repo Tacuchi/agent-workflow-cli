@@ -35,7 +35,7 @@ Same hard floor: this mode **proposes** the route — it never starts the target
 ## Run
 
 1. **Workline level — compose `/w:status`.** Read-and-follow [`status.md`](status.md) to produce the prioritized summary (it already renders `aw status` and, when available, the host-context section). Do **not** re-implement the summary. For deeper session detail, `aw resume-summary [--include-recent-closed]` gives the primary session's CHECKPOINT state, and `aw session-resume --code <NNN>` the full checkpoint of any other active or closed session.
-2. **Interpret the stage marks.** Map each signal to its stage: the spec's `status` (`draft`/`refining` = SPEC work still open · `ready-for-plan` = it can go to PLAN) + `open_questions`; plan progress on **both axes** — checkboxes (`tasks_done` / `tasks_total`) and validated phases (`phases_validated` / `phases_total`); session `checkpoint_present`. A `status` that is absent, empty or unknown reads `draft`: that work stays in SPEC and never routes to PLAN on an unreadable mark. Associate a session to its plan or spec by **slug** — there is no linkage field in the `aw status` output, so infer it from `folder` / `slug`; when precision matters, confirm by the session's `## Origin` (§ *Directed resume*).
+2. **Interpret the stage marks.** Map each signal to its stage: the spec's `status` (`draft`/`refining` = SPEC work still open · `ready-for-plan` = it can go to PLAN) + `open_questions`; plan progress on **all three axes** — checkboxes (`tasks_done` / `tasks_total`), validated phases (`phases_validated` / `phases_total`) and closure (`plan_state`, with `final_validation_pending` and `blocked_phases[]`); session `checkpoint_present`. A `status` that is absent, empty or unknown reads `draft`: that work stays in SPEC and never routes to PLAN on an unreadable mark. Associate a session to its plan or spec by **slug** — there is no linkage field in the `aw status` output, so infer it from `folder` / `slug`; when precision matters, confirm by the session's `## Origin` (§ *Directed resume*).
 3. **Build the prioritized pending list** — fixed order: **session with CHECKPOINT > plan half-done > spec not ready > host context**.
 4. **Host level (second source).** If the workline level does not explain the pending work (or no Workline flow was used), rely on the host-context already surfaced by `/w:status`; escalate it to a proposal and, only if needed, use the host-memory *deep* tier or ask the user (universal fallback: git / `docs/` signals + a question). See [`../harness/HARNESS.md`](../harness/HARNESS.md) § *host-memory*.
 5. **Propose (only when ≥1 pending).** One structured-choice with the top ≤3 options by the priority order; each option **routes** to its command (table below). Every proposal carries `Retomar` (recommended) and `Descartar` / `Cerrar` (secondary).
@@ -47,11 +47,16 @@ Priority: **session+CHECKPOINT > plan half-done > spec not ready > host context*
 
 > **Every box ticked is not a finished plan.** A plan with `phases_validated` below `phases_total` still has functional state to reach — work implemented, not validated — so it counts as half-done and routes to `/w:plan-exec`, which re-enters at the first phase that is not `validada`. A phase left `bloqueada` routes the same way: `/w:plan-exec` re-enters **through it** to run the validation still pending, and the plan stays open until that phase reads `validada`. A plan with `phases_total: 0` is a legacy plan (no phase marks) and is judged by its checkboxes alone.
 
+> **`plan_state` decides whether a plan is resumable at all.** Only `done` is finished; everything else routes back to `/w:plan-exec` with a different re-entry point. `final_validation_pending: true` means the phases are green but the final validation never ran — the plan re-enters **at that validation**, not at a phase. `inconsistent` means the document contradicts itself (`done` declared over open work, or an unreadable value): the re-entry is **repairing the state first**, and the proposal says so instead of pretending there is work to implement.
+
 | Pending detected | `Retomar` (recommended) | Secondary |
 |---|---|---|
 | spec not ready (`draft` / `refining`, or a `status` absent or unreadable) | `/w:spec-refine` | `Descartar` |
 | spec `ready-for-plan`, no plan | `/w:plan-new` | `Descartar` |
-| plan half-done — open checkboxes **or** phases not `validada` | `/w:plan-exec` | `Cerrar` |
+| plan `open` — open checkboxes **or** phases not `validada` | `/w:plan-exec` | `Cerrar` |
+| plan `open` with `final_validation_pending` — everything validated, no closure | `/w:plan-exec`, from the final validation | `Cerrar` |
+| plan `inconsistent` — `done` over open work, or an unreadable value | `/w:plan-exec`, repairing the state first | `Cerrar` |
+| plan `done` | — not resumed automatically | — |
 | active session with CHECKPOINT | continue / reopen (`aw session-resume --reopen`) | `Cerrar` |
 | host context only (no workline) | best next step for what was found | `Descartar` |
 

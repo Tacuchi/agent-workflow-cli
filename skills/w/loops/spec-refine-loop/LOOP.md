@@ -46,7 +46,9 @@ Closing *every* gap turns the spec into a premature plan. Close what changes **w
 **Adopt, do not repeat.** `spec-new`'s **facts** are reused; its **assumptions** are re-validated **only when one blocks a gap**; its `Open questions` are re-classified by destination; its one-vs-many hypothesis is re-judged at the *Change-shape gate*. The shallow sweep is never re-run wholesale. Keep the labels distinct — a spec that blurs them cannot be gated: **fact** (backed by repo, data or docs) · **inference** (unproven) · **user decision** · **deferred decision** (owner declared) · **open question** (can still move the contract).
 
 ## Writes
-Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Guardar especificación refinada`): completes sections, **adds** `## Decisions`, closes `Open questions` as they get resolved, and stamps the frontmatter `status: ready-for-plan`. Since it overwrites an existing doc, it asks the user's **confirmation**. An accepted split — or an accepted replacement — also **creates** new spec files (§ *Change-shape gate*).
+Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Guardar especificación refinada`): completes sections, **adds** `## Decisions`, closes `Open questions` as they get resolved, and stamps the frontmatter `status: ready-for-plan`. Since it overwrites an existing doc, it asks the user's **confirmation**.
+
+> **Not every shape decision creates a file** (§ *Change-shape gate*). An accepted **split** writes the reduced original **and** the extracted sibling specs; a replacement by **`Crear una nueva spec`** writes one new file and leaves this one untouched; **`Reformular esta spec`** creates nothing — it edits this same file, same number, same path. Every write, new or overwriting, is confirmed first.
 
 > **Boundary invariant:** this loop writes **only** into `docs/specs`. It never graduates/exports other artifacts to `docs/` — that is separate `export-*` work (chassis § *docs/ boundary*).
 
@@ -82,6 +84,8 @@ When the project already exists, establish the current behavior the change rests
 
 Runs once the baseline exists and **before** closing details: the investigation can reveal the draft's shape was wrong. Does the spec still carry **one** functional outcome, did its purpose survive, can the delivery be accepted as a unit? The verdict is **one of three shapes** — `same` | `split` | `replace` — each with its own branch; only the last two ask anything.
 
+> **Resolved before the gap loop starts, never carried into it (hard rule).** A `split` or a `replace` is asked, answered and applied **immediately** — its own structured-choice, in its own step, between the baseline and the first gap batch. It never travels in `pending_human`: that collection is rebuilt on every iteration and is reserved for questions about functional, technical or scope **gaps**, so a shape decision parked there is erased by the next batch — or never asked at all, because a spec with no blocking gap breaks out of the loop before the batch is built. The resolution lands in `CHECKPOINT` **before** anything else runs, so a resume re-enters with the shape already decided and never re-asks it.
+
 - same outcome — more clarity, or more technical components → **`same`**: no shape question, keep refining this spec;
 - independent functional outcomes discovered → **`split`** (below);
 - purpose fundamentally changed → **`replace`** (below);
@@ -96,6 +100,8 @@ Runs once the baseline exists and **before** closing details: the investigation 
 
 - **New spec:** this one is **preserved**, its purpose never silently rewritten; the new one is minted with `aw next-number docs/specs`, born **`status: draft`**, its `## Origin` recording the origin spec, the replaced purpose and the user's decision. Its path goes to the `CHECKPOINT`; the run closes reporting `/w:spec-refine <new path>` as the next step.
 - **Reformulate:** same number/path, the work treated as `refining` while rewritten; baseline, gap classification and the *ready-for-plan gate* run again over the new purpose; `status` is stamped only on the save that follows the passing gate, and the material decision lands in `## Decisions`.
+
+**Every branch has a way out that changes nothing.** The `flow` control present on every structured-choice (chassis) is that exit here: `Cerrar` closes the run **without applying the shape change** — no sibling minted, no spec reformulated, the document untouched and the decision recorded in `CHECKPOINT` as declined. And no branch writes a file without the user's confirmation: minting siblings and minting a replacement both go through the same confirm-before-write rule as an in-place save.
 
 Neither branch adds a `superseded` status or archives the replaced spec: a historical close needs its own runtime contract, out of scope here.
 
@@ -193,15 +199,23 @@ spec-refine-loop(spec):
   adopt(spec-new facts + assumptions + open questions + conversation)  # never re-derive (§ Reads)
   baseline = resolve_current_behavior(work)      # inline research, ONLY what the change rests on
   shape = change_shape_gate(work, baseline)      # BEFORE closing details → same | split | replace
-  if shape == split:   pending_human.push(split offer)     # `Dividir en varias specs` | `Una sola spec`
-  if shape == replace: pending_human.push(replace offer)   # `Crear una nueva spec` | `Reformular esta spec`
+  if shape != same:                              # RESOLVED HERE — never queued into pending_human
+    ans = structured_choice(content: [the offer of THIS branch],   # split and replace never share labels
+                            flow: [Compactar, Cerrar])
+    write CHECKPOINT (the decision + its consequence)  # BEFORE acting: a resume re-enters already decided
+    flow Cerrar → goto finalize                  # closed without applying the change; the spec stays untouched
+    `Una sola spec`           → shape resolved as same; keep refining this spec
+    `Dividir en varias specs` → the accepted cut is fixed now; its writes wait for `Guardar specs`
+    `Crear una nueva spec`    → mint draft with confirmation (## Origin) ; THIS spec untouched ;
+                                CHECKPOINT.Next = refine it ; goto finalize
+    `Reformular esta spec`    → same number/path ; re-run baseline + this gate before any stamp
   attempts = {}                                          # anti re-fire per gap
   repeat:
     gaps = classify_by_destination(detect_gaps(work)) minus the "exhausted" gaps
     record(gaps.plan_owned + gaps.deferrable) → ## Open questions with destination  # never closed here
     blocking = gaps.spec_blocking
     if blocking == ∅: break
-    batch = top ≤3 blocking ; pending_human = []
+    batch = top ≤3 blocking ; pending_human = []   # gap questions ONLY — the shape was resolved above
     seed CHECKPOINT.Pending/Next = batch (refine_session) # BEFORE: seed the intent (artifact-first)
     for each gap in batch:
       if gap = UI (requirement involves UI, ## UI spec missing):
@@ -222,9 +236,7 @@ spec-refine-loop(spec):
       switch(flow):
         Compactar → write CHECKPOINT (refine_session) ; compact(harness) ; continue
         Cerrar    → goto finalize
-      work = integrate(work, ans)            # → Decisions / Open questions / the accepted shape
-      accepted `Crear una nueva spec`  → mint draft (## Origin) ; this one untouched ; CHECKPOINT.Next = refine it ; goto finalize
-      accepted `Reformular esta spec`  → same number/path ; re-run baseline + gaps + ready-for-plan gate before any stamp
+      work = integrate(work, ans)            # → Decisions / Open questions
       ideation offer accepted → run the round NOW, then its verdicts as a NEW ≤3+flow batch (§ Ideation gate)
       ideation offer declined → mark that gap exhausted    # anti re-fire; on-demand entry stays open
   # no BLOCKING gaps → ready-for-plan gate = Success criteria green (read-only) before offering Guardar:
@@ -247,6 +259,7 @@ finalize:
 Full mechanism (3 cases, `Compactar`, re-run on demand with `--reopen`) in the chassis (§ *Compact / resume*). SPEC keys:
 
 - The **prior-work mark** is the frontmatter `status: ready-for-plan` (legacy specs: `## Refinement decisions`, older ones also `## Q&A traceability`).
+- The **shape decision survives a resume.** It is written to `CHECKPOINT` the moment it is taken, before anything acts on it, so a compact, a `Cerrar` or a crash between the gate and the save re-enters with the shape settled — the gate is not re-run and the question is not re-asked. Only a *new* run over a spec whose baseline changed re-opens it.
 - Re-refining on demand is a **first-class operation** while the flow stays in SPEC (new requirements, scope changes, after re-reading the spec): it always reads the **spec itself**, incremental re-refinement; on `Guardar`, edits in place with confirmation.
 - **Legacy migration happens only here.** A re-refined legacy spec runs the gate like any other; on `Guardar`, its `## Refinement decisions` is renamed `## Decisions` and pruned to the material decisions — **in the same write that stamps `status`**, so the spec is never left with no mark. Specs nobody re-refines are not migrated.
 - **`Cerrar` before converging leaves the spec untouched**: the progress lives in the `CHECKPOINT`, and `status` is neither invented nor downgraded. `refining` is understood **on read** (a hand-written spec may declare it) — this loop never writes a partial spec.

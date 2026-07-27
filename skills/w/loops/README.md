@@ -16,13 +16,15 @@ The 5 loops run the same **common engine**, whose canon lives in [`CHASSIS.md`](
 
 | Loop (`name:`) | Flow | Started by | Reads | Writes |
 |---|---|---|---|---|
-| [`spec-refine-loop`](spec-refine-loop/LOOP.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec*.md` (the spec itself) | `docs/specs/NNN-spec-<slug>.md` (in place) |
-| [`plan-new-loop`](plan-new-loop/LOOP.md) | PLAN | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md` |
-| [`plan-refine-loop`](plan-refine-loop/LOOP.md) | PLAN | `/w:plan-refine` *(aux, optional)* | `docs/plans/PPP-plan-*.md` (the plan itself) | `docs/plans/PPP-plan-<slug>.md` (in place) |
+| [`spec-refine-loop`](spec-refine-loop/LOOP.md) | SPEC | `/w:spec-refine` | `docs/specs/NNN-spec*.md` (the spec itself) | `docs/specs/NNN-spec-<slug>.md` (in place) **and, with confirmation, sibling specs** (accepted split) **or one replacement spec** (`Crear una nueva spec`) |
+| [`plan-new-loop`](plan-new-loop/LOOP.md) | PLAN | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md`, **or N sibling plans** (accepted split) |
+| [`plan-refine-loop`](plan-refine-loop/LOOP.md) | PLAN | `/w:plan-refine` *(aux, optional)* | `docs/plans/PPP-plan-*.md` (the plan itself) | `docs/plans/PPP-plan-<slug>.md` (in place) **plus the extracted sibling plans** (accepted split) |
 | [`plan-exec-loop`](plan-exec-loop/LOOP.md) | PLAN | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update); the rest via `export-*` |
 | [`quick-loop`](quick-loop/LOOP.md) | QUICK | `/w:quick` | — (prompt) | edits code + light session; **no** `docs/` |
 
 > `/w:spec-new` has no loop (single-pass). Hence **6 commands / 5 loops**.
+
+> **A single run may write several documents.** Splitting, and replacing by a new spec, produce more than one file — always **inside the same flow's folder**, always **after confirmation**, never in another `docs/` zone: the `docs/` boundary below bounds *where* a loop writes, not *how many* files it writes there. `Reformular esta spec` is the counter-case: a replacement that creates nothing and edits the same file in place.
 
 ### `docs/` boundary (hard rule)
 

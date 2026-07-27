@@ -283,6 +283,33 @@ describe("runStatusCommand — spec maturity", () => {
     expect(out.counts.specs_refined).toBe(2);
   });
 
+  // The bundle documents its own contracts as Markdown examples, and specs
+  // quote them. A legacy mark shown inside a fence is documentation ABOUT the
+  // mark — promoting on it sends work to PLAN on a gate nobody ran.
+  it("a legacy mark quoted inside a fence never promotes a spec", async () => {
+    const out = await specStatuses({
+      "010": "# Spec\n\n```markdown\n## Refinement decisions\n- ejemplo\n```\n",
+      "011": "# Spec\n\n~~~markdown\n## Q&A traceability\n- ejemplo\n~~~\n",
+      "012":
+        "# Spec\n\n````markdown\n```\n## Refinement decisions\n```\n## Q&A traceability\n````\n",
+      "013": "# Spec\n\n## Refinement decisions\n- la de verdad\n",
+    });
+    expect(spec(out, "010")).toMatchObject({ status: "draft", refined: false });
+    expect(spec(out, "011")).toMatchObject({ status: "draft", refined: false });
+    expect(spec(out, "012")).toMatchObject({ status: "draft", refined: false });
+    // …and a real one outside any fence still promotes.
+    expect(spec(out, "013")).toMatchObject({ status: "ready-for-plan", refined: true });
+    expect(out.counts.specs_refined).toBe(1);
+  });
+
+  it("an Open questions example inside a fence is not an open question", async () => {
+    const out = await specStatuses({
+      "010":
+        "# Spec\n\n## Open questions\nNone\n\n```markdown\n## Open questions\n- ejemplo\n```\n",
+    });
+    expect(spec(out, "010")).toMatchObject({ open_questions: 0 });
+  });
+
   it("frontmatter does not shadow ## section parsing, CRLF included", async () => {
     const out = await specStatuses({
       "010": "---\nstatus: ready-for-plan\n---\n# Spec\n\n## Open questions\n- ¿ARM?\n- ¿XP?\n",
@@ -414,6 +441,243 @@ describe("runStatusCommand — phase progress", () => {
         phases_validated: 0,
       });
     }
+  });
+});
+
+describe("runStatusCommand — plan closure (the third axis)", () => {
+  /** A workspace holding one plan-doc built from the given body lines. */
+  async function planStatus(...body: string[]) {
+    const fs = new FakeFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    fs.file("/cwd/docs/plans/011-plan-cupon.md", body.join("\n"), NOW);
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    const plan = out.plans[0];
+    if (!plan) throw new Error("the fixture plan was not read");
+    return plan;
+  }
+
+  /** Two phases, both validated, every box ticked — the "looks finished" shape. */
+  const ALL_GREEN = [
+    "## Tasks",
+    "",
+    "### F1 — El carrito acepta un cupón",
+    "> Estado: validada",
+    "- [x] T1.1",
+    "",
+    "### F2 — El descuento se persiste",
+    "> Estado: validada",
+    "- [x] T2.1",
+  ];
+
+  it("a plan with work left is open, whatever it declares or omits", async () => {
+    const open = await planStatus(
+      "# Plan 011 — cupón",
+      "",
+      "> Estado: open",
+      "",
+      "## Tasks",
+      "",
+      "### F1 — El carrito acepta un cupón",
+      "> Estado: en ejecución",
+      "- [x] T1.1",
+      "- [ ] T1.2",
+    );
+    expect(open).toMatchObject({ plan_state: "open", final_validation_pending: false });
+  });
+
+  // The row that motivates the whole axis: everything green is NOT a closed
+  // plan — the final validation is a step of its own, and nobody ran it.
+  it("every task done and every phase validated is still open, with the final validation pending", async () => {
+    const plan = await planStatus("# Plan 011 — cupón", "", "> Estado: open", "", ...ALL_GREEN);
+    expect(plan).toMatchObject({
+      progress_pct: 100,
+      phases_total: 2,
+      phases_validated: 2,
+      plan_state: "open",
+      final_validation_pending: true,
+    });
+  });
+
+  it("an undeclared plan behaves like an open one — closure is never inferred", async () => {
+    const plan = await planStatus("# Plan 011 — cupón", "", ...ALL_GREEN);
+    expect(plan).toMatchObject({ plan_state: "open", final_validation_pending: true });
+  });
+
+  it("`done` closes the plan only when both counters back the declaration", async () => {
+    const plan = await planStatus(
+      "# Plan 011 — cupón",
+      "",
+      "> Estado: done",
+      "> Cierre: 2026-06-21 · sesión 123",
+      "",
+      ...ALL_GREEN,
+    );
+    expect(plan).toMatchObject({ plan_state: "done", final_validation_pending: false });
+  });
+
+  it("the legacy one-line closure is still read as closed", async () => {
+    const plan = await planStatus(
+      "# Plan 011 — cupón",
+      "",
+      "> Estado: done — 2026-06-21 · sesión 123",
+      "",
+      ...ALL_GREEN,
+    );
+    expect(plan.plan_state).toBe("done");
+  });
+
+  it("`done` over an open task is a contradiction, not a closure", async () => {
+    const plan = await planStatus(
+      "# Plan 011 — cupón",
+      "",
+      "> Estado: done",
+      "",
+      ...ALL_GREEN,
+      "- [ ] T2.2 — quedo pendiente",
+    );
+    expect(plan).toMatchObject({ plan_state: "inconsistent", final_validation_pending: false });
+  });
+
+  it("`done` over a phase nobody validated is a contradiction too", async () => {
+    for (const state of ["pendiente", "en ejecución", "bloqueada"]) {
+      const plan = await planStatus(
+        "# Plan 011 — cupón",
+        "",
+        "> Estado: done",
+        "",
+        "## Tasks",
+        "",
+        "### F1 — El carrito acepta un cupón",
+        "> Estado: validada",
+        "- [x] T1.1",
+        "",
+        "### F2 — El descuento se persiste",
+        `> Estado: ${state}`,
+        "- [x] T2.1",
+      );
+      expect(plan.plan_state, state).toBe("inconsistent");
+    }
+  });
+
+  it("a value nobody can read is inconsistent, never a silent open", async () => {
+    const plan = await planStatus("# Plan 011 — cupón", "", "> Estado: cerrado", "", ...ALL_GREEN);
+    expect(plan.plan_state).toBe("inconsistent");
+  });
+
+  // Legacy contract (`legacy-tasks`): no phase marks at all, so the checkboxes
+  // decide alone — a pre-contract plan never acquires fictitious phases.
+  it("a legacy plan with no phase marks is judged by its checkboxes alone", async () => {
+    const closed = await planStatus(
+      "# Plan 011 — legacy",
+      "",
+      "> Estado: done — 2026-06-01 · sesión 90",
+      "",
+      "## Tasks",
+      "- [x] T1",
+      "- [x] T2",
+    );
+    expect(closed).toMatchObject({
+      phases_total: 0,
+      plan_state: "done",
+      final_validation_pending: false,
+    });
+
+    const contradictory = await planStatus(
+      "# Plan 011 — legacy",
+      "",
+      "> Estado: done",
+      "",
+      "## Tasks",
+      "- [x] T1",
+      "- [ ] T2",
+    );
+    expect(contradictory.plan_state).toBe("inconsistent");
+  });
+
+  it("a legacy plan that declares nothing stays open, however many boxes are ticked", async () => {
+    const plan = await planStatus("# Plan 011 — legacy", "", "## Tasks", "- [x] T1", "- [x] T2");
+    expect(plan).toMatchObject({
+      phases_total: 0,
+      plan_state: "open",
+      // No phase contract → no final validation to be pending on.
+      final_validation_pending: false,
+    });
+  });
+
+  it("a status line quoted inside a fence never closes a plan", async () => {
+    const plan = await planStatus(
+      "# Plan 011 — cupón",
+      "",
+      "```markdown",
+      "> Estado: done",
+      "```",
+      "",
+      ...ALL_GREEN,
+    );
+    expect(plan.plan_state).toBe("open");
+  });
+});
+
+describe("runStatusCommand — what blocks a phase", () => {
+  async function blockedPhases(...body: string[]) {
+    const fs = new FakeFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    fs.file("/cwd/docs/plans/012-plan-cupon.md", body.join("\n"), NOW);
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    const plan = out.plans[0];
+    if (!plan) throw new Error("the fixture plan was not read");
+    return plan;
+  }
+
+  it("a blocked phase reaches status with its number, its name and its reason", async () => {
+    const plan = await blockedPhases(
+      "# Plan 012 — cupón",
+      "",
+      "## Tasks",
+      "",
+      "### F1 — El carrito acepta un cupón",
+      "> Estado: validada",
+      "- [x] T1.1",
+      "",
+      "### F3 — Persistencia real",
+      "> Estado: bloqueada",
+      "> Bloqueo: falta aplicar la migración",
+      "- [x] T3.1",
+    );
+    expect(plan.phases_blocked).toBe(1);
+    expect(plan.blocked_phases).toEqual([
+      { number: 3, name: "Persistencia real", blocker: "falta aplicar la migración" },
+    ]);
+  });
+
+  it("a legacy block that states no reason does not break the parser", async () => {
+    const plan = await blockedPhases(
+      "# Plan 012 — cupón",
+      "",
+      "## Tasks",
+      "",
+      "### F1 — Persistencia real",
+      "> Estado: bloqueada",
+      "- [x] T1.1",
+    );
+    expect(plan.blocked_phases).toEqual([{ number: 1, name: "Persistencia real", blocker: null }]);
+  });
+
+  it("a phase that is not blocked never exposes a residual reason", async () => {
+    // Doctrine says the `> Bloqueo:` line is dropped when the blocker clears —
+    // documents lie, so the state, not the leftover line, decides.
+    const plan = await blockedPhases(
+      "# Plan 012 — cupón",
+      "",
+      "## Tasks",
+      "",
+      "### F1 — Persistencia real",
+      "> Estado: validada",
+      "> Bloqueo: motivo que quedo colgado",
+      "- [x] T1.1",
+    );
+    expect(plan.phases_blocked).toBe(0);
+    expect(plan.blocked_phases).toEqual([]);
   });
 });
 

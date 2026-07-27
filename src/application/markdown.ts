@@ -1,3 +1,73 @@
+export interface MarkdownHeading {
+  /** `#` count — 1..6 */
+  level: number;
+  /** heading text, trimmed, without the leading `#`s */
+  title: string;
+  /** 0-based index into {@link MarkdownScan.lines} */
+  line: number;
+}
+
+export interface MarkdownScan {
+  /** every line of the document, unmodified — index = line number */
+  lines: string[];
+  /** `fenced[i]` = `lines[i]` sits inside a fenced code block (its markers included) */
+  fenced: boolean[];
+  /** ATX headings found OUTSIDE fenced code blocks, in document order */
+  headings: MarkdownHeading[];
+}
+
+const HEADING_LINE_RE = /^(#{1,6})\s+(\S.*)$/;
+const FENCE_OPEN_RE = /^(`{3,}|~{3,})/;
+
+/**
+ * Single-pass semantic scan of a Markdown document: which lines are quoted
+ * inside a fenced code block, and which headings are real structure.
+ *
+ * One implementation governs what is semantically visible, because the project
+ * writes its own contracts as Markdown examples: a `## Refinement decisions`,
+ * a `### F9` or a `> Estado: validada` shown inside a fence is documentation
+ * ABOUT the contract, never an instance of it. A parser that misses the
+ * distinction promotes specs nobody refined and counts phases nobody planned.
+ *
+ * Fences follow CommonMark's closing rule (see {@link closesFence}) — the
+ * alternating-marker shortcut leaked a nested example back into visibility.
+ * Beyond that, this is deliberately NOT a CommonMark implementation: indented
+ * code blocks, HTML blocks and setext headings are out of the contracts'
+ * vocabulary and stay unhandled.
+ */
+export function scanMarkdown(text: string): MarkdownScan {
+  const lines = text.split("\n");
+  const fenced: boolean[] = new Array(lines.length).fill(false);
+  const headings: MarkdownHeading[] = [];
+
+  let fence: string | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = (lines[i] ?? "").trim();
+    const marker = FENCE_OPEN_RE.exec(line)?.[1] ?? null;
+    if (fence === null) {
+      if (marker) {
+        fence = marker;
+        fenced[i] = true;
+        continue;
+      }
+      const match = HEADING_LINE_RE.exec(line);
+      if (match?.[1] && match[2]) {
+        headings.push({ level: match[1].length, title: match[2].trim(), line: i });
+      }
+      continue;
+    }
+    fenced[i] = true;
+    if (marker && closesFence(fence, marker, line)) fence = null;
+  }
+
+  return { lines, fenced, headings };
+}
+
+/** CommonMark closing fence: same character, at least as long, the bare marker alone. */
+function closesFence(open: string, marker: string, line: string): boolean {
+  return marker[0] === open[0] && marker.length >= open.length && line === marker;
+}
+
 export function parseMdValue(text: string, key: string): string | undefined {
   const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(`^\\s*[-*]?\\s*\\*{0,2}${escaped}\\*{0,2}\\s*[:=]\\s*(.+)$`, "im");
@@ -9,31 +79,30 @@ export function parseMdValue(text: string, key: string): string | undefined {
   return value.length > 0 ? value : undefined;
 }
 
+/**
+ * Body of the section opened by `heading`, up to the next heading of the same
+ * or a higher level. Section boundaries come from {@link scanMarkdown}, so a
+ * heading quoted inside a fence neither opens nor closes a section; the body
+ * returned is the raw slice, fenced examples included.
+ */
 export function parseMdSection(
   text: string,
   heading: string,
   normalizeName: (s: string) => string = (s) => s.trim().toLowerCase(),
 ): string | undefined {
   const target = normalizeName(heading);
-  const lines = text.split("\n");
-  const headingRe = /^(#{1,6})\s+(.+?)\s*$/;
+  const { lines, headings } = scanMarkdown(text);
 
   let captureFrom: number | null = null;
   let captureLevel = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line === undefined) continue;
-    const match = line.match(headingRe);
-    if (!match || !match[1] || !match[2]) continue;
-    const level = match[1].length;
-    const name = normalizeName(match[2]);
+  for (const h of headings) {
     if (captureFrom === null) {
-      if (name === target) {
-        captureFrom = i + 1;
-        captureLevel = level;
+      if (normalizeName(h.title) === target) {
+        captureFrom = h.line + 1;
+        captureLevel = h.level;
       }
-    } else if (level <= captureLevel) {
-      return joinTrim(lines.slice(captureFrom, i));
+    } else if (h.level <= captureLevel) {
+      return joinTrim(lines.slice(captureFrom, h.line));
     }
   }
 
