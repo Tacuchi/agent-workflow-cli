@@ -71,7 +71,9 @@ question that changed nothing, is NOT transcribed.
 
 > **No gating contract** (unlike spec↔plan): the presence of `## Refinement decisions` in the plan is **audit trace only** — `plan-exec` neither requires nor checks it (it runs any plan). It serves to (a) distinguish a re-refined plan from a freshly generated one on resume, and (b) record what changed and why. *(Legacy plans may also carry `## Q&A traceability`; new runs never write it.)*
 
-> **Execution updates progress; refinement changes structure.** `plan-exec` updates the plan's operational state in place — task checkboxes, the phase `> Estado:` line with its `> Bloqueo:` line while blocked, declared deferrals and the final plan status line. It does **not** redesign contracts, phase shape or order, participating components, evidence or simulation boundaries: those structural changes are this loop's, and a change of functional behavior belongs to `spec-refine`.
+> **Execution updates progress; refinement changes structure.** `plan-exec` updates the plan's operational state in place — task checkboxes, the phase `> Estado:` line with its `> Bloqueo:` line while blocked, declared deferrals and the plan's own status mark. It does **not** redesign contracts, phase shape or order, participating components, evidence or simulation boundaries: those structural changes are this loop's, and a change of functional behavior belongs to `spec-refine`.
+
+> **Normalize on write, never invent.** A save through this loop leaves the document on the current contract. The plan-level `> Estado:` line sits under the title — `open`, unless execution already closed it, and then with the date and session on their own `> Cierre:` line. Each `### Fn` carries its required blocks, and **no conditional block is written empty**: a phase with no temporary behavior gets no `Límite de simulación`, one with nothing excluded gets no `Diferido`. Normalizing is a rewrite of form — it never changes a phase's state, never ticks a box, and never closes a plan.
 
 ## Delta 2 — Gap taxonomy (of "plan")
 

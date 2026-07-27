@@ -45,7 +45,7 @@ The skill evaluates `$ARGUMENTS` (specs live in place — `docs/specs/NNN-spec-<
 
 ## Phases are functional states
 
-The plan is born with `### Fn` phases that each leave a **verifiable state of the system** — each with its `> Estado:` line, its primary evidence and its exit condition — never a list of files, classes or layers. Contract: `../loops/plan-new-loop/LOOP.md` § *Phase contract (canonical)*.
+The plan is born with `### Fn` phases that each leave a **verifiable state of the system** — each with its `> Estado:` line, its primary evidence and its exit condition — never a list of files, classes or layers. The blocks beyond those are **conditional**: a phase with no temporary behavior gets no `Límite de simulación`, and one with nothing excluded gets no `Diferido` — a heading is never written empty to satisfy a template. The plan itself is born `> Estado: open` under the title; only `plan-exec` closes it. Contract: `../loops/plan-new-loop/LOOP.md` § *Phase contract (canonical)*.
 
 ## Numbering notes
 

@@ -155,6 +155,25 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
   // was the reference and not a cost. Re-anchored to measured + ~0.8 KB
   // (measured: quick 48 882 · spec-new 13 769 · spec-refine 56 893 ·
   // plan-new 51 680 · plan-refine 72 332 · plan-exec 61 396).
+  // Normalization round — four flows move; quick and spec-new do not, and that
+  // is the shape of the spend: the chassis and CODE-POLICIES are untouched
+  // again, so nothing is charged to flows that gain nothing. spec-refine takes
+  // the biggest raise (+3 568 B) and buys the one behavioral fix of the round:
+  // the change-shape decision is asked, answered and checkpointed in its own
+  // step BEFORE the gap loop, instead of being pushed into `pending_human` —
+  // the batch that gets emptied on every iteration, and never built at all when
+  // no gap blocks. Saying that precisely costs the hard rule, the no-op exit,
+  // the Writes correction (only some branches create a file) and the rewritten
+  // sequence branch. plan-new (+1 855 B) splits the phase contract into
+  // required and conditional blocks and gains the plan-level state as an axis
+  // of its own. plan-exec (+1 955 B) pays for the two-line closure mark with
+  // its legacy migration, the mandatory blocker reason, and the
+  // conditional-simulation carve-out on the entry gate. plan-refine pays twice
+  // again (+2 144 B on its own file plus what it inherits from plan-new-loop)
+  // and stays the heaviest flow, as it has been since the functional-phases
+  // round. Re-anchored to measured + ~0.8 KB (measured: quick 48 882 ·
+  // spec-new 13 769 · spec-refine 60 461 · plan-new 53 535 ·
+  // plan-refine 74 476 · plan-exec 63 351).
   const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
     {
       flow: "quick",
@@ -174,12 +193,12 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
     {
       flow: "spec-refine",
       files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 57_700,
+      budget: 61_300,
     },
     {
       flow: "plan-new",
       files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 52_500,
+      budget: 54_400,
     },
     {
       flow: "plan-refine",
@@ -189,7 +208,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/plan-new-loop/LOOP.md",
         "loops/CHASSIS.md",
       ],
-      budget: 73_200,
+      budget: 75_300,
     },
     {
       flow: "plan-exec",
@@ -199,7 +218,7 @@ describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md",
       ],
-      budget: 62_200,
+      budget: 64_200,
     },
   ];
 
@@ -456,12 +475,15 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     // Renamed from "Checkbox-only residue" by the functional-phases round: the
     // rule now admits a fourth write (the phase's own `> Estado:` line), so the
     // old name was no longer true. The bound itself is what G14 protects.
+    // The normalization round splits the closure mark in two lines (bare value
+    // + `> Cierre:`), so the pin follows the value, not the old single-line form.
     const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
     expect(planExec).toContain("**Plan-doc residue (hard rule):**");
     expect(planExec).not.toContain("**Checkbox-only residue (hard rule):**");
     expect(planExec).toContain("NEVER append a duplicate `### Fn` block");
-    expect(planExec).toContain("**Marking done = ONE line in the plan-doc**");
-    expect(planExec).toContain("> Estado: done — YYYY-MM-DD · sesión NNN");
+    expect(planExec).toContain("**Marking done = ONE status line in the plan-doc**");
+    expect(planExec).toContain("> Estado: done");
+    expect(planExec).toContain("> Cierre: YYYY-MM-DD · sesión NNN");
   });
 
   it("the residue rule carves out the Open-questions deferrals, the phase state and its blocker line", async () => {
@@ -887,6 +909,169 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     const chassis = await readRel("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/deviation gate|phase contract|executability/i);
     expect(chassis).not.toContain("> Estado:");
+  });
+});
+
+describe("Doctrine guards — G18 · normalization round (three axes · shape-first · conditional blocks)", () => {
+  // Pin the normalization round. Three regressions it guards against, each one
+  // observed in the audited baseline:
+  //   1. the plan's closure collapsing back into the phase counters, so a plan
+  //      whose phases are all green reads "finished" before anyone validated it;
+  //   2. the change-shape decision travelling in `pending_human` — the batch
+  //      that gets rebuilt every iteration — so a split nobody could re-derive
+  //      was silently dropped between rounds;
+  //   3. the conditional blocks presented as required, which is what pushed the
+  //      agent to invent a stub so the plan would match the template.
+  const PLAN_NEW = "loops/plan-new-loop/LOOP.md";
+  const PLAN_EXEC = "loops/plan-exec-loop/LOOP.md";
+  const SPEC_REFINE = "loops/spec-refine-loop/LOOP.md";
+
+  /** The `## Phase contract (canonical)` section, up to the next `## ` heading. */
+  async function phaseContract(): Promise<string> {
+    const planNew = await readRel(PLAN_NEW);
+    const start = planNew.indexOf("## Phase contract (canonical)");
+    const rest = planNew.slice(start);
+    const end = rest.indexOf("\n## ");
+    return end === -1 ? rest : rest.slice(0, end);
+  }
+
+  it("the plan carries a state of its own, distinct from the phase marks", async () => {
+    const contract = await phaseContract();
+    expect(contract).toContain("**The plan carries its own state, and it is a different axis.**");
+    expect(contract).toContain("`open` | `done`");
+    expect(contract).toContain("> Cierre: YYYY-MM-DD · sesión NNN");
+    // Position is the discriminator; one rule for both marks would let a
+    // validated first phase close the plan.
+    expect(contract).toContain("Position disambiguates the two marks");
+  });
+
+  it("doctrine and runtime agree on the plan-level vocabulary", async () => {
+    const { PLAN_DECLARED_STATES } = await import("../../src/application/parsers/plan-status.js");
+    expect(PLAN_DECLARED_STATES).toEqual(["open", "done"]);
+    const contract = await phaseContract();
+    for (const state of PLAN_DECLARED_STATES) {
+      expect(contract, state).toContain(`\`${state}\``);
+    }
+  });
+
+  it("the three axes are declared on every surface that reports progress", async () => {
+    for (const rel of ["SKILL.md", "commands/status.md"]) {
+      const doc = await readRel(rel);
+      expect(doc, rel).toContain("Three axes");
+      expect(doc, rel).toContain("plan_state");
+    }
+    const status = await readRel("commands/status.md");
+    expect(status).toContain("final_validation_pending");
+    expect(status).toContain("`inconsistent`");
+  });
+
+  it("plan-exec keeps the plan open until the final validation, never from the counters", async () => {
+    const exec = await readRel(PLAN_EXEC);
+    expect(exec).toContain("Every phase `validada` is **not** the plan closed");
+    expect(exec).toContain("never write `done` from the counters");
+    // Reading the legacy one-line form is compatibility; writing it is not.
+    expect(exec).toContain("**Legacy status line, migrated on write.**");
+  });
+
+  it("a blocked phase must state its reason, and the next step is the unblocking action", async () => {
+    const exec = await readRel(PLAN_EXEC);
+    expect(exec).toContain("**A blocker without a reason is not a blocker (hard rule).**");
+    expect(exec).toContain("`blocker: null`");
+    expect(exec).toContain("names **the action that unblocks it**");
+    // The reader has to render it, not just count it.
+    const status = await readRel("commands/status.md");
+    expect(status).toContain("blocked_phases[]");
+    expect(status).toContain("motivo no declarado");
+  });
+
+  it("the shape decision is resolved before the gap loop and never stored in pending_human", async () => {
+    const loop = await readRel(SPEC_REFINE);
+    const gate = loop.indexOf("## Change-shape gate");
+    const taxonomy = loop.indexOf("## Gap taxonomy");
+    expect(gate).toBeGreaterThan(-1);
+    expect(taxonomy).toBeGreaterThan(gate);
+    expect(loop).toContain(
+      "**Resolved before the gap loop starts, never carried into it (hard rule).**",
+    );
+    expect(loop).toContain("It never travels in `pending_human`");
+
+    // The sequence must show it too: the resolution branch has to sit BEFORE
+    // the `repeat:` that rebuilds `pending_human`, or the prose is aspirational.
+    const sequence = loop.slice(loop.indexOf("## Sequence"));
+    const resolve = sequence.indexOf("if shape != same:");
+    const repeat = sequence.indexOf("\n  repeat:");
+    const reset = sequence.indexOf("pending_human = []");
+    expect(resolve).toBeGreaterThan(-1);
+    expect(repeat).toBeGreaterThan(resolve);
+    expect(reset).toBeGreaterThan(repeat);
+  });
+
+  it("split and replace keep separate offers, and a way out that writes nothing", async () => {
+    const loop = await readRel(SPEC_REFINE);
+    expect(loop).toContain("**Every branch has a way out that changes nothing.**");
+    expect(loop).toContain("`Cerrar` closes the run **without applying the shape change**");
+    // The command surface must state the asymmetry the loop implements.
+    const command = await readRel("commands/spec-refine.md");
+    expect(command).toContain("## The two shape branches are not the same question");
+    expect(command).toContain("`Dividir en varias specs`");
+    expect(command).toContain("`Crear una nueva spec`");
+    expect(command).toContain("`Reformular esta spec`");
+    expect(command).toContain("**no new file**");
+  });
+
+  it("only the branches that create a file say they create one", async () => {
+    const loop = await readRel(SPEC_REFINE);
+    expect(loop).toContain("**Not every shape decision creates a file**");
+    // The index must describe the same possible writes.
+    const index = await readRel("loops/README.md");
+    expect(index).toContain("**A single run may write several documents.**");
+    expect(index).toContain("sibling specs");
+    expect(index).toContain("sibling plans");
+    expect(index).toContain("`Reformular esta spec`");
+  });
+
+  it("the conditional phase blocks are declared conditional wherever they are demanded", async () => {
+    const contract = await phaseContract();
+    expect(contract).toContain("**Required**");
+    expect(contract).toContain("**Conditional**");
+    expect(contract).toContain("**A new phase never writes an empty conditional block.**");
+    expect(contract).toContain("(**only** when temporary behavior exists)");
+
+    // Each rule that could demand a simulation states its own condition — the
+    // failure mode is one conditional sentence somewhere and unconditional
+    // demands everywhere else.
+    const exec = await readRel(PLAN_EXEC);
+    expect(exec).toContain(
+      "**A missing `Límite de simulación` is a gap only when there is something to simulate.**",
+    );
+    for (const rel of [
+      "commands/plan-new.md",
+      "commands/plan-exec.md",
+      "commands/plan-refine.md",
+    ]) {
+      const doc = await readRel(rel);
+      expect(doc, rel).toMatch(/only when the change carries|no `Límite de simulación`/);
+    }
+  });
+
+  it("`/w:resume` figures in the transversal inventory of every index", async () => {
+    const skill = await readRel("SKILL.md");
+    expect(skill).toContain("`/w:resume`");
+    const readme = await readFile(resolve(SKILL_ROOT, "..", "..", "README.md"), "utf8");
+    const transversal = readme.split("\n").find((l) => l.includes("**Transversal**")) ?? "";
+    expect(transversal).toContain("/w:resume");
+  });
+
+  it("`resume` routes by plan_state — done is the only state it does not resume", async () => {
+    const resume = await readRel("commands/resume.md");
+    expect(resume).toContain("**`plan_state` decides whether a plan is resumable at all.**");
+    for (const row of [
+      "| plan `open` with `final_validation_pending`",
+      "| plan `inconsistent`",
+      "| plan `done` | — not resumed automatically",
+    ]) {
+      expect(resume, row).toContain(row);
+    }
   });
 });
 

@@ -4,9 +4,10 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection } from "./markdown.js";
-import { parsePhases } from "./parsers/phases.js";
+import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
+import { type ParsedPlanStatus, parsePlanStatus } from "./parsers/plan-status.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
-import { parseTasks } from "./parsers/tasks.js";
+import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { findArtifact } from "./session-artifacts.js";
 import { SessionsService } from "./sessions-service.js";
@@ -36,6 +37,21 @@ export interface StatusSpec {
   relative: string;
 }
 
+/**
+ * Whole-plan closure, derived — never declared alone and never inferred from
+ * the counters. `open` = there is still something to do or to validate;
+ * `done` = the plan declares it AND the counters back the declaration;
+ * `inconsistent` = the document contradicts itself and a human must repair it.
+ */
+export type PlanState = "open" | "done" | "inconsistent";
+
+export interface StatusBlockedPhase {
+  number: number;
+  name: string;
+  /** the phase's `> Bloqueo:` reason; `null` on a legacy block that declares none */
+  blocker: string | null;
+}
+
 export interface StatusPlan {
   file: string;
   number: string;
@@ -48,6 +64,14 @@ export interface StatusPlan {
   phases_total: number;
   /** phases whose exact mark is `> Estado: validada` — never inferred from the checkboxes */
   phases_validated: number;
+  /** the plan's third axis: closure, derived from the declaration AND the two counters */
+  plan_state: PlanState;
+  /** phases whose exact mark is `> Estado: bloqueada` */
+  phases_blocked: number;
+  /** the blocked phases with what each one waits on */
+  blocked_phases: StatusBlockedPhase[];
+  /** every task done and every phase validated, but the final validation never ran */
+  final_validation_pending: boolean;
   date: string;
   relative: string;
 }
@@ -270,6 +294,8 @@ async function readPlans(fs: FileSystemPort, cwd: string, now: Date): Promise<St
       const text = await fs.readText(f.path);
       const t = parseTasks(text);
       const p = parsePhases(text);
+      const declared = parsePlanStatus(text).declared;
+      const planState = derivePlanState(declared, t, p);
       const ts = await resolveTimestamp(fs, f.path, undefined, now);
       out.push({
         file: relFromCwd(f.path, cwd),
@@ -280,6 +306,13 @@ async function readPlans(fs: FileSystemPort, cwd: string, now: Date): Promise<St
         progress_pct: t.progress_pct,
         phases_total: p.total,
         phases_validated: p.validated,
+        plan_state: planState,
+        phases_blocked: p.blocked,
+        blocked_phases: p.items
+          .filter((phase) => phase.state === "bloqueada")
+          .map((phase) => ({ number: phase.n, name: phase.name, blocker: phase.blocker })),
+        final_validation_pending:
+          planState === "open" && p.total > 0 && p.validated === p.total && t.closed === t.total,
         date: ts.date,
         relative: ts.relative,
       });
@@ -288,6 +321,34 @@ async function readPlans(fs: FileSystemPort, cwd: string, now: Date): Promise<St
     }
   }
   return sortByNumber(out);
+}
+
+/**
+ * The three axes reconciled into one closure state. The rules, in order:
+ *
+ * - a plan that declares nothing, or declares `open`, IS open — including the
+ *   case where every box is ticked and every phase is validated: that plan is
+ *   waiting on its final validation, not finished (`final_validation_pending`);
+ * - a plan that declares `done` is `done` only when the counters agree — every
+ *   task closed and, under the phase contract, every phase validated;
+ * - any other combination is `inconsistent`: the document says one thing and
+ *   shows another, and nothing but a human repairs that.
+ *
+ * A plan with no phase marks predates the contract (`phases_total: 0`) and is
+ * judged by its checkboxes alone — it never acquires fictitious phases, and
+ * `done` on such a plan stays legitimate when its boxes are all ticked.
+ */
+function derivePlanState(
+  declared: ParsedPlanStatus["declared"],
+  tasks: ParsedTasks,
+  phases: ParsedPhases,
+): PlanState {
+  if (declared === "unknown") return "inconsistent";
+  if (declared !== "done") return "open";
+  if (tasks.closed !== tasks.total) return "inconsistent";
+  // Legacy contract (`legacy-tasks`): no phase marks, so the checkboxes decide.
+  if (phases.total === 0) return "done";
+  return phases.validated === phases.total ? "done" : "inconsistent";
 }
 
 // ── sessions ──────────────────────────────────────────────────────────────────
