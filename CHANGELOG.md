@@ -4,6 +4,38 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.25.0] — 2026-07-29
+
+**Los hosts vivían en cuatro registros que no coincidían, y la detección respondía con un booleano a cuatro preguntas distintas.** El dominio declaraba 7 harnesses (con `oz`, sin `agents`), los destinos de instalación 8 (con ambos), la TUI mantenía su propia lista de 7 (con `agents`, sin `oz`) y el doctor filtraba por `mcpHostId !== null` y se quedaba en 6 — así que una instalación en Oz era **invisible en toda la TUI** y el directorio compartido `~/.agents/skills` inflaba el conteo de hosts. La detección mezclaba «este host está instalado» con «estamos corriendo dentro de este host»: `~/.oz` se sondeaba aunque ningún host lo cree, y `~/.codex` presente bastaba para responder «codex» y, con eso, para que `aw mcp setup` sin `--host` escribiera en su `config.toml`. Ahora **el dominio es el único catálogo** y todas las superficies derivan de él con guardas que fallan si alguna diverge; la detección separa **cuatro estados observables** por host —config presente · runtime disponible · Workline instalado · capacidades— cada uno con su evidencia; y sobre ese catálogo entra **Kimi Code** como host oficial de punta a punta. Una corrida reproducible (`npm run smoke:hosts`) instala y desinstala cada host oficial en un HOME desechable y **escribe el veredicto**: ninguna superficie afirma una verificación que no corrió. 5/5 oficiales verdes en macOS. Bundle `w` **13.22.0**.
+
+### Added
+
+- **`npm run smoke:hosts`** — valida por nivel de soporte: sonda runtime y versión de los 8 hosts, y para los **oficiales** instala en un `HOME` de sandbox, verifica que en disco esté exactamente lo que el catálogo promete (bundle · superficie de comandos · hooks), desinstala y verifica que **las tres** desaparecieron. Escribe `src/domain/host-verification.ts`, la única fuente de un «verificado el X contra la versión Y» en todo el CLI. `-- --check` corre lo mismo sin escribir.
+- **Kimi Code como host oficial** — dominio, detección, instalación, desinstalación, MCP, TUI y documentación. Skills en `~/.kimi-code/skills` (también lee `~/.agents/skills`), comandos como `/skill:w-<command>`, MCP en `~/.kimi-code/mcp.json` (shape `mcpServers`) y hooks en el `[[hooks]]` de su `config.toml`. Todo verificado contra el binario v0.29.2 y con probes en vivo.
+- **Metadata de soporte en el catálogo** — `tier` (oficial | best-effort), superficie inestable para los pre-1.0, etiqueta y glifo. La TUI, el README y los describes la proyectan; un host que ninguna corrida cubrió se muestra `unverified`, nunca «verificado».
+- **`aw self detect-hosts` con evidencia** — por host, los cuatro estados con el porqué de cada uno («'claude' en el PATH; reportó 2.1.220», «Warp no trae CLI propio — su presencia se juzga por su config dir»), las capacidades reales (nativa · degradada · no soportada) y una acción proporcional cuando queda configuración residual. Los destinos compartidos van en su propia sección.
+
+### Changed
+
+- **`--target all` significa lo mismo en install y uninstall**: todos los hosts. Antes install saltaba `agents` y uninstall lo incluía, así que `all` borraba más de lo que `all` había puesto. Los directorios compartidos se piden explícitos y la salida lo declara.
+- **El doctor reporta todos los hosts del catálogo.** El filtro por `mcpHostId` dejaba fuera a Oz —el único que toma MCP por flag de arranque— y con él a cualquier instalación suya.
+- **La TUI proyecta el catálogo**: `oz` visible, `agents` como destino compartido fuera del conteo, pill de nivel y versión verificada por fila, hooks **sondeados por host** en vez de un «claude only» global, réplicas y totales derivados. El mcp-tab pregunta en qué host instalar en lugar de escribir siempre en Claude.
+- **`aw harness` responde solo por marcadores de entorno.** Se retiró el fallback de filesystem que contestaba «codex» con solo existir `~/.codex`: confundía «está instalado» con «estamos dentro», y por esa vía `aw mcp setup` sin `--host` escribía en un host que el usuario no eligió. `unknown` es ahora una respuesta legítima y documentada — varios hosts no exportan marcador alguno.
+- **El escritor de MCP es un switch exhaustivo.** Un `McpHost` sin rama ya no compila.
+
+### Fixed
+
+- **`uninstall --with-hooks` borraba hooks del usuario.** Eliminaba el evento completo cuando su nombre coincidía con uno de los nuestros, contra lo que su propio comentario prometía: quien tuviera su propio `PreToolUse` lo perdía. La propiedad se decide ahora **por entrada** —idéntica a la del template, o con todos sus comandos invocando este CLI—; una entrada mixta se preserva porque partirla sería adivinar. Se recorren todos los eventos, así que un evento nuevo del template queda cubierto sin tocar código.
+- **Los hooks de Kimi sobreviven a que el propio host reescriba su `config.toml`.** Kimi re-serializa ese archivo en operaciones normales suyas y **borra todos los comentarios** conservando el array `hooks`: identificar lo nuestro por marcador dejaba los hooks armados y sin forma de quitarlos, duplicándose en cada reinstalación. La propiedad es por dato, igual que en Claude.
+- **`mcp setup` sin `--host` en un harness no identificable pide el destino** en vez de escribir en la configuración de todos.
+- **`~/.oz` dejó de fabricarse.** Oz no tiene config dir propio —corre dentro del entorno de Warp— y se detecta por su binario.
+- **`plugin-doctor` procesaba `hooks/hooks.json` dos veces** (Claude y Codex declaran el mismo directorio) y duplicaba cada hallazgo sobre ese archivo.
+- **La degradación de capacidades se informa por la ruta que el usuario recorre.** El aviso de que un hook no es expresable en el host llegaba solo a `self install-hooks`, no a `self install`.
+
+### Removed
+
+- **La copia a mano de los eventos que instalamos** en el desinstalador, y los tres `new Set(["claude"])` que decidían por separado en qué hosts se arman hooks: ahora derivan del catálogo.
+
 ## [20.24.0] — 2026-07-29
 
 **La doctrina deja de cargarse entera para dejarse cargar por señal, y el costo del contexto pasa de techo a presupuesto.** Cada comando ordenaba su cadena en prosa —`commands/<c>.md` → `## Run the loop` → `loops/<x>/LOOP.md` → `## Inherits` → `loops/CHASSIS.md`— y toda la doctrina entraba siempre, aplicara o no al caso: un `status` arrastraba el chasis, un plan sin base de datos cargaba las reglas de BD. El costo se fijaba a mano en una tabla de seis flows que solo sabía subir —unos diez párrafos de comentario documentaban cada alza—, dejaba sin presupuesto a los diez comandos sin loop y no medía ningún recorrido. Ahora un manifiesto declara, por comando, el núcleo que se carga siempre y los módulos con la señal que activa cada uno; `aw context-plan` devuelve el read-set ordenado con **rutas absolutas** y su recibo, y `aw context-budget` mide los tres tramos contra un baseline congelado del que se **derivan** todos los techos. La cadena no se profundiza: se **aplana**. Donde había dos saltos de lectura encadenados —y la evidencia dice que el segundo es el que se pierde en modelos débiles— queda una llamada y N archivos al mismo nivel. Discovery −34,5% · activación mediana −40,4% · ejecución mediana −25,3% · ningún recorrido creció. Bundle `w` **13.21.0**.
