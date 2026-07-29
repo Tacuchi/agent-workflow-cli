@@ -41,7 +41,7 @@ export function hashContextId(contextId: string): string {
   return createHash("sha256").update(contextId, "utf8").digest("hex");
 }
 
-export function parseBindingRegistry(raw: string): RegistryRead {
+function parseBindingRegistry(raw: string): RegistryRead {
   if (raw.trim().length === 0) return { ok: true, registry: emptyRegistry() };
   let parsed: unknown;
   try {

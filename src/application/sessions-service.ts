@@ -94,6 +94,3 @@ function applyFilter(sessions: SessionEntry[], input: ListSessionsInput): Sessio
   }
   return sessions.filter((s) => s.state === "active");
 }
-
-// Backwards-compat re-export. Other modules may import { parseSessionFolder } from this file.
-export { parseSessionFolder } from "./session-resolver.js";
