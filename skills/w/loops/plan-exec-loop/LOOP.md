@@ -110,10 +110,6 @@ On either return path: `CHECKPOINT` records the state reached and the trigger, t
 
 Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Safe git*: branch-check before editing, rejected commit — changes stay + get recorded —, working-tree precondition between phases). **Inline:** before editing, verify each source's expected branch (`aw check-branch --source <alias>`; on mismatch → pause and resolve with the human); at each phase close and **after the review gate** (Delta 5), **proposed commits per source** (approve first) — never `push`/`--amend`/`--no-verify`.
 
-## Delta 3 — DB policy: **the AI never executes DML**
-
-Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *DB scripts-only*). **Inline:** read-only queries → the session's `SCRIPTS.sql`, executed via MCP (`sql-mutation-guard`); DDL/DML migrations → the AI **drafts them in `SCRIPTS.sql` but NEVER executes them** — their promotion to `docs/scripts/` is done by a separate `export-*`, never this loop.
-
 ## Delta 4 — Validation: phase proof + progressive tests
 
 - The phase's **primary proof** is its `Validación de fase`: it demonstrates the **state reached**, not the structure written. Three levels, and the loop never descends one automatically:
@@ -141,14 +137,6 @@ Full gate in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) (§ *Closing review ga
 - **Marking done = ONE status line in the plan-doc**, under the title's blockquote: `> Estado: done`, updated in place on a re-run. The machine value **stands alone** — the date and session go on their own `> Cierre: YYYY-MM-DD · sesión NNN` line right under it, for the same reason a blocker never rides on a phase's state line. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
 - **Legacy status line, migrated on write.** A plan carrying the old single-line form (`> Estado: done — YYYY-MM-DD · sesión NNN`) is still **read** as closed; the first time this loop legitimately writes that document, it is rewritten to the two-line form. Compatibility is for reading old plans — every new write uses the normalized contract.
 - **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.
-
-## Delta 7 — Probe (PoC) tasks
-
-Chassis § *Proof of concept (probe)*, instantiated for execution — for a plan's explicit probe task or a runnable doubt inside a task:
-
-- Seed the question + pass/fail check → run **throwaway code in the session folder** (never the source tree, never committed; DB probe = read-only) → verdict in `CONCLUSIONS`, consequences in `DECISION` (tagged by task) → mark the task with its verdict.
-- A **failed probe does not fail the phase** — it de-risked it: surface it (structured-choice); reshaping the plan goes to `Open questions` + `BACKLOG` (or `/w:plan-refine`).
-- **Promotion**: probe code reaches the sources only as a normal task edit (branch-check + review gate) — never by committing the probe.
 
 ## Sequence
 
@@ -210,3 +198,8 @@ finalize: CHECKPOINT (+ BACKLOG if something is deferred) + close session + repo
 - A **structural deviation** or a **functional change** exits this loop without converging (§ *Deviation gate*): `CHECKPOINT` + `finalize`, and the work continues in `plan-refine` / `spec-refine`. Same exit when the entry gate finds a structural gap.
 - `Cerrar` (`flow` control, at any time) → `finalize` persists `CHECKPOINT` (and `BACKLOG` only if something remained unexecuted / uncommitted / unapplied), closes the session, reports.
 - Promoting artifacts to `docs/` (via `export-*`) is **always** a later, explicit step outside this loop.
+
+## Conditional modules
+
+- `probe` — probe (PoC) tasks → `../../modules/EXEC-PROBE-TASKS.md`
+- `db` — the DB policy → `../../modules/EXEC-DB-POLICY.md`

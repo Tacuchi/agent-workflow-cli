@@ -1,5 +1,5 @@
 ---
-description: Use when the user asks for a scoped, direct task — a fix, tweak, chore or small change that warrants no spec or plan (e.g. "fix this bug", "rename X", "tidy up Y"). Starts quick-loop with minimal ceremony; never touches docs/. If the objective exceeds a quick or the task grows, it escalates — to SPEC live (with consent), to PLAN deferred.
+description: Use for a scoped, direct task that warrants no spec or plan — a fix, a tweak, a chore ("fix this bug", "rename X"). Starts quick-loop with minimal ceremony; never touches docs/. Escalates when the objective exceeds a quick: to SPEC live with consent, to PLAN deferred.
 argument-hint: <prompt with the scoped task>
 allowed-tools:
   [
@@ -12,7 +12,7 @@ allowed-tools:
 
 # quick — trampoline to the lightweight loop
 
-For scoped, direct tasks that do not justify going through SPEC or PLAN. Creates a light session (traceability + resume) — unless the **entry size gate** escalates to SPEC before starting. Delegates to `quick-loop` (Layer 2).
+Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + resume) — unless the **entry size gate** escalates first.
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
@@ -23,27 +23,20 @@ For scoped, direct tasks that do not justify going through SPEC or PLAN. Creates
 
 ## Run the loop
 
-`quick-loop` is **not** a skill invocable by name — it is this command's operating manual (a sibling doc in the bundle). **Load it and execute it end to end**:
+1. `aw context-plan --command quick` — read exactly the documents it lists, in order.
+2. Follow the loop manual end to end, taking `$ARGUMENTS` as the task: it evaluates the size gate, creates the light session, works with minimal ceremony (git-safe), escalates if the task grows, and reports.
 
-1. **Read** `../loops/quick-loop/LOOP.md` (inside the installed `w` skill — e.g. `~/.claude/skills/w/loops/…`).
-2. **Follow** its instructions taking `$ARGUMENTS` as the task: it evaluates the size gate, creates the light session, works with minimal ceremony (git-safe), escalates if the task exceeds or grows (SPEC live / PLAN deferred), and reports.
+> `quick-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
 
-> Do not try `Skill: quick-loop` — it is not registered as a skill. The command **is** the entry; the loop is its body.
+## Two things this command never does
 
-## What the loop does
+- **It never touches `docs/`** and it exports nothing.
+- **It never re-derives what the conversation already settled.** Analysis already established here is *input*, seeded into the session with `## Origin` = adopted.
 
-- Edits code in the workspace sources.
-- **Adopts prior context**: analysis/conclusions already established in this conversation (e.g. via a host-native feature) are **input** — seeded into the session with `## Origin` = adopted, never re-derived or re-asked (chassis § *Adopted context*).
-- Minimal session artifacts (lazy DECISION, proposed commit).
-- **Proportional closing review gate** before proposing the single commit: re-reads the diff applying the installed ambient conventions and fixes or defers (see `../loops/quick-loop/LOOP.md` § *Sequence*).
-- **Never touches `docs/`** and exports nothing.
-- **Escalates** when complexity emerges — **entry size gate** (before creating the session) and mid-loop (many files, ≥2 sources, needs architecture, or the change is a feature/refactor). Accepting **SPEC** = **live** transition into the SPEC flow (draft via the spec-new procedure + spec-refine-loop); **PLAN** stays seeded for later. See `../loops/quick-loop/LOOP.md` § *QUICK delta*.
+## More context
 
-## Plan mode
+`aw context-plan --command quick --signal <s>` returns the extra documents a case needs; read exactly what it lists:
 
-The skill describes the changes it would apply and the files it would touch, without executing them. Escalation included: if the gate (entry or mid-loop) would fire, it describes it (options + the spec it would materialize) without writing `docs/` or starting loops.
-
-## Resources
-
-- Loop manual: `../loops/quick-loop/LOOP.md`
-- Design reference: `docs/referencias/workflow-commands/quick.md`
+- `db` — the task reads or writes a database → [`../modules/DB-SCRIPTS-ONLY.md`](../modules/DB-SCRIPTS-ONLY.md)
+- `probe` — a runnable doubt has to be settled by running something → [`../modules/PROBE.md`](../modules/PROBE.md)
+- `adopted` — the conversation already established the analysis → [`../modules/ADOPTED-CONTEXT.md`](../modules/ADOPTED-CONTEXT.md)

@@ -96,17 +96,27 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     }
   });
 
-  it("the surfaces that opted into a human projection are exactly the ten", () => {
-    const withRenderer = ALL_COMMANDS.filter((c) => c.renderHuman !== undefined).map((c) => c.name);
-    expect([...withRenderer].sort()).toEqual([...SURFACES.map((s) => s.name)].sort());
+  it("every declared surface carries the human projection", () => {
+    const withRenderer = new Set(
+      ALL_COMMANDS.filter((c) => c.renderHuman !== undefined).map((c) => c.name),
+    );
+    for (const surface of SURFACES) expect(withRenderer.has(surface.name), surface.name).toBe(true);
   });
 
-  // The compatibility floor: every OTHER command keeps emitting JSON in a
-  // terminal, exactly as it did before this plan.
-  it("no other command acquired a human projection by accident", () => {
-    const others = ALL_COMMANDS.filter(
-      (c) => !SURFACES.some((s) => s.name === c.name) && c.renderHuman !== undefined,
-    );
+  // The compatibility floor: every command that existed before spec 012 keeps
+  // emitting JSON in a terminal, exactly as it did then. Commands added LATER
+  // adopt the projection by design — reusing output-mode.ts is the pattern this
+  // plan established, not drift — so they are listed here, by name, one line per
+  // adopter. What the guard still refuses is a command acquiring a renderer
+  // without anyone declaring that it should.
+  const LATER_ADOPTERS: readonly string[] = [
+    "context-budget", // plan 010 — the context budget report
+    "context-plan", // plan 010 — the read-set an invocation must load
+  ];
+
+  it("no undeclared command acquired a human projection", () => {
+    const declared = new Set<string>([...SURFACES.map((s) => s.name), ...LATER_ADOPTERS]);
+    const others = ALL_COMMANDS.filter((c) => !declared.has(c.name) && c.renderHuman !== undefined);
     expect(others.map((c) => c.name)).toEqual([]);
   });
 });
@@ -127,12 +137,19 @@ describe("C1/C9 · every wrapper invokes the CLI and re-decides nothing", () => 
     },
   );
 
-  // The 34,9 KB the exports used to load on every invocation.
+  // The 34,9 KB the exports used to load on every invocation. Plan 010 removed
+  // the trailing `## Resources` pointer lists, so the normal path is now the
+  // whole body: assert over all of it instead of a slice that ended at a
+  // heading which no longer exists.
   it("no export wrapper loads its EXPORT.md on the normal path", async () => {
     for (const category of ["diagrams", "manuals", "reports", "scripts"]) {
       const doc = await readFile(join(SKILL_ROOT, "commands", `export-${category}.md`), "utf8");
-      const run = doc.slice(doc.indexOf("## Run"), doc.indexOf("## Resources"));
-      expect(run, category).not.toContain("EXPORT.md");
+      // What matters is the NORMAL PATH: the `## Run` steps must not send the
+      // agent into the manual. A markdown link names the file twice by
+      // construction, so counting occurrences measured formatting, not loading.
+      const run = doc.slice(doc.indexOf("## Run"));
+      const runSteps = run.slice(0, run.indexOf("\n## ") === -1 ? undefined : run.indexOf("\n## "));
+      expect(runSteps, category).not.toContain("EXPORT.md");
       expect(doc, category).toContain("no longer loaded on the normal path");
     }
   });

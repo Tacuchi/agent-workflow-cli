@@ -28,7 +28,7 @@ Given a UI requirement, author a **structured Markdown description** of the scre
 Two levels, same capability:
 
 - **`spec-refine-loop`** (see `../../loops/spec-refine-loop/LOOP.md`) — resolving the **UI unspecified** gap (when the requirement involves UI): authors the spec's `## UI spec` section (the UI's *what*, coarse-grain screens).
-- **`plan-new-loop` · `plan-refine-loop`** (see `../../loops/plan-new-loop/LOOP.md` § *Delta 4*) — resolving the **UI without design SPEC** gap (when the **plan includes UI**): authors per-screen **design SPECs** (`NNN-SPEC-<SLUG>.md`) as **PLAN session artifacts** (see `../../artifacts/artifacts-design/SPEC.md`); they derive from `## UI spec` when it exists.
+- **`plan-new-loop` · `plan-refine-loop`** (see `../../modules/PLAN-DESIGN-SPECS.md`, the plan loops' `ui` module) — resolving the **UI without design SPEC** gap (when the **plan includes UI**): authors per-screen **design SPECs** (`NNN-SPEC-<SLUG>.md`) as **PLAN session artifacts** (see `../../artifacts/artifacts-design/SPEC.md`); they derive from `## UI spec` when it exists.
 
 In both, the composing loop contributes:
 

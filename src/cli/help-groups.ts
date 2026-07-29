@@ -59,6 +59,10 @@ const GROUPS: readonly CommandGroup[] = [
       "skills",
       "resume-summary",
       "next-number",
+      // Context budget & read-set resolution (spec 009): what a command costs
+      // to load, and which documents it actually has to load.
+      "context-budget",
+      "context-plan",
     ],
   },
   {

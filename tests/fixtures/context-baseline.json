@@ -1,0 +1,304 @@
+{
+  "$comment": "BASELINE del costo de contexto (plan 010). DOS congelados con DOS revisiones, y no se mezclan: discovery/activation/execution/guaranteed se midieron ANTES del corte, sobre el arbol que declara `revision` (53 archivos); `modules` se midio DESPUES, sobre el arbol que declara `modules.revision`, porque antes del corte no existian modulos y no hay cifra pre-split contra la cual compararlo. Por eso su linea acota el CRECIMIENTO del arbol condicional, no una reduccion. NO se regenera: los techos se derivan de estas cifras por los ratios de skills/w/context/MANIFEST.json. Reproducible con: aw context-budget --root skills/w --json.",
+  "root_origin": "packaged",
+  "revision": {
+    "cli_version": "20.23.0",
+    "content_digest": "256bffcaf5a68a89",
+    "file_count": 53
+  },
+  "discovery": {
+    "bytes": 6684,
+    "entries": [
+      {
+        "path": "SKILL.md",
+        "bytes": 604
+      },
+      {
+        "path": "commands/export-diagrams.md",
+        "bytes": 250
+      },
+      {
+        "path": "commands/export-manuals.md",
+        "bytes": 239
+      },
+      {
+        "path": "commands/export-reports.md",
+        "bytes": 218
+      },
+      {
+        "path": "commands/export-scripts.md",
+        "bytes": 254
+      },
+      {
+        "path": "commands/fix-git.md",
+        "bytes": 454
+      },
+      {
+        "path": "commands/generate-launch.md",
+        "bytes": 455
+      },
+      {
+        "path": "commands/persist.md",
+        "bytes": 460
+      },
+      {
+        "path": "commands/plan-exec.md",
+        "bytes": 490
+      },
+      {
+        "path": "commands/plan-new.md",
+        "bytes": 484
+      },
+      {
+        "path": "commands/plan-refine.md",
+        "bytes": 472
+      },
+      {
+        "path": "commands/quick.md",
+        "bytes": 344
+      },
+      {
+        "path": "commands/resume.md",
+        "bytes": 376
+      },
+      {
+        "path": "commands/spec-new.md",
+        "bytes": 406
+      },
+      {
+        "path": "commands/spec-refine.md",
+        "bytes": 440
+      },
+      {
+        "path": "commands/status.md",
+        "bytes": 326
+      },
+      {
+        "path": "commands/workspace-init.md",
+        "bytes": 412
+      }
+    ]
+  },
+  "activation": {
+    "median": 4221,
+    "entries": [
+      {
+        "command": "export-diagrams",
+        "bytes": 2603
+      },
+      {
+        "command": "export-manuals",
+        "bytes": 2649
+      },
+      {
+        "command": "export-reports",
+        "bytes": 2469
+      },
+      {
+        "command": "export-scripts",
+        "bytes": 2776
+      },
+      {
+        "command": "fix-git",
+        "bytes": 4233
+      },
+      {
+        "command": "generate-launch",
+        "bytes": 4562
+      },
+      {
+        "command": "persist",
+        "bytes": 5764
+      },
+      {
+        "command": "plan-exec",
+        "bytes": 5870
+      },
+      {
+        "command": "plan-new",
+        "bytes": 6412
+      },
+      {
+        "command": "plan-refine",
+        "bytes": 6117
+      },
+      {
+        "command": "quick",
+        "bytes": 3906
+      },
+      {
+        "command": "resume",
+        "bytes": 4210
+      },
+      {
+        "command": "spec-new",
+        "bytes": 13769
+      },
+      {
+        "command": "spec-refine",
+        "bytes": 5546
+      },
+      {
+        "command": "status",
+        "bytes": 2636
+      },
+      {
+        "command": "workspace-init",
+        "bytes": 4195
+      }
+    ]
+  },
+  "execution": {
+    "median": 51208,
+    "journeys": [
+      {
+        "id": "spec",
+        "label": "SPEC",
+        "command": "spec-refine",
+        "signals": [],
+        "bytes": 60461
+      },
+      {
+        "id": "plan-doc",
+        "label": "PLAN documental",
+        "command": "plan-new",
+        "signals": [],
+        "bytes": 53535
+      },
+      {
+        "id": "code-exec",
+        "label": "ejecucion de codigo",
+        "command": "plan-exec",
+        "signals": ["code"],
+        "bytes": 63351
+      },
+      {
+        "id": "quick",
+        "label": "QUICK",
+        "command": "quick",
+        "signals": ["code"],
+        "bytes": 48882
+      },
+      {
+        "id": "transversal",
+        "label": "transversal",
+        "command": "persist",
+        "signals": [],
+        "bytes": 5764
+      },
+      {
+        "id": "export",
+        "label": "export",
+        "command": "export-scripts",
+        "signals": ["export"],
+        "bytes": 2776
+      }
+    ]
+  },
+  "guaranteed": [
+    {
+      "command": "export-diagrams",
+      "bytes": 2603,
+      "files": ["commands/export-diagrams.md"]
+    },
+    {
+      "command": "export-manuals",
+      "bytes": 2649,
+      "files": ["commands/export-manuals.md"]
+    },
+    {
+      "command": "export-reports",
+      "bytes": 2469,
+      "files": ["commands/export-reports.md"]
+    },
+    {
+      "command": "export-scripts",
+      "bytes": 2776,
+      "files": ["commands/export-scripts.md"]
+    },
+    {
+      "command": "fix-git",
+      "bytes": 4233,
+      "files": ["commands/fix-git.md"]
+    },
+    {
+      "command": "generate-launch",
+      "bytes": 4562,
+      "files": ["commands/generate-launch.md"]
+    },
+    {
+      "command": "persist",
+      "bytes": 5764,
+      "files": ["commands/persist.md"]
+    },
+    {
+      "command": "plan-exec",
+      "bytes": 63351,
+      "files": [
+        "commands/plan-exec.md",
+        "loops/plan-exec-loop/LOOP.md",
+        "loops/CHASSIS.md",
+        "loops/CODE-POLICIES.md"
+      ]
+    },
+    {
+      "command": "plan-new",
+      "bytes": 53535,
+      "files": ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"]
+    },
+    {
+      "command": "plan-refine",
+      "bytes": 74476,
+      "files": [
+        "commands/plan-refine.md",
+        "loops/plan-refine-loop/LOOP.md",
+        "loops/plan-new-loop/LOOP.md",
+        "loops/CHASSIS.md"
+      ]
+    },
+    {
+      "command": "quick",
+      "bytes": 48882,
+      "files": [
+        "commands/quick.md",
+        "loops/quick-loop/LOOP.md",
+        "loops/CHASSIS.md",
+        "loops/CODE-POLICIES.md"
+      ]
+    },
+    {
+      "command": "resume",
+      "bytes": 4210,
+      "files": ["commands/resume.md"]
+    },
+    {
+      "command": "spec-new",
+      "bytes": 13769,
+      "files": ["commands/spec-new.md"]
+    },
+    {
+      "command": "spec-refine",
+      "bytes": 60461,
+      "files": ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"]
+    },
+    {
+      "command": "status",
+      "bytes": 2636,
+      "files": ["commands/status.md"]
+    },
+    {
+      "command": "workspace-init",
+      "bytes": 4195,
+      "files": ["commands/workspace-init.md"]
+    }
+  ],
+  "modules": {
+    "count": 32,
+    "bytes": 81425,
+    "revision": {
+      "cli_version": "20.23.0",
+      "content_digest": "7a76998d353ec9f3",
+      "file_count": 81
+    }
+  }
+}

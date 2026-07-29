@@ -1,0 +1,486 @@
+{
+  "version": 1,
+  "$comment": "Context graph of the w bundle. Single source for BOTH measurement (aw context-budget) and resolution (aw context-plan). It lives inside the bundle on purpose: a hand-installed tree carries the manifest that describes IT, so a receipt can never describe a bundle other than the one the agent actually reads. Paths are relative to the bundle root. `core` is loaded always, in order; a module is loaded only when its signal is observed.",
+  "signals": {
+    "plan-mode": "the host reports it is planning, so the command describes instead of acting",
+    "adopted": "the conversation already produced the analysis, plan or answers the run needs",
+    "probe": "the run rests on a runnable assumption that reading cannot settle",
+    "db": "the run reads or writes a database",
+    "ui": "the run produces or changes a user interface",
+    "split": "the deliverable may have to become more than one document",
+    "shape": "the investigation may have changed what kind of document this is",
+    "input": "the argument is not plainly the document this command expects",
+    "resume": "a prior run over this same input may exist",
+    "replan": "work already executed has to be re-planned around",
+    "simulation": "the change carries temporary behavior with a boundary to declare",
+    "compaction": "the run is long enough that context pressure governs its pacing",
+    "sessions": "a session other than this run's own has to be located, named or reopened",
+    "web": "the run needs evidence from outside the workspace",
+    "reconnaissance": "a draft is being cut from a raw prompt over unfamiliar terrain",
+    "detection": "the CLI's automatic detection was wrong or ambiguous",
+    "scaffold": "the target folder already carries a workspace",
+    "classification": "in-conversation work has to be classified before it is written",
+    "authoring": "the deliverable's own notation, structure or ordering is not obvious from the material"
+  },
+  "commands": {
+    "quick": {
+      "core": [
+        "commands/quick.md",
+        "loops/quick-loop/LOOP.md",
+        "loops/CHASSIS.md",
+        "loops/CODE-POLICIES.md"
+      ],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/ADOPTED-CONTEXT.md",
+          "signal": "adopted"
+        },
+        {
+          "path": "modules/PROBE.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/DB-RESEARCH-RULE.md",
+          "signal": "db",
+          "requires": "external-data"
+        },
+        {
+          "path": "modules/DB-SCRIPTS-ONLY.md",
+          "signal": "db",
+          "requires": "external-data"
+        },
+        {
+          "path": "modules/COMPACTION.md",
+          "signal": "compaction",
+          "requires": "compaction"
+        },
+        {
+          "path": "modules/SESSION-NUMBERING.md",
+          "signal": "sessions"
+        },
+        {
+          "path": "modules/PROMPT-CONTINUITY.md",
+          "signal": "resume"
+        }
+      ]
+    },
+    "spec-new": {
+      "core": ["commands/spec-new.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/RECONNAISSANCE.md",
+          "signal": "reconnaissance"
+        },
+        {
+          "path": "modules/SPLIT-GATE.md",
+          "signal": "split"
+        }
+      ]
+    },
+    "spec-refine": {
+      "core": ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/SPEC-CHANGE-SHAPE.md",
+          "signal": "shape"
+        },
+        {
+          "path": "modules/SPEC-REFINE-KEYS.md",
+          "signal": "resume"
+        },
+        {
+          "path": "modules/IDEATION-GATE.md",
+          "signal": "web",
+          "requires": "web-research"
+        },
+        {
+          "path": "modules/ADOPTED-CONTEXT.md",
+          "signal": "adopted"
+        },
+        {
+          "path": "modules/PROBE.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/DB-RESEARCH-RULE.md",
+          "signal": "db",
+          "requires": "external-data"
+        },
+        {
+          "path": "modules/COMPACTION.md",
+          "signal": "compaction",
+          "requires": "compaction"
+        },
+        {
+          "path": "modules/SESSION-NUMBERING.md",
+          "signal": "sessions"
+        }
+      ]
+    },
+    "plan-new": {
+      "core": ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/PLAN-INPUT.md",
+          "signal": "input"
+        },
+        {
+          "path": "modules/PLAN-SPLIT-GATE.md",
+          "signal": "split"
+        },
+        {
+          "path": "modules/INCREMENTAL-STRATEGY.md",
+          "signal": "split"
+        },
+        {
+          "path": "modules/PLAN-DESIGN-SPECS.md",
+          "signal": "ui"
+        },
+        {
+          "path": "modules/PLAN-PROBE-TASKS.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/PROBE.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/ADOPTED-CONTEXT.md",
+          "signal": "adopted"
+        },
+        {
+          "path": "modules/DB-RESEARCH-RULE.md",
+          "signal": "db",
+          "requires": "external-data"
+        },
+        {
+          "path": "modules/COMPACTION.md",
+          "signal": "compaction",
+          "requires": "compaction"
+        },
+        {
+          "path": "modules/SESSION-NUMBERING.md",
+          "signal": "sessions"
+        }
+      ]
+    },
+    "plan-refine": {
+      "core": [
+        "commands/plan-refine.md",
+        "loops/plan-refine-loop/LOOP.md",
+        "loops/plan-new-loop/LOOP.md",
+        "loops/CHASSIS.md"
+      ],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/PLAN-INPUT.md",
+          "signal": "input"
+        },
+        {
+          "path": "modules/PLAN-REFINE-KEYS.md",
+          "signal": "resume"
+        },
+        {
+          "path": "modules/PLAN-REFINE-SPLIT.md",
+          "signal": "split"
+        },
+        {
+          "path": "modules/PLAN-SPLIT-GATE.md",
+          "signal": "split"
+        },
+        {
+          "path": "modules/INCREMENTAL-STRATEGY.md",
+          "signal": "split"
+        },
+        {
+          "path": "modules/PLAN-REFINE-DESIGN-SPECS.md",
+          "signal": "ui"
+        },
+        {
+          "path": "modules/PLAN-DESIGN-SPECS.md",
+          "signal": "ui"
+        },
+        {
+          "path": "modules/REPLANNING.md",
+          "signal": "replan"
+        },
+        {
+          "path": "modules/SIMULATION-LIFECYCLE.md",
+          "signal": "simulation"
+        },
+        {
+          "path": "modules/PLAN-PROBE-TASKS.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/PROBE.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/ADOPTED-CONTEXT.md",
+          "signal": "adopted"
+        },
+        {
+          "path": "modules/DB-RESEARCH-RULE.md",
+          "signal": "db",
+          "requires": "external-data"
+        },
+        {
+          "path": "modules/COMPACTION.md",
+          "signal": "compaction",
+          "requires": "compaction"
+        },
+        {
+          "path": "modules/SESSION-NUMBERING.md",
+          "signal": "sessions"
+        }
+      ]
+    },
+    "plan-exec": {
+      "core": [
+        "commands/plan-exec.md",
+        "loops/plan-exec-loop/LOOP.md",
+        "loops/CHASSIS.md",
+        "loops/CODE-POLICIES.md"
+      ],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/EXEC-PROBE-TASKS.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/PROBE.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/EXEC-DB-POLICY.md",
+          "signal": "db",
+          "requires": "external-data"
+        },
+        {
+          "path": "modules/DB-SCRIPTS-ONLY.md",
+          "signal": "db",
+          "requires": "external-data"
+        },
+        {
+          "path": "modules/DB-RESEARCH-RULE.md",
+          "signal": "db",
+          "requires": "external-data"
+        },
+        {
+          "path": "modules/SIMULATION-LIFECYCLE.md",
+          "signal": "simulation"
+        },
+        {
+          "path": "modules/PLAN-DESIGN-SPECS.md",
+          "signal": "ui"
+        },
+        {
+          "path": "modules/ADOPTED-CONTEXT.md",
+          "signal": "adopted"
+        },
+        {
+          "path": "modules/COMPACTION.md",
+          "signal": "compaction",
+          "requires": "compaction"
+        },
+        {
+          "path": "modules/SESSION-NUMBERING.md",
+          "signal": "sessions"
+        }
+      ]
+    },
+    "status": {
+      "core": ["commands/status.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        }
+      ]
+    },
+    "resume": {
+      "core": ["commands/resume.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        }
+      ]
+    },
+    "persist": {
+      "core": ["commands/persist.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/PERSIST-ROUTING.md",
+          "signal": "classification"
+        },
+        {
+          "path": "modules/ADOPTED-CONTEXT.md",
+          "signal": "adopted"
+        }
+      ]
+    },
+    "fix-git": {
+      "core": ["commands/fix-git.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        }
+      ]
+    },
+    "generate-launch": {
+      "core": ["commands/generate-launch.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/LAUNCH-DETECTION.md",
+          "signal": "detection"
+        }
+      ]
+    },
+    "workspace-init": {
+      "core": ["commands/workspace-init.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/WORKSPACE-SCAFFOLD.md",
+          "signal": "scaffold"
+        }
+      ]
+    },
+    "export-diagrams": {
+      "core": ["commands/export-diagrams.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "exports/export-diagrams/EXPORT.md",
+          "signal": "authoring"
+        }
+      ]
+    },
+    "export-manuals": {
+      "core": ["commands/export-manuals.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "exports/export-manuals/EXPORT.md",
+          "signal": "authoring"
+        }
+      ]
+    },
+    "export-reports": {
+      "core": ["commands/export-reports.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "exports/export-reports/EXPORT.md",
+          "signal": "authoring"
+        }
+      ]
+    },
+    "export-scripts": {
+      "core": ["commands/export-scripts.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "exports/export-scripts/EXPORT.md",
+          "signal": "authoring"
+        }
+      ]
+    }
+  },
+  "journeys": [
+    {
+      "id": "spec",
+      "label": "SPEC",
+      "command": "spec-refine",
+      "signals": []
+    },
+    {
+      "id": "plan-doc",
+      "label": "PLAN documental",
+      "command": "plan-new",
+      "signals": []
+    },
+    {
+      "id": "code-exec",
+      "label": "ejecucion de codigo",
+      "command": "plan-exec",
+      "signals": []
+    },
+    {
+      "id": "quick",
+      "label": "QUICK",
+      "command": "quick",
+      "signals": []
+    },
+    {
+      "id": "transversal",
+      "label": "transversal",
+      "command": "persist",
+      "signals": []
+    },
+    {
+      "id": "export",
+      "label": "export",
+      "command": "export-scripts",
+      "signals": []
+    }
+  ],
+  "budget_policy": {
+    "$comment": "Ratios of the frozen baseline (spec 009 \u00a7 Decisions: -30% discovery, -40% median and -20% minimum activation, -25% median execution, +5% ceiling per journey). Absolute targets are DERIVED from baseline x ratio, never written by hand. The +5% ceiling also caps modules.total, the conditional tree as one figure: a representative journey carries no signal, so no journey line ever prices a module, and without that line the modules would grow unwatched.",
+    "discovery_max_ratio": 0.7,
+    "activation_median_max_ratio": 0.6,
+    "activation_each_max_ratio": 0.8,
+    "execution_median_max_ratio": 0.75,
+    "journey_max_ratio": 1.05
+  }
+}

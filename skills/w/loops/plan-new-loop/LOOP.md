@@ -33,7 +33,7 @@ PLAN
 
 > **slug**: short kebab-case derived from the spec's Requirement — only `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars. `aw next-number docs/plans` returns JSON (field `next` = `PPP`); the loop builds the full name. To locate plans, glob `docs/plans/PPP-plan-*.md`.
 
-> **Adoption (command mode 4):** an **externally-built plan** (host plan mode, hand-written, another agent) is materialized by the **command** in a single pass — this loop does not run: transcribe + normalize into the Delta 1 schema, `## Origin` = "adopted from <source>" + attribution; then `plan-refine` closes schema gaps (its coherence gate degrades for spec-less plans). See `../../commands/plan-new.md` § *Input resolution*.
+> **Adoption (command mode 4):** an **externally-built plan** (host plan mode, hand-written, another agent) is materialized by the **command** in a single pass — this loop does not run: transcribe + normalize into the Delta 1 schema, `## Origin` = "adopted from <source>" + attribution; then `plan-refine` closes schema gaps (its coherence gate degrades for spec-less plans). See `../../modules/PLAN-INPUT.md` (the command's `input` module).
 
 ## Inherits
 
@@ -124,10 +124,6 @@ A `### Fn` block is a **verifiable state of the system**, never a list of layers
 
 **Granularity is semantic, not mechanical.** A phase earns its place when it leaves a demonstrable state, can be reviewed as a unit, and — when the change carries temporary behavior — moves or retires a simulation. A task is a **coherent unit of purpose** and may touch several files. Naming an edit operation — "create class X", "add method Y", "update the import" — describes a **micro step**: internal to execution, recorded in `CHECKPOINT` when a resume needs it, never a plan entry. `XS–S` stays an orientation of risk and scope; it never mandates splitting a semantic task into mechanical operations.
 
-## Incremental strategy (reference, never a template)
-
-A change spread over consumer, service and data often lands well as: consumer shell → minimal real integration → vertical skeleton → real implementation from the source outwards → hardening → finish. **Reference to adapt, never a mandatory shape.** Backend-only, CLI, batch, library and database-only changes have their own journey, and inserting a layer the project does not have fails the minimality lens. A small change may be **one phase**, when that phase already is a coherent verifiable state.
-
 ## Delta 2 — Gap taxonomy (of "plan")
 
 Replaces the spec gap taxonomy with a planning-oriented one:
@@ -155,33 +151,6 @@ Replaces the spec gap taxonomy with a planning-oriented one:
 ## Delta 3 — What research investigates here
 
 The chassis' **inline** research specializes: mapping **code/impact** — affected FE/BE/DB components, AS-IS wiring, dependencies. It feeds `Solution` (its AS-IS → TO-BE delta) and `Impacted`. The chassis DB rule applies unchanged (read-only queries into `SCRIPTS.sql`, MCP chosen via a content question when >1 without default).
-
-## Delta 4 — Design SPECs (when the plan includes UI)
-
-The **UI without design SPEC** gap is resolved by **composing** the **`ui-design`** capability (built-in default [`ui-spec`](../../roles/ui-spec/ROLE.md); rebindable via `.workflow/skills.toml`; `off` → degrades to human / `Open questions`):
-
-- It authors **one design SPEC per screen** as a session artifact: `NNN-SPEC-<SLUG>.md` (numbering local to the session — see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
-- It **derives** from the spec's `## UI spec` section when present (splits it per screen and raises it to executable detail); otherwise it authors from the `Requirement` (design system/theme/ambiguities via *structured-choice*, counts in the batch).
-- The plan's **UI Tasks reference** their SPEC's path — that reference is the **source of truth** — and `plan-exec-loop` reads them as the design reference.
-- It is the chassis' composed-capability resolution mode (next to *research*, *probe* and *human*).
-
-## Delta 5 — Probe (PoC) tasks — de-risk early
-
-Chassis § *Proof of concept (probe)*, instantiated for planning. Two placements:
-
-- **Plan-shaping unknown** (the `Solution` itself depends on the answer) → run the probe **inline now**; the verdict (`CONCLUSIONS`) feeds `Solution` / `Risks / impact`.
-- **Execution-time risk** (a task will build on a risky, runnable assumption) → encode an explicit **probe task**, placed **early** — before the tasks that depend on its verdict; the matching `Risks / impact` entry references it.
-
-## Split gate (multi-plan)
-
-Resolves the **Plan splittable** gap (Delta 2) — the canonical definition for **both** plan loops (`plan-refine-loop` references it, never redefines it). It fires **only on clear signals** (≥2 of: tranches independently executable/deliverable · no shared deps/risk between tranches · different requested moments/priorities · the plan far exceeds S-complexity phases · the user asked for staging); borderline → **one plan, no question**. It can be assessed during decomposition or at the coherence gate, always **before** `Guardar`.
-
-- **The offer** enters the batch as a **content question** (counts in the ≤3): the body shows the proposed cut in the **user's language** — per sibling, a name + slug, a 1-line scope, the phase mapping and the order. Labels: `Dividir en varios planes` (recommended when the signals hold) | `Un solo plan`. Declining marks the gap **exhausted** (no re-offer this run); a free-form answer adjusts the cut. The accepted cut is seeded into `CHECKPOINT` — a resume does **not** re-ask.
-- **Anti-duplicate** (the `create_or_resume` spirit): if sibling plans whose `## Origin` references this same spec/split already exist, the recommended option becomes resuming them (`/w:plan-refine` / `/w:plan-exec` semantics) — never a second set.
-- **On acceptance** — same run, same session (one session per run, one HISTORY row): **all N siblings are elaborated complete** in this run — each gets the full Delta 1 schema and is immediately executable (`plan-exec` runs any plan; a seed without `## Tasks` would break that contract). Context pressure is absorbed by self-regulation (chassis § *Compact / resume*). Numbering: `aw next-number docs/plans` **immediately before each write** — numbers come out consecutive, so every sibling path is known after the first mint.
-- **Sibling contract**: each `## Origin` records the shared source spec + `split (part i/N)` + the **siblings by path** + the order; `## Dependencies` (the existing optional section) carries the inter-plan order — **acyclic and advisory** (`plan-exec` does not enforce it; it only orients what to attack first).
-- **Coherence gate, re-framed**: every spec acceptance criterion traces to **exactly one** sibling — a **complete, disjoint partition**; each sibling's Final behavior block (in `## Solution`) covers its subset; the union covers the spec. Spec-less plans anchor the partition to their own Final behavior block / `Validations`.
-- **Closing action** on the split branch: `Guardar planes` (the single-plan branch keeps `Guardar plan`).
 
 ## Sequence
 
@@ -229,3 +198,10 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).
 
 > **After generating:** the plan can go straight to `plan-exec`, or — if changes arise before executing (new requirements, scope adjustments) — pass through [`plan-refine-loop`](../plan-refine-loop/LOOP.md) (`/w:plan-refine`, auxiliary and **not mandatory**), which refines it in place.
+
+## Conditional modules
+
+- `split` — the canonical multi-plan gate → `../../modules/PLAN-SPLIT-GATE.md`
+- `split` — the incremental journey shape → `../../modules/INCREMENTAL-STRATEGY.md`
+- `ui` — per-screen design SPECs → `../../modules/PLAN-DESIGN-SPECS.md`
+- `probe` — probe (PoC) tasks → `../../modules/PLAN-PROBE-TASKS.md`

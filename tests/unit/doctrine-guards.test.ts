@@ -1,6 +1,11 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  type ContextBudgetOutput,
+  runContextBudget,
+} from "../../src/application/context/budget-service.js";
+import { NodeFileSystem } from "../helpers/real-fs.js";
 
 // Doctrine budget & form guards (informe 003 — weak-model clarity round).
 // G1 pins the guaranteed per-flow load: adding doctrine to a hot-path file must
@@ -17,6 +22,35 @@ const readSrc = (name: string): Promise<string> => readFile(resolve(SRC_ROOT, na
 
 async function readRel(rel: string): Promise<string> {
   return readFile(join(SKILL_ROOT, rel), "utf8");
+}
+
+/**
+ * A document plus every module it points at — its whole doctrinal SURFACE.
+ *
+ * Since plan 010 a conditional branch lives in `modules/<NAME>.md` and its host
+ * document carries a one-line pointer. A guard that pins a rule must follow that
+ * pointer, or splitting a file would read as deleting the rule.
+ *
+ * Use this for what a surface must SAY. Keep `readRel` for what a file must NOT
+ * say — separation is a property of the file, not of the surface.
+ *
+ * It is strictly stronger than the single-file read it replaces: deleting the
+ * content fails, and so does deleting the pointer that reaches it.
+ */
+async function readSurface(rel: string): Promise<string> {
+  const own = await readRel(rel);
+  const parts = [own];
+  for (const match of own.matchAll(/(?:\.\.\/)+modules\/([A-Z0-9-]+\.md)/g)) {
+    const name = match[1];
+    if (name === undefined) continue;
+    try {
+      parts.push(await readRel(join("modules", name)));
+    } catch {
+      // A pointer to a module this bundle does not carry is caught by the
+      // manifest guard, not here.
+    }
+  }
+  return parts.join("\n");
 }
 
 async function listMdFiles(dir: string): Promise<string[]> {
@@ -56,184 +90,88 @@ function descriptionLength(text: string): number {
   return buf.join(" ").trim().length;
 }
 
-describe("Doctrine guards — G1 · guaranteed load budget per flow", () => {
-  // command + loop + chassis (+ CODE-POLICIES for code loops) (+ declared
-  // reuse: plan-refine loads plan-new-loop for its taxonomy and skeleton).
-  // Budgets consciously raised in v20.7.0 (host-as-producer doctrine): the
-  // chassis gained § Adopted context (+ the ask-vs-research third resolver),
-  // plan-new gained input mode 4 (external-plan adoption), plan-refine the
-  // spec-less degradation, quick the adopted-context seeding. ~0.5-1 KB of
-  // headroom per flow over the measured totals.
-  // Raised again in v20.8.0 (probe/PoC doctrine + spec Scenarios): the chassis
-  // gained § Proof of concept (+ the fourth ask-vs-research resolver: runnable
-  // doubt → probe), plan-new gained Delta 5 (early probe tasks), plan-exec
-  // Delta 7 (probe execution) + Scenarios-as-test-cases, spec-refine the
-  // ## Scenarios schema + gate clause, quick/plan-refine one resolver line
-  // each. Same ~1 KB headroom over the measured totals.
-  // Raised again (minimality-gate round): the chassis gained § Minimality (a
-  // shared gate property next to Gate integrity), each heir instantiates the
-  // lens (spec gap+gate, plan gap+gate+generative note, CODE-POLICIES floor).
-  // ~0.8 KB headroom over the measured totals.
-  // Raised again (spec 004 self-regulation round): the chassis gained the
-  // § Compact / resume → Self-regulation (proactive compaction) subsection
-  // + the proactive-raise line in § Structured-choice (all 5 heirs inherit;
-  // no per-loop edits). ~0.8 KB headroom over the measured totals.
-  // Raised again (creativity-gate round): spec-refine's LOOP gained the
-  // § Ideation gate (gap row + sequence branch + integration line) and the
-  // harness the optional web-research capability; chassis untouched —
-  // spec-only tax, so only this flow's budget moves. ~0.8 KB headroom.
-  // Raised again (split-gate round): plan-new-loop gained § Split gate
-  // (multi-plan) (gap row + sequence branch + convergence line) and
-  // plan-refine-loop the refine-split semantics (references the canonical
-  // gate, never redefines it); spec-new gained its own multi-spec gate but
-  // stays unbudgeted (no loop), and the chassis is untouched — only the two
-  // plan flows move. ~0.8 KB headroom over the measured totals.
-  // Raised again (tooling-gate round): CODE-POLICIES' closing review gate
-  // gained the Tooling check bullet (docs/tools routing + no-skill
-  // degradation) — quick and plan-exec load it; SKILL.md's Tools pointer is
-  // unbudgeted (orientation, not a flow load). ~0.8 KB headroom over the
-  // measured totals.
-  // Recalibrated (artifact-slim round, G14) — budgets RAISED, deliberately:
-  // this round slims the GENERATED artifacts (single Refinement decisions
-  // trace, plan-doc consolidated into Solution/Tasks, Estimated time gone),
-  // not the doctrine that describes them. The loaded doctrine grew in every
-  // flow — the legacy-compat notes, the checkbox-only + never-duplicate exec
-  // rules and the single done-status line outweigh the schema lines removed:
-  // quick +104 B · spec-refine +606 B · plan-new +372 B · plan-refine +444 B ·
-  // plan-exec +1 084 B vs the previous round. The savings land in the
-  // workspaces' specs/plans/sessions, NOT in skills/w. Budgets re-anchored to
-  // measured + ~0.8 KB (measured: quick 47 839 · spec-refine 45 028 ·
-  // plan-new 45 769 · plan-refine 57 207 · plan-exec 48 283).
-  // Bounded-reconnaissance round: `spec-new` enters the table with a row of its
-  // own. It has no loop, so its guaranteed load IS the command file, and until
-  // now that made it the only unbudgeted hot-path doc — exactly where this
-  // round spends (8 289 → 13 444 B: the reconnaissance pass, the functional
-  // independence criterion and where the findings may land). spec-refine moves
-  // too (the boundary note with spec-new: measured 45 410); quick absorbs its
-  // one-line note inside the existing headroom, so its budget stays put.
-  // Ready-for-plan round — the biggest single-flow raise so far, declared as
-  // such: spec-refine 46 200 → 56 000 (measured 55 192). The LOOP goes
-  // 16 425 → 25 575 B for FIVE doctrine features, not one: the convergence
-  // target (READY FOR PLAN, NOT PERFECTLY CLOSED), the current-behavior
-  // baseline, the change-shape gate with its in-place split semantics, the
-  // destination axis in the gap taxonomy (+ the PLAN-owned rows), and the
-  // status/Decisions contract with its legacy migration. ~1.5x the per-feature
-  // cost of the split-gate round, spread over 5. Anchor for whether this is
-  // proportionate: plan-refine already loads 57 309 B, so spec-refine stays
-  // BELOW the heaviest flow in the bundle. The chassis SHRANK (25 392 →
-  // 25 272: the decision-record and prior-work-mark lines stopped enumerating
-  // per-heir names), which is why the other four flows absorb their own edits
-  // inside existing headroom and only this budget moves. Measured after:
-  // quick 47 895 · spec-new 13 769 · plan-new 46 055 · plan-refine 57 309 ·
-  // plan-exec 48 348.
-  // Functional-phases round — the three PLAN flows move together, by design.
-  // The plan stops being a task list and becomes a sequence of verifiable
-  // states, so the cost lands where the model lives: plan-new gains the
-  // CANONICAL phase contract (+ the reference incremental strategy), plan-refine
-  // the journey map, simulation lifecycle, evidence-by-behavior, executability
-  // gate and replanning of executed work, plan-exec the executability entry
-  // gate, the phase cycle with its marking order and the deviation gate.
-  // plan-refine pays twice (it loads plan-new-loop too) — 71 075 B makes it, by
-  // a wide margin, the heaviest flow in the bundle; that is the conscious price
-  // of defining the contract once instead of in both plan loops. quick moves
-  // only for CODE-POLICIES' two new floor lenses (test value + temporary
-  // simulation), which it inherits without asking. spec-new and spec-refine are
-  // untouched: the chassis did NOT grow this round — the deviation gate stayed
-  // in plan-exec-loop precisely so the other flows would not pay for it.
-  // Measured after: quick 48 882 · spec-new 13 769 · spec-refine 55 174 ·
-  // plan-new 51 287 · plan-refine 71 075 · plan-exec 60 066.
-  // Correction round — four flows move, and none of it buys a new feature: it
-  // pays for saying precisely what the previous three rounds said loosely. The
-  // spend is concentrated where the ambiguity was. spec-refine (+1 719 B in the
-  // LOOP) gets the `replace` branch its change-shape gate always claimed to
-  // have but never offered — a third shape with an offer of its own instead of
-  // borrowing the split question. plan-exec (+999 B) turns "deferred" into
-  // `bloqueada` across the phase cycle, Delta 4, Delta 6, the sequence and the
-  // convergence rule; that one rule appears five times because execution reads
-  // those five places at five different moments. plan-new (+393 B) gains the
-  // bare-value rule of the state line, and plan-refine (+810 B on its own file,
-  // plus what it inherits from plan-new-loop) the mutation frontier and the
-  // conditional simulation. quick and spec-new do not move: the chassis and
-  // CODE-POLICIES are untouched — CODE-POLICIES already carried the canonical
-  // conditional wording this round propagated to everyone else, which is why it
-  // was the reference and not a cost. Re-anchored to measured + ~0.8 KB
-  // (measured: quick 48 882 · spec-new 13 769 · spec-refine 56 893 ·
-  // plan-new 51 680 · plan-refine 72 332 · plan-exec 61 396).
-  // Normalization round — four flows move; quick and spec-new do not, and that
-  // is the shape of the spend: the chassis and CODE-POLICIES are untouched
-  // again, so nothing is charged to flows that gain nothing. spec-refine takes
-  // the biggest raise (+3 568 B) and buys the one behavioral fix of the round:
-  // the change-shape decision is asked, answered and checkpointed in its own
-  // step BEFORE the gap loop, instead of being pushed into `pending_human` —
-  // the batch that gets emptied on every iteration, and never built at all when
-  // no gap blocks. Saying that precisely costs the hard rule, the no-op exit,
-  // the Writes correction (only some branches create a file) and the rewritten
-  // sequence branch. plan-new (+1 855 B) splits the phase contract into
-  // required and conditional blocks and gains the plan-level state as an axis
-  // of its own. plan-exec (+1 955 B) pays for the two-line closure mark with
-  // its legacy migration, the mandatory blocker reason, and the
-  // conditional-simulation carve-out on the entry gate. plan-refine pays twice
-  // again (+2 144 B on its own file plus what it inherits from plan-new-loop)
-  // and stays the heaviest flow, as it has been since the functional-phases
-  // round. Re-anchored to measured + ~0.8 KB (measured: quick 48 882 ·
-  // spec-new 13 769 · spec-refine 60 461 · plan-new 53 535 ·
-  // plan-refine 74 476 · plan-exec 63 351).
-  const FLOW_LOADS: ReadonlyArray<{ flow: string; files: string[]; budget: number }> = [
-    {
-      flow: "quick",
-      files: [
-        "commands/quick.md",
-        "loops/quick-loop/LOOP.md",
-        "loops/CHASSIS.md",
-        "loops/CODE-POLICIES.md",
-      ],
-      budget: 49_700,
-    },
-    {
-      flow: "spec-new",
-      files: ["commands/spec-new.md"],
-      budget: 14_300,
-    },
-    {
-      flow: "spec-refine",
-      files: ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 61_300,
-    },
-    {
-      flow: "plan-new",
-      files: ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
-      budget: 54_400,
-    },
-    {
-      flow: "plan-refine",
-      files: [
-        "commands/plan-refine.md",
-        "loops/plan-refine-loop/LOOP.md",
-        "loops/plan-new-loop/LOOP.md",
-        "loops/CHASSIS.md",
-      ],
-      budget: 75_300,
-    },
-    {
-      flow: "plan-exec",
-      files: [
-        "commands/plan-exec.md",
-        "loops/plan-exec-loop/LOOP.md",
-        "loops/CHASSIS.md",
-        "loops/CODE-POLICIES.md",
-      ],
-      budget: 64_200,
-    },
-  ];
+describe("Doctrine guards — G1 · context budget derived from a frozen baseline", () => {
+  // G1 used to be a hand-written table of per-flow byte ceilings, and every
+  // round that added doctrine re-approved itself by editing the number. That
+  // is a ceiling, not a budget: it can only ever go up, it covered 6 flows and
+  // not the 16 commands, and it said nothing about discovery.
+  //
+  // Since plan 010 the figures come from the measurement (`aw context-budget`)
+  // over the bundle's own manifest, compared against tests/fixtures/
+  // context-baseline.json — frozen, with the digest of the tree it measured.
+  // Nothing here is typed by hand: the absolute targets are baseline x the
+  // ratios in skills/w/context/MANIFEST.json. The raise history this comment
+  // replaces lives in git, where a history belongs.
+  //
+  // It enforces the WHOLE policy: the round's reduction targets (-30%
+  // discovery, -40% median activation, -20% per command, -25% median execution)
+  // and the permanent +5% ceiling per journey and per command. One assertion
+  // over every metric, because a budget that only checks the easy half is the
+  // ceiling all over again.
+  const BASELINE_PATH = resolve(__dirname, "..", "fixtures", "context-baseline.json");
 
-  it("every flow's guaranteed load stays within its byte budget", async () => {
-    const offenders: string[] = [];
-    for (const { flow, files, budget } of FLOW_LOADS) {
-      let total = 0;
-      for (const rel of files) total += Buffer.byteLength(await readRel(rel), "utf8");
-      if (total > budget) offenders.push(`${flow}: ${total} B > budget ${budget} B`);
+  async function measure(): Promise<ContextBudgetOutput> {
+    return runContextBudget(new NodeFileSystem(), {
+      root: SKILL_ROOT,
+      baselinePath: BASELINE_PATH,
+    });
+  }
+
+  it("every metric is inside its derived budget", async () => {
+    const result = await measure();
+    expect(result.offenders).toEqual([]);
+    expect(result.verdict).toBe("ok");
+  });
+
+  it("the three tramos hit the reductions spec 009 decided", async () => {
+    const result = await measure();
+    const line = (metric: string) => result.budget.find((b) => b.metric === metric);
+    // Stated as ratios, not as figures: the absolutes come from the baseline.
+    for (const [metric, ratio] of [
+      ["discovery", 0.7],
+      ["activation.median", 0.6],
+      ["execution.median", 0.75],
+    ] as const) {
+      const entry = line(metric);
+      expect(entry?.baseline, metric).toBeGreaterThan(0);
+      expect(entry?.actual, metric).toBeLessThanOrEqual(Math.floor((entry?.baseline ?? 0) * ratio));
     }
+  });
+
+  it("every one of the 16 commands is at least 20% under its baseline", async () => {
+    const result = await measure();
+    const perCommand = result.budget.filter((line) => line.metric.startsWith("activation."));
+    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(16);
+    const offenders = perCommand
+      .filter((line) => line.ok === false)
+      .map((line) => `${line.metric}: ${line.actual} B > ${line.target} B`);
     expect(offenders).toEqual([]);
+  });
+
+  it("covers all 16 commands, not the 6 flows the retired table listed", async () => {
+    const result = await measure();
+    expect(result.guaranteed).toHaveLength(16);
+    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(16);
+  });
+
+  it("every journey the manifest declares is actually measured", async () => {
+    const result = await measure();
+    expect(result.execution.journeys.length).toBeGreaterThanOrEqual(6);
+    expect(result.execution.journeys.every((j) => j.files.length > 0)).toBe(true);
+  });
+
+  it("no journey silently loses a document it declares", async () => {
+    const result = await measure();
+    const missing = result.execution.journeys.flatMap((journey) =>
+      journey.files.filter((f) => f.missing).map((f) => `${journey.id} → ${f.path}`),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it("the baseline names the tree it was measured on", async () => {
+    const baseline = JSON.parse(await readFile(BASELINE_PATH, "utf8"));
+    expect(baseline.revision?.content_digest).toMatch(/^[0-9a-f]{16}$/);
+    expect(baseline.revision?.file_count).toBeGreaterThan(40);
   });
 });
 
@@ -241,22 +179,22 @@ describe("Doctrine guards — G9 · probe (PoC) + spec Scenarios pins", () => {
   // Pin the v20.8.0 concepts so a future compression pass cannot silently
   // drop the fourth resolver or desynchronize the draft/refined spec schemas.
   it("the chassis keeps § Proof of concept and the fourth resolver line", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
+    const chassis = await readSurface("loops/CHASSIS.md");
     expect(chassis).toContain("## Proof of concept (probe)");
     expect(chassis).toMatch(/research \*reads\*, a probe \*runs\*/);
     expect(chassis).toContain("RUNNING a small experiment");
   });
 
   it("the plan loops instantiate the probe (Delta 5 planning / Delta 7 execution)", async () => {
-    const planNew = await readRel("loops/plan-new-loop/LOOP.md");
-    const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
+    const planNew = await readSurface("loops/plan-new-loop/LOOP.md");
+    const planExec = await readSurface("loops/plan-exec-loop/LOOP.md");
     expect(planNew).toContain("## Delta 5 — Probe (PoC) tasks — de-risk early");
     expect(planExec).toContain("## Delta 7 — Probe (PoC) tasks");
   });
 
   it("spec draft and refined schemas agree on ## Scenarios (GIVEN/WHEN/THEN/AND)", async () => {
-    const specNew = await readRel("commands/spec-new.md");
-    const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
+    const specNew = await readSurface("commands/spec-new.md");
+    const specRefine = await readSurface("loops/spec-refine-loop/LOOP.md");
     for (const doc of [specNew, specRefine]) {
       expect(doc).toContain("## Scenarios");
       expect(doc).toContain("GIVEN/WHEN/THEN/AND");
@@ -306,7 +244,7 @@ describe("Doctrine guards — G11 · creativity/ideation gate pins", () => {
   // drop the divergent gate, leak it into the shared chassis (spec-only tax),
   // or relax spec-new's single-pass web prohibition.
   it("spec-refine keeps the ideation gate (gap row + section + web-research consumer)", async () => {
-    const specRefine = await readRel("loops/spec-refine-loop/LOOP.md");
+    const specRefine = await readSurface("loops/spec-refine-loop/LOOP.md");
     expect(specRefine).toContain("## Ideation gate (creativity)");
     expect(specRefine).toContain("Unexplored solution space");
     expect(specRefine).toContain("web-research");
@@ -316,18 +254,18 @@ describe("Doctrine guards — G11 · creativity/ideation gate pins", () => {
   });
 
   it("the harness declares web-research as an optional capability with a declared degrade", async () => {
-    const harness = await readRel("harness/HARNESS.md");
+    const harness = await readSurface("harness/HARNESS.md");
     expect(harness).toContain("**web-research**");
     expect(harness).toContain("web-research (consumer & consent)");
   });
 
   it("the chassis stays clean — the gate never migrates to the shared engine", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
+    const chassis = await readSurface("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/web-research|ideation/i);
   });
 
   it("spec-new keeps its single-pass web prohibition", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     expect(specNew).toContain("FORBIDDEN");
     expect(specNew).toContain("web searches");
   });
@@ -337,7 +275,7 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
   // Pin the split-gate round so a future compression pass cannot silently drop
   // a gate, dilute its canonical labels, or leak it into the shared chassis.
   it("spec-new keeps the multi-spec split gate (section + labels + write ordering)", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     expect(specNew).toContain("## Split gate (multi-spec)");
     expect(specNew).toContain("before writing anything");
     expect(specNew).toContain("NO RESEARCH");
@@ -347,7 +285,7 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
   });
 
   it("the multi-spec gate stays scoped to raw prompts (escalation/adoption never re-ask)", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     const section = specNew.slice(specNew.indexOf("## Split gate (multi-spec)"));
     const gate = section.slice(0, section.indexOf("\n## "));
     expect(gate).toMatch(/escalat/i);
@@ -356,7 +294,7 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
   });
 
   it("plan-new-loop defines the canonical multi-plan gate (gap row + partition + labels)", async () => {
-    const planNew = await readRel("loops/plan-new-loop/LOOP.md");
+    const planNew = await readSurface("loops/plan-new-loop/LOOP.md");
     expect(planNew).toContain("## Split gate (multi-plan)");
     expect(planNew).toContain("Plan splittable");
     expect(planNew).toMatch(/traces to \*\*exactly one\*\*/);
@@ -369,7 +307,7 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
   });
 
   it("plan-refine-loop adds only the refine semantics (original keeps path; [x] anchored)", async () => {
-    const planRefine = await readRel("loops/plan-refine-loop/LOOP.md");
+    const planRefine = await readSurface("loops/plan-refine-loop/LOOP.md");
     expect(planRefine).toContain("## Split gate — refine semantics");
     expect(planRefine).toContain("keeps its number/path");
     expect(planRefine).toContain("Completed tasks (`- [x]`) never move to a sibling");
@@ -378,7 +316,7 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
   });
 
   it("the chassis stays clean — the split gates never migrate to the shared engine", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
+    const chassis = await readSurface("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/split gate|multi-spec|multi-plan|Dividir/i);
   });
 });
@@ -546,7 +484,7 @@ describe("Doctrine guards — G15 · bounded reconnaissance pins", () => {
   // into the old blanket prohibition. The ORDER is the whole point: looking
   // after deciding the cut would be theater.
   it("spec-new carries the reconnaissance section and its bounded contract", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     expect(specNew).toContain("## Bounded reconnaissance");
     expect(specNew).toContain("BOUNDED RECONNAISSANCE, NO DEEP RESEARCH");
     expect(specNew).toContain("**Budget: ≤5 reads + ≤3 searches.**");
@@ -557,7 +495,7 @@ describe("Doctrine guards — G15 · bounded reconnaissance pins", () => {
   });
 
   it("the reconnaissance runs BEFORE the split gate", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     const recon = specNew.indexOf("## Bounded reconnaissance");
     const gate = specNew.indexOf("## Split gate (multi-spec)");
     expect(recon).toBeGreaterThan(-1);
@@ -566,32 +504,32 @@ describe("Doctrine guards — G15 · bounded reconnaissance pins", () => {
   });
 
   it("the cut follows functional independence — technical boundaries are secondary evidence", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     expect(specNew).toContain("refined, accepted and planned on its own");
     expect(specNew).toContain("**secondary evidence**");
   });
 
   it("thin evidence degrades to a single spec, never to a speculative split", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     expect(specNew).toContain("justify a speculative cut");
     expect(specNew).toContain("**one spec, no question**");
   });
 
   it("the scope hypothesis stays internal (no artifact, no new spec section)", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     expect(specNew).toContain("**reasoning, not an artifact**");
     expect(specNew).not.toContain("## Scope hypothesis");
   });
 
   it("the findings have declared landing sites (Context anchored, Scope untouched)", async () => {
-    const specNew = await readRel("commands/spec-new.md");
+    const specNew = await readSurface("commands/spec-new.md");
     expect(specNew).toContain("**at most one path per component**");
     expect(specNew).toContain("**The code found never widens `Scope`**");
     expect(specNew).toContain("**acceptance criteria derive from the user's intent**");
   });
 
   it("the pass never migrates to the shared engine", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
+    const chassis = await readSurface("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/bounded reconnaissance/i);
   });
 });
@@ -615,14 +553,14 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   }
 
   it("spec-refine declares the convergence target verbatim", async () => {
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain("## Convergence target");
     expect(loop).toContain("READY FOR PLAN, NOT PERFECTLY CLOSED");
     expect(loop).toContain("without inventing functional decisions");
   });
 
   it("the taxonomy classifies by destination, and PLAN-owned questions never fail the gate", async () => {
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain("## Gap taxonomy — signal, resolver, destination");
     expect(loop).toContain("classified by destination before its resolver is chosen");
     expect(loop).toContain("declare, never close here");
@@ -632,18 +570,27 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   it("the phases stay ordered: baseline → change-shape → taxonomy", async () => {
     // The order is the point: judging the shape after closing the details would
     // mean re-litigating a contract already hardened around the wrong cut.
-    const loop = await readRel(LOOP);
-    const baseline = loop.indexOf("## Current-behavior baseline");
-    const shape = loop.indexOf("## Change-shape gate");
-    const taxonomy = loop.indexOf("## Gap taxonomy");
+    //
+    // Anchored on the loop's `## Sequence` rather than on where the sections sit
+    // in the file. Since plan 010 the change-shape gate is a module, so section
+    // position stopped meaning execution order — the sequence never did.
+    const loop = await readSurface(LOOP);
+    const sequence = loop.slice(loop.indexOf("## Sequence"));
+    const baseline = sequence.indexOf("baseline = resolve_current_behavior");
+    const shape = sequence.indexOf("shape = change_shape_gate");
+    const taxonomy = sequence.indexOf("gaps = classify_by_destination");
     expect(baseline).toBeGreaterThan(-1);
     expect(shape).toBeGreaterThan(baseline);
     expect(taxonomy).toBeGreaterThan(shape);
+    // The three sections still exist somewhere on the surface…
+    expect(loop).toContain("## Current-behavior baseline");
+    expect(loop).toContain("## Change-shape gate");
+    expect(loop).toContain("## Gap taxonomy");
     expect(loop).toContain("**before** closing details");
   });
 
   it("the baseline is bounded (brownfield only, stops at the functional change)", async () => {
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain(
       "**Stop when the baseline is enough to state and accept the functional change**",
     );
@@ -652,7 +599,7 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   });
 
   it("ideation is conditional — triggers AND non-triggers are both declared", async () => {
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain("**Unexplored solution space is not a universal gap**");
     expect(loop).toContain("**Triggers (≥1).**");
     expect(loop).toContain("**Not triggers.**");
@@ -660,7 +607,7 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   });
 
   it("the change-shape gate reuses spec-new's split criterion and splits in place", async () => {
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain("never a different one");
     expect(loop).toContain("keeps its number/path");
     expect(loop).toContain("`Guardar specs`");
@@ -671,7 +618,7 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   it("the gate has three shapes, and `replace` never borrows the split question", async () => {
     // Correction round: `split` and `replace` used to share one offer, so the
     // question asked about cardinality when what changed was the purpose.
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain("`same` | `split` | `replace`");
     expect(loop).toContain("**Replace semantics.**");
     const replace = section(loop, "**Replace semantics.**");
@@ -682,7 +629,7 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   });
 
   it("a replacement mints a draft with its origin, and reformulating re-runs the gate", async () => {
-    const replace = section(await readRel(LOOP), "**Replace semantics.**");
+    const replace = section(await readSurface(LOOP), "**Replace semantics.**");
     expect(replace).toContain("born **`status: draft`**");
     expect(replace).toContain("`## Origin` recording the origin spec");
     // Reformulating keeps the identity but never inherits the old approval.
@@ -691,13 +638,13 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   });
 
   it("the round adds no archival state — `superseded` stays out of the vocabulary", async () => {
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain("Neither branch adds a `superseded` status");
     expect(loop).not.toContain("status: superseded");
   });
 
   it("the maturity mark is machine state, tolerant of legacy and never a gate bypass", async () => {
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain("It is machine state, never prose");
     expect(loop).toContain("A legacy mark does NOT skip the gate on a re-refine");
     // The rename never leaves a spec with no mark at all.
@@ -705,13 +652,13 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   });
 
   it("`refining` is read but never written — no partial spec writes", async () => {
-    const loop = await readRel(LOOP);
+    const loop = await readSurface(LOOP);
     expect(loop).toContain("this loop never writes a partial spec");
     expect(loop).toMatch(/`refining` is understood \*\*on read\*\*/);
   });
 
   it("the SPEC gate never migrates to the shared engine", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
+    const chassis = await readSurface("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/ready-for-plan|change-shape/i);
     // The engine names no heir's own sections anymore — each heir declares them.
     expect(chassis).not.toContain("in the refine loops");
@@ -735,7 +682,7 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
 
   /** The `## Phase contract (canonical)` section, up to the next `## ` heading. */
   async function phaseContract(): Promise<string> {
-    const planNew = await readRel(PLAN_NEW);
+    const planNew = await readSurface(PLAN_NEW);
     const start = planNew.indexOf("## Phase contract (canonical)");
     expect(start).toBeGreaterThan(-1);
     const rest = planNew.slice(start);
@@ -789,7 +736,7 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
   });
 
   it("a proof nobody could run leaves the phase `bloqueada`, and the plan open", async () => {
-    const exec = await readRel(PLAN_EXEC);
+    const exec = await readSurface(PLAN_EXEC);
     expect(exec).toContain("**stays `bloqueada`**");
     expect(exec).toContain("A deferred check never counts as a passed one");
     expect(exec).toContain("a blocker is never deferred into `validada`");
@@ -807,7 +754,7 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     // plan-refine used to claim the plan "never mutates by execution" while
     // plan-exec flipped checkboxes and phase states in it. The frontier is the
     // fix: not WHETHER execution writes, but WHAT it is allowed to write.
-    const refine = await readRel(PLAN_REFINE);
+    const refine = await readSurface(PLAN_REFINE);
     expect(refine).toContain("**Execution updates progress; refinement changes structure.**");
     expect(refine).not.toContain("never mutates by execution");
     for (const owned of ["contracts", "phase shape or order", "simulation boundaries"]) {
@@ -826,8 +773,8 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
   });
 
   it("the other two plan loops reference the contract and never redefine it", async () => {
-    const refine = await readRel(PLAN_REFINE);
-    const exec = await readRel(PLAN_EXEC);
+    const refine = await readSurface(PLAN_REFINE);
+    const exec = await readSurface(PLAN_EXEC);
     for (const [name, doc] of [
       ["plan-refine", refine],
       ["plan-exec", exec],
@@ -840,7 +787,7 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
   });
 
   it("granularity is semantic \u2014 the mechanical complexity criterion is gone", async () => {
-    const planNew = await readRel(PLAN_NEW);
+    const planNew = await readSurface(PLAN_NEW);
     expect(planNew).not.toContain("complexity > S");
     expect(planNew).not.toContain("complexity > XS");
     const contract = await phaseContract();
@@ -851,14 +798,14 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
   it("the reference sequence stays a reference, never a mandatory shape", async () => {
     // The design's whole point: adapt to the real architecture (backend-only,
     // CLI, batch, library, DB-only) instead of inventing layers to fill a template.
-    const planNew = await readRel(PLAN_NEW);
+    const planNew = await readSurface(PLAN_NEW);
     expect(planNew).toContain("## Incremental strategy (reference, never a template)");
     expect(planNew).toContain("Reference to adapt, never a mandatory shape.");
   });
 
   it("plan-refine converges on an executable plan and plan-exec re-checks it on entry", async () => {
-    const refine = await readRel(PLAN_REFINE);
-    const exec = await readRel(PLAN_EXEC);
+    const refine = await readSurface(PLAN_REFINE);
+    const exec = await readSurface(PLAN_EXEC);
     expect(refine).toContain("## Objective \u2014 an executable sequence of functional states");
     expect(refine).toContain("## Executability gate");
     expect(refine).toContain("without inventing");
@@ -870,7 +817,7 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
   });
 
   it("the deviation gate lives only in plan-exec, with its three destinations", async () => {
-    const exec = await readRel(PLAN_EXEC);
+    const exec = await readSurface(PLAN_EXEC);
     expect(exec).toContain("## Deviation gate");
     expect(exec).toContain("**Marking order (hard rule):**");
     expect(exec).toContain("**Local decision \u2014 `plan-exec` continues.**");
@@ -878,17 +825,17 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     expect(exec).toContain("**Functional change \u2014 return to `spec-refine`.**");
     expect(exec).toContain("This gate lives **only** in this loop");
     // A structural deviation cannot be absorbed by a DECISION entry.
-    const decision = await readRel(join("artifacts", "artifacts-exec", "DECISION.md"));
+    const decision = await readSurface(join("artifacts", "artifacts-exec", "DECISION.md"));
     expect(decision).toContain("**Local decisions only.**");
     expect(decision).toContain("Deviation gate");
   });
 
   it("the temporary simulation has a declared lifecycle and a retirement gate", async () => {
-    const refine = await readRel(PLAN_REFINE);
+    const refine = await readSurface(PLAN_REFINE);
     expect(refine).toContain("## Simulation lifecycle");
     expect(refine).toContain("**Displacement rule**");
     expect(refine).toContain("**Removal gate**");
-    const policies = await readRel("loops/CODE-POLICIES.md");
+    const policies = await readSurface("loops/CODE-POLICIES.md");
     expect(policies).toContain("**Temporary simulation check**");
     expect(policies).toContain("no configuration can select them in a production runtime");
     // …and the lifecycle only exists when there is something to retire.
@@ -898,19 +845,19 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
   });
 
   it("evidence is chosen by behavior, and over-testing is a finding, not an auto-rejection", async () => {
-    const policies = await readRel("loops/CODE-POLICIES.md");
+    const policies = await readSurface("loops/CODE-POLICIES.md");
     expect(policies).toContain("**Test-value lens**");
     expect(policies).toContain("`overtest`");
     expect(policies).toContain("prunes redundancy");
-    const refine = await readRel(PLAN_REFINE);
-    const exec = await readRel(PLAN_EXEC);
+    const refine = await readSurface(PLAN_REFINE);
+    const exec = await readSurface(PLAN_EXEC);
     expect(refine).toContain("## Evidence by behavior");
     expect(refine).toContain("**Necessity gate**");
     expect(exec).toContain("never an automatic rejection");
   });
 
   it("the model never migrates to the shared engine \u2014 only PLAN pays for it", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
+    const chassis = await readSurface("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/deviation gate|phase contract|executability/i);
     expect(chassis).not.toContain("> Estado:");
   });
@@ -932,7 +879,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
 
   /** The `## Phase contract (canonical)` section, up to the next `## ` heading. */
   async function phaseContract(): Promise<string> {
-    const planNew = await readRel(PLAN_NEW);
+    const planNew = await readSurface(PLAN_NEW);
     const start = planNew.indexOf("## Phase contract (canonical)");
     const rest = planNew.slice(start);
     const end = rest.indexOf("\n## ");
@@ -959,7 +906,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("the three axes are declared on every surface that reports progress", async () => {
-    const skill = await readRel("SKILL.md");
+    const skill = await readSurface("SKILL.md");
     expect(skill).toContain("Three axes");
     expect(skill).toContain("plan_state");
     // The reporting surface is the CLI now: `status` renders it and the index
@@ -971,7 +918,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("plan-exec keeps the plan open until the final validation, never from the counters", async () => {
-    const exec = await readRel(PLAN_EXEC);
+    const exec = await readSurface(PLAN_EXEC);
     expect(exec).toContain("Every phase `validada` is **not** the plan closed");
     expect(exec).toContain("never write `done` from the counters");
     // Reading the legacy one-line form is compatibility; writing it is not.
@@ -979,7 +926,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("a blocked phase must state its reason, and the next step is the unblocking action", async () => {
-    const exec = await readRel(PLAN_EXEC);
+    const exec = await readSurface(PLAN_EXEC);
     expect(exec).toContain("**A blocker without a reason is not a blocker (hard rule).**");
     expect(exec).toContain("`blocker: null`");
     expect(exec).toContain("names **the action that unblocks it**");
@@ -992,11 +939,12 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("the shape decision is resolved before the gap loop and never stored in pending_human", async () => {
-    const loop = await readRel(SPEC_REFINE);
-    const gate = loop.indexOf("## Change-shape gate");
-    const taxonomy = loop.indexOf("## Gap taxonomy");
-    expect(gate).toBeGreaterThan(-1);
-    expect(taxonomy).toBeGreaterThan(gate);
+    const loop = await readSurface(SPEC_REFINE);
+    // Both sections still exist on the surface; their ORDER is asserted on the
+    // sequence below, which is where execution order actually lives now that
+    // the gate is a module.
+    expect(loop).toContain("## Change-shape gate");
+    expect(loop).toContain("## Gap taxonomy");
     expect(loop).toContain(
       "**Resolved before the gap loop starts, never carried into it (hard rule).**",
     );
@@ -1014,11 +962,11 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("split and replace keep separate offers, and a way out that writes nothing", async () => {
-    const loop = await readRel(SPEC_REFINE);
+    const loop = await readSurface(SPEC_REFINE);
     expect(loop).toContain("**Every branch has a way out that changes nothing.**");
     expect(loop).toContain("`Cerrar` closes the run **without applying the shape change**");
     // The command surface must state the asymmetry the loop implements.
-    const command = await readRel("commands/spec-refine.md");
+    const command = await readSurface("commands/spec-refine.md");
     expect(command).toContain("## The two shape branches are not the same question");
     expect(command).toContain("`Dividir en varias specs`");
     expect(command).toContain("`Crear una nueva spec`");
@@ -1027,10 +975,10 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("only the branches that create a file say they create one", async () => {
-    const loop = await readRel(SPEC_REFINE);
+    const loop = await readSurface(SPEC_REFINE);
     expect(loop).toContain("**Not every shape decision creates a file**");
     // The index must describe the same possible writes.
-    const index = await readRel("loops/README.md");
+    const index = await readSurface("loops/README.md");
     expect(index).toContain("**A single run may write several documents.**");
     expect(index).toContain("sibling specs");
     expect(index).toContain("sibling plans");
@@ -1047,22 +995,32 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     // Each rule that could demand a simulation states its own condition — the
     // failure mode is one conditional sentence somewhere and unconditional
     // demands everywhere else.
-    const exec = await readRel(PLAN_EXEC);
+    const exec = await readSurface(PLAN_EXEC);
     expect(exec).toContain(
       "**A missing `Límite de simulación` is a gap only when there is something to simulate.**",
     );
+    // Each rule that could demand a simulation states its own condition. All
+    // three plan commands carry it — no exemption, no skip.
+    //
+    // An earlier version of this guard skipped a doc that mentioned no
+    // simulation at all. That looked like a reasonable "nothing to qualify"
+    // carve-out and was in fact the opposite: `plan-new.md` had LOST the rule
+    // in a compression pass, and the skip is what hid it. A guard that lets a
+    // doc out of an assertion by dropping the subject is not a guard.
     for (const rel of [
       "commands/plan-new.md",
       "commands/plan-exec.md",
       "commands/plan-refine.md",
     ]) {
-      const doc = await readRel(rel);
-      expect(doc, rel).toMatch(/only when the change carries|no `Límite de simulación`/);
+      const doc = await readSurface(rel);
+      expect(doc, rel).toMatch(
+        /only when the change carries|only when it does|no `Límite de simulación`/,
+      );
     }
   });
 
   it("`/w:resume` figures in the transversal inventory of every index", async () => {
-    const skill = await readRel("SKILL.md");
+    const skill = await readSurface("SKILL.md");
     expect(skill).toContain("`/w:resume`");
     const readme = await readFile(resolve(SKILL_ROOT, "..", "..", "README.md"), "utf8");
     const transversal = readme.split("\n").find((l) => l.includes("**Transversal**")) ?? "";
@@ -1079,7 +1037,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(service).toContain("plan.final_validation_pending");
     expect(service).toContain("BLOQUEADA F");
     // And the skill states the rule without owning it.
-    const doc = await readRel("commands/resume.md");
+    const doc = await readSurface("commands/resume.md");
     expect(doc).toContain("A plan is not finished because its boxes are ticked");
     expect(doc).toContain("comes back as inconsistent");
   });
@@ -1093,7 +1051,7 @@ describe("Doctrine guards — G2 · readability caps in the hot path", () => {
 
   it("no line > 900 chars and no sentence > 60 words in loops/ and commands/", async () => {
     const targets: string[] = [];
-    for (const sub of ["loops", "commands"]) {
+    for (const sub of ["loops", "commands", "modules"]) {
       targets.push(...(await listMdFiles(join(SKILL_ROOT, sub))));
     }
     const offenders: string[] = [];
@@ -1123,6 +1081,12 @@ describe("Doctrine guards — G2 · readability caps in the hot path", () => {
 describe("Doctrine guards — G4 · frontmatter description budgets", () => {
   // Descriptions are the always-loaded surface (flatten hosts pay ALL of them);
   // caps per area, tighter than the Agent Skills 1024 standard cap.
+  //
+  // The per-item cap is necessary and was never sufficient: it is what let the
+  // discovery aggregate drift from 5 861 to 6 684 B during plan 009 without a
+  // single description crossing its own limit. Sixteen commands each 20 B under
+  // their cap is sixteen times a cost the user pays before invoking anything.
+  // The aggregate below is the half that was missing.
   function capFor(rel: string): number {
     if (rel.startsWith("commands/")) return 500;
     if (rel.startsWith("loops/")) return 600;
@@ -1133,7 +1097,7 @@ describe("Doctrine guards — G4 · frontmatter description budgets", () => {
 
   it("every description stays within its area budget", async () => {
     const rels: string[] = ["SKILL.md", join("harness", "HARNESS.md")];
-    for (const sub of ["commands", "loops", "exports", "roles"]) {
+    for (const sub of ["commands", "loops", "modules", "exports", "roles"]) {
       const files = await listMdFiles(join(SKILL_ROOT, sub));
       rels.push(...files.map((f) => f.slice(SKILL_ROOT.length + 1)));
     }
@@ -1144,6 +1108,16 @@ describe("Doctrine guards — G4 · frontmatter description budgets", () => {
       if (len > cap) offenders.push(`${rel}: ${len} chars > cap ${cap}`);
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("the discovery aggregate never grows past the frozen baseline", async () => {
+    const result = await runContextBudget(new NodeFileSystem(), {
+      root: SKILL_ROOT,
+      baselinePath: resolve(__dirname, "..", "fixtures", "context-baseline.json"),
+    });
+    const discovery = result.budget.find((line) => line.metric === "discovery");
+    expect(discovery?.baseline).toBeGreaterThan(0);
+    expect(discovery?.actual).toBeLessThanOrEqual(discovery?.baseline ?? 0);
   });
 });
 
@@ -1273,7 +1247,16 @@ describe("Doctrine guards — G3 · language policy (English doctrine)", () => {
 
   it("no Spanish diacritics outside code fences and inline code in skills/w/**.md", async () => {
     const targets: string[] = [join(SKILL_ROOT, "SKILL.md"), join(SKILL_ROOT, "README.md")];
-    for (const sub of ["commands", "loops", "exports", "roles", "artifacts", "harness", "hooks"]) {
+    for (const sub of [
+      "commands",
+      "loops",
+      "modules",
+      "exports",
+      "roles",
+      "artifacts",
+      "harness",
+      "hooks",
+    ]) {
       targets.push(...(await listMdFiles(join(SKILL_ROOT, sub))));
     }
     const offenders: string[] = [];

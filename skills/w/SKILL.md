@@ -99,7 +99,7 @@ It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+r
 
 ### Host as producer — adopted context
 
-The flows are **composable with host-native work, never exclusive**. The host is not only the executor of the loops: it is a legitimate **producer** of input. Work products born in the host conversation — an analysis reached with a host feature, a plan built in the host's plan mode, settled conclusions — are first-class flow input via **adoption**: transcribe with provenance (`## Origin` = adopted from the host conversation), verify like any other input (gate integrity), and never re-derive or re-ask what is already settled. Entry points: any loop start (adopted context — `loops/CHASSIS.md` § *Adopted context*), `plan-new` input mode 4 (adopt an external plan), and `/w:persist` (classify + persist finished work into `docs/`).
+The flows are **composable with host-native work, never exclusive**. The host is not only the executor of the loops: it is a legitimate **producer** of input. Work products born in the host conversation — an analysis reached with a host feature, a plan built in the host's plan mode, settled conclusions — are first-class flow input via **adoption**: transcribe with provenance (`## Origin` = adopted from the host conversation), verify like any other input (gate integrity), and never re-derive or re-ask what is already settled. Entry points: any loop start (adopted context — `modules/ADOPTED-CONTEXT.md`, loaded under the `adopted` signal), `plan-new` input mode 4 (adopt an external plan), and `/w:persist` (classify + persist finished work into `docs/`).
 
 ### The commands (`/w:` namespace)
 
@@ -126,7 +126,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 
 A loop is a skill that teaches the AI **how to iterate** to a deliverable: detect gaps, resolve them (human via structured-choice, inline research, a small probe/PoC or a composed capability), integrate and repeat until convergence. The 5 loops run the same **common engine** — persistent objective + verification-first, gap-driven convergent, single session per run, structured-choice + `flow` control (`Compactar`/`Cerrar`), compact/resume, artifacts as a live log, convergence gate — whose canon lives in [`loops/CHASSIS.md`](loops/CHASSIS.md); each loop is an **heir** adding only its deltas.
 
-The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply the *code-editing loop policies*: safe git, DB scripts-only and the pre-commit **closing review gate** (nothing reaches a proposed commit unreviewed) — see [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (the chassis' sibling doc; document loops do not load it).
+The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply the *code-editing loop policies*: safe git, DB scripts-only (`modules/DB-SCRIPTS-ONLY.md`, under the `db` signal) and the pre-commit **closing review gate** (nothing reaches a proposed commit unreviewed) — see [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (the chassis' sibling doc; document loops do not load it).
 
 `spec-new` has no loop (single-pass): **6 commands / 5 loops**.
 

@@ -67,16 +67,6 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
   3. The artifacts (`DECISION`, `SCRIPTS.sql`) **stay in the quick session** as referenceable context for the new session (never migrated).
   4. **SPEC enters live**: after `finalize`, run the *Live transition to SPEC* (draft **only if no spec exists** for this objective; then the loop). **Asymmetry** intact: PLAN can **absorb** the progress (plan-exec picks up the existing working tree); SPEC **restarts** the design cycle and treats the half-done code as context/reference, never as ingested work.
 
-## Continuity across prompts (operating context)
-
-`quick` is where the **continuity rule** ([`../../SKILL.md`](../../SKILL.md) § *Operating context*) shows most clearly. Inside a workspace:
-
-1. `/w:quick "first prompt"` (**command**) → creates session `NNN-<slug>-quick`, starts the loop. Scripts go to **its** `SCRIPTS.sql`.
-2. `"second prompt"` (**no command**, related work) → does **not** create another session: **continues/reopens the most recent one** (from step 1) and appends the new scripts to **that same** `SCRIPTS.sql`.
-3. `/w:quick "third prompt"` (**command** again) → **new** session, new loop.
-
-> The **command** signals "new work line"; a **bare prompt** means "same line" → by default continue/reopen the most recent session (the *last started*). Clearly unrelated → offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to the **no-flow** branch (write into `docs/` by convention + numbering). No workspace → **vanilla** behavior.
-
 ## Sequence
 
 ```
@@ -123,3 +113,7 @@ finalize: CHECKPOINT (AFTER: Pending→Completed) + BACKLOG (only if something i
 - **No export**: nothing goes to `docs/`. Anything worth preserving → promoted separately via `export-*`, or escalated (to SPEC **live** — the line continues in spec-refine already as SPEC flow; to PLAN **deferred**, seed + pointer).
 
 > QUICK's *convergence gate* is **proportional verification-first**: a **short** `Success criteria` seeded at start (not the *absence* of a checklist — its minimal version) — for code, "the change does what the prompt asked + tests/build green"; for analysis/design, a short ratified rubric. Minimal ceremony by design, but **always with the check declared first**.
+
+## Conditional modules
+
+- `resume` — continuity across prompts → `../../modules/PROMPT-CONTINUITY.md`

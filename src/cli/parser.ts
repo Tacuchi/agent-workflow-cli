@@ -39,6 +39,10 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   // Repeated `--path` (attach/detach-multiroot) and `--pattern` (code-scan).
   "path",
   "pattern",
+  // Repeated `--signal` and `--capability` (context-plan): a journey carries as
+  // many signals as it carries, and a host declares as many capabilities as it has.
+  "signal",
+  "capability",
 ]);
 
 // Flag names (without leading `--`) that are booleans: their presence is the

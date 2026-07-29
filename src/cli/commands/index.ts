@@ -10,6 +10,8 @@ import { checkBranchCommand } from "./check-branch.js";
 import { checkpointReadCommand } from "./checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-write.js";
 import { codeScanCommand } from "./code-scan.js";
+import { contextBudgetCommand } from "./context-budget.js";
+import { contextPlanCommand } from "./context-plan.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
 import {
   exportDiagramsCommand,
@@ -66,6 +68,8 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   stackCommand,
   workspaceInitCommand,
   skillIndexCommand,
+  contextBudgetCommand,
+  contextPlanCommand,
   skillsCommand,
   sourcesCommand,
   generateLaunchCommand,

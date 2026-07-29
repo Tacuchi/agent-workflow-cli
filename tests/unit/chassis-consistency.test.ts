@@ -20,6 +20,11 @@ const HEIR_INSTANCED_SECTIONS: ReadonlySet<string> = new Set([
   "Internal sessions (managed) — one session per run",
   "Compact / resume",
   "Convergence / exit",
+  // Since plan 010 every document that has conditional branches lists them
+  // under this heading with its own signals and its own modules. It is a
+  // per-document pointer list, not engine doctrine restated — the same reason
+  // the three above are here.
+  "Conditional modules",
 ]);
 
 /** `## ` headings outside fenced code blocks. */
@@ -104,14 +109,31 @@ describe("CHASSIS consistency — motor de loops vs heirs reales", () => {
 describe("Self-regulation (proactive compaction) — chasis ↔ harness (spec 004)", () => {
   const HARNESS_PATH = resolve(__dirname, "..", "..", "skills", "w", "harness", "HARNESS.md");
 
-  /** The `### Self-regulation …` subsection of § Compact / resume, up to the next `## `. */
+  /**
+   * The proactive-compaction doctrine, wherever the chassis keeps it.
+   *
+   * Since plan 010 it is `modules/COMPACTION.md`, loaded under the `compaction`
+   * signal: only a long run pays for it. The pins below are unchanged — what
+   * moved is the file, not the rule — and the chassis must still point at it,
+   * which is what the last assertion here checks.
+   */
+  const COMPACTION_MODULE = resolve(
+    __dirname,
+    "..",
+    "..",
+    "skills",
+    "w",
+    "modules",
+    "COMPACTION.md",
+  );
+
   async function selfRegulationSubsection(): Promise<string> {
     const chassis = await readFile(CHASSIS_PATH, "utf8");
-    const start = chassis.indexOf("### Self-regulation (proactive compaction)");
+    expect(chassis).toContain("modules/COMPACTION.md");
+    const module = await readFile(COMPACTION_MODULE, "utf8");
+    const start = module.indexOf("`Compactar` is not only reactive");
     expect(start).toBeGreaterThan(-1);
-    const rest = chassis.slice(start);
-    const end = rest.indexOf("\n## ");
-    return end === -1 ? rest : rest.slice(0, end);
+    return module.slice(start);
   }
 
   it("el chasis fija los dos modos, la config [compaction] y la degradación a confirm", async () => {
@@ -149,7 +171,7 @@ describe("Self-regulation (proactive compaction) — chasis ↔ harness (spec 00
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const section = chassis.slice(start, end);
-    expect(section).toContain("Proactive raise");
+    expect(section).toMatch(/raises the choice itself|Proactive raise/);
     expect(section).toContain("`Compactar`");
   });
 

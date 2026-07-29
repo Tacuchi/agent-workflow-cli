@@ -91,10 +91,6 @@ Reuses plan-new-loop's gap taxonomy **in full** ([`plan-new-loop`](../plan-new-l
 
 Same as plan-new (maps code/impact: FE/BE/DB components, AS-IS wiring, deps), but **scoped to the delta**: it re-verifies only what the change touches (never re-maps the whole plan). Chassis DB rule unchanged (read-only into `SCRIPTS.sql`, MCP via a question when >1 without default).
 
-## Delta 4 — Design SPECs (when the refine touches UI)
-
-Same mechanism as [`plan-new-loop`](../plan-new-loop/LOOP.md) (§ *Delta 4*: the **`ui-design`** capability → per-screen `NNN-SPEC-<SLUG>.md`, see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)), **scoped to the delta**: only the screens **new or changed** by the refine get a design SPEC. The updated SPEC is written in **plan-refine's own session** (each loop manages ITS session's artifacts — it never edits plan-new's) and the plan **re-points** the UI Task reference to the current SPEC. Untouched screens keep their original SPEC.
-
 ## Functional journey map
 
 Before re-shaping phases, the plan must answer what execution would otherwise have to invent. The answers land **inside the existing sections** (`## Solution`, `## Impacted`, the `### Fn` blocks) — this loop adds no plan section beyond its trace:
@@ -105,14 +101,6 @@ Before re-shaping phases, the plan must answer what execution would otherwise ha
 - **Evidence** — the primary proof of each phase, which rules deserve an isolated test, which integrations need a real one, and what cannot be validated because of operational constraints (that one goes to `## Open questions`).
 
 > **Bounded research** (Delta 3, sharpened): investigate **only** what is needed to order the phases — journey, boundaries, existing contracts, where the simulation can live, risks that change the plan's design. What `plan-exec` resolves locally is **not** pre-investigated here.
-
-## Simulation lifecycle
-
-**This section applies only when the journey introduces temporary behavior** — a stub, fake, in-memory adapter, controlled fixture or temporary response. None in the change → no `Límite de simulación`, and no artificial phase invented to retire one. When there is, it is planned, never improvised: every simulation declares **purpose · location · the contract it stands for · the phase where it appears · the phase where it moves or disappears · what prevents its accidental selection in a production runtime · the minimum proof needed while it exists**.
-
-- **Explicit over hidden**: `Stub…` / `Fake…`, in-memory adapter, temporary provider or controlled fixture — never a hardcode buried inside production code.
-- **Displacement rule**: each affected phase writes its `Límite de simulación` as normalized prose — `antes <where it is>` → `después <where it lands, or removed>` — never as an implicit assumption.
-- **Removal gate**: the change is not complete while a main-path simulation stays active, a configuration can still select it, the plan does not explain why it remains, or its removal was never validated. Test doubles isolated from the production runtime may stay.
 
 ## Evidence by behavior
 
@@ -136,30 +124,6 @@ This loop's instance of the chassis convergence gate — the same one `plan-exec
 - **Simulation** *(only when the change carries one)* — initial boundary identified, every displacement foreseen, one phase owns the retirement, nothing can stay active by accident. No temporary behavior → the check does not apply, and no empty `Límite de simulación` is required.
 - **Evidence** — every phase declares its primary proof, per-layer tests are justified, the same scenario is not duplicated by default, declared risks have evidence or an explicit deferral.
 - **Resumability** — tasks legible enough for a `CHECKPOINT`, intermediate states stable, pending work distinguishable from work already `validada`.
-
-## Replanning executed work
-
-A partially executed plan is replanned **forward**, never rewritten backwards:
-
-- Phases already `validada` **stay as they are**, and their result becomes the initial state of what follows. Completed tasks are not re-written as if they had never happened.
-- Only pending work is re-designed. A `validada` phase that the new shape invalidates gets a **compensating correction** as a new phase — never a silent edit of the closed one.
-- **Return from `plan-exec`** (structural deviation — [`plan-exec-loop`](../plan-exec-loop/LOOP.md) § *Deviation gate*): the deviation enters as a **material gap** of this run. Changed input or output, observable state, public contract, participating components, phase order, simulation boundary or integration strategy — all land in `## Refinement decisions` with what execution already proved.
-- **Legacy plans** (no phase state, micro-task shape) are migrated to the phase contract when this round touches them: completed tasks preserved, micro-tasks grouped by purpose, results and exit conditions derived from the spec and from the plan itself. Functional evidence that neither backs is **not invented** — it becomes an `## Open questions` entry.
-
-## Split gate — refine semantics
-
-The gate itself — signals, offer, anti-duplicate, sibling contract, partition — is defined **once** in [`plan-new-loop`](../plan-new-loop/LOOP.md) § *Split gate (multi-plan)* (this flow's guaranteed load already includes that file); this loop only adds the **in-place semantics** of splitting an existing plan:
-
-- The original plan **keeps its number/path**: it is rewritten **reduced** to its remaining tranche (in place, with confirmation). The extracted tranches become newly minted sibling plans (`aw next-number docs/plans` immediately before each write); their `## Origin` records "split from `docs/plans/PPP-plan-<slug>.md`" + the source spec + the siblings by path.
-- The gate also fires on **partially executed** plans. **Completed tasks (`- [x]`) never move to a sibling** — execution history stays anchored to the original path (plan-exec sessions' `## Origin` keep resolving); only pending work is extracted.
-- The split is recorded in `## Refinement decisions` (what moved where + why); original + siblings together keep the **complete, disjoint partition** of the spec criteria (spec-less: the Delta 2 degradation applies).
-- **Closing action** on the split branch: `Guardar planes` (edit the original reduced + write the extracted siblings); the normal branch keeps `Guardar plan refinado`.
-
-## Compact / resume — PLAN-refine keys
-
-Full mechanism (3 cases, `Compactar`, re-run with `--reopen`) in the chassis (§ *Compact / resume*). PLAN-refine keys: prior-work mark = `## Refinement decisions` **in the plan** (legacy plans may also carry `## Q&A traceability`); re-refine on demand is **first-class** as many times as needed while the flow stays in PLAN.
-
-> **Inter-turn continuity** (chassis, row 2): a flow command opens a "new work line" (new session) — **except re-running the same flow over the same input** (same plan), which does `create_or_resume` (resumes/reopens instead of duplicating).
 
 ## Sequence
 
@@ -202,3 +166,11 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).
 
 > **After refining:** the plan goes to `plan-exec`, which re-checks this same gate on entry — a plan saved here should never bounce back for its structure.
+
+## Conditional modules
+
+- `ui` — design SPECs for changed screens → `../../modules/PLAN-REFINE-DESIGN-SPECS.md`
+- `simulation` — the life of temporary behavior → `../../modules/SIMULATION-LIFECYCLE.md`
+- `replan` — replanning executed work → `../../modules/REPLANNING.md`
+- `split` — splitting a plan in place → `../../modules/PLAN-REFINE-SPLIT.md`
+- `resume` — this loop's compact / resume keys → `../../modules/PLAN-REFINE-KEYS.md`

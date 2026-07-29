@@ -7,7 +7,15 @@ import { describe, expect, it } from "vitest";
 // bundle audit — the new bundle must be clean from the start).
 const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
 
-const SCANNED_SUBFOLDERS = ["commands", "loops", "exports", "roles", "artifacts", "hooks"];
+const SCANNED_SUBFOLDERS = [
+  "commands",
+  "loops",
+  "modules",
+  "exports",
+  "roles",
+  "artifacts",
+  "hooks",
+];
 
 // No exemptions: the new bundle must be entirely free of legacy QTC refs.
 const EXEMPT_FILES = new Set<string>();

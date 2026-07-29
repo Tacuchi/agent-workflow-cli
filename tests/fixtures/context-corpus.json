@@ -1,0 +1,105 @@
+{
+  "$comment": "Corpus of the six representative journeys (spec 009 § Scope). For each one it freezes WHAT it must load (read_set) and WHICH hard-floor cases its loaded content must keep covering. Coverage is frozen at what the bundle genuinely guaranteed when the corpus was written, not at an aspiration: a journey that never carried a case (persist creates no session, by design) does not gain one here — but no journey may LOSE one when the doctrine is split into core + modules. Limitation, declared: this proves the floor is PRESENT in the compact profile, not that a weak model obeys it. That failure mode only surfaces in a real smoke (informe 003 § wave 5).",
+  "hard_floor_cases": {
+    "session": {
+      "why": "the run owns a session before touching anything",
+      "any_of": ["aw session-create --type", "create_or_resume"]
+    },
+    "checkpoint": {
+      "why": "progress survives compaction and resume",
+      "any_of": ["CHECKPOINT"]
+    },
+    "language": {
+      "why": "user-facing output stays in the user's language",
+      "any_of": ["user's language", "Language policy"]
+    },
+    "structured-choice": {
+      "why": "user-dependent decisions go through the canonical gate",
+      "any_of": ["Compactar", "structured-choice", "structured_choice"]
+    },
+    "write-boundary": {
+      "why": "the flow writes into exactly one docs/ folder and no other",
+      "any_of": [
+        "Write boundary",
+        "docs/ boundary",
+        "Never touches `docs/`",
+        "Never write into `docs/`",
+        "writes into `docs/"
+      ]
+    },
+    "recovery": {
+      "why": "an interrupted run can be picked up where it stopped",
+      "any_of": ["Compact / resume", "Resumable", "resumable", "session-resume"]
+    }
+  },
+  "journeys": [
+    {
+      "id": "spec",
+      "read_set": ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
+      "hard_floor": [
+        "session",
+        "checkpoint",
+        "language",
+        "structured-choice",
+        "write-boundary",
+        "recovery"
+      ]
+    },
+    {
+      "id": "plan-doc",
+      "read_set": ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
+      "hard_floor": [
+        "session",
+        "checkpoint",
+        "language",
+        "structured-choice",
+        "write-boundary",
+        "recovery"
+      ]
+    },
+    {
+      "id": "code-exec",
+      "read_set": [
+        "commands/plan-exec.md",
+        "loops/plan-exec-loop/LOOP.md",
+        "loops/CHASSIS.md",
+        "loops/CODE-POLICIES.md"
+      ],
+      "hard_floor": [
+        "session",
+        "checkpoint",
+        "language",
+        "structured-choice",
+        "write-boundary",
+        "recovery"
+      ]
+    },
+    {
+      "id": "quick",
+      "read_set": [
+        "commands/quick.md",
+        "loops/quick-loop/LOOP.md",
+        "loops/CHASSIS.md",
+        "loops/CODE-POLICIES.md"
+      ],
+      "hard_floor": [
+        "session",
+        "checkpoint",
+        "language",
+        "structured-choice",
+        "write-boundary",
+        "recovery"
+      ]
+    },
+    {
+      "id": "transversal",
+      "read_set": ["commands/persist.md"],
+      "hard_floor": ["language", "structured-choice", "write-boundary"]
+    },
+    {
+      "id": "export",
+      "read_set": ["commands/export-scripts.md"],
+      "hard_floor": ["write-boundary"]
+    }
+  ]
+}

@@ -41,7 +41,7 @@ Closing *every* gap turns the spec into a premature plan. Close what changes **w
 ## Reads
 - `docs/specs/NNN-spec*.md` (glob — locates the spec by number; also catches the legacy `NNN-spec.md`), **or** the exact path passed as the command argument. **Always the spec itself**: this loop edits it in place; there is no separate "refined" file.
 
-> **Boundary with `spec-new`:** the draft arrives from a **bounded reconnaissance** of the surface ([`../../commands/spec-new.md`](../../commands/spec-new.md) § *Bounded reconnaissance*) — hypotheses, not verified facts. **Deep investigation is this loop's**: walk the dependencies, check those hypotheses, and close the doubts parked in `## Open questions`.
+> **Boundary with `spec-new`:** the draft arrives from a **bounded reconnaissance** of the surface ([`../../modules/RECONNAISSANCE.md`](../../modules/RECONNAISSANCE.md), `spec-new`'s `reconnaissance` module) — hypotheses, not verified facts. **Deep investigation is this loop's**: walk the dependencies, check those hypotheses, and close the doubts parked in `## Open questions`.
 
 **Adopt, do not repeat.** `spec-new`'s **facts** are reused; its **assumptions** are re-validated **only when one blocks a gap**; its `Open questions` are re-classified by destination; its one-vs-many hypothesis is re-judged at the *Change-shape gate*. The shallow sweep is never re-run wholesale. Keep the labels distinct — a spec that blurs them cannot be gated: **fact** (backed by repo, data or docs) · **inference** (unproven) · **user decision** · **deferred decision** (owner declared) · **open question** (can still move the contract).
 
@@ -79,31 +79,6 @@ Other transversal capabilities the engine always uses: `research` (**inline** �
 When the project already exists, establish the current behavior the change rests on **before** describing the change: what happens today, which actor starts or receives it, which capabilities take part, which existing rules and observable limits shape the request — each with its source.
 
 **Stop when the baseline is enough to state and accept the functional change** — not when the system is documented. Digging on to pick an architecture, anticipate tasks or map every dependency is `PLAN` work, and gold-plating here. Greenfield has no baseline: skip it — that is what makes `## Behavioral changes` earn its place or not.
-
-## Change-shape gate
-
-Runs once the baseline exists and **before** closing details: the investigation can reveal the draft's shape was wrong. Does the spec still carry **one** functional outcome, did its purpose survive, can the delivery be accepted as a unit? The verdict is **one of three shapes** — `same` | `split` | `replace` — each with its own branch; only the last two ask anything.
-
-> **Resolved before the gap loop starts, never carried into it (hard rule).** A `split` or a `replace` is asked, answered and applied **immediately** — its own structured-choice, in its own step, between the baseline and the first gap batch. It never travels in `pending_human`: that collection is rebuilt on every iteration and is reserved for questions about functional, technical or scope **gaps**, so a shape decision parked there is erased by the next batch — or never asked at all, because a spec with no blocking gap breaks out of the loop before the batch is built. The resolution lands in `CHECKPOINT` **before** anything else runs, so a resume re-enters with the shape already decided and never re-asks it.
-
-- same outcome — more clarity, or more technical components → **`same`**: no shape question, keep refining this spec;
-- independent functional outcomes discovered → **`split`** (below);
-- purpose fundamentally changed → **`replace`** (below);
-- refactor indispensable to the outcome → a consideration for `PLAN`, never its own spec; refactor with no functional change → out of the contract;
-- evidence insufficient → **`same`** + the uncertainty recorded. Thin evidence never justifies a cut.
-
-**Split criterion** — the one `spec-new` already uses ([`../../commands/spec-new.md`](../../commands/spec-new.md) § *Split gate (multi-spec)*), never a different one: divide **only** when each part can be refined, accepted and planned on its own. Repos, technologies, layers or teams are **secondary evidence**, never the reason.
-
-**Split semantics (in place).** The offer enters the batch as a content question — `Dividir en varias specs` | `Una sola spec`; declining marks it **exhausted** for the run. On acceptance: the original **keeps its number/path**, rewritten reduced to its remaining outcome; each extracted outcome is minted with `aw next-number docs/specs` right before its write and is born **`status: draft`**. Siblings are **not** elaborated here — unlike the multi-plan gate, where `plan-exec` would break on a plan with no `## Tasks`; a draft spec is legitimate input to this very loop — so the run keeps refining the **reduced original** and reports `/w:spec-refine` as each sibling's next step. Every `## Origin` records "split from `docs/specs/NNN-spec-<slug>.md`" + the siblings **by path**. Closing action on this branch: `Guardar specs`.
-
-**Replace semantics.** Its offer is its own — `Crear una nueva spec` | `Reformular esta spec`, **never** the split labels: what gets decided is which identity carries the new purpose. Recommend **a new spec** when the main functional outcome or the actor/consumer changed; **reformulating** when the user confirms this file is still the same unit of work and wants to keep its identity.
-
-- **New spec:** this one is **preserved**, its purpose never silently rewritten; the new one is minted with `aw next-number docs/specs`, born **`status: draft`**, its `## Origin` recording the origin spec, the replaced purpose and the user's decision. Its path goes to the `CHECKPOINT`; the run closes reporting `/w:spec-refine <new path>` as the next step.
-- **Reformulate:** same number/path, the work treated as `refining` while rewritten; baseline, gap classification and the *ready-for-plan gate* run again over the new purpose; `status` is stamped only on the save that follows the passing gate, and the material decision lands in `## Decisions`.
-
-**Every branch has a way out that changes nothing.** The `flow` control present on every structured-choice (chassis) is that exit here: `Cerrar` closes the run **without applying the shape change** — no sibling minted, no spec reformulated, the document untouched and the decision recorded in `CHECKPOINT` as declined. And no branch writes a file without the user's confirmation: minting siblings and minting a replacement both go through the same confirm-before-write rule as an in-place save.
-
-Neither branch adds a `superseded` status or archives the replaced spec: a historical close needs its own runtime contract, out of scope here.
 
 ## Deliverable schema (the spec, edited in place)
 
@@ -175,19 +150,6 @@ The choices a reader needs in order to interpret the contract, each with its why
 
 **Resolution order** — the chassis *ask-vs-research rule* with the destination step in front: settled in the conversation → **adopt** · provable by reading repos or data → **research inline** · depends on what the user wants → **ask** · defines the technical solution without changing behavior → **hand to `PLAN`** · answerable later without touching the contract → **defer explicitly**.
 
-## Ideation gate (creativity)
-
-The loop's one **divergent** gate: every other resolver closes a gap; this one widens the option space before the spec hardens around its first idea. **Unexplored solution space is not a universal gap** — it stays shut unless a trigger fires, because exploring what is already decided burns context and invites gold-plating.
-
-**Triggers (≥1).** The user knows the problem but not the desired outcome · several functional directions carry materially different consequences · the spec adopted the first alternative prematurely · a choice can materially change scope · the alternatives change experience, rules or acceptance · the user asks to explore.
-
-**Not triggers.** More than one technical solution exists · no library is chosen yet · the system uses several technologies · every implementation admits alternatives · the request is already functionally clear. Purely technical alternatives belong to `PLAN`.
-
-1. **Offer & consent.** The gap enters the batch as a content question — `Explorar ideas` vs `Seguir sin ideación` — carrying the AI's recommendation like any other. Declining marks the gap **exhausted** (never re-offered this run); an explicit user request for ideas at any point counts as an accepted offer (on-demand entry). Alternatives already weighed in the conversation are *adopted context* — the gap does not fire.
-2. **Ideation round** (one per consent). Propose fresh ideas and **combinations** (the user's + found ones). If the host exposes **web-research** ([`../../harness/HARNESS.md`](../../harness/HARNESS.md)), the accepted offer also authorizes that round's web searches — no per-search consent; findings + sources land in the session's `CONCLUSIONS`, like inline research. Without the capability, ideate offline (own knowledge + workspace + repos) and **declare it** — never silently.
-
-**Verdicts (back to convergence).** Present the top ≤3 ideas via the same structured-choice, each with a recommended verdict: `Adoptar` → integrate into `Requirement`/`Scope`/criteria + record it in `## Decisions` (the choice and its why, with the source/URL when web-found) · `Descartar` → the reason goes to `CONCLUSIONS`, not to the spec · `Aparcar` → `## Open questions` with its destination. Ideas beyond the top 3 stay summarized in `CONCLUSIONS`. Divergence is bounded by *Minimality* (chassis): nothing enters the spec without an explicit `Adoptar`. This gate exists **only** in this loop — `spec-new` stays single-pass (bounded reconnaissance at most, no web) and the plan/quick loops inherit none of it.
-
 ## Sequence
 
 ```
@@ -254,16 +216,6 @@ finalize:
   close refine_session ; report
 ```
 
-## Compact / resume — SPEC keys
-
-Full mechanism (3 cases, `Compactar`, re-run on demand with `--reopen`) in the chassis (§ *Compact / resume*). SPEC keys:
-
-- The **prior-work mark** is the frontmatter `status: ready-for-plan` (legacy specs: `## Refinement decisions`, older ones also `## Q&A traceability`).
-- The **shape decision survives a resume.** It is written to `CHECKPOINT` the moment it is taken, before anything acts on it, so a compact, a `Cerrar` or a crash between the gate and the save re-enters with the shape settled — the gate is not re-run and the question is not re-asked. Only a *new* run over a spec whose baseline changed re-opens it.
-- Re-refining on demand is a **first-class operation** while the flow stays in SPEC (new requirements, scope changes, after re-reading the spec): it always reads the **spec itself**, incremental re-refinement; on `Guardar`, edits in place with confirmation.
-- **Legacy migration happens only here.** A re-refined legacy spec runs the gate like any other; on `Guardar`, its `## Refinement decisions` is renamed `## Decisions` and pruned to the material decisions — **in the same write that stamps `status`**, so the spec is never left with no mark. Specs nobody re-refines are not migrated.
-- **`Cerrar` before converging leaves the spec untouched**: the progress lives in the `CHECKPOINT`, and `status` is neither invented nor downgraded. `refining` is understood **on read** (a hand-written spec may declare it) — this loop never writes a partial spec.
-
 ## Convergence / exit
 
 - **No blocking gaps** → **ready-for-plan gate** (read-only) = **`Success criteria` green** (*verification-first*; the SPEC instance of the chassis convergence gate). The checklist:
@@ -285,3 +237,9 @@ Full mechanism (3 cases, `Compactar`, re-run on demand with `--reopen`) in the c
 - **`ui-design` capability** (UI gap) → the spec's `## UI spec` section.
 - **Owned by `PLAN` or deferred** → `## Open questions` with its destination, and nothing else in the spec.
 - **Inconclusive or unresolved research** → `## Open questions` (deferred) + the refine session's `BACKLOG.md` (only if something is deferred).
+
+## Conditional modules
+
+- `shape` — the change-shape gate and its split / replace branches → `../../modules/SPEC-CHANGE-SHAPE.md`
+- `web` — the conditional ideation gate, its triggers and verdicts → `../../modules/IDEATION-GATE.md`
+- `resume` — the SPEC keys of compact / resume → `../../modules/SPEC-REFINE-KEYS.md`

@@ -9,15 +9,6 @@ They apply to **`plan-exec-loop`** (per plan phase) and **`quick-loop`** (the si
 - **Rejected commit**: the changes **stay in the working tree** (never reverted). Re-proposing / editing the message is allowed. Record in `CHECKPOINT` + `BACKLOG` that the phase/task remained **uncommitted** (resumable).
 - **Between-phase precondition** (plan-exec): `branch-check` validates branch *identity*, **not** working-tree *cleanliness*. Before starting the next phase, each source's working tree must be **clean** (committed) or explicitly **acknowledged** as "uncommitted changes from phase N" — so two phases never co-mingle in one commit.
 
-## DB scripts-only — the AI never executes DML/DDL
-
-Distinguished by **execution**, not by file (see the [`SCRIPTS.sql`](../artifacts/artifacts-core/SCRIPTS.sql) schema):
-
-- **Read-only queries** (diagnosis/validation) → `SCRIPTS.sql` (session artifact); the AI **does** execute them read-only via MCP (`sql-mutation-guard`).
-- **DDL/DML migrations** (schema/data changes) → the AI **drafts them in `SCRIPTS.sql`** (session artifact) but **NEVER executes them**.
-
-> Mutating SQL **stays in the session**; it is never moved to `docs/`. Its promotion to `docs/scripts/` (forward + rollback) is done by a separate `export-*`, never by the loop.
-
 ## Closing review gate (conventions, pre-commit)
 
 After validation (of the phase in plan-exec; of the task in quick, proportional) and **before proposing its commits** (also on an early `Cerrar`, before proposing the pending commits), the diff passes a **closing review gate**:
@@ -36,3 +27,7 @@ Only with the gate green are the commits proposed.
 ## Location
 
 Same as the chassis: code-editing loops reference it as `../CODE-POLICIES.md` — the `w/loops/` tree is installed intact on every host (chassis § *Reference resolution*).
+
+## Conditional modules
+
+- `db` — the DB scripts-only rule → `../modules/DB-SCRIPTS-ONLY.md`
