@@ -186,11 +186,22 @@ describe("runCheckpointWrite", () => {
       new FakeGit(),
       paths,
     );
-    expect("skipped" in result && result.skipped).toBe(true);
-    if ("skipped" in result && result.skipped) {
-      expect(result.reason).toContain("múltiples sesiones activas");
-      expect(result.active_sessions).toEqual(["session001-dev-foo", "session002-dev-bar"]);
+    // Non-pausable host (no --can-pause): the compaction goes ahead, Workline
+    // writes nothing and declares degraded continuity with `primary_session: null`
+    // — the active list is shown as candidates, never as an identity.
+    if (!("skipped" in result) || !result.skipped) {
+      throw new Error(`expected a degraded result, got: ${JSON.stringify(result)}`);
     }
+    expect(result.continuity).toBe("degraded");
+    expect(result.primary_session).toBeNull();
+    expect(result.reason).toContain("2 sesiones activas");
+    expect(result.active_sessions).toEqual(["session001-dev-foo", "session002-dev-bar"]);
+    expect(result.candidates.map((c) => c.folder)).toEqual([
+      "session001-dev-foo",
+      "session002-dev-bar",
+    ]);
+    expect(result.action).toContain("--code");
+    expect(fs.writes.size).toBe(0);
   });
 
   it("--code resolves to specific session and writes CHECKPOINT.md", async () => {

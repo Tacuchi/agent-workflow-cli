@@ -160,21 +160,33 @@ describe("listSessionsForRelease", () => {
 });
 
 describe("readSessionArtifacts", () => {
-  it("returns session_not_found when sessions dir is missing", async () => {
+  // The private `findSessionFolder` matcher is gone: this dump now resolves
+  // through the canonical resolver, so a miss reports the same stable code,
+  // candidates and action as every other session-scoped command.
+  it("an absent sessions dir reports the canonical SESSION_NOT_FOUND", async () => {
     const fs = new FakeFs({ lenient: true });
-    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001");
-    expect(result.error).toBe("session_not_found:001");
+    const result = await readSessionArtifacts(fs, paths, "001");
+    expect(result.sessionError?.code).toBe("SESSION_NOT_FOUND");
+    expect(result.sessionError?.candidates).toEqual([]);
+    expect(result.sessionError?.action.length).toBeGreaterThan(0);
   });
 
-  it("returns session_not_found when no folder matches the code", async () => {
-    const fs = new FakeFs({ lenient: true }).dir(baseSessionsDir);
-    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001");
-    expect(result.error).toBe("session_not_found:001");
+  it("a code matching no folder reports SESSION_NOT_FOUND with the real candidates", async () => {
+    const fs = sessionsFs({ "003-otra-quick": { "SESSION.md": "# s" } });
+    const result = await readSessionArtifacts(fs, paths, "001");
+    expect(result.sessionError?.code).toBe("SESSION_NOT_FOUND");
+    expect(result.sessionError?.candidates.map((c) => c.folder)).toEqual(["003-otra-quick"]);
+  });
+
+  it("resolves a current-model folder too, not just the legacy layout", async () => {
+    const fs = sessionsFs({ "044-nueva-plan-exec": { "SESSION.md": "# s" } });
+    const result = await readSessionArtifacts(fs, paths, "044", ["objetivo"]);
+    expect(result.session).toBe("044-nueva-plan-exec");
   });
 
   it("returns legacy_format error when only REQUIREMENTS.md exists", async () => {
     const fs = sessionsFs({ "session001-dev-old": { "REQUIREMENTS.md": "# old" } });
-    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001");
+    const result = await readSessionArtifacts(fs, paths, "001");
     expect(result.error).toBe("legacy_format");
     expect(result.session).toBe("session001-dev-old");
     expect(result.hint).toContain("REQUIREMENTS.md");
@@ -183,9 +195,7 @@ describe("readSessionArtifacts", () => {
   it("returns content for OBJETIVO.md when present", async () => {
     const objetivoContent = "# Objetivo\n## Requerimiento\nTest content\n";
     const fs = sessionsFs({ "session042-dev-target": { "OBJETIVO.md": objetivoContent } });
-    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "042", [
-      "objetivo",
-    ]);
+    const result = await readSessionArtifacts(fs, paths, "042", ["objetivo"]);
     expect(result.error).toBeUndefined();
     expect(result.session).toBe("session042-dev-target");
     const objetivo = (result as Record<string, unknown>).objetivo as { content: string };
@@ -194,27 +204,22 @@ describe("readSessionArtifacts", () => {
 
   it("returns null for missing artifact kinds", async () => {
     const fs = sessionsFs({ "session001-dev-min": { "OBJETIVO.md": "# bare" } });
-    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001", [
-      "decisiones",
-      "tasks",
-    ]);
+    const result = await readSessionArtifacts(fs, paths, "001", ["decisiones", "tasks"]);
     expect((result as Record<string, unknown>).decisiones).toBeNull();
     expect((result as Record<string, unknown>).tasks).toBeNull();
   });
 
   it("returns scripts list (empty when scripts/ dir absent)", async () => {
     const fs = sessionsFs({ "session001-dev-noscripts": { "OBJETIVO.md": "# bare" } });
-    const result = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "001", [
-      "scripts",
-    ]);
+    const result = await readSessionArtifacts(fs, paths, "001", ["scripts"]);
     expect(result.scripts).toEqual([]);
   });
 
   it("normalizes session code with 'session' prefix and pads to 3 digits", async () => {
     const fs = sessionsFs({ "session007-dev-norm": { "OBJETIVO.md": "# norm" } });
-    const r1 = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "7");
+    const r1 = await readSessionArtifacts(fs, paths, "7");
     expect(r1.session).toBe("session007-dev-norm");
-    const r2 = await readSessionArtifacts(fs, new FakeEnv("/home/u", "/cwd"), paths, "session007");
+    const r2 = await readSessionArtifacts(fs, paths, "session007");
     expect(r2.session).toBe("session007-dev-norm");
   });
 });

@@ -5,7 +5,14 @@ import type { GitPort } from "../ports/git.js";
 import { findActiveSessions } from "./checkpoint-service.js";
 import { formatCheckpointMd } from "./checkpoint/markdown.js";
 import { extractSessionState } from "./checkpoint/state-reader.js";
+import {
+  type LifecycleOptions,
+  type LifecycleTarget,
+  resolveLifecycleTarget,
+  unresolvedDetail,
+} from "./lifecycle-target.js";
 import type { PathsService } from "./paths-service.js";
+import type { SessionCandidate, SessionEntry, SessionResolutionError } from "./session-resolver.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
 
@@ -21,44 +28,60 @@ export interface CheckpointWriteOutput {
   reason?: string;
 }
 
-export interface CheckpointWriteSkipped {
+/**
+ * Non-pausable host: its native compaction goes ahead, Workline writes nothing
+ * and says the continuity is degraded. `primary_session: null` is the point —
+ * no active session gets presented as this conversation's line.
+ */
+export interface CheckpointWriteDegraded {
   skipped: true;
   reason: string;
-  active_sessions?: string[];
+  continuity: "degraded";
+  primary_session: null;
+  active_sessions: string[];
+  candidates: SessionCandidate[];
+  action: string;
 }
 
+/** Pausable host: hold the compaction until a human names the target. */
+export interface CheckpointWriteBlocked {
+  blocked: true;
+  selection_required: true;
+  sessionError: SessionResolutionError;
+}
+
+export type CheckpointWriteResult =
+  | CheckpointWriteOutput
+  | CheckpointWriteDegraded
+  | CheckpointWriteBlocked;
+
+export interface CheckpointWriteOptions extends LifecycleOptions {
+  force?: boolean;
+}
+
+/**
+ * PreCompact payload. `--code` used to be honoured only for legacy
+ * `sessionNNN-*` folders, so a perfectly unambiguous current-model code was
+ * silently skipped whenever a second session was active. It now goes through
+ * the canonical resolver like everything else.
+ */
 export async function runCheckpointWrite(
   fs: FileSystemPort,
   env: EnvPort,
   git: GitPort,
   paths: PathsService,
-  options: { code?: string; force?: boolean } = {},
-): Promise<CheckpointWriteOutput | CheckpointWriteSkipped> {
-  const cwd = env.cwd();
-  const folder = await resolveTargetFolder(fs, env, paths, options.code);
-  if (!folder) {
-    const actives = await findActiveSessions(fs, paths);
-    if (actives.length === 0) {
-      return { skipped: true, reason: "no hay sesiones activas en .workflow/sessions" };
-    }
-    return {
-      skipped: true,
-      reason: "múltiples sesiones activas; especificá --code <CODE>",
-      active_sessions: actives.map((a) => a.folder),
-    };
-  }
-
-  const sessionPath = join(paths.cwdSessionsDir(), folder);
-  if (!(await fs.exists(sessionPath))) {
-    throw new Error(`folder no existe: ${sessionPath}`);
-  }
-  const cpPath = join(sessionPath, "CHECKPOINT.md");
+  options: CheckpointWriteOptions = {},
+): Promise<CheckpointWriteResult> {
+  const target = await resolveLifecycleTarget(fs, paths, options);
+  if (target.outcome !== "resolved") return unresolved(fs, paths, target);
+  const session = target.session;
+  const cpPath = join(session.path, "CHECKPOINT.md");
 
   if ((await fs.exists(cpPath)) && options.force !== true) {
     const existing = await fs.readText(cpPath);
     if (!existing.includes(PLACEHOLDER_MARKER)) {
       return {
-        session: folder,
+        session: session.folder,
         checkpoint_path: cpPath,
         skipped: true,
         reason:
@@ -67,13 +90,13 @@ export async function runCheckpointWrite(
     }
   }
 
-  const state = await extractSessionState(fs, git, cwd, sessionPath);
+  const state = await extractSessionState(fs, git, env.cwd(), session.path);
   const md = formatCheckpointMd(state);
-  await fs.mkdirp(sessionPath);
+  await fs.mkdirp(session.path);
   await fs.writeText(cpPath, md);
 
   return {
-    session: folder,
+    session: session.folder,
     checkpoint_path: cpPath,
     lines_written: md.replace(/\n$/, "").split("\n").length,
     progress_pct: state.progress_pct,
@@ -83,30 +106,8 @@ export async function runCheckpointWrite(
   };
 }
 
-async function resolveTargetFolder(
-  fs: FileSystemPort,
-  env: EnvPort,
-  paths: PathsService,
-  code: string | undefined,
-): Promise<string | null> {
-  if (code) {
-    const sessionsDir = paths.cwdSessionsDir();
-    if (!(await fs.exists(sessionsDir))) return null;
-    const entries = await fs.list(sessionsDir);
-    const norm = code.replace("session", "").split("-")[0]?.padStart(3, "0") ?? code;
-    for (const entry of entries) {
-      if (entry.type !== "dir") continue;
-      const m = entry.name.match(/^session(\d{3})-/);
-      if (m?.[1] === norm) return entry.name;
-    }
-    return null;
-  }
-  void env;
-  const actives = await findActiveSessions(fs, paths);
-  return actives.length === 1 ? (actives[0]?.folder ?? null) : null;
-}
-
 export interface AutoCompactOnCloseOutput {
+  /** At most ONE entry: the resolved target, never "every active session". */
   checkpoints_written: Array<{
     session?: string;
     checkpoint_path?: string;
@@ -115,48 +116,56 @@ export interface AutoCompactOnCloseOutput {
     reason?: string;
     error?: string;
   }>;
+  continuity?: "degraded";
+  primary_session?: null;
+  candidates?: SessionCandidate[];
+  action?: string;
 }
 
-export interface AutoCompactOnCloseSkipped {
-  skipped: true;
-  reason: string;
-}
-
+/**
+ * SessionEnd. It used to iterate EVERY active session, so closing one host
+ * conversation wrote checkpoints over lines belonging to others. It now
+ * checkpoints the resolved target and nothing else; with no sufficient
+ * identity it writes nothing at all. The host is exiting, so there is nobody
+ * left to answer a selection prompt: this surface always degrades, never blocks.
+ */
 export async function runAutoCompactOnClose(
   fs: FileSystemPort,
   env: EnvPort,
   git: GitPort,
   paths: PathsService,
-): Promise<AutoCompactOnCloseOutput | AutoCompactOnCloseSkipped> {
-  const cwd = env.cwd();
-  const actives = await findActiveSessions(fs, paths);
-  if (actives.length === 0) {
-    return { skipped: true, reason: "no hay sesiones activas" };
+  options: LifecycleOptions = {},
+): Promise<AutoCompactOnCloseOutput> {
+  const target = await resolveLifecycleTarget(fs, paths, {
+    ...options,
+    canPauseCompaction: false,
+  });
+  if (target.outcome !== "resolved") {
+    const detail = unresolvedDetail(target);
+    return {
+      checkpoints_written: [],
+      continuity: "degraded",
+      primary_session: null,
+      candidates: detail.candidates,
+      action: detail.action,
+    };
   }
-  const written: AutoCompactOnCloseOutput["checkpoints_written"] = [];
-  for (const a of actives) {
-    const entry = await writeCheckpointForActive(fs, git, cwd, paths, a.folder);
-    if (entry) written.push(entry);
-  }
-  return { checkpoints_written: written };
+  const entry = await writeCheckpointForTarget(fs, git, env.cwd(), target.session);
+  return { checkpoints_written: [entry] };
 }
 
-async function writeCheckpointForActive(
+async function writeCheckpointForTarget(
   fs: FileSystemPort,
   git: GitPort,
   cwd: string,
-  paths: PathsService,
-  folder: string,
-): Promise<AutoCompactOnCloseOutput["checkpoints_written"][number] | null> {
-  if (!folder) return null;
-  const sessionPath = join(paths.cwdSessionsDir(), folder);
-  if (!(await fs.exists(sessionPath))) return null;
-  const cpPath = join(sessionPath, "CHECKPOINT.md");
+  session: SessionEntry,
+): Promise<AutoCompactOnCloseOutput["checkpoints_written"][number]> {
+  const cpPath = join(session.path, "CHECKPOINT.md");
   if (await fs.exists(cpPath)) {
     const existing = await fs.readText(cpPath);
     if (!existing.includes(PLACEHOLDER_MARKER)) {
       return {
-        session: folder,
+        session: session.folder,
         checkpoint_path: cpPath,
         skipped: true,
         reason: "CHECKPOINT.md ya sintetizado",
@@ -164,19 +173,39 @@ async function writeCheckpointForActive(
     }
   }
   try {
-    const state = await extractSessionState(fs, git, cwd, sessionPath);
+    const state = await extractSessionState(fs, git, cwd, session.path);
     const md = formatCheckpointMd(state);
-    await fs.mkdirp(sessionPath);
+    await fs.mkdirp(session.path);
     await fs.writeText(cpPath, md);
     return {
-      session: folder,
+      session: session.folder,
       checkpoint_path: cpPath,
       progress_pct: state.progress_pct,
     };
   } catch (err) {
     return {
-      session: folder,
+      session: session.folder,
       error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
     };
   }
+}
+
+async function unresolved(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: Extract<LifecycleTarget, { outcome: "degraded" | "blocked" }>,
+): Promise<CheckpointWriteDegraded | CheckpointWriteBlocked> {
+  if (target.outcome === "blocked") {
+    return { blocked: true, selection_required: true, sessionError: target.error };
+  }
+  const actives = await findActiveSessions(fs, paths);
+  return {
+    skipped: true,
+    reason: target.reason,
+    continuity: "degraded",
+    primary_session: null,
+    active_sessions: actives.map((a) => a.folder),
+    candidates: target.candidates,
+    action: target.action,
+  };
 }

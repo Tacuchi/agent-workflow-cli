@@ -44,12 +44,10 @@ export const sessionArtifactsCommand: QtcCommand = {
           );
         }
       }
-      const dump = await readSessionArtifacts(ctx.fs, ctx.env, ctx.paths, code, kinds, ctx.runtime);
+      const dump = await readSessionArtifacts(ctx.fs, ctx.paths, code, kinds, ctx.runtime);
+      if (dump.sessionError !== undefined) return failSessionResolution(dump.sessionError);
       if (dump.error !== undefined) {
-        const errCode = String(dump.error).startsWith("session_not_found")
-          ? "SESSION_NOT_FOUND"
-          : "LEGACY_FORMAT";
-        return fail(errCode, String(dump.hint ?? dump.error), dump);
+        return fail("LEGACY_FORMAT", String(dump.hint ?? dump.error), dump);
       }
       return { ok: true, data: dump, exitCode: 0 };
     }

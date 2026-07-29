@@ -1,11 +1,10 @@
 import { join } from "node:path";
-import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
 import type { PathsService } from "../paths-service.js";
 import { type ArtifactKind, findArtifact } from "../session-artifacts.js";
-import { buildSessionEntry, parseSessionFolder } from "../session-resolver.js";
-import { collectFilesByExt, sessionCodeInt } from "./common.js";
+import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
+import { collectFilesByExt } from "./common.js";
 
 // Each request-kind maps to an ordered list of on-disk ArtifactKinds tried in
 // turn (first match wins). The descriptor request-kind `objetivo` reads the new
@@ -28,6 +27,8 @@ export interface SessionArtifactsResult {
   code?: string | null;
   state?: string;
   scripts?: { name: string; path: string; size: number | null; is_rollback: boolean }[];
+  /** Canonical resolution failure (code + message + candidates + action). */
+  sessionError?: SessionResolutionError;
   error?: string;
   hint?: string;
   [k: string]:
@@ -40,22 +41,29 @@ export interface SessionArtifactsResult {
 
 export async function readSessionArtifacts(
   fs: FileSystemPort,
-  env: EnvPort,
   paths: PathsService,
   sessionCode: string,
   kinds?: string[],
   runtime?: ResolvedRuntime,
 ): Promise<SessionArtifactsResult> {
-  void env;
-  const found = await findSessionFolder(fs, paths.cwdSessionsDir(), sessionCode);
-  if (!found) return { error: `session_not_found:${sessionCode}` };
+  // This is a session-scoped READ reached by `aw session-artifacts --dump --code`.
+  // It used to carry its own folder matcher (`sessionCodeInt` over a filtered
+  // listing) — the last resolver besides the canonical one. `allowClosed` is on
+  // (dumping a finished session's artifacts is the normal case) and `bind` is
+  // off: a release/inspection dump is not how a conversation picks its line.
+  const resolution = await resolveSessionTarget(fs, paths, {
+    code: sessionCode,
+    allowClosed: true,
+  });
+  if (resolution.outcome !== "resolved") return { sessionError: resolution };
 
-  const { sessionPath, folderName } = found;
+  const sessionPath = resolution.session.path;
+  const folderName = resolution.session.folder;
 
   const legacyCheck = await detectLegacyFormat(fs, sessionPath, folderName, runtime);
   if (legacyCheck) return legacyCheck;
 
-  const entry = await buildSessionEntry(fs, sessionPath, folderName);
+  const entry = resolution.session;
   const result: SessionArtifactsResult = {
     session: entry.folder,
     path: entry.path,
@@ -72,23 +80,6 @@ export async function readSessionArtifacts(
     }
   }
   return result;
-}
-
-async function findSessionFolder(
-  fs: FileSystemPort,
-  sessionsDir: string,
-  sessionCode: string,
-): Promise<{ sessionPath: string; folderName: string } | null> {
-  const targetInt = sessionCodeInt(sessionCode);
-  if (!(await fs.exists(sessionsDir)) || targetInt === null) return null;
-  // Accept both the current naming (NNN-<slug>-<flow>) and the legacy one
-  // (sessionNNN-…): a legacy-only filter would never find current sessions.
-  const folders = (await fs.list(sessionsDir)).filter(
-    (e) => e.type === "dir" && /^(session)?\d{3}-/.test(e.name),
-  );
-  const match = folders.find((f) => sessionCodeInt(parseSessionFolder(f.name).code) === targetInt);
-  if (!match) return null;
-  return { sessionPath: match.path, folderName: match.name };
 }
 
 async function detectLegacyFormat(

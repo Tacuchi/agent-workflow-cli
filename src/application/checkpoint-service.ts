@@ -1,10 +1,24 @@
 import { join } from "node:path";
-import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import {
+  type LifecycleTarget,
+  resolveLifecycleTarget,
+  unresolvedDetail,
+} from "./lifecycle-target.js";
 import { parseMdSection, parseMdSectionBilingual, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { type ArtifactKind, listExistingArtifacts } from "./session-artifacts.js";
-import { CLOSED_MARKER, listSessionFolders, parseSessionFolder } from "./session-resolver.js";
+import {
+  CLOSED_MARKER,
+  type SessionCandidate,
+  type SessionEntry,
+  type SessionResolutionError,
+  listSessionFolders,
+  parseSessionFolder,
+  resolveSessionTarget,
+  sessionNumericCode,
+  sessionReadRequest,
+} from "./session-resolver.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
 const DEFAULT_STALE_THRESHOLD_SECONDS = 300;
@@ -170,24 +184,23 @@ export interface CheckpointReadOutput {
   reason?: string;
 }
 
-export interface CheckpointReadError {
-  error: string;
-}
+export type CheckpointReadResult = CheckpointReadOutput | { sessionError: SessionResolutionError };
 
 export async function runCheckpointRead(
   fs: FileSystemPort,
-  env: EnvPort,
   paths: PathsService,
-  code: string | undefined,
-): Promise<CheckpointReadOutput | CheckpointReadError> {
-  const folder = await resolveTargetSession(fs, env, paths, code);
-  if (!folder) return { error: "no hay sesión activa única; especificá --code" };
-  const sessionPath = join(paths.cwdSessionsDir(), folder);
-  const cp = await readLatestCheckpoint(fs, sessionPath);
+  input: { code?: string; contextId?: string },
+): Promise<CheckpointReadResult> {
+  // Reading a checkpoint is a read: a closed session's checkpoint is legitimate
+  // to inspect, and the association makes later turns stay on this line.
+  const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
+  if (resolution.outcome !== "resolved") return { sessionError: resolution };
+  const session = resolution.session;
+  const cp = await readLatestCheckpoint(fs, session.path);
   if (!cp) {
-    return { session: folder, checkpoint: null, reason: "CHECKPOINT.md no existe" };
+    return { session: session.folder, checkpoint: null, reason: "CHECKPOINT.md no existe" };
   }
-  return { session: folder, checkpoint: cp };
+  return { session: session.folder, checkpoint: cp };
 }
 
 export interface ActiveSession {
@@ -212,29 +225,6 @@ export async function findActiveSessions(
   return active;
 }
 
-async function resolveTargetSession(
-  fs: FileSystemPort,
-  env: EnvPort,
-  paths: PathsService,
-  code: string | undefined,
-): Promise<string | null> {
-  if (code) {
-    const sessionsDir = paths.cwdSessionsDir();
-    if (!(await fs.exists(sessionsDir))) return null;
-    const entries = await fs.list(sessionsDir);
-    const norm = code.replace("session", "").split("-")[0]?.padStart(3, "0") ?? code;
-    for (const entry of entries) {
-      if (entry.type !== "dir") continue;
-      const m = entry.name.match(/^session(\d{3})-/);
-      if (m?.[1] === norm) return entry.name;
-    }
-    return null;
-  }
-  void env;
-  const actives = await findActiveSessions(fs, paths);
-  return actives.length === 1 ? (actives[0]?.folder ?? null) : null;
-}
-
 export interface RecentClosedEntry {
   code: string;
   folder: string;
@@ -253,6 +243,10 @@ export interface ResumeSummaryOutput {
   checkpoint_age_seconds?: number | null;
   unfilled_placeholders: string[];
   needs_ai_action: boolean;
+  /** `degraded` = no state is restored until the target is resolved. */
+  continuity: "ok" | "degraded";
+  candidates?: SessionCandidate[];
+  action?: string;
   checkpoint?: {
     actualizado: string | null;
     avance: string | null;
@@ -264,55 +258,71 @@ export interface ResumeSummaryOutput {
 export interface ResumeSummaryOptions {
   includeRecentClosed?: boolean;
   recentDays?: number;
+  code?: string;
+  contextId?: string;
 }
 
 const DEFAULT_RECENT_DAYS = 7;
 
+/**
+ * PostCompact payload. It used to present `actives[0]` — the OLDEST active
+ * session — as the primary one, so a compacted conversation could be handed
+ * another conversation's checkpoint. The target is now the canonical one, and
+ * an unresolvable target degrades: `primary_session: null` plus candidates,
+ * never an arbitrary session. PostCompact never blocks — the host already
+ * compacted; what it must not do is restore the wrong line.
+ */
 export async function runResumeSummary(
   fs: FileSystemPort,
-  env: EnvPort,
   paths: PathsService,
   options: ResumeSummaryOptions = {},
 ): Promise<ResumeSummaryOutput> {
-  void env;
+  // Deliberately an aggregated read: it may list N sessions and turns none of
+  // them into the conversation's association (AC-09).
   const actives = await findActiveSessions(fs, paths);
-  const target = actives[0];
-  if (!target) {
-    const baseEmpty: ResumeSummaryOutput = {
-      active_sessions: [],
-      primary_session: null,
-      checkpoint_present: false,
-      checkpoint_status: "missing",
-      unfilled_placeholders: [],
-      needs_ai_action: false,
-    };
-    if (options.includeRecentClosed === true) {
-      baseEmpty.recent_closed_with_artifacts = await findRecentClosedWithArtifacts(
-        fs,
-        paths,
-        actives.map((a) => a.folder),
-        options.recentDays ?? DEFAULT_RECENT_DAYS,
-      );
-    }
-    return baseEmpty;
+  const activeFolders = actives.map((a) => a.folder);
+
+  const target = await resolveLifecycleTarget(fs, paths, {
+    ...(options.code !== undefined ? { code: options.code } : {}),
+    ...(options.contextId !== undefined ? { contextId: options.contextId } : {}),
+  });
+
+  const summary =
+    target.outcome === "resolved"
+      ? await summarizeResolved(fs, activeFolders, target.session)
+      : degradedSummary(activeFolders, target);
+
+  if (options.includeRecentClosed === true) {
+    summary.recent_closed_with_artifacts = await findRecentClosedWithArtifacts(
+      fs,
+      paths,
+      activeFolders,
+      options.recentDays ?? DEFAULT_RECENT_DAYS,
+    );
   }
+  return summary;
+}
 
-  const sessionPath = join(paths.cwdSessionsDir(), target.folder);
-  const cp = await readLatestCheckpoint(fs, sessionPath);
-  const cpStatus = await computeCheckpointStatus(fs, sessionPath);
-
-  const codeMatch = target.folder.split("-", 1)[0]?.replace("session", "");
+async function summarizeResolved(
+  fs: FileSystemPort,
+  activeFolders: string[],
+  session: SessionEntry,
+): Promise<ResumeSummaryOutput> {
+  const cp = await readLatestCheckpoint(fs, session.path);
+  const cpStatus = await computeCheckpointStatus(fs, session.path);
+  const code = sessionNumericCode(session.folder);
 
   const summary: ResumeSummaryOutput = {
-    active_sessions: actives.map((a) => a.folder),
-    primary_session: target.folder,
-    primary_session_code: codeMatch && codeMatch.length > 0 ? codeMatch : null,
+    active_sessions: activeFolders,
+    primary_session: session.folder,
+    primary_session_code: code,
     checkpoint_present: cp !== null,
     checkpoint_path: cpStatus.checkpoint_path,
     checkpoint_status: cpStatus.status,
     checkpoint_age_seconds: cpStatus.age_seconds,
     unfilled_placeholders: cpStatus.unfilled_placeholders,
     needs_ai_action: cpStatus.needs_ai_action,
+    continuity: "ok",
   };
 
   if (cp) {
@@ -328,17 +338,28 @@ export async function runResumeSummary(
       proximo: proximoLines && proximoLines.length > 0 ? proximoLines : null,
     };
   }
-
-  if (options.includeRecentClosed === true) {
-    summary.recent_closed_with_artifacts = await findRecentClosedWithArtifacts(
-      fs,
-      paths,
-      actives.map((a) => a.folder),
-      options.recentDays ?? DEFAULT_RECENT_DAYS,
-    );
-  }
-
   return summary;
+}
+
+function degradedSummary(
+  activeFolders: string[],
+  target: Extract<LifecycleTarget, { outcome: "degraded" | "blocked" }>,
+): ResumeSummaryOutput {
+  const detail = unresolvedDetail(target);
+  return {
+    active_sessions: activeFolders,
+    primary_session: null,
+    primary_session_code: null,
+    checkpoint_present: false,
+    checkpoint_status: "missing",
+    unfilled_placeholders: [],
+    // Nothing to do when there is no session at all; with candidates present,
+    // resolving the target IS the pending action.
+    needs_ai_action: activeFolders.length > 0,
+    continuity: "degraded",
+    candidates: detail.candidates,
+    action: detail.action,
+  };
 }
 
 /**

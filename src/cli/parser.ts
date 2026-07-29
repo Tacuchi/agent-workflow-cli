@@ -75,6 +75,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "include-graduated",
   "include-legacy",
   "include-recent-closed",
+  "can-pause",
   "include-docs",
   "from-sources",
   "exported-only",

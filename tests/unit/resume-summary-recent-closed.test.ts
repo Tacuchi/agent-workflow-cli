@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { runResumeSummary } from "../../src/application/checkpoint-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
 const ns = normalizeNamespace("workflow");
@@ -51,13 +50,13 @@ describe("runResumeSummary --include-recent-closed", () => {
     const now = new Date("2026-05-18T22:00:00Z");
     const s1 = buildClosedSession("062", { conclusions: true });
     const fs = buildFs([{ ...s1, mtime: now }]);
-    const result = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths);
+    const result = await runResumeSummary(fs, paths);
     expect(result.recent_closed_with_artifacts).toBeUndefined();
   });
 
   it("returns empty array when flag set but no closed sessions in window", async () => {
     const fs = buildFs([]);
-    const result = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
     });
     expect(result.recent_closed_with_artifacts).toEqual([]);
@@ -67,7 +66,7 @@ describe("runResumeSummary --include-recent-closed", () => {
     const recentMtime = new Date(Date.now() - 1000 * 60 * 60); // 1 hour ago
     const s1 = buildClosedSession("062", { conclusions: true });
     const fs = buildFs([{ ...s1, mtime: recentMtime }]);
-    const result = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
     });
     expect(result.recent_closed_with_artifacts).toHaveLength(1);
@@ -81,7 +80,7 @@ describe("runResumeSummary --include-recent-closed", () => {
     const recentMtime = new Date(Date.now() - 1000);
     const s1 = buildClosedSession("063", { analysisFile: true });
     const fs = buildFs([{ ...s1, mtime: recentMtime }]);
-    const result = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
     });
     expect(result.recent_closed_with_artifacts).toHaveLength(1);
@@ -92,7 +91,7 @@ describe("runResumeSummary --include-recent-closed", () => {
     const recentMtime = new Date(Date.now() - 1000);
     const s1 = buildClosedSession("062", {});
     const fs = buildFs([{ ...s1, mtime: recentMtime }]);
-    const result = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
     });
     expect(result.recent_closed_with_artifacts).toEqual([]);
@@ -102,7 +101,7 @@ describe("runResumeSummary --include-recent-closed", () => {
     const recentMtime = new Date(Date.now() - 1000);
     const s1 = buildClosedSession("062", { conclusions: true, closed: false });
     const fs = buildFs([{ ...s1, mtime: recentMtime }]);
-    const result = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
     });
     expect(result.recent_closed_with_artifacts).toEqual([]);
@@ -112,7 +111,7 @@ describe("runResumeSummary --include-recent-closed", () => {
     const oldMtime = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10); // 10 days ago
     const s = buildClosedSession("062", { conclusions: true });
     const fs = buildFs([{ ...s, mtime: oldMtime }]);
-    const result = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
       recentDays: 7,
     });
@@ -123,12 +122,12 @@ describe("runResumeSummary --include-recent-closed", () => {
     const mtime = new Date(Date.now() - 1000 * 60 * 60 * 24 * 5); // 5 days ago
     const s = buildClosedSession("062", { conclusions: true });
     const fs = buildFs([{ ...s, mtime }]);
-    const r1 = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const r1 = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
       recentDays: 7,
     });
     expect(r1.recent_closed_with_artifacts).toHaveLength(1);
-    const r2 = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const r2 = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
       recentDays: 3,
     });
@@ -145,7 +144,7 @@ describe("runResumeSummary --include-recent-closed", () => {
       { ...s2, mtime: recentMtime },
       { ...s3, mtime: recentMtime },
     ]);
-    const result = await runResumeSummary(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runResumeSummary(fs, paths, {
       includeRecentClosed: true,
     });
     expect(result.recent_closed_with_artifacts?.map((e) => e.code)).toEqual(["062", "055", "049"]);
