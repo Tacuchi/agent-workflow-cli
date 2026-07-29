@@ -8,6 +8,7 @@ import {
   isDsnVisible,
   selfMcpConfig,
 } from "../../../application/self/mcp-config.js";
+import type { McpHost } from "../../../domain/mcp-entry.js";
 import type { CommandResult } from "../../../domain/types.js";
 import type { CliContext } from "../../types.js";
 import { ConfirmBanner } from "../components/confirm-banner.js";
@@ -24,12 +25,17 @@ import { colors, icons } from "../theme.js";
 import { useListDetailKeys } from "../use-list-detail-keys.js";
 import { useOnMount } from "../use-on-mount.js";
 import {
+  INSTALLABLE_MCP_HOSTS,
   buildArgs,
   installActionLabel,
   installDestination,
   installStatusPill,
+  mcpHostLabel,
   suggestDsnVar,
 } from "./mcp-tab-helpers.js";
+
+// Hosts the picker offers, from the registry — never a hardcoded "claude".
+const HOST_CHOICES: readonly McpHost[] = INSTALLABLE_MCP_HOSTS;
 
 type Mode =
   | { kind: "list" }
@@ -45,6 +51,9 @@ type Mode =
       test?: { ok: boolean; msg: string };
     }
   | { kind: "confirm-delete"; name: string }
+  // Install used to go straight to Claude while the panel promised "the host's
+  // config". The host is now chosen, and only file-writing hosts are offered.
+  | { kind: "select-host"; name: string; cursor: number }
   | { kind: "busy"; label: string };
 
 type ActionId = "install" | "test" | "edit" | "remove";
@@ -105,6 +114,23 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       });
     },
   });
+
+  // Host picker keys (↑↓ · ⏎ install · esc back). Its own handler: the shared
+  // list/detail hook is off in this mode.
+  useInput(
+    (_input, key) => {
+      if (mode.kind !== "select-host") return;
+      if (key.upArrow) return setMode({ ...mode, cursor: Math.max(0, mode.cursor - 1) });
+      if (key.downArrow)
+        return setMode({ ...mode, cursor: Math.min(HOST_CHOICES.length - 1, mode.cursor + 1) });
+      if (key.escape) return setMode({ kind: "detail" });
+      if (key.return) {
+        const host = HOST_CHOICES[mode.cursor];
+        if (host) void runInstall(mode.name, host);
+      }
+    },
+    { isActive: isActive && mode.kind === "select-host" },
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -183,14 +209,14 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
     [ctx, onToast, refresh],
   );
 
-  // Install the connection into the host's user-scope config (claude →
-  // ~/.claude.json) via the existing `install-claude` action (runMcpSetup,
-  // scope=global; the button press is the consent the guard asks for).
+  // Install the connection into the CHOSEN host's user-scope config via the
+  // backend's `install-<host>` action (runMcpSetup, scope=global; the button
+  // press is the consent the guard asks for).
   const runInstall = useCallback(
-    async (name: string) => {
-      setMode({ kind: "busy", label: `installing ${name} → ${installDestination("claude")}…` });
+    async (name: string, host: McpHost) => {
+      setMode({ kind: "busy", label: `installing ${name} → ${installDestination(host)}…` });
       try {
-        const result = await selfMcpConfig(buildArgs("install-claude", { name }), ctx);
+        const result = await selfMcpConfig(buildArgs(`install-${host}`, { name }), ctx);
         onToast?.({
           tone: result.ok ? "ok" : "err",
           title: result.ok ? `Installed · ${name}` : `Install failed · ${name}`,
@@ -211,7 +237,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       if (!current) return;
       switch (id) {
         case "install":
-          void runInstall(current.nombre);
+          setMode({ kind: "select-host", name: current.nombre, cursor: 0 });
           return;
         case "test":
           void runTestConnection(current.nombre, current.dsn_var);
@@ -228,7 +254,9 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           return;
       }
     },
-    [current, runTestConnection, runInstall],
+    // `runInstall` is no longer called here: Install opens the host picker and
+    // the picker's handler runs it.
+    [current, runTestConnection],
   );
 
   // Detail panel actions (Install/Test/Edit/Remove). `Install` adapts its label
@@ -444,6 +472,24 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
                   </Text>
                 </Box>
               </Box>
+            </Box>
+          ) : null}
+
+          {mode.kind === "select-host" ? (
+            <Box marginTop={1} flexDirection="column">
+              <SectionHead label={`Install ${mode.name} into…`} count={HOST_CHOICES.length} />
+              {HOST_CHOICES.map((host, i) => (
+                <ListRow
+                  key={host}
+                  icon={icons.diamond}
+                  iconActive={mode.cursor === i}
+                  title={mcpHostLabel(host)}
+                  subtitle={installDestination(host)}
+                  active={mode.cursor === i}
+                  widthHint={rowWidth(stdout?.columns, false)}
+                />
+              ))}
+              <Text color={colors.faint}>[⏎] install here · esc cancel</Text>
             </Box>
           ) : null}
 

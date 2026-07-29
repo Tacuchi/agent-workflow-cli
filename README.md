@@ -65,7 +65,7 @@ A plan at 100% of checkboxes with zero validated phases is work implemented, not
 The published tarball bundles the universal skill set under `skills/w/`. Install it into your host with `--target` (required):
 
 ```bash
-agent-workflow self install --target claude     # or: codex · warp · oz · agents · gemini · opencode · crush
+agent-workflow self install --target claude     # or: codex · warp · oz · gemini · opencode · crush · kimi · agents
 agent-workflow self install --target all --confirm-all
 agent-workflow self detect-hosts                # which hosts are present + already have it
 agent-workflow self install --target claude --dry-run
@@ -77,20 +77,43 @@ By default the CLI clears the target host's plugin cache before installing (opt 
 
 `self install --target <host>` installs **SKILL + user-level slash commands + hooks** in one shot, scaled to what the host supports:
 
-| Host | SKILL | User-level commands | Hooks |
-|---|---|---|---|
-| `claude` | `~/.claude/skills/w/` | `~/.claude/commands/w/<n>.md` → `/w:<n>` | `~/.claude/settings.json` (JSON merge + backup) |
-| `codex` | `~/.codex/skills/w/` | synthesized skills `~/.codex/skills/w-<n>/` → `$w-<n>` (Codex reads no commands dir) | skipped (config.toml not yet wired) |
-| `warp` | `~/.warp/skills/w/` | synthesized skills `~/.warp/skills/w-<n>/` → `/w-<n>` | skipped (no hook system) |
-| `oz` | `~/.agents/skills/w/` | synthesized skills `~/.agents/skills/w-<n>/` | skipped |
-| `agents` | `~/.agents/skills/w/` | skipped (shared dir, not a host) | skipped |
-| `gemini` | `~/.gemini/skills/w/` | synthesized skills `~/.gemini/skills/w-<n>/` (Antigravity `agy`) + `~/.gemini/commands/w/<n>.toml` → `/w:<n>` (legacy Gemini CLI) | skipped |
-| `opencode` | `~/.opencode/skills/w/` | `~/.opencode/command/w/<n>.md` → `/w/<n>` | skipped |
-| `crush` | `~/.config/crush/skills/w/` (XDG — the only global root Crush reads; `~/.crush` holds commands only) | `~/.crush/commands/w/<n>.md` → palette `user:w:<n>` | skipped |
+| Host | Level | SKILL | User-level commands | Hooks |
+|---|---|---|---|---|
+| `claude` | official | `~/.claude/skills/w/` | `~/.claude/commands/w/<n>.md` → `/w:<n>` | `~/.claude/settings.json` (JSON merge + backup) |
+| `codex` | official | `~/.codex/skills/w/` | synthesized skills `~/.codex/skills/w-<n>/` → `$w-<n>` (Codex reads no commands dir) | not armed (its hooks live in `config.toml`, not wired yet) |
+| `warp` | official | `~/.warp/skills/w/` | synthesized skills `~/.warp/skills/w-<n>/` → `/w-<n>` | none (no hook system) |
+| `gemini` | official | `~/.gemini/skills/w/` | synthesized skills `~/.gemini/skills/w-<n>/` (Antigravity `agy`) + `~/.gemini/commands/w/<n>.toml` → `/w:<n>` (legacy Gemini CLI) | not armed (extension-bundled) |
+| `kimi` | official · pre-1.0 | `~/.kimi-code/skills/w/` (also reads `~/.agents/skills`) | synthesized skills `~/.kimi-code/skills/w-<n>/` → `/skill:w-<n>` | `~/.kimi-code/config.toml` → managed `[[hooks]]` block (marked + backup) |
+| `oz` | best-effort · pre-1.0 | `~/.agents/skills/w/` | synthesized skills `~/.agents/skills/w-<n>/` | none |
+| `opencode` | best-effort | `~/.opencode/skills/w/` | `~/.opencode/command/w/<n>.md` → `/w/<n>` | not armed (JS plugins) |
+| `crush` | best-effort · pre-1.0 | `~/.config/crush/skills/w/` (XDG — the only global root Crush reads; `~/.crush` holds commands only) | `~/.crush/commands/w/<n>.md` → palette `user:w:<n>` | not armed (preliminary) |
+| `agents` | *shared destination, not a host* | `~/.agents/skills/w/` | skipped (shared dir) | skipped |
 
 The bundle's internal manuals (`loops/*/LOOP.md`, `roles/*/ROLE.md`, `exports/*/EXPORT.md`, `harness/HARNESS.md`) are deliberately **not** `SKILL.md` files, so hosts that scan skill roots recursively (Codex, OpenCode, Crush) never list them as invocable skills — only the commands and the `w` orientation skill surface. Where a layer is skipped, the SKILL is sufficient — the AI reads it and invokes `agent-workflow <subcommand>` directly.
 
 Opt-out flags: `--skill-only`, `--no-commands`, `--no-hooks`. Override the source with `--from /path/to/skills/w`. Other flags: `--confirm-all` (required with `--target all`), `--keep-cache`, `--force`, `--dry-run`.
+
+**What `--target all` means.** Every **host** — never the shared skills dirs, which are install destinations rather than hosts and are reached explicitly (`--target agents`). `install` and `uninstall` use the same set, so the round trip matches: what `all` installs is what `all` removes. (`oz` installs into `~/.agents/skills`, so that directory is still covered under `all` through its host.)
+
+### Support levels and how long a verification is worth
+
+**official** — Claude Code, Codex, Warp, Gemini/Antigravity, Kimi Code. **best-effort** — Oz, OpenCode, Crush. `agents` is a shared destination, not a host, and never counts as one.
+
+The difference is what gets *checked*, not what gets installed: `npm run smoke:hosts` probes every host's runtime and version, and for the official ones it additionally installs into a throwaway `HOME` and verifies that the artifacts on disk are the ones this table promises — bundle, command surface, hooks — then uninstalls and verifies they are gone. Its result is written to `src/domain/host-verification.ts`, and that file is the **only** source of a "verified" claim anywhere in the CLI: a host no run has covered is shown as `unverified`, never as verified. `npm run smoke:hosts -- --check` runs the same checks without writing the ledger.
+
+Re-verify when a release touches a host. A host marked **pre-1.0** (Kimi Code, Crush, Oz) can change its surface between its own releases faster than we re-check — Kimi Code ships roughly twice a week — so the table states the version a run actually proved and the date it proved it. It is a claim about that version, not a promise about the next one.
+
+Validation platform: **macOS** is where all eight runtimes live and where the suite is expected to pass. **Windows** stays best-effort on the existing launch smokes. **Linux** is documented without a guarantee.
+
+### Retiring a host
+
+Removing a host's key from `InstallTarget` makes TypeScript demand you delete its `TARGET_ROOTS` entry too — and the moment that path is gone, nothing can clean what previous releases installed there. The pattern, modeled on the `crush` root migration:
+
+1. **Keep** the target alive in `InstallTarget` / `TARGET_ROOTS` for at least one release, and drop its `HarnessSpec` from `HARNESSES` — it stops being offered as a host while staying reachable for cleanup.
+2. **Move** its old roots into `LEGACY_SKILL_ROOTS_BY_TARGET` so `install`/`uninstall`/`clean-legacy` sweep them, ownership-verified (those roots can be shared namespaces — never delete by dir name alone).
+3. **Then** remove the key, once telemetry or a major version says nobody can still have it installed.
+
+Skipping step 2 strands files in a directory no code path can name any more.
 
 ## TUI
 

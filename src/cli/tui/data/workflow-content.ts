@@ -1,4 +1,10 @@
 // [Workline] tab data — hardcoded to avoid I/O during render.
+//
+// SCOPE: this describes THE BUNDLE, not any host. Which of these commands a
+// given host exposes (native wrappers vs synthesized `w-<command>` skills) and
+// which hooks it actually arms are per-host facts — they come from the catalog
+// (`HARNESSES`) through `host-states.ts`, and the TUI renders them per row.
+// Never present these totals as universal.
 // Kept in sync with the redesigned model (stages + loops + artifacts):
 //   - skills/w/commands/   (/w: slash commands — 1 per .md file)
 //   - skills/w/README.md   (3 flows: SPEC / PLAN / QUICK)

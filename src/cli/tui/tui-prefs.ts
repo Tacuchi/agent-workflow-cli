@@ -7,6 +7,7 @@
 
 import { dirname, join } from "node:path";
 import type { PathsService } from "../../application/paths-service.js";
+import { HOST_INSTALL_TARGETS } from "../../domain/harnesses.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { TABS_LIST, type TabId } from "./components/tabs-config.js";
 import { ACCENTS, type AccentColor, DEFAULT_ACCENT } from "./theme.js";
@@ -35,6 +36,12 @@ function isTabId(v: unknown): v is TabId {
   return typeof v === "string" && TABS_LIST.some((t) => t.id === v);
 }
 
+// Only real hosts can be disabled. An id that is not in the catalog — a host
+// that was retired, or a typo in a hand-edited prefs file — was silently kept
+// and then silently skewed the coverage denominator; it is dropped on load and
+// the next save persists the cleaned list.
+const KNOWN_HOST_IDS: ReadonlySet<string> = new Set(HOST_INSTALL_TARGETS);
+
 export class TuiPrefsService {
   constructor(
     private readonly fs: FileSystemPort,
@@ -59,7 +66,9 @@ export class TuiPrefsService {
           ? parsed.initialScreen
           : DEFAULT_TUI_PREFS.initialScreen,
         disabledHosts: Array.isArray(parsed.disabledHosts)
-          ? parsed.disabledHosts.filter((h): h is string => typeof h === "string")
+          ? parsed.disabledHosts.filter(
+              (h): h is string => typeof h === "string" && KNOWN_HOST_IDS.has(h),
+            )
           : DEFAULT_TUI_PREFS.disabledHosts,
         ...(typeof parsed.lastOpenApp === "string" ? { lastOpenApp: parsed.lastOpenApp } : {}),
       };

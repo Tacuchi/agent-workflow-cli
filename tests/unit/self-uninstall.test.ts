@@ -12,6 +12,7 @@ import type { InstallTarget } from "../../src/application/self/install-skill.js"
 import { selfUninstall } from "../../src/application/self/uninstall.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { HOST_INSTALL_TARGETS } from "../../src/domain/harnesses.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
@@ -48,16 +49,10 @@ function buildCtx(home: string, fs: FileSystemPort): CliContext {
   };
 }
 
-const ALL_TARGETS: readonly InstallTarget[] = [
-  "claude",
-  "codex",
-  "agents",
-  "warp",
-  "oz",
-  "gemini",
-  "opencode",
-  "crush",
-];
+// Derivado del dominio: la lista a mano se quedó sin `kimi` y con `agents`, y
+// como `oz` y `agents` comparten `.agents/skills`, deduplicar rutas hacía que el
+// test no pudiera observar ninguna de las dos diferencias.
+const ALL_TARGETS: readonly InstallTarget[] = HOST_INSTALL_TARGETS;
 
 function skillDir(home: string, target: InstallTarget): string {
   return join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
@@ -94,21 +89,101 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it("--target=all removes the canonical skill from every one of the 8 hosts", async () => {
+  it("--target=all limpia TODOS los hosts del catálogo, kimi incluido", async () => {
     const ctx = buildCtx(home, fs);
-    // agents and oz share .agents/skills, so seed distinct dirs by path.
+    // oz y agents comparten `.agents/skills`; se siembran por ruta distinta.
     const distinctPaths = new Set(ALL_TARGETS.map((t) => skillDir(home, t)));
     for (const p of distinctPaths) await seedDir(p);
+    // El bundle del host nuevo tiene ruta propia: si `all` no lo alcanzara, este
+    // assert lo vería (antes ni se sembraba).
+    expect(distinctPaths.has(skillDir(home, "kimi"))).toBe(true);
 
     const result = await selfUninstall(buildArgs({}, []), ctx);
 
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.status).toBe("removed");
+      // `all` es hosts: ningún paso lo atribuye al destino compartido.
+      expect(result.data.steps.map((s) => s.target)).not.toContain("agents");
+      expect(result.data.untouched_note).toMatch(/--target agents/);
     }
     for (const p of distinctPaths) {
       expect(await fs.exists(p)).toBe(false);
     }
+  });
+
+  it("`--target all` NO alcanza el destino compartido salvo que se pida explícito", async () => {
+    const ctx = buildCtx(home, fs);
+    // Solo el dir compartido, sin sembrar oz (que comparte esa raíz).
+    await seedDir(skillDir(home, "agents"));
+
+    await selfUninstall(buildArgs({}, []), ctx);
+    // `oz` está en `all` y enraíza en `.agents/skills`, así que el bundle se va
+    // por esa vía; lo que NO ocurre es que se atribuya a `agents`.
+    const explicit = await selfUninstall(buildArgs({ target: "agents" }, []), ctx);
+    expect(explicit.ok).toBe(true);
+    expect(await fs.exists(skillDir(home, "agents"))).toBe(false);
+  });
+
+  // REGRESIÓN (el bug que este cambio arregla): el strip borraba el EVENTO
+  // COMPLETO cuando su nombre coincidía con uno de los nuestros, así que un
+  // usuario con su propio `PreToolUse` lo perdía al desinstalar — justo lo
+  // contrario de lo que el código decía hacer. La propiedad se decide ahora
+  // por ENTRADA.
+  it("--with-hooks preserva los hooks del usuario que comparten evento con los nuestros", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "claude"));
+    const settingsPath = await seedSettings(home, {
+      PreToolUse: [...OUR_HOOK, ...USER_HOOK],
+      SessionStart: [...USER_HOOK],
+    });
+
+    const result = await selfUninstall(buildArgs({ target: "claude" }, ["--with-hooks"]), ctx);
+
+    expect(result.ok).toBe(true);
+    const after = JSON.parse(await fs.readText(settingsPath));
+    // El evento SIGUE existiendo, con la entrada del usuario intacta.
+    expect(after.hooks.PreToolUse).toEqual(USER_HOOK);
+    // Un evento donde solo hay hooks del usuario no se toca en absoluto.
+    expect(after.hooks.SessionStart).toEqual(USER_HOOK);
+  });
+
+  it("--with-hooks no toca una entrada MIXTA: partirla sería adivinar", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "claude"));
+    const mixed = [
+      {
+        hooks: [
+          { type: "command", command: "agent-workflow x" },
+          { type: "command", command: "my-own-thing" },
+        ],
+      },
+    ];
+    const settingsPath = await seedSettings(home, { PreToolUse: mixed });
+
+    await selfUninstall(buildArgs({ target: "claude" }, ["--with-hooks"]), ctx);
+
+    const after = JSON.parse(await fs.readText(settingsPath));
+    expect(after.hooks.PreToolUse).toEqual(mixed);
+  });
+
+  // MUTACIÓN: antes existía una copia a mano de los eventos que instalamos, así
+  // que un evento nuevo en el template quedaba fuera del barrido. Ahora se
+  // recorren TODOS los eventos y la propiedad decide, sin lista que mantener.
+  it("--with-hooks barre un evento que ninguna lista enumeraba", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "claude"));
+    const settingsPath = await seedSettings(home, {
+      UnEventoNuevoDelTemplate: OUR_HOOK,
+      Notification: USER_HOOK,
+    });
+
+    const result = await selfUninstall(buildArgs({ target: "claude" }, ["--with-hooks"]), ctx);
+
+    expect(result.ok).toBe(true);
+    const after = JSON.parse(await fs.readText(settingsPath));
+    expect(after.hooks.UnEventoNuevoDelTemplate).toBeUndefined();
+    expect(after.hooks.Notification).toEqual(USER_HOOK);
   });
 
   it("--with-hooks strips only our events from settings.json, preserving user hooks + a backup", async () => {
@@ -255,7 +330,7 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
   it("sweeps w-* wrappers with ownership proof on EVERY command-skills host (install/uninstall symmetry)", async () => {
     const { COMMAND_SKILLS_HOSTS } = await import("../../src/application/self/install-targets.js");
     // The set is the single source both sides consume; pin its membership.
-    expect([...COMMAND_SKILLS_HOSTS].sort()).toEqual(["codex", "gemini", "oz", "warp"]);
+    expect([...COMMAND_SKILLS_HOSTS].sort()).toEqual(["codex", "gemini", "kimi", "oz", "warp"]);
     const ctx = buildCtx(home, fs);
     for (const target of COMMAND_SKILLS_HOSTS) {
       const root = join(home, ...TARGET_ROOTS[target]);

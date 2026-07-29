@@ -11,9 +11,17 @@ export interface HooksResult {
 export async function parseHooks(pluginRoot: string, fs: FileSystemPort): Promise<HooksResult> {
   const findings: DoctorFinding[] = [];
   const hooksInfo: Record<string, HooksInfoValue> = {};
-  const hookRelPaths = HARNESSES.filter((h) => h.pluginHooksDir !== null).map(
-    (h) => `${h.pluginHooksDir}/hooks.json`,
-  );
+  // De-duplicated: Claude and Codex both ship plugin hooks at `hooks/hooks.json`,
+  // so the un-deduped list parsed the SAME file twice and reported every finding
+  // about it twice. Hosts whose hooks are not a JSON plugin file at all (Kimi
+  // keeps them in config.toml) declare `pluginHooksDir: null` and stay out.
+  const hookRelPaths = [
+    ...new Set(
+      HARNESSES.filter((h) => h.pluginHooksDir !== null).map(
+        (h) => `${h.pluginHooksDir}/hooks.json`,
+      ),
+    ),
+  ];
   for (const relPath of hookRelPaths) {
     const result = await parseHookFile(join(pluginRoot, relPath), relPath, fs);
     hooksInfo[relPath] = result.value;

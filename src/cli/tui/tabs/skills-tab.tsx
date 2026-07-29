@@ -9,6 +9,8 @@ import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import {
+  REPLICA_HOST_KEYS,
+  REPLICA_HOST_LABELS,
   type SkillListItem,
   canonicalSkillsRoot,
   installSkill,
@@ -37,6 +39,10 @@ import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
 import { useListDetailKeys } from "../use-list-detail-keys.js";
 import { useOnMount } from "../use-on-mount.js";
+
+// Derived from the engine's own replica list — the four places that used to
+// spell "Claude, Gemini" by hand went stale the moment a replica host changed.
+const REPLICA_LABELS = REPLICA_HOST_LABELS.join(", ");
 
 export interface SkillsTabProps {
   ctx: CliContext;
@@ -152,7 +158,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
           id: "install",
           action: {
             name: "Install",
-            description: "Register + install (canonical + host replicas: Claude, Gemini).",
+            description: `Register + install (canonical + host replicas: ${REPLICA_LABELS}).`,
           },
         },
       ];
@@ -163,7 +169,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
           id: "install",
           action: {
             name: "Install",
-            description: "Materialize canonical + host replicas (Claude, Gemini).",
+            description: `Materialize canonical + host replicas (${REPLICA_LABELS}).`,
           },
         },
         {
@@ -538,9 +544,16 @@ function detailMeta(item: SkillListItem, home: string): string {
   const source = `${item.source}${item.ref ? ` #${item.ref}` : ""}`;
   if (item.status === "recommended") return `${source}\n${item.description ?? ""}`;
   const canonical = `${canonicalSkillsRoot(home)}/${item.name}`.replace(home, "~");
-  const replicas = `agents ${item.replicas.agents ? "✓" : "·"} · claude ${item.replicas.claude ? "✓" : "·"}${
-    item.mode === "copy" ? " (copy)" : ""
-  } · gemini ${item.replicas.gemini ? "✓" : "·"}`;
+  // `item.mode` describes the FIRST replica host's materialization (symlink vs
+  // copy) — the suffix stays on that one, and the host names come from the
+  // engine's list instead of being spelled here.
+  const replicas = [
+    `agents ${item.replicas.agents ? "✓" : "·"}`,
+    ...REPLICA_HOST_KEYS.map(
+      (key, i) =>
+        `${key} ${item.replicas[key] ? "✓" : "·"}${i === 0 && item.mode === "copy" ? " (copy)" : ""}`,
+    ),
+  ].join(" · ");
   if (item.status === "unmanaged") {
     return `${source === "" ? "unknown source" : source}\n${canonical}\n${replicas}\nInstalled outside the registry (e.g. skills.sh) — not operable from here.`;
   }

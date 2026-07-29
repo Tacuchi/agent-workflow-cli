@@ -41,6 +41,11 @@ export const LEGACY_SCAN_PATHS_BY_TARGET: Record<InstallTarget, readonly (readon
     // Dead root ≤v19.1 installs wrote; still scanned for leftovers.
     [".crush", "skills"],
   ],
+  // Kimi's user tiers (v0.29.2): its own root plus the shared anchor.
+  kimi: [
+    [".kimi-code", "skills"],
+    [".agents", "skills"],
+  ],
 };
 
 export type CleanLegacyTargetChoice = InstallTarget | "all";

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { HARNESSES, type Harness } from "../domain/harnesses.js";
@@ -14,12 +14,25 @@ export interface HarnessOutput {
   supports_plan_subagent: boolean;
   detected_via: string;
   known_harnesses: string[];
+  /**
+   * Set when `harness` is `unknown`. Env markers are the only signal this
+   * function has, and several hosts export none to their subprocesses — so
+   * `unknown` means "no marker in this environment", NEVER "no host here".
+   * Which hosts exist on the machine is `aw self detect-hosts`' question, and it
+   * answers it from binaries and config dirs instead.
+   */
+  note?: string;
 }
 
-export function runHarness(
-  envGet: (k: string) => string | undefined,
-  homedirFn: () => string = homedir,
-): HarnessOutput {
+const UNKNOWN_NOTE =
+  "No env marker matched. Some hosts export none to their subprocesses, so this is not evidence that no host is present — run 'agent-workflow self detect-hosts' for the machine's real host states.";
+
+/**
+ * Which harness are we running INSIDE? Env markers only — that is the single
+ * signal a process has about its own parent. A host that exports none (Kimi
+ * Code) legitimately answers `unknown`; see `note`.
+ */
+export function runHarness(envGet: (k: string) => string | undefined): HarnessOutput {
   const knownHarnesses = [...HARNESSES.map((h) => h.id), "unknown"];
 
   // First-match over HARNESSES registry (oz before warp for overlap handling)
@@ -44,24 +57,20 @@ export function runHarness(
     }
   }
 
-  // Filesystem fallback: detect codex by ~/.codex/ directory presence
-  const codexHome = join(homedirFn(), ".codex");
-  if (existsSync(codexHome) && statSync(codexHome).isDirectory()) {
-    if (existsSync(join(codexHome, "config.toml")) || existsSync(join(codexHome, "sessions"))) {
-      return {
-        harness: "codex",
-        supports_plan_subagent: false,
-        detected_via: "fs:~/.codex/",
-        known_harnesses: knownHarnesses,
-      };
-    }
-  }
-
+  // There used to be a filesystem fallback here: `~/.codex/` present → answer
+  // "codex". It conflated two different facts — "Codex is INSTALLED on this
+  // machine" and "we are RUNNING INSIDE Codex" — and the second is the only one
+  // this function is asked about. The consequence was concrete: `aw mcp setup`
+  // with no `--host`, run from any unrecognized host, resolved to codex and
+  // would have written that host's config.toml, purely because the directory
+  // existed. Which hosts are installed is `aw self detect-hosts`' question, and
+  // it answers it from binaries and config dirs, as separate states.
   return {
     harness: "unknown",
     supports_plan_subagent: false,
     detected_via: "unknown",
     known_harnesses: knownHarnesses,
+    note: UNKNOWN_NOTE,
   };
 }
 

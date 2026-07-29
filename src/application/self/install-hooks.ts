@@ -4,12 +4,14 @@ import { isDeepStrictEqual } from "node:util";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
+import { hooksTemplateToToml, upsertManagedHooksBlock } from "./hooks-toml.js";
 import {
   INSTALL_TARGETS,
   type InstallTarget,
   SKILL_DIR_NAME,
   findUpward,
 } from "./install-skill.js";
+import { HOOKS_MANAGED_TARGETS } from "./install-targets.js";
 
 export interface HookEntry {
   matcher?: string;
@@ -44,8 +46,6 @@ export interface SelfInstallHooksData {
 // host can't silently fall into the invalid bucket (the clean-legacy lesson).
 const HOOK_TARGET_CHOICES: readonly InstallTarget[] = INSTALL_TARGETS;
 
-const SUPPORTED_HOOK_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
-
 export async function selfInstallHooks(
   args: ParsedArgs,
   ctx: CliContext,
@@ -78,7 +78,7 @@ export async function selfInstallHooks(
 
   const target = targetArg as InstallTarget;
 
-  if (!SUPPORTED_HOOK_TARGETS.has(target)) {
+  if (!HOOKS_MANAGED_TARGETS.has(target)) {
     return {
       ok: true,
       data: {
@@ -88,7 +88,7 @@ export async function selfInstallHooks(
         events_installed: [],
         events_already_present: [],
         backup_path: null,
-        warning: `Hooks via merge-into-config are not yet implemented for host '${target}'. Currently supported: claude. Other hosts use file-based or no-hook mechanisms.`,
+        warning: `Workline does not manage hooks on '${target}'. Managed hosts: ${[...HOOKS_MANAGED_TARGETS].join(", ")}. The rest use file-based or no-hook mechanisms.`,
       },
       exitCode: 0,
     };
@@ -143,9 +143,133 @@ export async function selfInstallHooks(
     };
   }
 
-  return installClaudeHooks(ctx, target, template, dryRun);
+  return installHooksFor(target, ctx, template, dryRun);
 }
 
+/**
+ * Per-host hook installers. A host in `HOOKS_MANAGED_TARGETS` MUST have one —
+ * `hookInstallerCoverage()` proves it, so "managed" can never mean "declared
+ * managed and quietly doing nothing".
+ */
+const HOOK_INSTALLERS: Partial<
+  Record<
+    InstallTarget,
+    (
+      ctx: CliContext,
+      target: InstallTarget,
+      template: HooksTemplate,
+      dryRun: boolean,
+    ) => Promise<CommandResult<SelfInstallHooksData>>
+  >
+> = {
+  claude: installClaudeHooks,
+  kimi: installKimiHooks,
+};
+
+/** Managed targets with no installer wired. Must be empty. */
+export function hookInstallerCoverage(): InstallTarget[] {
+  return [...HOOKS_MANAGED_TARGETS].filter((t) => HOOK_INSTALLERS[t] === undefined);
+}
+
+function installHooksFor(
+  target: InstallTarget,
+  ctx: CliContext,
+  template: HooksTemplate,
+  dryRun: boolean,
+): Promise<CommandResult<SelfInstallHooksData>> {
+  const installer = HOOK_INSTALLERS[target];
+  if (installer === undefined) {
+    return Promise.resolve({
+      ok: false,
+      error: {
+        code: "HOOKS_INSTALLER_MISSING",
+        message: `'${target}' is declared as a hooks-managed host but has no installer wired. This is a bug in the CLI, not in your setup.`,
+      },
+      exitCode: 1,
+    });
+  }
+  return installer(ctx, target, template, dryRun);
+}
+
+/**
+ * Kimi Code keeps hooks in `[[hooks]]` tables inside its USER-GLOBAL
+ * `config.toml` — there is no project-level config to write instead (verified
+ * against v0.29.2 plus a live probe). Our entries live inside a marked block so
+ * everything the user wrote around it survives install, reinstall and uninstall
+ * untouched, and the file is backed up before any write.
+ */
+async function installKimiHooks(
+  ctx: CliContext,
+  target: InstallTarget,
+  template: HooksTemplate,
+  dryRun: boolean,
+): Promise<CommandResult<SelfInstallHooksData>> {
+  const configPath = join(ctx.env.homeDir(), ".kimi-code", "config.toml");
+  const existing = (await ctx.fs.exists(configPath)) ? await ctx.fs.readText(configPath) : "";
+
+  const { entries, skipped } = hooksTemplateToToml(template);
+  const eventsInstalled = [...new Set(entries.map((e) => e.event))];
+  const next = upsertManagedHooksBlock(existing, entries).text;
+
+  const warning =
+    skipped.length > 0
+      ? `Not expressible in Kimi Code and therefore skipped: ${skipped
+          .map((s) => `${s.event} (${s.reason})`)
+          .join("; ")}.`
+      : undefined;
+
+  if (next === existing) {
+    return {
+      ok: true,
+      data: {
+        status: "noop",
+        target,
+        config_path: configPath,
+        events_installed: [],
+        events_already_present: eventsInstalled,
+        backup_path: null,
+        ...(warning ? { warning } : {}),
+      },
+      exitCode: 0,
+    };
+  }
+
+  if (dryRun) {
+    return {
+      ok: true,
+      data: {
+        status: "dry-run",
+        target,
+        config_path: configPath,
+        events_installed: eventsInstalled,
+        events_already_present: [],
+        backup_path: null,
+        ...(warning ? { warning } : {}),
+      },
+      exitCode: 0,
+    };
+  }
+
+  await ctx.fs.mkdirp(dirname(configPath));
+  const backup = await tryBackup(configPath, ctx);
+  await ctx.fs.writeText(configPath, next);
+
+  return {
+    ok: true,
+    data: {
+      status: "installed",
+      target,
+      config_path: configPath,
+      events_installed: eventsInstalled,
+      events_already_present: [],
+      backup_path: backup,
+      ...(warning ? { warning } : {}),
+    },
+    exitCode: 0,
+  };
+}
+
+/** Claude Code: JSON merge into `~/.claude/settings.json` → `hooks{}`. */
 async function installClaudeHooks(
   ctx: CliContext,
   target: InstallTarget,

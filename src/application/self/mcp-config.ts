@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
-import { HARNESSES } from "../../domain/harnesses.js";
+import { MCP_FILE_HOSTS, harnessForMcpHost } from "../../domain/harnesses.js";
 import {
   type McpHost,
   type McpInstance,
@@ -29,22 +29,18 @@ import {
   buildWarpPostInstallHint,
 } from "../mcp-warp-postinstall-hint.js";
 
-// Hosts with a file-based MCP config the CLI can write, derived from the registry
-// (all 6: claude/codex/warp/gemini/opencode/crush). Keeping this data-driven means
-// a newly-supported host shows up in the wizard menu, status table, doctor and
-// remove automatically — no host can be silently left on 3.
-const FILE_HOSTS: readonly McpHost[] = HARNESSES.filter((h) => h.mcpHostId !== null).map(
-  (h) => h.mcpHostId as McpHost,
-);
-const HOST_LABEL: Record<McpHost, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  warp: "Warp Terminal",
-  gemini: "Gemini CLI / Antigravity",
-  opencode: "OpenCode",
-  crush: "Crush",
-};
-// Concise column headers for the status table.
+// Hosts with a file-based MCP config the CLI can write — single source in the
+// domain. Keeping this data-driven means a newly-supported host shows up in the
+// wizard menu, status table, doctor and remove automatically.
+const FILE_HOSTS: readonly McpHost[] = MCP_FILE_HOSTS;
+
+/** Long label — read from the catalog, never a second copy of it. */
+function hostLabel(host: McpHost): string {
+  return harnessForMcpHost(host)?.label ?? host;
+}
+
+// Concise column headers for the status table: presentation-only shortenings of
+// the catalog labels, which are too wide for a column.
 const HOST_COLUMN: Record<McpHost, string> = {
   claude: "Claude",
   codex: "Codex",
@@ -52,6 +48,7 @@ const HOST_COLUMN: Record<McpHost, string> = {
   gemini: "Gemini",
   opencode: "OpenCode",
   crush: "Crush",
+  kimi: "Kimi",
 };
 
 type InstallAction = `install-${McpHost}`;
@@ -204,7 +201,7 @@ async function listConnectionsMenu(
     choices: [
       { type: "separator", separator: "── Instalar / Actualizar ──" },
       ...FILE_HOSTS.map((h) => ({
-        name: `▸ ${HOST_LABEL[h]}`,
+        name: `▸ ${hostLabel(h)}`,
         value: `install-${h}` as ConnectionMenuAction,
       })),
       { type: "separator", separator: "── Operar ──" },
@@ -718,10 +715,6 @@ function isAction(value: string | undefined): value is SelfMcpAction {
 
 function hostAction(host: McpHost): InstallAction {
   return `install-${host}`;
-}
-
-function hostLabel(host: McpHost): string {
-  return HOST_LABEL[host];
 }
 
 function refusal(

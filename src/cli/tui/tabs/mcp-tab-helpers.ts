@@ -2,7 +2,11 @@
 // testable without mounting the Ink component. The async command wiring
 // (selfMcpConfig / testMcpConnection) stays in mcp-tab.tsx, thin over these.
 
-import { harnessForMcpHost, resolveGlobalMcpRawPath } from "../../../domain/harnesses.js";
+import {
+  MCP_FILE_HOSTS,
+  harnessForMcpHost,
+  resolveGlobalMcpRawPath,
+} from "../../../domain/harnesses.js";
 import type { McpHost } from "../../../domain/mcp-entry.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { MetaTone } from "../components/list-row.js";
@@ -71,6 +75,14 @@ export function installActionLabel(status: HostInstallStatus): string {
  * harness registry (e.g. claude → `~/.claude.json`) so labels never drift from
  * the file the installer actually writes.
  */
+/** Hosts the install action can target — the same list the CLI validates against. */
+export const INSTALLABLE_MCP_HOSTS: readonly McpHost[] = MCP_FILE_HOSTS;
+
+/** Human label for a host id, from the catalog. */
+export function mcpHostLabel(host: McpHost): string {
+  return harnessForMcpHost(host)?.label ?? host;
+}
+
 export function installDestination(host: McpHost): string {
   const spec = harnessForMcpHost(host);
   const raw = spec ? resolveGlobalMcpRawPath(spec) : null;

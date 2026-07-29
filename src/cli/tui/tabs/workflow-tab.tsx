@@ -29,11 +29,14 @@ export function WorkflowTab({ ctx, isActive, onToast }: WorkflowTabProps) {
     <Box flexDirection="column">
       <PageHead
         title="Workline"
+        // These are the BUNDLE's contents, not a promise about every host: the
+        // command surface and the hooks differ per host, and each host's row
+        // below states what it actually exposes.
         count={{
-          label: `${w.slashCommands.length} slash commands · ${w.hooks.length} hooks`,
+          label: `bundle: ${w.slashCommands.length} commands · ${w.hooks.length} hooks`,
           tone: "accent",
         }}
-        action={<Text color={colors.mute}>stages + loops + artifacts system</Text>}
+        action={<Text color={colors.mute}>per-host surface shown on each row</Text>}
       />
 
       <Box>

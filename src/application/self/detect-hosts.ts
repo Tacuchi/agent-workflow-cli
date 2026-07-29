@@ -1,82 +1,76 @@
-import { dirname, join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
-import { resolveWarpGlobalMcpPath } from "../multiroot/warp.js";
 import {
-  INSTALL_TARGETS,
-  type InstallTarget,
-  SKILL_DIR_NAME,
-  TARGET_ROOTS,
-} from "./install-skill.js";
+  type HostStateReport,
+  type SharedDestinationReport,
+  reportAllHostStates,
+  reportSharedDestinations,
+} from "./host-states.js";
 
-export interface DetectedHost {
-  target: InstallTarget;
-  config_dir: string;
-  config_dir_present: boolean;
-  skill_installed: boolean;
-  skill_path: string;
-}
+export type { HostStateReport, SharedDestinationReport };
 
 export interface SelfDetectHostsData {
-  hosts: DetectedHost[];
+  hosts: HostStateReport[];
+  /** `~/.agents/skills` and friends: install destinations, never hosts. */
+  shared_destinations: SharedDestinationReport[];
+  /** Hosts actually present on this machine (runtime answers, or a CLI-less host has its config). */
   detected_count: number;
+  /** Hosts with the Workline bundle installed. */
   installed_count: number;
+  /** Hosts whose config dir survives with no runtime behind it. */
+  residual_count: number;
   summary: string;
 }
 
-// Config dirs that do NOT follow the ~/.<target> convention. OpenCode and Crush
-// resolve via mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA);
-// Warp is platform-divergent (darwin ~/.warp, linux ~/.config/warp-terminal,
-// win32 %LOCALAPPDATA%/warp/Warp/config) and derives from the registry via
-// resolveWarpGlobalMcpPath — same source as the MCP writer/reader; the rest use
-// ~/.<target>.
-function overrideConfigDir(target: InstallTarget, home: string): string | null {
-  if (target === "opencode") return dirname(opencodeGlobalMcpFile(home));
-  if (target === "crush") return dirname(crushGlobalMcpFile(home));
-  if (target === "warp") {
-    const mcpFile = resolveWarpGlobalMcpPath(process.platform, () => home);
-    return mcpFile ? dirname(mcpFile) : null;
-  }
-  return null;
-}
-
+/**
+ * Reports every host with its four observable states and the evidence for each.
+ *
+ * It answers with the catalog, not with guesses: it no longer counts the shared
+ * `agents` dir as a host, no longer invents a `~/.oz` that no host ever creates,
+ * and no longer depends on env markers — a host that exports none (Kimi Code) is
+ * still detected through its binary and its config dir.
+ */
 export async function selfDetectHosts(
   ctx: CliContext,
 ): Promise<CommandResult<SelfDetectHostsData>> {
-  const home = ctx.env.homeDir();
-  const hosts: DetectedHost[] = [];
+  const [hosts, sharedDestinations] = await Promise.all([
+    reportAllHostStates(ctx),
+    reportSharedDestinations(ctx),
+  ]);
 
-  for (const target of INSTALL_TARGETS) {
-    const skillPath = join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME);
-    const configDir = overrideConfigDir(target, home) ?? join(home, `.${target}`);
-    const [configPresent, skillInstalled] = await Promise.all([
-      ctx.fs.exists(configDir),
-      ctx.fs.exists(skillPath),
-    ]);
-    hosts.push({
-      target,
-      config_dir: configDir,
-      config_dir_present: configPresent,
-      skill_installed: skillInstalled,
-      skill_path: skillPath,
-    });
-  }
-
-  const detectedCount = hosts.filter((h) => h.config_dir_present).length;
-  const installedCount = hosts.filter((h) => h.skill_installed).length;
-  const summary = buildSummary(detectedCount, installedCount);
+  const detectedCount = hosts.filter(
+    (h) => h.status === "ready" || h.status === "installable",
+  ).length;
+  const installedCount = hosts.filter((h) => h.workline.installed).length;
+  const residualCount = hosts.filter((h) => h.status === "residual-config").length;
 
   return {
     ok: true,
-    data: { hosts, detected_count: detectedCount, installed_count: installedCount, summary },
+    data: {
+      hosts,
+      shared_destinations: sharedDestinations,
+      detected_count: detectedCount,
+      installed_count: installedCount,
+      residual_count: residualCount,
+      summary: buildSummary(hosts.length, detectedCount, installedCount, residualCount),
+    },
     exitCode: 0,
   };
 }
 
-function buildSummary(detected: number, installed: number): string {
+function buildSummary(
+  total: number,
+  detected: number,
+  installed: number,
+  residual: number,
+): string {
   if (detected === 0) {
-    return "No host config directories detected. Run any host (Claude Code / Codex / Warp / OZ / Gemini / OpenCode / Crush) once to create them.";
+    const tail =
+      residual > 0
+        ? ` ${residual} config dir(s) left behind with no runtime — see each host's advice.`
+        : "";
+    return `No host runtime detected out of ${total} in the catalog.${tail} Shared skills dirs are listed apart and never count as hosts.`;
   }
-  return `Detected ${detected} host config dir(s); SKILL installed in ${installed}.`;
+  const tail = residual > 0 ? ` ${residual} with residual config only.` : "";
+  return `${detected}/${total} hosts present; Workline installed in ${installed}.${tail} Shared skills dirs are listed apart and never count as hosts.`;
 }

@@ -6,6 +6,7 @@ import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { selfCleanLegacy } from "../../../application/self/clean-legacy.js";
+import { reportHooksArmed } from "../../../application/self/host-states.js";
 import {
   type InstallTarget,
   SKILL_DIR_NAME,
@@ -17,7 +18,7 @@ import { selfUninstall } from "../../../application/self/uninstall.js";
 import type { CommandResult } from "../../../domain/types.js";
 import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
-import { HOSTS, type HostMeta } from "../hosts.js";
+import { HOSTS, SHARED_DESTINATIONS, supportPill } from "../hosts.js";
 import { useLockWhile } from "../input-lock.js";
 import type { ToastBridgeInput } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
@@ -43,8 +44,17 @@ export interface HostAdminSectionProps {
   hooksMetaSuffix?: string;
 }
 
-interface HostState {
-  host: HostMeta;
+/**
+ * One operable row. Hosts and shared destinations share the install/uninstall
+ * machinery — they are both install targets — but they are NEVER mixed in the
+ * counts: a shared skills dir has no runtime and must not inflate "N hosts".
+ */
+interface TargetRow {
+  kind: "host" | "shared";
+  id: InstallTarget;
+  name: string;
+  /** Support level + verified version for a host; what it is, for a shared dir. */
+  pill: string;
   installed: boolean;
   hooks_installed: boolean;
   path: string;
@@ -52,9 +62,8 @@ interface HostState {
 
 type SkillAction = "install-full" | "uninstall-full" | "clean-cache" | "clean-legacy";
 
-type Mode = { kind: "list" } | { kind: "detail" } | { kind: "confirm-uninstall"; host: HostMeta };
+type Mode = { kind: "list" } | { kind: "detail" } | { kind: "confirm-uninstall"; row: TargetRow };
 
-const HOOKS_SUPPORTED_TARGETS: ReadonlySet<string> = new Set(["claude"]);
 // Derived from the backend's own target map so the section can't drift from what
 // `self install/uninstall-skill` actually supports (clean-legacy v14.5.1 lesson).
 const BACKED_INSTALL_TARGETS: ReadonlySet<string> = new Set(Object.keys(TARGET_ROOTS));
@@ -66,7 +75,7 @@ export function HostAdminSection({
   onSummary,
   hooksMetaSuffix,
 }: HostAdminSectionProps) {
-  const [skills, setSkills] = useState<HostState[]>([]);
+  const [rows, setRows] = useState<TargetRow[]>([]);
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
@@ -78,34 +87,37 @@ export function HostAdminSection({
 
   const refresh = useCallback(async () => {
     const home = ctx.env.homeDir();
-    const settingsPath = `${home}/.claude/settings.json`;
-    let hooksInstalled = false;
-    if (await ctx.fs.exists(settingsPath)) {
-      try {
-        const parsed = JSON.parse(await ctx.fs.readText(settingsPath));
-        hooksInstalled =
-          typeof parsed === "object" &&
-          parsed !== null &&
-          "hooks" in parsed &&
-          typeof (parsed as { hooks?: unknown }).hooks === "object" &&
-          Object.keys((parsed as { hooks: object }).hooks).length > 0;
-      } catch {
-        hooksInstalled = false;
-      }
-    }
+    // Hooks are probed PER HOST from the single managed-hosts source, instead of
+    // reading Claude's settings.json and calling the answer global.
+    const hooks = await reportHooksArmed(ctx).catch(() => []);
+    const armedByTarget = new Map(hooks.map((h) => [h.target, h.armed]));
 
-    const next: HostState[] = [];
+    const next: TargetRow[] = [];
     for (const host of HOSTS) {
-      const path = pathForHost(host, home);
-      const installed = path ? await ctx.fs.exists(path) : false;
+      const path = pathForTarget(host.id, home);
       next.push({
-        host,
-        installed,
-        hooks_installed: host.id === "claude" ? hooksInstalled : false,
-        path: installed ? friendlyPath(host) : "not installed",
+        kind: "host",
+        id: host.id,
+        name: host.name,
+        pill: supportPill(host),
+        installed: path ? await ctx.fs.exists(path) : false,
+        hooks_installed: armedByTarget.get(host.id) === true,
+        path: friendlyPath(host.id),
       });
     }
-    setSkills(next);
+    for (const dest of SHARED_DESTINATIONS) {
+      const path = pathForTarget(dest.id, home);
+      next.push({
+        kind: "shared",
+        id: dest.id,
+        name: dest.name,
+        pill: `shared dir · read by ${dest.readBy.length} hosts`,
+        installed: path ? await ctx.fs.exists(path) : false,
+        hooks_installed: false,
+        path: friendlyPath(dest.id),
+      });
+    }
+    setRows(next);
     setCursor((c) => Math.min(Math.max(0, c), Math.max(0, next.length - 1)));
   }, [ctx]);
 
@@ -115,16 +127,19 @@ export function HostAdminSection({
     void refresh();
   }, [refresh]);
 
-  const installedCount = skills.filter((s) => s.installed).length;
-  const totalCount = skills.length;
+  // Counts are HOSTS ONLY — a shared skills dir is a destination, never a host.
+  const hostRows = rows.filter((r) => r.kind === "host");
+  const sharedRows = rows.filter((r) => r.kind === "shared");
+  const installedCount = hostRows.filter((s) => s.installed).length;
+  const totalCount = hostRows.length;
 
   useEffect(() => {
     onSummary?.({ installed: installedCount, total: totalCount });
   }, [onSummary, installedCount, totalCount]);
 
-  const focused: HostState | null = skills[cursor] ?? null;
+  const focused: TargetRow | null = rows[cursor] ?? null;
   const isInstalled = focused?.installed === true;
-  const isBackedFocused = focused ? BACKED_INSTALL_TARGETS.has(focused.host.id) : false;
+  const isBackedFocused = focused ? BACKED_INSTALL_TARGETS.has(focused.id) : false;
 
   const detailActions = useMemo<DetailAction[]>(() => {
     if (!focused) return [];
@@ -146,26 +161,26 @@ export function HostAdminSection({
   }, [focused, isInstalled]);
 
   const runComposite = useCallback(
-    async (kind: "install" | "uninstall", host: HostMeta) => {
-      if (!BACKED_INSTALL_TARGETS.has(host.id)) {
+    async (kind: "install" | "uninstall", row: TargetRow) => {
+      if (!BACKED_INSTALL_TARGETS.has(row.id)) {
         onToast?.({
           tone: "info",
-          title: `Host '${host.name}' not supported yet`,
+          title: `Target '${row.name}' not supported yet`,
           body: "Install/uninstall backend without path mapping.",
         });
         return;
       }
-      const target = host.id as InstallTarget;
+      const target = row.id;
       const steps: SkillAction[] =
         kind === "install"
           ? ["clean-legacy", "clean-cache", "install-full"]
           : ["uninstall-full", "clean-cache"];
       const startLabel =
-        kind === "install" ? `installing on ${host.name}…` : `uninstalling from ${host.name}…`;
+        kind === "install" ? `installing on ${row.name}…` : `uninstalling from ${row.name}…`;
       setBusy(startLabel);
       try {
         for (const step of steps) {
-          setBusy(ACTION_DEF[step].busy(host.name));
+          setBusy(ACTION_DEF[step].busy(row.name));
           const result = await ACTION_DEF[step].run(buildArgsFor(step, target), ctx);
           if (!result.ok) {
             const failMsg = result.error?.message;
@@ -181,8 +196,8 @@ export function HostAdminSection({
           }
         }
         const finalAction: SkillAction = kind === "install" ? "install-full" : "uninstall-full";
-        onToast?.({ tone: "ok", title: ACTION_DEF[finalAction].ok(host.name) });
-        void ctx.logger?.info(formatTuiEvent(`skill ${kind} ${host.name}`, "ok"));
+        onToast?.({ tone: "ok", title: ACTION_DEF[finalAction].ok(row.name) });
+        void ctx.logger?.info(formatTuiEvent(`skill ${kind} ${row.name}`, "ok"));
         await refresh();
       } catch (err) {
         onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
@@ -198,7 +213,7 @@ export function HostAdminSection({
     (input, key) => {
       if (!isActive || busy || mode.kind !== "list") return;
       if ((input === "i" || input === "I") && installedCount === 0) {
-        const claude = HOSTS.find((h) => h.id === "claude");
+        const claude = hostRows.find((r) => r.id === "claude");
         if (claude) void runComposite("install", claude);
         return;
       }
@@ -207,14 +222,14 @@ export function HostAdminSection({
         return;
       }
       if (key.downArrow) {
-        setCursor((c) => (skills.length === 0 ? 0 : Math.min(skills.length - 1, c + 1)));
+        setCursor((c) => (rows.length === 0 ? 0 : Math.min(rows.length - 1, c + 1)));
         return;
       }
       if (key.return && focused) {
-        if (!BACKED_INSTALL_TARGETS.has(focused.host.id)) {
+        if (!BACKED_INSTALL_TARGETS.has(focused.id)) {
           onToast?.({
             tone: "info",
-            title: `Host '${focused.host.name}'`,
+            title: `Target '${focused.name}'`,
             body: "pending — backend without path mapping yet",
           });
           return;
@@ -246,9 +261,9 @@ export function HostAdminSection({
         const action = detailActions[actionCursor];
         if (!action) return;
         if (action.danger) {
-          setMode({ kind: "confirm-uninstall", host: focused.host });
+          setMode({ kind: "confirm-uninstall", row: focused });
         } else {
-          void runComposite("install", focused.host);
+          void runComposite("install", focused);
           setMode({ kind: "list" });
         }
       }
@@ -261,7 +276,7 @@ export function HostAdminSection({
     (input, key) => {
       if (!isActive || mode.kind !== "confirm-uninstall") return;
       if (input === "y" || input === "Y") {
-        void runComposite("uninstall", mode.host);
+        void runComposite("uninstall", mode.row);
         setMode({ kind: "list" });
       } else if (key.escape || input === "n" || input === "N") {
         setMode({ kind: "detail" });
@@ -283,18 +298,17 @@ export function HostAdminSection({
 
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
-          {skills.map((s, i) => (
+          {hostRows.map((s, i) => (
             <ListRow
-              key={s.host.id}
+              key={s.id}
               icon={icons.diamond}
               iconActive={s.installed}
-              title={s.host.name}
-              subtitle={friendlyPath(s.host)}
-              meta={
-                HOOKS_SUPPORTED_TARGETS.has(s.host.id) && s.hooks_installed
-                  ? [{ label: "hooks armed", tone: "ok" }]
-                  : []
-              }
+              title={s.name}
+              subtitle={s.path}
+              meta={[
+                { label: s.pill, tone: "dim" },
+                ...(s.hooks_installed ? ([{ label: "hooks armed", tone: "ok" }] as const) : []),
+              ]}
               state={{
                 label: s.installed ? "installed" : "backed",
                 tone: s.installed ? "ok" : "dim",
@@ -304,14 +318,41 @@ export function HostAdminSection({
               widthHint={rowWidth(stdout?.columns, detailVisible)}
             />
           ))}
+
+          {sharedRows.length > 0 ? (
+            <>
+              <SectionHead
+                label="Shared destinations"
+                count={sharedRows.length}
+                rightAction="not hosts — never counted as such"
+              />
+              {sharedRows.map((s, i) => (
+                <ListRow
+                  key={s.id}
+                  icon={icons.diamond}
+                  iconActive={s.installed}
+                  title={s.name}
+                  subtitle={s.path}
+                  meta={[{ label: s.pill, tone: "dim" }]}
+                  state={{
+                    label: s.installed ? "installed" : "backed",
+                    tone: s.installed ? "ok" : "dim",
+                  }}
+                  chevron
+                  active={cursor === hostRows.length + i}
+                  widthHint={rowWidth(stdout?.columns, detailVisible)}
+                />
+              ))}
+            </>
+          ) : null}
         </Box>
 
         {focused && isBackedFocused && detailVisible ? (
           <DetailPanel
             bordered
             header={{
-              name: focused.host.name,
-              meta: `${focused.path}${
+              name: focused.name,
+              meta: `${focused.path}\n${focused.pill}${
                 focused.hooks_installed && hooksMetaSuffix ? `\n${hooksMetaSuffix}` : ""
               }`,
             }}
@@ -324,8 +365,8 @@ export function HostAdminSection({
             banner={
               mode.kind === "confirm-uninstall" ? (
                 <ConfirmBanner
-                  title={`× Uninstall ${mode.host.name}?`}
-                  body={`Removes SKILL + commands + hooks from ${friendlyPath(mode.host)}. Reversible with Reinstall.`}
+                  title={`× Uninstall ${mode.row.name}?`}
+                  body={`Removes SKILL + commands + hooks from ${mode.row.path}. Reversible with Reinstall.`}
                 />
               ) : null
             }
@@ -350,15 +391,15 @@ export function HostAdminSection({
   );
 }
 
-function pathForHost(host: HostMeta, home: string): string | null {
-  if (!BACKED_INSTALL_TARGETS.has(host.id)) return null;
-  const root = TARGET_ROOTS[host.id as InstallTarget];
+function pathForTarget(target: InstallTarget, home: string): string | null {
+  if (!BACKED_INSTALL_TARGETS.has(target)) return null;
+  const root = TARGET_ROOTS[target];
   if (!root) return null;
   return `${home}/${root.join("/")}/${SKILL_DIR_NAME}`;
 }
 
-function friendlyPath(host: HostMeta): string {
-  const root = TARGET_ROOTS[host.id as InstallTarget];
+function friendlyPath(target: InstallTarget): string {
+  const root = TARGET_ROOTS[target];
   if (!root) return "(not wired yet)";
   return `~/${root.join("/")}/${SKILL_DIR_NAME}/`;
 }

@@ -24,6 +24,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { CliContext } from "../../cli/types.js";
+import { harnessByInstallTarget } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import {
   gitClone,
@@ -148,6 +149,18 @@ const REPLICA_HOSTS: readonly ReplicaHost[] = [
   { key: "claude", root: claudeReplicaRoot, preferSymlink: true },
   { key: "gemini", root: geminiReplicaRoot, preferSymlink: false },
 ];
+
+/**
+ * Labels of the hosts that get a replica, for surfaces that describe the
+ * action. The TUI used to spell "Claude, Gemini" into four separate strings, so
+ * adding a replica host meant remembering all four.
+ */
+export const REPLICA_HOST_LABELS: readonly string[] = REPLICA_HOSTS.map(
+  (h) => harnessByInstallTarget(h.key)?.label ?? h.key,
+);
+
+/** Replica host keys in display order — surfaces enumerate from here, not by hand. */
+export const REPLICA_HOST_KEYS: readonly ReplicaHost["key"][] = REPLICA_HOSTS.map((h) => h.key);
 
 /**
  * Normalizes the user's source: git URL (with `#ref`), `owner/repo` shorthand

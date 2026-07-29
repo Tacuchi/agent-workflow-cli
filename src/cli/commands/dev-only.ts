@@ -4,15 +4,19 @@ import {
   runNextNumber,
   runProfiles,
 } from "../../application/dev-only-services.js";
+import { HARNESSES } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
+// Derived from the catalog: the describe used to name two hosts out of seven.
+const HARNESS_IDS = HARNESSES.map((h) => h.id).join(" | ");
+
 export const harnessCommand: QtcCommand = {
   name: "harness",
-  describe: "Detect host harness (claude-code | codex | unknown).",
+  describe: `Identify the host harness from its env markers (${HARNESS_IDS} | unknown). 'unknown' is a legitimate answer — some hosts export no marker to their subprocesses; use 'self detect-hosts' for what is actually installed on the machine.`,
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const data = runHarness((k) => ctx.env.get(k));
     return { ok: true, data, exitCode: 0 };

@@ -12,7 +12,7 @@ import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
 import { resolveHosts } from "../../src/cli/commands/mcp.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import { HARNESSES } from "../../src/domain/harnesses.js";
+import { HARNESSES, MCP_FILE_HOSTS } from "../../src/domain/harnesses.js";
 import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
 const HOME = "/home/u";
@@ -139,12 +139,36 @@ describe("resolveHosts — host anfitrión data-driven desde el registro", () =>
     }
   });
 
-  it("harness sin mcpHostId (oz) cae al fan-out completo", () => {
-    // runHarness has a filesystem fallback (detects the machine's real ~/.codex),
-    // so the deterministic fan-out case is a harness detected WITHOUT its own
-    // MCP config file: oz.
+  // INVERTIDO A PROPÓSITO. Antes, un harness sin archivo de configuración MCP
+  // (oz) hacía fan-out a TODOS los hosts: escribía en configuraciones que el
+  // usuario nunca eligió por no poder decidir en cuál estaba. Ahora pide el
+  // destino.
+  it("harness sin mcpHostId (oz) sin --host: pide el host en vez de escribir en todos", () => {
     const result = resolveHosts(argsNoHost(), ctxWithEnv({ OZ_RUN_ID: "1" }));
+    if ("value" in result) throw new Error("expected a refusal, got a host list");
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("HOST_REQUIRED");
+    expect(result.error?.message).toMatch(/--host/);
+    expect(result.error?.message).toMatch(/detect-hosts/);
+  });
+
+  it("harness sin marcadores de entorno (kimi) sin --host: misma negativa instructiva", () => {
+    const result = resolveHosts(argsNoHost(), ctxWithEnv({}));
+    if ("value" in result) throw new Error("expected a refusal, got a host list");
+    expect(result.error?.code).toBe("HOST_REQUIRED");
+    expect(result.error?.message).toMatch(/no exporta marcadores/);
+  });
+
+  it("--host all sigue siendo la forma EXPLÍCITA de abarcar todos los hosts", () => {
+    const args: ParsedArgs = {
+      rest: [],
+      plugin: {},
+      flags: new Set(),
+      values: new Map([["host", "all"]]),
+      valuesMulti: new Map(),
+    };
+    const result = resolveHosts(args, ctxWithEnv({}));
     if (!("value" in result)) throw new Error("expected value");
-    expect(result.value.length).toBeGreaterThanOrEqual(6);
+    expect(result.value.length).toBe(MCP_FILE_HOSTS.length);
   });
 });

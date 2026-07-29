@@ -18,7 +18,8 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "smoke:hosts": "npm run build && node scripts/smoke-hosts.mjs"
   },
   "keywords": [
     "cli",

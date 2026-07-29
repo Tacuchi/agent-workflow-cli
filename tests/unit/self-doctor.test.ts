@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { selfDoctor } from "../../src/application/self/doctor-self.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { HOST_INSTALL_TARGETS } from "../../src/domain/harnesses.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -46,27 +47,29 @@ describe("selfDoctor", () => {
     }
   });
 
-  it("reports all 6 file-hosting targets when all have it (claude/codex/warp/gemini/opencode/crush)", async () => {
+  // El doctor ya NO filtra por `mcpHostId !== null`: ese filtro dejaba fuera a
+  // oz — el único host que toma MCP por flag de arranque — y una instalación en
+  // oz quedaba invisible para el doctor y, a través de él, para toda la TUI.
+  it("reporta TODOS los hosts del catálogo (oz incluido), no solo los que escriben MCP", async () => {
     const fs = new MemFs({ lenient: true })
       .dir("/home/u/.claude/skills/w")
       .dir("/home/u/.codex/skills/w")
       .dir("/home/u/.warp/skills/w")
+      .dir("/home/u/.agents/skills/w")
       .dir("/home/u/.gemini/skills/w")
       .dir("/home/u/.opencode/skills/w")
-      .dir("/home/u/.config/crush/skills/w");
+      .dir("/home/u/.config/crush/skills/w")
+      .dir("/home/u/.kimi-code/skills/w");
     const result = await selfDoctor(ctx(fs));
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.skill.installed).toBe(true);
       expect(result.data.skill.targets.every((t) => t.installed)).toBe(true);
       expect(result.data.skill.targets.map((t) => t.target)).toEqual([
-        "claude",
-        "codex",
-        "warp",
-        "gemini",
-        "opencode",
-        "crush",
+        ...HOST_INSTALL_TARGETS,
+        "agents",
       ]);
+      expect(result.data.skill.targets.map((t) => t.target)).toContain("oz");
     }
   });
 
@@ -130,7 +133,7 @@ describe("selfDoctor", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       const targets = result.data.skill.targets.map((t) => t.target);
-      expect(targets).toEqual(["claude", "codex", "warp", "gemini", "opencode", "crush"]);
+      expect(targets).toEqual([...HOST_INSTALL_TARGETS]);
       expect(targets).not.toContain("agents");
     }
   });

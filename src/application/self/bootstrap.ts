@@ -1,5 +1,6 @@
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
+import { HARNESSES, type HarnessId, type InstallTarget } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type SelfDoctorReport, selfDoctor } from "./doctor-self.js";
 import {
@@ -17,7 +18,9 @@ export interface BootstrapStep {
 }
 
 export interface BootstrapNextStep {
-  harness: "claude-code" | "codex";
+  harness: HarnessId;
+  target: InstallTarget;
+  label: string;
   detected: boolean;
   install_command: string;
   description: string;
@@ -115,33 +118,48 @@ function buildInstallArgs(dryRun: boolean): ParsedArgs {
   };
 }
 
+// Per-host wording for the plugin-marketplace channel. The SET of hosts is
+// derived from the catalog (`pluginManifest !== null`), so a new plugin-capable
+// host shows up here on its own; only the phrasing is authored, and a host
+// without one still gets an honest generic line instead of being dropped.
+const PLUGIN_INSTALL_HINTS: Partial<Record<HarnessId, { command: string; description: string }>> = {
+  "claude-code": {
+    command: "/plugin marketplace add <marketplace-url>; /plugin install <plugin-name>",
+    description:
+      "En Claude Code: agregá el marketplace si aún no está, después instalá el plugin requerido.",
+  },
+  codex: {
+    command: "codex plugin install <marketplace-url>#<plugin-name>",
+    description:
+      "En Codex: instalá el plugin desde el marketplace y reiniciá la app para refrescar el cache.",
+  },
+};
+
 function buildNextSteps(dests: SelfInstallTargetResult[]): BootstrapNextStep[] {
-  return [
-    {
-      harness: "claude-code",
-      detected: dests.some((d) => d.target === "claude"),
-      install_command: "/plugin marketplace add <marketplace-url>; /plugin install <plugin-name>",
+  return HARNESSES.filter((h) => h.pluginManifest !== null).map((h) => {
+    const hint = PLUGIN_INSTALL_HINTS[h.id];
+    return {
+      harness: h.id,
+      target: h.installTarget,
+      label: h.label,
+      detected: dests.some((d) => d.target === h.installTarget),
+      install_command: hint?.command ?? `(consultá la documentación de ${h.label})`,
       description:
-        "En Claude Code: agregá el marketplace si aún no está, después instalá el plugin requerido.",
-    },
-    {
-      harness: "codex",
-      detected: dests.some((d) => d.target === "codex"),
-      install_command: "codex plugin install <marketplace-url>#<plugin-name>",
-      description:
-        "En Codex: instalá el plugin desde el marketplace y reiniciá la app para refrescar el cache.",
-    },
-  ];
+        hint?.description ??
+        `${h.label} soporta plugins (${h.pluginManifest}); instalá el plugin desde su marketplace.`,
+    };
+  });
 }
 
 function composeSummary(steps: BootstrapStep[], nextSteps: BootstrapNextStep[]): string {
   const ok = steps.filter((s) => s.status === "ok").length;
   const skipped = steps.filter((s) => s.status === "skipped").length;
-  const detected = nextSteps.filter((n) => n.detected).map((n) => n.harness);
+  const detected = nextSteps.filter((n) => n.detected).map((n) => n.label);
+  const candidates = nextSteps.map((n) => n.label).join(" o ");
   const detectedFragment =
     detected.length > 0
       ? `Harnesses detectados: ${detected.join(", ")}.`
-      : "Sin harnesses detectados — instalá Claude Code o Codex y volvé a correr.";
+      : `Sin harnesses con plugin detectados — instalá ${candidates} y volvé a correr.`;
   return `Bootstrap completo: ${ok} pasos OK, ${skipped} saltados. ${detectedFragment} Ver next_steps[] para los comandos de instalación del plugin.`;
 }
 

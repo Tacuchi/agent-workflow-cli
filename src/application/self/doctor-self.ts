@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
-import { HARNESSES } from "../../domain/harnesses.js";
+import { HOST_INSTALL_TARGETS } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readPackageVersion } from "../../runtime/version.js";
 import {
@@ -58,9 +58,12 @@ export interface SelfDoctorReport {
   };
 }
 
-const FS_TARGETS: readonly InstallTarget[] = HARNESSES.filter((h) => h.mcpHostId !== null).map(
-  (h) => h.installTarget,
-);
+// Every host in the catalog, shared destinations apart (`agents` gets its own
+// report below, with its lock file). It used to filter on `mcpHostId !== null`,
+// which silently dropped Oz — the one host that takes MCP through a launch flag
+// instead of a config file — so an Oz install was invisible to the doctor and,
+// through it, to the whole TUI.
+const FS_TARGETS: readonly InstallTarget[] = HOST_INSTALL_TARGETS;
 
 export async function selfDoctor(ctx: CliContext): Promise<CommandResult<SelfDoctorReport>> {
   const home = ctx.env.homeDir();

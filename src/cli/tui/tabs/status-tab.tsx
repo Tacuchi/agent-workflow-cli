@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import { useCallback, useState } from "react";
 import { type SelfDoctorReport, selfDoctor } from "../../../application/self/doctor-self.js";
+import { type HooksArmedReport, reportHooksArmed } from "../../../application/self/host-states.js";
 import type { SelfMcpConnectionView } from "../../../application/self/mcp-config.js";
 import { selfMcpConfig } from "../../../application/self/mcp-config.js";
 import type { CliContext } from "../../types.js";
@@ -34,7 +35,8 @@ export interface StatusTabProps {
 interface StatusData {
   doctor: SelfDoctorReport | null;
   mcp: SelfMcpConnectionView[];
-  hooksArmed: boolean;
+  /** One row per host whose hooks Workline manages — never a global boolean. */
+  hooks: HooksArmedReport[];
   loading: boolean;
 }
 
@@ -55,7 +57,7 @@ export function StatusTab({
   const [data, setData] = useState<StatusData>({
     doctor: null,
     mcp: [],
-    hooksArmed: false,
+    hooks: [],
     loading: true,
   });
   const [tileCursor, setTileCursor] = useState<TileId>("cli");
@@ -89,11 +91,11 @@ export function StatusTab({
       const doc = await selfDoctor(ctx).catch(() => null);
       const mcpRes = await selfMcpConfig(buildArgs("list"), ctx).catch(() => null);
       const mcp: SelfMcpConnectionView[] = mcpRes?.ok ? (mcpRes.data?.connections ?? []) : [];
-      const hooksArmed = await detectHooksArmed(ctx);
+      const hooks = await reportHooksArmed(ctx).catch(() => []);
       setData({
         doctor: doc?.ok ? (doc.data ?? null) : null,
         mcp,
-        hooksArmed,
+        hooks,
         loading: false,
       });
     })();
@@ -145,6 +147,14 @@ export function StatusTab({
   const supportedHosts = activeHosts.length;
   const pct = supportedHosts > 0 ? Math.round((installedHosts / supportedHosts) * 100) : 0;
 
+  // Hooks are not universal and the tile no longer pretends they are: it names
+  // the hosts whose hooks Workline manages, and how many of them are armed.
+  const hooksArmedCount = data.hooks.filter((h) => h.armed).length;
+  const hooksSub =
+    data.hooks.length === 0
+      ? "no host manages hooks"
+      : `${hooksArmedCount}/${data.hooks.length} · ${data.hooks.map((h) => h.target).join(", ")}`;
+
   return (
     <Box flexDirection="column">
       <PageHead
@@ -173,9 +183,9 @@ export function StatusTab({
         />
         <StatTile
           label="hooks"
-          value={data.hooksArmed ? "armed" : "off"}
-          sub="claude only"
-          tone={data.hooksArmed ? "ok" : "dim"}
+          value={hooksArmedCount > 0 ? "armed" : "off"}
+          sub={hooksSub}
+          tone={hooksArmedCount > 0 ? "ok" : "dim"}
           active={tileCursor === "hooks"}
         />
         <StatTile
@@ -238,18 +248,6 @@ function HostChip({ name, installed }: { name: string; installed: boolean }) {
       <Text color={installed ? colors.text : colors.dim}>{name}</Text>
     </Box>
   );
-}
-
-async function detectHooksArmed(ctx: CliContext): Promise<boolean> {
-  const settingsPath = `${ctx.env.homeDir()}/.claude/settings.json`;
-  if (!(await ctx.fs.exists(settingsPath))) return false;
-  try {
-    const raw = await ctx.fs.readText(settingsPath);
-    const parsed = JSON.parse(raw) as { hooks?: Record<string, unknown> };
-    return Boolean(parsed.hooks && Object.keys(parsed.hooks).length > 0);
-  } catch {
-    return false;
-  }
 }
 
 function ProgressLine({ ratio }: { ratio: number }) {

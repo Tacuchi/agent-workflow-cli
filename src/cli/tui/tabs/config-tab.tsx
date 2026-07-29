@@ -12,7 +12,7 @@ import { InputPrompt } from "../components/input-prompt.js";
 import { PageHead } from "../components/page-head.js";
 import { SectionHead } from "../components/section-head.js";
 import { TABS_LIST, type TabId } from "../components/tabs-config.js";
-import { HOSTS } from "../hosts.js";
+import { HOSTS, supportPill } from "../hosts.js";
 import { useInputLock } from "../input-lock.js";
 import { ACCENTS, ACCENT_ORDER, type AccentColor, colors, icons } from "../theme.js";
 import { DEFAULT_TUI_PREFS, type TuiPrefs } from "../tui-prefs.js";
@@ -243,6 +243,9 @@ export function ConfigTab({
         <Text color={colors.mute}>{profilePath}</Text>
       </FocusRow>
 
+      {/* Hosts only — shared skills dirs are install destinations, not targets
+          you enable or disable, and they never entered this list. */}
+      <SectionHead label="HOSTS" hint="off = excluded from targeting and coverage" marginTop={1} />
       <Box flexDirection="column">
         {HOSTS.map((h) => {
           const st = hostState(!prefs.disabledHosts.includes(h.id));
@@ -252,10 +255,14 @@ export function ConfigTab({
               focused={isFocused({ kind: "host", id: h.id })}
               cols={cols}
               label={`${h.glyph} ${h.name}`}
-              valueWidth={st.width}
+              valueWidth={st.width + supportPill(h).length + 2}
             >
               <Text color={st.color}>
                 {icons.pending} {st.label}
+              </Text>
+              <Text color={colors.faint}>
+                {"  "}
+                {supportPill(h)}
               </Text>
             </FocusRow>
           );

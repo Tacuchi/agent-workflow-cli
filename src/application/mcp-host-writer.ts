@@ -104,21 +104,38 @@ export class McpWriterError extends Error {
   }
 }
 
+/**
+ * Both dispatchers are EXHAUSTIVE switches on purpose.
+ *
+ * They used to be if-chains ending in a bare `return …crush…`, so a host added
+ * to `McpHost` without a branch here compiled cleanly and silently wrote its
+ * entry into `crush.json` — the wrong file, no error, no warning. The
+ * `assertNeverHost` default turns that into a compile error instead.
+ */
 export function writeMcpEntry(
   host: McpHost,
   entry: McpEntry,
   scope: ScopeInput,
   opts: McpWriteOpts = {},
 ): McpWriteResult {
-  if (host === "claude") return writeClaudeMcpEntry(entry, scope, opts);
-  if (host === "warp")
-    return writeJsonMcpEntry("warp", warpMcpFile(scope), "mcpServers", entry, opts);
-  if (host === "codex") return writeCodexMcpEntry(entry, scope, opts);
-  if (host === "gemini")
-    return writeJsonMcpEntry("gemini", geminiMcpFile(scope), "mcpServers", entry, opts);
-  if (host === "opencode")
-    return writeJsonMcpEntry("opencode", opencodeMcpFile(scope), "mcp", entry, opts);
-  return writeJsonMcpEntry("crush", crushMcpFile(scope), "mcp", entry, opts);
+  switch (host) {
+    case "claude":
+      return writeClaudeMcpEntry(entry, scope, opts);
+    case "codex":
+      return writeCodexMcpEntry(entry, scope, opts);
+    case "warp":
+      return writeJsonMcpEntry("warp", warpMcpFile(scope), "mcpServers", entry, opts);
+    case "gemini":
+      return writeJsonMcpEntry("gemini", geminiMcpFile(scope), "mcpServers", entry, opts);
+    case "kimi":
+      return writeJsonMcpEntry("kimi", kimiMcpFile(scope), "mcpServers", entry, opts);
+    case "opencode":
+      return writeJsonMcpEntry("opencode", opencodeMcpFile(scope), "mcp", entry, opts);
+    case "crush":
+      return writeJsonMcpEntry("crush", crushMcpFile(scope), "mcp", entry, opts);
+    default:
+      return assertNeverHost(host);
+  }
 }
 
 export function removeMcpEntry(
@@ -127,15 +144,30 @@ export function removeMcpEntry(
   scope: ScopeInput,
   opts: McpWriteOpts = {},
 ): McpWriteResult {
-  if (host === "claude") return removeClaudeMcpEntry(entry, scope, opts);
-  if (host === "warp")
-    return removeJsonMcpEntry("warp", warpMcpFile(scope), "mcpServers", entry, opts);
-  if (host === "codex") return removeCodexMcpEntry(entry, scope, opts);
-  if (host === "gemini")
-    return removeJsonMcpEntry("gemini", geminiMcpFile(scope), "mcpServers", entry, opts);
-  if (host === "opencode")
-    return removeJsonMcpEntry("opencode", opencodeMcpFile(scope), "mcp", entry, opts);
-  return removeJsonMcpEntry("crush", crushMcpFile(scope), "mcp", entry, opts);
+  switch (host) {
+    case "claude":
+      return removeClaudeMcpEntry(entry, scope, opts);
+    case "codex":
+      return removeCodexMcpEntry(entry, scope, opts);
+    case "warp":
+      return removeJsonMcpEntry("warp", warpMcpFile(scope), "mcpServers", entry, opts);
+    case "gemini":
+      return removeJsonMcpEntry("gemini", geminiMcpFile(scope), "mcpServers", entry, opts);
+    case "kimi":
+      return removeJsonMcpEntry("kimi", kimiMcpFile(scope), "mcpServers", entry, opts);
+    case "opencode":
+      return removeJsonMcpEntry("opencode", opencodeMcpFile(scope), "mcp", entry, opts);
+    case "crush":
+      return removeJsonMcpEntry("crush", crushMcpFile(scope), "mcp", entry, opts);
+    default:
+      return assertNeverHost(host);
+  }
+}
+
+/** Compile-time exhaustiveness; at runtime it refuses instead of writing somewhere wrong. */
+function assertNeverHost(host: never): never {
+  const id = String(host);
+  throw new McpWriterError(`no MCP writer wired for host '${id}'`, id);
 }
 
 // --- New-host MCP file locations ---
@@ -155,29 +187,47 @@ function crushMcpFile(scope: ScopeInput): string {
     ? crushGlobalMcpFile(scope.scopeDir)
     : join(scope.scopeDir, "crush.json");
 }
+// Kimi resolves the same relative path in both scopes: `<KIMI_CODE_HOME>/mcp.json`
+// globally (scopeDir = home) and `<cwd>/.kimi-code/mcp.json` per project.
+// Verified against v0.29.2's resolver. It ALSO reads the project-root
+// Claude-compatible `.mcp.json`, which we deliberately do not write for it —
+// that file belongs to Claude's target.
+function kimiMcpFile(scope: ScopeInput): string {
+  return join(scope.scopeDir, ".kimi-code", "mcp.json");
+}
 
 // Per-host serialization of a dbhub McpEntry into the host's JSON schema.
+// Exhaustive for the same reason the dispatchers are: a new host must state its
+// shape, not inherit Claude's by falling off the end.
 function mcpShapeFor(host: McpHost, entry: McpEntry): Record<string, unknown> {
-  if (host === "opencode") {
-    // OpenCode: { type: "local", command: [cmd, ...args], environment, enabled }
-    return {
-      type: "local",
-      command: [entry.command, ...entry.args],
-      environment: { ...entry.env },
-      enabled: true,
-    };
+  switch (host) {
+    case "opencode":
+      // OpenCode: { type: "local", command: [cmd, ...args], environment, enabled }
+      return {
+        type: "local",
+        command: [entry.command, ...entry.args],
+        environment: { ...entry.env },
+        enabled: true,
+      };
+    case "crush":
+      // Crush: { type: "stdio", command, args, env }
+      return {
+        type: "stdio",
+        command: entry.command,
+        args: [...entry.args],
+        env: { ...entry.env },
+      };
+    case "claude":
+    case "codex":
+    case "warp":
+    case "gemini":
+    // Kimi's stdio entry is `command` + optional `args`/`env`/`cwd` — the same
+    // shape, verified against v0.29.2's MCP config schema.
+    case "kimi":
+      return expectedClaudeShape(entry);
+    default:
+      return assertNeverHost(host);
   }
-  if (host === "crush") {
-    // Crush: { type: "stdio", command, args, env }
-    return {
-      type: "stdio",
-      command: entry.command,
-      args: [...entry.args],
-      env: { ...entry.env },
-    };
-  }
-  // gemini (and any Claude-compatible host): { command, args, env }
-  return expectedClaudeShape(entry);
 }
 
 // Generic writer for hosts whose MCP config is a JSON file with a top-level

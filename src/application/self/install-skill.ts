@@ -4,13 +4,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
-import type { InstallTarget } from "../../domain/harnesses.js";
+import { type InstallTarget, harnessByInstallTarget } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import { copyDir, hasValidFrontmatter } from "./install-plugin-skills.js";
 import {
   COMMAND_SKILLS_HOSTS,
+  HOOKS_MANAGED_TARGETS,
+  HOST_INSTALL_TARGETS,
   INSTALL_TARGETS,
   LEGACY_SKILL_ROOTS_BY_TARGET,
+  SHARED_INSTALL_TARGETS,
   TARGET_ROOTS,
 } from "./install-targets.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
@@ -63,8 +66,12 @@ export interface SelfInstallSkillData {
 
 const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [...INSTALL_TARGETS, "all"];
 
-// `--target all` skips `agents`: it is the shared cross-host dir, not a host.
-const ALL_INSTALL_TARGETS: readonly InstallTarget[] = INSTALL_TARGETS.filter((t) => t !== "agents");
+// `--target all` means EVERY HOST — shared skills dirs are destinations, not
+// hosts, and are reached explicitly with `--target agents`. `uninstall` uses the
+// same rule, so the round trip matches: what `all` installs is what `all`
+// removes. (Note that `oz` installs INTO the shared root, so that dir is still
+// covered under `all` through its host — see TARGET_ROOTS.)
+const ALL_INSTALL_TARGETS: readonly InstallTarget[] = HOST_INSTALL_TARGETS;
 
 const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
   "claude",
@@ -119,6 +126,8 @@ export const USER_COMMANDS_BY_TARGET: Record<InstallTarget, UserCommandsSpec | n
   gemini: { relpath: ".gemini/commands/w", format: "gemini-toml" },
   opencode: { relpath: ".opencode/command/w", format: "opencode-md" },
   crush: { relpath: ".crush/commands/w", format: "crush-md" },
+  // kimi: skills ARE the command surface (`/skill:w-<cmd>`) — no commands dir.
+  kimi: null,
 };
 
 // Stale user-commands dirs from prior releases, removed on install/uninstall:
@@ -134,6 +143,7 @@ const LEGACY_USER_COMMANDS_RELPATHS_BY_TARGET: Record<InstallTarget, readonly st
   gemini: [],
   opencode: [],
   crush: [],
+  kimi: [],
 };
 
 /** rmdir succeeds only on empty dirs — clears purposeless leftovers (e.g. the
@@ -242,11 +252,6 @@ async function cleanLegacyArtifacts(
   return removed;
 }
 
-// Hosts where install-hooks merges into a user-level config (JSON/TOML).
-// Codex has a different config format (TOML) and no settled hook syntax at
-// the user level yet — see DEC-W4 for Warp/OZ (no hook system at all).
-const HOOKS_AUTOINSTALL_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
-
 function explainSkipReason(target: InstallTarget, kind: "commands" | "hooks"): string {
   if (kind === "commands") {
     if (COMMAND_SKILLS_HOSTS.has(target)) {
@@ -254,14 +259,16 @@ function explainSkipReason(target: InstallTarget, kind: "commands" | "hooks"): s
     }
     return `${target}: shared cross-host skills dir, not a host — no command wrapper to install.`;
   }
-  // hooks
-  if (target === "warp" || target === "oz") {
-    return `${target}: no hook system per DEC-W4. Skipped silently.`;
+  // hooks — the reason comes from the catalog, so it can never contradict what
+  // the host actually offers (it used to name warp/oz/codex by hand).
+  const spec = harnessByInstallTarget(target);
+  if (spec === null) {
+    return `${target}: shared cross-host skills dir, not a host — nothing to arm hooks on.`;
   }
-  if (target === "codex") {
-    return `codex: hook merge into config.toml not implemented yet (different format from Claude's settings.json). SKILL works without hooks; CLI commands still callable manually.`;
+  if (spec.hooks === null) {
+    return `${target}: this host has no hook system. Skipped silently.`;
   }
-  return `${target}: hooks auto-install not supported yet.`;
+  return `${target}: hooks live in ${spec.hooks.mechanism}, which Workline does not write yet. The SKILL works without them and the CLI commands stay callable manually.`;
 }
 
 export async function selfInstallSkill(
@@ -295,7 +302,7 @@ export async function selfInstallSkill(
       ok: false,
       error: {
         code: "CONFIRM_ALL_REQUIRED",
-        message: `--target all installs into every supported host. Pass --confirm-all to acknowledge, or pick a specific host (${ALL_INSTALL_TARGETS.join("|")}).`,
+        message: `--target all installs into every HOST (${ALL_INSTALL_TARGETS.join("|")}) and leaves the shared skills dirs alone (${SHARED_INSTALL_TARGETS.join("|")} — install those explicitly). Pass --confirm-all to acknowledge, or pick a specific target.`,
       },
       exitCode: 1,
     };
@@ -745,7 +752,7 @@ async function installHooksForTarget(
   target: InstallTarget,
   ctx: CliContext,
 ): Promise<{ status: string; warning?: string }> {
-  if (!HOOKS_AUTOINSTALL_TARGETS.has(target)) {
+  if (!HOOKS_MANAGED_TARGETS.has(target)) {
     return {
       status: "skipped",
       warning: explainSkipReason(target, "hooks"),
@@ -764,7 +771,13 @@ async function installHooksForTarget(
     if (!result.ok) {
       return { status: "error", warning: result.error?.message ?? "unknown error" };
     }
-    return { status: result.data?.status ?? "unknown" };
+    // Carry the hook installer's warning through. Dropping it meant a Kimi user
+    // was told "installed" with no hint that the PostCompact prompt hook — the
+    // one that resumes the loop after a compact — cannot exist on that host.
+    return {
+      status: result.data?.status ?? "unknown",
+      ...(result.data?.warning ? { warning: result.data.warning } : {}),
+    };
   } catch (err) {
     return { status: "exception", warning: (err as Error).message };
   }

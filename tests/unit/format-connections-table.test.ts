@@ -3,11 +3,16 @@ import {
   type SelfMcpConnectionView,
   formatConnectionsTable,
 } from "../../src/application/self/mcp-config.js";
+import { MCP_FILE_HOSTS } from "../../src/domain/harnesses.js";
+import type { McpHost } from "../../src/domain/mcp-entry.js";
 
 type Status = "si" | "no" | "drift";
-type Host = "claude" | "codex" | "warp" | "gemini" | "opencode" | "crush";
+type Host = McpHost;
 
-// All 6 hosts default to "no"; override any subset.
+// One column per file-writing host, DERIVED from the catalog: pinning the count
+// by hand is exactly how this table went stale when a host was added.
+const HOST_COUNT = MCP_FILE_HOSTS.length;
+
 function view(
   nombre: string,
   dsnVar: string,
@@ -19,14 +24,10 @@ function view(
     server_name: nombre,
     dsn_var: dsnVar,
     dsn_visible: false,
-    instalado: {
-      claude: status.claude ?? d,
-      codex: status.codex ?? d,
-      warp: status.warp ?? d,
-      gemini: status.gemini ?? d,
-      opencode: status.opencode ?? d,
-      crush: status.crush ?? d,
-    },
+    instalado: Object.fromEntries(MCP_FILE_HOSTS.map((h) => [h, status[h] ?? d])) as Record<
+      McpHost,
+      Status
+    >,
   };
 }
 
@@ -37,7 +38,7 @@ function statusCells(line: string): string[] {
 }
 
 describe("formatConnectionsTable", () => {
-  it("caso vacío: marco cerrado + una columna por cada host (los 6)", () => {
+  it("caso vacío: marco cerrado + una columna por cada host (todos)", () => {
     const out = formatConnectionsTable([]);
     const lines = out.split("\n");
     expect(lines).toHaveLength(3);
@@ -58,36 +59,31 @@ describe("formatConnectionsTable", () => {
     expect(lines[2]?.startsWith("└")).toBe(true);
   });
 
-  it("una conexión sin instalar: – en las 6 columnas de host", () => {
+  it("una conexión sin instalar: – en todas las columnas de host", () => {
     const out = formatConnectionsTable([view("cert", "DB_CERT_DSN")]);
     const lines = out.split("\n");
     expect(lines).toHaveLength(5);
     expect(lines[3]).toContain("│ cert");
     expect(lines[3]).toContain("DB_CERT_DSN");
-    expect(statusCells(lines[3] ?? "")).toEqual(["–", "–", "–", "–", "–", "–"]);
+    expect(statusCells(lines[3] ?? "")).toEqual(Array(HOST_COUNT).fill("–"));
   });
 
-  it("status icons mapean: si→✓ en las 6 columnas", () => {
-    const all: Status = "si";
-    const out = formatConnectionsTable([
-      view("a", "DSN_A", {
-        claude: all,
-        codex: all,
-        warp: all,
-        gemini: all,
-        opencode: all,
-        crush: all,
-      }),
-    ]);
-    expect(statusCells(out.split("\n")[3] ?? "")).toEqual(["✓", "✓", "✓", "✓", "✓", "✓"]);
+  it("status icons mapean: si→✓ en todas las columnas", () => {
+    const all: Partial<Record<Host, Status>> = Object.fromEntries(
+      MCP_FILE_HOSTS.map((h) => [h, "si" as Status]),
+    );
+    const out = formatConnectionsTable([view("a", "DSN_A", all)]);
+    expect(statusCells(out.split("\n")[3] ?? "")).toEqual(Array(HOST_COUNT).fill("✓"));
   });
 
   it("status icons mapean: drift→! y no→–, por columna independiente", () => {
     const out = formatConnectionsTable([
       view("a", "DSN_A", { claude: "drift", warp: "drift" }), // rest = no
     ]);
-    // column order = host registry order (claude, codex, warp, gemini, opencode, crush)
-    expect(statusCells(out.split("\n")[3] ?? "")).toEqual(["!", "–", "!", "–", "–", "–"]);
+    // column order = host registry order; only claude and warp drift.
+    expect(statusCells(out.split("\n")[3] ?? "")).toEqual(
+      MCP_FILE_HOSTS.map((h) => (h === "claude" || h === "warp" ? "!" : "–")),
+    );
   });
 
   it("ancho de columna se ajusta al valor más largo (no al header)", () => {

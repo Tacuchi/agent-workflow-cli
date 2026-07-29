@@ -53,7 +53,9 @@ export function readMcpEntry(
 
   // JSON readers keyed by `mcpServers` (Claude shape): claude uses .mcp.json (workspace)
   // or .claude.json (global); warp uses .warp/.mcp.json (workspace) or the per-platform
-  // global registry path (mirrors the writer — DEC-W3); gemini uses .gemini/settings.json.
+  // global registry path (mirrors the writer — DEC-W3); gemini uses .gemini/settings.json;
+  // kimi uses .kimi-code/mcp.json, the SAME relative path in both scopes, so it needs no
+  // special case — its `projectMcpPath` already resolves both (verified vs v0.29.2).
   if (host === "warp" && kind === "global") {
     const globalPath = resolveWarpGlobalMcpPath(process.platform, () => scopeDir);
     if (globalPath) return readJsonMcpEntry(host, globalPath, name);

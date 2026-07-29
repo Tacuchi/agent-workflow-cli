@@ -7,7 +7,7 @@ import {
 } from "../../src/domain/harnesses.js";
 
 describe("HARNESSES registry — shape invariants", () => {
-  it("contiene los 7 harnesses esperados (claude/codex/oz/warp + gemini/opencode/crush)", () => {
+  it("contiene los 8 harnesses esperados (claude/codex/oz/warp + gemini/opencode/crush + kimi)", () => {
     const ids = HARNESSES.map((h) => h.id);
     expect(ids).toContain("claude-code");
     expect(ids).toContain("codex");
@@ -16,7 +16,8 @@ describe("HARNESSES registry — shape invariants", () => {
     expect(ids).toContain("gemini");
     expect(ids).toContain("opencode");
     expect(ids).toContain("crush");
-    expect(ids).toHaveLength(7);
+    expect(ids).toContain("kimi");
+    expect(ids).toHaveLength(8);
   });
 
   it("codex expone skills en .agents/skills (estándar abierto, no solo .codex/skills)", () => {
@@ -57,9 +58,48 @@ describe("HARNESSES registry — shape invariants", () => {
     ]);
   });
 
-  it("cada harness tiene envMarkers no vacío", () => {
+  // Antes se exigía envMarkers no vacío en TODOS. Kimi Code no exporta ninguno a
+  // sus subprocesos (probe 2026-07-29: `env | grep ^KIMI` vacío dentro de su
+  // propia shell), así que el invariante real no es "todos tienen marcador" sino
+  // "todo host es detectable de alguna forma": marcadores de entorno o binario.
+  it("todo harness es detectable: env markers o un binario que sondear", () => {
     for (const h of HARNESSES) {
-      expect(h.envMarkers.length, `${h.id} debe tener al menos un envMarker`).toBeGreaterThan(0);
+      const detectable = h.envMarkers.length > 0 || h.runtime.bins.length > 0;
+      expect(detectable, `${h.id} no tiene ni envMarkers ni binario que sondear`).toBe(true);
+    }
+  });
+
+  it("kimi: sin env markers (verificado) → se detecta por binario + config dir", () => {
+    const kimi = HARNESSES.find((h) => h.id === "kimi");
+    expect(kimi?.envMarkers).toEqual([]);
+    expect(kimi?.runtime.bins).toContain("kimi");
+    // Su instalador deja el binario fuera del PATH de una shell no interactiva.
+    expect(kimi?.runtime.fallbackBinPaths).toContain("~/.kimi-code/bin/kimi");
+    expect(kimi?.configDir).toEqual({ kind: "dir", path: "~/.kimi-code" });
+  });
+
+  it("kimi: MCP con shape mcpServers en ~/.kimi-code/mcp.json y skills en 2 tiers", () => {
+    const kimi = HARNESSES.find((h) => h.id === "kimi");
+    expect(kimi?.mcpHostId).toBe("kimi");
+    expect(kimi?.projectMcpPath).toBe(".kimi-code/mcp.json");
+    expect(resolveGlobalMcpRawPath(kimi as never, "darwin")).toBe("~/.kimi-code/mcp.json");
+    expect(kimi?.skillsDirs).toEqual([".kimi-code/skills", ".agents/skills"]);
+  });
+
+  it("cada harness declara nivel de soporte con glifo único", () => {
+    const glyphs = HARNESSES.map((h) => h.glyph);
+    expect(new Set(glyphs).size, `glifos duplicados: ${glyphs.join(",")}`).toBe(glyphs.length);
+    for (const h of HARNESSES) {
+      expect(["official", "best-effort"], `${h.id}`).toContain(h.support.tier);
+      expect(h.label.length, `${h.id} sin label`).toBeGreaterThan(0);
+    }
+  });
+
+  it("un host con hooks gestionados declara su mecanismo", () => {
+    for (const h of HARNESSES) {
+      if (h.hooks?.managed === true) {
+        expect(h.hooks.mechanism.length, `${h.id}`).toBeGreaterThan(0);
+      }
     }
   });
 

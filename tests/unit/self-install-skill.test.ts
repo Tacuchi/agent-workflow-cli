@@ -6,6 +6,7 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { SKILL_DIR_NAME, selfInstallSkill } from "../../src/application/self/install-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { HOST_INSTALL_TARGETS } from "../../src/domain/harnesses.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -140,7 +141,7 @@ describe("selfInstallSkill", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it("default --target=all installs into all 7 hosts (claude/codex/warp/oz + gemini/opencode/crush)", async () => {
+  it("--target=all instala en TODOS los hosts del catálogo y en ningún destino compartido", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
@@ -153,7 +154,9 @@ describe("selfInstallSkill", () => {
     if (result.ok && result.data) {
       expect(result.data.status).toBe("installed");
       expect(result.data.source_kind).toBe("path");
-      expect(result.data.dests).toHaveLength(7);
+      expect(result.data.dests.map((d) => d.target)).toEqual([...HOST_INSTALL_TARGETS]);
+      // `agents` es destino compartido: `all` no lo toca (se pide explícito).
+      expect(result.data.dests.map((d) => d.target)).not.toContain("agents");
       const claudeDest = result.data.dests.find((d) => d.target === "claude");
       const codexDest = result.data.dests.find((d) => d.target === "codex");
       const opencodeDest = result.data.dests.find((d) => d.target === "opencode");
@@ -562,7 +565,7 @@ describe("selfInstallSkill", () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
       expect(result.data.status).toBe("dry-run");
-      expect(result.data.dests).toHaveLength(7);
+      expect(result.data.dests).toHaveLength(HOST_INSTALL_TARGETS.length);
       expect(result.data.dests.every((d) => d.status === "dry-run")).toBe(true);
     }
 

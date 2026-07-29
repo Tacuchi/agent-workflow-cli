@@ -15,7 +15,7 @@ import {
   resolveWarpGlobalMcpPath,
   resolveWarpProjectMcpPath,
 } from "../../application/multiroot/warp.js";
-import { HARNESSES, harnessById } from "../../domain/harnesses.js";
+import { MCP_FILE_HOSTS, harnessById } from "../../domain/harnesses.js";
 import {
   DEFAULT_MCP_INSTANCES,
   type McpHost,
@@ -30,10 +30,9 @@ import type { QtcCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-// File-writing hosts derived from registry (excludes oz which has no file writer)
-const FILE_HOSTS: readonly McpHost[] = HARNESSES.filter((h) => h.mcpHostId !== null).map(
-  (h) => h.mcpHostId as McpHost,
-);
+// File-writing hosts — single source in the domain (excludes oz, which has no
+// file writer). The TUI's host picker reads the same list.
+const FILE_HOSTS: readonly McpHost[] = MCP_FILE_HOSTS;
 const HOST_VALUES: ReadonlySet<string> = new Set([...FILE_HOSTS, "both", "all"]);
 
 export const mcpCommand: QtcCommand = {
@@ -249,20 +248,31 @@ async function runDoctorSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   };
 }
 
-/** Exported for tests: host-harness detection must cover all 6 hosts. */
+/** Exported for tests: host-harness detection must cover every file-writing host. */
 export function resolveHosts(
   args: ParsedArgs,
   ctx: CliContext,
 ): { value: McpHost[] } | CommandResult {
   const flag = args.values.get("host");
   if (flag === undefined) {
-    // No --host: write only to the host harness, data-driven from the registry
-    // (hardcoded ifs left out gemini/opencode/crush → fan-out to all 6 hosts
-    // while running inside one of them).
+    // No --host: write only to the harness we are running inside, resolved from
+    // the registry.
     const harness = runHarness((k) => ctx.env.get(k));
     const spec = harness.harness === "unknown" ? null : harnessById(harness.harness);
     if (spec?.mcpHostId) return { value: [spec.mcpHostId] };
-    return { value: [...FILE_HOSTS] };
+    // We could NOT tell which host we are in — either it exports no env marker
+    // to its subprocesses (Kimi Code among them) or it takes MCP through a
+    // launch flag instead of a config file (Oz). Falling back to "write into
+    // every host" turned that ignorance into edits the user never asked for,
+    // across configs they may not even use. Ask instead.
+    const reason =
+      spec === null
+        ? "no pude identificar el host: no exporta marcadores de entorno a sus subprocesos"
+        : `'${spec.label}' no escribe un archivo de configuración MCP (toma servidores por flag de arranque)`;
+    return fail(
+      "HOST_REQUIRED",
+      `${reason}. Indicá el destino con --host <${[...FILE_HOSTS].join("|")}> (o --host all para todos). Para ver qué hosts hay en esta máquina: 'agent-workflow self detect-hosts'.`,
+    );
   }
   if (!HOST_VALUES.has(flag)) {
     const validList = [...FILE_HOSTS, "both", "all"].join(" | ");

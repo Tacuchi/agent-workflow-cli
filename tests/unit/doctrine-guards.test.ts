@@ -1294,6 +1294,7 @@ describe("doctrine guards — G8 multi-host packaging contract", () => {
       gemini: [".gemini", "skills"],
       opencode: [".opencode", "skills"],
       crush: [".config", "crush", "skills"],
+      kimi: [".kimi-code", "skills"],
     });
   });
 
@@ -1314,6 +1315,9 @@ describe("doctrine guards — G8 multi-host packaging contract", () => {
       gemini: ".gemini/commands/w",
       opencode: ".opencode/command/w",
       crush: ".crush/commands/w",
+      // kimi reads no commands dir: its command surface is the synthesized
+      // `w-<cmd>` skills, invoked as `/skill:w-<cmd>`.
+      kimi: null,
     });
     expect(USER_COMMANDS_RELPATH_BY_TARGET).toEqual({
       ...installRelpaths,

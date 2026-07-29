@@ -60,8 +60,11 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
   it("header: título Workline + counts derivados de los data modules (.length)", async () => {
     const frame = await renderFlat();
     expect(frame).toContain("Workline");
-    expect(frame).toContain(`${WORKFLOW_CONTENT.slashCommands.length} slash commands`);
+    // Los totales son del BUNDLE, no una promesa universal: la cabecera lo dice
+    // y la superficie real de cada host va en su fila.
+    expect(frame).toContain(`bundle: ${WORKFLOW_CONTENT.slashCommands.length} commands`);
     expect(frame).toContain(`${WORKFLOW_CONTENT.hooks.length} hooks`);
+    expect(frame).toContain("per-host surface shown on each row");
   });
 
   it("informativo mínimo: overview 1 línea + strip de flows; sin FamilyCards ni PhaseCards", async () => {
@@ -86,15 +89,41 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
 
   // The hooks-armed section mounts here now, so its ~/.claude/settings.json
   // detection is pinned here.
-  it("muestra 'hooks armed' cuando ~/.claude/settings.json trae hooks", async () => {
+  // Un `hooks{}` no vacío ya NO alcanza: el usuario puede tener hooks propios.
+  // "armed" significa que están LOS NUESTROS, y eso se prueba por el comando.
+  it("muestra 'hooks armed' cuando settings.json trae NUESTROS hooks", async () => {
     await mkdir(join(home, ".claude"), { recursive: true });
     await writeFile(
       join(home, ".claude", "settings.json"),
-      JSON.stringify({ hooks: { SessionStart: [{ matcher: "", hooks: [] }] } }),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [
+            {
+              matcher: "startup|resume|clear",
+              hooks: [{ type: "command", command: "agent-workflow self namespace --pin workflow" }],
+            },
+          ],
+        },
+      }),
       "utf8",
     );
     const frame = await renderFlat();
     expect(frame).toContain("hooks armed");
+  });
+
+  it("NO dice 'hooks armed' cuando los únicos hooks son del usuario", async () => {
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await writeFile(
+      join(home, ".claude", "settings.json"),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [{ matcher: "", hooks: [{ type: "command", command: "echo hola" }] }],
+        },
+      }),
+      "utf8",
+    );
+    const frame = await renderFlat();
+    expect(frame).not.toContain("hooks armed");
   });
 
   it("no crashea con settings.json inválido y no muestra hooks armed", async () => {

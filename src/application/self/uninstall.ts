@@ -1,8 +1,16 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import { parse as parseToml } from "smol-toml";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
+import {
+  countOurHookEntries,
+  isOurCommand,
+  stripOurHookEntries as stripOurKimiHookEntries,
+} from "./hooks-toml.js";
+import { type HooksTemplate, resolveBundledHookTemplate } from "./install-hooks.js";
 import {
   type InstallTarget,
   LEGACY_SKILL_NAMES,
@@ -15,8 +23,11 @@ import {
 } from "./install-skill.js";
 import {
   COMMAND_SKILLS_HOSTS,
+  HOOKS_MANAGED_TARGETS,
+  HOST_INSTALL_TARGETS,
   INSTALL_TARGETS,
   LEGACY_SKILL_ROOTS_BY_TARGET,
+  SHARED_INSTALL_TARGETS,
 } from "./install-targets.js";
 import { updateAgentsLock } from "./uninstall-skill.js";
 
@@ -44,12 +55,17 @@ export interface SelfUninstallData {
   lock_updated: boolean;
   lock_path?: string;
   lock_warning?: string;
+  /** What `--target all` deliberately did not touch. Present only for `all`. */
+  untouched_note?: string;
 }
 
-// Derived from TARGET_ROOTS (single source) so uninstall keeps round-trip
-// parity with install when a host is added — the clean-legacy v14.5.1 lesson.
-const ALL_TARGETS: readonly InstallTarget[] = INSTALL_TARGETS;
-const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"];
+// `--target all` means EVERY HOST, exactly like `install-skill --target all`:
+// the two used to disagree (install skipped `agents`, uninstall included it), so
+// `all` removed more than `all` had installed. Shared skills dirs are reached
+// explicitly with `--target agents`.
+const ALL_TARGETS: readonly InstallTarget[] = HOST_INSTALL_TARGETS;
+// Every target stays a valid explicit choice — including the shared ones.
+const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...INSTALL_TARGETS, "all"];
 
 // Derived from the install-side map so both sides stay symmetric by construction.
 export const USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | null> = {
@@ -71,19 +87,33 @@ const LEGACY_USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | nul
   gemini: null,
   opencode: null,
   crush: null,
+  kimi: null,
 };
 
-const HOOKS_REMOVABLE_TARGETS: ReadonlySet<InstallTarget> = new Set(["claude"]);
+/**
+ * Per-host hook removers, mirroring `HOOK_INSTALLERS` on the install side. The
+ * MAP is the set: there is no second list of "targets we can clean" to fall out
+ * of step with the branches — `hookRemoverCoverage()` reads this very object.
+ */
+const HOOK_REMOVERS: Partial<
+  Record<
+    InstallTarget,
+    (
+      ctx: CliContext,
+      home: string,
+      target: InstallTarget,
+      dryRun: boolean,
+    ) => Promise<UninstallStep | null>
+  >
+> = {
+  claude: removeClaudeHooks,
+  kimi: removeKimiHooks,
+};
 
-// Event names we install via hooks.template.json (we only touch these on
-// uninstall to avoid clobbering hooks the user added manually).
-const HOOK_EVENTS_WE_INSTALL: readonly string[] = [
-  "SessionStart",
-  "PreToolUse",
-  "SessionEnd",
-  "PreCompact",
-  "PostCompact",
-];
+/** Hooks-managed targets with no remover wired — they would strand hooks. Must be empty. */
+export function hookRemoverCoverage(): InstallTarget[] {
+  return [...HOOKS_MANAGED_TARGETS].filter((t) => HOOK_REMOVERS[t] === undefined);
+}
 
 interface UninstallFlags {
   dryRun: boolean;
@@ -112,7 +142,7 @@ export async function selfUninstall(
       ok: false,
       error: {
         code: "INVALID_TARGET",
-        message: `--target must be one of: ${TARGET_CHOICES.join(", ")}. Got '${targetArg}'.`,
+        message: `--target must be one of: ${TARGET_CHOICES.join(", ")}. Got '${targetArg}'. 'all' means every host (${ALL_TARGETS.join("|")}); shared skills dirs are explicit.`,
       },
       exitCode: 1,
     };
@@ -127,7 +157,11 @@ export async function selfUninstall(
     steps.push(...(await uninstallOneTarget(ctx, home, target, flags)));
   }
 
-  const lockResult = targets.includes("agents")
+  // The lock lives in the shared `.agents` root — and `oz` installs INTO that
+  // same root, so it must be pruned whenever any target is rooted there, not
+  // only when the literal `agents` target was asked for.
+  const touchesAgentsRoot = targets.some((t) => TARGET_ROOTS[t][0] === ".agents");
+  const lockResult = touchesAgentsRoot
     ? await updateAgentsLock(ctx, home, flags.includeLegacy, flags.dryRun)
     : { updated: false };
 
@@ -146,6 +180,11 @@ export async function selfUninstall(
       lock_updated: lockResult.updated,
       ...(lockResult.path ? { lock_path: lockResult.path } : {}),
       ...(lockResult.warning ? { lock_warning: lockResult.warning } : {}),
+      ...(targetArg === "all"
+        ? {
+            untouched_note: `--target all covers hosts only (${ALL_TARGETS.join(", ")}); shared skills dirs are removed explicitly with --target ${SHARED_INSTALL_TARGETS.join(" / --target ")}.`,
+          }
+        : {}),
     },
     exitCode: 0,
   };
@@ -293,7 +332,28 @@ async function removeHooks(
   target: InstallTarget,
   dryRun: boolean,
 ): Promise<UninstallStep | null> {
-  if (!HOOKS_REMOVABLE_TARGETS.has(target)) return null;
+  if (!HOOKS_MANAGED_TARGETS.has(target)) return null;
+  const remover = HOOK_REMOVERS[target];
+  if (remover === undefined) {
+    // Guarded by hookRemoverCoverage(); reported rather than silently skipped.
+    return {
+      target,
+      kind: "hooks",
+      path: "(none)",
+      status: "skipped",
+      reason: `'${target}' is a hooks-managed host with no remover wired — report this as a CLI bug`,
+    };
+  }
+  return remover(ctx, home, target, dryRun);
+}
+
+/** Claude Code: strip our entries from the `hooks{}` map in settings.json. */
+async function removeClaudeHooks(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep | null> {
   const settingsPath = join(home, ".claude", "settings.json");
   if (!(await ctx.fs.exists(settingsPath))) return null;
 
@@ -309,8 +369,9 @@ async function removeHooks(
   }
   if (parsed === null) return null;
 
-  const removed = stripOurHookEvents(parsed);
-  if (removed.length === 0) return null;
+  const template = await loadHookTemplate(ctx);
+  const removed = stripOurHookEntries(parsed, template);
+  if (removed.events.length === 0) return null;
 
   if (!dryRun) await persistSettings(home, settingsPath, parsed);
 
@@ -319,8 +380,68 @@ async function removeHooks(
     kind: "hooks",
     path: settingsPath,
     status: dryRun ? "dry-run" : "removed",
-    reason: `Removed events: ${removed.join(", ")}`,
+    reason: `Removed ${removed.entries} of our hook entries under: ${removed.events.join(", ")}${
+      removed.preserved > 0 ? ` (${removed.preserved} of your own entries preserved)` : ""
+    }`,
   };
+}
+
+/**
+ * Kimi Code: drop our marked block from `~/.kimi-code/config.toml`. Everything
+ * outside the markers — the user's models, providers and any hooks of their own
+ * — is preserved byte for byte, and the file is backed up before the write.
+ */
+async function removeKimiHooks(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep | null> {
+  const configPath = join(home, ".kimi-code", "config.toml");
+  if (!(await ctx.fs.exists(configPath))) return null;
+
+  const current = await ctx.fs.readText(configPath);
+  const { text, removed } = stripOurKimiHookEntries(current);
+  if (removed === 0) return null;
+
+  if (!dryRun) {
+    await persistTextWithBackup(configPath, current, text);
+  }
+  // Belt: if a parse still sees hooks of ours, the host wrote them in a shape the
+  // text sweep does not recognise. Say so instead of reporting a clean removal.
+  const leftover = dryRun ? 0 : (countOurHookEntries(text, parseToml) ?? 0);
+  return {
+    target,
+    kind: "hooks",
+    path: configPath,
+    status: dryRun ? "dry-run" : "removed",
+    reason:
+      leftover > 0
+        ? `Removed ${removed} of our [[hooks]] entries, but ${leftover} more remain in a shape this version does not recognise — remove them by hand`
+        : `Removed ${removed} of our [[hooks]] entries; the rest of config.toml is untouched`,
+  };
+}
+
+async function persistTextWithBackup(path: string, original: string, next: string): Promise<void> {
+  const ts = Math.floor(Date.now() / 1000);
+  try {
+    await writeFile(`${path}.bak.${ts}`, original, "utf8");
+  } catch {
+    // best-effort backup
+  }
+  await writeFile(path, next, "utf8");
+}
+
+/** The bundled template, or null when it cannot be read (ownership then falls back to the command prefix). */
+async function loadHookTemplate(ctx: CliContext): Promise<HooksTemplate | null> {
+  try {
+    const path = await resolveBundledHookTemplate();
+    if (path === null || !(await ctx.fs.exists(path))) return null;
+    const parsed = JSON.parse(await ctx.fs.readText(path)) as HooksTemplate;
+    return parsed?.hooks && typeof parsed.hooks === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 async function tryParseSettings(path: string): Promise<Record<string, unknown> | "invalid" | null> {
@@ -336,16 +457,73 @@ async function tryParseSettings(path: string): Promise<Record<string, unknown> |
   return data;
 }
 
-function stripOurHookEvents(data: Record<string, unknown>): string[] {
+export interface HookStripResult {
+  /** Events where at least one of our entries was removed. */
+  events: string[];
+  /** How many of our entries were removed. */
+  entries: number;
+  /** How many entries were left in place because they are not ours. */
+  preserved: number;
+}
+
+/**
+ * Removes OUR hook entries and nothing else.
+ *
+ * It used to delete the whole event whenever its name matched one we install —
+ * so a user with their own `PreToolUse` hook lost it on uninstall, exactly the
+ * opposite of what the code claimed to do. Ownership is now decided per ENTRY:
+ * an entry deep-equal to one in the bundled template is ours, and so is one
+ * whose every command invokes this CLI (covers templates that drifted since
+ * install). An entry mixing our command with the user's is left alone: it
+ * cannot be split without guessing.
+ *
+ * Scanning every event, not a hardcoded list, also means a new event added to
+ * the template is swept without touching this code.
+ */
+export function stripOurHookEntries(
+  data: Record<string, unknown>,
+  template: HooksTemplate | null,
+): HookStripResult {
   const hooks = data.hooks as Record<string, unknown>;
-  const removed = HOOK_EVENTS_WE_INSTALL.filter((event) => event in hooks);
-  for (const event of removed) {
-    Reflect.deleteProperty(hooks, event);
+  const events: string[] = [];
+  let entries = 0;
+  let preserved = 0;
+
+  for (const [event, value] of Object.entries(hooks)) {
+    if (!Array.isArray(value)) continue;
+    const templateEntries = template?.hooks?.[event];
+    const kept = value.filter((entry) => !isOurHookEntry(entry, templateEntries));
+    preserved += kept.length;
+    if (kept.length === value.length) continue;
+    entries += value.length - kept.length;
+    events.push(event);
+    if (kept.length === 0) Reflect.deleteProperty(hooks, event);
+    else hooks[event] = kept;
   }
+
   if (Object.keys(hooks).length === 0) {
     Reflect.deleteProperty(data, "hooks");
   }
-  return removed;
+  return { events, entries, preserved };
+}
+
+function isOurHookEntry(entry: unknown, templateEntries: unknown): boolean {
+  if (Array.isArray(templateEntries) && templateEntries.some((t) => isDeepStrictEqual(t, entry))) {
+    return true;
+  }
+  return entryInvokesOurCli(entry);
+}
+
+/** True when the entry carries commands and EVERY one of them runs this CLI. */
+function entryInvokesOurCli(entry: unknown): boolean {
+  if (typeof entry !== "object" || entry === null) return false;
+  const hooks = (entry as { hooks?: unknown }).hooks;
+  if (!Array.isArray(hooks) || hooks.length === 0) return false;
+  const commands = hooks
+    .map((h) => (typeof h === "object" && h !== null ? (h as { command?: unknown }).command : null))
+    .filter((c): c is string => typeof c === "string");
+  if (commands.length === 0) return false;
+  return commands.every(isOurCommand);
 }
 
 async function persistSettings(

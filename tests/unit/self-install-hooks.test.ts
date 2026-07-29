@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { selfInstallHooks } from "../../src/application/self/install-hooks.js";
@@ -264,5 +265,139 @@ describe("selfInstallHooks", () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("TEMPLATE_INVALID_SCHEMA");
+  });
+});
+
+// ─── Kimi Code: TOML dialect, and the host that rewrites its own config ──────
+//
+// The wiring around `hooksTemplateToToml` was the untested half: statuses,
+// backup, the degradation warning, and — the one that bit — ownership surviving
+// Kimi's own re-serialization of `config.toml`, which drops every comment while
+// keeping the `hooks` array.
+describe("selfInstallHooks — kimi", () => {
+  let workdir: string;
+  let home: string;
+  let templatePath: string;
+  let configPath: string;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "aw-hooks-kimi-"));
+    home = join(workdir, "home");
+    templatePath = join(workdir, "hooks.template.json");
+    configPath = join(home, ".kimi-code", "config.toml");
+    await mkdir(join(home, ".kimi-code"), { recursive: true });
+    await writeFile(templatePath, JSON.stringify(VALID_TEMPLATE), "utf8");
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  const USER_CONFIG = [
+    'default_model = "kimi-code/k3"',
+    "",
+    "[thinking]",
+    "enabled = true",
+    "",
+  ].join("\n");
+
+  async function install(flags: string[] = []) {
+    return selfInstallHooks(
+      buildArgs({ target: "kimi", template: templatePath }, flags),
+      buildCtx(home),
+    );
+  }
+
+  it("instala los hooks como [[hooks]] y deja la config del usuario intacta", async () => {
+    await writeFile(configPath, USER_CONFIG, "utf8");
+    const result = await install();
+
+    expect(result.ok).toBe(true);
+    expect(result.data?.status).toBe("installed");
+    expect(result.data?.config_path).toBe(configPath);
+    expect(result.data?.events_installed).toEqual(["SessionStart", "PreToolUse", "SessionEnd"]);
+
+    const written = await readFile(configPath, "utf8");
+    const parsed = parseToml(written) as { hooks: Record<string, unknown>[]; thinking: unknown };
+    expect(parsed.hooks).toHaveLength(3);
+    expect(parsed.thinking).toEqual({ enabled: true });
+    expect(written.startsWith(USER_CONFIG)).toBe(true);
+  });
+
+  it("respalda el archivo antes de escribirlo", async () => {
+    await writeFile(configPath, USER_CONFIG, "utf8");
+    const result = await install();
+    expect(result.data?.backup_path).toBeTruthy();
+    expect(await readFile(result.data?.backup_path as string, "utf8")).toBe(USER_CONFIG);
+  });
+
+  it("reinstalar es noop: no reescribe ni deja un respaldo nuevo", async () => {
+    await writeFile(configPath, USER_CONFIG, "utf8");
+    await install();
+    const afterFirst = await readFile(configPath, "utf8");
+
+    const second = await install();
+    expect(second.data?.status).toBe("noop");
+    expect(second.data?.backup_path).toBeNull();
+    expect(await readFile(configPath, "utf8")).toBe(afterFirst);
+  });
+
+  it("--dry-run no escribe nada", async () => {
+    await writeFile(configPath, USER_CONFIG, "utf8");
+    const result = await install(["--dry-run"]);
+    expect(result.data?.status).toBe("dry-run");
+    expect(await readFile(configPath, "utf8")).toBe(USER_CONFIG);
+  });
+
+  it("reporta lo que el dialecto de kimi no puede expresar", async () => {
+    await writeFile(
+      templatePath,
+      JSON.stringify({
+        hooks: {
+          PostCompact: [
+            {
+              matcher: "",
+              hooks: [
+                { type: "command", command: "agent-workflow resume-summary", timeout: 10 },
+                { type: "prompt", prompt: "reanudá" },
+              ],
+            },
+          ],
+          UnEventoQueKimiNoConoce: [
+            { matcher: "", hooks: [{ type: "command", command: "agent-workflow x" }] },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    const result = await install();
+    expect(result.data?.warning).toMatch(/prompt/);
+    expect(result.data?.warning).toMatch(/UnEventoQueKimiNoConoce/);
+    // Y lo que no se puede expresar NO se escribe: kimi tira TODA su sección de
+    // hooks si una entrada no valida, incluidos los del usuario.
+    const parsed = parseToml(await readFile(configPath, "utf8")) as {
+      hooks: { event: string }[];
+    };
+    expect(parsed.hooks.map((h) => h.event)).toEqual(["PostCompact"]);
+  });
+
+  // REGRESIÓN: kimi reescribe su config.toml en operaciones suyas normales
+  // (login, quitar un provider…) y borra TODOS los comentarios, conservando el
+  // array `hooks`. Si la propiedad fuera el marcador, nuestros hooks quedarían
+  // sin forma de quitarse y se duplicarían en cada reinstalación.
+  it("sobrevive a que kimi reescriba el archivo y borre los comentarios", async () => {
+    await writeFile(configPath, USER_CONFIG, "utf8");
+    await install();
+
+    // Simula la re-serialización del propio host: parse + stringify.
+    const reserialized = stringifyToml(parseToml(await readFile(configPath, "utf8")) as never);
+    await writeFile(configPath, `${reserialized}\n`, "utf8");
+    expect(await readFile(configPath, "utf8")).not.toContain("agent-workflow (Workline)");
+
+    // Reinstalar NO duplica.
+    const again = await install();
+    expect(again.ok).toBe(true);
+    const parsed = parseToml(await readFile(configPath, "utf8")) as { hooks: unknown[] };
+    expect(parsed.hooks).toHaveLength(3);
   });
 });
