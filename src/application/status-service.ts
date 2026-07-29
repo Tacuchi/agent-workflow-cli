@@ -1,80 +1,25 @@
-import { basename, join, relative } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { localDateIso } from "./dates.js";
-import { humanizeRelativeEs } from "./humanize-es.js";
-import { firstNonEmptyLine, parseMdSection } from "./markdown.js";
-import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
-import { type ParsedPlanStatus, parsePlanStatus } from "./parsers/plan-status.js";
-import { parseProjectBlock } from "./parsers/project-block.js";
-import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
-import { findArtifact } from "./session-artifacts.js";
-import { SessionsService } from "./sessions-service.js";
-
-export interface StatusWorkspace {
-  name: string;
-  path: string;
-  /** `.<ns>/` present in the workspace root. */
-  initialized: boolean;
-}
-
-const SPEC_STATUSES = ["draft", "refining", "ready-for-plan"] as const;
-
-/** Spec maturity: how ready the spec is for `plan-new` to design against it. */
-export type SpecStatus = (typeof SPEC_STATUSES)[number];
-
-export interface StatusSpec {
-  file: string; // relpath from workspace, e.g. docs/specs/003-spec-foo.md
-  number: string; // "003"
-  slug: string; // "foo" ("" for legacy NNN-spec.md)
-  /** frontmatter `status:` when declared, else inferred from the legacy trace sections */
-  status: SpecStatus;
-  /** derived alias of `status === "ready-for-plan"`; kept for existing consumers */
-  refined: boolean;
-  open_questions: number;
-  date: string; // YYYY-MM-DD (fs mtime)
-  relative: string;
-}
+import {
+  type IndexedDiscarded,
+  type IndexedPlan,
+  type IndexedSpec,
+  type IndexedWorkspace,
+  type PipelineItem,
+  buildWorklineIndex,
+} from "./workline-index-service.js";
 
 /**
- * Whole-plan closure, derived — never declared alone and never inferred from
- * the counters. `open` = there is still something to do or to validate;
- * `done` = the plan declares it AND the counters back the declaration;
- * `inconsistent` = the document contradicts itself and a human must repair it.
+ * `status` projected out of the Workline index.
+ *
+ * The reading itself lives in `workline-index-service` — this module only
+ * shapes it for one command, so `status` and `resume` can never answer the
+ * same question differently. Everything here is derivation; nothing re-reads
+ * the filesystem and nothing writes to it.
  */
-export type PlanState = "open" | "done" | "inconsistent";
 
-export interface StatusBlockedPhase {
-  number: number;
-  name: string;
-  /** the phase's `> Bloqueo:` reason; `null` on a legacy block that declares none */
-  blocker: string | null;
-}
-
-export interface StatusPlan {
-  file: string;
-  number: string;
-  slug: string;
-  tasks_total: number;
-  tasks_done: number;
-  /** checkbox-derived work progress; the phase counts below never feed it */
-  progress_pct: number;
-  /** `### Fn` blocks inside the plan-doc's `## Tasks`; `0` on a plan with no phases or none stated (pre-contract) */
-  phases_total: number;
-  /** phases whose exact mark is `> Estado: validada` — never inferred from the checkboxes */
-  phases_validated: number;
-  /** the plan's third axis: closure, derived from the declaration AND the two counters */
-  plan_state: PlanState;
-  /** phases whose exact mark is `> Estado: bloqueada` */
-  phases_blocked: number;
-  /** the blocked phases with what each one waits on */
-  blocked_phases: StatusBlockedPhase[];
-  /** every task done and every phase validated, but the final validation never ran */
-  final_validation_pending: boolean;
-  date: string;
-  relative: string;
-}
+export type { PipelineItem } from "./workline-index-service.js";
 
 export interface StatusSession {
   code: string | null;
@@ -85,26 +30,17 @@ export interface StatusSession {
   relative: string;
 }
 
-export type DiscardedKind = "deferred" | "excluded";
-
-export interface StatusDiscarded {
-  source: string; // session code/folder the item came from
-  source_path: string; // relpath of the session folder
-  kind: DiscardedKind; // deferred (BACKLOG ## Deferred) | excluded (CHECKPOINT ## Excluded)
-  text: string;
-  date: string;
-  relative: string;
-}
-
 export interface StatusOutput {
-  workspace: StatusWorkspace;
-  specs: StatusSpec[];
-  plans: StatusPlan[];
+  workspace: IndexedWorkspace;
+  specs: IndexedSpec[];
+  plans: IndexedPlan[];
   sessions: {
     active: StatusSession[];
     closed: StatusSession[];
   };
-  discarded: StatusDiscarded[];
+  discarded: IndexedDiscarded[];
+  /** what is left to do, in priority order — the same list `resume` routes from */
+  pipeline: PipelineItem[];
   counts: {
     specs: number;
     specs_refined: number;
@@ -112,6 +48,7 @@ export interface StatusOutput {
     sessions_active: number;
     sessions_closed: number;
     discarded: number;
+    pending: number;
   };
 }
 
@@ -130,453 +67,36 @@ export async function runStatusCommand(
   paths: PathsService,
   input: StatusInput = {},
 ): Promise<StatusOutput> {
-  const now = input.now ?? new Date();
-  const cwd = paths.workspaceDir();
+  const index = await buildWorklineIndex(fs, env, paths, input);
 
-  const workspace = await readWorkspace(fs, paths, cwd);
-  const specs = await readSpecs(fs, cwd, now);
-  const plans = await readPlans(fs, cwd, now);
-  const { active, closed, folders } = await readSessions(fs, env, paths, now);
-  const discarded = await readDiscarded(fs, folders, cwd, now);
-
-  return {
-    workspace,
-    specs,
-    plans,
-    sessions: { active, closed },
-    discarded,
-    counts: {
-      specs: specs.length,
-      specs_refined: specs.filter((s) => s.refined).length,
-      plans: plans.length,
-      sessions_active: active.length,
-      sessions_closed: closed.length,
-      discarded: discarded.length,
-    },
-  };
-}
-
-// ── workspace ──────────────────────────────────────────────────────────────
-
-async function readWorkspace(
-  fs: FileSystemPort,
-  paths: PathsService,
-  cwd: string,
-): Promise<StatusWorkspace> {
-  let name = basename(cwd);
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    try {
-      if (!(await fs.exists(file))) continue;
-      const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-      if (block?.proyecto) {
-        name = block.proyecto;
-        break;
-      }
-    } catch {
-      // ignore; fall back to basename
-    }
-  }
-  const initialized = await safeExists(fs, paths.cwdRoot());
-  return { name, path: cwd, initialized };
-}
-
-// ── specs ──────────────────────────────────────────────────────────────────
-
-const SPEC_RE = /^(\d{3})-spec(?:-(.+))?\.md$/i;
-
-async function readSpecs(fs: FileSystemPort, cwd: string, now: Date): Promise<StatusSpec[]> {
-  const dir = join(cwd, "docs", "specs");
-  const files = await listMarkdown(fs, dir, SPEC_RE);
-  const deduped = dedupeRefined(files);
-  const out: StatusSpec[] = [];
-  for (const f of deduped) {
-    try {
-      const text = await fs.readText(f.path);
-      const status = resolveSpecStatus(text);
-      const ts = await resolveTimestamp(fs, f.path, undefined, now);
-      out.push({
-        file: relFromCwd(f.path, cwd),
-        number: f.number,
-        slug: f.slug,
-        status,
-        refined: status === "ready-for-plan",
-        open_questions: countOpenQuestions(text),
-        date: ts.date,
-        relative: ts.relative,
-      });
-    } catch {
-      // skip unreadable spec
-    }
-  }
-  return sortByNumber(out);
-}
-
-/**
- * The only two trace sections that marked a spec as worked-through before the
- * frontmatter `status` existed. `## Decisions` is NOT one of them: it belongs
- * to the current spec schema and proves nothing about the refine gate.
- *
- * Exported so the doctrine guard can check this list against the marks the
- * bundle documents — the two drifted apart once, and a spec nobody refined
- * reached PLAN because of it.
- */
-export const LEGACY_READY_MARKS = ["Refinement decisions", "Q&A traceability"];
-
-/**
- * Spec maturity. A declared frontmatter governs alone: an empty, unknown or
- * unterminated declaration reads `draft` — never a legacy inference, which
- * would send work to PLAN on a gate `spec-refine` never ran. Legacy
- * compatibility runs only on a spec that carries no frontmatter at all.
- */
-function resolveSpecStatus(text: string): SpecStatus {
-  const frontmatter = parseSpecFrontmatter(text);
-  if (frontmatter.kind === "malformed") return "draft";
-  if (frontmatter.kind === "present") {
-    const declared = (frontmatter.status ?? "").toLowerCase();
-    return isSpecStatus(declared) ? declared : "draft";
-  }
-  return hasLegacyReadyMark(text) ? "ready-for-plan" : "draft";
-}
-
-function hasLegacyReadyMark(text: string): boolean {
-  return LEGACY_READY_MARKS.some((h) => parseMdSectionLoose(text, h) !== undefined);
-}
-
-function isSpecStatus(value: string): value is SpecStatus {
-  return (SPEC_STATUSES as readonly string[]).includes(value);
-}
-
-const FRONTMATTER_FENCE = "---";
-const FRONTMATTER_ENTRY = /^([A-Za-z0-9_-]+):\s*(.*)$/;
-
-/**
- * `absent` (no block at the top) · `present` (block opened and closed) ·
- * `malformed` (opened, never closed). The three are not interchangeable: a
- * broken declaration is a declaration, and only `absent` may fall back.
- */
-type SpecFrontmatter =
-  | { kind: "absent" | "malformed" }
-  | { kind: "present"; status: string | undefined };
-
-/**
- * Classify the `---` block at the top of the file and read its `status` scalar.
- * Specs only carry flat scalars there, so this stays a few lines instead of
- * pulling a YAML dependency into the CLI.
- */
-function parseSpecFrontmatter(text: string): SpecFrontmatter {
-  const lines = text.split(/\r?\n/);
-  if ((lines[0] ?? "").trim() !== FRONTMATTER_FENCE) return { kind: "absent" };
-  const end = lines.findIndex((l, i) => i > 0 && l.trim() === FRONTMATTER_FENCE);
-  if (end === -1) return { kind: "malformed" };
-  return { kind: "present", status: readScalar(lines.slice(1, end), "status") };
-}
-
-function readScalar(lines: string[], key: string): string | undefined {
-  for (const line of lines) {
-    const m = FRONTMATTER_ENTRY.exec(line);
-    if (m?.[1] !== key) continue;
-    const value = (m[2] ?? "").trim().replace(/^["']|["']$/g, "");
-    return value.length > 0 ? value : undefined;
-  }
-  return undefined;
-}
-
-// ── plans ────────────────────────────────────────────────────────────────────
-
-const PLAN_RE = /^(\d{3})-plan(?:-(.+))?\.md$/i;
-
-async function readPlans(fs: FileSystemPort, cwd: string, now: Date): Promise<StatusPlan[]> {
-  const dir = join(cwd, "docs", "plans");
-  const files = await listMarkdown(fs, dir, PLAN_RE);
-  const out: StatusPlan[] = [];
-  for (const f of files) {
-    try {
-      const text = await fs.readText(f.path);
-      const t = parseTasks(text);
-      const p = parsePhases(text);
-      const declared = parsePlanStatus(text).declared;
-      const planState = derivePlanState(declared, t, p);
-      const ts = await resolveTimestamp(fs, f.path, undefined, now);
-      out.push({
-        file: relFromCwd(f.path, cwd),
-        number: f.number,
-        slug: f.slug,
-        tasks_total: t.total,
-        tasks_done: t.closed,
-        progress_pct: t.progress_pct,
-        phases_total: p.total,
-        phases_validated: p.validated,
-        plan_state: planState,
-        phases_blocked: p.blocked,
-        blocked_phases: p.items
-          .filter((phase) => phase.state === "bloqueada")
-          .map((phase) => ({ number: phase.n, name: phase.name, blocker: phase.blocker })),
-        final_validation_pending:
-          planState === "open" && p.total > 0 && p.validated === p.total && t.closed === t.total,
-        date: ts.date,
-        relative: ts.relative,
-      });
-    } catch {
-      // skip unreadable plan
-    }
-  }
-  return sortByNumber(out);
-}
-
-/**
- * The three axes reconciled into one closure state. The rules, in order:
- *
- * - a plan that declares nothing, or declares `open`, IS open — including the
- *   case where every box is ticked and every phase is validated: that plan is
- *   waiting on its final validation, not finished (`final_validation_pending`);
- * - a plan that declares `done` is `done` only when the counters agree — every
- *   task closed and, under the phase contract, every phase validated;
- * - any other combination is `inconsistent`: the document says one thing and
- *   shows another, and nothing but a human repairs that.
- *
- * A plan with no phase marks predates the contract (`phases_total: 0`) and is
- * judged by its checkboxes alone — it never acquires fictitious phases, and
- * `done` on such a plan stays legitimate when its boxes are all ticked.
- */
-function derivePlanState(
-  declared: ParsedPlanStatus["declared"],
-  tasks: ParsedTasks,
-  phases: ParsedPhases,
-): PlanState {
-  if (declared === "unknown") return "inconsistent";
-  if (declared !== "done") return "open";
-  if (tasks.closed !== tasks.total) return "inconsistent";
-  // Legacy contract (`legacy-tasks`): no phase marks, so the checkboxes decide.
-  if (phases.total === 0) return "done";
-  return phases.validated === phases.total ? "done" : "inconsistent";
-}
-
-// ── sessions ──────────────────────────────────────────────────────────────────
-
-interface SessionFolderRef {
-  code: string | null;
-  folder: string;
-  path: string; // absolute
-}
-
-async function readSessions(
-  fs: FileSystemPort,
-  env: EnvPort,
-  paths: PathsService,
-  now: Date,
-): Promise<{ active: StatusSession[]; closed: StatusSession[]; folders: SessionFolderRef[] }> {
   const active: StatusSession[] = [];
   const closed: StatusSession[] = [];
-  const folders: SessionFolderRef[] = [];
-  let list: Awaited<ReturnType<SessionsService["list"]>>;
-  try {
-    list = await new SessionsService(fs, env, paths).list({ state: "all", verbose: true });
-  } catch {
-    return { active, closed, folders };
+  for (const session of index.sessions) {
+    (session.state === "closed" ? closed : active).push({
+      code: session.code,
+      folder: session.folder,
+      type: session.type,
+      summary: session.summary,
+      date: session.date,
+      relative: session.relative,
+    });
   }
-  for (const s of list.sessions) {
-    folders.push({ code: s.code, folder: s.folder, path: s.path });
-    const primary = (await findArtifact(s.path, "session", fs)) ?? s.path;
-    const ts = await resolveTimestamp(fs, primary, s.date, now);
-    const entry: StatusSession = {
-      code: s.code,
-      folder: s.folder,
-      type: s.type ?? null,
-      summary: s.summary ?? s.folder,
-      date: ts.date,
-      relative: ts.relative,
-    };
-    (s.state === "closed" ? closed : active).push(entry);
-  }
-  return { active, closed, folders };
-}
 
-// ── discarded ──────────────────────────────────────────────────────────────────
-
-async function readDiscarded(
-  fs: FileSystemPort,
-  folders: SessionFolderRef[],
-  cwd: string,
-  now: Date,
-): Promise<StatusDiscarded[]> {
-  const out: StatusDiscarded[] = [];
-  for (const f of folders) {
-    await collectDiscarded(fs, f, "backlog", "Deferred", "deferred", cwd, now, out);
-    await collectDiscarded(fs, f, "checkpoint", "Excluded", "excluded", cwd, now, out);
-  }
-  return out;
-}
-
-async function collectDiscarded(
-  fs: FileSystemPort,
-  ref: SessionFolderRef,
-  artifact: "backlog" | "checkpoint",
-  heading: string,
-  kind: DiscardedKind,
-  cwd: string,
-  now: Date,
-  out: StatusDiscarded[],
-): Promise<void> {
-  try {
-    const path = await findArtifact(ref.path, artifact, fs);
-    if (!path) return;
-    const items = listItems(parseMdSectionLoose(await fs.readText(path), heading));
-    if (items.length === 0) return;
-    const ts = await resolveTimestamp(fs, path, undefined, now);
-    for (const text of items) {
-      out.push({
-        source: ref.code ?? ref.folder,
-        source_path: relFromCwd(ref.path, cwd),
-        kind,
-        text,
-        date: ts.date,
-        relative: ts.relative,
-      });
-    }
-  } catch {
-    // skip unreadable artifact
-  }
-}
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-interface DocFile {
-  path: string;
-  number: string;
-  slug: string;
-}
-
-async function listMarkdown(fs: FileSystemPort, dir: string, re: RegExp): Promise<DocFile[]> {
-  if (!(await safeExists(fs, dir))) return [];
-  let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
-  try {
-    entries = await fs.list(dir);
-  } catch {
-    return [];
-  }
-  const out: DocFile[] = [];
-  for (const e of entries) {
-    if (e.type !== "file") continue;
-    const m = re.exec(e.name);
-    if (!m?.[1]) continue;
-    out.push({ path: e.path, number: m[1], slug: m[2] ?? "" });
-  }
-  return out;
-}
-
-/** Drop legacy `NNN-spec-refined.md` when another file shares its number. */
-function dedupeRefined(files: DocFile[]): DocFile[] {
-  const byNumber = new Map<string, DocFile[]>();
-  for (const f of files) {
-    const group = byNumber.get(f.number) ?? [];
-    group.push(f);
-    byNumber.set(f.number, group);
-  }
-  const out: DocFile[] = [];
-  for (const group of byNumber.values()) {
-    const isRefined = (f: DocFile) => /(^|-)refined$/i.test(f.slug);
-    const nonRefined = group.filter((f) => !isRefined(f));
-    const chosen = nonRefined.length > 0 ? nonRefined : group;
-    chosen.sort((a, b) => a.path.localeCompare(b.path));
-    const first = chosen[0];
-    if (first) out.push(first);
-  }
-  return out;
-}
-
-function sortByNumber<T extends { number: string; file: string }>(items: T[]): T[] {
-  return items.sort((a, b) => a.number.localeCompare(b.number) || a.file.localeCompare(b.file));
-}
-
-interface ResolvedTimestamp {
-  date: string;
-  relative: string;
-}
-
-/**
- * Best-available timestamp for `relative`/`date`: full-precision fs mtime if the
- * path stats, else a date-only fallback projected to local noon, else `now`.
- */
-async function resolveTimestamp(
-  fs: FileSystemPort,
-  path: string,
-  fallbackDateOnly: string | undefined,
-  now: Date,
-): Promise<ResolvedTimestamp> {
-  let mtime: Date | null = null;
-  try {
-    mtime = (await fs.stat(path)).mtime;
-  } catch {
-    mtime = null;
-  }
-  const when = mtime ?? dateOnlyToNoon(fallbackDateOnly) ?? now;
   return {
-    date: localDateIso(when),
-    relative: humanizeRelativeEs(when, now),
+    workspace: index.workspace,
+    specs: index.specs,
+    plans: index.plans,
+    sessions: { active, closed },
+    discarded: index.discarded,
+    pipeline: index.pipeline,
+    counts: {
+      specs: index.specs.length,
+      specs_refined: index.specs.filter((s) => s.refined).length,
+      plans: index.plans.length,
+      sessions_active: active.length,
+      sessions_closed: closed.length,
+      discarded: index.discarded.length,
+      pending: index.pipeline.length,
+    },
   };
-}
-
-function dateOnlyToNoon(dateStr: string | undefined): Date | null {
-  if (!dateStr) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
-  if (!m) return null;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
-}
-
-async function safeExists(fs: FileSystemPort, path: string): Promise<boolean> {
-  try {
-    return await fs.exists(path);
-  } catch {
-    return false;
-  }
-}
-
-function relFromCwd(path: string, cwd: string): string {
-  // path.relative handles the win32 case a raw string-prefix strip missed: join()
-  // yields backslash paths while the old prefix appended a forward slash, so the
-  // strip never matched and status showed absolute paths. Normalize to forward
-  // slashes so the displayed path reads the same on every OS.
-  return relative(cwd, path).split("\\").join("/");
-}
-
-/**
- * Like `parseMdSection` but tolerant of the template heading annotations
- * (`## Excluded (list):`, `## Deferred (text):`) — ignores a trailing
- * `(...)` / `:`; needed for legacy artifacts that still carry the suffix.
- */
-const parseMdSectionLoose = (text: string, heading: string): string | undefined =>
-  parseMdSection(text, heading, normalizeHeading);
-
-function normalizeHeading(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/\s*\([^)]*\)\s*:?\s*$/, "")
-    .replace(/:\s*$/, "")
-    .trim();
-}
-
-/** List-item lines of a section, dropping the `List of …` template placeholder. */
-function listItems(section: string | undefined): string[] {
-  if (!section) return [];
-  const out: string[] = [];
-  for (const raw of section.split("\n")) {
-    const m = /^\s*[-*]\s+(.+?)\s*$/.exec(raw);
-    if (!m?.[1]) continue;
-    const text = m[1].trim();
-    if (text.length === 0) continue;
-    if (/^list of\b/i.test(text)) continue; // template placeholder
-    out.push(text);
-  }
-  return out;
-}
-
-function countOpenQuestions(text: string): number {
-  const sec = parseMdSectionLoose(text, "Open questions");
-  if (!sec) return 0;
-  const first = (firstNonEmptyLine(sec) ?? "").toLowerCase();
-  if (first.length === 0) return 0;
-  if (/^[-*]?\s*(none|ninguna|ninguno|n\/a|—|-)\.?$/.test(first)) return 0;
-  const bullets = sec.split("\n").filter((l) => /^\s*[-*]\s+\S/.test(l)).length;
-  return bullets > 0 ? bullets : 1;
 }

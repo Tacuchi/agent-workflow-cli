@@ -129,7 +129,7 @@ describe("runStatusCommand — full dashboard", () => {
     });
     expect(excluded).toMatchObject({ text: "fase 9: fuera de alcance", source: "002-plan-exec" });
 
-    // counts
+    // counts — `pending` is the additive pipeline counter
     expect(out.counts).toEqual({
       specs: 2,
       specs_refined: 1,
@@ -137,7 +137,26 @@ describe("runStatusCommand — full dashboard", () => {
       sessions_active: 1,
       sessions_closed: 1,
       discarded: 2,
+      pending: 3,
     });
+
+    // pipeline: spec 004 is draft, spec 003 has no plan proving it, plan 007 is open.
+    // The closed session and the checkpoint-less active one contribute nothing.
+    expect(out.pipeline.map((p) => [p.kind, p.number])).toEqual([
+      ["spec-unrefined", "004"],
+      ["spec-unplanned", "003"],
+      ["plan-open", "007"],
+    ]);
+    expect(out.pipeline[0]?.command).toBe("/w:spec-refine docs/specs/004-spec-bar.md");
+    expect(out.pipeline[2]?.command).toBe("/w:plan-exec docs/plans/007-plan-foo.md");
+  });
+
+  // Read-only is an acceptance criterion, not a description: reading the
+  // workspace must not create a session, a document or a binding registry.
+  it("writes nothing at all", async () => {
+    const fs = fullWorkspace();
+    await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect([...fs.writes.keys()]).toEqual([]);
   });
 
   it("legacy mark = ## Refinement decisions alone; legacy specs with both sections stay refined", async () => {

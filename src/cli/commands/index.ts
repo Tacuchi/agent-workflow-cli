@@ -11,6 +11,13 @@ import { checkpointReadCommand } from "./checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-write.js";
 import { codeScanCommand } from "./code-scan.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
+import {
+  exportDiagramsCommand,
+  exportManualsCommand,
+  exportReportsCommand,
+  exportScriptsCommand,
+} from "./export.js";
+import { fixGitCommand } from "./fix-git.js";
 import { generateLaunchCommand } from "./generate-launch.js";
 import { gitFlowCommand } from "./git-flow.js";
 import { historyUpdateCommand } from "./history-update.js";
@@ -19,12 +26,14 @@ import { hostDoctorCommand } from "./host-doctor.js";
 import { mcpCommand } from "./mcp.js";
 import { mergeStateCommand } from "./merge-state.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./multiroot.js";
+import { persistCommand } from "./persist.js";
 import { pluginCacheCommand } from "./plugin-cache.js";
 import { pluginDoctorCommand } from "./plugin-doctor.js";
 import { projectMdUpsertCommand } from "./project-md-upsert.js";
 import { releaseDataCommand } from "./release-data.js";
 import { removeSourceCommand } from "./remove-source.js";
 import { resumeSummaryCommand } from "./resume-summary.js";
+import { resumeCommand } from "./resume.js";
 import { selfCommand } from "./self.js";
 import { sessionArtifactsCommand } from "./session-artifacts.js";
 import { sessionCloseCommand } from "./session-close.js";
@@ -43,6 +52,13 @@ import { workspaceInitCommand } from "./workspace-init.js";
 export const ALL_COMMANDS: readonly QtcCommand[] = [
   sessionsCommand,
   statusCommand,
+  resumeCommand,
+  persistCommand,
+  fixGitCommand,
+  exportDiagramsCommand,
+  exportManualsCommand,
+  exportReportsCommand,
+  exportScriptsCommand,
   historyUpdateCommand,
   sessionArtifactsCommand,
   sessionCloseCommand,

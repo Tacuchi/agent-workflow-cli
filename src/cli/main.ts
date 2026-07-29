@@ -20,6 +20,7 @@ import { readPackageVersion } from "../runtime/version.js";
 import { ALL_COMMANDS, commandDescribes } from "./commands/index.js";
 import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
 import { type MenuAction, shouldShowInteractiveMenu } from "./interactive-menu.js";
+import { type OutputMode, resolveOutputMode } from "./output-mode.js";
 import { parseArgv } from "./parser.js";
 import { CommandRegistry, type QtcCommand } from "./registry.js";
 import {
@@ -27,6 +28,7 @@ import {
   fail,
   formatArgvError,
   formatUnknownCommand,
+  renderHumanError,
   renderRaw,
   writeStdout,
 } from "./render.js";
@@ -59,6 +61,12 @@ async function run(argv: string[]): Promise<ExitCode> {
 
   const isTTY = process.stdout.isTTY === true;
   const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
+
+  const output = resolveOutputMode(parsed, isTTY);
+  if (!output.ok) {
+    emitError(formatArgvError(output.message));
+    return 1;
+  }
 
   const namespaceResolver = new NamespaceResolver(fs, env);
   const namespace = await namespaceResolver.resolve(parsed.values.get("namespace"));
@@ -124,30 +132,58 @@ async function run(argv: string[]): Promise<ExitCode> {
       result.ok ? "info" : "error",
       formatCommandOutcome(command.name, result.exitCode),
     );
-    emit(result);
+    emit(result, command, output.mode);
     return result.exitCode;
   } catch (err) {
     await logger.error(formatCommandError(command.name, err));
     const message = err instanceof Error ? err.message : String(err);
-    emit(fail("UNHANDLED", message));
+    emit(fail("UNHANDLED", message), command, output.mode);
     return 1;
   }
 }
 
-function emit<T>(result: CommandResult<T>): void {
-  if (result.ok && result.data !== undefined) {
-    writeStdout(renderRaw(result.data));
-  } else if (result.ok && result.data === undefined) {
+function emit(result: CommandResult, command: QtcCommand, mode: OutputMode): void {
+  if (result.ok && result.data === undefined) {
     // Command already wrote stdout itself (custom rendering); nothing more to emit.
     return;
-  } else {
-    const payload: { ok: boolean; error: typeof result.error; data?: unknown } = {
-      ok: result.ok,
-      error: result.error,
-    };
-    if (result.data !== undefined) payload.data = result.data;
-    writeStdout(renderRaw(payload));
   }
+  if (mode.format === "human") {
+    const rendered = renderHuman(result, command, mode);
+    if (rendered !== undefined) {
+      writeStdout(rendered);
+      return;
+    }
+  }
+  emitJson(result);
+}
+
+/**
+ * Human projection, or `undefined` when the command declares none — in which
+ * case the runtime keeps JSON. Success and failure are kept together on
+ * purpose: a command that renders prose on error but JSON on success would be
+ * incoherent to read and to script against.
+ */
+function renderHuman(
+  result: CommandResult,
+  command: QtcCommand,
+  mode: OutputMode,
+): string | undefined {
+  if (command.renderHuman === undefined) return undefined;
+  if (!result.ok) return renderHumanError(result.error, result.data);
+  return command.renderHuman(result, { detail: mode.detail });
+}
+
+function emitJson(result: CommandResult): void {
+  if (result.ok) {
+    writeStdout(renderRaw(result.data));
+    return;
+  }
+  const payload: { ok: boolean; error: typeof result.error; data?: unknown } = {
+    ok: result.ok,
+    error: result.error,
+  };
+  if (result.data !== undefined) payload.data = result.data;
+  writeStdout(renderRaw(payload));
 }
 
 async function dispatchMenuAction(

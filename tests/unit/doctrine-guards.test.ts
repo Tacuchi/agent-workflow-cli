@@ -10,6 +10,10 @@ import { describe, expect, it } from "vitest";
 // G5 pins the canonical short `## Inherits` form — paraphrased engine summaries
 // were the informe-002 drift factory reborn in miniature.
 const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
+// Since plan 009 the CLI holds the reader half of the progress contracts:
+// `status`/`resume` relay what it renders instead of re-interpreting JSON.
+const SRC_ROOT = resolve(__dirname, "..", "..", "src", "application");
+const readSrc = (name: string): Promise<string> => readFile(resolve(SRC_ROOT, name), "utf8");
 
 async function readRel(rel: string): Promise<string> {
   return readFile(join(SKILL_ROOT, rel), "utf8");
@@ -955,14 +959,15 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("the three axes are declared on every surface that reports progress", async () => {
-    for (const rel of ["SKILL.md", "commands/status.md"]) {
-      const doc = await readRel(rel);
-      expect(doc, rel).toContain("Three axes");
-      expect(doc, rel).toContain("plan_state");
-    }
-    const status = await readRel("commands/status.md");
-    expect(status).toContain("final_validation_pending");
-    expect(status).toContain("`inconsistent`");
+    const skill = await readRel("SKILL.md");
+    expect(skill).toContain("Three axes");
+    expect(skill).toContain("plan_state");
+    // The reporting surface is the CLI now: `status` renders it and the index
+    // derives it, so the three axes have to stay separable THERE.
+    const index = await readSrc("workline-index-service.ts");
+    expect(index).toContain("the plan's third axis");
+    expect(index).toContain("final_validation_pending");
+    expect(index).toContain("`inconsistent` = the document contradicts itself");
   });
 
   it("plan-exec keeps the plan open until the final validation, never from the counters", async () => {
@@ -978,10 +983,12 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(exec).toContain("**A blocker without a reason is not a blocker (hard rule).**");
     expect(exec).toContain("`blocker: null`");
     expect(exec).toContain("names **the action that unblocks it**");
-    // The reader has to render it, not just count it.
-    const status = await readRel("commands/status.md");
-    expect(status).toContain("blocked_phases[]");
-    expect(status).toContain("motivo no declarado");
+    // The reader has to render the reason, not just count the phase.
+    const index = await readSrc("workline-index-service.ts");
+    expect(index).toContain("blocked_phases");
+    expect(index).toContain("`null` on a legacy block that declares none");
+    const resume = await readSrc("resume-service.ts");
+    expect(resume).toContain('blocked.blocker ?? "sin motivo declarado"');
   });
 
   it("the shape decision is resolved before the gap loop and never stored in pending_human", async () => {
@@ -1063,15 +1070,18 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("`resume` routes by plan_state — done is the only state it does not resume", async () => {
-    const resume = await readRel("commands/resume.md");
-    expect(resume).toContain("**`plan_state` decides whether a plan is resumable at all.**");
-    for (const row of [
-      "| plan `open` with `final_validation_pending`",
-      "| plan `inconsistent`",
-      "| plan `done` | — not resumed automatically",
-    ]) {
-      expect(resume, row).toContain(row);
-    }
+    // The routing table moved into the runtime: `derivePipeline` skips `done`
+    // and `describePlanNext` gives every other state its own re-entry point.
+    const index = await readSrc("workline-index-service.ts");
+    expect(index).toContain('if (plan.plan_state === "done") continue;');
+    const service = await readSrc("resume-service.ts");
+    expect(service).toContain('plan.plan_state === "inconsistent"');
+    expect(service).toContain("plan.final_validation_pending");
+    expect(service).toContain("BLOQUEADA F");
+    // And the skill states the rule without owning it.
+    const doc = await readRel("commands/resume.md");
+    expect(doc).toContain("A plan is not finished because its boxes are ticked");
+    expect(doc).toContain("comes back as inconsistent");
   });
 });
 

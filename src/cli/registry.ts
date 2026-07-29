@@ -2,10 +2,24 @@ import type { CommandResult } from "../domain/types.js";
 import type { ParsedArgs } from "./parser.js";
 import type { CliContext } from "./types.js";
 
+export interface HumanRenderContext {
+  /** `--detail` was requested: widen the projection. Never changes the domain. */
+  detail: boolean;
+}
+
 export interface QtcCommand<O = unknown> {
   name: string;
   describe?: string;
   execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<O>>;
+  /**
+   * Optional human projection of the SAME result `execute` returned — the
+   * runtime never re-derives anything, it only chooses a projection.
+   *
+   * A command without this stays JSON in every mode. That is what keeps the
+   * migration incremental: the ~35 commands that never opt in behave exactly
+   * as they do today, in a terminal and in a pipe alike.
+   */
+  renderHuman?(result: CommandResult<O>, context: HumanRenderContext): string;
 }
 
 export class CommandRegistry {

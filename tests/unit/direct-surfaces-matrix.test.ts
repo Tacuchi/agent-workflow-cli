@@ -1,0 +1,189 @@
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { ALL_COMMANDS, commandDescribes } from "../../src/cli/commands/index.js";
+import { groupCommands } from "../../src/cli/help-groups.js";
+import { resolveOutputMode } from "../../src/cli/output-mode.js";
+import { parseArgv } from "../../src/cli/parser.js";
+import { CommandRegistry } from "../../src/cli/registry.js";
+
+/**
+ * The cross-cutting matrix of spec 012 (C1–C18): the ten direct surfaces, their
+ * output projections, their write boundary and their distribution.
+ *
+ * Per-command behavior is proven by each service's own suite. What only shows up
+ * here is the COHERENCE between them — the drift this plan exists to remove.
+ */
+
+const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
+
+/** The ten commands spec 012 declares direct, with their classification. */
+const SURFACES = [
+  { name: "status", kind: "cli-complete", writes: null },
+  { name: "resume", kind: "cli-complete", writes: null },
+  { name: "generate-launch", kind: "cli-complete", writes: ".workflow/launch" },
+  { name: "workspace-init", kind: "cli-complete", writes: ".workflow" },
+  { name: "persist", kind: "hybrid", writes: "docs/research|specs|plans" },
+  { name: "fix-git", kind: "hybrid", writes: "the repo's conflicted files" },
+  { name: "export-diagrams", kind: "hybrid", writes: "docs/diagrams" },
+  { name: "export-manuals", kind: "hybrid", writes: "docs/manuals" },
+  { name: "export-reports", kind: "hybrid", writes: "docs/reports" },
+  { name: "export-scripts", kind: "hybrid", writes: "docs/scripts" },
+] as const;
+
+function registry(): CommandRegistry {
+  const reg = new CommandRegistry();
+  for (const command of ALL_COMMANDS) reg.register(command);
+  return reg;
+}
+
+// ── C1 · the ten surfaces exist and are reachable ────────────────────────────
+
+describe("C1 · every declared surface is a real, registered command", () => {
+  it.each(SURFACES.map((s) => s.name))("`aw %s` resolves", (name) => {
+    expect(registry().resolve(name)).toBeDefined();
+  });
+
+  it("no command falls into the help catch-all", () => {
+    const groups = groupCommands(registry().list());
+    expect(groups.find((g) => g.name === "Other")).toBeUndefined();
+  });
+
+  it("every surface carries a describe that names its usage", () => {
+    const describes = commandDescribes();
+    for (const surface of SURFACES) {
+      const describe_ = describes.get(surface.name) ?? "";
+      expect(describe_, surface.name).toContain(`aw ${surface.name}`);
+    }
+  });
+
+  // Three commands share the `resume` stem and three different audiences.
+  it("the three resume-shaped commands stay distinguishable", () => {
+    const describes = commandDescribes();
+    expect(describes.get("resume")).toContain("pipeline documental");
+    expect(describes.get("resume-summary")).toContain("PostCompact");
+    expect(describes.get("session-resume")).toContain("session");
+  });
+});
+
+// ── C12/C13 · output projections ─────────────────────────────────────────────
+
+describe("C12/C13 · the output matrix is one rule for every command", () => {
+  const matrix: Array<[string[], boolean, "human" | "json", boolean]> = [
+    [[], false, "json", false], // pipe, no override → the JSON automation parses
+    [[], true, "human", false], // terminal, no override → compact prose
+    [["--json"], true, "json", false], // explicit machine, inside a terminal
+    [["--format", "human"], false, "human", false], // explicit human, through a pipe
+    [["--detail"], false, "human", true], // detail implies the human projection
+    [["--detail", "--format", "human"], true, "human", true],
+  ];
+
+  it.each(matrix)("argv %j on TTY=%s → %s (detail=%s)", (argv, isTTY, format, detail) => {
+    const resolution = resolveOutputMode(parseArgv(["status", ...argv]), isTTY);
+    if (!resolution.ok) throw new Error(`expected a mode: ${resolution.message}`);
+    expect(resolution.mode).toEqual({ format, detail });
+  });
+
+  it("rejects the contradictions instead of picking a winner", () => {
+    for (const argv of [
+      ["--json", "--format", "human"],
+      ["--detail", "--json"],
+      ["--format", "yaml"],
+    ]) {
+      expect(resolveOutputMode(parseArgv(["status", ...argv]), true).ok, argv.join(" ")).toBe(
+        false,
+      );
+    }
+  });
+
+  it("the surfaces that opted into a human projection are exactly the ten", () => {
+    const withRenderer = ALL_COMMANDS.filter((c) => c.renderHuman !== undefined).map((c) => c.name);
+    expect([...withRenderer].sort()).toEqual([...SURFACES.map((s) => s.name)].sort());
+  });
+
+  // The compatibility floor: every OTHER command keeps emitting JSON in a
+  // terminal, exactly as it did before this plan.
+  it("no other command acquired a human projection by accident", () => {
+    const others = ALL_COMMANDS.filter(
+      (c) => !SURFACES.some((s) => s.name === c.name) && c.renderHuman !== undefined,
+    );
+    expect(others.map((c) => c.name)).toEqual([]);
+  });
+});
+
+// ── C1/C9 · the skills delegate instead of re-deriving ───────────────────────
+
+describe("C1/C9 · every wrapper invokes the CLI and re-decides nothing", () => {
+  it.each(SURFACES.map((s) => s.name))("`%s.md` invokes its own CLI command", async (name) => {
+    const doc = await readFile(join(SKILL_ROOT, "commands", `${name}.md`), "utf8");
+    expect(doc).toContain(`aw ${name} `);
+  });
+
+  it.each(SURFACES.filter((s) => s.kind === "hybrid").map((s) => s.name))(
+    "`%s.md` states the CLI owns the write",
+    async (name) => {
+      const doc = await readFile(join(SKILL_ROOT, "commands", `${name}.md`), "utf8");
+      expect(doc).toMatch(/Never write into `docs\/`|Never edit a conflicted file/);
+    },
+  );
+
+  // The 34,9 KB the exports used to load on every invocation.
+  it("no export wrapper loads its EXPORT.md on the normal path", async () => {
+    for (const category of ["diagrams", "manuals", "reports", "scripts"]) {
+      const doc = await readFile(join(SKILL_ROOT, "commands", `export-${category}.md`), "utf8");
+      const run = doc.slice(doc.indexOf("## Run"), doc.indexOf("## Resources"));
+      expect(run, category).not.toContain("EXPORT.md");
+      expect(doc, category).toContain("no longer loaded on the normal path");
+    }
+  });
+
+  it("no direct wrapper keeps a write tool in allowed-tools", async () => {
+    for (const surface of SURFACES) {
+      const doc = await readFile(join(SKILL_ROOT, "commands", `${surface.name}.md`), "utf8");
+      const frontmatter = doc.slice(0, doc.indexOf("\n---", 4));
+      expect(frontmatter, surface.name).not.toContain('"Write"');
+      expect(frontmatter, surface.name).not.toContain('"Edit"');
+    }
+  });
+});
+
+// ── C15/C16/C18 · the write boundary, declared per surface ───────────────────
+
+describe("C15/C16/C18 · each surface declares one destination and no session", () => {
+  it("the read-only surfaces declare no destination at all", () => {
+    const readOnly = SURFACES.filter((s) => s.writes === null).map((s) => s.name);
+    expect(readOnly).toEqual(["status", "resume"]);
+  });
+
+  it("the four exports own four disjoint folders", () => {
+    const folders = SURFACES.filter((s) => s.name.startsWith("export-")).map((s) => s.writes);
+    expect(folders).toEqual(["docs/diagrams", "docs/manuals", "docs/reports", "docs/scripts"]);
+    expect(new Set(folders).size).toBe(folders.length);
+  });
+
+  it("no direct surface documents creating a session", async () => {
+    for (const surface of SURFACES) {
+      const doc = await readFile(join(SKILL_ROOT, "commands", `${surface.name}.md`), "utf8");
+      expect(doc, surface.name).not.toMatch(/aw session-create/);
+    }
+  });
+});
+
+// ── cost fixture (spec 009 consumes it; no threshold is set here) ────────────
+
+describe("activation cost — recorded, not budgeted", () => {
+  it("records the wrapper bytes of the ten surfaces", async () => {
+    const sizes: Record<string, number> = {};
+    for (const surface of SURFACES) {
+      const doc = await readFile(join(SKILL_ROOT, "commands", `${surface.name}.md`), "utf8");
+      sizes[surface.name] = Buffer.byteLength(doc, "utf8");
+    }
+    // Deliberately no threshold: spec 009 owns the budgets. What this pins is
+    // that the numbers stay MEASURABLE and that the migration did not make the
+    // normal path heavier than the doctrine it replaced (15 434 B for
+    // status+resume alone, plus 34 900 B of export manuals).
+    const total = Object.values(sizes).reduce((a, b) => a + b, 0);
+    expect(total).toBeLessThan(15_434 + 34_900);
+    expect(Object.keys(sizes)).toHaveLength(10);
+  });
+});

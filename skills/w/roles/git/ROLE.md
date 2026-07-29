@@ -97,14 +97,13 @@ Outside an active session: relax to "1 line + no co-author"; the `session<NNN>` 
 
 Autonomous `git merge` is forbidden (above), **but** resolving an **in-progress** merge (MERGE_HEAD), or one invoked by the user via `/w:fix-git`, **is** sanctioned work. **Workspace-agnostic**: it operates on any repo (no `.workflow/`, flows or sessions required).
 
-1. **Detect + identify** with `aw merge-state [<path>|--source <alias>|--all]` (read-only): `is_merging`, `current_branch` (**destination / ours**), `merge_origin` (**origin / theirs**), `conflicted_files`. If `merge_origin` comes empty, check `.git/MERGE_MSG` or `git log --oneline -1 MERGE_HEAD`.
-2. **Analyze each conflict's intent** **before** resolving — never pick a side blindly:
-   - The three versions: `git show :1:<file>` (base) · `:2:<file>` (ours/destination) · `:3:<file>` (theirs/origin).
-   - Each side's why: `git log --merge -p -- <file>`; the hunk's history on each branch.
-   - The code around the marker (coherence with the rest of the file).
-3. **Resolve** by editing the file (remove `<<<<<<<` / `=======` / `>>>>>>>`): pick **ours**, **theirs**, **combine** both intents, or **rewrite** to satisfy both. `git add <file>` what is resolved.
-4. **Ask** (*structured-choice*) when the intent is **ambiguous** or both sides are **incoherent** with each other (not combinable without losing something): one content question per doubtful file/hunk (≤3 + `flow` control), options "Ours (`<destination>`)" / "Theirs (`<origin>`)" / "Combine" / "Edit manually". **Never invent** a resolution under real doubt.
-5. **Proposed commit**: completing the merge is a `git commit` (the merge commit) → **propose-then-execute** like any commit (canonical format above; outside a session → 1 line without the `session<NNN>` tag; never `--no-verify`/`--amend`/`push`). The `git-commit-advisor` hook gates it.
+**The mechanics live in the CLI** (`aw fix-git prepare | apply | commit`); what follows is the reasoning it expects from you. Never edit a conflicted file, `git add` or `git commit` by hand here — see [`../../commands/fix-git.md`](../../commands/fix-git.md) for the exact invocations.
+
+1. **Detect + identify**: `aw fix-git prepare` (read-only) returns the merge direction (**theirs → ours**), the conflicted paths and, per path, its three index stages with their blob hashes. `aw merge-state` remains the lighter inspector when you only need the state.
+2. **Analyze each conflict's intent** **before** resolving — never pick a side blindly. The request already carries the three versions: `base` (common ancestor), `ours` (destination) and `theirs` (origin). Add `git log --merge -p -- <file>` when the *why* of a hunk is not evident, and read the surrounding code for coherence.
+3. **Resolve** by composing the complete resolved file: pick **ours**, **theirs**, **combine** both intents, or **rewrite** to satisfy both — with no `<<<<<<<` / `=======` / `>>>>>>>` left. The CLI writes and stages it; a leftover marker is rejected, and so is a path that is no longer in conflict.
+4. **Ask** (*structured-choice*) when the intent is **ambiguous** or both sides are **incoherent** with each other (not combinable without losing something): answer `state: "ambiguous"` so nothing is written, then ask one content question per doubtful file/hunk (≤3 + `flow` control), options "Ours (`<destination>`)" / "Theirs (`<origin>`)" / "Combine" / "Edit manually". **Never invent** a resolution under real doubt. A **binary** conflict is never resolved automatically: propose `git checkout --ours|--theirs`.
+5. **Proposed commit**: completing the merge is a `git commit` (the merge commit) → **propose-then-execute** like any commit (canonical format above; outside a session → 1 line without the `session<NNN>` tag; never `--no-verify`/`--amend`/`push`). It is a **separate, confirmed** invocation — `aw fix-git commit --message "<msg>" --confirm` — which refuses while any file stays unmerged. The `git-commit-advisor` hook gates it.
 6. **Escape hatch**: if the merge must not complete, `git merge --abort` **after user confirmation** (*structured-choice*) — leaves the repo as before the merge.
 
 > **Resume via git**: the merge state in `.git` (MERGE_HEAD + index) **is** the checkpoint; re-running `/w:fix-git` resumes from the remaining conflicts. No session, no artifact.

@@ -12,6 +12,14 @@ import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 // apart on the engine flag (`--diagrams` vs `--engine`), the default engine
 // (structurizr vs mermaid) and the output filenames. A composing pair must agree.
 const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
+
+// Since plan 009 the transversal surfaces (`status`, `resume`) no longer
+// interpret the JSON — the CLI renders. The vocabulary guards below therefore
+// point at the SOURCE that now holds the reader's half of each contract: the
+// skill is checked for delegating, the CLI for speaking the writer's language.
+const SRC_ROOT = resolve(__dirname, "..", "..", "src");
+const INDEX_SERVICE = join(SRC_ROOT, "application", "workline-index-service.ts");
+const RESUME_SERVICE = join(SRC_ROOT, "application", "resume-service.ts");
 const SCANNED_SUBFOLDERS = ["commands", "loops", "exports", "roles", "artifacts", "hooks"];
 
 async function listMdFiles(dir: string): Promise<string[]> {
@@ -296,11 +304,16 @@ describe("SPEC readiness contract — spec-new ↔ spec-refine ↔ plan-new ↔ 
   });
 
   it("the transversal surfaces speak the same vocabulary", async () => {
+    // The vocabulary moved into the CLI with the interpretation; the skills now
+    // have to DELEGATE, and saying so is what keeps them from drifting back.
     const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
     const resume = await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8");
-    expect(status).toContain("`ready-for-plan`");
-    expect(status).toContain("`refined: true` as its boolean mirror");
-    expect(resume).toContain("`ready-for-plan`");
+    const index = await readFile(INDEX_SERVICE, "utf8");
+    expect(status).toContain("aw status --format human");
+    expect(resume).toContain("aw resume --format human");
+    expect(resume).toContain("**Never re-decide**");
+    expect(index).toContain("ready-for-plan");
+    expect(index).toContain('`status === "ready-for-plan"`');
     expect(resume).not.toContain("spec unrefined");
   });
 
@@ -309,24 +322,25 @@ describe("SPEC readiness contract — spec-new ↔ spec-refine ↔ plan-new ↔ 
     // section of the CURRENT schema, so a spec nobody refined read as ready and
     // `/w:resume` routed it to PLAN. The list is a contract, not an implementation
     // detail — the docs that describe it and the code that applies it must match.
-    const { LEGACY_READY_MARKS } = await import("../../src/application/status-service.js");
+    const { LEGACY_READY_MARKS } = await import("../../src/application/workline-index-service.js");
     expect(LEGACY_READY_MARKS).toEqual(["Refinement decisions", "Q&A traceability"]);
     for (const rel of [
       "loops/spec-refine-loop/LOOP.md",
       "loops/plan-new-loop/LOOP.md",
       "commands/plan-new.md",
       "commands/spec-refine.md",
-      "commands/status.md",
     ]) {
       const doc = await readFile(join(SKILL_ROOT, rel), "utf8");
       for (const mark of LEGACY_READY_MARKS) {
         expect(doc, `${rel} must name the legacy mark ## ${mark}`).toContain(`## ${mark}`);
       }
     }
-    // And the frontmatter is what governs when it exists.
-    const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
-    expect(status).toContain("**The frontmatter governs spec maturity.**");
-    expect(status).toContain("A `status` that is absent, empty or unknown reads `draft`");
+    // `commands/status.md` dropped off that list when the CLI took over spec
+    // maturity: the rule it used to describe is now applied there, and that is
+    // the copy the guard has to pin.
+    const index = await readFile(INDEX_SERVICE, "utf8");
+    expect(index).toContain("A declared frontmatter governs alone");
+    expect(index).toContain("runs only on a spec that carries no frontmatter at all");
   });
 
   it("the naming asymmetry with plan-refine is deliberate and declared", async () => {
@@ -351,33 +365,35 @@ describe("Phase contract — plan loops ↔ the transversal surfaces ↔ the run
     const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
     const resume = await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8");
     expect(exec).toContain("> Estado: validada");
+    // The reader half is the CLI now — the skills only relay what it prints.
     for (const [name, doc] of [
-      ["status", status],
-      ["resume", resume],
+      ["index", await readFile(INDEX_SERVICE, "utf8")],
+      ["resume-service", await readFile(RESUME_SERVICE, "utf8")],
     ] as const) {
       expect(doc, name).toContain("phases_validated");
       expect(doc, name).toContain("phases_total");
       expect(doc, name).toContain("validada");
     }
+    expect(resume).toContain("not `validada`");
+    expect(status).toContain("plans not `done`");
   });
 
   it("the two progress signals stay separate on every surface", async () => {
     // Additive, not a replacement: checkboxes measure work, phases measure state.
-    const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
+    const index = await readFile(INDEX_SERVICE, "utf8");
     const resume = await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8");
-    expect(status).toContain("`progress_pct` stays checkbox-derived");
-    expect(status).toContain("work implemented, not validated");
-    expect(resume).toContain("Every box ticked is not a finished plan");
+    expect(index).toContain("checkbox-derived work progress; the phase counts below never feed it");
+    expect(index).toContain("never inferred from the checkboxes");
+    expect(resume).toContain("A plan is not finished because its boxes are ticked");
     expect(resume).toContain("`/w:plan-exec`");
   });
 
   it("a legacy plan with no phase marks degrades the same way everywhere", async () => {
     const exec = await readFile(join(SKILL_ROOT, "loops/plan-exec-loop/LOOP.md"), "utf8");
-    const status = await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8");
-    const resume = await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8");
+    const index = await readFile(INDEX_SERVICE, "utf8");
     expect(exec).toContain("a missing line reads `pendiente`");
-    expect(status).toContain("`phases_total: 0`");
-    expect(resume).toContain("`phases_total: 0`");
+    expect(index).toContain("`phases_total: 0`");
+    expect(index).toContain("it never acquires fictitious phases");
   });
 
   it("plan-refine's exit gate and plan-exec's entry gate are the same gate", async () => {
@@ -399,13 +415,16 @@ describe("Phase contract — plan loops ↔ the transversal surfaces ↔ the run
       "utf8",
     );
     expect(exec).toContain("> Bloqueo:");
-    for (const [name, doc] of [
-      ["status", await readFile(join(SKILL_ROOT, "commands/status.md"), "utf8")],
-      ["resume", await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8")],
-      ["checkpoint", checkpoint],
-    ] as const) {
-      expect(doc, name).toContain("`bloqueada`");
-    }
+    expect(checkpoint).toContain("`bloqueada`");
+    // The runtime keys off the exact mark the writer emits, not a paraphrase.
+    const index = await readFile(INDEX_SERVICE, "utf8");
+    expect(index).toContain("> Estado: bloqueada");
+    expect(index).toContain('phase.state === "bloqueada"');
+    // And the reader surfaces the declared reason instead of a bare state.
+    expect(await readFile(RESUME_SERVICE, "utf8")).toContain("sin motivo declarado");
+    expect(await readFile(join(SKILL_ROOT, "commands/resume.md"), "utf8")).toContain(
+      "`bloqueada` phase with its declared reason",
+    );
     expect(checkpoint).toContain("**what is missing to validate it**");
   });
 
@@ -486,19 +505,25 @@ describe("directed resume contract — resume.md optional argument (spec 004)", 
 
   it("keeps the read-only hard floor, argument or not", async () => {
     const text = await readFile(join(SKILL_ROOT, RESUME), "utf8");
-    expect(text).toContain("never write `docs/` or `.workflow/`");
+    expect(text).toContain("writes nothing in `docs/` or `.workflow/`");
     expect(text).toContain("with or without an argument");
+    // The floor is enforced, not just declared: the resolver reads with
+    // `bind: false`, so even the session path records nothing.
+    expect(await readFile(RESUME_SERVICE, "utf8")).toContain("bind: false");
   });
 
-  it("directed mode resolves via existing CLI + ## Origin and routes through ## Routing (no new helper)", async () => {
+  it("the directed target is resolved by the CLI, and the skill only forwards it", async () => {
     const text = await readFile(join(SKILL_ROOT, RESUME), "utf8");
-    const start = text.indexOf("## Directed resume");
-    expect(start).toBeGreaterThan(-1);
-    const directed = text.slice(start, text.indexOf("\n## Run\n"));
-    expect(directed).toContain("aw sessions --state all");
-    expect(directed).toContain("--include-recent-closed");
-    expect(directed).toContain("## Origin");
-    expect(directed).toContain("`## Routing`");
+    // The skill no longer owns the survey: no slug matching, no `## Origin`
+    // reading, no routing table to keep in sync with the runtime.
+    expect(text).not.toContain("## Directed resume");
+    expect(text).not.toContain("## Routing");
+    expect(text).toContain("pass it as the positional");
+    expect(text).toContain("aw resume --code");
+
+    const service = await readFile(RESUME_SERVICE, "utf8");
+    expect(service).toContain("An explicit target wins");
+    expect(service).toContain("never by slug");
   });
 });
 

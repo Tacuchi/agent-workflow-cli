@@ -39,6 +39,7 @@ const GROUPS: readonly CommandGroup[] = [
       "remove-source",
       "git-flow",
       "merge-state",
+      "fix-git",
       "attach-multiroot",
       "detach-multiroot",
       "visibility",
@@ -49,7 +50,21 @@ const GROUPS: readonly CommandGroup[] = [
     name: "Orchestration",
     // next-number is a core helper (the bundle skills call it for NNN
     // correlatives), not dev-only; skills/skill-index resolve capability bindings.
-    commands: ["status", "stack", "skill-index", "skills", "resume-summary", "next-number"],
+    commands: [
+      "status",
+      "resume",
+      "persist",
+      "stack",
+      "skill-index",
+      "skills",
+      "resume-summary",
+      "next-number",
+    ],
+  },
+  {
+    name: "Exports",
+    // Each writes into exactly one docs/ folder and nowhere else.
+    commands: ["export-diagrams", "export-manuals", "export-reports", "export-scripts"],
   },
   {
     name: "Doctor / Data",

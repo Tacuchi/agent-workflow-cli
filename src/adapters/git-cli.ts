@@ -1,4 +1,10 @@
-import type { DiffNumstatEntry, GitPort, MergeResult } from "../ports/git.js";
+import type {
+  ConflictStage,
+  ConflictStages,
+  DiffNumstatEntry,
+  GitPort,
+  MergeResult,
+} from "../ports/git.js";
 import type { ProcessPort, RunOptions, RunResult } from "../ports/process.js";
 
 /**
@@ -152,6 +158,54 @@ export class GitCliAdapter implements GitPort {
     const raw = result.stdout.trim();
     if (raw.length === 0 || raw === "undefined") return undefined;
     return cleanRefName(raw);
+  }
+
+  async conflictStages(repoPath: string, path: string): Promise<ConflictStages> {
+    // `ls-files -u` is the only source that gives BOTH the stage number and the
+    // blob hash. Reading the worktree file instead would show the conflict
+    // markers git already wrote, not the three sides that produced them.
+    const listed = await this.process.run(
+      "git",
+      ["ls-files", "-u", "--", path],
+      this.opts(repoPath),
+    );
+    const hashes = new Map<string, string>();
+    if (listed.code === 0) {
+      for (const line of listed.stdout.split("\n")) {
+        const match = /^\d+ ([0-9a-f]{40}) ([123])\t/.exec(line);
+        if (match?.[1] && match[2]) hashes.set(match[2], match[1]);
+      }
+    }
+
+    const base = await this.readStage(repoPath, hashes.get("1"));
+    const ours = await this.readStage(repoPath, hashes.get("2"));
+    const theirs = await this.readStage(repoPath, hashes.get("3"));
+    const present = [base, ours, theirs].filter((s) => s.hash !== null);
+    return {
+      path,
+      base,
+      ours,
+      theirs,
+      binary: present.some((s) => s.content === null),
+    };
+  }
+
+  private async readStage(repoPath: string, hash: string | undefined): Promise<ConflictStage> {
+    if (hash === undefined) return { hash: null, content: null, bytes: 0 };
+    const result = await this.process.run("git", ["cat-file", "-p", hash], this.opts(repoPath));
+    if (result.code !== 0) return { hash, content: null, bytes: 0 };
+    const bytes = Buffer.byteLength(result.stdout, "utf8");
+    // A NUL byte is the same heuristic git itself uses to call a blob binary.
+    const content = result.stdout.includes("\u0000") ? null : result.stdout;
+    return { hash, content, bytes };
+  }
+
+  async stagePath(repoPath: string, path: string): Promise<void> {
+    await this.mustRun(`add ${path}`, ["add", "--", path], repoPath);
+  }
+
+  async commit(repoPath: string, message: string): Promise<void> {
+    await this.mustRun("commit", ["commit", "-m", message], repoPath);
   }
 }
 

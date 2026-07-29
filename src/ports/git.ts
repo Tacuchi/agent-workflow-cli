@@ -34,4 +34,39 @@ export interface GitPort {
    * Undefined when not mid-merge or the commit can't be named to a ref.
    */
   mergeOrigin(repoPath: string): Promise<string | undefined>;
+  /**
+   * The three index stages of one conflicted path. Read-only.
+   *
+   * The blob hashes are what makes a resolution verifiable later: they identify
+   * the exact conflict a proposal was written against, so `fix-git apply` can
+   * refuse one whose stages moved underneath it.
+   */
+  conflictStages(repoPath: string, path: string): Promise<ConflictStages>;
+  /** `git add -- <path>`. Throws on failure. Never `git add -A`. */
+  stagePath(repoPath: string, path: string): Promise<void>;
+  /**
+   * `git commit -m <message>` on the staged content. Never `--no-verify`,
+   * never `--amend`, never a push — those stay outside this port on purpose.
+   */
+  commit(repoPath: string, message: string): Promise<void>;
+}
+
+export interface ConflictStage {
+  /** Index blob hash, `null` when the stage is absent (add/add, delete/modify). */
+  hash: string | null;
+  /** Decoded text, `null` when the stage is absent or is not UTF-8 text. */
+  content: string | null;
+  bytes: number;
+}
+
+export interface ConflictStages {
+  path: string;
+  /** stage 1 — the common ancestor */
+  base: ConflictStage;
+  /** stage 2 — HEAD */
+  ours: ConflictStage;
+  /** stage 3 — the branch being merged in */
+  theirs: ConflictStage;
+  /** Any present stage is not decodable text: never resolved automatically. */
+  binary: boolean;
 }

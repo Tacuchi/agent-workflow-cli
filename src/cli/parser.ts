@@ -76,6 +76,11 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "include-legacy",
   "include-recent-closed",
   "can-pause",
+  // Output projection (see output-mode.ts). `--format` takes a value and stays
+  // out; these two are presence-only and MUST be here or `aw status --json` and
+  // `aw resume --detail 009` would swallow the following positional.
+  "json",
+  "detail",
   "include-docs",
   "from-sources",
   "exported-only",

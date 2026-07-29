@@ -5,8 +5,6 @@ allowed-tools:
   [
     "Bash",
     "Read",
-    "Write",
-    "Edit",
   ]
 ---
 
@@ -15,8 +13,10 @@ allowed-tools:
 Runs `aw workspace-init` to turn the current folder into a Workline workspace. A workspace has **1+ sources** (repos); "standalone" = a single source. There are no project/hub modes — the model is unified.
 
 ```bash
-aw workspace-init --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run]
+aw workspace-init --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run] --format human
 ```
+
+> **The CLI writes; this wrapper does not.** Every file below is created by `aw workspace-init` — `Write` and `Edit` are deliberately absent from `allowed-tools`. Use `--dry-run` to show the user what would land, then re-run without it. Relay the CLI's output instead of re-rendering it.
 
 ## Interactive steps
 

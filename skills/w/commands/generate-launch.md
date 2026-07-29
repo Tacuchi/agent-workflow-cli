@@ -1,5 +1,5 @@
 ---
-description: "(Re)generates the per-source launch scripts (.workflow/launch/<alias>/ — launch.json + run.sh + run.ps1) by detecting each source's stack and launch mode (interactive TUI vs server). Idempotent: pristine files regenerate, hand-edited ones are preserved (--force overwrites). Confirms the mode/command via structured-choice when it matters. Backed by `aw generate-launch`. Transversal command (not a flow); no session, never touches docs/."
+description: "(Re)generates the per-source launch scripts (.workflow/launch/<alias>/ — launch.json + run.sh + run.ps1) by detecting each source's stack and launch mode (interactive TUI vs server). Idempotent: pristine files regenerate, hand-edited ones are preserved (--force overwrites). Confirms the mode/command via structured-choice when it matters. Backed by `aw generate-launch --format human`. Transversal command (not a flow); no session, never touches docs/."
 argument-hint: "[--source <alias>] [--mode interactive|server] [--command <cmd>] [--force] [--dry-run]"
 allowed-tools:
   [
