@@ -26,8 +26,8 @@ function setup() {
 
 describe("Wave 1B write commands — golden parity (new model)", () => {
   it("history-update --code 001 --state closed --summary 'tarea cerrada via test'", async () => {
-    const { cwd, env, paths } = setup();
-    const result = await runHistoryUpdate(fs, env, paths, {
+    const { cwd, paths } = setup();
+    const result = await runHistoryUpdate(fs, paths, {
       code: "001",
       state: "closed",
       summary: "tarea cerrada via test",
@@ -43,10 +43,10 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-close --code 001 writes the .closed sentinel AND upserts the HISTORY row", async () => {
-    const { cwd, env, paths } = setup();
+    const { cwd, paths } = setup();
     const historyBefore = readFile(join(cwd, ".workflow", "HISTORY.md"));
 
-    const result = await runSessionClose(fs, env, paths, { code: "001" });
+    const result = await runSessionClose(fs, paths, { code: "001" });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.sessionClose.code).toBe("001");
     expect(result.sessionClose.folder).toBe("session001-dev-foo");
@@ -76,8 +76,8 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-close --refs lands the refs (free text included) in the HISTORY row", async () => {
-    const { cwd, env, paths } = setup();
-    const result = await runSessionClose(fs, env, paths, {
+    const { cwd, paths } = setup();
+    const result = await runSessionClose(fs, paths, {
       code: "001",
       refs: "see docs/decisiones/001-foo.md",
     });
@@ -89,37 +89,47 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(row).toContain("see docs/decisiones/001-foo.md");
   });
 
-  it("session-close es no-fatal ante HISTORY bloqueado: cierra igual y reporta history_error", async () => {
-    const { cwd, env, paths } = setup();
-    // Live foreign lock (test's pid, current ISO ts) → history-update returns lock busy.
+  // INVERTED on purpose (plan 008 / F1). Close used to write `.closed` outside
+  // the lock, so a busy lock still closed the session and only HISTORY was
+  // skipped. Closing now also releases the conversation bindings pointing at the
+  // session, and the two must not diverge — a session marked closed whose
+  // associations survived is exactly the mixed state this plan removes. So the
+  // whole mutation is one critical section: a busy lock closes NOTHING and
+  // reports an actionable block instead.
+  it("session-close ante lock ocupado: no muta nada y reporta bloqueo accionable", async () => {
+    const { cwd, paths } = setup();
+    // Live foreign lock (test's pid, current ISO ts) → the critical section is unreachable.
     await fs.writeText(
       join(cwd, ".workflow", ".lock"),
       JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
     );
     const historyBefore = readFile(join(cwd, ".workflow", "HISTORY.md"));
 
-    const result = await runSessionClose(fs, env, paths, { code: "001" });
-    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
-    expect(result.sessionClose.closed).toBe(true);
+    const result = await runSessionClose(fs, paths, { code: "001" });
+    if (!("error" in result)) throw new Error("expected a lock-busy error");
+    expect(result.code).toBe("LOCK_BUSY");
+    expect(result.error).toMatch(/lock ocupado/);
+    // Zero mutations: neither the sentinel nor HISTORY moved.
     expect(existsSync(join(cwd, ".workflow", "sessions", "session001-dev-foo", ".closed"))).toBe(
-      true,
+      false,
     );
-    expect(result.sessionClose.history).toBeUndefined();
-    expect(result.sessionClose.history_error).toMatch(/lock ocupado/);
     expect(readFile(join(cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);
   });
 
-  it("session-close error si la sesión no existe", async () => {
-    const { env, paths } = setup();
-    const result = await runSessionClose(fs, env, paths, { code: "999" });
-    if (!("error" in result)) throw new Error("expected error");
-    expect(result.error).toMatch(/Sesión no encontrada/);
+  it("session-close error si la sesión no existe: código estable + candidatos + acción", async () => {
+    const { paths } = setup();
+    const result = await runSessionClose(fs, paths, { code: "999" });
+    if (!("sessionError" in result)) throw new Error("expected a resolution error");
+    expect(result.sessionError.code).toBe("SESSION_NOT_FOUND");
+    expect(result.sessionError.message).toMatch(/'999'/);
+    expect(result.sessionError.candidates.map((c) => c.folder)).toContain("session001-dev-foo");
+    expect(result.sessionError.action.length).toBeGreaterThan(0);
   });
 
   it("session-create --type exec --name ... --objetivo ... --from ... writes SESSION.md (no HISTORY, no project-block)", async () => {
-    const { cwd, env, paths } = setup();
+    const { cwd, paths } = setup();
     const historyBefore = readFile(join(cwd, ".workflow", "HISTORY.md"));
-    const result = await runSessionCreate(fs, env, paths, {
+    const result = await runSessionCreate(fs, paths, {
       type: "exec",
       name: "session004-dev-nueva-tarea",
       objetivo: "Probar session-create del CLI TS",
@@ -155,19 +165,19 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create numbers sessions globally & sequentially, regardless of type", async () => {
-    const { env, paths } = setup();
+    const { paths } = setup();
 
-    const first = await runSessionCreate(fs, env, paths, {
+    const first = await runSessionCreate(fs, paths, {
       type: "refine",
       name: "spec-refine",
       objetivo: "control del loop de refinamiento",
     });
-    const second = await runSessionCreate(fs, env, paths, {
+    const second = await runSessionCreate(fs, paths, {
       type: "research",
       name: "spec-refine-research-winfacts",
       objetivo: "investigar hechos de Windows",
     });
-    const third = await runSessionCreate(fs, env, paths, {
+    const third = await runSessionCreate(fs, paths, {
       type: "refine",
       name: "plan-new",
       objetivo: "control del loop de planificación",
@@ -182,7 +192,7 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(third.sessionCreate.folder).toBe("003-plan-new");
 
     // A descriptor that accidentally carries a leading NNN- is normalized, never doubled.
-    const fourth = await runSessionCreate(fs, env, paths, {
+    const fourth = await runSessionCreate(fs, paths, {
       type: "quick",
       name: "001-quick",
       objetivo: "no debe duplicar el prefijo",
@@ -192,8 +202,8 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create without --from renders the Origin placeholder", async () => {
-    const { cwd, env, paths } = setup();
-    const result = await runSessionCreate(fs, env, paths, {
+    const { cwd, paths } = setup();
+    const result = await runSessionCreate(fs, paths, {
       type: "research",
       name: "investiga-x",
       objetivo: "Investigar el patrón X",
@@ -213,8 +223,8 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create requires --type (research|refine|exec|quick)", async () => {
-    const { env, paths } = setup();
-    const result = await runSessionCreate(fs, env, paths, {
+    const { paths } = setup();
+    const result = await runSessionCreate(fs, paths, {
       name: "x",
       objetivo: "y",
     });
@@ -224,8 +234,8 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create rejects an invalid --type", async () => {
-    const { env, paths } = setup();
-    const result = await runSessionCreate(fs, env, paths, {
+    const { paths } = setup();
+    const result = await runSessionCreate(fs, paths, {
       type: "feature",
       name: "x",
       objetivo: "y",
@@ -235,8 +245,8 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
   });
 
   it("session-create requires --objetivo", async () => {
-    const { env, paths } = setup();
-    const result = await runSessionCreate(fs, env, paths, {
+    const { paths } = setup();
+    const result = await runSessionCreate(fs, paths, {
       type: "exec",
       name: "x",
     });

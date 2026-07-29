@@ -1,9 +1,10 @@
-import { runArtifactsCommand } from "../../application/artifacts-service.js";
+import { type ArtifactsInput, runArtifactsCommand } from "../../application/artifacts-service.js";
 import { readSessionArtifacts } from "../../application/release-data/artifacts.js";
 import type { CommandResult } from "../../domain/types.js";
+import { readContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
-import { fail } from "../render.js";
+import { fail, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 
 const DUMP_KINDS = new Set([
@@ -53,14 +54,14 @@ export const sessionArtifactsCommand: QtcCommand = {
       return { ok: true, data: dump, exitCode: 0 };
     }
 
-    const verbose = args.flags.has("--verbose");
-    const input: { code?: string; verbose?: boolean } = {};
+    const input: ArtifactsInput = {};
     if (code !== undefined) input.code = code;
-    if (verbose) input.verbose = true;
+    if (args.flags.has("--verbose")) input.verbose = true;
+    const contextId = readContextId(ctx.env);
+    if (contextId !== undefined) input.contextId = contextId;
+
     const data = await runArtifactsCommand(ctx.fs, ctx.env, ctx.paths, input);
-    if ("error" in data) {
-      return fail("SESSION_NOT_FOUND", data.error, data);
-    }
+    if ("sessionError" in data) return failSessionResolution(data.sessionError);
     return { ok: true, data, exitCode: 0 };
   },
 };

@@ -22,14 +22,14 @@ export const historyUpdateCommand: QtcCommand = {
     const date = args.values.get("date");
     const refs = args.values.get("refs");
 
-    const input: Parameters<typeof runHistoryUpdate>[3] = {};
+    const input: Parameters<typeof runHistoryUpdate>[2] = {};
     if (code !== undefined) input.code = code;
     if (state !== undefined) input.state = state;
     if (sesion !== undefined) input.sesionName = sesion;
     if (date !== undefined) input.date = date;
     if (refs !== undefined) input.refs = refs;
 
-    const data = await runHistoryUpdate(ctx.fs, ctx.env, ctx.paths, input);
+    const data = await runHistoryUpdate(ctx.fs, ctx.paths, input);
     if ("error" in data) {
       return fail("INVALID_INPUT", data.error, data);
     }

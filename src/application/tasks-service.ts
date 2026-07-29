@@ -4,12 +4,18 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { type ParsedTasks, type TaskItem, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
-import { resolveSession } from "./session-resolver.js";
+import {
+  type SessionResolutionError,
+  resolveSessionTarget,
+  sessionReadRequest,
+} from "./session-resolver.js";
 
 export interface TasksCommandInput {
   code?: string;
   onlyOpen?: boolean;
   verbose?: boolean;
+  /** Opaque conversation id; resolution falls back to its durable association. */
+  contextId?: string;
 }
 
 export interface TasksCommandOutput {
@@ -24,12 +30,7 @@ export interface TasksCommandOutput {
   next_open: TaskItem | null;
 }
 
-export interface TasksCommandError {
-  error: string;
-  code: string | null;
-}
-
-export type TasksCommandResult = TasksCommandOutput | TasksCommandError;
+export type TasksCommandResult = TasksCommandOutput | { sessionError: SessionResolutionError };
 
 export async function runTasksCommand(
   fs: FileSystemPort,
@@ -37,10 +38,9 @@ export async function runTasksCommand(
   paths: PathsService,
   input: TasksCommandInput,
 ): Promise<TasksCommandResult> {
-  const session = await resolveSession(fs, env, paths, input.code, true);
-  if (!session) {
-    return { error: "session_not_found", code: input.code ?? null };
-  }
+  const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
+  if (resolution.outcome !== "resolved") return { sessionError: resolution };
+  const session = resolution.session;
   const tasksPath = join(session.path, "TASKS.md");
   const cwd = env.cwd();
   const verbose = input.verbose === true;

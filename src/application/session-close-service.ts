@@ -1,10 +1,16 @@
 import { join } from "node:path";
-import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { runHistoryUpdate } from "./history-update-service.js";
+import { historyFields, upsertHistoryRow } from "./history-update-service.js";
+import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
-import { CLOSED_MARKER, resolveSession } from "./session-resolver.js";
+import { invalidateBindingsTo } from "./session-binding-service.js";
+import {
+  CLOSED_MARKER,
+  type SessionEntry,
+  type SessionResolutionError,
+  resolveSessionTarget,
+} from "./session-resolver.js";
 
 export interface SessionCloseInput {
   code?: string;
@@ -21,8 +27,10 @@ export interface SessionCloseOutput {
   refs?: string;
   /** HISTORY.md row upsert performed by close (durable record of closed work). */
   history?: { action: string; state: string };
-  /** Non-fatal: close succeeds even if the HISTORY write failed (e.g. busy lock). */
+  /** Non-fatal: close succeeds even if the HISTORY write failed. */
   history_error?: string;
+  /** Conversation associations dropped because they pointed at this session. */
+  bindings_invalidated: number;
 }
 
 export interface SessionCloseFullOutput {
@@ -31,62 +39,104 @@ export interface SessionCloseFullOutput {
 
 export interface SessionCloseError {
   error: string;
+  code?: string;
 }
+
+export type SessionCloseResult =
+  | SessionCloseFullOutput
+  | SessionCloseError
+  | { sessionError: SessionResolutionError };
 
 export async function runSessionClose(
   fs: FileSystemPort,
-  env: EnvPort,
   paths: PathsService,
   input: SessionCloseInput,
-): Promise<SessionCloseFullOutput | SessionCloseError> {
+): Promise<SessionCloseResult> {
+  // Closing is destructive to continuity: it always names its target. Falling
+  // back to "the sole active one" would let a conversation close a line it
+  // never selected.
   if (!input.code) return { error: "--code es obligatorio" };
-  const session = await resolveSession(fs, env, paths, input.code, true);
-  if (!session) return { error: `Sesión no encontrada: ${input.code}` };
+  const resolution = await resolveSessionTarget(fs, paths, { code: input.code, allowClosed: true });
+  if (resolution.outcome !== "resolved") return { sessionError: resolution };
+  const session = resolution.session;
 
-  // Persist the durable artifacts in the session folder (they survive close).
-  // CHECKPOINT is a resume safety net (no-op when the loop already wrote one).
-  // BACKLOG is NOT fabricated here: the owning loop writes a real BACKLOG.md
-  // only when there is deferred/followup content, so close no longer creates
-  // an empty boilerplate file. `backlog_path` still reports the canonical path.
+  // Durable artifacts survive close. CHECKPOINT is a resume safety net (no-op
+  // when the loop already wrote one). BACKLOG is NOT fabricated: the owning loop
+  // writes it only when there is deferred content; `backlog_path` still reports
+  // the canonical path.
   const checkpointPath = canonicalArtifactPath(session.path, "checkpoint");
-  const backlogPath = canonicalArtifactPath(session.path, "backlog");
   await ensureFile(fs, checkpointPath, "# CHECKPOINT\n");
 
-  // Mark the session closed via the folder-local sentinel file.
-  // Sessions are internal/light: closing does not touch the project block.
-  await fs.writeText(join(session.path, CLOSED_MARKER), "");
+  const refs = input.refs?.trim();
+  const closure = await closeUnderLock(fs, paths, session, {
+    code: session.code ?? input.code,
+    ...(refs !== undefined && refs.length > 0 ? { refs } : {}),
+  });
+  if ("error" in closure) return closure;
 
   const sessionClose: SessionCloseOutput = {
-    code: session.code ?? input.code ?? "",
+    code: session.code ?? input.code,
     folder: session.folder,
     closed: true,
     checkpoint_path: checkpointPath,
-    backlog_path: backlogPath,
+    backlog_path: canonicalArtifactPath(session.path, "backlog"),
+    ...(refs !== undefined && refs.length > 0 ? { refs } : {}),
+    bindings_invalidated: closure.bindings_invalidated,
+    ...(closure.history ? { history: closure.history } : {}),
+    ...(closure.history_error !== undefined ? { history_error: closure.history_error } : {}),
   };
-  if (input.refs && input.refs.trim().length > 0) {
-    sessionClose.refs = input.refs.trim();
-  }
-
-  // Sessions are gitignored (machine-local live log); HISTORY.md is the durable,
-  // committable record — close upserts its row here so it actually gets written
-  // (doctrine-only wiring proved dead: nothing ever called `aw history-update`).
-  // Non-fatal: a busy lock or a write failure never blocks closing.
-  try {
-    const history = await runHistoryUpdate(fs, env, paths, {
-      code: sessionClose.code,
-      state: "closed",
-      ...(sessionClose.refs !== undefined ? { refs: sessionClose.refs } : {}),
-    });
-    if ("error" in history) {
-      sessionClose.history_error = history.error;
-    } else {
-      sessionClose.history = { action: history.action, state: history.state };
-    }
-  } catch (err) {
-    sessionClose.history_error = err instanceof Error ? err.message : String(err);
-  }
-
   return { sessionClose };
+}
+
+interface Closure {
+  bindings_invalidated: number;
+  history?: { action: string; state: string };
+  history_error?: string;
+}
+
+/**
+ * The whole shared-state mutation of a close, under ONE lock acquisition:
+ * invalidate the associations pointing here, write the `.closed` marker, upsert
+ * the HISTORY row. HISTORY goes through the lock-free primitive on purpose —
+ * its public command takes the lock itself, and nesting would deadlock.
+ *
+ * The registry goes FIRST: if it cannot be read, the close aborts having
+ * mutated nothing, rather than leaving a closed session that conversations are
+ * still associated with.
+ */
+async function closeUnderLock(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  row: { code: string; refs?: string },
+): Promise<Closure | SessionCloseError> {
+  // `failure` (not `error`) so the busy-lock envelope `withCwdLock` returns
+  // stays distinguishable from a failure raised inside the critical section.
+  type Locked = { ok: true; closure: Closure } | { ok: false; failure: SessionCloseError };
+
+  const result = await withCwdLock(fs, paths, async (): Promise<Locked> => {
+    const invalidated = await invalidateBindingsTo(fs, paths, session.folder);
+    if (!invalidated.ok) {
+      return { ok: false, failure: { error: invalidated.reason, code: "SESSION_BINDING_INVALID" } };
+    }
+    await fs.writeText(join(session.path, CLOSED_MARKER), "");
+    const closure: Closure = { bindings_invalidated: invalidated.removed };
+    try {
+      const history = await upsertHistoryRow(
+        fs,
+        paths,
+        historyFields({ ...row, state: "closed" }, session, row.code),
+      );
+      closure.history = { action: history.action, state: history.state };
+    } catch (err) {
+      // Non-fatal, as before: the caller re-runs `aw history-update` on this.
+      closure.history_error = err instanceof Error ? err.message : String(err);
+    }
+    return { ok: true, closure };
+  });
+
+  if ("error" in result) return { error: result.error, code: "LOCK_BUSY" };
+  return result.ok ? result.closure : result.failure;
 }
 
 async function ensureFile(fs: FileSystemPort, path: string, defaultContent: string): Promise<void> {

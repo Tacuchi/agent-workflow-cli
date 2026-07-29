@@ -4,11 +4,17 @@ import { type ParsedDecision, parseDecisiones } from "./parsers/decisiones.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { canonicalArtifactPath, findArtifact } from "./session-artifacts.js";
-import { resolveSession } from "./session-resolver.js";
+import {
+  type SessionResolutionError,
+  resolveSessionTarget,
+  sessionReadRequest,
+} from "./session-resolver.js";
 
 export interface DecisionesCommandInput {
   code?: string;
   full?: boolean;
+  /** Opaque conversation id; resolution falls back to its durable association. */
+  contextId?: string;
 }
 
 export interface DecisionesCommandOutput {
@@ -19,12 +25,9 @@ export interface DecisionesCommandOutput {
   items: ParsedDecision[];
 }
 
-export interface DecisionesCommandError {
-  error: string;
-  code: string | null;
-}
-
-export type DecisionesCommandResult = DecisionesCommandOutput | DecisionesCommandError;
+export type DecisionesCommandResult =
+  | DecisionesCommandOutput
+  | { sessionError: SessionResolutionError };
 
 export async function runDecisionesCommand(
   fs: FileSystemPort,
@@ -32,10 +35,9 @@ export async function runDecisionesCommand(
   paths: PathsService,
   input: DecisionesCommandInput,
 ): Promise<DecisionesCommandResult> {
-  const session = await resolveSession(fs, env, paths, input.code, true);
-  if (!session) {
-    return { error: "session_not_found", code: input.code ?? null };
-  }
+  const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
+  if (resolution.outcome !== "resolved") return { sessionError: resolution };
+  const session = resolution.session;
   const decPath = await findArtifact(session.path, "decisions", fs);
   if (!decPath) {
     return {

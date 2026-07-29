@@ -1,3 +1,4 @@
+import type { SessionResolutionError } from "../application/session-resolver.js";
 import type { CommandResult } from "../domain/types.js";
 
 export interface ErrorEnvelope {
@@ -23,6 +24,19 @@ export function fail(
     ...(data !== undefined ? { data } : {}),
     exitCode,
   };
+}
+
+/**
+ * Canonical envelope for a failed session resolution: the stable `code`, the
+ * human message, and — in `data` — the relevant candidates plus one valid next
+ * action. Every session-scoped command reports the failure this way, so the
+ * shape never depends on which command hit it.
+ */
+export function failSessionResolution(error: SessionResolutionError): CommandResult {
+  return fail(error.code, error.message, {
+    candidates: error.candidates,
+    action: error.action,
+  });
 }
 
 export function renderRaw(payload: unknown): string {

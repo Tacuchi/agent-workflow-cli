@@ -7,11 +7,17 @@ import { type TaskItem, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact, listExistingArtifacts } from "./session-artifacts.js";
-import { resolveSession } from "./session-resolver.js";
+import {
+  type SessionResolutionError,
+  resolveSessionTarget,
+  sessionReadRequest,
+} from "./session-resolver.js";
 
 export interface ArtifactsInput {
   code?: string;
   verbose?: boolean;
+  /** Opaque conversation id; resolution falls back to its durable association. */
+  contextId?: string;
 }
 
 interface SessionSummary {
@@ -49,21 +55,17 @@ export interface ArtifactsOutput {
   branch?: string;
 }
 
-export interface ArtifactsError {
-  error: string;
-  code: string | null;
-}
+export type ArtifactsResult = ArtifactsOutput | { sessionError: SessionResolutionError };
 
 export async function runArtifactsCommand(
   fs: FileSystemPort,
   env: EnvPort,
   paths: PathsService,
   input: ArtifactsInput,
-): Promise<ArtifactsOutput | ArtifactsError> {
-  const session = await resolveSession(fs, env, paths, input.code, true);
-  if (!session) {
-    return { error: "session_not_found", code: input.code ?? null };
-  }
+): Promise<ArtifactsResult> {
+  const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
+  if (resolution.outcome !== "resolved") return { sessionError: resolution };
+  const session = resolution.session;
   const cwd = env.cwd();
   const verbose = input.verbose === true;
 

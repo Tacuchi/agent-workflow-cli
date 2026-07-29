@@ -3,6 +3,7 @@ import {
   runSessionCreate,
 } from "../../application/session-create-service.js";
 import type { CommandResult } from "../../domain/types.js";
+import { readContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import { fail } from "../render.js";
@@ -22,8 +23,10 @@ export const sessionCreateCommand: QtcCommand = {
     if (objetivo !== undefined) input.objetivo = objetivo;
     const from = args.values.get("from");
     if (from !== undefined) input.originRaw = from;
+    const contextId = readContextId(ctx.env);
+    if (contextId !== undefined) input.contextId = contextId;
 
-    const data = await runSessionCreate(ctx.fs, ctx.env, ctx.paths, input);
+    const data = await runSessionCreate(ctx.fs, ctx.paths, input);
     if ("error" in data) {
       return fail(data.code ?? "INVALID_INPUT", data.error, data);
     }

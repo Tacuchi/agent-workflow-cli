@@ -2,13 +2,22 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type CheckpointFields, readLatestCheckpoint } from "./checkpoint-service.js";
+import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact } from "./session-artifacts.js";
-import { CLOSED_MARKER, resolveSession } from "./session-resolver.js";
+import { bindContextToSession } from "./session-binding-service.js";
+import {
+  CLOSED_MARKER,
+  type SessionEntry,
+  type SessionResolutionError,
+  resolveSessionTarget,
+} from "./session-resolver.js";
 
 export interface SessionResumeInput {
   code?: string;
+  /** Opaque conversation id; resolution falls back to its durable association. */
+  contextId?: string;
   /**
    * Reactivate a closed session being resumed (remove its `.closed` sentinel).
    * Default false = read-only resume. This is the inter-turn continuity move
@@ -31,26 +40,41 @@ export interface SessionResumeOutput {
 
 export interface SessionResumeError {
   error: string;
-  code: string | null;
+  code?: string;
 }
+
+export type SessionResumeResult =
+  | SessionResumeOutput
+  | SessionResumeError
+  | { sessionError: SessionResolutionError };
 
 export async function runSessionResume(
   fs: FileSystemPort,
   env: EnvPort,
   paths: PathsService,
   input: SessionResumeInput,
-): Promise<SessionResumeOutput | SessionResumeError> {
-  const session = await resolveSession(fs, env, paths, input.code, true);
-  if (!session) {
-    return { error: "session_not_found", code: input.code ?? null };
+): Promise<SessionResumeResult> {
+  // Reopening is a selection, not a guess: it reactivates a closed line and
+  // associates the conversation with it, so it always names its target.
+  if (input.reopen === true && (input.code ?? "").trim().length === 0) {
+    return { error: "--reopen exige --code <NNN>", code: "INVALID_INPUT" };
   }
 
-  // Inter-turn continuity (operating context, row 2): when explicitly resuming
-  // to continue, a closed session is REOPENED — drop the `.closed` sentinel so
-  // it becomes active again. `remove` is idempotent; a no-op when already active.
+  const resolution = await resolveSessionTarget(fs, paths, {
+    ...(input.code !== undefined ? { code: input.code } : {}),
+    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
+    allowClosed: true,
+    // A reopen binds inside its own lock below, so the operation acquires the
+    // workspace lock exactly once.
+    bind: input.reopen !== true,
+  });
+  if (resolution.outcome !== "resolved") return { sessionError: resolution };
+  const session = resolution.session;
+
   let state = session.state;
-  if (input.reopen === true && state === "closed") {
-    await fs.remove(join(session.path, CLOSED_MARKER));
+  if (input.reopen === true) {
+    const reopened = await reopenUnderLock(fs, paths, session, input.contextId);
+    if (reopened !== null) return reopened;
     state = "active";
   }
 
@@ -73,4 +97,30 @@ export async function runSessionResume(
     objetivo_text: objetivoText,
     checkpoint,
   };
+}
+
+/** `null` = reopened and associated; otherwise the error to return verbatim. */
+async function reopenUnderLock(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  contextId: string | undefined,
+): Promise<SessionResumeError | null> {
+  const id = contextId?.trim() ?? "";
+  // `failure` (not `error`) so the busy-lock envelope `withCwdLock` returns
+  // stays distinguishable from a failure raised inside the critical section.
+  type Locked = { ok: true } | { ok: false; failure: SessionResumeError };
+
+  const result = await withCwdLock(fs, paths, async (): Promise<Locked> => {
+    // `remove` is idempotent — a no-op when the session is already active.
+    await fs.remove(join(session.path, CLOSED_MARKER));
+    if (id.length === 0) return { ok: true };
+    const bound = await bindContextToSession(fs, paths, id, session.folder);
+    return bound.ok
+      ? { ok: true }
+      : { ok: false, failure: { error: bound.reason, code: "SESSION_BINDING_INVALID" } };
+  });
+
+  if ("error" in result) return { error: result.error, code: "LOCK_BUSY" };
+  return result.ok ? null : result.failure;
 }

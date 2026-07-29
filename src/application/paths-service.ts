@@ -73,6 +73,14 @@ export class PathsService {
   cwdSessionsDir(): string {
     return join(this.cwdRoot(), "sessions");
   }
+  /**
+   * Durable conversation→session association registry. Lives inside the
+   * sessions dir (machine-local, gitignored) and is skipped by
+   * `listSessionFolders`, which ignores dot-prefixed entries.
+   */
+  cwdSessionBindingsFile(): string {
+    return join(this.cwdSessionsDir(), ".bindings.json");
+  }
   cwdHistoryFile(): string {
     return join(this.cwdRoot(), "HISTORY.md");
   }
