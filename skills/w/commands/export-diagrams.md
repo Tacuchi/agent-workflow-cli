@@ -18,6 +18,6 @@ allowed-tools: ["Bash", "Read"]
 
 ## More context
 
-`aw context-plan --command export-diagrams --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command export-diagrams --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `authoring` — the notation or the `--engine` choice is not obvious from the material → [`../exports/export-diagrams/EXPORT.md`](../exports/export-diagrams/EXPORT.md), no longer loaded on the normal path

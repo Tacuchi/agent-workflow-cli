@@ -7,6 +7,7 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
 
 const REPO_ROOT = resolve(__dirname, "..", "..");
 const BUNDLE_ROOT = join(REPO_ROOT, "skills", "w");
+const COMMANDS_ROOT = join(BUNDLE_ROOT, "commands");
 const BASELINE_PATH = join(REPO_ROOT, "tests", "fixtures", "context-baseline.json");
 const CONTEXT_SRC = join(REPO_ROOT, "src", "application", "context");
 
@@ -40,6 +41,26 @@ describe("context-plan — the resolver returns what the doctrine already orders
       expect(plan.degraded, command).toBe(false);
       expect(plan.profile, command).toBe("compact");
     }
+  });
+
+  it("every authored command pins context-plan to the Claude plugin bundle token", async () => {
+    const rootArg = '--root "${CLAUDE_PLUGIN_ROOT}/skills/w"';
+    const commandFiles = (await readdir(COMMANDS_ROOT))
+      .filter((name) => name.endsWith(".md") && name !== "README.md")
+      .sort();
+    expect(commandFiles).toHaveLength(16);
+
+    const offenders: string[] = [];
+    for (const file of commandFiles) {
+      const lines = (await readFile(join(COMMANDS_ROOT, file), "utf8"))
+        .split(/\r?\n/)
+        .filter((line) => line.includes("aw context-plan --command"));
+      if (lines.length === 0) offenders.push(`${file}: missing context-plan call`);
+      for (const line of lines) {
+        if (!line.includes(rootArg)) offenders.push(`${file}: ${line.trim()}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("a signalled invocation adds its module and nothing else", async () => {

@@ -15,7 +15,7 @@ Single-pass, no loop, no session, **never writes `docs/`**. **Transversal** (no 
 ## Run
 
 1. **Detect** — `aw generate-launch --dry-run [--source <alias>]`. Per source: `stack`, `launchable`, the detected `run` and `mode` (`interactive` | `server`).
-2. **Confirm (structured-choice)** — per **launchable** source; recommended = the detected mode.
+2. **Confirm (structured-choice)** — per **launchable** source; recommended = the detected mode. Use the canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) and [per-host binding](../harness/HARNESS.md#harness-binding-matrix).
    - **Interactive** — foreground, owns a real TTY. TUIs / REPLs / interactive CLIs.
    - **Server** — background + log window (close-to-stop). Dev servers, services.
    - **Custom command** — the user gives the exact run command (optional).
@@ -26,6 +26,6 @@ Single-pass, no loop, no session, **never writes `docs/`**. **Transversal** (no 
 
 ## More context
 
-`aw context-plan --command generate-launch --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command generate-launch --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `detection` — the CLI's automatic detection of how to run the project was wrong or ambiguous → [`../modules/LAUNCH-DETECTION.md`](../modules/LAUNCH-DETECTION.md)

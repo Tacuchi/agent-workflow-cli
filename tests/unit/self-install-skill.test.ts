@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
-import { SKILL_DIR_NAME, selfInstallSkill } from "../../src/application/self/install-skill.js";
+import {
+  CLAUDE_PLUGIN_BUNDLE_ROOT,
+  SKILL_DIR_NAME,
+  selfInstallSkill,
+} from "../../src/application/self/install-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { HOST_INSTALL_TARGETS } from "../../src/domain/harnesses.js";
@@ -82,12 +86,17 @@ allowed-tools:
 
 # quick — trampoline
 
-Read \`../loops/quick-loop/LOOP.md\` and follow it taking \`$ARGUMENTS\` as the task.
+Run \`aw context-plan --command quick --root "\${CLAUDE_PLUGIN_ROOT}/skills/w"\`. Read \`../loops/quick-loop/LOOP.md\`, consult \`../harness/HARNESS.md\`, and follow the loop taking \`$ARGUMENTS\` as the task.
 `;
+
+function portablePath(path: string): string {
+  return path.split("\\").join("/");
+}
 
 async function seedCommandsFixture(root: string): Promise<void> {
   await mkdir(join(root, "commands"), { recursive: true });
   await mkdir(join(root, "loops/quick-loop"), { recursive: true });
+  await mkdir(join(root, "harness"), { recursive: true });
   await writeFile(join(root, "commands/quick.md"), QUICK_COMMAND, "utf8");
   await writeFile(
     join(root, "commands/status.md"),
@@ -100,6 +109,7 @@ async function seedCommandsFixture(root: string): Promise<void> {
     "---\nname: quick-loop\ndescription: Quick loop.\n---\n\n# quick-loop\n",
     "utf8",
   );
+  await writeFile(join(root, "harness/HARNESS.md"), "# harness binding\n", "utf8");
 }
 
 describe("splitCommandDoc", () => {
@@ -256,7 +266,10 @@ describe("selfInstallSkill", () => {
     expect(synth).toContain("Lightweight shortcut for scoped work");
     // Bundle-relative reference rewritten to resolve from the sibling skill.
     expect(synth).toContain("../w/loops/quick-loop/LOOP.md");
+    expect(synth).toContain("../w/harness/HARNESS.md");
     expect(synth).not.toContain("`../loops/");
+    expect(synth).toContain(`--root "${portablePath(join(home, ".codex/skills/w"))}"`);
+    expect(synth).not.toContain(CLAUDE_PLUGIN_BUNDLE_ROOT);
     // The wrapper explains the $ARGUMENTS binding for hosts without substitution.
     expect(synth).toContain("$ARGUMENTS");
     // Ownership-aware sweep: the old flatten disappears, the foreign skill
@@ -264,6 +277,7 @@ describe("selfInstallSkill", () => {
     expect(await fs.exists(join(home, ".codex/skills/w-quick-loop"))).toBe(false);
     expect(await fs.exists(join(home, ".codex/skills/w-scraper"))).toBe(true);
     expect(await fs.exists(join(home, ".codex/skills/w/loops/quick-loop/LOOP.md"))).toBe(true);
+    expect(await fs.exists(join(home, ".codex/skills/w/harness/HARNESS.md"))).toBe(true);
     expect(await fs.exists(join(home, ".codex/commands/w"))).toBe(false);
 
     // Re-installing sweeps and regenerates our own wrappers (marker) without touching foreign ones.
@@ -321,7 +335,7 @@ describe("selfInstallSkill", () => {
     expect(await fs.exists(join(home, ".gemini/commands/w/quick.toml"))).toBe(true);
   });
 
-  it("native wrappers: gemini TOML ({{args}}), opencode description-only, crush body-only", async () => {
+  it("native wrappers: adapt dialect and resolve bundle-relative references", async () => {
     await seedCommandsFixture(source);
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
@@ -339,6 +353,10 @@ describe("selfInstallSkill", () => {
     expect(toml).toContain('prompt = """');
     expect(toml).toContain("{{args}}");
     expect(toml).not.toContain("$ARGUMENTS");
+    expect(toml).toContain("../../skills/w/loops/quick-loop/LOOP.md");
+    expect(toml).toContain("../../skills/w/harness/HARNESS.md");
+    expect(toml).toContain(`--root "${portablePath(join(home, ".gemini/skills/w"))}"`);
+    expect(toml).not.toContain(CLAUDE_PLUGIN_BUNDLE_ROOT);
     // TOML escapes: the description's quotes and backslash survive.
     const statusToml = await readFile(join(home, ".gemini/commands/w/status.toml"), "utf8");
     expect(statusToml).toContain(
@@ -355,17 +373,25 @@ describe("selfInstallSkill", () => {
     expect(oc).toContain("description: Lightweight shortcut");
     expect(oc).not.toContain("allowed-tools");
     expect(oc).toContain("$ARGUMENTS");
+    expect(oc).toContain("../../skills/w/loops/quick-loop/LOOP.md");
+    expect(oc).toContain("../../skills/w/harness/HARNESS.md");
+    expect(oc).toContain(`--root "${portablePath(join(home, ".opencode/skills/w"))}"`);
+    expect(oc).not.toContain(CLAUDE_PLUGIN_BUNDLE_ROOT);
 
     // Crush: user:w:quick via ~/.crush/commands/w/quick.md — no frontmatter.
     const crush = await readFile(join(home, ".crush/commands/w/quick.md"), "utf8");
     expect(crush.startsWith("# quick — trampoline")).toBe(true);
     expect(crush).not.toContain("---");
     expect(crush).toContain("$ARGUMENTS");
+    expect(crush).toContain("../../../.config/crush/skills/w/loops/quick-loop/LOOP.md");
+    expect(crush).toContain("../../../.config/crush/skills/w/harness/HARNESS.md");
+    expect(crush).toContain(`--root "${portablePath(join(home, ".config/crush/skills/w"))}"`);
+    expect(crush).not.toContain(CLAUDE_PLUGIN_BUNDLE_ROOT);
     // README.md is never installed as a command.
     expect(await fs.exists(join(home, ".crush/commands/w/README.md"))).toBe(false);
   });
 
-  it("claude: writes /w:* wrappers to ~/.claude/commands/w as-authored (claude-md)", async () => {
+  it("claude: preserves binding frontmatter and resolves links through ~/.claude/skills/w", async () => {
     await seedCommandsFixture(source);
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
@@ -373,10 +399,16 @@ describe("selfInstallSkill", () => {
     const result = await selfInstallSkill(buildArgs({ from: source, target: "claude" }, []), ctx);
 
     expect(result.ok).toBe(true);
-    // The claude-md format is a passthrough: byte-identical to the bundle source,
-    // Claude-binding frontmatter (description/argument-hint/allowed-tools) intact.
+    // Claude-binding frontmatter stays intact; only bundle-relative links move
+    // from their source location (skills/w/commands) to the installed bundle.
     const quick = await readFile(join(home, ".claude/commands/w/quick.md"), "utf8");
-    expect(quick).toBe(QUICK_COMMAND);
+    expect(quick).toContain("allowed-tools:");
+    expect(quick).toContain("../../skills/w/loops/quick-loop/LOOP.md");
+    expect(quick).toContain("../../skills/w/harness/HARNESS.md");
+    expect(quick).toContain(`--root "${portablePath(join(home, ".claude/skills/w"))}"`);
+    expect(quick).not.toContain(CLAUDE_PLUGIN_BUNDLE_ROOT);
+    expect(quick).not.toContain("`../loops/quick-loop/LOOP.md`");
+    expect(quick).not.toContain("`../harness/HARNESS.md`");
     expect(await fs.exists(join(home, ".claude/commands/w/status.md"))).toBe(true);
     expect(await fs.exists(join(home, ".claude/commands/w/README.md"))).toBe(false);
   });

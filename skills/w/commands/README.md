@@ -45,3 +45,5 @@ Every `<command>.md` in this folder uses this frontmatter + body structure — t
 | `argument-hint:` | Argument signature for the user |
 | `allowed-tools:` | YAML list (typically `Bash`/`Read`/`Write`/`Edit`). Loops/exports are **read-and-followed**, not invoked with `Skill:` — so `Skill` is **not** in `allowed-tools`. |
 | Body | 1-3 orienting lines, then the invocation: **read-and-follow** the sibling loop/export doc (`LOOP.md` / `EXPORT.md`), or call the `aw` CLI; then `## Plan mode`, `## Resources` |
+
+Every `aw context-plan` call pins `--root "${CLAUDE_PLUGIN_ROOT}/skills/w"`. Claude expands that official plugin placeholder in command content; `aw self install-skill` replaces it with the absolute installed bundle path in native and synthesized wrappers. A receipt therefore describes the same tree the host command reads, even when the globally installed CLI is a different version.

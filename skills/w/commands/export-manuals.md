@@ -20,6 +20,6 @@ allowed-tools: ["Bash", "Read"]
 
 ## More context
 
-`aw context-plan --command export-manuals --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command export-manuals --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `authoring` — the manual's structure or audience is not obvious from the material → [`../exports/export-manuals/EXPORT.md`](../exports/export-manuals/EXPORT.md), no longer loaded on the normal path

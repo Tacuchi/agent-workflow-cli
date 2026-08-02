@@ -26,4 +26,4 @@ Read-only single pass: no loop, no session, no writes. Transversal.
 
 ## More context
 
-`aw context-plan --command status --signal <s>` returns the extra documents a case needs; read exactly what it lists.
+`aw context-plan --command status --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists.

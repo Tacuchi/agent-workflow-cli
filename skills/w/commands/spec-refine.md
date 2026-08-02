@@ -25,14 +25,14 @@ Delegates to `spec-refine-loop` (Layer 2), which iterates, closes the blocking g
 
 ## Run the loop
 
-1. `aw context-plan --command spec-refine` — read exactly the documents it lists, in order.
+1. `aw context-plan --command spec-refine --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` — read exactly the documents it lists, in order.
 2. Follow the loop manual end to end, taking `$ARGUMENTS` as input: it detects state/resume, runs the gap-driven engine, manages sessions, converges and reports.
 
 > `spec-refine-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
 
 ## More context
 
-`aw context-plan --command spec-refine --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command spec-refine --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `shape` — the loop's change-shape gate fired and you must tell `split` from `replace` → [`../modules/SPEC-CHANGE-SHAPE.md`](../modules/SPEC-CHANGE-SHAPE.md)
 - `resume` — a prior refinement of this spec may exist → [`../modules/SPEC-REFINE-KEYS.md`](../modules/SPEC-REFINE-KEYS.md)

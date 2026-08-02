@@ -174,11 +174,11 @@ The **loop chassis** is NOT bound: it is the common engine of the 5 loops ([`loo
 
 ### Harness (harness-agnostic)
 
-The doctrine names abstract **capabilities**, never a concrete harness tool. A single doc —`harness/HARNESS.md`— binds each capability to each harness's mechanism (Claude Code, Codex, Gemini/Antigravity, OpenCode, Crush, Warp, generic). Two principles: **capability-not-tool** (loops/commands reference the capability by name) and **progressive-enhancement** (use the harness's richest mechanism; degrade to a universal fallback when it does not exist).
+The doctrine names abstract **capabilities**, never a concrete harness tool. A single doc —`harness/HARNESS.md`— binds each capability to each harness's mechanism (Claude Code, Codex, Kimi Code, Gemini/Antigravity, OpenCode, Crush, Warp/Oz, generic). Two principles: **capability-not-tool** (loops/commands reference the capability by name) and **progressive-enhancement** (use the harness's richest mechanism; degrade to a universal fallback when it does not exist).
 
 Key capabilities:
 
-- **structured-choice** — ask the human ≤3 content questions + 1 `flow` control. Claude Code: `AskUserQuestion`. Fallback: numbered markdown.
+- **structured-choice** — ask the human ≤3 content questions + 1 `flow` control; each option has a short label and a one-sentence functional explanation/example. Use the native binding in `HARNESS.md` when the current client exposes it; otherwise use labeled markdown with `Aceptar recomendaciones`, never positional codes.
 - **compaction** — shrink the context without losing the thread; its context-pressure signal feeds the loops' self-regulation (chassis § *Compact / resume*). Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
 - **command-invocation** · **procedure-loading** · **subagent-dispatch** (opt.) · **persistent-context** · **external-data** (MCP) · **dry-run/preview**.
 
@@ -193,7 +193,7 @@ One language per plane — never mix them:
 | Doctrine (this bundle: chassis, loops, commands, roles, exports, harness) | **English** |
 | **Section headings** of artifacts and docs (`## Requirement`, `## Completed`, …) | **English** (parse contract) |
 | Everything **user-facing**: structured-choice questions, reports, dashboards, the **content** the AI writes into artifacts and `docs/` deliverables, commit messages | **the user's language** (this product: Spanish) |
-| Literal option labels (`Compactar`, `Cerrar`, `Guardar plan`, …) | canonical product strings — use them **verbatim** |
+| Literal option labels (`Continuar`, `Compactar`, `Cerrar`, `Aceptar recomendaciones`, `Guardar plan`, …) | canonical product strings — use them **verbatim** |
 | Domain terms (class/route/table names, e.g. the QTC fleet) | the domain's ubiquitous language (Spanish) — never translated |
 
 ### The 6 hard invariants

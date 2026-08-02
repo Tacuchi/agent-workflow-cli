@@ -14,7 +14,7 @@ Read-only **with or without an argument**: no loop, no session, and it writes no
 
 1. **Read-only** — never run the route; the user does.
 2. **Never re-decide** — priority, ties, the spec→plan link and the command come from the CLI. No re-sort by date, no slug match, no tie broken.
-3. **Ask via structured-choice** only for CLI candidates: one option each, in order, plus `flow`.
+3. **Ask via structured-choice** only for CLI candidates: one option each, in order, plus `flow`. Follow the canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) and [per-host binding](../harness/HARNESS.md#harness-binding-matrix); use each candidate's title as its label and its `Progreso` + `Siguiente` as the functional description.
 4. Output in the **user's language**.
 
 ## Run
@@ -34,4 +34,4 @@ Read-only **with or without an argument**: no loop, no session, and it writes no
 
 ## More context
 
-`aw context-plan --command resume --signal <s>` returns the extra documents a case needs; read exactly what it lists.
+`aw context-plan --command resume --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists.

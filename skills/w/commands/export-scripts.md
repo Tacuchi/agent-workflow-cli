@@ -19,6 +19,6 @@ allowed-tools: ["Bash", "Read"]
 
 ## More context
 
-`aw context-plan --command export-scripts --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command export-scripts --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `authoring` — the rollback derivation or the ordering is not obvious from the material → [`../exports/export-scripts/EXPORT.md`](../exports/export-scripts/EXPORT.md), no longer loaded on the normal path

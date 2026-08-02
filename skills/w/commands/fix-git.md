@@ -38,4 +38,4 @@ No loop, no session, never writes `docs/`. Any git repo, workspace or not. Outpu
 
 ## More context
 
-`aw context-plan --command fix-git --signal <s>` returns the extra documents a case needs; read exactly what it lists.
+`aw context-plan --command fix-git --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` lists the case-specific documents to read.

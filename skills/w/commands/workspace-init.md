@@ -29,6 +29,6 @@ Done → the user can run `/w:spec-new`, `/w:plan-new` or `/w:quick`.
 
 ## More context
 
-`aw context-plan --command workspace-init --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command workspace-init --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` lists the case-specific documents to read:
 
 - `scaffold` — the folder already carries a workspace, or you need what init versions, ignores and prunes → [`../modules/WORKSPACE-SCAFFOLD.md`](../modules/WORKSPACE-SCAFFOLD.md)

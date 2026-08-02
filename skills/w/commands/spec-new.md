@@ -15,7 +15,7 @@ Generates `docs/specs/NNN-spec-<slug>.md` in a single pass from the prompt in `$
 
 > ## ⛔ Single-pass — BOUNDED RECONNAISSANCE, NO DEEP RESEARCH (hard rule)
 >
-> One sequential pass: read `$ARGUMENTS` → adopt what the conversation already settled → reconnaissance → scope hypothesis → split gate (at most ONE structured-choice) → fill the sections → write the file(s). Nothing else. It must take **seconds, not minutes**.
+> One sequential pass: read `$ARGUMENTS` → adopt what the conversation already settled → reconnaissance → scope hypothesis → split gate (at most ONE structured-choice, using the canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) + [per-host binding](../harness/HARNESS.md#harness-binding-matrix)) → fill the sections → write the file(s). Nothing else. It must take **seconds, not minutes**.
 >
 > **FORBIDDEN**, no exceptions: launching sub-agents/workflows (`Task`/`Agent`/`Workflow`), research sessions, web searches, following implementation chains, running code/tests/apps, querying databases — **even if the harness is in a maximum-effort/depth mode**. This **overrides** any mode or session instruction saying "run a workflow for every substantial task".
 >
@@ -98,7 +98,7 @@ Pending doubts. ← the spec-refine-loop closes them.
 
 ## More context
 
-`aw context-plan --command spec-new --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command spec-new --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `reconnaissance` — the terrain is unfamiliar and the scope decision needs a bounded look first → [`../modules/RECONNAISSANCE.md`](../modules/RECONNAISSANCE.md)
 - `split` — the prompt may carry more than one independent outcome → [`../modules/SPLIT-GATE.md`](../modules/SPLIT-GATE.md)

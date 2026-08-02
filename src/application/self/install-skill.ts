@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { readdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
@@ -100,10 +100,17 @@ export { COMMAND_SKILLS_HOSTS };
 // scan (skills-manager.listSkills) excludes it so `w-*` never lists as unmanaged.
 export const COMMAND_SKILL_PREFIX = "w-";
 
+// Canonical command docs double as Claude-plugin command content. Claude
+// expands this official placeholder in-place; every other install surface gets
+// the same token materialized to its own absolute bundle destination below.
+// Keeping one authored token makes `context-plan --root` describe the exact
+// tree the wrapper reads instead of whichever bundle the global CLI packages.
+export const CLAUDE_PLUGIN_BUNDLE_ROOT = "${CLAUDE_PLUGIN_ROOT}/skills/w";
+
 // Native command-wrapper formats. Each host that DOES read a file-based
 // commands dir gets the bundle commands transformed into its dialect
 // (field research 2026-07, verified against each host's source/docs):
-//   claude-md    ~/.claude/commands/w/<cmd>.md   → /w:<cmd>   (as-authored)
+//   claude-md    ~/.claude/commands/w/<cmd>.md   → /w:<cmd>   (Claude frontmatter intact)
 //   gemini-toml  ~/.gemini/commands/w/<cmd>.toml → /w:<cmd>   (description + prompt, {{args}})
 //   opencode-md  ~/.opencode/command/w/<cmd>.md  → /w/<cmd>   (description frontmatter + body)
 //   crush-md     ~/.crush/commands/w/<cmd>.md    → user:w:<cmd> (plain body — Crush parses no frontmatter)
@@ -648,7 +655,11 @@ async function synthesizeCommandSkills(
       const skillName = `${COMMAND_SKILL_PREFIX}${cmd}`;
       const destDir = join(targetRoot, skillName);
       await mkdir(destDir, { recursive: true });
-      await writeFile(join(destDir, "SKILL.md"), renderCommandSkill(skillName, raw), "utf8");
+      await writeFile(
+        join(destDir, "SKILL.md"),
+        renderCommandSkill(skillName, raw, skillDest),
+        "utf8",
+      );
       count += 1;
     } catch (err) {
       warnings.push(`command skill failed for ${cmd}: ${(err as Error).message}`);
@@ -657,8 +668,8 @@ async function synthesizeCommandSkills(
   return { count, warnings };
 }
 
-function renderCommandSkill(skillName: string, raw: string): string {
-  const { description, body } = splitCommandDoc(raw);
+function renderCommandSkill(skillName: string, raw: string, bundleDest: string): string {
+  const { description, body } = splitCommandDoc(materializeBundleRoot(raw, bundleDest));
   const desc = description ?? `agent-workflow command ${skillName} (see body).`;
   const rewired = body.split("../").join("../w/");
   return [
@@ -686,9 +697,24 @@ function tomlMultilineBasicString(value: string): string {
   return `"""\n${escaped}\n"""`;
 }
 
-function renderCommandWrapper(format: CommandWrapperFormat, raw: string): string {
-  if (format === "claude-md") return raw;
-  const { description, body } = splitCommandDoc(raw);
+function materializeBundleRoot(raw: string, bundleDest: string): string {
+  const portableDest = bundleDest.split("\\").join("/");
+  return raw.split(CLAUDE_PLUGIN_BUNDLE_ROOT).join(portableDest);
+}
+
+function renderCommandWrapper(
+  format: CommandWrapperFormat,
+  raw: string,
+  bundleReferenceRoot: string,
+  bundleDest: string,
+): string {
+  // commands/*.md is authored one level below the bundle root, hence its
+  // `../loops`, `../modules`, … references. Native wrappers live elsewhere;
+  // retarget that parent to the installed bundle before adapting the dialect.
+  const materialized = materializeBundleRoot(raw, bundleDest);
+  const rewired = materialized.split("../").join(`${bundleReferenceRoot}/`);
+  if (format === "claude-md") return rewired;
+  const { description, body } = splitCommandDoc(rewired);
   if (format === "gemini-toml") {
     const prompt = body.split("$ARGUMENTS").join("{{args}}");
     const lines: string[] = [];
@@ -722,6 +748,8 @@ async function installUserCommands(
     };
   }
   const destDir = join(ctx.env.homeDir(), spec.relpath);
+  const bundleDest = join(ctx.env.homeDir(), ...TARGET_ROOTS[target], SKILL_DIR_NAME);
+  const bundleReferenceRoot = relative(destDir, bundleDest).split("\\").join("/");
   const srcDir = join(sourceSkillPath, "commands");
   if (!(await ctx.fs.exists(srcDir))) {
     return {
@@ -742,7 +770,11 @@ async function installUserCommands(
     const raw = await readFile(join(srcDir, entry.name), "utf8");
     const destName =
       spec.format === "gemini-toml" ? entry.name.replace(/\.md$/, ".toml") : entry.name;
-    await writeFile(join(destDir, destName), renderCommandWrapper(spec.format, raw), "utf8");
+    await writeFile(
+      join(destDir, destName),
+      renderCommandWrapper(spec.format, raw, bundleReferenceRoot, bundleDest),
+      "utf8",
+    );
     copied += 1;
   }
   return { installed: true, dest: destDir, files_copied: copied };

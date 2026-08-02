@@ -23,7 +23,7 @@ Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase
 
 ## Run the loop
 
-1. `aw context-plan --command plan-exec` — read exactly the documents it lists, in order.
+1. `aw context-plan --command plan-exec --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` — read exactly the documents it lists, in order.
 2. Follow the loop manual end to end, taking `$ARGUMENTS` as input: it checks executability on entry, executes phase by phase (git-safe, DB scripts-only), keeps the plan alive and reports.
 
 > `plan-exec-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body. It is **resumable**: an existing CHECKPOINT continues from there.
@@ -35,7 +35,7 @@ Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase
 
 ## More context
 
-`aw context-plan --command plan-exec --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command plan-exec --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `db` — the plan touches a database → [`../modules/EXEC-DB-POLICY.md`](../modules/EXEC-DB-POLICY.md)
 - `probe` — a task is a PoC → [`../modules/EXEC-PROBE-TASKS.md`](../modules/EXEC-PROBE-TASKS.md)

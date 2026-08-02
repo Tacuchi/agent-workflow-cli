@@ -23,7 +23,7 @@ SPEC → PLAN bridge. Turns the "what" (refined spec) into the "how" (plan). Del
 
 ## Run the loop
 
-1. `aw context-plan --command plan-new` — read exactly the documents it lists, in order.
+1. `aw context-plan --command plan-new --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` — read exactly the documents it lists, in order.
 2. Follow the loop manual end to end, taking `$ARGUMENTS` as input (resolved per the module below): it detects state/resume, runs the gap-driven engine, manages sessions, converges and reports.
 
 > `plan-new-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
@@ -34,7 +34,7 @@ The plan is born with `### Fn` phases that each leave a **verifiable state of th
 
 ## More context
 
-`aw context-plan --command plan-new --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command plan-new --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `input` — the argument is not plainly a `ready-for-plan` spec → [`../modules/PLAN-INPUT.md`](../modules/PLAN-INPUT.md)
 - `split` — the spec may need more than one plan → [`../modules/PLAN-SPLIT-GATE.md`](../modules/PLAN-SPLIT-GATE.md)

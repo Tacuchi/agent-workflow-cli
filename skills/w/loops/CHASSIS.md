@@ -105,14 +105,15 @@ Investigation is **inline**: an activity **inside the run's current session**, n
 
 ## Structured-choice (design & batching)
 
-**Canonical rule (single source — the rest of the corpus only references it):** *structured-choice* = **≤3 content questions + 1 `flow` control**, always. Per-harness binding in [`../harness/HARNESS.md`](../harness/HARNESS.md) (Claude Code: `AskUserQuestion`, max 4 questions/call; without structured choice it degrades to **numbered markdown**).
+**Canonical rule:** *structured-choice* = **≤3 content questions + 1 `flow` control**, always. Each option is a **short semantic label + one functional sentence** (outcome/trade-off or simple example), never a positional code. Use the richest current binding in [`HARNESS.md`](../harness/HARNESS.md); otherwise use labeled markdown.
 
-- **`flow` control** (lifecycle, always present): `Compactar` | `Cerrar`. Answering only the content questions = keep iterating. Under context pressure the loop **raises the choice itself**, with `Compactar` recommended.
-- **Content questions** are: human doubts (non-factual gaps) · MCP choice (DB rule), before running queries · at **convergence**, the loop's own closing action — each heir defines it in its *Convergence / exit* (e.g. `Guardar especificación refinada` · `Cerrar tarea`) — | `Preguntar algo más`.
-- **Batching**: up to 3 human gaps per call; with more pending, prioritize the ones that unblock others and defer the rest.
-- **Recommended answer per question**: every content question **always** carries the AI's recommended answer — the first option, marked *recommended*. Never ask "cold": the human ratifies or corrects a proposal, never starts from zero. The recommendation comes from what was researched (ask-vs-research rule), never from an empty default.
+- **Flow:** `Compactar` | `Cerrar`; an unanswered control means continue (`Continuar` when the UI requires it). Under context pressure the loop **raises the choice itself**, recommending `Compactar`.
+- **Content/batching:** human gaps, pre-query MCP choice and the convergence action | `Preguntar algo más`; at most 3 per call. Honor a smaller native ceiling by reserving one question slot for `flow`; carry overflow, prioritizing blockers.
+- **Options/encoding:** prefer 2–3 alternatives. Map label/sentence to separate fields or `Label — functional sentence`. If it cannot fit, use labeled markdown; never truncate or merge candidates or duplicate a host-provided free-text option.
+- **Recommendation:** the first option is marked *recommended* and comes from research; the human ratifies or corrects it, never starts cold.
+- **Text fallback:** answer by label; `Aceptar recomendaciones` accepts all first options. Never require composite coordinates such as `1A, 2A, 3A`.
 
-> **Label language:** the literal option labels (`Compactar`, `Cerrar`, `Guardar plan`, …) are **canonical product strings** — present them **verbatim**. All other user-facing output follows [`../SKILL.md`](../SKILL.md) § *Language policy*.
+> Canonical labels (`Continuar`, `Compactar`, `Cerrar`, `Aceptar recomendaciones`, `Guardar plan`, …) stay verbatim; other user-facing text follows [`SKILL.md`](../SKILL.md) § *Language policy*.
 
 ## Compact / resume
 

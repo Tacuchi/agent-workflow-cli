@@ -23,7 +23,7 @@ Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + res
 
 ## Run the loop
 
-1. `aw context-plan --command quick` — read exactly the documents it lists, in order.
+1. `aw context-plan --command quick --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` — read exactly the documents it lists, in order.
 2. Follow the loop manual end to end, taking `$ARGUMENTS` as the task: it evaluates the size gate, creates the light session, works with minimal ceremony (git-safe), escalates if the task grows, and reports.
 
 > `quick-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
@@ -35,7 +35,7 @@ Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + res
 
 ## More context
 
-`aw context-plan --command quick --signal <s>` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command quick --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `db` — the task reads or writes a database → [`../modules/DB-SCRIPTS-ONLY.md`](../modules/DB-SCRIPTS-ONLY.md)
 - `probe` — a runnable doubt has to be settled by running something → [`../modules/PROBE.md`](../modules/PROBE.md)

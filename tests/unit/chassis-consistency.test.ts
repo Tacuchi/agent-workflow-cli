@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { HARNESSES, type HarnessId } from "../../src/domain/harnesses.js";
 import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 
 // Guards for the loop chassis (skills/w/loops/CHASSIS.md). The engine shared by
@@ -183,5 +184,100 @@ describe("Self-regulation (proactive compaction) — chasis ↔ harness (spec 00
     // Single source: the config/mode semantics live ONLY in the chassis subsection.
     expect(harness).toContain("the chassis' subsection — single source");
     expect(harness).not.toMatch(/\[compaction\] mode = /);
+  });
+});
+
+describe("Structured-choice — opciones funcionales y bindings multi-host", () => {
+  const HARNESS_PATH = resolve(__dirname, "..", "..", "skills", "w", "harness", "HARNESS.md");
+
+  it("el chasis exige etiqueta semántica y explicación funcional o ejemplo", async () => {
+    const chassis = await readFile(CHASSIS_PATH, "utf8");
+    const section = chassis.slice(
+      chassis.indexOf("## Structured-choice"),
+      chassis.indexOf("## Compact / resume"),
+    );
+    expect(section).toContain("short semantic label + one functional sentence");
+    expect(section).toMatch(/outcome\/trade-off|simple example/);
+  });
+
+  it("la matriz declara el binding comprobado de cada host o una limitación explícita", async () => {
+    const harness = await readFile(HARNESS_PATH, "utf8");
+    const lines = harness.split(/\r?\n/);
+    const parseRow = (line: string): string[] =>
+      line
+        .slice(1, -1)
+        .split("|")
+        .map((cell) => cell.trim());
+    const header = parseRow(
+      lines.find((line) => line.startsWith("| Capability | Claude Code | Codex |")) ?? "",
+    );
+    const row = parseRow(lines.find((line) => line.startsWith("| structured-choice |")) ?? "");
+    expect(row).toHaveLength(header.length);
+
+    const bindings = Object.fromEntries(header.map((column, index) => [column, row[index]]));
+    expect(bindings["Claude Code"]).toContain("`AskUserQuestion`");
+    expect(bindings.Codex).toContain("`request_user_input` when exposed");
+    expect(bindings["Kimi Code"]).toContain("`AskUserQuestion`");
+    expect(bindings["Gemini / Antigravity"]).toMatch(/`ask_user`.*`AskQuestion`/);
+    expect(bindings.OpenCode).toContain("`question`");
+    expect(bindings.Crush).toContain("`question`");
+    expect(bindings["Warp / Oz"]).toContain("no documented structured-choice surface");
+    expect(bindings.Generic).toContain("labeled markdown");
+
+    const matrixColumnByHarness = {
+      "claude-code": "Claude Code",
+      codex: "Codex",
+      kimi: "Kimi Code",
+      gemini: "Gemini / Antigravity",
+      opencode: "OpenCode",
+      crush: "Crush",
+      warp: "Warp / Oz",
+      oz: "Warp / Oz",
+    } satisfies Record<HarnessId, string>;
+    expect(Object.keys(matrixColumnByHarness).sort()).toEqual(
+      HARNESSES.map((spec) => spec.id).sort(),
+    );
+    for (const spec of HARNESSES) {
+      expect(bindings[matrixColumnByHarness[spec.id]], spec.id).toBeTruthy();
+    }
+    expect(harness).not.toContain("this table is prose and no test reads it");
+  });
+
+  it("el binding preserva label y explicación incluso en superficies de un solo texto", async () => {
+    const harness = await readFile(HARNESS_PATH, "utf8");
+    expect(harness).toContain("render `Label — functional sentence`");
+    expect(harness).toContain("do not add a duplicate `Other` option");
+  });
+
+  it("el chasis común no codifica límites o herramientas de un host concreto", async () => {
+    const chassis = await readFile(CHASSIS_PATH, "utf8");
+    const section = chassis.slice(
+      chassis.indexOf("## Structured-choice"),
+      chassis.indexOf("## Compact / resume"),
+    );
+    expect(section).not.toMatch(
+      /Claude|Codex|Kimi|Gemini|Antigravity|OpenCode|Crush|Warp|AskUserQuestion|request_user_input/,
+    );
+    expect(section).toContain("reserving one question slot for `flow`");
+  });
+
+  it("el fallback acepta recomendaciones por etiqueta y no exige coordenadas 1A", async () => {
+    const chassis = await readFile(CHASSIS_PATH, "utf8");
+    expect(chassis).toContain("`Aceptar recomendaciones`");
+    expect(chassis).toContain("Never require composite coordinates such as `1A, 2A, 3A`");
+  });
+
+  it("una pregunta que excede la UI cae a texto sin perder candidatos", async () => {
+    const chassis = await readFile(CHASSIS_PATH, "utf8");
+    expect(chassis).toContain("never truncate or merge candidates");
+  });
+
+  it("los comandos directos que preguntan enlazan forma canónica y binding por host", async () => {
+    const commands = ["generate-launch.md", "persist.md", "resume.md", "spec-new.md"];
+    for (const command of commands) {
+      const body = await readFile(join(LOOPS_ROOT, "..", "commands", command), "utf8");
+      expect(body, command).toContain("../loops/CHASSIS.md#structured-choice-design--batching");
+      expect(body, command).toContain("../harness/HARNESS.md#harness-binding-matrix");
+    }
   });
 });

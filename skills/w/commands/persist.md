@@ -17,7 +17,7 @@ Captures **work already produced in this conversation** — with or without host
 > 1. **Adopt, don't re-derive** — single pass, **NO RESEARCH**: transcribe/organize what the conversation already established. New investigation is flow work (`spec-refine`, `quick`), never this command's.
 > 2. **You classify and write; the CLI decides everything else** — inventory, anti-duplicate, numbering, destination, authorization and the write itself belong to `aw persist`. Never write into `docs/` with a file tool here; `Write`/`Edit` are deliberately not in `allowed-tools`.
 > 3. **Never invent the number** — the `NNN` you put in the path is consultative; `apply` reassigns it inside the lock. Do not renumber it.
-> 4. **Confirm before writing** — classification and destination go through **structured-choice**; `apply` refuses without the digest `validate` returned. **Never creates sessions** (sessions are loop-created only).
+> 4. **Confirm before writing** — classification and destination go through **structured-choice** (canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) + [per-host binding](../harness/HARNESS.md#harness-binding-matrix)); `apply` refuses without the digest `validate` returned. **Never creates sessions** (sessions are loop-created only).
 > 5. **Language** — headings in English (parse contract); content in the **user's language**.
 
 ## Input
@@ -42,4 +42,4 @@ Requires a **workspace** (`docs/` is the managed surface). Without one → degra
 
 ## More context
 
-`aw context-plan --command persist --signal classification` returns the routing table — which shape goes to `docs/research/`, which becomes a spec draft, which is a plan adoption — plus the anti-duplicate rule: [`../modules/PERSIST-ROUTING.md`](../modules/PERSIST-ROUTING.md). Read exactly what it lists.
+`aw context-plan --command persist --signal classification --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the routing table — which shape goes to `docs/research/`, which becomes a spec draft, which is a plan adoption — plus the anti-duplicate rule: [`../modules/PERSIST-ROUTING.md`](../modules/PERSIST-ROUTING.md). Read exactly what it lists.
