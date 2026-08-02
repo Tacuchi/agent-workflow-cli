@@ -26,7 +26,7 @@
     "id": {
       "description": "Package identity. Derives from nothing — not a spec, plan, session, slug, path or provider — and survives every rename or move.",
       "type": "string",
-      "pattern": "^DES-[0-9]{3,}$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})$"
     },
     "title": {
       "description": "Human name of the package.",
@@ -40,7 +40,7 @@
     "derived_from": {
       "description": "Baseline of the package this one forked from. An intentional divergence creates another package instead of a second live baseline line.",
       "type": ["string", "null"],
-      "pattern": "^DES-[0-9]{3,}@r[0-9]+$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
     },
     "current_baseline": {
       "description": "The published baseline in force. Null until the first publication. Must match its entry in `baselines`.",
@@ -48,9 +48,16 @@
       "additionalProperties": false,
       "required": ["revision", "path", "digest"],
       "properties": {
-        "revision": { "type": "integer", "minimum": 1 },
-        "path": { "$ref": "#/$defs/packagePath" },
-        "digest": { "$ref": "#/$defs/digest" }
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "$ref": "#/$defs/packagePath"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
       }
     },
     "baselines": {
@@ -61,14 +68,24 @@
         "additionalProperties": false,
         "required": ["revision", "path", "digest", "parent_baseline", "published"],
         "properties": {
-          "revision": { "type": "integer", "minimum": 1 },
-          "path": { "$ref": "#/$defs/packagePath" },
-          "digest": { "$ref": "#/$defs/digest" },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "path": {
+            "$ref": "#/$defs/packagePath"
+          },
+          "digest": {
+            "$ref": "#/$defs/digest"
+          },
           "parent_baseline": {
             "type": ["string", "null"],
-            "pattern": "^DES-[0-9]{3,}@r[0-9]+$"
+            "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
           },
-          "published": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+          "published": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
         }
       }
     },
@@ -78,11 +95,36 @@
       "additionalProperties": false,
       "required": ["flows", "screens", "rules", "tokens", "renditions", "assets"],
       "properties": {
-        "flows": { "type": "array", "items": { "$ref": "#/$defs/maturedArtifact" } },
-        "screens": { "type": "array", "items": { "$ref": "#/$defs/maturedArtifact" } },
-        "rules": { "type": "array", "items": { "$ref": "#/$defs/revisionedArtifact" } },
-        "tokens": { "type": "array", "items": { "$ref": "#/$defs/revisionedArtifact" } },
-        "renditions": { "type": "array", "items": { "$ref": "#/$defs/revisionedArtifact" } },
+        "flows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/maturedArtifact"
+          }
+        },
+        "screens": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/maturedArtifact"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/revisionedArtifact"
+          }
+        },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/revisionedArtifact"
+          }
+        },
+        "renditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/revisionedArtifact"
+          }
+        },
         "assets": {
           "type": "array",
           "items": {
@@ -90,7 +132,9 @@
             "additionalProperties": false,
             "required": ["digest", "path"],
             "properties": {
-              "digest": { "$ref": "#/$defs/digest" },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              },
               "path": {
                 "description": "`assets/<sha256>-<safe-name>.<ext>` — the digest is in the file name, so different bytes can never occupy the same path.",
                 "$ref": "#/$defs/packagePath"
@@ -108,8 +152,12 @@
         "additionalProperties": false,
         "required": ["ref", "state"],
         "properties": {
-          "ref": { "$ref": "#/$defs/artifactRef" },
-          "state": { "enum": ["current", "superseded"] }
+          "ref": {
+            "$ref": "#/$defs/artifactRef"
+          },
+          "state": {
+            "enum": ["current", "superseded"]
+          }
         }
       }
     },
@@ -119,8 +167,18 @@
       "additionalProperties": false,
       "required": ["reviews", "revocations"],
       "properties": {
-        "reviews": { "type": "array", "items": { "$ref": "#/$defs/governanceEntry" } },
-        "revocations": { "type": "array", "items": { "$ref": "#/$defs/governanceEntry" } }
+        "reviews": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/governanceEntry"
+          }
+        },
+        "revocations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/governanceEntry"
+          }
+        }
       }
     },
     "relations": {
@@ -129,8 +187,18 @@
       "additionalProperties": false,
       "required": ["specs", "plans"],
       "properties": {
-        "specs": { "type": "array", "items": { "type": "string" } },
-        "plans": { "type": "array", "items": { "type": "string" } }
+        "specs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "plans": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -146,19 +214,27 @@
     },
     "artifactRef": {
       "type": "string",
-      "pattern": "^DES-[0-9]{3,}/(FLW|SCR|RUL|TOK|VIS|REV|RVK)-[0-9]{3,}@r[0-9]+(#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/(?:FLW|SCR|RUL|TOK|VIS|REV|RVK)-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}(#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
     },
     "revisionedArtifact": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "revision", "path", "supersedes"],
       "properties": {
-        "id": { "type": "string", "pattern": "^(FLW|SCR|RUL|TOK|VIS)-[0-9]{3,}$" },
-        "revision": { "type": "integer", "minimum": 1 },
-        "path": { "$ref": "#/$defs/packagePath" },
+        "id": {
+          "type": "string",
+          "pattern": "^(?:FLW|SCR|RUL|TOK|VIS)-(?:[0-9]{3}|[1-9][0-9]{3,})$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "$ref": "#/$defs/packagePath"
+        },
         "supersedes": {
           "type": ["string", "null"],
-          "pattern": "^DES-[0-9]{3,}/(FLW|SCR|RUL|TOK|VIS)-[0-9]{3,}@r[0-9]+$"
+          "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/(?:FLW|SCR|RUL|TOK|VIS)-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
         }
       }
     },
@@ -167,14 +243,24 @@
       "additionalProperties": false,
       "required": ["id", "revision", "path", "supersedes", "maturity"],
       "properties": {
-        "id": { "type": "string", "pattern": "^(FLW|SCR)-[0-9]{3,}$" },
-        "revision": { "type": "integer", "minimum": 1 },
-        "path": { "$ref": "#/$defs/packagePath" },
+        "id": {
+          "type": "string",
+          "pattern": "^(?:FLW|SCR)-(?:[0-9]{3}|[1-9][0-9]{3,})$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "$ref": "#/$defs/packagePath"
+        },
         "supersedes": {
           "type": ["string", "null"],
-          "pattern": "^DES-[0-9]{3,}/(FLW|SCR)-[0-9]{3,}@r[0-9]+$"
+          "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/(?:FLW|SCR)-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
         },
-        "maturity": { "enum": ["outline", "handoff"] }
+        "maturity": {
+          "enum": ["outline", "handoff"]
+        }
       }
     },
     "governanceEntry": {
@@ -182,10 +268,20 @@
       "additionalProperties": false,
       "required": ["id", "path", "digest", "target"],
       "properties": {
-        "id": { "type": "string", "pattern": "^(REV|RVK)-[0-9]{3,}$" },
-        "path": { "$ref": "#/$defs/packagePath" },
-        "digest": { "$ref": "#/$defs/digest" },
-        "target": { "type": "string", "pattern": "^DES-[0-9]{3,}@r[0-9]+$" }
+        "id": {
+          "type": "string",
+          "pattern": "^(?:REV|RVK)-(?:[0-9]{3}|[1-9][0-9]{3,})$"
+        },
+        "path": {
+          "$ref": "#/$defs/packagePath"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
+        }
       }
     }
   }

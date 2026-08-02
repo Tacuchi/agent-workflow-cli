@@ -13,8 +13,35 @@
  * resolver built on top of it.
  */
 
-/** `DES-001`, `DES-1042`. Three digits minimum, so the sort order reads well. */
-const PACKAGE_ID_RE = /^DES-\d{3,}$/;
+/**
+ * THE grammar, as pattern fragments.
+ *
+ * Every regex in this module and every `pattern` in the three published JSON
+ * Schemas is built from these strings — and a guard test proves the schemas use
+ * them. Without that, tightening a regex here silently leaves the normative
+ * contract describing something looser, which is exactly what happened once.
+ *
+ * `DES-0001` and `DES-001` must never be two spellings of one identity, and
+ * `@r04` must never be another spelling of `@r4`: references are compared as
+ * STRINGS everywhere downstream, so two spellings break every comparison.
+ */
+export const GRAMMAR = {
+  packageId: "DES-(?:[0-9]{3}|[1-9][0-9]{3,})",
+  /** Suffix after a kind prefix, e.g. `FLW` + this. */
+  serial: "-(?:[0-9]{3}|[1-9][0-9]{3,})",
+  revision: "[1-9][0-9]{0,5}",
+  anchor: "[A-Za-z0-9][A-Za-z0-9_-]*",
+  digest: "sha256:[0-9a-f]{64}",
+} as const;
+
+/** `FLW|SCR` → `(?:FLW|SCR)-(?:[0-9]{3}|[1-9][0-9]{3,})`. */
+export function artifactIdPattern(prefixes: string): string {
+  return `(?:${prefixes})${GRAMMAR.serial}`;
+}
+
+const ALL_PREFIXES = "FLW|SCR|RUL|TOK|VIS|REV|RVK";
+
+const PACKAGE_ID_RE = new RegExp(`^${GRAMMAR.packageId}$`);
 
 export type DesignArtifactKind =
   | "flow"
@@ -36,10 +63,10 @@ export const ARTIFACT_PREFIX: Record<DesignArtifactKind, string> = {
   revocation: "RVK",
 };
 
-const ARTIFACT_ID_RE = /^(FLW|SCR|RUL|TOK|VIS|REV|RVK)-\d{3,}$/;
+const ARTIFACT_ID_RE = new RegExp(`^${artifactIdPattern(ALL_PREFIXES)}$`);
 
 /** `sha256:` + 64 lowercase hex chars. The only digest form the package writes. */
-const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
+const DIGEST_RE = new RegExp(`^${GRAMMAR.digest}$`);
 
 /** `<sha256>-<safe-name>.<ext>` — the content-addressed asset file name. */
 const ASSET_FILENAME_RE = /^[0-9a-f]{64}-[A-Za-z0-9._-]+$/;
@@ -76,9 +103,10 @@ export interface ArtifactRef {
   state?: string;
 }
 
-const BASELINE_REF_RE = /^(DES-\d{3,})@r(\d+)$/;
-const ARTIFACT_REF_RE =
-  /^(DES-\d{3,})\/((?:FLW|SCR|RUL|TOK|VIS|REV|RVK)-\d{3,})@r(\d+)(?:#([A-Za-z0-9][A-Za-z0-9_-]*))?$/;
+const BASELINE_REF_RE = new RegExp(`^(${GRAMMAR.packageId})@r(${GRAMMAR.revision})$`);
+const ARTIFACT_REF_RE = new RegExp(
+  `^(${GRAMMAR.packageId})/(${artifactIdPattern(ALL_PREFIXES)})@r(${GRAMMAR.revision})(?:#(${GRAMMAR.anchor}))?$`,
+);
 
 export function parseBaselineRef(raw: unknown): BaselineRef | null {
   if (typeof raw !== "string") return null;
@@ -95,7 +123,9 @@ export interface ArtifactId {
   artifact: string;
 }
 
-const ARTIFACT_ID_QUALIFIED_RE = /^(DES-\d{3,})\/((?:FLW|SCR|RUL|TOK|VIS|REV|RVK)-\d{3,})$/;
+const ARTIFACT_ID_QUALIFIED_RE = new RegExp(
+  `^(${GRAMMAR.packageId})/(${artifactIdPattern(ALL_PREFIXES)})$`,
+);
 
 export function parseArtifactId(raw: unknown): ArtifactId | null {
   if (typeof raw !== "string") return null;
@@ -108,8 +138,10 @@ export function parseArtifactId(raw: unknown): ArtifactId | null {
  * The same grammar with the `g` flag, for scanning prose. Cross-validation only
  * ever recognizes this exact form — never an informally written mention.
  */
-export const ARTIFACT_REF_GLOBAL =
-  /DES-\d{3,}\/(?:FLW|SCR|RUL|TOK|VIS|REV|RVK)-\d{3,}@r\d+(?:#[A-Za-z0-9][A-Za-z0-9_-]*)?/g;
+export const ARTIFACT_REF_GLOBAL = new RegExp(
+  `${GRAMMAR.packageId}/${artifactIdPattern(ALL_PREFIXES)}@r${GRAMMAR.revision}(?:#${GRAMMAR.anchor})?`,
+  "g",
+);
 
 /**
  * An acceptance criterion as Workline writes it: `S013/AC-SEM-11`, `S046/AC-01`.
@@ -124,9 +156,14 @@ export function parseArtifactRef(raw: unknown): ArtifactRef | null {
   if (m === null) return null;
   const revision = Number(m[3]);
   if (!isRevision(revision)) return null;
+  const artifact = m[2] as string;
+  // Only a screen has states. An anchor on a flow, rule, token or rendition is
+  // not a stricter reference — it is a reference to something that cannot exist,
+  // and letting it parse means the diagnostic later blames the wrong thing.
+  if (m[4] !== undefined && !artifact.startsWith("SCR-")) return null;
   return {
     package: m[1] as string,
-    artifact: m[2] as string,
+    artifact,
     revision,
     ...(m[4] !== undefined ? { state: m[4] } : {}),
   };
@@ -134,5 +171,16 @@ export function parseArtifactRef(raw: unknown): ArtifactRef | null {
 
 /** Revisions are logical and start at 1: `@r0` is not a thing. */
 export function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+/**
+ * True when a reference would parse if it dropped its state anchor — i.e. the
+ * anchor is the only thing wrong with it. Lets a call site keep the precise
+ * diagnostic ("this list references whole revisions") without restating the
+ * rule that only screens have states.
+ */
+export function anchorIsTheProblem(raw: unknown): boolean {
+  if (typeof raw !== "string" || !raw.includes("#")) return false;
+  return parseArtifactRef(raw) === null && parseArtifactRef(raw.split("#")[0] as string) !== null;
 }

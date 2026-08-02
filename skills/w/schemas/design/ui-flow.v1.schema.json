@@ -29,7 +29,7 @@
     "id": {
       "description": "Qualified identity WITHOUT the revision — the revision is its own field.",
       "type": "string",
-      "pattern": "^DES-[0-9]{3,}/FLW-[0-9]{3,}$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/FLW-(?:[0-9]{3}|[1-9][0-9]{3,})$"
     },
     "revision": {
       "$ref": "#/$defs/revision"
@@ -40,7 +40,7 @@
     "supersedes": {
       "description": "An EARLIER revision of this same flow, or null. Currentness is derived from it.",
       "type": ["string", "null"],
-      "pattern": "^DES-[0-9]{3,}/FLW-[0-9]{3,}@r[0-9]+$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/FLW-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
     },
     "purpose": {
       "type": "string",
@@ -127,12 +127,12 @@
     },
     "artifactRef": {
       "type": "string",
-      "pattern": "^DES-[0-9]{3,}/(FLW|SCR|RUL|TOK|VIS)-[0-9]{3,}@r[0-9]+(#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/(?:FLW|SCR|RUL|TOK|VIS)-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}(#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
     },
     "stateRef": {
       "description": "A screen state: `DES-001/SCR-002@r2#empty`. The anchor is required.",
       "type": "string",
-      "pattern": "^DES-[0-9]{3,}/SCR-[0-9]{3,}@r[0-9]+#[A-Za-z0-9][A-Za-z0-9_-]*$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/SCR-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}#[A-Za-z0-9][A-Za-z0-9_-]*$"
     },
     "trace": {
       "description": "Acceptance criteria this artifact answers to. Emptiness is the maturity profile's business, not this schema's.",

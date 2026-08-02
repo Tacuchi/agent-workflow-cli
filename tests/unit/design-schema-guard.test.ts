@@ -5,6 +5,7 @@ import {
   ALLOWED_KEYS as ARTIFACT_ALLOWED_KEYS,
   validateDesignArtifact,
 } from "../../src/domain/design/artifact.js";
+import { GRAMMAR } from "../../src/domain/design/identity.js";
 import {
   ALLOWED_KEYS as MANIFEST_ALLOWED_KEYS,
   validateDesignManifest,
@@ -232,4 +233,69 @@ describe("los schemas de diseño publicados y sus validadores no derivan", () =>
       expect(tolerated, "claves que el schema exige y el validador acepta ausentes").toEqual([]);
     },
   );
+});
+
+/**
+ * La segunda mitad del guard: los schemas publicados y el código tienen que
+ * hablar la MISMA gramática.
+ *
+ * La cobertura de propiedades no ve esto. Endurecí los regex de `identity.ts`
+ * en la F3 y dejé los tres contratos describiendo algo más laxo — o sea, el
+ * contrato normativo decía que `DES-0001@r04` era válido mientras el validador
+ * lo rechazaba. Esa divergencia sobrevivió a un guard verde.
+ */
+/** Every `pattern` anywhere in a schema, however deeply nested. */
+function collectPatterns(node: unknown, out: string[]): void {
+  if (Array.isArray(node)) {
+    for (const v of node) collectPatterns(v, out);
+    return;
+  }
+  if (typeof node !== "object" || node === null) return;
+  const record = node as Record<string, unknown>;
+  if (typeof record.pattern === "string") out.push(record.pattern);
+  for (const v of Object.values(record)) collectPatterns(v, out);
+}
+
+describe("la gramática publicada es la misma que la del código", () => {
+  function patternsOf(contract: Contract): string[] {
+    const out: string[] = [];
+    collectPatterns(JSON.parse(read(contract.schemaPath)), out);
+    return out;
+  }
+
+  it.each(CONTRACTS.map((c) => [c.name, c] as const))(
+    "%s — cada patrón que nombra un package usa la gramática canónica",
+    (_name, contract) => {
+      const offenders = patternsOf(contract).filter(
+        (p) => p.includes("DES-") && !p.includes(GRAMMAR.packageId),
+      );
+      expect(offenders, "patrones con una gramática de package distinta del código").toEqual([]);
+    },
+  );
+
+  it.each(CONTRACTS.map((c) => [c.name, c] as const))(
+    "%s — cada patrón que nombra una revisión usa la gramática canónica",
+    (_name, contract) => {
+      const offenders = patternsOf(contract).filter(
+        (p) => p.includes("@r") && !p.includes(`@r${GRAMMAR.revision}`),
+      );
+      expect(offenders, "patrones con una gramática de revisión distinta del código").toEqual([]);
+    },
+  );
+
+  it.each(CONTRACTS.map((c) => [c.name, c] as const))(
+    "%s — cada patrón que nombra un artefacto usa el serial canónico",
+    (_name, contract) => {
+      const offenders = patternsOf(contract).filter(
+        (p) => /\b(FLW|SCR|RUL|TOK|VIS|REV|RVK)/.test(p) && !p.includes(GRAMMAR.serial),
+      );
+      expect(offenders, "patrones con un serial de artefacto distinto del código").toEqual([]);
+    },
+  );
+
+  it("y el guard mira patrones de verdad, no un array vacío", () => {
+    for (const contract of CONTRACTS) {
+      expect(patternsOf(contract).length, contract.name).toBeGreaterThan(3);
+    }
+  });
 });

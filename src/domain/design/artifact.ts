@@ -12,6 +12,7 @@ import {
 import {
   ARTIFACT_PREFIX,
   type ArtifactRef,
+  anchorIsTheProblem,
   isDigest,
   isRevision,
   parseArtifactId,
@@ -362,6 +363,14 @@ function checkSupersedes(
     return;
   }
   if (supersedes === null) return;
+  if (anchorIsTheProblem(supersedes)) {
+    r.invalid(
+      artifact,
+      `'supersedes' lleva un anchor de estado y supersede una REVISIÓN entera`,
+      "quitá el anchor: se supersede la revisión, no uno de sus estados",
+    );
+    return;
+  }
   const ref = parseArtifactRef(supersedes);
   if (ref === null) {
     r.invalid(
@@ -838,6 +847,14 @@ function checkRef(
   kind: "screen" | "flow" | "rule" | "token" | null,
   requireAnchor: boolean,
 ): boolean {
+  if (anchorIsTheProblem(value)) {
+    r.invalid(
+      artifact,
+      `'${path}' referencia revisiones enteras y ${String(value)} lleva un anchor de estado`,
+      "quitá el '#estado' de la referencia: solo una screen tiene estados",
+    );
+    return false;
+  }
   const ref: ArtifactRef | null = parseArtifactRef(value);
   if (ref === null) {
     r.invalid(

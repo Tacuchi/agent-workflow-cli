@@ -22,7 +22,12 @@ export const designsCommand: QtcCommand<DesignsOutput> = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DesignsOutput>> {
     const index = await readDesignIndex(ctx.fs, ctx.paths.workspaceDir());
     const id = args.values.get("id");
-    if (id === undefined) return { ok: true, data: index, exitCode: 0 };
+    if (id === undefined) {
+      // The listing answers "what exists and where"; the whole catalog of every
+      // package would drown that. `--id` keeps it, because that IS the detail view.
+      const packages = index.packages.map((p) => ({ ...p, manifest: null }));
+      return { ok: true, data: { ...index, packages }, exitCode: 0 };
+    }
 
     const found = resolveDesignPackage(index, id);
     if (found === null) {

@@ -10,6 +10,7 @@ import {
   parseArtifactRef,
   parseBaselineRef,
 } from "./identity.js";
+import { type NamedKind, baselinePath, checkNaming } from "./naming.js";
 import {
   type AllowedKeys,
   type DesignFailure,
@@ -259,10 +260,11 @@ export function validateDesignManifest(
     );
   }
 
-  const baselines = readBaselines(r, raw, artifact);
+  const baselines = readBaselines(r, raw, artifact, id);
   const currentBaseline = readCurrentBaseline(r, raw, artifact, baselines);
   const catalog = readCatalog(r, raw, artifact);
   const currentness = readCurrentness(r, raw, artifact, id, catalog);
+  checkSupersedesIntegrity(r, artifact, id, catalog);
   const governance = readGovernance(r, raw, artifact, baselines);
   const relations = readRelations(r, raw, artifact);
 
@@ -283,7 +285,12 @@ export function validateDesignManifest(
   });
 }
 
-function readBaselines(r: Reader, raw: Record<string, unknown>, artifact: string): BaselineEntry[] {
+function readBaselines(
+  r: Reader,
+  raw: Record<string, unknown>,
+  artifact: string,
+  packageId: unknown,
+): BaselineEntry[] {
   const out: BaselineEntry[] = [];
   const seen = new Set<number>();
   for (const entry of eachRecord(
@@ -293,7 +300,7 @@ function readBaselines(r: Reader, raw: Record<string, unknown>, artifact: string
     artifact,
     " (vacío si el package todavía no publicó)",
   )) {
-    const parsed = readBaselineEntry(r, entry, artifact, seen);
+    const parsed = readBaselineEntry(r, entry, artifact, seen, packageId);
     if (parsed !== null) out.push(parsed);
   }
   return out;
@@ -304,6 +311,7 @@ function readBaselineEntry(
   entry: Record<string, unknown>,
   artifact: string,
   seen: Set<number>,
+  packageId: unknown,
 ): BaselineEntry | null {
   const revision = r.read(entry, "baselines[].revision");
   const path = r.read(entry, "baselines[].path");
@@ -330,7 +338,16 @@ function readBaselineEntry(
     return null;
   }
   seen.add(revision);
-  checkPackagePath(r, artifact, `${label}.path`, path);
+  if (checkPackagePath(r, artifact, `${label}.path`, path) && isPackageId(packageId)) {
+    const expected = baselinePath(packageId, revision);
+    if (path !== expected) {
+      r.invalid(
+        artifact,
+        `${label}: '${String(path)}' no es el nombre de esa revisión`,
+        `renombralo a '${expected}': la revisión va en el path para que publicar la siguiente no pise esta`,
+      );
+    }
+  }
   if (!isDigest(digest)) {
     r.invalid(
       artifact,
@@ -512,7 +529,9 @@ function readCatalogEntry(
     return null;
   }
   seen.add(slot);
-  checkPackagePath(r, artifact, `${label}.path`, path);
+  if (checkPackagePath(r, artifact, `${label}.path`, path)) {
+    checkArtifactNaming(r, artifact, label, kind as NamedKind, path as string, id, revision);
+  }
   if (supersedes !== null && parseArtifactRef(supersedes) === null) {
     r.invalid(
       artifact,
@@ -567,6 +586,14 @@ function readAssets(r: Reader, node: Record<string, unknown>, artifact: string):
     // asset can never be silently replaced by different bytes under the same path.
     const filename = (path as string).split("/").pop() as string;
     const bare = digest.slice("sha256:".length);
+    if (!(path as string).startsWith("assets/")) {
+      r.invalid(
+        artifact,
+        `catalog.assets: '${String(path)}' no vive en 'assets/'`,
+        `movelo a 'assets/${bare}-<nombre>.<ext>'`,
+      );
+      continue;
+    }
     if (!isAssetFilename(filename) || !filename.startsWith(`${bare}-`)) {
       r.invalid(
         artifact,
@@ -577,6 +604,73 @@ function readAssets(r: Reader, node: Record<string, unknown>, artifact: string):
     out.push({ digest, path: path as string });
   }
   return out;
+}
+
+/**
+ * `supersedes` names a predecessor, and a predecessor the catalog does not hold
+ * is a succession nobody can follow: currentness derives from this field, so a
+ * dangling one silently un-supersedes whatever it pointed at.
+ */
+function checkSupersedesIntegrity(
+  r: Reader,
+  artifact: string,
+  packageId: unknown,
+  catalog: DesignCatalog,
+): void {
+  const catalogued = new Set<string>();
+  for (const { key } of CATALOG_KINDS) {
+    for (const entry of catalog[key]) catalogued.add(`${entry.id}@r${entry.revision}`);
+  }
+  for (const { key } of CATALOG_KINDS) {
+    for (const entry of catalog[key]) {
+      checkOneSupersedes(r, artifact, packageId, `catalog.${key}`, entry, catalogued);
+    }
+  }
+}
+
+function checkOneSupersedes(
+  r: Reader,
+  artifact: string,
+  packageId: unknown,
+  listPath: string,
+  entry: CatalogEntry,
+  catalogued: ReadonlySet<string>,
+): void {
+  if (entry.supersedes === null) return;
+  const ref = parseArtifactRef(entry.supersedes);
+  if (ref === null) return; // ya reportado como formato inválido
+  const label = `${listPath}[${entry.id}@r${entry.revision}]`;
+  const broken = (message: string, action: string): void => {
+    r.fail("DESIGN_RELATION_BROKEN", artifact, `${label}: ${message}`, action);
+  };
+
+  if (isPackageId(packageId) && ref.package !== packageId) {
+    broken(
+      `'supersedes' apunta a ${ref.package}, otro package`,
+      "una revisión solo supersede a otra del mismo artefacto",
+    );
+    return;
+  }
+  if (ref.artifact !== entry.id) {
+    broken(
+      `'supersedes' apunta a ${ref.artifact}, otro artefacto`,
+      "una revisión solo supersede a otra del mismo artefacto",
+    );
+    return;
+  }
+  if (ref.revision >= entry.revision) {
+    broken(
+      `'supersedes' apunta a r${ref.revision}, que no es anterior`,
+      "solo se supersede una revisión anterior",
+    );
+    return;
+  }
+  if (!catalogued.has(`${ref.artifact}@r${ref.revision}`)) {
+    broken(
+      `'supersedes' apunta a ${entry.supersedes} y el catálogo no la contiene`,
+      "catalogá la revisión anterior: publicar la siguiente nunca la borra",
+    );
+  }
 }
 
 function readCurrentness(
@@ -700,58 +794,74 @@ function readGovernanceList(
   const out: GovernanceEntry[] = [];
   const seen = new Set<string>();
   for (const entry of eachRecord(r, node, `governance.${key}`, artifact)) {
-    const id = r.read(entry, `governance.${key}[].id`);
-    const path = r.read(entry, `governance.${key}[].path`);
-    const digest = r.read(entry, `governance.${key}[].digest`);
-    const target = r.read(entry, `governance.${key}[].target`);
-
-    if (!isArtifactId(id, kind)) {
-      r.invalid(
-        artifact,
-        `governance.${key}: 'id' debe empezar con ${ARTIFACT_PREFIX[kind]}-`,
-        `usá ${ARTIFACT_PREFIX[kind]}-NNN`,
-      );
-      continue;
-    }
-    if (seen.has(id)) {
-      r.fail(
-        "DESIGN_ID_DUPLICATE",
-        artifact,
-        `governance.${key} repite ${id}`,
-        "cada record de gobierno tiene un id único",
-      );
-      continue;
-    }
-    seen.add(id);
-    checkPackagePath(r, artifact, `governance.${key}[${id}].path`, path);
-    if (!isDigest(digest)) {
-      r.invalid(
-        artifact,
-        `governance.${key}[${id}]: 'digest' debe ser 'sha256:' + 64 hex`,
-        "recalculá el digest propio del record",
-      );
-    }
-    const ref = parseBaselineRef(target);
-    if (ref === null) {
-      r.invalid(
-        artifact,
-        `governance.${key}[${id}]: 'target' debe ser DES-NNN@rN`,
-        "un record decide sobre un baseline exacto",
-      );
-      continue;
-    }
-    if (!baselines.some((b) => b.revision === ref.revision)) {
-      r.fail(
-        "DESIGN_RELATION_BROKEN",
-        artifact,
-        `governance.${key}[${id}] decide sobre ${String(target)} y 'baselines' no la contiene`,
-        "apuntá a un baseline publicado",
-      );
-      continue;
-    }
-    out.push({ id, path: path as string, digest: digest as string, target: target as string });
+    const record = readGovernanceRecord(r, entry, artifact, key, kind, baselines, seen);
+    if (record !== null) out.push(record);
   }
   return out;
+}
+
+function readGovernanceRecord(
+  r: Reader,
+  entry: Record<string, unknown>,
+  artifact: string,
+  key: "reviews" | "revocations",
+  kind: DesignArtifactKind,
+  baselines: BaselineEntry[],
+  seen: Set<string>,
+): GovernanceEntry | null {
+  const id = r.read(entry, `governance.${key}[].id`);
+  const path = r.read(entry, `governance.${key}[].path`);
+  const digest = r.read(entry, `governance.${key}[].digest`);
+  const target = r.read(entry, `governance.${key}[].target`);
+
+  if (!isArtifactId(id, kind)) {
+    r.invalid(
+      artifact,
+      `governance.${key}: 'id' debe empezar con ${ARTIFACT_PREFIX[kind]}-`,
+      `usá ${ARTIFACT_PREFIX[kind]}-NNN`,
+    );
+    return null;
+  }
+  if (seen.has(id)) {
+    r.fail(
+      "DESIGN_ID_DUPLICATE",
+      artifact,
+      `governance.${key} repite ${id}`,
+      "cada record de gobierno tiene un id único",
+    );
+    return null;
+  }
+  seen.add(id);
+
+  // El NOMBRE de un record de gobierno es de F7: los records no son archivos
+  // normativos seleccionados por un baseline, así que quedan fuera de AC-PKG-08.
+  checkPackagePath(r, artifact, `governance.${key}[${id}].path`, path);
+  if (!isDigest(digest)) {
+    r.invalid(
+      artifact,
+      `governance.${key}[${id}]: 'digest' debe ser 'sha256:' + 64 hex`,
+      "recalculá el digest propio del record",
+    );
+  }
+  const ref = parseBaselineRef(target);
+  if (ref === null) {
+    r.invalid(
+      artifact,
+      `governance.${key}[${id}]: 'target' debe ser DES-NNN@rN`,
+      "un record decide sobre un baseline exacto",
+    );
+    return null;
+  }
+  if (!baselines.some((b) => b.revision === ref.revision)) {
+    r.fail(
+      "DESIGN_RELATION_BROKEN",
+      artifact,
+      `governance.${key}[${id}] decide sobre ${String(target)} y 'baselines' no la contiene`,
+      "apuntá a un baseline publicado",
+    );
+    return null;
+  }
+  return { id, path: path as string, digest: digest as string, target: target as string };
 }
 
 function readRelations(r: Reader, raw: Record<string, unknown>, artifact: string): DesignRelations {
@@ -810,6 +920,21 @@ function readRelationList(
     out.push(safe.path);
   }
   return out;
+}
+
+/** The revision belongs in the file name — that is what makes immutability checkable. */
+function checkArtifactNaming(
+  r: Reader,
+  artifact: string,
+  label: string,
+  kind: NamedKind,
+  path: string,
+  id: string,
+  revision: number,
+): void {
+  const check = checkNaming(kind, path, id, revision);
+  if (check.ok) return;
+  r.invalid(artifact, `${label}: ${check.why}`, `usá '${check.expected}'`);
 }
 
 /** A manifest path is package-relative and never escapes the package folder. */

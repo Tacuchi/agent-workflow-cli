@@ -348,3 +348,197 @@ describe("validateDesignManifest — cada fallo nombra artefacto y acción", () 
     }
   });
 });
+
+describe("validateDesignManifest — la revisión vive en el nombre del archivo (F3/T3.3)", () => {
+  // Es lo que vuelve COMPROBABLE la inmutabilidad: publicar @r2 escribe otro
+  // archivo, así que no puede pisar @r1. No es una política, es un path distinto.
+  it("rechaza un artefacto cuyo path no lleva su revisión", () => {
+    const result = validateDesignManifest(
+      mutate((m) => {
+        at(catalogOf(m, "flows"), 1).path = "flows/FLW-001-alta-miembro.md";
+      }),
+    );
+    const failure = result.failures.find((f) => f.code === "DESIGN_FIELD_INVALID");
+    expect(failure?.message).toContain("su revisión no está en el path");
+    expect(failure?.action).toContain("FLW-001-r002-");
+  });
+
+  it("rechaza un artefacto cuya revisión en el nombre NO es la que declara", () => {
+    expect(
+      codes(
+        mutate((m) => {
+          at(catalogOf(m, "screens"), 0).path = "screens/SCR-001-r009-formulario-alta.md";
+        }),
+      ),
+    ).toContain("DESIGN_FIELD_INVALID");
+  });
+
+  it("exige el directorio de cada tipo", () => {
+    expect(
+      codes(
+        mutate((m) => {
+          at(catalogOf(m, "rules"), 0).path = "rules/RUL-001-r001-densidad.md";
+        }),
+      ),
+    ).toContain("DESIGN_FIELD_INVALID");
+    expect(
+      codes(
+        mutate((m) => {
+          at(catalogOf(m, "tokens"), 0).path = "tokens/TOK-001-r001-base.json";
+        }),
+      ),
+    ).toContain("DESIGN_FIELD_INVALID");
+  });
+
+  it("una proyección regenerable no puede catalogarse como artefacto normativo", () => {
+    const result = validateDesignManifest(
+      mutate((m) => {
+        at(catalogOf(m, "rules"), 0).path = "design-system/DESIGN.md";
+      }),
+    );
+    const failure = result.failures.find((f) => f.code === "DESIGN_FIELD_INVALID");
+    expect(failure?.message).toContain("proyección regenerable");
+  });
+
+  it("un baseline se llama por su revisión, sin slug", () => {
+    const result = validateDesignManifest(
+      mutate((m) => {
+        at(m.baselines, 1).path = "baselines/DES-001-r002-con-slug.json";
+        (m.current_baseline as Obj).path = "baselines/DES-001-r002-con-slug.json";
+      }),
+    );
+    const failure = result.failures.find((f) => f.code === "DESIGN_FIELD_INVALID");
+    expect(failure?.action).toContain("baselines/DES-001-r002.json");
+    expect(failure?.action).toContain("no pise esta");
+  });
+});
+
+describe("validateDesignManifest — una identidad tiene UNA sola grafía (F3)", () => {
+  // Las referencias se comparan como strings en todo el resto del código, así
+  // que dos grafías de lo mismo rompen toda igualdad silenciosamente.
+  it("rechaza el cero de más en un id de package o de artefacto", () => {
+    expect(
+      codes(
+        mutate((m) => {
+          m.id = "DES-0001";
+        }),
+      ),
+    ).toContain("DESIGN_FIELD_INVALID");
+    expect(
+      codes(
+        mutate((m) => {
+          at(catalogOf(m, "flows"), 0).id = "FLW-0001";
+        }),
+      ),
+    ).toContain("DESIGN_FIELD_INVALID");
+  });
+
+  it("rechaza '@r04': la revisión también tiene una sola grafía", () => {
+    expect(
+      codes(
+        mutate((m) => {
+          at(catalogOf(m, "flows"), 1).supersedes = "DES-001/FLW-001@r01";
+        }),
+      ),
+    ).toContain("DESIGN_FIELD_INVALID");
+    expect(
+      codes(
+        mutate((m) => {
+          at(m.baselines, 1).parent_baseline = "DES-001@r01";
+        }),
+      ),
+    ).toContain("DESIGN_FIELD_INVALID");
+  });
+
+  it("rechaza una revisión fuera del rango seguro", () => {
+    expect(
+      codes(
+        mutate((m) => {
+          at(m.baselines, 1).parent_baseline = `DES-001@r${"9".repeat(20)}`;
+        }),
+      ),
+    ).toContain("DESIGN_FIELD_INVALID");
+  });
+});
+
+describe("validateDesignManifest — cada artefacto en su carpeta (F3)", () => {
+  it("exige que un asset viva bajo assets/", () => {
+    const result = validateDesignManifest(
+      mutate((m) => {
+        const asset = at(catalogOf(m, "assets"), 0);
+        asset.path = (asset.path as string).replace("assets/", "imagenes/");
+      }),
+    );
+    expect(result.failures[0]?.message).toContain("no vive en 'assets/'");
+  });
+});
+
+describe("validateDesignManifest — 'supersedes' apunta a algo que existe (F3)", () => {
+  it("rechaza un predecesor que el catálogo no contiene", () => {
+    const result = validateDesignManifest(
+      mutate((m) => {
+        // r2 supersede a r1, que es anterior y correcta… salvo que r1 ya no está.
+        (catalogOf(m, "flows") as unknown[]).shift();
+        (m.currentness as unknown[]).length = 0;
+      }),
+    );
+    const failure = result.failures.find((f) => f.code === "DESIGN_RELATION_BROKEN");
+    expect(failure?.message).toContain("el catálogo no la contiene");
+    expect(failure?.action).toContain("publicar la siguiente nunca la borra");
+  });
+
+  it("rechaza superseder a otro artefacto o a otro package", () => {
+    expect(
+      codes(
+        mutate((m) => {
+          at(catalogOf(m, "flows"), 1).supersedes = "DES-001/FLW-002@r1";
+        }),
+      ),
+    ).toContain("DESIGN_RELATION_BROKEN");
+    expect(
+      codes(
+        mutate((m) => {
+          at(catalogOf(m, "flows"), 1).supersedes = "DES-002/FLW-001@r1";
+        }),
+      ),
+    ).toContain("DESIGN_RELATION_BROKEN");
+  });
+
+  it("rechaza superseder a una revisión posterior o a sí misma", () => {
+    expect(
+      codes(
+        mutate((m) => {
+          at(catalogOf(m, "flows"), 1).supersedes = "DES-001/FLW-001@r2";
+        }),
+      ),
+    ).toContain("DESIGN_RELATION_BROKEN");
+  });
+});
+
+describe("la regla de directorio, AISLADA (el review gate la vio sobrevivir)", () => {
+  // Un directorio del mismo largo que el correcto deja el prefijo y el sufijo
+  // intactos, así que la ÚNICA comprobación que puede cazarlo es la del
+  // directorio. Con `flows/` mal escrito como `flowz/`, el test muere si esa
+  // regla desaparece — que es lo que un test de la regla tiene que hacer.
+  it("un flow fuera de flows/ se rechaza aunque el nombre del archivo sea perfecto", () => {
+    const result = validateDesignManifest(
+      mutate((m) => {
+        at(catalogOf(m, "flows"), 1).path = "flowz/FLW-001-r002-alta-miembro.md";
+      }),
+    );
+    const failure = result.failures.find((f) => f.code === "DESIGN_FIELD_INVALID");
+    expect(failure?.message).toContain("no vive en 'flows/'");
+    expect(failure?.action).toContain("flows/FLW-001-r002-");
+  });
+
+  it("y una rule fuera de design-system/rules/ tampoco pasa", () => {
+    const result = validateDesignManifest(
+      mutate((m) => {
+        at(catalogOf(m, "rules"), 0).path = "design-system/rulez/RUL-001-r001-densidad.md";
+      }),
+    );
+    expect(result.failures.find((f) => f.code === "DESIGN_FIELD_INVALID")?.message).toContain(
+      "no vive en 'design-system/rules/'",
+    );
+  });
+});

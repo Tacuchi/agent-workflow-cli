@@ -7,6 +7,7 @@ import {
   type DesignManifest,
   validateDesignManifest,
 } from "../../domain/design/manifest.js";
+import { isRecord } from "../../domain/design/validation.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 
 /**
@@ -22,11 +23,23 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 export interface DesignPackageEntry {
   /** Null when the manifest could not be read or failed validation. */
   id: string | null;
+  /**
+   * The `id` the manifest CLAIMS, even when it did not validate. Lets a broken
+   * package be named in a diagnostic instead of reading as "no existe": those
+   * are very different problems for whoever has to fix one.
+   */
+  declared_id: string | null;
   title: string | null;
   /** Workspace-relative directory the package lives in RIGHT NOW. */
   path: string;
   manifest_path: string;
   current_baseline: CurrentBaseline | null;
+  /**
+   * The validated manifest, for whoever needs to resolve inside the package
+   * (the reference resolver). Null when the manifest did not validate. The
+   * listing surface projects it away — a catalog is not a listing.
+   */
+  manifest: DesignManifest | null;
   ok: boolean;
   failures: DesignFailure[];
 }
@@ -43,13 +56,10 @@ export async function readDesignIndex(fs: FileSystemPort, workspace: string): Pr
   const index: DesignIndex = { root: DESIGNS_DIR, packages: [], failures: [] };
   if (!(await fs.exists(rootAbs))) return index;
 
-  for (const entry of await fs.list(rootAbs)) {
-    // `dir` only, and `list` does not follow links: a symlink under
-    // `docs/designs/` reads as `other`, so it can never pull a manifest — and an
-    // identity — in from outside the workspace.
-    if (entry.type !== "dir") continue;
-    index.packages.push(await readPackage(fs, rootAbs, entry.name));
-  }
+  // "Moving the dossier WITHIN docs/designs/" includes moving it into a
+  // subfolder, so discovery descends. A directory that is itself a package
+  // stops the descent: a package never contains another one.
+  await collect(fs, rootAbs, "", index.packages);
 
   index.packages.sort((a, b) => (a.id ?? a.path).localeCompare(b.id ?? b.path));
   index.failures = findDuplicateIds(index.packages);
@@ -59,6 +69,38 @@ export async function readDesignIndex(fs: FileSystemPort, workspace: string): Pr
 /** Resolve by identity. The caller never passes a path — that is the point. */
 export function resolveDesignPackage(index: DesignIndex, id: string): DesignPackageEntry | null {
   return index.packages.find((p) => p.id === id) ?? null;
+}
+
+/** Depth-first walk under `docs/designs/`, stopping at each package. */
+async function collect(
+  fs: FileSystemPort,
+  rootAbs: string,
+  relative: string,
+  out: DesignPackageEntry[],
+): Promise<void> {
+  const here = relative.length === 0 ? rootAbs : join(rootAbs, relative);
+  for (const entry of await fs.list(here)) {
+    // `dir` only, and `list` does not follow links: a symlink under
+    // `docs/designs/` reads as `other`, so it can never pull a manifest — and an
+    // identity — in from outside the workspace.
+    if (entry.type !== "dir") continue;
+    const folder = relative.length === 0 ? entry.name : `${relative}/${entry.name}`;
+    if (await fs.exists(join(rootAbs, folder, DESIGN_MANIFEST_FILE))) {
+      out.push(await readPackage(fs, rootAbs, folder));
+      continue;
+    }
+    // A folder that holds packages is a legitimate grouping. A LEAF with no
+    // manifest is not: it sits in the design taxonomy and is nothing.
+    const before = out.length;
+    await collect(fs, rootAbs, folder, out);
+    if (out.length === before && !(await hasSubdirectory(fs, join(rootAbs, folder)))) {
+      out.push(await readPackage(fs, rootAbs, folder));
+    }
+  }
+}
+
+async function hasSubdirectory(fs: FileSystemPort, dir: string): Promise<boolean> {
+  return (await fs.list(dir)).some((e) => e.type === "dir");
 }
 
 async function readPackage(
@@ -73,7 +115,9 @@ async function readPackage(
     title: null,
     path,
     manifest_path: manifestPath,
+    declared_id: null,
     current_baseline: null,
+    manifest: null,
     ok: false,
     failures: [],
   };
@@ -110,20 +154,22 @@ async function readPackage(
     };
   }
 
+  const declared = isRecord(parsed) && typeof parsed.id === "string" ? parsed.id : null;
   const validation = validateDesignManifest(parsed, manifestPath);
   if (!validation.ok || validation.value === null) {
-    return { ...base, failures: validation.failures };
+    return { ...base, declared_id: declared, failures: validation.failures };
   }
-  return { ...base, ...project(validation.value), ok: true };
+  return { ...base, declared_id: declared, ...project(validation.value), ok: true };
 }
 
 function project(
   manifest: DesignManifest,
-): Pick<DesignPackageEntry, "id" | "title" | "current_baseline"> {
+): Pick<DesignPackageEntry, "id" | "title" | "current_baseline" | "manifest"> {
   return {
     id: manifest.id,
     title: manifest.title,
     current_baseline: manifest.current_baseline,
+    manifest,
   };
 }
 

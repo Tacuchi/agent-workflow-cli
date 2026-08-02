@@ -29,7 +29,7 @@
     "id": {
       "description": "Qualified identity WITHOUT the revision — the revision is its own field.",
       "type": "string",
-      "pattern": "^DES-[0-9]{3,}/SCR-[0-9]{3,}$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/SCR-(?:[0-9]{3}|[1-9][0-9]{3,})$"
     },
     "revision": {
       "$ref": "#/$defs/revision"
@@ -40,7 +40,7 @@
     "supersedes": {
       "description": "An EARLIER revision of this same screen, or null. Currentness is derived from it.",
       "type": ["string", "null"],
-      "pattern": "^DES-[0-9]{3,}/SCR-[0-9]{3,}@r[0-9]+$"
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/SCR-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
     },
     "title": {
       "type": "string",
@@ -83,7 +83,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^DES-[0-9]{3,}/FLW-[0-9]{3,}@r[0-9]+$"
+        "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/FLW-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
       },
       "uniqueItems": true
     },
@@ -96,7 +96,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^DES-[0-9]{3,}/RUL-[0-9]{3,}@r[0-9]+$"
+            "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/RUL-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
           },
           "uniqueItems": true
         },
@@ -104,7 +104,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^DES-[0-9]{3,}/TOK-[0-9]{3,}@r[0-9]+$"
+            "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/TOK-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
           },
           "uniqueItems": true
         },
