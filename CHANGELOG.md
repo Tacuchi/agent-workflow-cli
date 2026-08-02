@@ -4,6 +4,21 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.26.0] — 2026-08-02
+
+**Las opciones de Workline dejan de ser coordenadas sin contexto y la mejora llega al árbol que cada host realmente ejecuta.** Cada alternativa tiene ahora una etiqueta semántica y una frase funcional —resultado, trade-off o ejemplo—; Claude Code, Codex, Kimi Code, Gemini/Antigravity, OpenCode y Crush usan su selección nativa cuando puede conservar esa forma, mientras Warp/Oz y cualquier superficie limitada degradan a Markdown etiquetado sin truncar candidatos ni exigir respuestas como `1A, 2A, 3A`. La distribución también queda cerrada: wrappers nativos y sintetizados resuelven sus manuales dentro del `skills/w` instalado y fijan ese mismo árbol en `aw context-plan --root`, de modo que una CLI global con otro bundle ya no puede desviar el recibo. El smoke aislado cubrió 8 hosts + `agents`, 9 bundles idénticos y 144 wrappers. Bundle `w` **13.23.0**.
+
+### Changed
+
+- **Contrato `structured-choice` funcional y progresivo** — toda opción lleva etiqueta + explicación breve; las superficies de un solo campo usan `Etiqueta — explicación`, los hosts que inyectan respuesta libre no reciben un `Other` duplicado y el overflow cae a texto sin perder opciones. El fallback acepta labels o `Aceptar recomendaciones`, nunca coordenadas posicionales.
+- **Matriz de bindings actualizada con evidencia primaria** — límites y herramientas concretas viven sólo en `HARNESS.md`; el chasis común sigue expresado por capacidad. Las guardas parsean la matriz contra el catálogo canónico para que un host nuevo no nazca sin binding o limitación explícita.
+- **Cada comando fija el bundle de su recibo de contexto** — la fuente del plugin Claude usa `${CLAUDE_PLUGIN_ROOT}/skills/w`; `self install-skill` materializa ese token a la ruta absoluta del target en wrappers nativos y `w-<command>` sintetizados.
+
+### Fixed
+
+- **Los wrappers nativos apuntaban fuera del bundle.** Claude, Gemini CLI, OpenCode y Crush copiaban referencias `../loops`/`../harness` authored desde `skills/w/commands` sin reubicarlas desde sus directorios de comandos. El instalador calcula ahora la ruta relativa al `skills/w` de cada target.
+- **`context-plan` podía medir una doctrina distinta de la activa.** Sin `--root`, el diseño determinista del CLI usa su bundle empaquetado; si el host había recibido una versión más nueva, el recibo quedaba stale. Las 16 superficies pasan ahora el root explícito y un guard impide reintroducir llamadas desnudas.
+
 ## [20.25.0] — 2026-07-29
 
 **Los hosts vivían en cuatro registros que no coincidían, y la detección respondía con un booleano a cuatro preguntas distintas.** El dominio declaraba 7 harnesses (con `oz`, sin `agents`), los destinos de instalación 8 (con ambos), la TUI mantenía su propia lista de 7 (con `agents`, sin `oz`) y el doctor filtraba por `mcpHostId !== null` y se quedaba en 6 — así que una instalación en Oz era **invisible en toda la TUI** y el directorio compartido `~/.agents/skills` inflaba el conteo de hosts. La detección mezclaba «este host está instalado» con «estamos corriendo dentro de este host»: `~/.oz` se sondeaba aunque ningún host lo cree, y `~/.codex` presente bastaba para responder «codex» y, con eso, para que `aw mcp setup` sin `--host` escribiera en su `config.toml`. Ahora **el dominio es el único catálogo** y todas las superficies derivan de él con guardas que fallan si alguna diverge; la detección separa **cuatro estados observables** por host —config presente · runtime disponible · Workline instalado · capacidades— cada uno con su evidencia; y sobre ese catálogo entra **Kimi Code** como host oficial de punta a punta. Una corrida reproducible (`npm run smoke:hosts`) instala y desinstala cada host oficial en un HOME desechable y **escribe el veredicto**: ninguna superficie afirma una verificación que no corrió. 5/5 oficiales verdes en macOS. Bundle `w` **13.22.0**.
