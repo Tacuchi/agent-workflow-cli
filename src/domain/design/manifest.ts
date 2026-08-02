@@ -11,6 +11,7 @@ import {
   parseBaselineRef,
 } from "./identity.js";
 import { type NamedKind, baselinePath, checkNaming } from "./naming.js";
+import { secretFailures } from "./secrets.js";
 import {
   type AllowedKeys,
   type DesignFailure,
@@ -252,11 +253,21 @@ export function validateDesignManifest(
   }
 
   const derivedFrom = r.read(raw, "derived_from");
-  if (derivedFrom !== null && parseBaselineRef(derivedFrom) === null) {
+  const derived = derivedFrom === null ? null : parseBaselineRef(derivedFrom);
+  if (derivedFrom !== null && derived === null) {
     r.invalid(
       artifact,
       `'derived_from' no es un baseline: ${JSON.stringify(derivedFrom)}`,
       "usá null, o la forma DES-NNN@rN del package del que este deriva",
+    );
+  } else if (derived !== null && derived.package === id) {
+    // Una divergencia crea OTRO package. Derivar de uno mismo no es una
+    // divergencia: es la línea de baselines, que ya tiene su propio mecanismo.
+    r.fail(
+      "DESIGN_RELATION_BROKEN",
+      artifact,
+      `'derived_from' apunta a ${String(derivedFrom)}, que es este mismo package`,
+      "una divergencia deriva de OTRO package; dentro del propio, la línea se encadena con 'parent_baseline'",
     );
   }
 
@@ -267,6 +278,7 @@ export function validateDesignManifest(
   checkSupersedesIntegrity(r, artifact, id, catalog);
   const governance = readGovernance(r, raw, artifact, baselines);
   const relations = readRelations(r, raw, artifact);
+  for (const failure of secretFailures(raw, artifact)) r.failures.push(failure);
 
   if (r.failures.length > 0) return done(r, null);
 

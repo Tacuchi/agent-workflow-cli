@@ -110,7 +110,7 @@ const ARTIFACT_REF_RE = new RegExp(
 
 export function parseBaselineRef(raw: unknown): BaselineRef | null {
   if (typeof raw !== "string") return null;
-  const m = BASELINE_REF_RE.exec(raw.trim());
+  const m = BASELINE_REF_RE.exec(raw);
   if (m === null) return null;
   const revision = Number(m[2]);
   if (!isRevision(revision)) return null;
@@ -129,7 +129,7 @@ const ARTIFACT_ID_QUALIFIED_RE = new RegExp(
 
 export function parseArtifactId(raw: unknown): ArtifactId | null {
   if (typeof raw !== "string") return null;
-  const m = ARTIFACT_ID_QUALIFIED_RE.exec(raw.trim());
+  const m = ARTIFACT_ID_QUALIFIED_RE.exec(raw);
   if (m === null) return null;
   return { package: m[1] as string, artifact: m[2] as string };
 }
@@ -152,7 +152,7 @@ export const CRITERION_GLOBAL = /S\d{3}\/AC-(?:[A-Z]+-)?\d+/g;
 
 export function parseArtifactRef(raw: unknown): ArtifactRef | null {
   if (typeof raw !== "string") return null;
-  const m = ARTIFACT_REF_RE.exec(raw.trim());
+  const m = ARTIFACT_REF_RE.exec(raw);
   if (m === null) return null;
   const revision = Number(m[3]);
   if (!isRevision(revision)) return null;
@@ -168,6 +168,12 @@ export function parseArtifactRef(raw: unknown): ArtifactRef | null {
     ...(m[4] !== undefined ? { state: m[4] } : {}),
   };
 }
+
+/**
+ * No `trim()` on the parsers above, on purpose: `"DES-001@r1 "` would be a
+ * second spelling of one identity, and every comparison downstream is by
+ * string. Whoever reads from Markdown trims before parsing.
+ */
 
 /** Revisions are logical and start at 1: `@r0` is not a thing. */
 export function isRevision(value: unknown): value is number {

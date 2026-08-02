@@ -5,6 +5,10 @@ import {
   ALLOWED_KEYS as ARTIFACT_ALLOWED_KEYS,
   validateDesignArtifact,
 } from "../../src/domain/design/artifact.js";
+import {
+  ALLOWED_KEYS as BASELINE_ALLOWED_KEYS,
+  validateDesignBaseline,
+} from "../../src/domain/design/baseline.js";
 import { GRAMMAR } from "../../src/domain/design/identity.js";
 import {
   ALLOWED_KEYS as MANIFEST_ALLOWED_KEYS,
@@ -63,6 +67,21 @@ const CONTRACTS: Contract[] = [
       const doc = JSON.parse(read("tests/fixtures/design/manifest-maximal.json"));
       delete doc[key];
       return validateDesignManifest(doc);
+    },
+  },
+  {
+    name: "design-baseline/v1",
+    schemaPath: "skills/w/schemas/design/design-baseline.v1.schema.json",
+    allowedKeys: BASELINE_ALLOWED_KEYS,
+    run: () =>
+      validateDesignBaseline(
+        JSON.parse(read("tests/fixtures/design/baseline-DES-001-r002.json")),
+        "baselines/DES-001-r002.json",
+      ),
+    runWithout: (key) => {
+      const doc = JSON.parse(read("tests/fixtures/design/baseline-DES-001-r002.json"));
+      delete doc[key];
+      return validateDesignBaseline(doc, "baselines/DES-001-r002.json");
     },
   },
   {
@@ -178,7 +197,12 @@ describe("los schemas de diseño publicados y sus validadores no derivan", () =>
     (_name, contract) => {
       const result = contract.run();
       expect(result.ok).toBe(true);
-      expect(analyze(contract).declared.size).toBeGreaterThan(10);
+      // Un schema vacío o ilegible haría pasar la cobertura por medir cero, así
+      // que el piso se ancla contra la tabla del validador, que es otra fuente.
+      expect(analyze(contract).declared.size).toBeGreaterThanOrEqual(
+        (contract.allowedKeys[""] ?? []).length,
+      );
+      expect(result.touched.size, "el validador leyó algo").toBeGreaterThan(0);
     },
   );
 
@@ -227,9 +251,14 @@ describe("los schemas de diseño publicados y sus validadores no derivan", () =>
         if (!contract.runWithout(key).ok) continue;
         tolerated.push(key);
       }
-      // Sin esto, un `required` vacío o un helper que no borra nada dejaría el
-      // guard en verde sin haber comprobado absolutamente nada.
-      expect(checked, "claves obligatorias efectivamente probadas").toBeGreaterThan(9);
+      // El piso viene de una fuente INDEPENDIENTE del schema: la tabla de claves
+      // del validador. Compararlo contra el propio `required` que se itera sería
+      // una tautología — no podría fallar nunca.
+      const validatorRootKeys = (contract.allowedKeys[""] ?? []).length;
+      expect(validatorRootKeys, "el validador declara claves de raíz").toBeGreaterThan(0);
+      expect(checked, "claves obligatorias probadas vs claves de raíz del validador").toBe(
+        validatorRootKeys,
+      );
       expect(tolerated, "claves que el schema exige y el validador acepta ausentes").toEqual([]);
     },
   );

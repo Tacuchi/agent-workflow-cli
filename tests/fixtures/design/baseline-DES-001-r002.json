@@ -1,0 +1,40 @@
+{
+  "schema": "workline.design-baseline/v1",
+  "package": "DES-001",
+  "revision": 2,
+  "parent_baseline": "DES-001@r1",
+  "published": "2026-08-02",
+  "selection": [
+    {
+      "path": "flows/FLW-001-r002-alta-miembro.md",
+      "revision": 2,
+      "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "path": "screens/SCR-001-r001-formulario-alta.md",
+      "revision": 1,
+      "sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "path": "design-system/rules/RUL-001-r001-densidad.md",
+      "revision": 1,
+      "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "path": "tokens/TOK-001-r001-base.tokens.json",
+      "revision": 1,
+      "sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "path": "renditions/VIS-001-r001-formulario-alta/rendition.json",
+      "revision": 1,
+      "sha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "path": "assets/5555555555555555555555555555555555555555555555555555555555555555-logo.svg",
+      "revision": null,
+      "sha256": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    }
+  ],
+  "digest": "sha256:c131c3c52d71f1c245e98b82b63b7972f8d05e09c7e4868d38b97f84484fdda3"
+}
