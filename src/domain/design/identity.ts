@@ -89,6 +89,35 @@ export function parseBaselineRef(raw: unknown): BaselineRef | null {
   return { package: m[1] as string, revision };
 }
 
+/** A qualified artifact identity WITHOUT a revision: `DES-001/FLW-001`. */
+export interface ArtifactId {
+  package: string;
+  artifact: string;
+}
+
+const ARTIFACT_ID_QUALIFIED_RE = /^(DES-\d{3,})\/((?:FLW|SCR|RUL|TOK|VIS|REV|RVK)-\d{3,})$/;
+
+export function parseArtifactId(raw: unknown): ArtifactId | null {
+  if (typeof raw !== "string") return null;
+  const m = ARTIFACT_ID_QUALIFIED_RE.exec(raw.trim());
+  if (m === null) return null;
+  return { package: m[1] as string, artifact: m[2] as string };
+}
+
+/**
+ * The same grammar with the `g` flag, for scanning prose. Cross-validation only
+ * ever recognizes this exact form — never an informally written mention.
+ */
+export const ARTIFACT_REF_GLOBAL =
+  /DES-\d{3,}\/(?:FLW|SCR|RUL|TOK|VIS|REV|RVK)-\d{3,}@r\d+(?:#[A-Za-z0-9][A-Za-z0-9_-]*)?/g;
+
+/**
+ * An acceptance criterion as Workline writes it: `S013/AC-SEM-11`, `S046/AC-01`.
+ * Cross-validation harvests these from the body the same way it harvests
+ * references — closed grammar only, never a sentence.
+ */
+export const CRITERION_GLOBAL = /S\d{3}\/AC-(?:[A-Z]+-)?\d+/g;
+
 export function parseArtifactRef(raw: unknown): ArtifactRef | null {
   if (typeof raw !== "string") return null;
   const m = ARTIFACT_REF_RE.exec(raw.trim());

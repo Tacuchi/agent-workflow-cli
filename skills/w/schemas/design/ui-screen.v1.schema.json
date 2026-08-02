@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workline.dev/schemas/design/ui-screen.v1.schema.json",
+  "title": "Workline UI Design Package v1 — Screen Specification frontmatter",
+  "description": "Machine-readable half of a Screen Specification. Identity, states, dependencies and traceability resolve from here alone: nothing normative may require reading the Markdown body.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "revision",
+    "maturity",
+    "supersedes",
+    "title",
+    "purpose",
+    "platform",
+    "default_state",
+    "states",
+    "flow_refs",
+    "dependencies",
+    "trace",
+    "unknowns",
+    "not_applicable"
+  ],
+  "properties": {
+    "schema": {
+      "const": "workline.ui-screen/v1"
+    },
+    "id": {
+      "description": "Qualified identity WITHOUT the revision — the revision is its own field.",
+      "type": "string",
+      "pattern": "^DES-[0-9]{3,}/SCR-[0-9]{3,}$"
+    },
+    "revision": {
+      "$ref": "#/$defs/revision"
+    },
+    "maturity": {
+      "$ref": "#/$defs/maturity"
+    },
+    "supersedes": {
+      "description": "An EARLIER revision of this same screen, or null. Currentness is derived from it.",
+      "type": ["string", "null"],
+      "pattern": "^DES-[0-9]{3,}/SCR-[0-9]{3,}@r[0-9]+$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 1
+    },
+    "default_state": {
+      "description": "Anchor of the base state. Must be one of the declared `states`.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "states": {
+      "description": "Observable states. The anchor is what flows, tasks and renditions address, so it is unique WITHIN this revision.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["anchor", "purpose"],
+        "properties": {
+          "anchor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "flow_refs": {
+      "description": "Flows this screen participates in, by exact reference.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^DES-[0-9]{3,}/FLW-[0-9]{3,}@r[0-9]+$"
+      },
+      "uniqueItems": true
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rules", "tokens", "assets"],
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^DES-[0-9]{3,}/RUL-[0-9]{3,}@r[0-9]+$"
+          },
+          "uniqueItems": true
+        },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^DES-[0-9]{3,}/TOK-[0-9]{3,}@r[0-9]+$"
+          },
+          "uniqueItems": true
+        },
+        "assets": {
+          "description": "Content-addressed: an asset is depended on by digest, never by name.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "trace": {
+      "$ref": "#/$defs/trace"
+    },
+    "unknowns": {
+      "$ref": "#/$defs/unknowns"
+    },
+    "not_applicable": {
+      "$ref": "#/$defs/notApplicable"
+    }
+  },
+  "$defs": {
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "maturity": {
+      "enum": ["outline", "handoff"]
+    },
+    "trace": {
+      "description": "Acceptance criteria this artifact answers to. Emptiness is the maturity profile's business, not this schema's.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterion", "source"],
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": ["string", "null"],
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "unknowns": {
+      "description": "Open questions, explicit. `blocking: true` is what a handoff gate refuses.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "blocking"],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "blocking": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "notApplicable": {
+      "description": "Conditional section → reason. Only conditional sections may appear, and a reason is never empty. Essential sections cannot be waived at all.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

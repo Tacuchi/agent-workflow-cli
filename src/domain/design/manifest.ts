@@ -10,6 +10,14 @@ import {
   parseArtifactRef,
   parseBaselineRef,
 } from "./identity.js";
+import {
+  type AllowedKeys,
+  type DesignFailure,
+  Reader,
+  eachRecord,
+  isNonEmptyString,
+  isRecord,
+} from "./validation.js";
 
 /**
  * `design-manifest.json` — the package's MUTABLE index.
@@ -31,14 +39,7 @@ export const DESIGN_MANIFEST_FILE = "design-manifest.json";
 /** Workspace-relative root of the durable design taxonomy. */
 export const DESIGNS_DIR = "docs/designs";
 
-export interface DesignFailure {
-  code: string;
-  /** What is wrong — a manifest field path, or the offending file path. */
-  artifact: string;
-  message: string;
-  /** The one corrective action. A diagnostic without it is a dead end. */
-  action: string;
-}
+export type { DesignFailure } from "./validation.js";
 
 export interface BaselineEntry {
   revision: number;
@@ -145,7 +146,7 @@ export type DesignManifestValidation = {
  * published schema declares `additionalProperties: false` everywhere, so a key
  * this table does not list is a typo of a real one, never an extension.
  */
-export const ALLOWED_KEYS: Readonly<Record<string, readonly string[]>> = {
+export const ALLOWED_KEYS: AllowedKeys = {
   "": [
     "schema",
     "id",
@@ -191,47 +192,11 @@ const MATURITY_KEYS: ReadonlySet<RevisionedCatalogKey> = new Set(["flows", "scre
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-class Reader {
-  readonly touched = new Set<string>();
-  readonly failures: DesignFailure[] = [];
-
-  /** Read `path`'s last segment off `node`, recording the property as covered. */
-  read(node: Record<string, unknown>, path: string): unknown {
-    this.touched.add(path);
-    const segments = path.split(".");
-    const key = (segments[segments.length - 1] as string).replace("[]", "");
-    return node[key];
-  }
-
-  fail(code: string, artifact: string, message: string, action: string): void {
-    this.failures.push({ code, artifact, message, action });
-  }
-
-  /** Reject anything the schema does not declare at `path` (closed objects). */
-  closed(node: Record<string, unknown>, path: string, artifact: string): void {
-    const allowed = ALLOWED_KEYS[path];
-    if (allowed === undefined) return;
-    for (const key of Object.keys(node)) {
-      if (allowed.includes(key)) continue;
-      this.fail(
-        "DESIGN_KEY_UNKNOWN",
-        artifact,
-        `${path === "" ? "el manifest" : `'${path}'`} no admite la clave '${key}'`,
-        `quitala o corregí el nombre; las claves válidas son: ${allowed.join(", ")}`,
-      );
-    }
-  }
-
-  invalid(artifact: string, message: string, action: string): void {
-    this.fail("DESIGN_FIELD_INVALID", artifact, message, action);
-  }
-}
-
 export function validateDesignManifest(
   raw: unknown,
   artifact = DESIGN_MANIFEST_FILE,
 ): DesignManifestValidation {
-  const r = new Reader();
+  const r = new Reader(ALLOWED_KEYS);
 
   if (!isRecord(raw)) {
     r.fail(
@@ -872,44 +837,4 @@ function checkPackagePath(r: Reader, artifact: string, field: string, value: unk
 
 function done(r: Reader, value: DesignManifest | null): DesignManifestValidation {
   return { ok: value !== null, value, failures: r.failures, touched: r.touched };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Walk an array-of-objects field. Every list in the manifest shares the same
- * three failure modes — not an array, an item that is not an object, an item
- * carrying a key the schema does not declare — so they are stated once here and
- * each reader stays about ITS own fields.
- */
-function* eachRecord(
-  r: Reader,
-  node: Record<string, unknown>,
-  path: string,
-  artifact: string,
-  emptyMeans = "",
-): Generator<Record<string, unknown>> {
-  const list = r.read(node, path);
-  if (!Array.isArray(list)) {
-    r.invalid(artifact, `'${path}' debe ser un array${emptyMeans}`, `escribí '${path}': []`);
-    return;
-  }
-  for (const entry of list) {
-    if (!isRecord(entry)) {
-      r.invalid(
-        artifact,
-        `cada entrada de '${path}' debe ser un objeto`,
-        `revisá el array '${path}'`,
-      );
-      continue;
-    }
-    r.closed(entry, `${path}[]`, artifact);
-    yield entry;
-  }
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
 }

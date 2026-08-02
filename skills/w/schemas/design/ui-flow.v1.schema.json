@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workline.dev/schemas/design/ui-flow.v1.schema.json",
+  "title": "Workline UI Design Package v1 — Flow Specification frontmatter",
+  "description": "Machine-readable half of a User Flow / Task Flow. Identity, graph, dependencies and traceability resolve from here alone: nothing normative may require reading the Markdown body.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "revision",
+    "maturity",
+    "supersedes",
+    "purpose",
+    "platform",
+    "actors",
+    "entry",
+    "nodes",
+    "edges",
+    "dependencies",
+    "trace",
+    "unknowns",
+    "not_applicable"
+  ],
+  "properties": {
+    "schema": {
+      "const": "workline.ui-flow/v1"
+    },
+    "id": {
+      "description": "Qualified identity WITHOUT the revision — the revision is its own field.",
+      "type": "string",
+      "pattern": "^DES-[0-9]{3,}/FLW-[0-9]{3,}$"
+    },
+    "revision": {
+      "$ref": "#/$defs/revision"
+    },
+    "maturity": {
+      "$ref": "#/$defs/maturity"
+    },
+    "supersedes": {
+      "description": "An EARLIER revision of this same flow, or null. Currentness is derived from it.",
+      "type": ["string", "null"],
+      "pattern": "^DES-[0-9]{3,}/FLW-[0-9]{3,}@r[0-9]+$"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "entry": {
+      "description": "The screen STATE the flow starts at. Must also appear in `nodes`.",
+      "$ref": "#/$defs/stateRef"
+    },
+    "nodes": {
+      "description": "Every screen state the flow visits, by exact reference.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stateRef"
+      },
+      "uniqueItems": true
+    },
+    "edges": {
+      "description": "Transitions. Both endpoints must be declared nodes, so the graph closes on itself.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "trigger", "action", "condition", "to"],
+        "properties": {
+          "from": {
+            "$ref": "#/$defs/stateRef"
+          },
+          "trigger": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": ["string", "null"],
+            "minLength": 1
+          },
+          "condition": {
+            "type": ["string", "null"],
+            "minLength": 1
+          },
+          "to": {
+            "$ref": "#/$defs/stateRef"
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "description": "Rules and tokens the flow itself depends on, by exact reference.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactRef"
+      },
+      "uniqueItems": true
+    },
+    "trace": {
+      "$ref": "#/$defs/trace"
+    },
+    "unknowns": {
+      "$ref": "#/$defs/unknowns"
+    },
+    "not_applicable": {
+      "$ref": "#/$defs/notApplicable"
+    }
+  },
+  "$defs": {
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "maturity": {
+      "enum": ["outline", "handoff"]
+    },
+    "artifactRef": {
+      "type": "string",
+      "pattern": "^DES-[0-9]{3,}/(FLW|SCR|RUL|TOK|VIS)-[0-9]{3,}@r[0-9]+(#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
+    },
+    "stateRef": {
+      "description": "A screen state: `DES-001/SCR-002@r2#empty`. The anchor is required.",
+      "type": "string",
+      "pattern": "^DES-[0-9]{3,}/SCR-[0-9]{3,}@r[0-9]+#[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "trace": {
+      "description": "Acceptance criteria this artifact answers to. Emptiness is the maturity profile's business, not this schema's.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterion", "source"],
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": ["string", "null"],
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "unknowns": {
+      "description": "Open questions, explicit. `blocking: true` is what a handoff gate refuses.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "blocking"],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "blocking": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "notApplicable": {
+      "description": "Conditional section → reason. Only conditional sections may appear, and a reason is never empty. Essential sections cannot be waived at all.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
