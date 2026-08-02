@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workline.dev/schemas/design/design-manifest.v1.schema.json",
+  "title": "Workline UI Design Package v1 — design manifest",
+  "description": "Mutable discovery index of a UI Design Package. Owns nothing normative: it declares identity, where the artifacts live, which baseline is current and who consumes the package. A baseline digest excludes this file, so re-indexing never rewrites a published revision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "created",
+    "derived_from",
+    "current_baseline",
+    "baselines",
+    "catalog",
+    "currentness",
+    "governance",
+    "relations"
+  ],
+  "properties": {
+    "schema": {
+      "description": "Format version. An unknown value stops validation before any field is read.",
+      "const": "workline.design-manifest/v1"
+    },
+    "id": {
+      "description": "Package identity. Derives from nothing — not a spec, plan, session, slug, path or provider — and survives every rename or move.",
+      "type": "string",
+      "pattern": "^DES-[0-9]{3,}$"
+    },
+    "title": {
+      "description": "Human name of the package.",
+      "type": "string",
+      "minLength": 1
+    },
+    "created": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "derived_from": {
+      "description": "Baseline of the package this one forked from. An intentional divergence creates another package instead of a second live baseline line.",
+      "type": ["string", "null"],
+      "pattern": "^DES-[0-9]{3,}@r[0-9]+$"
+    },
+    "current_baseline": {
+      "description": "The published baseline in force. Null until the first publication. Must match its entry in `baselines`.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["revision", "path", "digest"],
+      "properties": {
+        "revision": { "type": "integer", "minimum": 1 },
+        "path": { "$ref": "#/$defs/packagePath" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "baselines": {
+      "description": "The package's baseline line, chained by `parent_baseline`.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["revision", "path", "digest", "parent_baseline", "published"],
+        "properties": {
+          "revision": { "type": "integer", "minimum": 1 },
+          "path": { "$ref": "#/$defs/packagePath" },
+          "digest": { "$ref": "#/$defs/digest" },
+          "parent_baseline": {
+            "type": ["string", "null"],
+            "pattern": "^DES-[0-9]{3,}@r[0-9]+$"
+          },
+          "published": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        }
+      }
+    },
+    "catalog": {
+      "description": "Every revision the package holds. Flows and screens carry maturity; rules, tokens and renditions do not; assets are content-addressed and have no ID.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["flows", "screens", "rules", "tokens", "renditions", "assets"],
+      "properties": {
+        "flows": { "type": "array", "items": { "$ref": "#/$defs/maturedArtifact" } },
+        "screens": { "type": "array", "items": { "$ref": "#/$defs/maturedArtifact" } },
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/revisionedArtifact" } },
+        "tokens": { "type": "array", "items": { "$ref": "#/$defs/revisionedArtifact" } },
+        "renditions": { "type": "array", "items": { "$ref": "#/$defs/revisionedArtifact" } },
+        "assets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["digest", "path"],
+            "properties": {
+              "digest": { "$ref": "#/$defs/digest" },
+              "path": {
+                "description": "`assets/<sha256>-<safe-name>.<ext>` — the digest is in the file name, so different bytes can never occupy the same path.",
+                "$ref": "#/$defs/packagePath"
+              }
+            }
+          }
+        }
+      }
+    },
+    "currentness": {
+      "description": "Derived from `supersedes`, cached here for discovery. Superseded warns; it never blocks — only an explicit revocation does.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "state"],
+        "properties": {
+          "ref": { "$ref": "#/$defs/artifactRef" },
+          "state": { "enum": ["current", "superseded"] }
+        }
+      }
+    },
+    "governance": {
+      "description": "Index of review and revocation records. The records themselves live outside the baseline they decide on, so no digest is self-referential.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviews", "revocations"],
+      "properties": {
+        "reviews": { "type": "array", "items": { "$ref": "#/$defs/governanceEntry" } },
+        "revocations": { "type": "array", "items": { "$ref": "#/$defs/governanceEntry" } }
+      }
+    },
+    "relations": {
+      "description": "Many-to-many links to the documents that consume this package — the backreference direction, so a consumer is found without scanning docs/.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specs", "plans"],
+      "properties": {
+        "specs": { "type": "array", "items": { "type": "string" } },
+        "plans": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "packagePath": {
+      "description": "Package-relative path. Never absolute, never Windows-separated, never carrying `.` or `..`.",
+      "type": "string",
+      "pattern": "^[^/\\\\][^\\\\]*$"
+    },
+    "artifactRef": {
+      "type": "string",
+      "pattern": "^DES-[0-9]{3,}/(FLW|SCR|RUL|TOK|VIS|REV|RVK)-[0-9]{3,}@r[0-9]+(#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
+    },
+    "revisionedArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "path", "supersedes"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(FLW|SCR|RUL|TOK|VIS)-[0-9]{3,}$" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "path": { "$ref": "#/$defs/packagePath" },
+        "supersedes": {
+          "type": ["string", "null"],
+          "pattern": "^DES-[0-9]{3,}/(FLW|SCR|RUL|TOK|VIS)-[0-9]{3,}@r[0-9]+$"
+        }
+      }
+    },
+    "maturedArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "path", "supersedes", "maturity"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(FLW|SCR)-[0-9]{3,}$" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "path": { "$ref": "#/$defs/packagePath" },
+        "supersedes": {
+          "type": ["string", "null"],
+          "pattern": "^DES-[0-9]{3,}/(FLW|SCR)-[0-9]{3,}@r[0-9]+$"
+        },
+        "maturity": { "enum": ["outline", "handoff"] }
+      }
+    },
+    "governanceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "digest", "target"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(REV|RVK)-[0-9]{3,}$" },
+        "path": { "$ref": "#/$defs/packagePath" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "target": { "type": "string", "pattern": "^DES-[0-9]{3,}@r[0-9]+$" }
+      }
+    }
+  }
+}

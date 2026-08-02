@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { checkSafeRelativePath } from "../../domain/safe-path.js";
 
 /**
  * The bounded CLI↔AI handshake shared by every hybrid command.
@@ -276,14 +277,9 @@ function checkPath(raw: string, allowed: string[]): SemanticParse<string> {
     },
   });
 
-  if (path.length === 0) return reject("está vacío");
-  if (path.includes("\\")) return reject("usa separador de Windows");
-  if (path.startsWith("/") || /^[A-Za-z]:/.test(path)) return reject("es absoluto");
-
-  const segments = path.split("/");
-  if (segments.some((s) => s === ".." || s === "." || s.length === 0)) {
-    return reject("contiene segmentos relativos o vacíos");
-  }
+  const safe = checkSafeRelativePath(path);
+  if (!safe.ok) return reject(safe.why);
+  const segments = safe.segments;
   // A destination is either a directory to write INSIDE (persist, exports) or an
   // exact file already identified as writable (fix-git's conflict set). Both are
   // compared on segments, so `docs/research-evil` never passes as `docs/research`.

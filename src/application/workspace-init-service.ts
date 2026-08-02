@@ -18,7 +18,15 @@ import {
  * anymore: each folder is born on demand at the first numbered write
  * (`aw next-number docs/<cat>` mkdirps it). The list drives the reconcile prune.
  */
-const DOCS_FOLDERS = ["specs", "plans", "manuals", "scripts", "diagrams", "reports"] as const;
+export const DOCS_FOLDERS = [
+  "specs",
+  "plans",
+  "designs",
+  "manuals",
+  "scripts",
+  "diagrams",
+  "reports",
+] as const;
 
 /**
  * Visibility files (machine-specific absolute roots) — gitignored when external

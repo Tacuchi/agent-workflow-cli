@@ -5,14 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
+  DOCS_FOLDERS,
   type WorkspaceInitInput,
   pruneReleasedLock,
   runWorkspaceInit,
 } from "../../src/application/workspace-init-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
-
-const DOCS_FOLDERS = ["specs", "plans", "manuals", "scripts", "diagrams", "reports"];
 
 describe("runWorkspaceInit", () => {
   let workspace: string;
@@ -349,7 +348,7 @@ describe("runWorkspaceInit", () => {
 
   it("prune reconcile: poda .gitkeep-only, docs/logs vacía, sessions/.gitkeep y .lock liberado; preserva contenido", async () => {
     // Workspace from the upfront-scaffold era: empty taxonomy with .gitkeep + one folder with content.
-    for (const f of ["manuals", "diagrams", "scripts"]) {
+    for (const f of ["manuals", "diagrams", "scripts", "designs"]) {
       mkdirSync(join(workspace, "docs", f), { recursive: true });
       writeFileSync(join(workspace, "docs", f, ".gitkeep"), "");
     }
@@ -364,7 +363,7 @@ describe("runWorkspaceInit", () => {
     const result = await init();
 
     // .gitkeep-only → folder pruned.
-    for (const f of ["manuals", "diagrams", "scripts"]) {
+    for (const f of ["manuals", "diagrams", "scripts", "designs"]) {
       expect(existsSync(join(workspace, "docs", f))).toBe(false);
     }
     // With content → stays, but without the stray .gitkeep.

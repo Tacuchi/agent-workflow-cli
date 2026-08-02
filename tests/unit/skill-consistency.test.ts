@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DESCRIPTION_MAX } from "../../src/application/plugin-doctor/skills.js";
 import { SKILL_DIR_NAME, splitCommandDoc } from "../../src/application/self/install-skill.js";
+import { DOCS_FOLDERS } from "../../src/application/workspace-init-service.js";
 import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 
 // Consistency guards for the `w` skill bundle. These catch CROSS-SKILL drift —
@@ -681,5 +682,21 @@ describe("section cross-references — a § points at the file that actually hol
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+// The docs/ taxonomy the CLI owns and the zone the doctrine advertises are two
+// declarations of one fact. `designs` entered the taxonomy in plan 012 and had
+// to be added to SKILL.md by hand — this guard is what makes the next one fail
+// loudly instead of leaving the doctrine describing a zone that no longer exists.
+describe("docs/ taxonomy — code and doctrine name the same categories", () => {
+  it("every CLI-owned docs/ category appears in the doctrine's docs/ zone", async () => {
+    const skill = await readFile(join(SKILL_ROOT, "SKILL.md"), "utf8");
+    const lines = skill.split("\n");
+    const header = lines.findIndex((line) => line.includes("docs/ ZONE"));
+    expect(header, "SKILL.md ya no describe la zona docs/").toBeGreaterThanOrEqual(0);
+    const zone = lines.slice(header, header + 3).join("\n");
+    const missing = DOCS_FOLDERS.filter((folder) => !zone.includes(folder));
+    expect(missing, "categorías que la CLI crea y la doctrina no menciona").toEqual([]);
   });
 });

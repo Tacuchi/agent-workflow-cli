@@ -1,0 +1,111 @@
+{
+  "schema": "workline.design-manifest/v1",
+  "id": "DES-001",
+  "title": "Alta y baja de miembros",
+  "created": "2026-08-02",
+  "derived_from": null,
+  "current_baseline": {
+    "revision": 2,
+    "path": "baselines/DES-001-r002.json",
+    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "baselines": [
+    {
+      "revision": 1,
+      "path": "baselines/DES-001-r001.json",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "parent_baseline": null,
+      "published": "2026-07-30"
+    },
+    {
+      "revision": 2,
+      "path": "baselines/DES-001-r002.json",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "parent_baseline": "DES-001@r1",
+      "published": "2026-08-02"
+    }
+  ],
+  "catalog": {
+    "flows": [
+      {
+        "id": "FLW-001",
+        "revision": 1,
+        "path": "flows/FLW-001-r001-alta-miembro.md",
+        "supersedes": null,
+        "maturity": "outline"
+      },
+      {
+        "id": "FLW-001",
+        "revision": 2,
+        "path": "flows/FLW-001-r002-alta-miembro.md",
+        "supersedes": "DES-001/FLW-001@r1",
+        "maturity": "handoff"
+      }
+    ],
+    "screens": [
+      {
+        "id": "SCR-001",
+        "revision": 1,
+        "path": "screens/SCR-001-r001-formulario-alta.md",
+        "supersedes": null,
+        "maturity": "handoff"
+      }
+    ],
+    "rules": [
+      {
+        "id": "RUL-001",
+        "revision": 1,
+        "path": "design-system/rules/RUL-001-r001-densidad.md",
+        "supersedes": null
+      }
+    ],
+    "tokens": [
+      {
+        "id": "TOK-001",
+        "revision": 1,
+        "path": "tokens/TOK-001-r001-base.tokens.json",
+        "supersedes": null
+      }
+    ],
+    "renditions": [
+      {
+        "id": "VIS-001",
+        "revision": 1,
+        "path": "renditions/VIS-001-r001-formulario-alta/rendition.json",
+        "supersedes": null
+      }
+    ],
+    "assets": [
+      {
+        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "path": "assets/5555555555555555555555555555555555555555555555555555555555555555-logo.svg"
+      }
+    ]
+  },
+  "currentness": [
+    { "ref": "DES-001/FLW-001@r1", "state": "superseded" },
+    { "ref": "DES-001/FLW-001@r2", "state": "current" }
+  ],
+  "governance": {
+    "reviews": [
+      {
+        "id": "REV-001",
+        "path": "governance/reviews/REV-001.json",
+        "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "target": "DES-001@r2"
+      }
+    ],
+    "revocations": [
+      {
+        "id": "RVK-001",
+        "path": "governance/revocations/RVK-001.json",
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "target": "DES-001@r1"
+      }
+    ]
+  },
+  "relations": {
+    "specs": ["docs/specs/013-spec-estandarizar-ui-spec.md"],
+    "plans": ["docs/plans/012-plan-paquete-diseno-ui-y-flows.md"]
+  }
+}

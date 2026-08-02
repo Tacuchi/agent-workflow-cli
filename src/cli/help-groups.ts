@@ -57,6 +57,9 @@ const GROUPS: readonly CommandGroup[] = [
       "stack",
       "skill-index",
       "skills",
+      // The durable design taxonomy: which UI Design Packages exist and where
+      // they live right now (identity resolves, the path is only a hint).
+      "designs",
       "resume-summary",
       "next-number",
       // Context budget & read-set resolution (spec 009): what a command costs

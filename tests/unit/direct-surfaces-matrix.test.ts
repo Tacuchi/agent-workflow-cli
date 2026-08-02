@@ -112,6 +112,7 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
   const LATER_ADOPTERS: readonly string[] = [
     "context-budget", // plan 010 — the context budget report
     "context-plan", // plan 010 — the read-set an invocation must load
+    "designs", // plan 012 — the UI Design Packages and where they live right now
   ];
 
   it("no undeclared command acquired a human projection", () => {

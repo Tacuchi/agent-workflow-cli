@@ -48,7 +48,7 @@ USER invokes
         │ the export-* read the artifacts
         ▼
   docs/ ZONE — permanent, user-facing documents
-    specs · plans (flows) · research (persist / no-flow) · scripts · manuals · diagrams · reports (export-*) · tools (ambient)
+    specs · plans (flows) · designs (UI Design Packages) · research (persist / no-flow) · scripts · manuals · diagrams · reports (export-*) · tools (ambient)
 ```
 
 - **Layer 1** — high level. Single-pass or starts a loop. No iteration logic.

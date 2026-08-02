@@ -12,6 +12,7 @@ import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-
 import { codeScanCommand } from "./code-scan.js";
 import { contextBudgetCommand } from "./context-budget.js";
 import { contextPlanCommand } from "./context-plan.js";
+import { designsCommand } from "./designs.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
 import {
   exportDiagramsCommand,
@@ -71,6 +72,7 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   contextBudgetCommand,
   contextPlanCommand,
   skillsCommand,
+  designsCommand,
   sourcesCommand,
   generateLaunchCommand,
   setWorkingBranchCommand,
