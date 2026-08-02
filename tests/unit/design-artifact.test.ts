@@ -545,3 +545,23 @@ describe("más hallazgos confirmados por el review gate", () => {
     expect(codes(naPlaceholder, "flow")).toContain("DESIGN_NOT_APPLICABLE_NO_REASON");
   });
 });
+
+describe("el último hallazgo del review gate: la acción correctiva tiene que ser la correcta", () => {
+  // Una arista sin anchor ya fallaba por pertenencia a 'nodes', pero el consejo
+  // era agregar la referencia sin anchor a 'nodes' — que ahora también falla.
+  // Un diagnóstico que manda al autor a un callejón no cumple el contrato.
+  it("un extremo de arista sin anchor se diagnostica por el anchor, no por la pertenencia", () => {
+    const sinAnchor = editFront(
+      FLOW,
+      "    to: DES-001/SCR-002@r1#success",
+      "    to: DES-001/SCR-002@r1",
+    );
+    const failures = validate(sinAnchor, "flow").failures;
+    const failure = failures.find((f) => f.message.includes("edges['submit']"));
+    expect(failure?.message).toContain("conecta ESTADOS");
+    expect(failure?.action).toContain("agregá el anchor");
+    expect(failures.map((f) => f.action)).not.toContain(
+      "agregá ese estado a 'nodes' o corregí la arista",
+    );
+  });
+});

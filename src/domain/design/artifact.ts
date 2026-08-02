@@ -654,11 +654,22 @@ function checkEndpoint(
   value: unknown,
   nodes: string[],
 ): boolean {
-  if (parseArtifactRef(value) === null) {
+  const ref = parseArtifactRef(value);
+  if (ref === null) {
     r.invalid(
       artifact,
       `edges['${trigger}']: '${side}' debe ser DES-NNN/SCR-NNN@rN#estado y llegó ${JSON.stringify(value)}`,
       "referenciá el estado de pantalla completo",
+    );
+    return false;
+  }
+  // Checked BEFORE membership: without it the author is told to add the
+  // unanchored reference to `nodes`, which is the wrong fix for the real problem.
+  if (ref.state === undefined) {
+    r.invalid(
+      artifact,
+      `edges['${trigger}']: '${side}' (${String(value)}) apunta a una pantalla y una arista conecta ESTADOS`,
+      "agregá el anchor del estado, por ejemplo @r2#default",
     );
     return false;
   }
