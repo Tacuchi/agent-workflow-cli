@@ -22,11 +22,13 @@
 import { createHash } from "node:crypto";
 import type { CapabilityDescriptor } from "../../domain/capability/descriptor.js";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
+import { RETIRED_SKILL_IDENTITIES } from "../../domain/skills.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { skillRoots } from "../skills-resolver-service.js";
 import { loadDescriptor, readSkillHead } from "./descriptor-loader.js";
+import type { SkillHead } from "./descriptor-loader.js";
 
 export interface InstanceLocation {
   /** The skill root this copy was found under. */
@@ -91,35 +93,57 @@ async function scanRoot(fs: FileSystemPort, root: string): Promise<Candidate[]> 
     // No readable head, or no claim at all: an ambient skill. It never becomes a
     // capability by being installed, so it never enters the inventory.
     if (head === null || head.locatorValue === null) continue;
-
-    const load = await loadDescriptor(fs, entry.path, head);
-    const location: InstanceLocation = {
-      scope: root,
-      skillDir: entry.path,
-      skillMd: head.skillMd,
-      descriptorPath: load.state === "loaded" ? load.loaded.path : null,
-    };
-    if (load.state !== "loaded") {
-      found.push({
-        name: head.name,
-        version: head.version,
-        digest: null,
-        location,
-        descriptor: null,
-        failure: load.state === "invalid" ? load.failure : null,
-      });
-      continue;
-    }
-    found.push({
-      name: head.name,
-      version: head.version,
-      digest: await instanceDigest(fs, head.skillMd, load.loaded.digest),
-      location,
-      descriptor: load.loaded.descriptor,
-      failure: null,
-    });
+    found.push(await candidateFor(fs, root, entry.path, head));
   }
   return found;
+}
+
+async function candidateFor(
+  fs: FileSystemPort,
+  root: string,
+  skillDir: string,
+  head: SkillHead,
+): Promise<Candidate> {
+  const location: InstanceLocation = {
+    scope: root,
+    skillDir,
+    skillMd: head.skillMd,
+    descriptorPath: null,
+  };
+  const base = { name: head.name, version: head.version, location, descriptor: null } as const;
+
+  // A directory wearing a retired name is refused before its descriptor is even
+  // read: the name IS the identity, and honoring it would resurrect the alias
+  // the contract exists to close.
+  const retired = RETIRED_SKILL_IDENTITIES.get(head.name.toLowerCase());
+  if (retired !== undefined) {
+    return {
+      ...base,
+      digest: null,
+      failure: {
+        code: "CAPABILITY_NAME_RETIRED",
+        message: `'${head.name}' está retirado — ${retired}`,
+        action: "renombrá la skill al nombre vigente de la capacidad; no hay alias",
+      },
+    };
+  }
+
+  const load = await loadDescriptor(fs, skillDir, head);
+  if (load.state !== "loaded") {
+    return {
+      ...base,
+      digest: null,
+      failure: load.state === "invalid" ? load.failure : null,
+    };
+  }
+  return {
+    name: head.name,
+    version: head.version,
+    digest: await instanceDigest(fs, head.skillMd, load.loaded.digest),
+    location: { ...location, descriptorPath: load.loaded.path },
+    descriptor: load.loaded.descriptor,
+    failure: null,
+  };
 }
 
 /**

@@ -114,6 +114,7 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     "context-plan", // plan 010 — the read-set an invocation must load
     "designs", // plan 012 — the UI Design Packages and where they live right now
     "capability", // plan 014 — the attempt's receipt, projected from the same data
+    "skills", // plan 014 — capability readiness, widened only under --detail
   ];
 
   it("no undeclared command acquired a human projection", () => {

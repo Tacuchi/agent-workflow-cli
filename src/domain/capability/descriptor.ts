@@ -33,6 +33,7 @@ import { createHash } from "node:crypto";
 import { ContractReader, eachRecord, isNonEmptyString, isRecord } from "../contract-reader.js";
 import type { AllowedKeys, ContractFailure } from "../contract-reader.js";
 import { checkSafeRelativePath } from "../safe-path.js";
+import { RETIRED_SKILL_IDENTITIES } from "../skills.js";
 import { isEffectClass } from "./effects.js";
 import type { EffectDeclaration } from "./effects.js";
 
@@ -315,6 +316,19 @@ function readIdentity(r: ContractReader, raw: Record<string, unknown>, artifact:
       `'name' debe ser un nombre de skill en minúsculas: ${JSON.stringify(name)}`,
       `escribí 'name' con la forma '${CAPABILITY_GRAMMAR.name}'`,
     );
+  } else {
+    // A descriptor is an entry surface like any other. Accepting a retired name
+    // here would let the identity come back in through the one door that was
+    // not watched — and it would come back CARRYING a contract.
+    const retired = RETIRED_SKILL_IDENTITIES.get(name.toLowerCase());
+    if (retired !== undefined) {
+      r.fail(
+        "CAPABILITY_NAME_RETIRED",
+        artifact,
+        `'${name}' está retirado — ${retired}`,
+        "publicá el descriptor bajo el nombre vigente de la capacidad",
+      );
+    }
   }
 
   const purpose = r.read(raw, "purpose");

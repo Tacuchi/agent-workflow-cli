@@ -21,6 +21,7 @@ import {
   CAPABILITY_DESCRIPTOR_METADATA_KEY,
   type CapabilityDescriptor,
 } from "../../domain/capability/descriptor.js";
+import type { FileSystemPort } from "../../ports/file-system.js";
 
 /**
  * The ownership fingerprint, same idea as `COMMAND_SKILL_MARKER`: the wrapper
@@ -99,26 +100,64 @@ export type WrapperOwnership =
   /** Someone else's skill, or ours after a hand edit. Never touched. */
   | { state: "foreign"; why: string };
 
+/**
+ * The ownership RULE, given what a reader found. One rule, two readers: the
+ * installer reads with `node:fs`, readiness reads through the port, and neither
+ * carries its own copy of "is this ours" — a second copy is a second answer.
+ */
+export function ownershipOf(
+  dir: string,
+  skillMd: string | null,
+  entries: readonly string[] | null,
+): WrapperOwnership {
+  if (skillMd === null) {
+    // No SKILL.md. An unrelated dir is not ours to claim either — but it is also
+    // not a skill, so installing into an empty one is safe.
+    if (entries === null || entries.length === 0) return { state: "absent" };
+    return { state: "foreign", why: `'${dir}' tiene contenido y ningún SKILL.md` };
+  }
+  if (skillMd.includes(CAPABILITY_SKILL_MARKER)) return { state: "ours" };
+  return { state: "foreign", why: `'${dir}' ya tiene un SKILL.md que no instalamos nosotros` };
+}
+
 export async function inspectCapabilityDir(dir: string): Promise<WrapperOwnership> {
-  let text: string;
+  let skillMd: string | null = null;
   try {
-    text = await readFile(join(dir, "SKILL.md"), "utf8");
+    skillMd = await readFile(join(dir, "SKILL.md"), "utf8");
   } catch {
-    // No SKILL.md. An empty or unrelated dir is not ours to claim either — but
-    // it is also not a skill, so installing into it is safe.
+    skillMd = null;
+  }
+  if (skillMd !== null) return ownershipOf(dir, skillMd, null);
+  try {
+    return ownershipOf(dir, null, await readdir(dir));
+  } catch {
+    return ownershipOf(dir, null, null);
+  }
+}
+
+/** The same rule, read through a `FileSystemPort` (readiness, tests). */
+export async function inspectCapabilityDirVia(
+  fs: FileSystemPort,
+  dir: string,
+): Promise<WrapperOwnership> {
+  const skillMd = join(dir, "SKILL.md");
+  if (await fs.exists(skillMd)) {
     try {
-      const entries = await readdir(dir);
-      if (entries.length === 0) return { state: "absent" };
-      return { state: "foreign", why: `'${dir}' tiene contenido y ningún SKILL.md` };
+      return ownershipOf(dir, await fs.readText(skillMd), null);
     } catch {
-      return { state: "absent" };
+      return ownershipOf(dir, null, null);
     }
   }
-  if (text.includes(CAPABILITY_SKILL_MARKER)) return { state: "ours" };
-  return {
-    state: "foreign",
-    why: `'${dir}' ya tiene un SKILL.md que no instalamos nosotros`,
-  };
+  if (!(await fs.exists(dir))) return ownershipOf(dir, null, null);
+  try {
+    return ownershipOf(
+      dir,
+      null,
+      (await fs.list(dir)).map((e) => e.name),
+    );
+  } catch {
+    return ownershipOf(dir, null, null);
+  }
 }
 
 export interface WrapperFailure {

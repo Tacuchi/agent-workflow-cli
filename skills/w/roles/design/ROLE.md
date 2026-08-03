@@ -164,6 +164,25 @@ validators and completeness. Where the two meet, Spec 014 decides the envelope
 and this one decides the payload. Duplicating either side is the failure mode
 being avoided.
 
+### What each caller may invoke
+
+Both routes reach the same dispatcher — `aw capability prepare|continue|validate|apply`,
+with the operation travelling in the envelope. What differs is WHO may ask for what:
+
+| Caller | Operations | Then |
+|---|---|---|
+| direct wrapper (`design/SKILL.md`) | all five | converses in the host; opens no flow session or document |
+| SPEC REFINE | `create` · `update` · `validate` | keeps its own questions, gate and publication |
+| PLAN NEW · PLAN REFINE | `update` · `validate` | closes its plan over the revision it references |
+| PLAN EXEC · QUICK | `validate` | **consumes** the package inside its own lifecycle |
+
+There is no sixth `consume` operation: consuming is what a flow DOES with a
+validated package, not something it asks the capability to do. An operation
+outside its row is refused, never improvised. The flow may add gates of its own
+and may never lower one the capability already failed; a durable output produced
+through the direct route is adopted later **by exact reference** — same identity,
+revision and digest — with no recreation and no format conversion.
+
 ## CLI ↔ agent split
 
 Explicit, and it is the whole point of the handshake:
