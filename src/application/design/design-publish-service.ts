@@ -15,11 +15,14 @@ import type { CatalogEntry, DesignFailure, DesignManifest } from "../../domain/d
 import { validateDesignManifest } from "../../domain/design/manifest.js";
 import { gateDesignDocument } from "../../domain/design/maturity.js";
 import { NAMING, type NamedKind, baselinePath, checkNaming } from "../../domain/design/naming.js";
+import { checkOfflineHtml } from "../../domain/design/offline.js";
+import { checkProviderLocator } from "../../domain/design/profiles.js";
 import {
   currentRevisions,
   renderDesignMd,
   renderPackageMd,
 } from "../../domain/design/projections.js";
+import { checkDataAuthorization } from "../../domain/design/render-bundle.js";
 import { type DesignRendition, validateDesignRendition } from "../../domain/design/rendition.js";
 import { KIND_LIST } from "../../domain/design/revision.js";
 import { crossVisualEvidence } from "../../domain/design/visual-evidence.js";
@@ -70,6 +73,15 @@ export interface PublishInput {
    * — which is the point.
    */
   expectedBase: string | null;
+  /**
+   * Who authorized REAL material in this revision, and for what (AC-SEC-03).
+   *
+   * Absent is the normal case: previews, bundles and assets are synthetic or
+   * redacted by default, so a rendition declaring `data_classification: real`
+   * without this is refused instead of quietly shipping personal data into a
+   * durable, shareable dossier.
+   */
+  dataAuthorization?: string;
   /**
    * Workspace-relative documents that must land WITH this revision — the spec or
    * plan whose `## Design references` points at the baseline being published
@@ -125,8 +137,14 @@ export async function publishDesignRevision(
     };
   }
 
-  const catalog = mergeCatalog(manifest, input.files);
+  const catalog = mergeCatalog(manifest, input.files, input.dataAuthorization);
   if ("failures" in catalog) return { ok: false, failures: catalog.failures };
+
+  // Los archivos locales de una rendition se comprueban antes que las citas: una
+  // preview que no está, que no es la que su rendition declara o que se cuelga de
+  // una URL remota no puede respaldar nada, y decirlo así nombra la causa real.
+  const local = await checkLocalEvidence(fs, workspace, packagePath, catalog.value, input.files);
+  if (local.length > 0) return { ok: false, failures: local };
 
   // La evidencia visual se cruza acá, con el catálogo YA fusionado: una rendition
   // publicada en esta misma revisión tiene que poder respaldar a la screen que la
@@ -268,6 +286,7 @@ function locate(
 function mergeCatalog(
   manifest: DesignManifest,
   files: PublishFile[],
+  authorization: string | undefined,
 ): { value: DesignManifest["catalog"] } | { failures: DesignFailure[] } {
   const catalog = structuredClone(manifest.catalog);
   const failures: DesignFailure[] = [];
@@ -277,9 +296,24 @@ function mergeCatalog(
       failures.push(...addAsset(catalog, file));
       continue;
     }
-    failures.push(...addArtifact(catalog, manifest.id, file));
+    // Una preview NO se cataloga: la autoridad sobre los archivos de una
+    // rendition es su propio documento, que los declara con su digest. Darle una
+    // entrada de catálogo le daría una identidad y una revisión que no tiene, y
+    // ningún baseline puede sellar un path que el catálogo no nombre.
+    if (isRenditionCompanion(file.path)) continue;
+    failures.push(...addArtifact(catalog, manifest.id, file, authorization));
   }
   return failures.length > 0 ? { failures } : { value: catalog };
+}
+
+/** A file inside a rendition's folder that is not the rendition document itself. */
+function isRenditionCompanion(path: string): boolean {
+  return path.startsWith(`${NAMING.rendition.dir}/`) && !path.endsWith(NAMING.rendition.suffix);
+}
+
+/** The directory a rendition's own files live in: `renditions/VIS-001-r001-x/`. */
+function dirOf(renditionPath: string): string {
+  return renditionPath.slice(0, renditionPath.length - "rendition.json".length);
 }
 
 /** One flow, screen, rule, token or rendition into the catalog it belongs to. */
@@ -287,8 +321,9 @@ function addArtifact(
   catalog: DesignManifest["catalog"],
   packageId: string,
   file: PublishFile,
+  authorization: string | undefined,
 ): DesignFailure[] {
-  const described = describeFile(file, packageId);
+  const described = describeFile(file, packageId, authorization);
   if ("failures" in described) return described.failures;
 
   const { kind, id, revision, maturity, states, supersedes } = described.value;
@@ -361,6 +396,7 @@ function addAsset(catalog: DesignManifest["catalog"], file: PublishFile): Design
 function describeFile(
   file: PublishFile,
   packageId: string,
+  authorization: string | undefined,
 ): { value: PublishedIdentity } | { failures: DesignFailure[] } {
   const kind = kindOfPath(file.path);
   if (kind === null) {
@@ -376,7 +412,7 @@ function describeFile(
     };
   }
   if (kind === "flow" || kind === "screen") return describeDocument(file, packageId, kind);
-  if (kind === "rendition") return describeRendition(file, packageId);
+  if (kind === "rendition") return describeRendition(file, packageId, authorization);
 
   const name = file.path.slice(NAMING[kind].dir.length + 1);
   const parsed = /^((?:RUL|TOK)-[0-9]+)-r([0-9]{3,})-/.exec(name);
@@ -417,6 +453,7 @@ interface PublishedIdentity {
 function describeRendition(
   file: PublishFile,
   packageId: string,
+  authorization: string | undefined,
 ): { value: PublishedIdentity } | { failures: DesignFailure[] } {
   const parsed = parseJson(file.content);
   if (parsed === null) {
@@ -461,6 +498,15 @@ function describeRendition(
       ],
     };
   }
+  // Lo que ya no se puede deshacer una vez publicado: un dato personal queda en el
+  // historial del repo para siempre, y un locator incompleto deja una evidencia que
+  // apunta a nada.
+  const policy = [
+    ...checkDataAuthorization(rendition.data_classification, authorization, file.path),
+    ...checkProviderLocator(rendition.provider, file.path),
+  ];
+  if (policy.length > 0) return { failures: policy };
+
   return {
     value: {
       kind: "rendition",
@@ -566,6 +612,126 @@ async function crossPublishedEvidence(
     );
   }
   return failures;
+}
+
+/**
+ * The seal chain of a local preview, and its offline guarantee.
+ *
+ * A preview file is not catalogued and no baseline selects it — it cannot be, since
+ * a baseline only seals catalogued paths and a preview has no identity of its own.
+ * What seals it is its rendition: `files[].sha256` names the exact bytes, and the
+ * rendition document IS sealed. So the chain holds only if somebody checks that
+ * link at publication time, which is what this does.
+ *
+ * Three things, all about the revision being published — the already-sealed ones
+ * were judged by the gate in force then, same doctrine as the evidence cross:
+ *
+ *  1. every file a published rendition declares exists, with the declared digest;
+ *  2. a companion file belongs to a rendition the catalog knows and that
+ *     rendition declares it — otherwise it is a stray file inside the package;
+ *  3. an `.html` export is self-sufficient (AC-REN-07).
+ */
+async function checkLocalEvidence(
+  fs: FileSystemPort,
+  workspace: string,
+  packagePath: string,
+  catalog: DesignManifest["catalog"],
+  files: PublishFile[],
+): Promise<DesignFailure[]> {
+  const incoming = new Map(files.map((f) => [f.path, f.content]));
+  const failures: DesignFailure[] = [];
+  const declared = new Set<string>();
+
+  for (const file of files) {
+    if (!file.path.endsWith(NAMING.rendition.suffix)) continue;
+    const validation = validateDesignRendition(parseJson(file.content), file.path);
+    // Una rendition que no valida ya se reportó en `mergeCatalog`; sus archivos no
+    // se pueden juzgar porque no se pudo leer qué archivos declara.
+    if (!validation.ok || validation.value === null) continue;
+
+    const dir = dirOf(file.path);
+    for (const entry of validation.value.files) {
+      const path = `${dir}${entry.path}`;
+      declared.add(path);
+      const bytes = await bytesOf(fs, workspace, packagePath, path, incoming);
+      failures.push(...sealFailures(file.path, entry, path, bytes));
+    }
+  }
+
+  for (const file of files) {
+    if (!isRenditionCompanion(file.path)) continue;
+    failures.push(...companionFailures(file, catalog, declared));
+    if (file.path.endsWith(".html")) failures.push(...checkOfflineHtml(file.content, file.path));
+  }
+  return failures;
+}
+
+/** One declared file against the bytes that are really there. */
+function sealFailures(
+  document: string,
+  entry: { path: string; sha256: string },
+  path: string,
+  bytes: Uint8Array | null,
+): DesignFailure[] {
+  if (bytes === null) {
+    return [
+      {
+        code: "DESIGN_EVIDENCE_INSUFFICIENT",
+        artifact: document,
+        message: `declara '${entry.path}' y el archivo no está en el package`,
+        action: `publicá '${path}' junto con la rendition: la evidencia local es el archivo, no la promesa`,
+      },
+    ];
+  }
+  const actual = digestOf(bytes);
+  if (actual === entry.sha256) return [];
+  return [
+    {
+      code: "DESIGN_DIGEST_MISMATCH",
+      artifact: path,
+      message: `'${entry.path}' no son los bytes que la rendition declara (declara ${entry.sha256}, calcula ${actual})`,
+      action:
+        "recalculá el digest sobre el archivo publicado: el documento de la rendition es lo único que sella su preview",
+    },
+  ];
+}
+
+/**
+ * A companion file has to belong to a rendition, and be one it declares.
+ *
+ * Declaration is checked FIRST because it is the stronger fact: a storyboard may
+ * keep `frames/step-1.svg` in a subfolder of its own directory, and asking "which
+ * rendition sits in this file's immediate directory" would call that an orphan. The
+ * owner lookup exists only to produce the better of the two diagnostics.
+ */
+function companionFailures(
+  file: PublishFile,
+  catalog: DesignManifest["catalog"],
+  declared: ReadonlySet<string>,
+): DesignFailure[] {
+  if (declared.has(file.path)) return [];
+
+  const owner = catalog.renditions.find((e) => file.path.startsWith(dirOf(e.path)));
+  if (owner === undefined) {
+    const dir = file.path.slice(0, file.path.lastIndexOf("/") + 1);
+    return [
+      {
+        code: "DESIGN_REFERENCE_MISSING",
+        artifact: file.path,
+        message: `'${file.path}' no pertenece a ninguna rendition del package`,
+        action: `publicá '${dir}rendition.json', o movelo: dentro de 'renditions/' solo viven los archivos de una rendition`,
+      },
+    ];
+  }
+  return [
+    {
+      code: "DESIGN_EVIDENCE_INSUFFICIENT",
+      artifact: file.path,
+      message: `'${file.path}' se publica y ${owner.id}@r${owner.revision} no lo declara en 'files'`,
+      action:
+        "declaralo en 'files' con su digest, o no lo publiques: un archivo que ninguna rendition sella es evidencia que nadie puede verificar",
+    },
+  ];
 }
 
 /**

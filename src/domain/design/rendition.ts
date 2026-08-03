@@ -227,9 +227,10 @@ export function computeSourceDigest(sources: readonly RenditionSource[]): string
   return `sha256:${createHash("sha256").update(input, "utf8").digest("hex")}`;
 }
 
-/** Why a rendition no longer matches its sources, or null when it still does. */
+/** Why something no longer matches the sources it came from, or null when it does. */
 export interface StaleVerdict {
-  rendition: string;
+  /** What went stale: a rendition (`VIS-001@r1`) or a proposal's base bundle. */
+  subject: string;
   expected: string;
   actual: string;
   /** The refs whose bytes moved, so the diagnostic points at the real cause. */
@@ -237,31 +238,45 @@ export interface StaleVerdict {
 }
 
 /**
- * Is this rendition still a picture of what it claims to be?
+ * Did the content this was cut from move?
  *
- * `current` is the sources as they are RIGHT NOW — read from the package, never
- * from the rendition. Comparing the rendition's own record against itself would
- * always pass, which is the failure mode this exists to prevent.
+ * Generic over the subject because a rendition and an external proposal ask the
+ * exact same question: I recorded these revisions with these bytes — are they
+ * still those bytes? `current` is the package as it is RIGHT NOW; comparing a
+ * record against itself would always pass, which is the failure mode this exists
+ * to prevent.
  */
-export function checkStale(
-  rendition: DesignRendition,
+export function checkSourcesStale(
+  subject: string,
+  sources: readonly RenditionSource[],
+  sourceDigest: string,
   current: ReadonlyMap<string, string>,
 ): StaleVerdict | null {
-  const rebuilt = rendition.sources.map((s) => ({
-    ref: s.ref,
-    sha256: current.get(s.ref) ?? "",
-  }));
+  const rebuilt = sources.map((s) => ({ ref: s.ref, sha256: current.get(s.ref) ?? "" }));
   const actual = computeSourceDigest(rebuilt);
-  if (actual === rendition.source_digest) return null;
+  if (actual === sourceDigest) return null;
   return {
-    rendition: `${rendition.id}@r${rendition.revision}`,
-    expected: rendition.source_digest,
+    subject,
+    expected: sourceDigest,
     actual,
-    moved: rendition.sources
+    moved: sources
       .filter((s) => current.get(s.ref) !== s.sha256)
       .map((s) => s.ref)
       .sort(),
   };
+}
+
+/** Is this rendition still a picture of what it claims to be? */
+export function checkStale(
+  rendition: DesignRendition,
+  current: ReadonlyMap<string, string>,
+): StaleVerdict | null {
+  return checkSourcesStale(
+    `${rendition.id}@r${rendition.revision}`,
+    rendition.sources,
+    rendition.source_digest,
+    current,
+  );
 }
 
 /** The stale verdict as a failure, for a caller that must refuse to go on. */
@@ -269,7 +284,7 @@ export function staleFailure(verdict: StaleVerdict, artifact: string): DesignFai
   return {
     code: "DESIGN_RENDITION_STALE",
     artifact,
-    message: `${verdict.rendition} se generó desde un contenido que ya cambió (${verdict.moved.join(", ") || "sus fuentes"})`,
+    message: `${verdict.subject} se generó desde un contenido que ya cambió (${verdict.moved.join(", ") || "sus fuentes"})`,
     action:
       "regenerá la rendition sobre la revisión vigente, o registrala contra la revisión de la que realmente salió",
   };

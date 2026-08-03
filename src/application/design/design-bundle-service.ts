@@ -3,6 +3,7 @@ import type { AdapterProfile } from "../../domain/design/adapter.js";
 import { bundleAdapterOf, declaredLosses } from "../../domain/design/adapter.js";
 import { type DesignArtifact, validateDesignArtifact } from "../../domain/design/artifact.js";
 import { type ClosureMember, computeClosure } from "../../domain/design/closure.js";
+import { type ExternalSendOutcome, planExternalSend } from "../../domain/design/external-send.js";
 import { parseArtifactRef } from "../../domain/design/identity.js";
 import type { DesignFailure, DesignManifest } from "../../domain/design/manifest.js";
 import { gateDesignDocument } from "../../domain/design/maturity.js";
@@ -11,6 +12,7 @@ import {
   type DataClassification,
   type RenderBundle,
   buildRenderBundle,
+  checkDataAuthorization,
 } from "../../domain/design/render-bundle.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { readDesignIndex } from "./design-index-service.js";
@@ -34,12 +36,27 @@ export interface CutBundleInput {
   adapter: AdapterProfile;
   /** Defaults to `synthetic`: real material is an authorization, not a default. */
   dataClassification?: DataClassification;
+  /** Who authorized real material, and for what. Required only for `real`. */
+  dataAuthorization?: string;
+  /** Who authorized reaching the provider. Only a `network: opt_in` profile needs it. */
+  sendAuthorization?: string;
   /** YYYY-MM-DD, passed in: no layer of this reads the clock. */
   generated: string;
 }
 
 export type CutBundleResult =
-  | { ok: true; value: RenderBundle }
+  | {
+      ok: true;
+      value: RenderBundle;
+      /**
+       * The send preflight, for a profile that can reach a third party; `null` for
+       * one that never does. It rides along with the bundle on purpose: cutting for
+       * an external profile is exactly the moment to show what going there would
+       * send — and the bundle is handed over either way, because the local handoff
+       * does not depend on anybody's authorization.
+       */
+      preflight: ExternalSendOutcome | null;
+    }
   | { ok: false; failures: DesignFailure[] };
 
 export async function cutRenderBundle(
@@ -47,6 +64,17 @@ export async function cutRenderBundle(
   workspace: string,
   input: CutBundleInput,
 ): Promise<CutBundleResult> {
+  const classification = input.dataClassification ?? "synthetic";
+  // Antes de leer el package: si el material real no está autorizado, el bundle no
+  // llega a existir. Comprobarlo después de armarlo dejaría los datos en memoria de
+  // un objeto cuyo único propósito es entregarse a un tercero.
+  const unauthorized = checkDataAuthorization(
+    classification,
+    input.dataAuthorization,
+    `${input.packageId}/render-bundle.json`,
+  );
+  if (unauthorized.length > 0) return { ok: false, failures: unauthorized };
+
   const index = await readDesignIndex(fs, workspace);
   const entry = index.packages.find((p) => p.id === input.packageId);
   if (entry === undefined || entry.manifest === null) {
@@ -85,7 +113,7 @@ export async function cutRenderBundle(
     (path) => content.documents.get(path) ?? null,
   );
 
-  return buildRenderBundle({
+  const built = buildRenderBundle({
     manifest,
     baseline: { revision: baseline.revision, digest: baseline.digest },
     adapter: bundleAdapterOf(input.adapter),
@@ -94,9 +122,25 @@ export async function cutRenderBundle(
     readBytes: (path) => content.bytes.get(path) ?? null,
     accessibility: accessibilityOf(manifest, closure.members, content.texts),
     losses: declaredLosses(input.adapter),
-    dataClassification: input.dataClassification ?? "synthetic",
+    dataClassification: classification,
     generated: input.generated,
   });
+  if (!built.ok) return built;
+
+  return {
+    ok: true,
+    value: built.value,
+    preflight:
+      input.adapter.network === "never"
+        ? null
+        : planExternalSend({
+            adapter: input.adapter,
+            bundle: built.value,
+            ...(input.sendAuthorization === undefined
+              ? {}
+              : { authorization: input.sendAuthorization }),
+          }),
+  };
 }
 
 /**
