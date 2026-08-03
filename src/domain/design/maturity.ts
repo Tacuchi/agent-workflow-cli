@@ -10,6 +10,8 @@ import {
 import {
   type DesignArtifact,
   type DesignMaturity,
+  type ScreenArtifact,
+  type ScreenTraceEntry,
   splitDesignDocument,
   validateDesignArtifact,
 } from "./artifact.js";
@@ -181,7 +183,102 @@ function checkHandoff(
     ...checkGraph(artifact, file),
     ...checkApplicableCompleteness(artifact, sections, kind, file),
     ...checkExternalCustody(artifact, file),
+    ...checkVisualEvidence(artifact, file),
   ];
+}
+
+/**
+ * The elevation of AC-REN-01 and AC-REN-02: a `handoff` screen is LOOKABLE.
+ *
+ * Until this existed, `handoff` meant the prose was complete. That let a screen
+ * be declared implementable while nobody could see it — and the visual evidence,
+ * when it existed at all, was somebody's habit rather than a requirement. So a
+ * `handoff` screen now owes two things:
+ *
+ * 1. a classification for every criterion it traces, and
+ * 2. a local preview of its `default_state` — the criterion that shows the base
+ *    state has to enumerate it AND enumerate a rendition of it.
+ *
+ * Both are checked HERE, against the document alone, and only the document's own
+ * claims. Whether the enumerated rendition exists, was cut from this revision and
+ * really covers that state is the package-level cross in `visual-evidence.ts`:
+ * this gate cannot open another file, and a gate that pretended to would be
+ * reporting on evidence it never read.
+ *
+ * `outline` is untouched on purpose. A screen still being shaped legitimately has
+ * no picture yet, and demanding one would push the author to render a placeholder
+ * so the document matches a template.
+ */
+function checkVisualEvidence(artifact: DesignArtifact, file: string): DesignFailure[] {
+  if (artifact.kind !== "screen") return [];
+  const screen = artifact as ScreenArtifact;
+  const failures: DesignFailure[] = [];
+
+  for (const entry of screen.trace) {
+    failures.push(...checkClassified(entry, file));
+  }
+
+  const base = screen.trace.filter(
+    (e) => e.classification !== "not_visual" && e.states.includes(screen.default_state),
+  );
+  if (!base.some((e) => e.renditions.length > 0)) {
+    failures.push({
+      code: "DESIGN_EVIDENCE_INSUFFICIENT",
+      artifact: file,
+      message: `ningún criterio trazado muestra el estado base '${screen.default_state}' con una rendition`,
+      action:
+        "un 'handoff' conserva una preview estática local de su default_state: creá la rendition y enumerala en el criterio que lo demuestra",
+    });
+  }
+  return failures;
+}
+
+/** One entry of the matrix: classified, and enumerating what its class demands. */
+function checkClassified(entry: ScreenTraceEntry, file: string): DesignFailure[] {
+  const incomplete = (message: string, action: string): DesignFailure => ({
+    code: "DESIGN_MATURITY_INCOMPLETE",
+    artifact: file,
+    message: `trace['${entry.criterion}'] ${message}`,
+    action,
+  });
+
+  if (entry.classification === null) {
+    return [
+      incomplete(
+        "no está clasificado",
+        "clasificalo 'visual', 'interaction' o 'not_visual': un 'handoff' dice cómo se demuestra cada criterio",
+      ),
+    ];
+  }
+  if (entry.classification === "not_visual") {
+    return entry.reason === null
+      ? [
+          incomplete(
+            "está clasificado 'not_visual' y no dice por qué",
+            "escribí en 'reason' qué hace que ese criterio no tenga nada que mirar",
+          ),
+        ]
+      : [];
+  }
+
+  const failures: DesignFailure[] = [];
+  if (entry.states.length === 0) {
+    failures.push(
+      incomplete(
+        `es '${entry.classification}' y no enumera estados`,
+        "nombrá en 'states' los anchors donde se ve",
+      ),
+    );
+  }
+  if (entry.renditions.length === 0) {
+    failures.push(
+      incomplete(
+        `es '${entry.classification}' y no enumera renditions`,
+        "referenciá en 'renditions' la evidencia visual que lo muestra",
+      ),
+    );
+  }
+  return failures;
 }
 
 /**

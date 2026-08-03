@@ -146,7 +146,7 @@
       "enum": ["outline", "handoff"]
     },
     "trace": {
-      "description": "Acceptance criteria this artifact answers to. Emptiness is the maturity profile's business, not this schema's.",
+      "description": "Acceptance criteria this screen answers to, and how each one is DEMONSTRATED (AC-REN-02). The classification lives here because a `not_visual` reason is an assertion about the criterion, not about any picture of it; which criteria a given rendition covers travels the other way, in `rendition.json`, and the handoff gate crosses the two. Emptiness — and an unclassified entry — is the maturity profile's business, not this schema's.",
       "type": "array",
       "items": {
         "type": "object",
@@ -158,6 +158,34 @@
             "minLength": 1
           },
           "source": {
+            "type": ["string", "null"],
+            "minLength": 1
+          },
+          "classification": {
+            "description": "`visual` — you can see whether it holds. `interaction` — you can only see it happen. `not_visual` — nothing to look at, and `reason` says why. Null until the author classifies it: a `handoff` is what demands all three be settled.",
+            "type": ["string", "null"],
+            "enum": ["visual", "interaction", "not_visual", null]
+          },
+          "states": {
+            "description": "Anchors of THIS revision where the criterion is demonstrated. Empty on a `not_visual` entry.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          },
+          "renditions": {
+            "description": "Renditions that show it, by exact reference. Empty on a `not_visual` entry.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/VIS-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
+            }
+          },
+          "reason": {
+            "description": "Why there is nothing to look at. Only a `not_visual` entry carries one.",
             "type": ["string", "null"],
             "minLength": 1
           }

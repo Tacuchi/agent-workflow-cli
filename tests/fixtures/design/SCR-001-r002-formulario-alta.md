@@ -21,6 +21,10 @@ dependencies:
 trace:
   - criterion: S046/AC-02
     source: docs/specs/046-spec-nacimiento-familias.md
+    classification: visual
+    states: [default, error]
+    renditions: [DES-001/VIS-001@r1]
+    reason: null
 external:
   - provider: DES-002
     revision: 3

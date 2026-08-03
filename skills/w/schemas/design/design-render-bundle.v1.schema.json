@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workline.dev/schemas/design/design-render-bundle.v1.schema.json",
+  "title": "Workline UI Design Package v1 — Render Context Bundle",
+  "description": "The single exchange payload every renderer and adapter receives. Deterministic for a baseline, a selection and an adapter profile: the digest is taken over canonical JSON without `digest` and without `generated`, so two equivalent runs seal the same bytes. It carries context, never authority — an integration transforms it over its own copy and the package stays untouched.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "package",
+    "baseline",
+    "baseline_digest",
+    "adapter",
+    "roots",
+    "closure",
+    "assets",
+    "data_classification",
+    "accessibility",
+    "losses",
+    "digest",
+    "generated"
+  ],
+  "properties": {
+    "schema": {
+      "const": "workline.design-render-bundle/v1"
+    },
+    "package": {
+      "description": "The package this bundle was cut from.",
+      "type": "string",
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})$"
+    },
+    "baseline": {
+      "description": "The published revision the selection was read at.",
+      "$ref": "#/$defs/revision"
+    },
+    "baseline_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "adapter": {
+      "description": "Which profile, at which version, this bundle was cut for. Determinism is a promise PER profile version: a profile that changes what it needs produces a different bundle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "version"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "roots": {
+      "description": "The selection, sorted. A selection is a set, so the order it was typed in is not part of the bundle. An anchor is allowed here: a root may ask for one state.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/(?:FLW|SCR|RUL|TOK|VIS)-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}(?:#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
+      }
+    },
+    "closure": {
+      "description": "Every revision the selection reaches, ordered by reference, with the content type and the digest of the bytes found on disk.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "kind", "path", "content_type", "sha256", "states"],
+        "properties": {
+          "ref": {
+            "description": "The revision, never anchored: the states demanded travel in `states`.",
+            "type": "string",
+            "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/(?:FLW|SCR|RUL|TOK|VIS)-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
+          },
+          "kind": {
+            "enum": ["flow", "screen", "rule", "token", "rendition"]
+          },
+          "path": {
+            "description": "Package-relative path. Never absolute and never escaping the package.",
+            "type": "string",
+            "minLength": 1
+          },
+          "content_type": {
+            "description": "Declared, not sniffed: a renderer decides how to read a member from this field.",
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "$ref": "#/$defs/digest"
+          },
+          "states": {
+            "description": "State anchors the selection asked for. Empty means the whole revision.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          }
+        }
+      }
+    },
+    "assets": {
+      "description": "The assets this bundle is allowed to hand over — only bytes the package custodies.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["digest", "path", "content_type"],
+        "properties": {
+          "digest": {
+            "$ref": "#/$defs/digest"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^assets/"
+          },
+          "content_type": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "data_classification": {
+      "description": "How the material was prepared. `synthetic` is the default; `real` is an authorization somebody had to give.",
+      "enum": ["synthetic", "redacted", "real"]
+    },
+    "accessibility": {
+      "description": "The accessibility obligations the selected revisions state. A design states them; a rendition never discharges them.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "statement"],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/(?:FLW|SCR|RUL|TOK|VIS)-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}(?:#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "losses": {
+      "description": "What this profile cannot represent, enumerated instead of omitted. A loss is part of the result, not a defect.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subject", "why"],
+        "properties": {
+          "subject": {
+            "description": "What is lost: `capability:pull`, `section:localization`, `medium:motion`.",
+            "type": "string",
+            "minLength": 1
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "digest": {
+      "description": "Over canonical JSON of this object WITHOUT `digest` and WITHOUT `generated`. That exclusion is the determinism boundary made checkable.",
+      "$ref": "#/$defs/digest"
+    },
+    "generated": {
+      "description": "YYYY-MM-DD. Outside the seal: a date is not part of what was selected.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "$defs": {
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

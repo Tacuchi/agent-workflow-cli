@@ -58,6 +58,47 @@ export interface TraceEntry {
   source: string | null;
 }
 
+/**
+ * How a traced criterion is DEMONSTRATED (AC-REN-02).
+ *
+ * - `visual` — you can see whether it holds, in a state of this screen.
+ * - `interaction` — you can only see it happen: a trigger, a transition and an
+ *   outcome. A still frame does not settle it.
+ * - `not_visual` — nothing to look at, and the author says why.
+ */
+export type CriterionClassification = "visual" | "interaction" | "not_visual";
+
+export const CRITERION_CLASSIFICATIONS: readonly CriterionClassification[] = [
+  "visual",
+  "interaction",
+  "not_visual",
+];
+
+/**
+ * A screen's trace entry: the criterion PLUS how it is shown.
+ *
+ * Only screens carry the classification, and that asymmetry is deliberate — a
+ * flow's visual evidence is its screens'. Its own criteria are demonstrated by
+ * the journey the screens make, so demanding renditions of a flow would force a
+ * picture of a graph to stand in for the graph the frontmatter already declares.
+ *
+ * The classification lives HERE, in the document, rather than in the rendition:
+ * a `not_visual` reason is an assertion about the criterion, not about any
+ * picture of it, and the frontmatter is the package's authority. What lives in
+ * `rendition.json` is the reverse direction — which criteria and states a given
+ * rendition covers — and the handoff gate crosses the two.
+ */
+export interface ScreenTraceEntry extends TraceEntry {
+  /** Null until the author classifies it: the `handoff` gate is what demands it. */
+  classification: CriterionClassification | null;
+  /** Declared state anchors this criterion is demonstrated on. */
+  states: string[];
+  /** Renditions that show it, by exact reference. */
+  renditions: string[];
+  /** Why there is nothing to look at. Only a `not_visual` entry carries one. */
+  reason: string | null;
+}
+
 export interface UnknownEntry {
   question: string;
   /** Whether resolving it could change behavior or acceptance. */
@@ -121,6 +162,8 @@ export interface ScreenArtifact extends CommonFields {
   states: StateEntry[];
   flow_refs: string[];
   dependencies: ScreenDependencies;
+  /** Narrowed: a screen's trace also says how each criterion is demonstrated. */
+  trace: ScreenTraceEntry[];
 }
 
 export type DesignArtifact = FlowArtifact | ScreenArtifact;
@@ -158,7 +201,7 @@ export const FLOW_ALLOWED_KEYS: AllowedKeys = {
 export const SCREEN_ALLOWED_KEYS: AllowedKeys = {
   "": [...COMMON_KEYS, "title", "default_state", "states", "flow_refs", "dependencies"],
   "states[]": ["anchor", "purpose"],
-  "trace[]": ["criterion", "source"],
+  "trace[]": ["criterion", "source", "classification", "states", "renditions", "reason"],
   "unknowns[]": ["question", "blocking"],
   "external[]": ["provider", "revision", "digest"],
   dependencies: ["rules", "tokens", "assets"],
@@ -273,6 +316,12 @@ export function validateDesignArtifact(
   const body = parseBody(split.body, split.bodyLine);
   checkHeadings(r, body, kind, artifact);
   checkNotApplicable(r, common.not_applicable, kind, artifact);
+  // The classification matrix names states, so it can only be checked once the
+  // states have been read. Coherence only — whether the matrix is COMPLETE is
+  // the `handoff` gate's question, and an `outline` is allowed to leave it open.
+  if (kind === "screen") {
+    checkTraceCoherence(r, artifact, common.trace, (specific as ScreenRead).states);
+  }
   checkBodyAgainstFrontmatter(r, body, kind, artifact, common, specific);
 
   if (r.failures.length > 0) {
@@ -351,7 +400,7 @@ function readCommon(
     supersedes: typeof supersedes === "string" ? supersedes : null,
     purpose: typeof purpose === "string" ? purpose : "",
     platform: typeof platform === "string" ? platform : "",
-    trace: readTrace(r, front, artifact),
+    trace: readTrace(r, front, artifact, kind),
     unknowns: readUnknowns(r, front, artifact),
     not_applicable: readNotApplicable(r, front, artifact),
     external: readExternal(r, front, artifact),
@@ -459,7 +508,12 @@ function checkSupersedes(
   }
 }
 
-function readTrace(r: Reader, front: Record<string, unknown>, artifact: string): TraceEntry[] {
+function readTrace(
+  r: Reader,
+  front: Record<string, unknown>,
+  artifact: string,
+  kind: DesignDocKind,
+): TraceEntry[] {
   const out: TraceEntry[] = [];
   for (const entry of eachRecord(r, front, "trace", artifact, " de entradas de trazabilidad")) {
     const criterion = r.read(entry, "trace[].criterion");
@@ -488,9 +542,185 @@ function readTrace(r: Reader, front: Record<string, unknown>, artifact: string):
     ) {
       continue;
     }
-    out.push({ criterion, source: typeof source === "string" ? source : null });
+    const base = { criterion, source: typeof source === "string" ? source : null };
+    // Only a screen declares the evidence half, so only a screen's validator may
+    // READ those properties: the drift guard proves a validator reads nothing the
+    // published schema does not declare, and `ui-flow/v1` does not declare them.
+    out.push(kind === "flow" ? base : { ...base, ...readEvidence(r, entry, artifact, criterion) });
   }
   return out;
+}
+
+/** The evidence half of a screen's trace entry. Shape only — completeness is the gate's. */
+function readEvidence(
+  r: Reader,
+  entry: Record<string, unknown>,
+  artifact: string,
+  criterion: string,
+): Omit<ScreenTraceEntry, "criterion" | "source"> {
+  const empty = { classification: null, states: [], renditions: [], reason: null };
+  const raw = r.read(entry, "trace[].classification");
+  const states = r.read(entry, "trace[].states");
+  const renditions = r.read(entry, "trace[].renditions");
+  const reason = r.read(entry, "trace[].reason");
+
+  const classification =
+    raw === undefined || raw === null
+      ? null
+      : CRITERION_CLASSIFICATIONS.includes(raw as CriterionClassification)
+        ? (raw as CriterionClassification)
+        : undefined;
+  if (classification === undefined) {
+    r.invalid(
+      artifact,
+      `trace['${criterion}']: 'classification' debe ser ${CRITERION_CLASSIFICATIONS.join(", ")} o null y llegó ${JSON.stringify(raw)}`,
+      "clasificá cómo se demuestra el criterio, o dejalo en null hasta hacerlo",
+    );
+    return empty;
+  }
+
+  const anchors = readAnchorList(r, artifact, `trace['${criterion}'].states`, states);
+  const shown = readRenditionList(r, artifact, `trace['${criterion}'].renditions`, renditions);
+  const why =
+    reason === null || reason === undefined
+      ? null
+      : checkText(
+            r,
+            artifact,
+            `trace['${criterion}'].reason`,
+            reason,
+            "escribí por qué el criterio no tiene nada que mirar, o poné null",
+          )
+        ? reason
+        : null;
+
+  const contradiction = contradictionIn(classification, anchors.length + shown.length, why);
+  if (contradiction !== null) {
+    r.invalid(artifact, `trace['${criterion}']: ${contradiction.what}`, contradiction.action);
+    return empty;
+  }
+  return { classification, states: anchors, renditions: shown, reason: why };
+}
+
+/**
+ * The three ways the evidence half can contradict its own classification.
+ *
+ * A contradiction is malformed whatever the maturity: `not_visual` MEANS there is
+ * nothing to look at, so enumerating a picture of it is not an incomplete claim to
+ * be finished later — it is two claims that cannot both hold. Incompleteness is a
+ * different verdict and belongs to the `handoff` gate.
+ */
+function contradictionIn(
+  classification: CriterionClassification | null,
+  enumerated: number,
+  reason: string | null,
+): { what: string; action: string } | null {
+  if (classification === null) {
+    if (enumerated === 0 && reason === null) return null;
+    return {
+      what: "declara evidencia sin clasificar el criterio",
+      action: "poné 'classification' en visual, interaction o not_visual",
+    };
+  }
+  if (classification === "not_visual") {
+    if (enumerated === 0) return null;
+    return {
+      what: "está clasificado 'not_visual' y enumera estados o renditions",
+      action: "si hay algo que mirar, clasificalo 'visual' o 'interaction'",
+    };
+  }
+  if (reason === null) return null;
+  return {
+    what: `'reason' explica por qué NO hay nada que mirar y este criterio es '${classification}'`,
+    action: "quitá 'reason', o reclasificá el criterio como 'not_visual'",
+  };
+}
+
+function readAnchorList(r: Reader, artifact: string, path: string, raw: unknown): string[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    r.invalid(artifact, `'${path}' debe ser un array de anchors`, `escribí '${path}': []`);
+    return [];
+  }
+  const out: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string" || !ANCHOR_RE.test(value)) {
+      r.invalid(
+        artifact,
+        `'${path}' trae un anchor inválido: ${JSON.stringify(value)}`,
+        "nombrá el anchor de un estado declarado, sin '#'",
+      );
+      continue;
+    }
+    if (out.includes(value)) {
+      r.fail(
+        "DESIGN_ID_DUPLICATE",
+        artifact,
+        `'${path}' repite '${value}'`,
+        "dejá una sola aparición",
+      );
+      continue;
+    }
+    out.push(value);
+  }
+  return out;
+}
+
+function readRenditionList(r: Reader, artifact: string, path: string, raw: unknown): string[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    r.invalid(artifact, `'${path}' debe ser un array de referencias`, `escribí '${path}': []`);
+    return [];
+  }
+  const out: string[] = [];
+  for (const value of raw) {
+    const ref = parseArtifactRef(value);
+    if (ref === null || !ref.artifact.startsWith("VIS-")) {
+      r.invalid(
+        artifact,
+        `'${path}' solo admite renditions DES-NNN/VIS-NNN@rN y llegó ${JSON.stringify(value)}`,
+        "referenciá la rendition exacta que muestra el criterio",
+      );
+      continue;
+    }
+    if (out.includes(value as string)) {
+      r.fail(
+        "DESIGN_ID_DUPLICATE",
+        artifact,
+        `'${path}' repite ${value as string}`,
+        "dejá una sola aparición",
+      );
+      continue;
+    }
+    out.push(value as string);
+  }
+  return out;
+}
+
+/**
+ * The matrix names states of THIS screen. A criterion demonstrated on an anchor
+ * the revision does not declare points at nothing, and a gate that accepted it
+ * would report coverage of a state nobody can open.
+ */
+function checkTraceCoherence(
+  r: Reader,
+  artifact: string,
+  trace: TraceEntry[],
+  states: StateEntry[],
+): void {
+  if (states.length === 0) return; // ya reportado por readScreen
+  const anchors = new Set(states.map((s) => s.anchor));
+  for (const entry of trace) {
+    for (const anchor of (entry as ScreenTraceEntry).states ?? []) {
+      if (anchors.has(anchor)) continue;
+      r.fail(
+        "DESIGN_RELATION_BROKEN",
+        artifact,
+        `trace['${entry.criterion}'] se demuestra en '${anchor}' y no está entre los states declarados (${[...anchors].join(", ")})`,
+        "declaralo en 'states' o nombrá uno existente",
+      );
+    }
+  }
 }
 
 function readUnknowns(r: Reader, front: Record<string, unknown>, artifact: string): UnknownEntry[] {
@@ -1094,6 +1324,12 @@ function checkOwnAnchor(
 function declaredReferences(common: CommonRead, specific: FlowRead | ScreenRead): Set<string> {
   const declared = new Set<string>();
   if (common.supersedes !== null) declared.add(common.supersedes);
+  // The evidence a screen's matrix enumerates IS declared in the frontmatter, so
+  // prose that names it is citing something the document already committed to.
+  // Without this, the section that explains the evidence could not mention it.
+  for (const entry of common.trace) {
+    for (const ref of (entry as ScreenTraceEntry).renditions ?? []) declared.add(ref);
+  }
   if ("nodes" in specific) {
     for (const ref of [...specific.nodes, ...specific.dependencies]) declared.add(ref);
     if (specific.entry.length > 0) declared.add(specific.entry);

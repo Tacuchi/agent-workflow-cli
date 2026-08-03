@@ -20,6 +20,14 @@ import {
   ALLOWED_KEYS as MANIFEST_ALLOWED_KEYS,
   validateDesignManifest,
 } from "../../src/domain/design/manifest.js";
+import {
+  ALLOWED_KEYS as BUNDLE_ALLOWED_KEYS,
+  validateRenderBundle,
+} from "../../src/domain/design/render-bundle.js";
+import {
+  ALLOWED_KEYS as RENDITION_ALLOWED_KEYS,
+  validateDesignRendition,
+} from "../../src/domain/design/rendition.js";
 import type { AllowedKeys } from "../../src/domain/design/validation.js";
 
 /**
@@ -118,6 +126,36 @@ const CONTRACTS: Contract[] = [
       const doc = JSON.parse(read("tests/fixtures/design/RVK-001-bloqueo.json"));
       delete doc[key];
       return validateDesignRevocation(doc, "governance/revocations/RVK-001.json");
+    },
+  },
+  {
+    name: "design-rendition/v1",
+    schemaPath: "skills/w/schemas/design/design-rendition.v1.schema.json",
+    allowedKeys: RENDITION_ALLOWED_KEYS,
+    run: () =>
+      validateDesignRendition(
+        JSON.parse(read("tests/fixtures/design/rendition-VIS-001-r001.json")),
+        "renditions/VIS-001-r001-formulario-alta/rendition.json",
+      ),
+    runWithout: (key) => {
+      const doc = JSON.parse(read("tests/fixtures/design/rendition-VIS-001-r001.json"));
+      delete doc[key];
+      return validateDesignRendition(doc, "renditions/VIS-001-r001-formulario-alta/rendition.json");
+    },
+  },
+  {
+    name: "design-render-bundle/v1",
+    schemaPath: "skills/w/schemas/design/design-render-bundle.v1.schema.json",
+    allowedKeys: BUNDLE_ALLOWED_KEYS,
+    run: () =>
+      validateRenderBundle(
+        JSON.parse(read("tests/fixtures/design/render-bundle-maximal.json")),
+        "render-bundle.json",
+      ),
+    runWithout: (key) => {
+      const doc = JSON.parse(read("tests/fixtures/design/render-bundle-maximal.json"));
+      delete doc[key];
+      return validateRenderBundle(doc, "render-bundle.json");
     },
   },
   {
@@ -386,7 +424,16 @@ describe("la gramática publicada es la misma que la del código", () => {
   // La red anterior se tejía sobre `DES-`, `@r` y los prefijos de artefacto. Un
   // anchor de estado no lleva ninguno de los tres, y por ahí se coló un patrón
   // de slug donde va la gramática de anchors.
-  const ANCHOR_PATHS = ["catalog.screens[].states[]", "states[].anchor"];
+  const ANCHOR_PATHS = [
+    "catalog.screens[].states[]",
+    "states[].anchor",
+    // La matriz criterio → clasificación y la cobertura de una rendition nombran
+    // anchors igual que el resto; entraron después y la red tenía que crecer con
+    // ellas o volvía a quedar un patrón de slug donde va un anchor.
+    "trace[].states[]",
+    "coverage.states[]",
+    "closure[].states[]",
+  ];
 
   it.each(CONTRACTS.map((c) => [c.name, c] as const))(
     "%s — cada patrón que nombra un anchor usa la gramática canónica",

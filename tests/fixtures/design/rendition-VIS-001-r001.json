@@ -1,0 +1,51 @@
+{
+  "schema": "workline.design-rendition/v1",
+  "id": "DES-001/VIS-001",
+  "revision": 1,
+  "supersedes": null,
+  "purpose": "Storyboard del alta: formulario vacío, documento repetido y corrección",
+  "medium": "storyboard",
+  "fidelity": "medium",
+  "tool": "portable-html renderer",
+  "format": "svg",
+  "context": {
+    "platform": "web",
+    "viewport": "1280x800",
+    "theme": "light",
+    "locale": "es-PE",
+    "variants": ["densidad-compacta"]
+  },
+  "sources": [
+    {
+      "ref": "DES-001/SCR-001@r2",
+      "sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    }
+  ],
+  "source_digest": "sha256:a47a3f507976dc0a9ccdd343621c969b6784957783d12f7a17d240f3ab7950a0",
+  "coverage": {
+    "criteria": ["S046/AC-02"],
+    "states": ["default", "error"]
+  },
+  "files": [
+    {
+      "path": "preview.svg",
+      "sha256": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    }
+  ],
+  "provider": {
+    "name": "figma",
+    "locator": {
+      "file_key": "abc123DEF456",
+      "node_id": "12:345"
+    },
+    "version": "2026-08-03T10:00:00Z",
+    "sync": "unknown"
+  },
+  "access": "team",
+  "interaction_evidence": {
+    "trigger": "confirmar con un documento ya tomado",
+    "transition": "default → error, conservando lo cargado",
+    "outcome": "el campo documento queda marcado y el foco vuelve a él"
+  },
+  "data_classification": "synthetic"
+}

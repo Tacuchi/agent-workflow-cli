@@ -36,10 +36,10 @@ export type DesignOperation = (typeof DESIGN_OPERATIONS)[number];
  * Every format this capability produces, and the only ones it accepts.
  *
  * The validators read their id from here rather than repeating a literal, so
- * the registry is load-bearing instead of documentation: a seventh format
- * cannot appear in code without appearing here, and `design-schema-guard`
- * proves this table and the published JSON Schemas under
- * `skills/w/schemas/design/` name the same six things.
+ * the registry is load-bearing instead of documentation: a new format cannot
+ * appear in code without appearing here, and `design-schema-guard` proves this
+ * table and the published JSON Schemas under `skills/w/schemas/design/` name
+ * the same things.
  *
  * This is the canonical authority (S013/AC-CAP-03). The built-in floor and any
  * third-party improvement bound to the role write these and are validated by
@@ -53,6 +53,8 @@ export const CANONICAL_SCHEMAS = {
   screen: "workline.ui-screen/v1",
   review: "workline.design-review/v1",
   revocation: "workline.design-revocation/v1",
+  rendition: "workline.design-rendition/v1",
+  renderBundle: "workline.design-render-bundle/v1",
 } as const;
 
 export type CanonicalFormat = keyof typeof CANONICAL_SCHEMAS;

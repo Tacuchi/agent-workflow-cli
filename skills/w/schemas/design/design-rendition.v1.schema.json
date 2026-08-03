@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workline.dev/schemas/design/design-rendition.v1.schema.json",
+  "title": "Workline UI Design Package v1 — Design Rendition",
+  "description": "What a picture of a design knows about itself. Three separations never collapse here: fidelity is a property of the picture and never moves the screen's maturity; staleness against the source is DERIVED (`source_digest` is recomputable from the sources' bytes) while sync with the provider is a claim and lives inside `provider`; and a locator locates without ever identifying — it never replaces the Workline id, revision or digest, and never carries a credential.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "revision",
+    "supersedes",
+    "purpose",
+    "medium",
+    "fidelity",
+    "tool",
+    "format",
+    "context",
+    "sources",
+    "source_digest",
+    "coverage",
+    "files",
+    "provider",
+    "access",
+    "interaction_evidence",
+    "data_classification"
+  ],
+  "properties": {
+    "schema": {
+      "const": "workline.design-rendition/v1"
+    },
+    "id": {
+      "description": "Qualified identity WITHOUT the revision — the revision is its own field.",
+      "type": "string",
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/VIS-(?:[0-9]{3}|[1-9][0-9]{3,})$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "supersedes": {
+      "description": "An EARLIER revision of this same rendition, or null.",
+      "type": ["string", "null"],
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/VIS-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "medium": {
+      "description": "What kind of artifact it is. Only `prototype` and `storyboard` can sustain interaction evidence — a still frame cannot show a transition.",
+      "enum": ["static_image", "document", "interactive_html", "prototype", "storyboard"]
+    },
+    "fidelity": {
+      "description": "How polished the PICTURE is. Deliberately not sharing vocabulary with maturity: raising fidelity never promotes a screen.",
+      "enum": ["low", "medium", "high"]
+    },
+    "tool": {
+      "description": "The tool that produced it, as a human would name it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "format": {
+      "description": "Closed so it can be cross-checked against the file actually on disk.",
+      "enum": ["svg", "png", "jpeg", "webp", "pdf", "html"]
+    },
+    "context": {
+      "description": "The same design looks different depending on where it was rendered.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "viewport", "theme", "locale", "variants"],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "viewport": {
+          "description": "`1280x800`, `390x844`, or a named breakpoint.",
+          "type": "string",
+          "minLength": 1
+        },
+        "theme": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "variants": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "sources": {
+      "description": "The exact revisions this rendition was produced from, with the bytes it saw. An anchor is meaningful here: a preview of one state is a preview of one state.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "sha256"],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})/(?:FLW|SCR|RUL|TOK)-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}(?:#[A-Za-z0-9][A-Za-z0-9_-]*)?$"
+          },
+          "sha256": {
+            "$ref": "#/$defs/digest"
+          }
+        }
+      }
+    },
+    "source_digest": {
+      "description": "One digest over the canonical list of `sources`. Recomputable from the package as it stands right now — that is what makes obsolescence detectable instead of asserted.",
+      "$ref": "#/$defs/digest"
+    },
+    "coverage": {
+      "description": "What this rendition demonstrates, in the screen's own vocabulary. The reverse direction of the screen's classification matrix; the handoff gate crosses the two.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criteria", "states"],
+      "properties": {
+        "criteria": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^S\\d{3}/AC-(?:[A-Z]+-)?\\d+$"
+          }
+        },
+        "states": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          }
+        }
+      }
+    },
+    "files": {
+      "description": "The local evidence, relative to the rendition's OWN directory. Never empty: a rendition with no local file is exactly the evidence that disappears when the provider does.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {
+            "description": "`preview.svg` — relative to this rendition's folder, never escaping it.",
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "$ref": "#/$defs/digest"
+          }
+        }
+      }
+    },
+    "provider": {
+      "description": "The external object, when there is one. `sync` lives in here because it only means something once a provider copy exists.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["name", "locator", "version", "sync"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locator": {
+          "description": "Provider-shaped keys (`file_key`, `node_id`, `project_id`, `artifact`, …). The key set is the adapter profile's business, not this schema's. Never a credential.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "version": {
+          "description": "The provider's own version identity, or null when it has no stable one.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "sync": {
+          "description": "A CLAIM about the provider's copy, not a derivation. `unknown` is the honest answer without consulting it.",
+          "enum": ["in_sync", "diverged", "unknown"]
+        }
+      }
+    },
+    "access": {
+      "description": "Who can reach the editable original, as a class. `local_only` is what keeps working when the provider does not.",
+      "enum": ["local_only", "public", "link_shared", "team", "private"]
+    },
+    "interaction_evidence": {
+      "description": "A trigger, a transition and an outcome — what a still frame cannot show. Null for a static rendition.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["trigger", "transition", "outcome"],
+      "properties": {
+        "trigger": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "data_classification": {
+      "description": "How the material shown was prepared. `synthetic` is the default; `real` is an authorization somebody had to give.",
+      "enum": ["synthetic", "redacted", "real"]
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

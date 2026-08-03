@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import type { DesignMaturity } from "../../domain/design/artifact.js";
+import type { DesignMaturity, ScreenArtifact } from "../../domain/design/artifact.js";
 import { validateDesignArtifact } from "../../domain/design/artifact.js";
 import {
   DESIGN_BASELINE_SCHEMA_ID,
@@ -20,7 +20,9 @@ import {
   renderDesignMd,
   renderPackageMd,
 } from "../../domain/design/projections.js";
+import { type DesignRendition, validateDesignRendition } from "../../domain/design/rendition.js";
 import { KIND_LIST } from "../../domain/design/revision.js";
+import { crossVisualEvidence } from "../../domain/design/visual-evidence.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { SemanticFailure } from "../semantic-operation/protocol.js";
@@ -125,6 +127,18 @@ export async function publishDesignRevision(
 
   const catalog = mergeCatalog(manifest, input.files);
   if ("failures" in catalog) return { ok: false, failures: catalog.failures };
+
+  // La evidencia visual se cruza acá, con el catálogo YA fusionado: una rendition
+  // publicada en esta misma revisión tiene que poder respaldar a la screen que la
+  // cita, y una cita que no se sostiene se rechaza ANTES de sellar nada.
+  const evidence = await crossPublishedEvidence(
+    fs,
+    workspace,
+    packagePath,
+    catalog.value,
+    input.files,
+  );
+  if (evidence.length > 0) return { ok: false, failures: evidence };
 
   const revision = (manifest.current_baseline?.revision ?? 0) + 1;
   const selection = await buildSelection(fs, workspace, packagePath, catalog.value, input.files);
@@ -362,9 +376,10 @@ function describeFile(
     };
   }
   if (kind === "flow" || kind === "screen") return describeDocument(file, packageId, kind);
+  if (kind === "rendition") return describeRendition(file, packageId);
 
   const name = file.path.slice(NAMING[kind].dir.length + 1);
-  const parsed = /^((?:RUL|TOK|VIS)-[0-9]+)-r([0-9]{3,})-/.exec(name);
+  const parsed = /^((?:RUL|TOK)-[0-9]+)-r([0-9]{3,})-/.exec(name);
   if (parsed === null) {
     return {
       failures: [
@@ -389,6 +404,71 @@ interface PublishedIdentity {
   states?: string[];
   /** Declared by the document; `undefined` for the kinds with no frontmatter. */
   supersedes?: string | null;
+}
+
+/**
+ * A rendition: validated, and its identity read from its own JSON.
+ *
+ * Until F4 gave it a content contract, the file NAME was the only declaration a
+ * rendition had — so a picture could be filed as `VIS-003@r1` while claiming
+ * something else inside, and nothing looked. Now the document is the authority
+ * here too, exactly as it is for a flow or a screen, and the name must agree.
+ */
+function describeRendition(
+  file: PublishFile,
+  packageId: string,
+): { value: PublishedIdentity } | { failures: DesignFailure[] } {
+  const parsed = parseJson(file.content);
+  if (parsed === null) {
+    return {
+      failures: [
+        {
+          code: "DESIGN_RENDITION_UNREADABLE",
+          artifact: file.path,
+          message: "la rendition no es un JSON legible",
+          action: "reparala como un único objeto JSON válido",
+        },
+      ],
+    };
+  }
+  const validation = validateDesignRendition(parsed, file.path);
+  if (!validation.ok || validation.value === null) return { failures: validation.failures };
+
+  const rendition = validation.value;
+  const identity = parseArtifactId(rendition.id);
+  if (identity === null || identity.package !== packageId) {
+    return {
+      failures: [
+        {
+          code: "DESIGN_AUTHORITY_CONFLICT",
+          artifact: file.path,
+          message: `la rendition declara '${rendition.id}' y el package es ${packageId}`,
+          action: "una rendition se publica dentro del package que declara su id",
+        },
+      ],
+    };
+  }
+  const naming = checkNaming("rendition", file.path, identity.artifact, rendition.revision);
+  if (!naming.ok) {
+    return {
+      failures: [
+        {
+          code: "DESIGN_AUTHORITY_CONFLICT",
+          artifact: file.path,
+          message: `la rendition declara ${identity.artifact}@r${rendition.revision} y ${naming.why}`,
+          action: `el documento manda: renombralo a '${naming.expected}'`,
+        },
+      ],
+    };
+  }
+  return {
+    value: {
+      kind: "rendition",
+      id: identity.artifact,
+      revision: rendition.revision,
+      supersedes: rendition.supersedes,
+    },
+  };
 }
 
 /** A flow or a screen: validated, and its identity read from the frontmatter. */
@@ -444,6 +524,86 @@ function describeDocument(
         : {}),
     },
   };
+}
+
+/**
+ * The elevated `handoff` gate, at the only place that can run it.
+ *
+ * A screen's classification matrix cites renditions, and whether those citations
+ * hold is a question about OTHER files — so it cannot be answered by the document
+ * validator. It is answered here, where the merged catalog says which renditions
+ * exist and the incoming batch plus the disk say what they contain.
+ *
+ * Only the screens this revision publishes are crossed. The ones already sealed
+ * were judged by the gate in force when they were published, and re-judging them
+ * would rewrite history; the elevation reaches them the next time somebody
+ * publishes a revision of them, which is exactly when it can be acted on.
+ */
+async function crossPublishedEvidence(
+  fs: FileSystemPort,
+  workspace: string,
+  packagePath: string,
+  catalog: DesignManifest["catalog"],
+  files: PublishFile[],
+): Promise<DesignFailure[]> {
+  const screens = files.filter((f) => kindOfPath(f.path) === "screen");
+  if (screens.length === 0) return [];
+
+  const renditions = await readRenditions(fs, workspace, packagePath, catalog.renditions, files);
+  const failures: DesignFailure[] = [];
+  for (const file of screens) {
+    const parsed = validateDesignArtifact(file.content, "screen", file.path);
+    // Un documento que no valida ya se reportó en `mergeCatalog`: acá no se
+    // vuelve a decir, porque su clasificación tampoco se pudo leer.
+    if (!parsed.ok || parsed.value === null) continue;
+    failures.push(
+      ...crossVisualEvidence(
+        catalog.renditions,
+        parsed.value as ScreenArtifact,
+        file.path,
+        (path) => renditions.get(path) ?? null,
+      ),
+    );
+  }
+  return failures;
+}
+
+/**
+ * Every catalogued rendition, pre-read: the cross walks a graph synchronously and
+ * cannot await mid-traversal. An unreadable or invalid one is simply absent — the
+ * citation then reports as dangling, which is what it is.
+ */
+async function readRenditions(
+  fs: FileSystemPort,
+  workspace: string,
+  packagePath: string,
+  entries: CatalogEntry[],
+  files: PublishFile[],
+): Promise<Map<string, DesignRendition>> {
+  const incoming = new Map(files.map((f) => [f.path, f.content]));
+  const out = new Map<string, DesignRendition>();
+  for (const entry of entries) {
+    const inline = incoming.get(entry.path);
+    let text = inline;
+    if (text === undefined) {
+      const absolute = join(workspace, packagePath, entry.path);
+      if (!(await fs.exists(absolute))) continue;
+      text = await fs.readText(absolute);
+    }
+    const parsed = parseJson(text);
+    if (parsed === null) continue;
+    const validation = validateDesignRendition(parsed, entry.path);
+    if (validation.ok && validation.value !== null) out.set(entry.path, validation.value);
+  }
+  return out;
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 /** Which artifact kind lives in the directory a path sits in. */

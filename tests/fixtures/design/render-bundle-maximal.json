@@ -1,0 +1,63 @@
+{
+  "schema": "workline.design-render-bundle/v1",
+  "package": "DES-001",
+  "baseline": 2,
+  "baseline_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "adapter": {
+    "profile": "portable-html",
+    "version": 1
+  },
+  "roots": ["DES-001/SCR-001@r2#default"],
+  "closure": [
+    {
+      "ref": "DES-001/RUL-001@r1",
+      "kind": "rule",
+      "path": "design-system/rules/RUL-001-r001-densidad.md",
+      "content_type": "text/markdown",
+      "sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "states": []
+    },
+    {
+      "ref": "DES-001/SCR-001@r2",
+      "kind": "screen",
+      "path": "screens/SCR-001-r002-formulario-alta.md",
+      "content_type": "text/markdown",
+      "sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "states": ["default"]
+    },
+    {
+      "ref": "DES-001/TOK-001@r1",
+      "kind": "token",
+      "path": "tokens/TOK-001-r001-base.tokens.json",
+      "content_type": "application/json",
+      "sha256": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "states": []
+    }
+  ],
+  "assets": [
+    {
+      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "path": "assets/5555555555555555555555555555555555555555555555555555555555555555-logo.svg",
+      "content_type": "image/svg+xml"
+    }
+  ],
+  "data_classification": "synthetic",
+  "accessibility": [
+    {
+      "ref": "DES-001/SCR-001@r2",
+      "statement": "El error de documento repetido se anuncia por región live y el foco vuelve al campo."
+    }
+  ],
+  "losses": [
+    {
+      "subject": "capability:pull",
+      "why": "el perfil 'portable-html' no declara 'pull'; lo más cercano que declara es 'record'"
+    },
+    {
+      "subject": "medium:motion",
+      "why": "una preview estática no representa transiciones animadas"
+    }
+  ],
+  "digest": "sha256:567da43d3f87c6f6eb8d90a5218fb9e0159065f3021b3d5bb826d587f8ed793d",
+  "generated": "2026-08-03"
+}

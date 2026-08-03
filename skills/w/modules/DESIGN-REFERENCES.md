@@ -34,6 +34,14 @@ cannot be superseded without editing it.
 Publishing the package is the loop writing a composed deliverable through the
 CLI, not graduating a session artifact (chassis § *docs/ boundary*).
 
+## `handoff` asks to SEE it
+
+A `handoff` screen owes evidence, not only prose: a local static preview of its
+`default_state`, and a `trace` classifying every criterion `visual`,
+`interaction` or `not_visual`. A package published under the earlier gate can stop
+qualifying; it reports `DESIGN_VISUAL_EVIDENCE_REQUIRED` with the screen, the
+criterion and the fix.
+
 ## SPEC — close the requirement at `outline`
 
 1. **Reuse before minting.** `aw designs` lists what the workspace already has; a
@@ -44,10 +52,8 @@ CLI, not graduating a session artifact (chassis § *docs/ boundary*).
 3. **Publish, then reference.** Citing a baseline that was never published is the
    dangling reference this contract removes.
 
-`spec-new` only **records the need**; it mints nothing. Design-system, theme and
-surface ambiguities are resolved like any other SPEC gap — *structured-choice*,
-counting inside the same ≤3 batch. The section sits where `## UI spec` used to,
-right before `## Decisions`.
+`spec-new` only **records the need**; it mints nothing. The section sits right
+before `## Decisions`.
 
 ## PLAN — promote the closure, pin the roots
 
@@ -58,8 +64,8 @@ right before `## Decisions`.
    screen states its phases will build.
 3. **Compute the closure**: a flow reaches its nodes, a screen its flows, and both
    reach the rules, tokens and assets they depend on. It stops there. `flow_refs`
-   is *not* followed — it records which flows visit a screen, so following it drags
-   in designs the plan never consumes.
+   is *not* followed — it is the inverse relation, and following it drags in
+   designs the plan never consumes.
 4. **Promote exactly that closure to `handoff`**, nothing else. Ten screens in
    `outline` and three promoted is a package's normal shape; promoting it wholesale
    because one task needed one screen makes maturity meaningless.
@@ -89,17 +95,15 @@ root: an approved image is not the current semantics, nor a conformance claim.
 nothing a baseline seals — normative content, a maturity, an approval. A visual
 tweak that turns out to need a new state or a redrawn journey **escalates with the
 evidence it gathered**: `plan-refine` for the package, `spec-refine` when behavior
-or acceptance moves. Editing it silently moves the revision with nobody's approval
-while every consumer stays pinned to the old digest.
+or acceptance moves. Editing it silently moves the revision while every consumer
+stays pinned to the old digest.
 
 ## plan-refine — the delta, and only the delta
 
 - **New revisions only for the artifacts the refine actually affects.** An
   untouched screen keeps its revision, maturity and digest.
 - **Never re-point another consumer.** Two plans may pin the same baseline;
-  publishing `@rN+1` for one leaves the other's reference exactly as it was —
-  that is what makes a published revision immutable rather than merely
-  discouraged from changing.
+  publishing `@rN+1` for one leaves the other's reference exactly as it was.
 - **Re-point only this plan** — its `## Design references` and the tasks whose
   artifacts moved. The spec's section is not touched: it records the baseline the
   *requirement* closed on.
