@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalJson } from "../../application/semantic-operation/protocol.js";
 import { isCalendarDate } from "./baseline.js";
+import { CANONICAL_SCHEMAS } from "./capability.js";
 import { isDigest, parseBaselineRef } from "./identity.js";
 import type { DesignManifest } from "./manifest.js";
 import {
@@ -98,7 +99,7 @@ export function validateDesignReview(
   artifact: string,
 ): GovernanceValidation<DesignReview> {
   const r = new Reader(REVIEW_ALLOWED_KEYS);
-  const common = readCommon(r, raw, artifact, "REV", "workline.design-review/v1");
+  const common = readCommon(r, raw, artifact, "REV", CANONICAL_SCHEMAS.review);
   if (common === null) return { ok: false, value: null, failures: r.failures, touched: r.touched };
 
   const decision = r.read(common.node, "decision");
@@ -129,7 +130,7 @@ export function validateDesignReview(
 
   const value: DesignReview = {
     ...common.value,
-    schema: "workline.design-review/v1",
+    schema: CANONICAL_SCHEMAS.review,
     decision: decision as ReviewDecision,
     evidence: evidence as string[],
   };
@@ -141,7 +142,7 @@ export function validateDesignRevocation(
   artifact: string,
 ): GovernanceValidation<DesignRevocation> {
   const r = new Reader(REVOCATION_ALLOWED_KEYS);
-  const common = readCommon(r, raw, artifact, "RVK", "workline.design-revocation/v1");
+  const common = readCommon(r, raw, artifact, "RVK", CANONICAL_SCHEMAS.revocation);
   if (common === null) return { ok: false, value: null, failures: r.failures, touched: r.touched };
 
   const reason = r.read(common.node, "reason");
@@ -155,7 +156,7 @@ export function validateDesignRevocation(
   }
   const value: DesignRevocation = {
     ...common.value,
-    schema: "workline.design-revocation/v1",
+    schema: CANONICAL_SCHEMAS.revocation,
     reason,
   };
   return finish(r, value, artifact);
@@ -182,9 +183,22 @@ function readCommon(
     );
     return null;
   }
+  // El gate de versión corre PRIMERO y solo, como en los tres módulos hermanos:
+  // leer campos de un formato que no conocemos reporta un montón de sinsentidos
+  // derivados, y manda a arreglar un campo cuando lo que falta es actualizar.
+  const declared = r.read(raw, "schema");
+  if (declared !== schema) {
+    r.fail(
+      "DESIGN_SCHEMA_UNKNOWN",
+      artifact,
+      `versión de formato no soportada: ${JSON.stringify(declared)}`,
+      `este Workline entiende ${schema}`,
+    );
+    return null;
+  }
+
   r.closed(raw, "", artifact);
 
-  const declared = r.read(raw, "schema");
   const id = r.read(raw, "id");
   const target = r.read(raw, "target");
   const targetDigest = r.read(raw, "target_digest");
@@ -192,13 +206,6 @@ function readCommon(
   const date = r.read(raw, "date");
   const digest = r.read(raw, "digest");
 
-  if (declared !== schema) {
-    r.invalid(
-      artifact,
-      `'schema' debe ser '${schema}'`,
-      "declará el contrato que el record cumple",
-    );
-  }
   if (typeof id !== "string" || !new RegExp(`^${prefix}-(?:[0-9]{3}|[1-9][0-9]{3,})$`).test(id)) {
     r.invalid(artifact, `'id' debe ser ${prefix}-NNN`, `numerá el record como ${prefix}-001`);
   }
@@ -449,11 +456,11 @@ export function checkGovernanceAuthority(
 }
 
 export function isReview(record: GovernanceRecord): record is DesignReview {
-  return record.schema === "workline.design-review/v1";
+  return record.schema === CANONICAL_SCHEMAS.review;
 }
 
 export function isRevocation(record: GovernanceRecord): record is DesignRevocation {
-  return record.schema === "workline.design-revocation/v1";
+  return record.schema === CANONICAL_SCHEMAS.revocation;
 }
 
 /**

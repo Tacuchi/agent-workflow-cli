@@ -42,5 +42,5 @@ It also writes the complete `## Execution batches` partition from
 
 - `input` — the argument is not plainly a `ready-for-plan` spec → [`../modules/PLAN-INPUT.md`](../modules/PLAN-INPUT.md)
 - `split` — the spec may need more than one plan → [`../modules/PLAN-SPLIT-GATE.md`](../modules/PLAN-SPLIT-GATE.md)
-- `ui` — the plan includes UI, so it composes `ui-design` → [`../modules/PLAN-DESIGN-SPECS.md`](../modules/PLAN-DESIGN-SPECS.md)
+- `ui` — the plan includes UI, so it invokes the legacy `ui-spec` skill → [`../modules/PLAN-DESIGN-SPECS.md`](../modules/PLAN-DESIGN-SPECS.md)
 - `probe` — the plan rests on a runnable unknown → [`../modules/PLAN-PROBE-TASKS.md`](../modules/PLAN-PROBE-TASKS.md)

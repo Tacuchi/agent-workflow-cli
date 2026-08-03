@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalJson } from "../../application/semantic-operation/protocol.js";
 import { checkSafeRelativePath } from "../safe-path.js";
+import { CANONICAL_SCHEMAS } from "./capability.js";
 import {
   ARTIFACT_PREFIX,
   isArtifactId,
@@ -42,7 +43,7 @@ import {
  * the contract exists to forbid.
  */
 
-export const DESIGN_BASELINE_SCHEMA_ID = "workline.design-baseline/v1";
+export const DESIGN_BASELINE_SCHEMA_ID = CANONICAL_SCHEMAS.baseline;
 
 export interface SelectionEntry {
   /** Package-relative path of a normative file. */

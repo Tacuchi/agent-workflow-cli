@@ -5,7 +5,7 @@ description: >-
   until PLAN can design without inventing behavior, scope or product
   decisions. Heir of the chassis (loops/CHASSIS.md). Deltas: current-behavior
   baseline, change-shape gate, gap taxonomy classified by destination,
-  conditional ideation gate, ## UI spec via the ui-design capability, and the
+  conditional ideation gate, ## UI spec via the legacy ui-spec skill, and the
   ready-for-plan gate that stamps the status frontmatter plan-new reads.
   Started by /w:spec-refine (or the live escalation from quick-loop);
   resumable via CHECKPOINT and re-runnable on demand.
@@ -66,7 +66,9 @@ Full doctrine in the chassis (§ *Internal sessions* + *Numbering*). This loop's
 
 ## Composes
 
-The **UI unspecified** gap (when the requirement involves UI; see *Gap taxonomy*) is resolved by **composing** the **`ui-design`** capability (built-in default `ui-spec`; rebindable via `.workflow/skills.toml`): it authors the UI spec natively (structure, vocabulary, Markdown format). It is the chassis' composed-capability resolution mode (next to *research*, *probe* and *human*): the loop contributes iteration/Q&A (design system, theme, variants, disambiguation) **via the same structured-choice**, and integrates the result as the spec's `## UI spec` section.
+> **LEGACY — being retired.** The public design capability is **`design`** ([`../../roles/design/ROLE.md`](../../roles/design/ROLE.md)) and its only output is the **UI Design Package v1**, which a spec *references* rather than contains. What follows is the previous path: `ui-spec` named **directly**, not resolved through a role — `ui-design` is no longer a role. It stays alive only so no intermediate release leaves this loop without design, and is retired in the last phase of plan 012.
+
+The **UI unspecified** gap (when the requirement involves UI; see *Gap taxonomy*) is resolved by the legacy `ui-spec` skill, which authors the UI spec natively (structure, vocabulary, Markdown format). The loop contributes iteration/Q&A (design system, theme, variants, disambiguation) **via the same structured-choice**, and integrates the result as the spec's `## UI spec` section. It is **not** a composed capability: that mode resolves a role, and this path has none.
 
 > **Two levels of the same capability:** here (SPEC) it produces `## UI spec` — the UI's *what*, coarse grain; in PLAN the plan loops produce **per-screen design SPECs** derived from that section (see [`SPEC.md`](../../artifacts/artifacts-design/SPEC.md)).
 
@@ -106,7 +108,7 @@ status: ready-for-plan    ← stamped on Guardar (vocabulary: draft | refining |
                            does not capture — NEVER a 1:1 restatement of a criterion)
 ## Assumptions            (declared)
 
-## UI spec                (opt. — if UI is involved; via the ui-design capability / ui-spec skill)
+## UI spec                (opt. — if UI is involved; via the legacy ui-spec skill)
 Structured Markdown description (screens → regions/components). See [`ui-spec`](../../roles/ui-spec/ROLE.md).
 
 ## Decisions              ← ADDED — the material decisions, NOT the run's history
@@ -140,7 +142,7 @@ The choices a reader needs in order to interpret the contract, each with its why
 | Hidden assumptions | the spec assumes unstated things | **research** validates / **human** confirms | SPEC |
 | Over-specified requirement | scope/criteria gold-plated — beyond the actual need (chassis § *Minimality*) | **human** (AI proposes the cut, human ratifies) | SPEC |
 | Unexplored solution space *(conditional)* | the spec settles on the first conceivable approach **and** a trigger fires (see *Ideation gate*) | **human consents** → **ideation** | SPEC — only on a trigger |
-| UI unspecified *(if it applies)* | the requirement involves UI but `## UI spec` is missing | **`ui-design` capability** | SPEC |
+| UI unspecified *(if it applies)* | the requirement involves UI but `## UI spec` is missing | legacy **`ui-spec`** skill | SPEC |
 | Architecture | how to distribute technical responsibilities | — | **`PLAN`** — declare, never close here |
 | Implementation | library, class, method, pattern, folder layout | — | **`PLAN`** / `EXEC` — outside the spec |
 | Executable technical risk | whether an integration really works | — | **`PLAN`** (probe), unless the answer changes the contract |
@@ -181,7 +183,7 @@ spec-refine-loop(spec):
     seed CHECKPOINT.Pending/Next = batch (refine_session) # BEFORE: seed the intent (artifact-first)
     for each gap in batch:
       if gap = UI (requirement involves UI, ## UI spec missing):
-        compose ui-design → author ## UI spec    # design-system/theme via structured-choice (counts in the batch)
+        invoke ui-spec (legacy) → author ## UI spec  # design-system/theme via structured-choice (counts in the batch)
         work = integrate(work, ui)               # → ## UI spec
       else if gap = Unexplored solution space and a trigger fires:
         pending_human.push("ideation offer")     # `Explorar ideas` | `Seguir sin ideación`
@@ -234,7 +236,7 @@ finalize:
 - **Inline research** → the fact lands in `## Context` / `## Behavioral changes`; if it settles a choice, the choice goes to `## Decisions` (+ ref to the session's `CONCLUSIONS`).
 - **Ideation** → per verdict (§ *Ideation gate*): `Adoptar` → the spec's sections + `## Decisions` · `Descartar` → `CONCLUSIONS` · `Aparcar` → `## Open questions`.
 - **Human** → `## Decisions`, as the decision plus its why. **Not** a `Q:` transcript: the question-by-question trace stays in the session.
-- **`ui-design` capability** (UI gap) → the spec's `## UI spec` section.
+- **Legacy `ui-spec` skill** (UI gap) → the spec's `## UI spec` section.
 - **Owned by `PLAN` or deferred** → `## Open questions` with its destination, and nothing else in the spec.
 - **Inconclusive or unresolved research** → `## Open questions` (deferred) + the refine session's `BACKLOG.md` (only if something is deferred).
 

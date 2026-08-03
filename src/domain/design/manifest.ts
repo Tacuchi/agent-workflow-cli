@@ -1,4 +1,5 @@
 import { checkSafeRelativePath } from "../safe-path.js";
+import { CANONICAL_SCHEMAS } from "./capability.js";
 import {
   ARTIFACT_PREFIX,
   type DesignArtifactKind,
@@ -37,7 +38,7 @@ import {
  * and a guard test proves this validator reads every property it declares.
  */
 
-export const DESIGN_MANIFEST_SCHEMA_ID = "workline.design-manifest/v1";
+export const DESIGN_MANIFEST_SCHEMA_ID = CANONICAL_SCHEMAS.manifest;
 export const DESIGN_MANIFEST_FILE = "design-manifest.json";
 /** Workspace-relative root of the durable design taxonomy. */
 export const DESIGNS_DIR = "docs/designs";

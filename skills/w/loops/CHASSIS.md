@@ -72,7 +72,7 @@ The common cycle — each heir instantiates it in its `## Sequence` with its own
 1. `detect_gaps(work)`, minus the *exhausted* gaps (see *Research*).
 2. If `∅` → **convergence gate** (see *Convergence / exit*).
 3. If there are gaps: take a batch (≤3) and **seed** `CHECKPOINT.Pending/Next` (*artifact-first*).
-4. Resolve each gap with its **resolver** per the *ask-vs-research rule*: human (structured-choice) · inline research · a probe (PoC) · a composed capability (e.g. `ui-design`).
+4. Resolve each gap with its **resolver** per the *ask-vs-research rule*: human (structured-choice) · inline research · a probe (PoC) · a composed capability (e.g. `design`).
 5. **Integrate**, update `CHECKPOINT` → repeat.
 
 ## Internal sessions (managed) — one session per run

@@ -6,7 +6,7 @@ description: >-
   TECHNICAL-NOTE level + Tasks phased by verifiable functional state
   (### Fn blocks with live state),
   code/impact-mapping research, planning gap taxonomy, and per-screen design
-  SPECs via ui-design
+  SPECs via the legacy ui-spec skill
   when the plan includes UI. If the spec is not refined it suggests
   spec-refine first. Started by /w:plan-new; resumable. Invoke when a spec
   must become an executable plan.
@@ -136,7 +136,7 @@ Replaces the spec gap taxonomy with a planning-oriented one:
 | Missing deps | order unclear | research / human |
 | Spec criteria uncovered | tasks don't trace to acceptance criteria | the AI derives + human confirms |
 | Unaddressed risks | technical risks unmitigated/undeclared | human / **probe** (Delta 5) |
-| UI without design SPEC *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## UI spec` in the spec, or UI tasks) without `NNN-SPEC-*.md` in the session | **`ui-design` capability** |
+| UI without design SPEC *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## UI spec` in the spec, or UI tasks) without `NNN-SPEC-*.md` in the session | legacy **`ui-spec`** skill |
 
 > **Author the Solution the laziest-that-works way** (chassis § *Minimality*, generative side): reuse what the codebase/stdlib/platform already provides before proposing new abstractions, layers or dependencies — the coherence gate then only *confirms* minimality, never repairs over-engineering after the fact.
 
@@ -160,7 +160,7 @@ plan-new-loop(spec):
     gaps = detect_gaps(work)  (Delta 2 taxonomy)  minus the exhausted ones
     if gaps == ∅: break
     batch ≤3 → seed CHECKPOINT.Pending/Next → resolve each gap:
-      research · human (structured-choice) · probe · ui-design
+      research · human (structured-choice) · probe · ui-spec (legacy)
     integrate + update CHECKPOINT
   coherence gate (read-only) = Success criteria green:
     - every spec criterion traces to a phase/task (split: exactly one sibling)

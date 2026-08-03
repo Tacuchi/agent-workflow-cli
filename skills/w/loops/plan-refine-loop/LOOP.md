@@ -6,7 +6,7 @@ description: >-
   (loops/CHASSIS.md). Deltas: functional journey map, phases re-shaped by
   verifiable state (contract in plan-new-loop), simulation lifecycle,
   evidence by behavior, executability gate, replanning of partially executed
-  plans, and design SPECs via ui-design on UI changes. Started by
+  plans, and design SPECs via the legacy ui-spec skill on UI changes. Started by
   /w:plan-refine — also the return path when plan-exec stops on a structural
   deviation; resumable and re-runnable on demand.
 ---
@@ -149,7 +149,7 @@ plan-refine-loop(plan):
     if gaps == ∅: break
     batch ≤3 → seed CHECKPOINT.Pending/Next → resolve each gap:
       research (scoped to the delta — Delta 3) · human (structured-choice) · probe (chassis) ·
-      ui-design (Delta 4, only new/changed screens)
+      ui-spec, legacy (Delta 4, only new/changed screens)
     integrate + update CHECKPOINT                              # artifact-first cycle
   executability gate (read-only) = Success criteria green:
     - contract · journey · phases · simulation · evidence · execution batches · resumability (§ Executability gate)

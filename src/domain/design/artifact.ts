@@ -9,6 +9,7 @@ import {
   conditionalKeys,
   parseBody,
 } from "./artifact-body.js";
+import { CANONICAL_SCHEMAS } from "./capability.js";
 import {
   ARTIFACT_PREFIX,
   type ArtifactRef,
@@ -41,8 +42,8 @@ import { parseYamlSubset } from "./yaml-subset.js";
  * frontmatter already declares.
  */
 
-export const FLOW_SCHEMA_ID = "workline.ui-flow/v1";
-export const SCREEN_SCHEMA_ID = "workline.ui-screen/v1";
+export const FLOW_SCHEMA_ID = CANONICAL_SCHEMAS.flow;
+export const SCREEN_SCHEMA_ID = CANONICAL_SCHEMAS.screen;
 
 export const SCHEMA_ID: Record<DesignDocKind, string> = {
   flow: FLOW_SCHEMA_ID,

@@ -47,7 +47,7 @@ The **5 loops** are heirs: they use `## Inherits` (a one-line reference to [`CHA
 
 ## Chassis / heirs
 
-The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skill); the 5 loops — including `spec-refine-loop` — are **heirs** of that engine. The canonical heirs list and their deltas live in the chassis itself (§ *Heirs*). The chassis is **not a bindable capability**: it is the loop engine; what is pluggable are the **capabilities** a loop composes (e.g. `ui-design`, `sql`, `git`), resolved via `.workflow/skills.toml`.
+The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skill); the 5 loops — including `spec-refine-loop` — are **heirs** of that engine. The canonical heirs list and their deltas live in the chassis itself (§ *Heirs*). The chassis is **not a bindable capability**: it is the loop engine; what is pluggable are the **capabilities** a loop composes (e.g. `design`, `sql`, `git`), resolved via `.workflow/skills.toml`.
 
 ## Composed capabilities (roles)
 

@@ -36,9 +36,9 @@ describe("resolveSkills (skills.toml cascade)", () => {
     const { skills, sources, warnings } = await resolveSkills(fs, paths);
     expect(sources).toEqual({ global: false, workspace: false });
     expect(warnings).toEqual([]);
-    expect(skills["ui-design"]).toEqual({
-      role: "ui-design",
-      skill: "ui-spec",
+    expect(skills.design).toEqual({
+      role: "design",
+      skill: "design",
       source: "default",
       enabled: true,
     });
@@ -60,11 +60,11 @@ describe("resolveSkills (skills.toml cascade)", () => {
   });
 
   it("workspace bindea un rol a una skill de tercero", async () => {
-    writeWorkspace('[skills]\nui-design = "acme/figma-spec"\n');
+    writeWorkspace('[skills]\ndesign = "acme/figma-spec"\n');
     const { skills, sources } = await resolveSkills(fs, paths);
     expect(sources.workspace).toBe(true);
-    expect(skills["ui-design"]).toEqual({
-      role: "ui-design",
+    expect(skills.design).toEqual({
+      role: "design",
       skill: "acme/figma-spec",
       source: "workspace",
       enabled: true,

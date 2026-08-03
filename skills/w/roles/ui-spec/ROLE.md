@@ -1,23 +1,19 @@
 ---
 name: ui-spec
 description: >-
-  UI spec authoring — built-in default for the `ui-design` capability. Given a UI
-  requirement, author a structured, framework-agnostic screen specification as
-  **Markdown** (single output format). Knows the conceptual screen structure, the
-  kind/region vocabulary, the authoring rules, design-system / theme / variant
-  handling, and the exact Markdown render format. Two landing zones, same render:
-  in SPEC (`spec-refine-loop`) it authors the `## UI spec` section of the spec doc;
-  in PLAN (`plan-new-loop`/`plan-refine-loop`) it authors per-screen **design
-  SPECs** (`NNN-SPEC-<SLUG>.md`) as session artifacts. Use when a loop is refining
-  a spec or building/refining a plan that involves screens, forms, dashboards,
-  modals or any UI surface.
+  RETIRED legacy render — do NOT select this. The design capability is `design`
+  (see `../design/ROLE.md`); `ui-spec` is not its alias, its role or its
+  implementation. Read only by the loops that still land the old `## UI spec`
+  section and per-screen design SPECs, which name it explicitly. Nothing else.
 ---
 
 # ui-spec — UI spec authoring
 
 ## Role
 
-`ui-design` — this is its **built-in default implementation**. Rebindable in `.workflow/skills.toml` to a third-party skill (installed via skills.sh) or `off`. Resolution: built-in default → `~/.workflow/skills.toml` (global) → `.workflow/skills.toml` (workspace).
+**None.** `ui-design` no longer exists as a role and this skill is bound to nothing: it is neither an alias of `design` nor an alternative implementation of it. The only rebindable design slot is `design` ([`../design/ROLE.md`](../design/ROLE.md)), and it produces a different, non-negotiable format — the UI Design Package v1.
+
+This file stays readable so the loops that still land the legacy render have their render rules, and so historical documents remain interpretable. It is retired in the last phase of plan 012, with no alias, dual-read, importer, conversion or migration.
 
 ## Purpose
 

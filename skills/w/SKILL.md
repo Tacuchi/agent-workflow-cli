@@ -143,16 +143,16 @@ Common: Layer 1, explicit (user-invoked, never by a loop) · single-pass, read-o
 
 ### Capability skills + `.workflow/skills.toml`
 
-A loop does **not** compose a concrete skill; it composes a **capability by its role** (e.g. `ui-design`). Which skill fulfills the role is decided by config, never by the loop. Swapping implementations = one config line.
+A loop does **not** compose a concrete skill; it composes a **capability by its role** (e.g. `design`). Which skill fulfills the role is decided by config, never by the loop. Swapping implementations = one config line.
 
 ```toml
 [skills]
-ui-design        = "ui-spec"          # built-in default
+design           = "design"           # built-in default
 sql              = "sql"
 git              = "git"
 research         = "research"
 # diagrams       = "off"              # ← capability disabled
-# ui-design      = "acme/figma-spec"  # ← third-party skill (via skills.sh)
+# design         = "acme/figma-spec"  # ← third-party skill (via skills.sh)
 ```
 
 **Resolution cascade**: built-in default → `~/.workflow/skills.toml` (global, machine) → `.workflow/skills.toml` (workspace). Workspace overrides global; global overrides default. Unbound role → built-in default. `off` → disabled (the loop continues without it; if it was needed, it says so or asks).
@@ -161,13 +161,15 @@ Role catalog and defaults:
 
 | Role | Default | Tier | Composed by |
 |---|---|---|---|
-| `ui-design` | `ui-spec` | must | `spec-refine-loop` (UI) · `plan-new-loop` / `plan-refine-loop` (design SPECs) |
+| `design` | `design` | must | `spec-refine-loop` (UI) · `plan-new-loop` / `plan-refine-loop` · `plan-exec-loop` (reads, never redesigns) † |
 | `sql` | `sql` | must | research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `research` | `research` | should | every loop (inline capability) |
 | `diagrams` | `diagrams` | should | `export-diagrams` |
 | `overview` | `w` | should | anyone (orientation) |
 
+> † **`design` is the identity; the loops have not moved yet.** The row states the composition the loops will have once they land `## Design references` and exact roots. Today they still produce the legacy render (`## UI spec`, per-screen design SPECs) by naming `ui-spec` directly — which is bound to nothing and is retired, with no alias, in the last phase of plan 012. See [roles/README.md](roles/README.md).
+>
 > **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [roles/README.md](roles/README.md).
 
 The **loop chassis** is NOT bound: it is the common engine of the 5 loops ([`loops/CHASSIS.md`](loops/CHASSIS.md), a referenced doc), not a pluggable capability.
@@ -200,7 +202,7 @@ One language per plane — never mix them:
 
 1. **No auto-export** — loops never graduate/export to `docs/`. Only `export-*` does, explicitly.
 2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` and `docs/research` belong to no flow: `docs/tools` is written by the ambient skill `creating-tools`; `docs/research` by `/w:persist` or direct no-flow authoring.)
-3. **The spec and the plan are documents** (`docs/`), not session artifacts. *(Not to be confused with the **design SPECs** `NNN-SPEC-<SLUG>.md`: **per-screen** UI design artifacts that PLAN sessions produce via the `ui-design` capability when the plan includes UI — see `artifacts/artifacts-design/` — they are not the requirement-spec.)*
+3. **The spec and the plan are documents** (`docs/`), not session artifacts. *(Not to be confused with the **UI Design Package** the `design` capability produces under `docs/designs/NNN-design-<slug>/`: a durable dossier a spec **references** by baseline and digest — see [`roles/design/ROLE.md`](roles/design/ROLE.md) — it is not the requirement-spec.)*
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations stay in `SCRIPTS.sql` and the user applies them. Only read-only reads via MCP.
 5. **Safe git** — expected branch verified before editing; proposed commits per source; never `push`/`--amend`/`--no-verify`.
 6. **Loop chassis** — the 5 loops run the same **common engine**; each loop is an heir adding only its deltas, nothing of the engine is re-declared. Detail: `loops/CHASSIS.md`.

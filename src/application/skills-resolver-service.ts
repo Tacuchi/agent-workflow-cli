@@ -4,6 +4,7 @@ import { HARNESSES } from "../domain/harnesses.js";
 import { parseSkillFrontmatter } from "../domain/skill-frontmatter.js";
 import {
   BUILTIN_DEFAULT_SKILLS,
+  RETIRED_SKILL_IDENTITIES,
   type ResolvedSkills,
   SKILL_ROLES,
   type SkillBindingSource,
@@ -203,14 +204,33 @@ function applyLevel(
 ): void {
   for (const [key, value] of Object.entries(table)) {
     if (!isSkillRole(key)) {
-      warnings.push(`${path}: unknown role '${key}' ignored`);
+      const retired = RETIRED_SKILL_IDENTITIES.get(key);
+      warnings.push(
+        retired === undefined
+          ? `${path}: unknown role '${key}' ignored`
+          : `${path}: role '${key}' está retirado y se ignora — ${retired}`,
+      );
       continue;
     }
     const val = String(value).trim();
     if (val.toLowerCase() === OFF) {
       skills[key] = { role: key, skill: null, source, enabled: false };
-    } else if (val.length > 0) {
-      skills[key] = { role: key, skill: val, source, enabled: true };
+      continue;
     }
+    if (val.length === 0) continue;
+    // Un nombre retirado se RECHAZA, no se resuelve: honrarlo lo convertiría en
+    // un nombre aceptado. Se compara en minúsculas igual que `off`, tres líneas
+    // arriba: dos reglas distintas en la misma función es una costura.
+    const retired = RETIRED_SKILL_IDENTITIES.get(val.toLowerCase());
+    if (retired !== undefined) {
+      // La línea se IGNORA. No se nombra un destino: si otro nivel de la
+      // cascada ya bindeó el role, el role NO queda en su built-in default y
+      // decirlo sería mentir. Lo que resolvió de verdad va al lado, en `skills`.
+      warnings.push(
+        `${path}: role '${key}' apunta a '${val}', que está retirado y no se acepta — ${retired}. Se ignora la línea`,
+      );
+      continue;
+    }
+    skills[key] = { role: key, skill: val, source, enabled: true };
   }
 }

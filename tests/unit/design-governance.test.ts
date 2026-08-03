@@ -296,6 +296,32 @@ describe("la fecha de un record tiene que existir", () => {
   });
 });
 
+describe("un contrato que no entendemos se dice como tal", () => {
+  it("un schema desconocido es DESIGN_SCHEMA_UNKNOWN, no un campo inválido", () => {
+    const result = validateDesignReview(review({ schema: "workline.design-review/v2" }), "r.json");
+    expect(result.ok).toBe(false);
+    expect(result.failures[0]?.code).toBe("DESIGN_SCHEMA_UNKNOWN");
+    // «Actualizá la CLI» y «arreglá el campo» mandan a lugares distintos.
+    expect(result.failures[0]?.action).toContain("entiende");
+  });
+
+  it("y el gate corre PRIMERO: no se reportan defectos derivados de un formato ajeno", () => {
+    // Todo lo demás roto a la vez: si el gate no cortara, saldrían seis fallos
+    // de campos que ese contrato quizá ni tiene.
+    const ajeno = { schema: "workline.design-review/v2", id: "X", target: "no", date: "ayer" };
+    const result = validateDesignReview(ajeno, "r.json");
+    expect(result.failures).toHaveLength(1);
+  });
+
+  it("la revocación se comporta igual que su módulo hermano", () => {
+    const result = validateDesignRevocation(
+      revocation({ schema: "workline.design-revocation/v2" }),
+      "v.json",
+    );
+    expect(result.failures[0]?.code).toBe("DESIGN_SCHEMA_UNKNOWN");
+  });
+});
+
 describe("evidence no repite", () => {
   it("citar dos veces la misma fuente no la hace más evidencia", () => {
     const repetida = review({ evidence: ["a.md", "a.md"] });

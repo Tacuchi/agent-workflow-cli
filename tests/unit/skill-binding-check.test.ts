@@ -47,19 +47,19 @@ describe("checkInstalledBindings (advisory binding validation)", () => {
   });
 
   it("no warning when the bound skill is installed under a standard root", async () => {
-    writeWorkspaceToml('[skills]\nui-design = "figma-spec"\n');
+    writeWorkspaceToml('[skills]\ndesign = "figma-spec"\n');
     installSkill(".claude/skills", "figma-spec");
     const resolution = await resolveSkills(fs, paths);
     const { checks, warnings } = await checkInstalledBindings(fs, env, resolution);
-    expect(checks.find((c) => c.role === "ui-design")?.installed).toBe(true);
+    expect(checks.find((c) => c.role === "design")?.installed).toBe(true);
     expect(warnings).toEqual([]);
   });
 
   it("warns when the bound skill is not installed anywhere", async () => {
-    writeWorkspaceToml('[skills]\nui-design = "ghost-skill"\n');
+    writeWorkspaceToml('[skills]\ndesign = "ghost-skill"\n');
     const resolution = await resolveSkills(fs, paths);
     const { checks, warnings } = await checkInstalledBindings(fs, env, resolution);
-    expect(checks.find((c) => c.role === "ui-design")?.installed).toBe(false);
+    expect(checks.find((c) => c.role === "design")?.installed).toBe(false);
     expect(warnings.some((w) => w.includes("ghost-skill"))).toBe(true);
   });
 
@@ -72,7 +72,7 @@ describe("checkInstalledBindings (advisory binding validation)", () => {
   });
 
   it("matches the last path segment for owner/skill-style bindings", async () => {
-    writeWorkspaceToml('[skills]\nui-design = "acme/figma-spec"\n');
+    writeWorkspaceToml('[skills]\ndesign = "acme/figma-spec"\n');
     installSkill(".agents/skills", "figma-spec");
     const resolution = await resolveSkills(fs, paths);
     const { warnings } = await checkInstalledBindings(fs, env, resolution);

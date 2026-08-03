@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { DesignMaturity } from "../../domain/design/artifact.js";
 import { validateDesignArtifact } from "../../domain/design/artifact.js";
 import {
+  DESIGN_BASELINE_SCHEMA_ID,
   type DesignBaseline,
   type SelectionEntry,
   checkBaselineAuthority,
@@ -508,7 +509,11 @@ function sealBaseline(
 ): DesignBaseline {
   const current = manifest.current_baseline;
   const sealed = {
-    schema: "workline.design-baseline/v1",
+    // Del registro, no a mano: este es el ÚNICO sitio del sistema que ESCRIBE
+    // un id canónico, y un literal aquí puede discrepar del que valida. Cuando
+    // eso pasa el floor emite output que su propio validador rechaza y ninguna
+    // revisión se publica — un formato paralelo de un solo carácter.
+    schema: DESIGN_BASELINE_SCHEMA_ID,
     package: manifest.id,
     revision,
     parent_baseline: current === null ? null : `${manifest.id}@r${current.revision}`,

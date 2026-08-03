@@ -95,7 +95,7 @@ describe("runWorkspaceInit", () => {
     expect(existsSync(join(workspace, ".workflow", "skills.toml"))).toBe(true);
     const toml = readFileSync(join(workspace, ".workflow", "skills.toml"), "utf-8");
     expect(toml).toContain("[skills]");
-    expect(toml).toContain('# ui-design = "ui-spec"');
+    expect(toml).toContain('# design = "design"');
     expect(toml).toContain('# overview = "w"');
     // commented [compaction] opt-in section: adjacent pair, after the [skills] roles
     // (uncommenting both must land `mode` inside [compaction], never inside [skills])

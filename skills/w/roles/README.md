@@ -12,7 +12,7 @@ All 6 roles, their built-in defaults, their tier, and which loops/exports compos
 
 | Role | Default built-in | Tier | Composed by |
 |---|---|---|---|
-| `ui-design` | [`ui-spec`](ui-spec/ROLE.md) | must | `spec-refine-loop` (when requirement involves UI) · `plan-new-loop` / `plan-refine-loop` (per-screen design SPECs) |
+| `design` | [`design`](design/ROLE.md) | must | `spec-refine-loop` (when requirement involves UI) · `plan-new-loop` / `plan-refine-loop` · `plan-exec-loop` (reads, never redesigns) |
 | `sql` | `sql` | must | inline research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
 | `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
 | `research` | [`research`](research/ROLE.md) | should | all loops (on-demand investigation) |
@@ -24,6 +24,8 @@ All 6 roles, their built-in defaults, their tier, and which loops/exports compos
 - `should` — loaded on-demand; active by default but lower priority to override.
 
 > **Ambient conventions (not roles).** Code, testing and writing standards **and tool authoring** (`creating-tools`, which writes `docs/tools`) are **not Workline roles** and are never bound: they are **standalone skills the host auto-discovers by `description`** and applies when relevant. Workline is **indifferent** (it neither reads nor looks for them). Useful families live in marketplace plugins (`dev-conventions`, `tool-builder`), but Workline does **not depend** on them.
+>
+> **`ui-spec` is not a role and is not bound to one.** [`ui-spec/ROLE.md`](ui-spec/ROLE.md) is still on disk, but the role it used to fill — `ui-design` — no longer exists, and nothing resolves to it: the design slot is `design`, whose only output is the UI Design Package v1. Two names for one capability are two contracts in disguise, so there is **no alias and no dual-read**. What survives is the legacy *render*, invoked by name by the loops that have not moved yet, and retired in the last phase of plan 012.
 >
 > **The closing review is not a role either** (deliberate decision — a `conventions`/`rules`/`review` role was evaluated and discarded): the pre-commit **closing review gate** of `plan-exec-loop`/`quick-loop` is a **loop step**; the loop creates the **moment** and the installed ambient conventions fill it. A role that "points at the marketplace skills" would re-couple what this extraction decoupled. The **minimality / anti-over-engineering** lens is **not a role either**: it is a built-in property of the convergence gate (chassis § *Minimality*), owed with no external skill and merely *raised* by whatever ambient review skills are installed — internal essence without the coupling a role would reintroduce.
 
@@ -56,7 +58,7 @@ built-in default
 ```toml
 [skills]
 # Built-in defaults (no entry needed — listed here for reference only)
-# ui-design        = "ui-spec"
+# design           = "design"
 # sql              = "sql"
 # git              = "git"
 # research         = "research"
@@ -64,7 +66,7 @@ built-in default
 # overview         = "w"
 
 # Override examples:
-ui-design        = "acme/figma-spec"    # third-party skill installed via skills.sh
+design           = "acme/figma-spec"    # third-party skill installed via skills.sh
 diagrams         = "mermaid-only"       # custom built installed locally
 sql              = "off"                # disable the sql capability
 ```
@@ -73,7 +75,7 @@ sql              = "off"                # disable the sql capability
 
 ```toml
 [skills]
-ui-design = "acme/figma-spec"
+design = "acme/figma-spec"
 ```
 
 `acme/figma-spec` must be installed on the host (e.g. via `skills.sh install acme/figma-spec`). The binding is **advisory**: the resolver emits the name as-is — it does **not** verify the skill is installed and does **not** auto-fall-back to the built-in default. A typo'd name silently leaves the role bound to a skill that does not exist. Verify the resolution with `aw skills`, which warns when a bound skill is not found in the standard skill roots.
@@ -111,7 +113,7 @@ Example output:
 ```
 Role              Resolved skill          Source
 ----------------- ----------------------- -----------
-ui-design         ui-spec                 built-in
+design            design                  built-in
 sql               sql                     built-in
 git               git                     built-in
 research          research                built-in

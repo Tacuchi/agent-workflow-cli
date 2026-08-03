@@ -1,7 +1,7 @@
 /**
  * Capability roles for the pluggable skills model.
  *
- * A loop composes a CAPABILITY by its role (e.g. "ui-design"), not a concrete
+ * A loop composes a CAPABILITY by its role (e.g. "design"), not a concrete
  * skill. The role → skill binding is resolved from `skills.toml`
  * (cascade: built-in default → global → workspace). See skills-resolver-service.
  *
@@ -12,13 +12,13 @@
  * or binds a specific convention skill; the host surfaces any useful one that is
  * installed (e.g. from the `dev-conventions` marketplace plugin, or anywhere).
  */
-export const SKILL_ROLES = ["ui-design", "sql", "git", "research", "diagrams", "overview"] as const;
+export const SKILL_ROLES = ["design", "sql", "git", "research", "diagrams", "overview"] as const;
 
 export type SkillRole = (typeof SKILL_ROLES)[number];
 
 /** Built-in default skill name for each capability role. */
 export const BUILTIN_DEFAULT_SKILLS: Record<SkillRole, string> = {
-  "ui-design": "ui-spec",
+  design: "design",
   sql: "sql",
   git: "git",
   research: "research",
@@ -43,3 +43,28 @@ const ROLE_SET: ReadonlySet<string> = new Set(SKILL_ROLES);
 export function isSkillRole(value: string): value is SkillRole {
   return ROLE_SET.has(value);
 }
+
+/**
+ * Names this contract does NOT accept, and what to say instead.
+ *
+ * `ui-design` was the design role and `ui-spec` its default implementation.
+ * Both are retired: the public identity is `design`, and its only output is the
+ * UI Design Package v1. They are not aliases and not alternative implementations
+ * — a second name for one capability is a second contract in disguise, and the
+ * day the two disagree there is no way to say which one the package obeys.
+ *
+ * So a config naming either is REFUSED, not silently honored: accepting
+ * `design = "ui-spec"` would make `ui-spec` an accepted name, which is exactly
+ * what the contract forbids. The role keeps its built-in default, so refusing
+ * the binding never leaves the capability mute.
+ */
+export const RETIRED_SKILL_IDENTITIES: ReadonlyMap<string, string> = new Map([
+  [
+    "ui-design",
+    "el role de diseño ahora es 'design' y su implementación por defecto también: no hay alias",
+  ],
+  [
+    "ui-spec",
+    "'ui-spec' es el render legacy y no implementa 'design', cuyo único formato es el UI Design Package v1",
+  ],
+]);
