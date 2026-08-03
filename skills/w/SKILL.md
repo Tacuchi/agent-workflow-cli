@@ -168,7 +168,7 @@ Role catalog and defaults:
 | `diagrams` | `diagrams` | should | `export-diagrams` |
 | `overview` | `w` | should | anyone (orientation) |
 
-> † **The composing loops already land references, not design.** `spec-refine` keeps `## Design references` and the plan loops promote the closure they implement and pin exact roots. `ui-spec` is bound to nothing, no loop invokes it, and its files are retired — with no alias — in the last phase of plan 012. See [roles/README.md](roles/README.md).
+> † **The composing loops land references, not design.** `spec-refine` keeps `## Design references` and the plan loops promote the closure they implement and pin exact roots. The retired names `ui-design` and `ui-spec` resolve to nothing — no alias, no dual-read, no migration. See [roles/README.md](roles/README.md).
 >
 > **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [roles/README.md](roles/README.md).
 

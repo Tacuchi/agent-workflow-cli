@@ -35,7 +35,7 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 
 > **Inline research (any session):** research is **not** a session type. When any session (`refine`/`exec`/`quick`) needs to investigate, it produces research artifacts **inline**: `ANALYSIS-FILE` (optional scratchpad), `CONCLUSIONS`, and read-only `SCRIPTS.sql` (if DB). These are written into the active session — there is no separate research session.
 
-> **Design is NOT a session artifact any more.** When a spec or a plan involves UI, the composed [`design`](../roles/design/ROLE.md) capability publishes a **UI Design Package** under `docs/designs/NNN-design-<slug>/` — a durable dossier the spec references by baseline and digest and the plan pins by exact root. Nothing about it lives in a session. The per-screen design SPEC (`NNN-SPEC-<SLUG>.md`) that PLAN sessions used to carry is a **retired** path: its documents stay readable where they were written, and no loop produces or reads one. See [`artifacts-design/`](artifacts-design/).
+> **Design is NOT a session artifact.** When a spec or a plan involves UI, the composed [`design`](../roles/design/ROLE.md) capability publishes a **UI Design Package** under `docs/designs/NNN-design-<slug>/` — a durable dossier the spec references by baseline and digest and the plan pins by exact root. Nothing about it lives in a session. The per-screen design SPEC (`NNN-SPEC-<SLUG>.md`) that PLAN sessions used to carry is **retired and unsupported**: no loop produces or reads one, there is no importer or conversion, and presenting one as input or as a gate's evidence is rejected — the result has to be recreated from current sources. Documents already written stay exactly where they are, byte for byte.
 
 > **PLAN note (rich plan):** the plan-doc (`docs/plans/PPP-plan.md`) absorbs inline the `TECHNICAL-NOTE` level (`Solution` — summary + AS-IS → TO-BE delta + Final behavior block —, `Impacted`, `Validations`…) **and** the phased `Tasks` (`### Fn` blocks). Therefore exec sessions do **not** carry a `TECHNICAL-NOTE` or own `TASKS` artifact: the technical detail and progress live in the plan-doc (living). `TASKS` remains as an optional artifact for sessions that need their own internal breakdown.
 
@@ -53,7 +53,6 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 |---|---|---|
 | [`artifacts-core/`](artifacts-core/) | common to any session | `SESSION` · `TASKS` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` |
 | [`artifacts-research/`](artifacts-research/) | inline research (any session) | `ANALYSIS-FILE` · `CONCLUSIONS` |
-| [`artifacts-design/`](artifacts-design/) | **retired** — design lives in `docs/designs/`, never in a session | `NNN-SPEC-<SLUG>.md` (design SPEC, historical) |
 | [`artifacts-exec/`](artifacts-exec/) | `exec` / `quick` session | `DECISION` · `TECHNICAL-NOTE` (schema reference; absorbed by the plan-doc) |
 
 ---

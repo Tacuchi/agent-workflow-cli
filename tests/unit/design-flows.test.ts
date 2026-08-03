@@ -16,6 +16,11 @@ import {
   parseSpecDesignReferences,
   parseTaskDesignReferences,
 } from "../../src/domain/design/reference.js";
+import {
+  BUILTIN_DEFAULT_SKILLS,
+  RETIRED_SKILL_IDENTITIES,
+  SKILL_ROLES,
+} from "../../src/domain/skills.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
 /**
@@ -459,31 +464,29 @@ describe("la doctrina de cada flow dice lo que el flow hace ahora", () => {
   });
 });
 
-describe("el camino legacy dejó de instruir (frontera de simulación de F8)", () => {
-  const RETIRED = ["modules/PLAN-DESIGN-SPECS.md", "modules/PLAN-REFINE-DESIGN-SPECS.md"];
-  /**
-   * The retired path's OWN files. They describe the render they used to produce,
-   * which is legitimate — nothing resolves to them and F11 deletes them. They
-   * are enumerated rather than pattern-excluded so a fourth one cannot appear
-   * quietly.
-   */
-  const RETIRED_OWN = ["roles/ui-spec/ROLE.md", "artifacts/artifacts-design/SPEC.md"];
+describe("el camino legacy quedó retirado, sin alias que lo reactive (F11)", () => {
+  /** The four files the retired path owned. F11 deletes them; nothing replaces them. */
+  const DELETED = [
+    "roles/ui-spec/ROLE.md",
+    "artifacts/artifacts-design/SPEC.md",
+    "modules/PLAN-DESIGN-SPECS.md",
+    "modules/PLAN-REFINE-DESIGN-SPECS.md",
+  ];
 
-  it("los dos módulos retirados dicen explícitamente que no se sigan", async () => {
-    for (const rel of RETIRED) {
-      const text = await flat(rel);
-      expect(text, rel).toMatch(/\*\*DO NOT FOLLOW THIS MODULE\.\*\*/);
-      expect(text, rel).toMatch(/DESIGN-REFERENCES\.md/);
-    }
+  it("los cuatro archivos del camino retirado ya no están en el bundle", async () => {
+    const live = new Set(await everyDoctrineFile());
+    expect(DELETED.filter((rel) => live.has(rel))).toEqual([]);
   });
 
-  it("y ya no llevan la instrucción operativa que los volvía ambiguos", async () => {
-    for (const rel of RETIRED) {
-      const text = await flat(rel);
-      // Lo peligroso no era nombrar el formato viejo: era mandar producirlo.
-      expect(text, rel).not.toMatch(/It authors \*\*one design SPEC per screen\*\*/);
-      expect(text, rel).not.toMatch(/is resolved by the legacy/);
+  it("y nada apunta a ellos: un enlace muerto es peor que una lápida", async () => {
+    const offenders: string[] = [];
+    for (const rel of await everyDoctrineFile()) {
+      const text = await readRel(rel);
+      for (const gone of ["ui-spec/ROLE.md", "artifacts-design", "DESIGN-SPECS.md"]) {
+        if (text.includes(gone)) offenders.push(`${rel} → ${gone}`);
+      }
     }
+    expect(offenders).toEqual([]);
   });
 
   it("ninguna superficie viva manda producir un design SPEC por pantalla", async () => {
@@ -492,23 +495,37 @@ describe("el camino legacy dejó de instruir (frontera de simulación de F8)", (
         text.replace(/\s+/g, " "),
       );
 
-    // Primero, que el detector NO sea vacuo: dispara sobre los archivos del
-    // camino retirado, que son justo los que describen ese render. Una guarda
-    // cuyo patrón no casa con nada pasa por el motivo equivocado.
-    for (const rel of RETIRED_OWN) expect(instructs(await readRel(rel)), rel).toBe(true);
+    // El detector no es vacuo: dispara sobre la instrucción que el camino viejo
+    // llevaba. Sin esta mitad, una guarda cuyo patrón no casa con nada pasa por
+    // el motivo equivocado — y los archivos que la disparaban ya no existen.
+    expect(
+      instructs("The loop invokes the capability and it authors one design SPEC per screen"),
+    ).toBe(true);
 
     const offenders: string[] = [];
     for (const rel of await everyDoctrineFile()) {
-      if (RETIRED_OWN.includes(rel) || RETIRED.includes(rel)) continue;
       if (instructs(await readRel(rel))) offenders.push(rel);
     }
     expect(offenders).toEqual([]);
   });
 
-  it("y el esquema del artefacto retirado habla en pasado", async () => {
-    const text = await flat("artifacts/artifacts-design/SPEC.md");
-    expect(text).toMatch(/\*\*RETIRED — no loop produces or reads this\.\*\*/);
-    expect(text).toMatch(/none of them authors a per-screen design SPEC any more/i);
+  it("los nombres retirados solo aparecen para ser rechazados, nunca como implementación", async () => {
+    const offenders: string[] = [];
+    for (const rel of await everyDoctrineFile()) {
+      const text = await flat(rel);
+      if (!/\bui-(design|spec)\b/.test(text)) continue;
+      // Nombrarlos es legítimo SOLO en la frase que los retira. Cualquier otra
+      // mención es un alias de hecho.
+      const rejects = /(retired|rejected|retirada|no alias|not aliases|is not a role)/i.test(text);
+      if (!rejects) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("el role de diseño no reaparece en el catálogo de la CLI", async () => {
+    expect(SKILL_ROLES as readonly string[]).not.toContain("ui-design");
+    expect(Object.keys(BUILTIN_DEFAULT_SKILLS)).not.toContain("ui-design");
+    expect([...RETIRED_SKILL_IDENTITIES.keys()].sort()).toEqual(["ui-design", "ui-spec"]);
   });
 });
 

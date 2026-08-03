@@ -194,7 +194,6 @@ describe("ninguna superficie viva nombra 'ui-spec' como implementación (AC-CAP-
   it("y donde sigue nombrándolo, lo declara legacy en la misma superficie", async () => {
     const offenders: string[] = [];
     for (const rel of await everyDoctrineFile()) {
-      if (rel === LEGACY_OWN) continue;
       const text = await readRel(rel);
       if (!/\bui-spec\b/.test(text)) continue;
       // Nombrarlo está permitido; nombrarlo sin decir que se retira, no.
@@ -203,12 +202,11 @@ describe("ninguna superficie viva nombra 'ui-spec' como implementación (AC-CAP-
     expect(offenders).toEqual([]);
   });
 
-  it("el propio archivo legacy declara que no implementa ningún role", async () => {
-    const text = await readRel(LEGACY_OWN);
-    expect(text).toMatch(/## Role\s*\n\s*\n\*\*None\.\*\*/);
-    expect(await flat(LEGACY_OWN)).toMatch(
-      /neither an alias of `design` nor an alternative implementation/,
-    );
+  it("y su archivo ya no existe: F11 lo retiró sin dejar alias", async () => {
+    // F8 aseveraba el CONTENIDO de esta lápida («no implementa ningún role»).
+    // F11 la borra, así que la promesa se demuestra por AUSENCIA — que es más
+    // fuerte: un archivo que no está no puede volver a instruir a nadie.
+    expect(await everyDoctrineFile()).not.toContain(LEGACY_OWN);
   });
 });
 

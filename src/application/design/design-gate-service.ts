@@ -15,6 +15,7 @@ import {
   parseSpecDesignReferences,
   parseTaskDesignReferences,
 } from "../../domain/design/reference.js";
+import { reportRetiredDesign } from "../../domain/design/retired.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { type DesignIndex, readDesignIndex } from "./design-index-service.js";
 import {
@@ -103,7 +104,14 @@ export async function gatePlanDesign(
   // `DES-001` is only prose when the same text pins it needs the whole text to
   // decide, and per-line it would report every prose mention of a pinned package.
   const pinned = parseTaskDesignReferences(text, planPath);
-  const failures = [...declared.failures, ...pinned.failures];
+  // Legacy material is REPORTED here, at the gate, because this is where a
+  // document is consumed as input and as a gate's evidence — the two things the
+  // retired path is no longer allowed to be.
+  const failures = [
+    ...reportRetiredDesign(text, planPath),
+    ...declared.failures,
+    ...pinned.failures,
+  ];
 
   if (pinned.references.length === 0) {
     // A plan with no design roots is the normal shape of a plan without UI. Its

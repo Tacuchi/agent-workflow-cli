@@ -189,23 +189,27 @@ A spec carries `## Design references` (package, baseline, digest, path hint); a
 plan carries the exact roots each phase or task consumes. Embedding the design
 in the document is what the package exists to end.
 
-## Simulation boundary
+## Retired path — `retired/unsupported`, and nothing else
 
-**Before**: the legacy path produced design for the flows — the `ui-design`
-binding, [`../ui-spec/ROLE.md`](../ui-spec/ROLE.md), the spec's `## UI spec`
-section and per-screen design SPECs as session artifacts.
+The legacy path is **gone**: the `ui-design` binding, the `ui-spec` skill, the
+spec's `## UI spec` section and the per-screen design SPECs that PLAN sessions
+carried. `design` is the only identity and the package above the only format.
 
-**Now**: the public identity is `design`, the package above is the only format
-this contract accepts, and the composing loops land only `## Design references`
-and exact roots — `spec-refine` opens the `outline` revision, the plan loops
-promote the closure they implement. The legacy *documents* stay physically
-present and readable, so nothing that was written before breaks, but no loop
-takes that path any more.
+Presenting any of it — a binding or invocation naming a retired name, a `## UI
+spec` section, a session design SPEC, an output of `ui-spec-generator` — is
+reported **`retired/unsupported`**. It is never read as a contract, and never
+satisfies a gate as evidence. There is **no alias, no dual-read, no importer, no
+conversion, no migrate-on-touch and no bulk migration**: a design that is still
+needed is **recreated** over the package from current sources.
 
-**After**: `plan-exec` gates on those references, and then the legacy surfaces are
-reported `retired/unsupported` — not read as a contract, not imported, not
-converted, not migrated — while their files are preserved byte for byte. There is
-no alias and no dual-read at any point.
+What retirement does not do is destroy: every document already written stays
+exactly where it is, byte for byte, readable by whoever opens it. Retiring an
+input is not the same as deleting a record.
+
+**`ui-spec-generator` is outside this topology.** It is not a dependency, not an
+adapter and not a source of truth for anything here; nothing in Workline reads,
+invokes or imports it. Whatever becomes of that repository is its own business —
+cleaning it up is explicitly not part of this contract.
 
 ## Source
 

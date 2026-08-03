@@ -4,6 +4,37 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.0.0] — 2026-08-03
+
+**El diseño de interfaces deja de vivir dentro de los documentos y pasa a ser un dossier durable con identidad propia, y el camino viejo queda retirado sin ruta de migración.** Antes el diseño se escribía dos veces —la sección `## UI spec` de la spec y un design SPEC por pantalla como artefacto de sesión— y moría con la sesión: sin catálogo, sin identidad estable, sin revisión, sin digest, y sin forma de que una tarea fijara exactamente qué diseño implementa. Ahora cada diseño es un **UI Design Package v1** bajo `docs/designs/NNN-design-<slug>/`: su `design-manifest.json` es el índice mutable, sus `baselines/DES-NNN-r00N.json` sellan una selección cerrada con SHA-256 sobre JSON canónico —sin autorreferencia y sin depender del índice—, y sus `flows/*.md` y `screens/*.md` declaran identidad, grafo, estados, dependencias y trazabilidad en frontmatter versionado, de modo que **nada normativo depende de interpretar prosa**. La spec guarda tres líneas —package, baseline y digest—; el plan fija raíces exactas (`DES-001@r4 / SCR-002@r2#empty`); y `plan-exec` **falla cerrado** antes de implementar si una referencia falta, su digest no coincide, la revisión está revocada o su clausura no alcanza `handoff`, nombrando siempre el artefacto y la acción correctiva. Una revisión superseded pero íntegra solo avisa: publicar `@r5` no invalida el `@r4` que alguien fijó a propósito. Renombrar o mover el dossier tampoco rompe nada — la identidad resuelve por `DES-NNN` y el path es un hint reparable. `status` y `resume` proyectan el grafo `spec → package → flow/screen → plan/tarea` distinguiendo válida, stale, missing y huérfana. Sin dependencias npm nuevas. Bundle `w` **14.0.0**.
+
+### BREAKING
+
+- **`ui-design` y `ui-spec` son nombres retirados y rechazados.** La capacidad pública de diseño es `design`, su implementación por defecto también, y su único formato de salida es el UI Design Package v1. Un binding que nombre cualquiera de los dos **se ignora con aviso** y el role conserva su default incorporado. No hay alias, dual-read, importador, conversión, migrate-on-touch ni migración masiva.
+- **Retiradas las cuatro superficies del camino viejo:** `roles/ui-spec/ROLE.md`, `artifacts/artifacts-design/SPEC.md`, `modules/PLAN-DESIGN-SPECS.md` y `modules/PLAN-REFINE-DESIGN-SPECS.md` ya no existen en el bundle, y ninguna doctrina apunta a ellas.
+- **Presentar material legacy es `retired/unsupported`.** Una sección `## UI spec`, un design SPEC de sesión (`NNN-SPEC-<SLUG>.md`) o una salida de `ui-spec-generator` se **reporta**, nunca se lee como contrato ni cuenta como evidencia de un gate: el diagnóstico exige **recrear** el resultado sobre el package. **Los archivos históricos quedan físicamente intactos**, byte a byte — retirar un input no es borrar un registro.
+- **Sin ruta de migración.** Un workspace con diseño en el formato viejo pierde su camino de diseño en esta versión y debe recrearlo sobre el package desde fuentes vigentes.
+
+### Added
+
+- **`docs/designs/` como categoría durable de `docs/`**, con identidad `DES-NNN` que no deriva de spec, plan, sesión, slug, path ni proveedor, y descubrimiento que resuelve por identidad aunque el dossier se haya renombrado o movido.
+- **`aw designs`** — lista los packages (identidad, baseline vigente, ubicación actual), `--id DES-NNN` resuelve uno por identidad, y **`--plan <doc>`** corre el gate de precondición de `plan-exec` por tarea, con salida distinta de cero cuando bloquea. `--require-approval` activa la política de aprobación del workspace, apagada por defecto.
+- **Gobierno con cuatro dimensiones independientes** — madurez (`outline`/`handoff`), review, currentness y execution policy se mueven por separado. Un review record vive **fuera** del baseline que decide, se sella con su propio digest y aprueba bytes, no un número: una revisión nueva nace `proposed` porque no existe record que la nombre, así que **la herencia de aprobación es imposible por construcción**. Solo una revocación explícita y auditada prohíbe una revisión.
+- **Publicación atómica** — valida el candidato completo antes del primer byte y, ante un fallo o una base concurrentemente modificada, deja el árbol idéntico. El compare-and-swap contra `parent_baseline` es obligatorio. Una spec o plan cuya referencia se mueve viaja **en el mismo lote**, así que nunca queda un documento citando un baseline inexistente ni un baseline sin consumidor.
+- **Clausura por tarea** — desde las raíces exactas que una tarea declara se calcula qué flows, screens, estados, rules, tokens y assets consume, y se promueve a `handoff` **solo eso**: diez screens en `outline` y tres promovidas es la forma normal de un package.
+
+### Changed
+
+- **Los cuatro flows referencian en vez de contener.** `spec-new` solo registra la necesidad de UI; `spec-refine` reutiliza un baseline compatible o abre una revisión `outline` y deja únicamente `## Design references`; `plan-new` promueve la clausura que implementa y fija las raíces; `plan-refine` acota las revisiones nuevas al delta y **no reapunta a otros consumidores del mismo baseline**. `quick` lee y valida un package pero escala —a `plan-refine`, o a `spec-refine` si cambia comportamiento o aceptación— conservando la evidencia reunida. `persist` encamina una idea UI durable primero a SPEC.
+- **La señal `ui` entrega un solo módulo** (`modules/DESIGN-REFERENCES.md`) a los cinco comandos que lo necesitan, y el presupuesto de contexto sigue cumpliéndose en todos sus ratios.
+
+### Fixed
+
+- **`judgeExecution` validaba media identidad** — comprobaba el package y no la revisión, así que `DES-001@r99` respondía «ejecutable» y, con la política activa, culpaba a una aprobación faltante en vez de decir que esa revisión no existe.
+- **`target_digest` era decorativo** — se validaba por forma y ninguna decisión lo consumía: un review que citaba un digest inventado aprobaba igual. Un baseline republicado con el mismo número y otro contenido ya no está aprobado por el record viejo.
+- **La política de aprobación no leía la decisión vigente** — preguntaba «¿alguna vez hubo un `approved`?», así que un `rejected` posterior no retiraba nada y una aprobación era irretirable.
+- **El índice podía contradecir lo que indexa** — `governance.reviews[]` declaraba id, path, digest y target sin cotejarse nunca contra el archivo en ese path.
+
 ## [20.26.0] — 2026-08-02
 
 **Las opciones de Workline dejan de ser coordenadas sin contexto y la mejora llega al árbol que cada host realmente ejecuta.** Cada alternativa tiene ahora una etiqueta semántica y una frase funcional —resultado, trade-off o ejemplo—; Claude Code, Codex, Kimi Code, Gemini/Antigravity, OpenCode y Crush usan su selección nativa cuando puede conservar esa forma, mientras Warp/Oz y cualquier superficie limitada degradan a Markdown etiquetado sin truncar candidatos ni exigir respuestas como `1A, 2A, 3A`. La distribución también queda cerrada: wrappers nativos y sintetizados resuelven sus manuales dentro del `skills/w` instalado y fijan ese mismo árbol en `aw context-plan --root`, de modo que una CLI global con otro bundle ya no puede desviar el recibo. El smoke aislado cubrió 8 hosts + `agents`, 9 bundles idénticos y 144 wrappers. Bundle `w` **13.23.0**.
