@@ -92,6 +92,33 @@ export interface HarnessGlobalMcpPaths {
   win32: string;
 }
 
+/**
+ * How a person reaches a top-level capability skill ON THIS HOST.
+ *
+ * Discovery renders this and nothing else. Announcing `/design` on a host that
+ * has no slash form is worse than saying nothing: the person types it, gets
+ * silence, and concludes the capability is broken. So the form is DATA, verified
+ * per host, and a host that cannot load a top-level skill declares `null` rather
+ * than borrowing another host's syntax.
+ *
+ * `template` carries `<name>` as the placeholder, the same convention `~` uses
+ * for home in this file.
+ */
+export interface HarnessInvocation {
+  /** `slash` = a typed command form. `mention` = the model activates it by description. */
+  kind: "slash" | "mention";
+  template: string;
+  /** What this claim rests on. A form nobody verified is a form nobody should print. */
+  note: string;
+}
+
+/** The mention form every host that auto-discovers skills by description shares. */
+const MENTION: HarnessInvocation = {
+  kind: "mention",
+  template: "<name>",
+  note: "las skills se activan por su description: se nombra la capacidad en la conversación",
+};
+
 export interface HarnessSpec {
   id: HarnessId;
   // Long label every projection renders (TUI cards, docs tables, CLI describes).
@@ -131,6 +158,11 @@ export interface HarnessSpec {
   skillsDirs: readonly string[];
   // Primary install destination used by install-skill
   installTarget: InstallTarget;
+  /**
+   * The form a capability skill is really invoked with here, or null when this
+   * host cannot load a top-level skill at all. Discovery prints exactly this.
+   */
+  invocation: HarnessInvocation | null;
 }
 
 export const HARNESSES: readonly HarnessSpec[] = [
@@ -154,6 +186,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     pluginHooksDir: "hooks",
     skillsDirs: [".claude/skills"],
     installTarget: "claude",
+    invocation: MENTION,
   },
   {
     id: "codex",
@@ -184,6 +217,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // secondary for older builds. Verified vs developers.openai.com/codex/skills.
     skillsDirs: [".agents/skills", ".codex/skills"],
     installTarget: "codex",
+    invocation: MENTION,
   },
   {
     // Detection: OZ_RUN_ID takes priority over warp markers to handle overlap.
@@ -207,6 +241,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     pluginHooksDir: null,
     skillsDirs: [".agents/skills"],
     installTarget: "oz",
+    invocation: MENTION,
   },
   {
     id: "warp",
@@ -238,6 +273,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // (skill-as-command). See install-skill.ts:synthesizeCommandSkills.
     skillsDirs: [".warp/skills", ".agents/skills", ".claude/skills", ".codex/skills"],
     installTarget: "warp",
+    invocation: MENTION,
   },
   {
     // Gemini CLI (deprecated mid-2026) + Antigravity CLI (`agy`, successor;
@@ -277,6 +313,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     pluginHooksDir: null, // Extension-bundled hooks (BeforeTool) — Phase 2
     skillsDirs: [".agents/skills", ".gemini/skills"],
     installTarget: "gemini",
+    invocation: MENTION,
   },
   {
     // OpenCode (sst/opencode). Config `opencode.json` ($schema); MCP under `mcp`
@@ -301,6 +338,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     pluginHooksDir: null,
     skillsDirs: [".opencode/skills", ".agents/skills", ".claude/skills"],
     installTarget: "opencode",
+    invocation: MENTION,
   },
   {
     // Crush (charmbracelet/crush). Config `crush.json` ($schema charm.land/crush.json);
@@ -336,6 +374,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       ".claude/skills",
     ],
     installTarget: "crush",
+    invocation: MENTION,
   },
   {
     // Kimi Code (MoonshotAI) — successor of the Python `kimi-cli`, shipped as a
@@ -376,6 +415,14 @@ export const HARNESSES: readonly HarnessSpec[] = [
     pluginHooksDir: null, // Its hooks live in config.toml, not in a plugin dir.
     skillsDirs: [".kimi-code/skills", ".agents/skills"],
     installTarget: "kimi",
+    // The one host with a VERIFIED typed form: a skill dropped in
+    // ~/.agents/skills was listed and invoked this way (probe 2026-07-29, the
+    // same one `COMMAND_SKILLS_HOSTS` rests on).
+    invocation: {
+      kind: "slash",
+      template: "/skill:<name>",
+      note: "probe 2026-07-29: las skills SON la superficie de comandos de Kimi Code",
+    },
   },
 ] as const satisfies readonly HarnessSpec[];
 

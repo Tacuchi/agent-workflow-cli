@@ -4,8 +4,10 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
+import { DESIGN_DESCRIPTOR } from "../../domain/design/capability.js";
 import { type InstallTarget, harnessByInstallTarget } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
+import { installCapabilitySkill } from "../capability/wrapper.js";
 import { copyDir, hasValidFrontmatter } from "./install-plugin-skills.js";
 import {
   COMMAND_SKILLS_HOSTS,
@@ -54,6 +56,10 @@ export interface SelfInstallTargetResult {
   /** Synthesized `w-<command>` skill-as-command wrappers (COMMAND_SKILLS_HOSTS). */
   command_skills?: number;
   command_skills_warnings?: string[];
+  /** Top-level capability skill installed here (the direct entrypoint). */
+  capability_skill?: string;
+  /** A foreign skill occupies the name: preserved, never overwritten. */
+  capability_skill_conflict?: string;
   error?: string;
 }
 
@@ -526,6 +532,14 @@ async function installOneTarget(
     cache_cleared: cacheOutcome.cleared,
   };
   if (cacheOutcome.warning !== undefined) entry.cache_clear_warning = cacheOutcome.warning;
+  // The capability wrapper is NOT a command wrapper: it is the physical
+  // entrypoint of a capability, and every host can load it. So it installs on
+  // all of them, and `--skill-only` does not skip it — skipping it would leave
+  // the capability declared and unreachable.
+  const capability = await installCapabilitySkill(dirname(dest), DESIGN_DESCRIPTOR);
+  if (capability.ok) entry.capability_skill = DESIGN_DESCRIPTOR.name;
+  else
+    entry.capability_skill_conflict = `${capability.failure.message} — ${capability.failure.action}`;
   if (!flags.skipCommands) {
     // Synthesized w-* wrappers ARE the command surface on COMMAND_SKILLS_HOSTS,
     // so --skill-only / --no-commands skips them exactly like native wrappers.

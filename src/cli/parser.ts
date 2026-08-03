@@ -43,6 +43,9 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   // many signals as it carries, and a host declares as many capabilities as it has.
   "signal",
   "capability",
+  // Repeated `--input` (capability): an operation takes as many inputs as its
+  // descriptor declares, and a single-value routing would keep only the last.
+  "input",
 ]);
 
 // Flag names (without leading `--`) that are booleans: their presence is the

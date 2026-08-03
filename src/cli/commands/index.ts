@@ -6,6 +6,7 @@
 
 import type { QtcCommand } from "../registry.js";
 import { bootstrapDsnCommand } from "./bootstrap-dsn.js";
+import { capabilityCommand } from "./capability.js";
 import { checkBranchCommand } from "./check-branch.js";
 import { checkpointReadCommand } from "./checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-write.js";
@@ -72,6 +73,7 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   contextBudgetCommand,
   contextPlanCommand,
   skillsCommand,
+  capabilityCommand,
   designsCommand,
   sourcesCommand,
   generateLaunchCommand,

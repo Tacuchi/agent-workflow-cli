@@ -4,7 +4,9 @@ import { isDeepStrictEqual } from "node:util";
 import { parse as parseToml } from "smol-toml";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
+import { DESIGN_DESCRIPTOR } from "../../domain/design/capability.js";
 import type { CommandResult } from "../../domain/types.js";
+import { uninstallCapabilitySkill } from "../capability/wrapper.js";
 import {
   countOurHookEntries,
   isOurCommand,
@@ -198,6 +200,10 @@ async function uninstallOneTarget(
 ): Promise<UninstallStep[]> {
   const steps: UninstallStep[] = [];
   steps.push(...(await removeSkill(ctx, home, target, flags.includeLegacy, flags.dryRun)));
+  // Symmetric with install: the capability wrapper goes on every host and is
+  // NOT a command wrapper, so it is not gated by `--no-commands`. Ownership is
+  // fail-closed — a foreign skill under that name is reported, never deleted.
+  steps.push(...(await removeCapabilitySkill(ctx, home, target, flags.dryRun)));
   if (!flags.skipCommands) {
     // Synthesized w-* wrappers ARE the command surface on codex/warp/oz —
     // gated like the native command dirs (mirror of installOneTarget).
@@ -209,6 +215,26 @@ async function uninstallOneTarget(
     if (hookStep !== null) steps.push(hookStep);
   }
   return steps;
+}
+
+async function removeCapabilitySkill(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep[]> {
+  const targetRoot = join(home, ...TARGET_ROOTS[target]);
+  const path = join(targetRoot, DESIGN_DESCRIPTOR.name);
+  if (!(await ctx.fs.exists(path))) return [];
+  if (dryRun) return [{ target, kind: "skill", path, status: "dry-run" }];
+
+  const outcome = await uninstallCapabilitySkill(targetRoot, DESIGN_DESCRIPTOR.name);
+  if (!outcome.ok) {
+    // Someone else's skill wearing the name. Preserved, and said out loud: a
+    // silent skip would read as "there was nothing there".
+    return [{ target, kind: "skill", path, status: "skipped", reason: outcome.failure.message }];
+  }
+  return outcome.removed ? [{ target, kind: "skill", path, status: "removed" }] : [];
 }
 
 async function removeSynthesizedCommandSkills(

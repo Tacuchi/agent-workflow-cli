@@ -60,6 +60,9 @@ const GROUPS: readonly CommandGroup[] = [
       // The durable design taxonomy: which UI Design Packages exist and where
       // they live right now (identity resolves, the path is only a hint).
       "designs",
+      // The shared entry into a conformant capability: both routes — the direct
+      // wrapper and a composing flow — reach the handlers through here.
+      "capability",
       "resume-summary",
       "next-number",
       // Context budget & read-set resolution (spec 009): what a command costs
