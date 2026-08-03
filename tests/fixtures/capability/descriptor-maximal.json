@@ -1,0 +1,124 @@
+{
+  "contract_version": 1,
+  "name": "example-capability",
+  "purpose": "fixture maximal: ejerce cada campo que el contrato transversal declara",
+  "exposure": ["direct", "compose"],
+  "default_operation": "inspect",
+  "operations": [
+    {
+      "name": "inspect",
+      "summary": "juzga sin escribir",
+      "exposure": ["direct", "compose"],
+      "workspace": "optional",
+      "interaction": "single_pass",
+      "inputs": [
+        {
+          "name": "target",
+          "kind": "reference",
+          "required": true,
+          "sensitivity": "public",
+          "schema": "workline.design-manifest/v1"
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false,
+          "sensitivity": "sensitive",
+          "schema": null
+        }
+      ],
+      "output": {
+        "kind": "value",
+        "schema": null,
+        "completeness": ["complete"]
+      },
+      "effects": [
+        {
+          "class": "read_only",
+          "idempotent": true,
+          "authorization": "invocation",
+          "approval": "none"
+        }
+      ],
+      "off": "allowed"
+    },
+    {
+      "name": "publish",
+      "summary": "produce una revisión durable y puede alcanzar un proveedor externo",
+      "exposure": ["compose"],
+      "workspace": "required",
+      "interaction": "needs_input",
+      "inputs": [
+        {
+          "name": "base",
+          "kind": "selection",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "evidence",
+          "kind": "attachment",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        }
+      ],
+      "output": {
+        "kind": "value_and_reference",
+        "schema": "workline.design-baseline/v1",
+        "completeness": ["complete", "partial"]
+      },
+      "effects": [
+        {
+          "class": "local_additive",
+          "idempotent": false,
+          "authorization": "invocation",
+          "approval": "none"
+        },
+        {
+          "class": "mutate_overwrite",
+          "idempotent": false,
+          "authorization": "preflight",
+          "approval": "visible"
+        },
+        {
+          "class": "execute",
+          "idempotent": true,
+          "authorization": "preflight",
+          "approval": "visible"
+        },
+        {
+          "class": "network_external",
+          "idempotent": false,
+          "authorization": "preflight",
+          "approval": "visible"
+        },
+        {
+          "class": "destructive",
+          "idempotent": false,
+          "authorization": "preflight",
+          "approval": "visible"
+        }
+      ],
+      "off": "blocked"
+    }
+  ],
+  "floor": {
+    "builtin": true,
+    "kind": "core",
+    "improvements": "host_selected"
+  },
+  "degradations": [
+    { "cause": "opaque_selection", "action": "floor" },
+    { "cause": "incompatible_improvement", "action": "reject" },
+    { "cause": "invalid_binding", "action": "floor" },
+    { "cause": "digest_changed", "action": "floor" }
+  ],
+  "compatibility": {
+    "status": "active",
+    "minimum_contract_version": 1,
+    "retired_names": ["legacy-example"],
+    "retired_formats": ["legacy-example:output"]
+  }
+}

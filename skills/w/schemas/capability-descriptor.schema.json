@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workline.dev/schemas/capability-descriptor.schema.json",
+  "title": "Workline capability descriptor v1",
+  "description": "The cross-cutting contract an Agent Skill declares to become invocable by Workline. Not a design format and not part of the UI Design Package catalog: it says what a capability IS — operations, inputs, outputs, context, interaction, effects, floor, degradations, off policy and retirement — for any capability, design included.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "name",
+    "purpose",
+    "exposure",
+    "default_operation",
+    "operations",
+    "floor",
+    "degradations",
+    "compatibility"
+  ],
+  "properties": {
+    "contract_version": {
+      "description": "Version of THIS contract, not of the skill. An unknown value stops validation before any field is read.",
+      "const": 1
+    },
+    "name": {
+      "description": "The capability's only public identity. There is no parallel role ID: the binding slot and the capability are one name.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "purpose": {
+      "description": "What the capability resolves, in one sentence. Discovery and generated help derive from here rather than restating it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "exposure": {
+      "description": "Routes the capability opens. A skill declaring neither gets no Workline surface — installing a utility does not make it a capability.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["direct", "compose"] }
+    },
+    "default_operation": {
+      "description": "Operation assumed when a caller names none. Null when every invocation must be explicit.",
+      "type": ["string", "null"],
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "operations": {
+      "description": "The finite operation catalog. Anything outside it is refused, never improvised.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "summary",
+          "exposure",
+          "workspace",
+          "interaction",
+          "inputs",
+          "output",
+          "effects",
+          "off"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exposure": {
+            "description": "Routes this operation answers on. Always a subset of the capability's own exposure.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "enum": ["direct", "compose"] }
+          },
+          "workspace": {
+            "description": "Whether the operation needs a Workline workspace. Being outside one returns an explicit result and never initializes Workline implicitly.",
+            "enum": ["required", "optional", "standalone"]
+          },
+          "interaction": {
+            "description": "Whether one attempt is the whole conversation, or the operation may answer `needs_input` and continue.",
+            "enum": ["single_pass", "needs_input"]
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "kind", "required", "sensitivity", "schema"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "kind": { "enum": ["text", "reference", "attachment", "selection"] },
+                "required": { "type": "boolean" },
+                "sensitivity": {
+                  "description": "Reading a sensitive source is never authorized by the invocation alone.",
+                  "enum": ["public", "sensitive"]
+                },
+                "schema": {
+                  "description": "Canonical format id when the input is schema-bearing, else null.",
+                  "type": ["string", "null"],
+                  "pattern": "^[a-z][a-z0-9.-]*/v[1-9][0-9]*$"
+                }
+              }
+            }
+          },
+          "output": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "schema", "completeness"],
+            "properties": {
+              "kind": {
+                "description": "A typed value, a durable reference, or both. Host prose is never the payload a flow consumes.",
+                "enum": ["value", "reference", "value_and_reference"]
+              },
+              "schema": {
+                "type": ["string", "null"],
+                "pattern": "^[a-z][a-z0-9.-]*/v[1-9][0-9]*$"
+              },
+              "completeness": {
+                "description": "Completeness values this operation may report. A dimension separate from the outcome: `completed` still requires the requested profile's completeness.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "enum": ["complete", "partial"] }
+              }
+            }
+          },
+          "effects": {
+            "description": "Every class of effect the operation may exercise. An undeclared effect is never exercised, so `read_only` is a declaration and not the absence of one.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["class", "idempotent", "authorization", "approval"],
+              "properties": {
+                "class": {
+                  "enum": [
+                    "read_only",
+                    "local_additive",
+                    "mutate_overwrite",
+                    "execute",
+                    "network_external",
+                    "destructive"
+                  ]
+                },
+                "idempotent": { "type": "boolean" },
+                "authorization": {
+                  "description": "Granted by the invocation itself, or by a preflight the human sees first.",
+                  "enum": ["invocation", "preflight"]
+                },
+                "approval": { "enum": ["none", "visible"] }
+              }
+            }
+          },
+          "off": {
+            "description": "What binding the capability `off` does to this operation. Never reverted by a host, a wrapper or a legacy name.",
+            "enum": ["blocked", "allowed"]
+          }
+        }
+      }
+    },
+    "floor": {
+      "description": "What runs with nothing installed. A capability a core gate needs carries its own implementation, so a missing external skill never blocks SPEC, PLAN or QUICK.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["builtin", "kind", "improvements"],
+      "properties": {
+        "builtin": { "type": "boolean" },
+        "kind": { "enum": ["core", "feature"] },
+        "improvements": {
+          "description": "`host_selected` means the host decides which compatible improvements contribute and in what order; Workline imposes no universal precedence.",
+          "enum": ["host_selected", "none"]
+        }
+      }
+    },
+    "degradations": {
+      "description": "The observable reasons a run may fall back, and what each one does. A cause not declared here is not a degradation, it is a failure.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cause", "action"],
+        "properties": {
+          "cause": {
+            "enum": [
+              "opaque_selection",
+              "incompatible_improvement",
+              "invalid_binding",
+              "digest_changed"
+            ]
+          },
+          "action": { "enum": ["floor", "reject"] }
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "minimum_contract_version", "retired_names", "retired_formats"],
+      "properties": {
+        "status": { "enum": ["active", "deprecated"] },
+        "minimum_contract_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retired_names": {
+          "description": "Names that are NOT aliases. A binding, invocation or descriptor using one fails with guidance to adopt the live name; it never resolves silently.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+          }
+        },
+        "retired_formats": {
+          "description": "Formats unsupported as a source: never read, imported, converted or migrated, and unable to satisfy a gate. The files themselves are left intact.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
