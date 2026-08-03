@@ -168,7 +168,7 @@ Role catalog and defaults:
 | `diagrams` | `diagrams` | should | `export-diagrams` |
 | `overview` | `w` | should | anyone (orientation) |
 
-> † **`design` is the identity; the loops have not moved yet.** The row states the composition the loops will have once they land `## Design references` and exact roots. Today they still produce the legacy render (`## UI spec`, per-screen design SPECs) by naming `ui-spec` directly — which is bound to nothing and is retired, with no alias, in the last phase of plan 012. See [roles/README.md](roles/README.md).
+> † **The composing loops already land references, not design.** `spec-refine` keeps `## Design references` and the plan loops promote the closure they implement and pin exact roots. `ui-spec` is bound to nothing, no loop invokes it, and its files are retired — with no alias — in the last phase of plan 012. See [roles/README.md](roles/README.md).
 >
 > **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [roles/README.md](roles/README.md).
 
@@ -201,7 +201,7 @@ One language per plane — never mix them:
 ### The 6 hard invariants
 
 1. **No auto-export** — loops never graduate/export to `docs/`. Only `export-*` does, explicitly.
-2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` and `docs/research` belong to no flow: `docs/tools` is written by the ambient skill `creating-tools`; `docs/research` by `/w:persist` or direct no-flow authoring.)
+2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`, **plus `docs/designs` for whichever loop composes the `design` capability** (spec-refine and the plan loops publish the package; `plan-exec` only reads it). (`docs/tools` and `docs/research` belong to no flow: `docs/tools` is written by the ambient skill `creating-tools`; `docs/research` by `/w:persist` or direct no-flow authoring.)
 3. **The spec and the plan are documents** (`docs/`), not session artifacts. *(Not to be confused with the **UI Design Package** the `design` capability produces under `docs/designs/NNN-design-<slug>/`: a durable dossier a spec **references** by baseline and digest — see [`roles/design/ROLE.md`](roles/design/ROLE.md) — it is not the requirement-spec.)*
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations stay in `SCRIPTS.sql` and the user applies them. Only read-only reads via MCP.
 5. **Safe git** — expected branch verified before editing; proposed commits per source; never `push`/`--amend`/`--no-verify`.

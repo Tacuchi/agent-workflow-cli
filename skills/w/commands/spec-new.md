@@ -76,7 +76,7 @@ Assumed facts.
 Pending doubts. ← the spec-refine-loop closes them.
 ```
 
-> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## UI spec` (if there is UI) + `## Decisions`, and may add `## Affected capabilities` / `## Behavioral changes` right after `Context` when the change touches behavior that already exists (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md); the refine drops `Open questions` when it empties). Draft and refined spec share the same skeleton and order.
+> **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## Design references` (if there is UI) + `## Decisions`, and may add `## Affected capabilities` / `## Behavioral changes` right after `Context` when the change touches behavior that already exists (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md); the refine drops `Open questions` when it empties). Draft and refined spec share the same skeleton and order.
 
 **Filling notes:**
 
@@ -88,7 +88,7 @@ Pending doubts. ← the spec-refine-loop closes them.
 - **The code found never widens `Scope`** and never becomes a requirement: **acceptance criteria derive from the user's intent**. The reconnaissance may lend vocabulary, name existing actors and boundaries, and avoid obvious contradictions. It must not invent behavior nobody asked for, turn a current technical decision into a user requirement, or impose an implementation as a criterion.
 - **Acceptance criteria = static testable criteria** (the "what"): `plan-exec` validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]`; the spec never mutates by execution, only by a re-refine.
 - **Scenarios = behavior made concrete** (uppercase GIVEN/WHEN/THEN/AND): draft them only when the prompt already describes behavior — deriving the rest is spec-refine work. A scenario earns its place only when it adds GIVEN setup or edge semantics the criterion does not capture — **never restate a criterion 1:1**.
-- If **UI** is involved, mention it in `Requirement`/`Context`; `## UI spec` is authored in `spec-refine` (via the legacy `ui-spec` skill). "UI unspecified" is a first-class refinement gap.
+- If **UI** is involved, **record the need and stop there**: mention it in `Requirement`/`Context`. This command creates **no design package** and writes no `## Design references` — the design is composed in `spec-refine` (via the [`design`](../roles/design/ROLE.md) capability, which publishes the package the spec then references). Minting a package from a draft would pin an identity before the requirement is even closed. "UI unspecified" is a first-class refinement gap.
 - The **gaps** the loop detects = weak sections of the schema (vague Requirement, Scope without `Out`, untestable criteria, open questions, undeclared assumptions, contradictions) **+ UI unspecified** when the requirement involves UI.
 - Equivalent alternative: the user writes the draft by hand. Both paths produce the same file.
 

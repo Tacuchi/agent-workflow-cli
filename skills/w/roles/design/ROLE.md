@@ -195,15 +195,17 @@ in the document is what the package exists to end.
 binding, [`../ui-spec/ROLE.md`](../ui-spec/ROLE.md), the spec's `## UI spec`
 section and per-screen design SPECs as session artifacts.
 
-**Now**: the public identity is `design` and the package above is the only
-format this contract accepts. The legacy *documents* stay physically present and
-readable, and the composing loops still land the legacy render, so no
-intermediate state leaves Workline without design capability.
+**Now**: the public identity is `design`, the package above is the only format
+this contract accepts, and the composing loops land only `## Design references`
+and exact roots — `spec-refine` opens the `outline` revision, the plan loops
+promote the closure they implement. The legacy *documents* stay physically
+present and readable, so nothing that was written before breaks, but no loop
+takes that path any more.
 
-**After**: the loops land only `## Design references` and exact roots; then the
-legacy surfaces are reported `retired/unsupported` — not read as a contract, not
-imported, not converted, not migrated — while their files are preserved byte for
-byte. There is no alias and no dual-read at any point.
+**After**: `plan-exec` gates on those references, and then the legacy surfaces are
+reported `retired/unsupported` — not read as a contract, not imported, not
+converted, not migrated — while their files are preserved byte for byte. There is
+no alias and no dual-read at any point.
 
 ## Source
 

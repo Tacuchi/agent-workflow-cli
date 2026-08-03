@@ -41,4 +41,4 @@ ask about units.
 - `resume` — a prior refinement of this plan may exist → [`../modules/PLAN-REFINE-KEYS.md`](../modules/PLAN-REFINE-KEYS.md)
 - `replan` — work already executed has to be re-planned around → [`../modules/REPLANNING.md`](../modules/REPLANNING.md)
 - `simulation` — the change carries temporary behavior, so **only when** it does, its boundary is declared → [`../modules/SIMULATION-LIFECYCLE.md`](../modules/SIMULATION-LIFECYCLE.md)
-- `ui` — the refine touches UI → [`../modules/PLAN-REFINE-DESIGN-SPECS.md`](../modules/PLAN-REFINE-DESIGN-SPECS.md)
+- `ui` — the refine touches UI, so it revises only the artifacts it affects → [`../modules/DESIGN-REFERENCES.md`](../modules/DESIGN-REFERENCES.md)

@@ -1,8 +1,8 @@
 # NNN-SPEC-<SLUG>.md — design SPEC (UI)
 
-> **LEGACY — being retired.** The public design capability is **`design`** ([`roles/design/ROLE.md`](../../roles/design/ROLE.md)), whose only output is the **UI Design Package v1** under `docs/designs/`. This per-screen artifact is **not** that format and **not** produced by that capability: it is the previous path, kept breathing only so no intermediate release leaves the loops without design. It is composed by naming the legacy [`ui-spec`](../../roles/ui-spec/ROLE.md) skill **directly** — `ui-spec` is not bound to `design`, and `ui-design` is no longer a role. Both this artifact and that skill are **retired** in the last phase of plan 012, with no alias, dual-read, importer or migration.
+> **RETIRED — no loop produces or reads this.** The public design capability is **`design`** ([`roles/design/ROLE.md`](../../roles/design/ROLE.md)), whose only output is the **UI Design Package v1** under `docs/designs/`. The composing loops land `## Design references` and exact roots over that package; **none of them authors a per-screen design SPEC any more**. This schema is documented only so a file written before the change can still be read by whoever finds it. The file itself, and [`ui-spec`](../../roles/ui-spec/ROLE.md), are **deleted** in the last phase of plan 012 — with no alias, dual-read, importer or migration.
 
-> What it is: the **design specification of ONE screen** (modal, dashboard, form, …), produced when the **plan includes UI**. It is a **session artifact** of the PLAN loops (`plan-new-loop` · `plan-refine-loop`) — process-facing, internal — and `plan-exec-loop` reads it as the **design reference** when implementing the UI tasks.
+> What it *was*: the **design specification of ONE screen** (modal, dashboard, form, …), produced as a **session artifact** of the PLAN loops when the plan included UI, and read by `plan-exec-loop` as the design reference. Everything below describes that historical form in the past tense.
 >
 > **It is NOT the spec.** The requirement-spec (`docs/specs/NNN-spec-<slug>.md`) and the plan remain **documents** (invariant 3). The design SPEC is a different thing: the per-screen UI design detail, ephemeral and process-facing, living inside the session. Spelling disambiguates: `SPEC` (UPPERCASE, artifact) vs `spec` (lowercase, document).
 
@@ -38,7 +38,7 @@ Trace header (blockquote) + the [`ui-spec`](../../roles/ui-spec/ROLE.md) Markdow
 
 ## Rules
 
-1. Authored by the legacy **`ui-spec`** skill, named directly — **not** resolved through a role, and **not** rebindable: the only rebindable design slot is `design`, which does not produce this format.
-2. The **plan-doc references** the path of the governing SPEC (in its UI Tasks / `Solution`): that reference is the **source of truth** for which SPEC governs each screen. A re-refine that changes a screen produces the updated SPEC **in its own session** (each loop manages the artifacts of ITS session) and re-points the plan reference.
-3. **Derives** from the spec's `## UI spec` section when present: splits it per screen and elevates it to executable detail; a SPEC↔`## UI spec` contradiction is a **gap** (plan↔spec drift). If the spec has no `## UI spec`, it is authored from the `Requirement` via structured-choice (design system, theme, screen ambiguities).
-4. Ephemeral and internal like every artifact: promotion to `docs/` happens **only** via `export-*` (never automatically by the loop).
+1. It **was** authored by the **`ui-spec`** skill, named directly — never resolved through a role. `ui-spec` is bound to nothing and no loop invokes it.
+2. The plan-doc **used to reference** the path of the governing SPEC in its UI Tasks. A plan written today pins an **exact root** instead (`DES-001@r4 / SCR-002@r2#empty`), which resolves by identity and digest rather than by a session path that dies with its session.
+3. It **used to derive** from the spec's `## UI spec` section. A spec written today keeps `## Design references` and no design at all.
+4. It was ephemeral and internal like every artifact. The package that replaced it is the opposite by design: durable, versioned, and living in `docs/designs/` from the moment it is published.

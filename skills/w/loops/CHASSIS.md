@@ -134,7 +134,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 ## docs/ boundary — no auto-export (hard rule)
 
-A loop writes into `docs/` **only** its own flow's doc (spec-refine: `docs/specs` · the three plan flows: `docs/plans` · quick: **none** — it never touches `docs/`). No loop **graduates/promotes artifacts** into `docs/`: migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are done by the separate **`export-*`** skills, as an explicit later step; artifacts stay in their sessions until then. A task that creates a tool/utility has it documented in `docs/tools` by the ambient `creating-tools` skill (auto-discovered; Workline does not bind it).
+A loop writes into `docs/` **only** its own flow's doc (spec-refine: `docs/specs` · the three plan flows: `docs/plans` · quick: **none** — it never touches `docs/`) plus, when it composes a capability whose own deliverable is a `docs/` category, that category — today only the **UI Design Package** under `docs/designs` (`design`). **Published, never graduated**: the test is the origin, not the folder. No loop **graduates/promotes artifacts** into `docs/`: migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are done by the separate **`export-*`** skills, as an explicit later step; artifacts stay in their sessions until then. A task that creates a tool/utility has it documented in `docs/tools` by the ambient `creating-tools` skill (auto-discovered; Workline does not bind it).
 
 ## Conditional modules
 

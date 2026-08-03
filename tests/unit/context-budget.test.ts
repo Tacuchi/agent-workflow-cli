@@ -75,6 +75,19 @@ describe("context measurement — the instrument the gates read", () => {
     expect(result.execution.journeys).toHaveLength(6);
   });
 
+  it("el bundle vivo respeta CADA techo de ratio, no solo el baseline", async () => {
+    // Hasta ahora nada aseveraba el techo: el test de arriba compara contra el
+    // BASELINE, que es ~33 % más laxo que el target derivado. Así el árbol podía
+    // pasar de su presupuesto real y solo un `aw context-budget` a mano lo veía.
+    // Evidencia de T9.5 del plan 012: el MANIFEST creció y sigue cumpliendo.
+    const result = await runContextBudget(fs, {
+      root: BUNDLE_ROOT,
+      baselinePath: BASELINE_PATH,
+    });
+    expect(result.offenders).toEqual([]);
+    expect(result.verdict).toBe("ok");
+  });
+
   it("declares tokens unavailable instead of inventing an equivalence with bytes", async () => {
     const result = await runContextBudget(fs, { root: BUNDLE_ROOT });
     expect(result.tokens.available).toBe(false);

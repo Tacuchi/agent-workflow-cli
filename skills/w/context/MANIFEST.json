@@ -101,6 +101,10 @@
           "signal": "resume"
         },
         {
+          "path": "modules/DESIGN-REFERENCES.md",
+          "signal": "ui"
+        },
+        {
           "path": "modules/IDEATION-GATE.md",
           "signal": "web",
           "requires": "web-research"
@@ -152,6 +156,10 @@
         {
           "path": "modules/INCREMENTAL-STRATEGY.md",
           "signal": "split"
+        },
+        {
+          "path": "modules/DESIGN-REFERENCES.md",
+          "signal": "ui"
         },
         {
           "path": "modules/PLAN-DESIGN-SPECS.md",
@@ -217,6 +225,10 @@
         {
           "path": "modules/INCREMENTAL-STRATEGY.md",
           "signal": "split"
+        },
+        {
+          "path": "modules/DESIGN-REFERENCES.md",
+          "signal": "ui"
         },
         {
           "path": "modules/PLAN-REFINE-DESIGN-SPECS.md",

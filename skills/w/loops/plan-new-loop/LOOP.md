@@ -5,8 +5,8 @@ description: >-
   spec. Heir of the chassis (loops/CHASSIS.md). Deltas: the plan absorbs the
   TECHNICAL-NOTE level + Tasks phased by verifiable functional state
   (### Fn blocks with live state),
-  code/impact-mapping research, planning gap taxonomy, and per-screen design
-  SPECs via the legacy ui-spec skill
+  code/impact-mapping research, planning gap taxonomy, and promotion of the
+  design closure to handoff via `design`
   when the plan includes UI. If the spec is not refined it suggests
   spec-refine first. Started by /w:plan-new; resumable. Invoke when a spec
   must become an executable plan.
@@ -29,7 +29,7 @@ PLAN
 `docs/specs/NNN-spec-*.md` (glob — locates the spec by number; or the exact path from the command argument). **Ready vs not** is read from the spec's frontmatter `status`: `ready-for-plan` → proceed (legacy compat: a frontmatter-less spec carrying `## Refinement decisions`, or the older `## Q&A traceability`, counts as ready). Otherwise → **soft-suggest** running `/w:spec-refine` first (planning over a solid spec produces better plans), **never a block**: the user may proceed. Questions the spec left with destination `PLAN` are **input to this loop**, not a reason to send it back.
 
 ## Writes
-`docs/plans/PPP-plan-<slug>.md` (`generate`; **overwrites with confirmation** if it exists) — or **several sibling plans** when an accepted split applies (§ *Split gate (multi-plan)*). It writes only `docs/plans` — never other `docs/` folders, no auto-export. If the plan **includes UI**, it also produces **design SPECs** (`NNN-SPEC-<SLUG>.md`) as artifacts **of its session** (see *Delta 4* — they are not `docs/`, no auto-export).
+`docs/plans/PPP-plan-<slug>.md` (`generate`; **overwrites with confirmation** if it exists) — or **several sibling plans** when an accepted split applies (§ *Split gate (multi-plan)*). With UI, also the design revision it publishes under `docs/designs` (chassis § *docs/ boundary*). It never graduates/exports anything else to `docs/` — that is separate `export-*` work.
 
 > **slug**: short kebab-case derived from the spec's Requirement — only `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars. `aw next-number docs/plans` returns JSON (field `next` = `PPP`); the loop builds the full name. To locate plans, glob `docs/plans/PPP-plan-*.md`.
 
@@ -61,6 +61,7 @@ The plan keeps technical detail and roadmap inline:
 ## Solution            the how: brief AS-IS → TO-BE + closing "Final behavior" block (core)
 ## Impacted            FE · BE · DB · APIs · integrations (core)
 ## Dependencies        docs · sources · DBs · sessions · inter-plan order (opt.)
+## Design references   the baselines this plan's roots pin (opt. — only with UI)
 ## Tasks               `### Fn` blocks: the ONLY source of phases (core)
 ## Execution batches   complete phase partition; contract in PLAN-EXECUTION-BATCHES (core)
 ## Validations         cross-cutting validations and constraints (core)
@@ -136,7 +137,7 @@ Replaces the spec gap taxonomy with a planning-oriented one:
 | Missing deps | order unclear | research / human |
 | Spec criteria uncovered | tasks don't trace to acceptance criteria | the AI derives + human confirms |
 | Unaddressed risks | technical risks unmitigated/undeclared | human / **probe** (Delta 5) |
-| UI without design SPEC *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## UI spec` in the spec, or UI tasks) without `NNN-SPEC-*.md` in the session | legacy **`ui-spec`** skill |
+| UI without design *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## Design references` in the spec, or UI tasks) and pins no exact root, or its roots are not `handoff` | **`design`** (promote the closure, pin the roots) |
 
 > **Author the Solution the laziest-that-works way** (chassis § *Minimality*, generative side): reuse what the codebase/stdlib/platform already provides before proposing new abstractions, layers or dependencies — the coherence gate then only *confirms* minimality, never repairs over-engineering after the fact.
 
@@ -160,7 +161,7 @@ plan-new-loop(spec):
     gaps = detect_gaps(work)  (Delta 2 taxonomy)  minus the exhausted ones
     if gaps == ∅: break
     batch ≤3 → seed CHECKPOINT.Pending/Next → resolve each gap:
-      research · human (structured-choice) · probe · ui-spec (legacy)
+      research · human (structured-choice) · probe · design (promote closure + pin roots)
     integrate + update CHECKPOINT
   coherence gate (read-only) = Success criteria green:
     - every spec criterion traces to a phase/task (split: exactly one sibling)
@@ -172,7 +173,7 @@ plan-new-loop(spec):
     - Execution batches partitions every phase once and crosses only eligible boundaries
     - resumable between units and within one through states/checkboxes
     - minimality: no solution/phase/task heavier than Final behavior requires
-    - (UI) every screen/UI task traces to its design SPEC and does not contradict ## UI spec
+    - (UI) every screen/UI task pins an exact root against a declared baseline · that closure is handoff · nothing outside it was promoted
     whatever fails → comes back as a gap
   if split accepted: work = N sibling plans
     structured_choice(content: [Guardar planes, Preguntar algo más], flow: [Compactar, Cerrar])
@@ -198,5 +199,5 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 
 - `split` — the canonical multi-plan gate → `../../modules/PLAN-SPLIT-GATE.md`
 - `split` — the incremental journey shape → `../../modules/INCREMENTAL-STRATEGY.md`
-- `ui` — per-screen design SPECs → `../../modules/PLAN-DESIGN-SPECS.md`
+- `ui` — the design closure to promote and the roots to pin → `../../modules/DESIGN-REFERENCES.md`
 - `probe` — probe (PoC) tasks → `../../modules/PLAN-PROBE-TASKS.md`

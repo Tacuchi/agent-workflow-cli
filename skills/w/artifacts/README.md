@@ -35,7 +35,7 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 
 > **Inline research (any session):** research is **not** a session type. When any session (`refine`/`exec`/`quick`) needs to investigate, it produces research artifacts **inline**: `ANALYSIS-FILE` (optional scratchpad), `CONCLUSIONS`, and read-only `SCRIPTS.sql` (if DB). These are written into the active session — there is no separate research session.
 
-> **Inline design (PLAN sessions):** when the plan **includes UI**, `plan-new-loop`/`plan-refine-loop` invoke the legacy **`ui-spec`** skill and produce **design SPECs** — `NNN-SPEC-<SLUG>.md`, one **per screen** (`001-SPEC-MODAL-EXPORT.md`, `002-SPEC-ADMIN-DASHBOARD.md`), numbering local to the session — inside their own session. The plan-doc **references** them (UI Tasks) and `plan-exec-loop` reads them as the design reference. They are **not** the requirement-spec (invariant 3): they are process artifacts. See [`artifacts-design/`](artifacts-design/).
+> **Design is NOT a session artifact any more.** When a spec or a plan involves UI, the composed [`design`](../roles/design/ROLE.md) capability publishes a **UI Design Package** under `docs/designs/NNN-design-<slug>/` — a durable dossier the spec references by baseline and digest and the plan pins by exact root. Nothing about it lives in a session. The per-screen design SPEC (`NNN-SPEC-<SLUG>.md`) that PLAN sessions used to carry is a **retired** path: its documents stay readable where they were written, and no loop produces or reads one. See [`artifacts-design/`](artifacts-design/).
 
 > **PLAN note (rich plan):** the plan-doc (`docs/plans/PPP-plan.md`) absorbs inline the `TECHNICAL-NOTE` level (`Solution` — summary + AS-IS → TO-BE delta + Final behavior block —, `Impacted`, `Validations`…) **and** the phased `Tasks` (`### Fn` blocks). Therefore exec sessions do **not** carry a `TECHNICAL-NOTE` or own `TASKS` artifact: the technical detail and progress live in the plan-doc (living). `TASKS` remains as an optional artifact for sessions that need their own internal breakdown.
 
@@ -53,7 +53,7 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 |---|---|---|
 | [`artifacts-core/`](artifacts-core/) | common to any session | `SESSION` · `TASKS` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` |
 | [`artifacts-research/`](artifacts-research/) | inline research (any session) | `ANALYSIS-FILE` · `CONCLUSIONS` |
-| [`artifacts-design/`](artifacts-design/) | inline design (PLAN sessions with UI) | `NNN-SPEC-<SLUG>.md` (design SPEC, one per screen) |
+| [`artifacts-design/`](artifacts-design/) | **retired** — design lives in `docs/designs/`, never in a session | `NNN-SPEC-<SLUG>.md` (design SPEC, historical) |
 | [`artifacts-exec/`](artifacts-exec/) | `exec` / `quick` session | `DECISION` · `TECHNICAL-NOTE` (schema reference; absorbed by the plan-doc) |
 
 ---
@@ -61,6 +61,6 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 ## Invariants (hard rules — canonical list: [`../SKILL.md`](../SKILL.md) § *The 6 hard invariants*)
 
 1. **No auto-export**: only `export-*` promotes to `docs/`, explicitly.
-2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans` · QUICK→none.
-3. **Spec and plan are documents**, never session artifacts. *(Design SPECs `NNN-SPEC-<SLUG>.md` are a different thing: per-screen UI artifacts of PLAN sessions — [`artifacts-design/`](artifacts-design/).)*
+2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans` · QUICK→none — plus `docs/designs` for whichever loop composes `design`.
+3. **Spec and plan are documents**, never session artifacts. *(Neither is the **UI Design Package** under `docs/designs/`: a durable dossier the spec references, not the requirement-spec.)*
 4. **DB scripts-only**: never execute DML/DDL; migrations (type B) stay in `SCRIPTS.sql` and ship via `export-scripts`; only read-only queries (type A) run via MCP.

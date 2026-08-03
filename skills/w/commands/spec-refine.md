@@ -35,5 +35,6 @@ Delegates to `spec-refine-loop` (Layer 2), which iterates, closes the blocking g
 `aw context-plan --command spec-refine --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
 
 - `shape` — the loop's change-shape gate fired and you must tell `split` from `replace` → [`../modules/SPEC-CHANGE-SHAPE.md`](../modules/SPEC-CHANGE-SHAPE.md)
+- `ui` — the requirement involves UI, so the spec references a design package instead of containing one → [`../modules/DESIGN-REFERENCES.md`](../modules/DESIGN-REFERENCES.md)
 - `resume` — a prior refinement of this spec may exist → [`../modules/SPEC-REFINE-KEYS.md`](../modules/SPEC-REFINE-KEYS.md)
 - `web` — the solution space looks unexplored and the loop opens its ideation step → [`../modules/IDEATION-GATE.md`](../modules/IDEATION-GATE.md)
