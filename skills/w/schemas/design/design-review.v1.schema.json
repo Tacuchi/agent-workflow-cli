@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workline.dev/schemas/design-review.v1.schema.json",
+  "title": "Workline design review record v1",
+  "description": "An external review of one exact baseline revision. It lives OUTSIDE the baseline it reviews, so no digest is self-referential, and it never grants anything to a later revision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "target",
+    "target_digest",
+    "author",
+    "date",
+    "decision",
+    "evidence",
+    "digest"
+  ],
+  "properties": {
+    "schema": {
+      "const": "workline.design-review/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^REV-(?:[0-9]{3}|[1-9][0-9]{3,})$"
+    },
+    "target": {
+      "description": "The exact baseline this record decides on.",
+      "$ref": "#/$defs/baselineRef"
+    },
+    "target_digest": {
+      "description": "The digest that baseline had. A record decides on BYTES, not on a name.",
+      "$ref": "#/$defs/digest"
+    },
+    "author": {
+      "description": "Who decided, or the role that did.",
+      "type": "string",
+      "minLength": 1
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "decision": {
+      "description": "`proposed` is the state a baseline is born in; only `approved` grants anything.",
+      "enum": ["proposed", "approved", "rejected"]
+    },
+    "evidence": {
+      "description": "Optional: where the decision was taken. Never a substitute for the decision.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "digest": {
+      "description": "SHA-256 of this record's canonical JSON WITHOUT this field.",
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "$defs": {
+    "baselineRef": {
+      "type": "string",
+      "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})@r[1-9][0-9]{0,5}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

@@ -73,7 +73,7 @@ export const ALLOWED_KEYS: AllowedKeys = {
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A date that EXISTS: `2026-13-45` has the shape and is not a day. */
-function isCalendarDate(value: string): boolean {
+export function isCalendarDate(value: string): boolean {
   if (!ISO_DATE_RE.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;

@@ -1,0 +1,11 @@
+{
+  "schema": "workline.design-review/v1",
+  "id": "REV-001",
+  "target": "DES-001@r2",
+  "target_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "author": "rol:diseño",
+  "date": "2026-08-02",
+  "decision": "approved",
+  "evidence": ["docs/specs/013-spec-estandarizar-ui-spec.md"],
+  "digest": "sha256:0a605e8c0a6145e2dbc3db08a54c873b73392ba43837953d4b664e7539120b8f"
+}

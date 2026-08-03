@@ -67,6 +67,35 @@ export function baselinePath(packageId: string, revision: number): string {
  */
 export const PROJECTIONS = ["PACKAGE.md", "design-system/DESIGN.md"];
 
+/**
+ * Where each governance record lives (T7.1).
+ *
+ * Separate from `NAMING` on purpose: a record is not a normative artifact, is
+ * never selected by a baseline, and has no revision of its own — it decides ON
+ * one. Folding it into the same table would hand it a revision segment it must
+ * not have.
+ */
+export const GOVERNANCE_NAMING: Record<"review" | "revocation", { dir: string; prefix: string }> = {
+  review: { dir: "governance/reviews", prefix: "REV-" },
+  revocation: { dir: "governance/revocations", prefix: "RVK-" },
+};
+
+/** `governance/reviews/REV-001.json`, or why the path does not honor the rule. */
+export function checkGovernanceNaming(
+  kind: "review" | "revocation",
+  path: string,
+  id: string,
+): NamingCheck {
+  const rule = GOVERNANCE_NAMING[kind];
+  const expected = `${rule.dir}/${id}.json`;
+  if (path === expected) return { ok: true };
+  return {
+    ok: false,
+    why: `'${path}' no es la ubicación de ${id}`,
+    expected,
+  };
+}
+
 export type NamedKind = keyof typeof NAMING;
 
 export interface NamingCheck {

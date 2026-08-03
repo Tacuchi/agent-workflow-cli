@@ -11,7 +11,7 @@ import {
   parseArtifactRef,
   parseBaselineRef,
 } from "./identity.js";
-import { type NamedKind, baselinePath, checkNaming } from "./naming.js";
+import { type NamedKind, baselinePath, checkGovernanceNaming, checkNaming } from "./naming.js";
 import { secretFailures } from "./secrets.js";
 import {
   type AllowedKeys,
@@ -287,7 +287,7 @@ export function validateDesignManifest(
   const catalog = readCatalog(r, raw, artifact);
   const currentness = readCurrentness(r, raw, artifact, id, catalog);
   checkSupersedesIntegrity(r, artifact, id, catalog);
-  const governance = readGovernance(r, raw, artifact, baselines);
+  const governance = readGovernance(r, raw, artifact, baselines, id);
   const relations = readRelations(r, raw, artifact);
   for (const failure of secretFailures(raw, artifact)) r.failures.push(failure);
 
@@ -820,6 +820,7 @@ function readGovernance(
   raw: Record<string, unknown>,
   artifact: string,
   baselines: BaselineEntry[],
+  packageId: unknown,
 ): DesignGovernance {
   const node = r.read(raw, "governance");
   if (!isRecord(node)) {
@@ -832,8 +833,16 @@ function readGovernance(
   }
   r.closed(node, "governance", artifact);
   return {
-    reviews: readGovernanceList(r, node, artifact, "reviews", "review", baselines),
-    revocations: readGovernanceList(r, node, artifact, "revocations", "revocation", baselines),
+    reviews: readGovernanceList(r, node, artifact, "reviews", "review", baselines, packageId),
+    revocations: readGovernanceList(
+      r,
+      node,
+      artifact,
+      "revocations",
+      "revocation",
+      baselines,
+      packageId,
+    ),
   };
 }
 
@@ -844,11 +853,12 @@ function readGovernanceList(
   key: "reviews" | "revocations",
   kind: DesignArtifactKind,
   baselines: BaselineEntry[],
+  packageId: unknown,
 ): GovernanceEntry[] {
   const out: GovernanceEntry[] = [];
   const seen = new Set<string>();
   for (const entry of eachRecord(r, node, `governance.${key}`, artifact)) {
-    const record = readGovernanceRecord(r, entry, artifact, key, kind, baselines, seen);
+    const record = readGovernanceRecord(r, entry, artifact, key, kind, baselines, seen, packageId);
     if (record !== null) out.push(record);
   }
   return out;
@@ -862,6 +872,7 @@ function readGovernanceRecord(
   kind: DesignArtifactKind,
   baselines: BaselineEntry[],
   seen: Set<string>,
+  packageId: unknown,
 ): GovernanceEntry | null {
   const id = r.read(entry, `governance.${key}[].id`);
   const path = r.read(entry, `governance.${key}[].path`);
@@ -887,9 +898,20 @@ function readGovernanceRecord(
   }
   seen.add(id);
 
-  // El NOMBRE de un record de gobierno es de F7: los records no son archivos
-  // normativos seleccionados por un baseline, así que quedan fuera de AC-PKG-08.
-  checkPackagePath(r, artifact, `governance.${key}[${id}].path`, path);
+  if (checkPackagePath(r, artifact, `governance.${key}[${id}].path`, path)) {
+    // Un record no es un artefacto normativo —no lo selecciona ningún baseline
+    // y no tiene revisión propia— pero su ubicación sí es fija: un índice que
+    // apunta a cualquier lado no permite encontrarlos sin leer el manifest.
+    const kindOf = key === "reviews" ? "review" : "revocation";
+    const naming = checkGovernanceNaming(kindOf, path as string, id);
+    if (!naming.ok) {
+      r.invalid(
+        artifact,
+        `governance.${key}[${id}]: ${naming.why}`,
+        `movelo a '${naming.expected}'`,
+      );
+    }
+  }
   if (!isDigest(digest)) {
     r.invalid(
       artifact,
@@ -903,6 +925,18 @@ function readGovernanceRecord(
       artifact,
       `governance.${key}[${id}]: 'target' debe ser DES-NNN@rN`,
       "un record decide sobre un baseline exacto",
+    );
+    return null;
+  }
+  // El package del target se comprobaba… nunca. Un record de este manifest que
+  // decide sobre el baseline de OTRO package queda indexado acá y obligado a
+  // vivir en esta carpeta: dos afirmaciones que no pueden ser ciertas a la vez.
+  if (ref.package !== packageId) {
+    r.fail(
+      "DESIGN_RELATION_BROKEN",
+      artifact,
+      `governance.${key}[${id}] decide sobre ${String(target)}, que no es de ${String(packageId)}`,
+      "un manifest solo indexa records sobre sus propios baselines",
     );
     return null;
   }

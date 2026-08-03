@@ -1,0 +1,10 @@
+{
+  "schema": "workline.design-revocation/v1",
+  "id": "RVK-001",
+  "target": "DES-001@r2",
+  "target_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "author": "rol:diseño",
+  "date": "2026-08-02",
+  "reason": "el flujo de alta expone el documento de otro miembro en el estado de error",
+  "digest": "sha256:5cd4250b83c9dd9bafb29d00b7eeebd49cb78b522b64d8b4ca336e2c776219c8"
+}

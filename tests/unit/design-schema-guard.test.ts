@@ -9,6 +9,12 @@ import {
   ALLOWED_KEYS as BASELINE_ALLOWED_KEYS,
   validateDesignBaseline,
 } from "../../src/domain/design/baseline.js";
+import {
+  REVIEW_ALLOWED_KEYS,
+  REVOCATION_ALLOWED_KEYS,
+  validateDesignReview,
+  validateDesignRevocation,
+} from "../../src/domain/design/governance.js";
 import { GRAMMAR } from "../../src/domain/design/identity.js";
 import {
   ALLOWED_KEYS as MANIFEST_ALLOWED_KEYS,
@@ -82,6 +88,36 @@ const CONTRACTS: Contract[] = [
       const doc = JSON.parse(read("tests/fixtures/design/baseline-DES-001-r002.json"));
       delete doc[key];
       return validateDesignBaseline(doc, "baselines/DES-001-r002.json");
+    },
+  },
+  {
+    name: "design-review/v1",
+    schemaPath: "skills/w/schemas/design/design-review.v1.schema.json",
+    allowedKeys: REVIEW_ALLOWED_KEYS,
+    run: () =>
+      validateDesignReview(
+        JSON.parse(read("tests/fixtures/design/REV-001-approved.json")),
+        "governance/reviews/REV-001.json",
+      ),
+    runWithout: (key) => {
+      const doc = JSON.parse(read("tests/fixtures/design/REV-001-approved.json"));
+      delete doc[key];
+      return validateDesignReview(doc, "governance/reviews/REV-001.json");
+    },
+  },
+  {
+    name: "design-revocation/v1",
+    schemaPath: "skills/w/schemas/design/design-revocation.v1.schema.json",
+    allowedKeys: REVOCATION_ALLOWED_KEYS,
+    run: () =>
+      validateDesignRevocation(
+        JSON.parse(read("tests/fixtures/design/RVK-001-bloqueo.json")),
+        "governance/revocations/RVK-001.json",
+      ),
+    runWithout: (key) => {
+      const doc = JSON.parse(read("tests/fixtures/design/RVK-001-bloqueo.json"));
+      delete doc[key];
+      return validateDesignRevocation(doc, "governance/revocations/RVK-001.json");
     },
   },
   {
