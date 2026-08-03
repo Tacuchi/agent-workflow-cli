@@ -74,8 +74,17 @@ function renderProposal(proposal: ResumeProposal, detail: boolean): string {
     `  Siguiente  ${proposal.next}`,
     `  Comando    ${proposal.command}`,
   ];
+  // Shown without `--detail`: a reference that does not resolve changes WHICH
+  // command is next, so hiding it behind a flag would hide the actual blocker.
+  for (const design of proposal.design ?? []) {
+    lines.push(`  Diseño     [${design.state}] ${design.baseline}${because(design.detail)}`);
+  }
   if (detail) lines.push(`  Ruta       ${proposal.file}`);
   return lines.join("\n");
+}
+
+function because(text: string | null): string {
+  return text === null ? "" : ` — ${text}`;
 }
 
 function renderCandidates(candidates: ResumeProposal[], action: string, detail: boolean): string {

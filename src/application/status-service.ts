@@ -1,5 +1,6 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { DesignGraph } from "./design/design-graph-service.js";
 import type { PathsService } from "./paths-service.js";
 import {
   type IndexedDiscarded,
@@ -41,6 +42,8 @@ export interface StatusOutput {
   discarded: IndexedDiscarded[];
   /** what is left to do, in priority order — the same list `resume` routes from */
   pipeline: PipelineItem[];
+  /** the design traceability graph, so a broken reference is visible without opening files */
+  designs: DesignGraph;
   counts: {
     specs: number;
     specs_refined: number;
@@ -89,6 +92,7 @@ export async function runStatusCommand(
     sessions: { active, closed },
     discarded: index.discarded,
     pipeline: index.pipeline,
+    designs: index.designs,
     counts: {
       specs: index.specs.length,
       specs_refined: index.specs.filter((s) => s.refined).length,

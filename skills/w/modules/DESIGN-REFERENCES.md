@@ -4,7 +4,7 @@ Loaded when the run involves UI (signal `ui`).
 
 The **UI unspecified** gap is resolved by the [`design`](../roles/design/ROLE.md)
 capability over the **UI Design Package v1**. A spec and a plan **reference** a
-design; neither contains one. The block below is the whole of what they carry.
+design; neither contains one. The block below is all they carry.
 
 ## The reference block
 
@@ -38,10 +38,9 @@ CLI, not graduating a session artifact (chassis § *docs/ boundary*).
 
 1. **Reuse before minting.** `aw designs` lists what the workspace already has; a
    compatible baseline is reused rather than given a second identity.
-2. **Otherwise open an `outline` revision.** `outline` is the correct maturity
-   here, not a shortcut: the spec closes *what* the interface must accomplish and
-   legitimately still holds unknowns. `handoff` is PLAN's call, because PLAN knows
-   what will actually be implemented.
+2. **Otherwise open an `outline` revision.** Not a shortcut: the spec closes *what*
+   the interface must accomplish and legitimately still holds unknowns. `handoff`
+   is PLAN's call — PLAN knows what will actually be implemented.
 3. **Publish, then reference.** Citing a baseline that was never published is the
    dangling reference this contract removes.
 
@@ -59,18 +58,18 @@ right before `## Decisions`.
    screen states its phases will build.
 3. **Compute the closure**: a flow reaches its nodes, a screen its flows, and both
    reach the rules, tokens and assets they depend on. It stops there. `flow_refs`
-   is *not* followed — it records which flows visit a screen, and following it
-   would drag in designs the plan never consumes.
+   is *not* followed — it records which flows visit a screen, so following it drags
+   in designs the plan never consumes.
 4. **Promote exactly that closure to `handoff`**, nothing else. Ten screens in
-   `outline` and three promoted is the normal shape of a package: promoting it
-   wholesale because one task needed one screen makes maturity meaningless.
+   `outline` and three promoted is a package's normal shape; promoting it wholesale
+   because one task needed one screen makes maturity meaningless.
 5. **Publish the revision**, then write the roots.
 
 The plan declares its own `## Design references` — same block — after
 `## Dependencies`, before `## Tasks`. **Its own, not a copy of the spec's**: that
-is what lets a refine move this plan to `@r5` while a sibling plan stays on `@r4`,
-verifiably. A plan whose task pins a baseline it never declared resolves against
-nothing, and says so.
+is what lets a refine move this plan to `@r5` while a sibling stays on `@r4`. A
+plan whose task pins a baseline it never declared resolves against nothing, and
+says so.
 
 Then each phase or task pins the exact roots it consumes:
 
@@ -81,10 +80,17 @@ Then each phase or task pins the exact roots it consumes:
 `<package>@rN / <artifact>@rN[#state]`. Both revisions are mandatory; the anchor
 is optional and only a screen has one. A phase whose tasks share one root may pin
 it once at phase level. Never acceptable: naming `DES-001` without a revision —
-`plan-exec` reports it instead of guessing.
+`plan-exec` reports it instead of guessing. And a rendition never answers for a
+root: an approved image is not the current semantics, nor a conformance claim.
 
-A rendition never answers for a root: an approved image is not the current
-semantics and is not a conformance claim.
+## quick — read it, never rewrite it
+
+`quick` **reads and validates** (`aw designs`, `aw designs --plan`); it changes
+nothing a baseline seals — normative content, a maturity, an approval. A visual
+tweak that turns out to need a new state or a redrawn journey **escalates with the
+evidence it gathered**: `plan-refine` for the package, `spec-refine` when behavior
+or acceptance moves. Editing it silently moves the revision with nobody's approval
+while every consumer stays pinned to the old digest.
 
 ## plan-refine — the delta, and only the delta
 

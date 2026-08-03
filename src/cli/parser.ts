@@ -89,6 +89,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "from-sources",
   "exported-only",
   "confirm-all",
+  "require-approval",
   "skip-claude",
   "skip-codex",
   "skip-warp",

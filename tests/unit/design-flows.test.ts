@@ -557,11 +557,24 @@ describe("el MANIFEST entrega los módulos nuevos y solo bajo su señal (T9.5)",
       ["spec-refine", "modules/DESIGN-REFERENCES.md"],
       ["plan-new", "modules/DESIGN-REFERENCES.md"],
       ["plan-refine", "modules/DESIGN-REFERENCES.md"],
+      // F10: los dos consumidores nuevos — plan-exec para su gate, quick para leer.
+      ["plan-exec", "modules/DESIGN-REFERENCES.md"],
+      ["quick", "modules/DESIGN-REFERENCES.md"],
     ] as const) {
       const entry = commands[command]?.modules.find((m) => m.path === module);
       expect(entry, `${command} → ${module}`).toBeDefined();
       expect(entry?.signal).toBe("ui");
     }
+  });
+
+  it("`ui` ya no entrega ninguna lápida: un módulo que dice «no me sigas» no se carga", async () => {
+    const commands = (await manifest()).commands;
+    const tombstones = Object.entries(commands).flatMap(([command, entry]) =>
+      entry.modules
+        .filter((m) => /DESIGN-SPECS\.md$/.test(m.path))
+        .map((m) => `${command} → ${m.path}`),
+    );
+    expect(tombstones).toEqual([]);
   });
 
   it("no inventa una señal: `ui` ya significaba exactamente este caso", async () => {
@@ -584,6 +597,85 @@ describe("el MANIFEST entrega los módulos nuevos y solo bajo su señal (T9.5)",
         command,
       ).toEqual([]);
     }
+  });
+});
+
+describe("la doctrina de F10: fallar cerrado, avisar, y no rediseñar", () => {
+  it("el gate de plan-exec enumera las cuatro causas de bloqueo y la de aviso (T10.1)", async () => {
+    const gate = await section(
+      "loops/plan-exec-loop/LOOP.md",
+      "## Design precondition gate (fail-closed, per task)",
+    );
+    for (const cause of [
+      /does not resolve/,
+      /digest no longer matches/,
+      /\*\*revoked\*\*/,
+      /does not reach `handoff`/,
+    ]) {
+      expect(gate, String(cause)).toMatch(cause);
+    }
+    expect(gate).toMatch(/names the artifact and the corrective action/);
+    expect(gate).toMatch(/One cause only warns.*superseded/);
+    expect(gate).toMatch(/stays executable/);
+    expect(gate).toMatch(/`plan-exec` never redesigns/);
+    expect(gate).toMatch(/aw designs --plan/);
+  });
+
+  it("y manda la corrección al refine que la posee, nunca a la implementación", async () => {
+    const gate = await section(
+      "loops/plan-exec-loop/LOOP.md",
+      "## Design precondition gate (fail-closed, per task)",
+    );
+    expect(gate).toMatch(/\/w:plan-refine/);
+    expect(gate).toMatch(/\/w:spec-refine.*behavior or acceptance/);
+  });
+
+  it("guardar documento y revisión es UNA transición, y lo no transaccional se declara (T10.4)", async () => {
+    const gate = await section(
+      "loops/plan-exec-loop/LOOP.md",
+      "## Design precondition gate (fail-closed, per task)",
+    );
+    expect(gate).toMatch(/same\*\* all-or-nothing batch/);
+    expect(gate).toMatch(/pending\s+reconciliation/);
+    expect(gate).toMatch(/never reported as published/);
+  });
+
+  it("plan-exec dejó de decir que lee design SPECs de sesión (residuo de F9)", async () => {
+    const text = await flat("loops/plan-exec-loop/LOOP.md");
+    expect(text).not.toMatch(/design SPECs/);
+    expect(text).not.toMatch(/artifacts-design/);
+    expect(text).toMatch(/UI Design Package/);
+    const command = await flat("commands/plan-exec.md");
+    expect(command).not.toMatch(/PLAN-DESIGN-SPECS/);
+    expect(command).toMatch(/modules\/DESIGN-REFERENCES\.md/);
+  });
+
+  it("quick lee y valida, y escalar es la única salida si cambiaría el package (T10.3)", async () => {
+    const rule = await section(
+      "modules/DESIGN-REFERENCES.md",
+      "## quick — read it, never rewrite it",
+    );
+    expect(rule).toMatch(/\*\*reads and validates\*\*/);
+    expect(rule).toMatch(/aw designs/);
+    expect(rule).toMatch(/escalates with the\s+evidence it gathered/);
+    expect(rule).toMatch(/`plan-refine` for the package/);
+    expect(rule).toMatch(/`spec-refine` when behavior\s+or acceptance moves/);
+  });
+
+  it("y su comando distingue leer de escribir en docs/, que es lo que sí puede hacer", async () => {
+    const text = await flat("commands/quick.md");
+    expect(text).toMatch(/It never writes `docs\/`/);
+    expect(text).toMatch(/may READ a design package/);
+    // La frase vieja prohibía leer sin querer: si vuelve, la contradicción vuelve.
+    expect(text).not.toMatch(/It never touches `docs\/`/);
+  });
+
+  it("persist encamina a SPEC primero y no publica una Screen Specification (T10.5)", async () => {
+    const text = await flat("modules/PERSIST-ROUTING.md");
+    expect(text).toMatch(/\*\*Durable UI idea\*\*/);
+    expect(text).toMatch(/`spec` \*\*first\*\*/);
+    expect(text).toMatch(/never a Screen Specification \*instead of\* the Requirement/);
+    expect(text).toMatch(/`persist` writes no package/);
   });
 });
 

@@ -30,8 +30,8 @@ Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + res
 
 ## Two things this command never does
 
-- **It never touches `docs/`** and it exports nothing.
-- **It never re-derives what the conversation already settled.** Analysis already established here is *input*, seeded into the session with `## Origin` = adopted.
+- **It never writes `docs/`** and it exports nothing. It may READ a design package; changing one escalates.
+- **It never re-derives what the conversation already settled** — that analysis is *input* (`## Origin` = adopted).
 
 ## More context
 

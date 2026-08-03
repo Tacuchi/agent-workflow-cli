@@ -1,5 +1,6 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { DesignRefState } from "./design/design-graph-service.js";
 import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { findArtifact } from "./session-artifacts.js";
@@ -45,6 +46,12 @@ export interface ResumeProposal {
   next: string;
   /** the exact command that continues it — presented, never run */
   command: string;
+  /**
+   * Design references of this document that are NOT valid. Absent when the
+   * document pins none or every one resolves — a resume that always carried the
+   * key would say "design: []" about work that has no design at all.
+   */
+  design?: Array<{ state: DesignRefState; baseline: string; detail: string | null }>;
 }
 
 export type ResumeOutcome =
@@ -83,7 +90,7 @@ function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
 
   const matches: ResumeProposal[] = [
     ...specs.map((s) => specProposal(s, index)),
-    ...plans.map(planProposal),
+    ...plans.map((plan) => planProposal(plan, index)),
   ];
 
   const [first] = matches;
@@ -170,7 +177,7 @@ async function pipelineProposal(
 ): Promise<ResumeProposal> {
   if (item.kind === "plan-open") {
     const plan = index.plans.find((p) => p.file === item.file);
-    if (plan !== undefined) return planProposal(plan);
+    if (plan !== undefined) return planProposal(plan, index);
   }
   if (item.kind === "checkpoint-orphan") {
     const session = index.sessions.find((s) => s.folder === item.file);
@@ -210,22 +217,42 @@ function specProposal(spec: IndexedSpec, index: WorklineIndex): ResumeProposal {
         ? "ya tiene plan derivado"
         : "generar su plan",
     command: refine ? `/w:spec-refine ${spec.file}` : `/w:plan-new ${spec.file}`,
+    ...designOf(index, spec.file),
   };
 }
 
-function planProposal(plan: IndexedPlan): ResumeProposal {
+function planProposal(plan: IndexedPlan, index: WorklineIndex): ResumeProposal {
   const [blocked] = plan.blocked_phases;
   const phases =
     plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
+  const design = designOf(index, plan.file);
   return {
     kind: "plan-open",
     file: plan.file,
     number: plan.number,
     objective: `plan ${plan.number}${plan.slug ? ` — ${plan.slug}` : ""}`,
     progress: `${plan.tasks_done}/${plan.tasks_total} tareas (${plan.progress_pct}%)${phases}`,
-    next: describePlanNext(plan, blocked),
+    // A missing reference outranks the plan's own next step: plan-exec fails
+    // closed on it, so proposing "implementá F3" would send someone into a wall.
+    next: describeMissingDesign(design) ?? describePlanNext(plan, blocked),
     command: `/w:plan-exec ${plan.file}`,
+    ...design,
   };
+}
+
+/** The document's non-valid references, or nothing at all to say. */
+function designOf(index: WorklineIndex, file: string): Pick<ResumeProposal, "design"> {
+  const design = index.designs.references
+    .filter((r) => r.from === file && r.state !== "valid")
+    .map((r) => ({ state: r.state, baseline: r.baseline, detail: r.detail }));
+  return design.length === 0 ? {} : { design };
+}
+
+function describeMissingDesign(design: Pick<ResumeProposal, "design">): string | null {
+  const missing = (design.design ?? []).filter((d) => d.state === "missing");
+  const [first] = missing;
+  if (first === undefined) return null;
+  return `DISEÑO IRRESOLUBLE ${first.baseline} — ${first.detail ?? "no resuelve"}`;
 }
 
 function describePlanNext(

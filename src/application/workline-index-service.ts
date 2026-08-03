@@ -2,6 +2,7 @@ import { basename, join, relative } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
+import { type DesignGraph, buildDesignGraph } from "./design/design-graph-service.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
@@ -158,6 +159,8 @@ export interface WorklineIndex {
   sessions: IndexedSession[];
   discarded: IndexedDiscarded[];
   pipeline: PipelineItem[];
+  /** `spec → package → flow/screen → plan/task`, with its four reference states. */
+  designs: DesignGraph;
 }
 
 export interface WorklineIndexInput {
@@ -183,6 +186,10 @@ export async function buildWorklineIndex(
   const plans = await readPlans(fs, cwd, specs, now);
   const sessions = await readSessions(fs, env, paths, now);
   const discarded = await readDiscarded(fs, sessions, cwd, now);
+  const designs = await buildDesignGraph(fs, cwd, [
+    ...specs.map((s) => ({ file: s.file, kind: "spec" as const })),
+    ...plans.map((p) => ({ file: p.file, kind: "plan" as const })),
+  ]);
 
   return {
     workspace,
@@ -191,6 +198,7 @@ export async function buildWorklineIndex(
     sessions,
     discarded,
     pipeline: derivePipeline(specs, plans, sessions),
+    designs,
   };
 }
 

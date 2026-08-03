@@ -68,6 +68,18 @@ export interface PublishInput {
    * — which is the point.
    */
   expectedBase: string | null;
+  /**
+   * Workspace-relative documents that must land WITH this revision — the spec or
+   * plan whose `## Design references` points at the baseline being published
+   * (AC-FLW-07).
+   *
+   * They ride the same all-or-nothing batch on purpose. Writing the document in
+   * a second step is what produces the dangling reference this contract removes:
+   * either the document cites a baseline that was never published, or a
+   * published baseline has no consumer. Unlike package files these are
+   * `overwrite: true` — a spec being refined already exists.
+   */
+  documents?: PublishFile[];
 }
 
 export interface PublishOutcome {
@@ -86,7 +98,7 @@ export async function publishDesignRevision(
   workspace: string,
   input: PublishInput,
 ): Promise<PublishResolution> {
-  const unsafe = input.files.flatMap((f) => pathFailure(f.path));
+  const unsafe = [...input.files, ...(input.documents ?? [])].flatMap((f) => pathFailure(f.path));
   if (unsafe.length > 0) return { ok: false, failures: unsafe };
 
   const index = await readDesignIndex(fs, workspace);
@@ -125,7 +137,13 @@ export async function publishDesignRevision(
   if (failures.length > 0) return { ok: false, failures };
 
   const artifacts = candidateArtifacts(packagePath, nextManifest, baseline, input.files);
-  const published = await publishArtifacts(fs, workspace, artifacts);
+  // The documents go LAST, after the manifest switched the package to the new
+  // revision: a reference is only ever visible pointing at a baseline that is
+  // already there. `publishArtifacts` rolls the whole batch back either way.
+  const published = await publishArtifacts(fs, workspace, [
+    ...artifacts,
+    ...(input.documents ?? []).map((d) => ({ ...d, overwrite: true })),
+  ]);
   if (!published.ok)
     return { ok: false, failures: [publishFailure(published.failure, packagePath)] };
   return { ok: true, value: { revision, baseline, written: published.value.written } };

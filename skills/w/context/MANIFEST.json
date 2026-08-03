@@ -54,6 +54,10 @@
           "requires": "external-data"
         },
         {
+          "path": "modules/DESIGN-REFERENCES.md",
+          "signal": "ui"
+        },
+        {
           "path": "modules/COMPACTION.md",
           "signal": "compaction",
           "requires": "compaction"
@@ -162,10 +166,6 @@
           "signal": "ui"
         },
         {
-          "path": "modules/PLAN-DESIGN-SPECS.md",
-          "signal": "ui"
-        },
-        {
           "path": "modules/PLAN-PROBE-TASKS.md",
           "signal": "probe"
         },
@@ -228,14 +228,6 @@
         },
         {
           "path": "modules/DESIGN-REFERENCES.md",
-          "signal": "ui"
-        },
-        {
-          "path": "modules/PLAN-REFINE-DESIGN-SPECS.md",
-          "signal": "ui"
-        },
-        {
-          "path": "modules/PLAN-DESIGN-SPECS.md",
           "signal": "ui"
         },
         {
@@ -315,7 +307,7 @@
           "signal": "simulation"
         },
         {
-          "path": "modules/PLAN-DESIGN-SPECS.md",
+          "path": "modules/DESIGN-REFERENCES.md",
           "signal": "ui"
         },
         {

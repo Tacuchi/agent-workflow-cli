@@ -7,6 +7,7 @@ Loaded when classifying what to persist (signal `classification`).
 | **Analysis / conclusions / design notes** | findings, comparisons, diagnoses, adjudications, recommendations | `research` → `docs/research/NNN-research-<slug>.md` |
 | **Requirement** | describes a *wish*: what should exist/change, acceptance criteria derivable | `spec` → `docs/specs/NNN-spec-<slug>.md`, born `status: draft`, `## Origin` = "adopted from host conversation" → offer `/w:spec-refine` |
 | **Plan** | already answers the *how*: phases/tasks/solution — e.g. the host plan-mode output | `plan` → `docs/plans/NNN-plan-<slug>.md` (adoption) → offer `/w:plan-refine` / `/w:plan-exec` |
+| **Durable UI idea** | screens, flows, states meant to last | `spec` **first**, then the design in the package it identifies ([`DESIGN-REFERENCES.md`](DESIGN-REFERENCES.md)); never a Screen Specification *instead of* the Requirement, and `persist` writes no package |
 | Mixed / ambiguous | e.g. analysis that ends in a requirement | one `persist` per document, each confirmed; a research doc plus a spec draft that cites it is a valid split |
 
 ## `docs/research/` — the analysis home (owned by this command)

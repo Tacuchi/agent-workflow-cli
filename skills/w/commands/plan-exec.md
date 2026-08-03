@@ -46,4 +46,4 @@ checkboxes and `> Estado:` line in the living plan.
 - `db` — the plan touches a database → [`../modules/EXEC-DB-POLICY.md`](../modules/EXEC-DB-POLICY.md)
 - `probe` — a task is a PoC → [`../modules/EXEC-PROBE-TASKS.md`](../modules/EXEC-PROBE-TASKS.md)
 - `simulation` — **only when the change carries temporary behavior**, its boundary is declared and its retirement identified → [`../modules/SIMULATION-LIFECYCLE.md`](../modules/SIMULATION-LIFECYCLE.md)
-- `ui` — the plan references design SPECs → [`../modules/PLAN-DESIGN-SPECS.md`](../modules/PLAN-DESIGN-SPECS.md)
+- `ui` — the plan pins design references → [`../modules/DESIGN-REFERENCES.md`](../modules/DESIGN-REFERENCES.md). Before implementing a task that pins one, `aw designs --plan <plan-doc>` decides: absent, altered, revoked or an applicable closure short of `handoff` **block** naming the artifact and the fix; superseded-but-intact only warns. `plan-exec` never redesigns.

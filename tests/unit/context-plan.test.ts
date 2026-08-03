@@ -384,7 +384,25 @@ describe("signal discoverability — a module nothing routes to is a module noth
     expect(unreachable).toEqual([]);
   });
 
-  it("no module in the tree is orphaned: every one is declared by some command", async () => {
+  /**
+   * A module nobody routes to is dead weight — with ONE exception, and it is the
+   * opposite case: a **tombstone** exists so an old link lands somewhere that
+   * says "do not follow", which means it must NOT be in anybody's read-set.
+   * Routing one delivers bytes whose only instruction is to ignore them.
+   *
+   * The exemption is earned by the FILE declaring itself retired, never by being
+   * listed here, so it cannot cover a live module. The test below proves the
+   * predicate discriminates.
+   */
+  const RETIRED_MARKER = "DO NOT FOLLOW THIS MODULE";
+
+  async function modulesOnDisk(): Promise<string[]> {
+    return (await fs.list(join(BUNDLE_ROOT, "modules")))
+      .filter((e) => e.type === "file" && e.name.endsWith(".md"))
+      .map((e) => `modules/${e.name}`);
+  }
+
+  async function declaredModules(): Promise<Set<string>> {
     const manifest = await loadManifest(fs, BUNDLE_ROOT);
     const declared = new Set<string>();
     for (const entry of Object.values(manifest.commands)) {
@@ -393,10 +411,32 @@ describe("signal discoverability — a module nothing routes to is a module noth
       }
       for (const module of entry.modules) declared.add(module.path);
     }
-    const onDisk = (await fs.list(join(BUNDLE_ROOT, "modules")))
-      .filter((e) => e.type === "file" && e.name.endsWith(".md"))
-      .map((e) => `modules/${e.name}`);
+    return declared;
+  }
+
+  it("no module in the tree is orphaned, unless it is a tombstone that says so", async () => {
+    const declared = await declaredModules();
+    const onDisk = await modulesOnDisk();
     expect(onDisk.length).toBeGreaterThan(0);
-    expect(onDisk.filter((path) => !declared.has(path))).toEqual([]);
+
+    const offenders: string[] = [];
+    for (const path of onDisk.filter((p) => !declared.has(p))) {
+      const text = await fs.readText(join(BUNDLE_ROOT, path));
+      if (!text.includes(RETIRED_MARKER)) offenders.push(path);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("and the exemption is earned by the file: no routed module carries the marker", async () => {
+    // Without this the rule above would be vacuous the moment the marker leaked
+    // into live doctrine — every module would exempt itself.
+    const declared = await declaredModules();
+    const leaked: string[] = [];
+    for (const path of await modulesOnDisk()) {
+      if (!declared.has(path)) continue;
+      const text = await fs.readText(join(BUNDLE_ROOT, path));
+      if (text.includes(RETIRED_MARKER)) leaked.push(path);
+    }
+    expect(leaked).toEqual([]);
   });
 });
