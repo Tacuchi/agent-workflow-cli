@@ -316,11 +316,22 @@ describe("una continuación es un request nuevo, enlazado e inmutable", () => {
 });
 
 describe("cada operación declara qué contexto necesita", () => {
-  const create = findOperation(DESIGN_DESCRIPTOR, "create") as CapabilityOperation;
   const validate = findOperation(DESIGN_DESCRIPTOR, "validate") as CapabilityOperation;
 
+  /**
+   * A `workspace: "required"` operation, built for this check.
+   *
+   * The rule belongs to the CONTRACT and has to be provable on its own: which
+   * value a given capability declares is that capability's domain decision, and
+   * `design` deliberately declares none — it accepts an explicit root instead
+   * (`S013/AC-DIR-04`). Anchoring the contract's rule to design's value is what
+   * made this test fail the day the domain changed its mind, which is a test
+   * measuring the wrong thing.
+   */
+  const requiresWorkspace: CapabilityOperation = { ...validate, workspace: "required" };
+
   it("fuera de un workspace, una operación que lo exige devuelve un resultado explícito", () => {
-    const check = checkWorkspaceRequirement(create, {
+    const check = checkWorkspaceRequirement(requiresWorkspace, {
       workspace: null,
       target: null,
       base: null,
@@ -335,7 +346,7 @@ describe("cada operación declara qué contexto necesita", () => {
   it("y no inicializa Workline por su cuenta", () => {
     const dir = mkdtempSync(join(tmpdir(), "aw-capability-"));
     try {
-      checkWorkspaceRequirement(create, {
+      checkWorkspaceRequirement(requiresWorkspace, {
         workspace: null,
         target: dir,
         base: null,
@@ -356,6 +367,14 @@ describe("cada operación declara qué contexto necesita", () => {
         profile: null,
       }).ok,
     ).toBe(true);
+  });
+
+  // El valor que design declara es de dominio, y lo fija el plan 013 F10.
+  it("design no exige workspace en ninguna operación: acepta raíz explícita", () => {
+    const required = DESIGN_DESCRIPTOR.operations
+      .filter((o) => o.workspace === "required")
+      .map((o) => o.name);
+    expect(required).toEqual([]);
   });
 });
 

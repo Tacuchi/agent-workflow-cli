@@ -94,9 +94,14 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       name: "create",
       summary: "primera revisión de un package a partir de fuentes declaradas",
       exposure: ["direct", "compose"],
-      // Writes a package under `docs/designs/`: without a workspace there is no
-      // place for it to land, and inventing one is exactly what AC-REQ-03 bans.
-      workspace: "required",
+      // `optional`, not `required`: inside a workspace the package defaults to
+      // `docs/designs/`, and OUTSIDE one an explicit root still produces a
+      // portable package (`AC-DIR-04`). Refusing outside a workspace would turn
+      // "design something on a machine with no Workline project" into an error
+      // instead of an answer — and `resolveOutputRoot` is what keeps the other
+      // half of `AC-REQ-03` intact: no root declared, no writing, and never an
+      // invented one.
+      workspace: "optional",
       interaction: "needs_input",
       inputs: [
         { name: "title", kind: "text", required: true, sensitivity: "public", schema: null },
@@ -110,6 +115,16 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
           schema: null,
         },
         { name: "context", kind: "text", required: false, sensitivity: "public", schema: null },
+        // The maturity the caller ASKS FOR. Declared as an input because the
+        // answer "you got `outline`, not `handoff`" only means something
+        // against something that was requested.
+        {
+          name: "maturity",
+          kind: "selection",
+          required: false,
+          sensitivity: "public",
+          schema: null,
+        },
       ],
       output: {
         kind: "value_and_reference",
@@ -131,7 +146,7 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       name: "update",
       summary: "revisión siguiente de un package existente, con base de compare-and-swap",
       exposure: ["direct", "compose"],
-      workspace: "required",
+      workspace: "optional",
       interaction: "needs_input",
       inputs: [
         { name: "package", kind: "reference", required: true, sensitivity: "public", schema: null },
@@ -144,6 +159,13 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
           schema: null,
         },
         { name: "context", kind: "text", required: false, sensitivity: "public", schema: null },
+        {
+          name: "maturity",
+          kind: "selection",
+          required: false,
+          sensitivity: "public",
+          schema: null,
+        },
       ],
       output: {
         kind: "value_and_reference",
@@ -200,7 +222,7 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       name: "render",
       summary: "regenerar las proyecciones de una revisión y preparar el handoff a un proveedor",
       exposure: ["direct", "compose"],
-      workspace: "required",
+      workspace: "optional",
       interaction: "single_pass",
       inputs: [
         { name: "package", kind: "reference", required: true, sensitivity: "public", schema: null },
@@ -235,7 +257,7 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       name: "record",
       summary: "sellar una decisión de gobierno sobre una revisión existente",
       exposure: ["direct", "compose"],
-      workspace: "required",
+      workspace: "optional",
       interaction: "single_pass",
       inputs: [
         { name: "package", kind: "reference", required: true, sensitivity: "public", schema: null },

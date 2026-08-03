@@ -87,11 +87,11 @@ export const capabilityCommand: QtcCommand<CapabilityAttempt> = {
         `--flow no reconoce '${flow}'; los flows son: ${WORKLINE_FLOWS.join(", ")}`,
       ) as CommandResult<CapabilityAttempt>;
     }
-    const dispatch =
+    const dispatchContext = await ctx0(ctx);
+    const result =
       flow === undefined
-        ? dispatchCapability(input, ctx0(ctx))
-        : composeCapability({ ...input, flow: flow as WorklineFlow }, ctx0(ctx));
-    const result = await dispatch;
+        ? await dispatchCapability(input, dispatchContext)
+        : await composeCapability({ ...input, flow: flow as WorklineFlow }, dispatchContext);
 
     if (!result.ok) return failSemantic(result.failure);
     return { ok: true, data: result.attempt, exitCode: 0 };
@@ -141,13 +141,22 @@ function dispatchInputFrom(
   };
 }
 
-/** The dispatch context, assembled once from the CLI context. */
-function ctx0(ctx: CliContext): DispatchContext {
+/**
+ * The dispatch context, assembled once from the CLI context.
+ *
+ * `workspace` is null unless this really IS a Workline workspace — the same
+ * rule the rest of the repo uses: `.<ns>/` present in the root. Handing the cwd
+ * over unconditionally made "outside a workspace" unreachable in production,
+ * so the explicit-root path could only ever be exercised by a test that passed
+ * null by hand. A smoke run from `/tmp` is what surfaced it.
+ */
+async function ctx0(ctx: CliContext): Promise<DispatchContext> {
+  const inWorkspace = await ctx.fs.exists(ctx.paths.cwdRoot());
   return {
     fs: ctx.fs,
     env: ctx.env,
     paths: ctx.paths,
-    workspace: ctx.paths.workspaceDir(),
+    workspace: inWorkspace ? ctx.paths.workspaceDir() : null,
     host: runHarness((k) => ctx.env.get(k)).harness,
   };
 }

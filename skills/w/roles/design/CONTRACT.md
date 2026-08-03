@@ -38,6 +38,34 @@ may never lower one the capability already failed; a durable output produced
 through the direct route is adopted later **by exact reference** — same identity,
 revision and digest — with no recreation and no format conversion.
 
+## Sources, and what an omission costs
+
+The v1 catalog: Markdown or text, images and screenshots, PDF, DOCX, PPTX, host
+context or attachments, an existing package, and provider locators. Binary
+documents are read by the **host's** multimodal capability — no parser ships in
+the CLI — so what the catalog declares is what the domain can account for.
+
+Every source ends in one of five dispositions, and each one that is not `used`
+carries its reason: `used` · `skipped` (a decision) · `unsupported` (a format v1
+never promised, every retired UI format included) · `unavailable` (it should
+have been readable and was not) · `redacted` (withheld on purpose).
+
+The consequence is fail-closed: a source that did not contribute blocks
+`handoff` unless someone states, in writing, why the design does not need it. A
+run that silently dropped a requirements document and still declared itself
+ready for implementation is the failure this exists to prevent. Original
+documents are never copied into the package unless a person names them, and
+never when they are sensitive.
+
+## Where the output lands
+
+Inside a workspace the package defaults to `docs/designs/` and is discoverable
+by the index — which is what lets a spec or a plan reference it later without it
+ever having had a relationship with those flows. Outside a workspace the caller
+must name an explicit root; the result is still a conformant, portable package,
+and it is simply not indexed. What never happens is a guess: no root declared,
+nothing written.
+
 ## What the direct route does not do
 
 - Never creates, advances, closes or publishes a SPEC, PLAN or QUICK session or
