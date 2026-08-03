@@ -51,6 +51,8 @@ built-in default
 2. **Role with no binding at any level** → use the built-in default (table above). No config needed for the common case.
 3. **`off`** → capability disabled. The loop continues without it; if the task required it, the loop reports why it cannot proceed or asks the human.
 
+**A role whose skill declares a capability descriptor is stricter**, because there the binding decides what RUNS and not just which name is written: unset or the canonical name enables the built-in floor plus whatever compatible improvements the host selected; `off` applies the descriptor's per-operation policy and no host, wrapper or legacy name reverts it; anything else is `misconfigured` — a replacement binding does not select an improvement, and the file is never rewritten for you. Existing workspaces are not migrated: `aw skills --detail` explains the reclassification and the owner adopts unset, the canonical name or `off`.
+
 ---
 
 ## skills.toml format

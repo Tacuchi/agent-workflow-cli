@@ -418,6 +418,18 @@ function renderSkillsTomlTemplate(): string {
     "[skills]",
   ];
   const roleLines = SKILL_ROLES.map((role) => `# ${role} = "${BUILTIN_DEFAULT_SKILLS[role]}"`);
+  // A role whose skill publishes a capability descriptor reads this file more
+  // strictly, and saying so at scaffold time is cheaper than explaining a
+  // `misconfigured` later. Stated as the rule, not per role: a note naming one
+  // capability would rot the day a second one ships.
+  const capabilityLines = [
+    "",
+    "# A role fulfilled by a skill that publishes a CAPABILITY DESCRIPTOR is stricter:",
+    "#   - unset, or the capability's own name = built-in floor + the improvements the host selected",
+    '#   - "off"                                = the descriptor decides operation by operation, and no host reverts it',
+    "#   - any other name                       = misconfigured; a replacement binding does NOT select an improvement",
+    "# Existing workspaces are never migrated: `aw skills --detail` explains and you choose.",
+  ];
   const compactionLines = [
     "",
     "# Context self-regulation of the loops (see the chassis' Self-regulation subsection):",
@@ -429,7 +441,7 @@ function renderSkillsTomlTemplate(): string {
     "# [compaction]",
     '# mode = "confirm"',
   ];
-  return `${[...header, ...roleLines, ...compactionLines].join("\n")}\n`;
+  return `${[...header, ...roleLines, ...capabilityLines, ...compactionLines].join("\n")}\n`;
 }
 
 interface VisibilityOutcome {

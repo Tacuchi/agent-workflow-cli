@@ -204,12 +204,42 @@
     "compatibility": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "minimum_contract_version", "retired_names", "retired_formats"],
+      "required": [
+        "status",
+        "minimum_contract_version",
+        "improves",
+        "retired_names",
+        "retired_formats"
+      ],
       "properties": {
         "status": { "enum": ["active", "deprecated"] },
         "minimum_contract_version": {
           "type": "integer",
           "minimum": 1
+        },
+        "improves": {
+          "description": "What this descriptor improves, in its OWN words. Null when the descriptor IS the capability. Installed never implies compatible: the resolution verifies this claim against the capability being resolved before the improvement contributes or produces any effect.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["capability", "operations", "contract_version"],
+          "properties": {
+            "capability": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+            },
+            "operations": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            },
+            "contract_version": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
         },
         "retired_names": {
           "description": "Names that are NOT aliases. A binding, invocation or descriptor using one fails with guidance to adopt the live name; it never resolves silently.",

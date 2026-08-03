@@ -141,8 +141,14 @@ export async function checkInstalledBindings(
   return { checks, warnings, rootsScanned: roots };
 }
 
-/** cwd + home crossed with every host's skill directory (deduped). */
-function skillRoots(env: EnvPort): string[] {
+/**
+ * cwd + home crossed with every host's skill directory (deduped).
+ *
+ * Exported because the capability inventory has to scan exactly the same set:
+ * two lists of "where skills live" would drift, and the day they did, a skill
+ * this check warns about would be one the inventory cannot see at all.
+ */
+export function skillRoots(env: EnvPort): string[] {
   const dirs = [...new Set(HARNESSES.flatMap((h) => [...h.skillsDirs]))];
   const roots: string[] = [];
   for (const d of dirs) {

@@ -105,19 +105,36 @@
     }
   ],
   "floor": {
-    "builtin": true,
-    "kind": "core",
-    "improvements": "host_selected"
+    "builtin": false,
+    "kind": "feature",
+    "improvements": "none"
   },
   "degradations": [
-    { "cause": "opaque_selection", "action": "floor" },
-    { "cause": "incompatible_improvement", "action": "reject" },
-    { "cause": "invalid_binding", "action": "floor" },
-    { "cause": "digest_changed", "action": "floor" }
+    {
+      "cause": "opaque_selection",
+      "action": "floor"
+    },
+    {
+      "cause": "incompatible_improvement",
+      "action": "reject"
+    },
+    {
+      "cause": "invalid_binding",
+      "action": "floor"
+    },
+    {
+      "cause": "digest_changed",
+      "action": "floor"
+    }
   ],
   "compatibility": {
     "status": "active",
     "minimum_contract_version": 1,
+    "improves": {
+      "capability": "design",
+      "operations": ["create", "update"],
+      "contract_version": 1
+    },
     "retired_names": ["legacy-example"],
     "retired_formats": ["legacy-example:output"]
   }

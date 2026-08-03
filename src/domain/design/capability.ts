@@ -284,6 +284,8 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
   compatibility: {
     status: "active",
     minimum_contract_version: CAPABILITY_CONTRACT_VERSION,
+    // This descriptor IS the capability, not an improvement to one.
+    improves: null,
     // Not aliases. Listed so every entry surface can refuse them by NAME with a
     // corrective action instead of failing with "unknown skill".
     retired_names: ["ui-design", "ui-spec"],

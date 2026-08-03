@@ -159,9 +159,27 @@ export interface CapabilityDegradation {
   action: DegradationAction;
 }
 
+/**
+ * What an improvement claims to improve — its own words, not the host's.
+ *
+ * "Installed" never implies "compatible", and the host's selection cannot supply
+ * the missing half: a host says WHICH skills contribute and in what order, it
+ * does not know whether a given skill speaks this capability's contract. So the
+ * claim has to live in the improvement's own descriptor, where it can be
+ * verified against the capability being resolved before anything contributes.
+ *
+ * `null` means the descriptor IS the capability, not an improvement to one.
+ */
+export interface CapabilityImproves {
+  capability: string;
+  operations: readonly string[];
+  contract_version: number;
+}
+
 export interface CapabilityCompatibility {
   status: CompatibilityStatus;
   minimum_contract_version: number;
+  improves: CapabilityImproves | null;
   /** Names that are NOT aliases: they fail with guidance instead of resolving. */
   retired_names: readonly string[];
   /** Formats that are unsupported as a source: never read, imported or migrated. */
@@ -208,7 +226,14 @@ export const ALLOWED_KEYS: AllowedKeys = {
   "operations[].effects[]": ["class", "idempotent", "authorization", "approval"],
   floor: ["builtin", "kind", "improvements"],
   "degradations[]": ["cause", "action"],
-  compatibility: ["status", "minimum_contract_version", "retired_names", "retired_formats"],
+  compatibility: [
+    "status",
+    "minimum_contract_version",
+    "improves",
+    "retired_names",
+    "retired_formats",
+  ],
+  "compatibility.improves": ["capability", "operations", "contract_version"],
 };
 
 export interface CapabilityDescriptorValidation {
@@ -600,8 +625,94 @@ function readCompatibility(
   }
 
   const name = isNonEmptyString(raw.name) ? raw.name : null;
+  readImproves(r, compat, artifact, name);
   readNameList(r, compat, "compatibility.retired_names", artifact, name);
   readStringList(r, compat, "compatibility.retired_formats", artifact);
+}
+
+/**
+ * A descriptor either IS a capability (`improves: null`) or improves one. The
+ * claim is read here so the resolution can verify it against the capability
+ * being resolved instead of trusting the host's word that the two match.
+ */
+function readImproves(
+  r: ContractReader,
+  compat: Record<string, unknown>,
+  artifact: string,
+  ownName: string | null,
+): void {
+  const improves = r.read(compat, "compatibility.improves");
+  if (improves === null) return;
+  if (!isRecord(improves)) {
+    r.invalid(
+      artifact,
+      "'compatibility.improves' debe ser un objeto o null",
+      "declará qué capacidad, operaciones y versión de contrato mejora, o null si el descriptor es la capacidad",
+    );
+    return;
+  }
+  r.closed(improves, "compatibility.improves", artifact);
+  readImprovedCapability(r, improves, artifact, ownName);
+  readImprovedOperations(r, improves, artifact);
+
+  const version = r.read(improves, "compatibility.improves.contract_version");
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 1) {
+    r.invalid(
+      artifact,
+      `'improves.contract_version' debe ser un entero ≥ 1: ${JSON.stringify(version)}`,
+      "declará la versión de contrato de la capacidad que mejora",
+    );
+  }
+}
+
+function readImprovedCapability(
+  r: ContractReader,
+  improves: Record<string, unknown>,
+  artifact: string,
+  ownName: string | null,
+): void {
+  const capability = r.read(improves, "compatibility.improves.capability");
+  if (!isNonEmptyString(capability) || !NAME_RE.test(capability)) {
+    r.invalid(
+      artifact,
+      `'improves.capability' inválido: ${JSON.stringify(capability)}`,
+      `nombrá la capacidad con la forma '${CAPABILITY_GRAMMAR.name}'`,
+    );
+    return;
+  }
+  // Self-improvement would let a descriptor grant itself the compatibility it is
+  // supposed to be claiming about something else.
+  if (capability === ownName) {
+    r.invalid(
+      artifact,
+      `'${capability}' declara mejorarse a sí misma`,
+      "una mejora nombra OTRA capacidad; si el descriptor es la capacidad, poné 'improves': null",
+    );
+  }
+}
+
+function readImprovedOperations(
+  r: ContractReader,
+  improves: Record<string, unknown>,
+  artifact: string,
+): void {
+  const operations = r.read(improves, "compatibility.improves.operations");
+  if (!Array.isArray(operations) || operations.length === 0) {
+    r.invalid(
+      artifact,
+      "'improves.operations' debe enumerar al menos una operación",
+      "declará qué operaciones mejora: una mejora que no dice cuáles no se puede verificar",
+    );
+    return;
+  }
+  for (const entry of operations) {
+    if (isNonEmptyString(entry) && IDENTIFIER_RE.test(entry)) continue;
+    r.invalid(
+      artifact,
+      `'improves.operations' no admite ${JSON.stringify(entry)}`,
+      `nombrá cada operación con la forma '${CAPABILITY_GRAMMAR.identifier}'`,
+    );
+  }
 }
 
 /** Retired names fail with guidance; listing the live name among them is a loop. */

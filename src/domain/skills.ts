@@ -58,6 +58,54 @@ export function isSkillRole(value: string): value is SkillRole {
  * what the contract forbids. The role keeps its built-in default, so refusing
  * the binding never leaves the capability mute.
  */
+/**
+ * What a role's binding MEANS for a capability that carries a built-in floor.
+ *
+ * The cascade answers "which name is bound"; this answers "and therefore what
+ * runs". Three states, exhaustive on purpose:
+ *
+ * - **unset or the canonical name** → the floor runs, and the host may add
+ *   whatever compatible improvements it selected. This is the ordinary case, and
+ *   it is the same for a workspace that never wrote a `skills.toml`.
+ * - **`off`** → the capability's own policy decides operation by operation. No
+ *   host, wrapper or legacy name reverts it.
+ * - **anything else** → `misconfigured`. A replacement binding does NOT select an
+ *   improvement: improvements are chosen by the host among instances it can
+ *   identify exactly, and honoring a name here would resurrect the "installed
+ *   implies compatible" shortcut the contract exists to close. The binding is not
+ *   rewritten either — the owner decides whether to adopt unset, the canonical
+ *   name or `off`.
+ *
+ * Takes the canonical NAME rather than the descriptor: the policy is about a
+ * role binding, and a capability-specific branch here would be exactly the
+ * per-name branching the evolution criterion forbids.
+ */
+export type CapabilityBindingState = "floor_and_improvements" | "off" | "misconfigured";
+
+export interface CapabilityBindingPolicy {
+  state: CapabilityBindingState;
+  /** Why, when it is not the ordinary case. */
+  reason: string | null;
+  action: string | null;
+}
+
+export function classifyCapabilityBinding(
+  resolved: ResolvedSkill,
+  canonicalName: string,
+): CapabilityBindingPolicy {
+  if (!resolved.enabled || resolved.skill === null) {
+    return { state: "off", reason: `'${resolved.role}' está en off`, action: null };
+  }
+  if (resolved.skill === canonicalName) {
+    return { state: "floor_and_improvements", reason: null, action: null };
+  }
+  return {
+    state: "misconfigured",
+    reason: `'${resolved.role}' apunta a '${resolved.skill}', y un binding de reemplazo no selecciona una mejora`,
+    action: `dejá el binding sin declarar, ponelo en '${canonicalName}' o desactivalo con "off"`,
+  };
+}
+
 export const RETIRED_SKILL_IDENTITIES: ReadonlyMap<string, string> = new Map([
   [
     "ui-design",
