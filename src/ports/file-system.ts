@@ -20,6 +20,11 @@ export interface LinkStat {
 
 export interface FileSystemPort {
   readText(path: string): Promise<string>;
+  /**
+   * Raw bytes. A design baseline seals the SHA-256 of a file's bytes, and an
+   * asset is binary: hashing `readText` output would hash a lossy decoding.
+   */
+  readBytes(path: string): Promise<Uint8Array>;
   writeText(path: string, content: string): Promise<void>;
   /** Append `content` to `path`, creating the file and its parent dirs if absent. */
   appendText(path: string, content: string): Promise<void>;

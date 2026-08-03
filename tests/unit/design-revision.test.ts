@@ -75,6 +75,7 @@ describe("findHistoryLoss — publicar la siguiente no puede perder la anterior"
         path: "screens/SCR-001-r002-formulario-alta.md",
         supersedes: "DES-001/SCR-001@r1",
         maturity: "handoff",
+        states: ["default", "error"],
       });
     });
     expect(findHistoryLoss(before, after)).toEqual([]);

@@ -2,6 +2,7 @@ import { checkSafeRelativePath } from "../safe-path.js";
 import {
   ARTIFACT_PREFIX,
   type DesignArtifactKind,
+  GRAMMAR,
   isArtifactId,
   isAssetFilename,
   isDigest,
@@ -60,6 +61,13 @@ export interface CatalogEntry {
   supersedes: string | null;
   /** Flows and screens only: every other artifact kind has no maturity. */
   maturity?: DesignMaturity;
+  /**
+   * Screens only: the anchors this revision declares. The catalog carries them
+   * so `PACKAGE.md` can LOCATE a state (AC-PKG-06) without a reader having to
+   * open every screen document, and without the projection repeating what the
+   * document normatively says about it.
+   */
+  states?: string[];
 }
 
 export type DesignMaturity = "outline" | "handoff";
@@ -166,7 +174,7 @@ export const ALLOWED_KEYS: AllowedKeys = {
   "baselines[]": ["revision", "path", "digest", "parent_baseline", "published"],
   catalog: ["flows", "screens", "rules", "tokens", "renditions", "assets"],
   "catalog.flows[]": ["id", "revision", "path", "supersedes", "maturity"],
-  "catalog.screens[]": ["id", "revision", "path", "supersedes", "maturity"],
+  "catalog.screens[]": ["id", "revision", "path", "supersedes", "maturity", "states"],
   "catalog.rules[]": ["id", "revision", "path", "supersedes"],
   "catalog.tokens[]": ["id", "revision", "path", "supersedes"],
   "catalog.renditions[]": ["id", "revision", "path", "supersedes"],
@@ -188,6 +196,9 @@ const CATALOG_KINDS: Array<{ key: RevisionedCatalogKey; kind: DesignArtifactKind
   { key: "tokens", kind: "token" },
   { key: "renditions", kind: "rendition" },
 ];
+
+/** Only the screens catalog declares the anchors of each revision. */
+const STATES_KEY: RevisionedCatalogKey = "screens";
 
 /** Kinds whose revisions carry a maturity. */
 const MATURITY_KEYS: ReadonlySet<RevisionedCatalogKey> = new Set(["flows", "screens"]);
@@ -512,6 +523,7 @@ function readCatalogEntry(
   const path = r.read(entry, `catalog.${key}[].path`);
   const supersedes = r.read(entry, `catalog.${key}[].supersedes`);
   const maturity = wantsMaturity ? r.read(entry, `catalog.${key}[].maturity`) : undefined;
+  const states = key === STATES_KEY ? r.read(entry, `catalog.${key}[].states`) : undefined;
 
   const label = `catalog.${key}[${String(id)}]`;
   if (!isArtifactId(id, kind)) {
@@ -559,13 +571,43 @@ function readCatalogEntry(
     );
     return null;
   }
+  const anchors = key === STATES_KEY ? readStates(r, artifact, label, states) : undefined;
+  if (key === STATES_KEY && anchors === null) return null;
   return {
     id,
     revision,
     path: typeof path === "string" ? path : "",
     supersedes: typeof supersedes === "string" ? supersedes : null,
     ...(wantsMaturity ? { maturity: maturity as DesignMaturity } : {}),
+    ...(anchors === undefined || anchors === null ? {} : { states: anchors }),
   };
+}
+
+/** The anchors a screen revision declares: at least one, and each one distinct. */
+function readStates(r: Reader, artifact: string, label: string, states: unknown): string[] | null {
+  const anchor = new RegExp(`^${GRAMMAR.anchor}$`);
+  if (
+    !Array.isArray(states) ||
+    states.length === 0 ||
+    !states.every((s) => typeof s === "string" && anchor.test(s))
+  ) {
+    r.invalid(
+      artifact,
+      `${label}: 'states' debe listar al menos un anchor en minúsculas`,
+      "catalogá los estados que la screen declara en su frontmatter",
+    );
+    return null;
+  }
+  if (new Set(states).size !== states.length) {
+    r.fail(
+      "DESIGN_ID_DUPLICATE",
+      artifact,
+      `${label}: 'states' repite un anchor`,
+      "cada estado se cataloga una sola vez",
+    );
+    return null;
+  }
+  return states as string[];
 }
 
 function readAssets(r: Reader, node: Record<string, unknown>, artifact: string): AssetEntry[] {

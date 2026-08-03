@@ -10,6 +10,8 @@ import type { DirEntry, FileStat, FileSystemPort, LinkStat } from "../../src/por
 export class MemFs implements FileSystemPort {
   readonly writes = new Map<string, string>();
   private readonly files = new Map<string, { content: string; mtime: Date }>();
+  /** Paths seeded as raw bytes: content that is not valid text has no `content`. */
+  private readonly bytes = new Map<string, Uint8Array>();
   private readonly dirMtime = new Map<string, Date>();
   private readonly children = new Map<string, Map<string, DirEntry>>();
 
@@ -41,6 +43,18 @@ export class MemFs implements FileSystemPort {
     const v = this.files.get(p);
     if (v === undefined) throw new Error(`ENOENT: ${p}`);
     return v.content;
+  }
+  /** Seed raw bytes. A binary asset is not text, and the double must be able to say so. */
+  binary(path: string, content: Uint8Array): this {
+    this.bytes.set(path, content);
+    this.files.set(path, { content: new TextDecoder().decode(content), mtime: new Date(0) });
+    this.register(path, "file");
+    return this;
+  }
+  async readBytes(p: string): Promise<Uint8Array> {
+    const raw = this.bytes.get(p);
+    if (raw !== undefined) return raw;
+    return new TextEncoder().encode(await this.readText(p));
   }
   async writeText(p: string, content: string): Promise<void> {
     this.writes.set(p, content);

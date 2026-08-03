@@ -285,6 +285,31 @@ function collectPatterns(node: unknown, out: string[]): void {
   for (const v of Object.values(record)) collectPatterns(v, out);
 }
 
+/** Same walk, but keeping WHERE each pattern lives: `states[]` needs its path. */
+function collectPatternsAt(
+  node: unknown,
+  root: unknown,
+  prefix: string,
+  out: Array<[string, string]>,
+  seen: Set<unknown>,
+): void {
+  if (typeof node !== "object" || node === null || seen.has(node)) return;
+  seen.add(node);
+  const record = node as Record<string, unknown>;
+  if (typeof record.$ref === "string") {
+    const name = record.$ref.replace("#/$defs/", "");
+    const defs = (root as { $defs?: Record<string, unknown> }).$defs;
+    collectPatternsAt(defs?.[name], root, prefix, out, seen);
+    return;
+  }
+  if (typeof record.pattern === "string") out.push([prefix, record.pattern]);
+  if (record.items !== undefined) collectPatternsAt(record.items, root, `${prefix}[]`, out, seen);
+  const properties = record.properties as Record<string, unknown> | undefined;
+  for (const [key, value] of Object.entries(properties ?? {})) {
+    collectPatternsAt(value, root, prefix === "" ? key : `${prefix}.${key}`, out, seen);
+  }
+}
+
 describe("la gramática publicada es la misma que la del código", () => {
   function patternsOf(contract: Contract): string[] {
     const out: string[] = [];
@@ -319,6 +344,30 @@ describe("la gramática publicada es la misma que la del código", () => {
         (p) => /\b(FLW|SCR|RUL|TOK|VIS|REV|RVK)/.test(p) && !p.includes(GRAMMAR.serial),
       );
       expect(offenders, "patrones con un serial de artefacto distinto del código").toEqual([]);
+    },
+  );
+
+  // La red anterior se tejía sobre `DES-`, `@r` y los prefijos de artefacto. Un
+  // anchor de estado no lleva ninguno de los tres, y por ahí se coló un patrón
+  // de slug donde va la gramática de anchors.
+  const ANCHOR_PATHS = ["catalog.screens[].states[]", "states[].anchor"];
+
+  it.each(CONTRACTS.map((c) => [c.name, c] as const))(
+    "%s — cada patrón que nombra un anchor usa la gramática canónica",
+    (_name, contract) => {
+      const found: Array<[string, string]> = [];
+      collectPatternsAt(
+        JSON.parse(read(contract.schemaPath)),
+        JSON.parse(read(contract.schemaPath)),
+        "",
+        found,
+        new Set(),
+      );
+      const offenders = found.filter(
+        ([path, pattern]) =>
+          ANCHOR_PATHS.some((p) => path.endsWith(p)) && pattern !== `^${GRAMMAR.anchor}$`,
+      );
+      expect(offenders, "patrones de anchor distintos del código").toEqual([]);
     },
   );
 

@@ -32,6 +32,10 @@ export class NodeFileSystem implements FileSystemPort {
     return readFile(path, "utf8");
   }
 
+  async readBytes(path: string): Promise<Uint8Array> {
+    return new Uint8Array(await readFile(path));
+  }
+
   /**
    * Atomic write: stage to `<path>.<pid>.<n>.tmp` and rename onto `path`.
    * `rename` is atomic on POSIX/NTFS within the same filesystem, so a concurrent

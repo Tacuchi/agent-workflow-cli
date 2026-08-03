@@ -17,7 +17,8 @@ import type { DesignFailure } from "./validation.js";
  * and the proof.
  */
 
-const KIND_LIST: Record<NamedKind, keyof DesignCatalog> = {
+/** Where each artifact kind is catalogued. One rule, one place. */
+export const KIND_LIST: Record<NamedKind, keyof DesignCatalog> = {
   flow: "flows",
   screen: "screens",
   rule: "rules",

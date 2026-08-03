@@ -48,7 +48,8 @@
         "revision": 1,
         "path": "screens/SCR-001-r001-formulario-alta.md",
         "supersedes": null,
-        "maturity": "handoff"
+        "maturity": "handoff",
+        "states": ["default", "error"]
       }
     ],
     "rules": [
@@ -83,8 +84,14 @@
     ]
   },
   "currentness": [
-    { "ref": "DES-001/FLW-001@r1", "state": "superseded" },
-    { "ref": "DES-001/FLW-001@r2", "state": "current" }
+    {
+      "ref": "DES-001/FLW-001@r1",
+      "state": "superseded"
+    },
+    {
+      "ref": "DES-001/FLW-001@r2",
+      "state": "current"
+    }
   ],
   "governance": {
     "reviews": [
