@@ -32,6 +32,10 @@ dependencies: [DES-001/RUL-001@r1]
 trace:
   - criterion: S046/AC-01
     source: docs/specs/046-spec-nacimiento-familias.md
+external:
+  - provider: DES-002
+    revision: 3
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 unknowns:
   - question: ¿El alta desde el compañero local usa este mismo recorrido?
     blocking: false

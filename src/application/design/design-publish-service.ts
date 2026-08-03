@@ -12,6 +12,7 @@ import {
 import { ARTIFACT_PREFIX, parseArtifactId } from "../../domain/design/identity.js";
 import type { CatalogEntry, DesignFailure, DesignManifest } from "../../domain/design/manifest.js";
 import { validateDesignManifest } from "../../domain/design/manifest.js";
+import { gateDesignDocument } from "../../domain/design/maturity.js";
 import { NAMING, type NamedKind, baselinePath, checkNaming } from "../../domain/design/naming.js";
 import {
   currentRevisions,
@@ -406,6 +407,12 @@ function describeDocument(
       ],
     };
   }
+  // La madurez que el documento RECLAMA se comprueba antes de sellarla —después
+  // de la identidad, porque un artefacto en el package equivocado se diagnostica
+  // por eso y no por su completitud.
+  const gate = gateDesignDocument(file.content, kind, file.path);
+  if (gate.failures.length > 0) return { failures: gate.failures };
+
   return {
     value: {
       kind,

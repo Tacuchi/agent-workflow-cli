@@ -20,7 +20,8 @@
     "dependencies",
     "trace",
     "unknowns",
-    "not_applicable"
+    "not_applicable",
+    "external"
   ],
   "properties": {
     "schema": {
@@ -127,6 +128,13 @@
     },
     "not_applicable": {
       "$ref": "#/$defs/notApplicable"
+    },
+    "external": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/externalDesignSystem"
+      }
     }
   },
   "$defs": {
@@ -180,6 +188,26 @@
       "additionalProperties": {
         "type": "string",
         "minLength": 1
+      }
+    },
+    "externalDesignSystem": {
+      "description": "Where foreign rules, tokens or assets came from. A `handoff` that depends on someone else's design system pins it and keeps the subset locally (AC-PKG-09).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "revision", "digest"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
       }
     }
   }

@@ -14,6 +14,7 @@ import {
   type ArtifactRef,
   anchorIsTheProblem,
   isDigest,
+  isPackageId,
   isRevision,
   parseArtifactId,
   parseArtifactRef,
@@ -92,6 +93,15 @@ interface CommonFields {
   trace: TraceEntry[];
   unknowns: UnknownEntry[];
   not_applicable: Record<string, string>;
+  /** Foreign design systems this revision pins. Empty is the normal case. */
+  external: ExternalDesignSystem[];
+}
+
+/** Provider, revision and digest of a design system that lives somewhere else. */
+export interface ExternalDesignSystem {
+  provider: string;
+  revision: number;
+  digest: string;
 }
 
 export interface FlowArtifact extends CommonFields {
@@ -133,6 +143,7 @@ const COMMON_KEYS = [
   "trace",
   "unknowns",
   "not_applicable",
+  "external",
 ];
 
 export const FLOW_ALLOWED_KEYS: AllowedKeys = {
@@ -140,6 +151,7 @@ export const FLOW_ALLOWED_KEYS: AllowedKeys = {
   "edges[]": ["from", "trigger", "action", "condition", "to"],
   "trace[]": ["criterion", "source"],
   "unknowns[]": ["question", "blocking"],
+  "external[]": ["provider", "revision", "digest"],
 };
 
 export const SCREEN_ALLOWED_KEYS: AllowedKeys = {
@@ -147,6 +159,7 @@ export const SCREEN_ALLOWED_KEYS: AllowedKeys = {
   "states[]": ["anchor", "purpose"],
   "trace[]": ["criterion", "source"],
   "unknowns[]": ["question", "blocking"],
+  "external[]": ["provider", "revision", "digest"],
   dependencies: ["rules", "tokens", "assets"],
 };
 
@@ -282,6 +295,7 @@ interface CommonRead {
   trace: TraceEntry[];
   unknowns: UnknownEntry[];
   not_applicable: Record<string, string>;
+  external: ExternalDesignSystem[];
   schema: string;
 }
 
@@ -339,7 +353,43 @@ function readCommon(
     trace: readTrace(r, front, artifact),
     unknowns: readUnknowns(r, front, artifact),
     not_applicable: readNotApplicable(r, front, artifact),
+    external: readExternal(r, front, artifact),
   };
+}
+
+/**
+ * The design systems this revision borrows from (AC-PKG-09).
+ *
+ * Pinning is the whole point: a provider without a revision and a digest is a
+ * promise that can change underneath the artifact, which is the situation
+ * `outline` exists to describe.
+ */
+function readExternal(
+  r: Reader,
+  front: Record<string, unknown>,
+  artifact: string,
+): ExternalDesignSystem[] {
+  const raw = r.read(front, "external");
+  if (raw === undefined) {
+    r.invalid(artifact, "'external' es obligatorio", "usá [] si no dependés de otro design system");
+    return [];
+  }
+  const out: ExternalDesignSystem[] = [];
+  for (const entry of eachRecord(r, front, "external", artifact)) {
+    const provider = r.read(entry, "external[].provider");
+    const revision = r.read(entry, "external[].revision");
+    const digest = r.read(entry, "external[].digest");
+    if (!isPackageId(provider) || !isRevision(revision) || !isDigest(digest)) {
+      r.invalid(
+        artifact,
+        "cada 'external' fija provider DES-NNN, revision entera y digest sha256",
+        "sin proveedor, revisión y digest la dependencia no está fijada",
+      );
+      continue;
+    }
+    out.push({ provider: provider as string, revision, digest: digest as string });
+  }
+  return out;
 }
 
 /**

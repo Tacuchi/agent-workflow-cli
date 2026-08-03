@@ -21,6 +21,10 @@ dependencies:
 trace:
   - criterion: S046/AC-02
     source: docs/specs/046-spec-nacimiento-familias.md
+external:
+  - provider: DES-002
+    revision: 3
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 unknowns:
   - question: ¿El documento admite pasaporte además de DNI?
     blocking: false
