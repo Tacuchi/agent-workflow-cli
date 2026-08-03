@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { readPackageVersion } from "../../runtime/version.js";
 import { splitCommandDoc } from "../self/install-skill.js";
+import { contextEntryFor } from "./manifest.js";
 import type { ContextManifest } from "./manifest.js";
 
 /**
@@ -246,12 +247,14 @@ export function resolveReadSet(
   command: string,
   signals: readonly string[],
 ): ReadSet {
-  const entry = manifest.commands[command];
+  // A capability answers here too: the question "what does this invocation have
+  // to load" is the same one, and only the BUDGET keeps them apart.
+  const entry = contextEntryFor(manifest, command);
   if (entry === undefined) {
     return {
       paths: [],
       degraded: true,
-      reasons: [`comando '${command}' no está declarado en el manifiesto`],
+      reasons: [`'${command}' no está declarado en el manifiesto`],
     };
   }
   const reasons: string[] = [];

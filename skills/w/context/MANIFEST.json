@@ -448,6 +448,13 @@
       ]
     }
   },
+  "capabilities": {
+    "$comment": "Conformant capabilities: the same read-set question as a command, and deliberately NOT commands — no commands/<name>.md, no activation median, no reclassification as a single-pass command.",
+    "design": {
+      "core": ["roles/design/CONTRACT.md"],
+      "modules": []
+    }
+  },
   "journeys": [
     {
       "id": "spec",
@@ -487,7 +494,7 @@
     }
   ],
   "budget_policy": {
-    "$comment": "Ratios of the frozen baseline (spec 009 \u00a7 Decisions: -30% discovery, -40% median and -20% minimum activation, -25% median execution, +5% ceiling per journey). Absolute targets are DERIVED from baseline x ratio, never written by hand. The +5% ceiling also caps modules.total, the conditional tree as one figure: a representative journey carries no signal, so no journey line ever prices a module, and without that line the modules would grow unwatched.",
+    "$comment": "Ratios of the frozen baseline (spec 009 § Decisions: -30% discovery, -40% median and -20% minimum activation, -25% median execution, +5% ceiling per journey). Absolute targets are DERIVED from baseline x ratio, never written by hand. The +5% ceiling also caps modules.total, the conditional tree as one figure: a representative journey carries no signal, so no journey line ever prices a module, and without that line the modules would grow unwatched.",
     "discovery_max_ratio": 0.7,
     "activation_median_max_ratio": 0.6,
     "activation_each_max_ratio": 0.8,

@@ -52,8 +52,29 @@ export interface ContextManifest {
   version: number;
   signals: Readonly<Record<string, string>>;
   commands: Readonly<Record<string, ContextCommandEntry>>;
+  /**
+   * Conformant CAPABILITIES, declared next to the commands and never among
+   * them.
+   *
+   * They carry the same shape — a core plus modules under signals — because the
+   * question is the same: what does this invocation have to load. What they are
+   * NOT is commands: there is no `commands/<name>.md`, they never enter the
+   * activation median, and the guard that pairs every command doc with its
+   * manifest entry keeps meaning exactly what it meant. Filing a capability
+   * under `commands` would have reclassified it as the single-pass command the
+   * contract says it is not.
+   */
+  capabilities: Readonly<Record<string, ContextCommandEntry>>;
   journeys: readonly ContextJourney[];
   budgetPolicy: BudgetPolicy;
+}
+
+/** The entry that answers for a name, whichever side of the manifest it is on. */
+export function contextEntryFor(
+  manifest: ContextManifest,
+  name: string,
+): ContextCommandEntry | undefined {
+  return manifest.commands[name] ?? manifest.capabilities[name];
 }
 
 export const MANIFEST_REL_PATH = join("context", "MANIFEST.json");
@@ -115,10 +136,12 @@ export function parseManifest(raw: unknown): ContextManifest {
 
   const signals = readSignals(root.signals);
   const commands = readCommands(root.commands, signals);
+  const capabilities =
+    root.capabilities === undefined ? {} : readCommands(root.capabilities, signals);
   const journeys = readJourneys(root.journeys, commands, signals);
   const budgetPolicy = readPolicy(root.budget_policy);
 
-  return { version, signals, commands, journeys, budgetPolicy };
+  return { version, signals, commands, capabilities, journeys, budgetPolicy };
 }
 
 function readSignals(raw: unknown): Record<string, string> {

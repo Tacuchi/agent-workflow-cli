@@ -1,4 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import "../../src/application/capability/design-handler.js";
 import { capabilityReadiness } from "../../src/application/capability/readiness.js";
@@ -137,5 +139,44 @@ describe("no se agregó otra superficie de discovery", () => {
   it("la readiness vive en `aw skills` y en ninguna otra superficie nueva", () => {
     const carriers = ALL_COMMANDS.filter((c) => /readiness/i.test(c.describe ?? ""));
     expect(carriers.map((c) => c.name)).toEqual(["skills"]);
+  });
+});
+
+describe("el presupuesto de doctrina declara la activación directa sin reclasificarla", () => {
+  const manifest = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL("../../skills/w/context/MANIFEST.json", import.meta.url)),
+      "utf8",
+    ),
+  );
+
+  it("design se declara como CAPACIDAD, nunca entre los comandos", () => {
+    expect(Object.keys(manifest.capabilities)).toContain("design");
+    expect(Object.keys(manifest.commands)).not.toContain("design");
+  });
+
+  // Meterla en `commands` la habría reclasificado como el comando single-pass
+  // que el contrato dice que no es — y habría roto el guard que empareja cada
+  // `commands/<x>.md` con su entrada.
+  it("y por eso no necesita un commands/design.md", () => {
+    const docs = readdirSync(fileURLToPath(new URL("../../skills/w/commands", import.meta.url)));
+    expect(docs).not.toContain("design.md");
+  });
+
+  it("su read-set es el contrato de invocación y nada más", () => {
+    expect(manifest.capabilities.design.core).toEqual(["roles/design/CONTRACT.md"]);
+    expect(manifest.capabilities.design.modules).toEqual([]);
+  });
+
+  it("los cinco flows que componen ya declaran el módulo de diseño bajo la señal ui", () => {
+    for (const flow of ["spec-refine", "plan-new", "plan-refine", "plan-exec", "quick"]) {
+      const ui = manifest.commands[flow].modules.filter(
+        (m: { path: string; signal: string }) => m.signal === "ui",
+      );
+      expect(
+        ui.map((m: { path: string }) => m.path),
+        flow,
+      ).toContain("modules/DESIGN-REFERENCES.md");
+    }
   });
 });

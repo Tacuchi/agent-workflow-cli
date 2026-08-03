@@ -246,20 +246,34 @@ describe("un output durable directo se adopta por referencia exacta", () => {
   });
 });
 
-describe("la doctrina que los callers leen declara el mapa real", () => {
-  const roleDoc = readFileSync(
-    fileURLToPath(new URL("../../skills/w/roles/design/ROLE.md", import.meta.url)),
-    "utf8",
-  );
+describe("la doctrina que los callers leen declara el mapa real, en UNA autoridad", () => {
+  const read = (rel: string): string =>
+    readFileSync(fileURLToPath(new URL(`../../skills/w/${rel}`, import.meta.url)), "utf8");
+  const contract = read("roles/design/CONTRACT.md");
+  const roleDoc = read("roles/design/ROLE.md");
 
-  it("el ROLE declara qué invoca cada caller y apunta al dispatcher compartido", () => {
-    expect(roleDoc).toContain("aw capability prepare|continue|validate|apply");
-    expect(roleDoc).toContain("SPEC REFINE");
-    expect(roleDoc).toContain("PLAN EXEC");
-    expect(roleDoc).toContain("no sixth `consume` operation");
+  it("el contrato de invocación declara qué puede pedir cada caller", () => {
+    expect(contract).toContain("aw capability prepare");
+    expect(contract).toContain("SPEC REFINE");
+    expect(contract).toContain("PLAN EXEC");
+    expect(contract).toContain("no sixth `consume` operation");
   });
 
-  it("y la doctrina no reimplementa el lifecycle transversal", () => {
+  it("el mapa que el código ejerce es el que la doctrina declara", () => {
+    for (const [flow, entries] of Object.entries(COMPOSED_OPERATIONS)) {
+      if (flow === "spec-refine") expect(entries).toHaveLength(3);
+      // Cada operación del mapa aparece nombrada en el contrato publicado.
+      for (const entry of entries) {
+        expect(contract, `${flow} → ${entry}`).toContain(entry.split(".")[1] as string);
+      }
+    }
+  });
+
+  // Consolidación: el ROLE apunta al contrato en vez de repetirlo. Dos
+  // descripciones del mismo contrato divergen el día que una cambia.
+  it("el ROLE referencia el contrato y no lo repite", () => {
+    expect(roleDoc).toContain("CONTRACT.md");
+    expect(roleDoc).not.toContain("no sixth `consume` operation");
     expect(roleDoc).toContain("not\nreimplemented here");
   });
 });

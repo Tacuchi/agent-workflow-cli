@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { TOKENS_UNAVAILABLE } from "./budget-service.js";
 import { resolveBundleRoot } from "./bundle-root.js";
-import { type ContextManifest, loadManifest } from "./manifest.js";
+import { type ContextManifest, contextEntryFor, loadManifest } from "./manifest.js";
 import { byteLength, resolveReadSet } from "./measure.js";
 
 /**
@@ -113,7 +113,7 @@ export async function runContextPlan(
   if (set.paths.length === 0) {
     throw new ContextPlanError(
       "CONTEXT_PLAN_UNKNOWN_COMMAND",
-      `'${input.command}' no está en el manifiesto de ${resolved.root}. Comandos: ${Object.keys(manifest.commands).sort().join(", ")}`,
+      `'${input.command}' no está en el manifiesto de ${resolved.root}. Comandos: ${Object.keys(manifest.commands).sort().join(", ")}. Capacidades: ${Object.keys(manifest.capabilities).sort().join(", ") || "(ninguna)"}`,
     );
   }
 
@@ -151,7 +151,7 @@ export async function runContextPlan(
     command: input.command,
     profile,
     signals,
-    available_signals: (manifest.commands[input.command]?.modules ?? []).map((m) => ({
+    available_signals: (contextEntryFor(manifest, input.command)?.modules ?? []).map((m) => ({
       signal: m.signal,
       means: manifest.signals[m.signal] ?? "",
       module: m.path,
@@ -205,7 +205,7 @@ function unmetCapabilities(
 ): string[] {
   const observed = new Set(signals);
   const out: string[] = [];
-  for (const module of manifest.commands[command]?.modules ?? []) {
+  for (const module of contextEntryFor(manifest, command)?.modules ?? []) {
     if (module.requires === undefined) continue;
     if (!observed.has(module.signal)) continue;
     if (capabilities.has(module.requires)) continue;
@@ -232,7 +232,7 @@ function samePaths(a: readonly string[], b: readonly string[]): boolean {
 }
 
 function everyPath(manifest: ContextManifest, command: string): string[] {
-  const entry = manifest.commands[command];
+  const entry = contextEntryFor(manifest, command);
   if (entry === undefined) return [];
   const out = [...entry.core];
   for (const module of entry.modules) if (!out.includes(module.path)) out.push(module.path);
@@ -280,7 +280,7 @@ function degradationNotice(profile: ContextProfile, reasons: readonly string[]):
 
 function moduleOrigins(manifest: ContextManifest, command: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const module of manifest.commands[command]?.modules ?? []) {
+  for (const module of contextEntryFor(manifest, command)?.modules ?? []) {
     out.set(module.path, module.signal);
   }
   return out;

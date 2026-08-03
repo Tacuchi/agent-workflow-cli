@@ -90,6 +90,8 @@ export function renderCapabilitySkill(descriptor: CapabilityDescriptor): string 
     "- No ejerce ningún efecto que el descriptor no declare, ni uno que exija aprobación sin pedirla.",
     "",
     "La conversación es la del host. Las preguntas de un `needs_input` se hacen acá mismo.",
+    "El contrato de invocación completo — qué puede pedir cada caller — vive en",
+    "`roles/design/CONTRACT.md` del bundle `w`, y no se repite acá.",
     "",
   ].join("\n");
 }
