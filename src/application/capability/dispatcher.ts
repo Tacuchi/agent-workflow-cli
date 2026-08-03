@@ -40,6 +40,7 @@ import {
   checkWorkspaceRequirement,
   continueInvocation,
   newInvocationId,
+  receiptPersistence,
 } from "../../domain/capability/protocol.js";
 import { RETIRED_SKILL_IDENTITIES, classifyCapabilityBinding } from "../../domain/skills.js";
 import type { EnvPort } from "../../ports/env.js";
@@ -53,9 +54,17 @@ import {
   type EffectBase,
   applyDurableEffect,
   prepareDurableEffect,
+  reconcileAfterFailure,
 } from "./durable-effect.js";
 import { buildCapabilityInventory } from "./installed-inventory.js";
-import { type CapabilityResolution, type HostSelection, resolveCapability } from "./resolution.js";
+import {
+  type CapabilityResolution,
+  type HostSelection,
+  type SelectionPin,
+  checkPin,
+  pinSelection,
+  resolveCapability,
+} from "./resolution.js";
 
 export type CapabilityVerb = "prepare" | "continue" | "validate" | "apply";
 
@@ -113,6 +122,14 @@ export interface CapabilityAttempt {
   receipt: CapabilityReceipt;
   output: OperationOutput | null;
   resolution: CapabilityResolution;
+  /**
+   * What this attempt resolved to, sealed. The caller carries it into the next
+   * attempt so a skill that changes mid-conversation is caught instead of
+   * silently answering the second half of a question the first half never asked.
+   */
+  pin: SelectionPin;
+  /** Where this attempt's receipt belongs — `none` for a read-only return. */
+  persistence: ReturnType<typeof receiptPersistence>;
   /** Present when the attempt produced something durable awaiting approval. */
   plan: DurableEffectPlan | null;
 }
@@ -144,6 +161,8 @@ export interface DispatchInput {
   approval?: EffectApproval | null;
   /** `apply`/`validate` only: the request the plan belongs to. */
   request?: CapabilityRequest | null;
+  /** `continue` only: the pin the previous attempt was resolved under. */
+  pin?: SelectionPin | null;
 }
 
 export async function dispatchCapability(
@@ -203,6 +222,22 @@ async function attemptStage(
   const built = buildFor(input, ctx, descriptor, operationName);
   if (!built.ok) return { ok: false, failure: built.failure };
   const { request, operation } = built;
+
+  // A continuation runs against the selection the FIRST attempt fixed. If those
+  // bytes moved, the conversation is answering something that no longer exists.
+  if (input.pin != null) {
+    const stillThere = checkPin(input.pin, await buildCapabilityInventory(ctx.fs, ctx.env));
+    if (!stillThere.ok) {
+      return receiptOf(request, descriptor, resolved, {
+        kind: "blocked",
+        failure: {
+          code: "CAPABILITY_SELECTION_CHANGED",
+          message: stillThere.degradation.loss,
+          action: stillThere.action,
+        },
+      });
+    }
+  }
 
   const blocked = blockedByResolution(resolved, operation);
   if (blocked !== null) {
@@ -309,10 +344,19 @@ async function applyStage(
     selfAuthorized: authorization.selfAuthorized,
   });
   if (!applied.ok) {
-    return receiptOf(input.request, descriptor, resolved, {
-      kind: "blocked",
-      failure: applied.failure,
-    });
+    // Whatever landed is enumerated with the failure, and the next action is a
+    // reconciliation — never a shrug that reads as "nothing happened".
+    const reconciliation = reconcileAfterFailure(
+      "failed",
+      applied.applied.map((cls) => ({ class: cls, what: `efecto '${cls}' ya aplicado` })),
+    );
+    return receiptOf(
+      input.request,
+      descriptor,
+      resolved,
+      { kind: "blocked", failure: { ...applied.failure, action: reconciliation.next_action } },
+      { applied: reconciliation.applied, authorization },
+    );
   }
 
   return receiptOf(
@@ -469,6 +513,8 @@ function receiptOf(
       receipt: built.receipt,
       output,
       resolution,
+      pin: pinSelection(resolution, descriptor),
+      persistence: receiptPersistence(built.receipt),
       plan: extras.plan ?? null,
     },
   };

@@ -1,6 +1,7 @@
 import {
   type CapabilityAttempt,
   type CapabilityVerb,
+  type DispatchContext,
   type DispatchInput,
   dispatchCapability,
   registeredCapabilities,
@@ -8,7 +9,13 @@ import {
 // Side-effect import: registering the floor is what makes `design` dispatchable.
 // Without it the registry is empty and every invocation answers CAPABILITY_UNKNOWN.
 import "../../application/capability/design-handler.js";
+import {
+  WORKLINE_FLOWS,
+  type WorklineFlow,
+  composeCapability,
+} from "../../application/capability/compose.js";
 import type { DurableEffectPlan } from "../../application/capability/durable-effect.js";
+import type { SelectionPin } from "../../application/capability/resolution.js";
 import { runHarness } from "../../application/dev-only-services.js";
 import type { CapabilityInputValue } from "../../domain/capability/protocol.js";
 import { renderReceiptHuman } from "../../domain/capability/protocol.js";
@@ -69,16 +76,22 @@ export const capabilityCommand: QtcCommand<CapabilityAttempt> = {
     const carried = parseCarried(raw, verb);
     if (!carried.ok) return fail("ARGS_INVALID", carried.why) as CommandResult<CapabilityAttempt>;
 
-    const result = await dispatchCapability(
-      dispatchInputFrom(args, verb, capability, inputs.values, carried),
-      {
-        fs: ctx.fs,
-        env: ctx.env,
-        paths: ctx.paths,
-        workspace: ctx.paths.workspaceDir(),
-        host: runHarness((k) => ctx.env.get(k)).harness,
-      },
-    );
+    const input = dispatchInputFrom(args, verb, capability, inputs.values, carried);
+    // A `--flow` invocation goes through the COMPOSED adapter, never straight to
+    // the dispatcher: the flow→operation map is the authorization, and a caller
+    // that reached the dispatcher directly would be a flow with no boundary.
+    const flow = args.values.get("flow");
+    if (flow !== undefined && !isWorklineFlow(flow)) {
+      return fail(
+        "ARGS_INVALID",
+        `--flow no reconoce '${flow}'; los flows son: ${WORKLINE_FLOWS.join(", ")}`,
+      ) as CommandResult<CapabilityAttempt>;
+    }
+    const dispatch =
+      flow === undefined
+        ? dispatchCapability(input, ctx0(ctx))
+        : composeCapability({ ...input, flow: flow as WorklineFlow }, ctx0(ctx));
+    const result = await dispatch;
 
     if (!result.ok) return failSemantic(result.failure);
     return { ok: true, data: result.attempt, exitCode: 0 };
@@ -120,11 +133,27 @@ function dispatchInputFrom(
     parent: carried.parent,
     request: carried.request,
     plan: carried.plan,
+    pin: carried.pin,
     ...(approval !== undefined
       ? { approval: { digest: approval, granted: carried.plan?.requires_approval ?? [] } }
       : {}),
     answer: carried.answer,
   };
+}
+
+/** The dispatch context, assembled once from the CLI context. */
+function ctx0(ctx: CliContext): DispatchContext {
+  return {
+    fs: ctx.fs,
+    env: ctx.env,
+    paths: ctx.paths,
+    workspace: ctx.paths.workspaceDir(),
+    host: runHarness((k) => ctx.env.get(k)).harness,
+  };
+}
+
+function isWorklineFlow(value: string): value is WorklineFlow {
+  return (WORKLINE_FLOWS as readonly string[]).includes(value);
 }
 
 interface ParsedInputs {
@@ -159,6 +188,7 @@ interface Carried {
   parent: CapabilityRequest | null;
   request: CapabilityRequest | null;
   plan: DurableEffectPlan | null;
+  pin: SelectionPin | null;
   answer: string | null;
 }
 
@@ -171,7 +201,14 @@ interface Carried {
  * re-sealed before it is trusted.
  */
 function parseCarried(raw: string, verb: CapabilityVerb): Carried | { ok: false; why: string } {
-  const empty: Carried = { ok: true, parent: null, request: null, plan: null, answer: null };
+  const empty: Carried = {
+    ok: true,
+    parent: null,
+    request: null,
+    plan: null,
+    pin: null,
+    answer: null,
+  };
   if (raw.trim().length === 0) {
     if (verb === "prepare") return empty;
     return { ok: false, why: `'${verb}' lee por stdin el estado del intento anterior` };
@@ -187,6 +224,7 @@ function parseCarried(raw: string, verb: CapabilityVerb): Carried | { ok: false;
     parent: (parsed.parent ?? null) as CapabilityRequest | null,
     request: (parsed.request ?? null) as CapabilityRequest | null,
     plan: (parsed.plan ?? null) as DurableEffectPlan | null,
+    pin: (parsed.pin ?? null) as SelectionPin | null,
     answer: parsed.answer === undefined ? null : JSON.stringify(parsed.answer),
   };
 }

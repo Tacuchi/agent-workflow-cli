@@ -7,12 +7,10 @@ import {
   CAPABILITY_DESCRIPTOR_METADATA_KEY,
   exposes,
   findOperation,
-  hasWorklineSurface,
   parseDescriptorLocator,
   validateCapabilityDescriptor,
   verifyDescriptorPayload,
 } from "../../src/domain/capability/descriptor.js";
-import type { CapabilityDescriptor } from "../../src/domain/capability/descriptor.js";
 import {
   CANONICAL_SCHEMAS,
   DESIGN_CAPABILITY,
@@ -128,17 +126,16 @@ describe("la identidad pública es el name y no hay un ID de rol paralelo", () =
 });
 
 describe("una skill solo obtiene superficie Workline si la declara", () => {
-  it("sin descriptor no hay superficie", () => {
-    expect(hasWorklineSurface(null)).toBe(false);
-  });
-
-  it("un descriptor sin exposición declarada no obtiene superficie", () => {
-    const ambient = { ...DESIGN_DESCRIPTOR, exposure: [] } as unknown as CapabilityDescriptor;
-    expect(hasWorklineSurface(ambient)).toBe(false);
+  // El opt-in se ejerce en el INVENTARIO: una skill sin descriptor no entra, y
+  // un descriptor sin exposición no valida. No hay un tercer lugar donde
+  // preguntarlo — un predicado aparte sería una segunda respuesta.
+  it("el contrato exige declarar al menos una ruta", () => {
+    const doc = maximal();
+    doc.exposure = [];
+    expect(validateCapabilityDescriptor(doc).ok).toBe(false);
   });
 
   it("design declara ambas rutas", () => {
-    expect(hasWorklineSurface(DESIGN_DESCRIPTOR)).toBe(true);
     expect(exposes(DESIGN_DESCRIPTOR, "direct")).toBe(true);
     expect(exposes(DESIGN_DESCRIPTOR, "compose")).toBe(true);
   });

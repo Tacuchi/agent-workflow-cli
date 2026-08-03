@@ -244,18 +244,6 @@ export interface CapabilityDescriptorValidation {
   value: CapabilityDescriptor | null;
 }
 
-/**
- * Whether an installed skill earns a Workline surface at all.
- *
- * The opt-in is the entire answer to "does installing a linter make it a
- * capability": no descriptor, or a descriptor that exposes nothing, means the
- * skill stays exactly what the host already knows — ambient, discovered by its
- * own description, invoked natively, and invisible to this layer.
- */
-export function hasWorklineSurface(descriptor: CapabilityDescriptor | null): boolean {
-  return descriptor !== null && descriptor.exposure.length > 0;
-}
-
 /** Whether the capability declares `exposure` for the given route. */
 export function exposes(descriptor: CapabilityDescriptor, route: CapabilityExposure): boolean {
   return descriptor.exposure.includes(route);

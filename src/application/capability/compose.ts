@@ -22,6 +22,7 @@
  */
 
 import type { CapabilityRequest, DurableReference } from "../../domain/capability/protocol.js";
+import { satisfiesCompletenessGate } from "../../domain/capability/protocol.js";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { DesignPackageEntry } from "../design/design-index-service.js";
 import { resolveDesignPackage } from "../design/design-index-service.js";
@@ -116,11 +117,31 @@ export type GateComposition =
   | { ok: true; gates: FlowGate[] }
   | { ok: false; failure: CapabilityFailure };
 
+export interface GateOptions {
+  /**
+   * The flow consumes the output, so a `partial` cannot satisfy it. PLAN EXEC
+   * and QUICK set this: they build against the package, and half a package is
+   * not something to build against.
+   */
+  requireCompleteness?: boolean;
+}
+
 export function composeGates(
   attempt: DispatchResult,
   flowGates: readonly FlowGate[],
+  options: GateOptions = {},
 ): GateComposition {
   if (!attempt.ok) return { ok: false, failure: attempt.failure };
+  if (options.requireCompleteness === true && !satisfiesCompletenessGate(attempt.attempt.receipt)) {
+    return {
+      ok: false,
+      failure: {
+        code: "CAPABILITY_OUTPUT_INCOMPLETE",
+        message: `'${input(attempt)}' devolvió un output que no cubre el perfil pedido`,
+        action: "completá el package antes de consumirlo: un parcial no satisface este gate",
+      },
+    };
+  }
   const capabilityGates: FlowGate[] = attempt.attempt.receipt.validations.map((v) => ({
     id: v.id,
     passed: v.passed,
@@ -190,6 +211,10 @@ export function adoptDurableReference(reference: DurableReference, index: Design
   }
   // Same identity, same revision, same digest: adopted as it is.
   return { ok: true, reference, entry };
+}
+
+function input(attempt: Extract<DispatchResult, { ok: true }>): string {
+  return `${attempt.attempt.receipt.capability}.${attempt.attempt.receipt.operation}`;
 }
 
 /** The request a flow passes on, unchanged — proof it shared, not re-derived. */
