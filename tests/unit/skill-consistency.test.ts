@@ -700,3 +700,52 @@ describe("docs/ taxonomy — code and doctrine name the same categories", () => 
     expect(missing, "categorías que la CLI crea y la doctrina no menciona").toEqual([]);
   });
 });
+
+describe("PLAN execution batches — producers, consumer and context graph", () => {
+  const MODULE = "modules/PLAN-EXECUTION-BATCHES.md";
+
+  it("all three PLAN commands load the same canonical contract as core", async () => {
+    const manifest = JSON.parse(
+      await readFile(join(SKILL_ROOT, "context/MANIFEST.json"), "utf8"),
+    ) as { commands: Record<string, { core: string[] }> };
+    for (const command of ["plan-new", "plan-refine", "plan-exec"]) {
+      expect(manifest.commands[command]?.core, command).toContain(MODULE);
+    }
+
+    for (const rel of [
+      "commands/plan-new.md",
+      "commands/plan-refine.md",
+      "commands/plan-exec.md",
+      "loops/plan-new-loop/LOOP.md",
+      "loops/plan-refine-loop/LOOP.md",
+      "loops/plan-exec-loop/LOOP.md",
+    ]) {
+      const surface = await readSurface(rel);
+      expect(surface, rel).toContain("# PLAN execution batches");
+      expect(surface, rel).toContain("`continuous`");
+      expect(surface, rel).toContain("`isolated`");
+    }
+  });
+
+  it("the representative PLAN journeys measure the new guaranteed document", async () => {
+    const corpus = JSON.parse(
+      await readFile(resolve(SKILL_ROOT, "..", "..", "tests/fixtures/context-corpus.json"), "utf8"),
+    ) as { journeys: Array<{ id: string; read_set: string[] }> };
+    for (const id of ["plan-doc", "code-exec"]) {
+      const journey = corpus.journeys.find((candidate) => candidate.id === id);
+      expect(journey?.read_set, id).toContain(MODULE);
+    }
+  });
+
+  it("planning declaration and runtime inference remain distinct authorities", async () => {
+    const planNew = await readSurface("loops/plan-new-loop/LOOP.md");
+    const refine = await readSurface("loops/plan-refine-loop/LOOP.md");
+    const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
+    expect(planNew).toContain("complete phase partition");
+    expect(refine).toContain("re-infers and");
+    expect(refine).toContain("writes its complete phase partition");
+    expect(exec).toContain("infer the effective batches over pending phases");
+    expect(exec).toContain("The declared section remains planning structure");
+    expect(exec).toContain("effective batches and any difference are recorded in `CHECKPOINT`");
+  });
+});

@@ -47,7 +47,12 @@
     },
     {
       "id": "plan-doc",
-      "read_set": ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
+      "read_set": [
+        "commands/plan-new.md",
+        "loops/plan-new-loop/LOOP.md",
+        "modules/PLAN-EXECUTION-BATCHES.md",
+        "loops/CHASSIS.md"
+      ],
       "hard_floor": [
         "session",
         "checkpoint",
@@ -62,6 +67,7 @@
       "read_set": [
         "commands/plan-exec.md",
         "loops/plan-exec-loop/LOOP.md",
+        "modules/PLAN-EXECUTION-BATCHES.md",
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md"
       ],

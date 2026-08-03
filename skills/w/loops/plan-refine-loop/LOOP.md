@@ -31,6 +31,11 @@ This loop turns a plan into a sequence of **verifiable states of the system**. E
 
 The phase contract is defined **once** in [`plan-new-loop`](../plan-new-loop/LOOP.md) § *Phase contract (canonical)* — this loop **applies** it and never redefines it: a `### Fn` block is a state the system reaches, with its `> Estado:` line, its work, its evidence and its exit condition.
 
+The plan's execution-unit interface is likewise defined once in
+[`PLAN-EXECUTION-BATCHES`](../../modules/PLAN-EXECUTION-BATCHES.md). This loop re-infers and
+writes its complete phase partition; it never asks the human to choose an optimization the repo
+can establish.
+
 ## Auxiliary / NOT mandatory
 `plan-exec` runs **any** plan that is already executable, refined or not — there is **no** gate requiring plan-refine. This loop exists to incorporate changes (new requirements, scope adjustments, deps/risks spotted on re-read) **before** executing, and to give an unexecutable plan the shape its execution needs, without regenerating it from scratch.
 
@@ -57,7 +62,8 @@ Full doctrine in the chassis (§ *Internal sessions* + *Numbering*). This loop's
 
 ## Delta 1 — Deliverable: the PLAN, edited in place
 
-The plan uses the **same skeleton** [`plan-new-loop`](../plan-new-loop/LOOP.md) produces (§ *Delta 1 — RICH PLAN*: `Solution` (with its Final behavior block)/`Impacted`/`Tasks` (`### Fn` blocks)/`Validations`/… with `(core)` sections always and `(opt.)` by complexity). plan-refine does **not** change the schema: it **completes/adjusts** the existing sections **in place** and **adds** one trace section:
+The plan uses the **same skeleton** [`plan-new-loop`](../plan-new-loop/LOOP.md) produces, including
+the core `## Execution batches` section. plan-refine completes it in place and adds one trace:
 
 ```markdown
 ## Refinement decisions   ← NEW (ADDED) — the run's single trace
@@ -123,6 +129,7 @@ This loop's instance of the chassis convergence gate — the same one `plan-exec
 - **Phases** — each leaves a verifiable state with its exit condition, none is a list of layers or files, the order allows early integration, deferrals are explicit.
 - **Simulation** *(only when the change carries one)* — initial boundary identified, every displacement foreseen, one phase owns the retirement, nothing can stay active by accident. No temporary behavior → the check does not apply, and no empty `Límite de simulación` is required.
 - **Evidence** — every phase declares its primary proof, per-layer tests are justified, the same scenario is not duplicated by default, declared risks have evidence or an explicit deferral.
+- **Execution batches** — every phase appears once; maximal continuous ranges cross no decision, proof, handoff, irreversible action or required recovery boundary.
 - **Resumability** — tasks legible enough for a `CHECKPOINT`, intermediate states stable, pending work distinguishable from work already `validada`.
 
 ## Sequence
@@ -135,6 +142,7 @@ plan-refine-loop(plan):
   work = read(plan) (+ the spec if realignment is needed; + checkpoint/exec history if resuming or returning from plan-exec)
   journey = map(observable contract, technical journey, incremental strategy, evidence)  # bounded research
   work = phases grouped by verifiable state (phase contract) + simulation lifecycle if any + primary proof each
+  work.Execution batches = infer maximal phase partition (PLAN-EXECUTION-BATCHES)
   keep validated phases and their completed tasks; redesign ONLY pending work
   repeat:                                                      # chassis engine
     gaps = detect_gaps(work)  (plan-new taxonomy + plan↔spec drift)  minus the exhausted ones
@@ -144,7 +152,7 @@ plan-refine-loop(plan):
       ui-design (Delta 4, only new/changed screens)
     integrate + update CHECKPOINT                              # artifact-first cycle
   executability gate (read-only) = Success criteria green:
-    - contract · journey · phases · simulation · evidence · resumability (§ Executability gate)
+    - contract · journey · phases · simulation · evidence · execution batches · resumability (§ Executability gate)
     - plan-new checklist (criterion→task · Final behavior block of Solution · deps · Impacted↔Solution · UI→current SPEC · minimality)
       # spec-less plan (adopted/hand-written): criteria anchor to the plan's own Final behavior block/Validations (see Delta 2)
     - re-refine's own check: the plan is REALIGNED with what changed

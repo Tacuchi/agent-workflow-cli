@@ -19,9 +19,8 @@ describe("context-plan — the resolver returns what the doctrine already orders
   // At F2 the resolver had to return a read-set byte-identical to the doctrine's
   // — with the bundle unrestructured, that equality was the evidence it invented
   // nothing. F3 and F4 then deliberately made those documents smaller, so the
-  // BYTES are no longer expected to match; the SET OF DOCUMENTS still is. An
-  // unsignalled invocation must reach exactly the files it always reached, and
-  // cost no more than it did at the freeze.
+  // BYTES are no longer expected to match. The frozen documents remain exact,
+  // except for explicitly approved new core modules, while the budget stays green.
   it("reaches the baseline read-set for all 16 commands, unsignalled, at no greater cost", async () => {
     const baseline = JSON.parse(await readFile(BASELINE_PATH, "utf8"));
     const frozen = new Map<string, { bytes: number; files: string[] }>(
@@ -33,10 +32,18 @@ describe("context-plan — the resolver returns what the doctrine already orders
     expect(frozen.size).toBe(16);
     for (const [command, expected] of frozen) {
       const plan = await runContextPlan(fs, { command, root: BUNDLE_ROOT });
+      const additions = ["plan-new", "plan-refine", "plan-exec"].includes(command)
+        ? ["modules/PLAN-EXECUTION-BATCHES.md"]
+        : [];
+      const insertAt = expected.files.indexOf("loops/CHASSIS.md");
+      const expectedFiles =
+        additions.length === 0 || insertAt === -1
+          ? expected.files
+          : [...expected.files.slice(0, insertAt), ...additions, ...expected.files.slice(insertAt)];
       expect(
         plan.read_set.map((e) => e.path),
         command,
-      ).toEqual(expected.files);
+      ).toEqual(expectedFiles);
       expect(plan.bytes, command).toBeLessThanOrEqual(expected.bytes);
       expect(plan.degraded, command).toBe(false);
       expect(plan.profile, command).toBe("compact");
@@ -381,6 +388,9 @@ describe("signal discoverability — a module nothing routes to is a module noth
     const manifest = await loadManifest(fs, BUNDLE_ROOT);
     const declared = new Set<string>();
     for (const entry of Object.values(manifest.commands)) {
+      for (const path of entry.core) {
+        if (path.startsWith("modules/")) declared.add(path);
+      }
       for (const module of entry.modules) declared.add(module.path);
     }
     const onDisk = (await fs.list(join(BUNDLE_ROOT, "modules")))

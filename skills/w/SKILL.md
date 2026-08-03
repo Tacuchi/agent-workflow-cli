@@ -108,7 +108,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 - `/w:spec-refine` — starts `spec-refine-loop` to refine the spec until it is `ready-for-plan`: the blocking functional decisions closed, the architecture/implementation ones declared for PLAN.
 - `/w:plan-new` — starts `plan-new-loop` to derive an executable plan from the ready spec.
 - `/w:plan-refine` — starts `plan-refine-loop` to turn the plan, in place, into an executable sequence of functional states (auxiliary, **not mandatory**); it is also the return path when execution hits a structural deviation.
-- `/w:plan-exec` — starts `plan-exec-loop` to execute the planned states and maintain the plan: it validates each phase before closing it, and never silently redesigns what it was given.
+- `/w:plan-exec` — executes planned states in live-inferred isolated/continuous batches; continuous units validate, review and commit only at batch close.
 - `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promote artifacts to `docs/`.
 

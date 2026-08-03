@@ -130,7 +130,12 @@
       ]
     },
     "plan-new": {
-      "core": ["commands/plan-new.md", "loops/plan-new-loop/LOOP.md", "loops/CHASSIS.md"],
+      "core": [
+        "commands/plan-new.md",
+        "loops/plan-new-loop/LOOP.md",
+        "modules/PLAN-EXECUTION-BATCHES.md",
+        "loops/CHASSIS.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -185,6 +190,7 @@
         "commands/plan-refine.md",
         "loops/plan-refine-loop/LOOP.md",
         "loops/plan-new-loop/LOOP.md",
+        "modules/PLAN-EXECUTION-BATCHES.md",
         "loops/CHASSIS.md"
       ],
       "modules": [
@@ -260,6 +266,7 @@
       "core": [
         "commands/plan-exec.md",
         "loops/plan-exec-loop/LOOP.md",
+        "modules/PLAN-EXECUTION-BATCHES.md",
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md"
       ],

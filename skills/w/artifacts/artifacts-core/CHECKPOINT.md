@@ -13,10 +13,10 @@
 ## Completed
 What already happened: finished phases/tasks/gaps with their outcome (ref: plan-doc `docs/plans/PPP-plan.md`, the spec's gaps, or `TASKS.md` if the session created its own split). Fold the key context a resume needs (settled decisions, discoveries) into these bullets.
 
-> **Implemented is not validated (exec sessions).** A phase lands here only once the plan-doc's `> Estado: validada` was flipped. Work that is written but not yet proven stays in `Pending / Next` with its validation pending — a full set of ticked tasks never promotes a phase into this section. Each closed phase records the **functional state reached** and, **only when the change carries one**, the **simulation boundary in force** — that, not the list of files touched, is what a resume actually needs.
+> **Implemented is not validated (exec sessions).** A phase lands here only once the plan-doc's `> Estado: validada` was flipped. Work that is written but not yet proven stays in `Pending / Next` with its validation pending — a full set of ticked tasks never promotes a phase into this section. Continuous-batch phases move together only after their combined validation/review. Each closed phase records the **functional state reached** and, **only when the change carries one**, the **simulation boundary in force** — that, not the list of files touched, is what a resume actually needs.
 
 ## Pending / Next
-The intent: what remains and what comes immediately next (seeded BEFORE executing — artifact-first). A resume starts here. In exec: the next functional state being pursued, plus any blocker or deferral that keeps a phase out of `validada`. A phase left `bloqueada` states here **what is missing to validate it** — applying the migration, an environment, a third party — so the next run knows what to execute before flipping the state.
+The intent: what remains and what comes immediately next (seeded BEFORE executing — artifact-first). A resume starts here. In exec, record the effective batch (`id` · `continuous|isolated` · phases), any declared-vs-live regrouping and explicit conditional commit authorization, then the next functional state. A phase left `bloqueada` states here **what is missing to validate it** — applying the migration, an environment, a third party — so the next run knows what to execute before flipping the state.
 
 ## Open questions
 Live doubts not yet resolved — the section exists only while there are any (rule 1). Deferred ones move to the session's `BACKLOG` or the flow doc's `## Open questions`.

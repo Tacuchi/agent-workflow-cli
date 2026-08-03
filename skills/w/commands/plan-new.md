@@ -1,5 +1,5 @@
 ---
-description: Use when a spec is ready to become an executable plan — not to refine one (plan-refine) nor execute one (plan-exec). Starts plan-new-loop from docs/specs/NNN-spec-<slug>.md, turning the "what" into the "how". Also adopts an externally-built plan. May split into sibling plans.
+description: Use when a spec is ready to become an executable plan. Starts plan-new-loop from docs/specs/NNN-spec-<slug>.md, turning the "what" into functional phases and inferred execution batches. Also adopts an external plan and may split siblings.
 argument-hint: <docs/specs/NNN-spec-<slug>.md | prompt>
 allowed-tools:
   [
@@ -31,6 +31,10 @@ SPEC → PLAN bridge. Turns the "what" (refined spec) into the "how" (plan). Del
 ## Phases are functional states
 
 The plan is born with `### Fn` phases that each leave a **verifiable state of the system** — each with its `> Estado:` line, its primary evidence and its exit condition — never a list of files, classes or layers. The blocks beyond those are **conditional**: a phase with no temporary behavior gets no `Límite de simulación`, and one with nothing excluded gets no `Diferido` — a heading is never written empty to satisfy a template. The plan itself is born `> Estado: open`; only `plan-exec` closes it.
+
+It also writes the complete `## Execution batches` partition from
+[`PLAN-EXECUTION-BATCHES`](../modules/PLAN-EXECUTION-BATCHES.md): maximal eligible ranges are
+`continuous`; the rest are one-phase `isolated` units. This is inferred, not asked.
 
 ## More context
 

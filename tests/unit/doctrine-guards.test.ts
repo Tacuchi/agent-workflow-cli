@@ -1237,6 +1237,89 @@ describe("Doctrine guards — G7 · hard floor inline in the flow commands (info
   });
 });
 
+describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
+  const BATCHES = "modules/PLAN-EXECUTION-BATCHES.md";
+
+  it("defines one compact plan interface with a complete ordered partition", async () => {
+    const contract = await readRel(BATCHES);
+    expect(contract).toContain("## Plan interface");
+    expect(contract).toContain("## Execution batches");
+    expect(contract).toContain("- B1 · continuous · F1-F3");
+    expect(contract).toContain("- B2 · isolated · F4");
+    expect(contract).toContain("complete, disjoint phase partition");
+    expect(contract).toContain("contains consecutive phases");
+    const planNew = await readRel("loops/plan-new-loop/LOOP.md");
+    expect(planNew).toContain("## Execution batches");
+    expect(planNew).toContain("(core)");
+  });
+
+  it("planning infers maximal groups and never asks for a repository fact", async () => {
+    const contract = await readRel(BATCHES);
+    expect(contract).toContain("maximal consecutive `continuous` ranges");
+    for (const guard of [
+      "Every dependency is already satisfied",
+      "determines how a later phase must be built",
+      "irreversible external",
+      "required recovery boundary",
+      "reviewable as one unit",
+    ]) {
+      expect(contract, guard).toContain(guard);
+    }
+    expect(contract).toContain("planning writes it without asking");
+    for (const loop of ["plan-new-loop", "plan-refine-loop"]) {
+      expect(await readSurface(`loops/${loop}/LOOP.md`), loop).toContain(
+        "infer maximal phase partition",
+      );
+    }
+  });
+
+  it("execution re-infers from live state and may regroup without consent", async () => {
+    const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
+    expect(exec).toContain("## Runtime authority");
+    expect(exec).toContain("may merge or split the declared batches without asking");
+    expect(exec).toContain("current evidence wins");
+    expect(exec).toContain("record batches + declaration drift in CHECKPOINT");
+    expect(exec).toContain("missing `## Execution batches` is legacy compatibility");
+  });
+
+  it("continuous units defer every check and validate/review atomically at close", async () => {
+    const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
+    expect(exec).toContain("run no phase proof, test runner, build, lint or closing review");
+    expect(exec).toContain("run every phase proof in order");
+    expect(exec).toContain("Review the whole batch diff once");
+    expect(exec).toContain("last pending batch also runs");
+    expect(exec).toContain("final validation here, before Git");
+    expect(exec).toContain("flip all batch phases to `validada`");
+    expect(exec).toContain("No unproven phase becomes");
+    expect(exec).toContain("combined changes remain uncommitted");
+  });
+
+  it("Git closes one source commit with final approval or conditional pre-authorization", async () => {
+    const policies = await readRel("loops/CODE-POLICIES.md");
+    expect(policies).toContain("exactly one commit");
+    expect(policies).toContain("one consolidated approval");
+    expect(policies).toContain("pre-authorization conditional on all checks passing");
+    expect(policies).toContain("failed or unrun check never authorizes a commit");
+    expect(policies).toContain("intentionally co-mingles its internal phases");
+    expect(policies).not.toContain("two phases never co-mingle in one commit");
+    const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
+    expect(exec).toContain("same authorization also marks the fully validated plan `done`");
+    expect(exec).toContain("before committing");
+    expect(exec).toContain("no second completion\nquestion or commit");
+    expect(exec).toContain("if plan is not done:");
+    expect(exec).toContain("when authorized → mark plan done");
+    expect(exec).toContain("then commit that source once");
+  });
+
+  it("CHECKPOINT carries the effective group, drift and reusable authorization", async () => {
+    const checkpoint = await readRel("artifacts/artifacts-core/CHECKPOINT.md");
+    expect(checkpoint).toContain("effective batch");
+    expect(checkpoint).toContain("declared-vs-live regrouping");
+    expect(checkpoint).toContain("conditional commit authorization");
+    expect(checkpoint).toContain("Continuous-batch phases move together");
+  });
+});
+
 describe("Doctrine guards — G3 · language policy (English doctrine)", () => {
   // Post language-migration (informe 003, wave 2) the doctrine is English.
   // User-facing Spanish is allowed ONLY inside code fences (output templates,

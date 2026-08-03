@@ -1,5 +1,5 @@
 ---
-description: Use when a plan is ready to implement — the real work: code edits, proposed SQL scripts, created tools. Starts or resumes plan-exec-loop over docs/plans/PPP-plan-<slug>.md, phase by phase, validating each before closing it. Git-safe (proposes commits, never push/--amend).
+description: Use when a plan is ready to implement. Starts/resumes plan-exec-loop over docs/plans/PPP-plan-<slug>.md, re-inferring continuous batches and deferring their validation, review and single-per-source commits to batch close.
 argument-hint: <docs/plans/PPP-plan-<slug>.md>
 allowed-tools:
   [
@@ -12,19 +12,25 @@ allowed-tools:
 
 # plan-exec — trampoline to the execution loop
 
-Starts or resumes `plan-exec-loop` (Layer 2), which executes the real work phase by phase — each phase a **verifiable state of the system**, not a batch of technical chores. The plan is a living document the loop keeps updated: each `### Fn` carries its own `> Estado:` line (`pendiente` | `en ejecución` | `bloqueada` | `validada`) next to its task checkboxes.
+Starts or resumes `plan-exec-loop` (Layer 2). Phases remain verifiable states; effective batches are
+execution units. The loop re-infers them from live state using
+[`PLAN-EXECUTION-BATCHES`](../modules/PLAN-EXECUTION-BATCHES.md), then updates each phase's
+checkboxes and `> Estado:` line in the living plan.
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
 > 1. **Session first** — create/resume the run's session before touching code: `aw session-create --type exec --name <slug>-plan-exec --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
-> 2. **Git/DB** — verify each source's expected branch before editing (`aw check-branch`); commits are **proposed**, never executed without approval; **never** `push`/`--amend`/`--no-verify`; never execute DML/DDL (SQL goes to the session's `SCRIPTS.sql`).
+> 2. **Git/DB** — branch-check before a batch; exactly one commit per affected source after its
+>    checks/review. Use one final approval unless the user explicitly pre-authorized green commits.
+>    Never `push`/`--amend`/`--no-verify`; DML/DDL stays in `SCRIPTS.sql`.
 > 3. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
 
 ## Run the loop
 
 1. `aw context-plan --command plan-exec --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` — read exactly the documents it lists, in order.
-2. Follow the loop manual end to end, taking `$ARGUMENTS` as input: it checks executability on entry, executes phase by phase (git-safe, DB scripts-only), keeps the plan alive and reports.
+2. Follow it end to end: check executability, infer live batches, execute each without internal
+   validation pauses, then validate/review/commit at its close.
 
 > `plan-exec-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body. It is **resumable**: an existing CHECKPOINT continues from there.
 

@@ -1,5 +1,5 @@
 ---
-description: Use when a plan must become executable before running it — new requirements, scope tweaks, phases shaped as file lists, or a structural deviation returned by plan-exec. Starts plan-refine-loop, which re-shapes docs/plans/PPP-plan-<slug>.md in place into verifiable functional states.
+description: Use when a plan must become executable before running it. Starts plan-refine-loop, which re-shapes docs/plans/PPP-plan-<slug>.md in place into verifiable functional states and re-infers its execution batches.
 argument-hint: <docs/plans/PPP-plan-<slug>.md>
 allowed-tools:
   [
@@ -28,7 +28,10 @@ allowed-tools:
 
 > `plan-refine-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
 
-**Expected output: an executable plan.** The loop converges on its **executability gate** — each phase a verifiable state with its evidence, its exit condition and, **only when the change carries temporary behavior**, its simulation boundary — so `plan-exec` implements it without inventing contracts, observable states, order or evidence.
+**Expected output: an executable plan.** Each phase has evidence and an exit condition;
+**only when the change carries temporary behavior**, it declares that boundary. The complete partition follows
+[`PLAN-EXECUTION-BATCHES`](../modules/PLAN-EXECUTION-BATCHES.md), so execution need not invent or
+ask about units.
 
 ## More context
 
