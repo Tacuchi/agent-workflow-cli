@@ -411,10 +411,23 @@ export type AttemptRecord =
  * Sequence is checked here too: attempts arrive 1, 2, 3. A jump means the chain
  * has a hole, and a hole is exactly where a stale envelope gets in.
  */
+/**
+ * The four fields the ledger actually reads.
+ *
+ * Named apart so anything with an attempt chain can be validated by the SAME
+ * rules — a flow run's persisted attempt history does exactly that. A full
+ * {@link CapabilityRequest} satisfies it structurally, so no existing caller
+ * changes.
+ */
+export type AttemptIdentity = Pick<
+  CapabilityRequest,
+  "invocation_id" | "attempt" | "request_digest" | "parent_request_digest"
+>;
+
 export class AttemptLedger {
   private readonly seen = new Map<string, Map<number, string>>();
 
-  record(request: CapabilityRequest): AttemptRecord {
+  record(request: AttemptIdentity): AttemptRecord {
     const attempts = this.seen.get(request.invocation_id) ?? new Map<number, string>();
     const known = attempts.get(request.attempt);
 

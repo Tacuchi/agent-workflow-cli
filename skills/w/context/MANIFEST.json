@@ -22,6 +22,24 @@
     "classification": "in-conversation work has to be classified before it is written",
     "authoring": "the deliverable's own notation, structure or ordering is not obvious from the material"
   },
+  "$comment_flow_signals": "Vocabulary the AGENT may declare at a flow boundary — kept HERE, next to the context signals, so there is one catalog and not two that drift. The frontier is exact: recognizing a signal is judgment (the agent's), applying the threshold over the declared signals is a rule (the CLI's). A signal outside this vocabulary never advances a journey. Each id must be consumed by some transition of the authority registry, and every signal a transition consumes must appear here: the guard runs in both directions.",
+  "flow_signals": {
+    "quick.needs-architecture": "the objective cannot be met without deciding how responsibilities are distributed",
+    "quick.two-or-more-sources": "the change reaches two or more declared sources",
+    "quick.multiple-deliverables": "the objective bundles more than one independent deliverable",
+    "quick.large-feature-or-refactor": "the size is that of a feature or a refactor, not a scoped fix",
+    "quick.ambiguous-requirements": "what is being asked needs elicitation before anything can be built",
+    "spec.independent-outcomes": "the prompt holds outcomes each worth delivering on its own",
+    "spec.enumerated-features": "the prompt enumerates distinct features explicitly",
+    "spec.distinct-moments": "the parts are requested for different moments or in a stated order",
+    "spec.independent-value": "the users or the value of each part do not depend on the others",
+    "plan.independent-tranches": "the tranches are executable and deliverable independently",
+    "plan.no-shared-deps": "the tranches share neither dependencies nor risk",
+    "plan.distinct-priorities": "the tranches are requested at different moments or priorities",
+    "plan.far-beyond-s": "the plan far exceeds S-complexity phases",
+    "plan.staging-requested": "the person asked for the work to be staged",
+    "chassis.context-pressure": "a fresh reader would need the CHECKPOINT to continue this run"
+  },
   "commands": {
     "quick": {
       "core": [

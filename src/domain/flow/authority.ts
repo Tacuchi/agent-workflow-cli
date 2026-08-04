@@ -22,6 +22,7 @@
  */
 
 import { WORKLINE_FLOWS, type WorklineFlow } from "../../application/capability/compose.js";
+import type { EffectClass } from "../capability/effects.js";
 
 export const FLOW_AUTHORITIES = ["cli", "agent", "human"] as const;
 
@@ -64,6 +65,33 @@ export interface FlowDecision {
   ownership: TransitionOwnership;
   /** Bundle-relative document that states it today. Must exist in the bundle. */
   document: string;
+  /**
+   * What applying it DOES, as the closed effect taxonomy says it.
+   *
+   * Absent means {@link DEFAULT_TRANSITION_EFFECTS} — a decision that computes a
+   * verdict and persists nothing. Only the transitions that really write, really
+   * overwrite or really run something declare it, and that declaration is what
+   * the authorization gate reads: a row claiming `read_only` while it rewrites a
+   * plan-doc would let the automatic advance edit a document nobody approved.
+   */
+  effects?: readonly EffectClass[];
+  /**
+   * Signals the agent may declare at THIS boundary, by id.
+   *
+   * Only an `agent` row carries them, and they are the exact frontier the spec
+   * draws: recognizing a signal is judgment, counting them against a threshold is
+   * a rule. The ids are declared once in the bundle's manifest (`flow_signals`);
+   * a signal outside that vocabulary never advances a journey.
+   */
+  signals?: readonly string[];
+}
+
+/** A decision computes a verdict; writing is the exception that declares itself. */
+export const DEFAULT_TRANSITION_EFFECTS: readonly EffectClass[] = ["read_only"];
+
+/** What applying this transition does. */
+export function effectsOf(decision: FlowDecision): readonly EffectClass[] {
+  return decision.effects ?? DEFAULT_TRANSITION_EFFECTS;
 }
 
 /**
@@ -104,6 +132,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: CHASSIS_MD,
+    effects: ["local_additive"],
   },
   {
     id: "chassis.session-numbering",
@@ -184,6 +213,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: CHASSIS_MD,
+    effects: ["mutate_overwrite"],
   },
   {
     id: "chassis.structured-choice-shape",
@@ -208,6 +238,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "agent",
     ownership: "legacy",
     document: "modules/COMPACTION.md",
+    signals: ["chassis.context-pressure"],
   },
   {
     id: "chassis.compaction-mode",
@@ -288,6 +319,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: CHASSIS_MD,
+    effects: ["mutate_overwrite"],
   },
 
   // ── QUICK — the pilot tranche ─────────────────────────────────────────────
@@ -298,6 +330,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "agent",
     ownership: "legacy",
     document: QUICK_LOOP,
+    signals: [
+      "quick.needs-architecture",
+      "quick.two-or-more-sources",
+      "quick.multiple-deliverables",
+      "quick.large-feature-or-refactor",
+      "quick.ambiguous-requirements",
+    ],
   },
   {
     id: "quick.entry-size-gate",
@@ -330,6 +369,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: QUICK_LOOP,
+    effects: ["local_additive"],
   },
   {
     id: "quick.success-criteria-authoring",
@@ -354,6 +394,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: QUICK_LOOP,
+    effects: ["local_additive"],
   },
   {
     id: "quick.branch-precondition",
@@ -378,6 +419,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: "modules/DB-SCRIPTS-ONLY.md",
+    effects: ["local_additive"],
   },
   {
     id: "quick.growth-escalation",
@@ -402,6 +444,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: QUICK_LOOP,
+    effects: ["execute"],
   },
   {
     id: "quick.review-precedence",
@@ -436,6 +479,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: SPEC_LOOP,
+    effects: ["local_additive"],
   },
   {
     id: "spec-refine.baseline-scope",
@@ -452,6 +496,20 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: "modules/SPEC-CHANGE-SHAPE.md",
+  },
+  {
+    id: "spec-refine.split-signal",
+    scope: "spec-refine",
+    title: "reconocer cada señal de división en el pedido recibido",
+    authority: "agent",
+    ownership: "legacy",
+    document: "modules/SPLIT-GATE.md",
+    signals: [
+      "spec.independent-outcomes",
+      "spec.enumerated-features",
+      "spec.distinct-moments",
+      "spec.independent-value",
+    ],
   },
   {
     id: "spec-refine.split-gate",
@@ -532,6 +590,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/DESIGN-REFERENCES.md",
+    effects: ["local_additive"],
   },
   {
     id: "spec-refine.ready-gate",
@@ -548,6 +607,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: SPEC_LOOP,
+    effects: ["mutate_overwrite"],
   },
   {
     id: "spec-refine.save-confirmation",
@@ -574,6 +634,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: PLAN_NEW_LOOP,
+    effects: ["local_additive"],
   },
   {
     id: "plan-new.slug-derivation",
@@ -606,6 +667,21 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: BATCHES_MD,
+  },
+  {
+    id: "plan-new.split-signal",
+    scope: "plan-new",
+    title: "reconocer cada señal de división en tramos del plan",
+    authority: "agent",
+    ownership: "legacy",
+    document: "modules/PLAN-SPLIT-GATE.md",
+    signals: [
+      "plan.independent-tranches",
+      "plan.no-shared-deps",
+      "plan.distinct-priorities",
+      "plan.far-beyond-s",
+      "plan.staging-requested",
+    ],
   },
   {
     id: "plan-new.split-gate",
@@ -656,6 +732,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: PLAN_REFINE_LOOP,
+    effects: ["local_additive"],
   },
   {
     id: "plan-refine.journey-map",
@@ -688,6 +765,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: "modules/PLAN-REFINE-SPLIT.md",
+    effects: ["local_additive", "mutate_overwrite"],
   },
   {
     id: "plan-refine.normalize-on-write",
@@ -696,6 +774,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: PLAN_REFINE_LOOP,
+    effects: ["mutate_overwrite"],
   },
   {
     id: "plan-refine.executability-gate",
@@ -722,6 +801,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: PLAN_EXEC_LOOP,
+    effects: ["local_additive"],
   },
   {
     id: "plan-exec.entry-gate",
@@ -802,6 +882,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: PLAN_EXEC_LOOP,
+    effects: ["mutate_overwrite"],
   },
   {
     id: "plan-exec.phase-state-transition",
@@ -810,6 +891,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: PLAN_EXEC_LOOP,
+    effects: ["mutate_overwrite"],
   },
   {
     id: "plan-exec.validation-execution",
@@ -818,6 +900,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: PLAN_EXEC_LOOP,
+    effects: ["execute"],
   },
   {
     id: "plan-exec.deferred-check",
@@ -866,6 +949,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "legacy",
     document: PLAN_EXEC_LOOP,
+    effects: ["mutate_overwrite"],
   },
 
   // ── Transversal commands (universe = the command registry) ────────────────
@@ -908,6 +992,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/PERSIST-ROUTING.md",
+    effects: ["local_additive"],
   },
   {
     id: "context-plan.signal-declaration",
@@ -940,6 +1025,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
+    effects: ["local_additive"],
   },
   {
     id: "session-close.closure",
@@ -948,6 +1034,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
+    effects: ["mutate_overwrite"],
   },
   {
     id: "session-resume.reopen",
@@ -956,6 +1043,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
+    effects: ["mutate_overwrite"],
   },
   {
     id: "check-branch.verdict",
@@ -996,6 +1084,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/WORKSPACE-SCAFFOLD.md",
+    effects: ["local_additive"],
   },
   {
     id: "generate-launch.detection",
@@ -1004,6 +1093,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/LAUNCH-DETECTION.md",
+    effects: ["local_additive"],
   },
   {
     id: "fix-git.intent",
@@ -1020,6 +1110,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "commands/fix-git.md",
+    effects: ["mutate_overwrite"],
   },
   {
     id: "export.selection",
@@ -1036,6 +1127,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "commands/export-reports.md",
+    effects: ["local_additive"],
   },
 ];
 

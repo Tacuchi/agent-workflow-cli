@@ -101,13 +101,57 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
  * intermediate state applied" checkable — the next state either exists whole or
  * was never produced.
  */
-export function applyTransition(state: FlowRunState, decisionId: string): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), applied: [...state.applied, decisionId] });
+export function applyTransition(
+  state: FlowRunState,
+  decisionId: string,
+  effects: readonly EffectClass[] = [],
+): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    applied: [...state.applied, decisionId],
+    // planned before applied, always: an effect that shows up as applied without
+    // ever having been planned is the lie `buildReceipt` refuses, and the
+    // directive refuses it too.
+    effects: {
+      planned: union(state.effects.planned, effects),
+      approved: [...state.effects.approved],
+      applied: union(state.effects.applied, effects),
+    },
+  });
 }
 
 /** Move the boundary to where the walk stopped, applying nothing. */
 export function withBoundary(state: FlowRunState, boundary: string | null): FlowRunState {
   return sealRunState({ ...withoutSeal(state), boundary });
+}
+
+/** Record one attempt in the persisted history, re-sealing the result. */
+export function withAttempt(state: FlowRunState, attempt: FlowRunAttempt): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), attempts: [...state.attempts, attempt] });
+}
+
+/**
+ * Grant the run an authorization the person just gave.
+ *
+ * The classes land in BOTH `authorizations` — what the run may exercise from here
+ * on — and `effects.approved` — the ledger moment. The two are the same split the
+ * capability contract already makes between the request's authorizations and the
+ * receipt's approved effects, and the directive enforces `approved ⊆ authorizations`.
+ */
+export function withApproval(state: FlowRunState, effects: readonly EffectClass[]): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    authorizations: union(state.authorizations, effects),
+    effects: {
+      planned: union(state.effects.planned, effects),
+      approved: union(state.effects.approved, effects),
+      applied: [...state.effects.applied],
+    },
+  });
+}
+
+function union(current: readonly EffectClass[], added: readonly EffectClass[]): EffectClass[] {
+  return [...new Set([...current, ...added])];
 }
 
 /**

@@ -66,9 +66,16 @@ export async function readRun(fs: FileSystemPort, location: FlowRunLocation): Pr
   return parseRunState(await fs.readText(location.statePath));
 }
 
-/** What a mutation returns, and what {@link applyUnderLock} returns in turn. */
+/**
+ * What a mutation returns, and what {@link applyUnderLock} returns in turn.
+ *
+ * `persist: false` is how a BUSINESS rejection comes back: it produced a real
+ * answer for the caller — the recalculated boundary — and it must not touch the
+ * file. Without it, "a rejected answer writes nothing" would rest on the mutation
+ * remembering to hand back the identical object, which is not a guarantee.
+ */
 export type FlowRunMutation<T> =
-  | { ok: true; state: FlowRunState; value: T }
+  | { ok: true; state: FlowRunState; value: T; persist?: boolean }
   | { ok: false; failure: CapabilityFailure };
 
 export interface ApplyOptions extends LockOptions {
@@ -136,6 +143,7 @@ export async function applyUnderLock<T>(
 
     const result = await mutate(state);
     if (!result.ok) return result;
+    if (result.persist === false) return result;
     // One write, after the next state is complete and sealed: nothing partial
     // can be observed because nothing partial is ever written.
     await fs.writeText(location.statePath, serializeRunState(result.state));

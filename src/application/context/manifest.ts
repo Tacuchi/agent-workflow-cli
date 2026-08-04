@@ -51,6 +51,16 @@ export interface BudgetPolicy {
 export interface ContextManifest {
   version: number;
   signals: Readonly<Record<string, string>>;
+  /**
+   * Vocabulary the AGENT may declare at a flow boundary, id → what it means.
+   *
+   * It lives next to the context signals rather than in a catalog of its own for
+   * one reason: two catalogs of "what the agent may say" drift, and the day they
+   * do, a threshold rule starts counting a signal the doctrine no longer names.
+   * Absent in an older bundle — a flow boundary then admits no signal at all,
+   * which is the fail-closed answer, never a permissive one.
+   */
+  flowSignals: Readonly<Record<string, string>>;
   commands: Readonly<Record<string, ContextCommandEntry>>;
   /**
    * Conformant CAPABILITIES, declared next to the commands and never among
@@ -134,23 +144,25 @@ export function parseManifest(raw: unknown): ContextManifest {
     );
   }
 
-  const signals = readSignals(root.signals);
+  const signals = readSignals(root.signals, "signals");
+  const flowSignals =
+    root.flow_signals === undefined ? {} : readSignals(root.flow_signals, "flow_signals");
   const commands = readCommands(root.commands, signals);
   const capabilities =
     root.capabilities === undefined ? {} : readCommands(root.capabilities, signals);
   const journeys = readJourneys(root.journeys, commands, signals);
   const budgetPolicy = readPolicy(root.budget_policy);
 
-  return { version, signals, commands, capabilities, journeys, budgetPolicy };
+  return { version, signals, flowSignals, commands, capabilities, journeys, budgetPolicy };
 }
 
-function readSignals(raw: unknown): Record<string, string> {
-  const record = asRecord(raw, "signals");
+function readSignals(raw: unknown, where: string): Record<string, string> {
+  const record = asRecord(raw, where);
   const out: Record<string, string> = {};
   for (const [id, description] of Object.entries(record)) {
     if (id.startsWith("$")) continue;
     if (typeof description !== "string" || description.length === 0) {
-      throw new ManifestError("CONTEXT_MANIFEST_INVALID", `signal '${id}' sin descripción`);
+      throw new ManifestError("CONTEXT_MANIFEST_INVALID", `${where} '${id}' sin descripción`);
     }
     out[id] = description;
   }

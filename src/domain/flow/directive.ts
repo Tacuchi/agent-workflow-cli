@@ -5,9 +5,12 @@
  * and degradations are the capability receipt's vocabulary, reused by name and by
  * type; a semantic boundary carries the existing `SemanticRequest` whole, with
  * its contract, its limits, its allowed destinations and its own `input_digest`.
- * What is genuinely new here is one field — `state_digest`, the continuity
- * evidence over the RUN STATE — because the run's staleness and the semantic
- * inputs' staleness are different questions and one digest could not answer both.
+ * What is genuinely new here is one field — `state_digest`, the seal of the
+ * BOUNDARY (the run state plus the transition it stands on). There is exactly one
+ * such seal per boundary and an answer quotes it back verbatim; a semantic
+ * boundary also carries it inside its request's own `input_digest`, because the
+ * protocol demands it there. One seal, carried where each contract needs it —
+ * two would mean two staleness questions and a caller guessing which to answer.
  *
  * `buildFlowDirective` refuses the combinations that would let a run lie: a
  * boundary with no next action, a finalization with work still pending, allowed
@@ -81,7 +84,13 @@ export interface FlowDirective {
   session: string;
   boundary: FlowBoundary;
   outcome: CapabilityOutcome;
-  /** Seal over the run state this directive was built from — the staleness key. */
+  /**
+   * Seal of this boundary — the run state plus the transition it stands on.
+   *
+   * The staleness key for EVERY boundary kind, not only the semantic ones: an
+   * answer quotes it back in its `input_digest`, and it changes the moment either
+   * the state or the boundary moves.
+   */
   state_digest: string;
   /** Transitions applied in THIS invocation, in order. */
   applied: string[];

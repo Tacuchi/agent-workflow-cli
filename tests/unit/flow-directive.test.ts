@@ -362,10 +362,12 @@ describe("sin tercer protocolo paralelo (AC-COMP-01)", () => {
     }
   });
 
-  it("la staleness de la corrida no se disfraza de input_digest del protocolo semántico", () => {
+  it("un solo sello por frontera, llevado donde cada contrato lo pide", () => {
+    // The directive names it once; the nested semantic request carries the SAME
+    // value in its own `input_digest`, because that protocol demands it there.
+    // Two different seals would be two staleness questions and a caller guessing.
     expect([...FLOW_DIRECTIVE_KEYS]).not.toContain("input_digest");
     expect([...FLOW_DIRECTIVE_KEYS]).toContain("state_digest");
-    // The semantic request keeps its own seal, nested and untouched.
     expect(Object.keys(request())).toContain("input_digest");
   });
 
