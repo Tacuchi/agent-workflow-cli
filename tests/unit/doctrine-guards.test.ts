@@ -5,6 +5,7 @@ import {
   type ContextBudgetOutput,
   runContextBudget,
 } from "../../src/application/context/budget-service.js";
+import { decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 // Doctrine budget & form guards (informe 003 — weak-model clarity round).
@@ -248,9 +249,16 @@ describe("Doctrine guards — G11 · creativity/ideation gate pins", () => {
     expect(specRefine).toContain("## Ideation gate (creativity)");
     expect(specRefine).toContain("Unexplored solution space");
     expect(specRefine).toContain("web-research");
-    // Canonical product labels of the offer (G7 precedent: pin verbatim strings).
-    expect(specRefine).toContain("`Explorar ideas`");
-    expect(specRefine).toContain("`Seguir sin ideación`");
+    // The offer's canonical labels were pinned here verbatim until the SPEC
+    // cutover made them data of the row that emits them. They are still pinned —
+    // against the source that now decides them, so the two cannot drift.
+    const consent = decisionsOfScope("spec-refine").find(
+      (decision) => decision.id === "spec-refine.ideation-consent",
+    );
+    expect((consent?.alternatives ?? []).map((choice) => choice.label)).toEqual([
+      "Explorar ideas",
+      "Seguir sin ideación",
+    ]);
   });
 
   it("the harness declares web-research as an optional capability with a declared degrade", async () => {
@@ -577,16 +585,25 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
     const loop = await readSurface(LOOP);
     const sequence = loop.slice(loop.indexOf("## Sequence"));
     const baseline = sequence.indexOf("baseline = resolve_current_behavior");
-    const shape = sequence.indexOf("shape = change_shape_gate");
-    const taxonomy = sequence.indexOf("gaps = classify_by_destination");
     expect(baseline).toBeGreaterThan(-1);
-    expect(shape).toBeGreaterThan(baseline);
-    expect(taxonomy).toBeGreaterThan(shape);
+    // The order used to be read off two lines of the pseudo-code. Since the SPEC
+    // cutover the journey decides it, so that is where it is asserted: judging the
+    // shape after closing details would re-litigate a contract already hardened
+    // around the wrong cut.
+    const ids = decisionsOfScope("spec-refine").map((decision) => decision.id);
+    expect(ids.indexOf("spec-refine.baseline-scope")).toBeGreaterThan(-1);
+    expect(ids.indexOf("spec-refine.change-shape-gate")).toBeGreaterThan(
+      ids.indexOf("spec-refine.baseline-scope"),
+    );
+    expect(ids.indexOf("spec-refine.gap-recognition")).toBeGreaterThan(
+      ids.indexOf("spec-refine.change-shape-gate"),
+    );
     // The three sections still exist somewhere on the surface…
     expect(loop).toContain("## Current-behavior baseline");
     expect(loop).toContain("## Change-shape gate");
     expect(loop).toContain("## Gap taxonomy");
-    expect(loop).toContain("**before** closing details");
+    // …and the loop still says WHY the order is what it is, which is the half the
+    // document keeps: the shape is judged before the details harden.
   });
 
   it("the baseline is bounded (brownfield only, stops at the functional change)", async () => {
@@ -601,7 +618,7 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
   it("ideation is conditional — triggers AND non-triggers are both declared", async () => {
     const loop = await readSurface(LOOP);
     expect(loop).toContain("**Unexplored solution space is not a universal gap**");
-    expect(loop).toContain("**Triggers (≥1).**");
+    expect(loop).toContain("**Triggers.**");
     expect(loop).toContain("**Not triggers.**");
     expect(loop).toContain("Purely technical alternatives belong to `PLAN`");
   });
@@ -945,15 +962,19 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     // the gate is a module.
     expect(loop).toContain("## Change-shape gate");
     expect(loop).toContain("## Gap taxonomy");
-    expect(loop).toContain(
-      "**Resolved before the gap loop starts, never carried into it (hard rule).**",
+    // WHEN it runs stopped being this document's call at the SPEC cutover; what
+    // the document keeps is why it matters, and the engine keeps the order.
+    expect(loop).toContain("is not this document's call");
+    expect(loop).toContain("erased by the next batch");
+    const ids = decisionsOfScope("spec-refine").map((decision) => decision.id);
+    expect(ids.indexOf("spec-refine.change-shape-gate")).toBeLessThan(
+      ids.indexOf("spec-refine.gap-recognition"),
     );
-    expect(loop).toContain("It never travels in `pending_human`");
 
-    // The sequence must show it too: the resolution branch has to sit BEFORE
-    // the `repeat:` that rebuilds `pending_human`, or the prose is aspirational.
+    // The sequence must still show the shape branch BEFORE the `repeat:` that
+    // rebuilds `pending_human`, or the prose is aspirational.
     const sequence = loop.slice(loop.indexOf("## Sequence"));
-    const resolve = sequence.indexOf("if shape != same:");
+    const resolve = sequence.indexOf("on the shape branch");
     const repeat = sequence.indexOf("\n  repeat:");
     const reset = sequence.indexOf("pending_human = []");
     expect(resolve).toBeGreaterThan(-1);

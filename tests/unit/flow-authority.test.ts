@@ -76,6 +76,12 @@ describe("registro de autoridad — forma y unicidad", () => {
       "quick.success-criteria-authoring",
       "quick.success-criteria-ratification",
       "quick.deliverable-authoring",
+      "spec-refine.baseline-scope",
+      "spec-refine.gap-recognition",
+      "spec-refine.ideation-consent",
+      "spec-refine.content-authoring",
+      "spec-refine.functional-ambiguity",
+      "spec-refine.save-confirmation",
     ]);
   });
 
@@ -190,43 +196,59 @@ describe("registro de autoridad — la migración arranca observable", () => {
     expect(hasLegacyOwnership(CHASSIS_SCOPE)).toBe(true);
   });
 
-  it("lo migrado es QUICK entero y nada de otro tramo", () => {
-    const owned = FLOW_DECISIONS.filter((decision) => decision.ownership === "cli-owned");
-    expect(owned.length).toBeGreaterThan(0);
-    // QUICK is the first tranche cut over; SPEC, PLAN and the chassis follow, so
-    // the only migrated flow rows are QUICK's own plus the three a shipped command
-    // already owned. A row appearing here from another flow is a cutover that
-    // moved without its phase.
-    const inFlows = owned.filter((decision) => flowOfScope(decision.scope) !== null);
-    const foreign = inFlows.filter(
-      (decision) => decision.scope !== "quick" && decision.document !== QUICK_LOOP,
-    );
-    expect(foreign.map((decision) => decision.id)).toEqual([
+  it("la migración se mide por DOCUMENTO, en las dos direcciones", () => {
+    // The tranche is the document, not the scope. A rule stated in a document that
+    // another still-legacy journey reads cannot be retired yet, so it cannot be
+    // migrated either — that is what kept QUICK's five transversal rows and the
+    // shared split gate behind. Both directions are asserted: nothing outside the
+    // cut-over documents is migrated, and nothing inside them is left behind.
+    const inFlows = FLOW_DECISIONS.filter((decision) => flowOfScope(decision.scope) !== null);
+    const migratedDocuments = new Set([
+      QUICK_LOOP,
+      "loops/spec-refine-loop/LOOP.md",
+      "modules/SPEC-CHANGE-SHAPE.md",
+      "modules/IDEATION-GATE.md",
+    ]);
+    // The three a shipped command already owned predate the tranches.
+    const commandOwned = new Set([
       "spec-refine.design-publication",
       "plan-new.numbering",
       "plan-exec.design-precondition",
     ]);
+
+    const early = inFlows.filter(
+      (decision) =>
+        decision.ownership === "cli-owned" &&
+        !commandOwned.has(decision.id) &&
+        !migratedDocuments.has(decision.document),
+    );
+    expect(early.map((decision) => `${decision.id} → ${decision.document}`)).toEqual([]);
+
+    const left = inFlows.filter(
+      (decision) => decision.ownership === "legacy" && migratedDocuments.has(decision.document),
+    );
+    expect(left.map((decision) => `${decision.id} → ${decision.document}`)).toEqual([]);
   });
 
-  it("el tramo QUICK migró sus 12 filas y NINGUNA transversal", () => {
-    const quick = decisionsOfScope("quick");
-    // The document is the boundary of the tranche, not the scope: five of QUICK's
-    // rows state their rule in CODE-POLICIES or DB-SCRIPTS-ONLY, which the other
-    // four flows read too. Migrating one of them here would cut over a tranche
-    // nobody planned — the drift this guard exists to catch.
-    const own = quick.filter((decision) => decision.document === QUICK_LOOP);
-    const transversal = quick.filter((decision) => decision.document !== QUICK_LOOP);
-    expect(own.length).toBe(12);
-    expect(own.every((decision) => decision.ownership === "cli-owned")).toBe(true);
-    expect(transversal.map((decision) => decision.ownership)).toEqual(
-      transversal.map(() => "legacy"),
+  it("QUICK migró 12 filas y SPEC 12, y ninguna de un documento compartido", () => {
+    const counted = (scope: string, document: string): number =>
+      decisionsOfScope(scope).filter(
+        (decision) => decision.document === document && decision.ownership === "cli-owned",
+      ).length;
+    expect(counted("quick", QUICK_LOOP)).toBe(12);
+    expect(counted("spec-refine", "loops/spec-refine-loop/LOOP.md")).toBe(9);
+    expect(counted("spec-refine", "modules/IDEATION-GATE.md")).toBe(2);
+    expect(counted("spec-refine", "modules/SPEC-CHANGE-SHAPE.md")).toBe(1);
+    // Still doctrine's, and each for the same reason: their document belongs to a
+    // journey nobody has cut over.
+    const shared = FLOW_DECISIONS.filter(
+      (decision) => decision.ownership === "legacy" && decision.scope === "spec-refine",
     );
-    expect(transversal.map((decision) => decision.document)).toEqual([
-      "loops/CODE-POLICIES.md",
-      "modules/DB-SCRIPTS-ONLY.md",
-      "loops/CODE-POLICIES.md",
-      "loops/CODE-POLICIES.md",
-      "loops/CODE-POLICIES.md",
+    expect(shared.map((decision) => decision.document)).toEqual([
+      "modules/SPLIT-GATE.md",
+      "modules/SPLIT-GATE.md",
+      "modules/SPLIT-GATE.md",
+      "modules/DESIGN-REFERENCES.md",
     ]);
   });
 });

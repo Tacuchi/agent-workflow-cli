@@ -123,6 +123,10 @@ The choices a reader needs in order to interpret the contract, each with its why
 
 > **Acceptance criteria = static testable criteria** (the "what"): plan-exec validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]` in the spec; the spec never mutates by execution, only by a re-refine.
 
+## Who decides what
+
+> **Directed tranche:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document — it opens the session, resolves the shape gate, decides when the ideation offer and the ambiguity question appear, evaluates the ready-for-plan gate and holds the save until its result comes back. What stays here is the *why*: the taxonomy, the checklist and what each branch means. The split gate keeps its rule in [`../../modules/SPLIT-GATE.md`](../../modules/SPLIT-GATE.md), which the PLAN flows still read.
+
 ## Gap taxonomy — signal, resolver, destination
 
 `detect_gaps(work)` looks for these signals. Each is **classified by destination before its resolver is chosen**: closing a `PLAN`-owned question here is the failure mode this taxonomy exists to prevent.
@@ -155,22 +159,17 @@ The choices a reader needs in order to interpret the contract, each with its why
 ```
 spec-refine-loop(spec):
   input = glob(NNN-spec*.md) | argument (path)          # always the spec itself (in place)
-  refine_session = create_or_resume("<slug>-spec-refine")  # <slug> from the spec; CLI prepends global NNN
-  seed SESSION.Success criteria = acceptance criteria + ready-for-plan checklist  # verification-first, BEFORE
+  refine_session = the run's session          # the CLI opens or resumes it and verifies its seed
+  SESSION.Success criteria = acceptance criteria + ready-for-plan checklist  # what its gate evaluates later
   work = read(input)  (+ apply checkpoint progress if resuming)
   adopt(spec-new facts + assumptions + open questions + conversation)  # never re-derive (§ Reads)
   baseline = resolve_current_behavior(work)      # inline research, ONLY what the change rests on
-  shape = change_shape_gate(work, baseline)      # BEFORE closing details → same | split | replace
-  if shape != same:                              # RESOLVED HERE — never queued into pending_human
-    ans = structured_choice(content: [the offer of THIS branch],   # split and replace never share labels
-                            flow: [Compactar, Cerrar])
-    write CHECKPOINT (the decision + its consequence)  # BEFORE acting: a resume re-enters already decided
-    flow Cerrar → goto finalize                  # closed without applying the change; the spec stays untouched
-    `Una sola spec`           → shape resolved as same; keep refining this spec
+  on the shape branch (see ../../modules/SPEC-CHANGE-SHAPE.md for what each one means):
+    `Una sola spec`           → keep refining this spec
     `Dividir en varias specs` → the accepted cut is fixed now; its writes wait for `Guardar specs`
     `Crear una nueva spec`    → mint draft with confirmation (## Origin) ; THIS spec untouched ;
                                 CHECKPOINT.Next = refine it ; goto finalize
-    `Reformular esta spec`    → same number/path ; re-run baseline + this gate before any stamp
+    `Reformular esta spec`    → same number/path ; re-run baseline before any stamp
   attempts = {}                                          # anti re-fire per gap
   repeat:
     gaps = classify_by_destination(detect_gaps(work)) minus the "exhausted" gaps
@@ -184,8 +183,8 @@ spec-refine-loop(spec):
         compose design → reuse a compatible baseline OR publish an `outline` revision
                                                  # design-system/theme via structured-choice (counts in the batch)
         work = integrate(work, design)           # → ## Design references (package + hint + digest)
-      else if gap = Unexplored solution space and a trigger fires:
-        pending_human.push("ideation offer")     # `Explorar ideas` | `Seguir sin ideación`
+      else if gap = Unexplored solution space:
+        declare the trigger signal               # the CLI decides whether the offer appears
       else if factual(gap) and attempts[gap] < MAX:
         if it needs DB and >1 MCP without default → queue "MCP choice" in pending_human
         res = research_inline(gap)           # current session: ANALYSIS-FILE → CONCLUSIONS (+read-only SCRIPTS.sql)
@@ -202,11 +201,8 @@ spec-refine-loop(spec):
       work = integrate(work, ans)            # → Decisions / Open questions
       ideation offer accepted → run the round NOW, then its verdicts as a NEW ≤3+flow batch (§ Ideation gate)
       ideation offer declined → mark that gap exhausted    # anti re-fire; on-demand entry stays open
-  # no BLOCKING gaps → ready-for-plan gate = Success criteria green (read-only) before offering Guardar:
-  issues = ready_for_plan(work)   # § Convergence / exit — PLAN-owned questions never fail it
-  if issues: blocking += issues ; continue        # findings come back into the loop as gaps
-  ans = structured_choice(content: [Guardar refinada | Guardar specs, Preguntar algo más],
-                        flow: [Compactar, Cerrar])
+  # no BLOCKING gaps → the CLI evaluates the ready-for-plan gate over the run's
+  # Success criteria and asks for their real state; whatever fails comes back as a gap.
   Guardar            → edit_in_place_with_confirm(spec) + stamp status: ready-for-plan ; goto finalize
                        # split branch → also mint + write the extracted siblings as status: draft
   Preguntar algo más → continue
@@ -227,7 +223,7 @@ finalize:
   - **Minimality** — no gold-plating: every criterion and scope item earns its place (chassis § *Minimality*); speculative scope is cut or deferred, and no technical solution was imposed that the requirement did not ask for;
   - `PLAN` can continue without inventing behavior, scope or product decisions.
 - Whatever fails **comes back as a gap**. A question owned by `PLAN` **never** fails the gate: it is recorded with its destination, not closed.
-- Passes → offer `Guardar especificación refinada` (split branch: `Guardar specs`) → `edit_in_place_with_confirm(spec)` + `status: ready-for-plan` → `finalize`.
+- Passes → `edit_in_place_with_confirm(spec)` + `status: ready-for-plan` → `finalize`. The stamp only counts once the document really carries it.
 - `Cerrar` → the chassis `finalize` (always persists `CHECKPOINT`; `BACKLOG` **only if** something is deferred — here: close reason + deferred `Open questions`).
 
 ## Integration (where each resolution lands)

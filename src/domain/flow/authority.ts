@@ -152,6 +152,16 @@ export interface FlowChoice {
 export interface SignalThreshold {
   /** Transition whose declared signals it counts. */
   observed: string;
+  /**
+   * Which of that row's signals count. Absent means all of them.
+   *
+   * A boundary can declare several signals that answer DIFFERENT questions — one
+   * says the solution space is unexplored, another that a functional ambiguity is
+   * blocking — and two rules reading the same row would otherwise be
+   * indistinguishable: either signal would fire both. Naming the subset is what
+   * keeps "how many" from silently becoming "how many of anything".
+   */
+  of?: readonly string[];
   /** How many DISTINCT declared signals make it fire. */
   min: number;
 }
@@ -305,6 +315,20 @@ const CODE_POLICIES_MD = "loops/CODE-POLICIES.md";
 const SKILL_MD = "SKILL.md";
 const QUICK_LOOP = "loops/quick-loop/LOOP.md";
 const SPEC_LOOP = "loops/spec-refine-loop/LOOP.md";
+const IDEATION_GATE = "modules/IDEATION-GATE.md";
+const CHANGE_SHAPE = "modules/SPEC-CHANGE-SHAPE.md";
+
+/**
+ * What SPEC's documents say about who decides their deterministic steps.
+ *
+ * One marker per document, because the guard reads each row's own document: the
+ * loop states it once for its nine rows, and each migrated module states it for
+ * its own. A module read by a tranche that has NOT been cut over keeps its rule
+ * and gets no marker — that is why `SPLIT-GATE.md` and `DESIGN-REFERENCES.md` are
+ * absent here.
+ */
+const SPEC_ATTRIBUTION =
+  "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
 const PLAN_NEW_LOOP = "loops/plan-new-loop/LOOP.md";
 const PLAN_REFINE_LOOP = "loops/plan-refine-loop/LOOP.md";
 const PLAN_EXEC_LOOP = "loops/plan-exec-loop/LOOP.md";
@@ -793,25 +817,43 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "spec-refine",
     title: "abrir o reanudar la sesión de refinamiento de la spec",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
     effects: ["local_additive"],
+    // Same shape as QUICK's: the engine cannot author the descriptor, so what it
+    // names is the read that proves the session it runs inside exists as an
+    // artifact — with its objective and its seeded criteria.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["spec.session-present"],
+      idempotent: true,
+      recovery:
+        "creá la sesión con 'aw session-create --type refine --name <slug>-spec-refine --objetivo \"<objetivo>\"' y volvé a devolver la lectura",
+    },
   },
   {
     id: "spec-refine.baseline-scope",
     scope: "spec-refine",
     title: "decidir cuánto comportamiento actual hace falta establecer",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
   },
   {
     id: "spec-refine.change-shape-gate",
     scope: "spec-refine",
     title: "resolver la forma del cambio: una sola spec, dividir o reemplazar",
     authority: "cli",
-    ownership: "legacy",
-    document: "modules/SPEC-CHANGE-SHAPE.md",
+    ownership: "cli-owned",
+    document: CHANGE_SHAPE,
+    attribution: SPEC_ATTRIBUTION,
   },
   {
     id: "spec-refine.split-signal",
@@ -848,48 +890,94 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "spec-refine",
     title: "reconocer qué clase de gap tiene la spec delante",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
+    // Two of the taxonomy's kinds decide whether a later step happens at all, so
+    // they travel as declared signals instead of as prose the next reader has to
+    // re-derive. Recognizing them is judgment — the taxonomy that explains HOW to
+    // recognize them stays in the document.
+    signals: ["spec.functional-ambiguity", "spec.solution-space-unexplored"],
   },
   {
     id: "spec-refine.gap-destination",
     scope: "spec-refine",
     title: "clasificar el gap por destino: bloquea SPEC, es de PLAN o se difiere",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
   },
   {
     id: "spec-refine.ideation-trigger",
     scope: "spec-refine",
     title: "aplicar el disparador condicional del gate de ideación",
     authority: "cli",
-    ownership: "legacy",
-    document: "modules/IDEATION-GATE.md",
+    ownership: "cli-owned",
+    document: IDEATION_GATE,
+    attribution: SPEC_ATTRIBUTION,
   },
   {
     id: "spec-refine.ideation-consent",
     scope: "spec-refine",
     title: "consentir la ronda de ideación o seguir sin ella",
     authority: "human",
-    ownership: "legacy",
-    document: "modules/IDEATION-GATE.md",
+    ownership: "cli-owned",
+    document: IDEATION_GATE,
+    attribution: SPEC_ATTRIBUTION,
+    // "Unexplored solution space is not a universal gap": the gate stays shut
+    // unless the signal is declared. Offering it always would burn context on a
+    // spec whose direction nobody doubts — the document's own words.
+    condition: {
+      threshold: {
+        observed: "spec-refine.gap-recognition",
+        of: ["spec.solution-space-unexplored"],
+        min: 1,
+      },
+      otherwise: "ningún disparador de ideación fue declarado: la spec no abre la ronda divergente",
+    },
+    alternatives: [
+      {
+        label: "Explorar ideas",
+        consequence:
+          "se corre una ronda de ideación y sus veredictos vuelven como un lote propio de la conversación",
+        recommended: true,
+      },
+      {
+        label: "Seguir sin ideación",
+        consequence: "el gap queda agotado para esta corrida y el refinamiento sigue sin la ronda",
+        recommended: false,
+      },
+    ],
   },
   {
     id: "spec-refine.content-authoring",
     scope: "spec-refine",
     title: "redactar requisito, contexto, criterios y escenarios de la spec",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
   },
   {
     id: "spec-refine.functional-ambiguity",
     scope: "spec-refine",
     title: "cerrar una ambigüedad funcional que puede cambiar lo que se construye",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
+    // Only when one was declared. A spec with no ambiguity that stopped to ask
+    // about one would train the reader to answer questions with no subject.
+    condition: {
+      threshold: {
+        observed: "spec-refine.gap-recognition",
+        of: ["spec.functional-ambiguity"],
+        min: 1,
+      },
+      otherwise:
+        "no se declaró ninguna ambigüedad funcional bloqueante: no hay nada que la persona tenga que cerrar",
+    },
   },
   {
     id: "spec-refine.design-reuse",
@@ -914,25 +1002,70 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "spec-refine",
     title: "evaluar el gate ready-for-plan sobre los criterios declarados",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: SPEC_LOOP,
-  },
-  {
-    id: "spec-refine.status-promotion",
-    scope: "spec-refine",
-    title: "promover el status de la spec a ready-for-plan",
-    authority: "cli",
-    ownership: "legacy",
-    document: SPEC_LOOP,
-    effects: ["mutate_overwrite"],
+    attribution: SPEC_ATTRIBUTION,
+    // The checklist is the run's own `Success criteria`, seeded before refining.
+    // The engine names the read that holds them and demands the real state of
+    // each one back: "the gate passed" is not a result.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}", "--dump", "objetivo"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["spec.ready-for-plan-checklist"],
+      idempotent: true,
+      recovery:
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real",
+    },
   },
   {
     id: "spec-refine.save-confirmation",
     scope: "spec-refine",
     title: "confirmar la sobreescritura de la spec",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
+    // BEFORE the stamp, and the real walk is what proved it: the migrated journey
+    // was promoting the status and asking for the overwrite afterwards, so the
+    // person would have been confirming a write that already happened. The
+    // doctrine's own line is `edit_in_place_with_confirm(spec) + stamp`.
+    alternatives: [
+      {
+        label: "Guardar especificación refinada",
+        consequence: "la spec se sobrescribe en su lugar y queda sellada como ready-for-plan",
+        recommended: true,
+      },
+      {
+        label: "Preguntar algo más",
+        consequence: "el refinamiento sigue abierto y la spec queda como está",
+        recommended: false,
+      },
+    ],
+  },
+  {
+    id: "spec-refine.status-promotion",
+    scope: "spec-refine",
+    title: "promover el status de la spec a ready-for-plan",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
+    effects: ["mutate_overwrite"],
+    // The stamp is a write on a document the engine does not edit, so what it
+    // demands back is the board's own reading of that document's status. The
+    // effect is not self-authorizable: the run stops to be authorized before this
+    // invocation is ever named.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["spec.status-ready-for-plan"],
+      idempotent: true,
+      recovery:
+        "sellá 'status: ready-for-plan' en la spec y volvé a devolver la lectura del tablero; si el sello no está, la transición sigue pendiente",
+    },
   },
 
   // ── PLAN — new ────────────────────────────────────────────────────────────

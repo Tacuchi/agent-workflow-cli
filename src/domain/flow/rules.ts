@@ -42,7 +42,12 @@ export function thresholdFired(
 ): boolean {
   const observed = journey.find((decision) => decision.id === rule.observed);
   if (observed === undefined) return false;
-  const vocabulary = new Set(observed.signals ?? []);
+  // The subset the rule names, intersected with what the row actually declares:
+  // a rule may only count signals its observed boundary can produce, so a typo in
+  // `of` narrows to nothing instead of counting something else.
+  const declaredVocabulary = observed.signals ?? [];
+  const counted = rule.of ?? declaredVocabulary;
+  const vocabulary = new Set(declaredVocabulary.filter((signal) => counted.includes(signal)));
   const declared = observations
     .filter((observation) => observation.transition === rule.observed)
     .flatMap((observation) => observation.signals)

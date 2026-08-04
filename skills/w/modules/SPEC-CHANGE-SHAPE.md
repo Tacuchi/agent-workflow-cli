@@ -13,9 +13,9 @@ Loaded when the investigation may have changed the spec shape (signal `shape`).
 
 ## Change-shape gate
 
-Runs once the baseline exists and **before** closing details: the investigation can reveal the draft's shape was wrong. Does the spec still carry **one** functional outcome, did its purpose survive, can the delivery be accepted as a unit? The verdict is **one of three shapes** — `same` | `split` | `replace` — each with its own branch; only the last two ask anything.
+The investigation can reveal the draft's shape was wrong. Does the spec still carry **one** functional outcome, did its purpose survive, can the delivery be accepted as a unit? The verdict is **one of three shapes** — `same` | `split` | `replace` — each with its own branch; only the last two ask anything.
 
-> **Resolved before the gap loop starts, never carried into it (hard rule).** A `split` or a `replace` is asked, answered and applied **immediately** — its own structured-choice, in its own step, between the baseline and the first gap batch. It never travels in `pending_human`: that collection is rebuilt on every iteration and is reserved for questions about functional, technical or scope **gaps**, so a shape decision parked there is erased by the next batch — or never asked at all, because a spec with no blocking gap breaks out of the loop before the batch is built. The resolution lands in `CHECKPOINT` **before** anything else runs, so a resume re-enters with the shape already decided and never re-asks it.
+> **When it runs, and that it never travels inside the gap loop, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Why it matters: a shape decision parked among the gap questions is erased by the next batch — or never asked at all, because a spec with no blocking gap leaves the loop before a batch is built.
 
 - same outcome — more clarity, or more technical components → **`same`**: no shape question, keep refining this spec;
 - independent functional outcomes discovered → **`split`** (below);

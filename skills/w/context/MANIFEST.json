@@ -30,6 +30,8 @@
     "quick.large-feature-or-refactor": "the size is that of a feature or a refactor, not a scoped fix",
     "quick.ambiguous-requirements": "what is being asked needs elicitation before anything can be built",
     "quick.deliverable-is-analysis": "what the task produces is an analysis or a design, so its criterion is a rubric a person ratifies",
+    "spec.functional-ambiguity": "a functional ambiguity with two readings that would change what gets built is blocking this spec",
+    "spec.solution-space-unexplored": "a trigger of the ideation gate fires: the spec settled on its first idea and the alternatives would change the outcome",
     "spec.independent-outcomes": "the prompt holds outcomes each worth delivering on its own",
     "spec.enumerated-features": "the prompt enumerates distinct features explicitly",
     "spec.distinct-moments": "the parts are requested for different moments or in a stated order",
