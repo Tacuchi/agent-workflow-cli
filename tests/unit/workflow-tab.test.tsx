@@ -8,6 +8,7 @@ import { WORKFLOW_CONTENT } from "../../src/cli/tui/data/workflow-content.js";
 import { HOSTS } from "../../src/cli/tui/hosts.js";
 import { WorkflowTab } from "../../src/cli/tui/tabs/workflow-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { FLOW_DECISIONS } from "../../src/domain/flow/authority.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -74,6 +75,17 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
     // Sections retired by the redesign (U2) must not render.
     expect(frame).not.toContain("Command families");
     expect(frame).not.toContain("Workspace init");
+  });
+
+  // El motor de dirección tiene su propia fila, y su cifra sale del registro de
+  // autoridad — nunca de un número escrito a mano, que se quedaría viejo en el
+  // primer tramo migrado y haría que la pestaña reporte mal la migración.
+  it("fila del motor: `aw flow` con su propiedad derivada del registro de autoridad", async () => {
+    const frame = await renderFlat();
+    expect(frame).toContain("Engine:");
+    expect(frame).toContain(WORKFLOW_CONTENT.engine.command);
+    const owned = FLOW_DECISIONS.filter((d) => d.ownership === "cli-owned").length;
+    expect(frame).toContain(`${owned}/${FLOW_DECISIONS.length} CLI-owned`);
   });
 
   it("administración por host montada: sección Hosts con TODOS los targets del registro", async () => {

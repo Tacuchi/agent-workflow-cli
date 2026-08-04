@@ -22,6 +22,7 @@ import {
   exportScriptsCommand,
 } from "./export.js";
 import { fixGitCommand } from "./fix-git.js";
+import { flowCommand } from "./flow.js";
 import { generateLaunchCommand } from "./generate-launch.js";
 import { gitFlowCommand } from "./git-flow.js";
 import { historyUpdateCommand } from "./history-update.js";
@@ -74,6 +75,7 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   contextPlanCommand,
   skillsCommand,
   capabilityCommand,
+  flowCommand,
   designsCommand,
   sourcesCommand,
   generateLaunchCommand,

@@ -115,6 +115,7 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     "designs", // plan 012 — the UI Design Packages and where they live right now
     "capability", // plan 014 — the attempt's receipt, projected from the same data
     "skills", // plan 014 — capability readiness, widened only under --detail
+    "flow", // plan 015 — the boundary directive, derived from the same directive
   ];
 
   it("no undeclared command acquired a human projection", () => {

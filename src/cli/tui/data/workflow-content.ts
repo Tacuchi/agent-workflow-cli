@@ -27,11 +27,25 @@ export interface HookEntry {
   fires: string;
 }
 
+/**
+ * The deterministic direction engine, as its own row.
+ *
+ * Identity and one line only: how much of the journey the CLI already owns is
+ * DERIVED at render time from the authority registry, never written here — a
+ * hardcoded number would go stale on the first migrated tranche and the tab
+ * would quietly misreport the migration.
+ */
+export interface WorkflowEngine {
+  command: string;
+  summary: string;
+}
+
 export interface WorkflowContent {
   overview: string;
   phases: WorkflowPhase[];
   slashCommands: string[];
   hooks: HookEntry[];
+  engine: WorkflowEngine;
 }
 
 export const WORKFLOW_CONTENT: WorkflowContent = {
@@ -97,4 +111,10 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       fires: "resume-summary + prompt to reload CHECKPOINT.md",
     },
   ],
+
+  // The engine that advances a journey to its first non-deterministic boundary.
+  engine: {
+    command: "aw flow",
+    summary: "stops at the first boundary it does not own",
+  },
 };

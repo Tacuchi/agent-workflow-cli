@@ -63,6 +63,9 @@ const GROUPS: readonly CommandGroup[] = [
       // The shared entry into a conformant capability: both routes — the direct
       // wrapper and a composing flow — reach the handlers through here.
       "capability",
+      // The deterministic direction engine: advances a journey to its first
+      // non-deterministic boundary and hands back that boundary's directive.
+      "flow",
       "resume-summary",
       "next-number",
       // Context budget & read-set resolution (spec 009): what a command costs
