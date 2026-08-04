@@ -30,8 +30,12 @@ function boundary(overrides: Partial<FlowBoundary> = {}): FlowBoundary {
     kind: "semantic",
     transition: "quick.entry-gate-signal",
     authority: "agent",
-    ownership: "legacy",
+    // A semantic, human or authorization boundary only exists for a transition
+    // this CLI owns: on a `legacy` row the engine returns the `legacy` boundary
+    // instead of asking about a step doctrine decides.
+    ownership: "cli-owned",
     title: "reconocer cada señal de tamaño en el objetivo recibido",
+    document: "loops/quick-loop/LOOP.md",
     ...overrides,
   };
 }
@@ -53,7 +57,13 @@ const BASE = {
   flow: "quick" as const,
   session: "001-prueba-quick",
   stateDigest: "sello",
-  applied: ["quick.session-create"],
+  applied: [
+    {
+      transition: "quick.session-create",
+      authority: "cli" as const,
+      ownership: "cli-owned" as const,
+    },
+  ],
   pending: ["quick.entry-gate-signal"],
   nextAction: "respondé con 'aw flow submit'",
 };
@@ -68,7 +78,7 @@ describe("directiva de frontera — la forma válida", () => {
     });
     if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
     expect(built.directive.tranche).toBe("quick");
-    expect(built.directive.boundary.ownership).toBe("legacy");
+    expect(built.directive.boundary.ownership).toBe("cli-owned");
     expect(built.directive.next_action.length).toBeGreaterThan(0);
     expect(Object.keys(built.directive).sort()).toEqual([...FLOW_DIRECTIVE_KEYS].sort());
   });
@@ -77,7 +87,14 @@ describe("directiva de frontera — la forma válida", () => {
     const built = buildFlowDirective({
       ...BASE,
       pending: [],
-      boundary: { kind: "final", transition: null, authority: null, ownership: null, title: null },
+      boundary: {
+        kind: "final",
+        transition: null,
+        authority: null,
+        ownership: null,
+        title: null,
+        document: null,
+      },
       outcome: "completed",
       nextAction: "no queda trabajo pendiente en este recorrido",
     });
@@ -98,14 +115,37 @@ describe("directiva de frontera — la forma válida", () => {
     expect(human).toContain(built.directive.state_digest);
   });
 
-  it("los cinco motivos de frontera son el vocabulario cerrado de la spec", () => {
+  it("los motivos de frontera son el vocabulario cerrado de la spec", () => {
     expect([...FLOW_BOUNDARY_KINDS]).toEqual([
       "semantic",
       "human",
       "authorization",
+      "legacy",
       "blocked",
       "final",
     ]);
+  });
+
+  it("una frontera legacy declara el fallback y no ofrece nada que elegir", () => {
+    const built = buildFlowDirective({
+      ...BASE,
+      boundary: boundary({
+        kind: "legacy",
+        authority: "cli",
+        ownership: "legacy",
+        transition: "quick.dedup-check",
+        title: "comprobar si ya existe trabajo equivalente",
+      }),
+      outcome: "needs_input",
+      nextAction: "aplicá la regla vigente de loops/quick-loop/LOOP.md",
+    });
+    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
+    expect(built.directive.boundary.document).toBe("loops/quick-loop/LOOP.md");
+    expect(built.directive.choices).toEqual([]);
+    expect(built.directive.request).toBeNull();
+    expect(renderDirectiveHuman(built.directive)).toContain(
+      "fallback declarado: la regla vigente de loops/quick-loop/LOOP.md",
+    );
   });
 });
 
@@ -132,6 +172,7 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
           authority: null,
           ownership: null,
           title: null,
+          document: null,
         },
         outcome: "completed",
       },
@@ -148,6 +189,7 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
           authority: "cli",
           ownership: "legacy",
           title: "crear la sesión liviana de la tarea",
+          document: "loops/quick-loop/LOOP.md",
         },
         outcome: "completed",
       },
@@ -277,10 +319,54 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
       "FLOW_DIRECTIVE_EFFECT_UNAUTHORIZED",
     ],
     [
+      "una frontera legacy que no declara su fallback",
+      {
+        ...BASE,
+        boundary: boundary({
+          kind: "legacy",
+          authority: "cli",
+          ownership: "legacy",
+          document: null,
+        }),
+        outcome: "needs_input",
+      },
+      "FLOW_DIRECTIVE_LEGACY_WITHOUT_FALLBACK",
+    ],
+    [
+      "una frontera semántica sobre una transición que la doctrina todavía decide",
+      {
+        ...BASE,
+        boundary: boundary({ ownership: "legacy" }),
+        outcome: "needs_input",
+        request: request(),
+      },
+      "FLOW_DIRECTIVE_OWNERSHIP_CONTRADICTED",
+    ],
+    [
+      "una frontera legacy sobre una transición ya migrada",
+      {
+        ...BASE,
+        boundary: boundary({ kind: "legacy", authority: "cli", ownership: "cli-owned" }),
+        outcome: "needs_input",
+      },
+      "FLOW_DIRECTIVE_OWNERSHIP_CONTRADICTED",
+    ],
+    [
       "una traza que repite una transición",
       {
         ...BASE,
-        applied: ["quick.session-create", "quick.session-create"],
+        applied: [
+          {
+            transition: "quick.session-create",
+            authority: "cli" as const,
+            ownership: "cli-owned" as const,
+          },
+          {
+            transition: "quick.session-create",
+            authority: "cli" as const,
+            ownership: "cli-owned" as const,
+          },
+        ],
         boundary: boundary(),
         outcome: "needs_input",
         request: request(),

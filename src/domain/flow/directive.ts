@@ -36,6 +36,7 @@ import type {
 } from "../capability/protocol.js";
 import {
   type FlowAuthority,
+  type FlowDecision,
   type FlowTranche,
   type TransitionOwnership,
   trancheOfFlow,
@@ -44,15 +45,17 @@ import {
 export const FLOW_DIRECTIVE_VERSION = 1;
 
 /**
- * The five reasons a deterministic advance stops. They are the spec's own list,
- * and collapsing any two would erase the difference between "I need a judgment",
- * "I need a preference", "I need an approval", "I am stuck" and "there is nothing
- * left" — five situations whose next action has nothing in common.
+ * The reasons a deterministic advance stops. They are the spec's own list, and
+ * collapsing any two would erase the difference between "I need a judgment", "I
+ * need a preference", "I need an approval", "I am stuck", "there is nothing left"
+ * — and "this step is not mine yet", whose next action is the only one that sends
+ * the reader to a document instead of back to the engine.
  */
 export const FLOW_BOUNDARY_KINDS = [
   "semantic",
   "human",
   "authorization",
+  "legacy",
   "blocked",
   "final",
 ] as const;
@@ -75,6 +78,38 @@ export interface FlowBoundary {
   /** Whether this transition is already CLI-owned or still decided by doctrine. */
   ownership: TransitionOwnership | null;
   title: string | null;
+  /**
+   * The doctrine document behind this transition.
+   *
+   * At a `legacy` boundary it is the fallback DECLARATION: which rule is about to
+   * decide the step the CLI does not own yet. Declaring it is a precondition, not
+   * a footnote — {@link buildFlowDirective} refuses a `legacy` boundary without
+   * it, so nobody can execute a fallback the run never named.
+   */
+  document: string | null;
+}
+
+/**
+ * One applied transition, with the authority that moved it.
+ *
+ * The trace is a list of these instead of bare ids because during the migration
+ * "it advanced" is not the whole truth: whoever executes has to see whether the
+ * step came from a rule this CLI owns or from doctrine it merely recorded. The
+ * pair travels with the step so the two facts can never be read apart.
+ */
+export interface FlowStep {
+  transition: string;
+  authority: FlowAuthority;
+  ownership: TransitionOwnership;
+}
+
+/** Project a decision into the trace entry of having applied it. */
+export function stepOf(decision: FlowDecision): FlowStep {
+  return {
+    transition: decision.id,
+    authority: decision.authority,
+    ownership: decision.ownership,
+  };
 }
 
 export interface FlowDirective {
@@ -92,8 +127,8 @@ export interface FlowDirective {
    * the state or the boundary moves.
    */
   state_digest: string;
-  /** Transitions applied in THIS invocation, in order. */
-  applied: string[];
+  /** Transitions applied in THIS invocation, in order, each with its authority. */
+  applied: FlowStep[];
   /** Transition ids still ahead, so a finalization cannot hide pending work. */
   pending: string[];
   /** Present exactly at a semantic boundary. */
@@ -157,7 +192,7 @@ export interface BuildDirectiveInput {
   boundary: FlowBoundary;
   outcome: CapabilityOutcome;
   stateDigest: string;
-  applied: readonly string[];
+  applied: readonly FlowStep[];
   pending: readonly string[];
   request?: SemanticRequest | null;
   choices?: readonly FlowChoice[];
@@ -357,8 +392,52 @@ function checkEffectLedger(directive: FlowDirective): CapabilityFailure | null {
   return null;
 }
 
+/**
+ * A legacy boundary has to name the rule that is about to decide it.
+ *
+ * "Declare the fallback BEFORE executing it" is only a real precondition if the
+ * directive cannot be built without it: a boundary that hands the step back to
+ * doctrine without saying which doctrine is indistinguishable, to whoever
+ * executes, from the CLI having decided.
+ */
+function checkLegacy(directive: FlowDirective): CapabilityFailure | null {
+  if (directive.boundary.kind !== "legacy") return null;
+  if (directive.boundary.document !== null) return null;
+  return reject(
+    "FLOW_DIRECTIVE_LEGACY_WITHOUT_FALLBACK",
+    "una frontera legacy no declara el documento cuya regla va a decidir el paso",
+    "nombrá el documento del fallback antes de ejecutarlo: sin eso, quien ejecuta no distingue el fallback de una decisión del CLI",
+  );
+}
+
+/**
+ * The kind of boundary and the ownership of its transition say the same thing.
+ *
+ * `legacy` is the only kind that means "doctrine decides this one", so a semantic,
+ * human or authorization boundary standing on a `legacy` row would be the engine
+ * asking about a step it does not own — and a `legacy` boundary standing on a
+ * migrated row would send the reader to a document for a rule the CLI already
+ * applies. Either way the directive would be telling two stories at once.
+ *
+ * Two kinds are exempt, and for the same reason: neither decides the step.
+ * `blocked` can stand on either side of the migration, and an `authorization`
+ * asks to approve an EFFECT — a legacy transition that writes still needs its
+ * approval, and refusing that combination would bypass the effect gate.
+ */
+function checkOwnership(directive: FlowDirective): CapabilityFailure | null {
+  const boundary = directive.boundary;
+  if (boundary.transition === null) return null;
+  if (boundary.kind === "blocked" || boundary.kind === "authorization") return null;
+  if ((boundary.kind === "legacy") === (boundary.ownership === "legacy")) return null;
+  return reject(
+    "FLOW_DIRECTIVE_OWNERSHIP_CONTRADICTED",
+    `una frontera '${boundary.kind}' declara la transición como '${boundary.ownership}'`,
+    "la propiedad sale del registro: una transición legacy se devuelve como frontera 'legacy' y una migrada nunca como tal",
+  );
+}
+
 function checkApplied(directive: FlowDirective): CapabilityFailure | null {
-  const seen = new Set(directive.applied);
+  const seen = new Set(directive.applied.map((step) => step.transition));
   if (seen.size === directive.applied.length) return null;
   return reject(
     "FLOW_DIRECTIVE_APPLIED_REPEATED",
@@ -374,6 +453,8 @@ const DIRECTIVE_CHECKS: readonly DirectiveCheck[] = [
   checkChoices,
   checkBlocked,
   checkAuthorization,
+  checkLegacy,
+  checkOwnership,
   checkEffectLedger,
   checkApplied,
 ];
@@ -403,8 +484,16 @@ function boundaryLines(directive: FlowDirective): string[] {
     const title = directive.boundary.title === null ? "" : ` — ${directive.boundary.title}`;
     lines.push(`detenido en ${directive.boundary.transition}${owner}${title}`);
   }
+  // The fallback, on the line right after the boundary that hands the step back:
+  // whoever executes reads which rule decides before reading what to do next.
+  if (directive.boundary.kind === "legacy" && directive.boundary.document !== null) {
+    lines.push(`fallback declarado: la regla vigente de ${directive.boundary.document}`);
+  }
   if (directive.applied.length > 0) {
-    lines.push(`aplicadas en esta invocación: ${directive.applied.join(", ")}`);
+    const trace = directive.applied
+      .map((step) => `${step.transition} (${step.authority} · ${step.ownership})`)
+      .join(", ");
+    lines.push(`aplicadas en esta invocación: ${trace}`);
   }
   if (directive.pending.length > 0) lines.push(`pendientes: ${directive.pending.length}`);
   return lines;

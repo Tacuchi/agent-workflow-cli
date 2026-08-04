@@ -84,6 +84,20 @@ export interface FlowDecision {
    * a signal outside that vocabulary never advances a journey.
    */
   signals?: readonly string[];
+  /**
+   * The text in {@link document} that attributes this decision to the CLI.
+   *
+   * Present on EVERY `cli-owned` row and on no other: what makes ownership
+   * observable in the doctrine is that the document says out loud who decides.
+   * The guard reads this field and demands the marker verbatim, so the day a
+   * document drops the attribution — the first symptom of doctrine taking a
+   * migrated rule back — the suite fails instead of two sources drifting apart.
+   *
+   * It is a marker, not a summary: it has to be text already earning its place in
+   * the document, which is why the guard also refuses one that names neither an
+   * `aw` invocation nor the CLI nor the capability that runs it.
+   */
+  attribution?: string;
 }
 
 /** A decision computes a verdict; writing is the exception that declares itself. */
@@ -141,6 +155,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
+    attribution: "The CLI owns the number (hard rule)",
   },
   {
     id: "chassis.session-locate",
@@ -590,6 +605,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/DESIGN-REFERENCES.md",
+    attribution: "capability over the **UI Design Package v1**",
     effects: ["local_additive"],
   },
   {
@@ -651,6 +667,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
+    attribution: "`aw next-number docs/plans`",
   },
   {
     id: "plan-new.phase-shaping",
@@ -842,6 +859,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/DESIGN-REFERENCES.md",
+    attribution: "`aw designs --plan`",
   },
   {
     id: "plan-exec.branch-precondition",
@@ -960,6 +978,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "commands/status.md",
+    attribution: "`aw status`",
   },
   {
     id: "resume.priority-derivation",
@@ -968,6 +987,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "commands/resume.md",
+    attribution: "`aw resume`",
   },
   {
     id: "resume.route-choice",
@@ -992,6 +1012,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/PERSIST-ROUTING.md",
+    attribution: "(owned by this command)",
     effects: ["local_additive"],
   },
   {
@@ -1009,6 +1030,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "commands/plan-exec.md",
+    attribution: "aw context-plan --command plan-exec",
   },
   {
     id: "context-budget.verdict",
@@ -1016,7 +1038,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     title: "medir el costo de carga de un comando contra su techo",
     authority: "cli",
     ownership: "cli-owned",
-    document: "commands/plan-exec.md",
+    // The manifest, not a command doc: the budget policy the verdict reads lives
+    // there and nothing else in the bundle states this decision. The attribution
+    // guard is what surfaced it — the previous pointer (`commands/plan-exec.md`)
+    // names `aw context-plan` and never mentions the measurement at all.
+    document: "context/MANIFEST.json",
+    attribution: "(aw context-budget)",
   },
   {
     id: "session-create.numbering",
@@ -1025,6 +1052,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
+    attribution: "`aw session-create`",
     effects: ["local_additive"],
   },
   {
@@ -1034,6 +1062,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
+    attribution: "`aw session-close`",
     effects: ["mutate_overwrite"],
   },
   {
@@ -1043,6 +1072,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
+    attribution: "`aw session-resume --code <NNN> --reopen`",
     effects: ["mutate_overwrite"],
   },
   {
@@ -1052,6 +1082,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
+    attribution: "aw check-branch",
   },
   {
     id: "next-number.correlative",
@@ -1060,6 +1091,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
+    attribution: "The CLI owns the number (hard rule)",
   },
   {
     id: "capability.routing",
@@ -1068,6 +1100,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "roles/design/CONTRACT.md",
+    attribution: "aw capability prepare",
   },
   {
     id: "designs.reference-verdict",
@@ -1076,6 +1109,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/DESIGN-REFERENCES.md",
+    attribution: "`aw designs`",
   },
   {
     id: "workspace-init.scaffold",
@@ -1084,6 +1118,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/WORKSPACE-SCAFFOLD.md",
+    attribution: "CLI-owned `.gitignore`",
     effects: ["local_additive"],
   },
   {
@@ -1093,6 +1128,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/LAUNCH-DETECTION.md",
+    attribution: "Loaded when the CLI's detection is wrong",
     effects: ["local_additive"],
   },
   {
@@ -1110,6 +1146,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "commands/fix-git.md",
+    attribution: "`aw fix-git`",
     effects: ["mutate_overwrite"],
   },
   {
@@ -1127,6 +1164,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: "commands/export-reports.md",
+    attribution: "`aw export-reports`",
     effects: ["local_additive"],
   },
 ];

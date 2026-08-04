@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
@@ -16,6 +16,20 @@ import {
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+
+// The engine walks only what the CLI owns, and no tranche is migrated yet: over the
+// live rows this run would stop at its first `legacy` boundary and this file would
+// be testing the migration instead of its own subject. The service resolves the
+// journey from the registry, so the flip happens here — same flip, same reason as
+// `tests/helpers/owned-journey.ts`, which the direct callers use.
+vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/domain/flow/authority.js")>();
+  return {
+    ...real,
+    decisionsOfScope: (scope: string) =>
+      real.decisionsOfScope(scope).map((row) => ({ ...row, ownership: "cli-owned" as const })),
+  };
+});
 
 /**
  * A response that does not serve changes NOTHING.
@@ -108,7 +122,7 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
       JSON.stringify({ input_digest: await seal(), decisions: { tamaño: "cabe en un quick" } }),
     );
     expect(applied.error).toBeNull();
-    expect(applied.applied).toContain("quick.entry-gate-signal");
+    expect(applied.applied.map((step) => step.transition)).toContain("quick.entry-gate-signal");
 
     const before = await bytes();
     const rejected = await submit(stale);

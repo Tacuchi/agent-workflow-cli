@@ -18,7 +18,10 @@ function decision(id: string, authority: FlowAuthority): FlowDecision {
     scope: "quick",
     title: `transición ${id} del fixture de avance`,
     authority,
-    ownership: "legacy",
+    // The engine only applies what the CLI owns: a fixture still marked `legacy`
+    // would stop at its first step, which is the migration's rule, not this
+    // file's subject.
+    ownership: "cli-owned",
     document: "loops/quick-loop/LOOP.md",
   };
 }
@@ -31,12 +34,23 @@ const JOURNEY: readonly FlowDecision[] = [
   decision("fixture.semantica", "agent"),
 ];
 
+/** The transitions a directive says it applied, in order. */
+function trace(directive: { applied: { transition: string }[] }): string[] {
+  return directive.applied.map((step) => step.transition);
+}
+
 describe("aw flow advance — agota los pasos deterministas", () => {
   it("una sola invocación aplica las tres y devuelve la directiva de la cuarta", () => {
     const result = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey: JOURNEY });
     if (!result.ok) throw new Error(`esperaba avanzar: ${result.failure.code}`);
 
-    expect(result.directive.applied).toEqual(["fixture.uno", "fixture.dos", "fixture.tres"]);
+    expect(trace(result.directive)).toEqual(["fixture.uno", "fixture.dos", "fixture.tres"]);
+    // The trace carries the authority each step moved with, not only its id.
+    expect(result.directive.applied[0]).toEqual({
+      transition: "fixture.uno",
+      authority: "cli",
+      ownership: "cli-owned",
+    });
     expect(result.directive.boundary.kind).toBe("semantic");
     expect(result.directive.boundary.transition).toBe("fixture.semantica");
     expect(result.directive.outcome).toBe("needs_input");
@@ -107,7 +121,7 @@ describe("aw flow advance — agota los pasos deterministas", () => {
     expect(result.failure.code).toBe("FLOW_RUN_AHEAD_OF_JOURNEY");
   });
 
-  it("el motor consume el registro real: el recorrido de cada flow tiene decisiones", () => {
+  it("el motor consume el registro real y no aplica nada que la doctrina todavía decida", () => {
     const real = decisionsOfScope("plan-exec");
     expect(real.length).toBeGreaterThan(0);
     const result = advanceFlowRun({
@@ -115,9 +129,13 @@ describe("aw flow advance — agota los pasos deterministas", () => {
       journey: real,
     });
     if (!result.ok) throw new Error(`esperaba avanzar: ${result.failure.code}`);
-    // The first non-`cli` row of PLAN exec is the consented normalization.
-    expect(result.directive.boundary.authority).not.toBe("cli");
-    expect(result.directive.applied.length).toBeGreaterThan(0);
+    // Every production row is still `legacy`, so the honest answer over the live
+    // registry is the boundary that hands the FIRST step back to its document —
+    // with nothing applied. The cutover phase of this tranche is what flips it.
+    expect(result.directive.boundary.kind).toBe("legacy");
+    expect(result.directive.boundary.transition).toBe(real[0]?.id);
+    expect(result.directive.boundary.document).toBe(real[0]?.document);
+    expect(result.directive.applied).toEqual([]);
   });
 });
 

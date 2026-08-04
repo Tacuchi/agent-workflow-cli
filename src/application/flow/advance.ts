@@ -1,19 +1,27 @@
 /**
- * One invocation exhausts every consecutive deterministic step.
+ * One invocation exhausts every consecutive deterministic step it OWNS.
  *
  * The engine walks the journey from where the run left off and applies each
- * transition whose authority is `cli`, one after another, without handing any of
- * them back as work. It stops at the FIRST transition that is not the CLI's —
- * semantic, human, an authorization it does not hold, a blocker — or at the end
- * of the journey, and returns that boundary as a directive.
+ * transition that is both the CLI's authority (`cli`) and the CLI's property
+ * (`cli-owned`), one after another, without handing any of them back as work. It
+ * stops at the FIRST transition it cannot apply — a judgment, a preference, an
+ * effect nobody authorized, a step doctrine still decides, a blocker — or at the
+ * end of the journey, and returns that boundary as a directive.
  *
- * The trace of what it applied lives in the run state, so the advance is
- * auditable after the fact instead of being a claim in a report.
+ * The two axes are not the same stop. Authority answers "is this derivable?";
+ * ownership answers "does this CLI decide it yet?". A row that is derivable but
+ * still doctrine's is handed back as a `legacy` boundary that DECLARES the
+ * document about to decide it — applying it would record as the CLI's a step
+ * whose rule nobody read. Both give way to one thing: an effect nobody
+ * authorized stops the advance whoever owns the rule.
+ *
+ * The trace of what it applied lives in the run state, with the authority each
+ * step moved under, so the advance is auditable after the fact instead of being a
+ * claim in a report.
  *
  * What "applying" means per transition is the business of each migrated tranche:
- * here a transition advances the run's position and nothing else. That is the
- * honest shape of the engine before its first production caller, and it is why
- * the registry — not this file — is where a new transition is added.
+ * here a transition advances the run's position and nothing else. That is why the
+ * registry — not this file — is where a new transition is added.
  */
 
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
@@ -27,7 +35,9 @@ import {
   type FlowBoundary,
   type FlowBoundaryKind,
   type FlowDirective,
+  type FlowStep,
   buildFlowDirective,
+  stepOf,
 } from "../../domain/flow/directive.js";
 import {
   type FlowRunState,
@@ -52,7 +62,7 @@ export interface AdvanceInput {
    * without seeding the trace, the directive would report only what came AFTER
    * and the audit trail of the invocation would be missing its first step.
    */
-  applied?: readonly string[];
+  applied?: readonly FlowStep[];
 }
 
 export type AdvanceResult =
@@ -64,18 +74,25 @@ export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
   if (incoherent !== null) return { ok: false, failure: incoherent };
 
   let state = input.state;
-  const appliedNow: string[] = [...(input.applied ?? [])];
+  const appliedNow: FlowStep[] = [...(input.applied ?? [])];
 
-  // Every consecutive `cli` transition, in one go. The walk stops the moment
-  // authority changes hands — or the moment the next transition would exercise an
-  // effect nobody authorized, which is the same kind of stop for a different
-  // reason: advancing automatically never widens an authorization.
+  // Every consecutive transition the CLI owns, in one go. The walk stops the
+  // moment authority changes hands, the moment the next transition would exercise
+  // an effect nobody authorized (advancing automatically never widens an
+  // authorization) — or the moment it reaches a step still owned by doctrine.
+  //
+  // That last stop is the migration's whole point. Applying a `legacy` row would
+  // record as decided-by-the-CLI a step whose rule lives in a document nobody has
+  // read yet: the run would claim an authority it does not have. So a legacy
+  // stretch becomes a boundary that DECLARES its fallback, and the doctrine
+  // decides it — until the tranche that migrates it flips the row.
   for (let index = state.applied.length; index < input.journey.length; index += 1) {
     const decision = input.journey[index];
     if (decision === undefined || decision.authority !== "cli") break;
+    if (decision.ownership !== "cli-owned") break;
     if (authorizeTransition(decision, state.authorizations).missing.length > 0) break;
     state = applyTransition(state, decision.id, effectsOf(decision));
-    appliedNow.push(decision.id);
+    appliedNow.push(stepOf(decision));
   }
 
   // The boundary is written into the state BEFORE its seal is computed. Resolving
@@ -95,9 +112,12 @@ export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
  * authorities on "what is being asked", which is the drift this whole initiative
  * removes.
  *
- * The `cli` case is not a contradiction: the walk NEVER stops on a `cli`
- * transition for any reason other than an effect nobody authorized, so finding
- * one at the current position IS the authorization boundary.
+ * Ownership is read FIRST, before authority: a step the CLI does not own yet is a
+ * `legacy` boundary whatever its authority would be, because emitting a bounded
+ * semantic request — or a set of alternatives — for a rule this CLI does not
+ * decide would be the engine speaking for the doctrine. Only among the steps it
+ * does own is the `cli` case the authorization boundary: there the walk never
+ * stops for any other reason.
  */
 export interface ResolvedBoundary {
   stopped: FlowDecision | null;
@@ -127,10 +147,27 @@ export function resolveBoundary(
       seal: boundarySeal(state, null),
     };
   }
+  // Computed for `cli` rows only, which is where every row that really writes or
+  // runs lives today (13 of them, all `cli`). The day a row with authority `agent`
+  // or `human` declares a non-self-authorizable effect, this condition is the
+  // thing to revisit — and the ORDER is the open question there: approving a write
+  // before the agent has produced what gets written is not obviously right, so
+  // whichever phase introduces such a row decides it instead of inheriting it.
   const authorization =
     stopped.authority === "cli" ? authorizeTransition(stopped, state.authorizations) : null;
-  const kind: FlowBoundaryKind =
-    authorization !== null ? "authorization" : stopped.authority === "agent" ? "semantic" : "human";
+  // An effect nobody authorized outranks the migration axis. Approving an effect
+  // is not deciding a step: ten `legacy` rows exercise `mutate_overwrite` or
+  // `execute`, and letting ownership answer first would hand them to doctrine with
+  // their effects unapproved — the authorization gate bypassed by a field that has
+  // nothing to do with it.
+  const gap = (authorization?.missing.length ?? 0) > 0;
+  const kind: FlowBoundaryKind = gap
+    ? "authorization"
+    : stopped.ownership !== "cli-owned"
+      ? "legacy"
+      : stopped.authority === "agent"
+        ? "semantic"
+        : "human";
   return {
     stopped,
     kind,
@@ -158,18 +195,26 @@ export function boundarySeal(state: FlowRunState, stopped: FlowDecision | null):
 export function directiveFor(
   state: FlowRunState,
   resolved: ResolvedBoundary,
-  appliedNow: readonly string[],
+  appliedNow: readonly FlowStep[],
   overrides: { outcome?: CapabilityOutcome; nextAction?: string } = {},
 ): AdvanceResult {
   const boundary: FlowBoundary =
     resolved.stopped === null
-      ? { kind: "final", transition: null, authority: null, ownership: null, title: null }
+      ? {
+          kind: "final",
+          transition: null,
+          authority: null,
+          ownership: null,
+          title: null,
+          document: null,
+        }
       : {
           kind: resolved.kind,
           transition: resolved.stopped.id,
           authority: resolved.stopped.authority,
           ownership: resolved.stopped.ownership,
           title: resolved.stopped.title,
+          document: resolved.stopped.document,
         };
   const planned = resolved.authorization?.planned ?? [];
   const built = buildFlowDirective({
@@ -298,6 +343,10 @@ function nextActionFor(boundary: FlowBoundary, resolved: ResolvedBoundary): stri
       const missing = resolved.authorization?.missing.join(", ") ?? "el efecto";
       return `${submit} con --approval ${digest}, autorizando ${missing} para '${stopped.title}'`;
     }
+    case "legacy":
+      // The document comes FIRST in the sentence: this step is not the CLI's, and
+      // the fallback has to be read before it runs, not justified afterwards.
+      return `aplicá la regla vigente de ${stopped.document} para '${stopped.title}' y después ${submit}, declarando ese fallback en 'fallback'`;
     default:
       return `resolvé el bloqueo de '${stopped.title}' y volvé a correr 'aw flow advance'`;
   }

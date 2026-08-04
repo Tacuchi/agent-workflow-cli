@@ -36,7 +36,9 @@ function journey(): FlowDecision[] {
     scope: "quick",
     title: `transición determinista ${id} del fixture`,
     authority: "cli" as const,
-    ownership: "legacy" as const,
+    // Owned on purpose: this file exercises the state, and the engine walks only
+    // the transitions the CLI owns.
+    ownership: "cli-owned" as const,
     document: "loops/quick-loop/LOOP.md",
   }));
 }

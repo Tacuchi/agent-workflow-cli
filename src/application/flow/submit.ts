@@ -12,7 +12,9 @@
  *    boundary, never from a flag: the same `submit` answers a semantic boundary,
  *    a human one and an authorization one.
  * 3. **Then apply.** Only a surviving answer becomes a transition, and only then
- *    does the run keep advancing until the next boundary.
+ *    does the run keep advancing until the next boundary. One surviving answer
+ *    deliberately applies nothing: an approval over a step doctrine still owns
+ *    grants the effect and leaves the run where it stands.
  *
  * Every rejection travels with `ok: true` inside the RECALCULATED directive,
  * carrying its code, message and action — with `ok: false` the host never calls
@@ -22,9 +24,9 @@
 import { AttemptLedger } from "../../domain/capability/protocol.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
 import { claimedSeal, parseFlowAnswer } from "../../domain/flow/answer.js";
-import { decisionsOfScope, effectsOf } from "../../domain/flow/authority.js";
+import { type FlowDecision, decisionsOfScope, effectsOf } from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
-import type { FlowDirective } from "../../domain/flow/directive.js";
+import { type FlowDirective, stepOf } from "../../domain/flow/directive.js";
 import {
   type FlowRunAttempt,
   type FlowRunState,
@@ -168,19 +170,45 @@ function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
   // 3 · Apply: the answer is the INPUT to the CLI's decision, so what advances is
   // the transition, never the sender's own verdict.
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
-  let next = granted.length > 0 ? withApproval(state, granted) : state;
-  next = applyTransition(next, resolved.stopped.id, effectsOf(resolved.stopped));
+  const approved = granted.length > 0 ? withApproval(state, granted) : state;
+  return resolved.kind === "authorization" && resolved.stopped.ownership !== "cli-owned"
+    ? holdAfterApproval(approved, journey, identity)
+    : applyAndAdvance(approved, journey, resolved.stopped, identity);
+}
+
+/**
+ * Approving an effect is NOT deciding the step.
+ *
+ * On a transition doctrine still owns, the approval is recorded and the run stays
+ * exactly where it is: the recalculated boundary is the `legacy` one for the same
+ * transition, which declares its fallback before anything runs. Applying here
+ * would let an approval smuggle in the very step whose rule nobody has read yet.
+ */
+function holdAfterApproval(
+  approved: FlowRunState,
+  journey: readonly FlowDecision[],
+  identity: FlowRunAttempt,
+): SubmitDecision {
+  const held = advanceFlowRun({ state: withAttempt(approved, identity), journey, applied: [] });
+  if (!held.ok) return { ok: false, failure: held.failure };
+  return { ok: true, state: held.state, value: held.directive };
+}
+
+/** The answer survived: the transition applies and the run keeps advancing. */
+function applyAndAdvance(
+  approved: FlowRunState,
+  journey: readonly FlowDecision[],
+  stopped: FlowDecision,
+  identity: FlowRunAttempt,
+): SubmitDecision {
+  let next = applyTransition(approved, stopped.id, effectsOf(stopped));
   next = withAttempt(next, identity);
   // The boundary follows the position, always: handing the engine a state whose
   // boundary still names the transition just applied is exactly the incoherence
   // `checkAgainstJourney` exists to refuse.
   next = withBoundary(next, journey[next.applied.length]?.id ?? null);
 
-  const advanced = advanceFlowRun({
-    state: next,
-    journey,
-    applied: [resolved.stopped.id],
-  });
+  const advanced = advanceFlowRun({ state: next, journey, applied: [stepOf(stopped)] });
   if (!advanced.ok) return { ok: false, failure: advanced.failure };
   return { ok: true, state: advanced.state, value: advanced.directive };
 }

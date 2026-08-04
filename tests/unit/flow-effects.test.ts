@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceFlowRun, resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
@@ -18,6 +18,20 @@ import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { FLOW_RUN_STATE_FILE, newRunState } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+
+// The engine walks only what the CLI owns, and no tranche is migrated yet: over the
+// live rows this run would stop at its first `legacy` boundary and this file would
+// be testing the migration instead of its own subject. The service resolves the
+// journey from the registry, so the flip happens here — same flip, same reason as
+// `tests/helpers/owned-journey.ts`, which the direct callers use.
+vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/domain/flow/authority.js")>();
+  return {
+    ...real,
+    decisionsOfScope: (scope: string) =>
+      real.decisionsOfScope(scope).map((row) => ({ ...row, ownership: "cli-owned" as const })),
+  };
+});
 
 /**
  * The automatic advance never widens an authorization.
@@ -38,7 +52,10 @@ function decision(id: string, effects?: readonly EffectClass[]): FlowDecision {
     scope: "quick",
     title: `transición ${id} del fixture de efectos`,
     authority: "cli",
-    ownership: "legacy",
+    // The engine only applies what the CLI owns: a fixture still marked `legacy`
+    // would stop at its first step, which is the migration's rule, not this
+    // file's subject.
+    ownership: "cli-owned",
     document: "loops/quick-loop/LOOP.md",
     ...(effects === undefined ? {} : { effects }),
   };
@@ -98,7 +115,10 @@ describe("el avance con autorización suficiente aplica y lo registra", () => {
     const journey = [decision("fixture.crea", ["local_additive"]), decision("fixture.lee")];
     const result = advanceFlowRun({ state: newRunState("quick", SESSION), journey });
     if (!result.ok) throw new Error(`esperaba avanzar: ${result.failure.code}`);
-    expect(result.directive.applied).toEqual(["fixture.crea", "fixture.lee"]);
+    expect(result.directive.applied.map((step) => step.transition)).toEqual([
+      "fixture.crea",
+      "fixture.lee",
+    ]);
     expect(result.state.effects.planned.sort()).toEqual(["local_additive", "read_only"]);
     expect(result.state.effects.applied.sort()).toEqual(["local_additive", "read_only"]);
     expect(result.state.effects.approved).toEqual([]);
@@ -115,7 +135,7 @@ describe("el avance con autorización suficiente aplica y lo registra", () => {
 
     expect(result.directive.boundary.kind).toBe("authorization");
     expect(result.directive.boundary.transition).toBe("fixture.sobrescribe");
-    expect(result.directive.applied).toEqual(["fixture.lee"]);
+    expect(result.directive.applied.map((step) => step.transition)).toEqual(["fixture.lee"]);
     // Planned, because that is what is being asked for — and NOT applied.
     expect(result.directive.effects.planned).toContain("mutate_overwrite");
     expect(result.directive.effects.applied).not.toContain("mutate_overwrite");
@@ -146,7 +166,9 @@ describe("el avance con autorización suficiente aplica y lo registra", () => {
     // The seeded state is re-sealed by the engine's own writes, so what matters
     // here is the verdict, not the digest of the hand-built input.
     if (!result.ok) throw new Error("esperaba avanzar con la autorización concedida");
-    expect(result.directive.applied).toEqual(["fixture.sobrescribe"]);
+    expect(result.directive.applied.map((step) => step.transition)).toEqual([
+      "fixture.sobrescribe",
+    ]);
     expect(result.directive.boundary.kind).toBe("final");
   });
 });

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceFlowRun, resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
@@ -12,6 +12,20 @@ import { decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { FLOW_RUN_STATE_FILE, newRunState } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+
+// The engine walks only what the CLI owns, and no tranche is migrated yet: over the
+// live rows this run would stop at its first `legacy` boundary and this file would
+// be testing the migration instead of its own subject. The service resolves the
+// journey from the registry, so the flip happens here — same flip, same reason as
+// `tests/helpers/owned-journey.ts`, which the direct callers use.
+vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/domain/flow/authority.js")>();
+  return {
+    ...real,
+    decisionsOfScope: (scope: string) =>
+      real.decisionsOfScope(scope).map((row) => ({ ...row, ownership: "cli-owned" as const })),
+  };
+});
 
 /**
  * When the preference is human, the advance stops with the alternatives on the
@@ -29,7 +43,10 @@ function decision(id: string, authority: FlowAuthority): FlowDecision {
     scope: "plan-exec",
     title: `transición ${id} del fixture`,
     authority,
-    ownership: "legacy",
+    // The engine only applies what the CLI owns: a fixture still marked `legacy`
+    // would stop at its first step, which is the migration's rule, not this
+    // file's subject.
+    ownership: "cli-owned",
     document: "loops/plan-exec-loop/LOOP.md",
   };
 }
@@ -42,7 +59,7 @@ describe("frontera humana — el avance se detiene con las alternativas puestas"
 
     expect(result.directive.boundary.kind).toBe("human");
     expect(result.directive.outcome).toBe("needs_input");
-    expect(result.directive.applied).toEqual(["fixture.uno"]);
+    expect(result.directive.applied.map((step) => step.transition)).toEqual(["fixture.uno"]);
     // Nothing past the boundary was applied: the preference is still open.
     expect(result.directive.pending).toEqual(["fixture.preferencia"]);
   });
@@ -141,7 +158,9 @@ describe("frontera humana — sobre una corrida real", () => {
     });
     if (!result.ok) throw new Error("esperaba que la elección se aplicara");
     expect(result.directive.error).toBeNull();
-    expect(result.directive.applied).toContain("plan-exec.normalization-consent");
+    expect(result.directive.applied.map((step) => step.transition)).toContain(
+      "plan-exec.normalization-consent",
+    );
   });
 
   it("declinar es una respuesta real y no aplica nada", async () => {

@@ -7,11 +7,13 @@
  * semantic boundary, a human one and an authorization one without the caller
  * being able to claim it is answering something else.
  *
- * Five ways an answer fails, and all five leave state and effects untouched:
- * absent, invalid, ambiguous, out of scope, stale. Each rejection carries a code,
- * a message and one valid action, and travels inside the RECALCULATED directive
- * with `ok: true` — with `ok: false` the host never calls `renderHuman` and the
- * person would never see the boundary they have to answer over.
+ * Six ways an answer fails, and all six leave state and effects untouched: absent,
+ * invalid, ambiguous, out of scope, stale, and — at a boundary the CLI does not
+ * own yet — an answer that never declared which fallback it applied. Each
+ * rejection carries a code, a message and one valid action, and travels inside the
+ * RECALCULATED directive with `ok: true` — with `ok: false` the host never calls
+ * `renderHuman` and the person would never see the boundary they have to answer
+ * over.
  */
 
 import type { CapabilityFailure } from "../capability/protocol.js";
@@ -28,6 +30,8 @@ export interface FlowAnswer {
   decisions: Record<string, unknown>;
   /** The alternative chosen, at a human or authorization boundary. */
   choice: string | null;
+  /** The fallback document applied, at a boundary the CLI does not own yet. */
+  fallback: string | null;
 }
 
 export type FlowAnswerParse =
@@ -64,6 +68,8 @@ export function parseFlowAnswer(input: ParseAnswerInput): FlowAnswerParse {
       return choiceAnswer(body, input);
     case "authorization":
       return approvalAnswer(body, input);
+    case "legacy":
+      return legacyAnswer(body, input);
     default:
       return {
         ok: false,
@@ -173,6 +179,7 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       signals,
       decisions: isRecord(decisions) ? decisions : {},
       choice: null,
+      fallback: null,
     },
   };
 }
@@ -201,7 +208,13 @@ function choiceAnswer(body: Record<string, unknown>, input: ParseAnswerInput): F
   }
   return {
     ok: true,
-    answer: { input_digest: body.input_digest as string, signals: [], decisions: {}, choice },
+    answer: {
+      input_digest: body.input_digest as string,
+      signals: [],
+      decisions: {},
+      choice,
+      fallback: null,
+    },
   };
 }
 
@@ -225,7 +238,13 @@ function approvalAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
   }
   const accepted = {
     ok: true as const,
-    answer: { input_digest: body.input_digest as string, signals: [], decisions: {}, choice },
+    answer: {
+      input_digest: body.input_digest as string,
+      signals: [],
+      decisions: {},
+      choice,
+      fallback: null,
+    },
   };
   // DECLINING needs no approval, and demanding one would be absurd: it would ask
   // the person to hand over the very approval they are refusing to give. The
@@ -253,6 +272,50 @@ function approvalAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
     };
   }
   return accepted;
+}
+
+/**
+ * A legacy step advances only if the answer names the fallback it applied.
+ *
+ * The directive declared which document decides; echoing it back is what turns
+ * "declare the fallback before executing it" into something the CLI can check
+ * instead of hope for. A blind submit — the failure mode of a host that never
+ * read the boundary — is exactly what this refuses, and refusing it costs the
+ * sender one field they already have in front of them.
+ */
+function legacyAnswer(body: Record<string, unknown>, input: ParseAnswerInput): FlowAnswerParse {
+  const declared = body.fallback;
+  if (typeof declared !== "string" || declared.trim().length === 0) {
+    return {
+      ok: false,
+      failure: {
+        code: "FLOW_FALLBACK_UNDECLARED",
+        message:
+          "esta transición todavía la decide la doctrina y la respuesta no declara el fallback que aplicó",
+        action: `declarás en 'fallback' el documento de la directiva: ${input.decision.document}`,
+      },
+    };
+  }
+  if (declared !== input.decision.document) {
+    return {
+      ok: false,
+      failure: {
+        code: "FLOW_FALLBACK_UNDECLARED",
+        message: `'${declared}' no es el documento cuya regla declara esta frontera`,
+        action: `el fallback de esta frontera es ${input.decision.document}`,
+      },
+    };
+  }
+  return {
+    ok: true,
+    answer: {
+      input_digest: body.input_digest as string,
+      signals: [],
+      decisions: {},
+      choice: null,
+      fallback: declared,
+    },
+  };
 }
 
 /**

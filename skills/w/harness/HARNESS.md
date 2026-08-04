@@ -79,6 +79,25 @@ Concrete mechanism per harness (matrix base verified **Jul-2026**; the `structur
 
 > **web-research (consumer & consent).** Single consumer today: `spec-refine-loop` § *Ideation gate* (the SPEC flow's divergent gate). Consent is **bundled into accepting that gate's offer** — one accepted offer authorizes that round's searches; never free browsing outside a consented round. It is *enhancement*, never a `must`: on degrade the loop ideates **offline and declares it** (unlike host-memory's silent omit — the user consented expecting the web, so silence would mislead).
 
+## Directive presentation (flow boundaries)
+
+A host surface — a command wrapper, a skill, an adapter — **invokes** the direction engine (`aw flow advance` / `aw flow submit`), **transports** the directive it returns and **presents** it. It never re-derives a transition, re-orders a journey or restates a rule the engine owns: the CLI decides, the surface shows. Two surfaces on two hosts therefore show the *same* boundary through *different* mechanisms, which is precisely the *capability, not tool* principle applied to one more capability.
+
+Each boundary kind maps to a capability **already catalogued above**; this table adds no host column, so per-host mechanisms keep living in exactly one place — the binding matrix.
+
+| Boundary | What it asks for | Capability used | Must survive the presentation |
+|---|---|---|---|
+| **semantic** | a bounded judgment from the agent | *procedure-loading* — the agent reads the request's `read_set` and answers inline; no human mechanism involved | `request` whole — contract, limits, `read_set` — and `state_digest` |
+| **human** | a preference nobody may infer | *structured-choice* | every `choices` entry with its consequence, and the single recommendation |
+| **authorization** | an approval over the effect classes it names | *structured-choice* | `choices`, `effects`, `authorizations`, and the approval digest carried in `next_action` |
+| **legacy** | a step the CLI does not own yet | *procedure-loading* (read the declared document, apply its rule) | `boundary.document` — the fallback declaration — and `state_digest` |
+| **blocked** | nothing, until the cause is cleared | — (plain report) | `error`: code, message and the one valid action |
+| **final** | nothing: the journey is done | — (plain report) | `pending` (empty) and the `applied` trace with each step's authority |
+
+- **Four things a presentation may never drop**, whatever the host: the **options** with their consequence (`choices`), the **explanation** of what is being asked (`request` at a semantic boundary, `boundary.document` at a legacy one), the **effects** at stake (`effects` + `authorizations`), and the **resume evidence** (`state_digest` + `session`) — without that last pair the boundary cannot be answered from another host, or after the conversation is gone.
+- **Degrade the mechanism, never the content.** A host with no native question surface renders labeled markdown (see the matrix); it does not merge, truncate or drop alternatives to fit. Losing content is a *degradation* and is declared as one.
+- **Ownership travels with every step.** The trace says whether each applied transition was `cli-owned` or `legacy`, and a surface may not present a `cli-owned` transition as its own decision — the registry (`domain/flow/authority.ts`) is the only place ownership changes.
+
 ## Leverage installed skills
 
 "Leverage whatever skills the harness has installed" resolves through the **same** `.workflow/skills.toml` binding: a role can point at a skill **installed on the host** (third-party, via skills.sh) instead of the built-in. Rule:

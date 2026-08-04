@@ -10,6 +10,7 @@ import {
   decisionsOfScope,
 } from "../../src/domain/flow/authority.js";
 import { newRunState } from "../../src/domain/flow/run-state.js";
+import { asOwned } from "../helpers/owned-journey.js";
 
 /**
  * The semantic boundary: the agent gets the context it needs, the response
@@ -25,8 +26,18 @@ const manifest = parseManifest(
   JSON.parse(readFileSync(join(BUNDLE, "context", "MANIFEST.json"), "utf8")),
 );
 
+/**
+ * The row that declares QUICK's signals, as its own tranche will own it.
+ *
+ * A semantic boundary exists only for a transition the CLI owns; while QUICK is
+ * still doctrine's, the engine answers `legacy` over the live rows. The flip
+ * touches nothing else — the vocabulary, the document and the order are the
+ * production ones.
+ */
 function signalRow(): FlowDecision {
-  const row = decisionsOfScope("quick").find((entry) => entry.id === "quick.entry-gate-signal");
+  const row = asOwned(decisionsOfScope("quick")).find(
+    (entry) => entry.id === "quick.entry-gate-signal",
+  );
   if (row === undefined) throw new Error("falta la fila que declara las señales de QUICK");
   return row;
 }
@@ -118,7 +129,7 @@ describe("el pedido de la frontera semántica no lleva nada invisible", () => {
 
 describe("la respuesta entra como dato y se valida antes de tocar el estado", () => {
   const state = newRunState("quick", "001-p-quick");
-  const resolved = resolveBoundary(state, decisionsOfScope("quick"));
+  const resolved = resolveBoundary(state, asOwned(decisionsOfScope("quick")));
 
   function answer(body: Record<string, unknown>) {
     return parseFlowAnswer({
