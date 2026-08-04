@@ -29,7 +29,7 @@ import { type EffectClass, isEffectClass } from "../capability/effects.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
 import type { FlowDecision } from "./authority.js";
 
-export const FLOW_RUN_STATE_VERSION = 1;
+export const FLOW_RUN_STATE_VERSION = 2;
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -48,6 +48,34 @@ export interface FlowRunAttempt {
   parent_request_digest: string | null;
 }
 
+/**
+ * The delegated action the run is waiting on, by its seal.
+ *
+ * The action itself is derived from the registry row, so copying its fields here
+ * would be a second source that can disagree with the first. What IS persisted is
+ * the seal of the action that was actually emitted: a CLI that changed underneath
+ * a run in flight rebuilds a different action, the seals no longer match, and the
+ * result is refused with that reason instead of a generic staleness.
+ */
+export interface FlowPendingAction {
+  transition: string;
+  /** Seal over program, arguments, target, input and demanded evidence. */
+  digest: string;
+}
+
+/**
+ * What the agent OBSERVED at a semantic boundary, kept for the rule that reads it
+ * later.
+ *
+ * Only the declared signals — never the verdict they produce. A threshold is
+ * derived from these on each read, so there is one source: persisting the verdict
+ * too would let the two drift and make "why did the gate fire?" unanswerable.
+ */
+export interface FlowObservation {
+  transition: string;
+  signals: string[];
+}
+
 export interface FlowRunState {
   version: number;
   flow: WorklineFlow;
@@ -57,6 +85,10 @@ export interface FlowRunState {
   applied: string[];
   /** The transition the run is standing on, or null when nothing is pending. */
   boundary: string | null;
+  /** The delegated action awaiting its result, or null when none is pending. */
+  pending_action: FlowPendingAction | null;
+  /** Validated observations a later rule consumes. */
+  observations: FlowObservation[];
   /** Effect classes this run already has authorization for. */
   authorizations: EffectClass[];
   /** Effects across their three moments, so a partial effect is expressible. */
@@ -87,6 +119,8 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
     session,
     applied: [],
     boundary: null,
+    pending_action: null,
+    observations: [],
     authorizations: [],
     effects: { planned: [], approved: [], applied: [] },
     attempts: [],
@@ -123,6 +157,31 @@ export function applyTransition(
 /** Move the boundary to where the walk stopped, applying nothing. */
 export function withBoundary(state: FlowRunState, boundary: string | null): FlowRunState {
   return sealRunState({ ...withoutSeal(state), boundary });
+}
+
+/**
+ * Record — or clear — the delegated action the run is waiting on.
+ *
+ * Clearing is as load-bearing as setting: a run that moved past an execution
+ * boundary and kept the old pending action would tell whoever resumes it to run
+ * something the engine no longer expects.
+ */
+export function withPendingAction(
+  state: FlowRunState,
+  pending: FlowPendingAction | null,
+): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), pending_action: pending });
+}
+
+/** Keep a validated observation for the rule that consumes it later. */
+export function withObservation(state: FlowRunState, observation: FlowObservation): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    observations: [
+      ...state.observations.filter((past) => past.transition !== observation.transition),
+      observation,
+    ],
+  });
 }
 
 /** Record one attempt in the persisted history, re-sealing the result. */
@@ -186,10 +245,13 @@ export function parseRunState(raw: string): FlowRunRead {
     );
   }
   if (parsed.version !== FLOW_RUN_STATE_VERSION) {
+    // No silent migration, in either direction: an older state predates fields
+    // the engine now reads, and inventing them would fabricate the very history
+    // this file exists to make trustworthy. Re-adoption is explicit and cheap.
     return refuse(
       "FLOW_RUN_VERSION_UNSUPPORTED",
       `versión de estado de corrida no soportada: ${String(parsed.version)}`,
-      `esta versión del CLI lee la ${FLOW_RUN_STATE_VERSION}: actualizá el CLI o re-adoptá la sesión`,
+      `esta versión del CLI lee la ${FLOW_RUN_STATE_VERSION}: actualizá el CLI, o re-adoptá la sesión con 'aw flow advance --flow <flow> --adopt' (no hay migración automática)`,
     );
   }
   const shape = checkShape(parsed);
@@ -261,6 +323,12 @@ function checkShape(parsed: Record<string, unknown>): CapabilityFailure | null {
   if (parsed.boundary !== null && typeof parsed.boundary !== "string") {
     return invalid("declara una frontera que no es un identificador");
   }
+  if (!isPendingAction(parsed.pending_action)) {
+    return invalid("declara una acción pendiente sin transición o sin sello");
+  }
+  if (!isObservationArray(parsed.observations)) {
+    return invalid("trae observaciones que no son señales declaradas por transición");
+  }
   if (!isEffectClassArray(parsed.authorizations)) {
     return invalid("declara autorizaciones que no son clases de efecto");
   }
@@ -292,6 +360,21 @@ function isEffectLedger(value: unknown): value is EffectLedger {
     isEffectClassArray(value.planned) &&
     isEffectClassArray(value.approved) &&
     isEffectClassArray(value.applied)
+  );
+}
+
+function isPendingAction(value: unknown): value is FlowPendingAction | null {
+  if (value === null) return true;
+  return (
+    isRecord(value) && typeof value.transition === "string" && typeof value.digest === "string"
+  );
+}
+
+function isObservationArray(value: unknown): value is FlowObservation[] {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) && typeof entry.transition === "string" && isStringArray(entry.signals),
   );
 }
 

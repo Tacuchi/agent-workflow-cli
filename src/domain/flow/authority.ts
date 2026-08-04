@@ -98,6 +98,17 @@ export interface FlowDecision {
    * `aw` invocation nor the CLI nor the capability that runs it.
    */
   attribution?: string;
+  /**
+   * The invocation that applies this transition when the engine cannot.
+   *
+   * Absent — the overwhelming default — means the engine applies it internally.
+   * Present makes it an `execution` boundary: the directive names the invocation,
+   * the caller runs it, and the transition applies only when a verifiable result
+   * comes back. Only a `cli` row may carry one; an `agent` or `human` row already
+   * returns to the caller for a different reason and adding a second would make
+   * the boundary ambiguous. See {@link DelegatedAction}.
+   */
+  action?: DelegatedAction;
 }
 
 /** A decision computes a verdict; writing is the exception that declares itself. */
@@ -106,6 +117,58 @@ export const DEFAULT_TRANSITION_EFFECTS: readonly EffectClass[] = ["read_only"];
 /** What applying this transition does. */
 export function effectsOf(decision: FlowDecision): readonly EffectClass[] {
   return decision.effects ?? DEFAULT_TRANSITION_EFFECTS;
+}
+
+/**
+ * The exact thing to run, named by the CLI and executed by whoever called.
+ *
+ * Structured rather than a command string because the result has to be checkable
+ * against it: "the executor ran something else" is only detectable if the two can
+ * be compared field by field.
+ */
+export interface DelegatedInvocation {
+  program: string;
+  args: readonly string[];
+  /** Where it runs, or what it acts on. Never implicit. */
+  target: string;
+  /** Payload for its stdin, when the invocation takes one. */
+  input: string | null;
+}
+
+/**
+ * How a transition gets APPLIED — a mode orthogonal to authority, ownership and
+ * effects.
+ *
+ * Absent means the engine applies it inside its own process, which is the default
+ * and the cheap case. Present means the engine can DIRECT the step but cannot
+ * materialize it: the search, the write or the check happens outside, so the
+ * transition stays pending until the sealed invocation comes back with a result.
+ * Deciding and executing are different acts, and this field is the seam between
+ * them — the reason `advance` never records "seeded" or "validations run" for
+ * something nothing ran.
+ *
+ * The effect classes are NOT restated here: they are the row's `effects`, read
+ * through {@link effectsOf}. A second declaration could contradict the first, and
+ * then "what does this do?" would have two answers.
+ */
+export interface DelegatedAction {
+  invocation: DelegatedInvocation;
+  /**
+   * Ids of the validations whose REAL output has to come back, non-empty.
+   *
+   * An action whose result nobody can check is a confirmation, and a confirmation
+   * is exactly what this contract exists to refuse.
+   */
+  evidence: readonly string[];
+  /** Whether re-running it is safe — what a retry after a partial result rests on. */
+  idempotent: boolean;
+  /** What to do when the result comes back failed or partial. Never empty. */
+  recovery: string;
+}
+
+/** The delegated action of a transition, or `null` when the engine applies it itself. */
+export function actionOf(decision: FlowDecision): DelegatedAction | null {
+  return decision.action ?? null;
 }
 
 /**

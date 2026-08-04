@@ -10,6 +10,7 @@ import {
   type CapabilityReceipt,
   type CapabilityRequest,
 } from "../../src/domain/capability/protocol.js";
+import type { DelegatedAction } from "../../src/domain/flow/authority.js";
 import {
   FLOW_BOUNDARY_KINDS,
   FLOW_DIRECTIVE_KEYS,
@@ -51,6 +52,22 @@ function request(): SemanticRequest {
     readSet: ["loops/quick-loop/LOOP.md"],
     readSetBytes: 0,
   });
+}
+
+/** A delegated action, valid by default so each case breaks exactly one thing. */
+function delegated(overrides: Partial<DelegatedAction> = {}): DelegatedAction {
+  return {
+    invocation: {
+      program: "aw",
+      args: ["session-create", "--type", "quick"],
+      target: ".workflow/sessions",
+      input: null,
+    },
+    evidence: ["sesion-creada"],
+    idempotent: false,
+    recovery: "borrá la carpeta a medias y volvé a sembrar",
+    ...overrides,
+  };
 }
 
 const BASE = {
@@ -115,12 +132,34 @@ describe("directiva de frontera — la forma válida", () => {
     expect(human).toContain(built.directive.state_digest);
   });
 
+  it("una frontera de ejecución lleva la invocación y su evidencia, y la proyecta", () => {
+    const built = buildFlowDirective({
+      ...BASE,
+      boundary: boundary({ kind: "execution", authority: "cli" }),
+      outcome: "needs_input",
+      action: delegated(),
+      nextAction: "ejecutá 'aw session-create --type quick' y devolvé su resultado",
+    });
+    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
+    expect(built.directive.action?.evidence).toEqual(["sesion-creada"]);
+    expect(built.directive.request).toBeNull();
+    expect(built.directive.choices).toEqual([]);
+    const human = renderDirectiveHuman(built.directive);
+    // The person sees what will run, what has to come back, and what to do if it
+    // comes back half-done — the three things a confirmation would hide.
+    expect(human).toContain("aw session-create --type quick");
+    expect(human).toContain(".workflow/sessions");
+    expect(human).toContain("sesion-creada");
+    expect(human).toContain("volvé a sembrar");
+  });
+
   it("los motivos de frontera son el vocabulario cerrado de la spec", () => {
     expect([...FLOW_BOUNDARY_KINDS]).toEqual([
       "semantic",
       "human",
       "authorization",
       "legacy",
+      "execution",
       "blocked",
       "final",
     ]);
@@ -372,6 +411,66 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
         request: request(),
       },
       "FLOW_DIRECTIVE_APPLIED_REPEATED",
+    ],
+    [
+      "una frontera de ejecución que no dice qué ejecutar",
+      {
+        ...BASE,
+        boundary: boundary({ kind: "execution", authority: "cli" }),
+        outcome: "needs_input",
+      },
+      "FLOW_DIRECTIVE_EXECUTION_WITHOUT_ACTION",
+    ],
+    [
+      "una acción delegada en una frontera que no la espera",
+      {
+        ...BASE,
+        boundary: boundary(),
+        outcome: "needs_input",
+        request: request(),
+        action: delegated(),
+      },
+      "FLOW_DIRECTIVE_ACTION_WITHOUT_BOUNDARY",
+    ],
+    [
+      "una invocación sin programa",
+      {
+        ...BASE,
+        boundary: boundary({ kind: "execution", authority: "cli" }),
+        outcome: "needs_input",
+        action: delegated({ invocation: { ...delegated().invocation, program: " " } }),
+      },
+      "FLOW_DIRECTIVE_ACTION_INCOMPLETE",
+    ],
+    [
+      "una acción que no exige evidencia de haber ocurrido",
+      {
+        ...BASE,
+        boundary: boundary({ kind: "execution", authority: "cli" }),
+        outcome: "needs_input",
+        action: delegated({ evidence: [] }),
+      },
+      "FLOW_DIRECTIVE_ACTION_WITHOUT_EVIDENCE",
+    ],
+    [
+      "una acción sin recuperación declarada",
+      {
+        ...BASE,
+        boundary: boundary({ kind: "execution", authority: "cli" }),
+        outcome: "needs_input",
+        action: delegated({ recovery: "  " }),
+      },
+      "FLOW_DIRECTIVE_ACTION_WITHOUT_RECOVERY",
+    ],
+    [
+      "una frontera de ejecución sobre una transición que la doctrina todavía decide",
+      {
+        ...BASE,
+        boundary: boundary({ kind: "execution", authority: "cli", ownership: "legacy" }),
+        outcome: "needs_input",
+        action: delegated(),
+      },
+      "FLOW_DIRECTIVE_OWNERSHIP_CONTRADICTED",
     ],
   ];
 

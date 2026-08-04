@@ -129,6 +129,17 @@ describe("la superficie de host solo invoca, transporta y presenta", () => {
     expect(section).toMatch(/declared as one|is declared/);
   });
 
+  it("la frontera de ejecución exige salida real y rechaza la confirmación", async () => {
+    const section = await presentation();
+    const execution = (await rows()).get("execution" satisfies FlowBoundaryKind) ?? "";
+    // The invocation and its demanded evidence are what the host has to carry
+    // whole: dropping either turns "run this and show me" into "please confirm".
+    expect(execution).toContain("`action`");
+    expect(execution).toContain("evidence");
+    expect(section).toMatch(/boolean confirmation|narration/);
+    expect(section).toMatch(/aw flow submit/);
+  });
+
   it("ninguna superficie presenta como propia una transición que el CLI ya posee", async () => {
     const section = await presentation();
     expect(section).toContain("cli-owned");

@@ -21,10 +21,17 @@
  * `renderHuman`, and a boundary nobody can see is a boundary that did not happen.
  */
 
+import type { EffectClass } from "../../domain/capability/effects.js";
 import { AttemptLedger } from "../../domain/capability/protocol.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
-import { claimedSeal, parseFlowAnswer } from "../../domain/flow/answer.js";
-import { type FlowDecision, decisionsOfScope, effectsOf } from "../../domain/flow/authority.js";
+import { type FlowAnswer, claimedSeal, parseFlowAnswer } from "../../domain/flow/answer.js";
+import {
+  type DelegatedAction,
+  type FlowDecision,
+  actionOf,
+  decisionsOfScope,
+  effectsOf,
+} from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
 import { type FlowDirective, stepOf } from "../../domain/flow/directive.js";
 import {
@@ -35,12 +42,19 @@ import {
   withApproval,
   withAttempt,
   withBoundary,
+  withObservation,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
-import { type ResolvedBoundary, advanceFlowRun, directiveFor, resolveBoundary } from "./advance.js";
+import {
+  type ResolvedBoundary,
+  actionDigest,
+  advanceFlowRun,
+  directiveFor,
+  resolveBoundary,
+} from "./advance.js";
 import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
 
 /** The label that declines a boundary instead of resolving it. */
@@ -131,58 +145,217 @@ function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
   const resend = resendCheck(state, resolved, identity);
   if (resend !== null) return resend;
 
-  // 2 · The boundary in force decides what is admissible.
-  const expectedApproval =
-    resolved.kind === "authorization"
-      ? effectApprovalDigest(resolved.stopped.id, resolved.authorization?.planned ?? [])
-      : null;
-  const parsed = parseFlowAnswer({
-    raw: input.raw,
-    boundary: resolved.kind,
-    decision: resolved.stopped,
-    seal: resolved.seal,
-    choices: resolved.choices,
-    approval: input.approval,
-    expectedApproval,
-    declineLabel: DECLINE_LABEL,
-  });
-  if (!parsed.ok) {
-    return reject(state, resolved, parsed.failure.message, {
-      code: parsed.failure.code,
-      action: parsed.failure.action,
-    });
-  }
+  // The action the run is waiting on is the one that was EMITTED, and the seal
+  // would already refuse a result about any other. What the persisted digest adds
+  // is the diagnosis: when the two differ, the invocation changed underneath a run
+  // in flight (a CLI upgraded mid-run), which is a different problem from a state
+  // that moved — and it has a different answer.
+  const drifted = actionDrift(state, resolved);
+  if (drifted !== null) return drifted;
 
-  // Declining is a real answer, and it applies nothing.
-  if (parsed.answer.choice === DECLINE_LABEL) {
-    return reject(
-      state,
-      resolved,
-      `'${DECLINE_LABEL}': el recorrido queda detenido en esta frontera`,
-      {
-        code: "FLOW_BOUNDARY_DECLINED",
-        action: "reanudá con 'aw flow advance' cuando quieras retomar esta frontera",
-        outcome: "cancelled",
-      },
-    );
-  }
+  // 2 · The boundary in force decides what is admissible.
+  const admissible = admit(state, resolved, resolved.stopped, input);
+  if ("decision" in admissible) return admissible.decision;
+  const parsed = admissible;
 
   // 3 · Apply: the answer is the INPUT to the CLI's decision, so what advances is
   // the transition, never the sender's own verdict.
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
   const approved = granted.length > 0 ? withApproval(state, granted) : state;
-  return resolved.kind === "authorization" && resolved.stopped.ownership !== "cli-owned"
+  // An approval NEVER applies a step by itself. Two reasons it must hold, and the
+  // second is the one this phase exists for: doctrine may still own the rule, or
+  // the step may be delegated — and an approval that applied a delegated
+  // transition would record the search, the write or the check as done because
+  // someone said the effect was allowed.
+  const holds =
+    resolved.kind === "authorization" &&
+    (resolved.stopped.ownership !== "cli-owned" || actionOf(resolved.stopped) !== null);
+  return holds
     ? holdAfterApproval(approved, journey, identity)
-    : applyAndAdvance(approved, journey, resolved.stopped, identity);
+    : applyAndAdvance(approved, journey, resolved.stopped, identity, parsed.answer);
 }
 
 /**
- * Approving an effect is NOT deciding the step.
+ * Everything that decides whether this payload may become a transition.
+ *
+ * Three refusals live together because they answer the same question — "is this
+ * an admissible answer to the boundary in force?" — and none of them writes:
+ * a payload the boundary's own contract rejects, a decline (a real answer that
+ * applies nothing), and an execution result that did not earn its transition.
+ */
+function admit(
+  state: FlowRunState,
+  resolved: ResolvedBoundary,
+  stopped: FlowDecision,
+  input: SubmitFlowInput,
+): { ok: true; answer: FlowAnswer } | { decision: SubmitDecision } {
+  const expectedApproval =
+    resolved.kind === "authorization"
+      ? effectApprovalDigest(stopped.id, resolved.authorization?.planned ?? [])
+      : null;
+  const parsed = parseFlowAnswer({
+    raw: input.raw,
+    boundary: resolved.kind,
+    decision: stopped,
+    seal: resolved.seal,
+    choices: resolved.choices,
+    approval: input.approval,
+    expectedApproval,
+    declineLabel: DECLINE_LABEL,
+    action: resolved.action,
+  });
+  if (!parsed.ok) {
+    return {
+      decision: reject(state, resolved, parsed.failure.message, {
+        code: parsed.failure.code,
+        action: parsed.failure.action,
+      }),
+    };
+  }
+  // Declining is a real answer, and it applies nothing.
+  if (parsed.answer.choice === DECLINE_LABEL) {
+    return {
+      decision: reject(
+        state,
+        resolved,
+        `'${DECLINE_LABEL}': el recorrido queda detenido en esta frontera`,
+        {
+          code: "FLOW_BOUNDARY_DECLINED",
+          action: "reanudá con 'aw flow advance' cuando quieras retomar esta frontera",
+          outcome: "cancelled",
+        },
+      ),
+    };
+  }
+  // An execution result has to EARN the transition. Anything short of a completed
+  // run with its evidence and its whole effect keeps the boundary standing: the
+  // work stays pending, with the recovery the action declared.
+  if (resolved.kind === "execution") {
+    const verdict = executionVerdict(parsed.answer, resolved.action, effectsOf(stopped));
+    if (verdict !== null) {
+      return { decision: reject(state, resolved, verdict.message, verdict.detail) };
+    }
+  }
+  return parsed;
+}
+
+/**
+ * Why this execution result does not apply the transition — or `null` when it does.
+ *
+ * Three verdicts, and each one is the answer to a way a run could claim work that
+ * never happened: an outcome that is not `completed` did not finish; evidence that
+ * is missing, failed or empty means nothing came back from the tool; and an effect
+ * ledger short of what the row declared means the invocation got partway. The
+ * recovery the action declared travels in every one of them, because a run stopped
+ * without a next step is the dead end this whole contract refuses.
+ */
+function executionVerdict(
+  answer: FlowAnswer,
+  action: DelegatedAction | null,
+  declared: readonly EffectClass[],
+): {
+  message: string;
+  detail: { code: string; action: string; outcome?: CapabilityOutcome };
+} | null {
+  const result = answer.result;
+  if (result === null || action === null) {
+    return {
+      message: "la respuesta no trae el resultado de la invocación",
+      detail: {
+        code: "FLOW_RESULT_INVALID",
+        action:
+          "devolvé el resultado real de la acción: outcome, invocación, validaciones y efectos",
+      },
+    };
+  }
+  if (result.outcome !== "completed") {
+    return {
+      message: `la invocación devolvió '${result.outcome}': la transición sigue pendiente`,
+      detail: {
+        code: "FLOW_EXECUTION_NOT_COMPLETED",
+        action: action.recovery,
+        outcome: result.outcome,
+      },
+    };
+  }
+  const missing = action.evidence.filter((id) => {
+    const found = result.validations.find((validation) => validation.id === id);
+    return found === undefined || !found.passed || (found.detail ?? "").trim().length === 0;
+  });
+  if (missing.length > 0) {
+    return {
+      message: `falta la evidencia real de ${missing.join(", ")}`,
+      detail: {
+        code: "FLOW_EVIDENCE_MISSING",
+        action: `devolvé cada validación exigida con 'passed' y su 'detail' — la salida de la herramienta, no una afirmación. ${action.recovery}`,
+      },
+    };
+  }
+  const applied = new Set(result.effects.applied);
+  const partial = declared.filter((effect) => !applied.has(effect));
+  if (partial.length > 0) {
+    return {
+      message: `la invocación declara completa pero no aplicó ${partial.join(", ")}`,
+      detail: {
+        code: "FLOW_EFFECT_PARTIAL",
+        action: action.recovery,
+        outcome: "needs_input",
+      },
+    };
+  }
+  // Completeness is not an outcome — it answers "does what came back cover what
+  // was asked?" — so an attempt that FINISHED can still hand back a partial
+  // output. Ignoring that here would let the run credit a search that returned
+  // half its matches as if it had returned all of them.
+  if (result.output?.completeness === "partial") {
+    return {
+      message: "la invocación terminó pero su salida declara cobertura parcial",
+      detail: {
+        code: "FLOW_EFFECT_PARTIAL",
+        action: action.recovery,
+        outcome: "needs_input",
+      },
+    };
+  }
+  return null;
+}
+
+/**
+ * Whether the sealed action changed underneath a run that is standing on it.
+ *
+ * Only reachable when the persisted digest and the registry's current one differ —
+ * i.e. the build moved while the caller was executing. Saying so beats the generic
+ * staleness the seal would otherwise report, because the fix is different: nothing
+ * is wrong with the state, the invocation is simply no longer the one that ran.
+ */
+function actionDrift(state: FlowRunState, resolved: ResolvedBoundary): SubmitDecision | null {
+  const pending = state.pending_action;
+  if (pending === null || resolved.action === null) return null;
+  if (pending.digest === actionDigest(resolved.action)) return null;
+  return reject(
+    state,
+    resolved,
+    "la acción de esta frontera cambió después de emitirse: el resultado corresponde a otra invocación",
+    {
+      code: "FLOW_ACTION_CHANGED",
+      action:
+        "volvé a correr 'aw flow advance' para recibir la acción vigente y ejecutá esa antes de responder",
+    },
+  );
+}
+
+/**
+ * Approving an effect is NOT deciding the step, and never executing it.
  *
  * On a transition doctrine still owns, the approval is recorded and the run stays
  * exactly where it is: the recalculated boundary is the `legacy` one for the same
  * transition, which declares its fallback before anything runs. Applying here
  * would let an approval smuggle in the very step whose rule nobody has read yet.
+ *
+ * On a DELEGATED transition the same hold, for the sharper reason: the approval
+ * authorizes the effect and the recalculated boundary becomes the `execution` one,
+ * which still has to come back with real output. "You may write this" and "this
+ * was written" are different facts, and only the second one advances a run.
  */
 function holdAfterApproval(
   approved: FlowRunState,
@@ -200,8 +373,16 @@ function applyAndAdvance(
   journey: readonly FlowDecision[],
   stopped: FlowDecision,
   identity: FlowRunAttempt,
+  answer: FlowAnswer,
 ): SubmitDecision {
-  let next = applyTransition(approved, stopped.id, effectsOf(stopped));
+  // What the agent OBSERVED outlives the boundary it was asked at: a later rule
+  // reads these signals to apply its threshold. The verdict is not stored — it is
+  // derived from these on each read, so the two can never disagree.
+  let next =
+    answer.signals.length > 0
+      ? withObservation(approved, { transition: stopped.id, signals: answer.signals })
+      : approved;
+  next = applyTransition(next, stopped.id, effectsOf(stopped));
   next = withAttempt(next, identity);
   // The boundary follows the position, always: handing the engine a state whose
   // boundary still names the transition just applied is exactly the incoherence

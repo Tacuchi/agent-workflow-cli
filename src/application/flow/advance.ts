@@ -25,7 +25,12 @@
  */
 
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
-import { type FlowDecision, effectsOf } from "../../domain/flow/authority.js";
+import {
+  type DelegatedAction,
+  type FlowDecision,
+  actionOf,
+  effectsOf,
+} from "../../domain/flow/authority.js";
 import {
   type TransitionAuthorization,
   authorizeTransition,
@@ -44,6 +49,7 @@ import {
   applyTransition,
   checkAgainstJourney,
   withBoundary,
+  withPendingAction,
 } from "../../domain/flow/run-state.js";
 import {
   type SemanticRequest,
@@ -73,35 +79,81 @@ export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
   const incoherent = checkAgainstJourney(input.state, input.journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
 
-  let state = input.state;
-  const appliedNow: FlowStep[] = [...(input.applied ?? [])];
+  const walked = walk(input.state, input.journey);
+  let state = walked.state;
+  const appliedNow: FlowStep[] = [...(input.applied ?? []), ...walked.applied];
 
-  // Every consecutive transition the CLI owns, in one go. The walk stops the
-  // moment authority changes hands, the moment the next transition would exercise
-  // an effect nobody authorized (advancing automatically never widens an
-  // authorization) — or the moment it reaches a step still owned by doctrine.
-  //
-  // That last stop is the migration's whole point. Applying a `legacy` row would
-  // record as decided-by-the-CLI a step whose rule lives in a document nobody has
-  // read yet: the run would claim an authority it does not have. So a legacy
-  // stretch becomes a boundary that DECLARES its fallback, and the doctrine
-  // decides it — until the tranche that migrates it flips the row.
-  for (let index = state.applied.length; index < input.journey.length; index += 1) {
-    const decision = input.journey[index];
+  // The boundary and the pending action are written into the state BEFORE its seal
+  // is computed. Resolving first would seal a state that is about to be re-sealed,
+  // and the digest the directive advertises has to be the one the next answer will
+  // be checked against — otherwise every caller that trusted the directive would
+  // be told its answer is stale.
+  const stopped = input.journey[state.applied.length] ?? null;
+  state = withBoundary(state, stopped?.id ?? null);
+  // Only an EMITTED action is pending. Reading it back off the resolved boundary
+  // — instead of off the row — is what keeps the two honest: a delegated step
+  // whose effect is still unapproved stops at the authorization boundary, its
+  // invocation is not in the directive, and the state must not claim the run is
+  // waiting on something nobody was told to run.
+  const emitted = resolveBoundary(state, input.journey).action;
+  state = withPendingAction(
+    state,
+    emitted === null || stopped === null
+      ? null
+      : { transition: stopped.id, digest: actionDigest(emitted) },
+  );
+  return directiveFor(state, resolveBoundary(state, input.journey), appliedNow);
+}
+
+/**
+ * Every consecutive transition the CLI owns AND can apply itself, in one go.
+ *
+ * The walk stops the moment authority changes hands, the moment the next
+ * transition would exercise an effect nobody authorized (advancing automatically
+ * never widens an authorization), the moment it reaches a step still owned by
+ * doctrine — or the moment the step is delegated.
+ *
+ * The last two stops are the same principle twice. Applying a `legacy` row would
+ * record as decided-by-the-CLI a step whose rule lives in a document nobody has
+ * read yet; applying a DELEGATED row would record as done a search, a seeding or
+ * a validation that nothing ran. Both would be the engine claiming something it
+ * cannot see, so both become boundaries: one declares its fallback, the other
+ * names its invocation and waits for real output.
+ */
+function walk(
+  from: FlowRunState,
+  journey: readonly FlowDecision[],
+): { state: FlowRunState; applied: FlowStep[] } {
+  let state = from;
+  const applied: FlowStep[] = [];
+  for (let index = state.applied.length; index < journey.length; index += 1) {
+    const decision = journey[index];
     if (decision === undefined || decision.authority !== "cli") break;
     if (decision.ownership !== "cli-owned") break;
     if (authorizeTransition(decision, state.authorizations).missing.length > 0) break;
+    if (actionOf(decision) !== null) break;
     state = applyTransition(state, decision.id, effectsOf(decision));
-    appliedNow.push(stepOf(decision));
+    applied.push(stepOf(decision));
   }
+  return { state, applied };
+}
 
-  // The boundary is written into the state BEFORE its seal is computed. Resolving
-  // first would seal a state that is about to be re-sealed by `withBoundary`, and
-  // the digest the directive advertises has to be the one the next answer will be
-  // checked against — otherwise every caller that trusted the directive would be
-  // told its answer is stale.
-  state = withBoundary(state, input.journey[state.applied.length]?.id ?? null);
-  return directiveFor(state, resolveBoundary(state, input.journey), appliedNow);
+/**
+ * The seal over the exact action emitted.
+ *
+ * Program, arguments, target, input and demanded evidence — change any of them and
+ * a result that quotes the old seal is answering about something else. Same reason
+ * `effectApprovalDigest` seals the classes being approved rather than the fact that
+ * an approval happened.
+ */
+export function actionDigest(action: DelegatedAction): string {
+  return semanticDigest({
+    program: action.invocation.program,
+    args: [...action.invocation.args],
+    target: action.invocation.target,
+    input: action.invocation.input,
+    evidence: [...action.evidence],
+  });
 }
 
 /**
@@ -124,6 +176,8 @@ export interface ResolvedBoundary {
   kind: FlowBoundaryKind;
   authorization: TransitionAuthorization | null;
   request: SemanticRequest | null;
+  /** The invocation to run, at an `execution` boundary. */
+  action: DelegatedAction | null;
   choices: FlowDirective["choices"];
   pending: string[];
   /** Seal of the boundary an answer has to quote back. */
@@ -142,11 +196,13 @@ export function resolveBoundary(
       kind: "final",
       authorization: null,
       request: null,
+      action: null,
       choices: [],
       pending,
       seal: boundarySeal(state, null),
     };
   }
+  const action = actionOf(stopped);
   // Computed for `cli` rows only, which is where every row that really writes or
   // runs lives today (13 of them, all `cli`). The day a row with authority `agent`
   // or `human` declares a non-self-authorizable effect, this condition is the
@@ -160,19 +216,13 @@ export function resolveBoundary(
   // `execute`, and letting ownership answer first would hand them to doctrine with
   // their effects unapproved — the authorization gate bypassed by a field that has
   // nothing to do with it.
-  const gap = (authorization?.missing.length ?? 0) > 0;
-  const kind: FlowBoundaryKind = gap
-    ? "authorization"
-    : stopped.ownership !== "cli-owned"
-      ? "legacy"
-      : stopped.authority === "agent"
-        ? "semantic"
-        : "human";
+  const kind = boundaryKind(stopped, (authorization?.missing.length ?? 0) > 0);
   return {
     stopped,
     kind,
     authorization,
     request: kind === "semantic" ? boundaryRequest(stopped, state) : null,
+    action: kind === "execution" ? action : null,
     choices: choicesFor(kind, stopped, authorization),
     pending,
     seal: boundarySeal(state, stopped),
@@ -180,15 +230,58 @@ export function resolveBoundary(
 }
 
 /**
- * The seal of a boundary: the state it stands on plus the transition it is about.
+ * Which boundary a stopped transition is, in the one order that holds.
+ *
+ * An effect nobody authorized outranks everything: approving an effect is not
+ * deciding a step, and letting any other axis answer first would hand a writing
+ * transition onwards with its effects unapproved — the authorization gate bypassed
+ * by a field that has nothing to do with it. Ownership comes next, because
+ * emitting a bounded request, a set of alternatives or an invocation for a rule
+ * this CLI does not decide would be the engine speaking for the doctrine. Only
+ * then does the mode matter: what remains is a judgment, an invocation to run, or
+ * a preference.
+ */
+function boundaryKind(stopped: FlowDecision, unauthorized: boolean): FlowBoundaryKind {
+  if (unauthorized) return "authorization";
+  if (stopped.ownership !== "cli-owned") return "legacy";
+  if (stopped.authority === "agent") return "semantic";
+  return actionOf(stopped) === null ? "human" : "execution";
+}
+
+/**
+ * The seal of a boundary: the state it stands on, the transition it is about, and
+ * the action it names.
  *
  * Every boundary has one, not only the semantic ones — a human choice sent back
  * against a state that moved is as stale as a semantic answer, and giving the two
  * different staleness rules would leave the cheaper one unguarded. The semantic
  * request's `input_digest` is computed over exactly this, so the two never differ.
+ *
+ * The action is inside the seal because a result is an assertion about a specific
+ * invocation: if the program, an argument, the target, the input or the demanded
+ * evidence changed, whatever came back answered a different question.
  */
 export function boundarySeal(state: FlowRunState, stopped: FlowDecision | null): string {
-  return semanticDigest({ state: state.digest, transition: stopped?.id ?? null });
+  return semanticDigest(boundaryInputs(state, stopped));
+}
+
+/**
+ * What the seal is computed over — and what the semantic request declares as its
+ * own inputs, so the two digests are the same number by construction.
+ *
+ * Building them apart is how a system ends up with two staleness questions and a
+ * caller guessing which one it just answered.
+ */
+function boundaryInputs(
+  state: FlowRunState,
+  stopped: FlowDecision | null,
+): { state: string; transition: string | null; action: string | null } {
+  const action = stopped === null ? null : actionOf(stopped);
+  return {
+    state: state.digest,
+    transition: stopped?.id ?? null,
+    action: action === null ? null : actionDigest(action),
+  };
 }
 
 /** Build the directive for a resolved boundary. Shared by both verbs. */
@@ -226,6 +319,7 @@ export function directiveFor(
     applied: appliedNow,
     pending: resolved.pending,
     request: resolved.request,
+    action: resolved.action,
     choices: resolved.choices,
     authorizations: state.authorizations,
     // The transition it stopped on is PLANNED even though nothing applied it: the
@@ -257,7 +351,7 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
       : `Declarás en 'signals' solo las que observás, de este vocabulario cerrado: ${vocabulary.join(", ")}. Una señal fuera de él no avanza el recorrido. El umbral sobre las señales lo aplica el CLI, no vos.`;
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
-    inputs: { state: state.digest, transition: decision.id },
+    inputs: boundaryInputs(state, decision),
     contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera. ${taxonomy} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: [],
@@ -347,6 +441,19 @@ function nextActionFor(boundary: FlowBoundary, resolved: ResolvedBoundary): stri
       // The document comes FIRST in the sentence: this step is not the CLI's, and
       // the fallback has to be read before it runs, not justified afterwards.
       return `aplicá la regla vigente de ${stopped.document} para '${stopped.title}' y después ${submit}, declarando ese fallback en 'fallback'`;
+    case "execution": {
+      // The exact invocation, projected — not a description of it. Whoever
+      // executes should never have to reconstruct the command from prose, and the
+      // evidence is named in the same breath so "it ran" and "here is the output"
+      // arrive together or not at all.
+      const action = resolved.action;
+      const call =
+        action === null
+          ? stopped.id
+          : [action.invocation.program, ...action.invocation.args].join(" ");
+      const evidence = action?.evidence.join(", ") ?? "la evidencia exigida";
+      return `ejecutá '${call}' en ${action?.invocation.target ?? "el target declarado"} y ${submit} con su resultado real: outcome, la invocación que corriste y las validaciones ${evidence}. Una confirmación sin salida no aplica la transición`;
+    }
     default:
       return `resolvé el bloqueo de '${stopped.title}' y volvé a correr 'aw flow advance'`;
   }

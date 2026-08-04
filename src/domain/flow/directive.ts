@@ -35,6 +35,7 @@ import type {
   EffectLedger,
 } from "../capability/protocol.js";
 import {
+  type DelegatedAction,
   type FlowAuthority,
   type FlowDecision,
   type FlowTranche,
@@ -50,12 +51,19 @@ export const FLOW_DIRECTIVE_VERSION = 1;
  * need a preference", "I need an approval", "I am stuck", "there is nothing left"
  * — and "this step is not mine yet", whose next action is the only one that sends
  * the reader to a document instead of back to the engine.
+ *
+ * `execution` is the one that stops on a step the CLI DOES own: the rule is
+ * decided and the effect is not the engine's to materialize, so the run holds
+ * until the sealed invocation comes back with a verifiable result. Merging it
+ * into `human` would turn "run this and show me the output" into "approve this",
+ * and an approval is precisely what does not prove anything ran.
  */
 export const FLOW_BOUNDARY_KINDS = [
   "semantic",
   "human",
   "authorization",
   "legacy",
+  "execution",
   "blocked",
   "final",
 ] as const;
@@ -133,6 +141,13 @@ export interface FlowDirective {
   pending: string[];
   /** Present exactly at a semantic boundary. */
   request: SemanticRequest | null;
+  /**
+   * Present exactly at an `execution` boundary: what to run, and what has to come
+   * back. Sealed by `state_digest` along with the state and the transition, so
+   * changing the program, an argument, the target, the input or the demanded
+   * evidence makes any result that quotes the old seal stale.
+   */
+  action: DelegatedAction | null;
   /** Non-empty exactly at a human or authorization boundary. */
   choices: FlowChoice[];
   effects: EffectLedger;
@@ -162,6 +177,7 @@ export const FLOW_DIRECTIVE_KEYS = [
   "applied",
   "pending",
   "request",
+  "action",
   "choices",
   "effects",
   "authorizations",
@@ -195,6 +211,7 @@ export interface BuildDirectiveInput {
   applied: readonly FlowStep[];
   pending: readonly string[];
   request?: SemanticRequest | null;
+  action?: DelegatedAction | null;
   choices?: readonly FlowChoice[];
   effects?: Partial<EffectLedger>;
   authorizations?: readonly EffectClass[];
@@ -219,6 +236,7 @@ export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
     applied: [...input.applied],
     pending: [...input.pending],
     request: input.request ?? null,
+    action: input.action ?? null,
     choices: [...(input.choices ?? [])],
     effects: {
       planned: [...(input.effects?.planned ?? [])],
@@ -293,6 +311,64 @@ function checkSemantic(directive: FlowDirective): CapabilityFailure | null {
       "FLOW_DIRECTIVE_REQUEST_WITHOUT_SEMANTIC",
       `una frontera '${directive.boundary.kind}' trae un pedido semántico`,
       "el pedido acotado viaja solo en la frontera semántica",
+    );
+  }
+  return null;
+}
+
+/**
+ * An `execution` boundary is the action, and nothing else is.
+ *
+ * Without the action the boundary would say "something has to run" and name
+ * nothing — the confirmation-shaped failure this whole phase exists to refuse.
+ * Carrying it anywhere else would be worse: a second place where an invocation
+ * can be read, only one of which the seal covers.
+ *
+ * The evidence and the recovery are demanded HERE, at construction, for the same
+ * reason: an action nobody can check is a confirmation with extra steps, and one
+ * that does not say what to do when it comes back half-done leaves the run's
+ * only real failure mode without an answer.
+ */
+function checkExecution(directive: FlowDirective): CapabilityFailure | null {
+  const execution = directive.boundary.kind === "execution";
+  if (!execution) {
+    if (directive.action === null) return null;
+    return reject(
+      "FLOW_DIRECTIVE_ACTION_WITHOUT_BOUNDARY",
+      `una frontera '${directive.boundary.kind}' trae una acción delegada`,
+      "la acción viaja solo en la frontera 'execution': es la única que espera un resultado de ejecución",
+    );
+  }
+  const action = directive.action;
+  if (action === null) {
+    return reject(
+      "FLOW_DIRECTIVE_EXECUTION_WITHOUT_ACTION",
+      "una frontera de ejecución no dice qué hay que ejecutar",
+      "declará la invocación exacta: programa, argumentos, target y la evidencia que tiene que volver",
+    );
+  }
+  if (
+    action.invocation.program.trim().length === 0 ||
+    action.invocation.target.trim().length === 0
+  ) {
+    return reject(
+      "FLOW_DIRECTIVE_ACTION_INCOMPLETE",
+      "la acción delegada no nombra su programa o su target",
+      "una invocación sin programa o sin dónde corre no es reproducible: declaralos",
+    );
+  }
+  if (action.evidence.length === 0) {
+    return reject(
+      "FLOW_DIRECTIVE_ACTION_WITHOUT_EVIDENCE",
+      "la acción delegada no exige ninguna evidencia de que ocurrió",
+      "nombrá las validaciones cuya salida real tiene que volver: sin eso, el resultado es una confirmación",
+    );
+  }
+  if (action.recovery.trim().length === 0) {
+    return reject(
+      "FLOW_DIRECTIVE_ACTION_WITHOUT_RECOVERY",
+      "la acción delegada no declara qué hacer si vuelve fallida o parcial",
+      "declará la recuperación: un efecto parcial sin salida deja la corrida sin próxima acción",
     );
   }
   return null;
@@ -450,6 +526,7 @@ const DIRECTIVE_CHECKS: readonly DirectiveCheck[] = [
   checkNextAction,
   checkFinal,
   checkSemantic,
+  checkExecution,
   checkChoices,
   checkBlocked,
   checkAuthorization,
@@ -504,6 +581,13 @@ function askLines(directive: FlowDirective): string[] {
   if (directive.request !== null) {
     lines.push(`contrato de respuesta: ${directive.request.contract}`);
     lines.push(`read_set visible: ${directive.request.read_set.join(", ") || "ninguno"}`);
+  }
+  if (directive.action !== null) {
+    const call = directive.action.invocation;
+    lines.push(`ejecutar: ${[call.program, ...call.args].join(" ")}`);
+    lines.push(`en: ${call.target}${call.input === null ? "" : " (con input por stdin)"}`);
+    lines.push(`evidencia exigida: ${directive.action.evidence.join(", ")}`);
+    lines.push(`si vuelve fallida o parcial: ${directive.action.recovery}`);
   }
   for (const choice of directive.choices) {
     lines.push(

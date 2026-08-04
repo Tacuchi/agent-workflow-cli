@@ -18,6 +18,8 @@ import {
   parseRunState,
   serializeRunState,
   withBoundary,
+  withObservation,
+  withPendingAction,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
@@ -86,6 +88,55 @@ describe("estado de corrida — fail-closed", () => {
     const read = parseRunState(ahead);
     if (read.ok) throw new Error("una versión futura no puede leerse");
     expect(read.failure.code).toBe("FLOW_RUN_VERSION_UNSUPPORTED");
+  });
+
+  it("un estado de la versión anterior se rechaza con re-adopción, sin migrar en silencio", () => {
+    // The v1 shape, written out: it predates the fields the engine now reads, and
+    // inventing them would fabricate history this file exists to make trustworthy.
+    const legacy = {
+      version: 1,
+      flow: "quick",
+      session: SESSION,
+      applied: ["quick.entry-gate-signal"],
+      boundary: "quick.entry-size-gate",
+      authorizations: [],
+      effects: { planned: [], approved: [], applied: [] },
+      attempts: [],
+      digest: "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+    };
+    const read = parseRunState(JSON.stringify(legacy));
+    if (read.ok) throw new Error("un estado v1 no puede leerse como v2");
+    expect(read.failure.code).toBe("FLOW_RUN_VERSION_UNSUPPORTED");
+    expect(read.failure.action).toContain("--adopt");
+    expect(read.failure.action).toContain("migración automática");
+  });
+
+  it("la acción pendiente y las observaciones se rechazan por forma", () => {
+    const state = newRunState("quick", SESSION);
+    for (const broken of [
+      { ...state, pending_action: { transition: "fixture.a" } },
+      { ...state, pending_action: "fixture.a" },
+      { ...state, observations: [{ transition: "fixture.a" }] },
+      { ...state, observations: [{ transition: "fixture.a", signals: [1, 2] }] },
+    ]) {
+      const read = parseRunState(JSON.stringify(broken));
+      if (read.ok) throw new Error("un estado mal formado no puede leerse");
+      expect(read.failure.code).toBe("FLOW_RUN_INVALID");
+    }
+  });
+
+  it("la acción pendiente se pone y se limpia, y la observación no se duplica", () => {
+    const pending = { transition: "fixture.a", digest: "sello" };
+    const waiting = withPendingAction(newRunState("quick", SESSION), pending);
+    expect(waiting.pending_action).toEqual(pending);
+    // Clearing matters as much: a run that moved on would otherwise tell whoever
+    // resumes it to run something the engine no longer expects.
+    expect(withPendingAction(waiting, null).pending_action).toBeNull();
+
+    const once = withObservation(waiting, { transition: "fixture.a", signals: ["s1"] });
+    const twice = withObservation(once, { transition: "fixture.a", signals: ["s1", "s2"] });
+    expect(twice.observations).toEqual([{ transition: "fixture.a", signals: ["s1", "s2"] }]);
+    expect(parseRunState(serializeRunState(twice)).ok).toBe(true);
   });
 
   it("un JSON inválido o vacío no avanza", () => {

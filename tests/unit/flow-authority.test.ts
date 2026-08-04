@@ -10,6 +10,7 @@ import {
   FLOW_DECISIONS,
   FLOW_TRANCHES,
   TRANSITION_OWNERSHIPS,
+  actionOf,
   commandOfScope,
   decisionsOfScope,
   flowOfScope,
@@ -54,6 +55,31 @@ describe("registro de autoridad — forma y unicidad", () => {
       (decision) => decision.ownership === "cli-owned" && decision.authority !== "cli",
     );
     expect(impossible.map((decision) => decision.id)).toEqual([]);
+  });
+
+  it("solo una decisión del CLI puede delegar su ejecución", () => {
+    // An `agent` or `human` row already hands control back for a different reason;
+    // a second one would make the boundary ambiguous — two answers admissible at
+    // the same stop, and the caller choosing which.
+    const offenders = FLOW_DECISIONS.filter(
+      (decision) => actionOf(decision) !== null && decision.authority !== "cli",
+    );
+    expect(offenders.map((decision) => decision.id)).toEqual([]);
+  });
+
+  it("toda acción delegada es reproducible, verificable y recuperable", () => {
+    for (const decision of FLOW_DECISIONS) {
+      const action = actionOf(decision);
+      if (action === null) continue;
+      // Reproducible: the caller must never have to reconstruct the call.
+      expect(action.invocation.program.trim().length, decision.id).toBeGreaterThan(0);
+      expect(action.invocation.target.trim().length, decision.id).toBeGreaterThan(0);
+      // Verifiable: an action nobody can check is a confirmation with extra steps.
+      expect(action.evidence.length, decision.id).toBeGreaterThan(0);
+      for (const id of action.evidence) expect(id.trim().length, decision.id).toBeGreaterThan(0);
+      // Recoverable: a partial result has to have somewhere to go.
+      expect(action.recovery.trim().length, decision.id).toBeGreaterThan(10);
+    }
   });
 
   it("cada título dice qué se decide, en una línea", () => {
