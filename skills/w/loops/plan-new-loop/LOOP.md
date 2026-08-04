@@ -26,12 +26,12 @@ PLAN
 `/w:plan-new` — **resumable** (same chassis mechanism, keyed off CHECKPOINT).
 
 ## Reads
-`docs/specs/NNN-spec-*.md` (glob — locates the spec by number; or the exact path from the command argument). **Ready vs not** is read from the spec's frontmatter `status`: `ready-for-plan` → proceed (legacy compat: a frontmatter-less spec carrying `## Refinement decisions`, or the older `## Q&A traceability`, counts as ready). Otherwise → **soft-suggest** running `/w:spec-refine` first (planning over a solid spec produces better plans), **never a block**: the user may proceed. Questions the spec left with destination `PLAN` are **input to this loop**, not a reason to send it back.
+`docs/specs/NNN-spec-*.md` (glob — locates the spec by number; or the exact path from the command argument). **Ready vs not** is read from the spec's frontmatter `status`, never from the filename, and a spec that is not ready is a **soft suggestion** to refine first, never a block — the four input modes are in [`PLAN-INPUT`](../../modules/PLAN-INPUT.md). Questions the spec left with destination `PLAN` are **input to this loop**, not a reason to send it back.
 
 ## Writes
 `docs/plans/PPP-plan-<slug>.md` (`generate`; **overwrites with confirmation** if it exists) — or **several sibling plans** when an accepted split applies (§ *Split gate (multi-plan)*). With UI, also the design revision it publishes under `docs/designs` (chassis § *docs/ boundary*). It never graduates/exports anything else to `docs/` — that is separate `export-*` work.
 
-> **slug**: short kebab-case derived from the spec's Requirement — only `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars. `aw next-number docs/plans` returns JSON (field `next` = `PPP`); the loop builds the full name. To locate plans, glob `docs/plans/PPP-plan-*.md`.
+> **Naming** follows [`PLAN-INPUT`](../../modules/PLAN-INPUT.md) § *Numbering*: `aw next-number docs/plans` mints `PPP` and the slug is short kebab-case from the Requirement. To locate plans, glob `docs/plans/PPP-plan-*.md`.
 
 > **Adoption (command mode 4):** an **externally-built plan** (host plan mode, hand-written, another agent) is materialized by the **command** in a single pass — this loop does not run: transcribe + normalize into the Delta 1 schema, `## Origin` = "adopted from <source>" + attribution; then `plan-refine` closes schema gaps (its coherence gate degrades for spec-less plans). See `../../modules/PLAN-INPUT.md` (the command's `input` module).
 
@@ -189,8 +189,10 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 - **No material gaps** → **coherence gate** (the *Sequence* checklist; the PLAN-new instance of the chassis convergence gate). Criterion→task traceability is a **checked invariant**, never a separate section.
 - **The gate judges functional states, not size.** Each phase needs an exit condition, evidence and,
   **only when the change carries one**, its simulation lifecycle.
-- Passes → `Guardar plan` (writes with confirmation if it exists) → `finalize`.
-- **Split branch**: `Guardar planes` writes the N siblings → `finalize`.
+- Passes → the save confirmation and, only after it, the write (confirmed again if the document
+  exists) → `finalize`. On the split branch the same step writes the N siblings.
+
+> **When the gate is evaluated, when the offer appears and with what alternatives, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. The *Sequence* above stays as the loop's shape; it is not its scheduler.
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).
 
 > **After generating:** run `plan-exec`; use optional `plan-refine` when the structure changes first.

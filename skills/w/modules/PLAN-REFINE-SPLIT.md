@@ -9,4 +9,6 @@ The gate itself — signals, offer, anti-duplicate, sibling contract, partition 
 - The original plan **keeps its number/path**: it is rewritten **reduced** to its remaining tranche (in place, with confirmation). The extracted tranches become newly minted sibling plans (`aw next-number docs/plans` immediately before each write); their `## Origin` records "split from `docs/plans/PPP-plan-<slug>.md`" + the source spec + the siblings by path.
 - The gate also fires on **partially executed** plans. **Completed tasks (`- [x]`) never move to a sibling** — execution history stays anchored to the original path (plan-exec sessions' `## Origin` keep resolving); only pending work is extracted.
 - The split is recorded in `## Refinement decisions` (what moved where + why); original + siblings together keep the **complete, disjoint partition** of the spec criteria (spec-less: the Delta 2 degradation applies).
-- **Closing action** on the split branch: `Guardar planes` (edit the original reduced + write the extracted siblings); the normal branch keeps `Guardar plan refinado`.
+- **Closing action** on the split branch edits the original reduced and writes the extracted siblings — after the confirmation, never before it.
+
+> **When the cut fires, and that the write follows the confirmation, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. The offer's alternatives are its too.

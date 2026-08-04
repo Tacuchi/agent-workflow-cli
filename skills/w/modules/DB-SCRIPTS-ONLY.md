@@ -10,3 +10,5 @@ Distinguished by **execution**, not by file (see the [`SCRIPTS.sql`](../artifact
 - **DDL/DML migrations** (schema/data changes) → the AI **drafts them in `SCRIPTS.sql`** (session artifact) but **NEVER executes them**.
 
 > Mutating SQL **stays in the session**; it is never moved to `docs/`. Its promotion to `docs/scripts/` (forward + rollback) is done by a separate `export-*`, never by the loop.
+
+> **Showing beats asserting here:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document — it asks the session's script back, because no narration tells drafting from running.

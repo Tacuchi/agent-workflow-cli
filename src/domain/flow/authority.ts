@@ -333,6 +333,63 @@ const PLAN_NEW_LOOP = "loops/plan-new-loop/LOOP.md";
 const PLAN_REFINE_LOOP = "loops/plan-refine-loop/LOOP.md";
 const PLAN_EXEC_LOOP = "loops/plan-exec-loop/LOOP.md";
 const BATCHES_MD = "modules/PLAN-EXECUTION-BATCHES.md";
+const PLAN_SPLIT_GATE = "modules/PLAN-SPLIT-GATE.md";
+const PLAN_REFINE_SPLIT = "modules/PLAN-REFINE-SPLIT.md";
+const PLAN_INPUT = "modules/PLAN-INPUT.md";
+const DB_SCRIPTS_ONLY = "modules/DB-SCRIPTS-ONLY.md";
+
+/**
+ * What PLAN's documents say about who decides their deterministic steps.
+ *
+ * Nine documents, one marker each — the three loops, the four PLAN modules, and
+ * the two the code-editing loops share. `CODE-POLICIES.md` and
+ * `DB-SCRIPTS-ONLY.md` are here for a reason worth stating: their only readers
+ * are `quick` and `plan-exec`, and with PLAN cut over neither is doctrine's
+ * anymore. Until this tranche they had to stay, because retiring a rule from a
+ * document a still-legacy journey reads would leave that journey without it.
+ */
+const PLAN_ATTRIBUTION =
+  "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
+
+/**
+ * The multi-plan gate's rule: two of the five declared signals.
+ *
+ * A factory rather than a constant because the SAME rule is applied by two
+ * journeys over their own observation — `plan-new` cuts a plan being generated,
+ * `plan-refine` cuts one that already exists — and a threshold may only count
+ * signals declared inside the journey it belongs to. What must not be duplicated
+ * is the number, and this keeps it in one place.
+ */
+const splitThreshold = (observed: string): SignalThreshold => ({ observed, min: 2 });
+
+/**
+ * The batching rule, stated the way the module states it.
+ *
+ * "A range is eligible only when ALL of these are true… anything else is
+ * `isolated`." So the threshold counts the facts that BREAK eligibility, and one
+ * is enough: `min: 1` is not a weak bar here, it is the whole rule. The three
+ * journeys that infer a partition each observe their own row, for the same reason
+ * the split gate does.
+ */
+const ineligibleRange = (observed: string): SignalThreshold => ({ observed, min: 1 });
+
+/** The five observable facts that make a consecutive range ineligible for `continuous`. */
+const BATCH_ELIGIBILITY_SIGNALS = [
+  "plan.dependency-outside-range",
+  "plan.result-shapes-later",
+  "plan.blocker-between-phases",
+  "plan.recovery-boundary",
+  "plan.not-one-reviewable-unit",
+] as const;
+
+/** The five signals of the multi-plan split gate, shared by both plan loops. */
+const PLAN_SPLIT_SIGNALS = [
+  "plan.independent-tranches",
+  "plan.no-shared-deps",
+  "plan.distinct-priorities",
+  "plan.far-beyond-s",
+  "plan.staging-requested",
+] as const;
 
 /**
  * Every decision and transition of every public journey, in journey order
@@ -540,10 +597,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
 
   // ── QUICK — the pilot tranche, and the first one this CLI decides ──────────
   //
-  // Twelve rows migrated: every decision whose rule lived in the loop's own
-  // document. The five that live in CODE-POLICIES/DB-SCRIPTS-ONLY stay `legacy`
-  // on purpose — they are the OTHER four flows' rules too, and migrating them
-  // here would move a tranche nobody has cut over.
+  // Twelve rows migrated with the pilot: every decision whose rule lived in the
+  // loop's own document. The five in CODE-POLICIES/DB-SCRIPTS-ONLY waited for the
+  // PLAN tranche and travelled with it — those two documents are read by `quick`
+  // and `plan-exec` and by nobody else, so only once execution was cut over could
+  // their rules be retired without leaving a journey without them.
   {
     id: "quick.entry-gate-signal",
     scope: "quick",
@@ -718,8 +776,18 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "quick",
     title: "verificar la rama esperada de cada fuente antes de editar",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    // Same read as PLAN's, and for the same reason: `aw check-branch` with no
+    // --source resolves no target and passes unconditionally.
+    action: {
+      invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      evidence: ["quick.rama-verificada"],
+      idempotent: true,
+      recovery:
+        "resolvé la rama de la fuente que no coincide y volvé a leer las fuentes: nunca limpies ni cambies de rama sin confirmación",
+    },
   },
   {
     id: "quick.deliverable-authoring",
@@ -735,9 +803,27 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "quick",
     title: "derivar todo DDL o DML al script de la sesión sin ejecutarlo",
     authority: "cli",
-    ownership: "legacy",
-    document: "modules/DB-SCRIPTS-ONLY.md",
+    ownership: "cli-owned",
+    document: DB_SCRIPTS_ONLY,
+    attribution: PLAN_ATTRIBUTION,
     effects: ["local_additive"],
+    // Migrated with the PLAN tranche and not with QUICK, for the same reason
+    // CODE-POLICIES was: `plan-exec` reads this module too, and retiring its rule
+    // while execution still decided from it would have left that journey without
+    // it. What comes back is the script itself — the whole point of the rule is
+    // that the statement was WRITTEN and not run.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}", "--dump", "scripts"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["quick.scripts-derivados"],
+      idempotent: true,
+      recovery:
+        "escribí el DDL o DML en el SCRIPTS.sql de la sesión y volvé a devolver el dump; ejecutarlo no es una alternativa que este contrato admita",
+    },
   },
   {
     id: "quick.growth-escalation",
@@ -791,24 +877,40 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "quick",
     title: "exigir el gate de revisión antes de proponer el commit",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
     id: "quick.review-findings",
     scope: "quick",
     title: "releer el diff y juzgar sus hallazgos con las convenciones instaladas",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
     id: "quick.commit-authorization",
     scope: "quick",
     title: "aprobar el commit propuesto de la tarea",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    alternatives: [
+      {
+        label: "Aprobar el commit",
+        consequence:
+          "se crea un solo commit al cierre de la tarea; sin push, sin --amend y sin --no-verify",
+        recommended: true,
+      },
+      {
+        label: "Dejar la tarea sin commitear",
+        consequence: "los cambios quedan en el árbol de trabajo y la tarea se registra en BACKLOG",
+        recommended: false,
+      },
+    ],
   },
 
   // ── SPEC ──────────────────────────────────────────────────────────────────
@@ -1069,30 +1171,60 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   },
 
   // ── PLAN — new ────────────────────────────────────────────────────────────
+  //
+  // The third tranche, and the one with the most effect surface: it writes plan
+  // documents, runs checks and reaches Git. Row ORDER is left exactly as the
+  // previous tranches found it wherever the doctrine does not force a change —
+  // reordering without evidence would be a claim about the journey nobody made.
   {
     id: "plan-new.spec-readiness",
     scope: "plan-new",
     title: "leer el status de la spec y sugerir refinar sin bloquear",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // "Read from the spec's frontmatter `status`, never from the filename" — so
+    // what the run credits is the board's reading of that document, not a claim
+    // that somebody looked. Suggesting is the outcome; it never blocks.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["plan.spec-status-leido"],
+      idempotent: true,
+      recovery:
+        "volvé a correr 'aw status --json' y devolvé su salida real; sin el status de la spec no hay nada que sugerir ni que dar por listo",
+    },
   },
   {
     id: "plan-new.session",
     scope: "plan-new",
     title: "abrir o reanudar la sesión de generación del plan",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
+    attribution: PLAN_ATTRIBUTION,
     effects: ["local_additive"],
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["plan.session-present"],
+      idempotent: true,
+      recovery:
+        "creá la sesión con 'aw session-create --type refine --name <slug>-plan-new --objetivo \"<objetivo>\"' y volvé a devolver la lectura",
+    },
   },
   {
     id: "plan-new.slug-derivation",
     scope: "plan-new",
     title: "derivar el slug del plan desde el requisito de la spec",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
     id: "plan-new.numbering",
@@ -1108,71 +1240,150 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "plan-new",
     title: "agrupar el trabajo en estados verificables del sistema",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+  },
+  {
+    id: "plan-new.batch-eligibility-signal",
+    scope: "plan-new",
+    title: "reconocer qué hecho observable rompe la elegibilidad de un rango continuo",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    // The module's five eligibility conditions, stated as what BREAKS them. The
+    // document phrased them as "the AI infers from observable facts, not a
+    // preference question" — and that is exactly the frontier: seeing the fact is
+    // judgment, turning it into `isolated` is the rule below.
+    signals: [...BATCH_ELIGIBILITY_SIGNALS],
   },
   {
     id: "plan-new.batch-inference",
     scope: "plan-new",
     title: "inferir la partición máxima de execution batches",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+  },
+  {
+    id: "plan-new.batch-isolation",
+    scope: "plan-new",
+    title: "aislar el rango cuyo hecho observable rompe su elegibilidad",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    condition: {
+      threshold: ineligibleRange("plan-new.batch-eligibility-signal"),
+      otherwise:
+        "ningún hecho observable rompe la elegibilidad: el rango máximo entra entero como un batch continuo",
+    },
   },
   {
     id: "plan-new.split-signal",
     scope: "plan-new",
     title: "reconocer cada señal de división en tramos del plan",
     authority: "agent",
-    ownership: "legacy",
-    document: "modules/PLAN-SPLIT-GATE.md",
-    signals: [
-      "plan.independent-tranches",
-      "plan.no-shared-deps",
-      "plan.distinct-priorities",
-      "plan.far-beyond-s",
-      "plan.staging-requested",
-    ],
+    ownership: "cli-owned",
+    document: PLAN_SPLIT_GATE,
+    attribution: PLAN_ATTRIBUTION,
+    signals: [...PLAN_SPLIT_SIGNALS],
   },
   {
     id: "plan-new.split-gate",
     scope: "plan-new",
     title: "aplicar el umbral de dos señales del gate multi-plan",
     authority: "cli",
-    ownership: "legacy",
-    document: "modules/PLAN-SPLIT-GATE.md",
+    ownership: "cli-owned",
+    document: PLAN_SPLIT_GATE,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
     id: "plan-new.split-choice",
     scope: "plan-new",
     title: "elegir entre dividir en varios planes o conservar uno solo",
     authority: "human",
-    ownership: "legacy",
-    document: "modules/PLAN-SPLIT-GATE.md",
+    ownership: "cli-owned",
+    document: PLAN_SPLIT_GATE,
+    attribution: PLAN_ATTRIBUTION,
+    // "It fires ONLY on clear signals… borderline → one plan, no question." A
+    // directed journey that asked anyway would ask what the doctrine it replaces
+    // explicitly refuses to ask.
+    condition: {
+      threshold: splitThreshold("plan-new.split-signal"),
+      otherwise:
+        "el umbral de dos señales no disparó: el trabajo queda en un solo plan y no se pregunta nada",
+    },
+    alternatives: [
+      {
+        label: "Dividir en varios planes",
+        consequence:
+          "cada tramo se elabora completo como plan hermano, con su origen y el orden entre ellos",
+        recommended: true,
+      },
+      {
+        label: "Un solo plan",
+        consequence: "el gap queda agotado para esta corrida y el trabajo sigue como un plan único",
+        recommended: false,
+      },
+    ],
   },
   {
     id: "plan-new.coherence-gate",
     scope: "plan-new",
     title: "evaluar el gate de coherencia del plan generado",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // Same shape as SPEC's ready gate: the checklist is the run's own `Success
+    // criteria`, seeded before planning, and what comes back is the real state of
+    // each line. "The gate passed" is not a result.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}", "--dump", "objetivo"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["plan.coherence-checklist"],
+      idempotent: true,
+      recovery:
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real",
+    },
   },
   {
     id: "plan-new.save-confirmation",
     scope: "plan-new",
     title: "confirmar la escritura del plan o de sus hermanos",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    alternatives: [
+      {
+        label: "Guardar plan",
+        consequence:
+          "el plan se escribe en docs/plans, y si el split fue aceptado se escriben también sus hermanos",
+        recommended: true,
+      },
+      {
+        label: "Preguntar algo más",
+        consequence: "la generación sigue abierta y no se escribe ningún documento",
+        recommended: false,
+      },
+    ],
   },
   {
     id: "plan-new.adoption",
     scope: "plan-new",
     title: "adoptar en una sola pasada un plan construido fuera del loop",
     authority: "cli",
-    ownership: "legacy",
-    document: "modules/PLAN-INPUT.md",
+    ownership: "cli-owned",
+    document: PLAN_INPUT,
+    attribution: PLAN_ATTRIBUTION,
   },
 
   // ── PLAN — refine ─────────────────────────────────────────────────────────
@@ -1181,67 +1392,178 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "plan-refine",
     title: "abrir, reanudar o reabrir la sesión de refinamiento del plan",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
     effects: ["local_additive"],
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["plan.session-present"],
+      idempotent: true,
+      recovery:
+        "creá o reabrí la sesión con 'aw session-create' o 'aw session-resume --code <NNN> --reopen' y volvé a devolver la lectura",
+    },
   },
   {
     id: "plan-refine.journey-map",
     scope: "plan-refine",
     title: "mapear contrato observable, recorrido técnico, estrategia incremental y evidencia",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
     id: "plan-refine.preserve-validated",
     scope: "plan-refine",
     title: "conservar las fases validadas y rediseñar solo el trabajo pendiente",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+  },
+  {
+    id: "plan-refine.batch-eligibility-signal",
+    scope: "plan-refine",
+    title: "reconocer qué hecho observable rompe la elegibilidad de un rango continuo",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    signals: [...BATCH_ELIGIBILITY_SIGNALS],
   },
   {
     id: "plan-refine.batch-reinference",
     scope: "plan-refine",
     title: "re-inferir y escribir la partición completa de batches",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
-    id: "plan-refine.split-in-place",
+    id: "plan-refine.batch-isolation",
     scope: "plan-refine",
-    title: "reducir el plan original y extraer los hermanos sin mover trabajo completado",
+    title: "aislar el rango cuyo hecho observable rompe su elegibilidad",
     authority: "cli",
-    ownership: "legacy",
-    document: "modules/PLAN-REFINE-SPLIT.md",
-    effects: ["local_additive", "mutate_overwrite"],
+    ownership: "cli-owned",
+    document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    condition: {
+      threshold: ineligibleRange("plan-refine.batch-eligibility-signal"),
+      otherwise:
+        "ningún hecho observable rompe la elegibilidad: el rango máximo entra entero como un batch continuo",
+    },
   },
   {
-    id: "plan-refine.normalize-on-write",
+    id: "plan-refine.split-signal",
     scope: "plan-refine",
-    title: "normalizar la forma sin escribir bloques condicionales vacíos ni tocar estados",
-    authority: "cli",
-    ownership: "legacy",
-    document: PLAN_REFINE_LOOP,
-    effects: ["mutate_overwrite"],
+    title: "reconocer cada señal de división sobre el plan que ya existe",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_SPLIT_GATE,
+    attribution: PLAN_ATTRIBUTION,
+    // The gate is defined ONCE in that module and this loop only adds the
+    // in-place semantics — so the signals are read from the same vocabulary. The
+    // row exists per journey because a threshold may only count signals declared
+    // inside the journey it belongs to.
+    signals: [...PLAN_SPLIT_SIGNALS],
   },
   {
     id: "plan-refine.executability-gate",
     scope: "plan-refine",
     title: "evaluar el gate de ejecutabilidad del plan",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}", "--dump", "objetivo"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["plan.executability-checklist"],
+      idempotent: true,
+      recovery:
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real",
+    },
   },
   {
     id: "plan-refine.save-confirmation",
     scope: "plan-refine",
     title: "confirmar la sobreescritura del plan refinado",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    alternatives: [
+      {
+        label: "Guardar plan refinado",
+        consequence:
+          "el plan se edita en su lugar con su traza de refinamiento, y si el split fue aceptado se escriben los hermanos extraídos",
+        recommended: true,
+      },
+      {
+        label: "Preguntar algo más",
+        consequence: "el refinamiento sigue abierto y el plan queda como está",
+        recommended: false,
+      },
+    ],
+  },
+  {
+    id: "plan-refine.split-in-place",
+    scope: "plan-refine",
+    title: "reducir el plan original y extraer los hermanos sin mover trabajo completado",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: PLAN_REFINE_SPLIT,
+    attribution: PLAN_ATTRIBUTION,
+    effects: ["local_additive", "mutate_overwrite"],
+    // AFTER the confirmation, and the doctrine's own sequence is why: the save
+    // branch reads `Guardar planes → edit original reduced (confirmation) + write
+    // extracted siblings`. The registry had both writes ahead of the gate and of
+    // the confirmation — the same defect the SPEC tranche found in its stamp, so
+    // the order moved to where the document puts it.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["plan.hermanos-extraidos"],
+      idempotent: true,
+      recovery:
+        "reducí el original en su lugar, escribí los hermanos extraídos y volvé a devolver la lectura; una tarea ya marcada nunca se muda a un hermano",
+    },
+    condition: {
+      threshold: splitThreshold("plan-refine.split-signal"),
+      otherwise:
+        "el umbral de dos señales no disparó: el plan conserva su número y su alcance, y no se extrae ningún hermano",
+    },
+  },
+  {
+    id: "plan-refine.normalize-on-write",
+    scope: "plan-refine",
+    title: "normalizar la forma sin escribir bloques condicionales vacíos ni tocar estados",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    effects: ["mutate_overwrite"],
+    // A write on a document the engine does not edit, so it is delegated like
+    // every other one. It had neither action nor evidence, which meant the run
+    // recorded "normalized" for something nothing performed — the phantom
+    // confirmation this whole contract exists to refuse.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["plan.forma-normalizada"],
+      idempotent: true,
+      recovery:
+        "normalizá la forma sin tocar estados ni casillas y volvé a devolver la lectura; normalizar de nuevo lo ya normalizado no rompe nada",
+    },
   },
 
   // ── PLAN — exec ───────────────────────────────────────────────────────────
@@ -1250,41 +1572,139 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "plan-exec",
     title: "abrir o reanudar la sesión única de la corrida de ejecución",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
     effects: ["local_additive"],
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["plan.session-present"],
+      idempotent: true,
+      recovery:
+        "creá la sesión con 'aw session-create --type exec --name <slug>-plan-exec --objetivo \"<objetivo>\"' y volvé a devolver la lectura",
+    },
   },
   {
     id: "plan-exec.entry-gate",
     scope: "plan-exec",
     title: "verificar en la entrada que el plan tiene forma ejecutable",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // The board already parses what the gate checks — the phase blocks, their
+    // state lines and the plan's own status — so what comes back is that reading
+    // and not "I read the plan". A plan whose shape the board cannot resolve is
+    // the gate's finding, not a detail to wave through.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["plan.forma-ejecutable"],
+      idempotent: true,
+      recovery:
+        "volvé a correr 'aw status --json' y devolvé su salida real; si el plan no se puede leer, eso ES el hallazgo del gate",
+    },
+  },
+  {
+    id: "plan-exec.entry-gap-recognition",
+    scope: "plan-exec",
+    title: "reconocer qué clase de hueco dejó el gate de entrada",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // Two signals for two different consequences, and neither is "no gap": a plan
+    // that passes the gate declares nothing here, which is what makes both rules
+    // below skip. Recognizing the class is judgment; what each class costs is the
+    // rule the CLI applies.
+    signals: ["plan.entry-gap-minor", "plan.entry-gap-structural"],
   },
   {
     id: "plan-exec.entry-gap-severity",
     scope: "plan-exec",
     title: "distinguir un hueco menor de uno estructural en el plan",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    condition: {
+      threshold: { observed: "plan-exec.entry-gap-recognition", min: 1 },
+      otherwise: "el gate de entrada no encontró ningún hueco: no hay severidad que clasificar",
+    },
   },
   {
     id: "plan-exec.normalization-consent",
     scope: "plan-exec",
     title: "consentir la normalización del plan o derivar a plan-refine",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // ONLY the minor gap is offered. A structural one "does not improvise": it
+    // leaves this loop, and putting `Normalizar y ejecutar` in front of somebody
+    // holding a structural gap is how a plan gets patched instead of refined.
+    condition: {
+      threshold: {
+        observed: "plan-exec.entry-gap-recognition",
+        of: ["plan.entry-gap-minor"],
+        min: 1,
+      },
+      otherwise: "no se declaró ningún hueco menor: no hay normalización que consentir",
+    },
+    alternatives: [
+      {
+        label: "Normalizar y ejecutar",
+        consequence:
+          "los bloques de fase se editan en su lugar sin agregar alcance ni mover ninguna frontera, y la ejecución sigue",
+        recommended: true,
+      },
+      {
+        label: "Ir a plan-refine",
+        consequence:
+          "la ejecución no arranca: el hallazgo queda en CHECKPOINT y el trabajo sigue en /w:plan-refine",
+        recommended: false,
+      },
+    ],
+  },
+  {
+    id: "plan-exec.batch-eligibility-signal",
+    scope: "plan-exec",
+    title: "reconocer qué hecho del checkout vivo rompe la elegibilidad de un rango",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    // Execution observes the same five facts as planning, but over live state —
+    // dependencies, branches, working trees, blockers and risks — which is why it
+    // may merge or split what the plan declared without asking.
+    signals: [...BATCH_ELIGIBILITY_SIGNALS],
   },
   {
     id: "plan-exec.batch-inference",
     scope: "plan-exec",
     title: "re-inferir los batches efectivos sobre el estado vivo",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+  },
+  {
+    id: "plan-exec.batch-isolation",
+    scope: "plan-exec",
+    title: "aislar el rango cuyo hecho del checkout vivo rompe su elegibilidad",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    condition: {
+      threshold: ineligibleRange("plan-exec.batch-eligibility-signal"),
+      otherwise:
+        "ningún hecho del checkout vivo rompe la elegibilidad: el rango máximo entra entero como un batch continuo",
+    },
   },
   {
     id: "plan-exec.design-precondition",
@@ -1300,108 +1720,245 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "plan-exec",
     title: "verificar la rama de cada fuente afectada antes del batch",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    // "Before editing… verify EVERY current branch" — every, so the read has to
+    // cover every declared source. `aw check-branch` cannot: without --source it
+    // resolves no target and answers `match: true` unconditionally, which would
+    // credit "branch verified" against a command that checked nothing. The real
+    // walk is what surfaced that. `aw sources` enriches each declared source with
+    // its current branch, the expected one and whether they match.
+    action: {
+      invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      evidence: ["plan.rama-verificada"],
+      idempotent: true,
+      recovery:
+        "resolvé la rama de la fuente que no coincide y volvé a leer las fuentes: nunca limpies ni cambies de rama sin confirmación",
+    },
   },
   {
     id: "plan-exec.implementation",
     scope: "plan-exec",
     title: "implementar el trabajo mínimo de cada tarea de la fase",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
     id: "plan-exec.deviation-recognition",
     scope: "plan-exec",
     title: "reconocer qué toca el cambio que apareció al implementar",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // Only the two that LEAVE the loop are signals. A local decision declares
+    // nothing, which is the doctrine's own default — "plan-exec continues" — and
+    // it is what keeps the gate below from stopping a run that has nothing to
+    // classify.
+    signals: ["plan.deviation-structural", "plan.deviation-functional"],
   },
   {
     id: "plan-exec.deviation-gate",
     scope: "plan-exec",
     title: "clasificar la desviación en local, estructural o funcional y derivar",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    condition: {
+      threshold: { observed: "plan-exec.deviation-recognition", min: 1 },
+      otherwise:
+        "no se declaró ninguna desviación estructural ni funcional: lo local se resuelve en la fase y la ejecución sigue",
+    },
   },
   {
     id: "plan-exec.task-marking",
     scope: "plan-exec",
     title: "marcar la tarea cuando su trabajo local termina",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    // The plan-doc is the per-task source of truth, and the engine does not edit
+    // it — so the write is delegated and what comes back is the board's count of
+    // ticked boxes. "I marked it" is the one thing this contract will not take.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["plan.casillas-marcadas"],
+      idempotent: true,
+      recovery:
+        "marcá la casilla de la tarea cuyo trabajo local terminó y volvé a devolver la lectura del tablero; marcar de nuevo lo ya marcado no rompe nada",
+    },
   },
   {
     id: "plan-exec.phase-state-transition",
     scope: "plan-exec",
     title: "aplicar la transición de estado de fase con sus precondiciones",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    // The precondition is what this row exists for: `validada` requires the proof
+    // to have RUN and passed, never the checkboxes. The state line is a write on a
+    // document the engine does not own, so the board's reading of that line is the
+    // evidence — and the board is the same thing that calls a plan `inconsistent`
+    // when a state and its boxes disagree.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["plan.estado-de-fase-aplicado"],
+      idempotent: true,
+      recovery:
+        "escribí el '> Estado:' que la fase realmente tiene —con su '> Bloqueo:' si quedó bloqueada— y volvé a devolver la lectura; una fase sin su prueba corrida no pasa a validada",
+    },
   },
   {
     id: "plan-exec.validation-execution",
     scope: "plan-exec",
     title: "correr las pruebas de fase y las validaciones aplicables al cierre del batch",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
     effects: ["execute"],
+    // The proofs are authored per phase, so no fixed runner can be named without
+    // inventing a rule this CLI does not have. What it CAN name is the artifact
+    // holding the run's criteria, and it demands the real output of having run
+    // them. This is the row `plan-exec.commit-enablement` stands on: reaching the
+    // commit means having come THROUGH here with a result.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}", "--dump", "objetivo"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["plan.validaciones-de-fase-verdes"],
+      idempotent: true,
+      recovery:
+        "arreglá lo que la validación reprobó y volvé a correr las pruebas afectadas: la transición sigue pendiente hasta que su salida real vuelva en verde",
+    },
   },
   {
     id: "plan-exec.deferred-check",
     scope: "plan-exec",
     title: "dejar bloqueada la fase cuyo chequeo operativo no puede correrse",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
     id: "plan-exec.review-findings",
     scope: "plan-exec",
     title: "releer el diff del batch y juzgar sus hallazgos",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CODE_POLICIES_MD,
-  },
-  {
-    id: "plan-exec.commit-enablement",
-    scope: "plan-exec",
-    title: "habilitar un commit por fuente solo tras un batch realmente verde",
-    authority: "cli",
-    ownership: "legacy",
-    document: CODE_POLICIES_MD,
-  },
-  {
-    id: "plan-exec.commit-authorization",
-    scope: "plan-exec",
-    title: "aprobar los commits del batch o preautorizarlos condicionalmente",
-    authority: "human",
-    ownership: "legacy",
-    document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
   },
   {
     id: "plan-exec.final-validation",
     scope: "plan-exec",
     title: "evaluar la validación final que habilita cerrar el plan",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // BEFORE Git, and the real walk is what proved it: the registry had inherited
+    // an order where the plan was committed and only then validated and stamped.
+    // Both documents say the opposite — "last Batch also runs final validation
+    // before Git", and "mark plan done, then commit once per affected source", so
+    // that the status write rides in the same commit instead of orphaning it.
+    // The convergence gate of PLAN-exec. The board is what distinguishes the three
+    // states this rule turns on — every phase green with no closure reads
+    // `final_validation_pending`, and a deferred check keeps its phase blocked —
+    // so it is read, not asserted.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["plan.validacion-final-verde"],
+      idempotent: true,
+      recovery:
+        "un chequeo diferido nunca cuenta como aprobado: deja su fase bloqueada y el plan abierto, así que corré lo que falte y volvé a leer el tablero",
+    },
+  },
+  {
+    id: "plan-exec.commit-enablement",
+    scope: "plan-exec",
+    title: "habilitar un commit por fuente solo tras un batch realmente verde",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    // "A failed or UNRUN check never authorizes a commit." The rule is enforced by
+    // position, not by asking: this row sits behind the delegated validation and
+    // behind the review, and neither can be passed with a narration. There is no
+    // field a caller could set to arrive here without them.
+  },
+  {
+    id: "plan-exec.commit-authorization",
+    scope: "plan-exec",
+    title: "aprobar los commits del batch o preautorizarlos condicionalmente",
+    authority: "human",
+    ownership: "cli-owned",
+    document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    alternatives: [
+      {
+        label: "Aprobar los commits del batch",
+        consequence:
+          "se crea exactamente un commit por fuente afectada; sin push, sin --amend y sin --no-verify",
+        recommended: true,
+      },
+      {
+        label: "Dejar el batch sin commitear",
+        consequence:
+          "los cambios quedan en el árbol de trabajo y el batch se registra sin commitear en CHECKPOINT y BACKLOG",
+        recommended: false,
+      },
+    ],
   },
   {
     id: "plan-exec.plan-done",
     scope: "plan-exec",
     title: "escribir el estado done del plan con su línea de cierre",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["plan.estado-done-sellado"],
+      idempotent: true,
+      recovery:
+        "escribí '> Estado: done' y su '> Cierre:' en la línea de abajo y volvé a devolver la lectura; si el tablero no lo lee cerrado, la transición sigue pendiente",
+    },
+  },
+  {
+    id: "plan-exec.commit-execution",
+    scope: "plan-exec",
+    title: "crear un commit por fuente afectada y dejar cada árbol limpio o reconocido",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    effects: ["execute", "local_additive"],
+    // Approving is not committing. The authorization above is a preference; this
+    // is the effect, and it comes back as the sources' real git state — which is
+    // also the between-unit precondition the policy demands ("each working tree
+    // clean or explicitly acknowledged").
+    action: {
+      invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      evidence: ["plan.commits-por-fuente"],
+      idempotent: false,
+      recovery:
+        "una fuente que quedó con cambios sin commitear deja el batch SIN commitear: registralo así en CHECKPOINT y BACKLOG en vez de commitear a medias",
+    },
   },
 
   // ── Transversal commands (universe = the command registry) ────────────────

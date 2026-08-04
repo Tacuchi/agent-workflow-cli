@@ -8,8 +8,15 @@ import { locateRun, readRun } from "../../src/application/flow/run-state-service
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import type { FlowAuthority, FlowDecision } from "../../src/domain/flow/authority.js";
-import { decisionsOfScope } from "../../src/domain/flow/authority.js";
-import { FLOW_RUN_STATE_FILE, newRunState } from "../../src/domain/flow/run-state.js";
+import { decisionsOfScope, effectsOf } from "../../src/domain/flow/authority.js";
+import {
+  FLOW_RUN_STATE_FILE,
+  applyTransition,
+  newRunState,
+  serializeRunState,
+  withBoundary,
+  withObservation,
+} from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
@@ -108,12 +115,38 @@ describe("frontera humana — sobre una corrida real", () => {
       "# SESSION — prueba\n",
       "utf8",
     );
-    // PLAN exec stops on its consented normalization after three deterministic steps.
-    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: true });
-    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    // PLAN exec stops on its consented normalization — but only when a minor entry
+    // gap was declared, and only after the delegated session read and entry gate
+    // have come back with real output. Adopting no longer reaches it in one call,
+    // so the run is POSITIONED there instead of walked: this file's subject is what
+    // the boundary does, not how many submits it took to arrive. The observation is
+    // seeded too, because without it the row is legitimately skipped.
+    await seedRunAt("plan-exec.normalization-consent");
+    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "plan-exec" });
+    if (!adopted.ok) throw new Error("esperaba leer la corrida posicionada");
     expect(adopted.directive.boundary.kind).toBe("human");
     expect(adopted.directive.boundary.transition).toBe("plan-exec.normalization-consent");
   });
+
+  /** Leave a persisted run exactly where the engine would leave it: stopped at `id`. */
+  async function seedRunAt(id: string): Promise<void> {
+    const journey = decisionsOfScope("plan-exec");
+    let state = withObservation(newRunState("plan-exec", SESSION), {
+      transition: "plan-exec.entry-gap-recognition",
+      signals: ["plan.entry-gap-minor"],
+      decisions: {},
+    });
+    for (const decision of journey) {
+      if (decision.id === id) break;
+      state = applyTransition(state, decision.id, effectsOf(decision));
+    }
+    state = withBoundary(state, id);
+    await writeFile(
+      join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE),
+      serializeRunState(state),
+      "utf8",
+    );
+  }
 
   afterEach(async () => {
     await rm(workdir, { recursive: true, force: true });
@@ -136,7 +169,10 @@ describe("frontera humana — sobre una corrida real", () => {
     });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     expect(result.directive.error?.code).toBe("FLOW_CHOICE_UNKNOWN");
-    expect(result.directive.error?.action).toContain("Resolver la frontera");
+    // The row declares its own alternatives now, so the rejection quotes the ones
+    // the doctrine used to enumerate — not the generic pair the engine falls back
+    // to for a migrated row that names none.
+    expect(result.directive.error?.action).toContain("Normalizar y ejecutar");
     expect(await readFile(statePath(), "utf8")).toBe(before);
   });
 
@@ -153,7 +189,7 @@ describe("frontera humana — sobre una corrida real", () => {
   it("la elección emitida se acepta y el avance sigue desde ahí", async () => {
     const result = await submitFlow(fs, paths, {
       code: "001",
-      raw: JSON.stringify({ input_digest: await seal(), choice: "Resolver la frontera" }),
+      raw: JSON.stringify({ input_digest: await seal(), choice: "Normalizar y ejecutar" }),
       approval: null,
     });
     if (!result.ok) throw new Error("esperaba que la elección se aplicara");

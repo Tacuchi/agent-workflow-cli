@@ -7,19 +7,15 @@ code loops keep only a short inline floor for advisory hosts.
 
 ## Safe git — verified branch + proposed commits
 
-- **Before editing** an execution unit's sources, verify every current branch (`aw check-branch
-  --source <alias>`). On mismatch, pause; never destructively clean or switch without confirmation.
-- **Proposed commits:** only after the closing review gate. In plan-exec create exactly one commit
-  per affected source at effective-batch close; in quick, one at task close. Never
-  `push`/`--amend`/`--no-verify`.
-- **Authorization:** default to one consolidated approval for a green batch's source commits. An
-  explicit user pre-authorization conditional on all checks passing is recorded before editing and
-  removes that final question. A failed or unrun check never authorizes a commit.
-- **Rejected commit:** changes stay. Record the execution unit as uncommitted in `CHECKPOINT` and
-  `BACKLOG`.
-- **Between-unit precondition:** each working tree is clean or explicitly acknowledged. A
-  `continuous` batch is the narrow exception that intentionally co-mingles its internal phases in
-  one reviewed commit; no batch may co-mingle with another.
+Sources are edited on a **verified** branch (`aw check-branch`), and the unit's commits are
+**proposed**: exactly one commit per affected source — at effective-batch close in plan-exec, at task
+close in quick — never `push`/`--amend`/`--no-verify`, and never a destructive clean or a branch
+switch without confirmation. A **rejected** commit leaves the changes in the tree and the unit
+recorded as uncommitted in `CHECKPOINT` and `BACKLOG`. Between units each working tree is clean or
+explicitly acknowledged; a `continuous` batch is the narrow exception that intentionally co-mingles
+its internal phases in one reviewed commit, and no batch may co-mingle with another.
+
+> **When the branch is verified, when a commit becomes available and what an approval covers is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Approving is the person's act and committing is a separate effect that comes back as the sources' real git state — which is also what makes "the checks passed" impossible to assert without having run them.
 
 ## Closing review gate (conventions, pre-commit)
 
@@ -36,8 +32,6 @@ same gate before any pending commit.
 - **Findings**: **fix** them in the working tree and **re-run validation** (the gate does not replace the tests: it re-verifies after fixing), or **defer them justified** (→ the plan's `Open questions` + `BACKLOG`; in quick, `BACKLOG`); the non-obvious → `DECISION`. Gate integrity (see [`CHASSIS.md`](CHASSIS.md) § *Verification-first*): never weaken a check or lower a convention to pass.
 - **Artifact-first + verification-first**: seed `CHECKPOINT.Next = "review <batch/task>"`; Success
   criteria require the whole diff to pass before commits.
-
-Only with the gate green are the commits proposed.
 
 ## Location
 

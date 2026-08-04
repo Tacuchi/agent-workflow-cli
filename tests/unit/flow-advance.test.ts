@@ -124,7 +124,7 @@ describe("aw flow advance — agota los pasos deterministas", () => {
     expect(result.failure.code).toBe("FLOW_RUN_AHEAD_OF_JOURNEY");
   });
 
-  it("el motor consume el registro real y no aplica nada que la doctrina todavía decida", () => {
+  it("el motor consume el registro real y no acredita nada que no haya corrido", () => {
     const real = decisionsOfScope("plan-exec");
     expect(real.length).toBeGreaterThan(0);
     const result = advanceFlowRun({
@@ -132,12 +132,15 @@ describe("aw flow advance — agota los pasos deterministas", () => {
       journey: real,
     });
     if (!result.ok) throw new Error(`esperaba avanzar: ${result.failure.code}`);
-    // Every production row is still `legacy`, so the honest answer over the live
-    // registry is the boundary that hands the FIRST step back to its document —
-    // with nothing applied. The cutover phase of this tranche is what flips it.
-    expect(result.directive.boundary.kind).toBe("legacy");
+    // PLAN is cut over, so the first row is no longer handed back to its document
+    // — it is handed back as an INVOCATION. The invariant the test guards is the
+    // same one, and it is the stronger half: over the live registry the engine
+    // still applies NOTHING on the first call, because the first step is something
+    // it can direct and cannot materialize.
+    expect(result.directive.boundary.kind).toBe("execution");
     expect(result.directive.boundary.transition).toBe(real[0]?.id);
     expect(result.directive.boundary.document).toBe(real[0]?.document);
+    expect(result.directive.action?.invocation.program).toBe("aw");
     expect(result.directive.applied).toEqual([]);
   });
 });

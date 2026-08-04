@@ -99,12 +99,17 @@ describe("el tramo QUICK migró como dato, no como prosa", () => {
     }
   });
 
-  it("las acciones delegadas son exactamente las tres del tramo", () => {
+  it("las acciones delegadas del tramo, incluidas las dos que llegaron con PLAN", () => {
     const delegated = JOURNEY.filter((decision) => actionOf(decision) !== null).map((d) => d.id);
+    // Las dos últimas del pilot mas las dos de los documentos compartidos: la
+    // rama y el script de la sesión se acreditan igual que todo lo demás, con
+    // salida real, y llegaron cuando PLAN liberó sus documentos.
     expect(delegated).toEqual([
       "quick.anti-duplicate",
       "quick.session-create",
       "quick.artifact-seed-order",
+      "quick.branch-precondition",
+      "quick.db-scripts-only",
       "quick.convergence-gate",
     ]);
   });
@@ -430,22 +435,48 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(green.effects.applied).toContain("execute");
   });
 
-  it("las cinco transversales siguen decidiendo desde su documento", async () => {
+  /** Whatever the boundary in force admits, answered the way the run would. */
+  async function answerBoundary(
+    resolved: Awaited<ReturnType<typeof current>>["resolved"],
+  ): Promise<void> {
+    const stopped = resolved.stopped as FlowDecision;
+    if (resolved.kind === "execution") {
+      await answer(resultFor(resolved));
+      return;
+    }
+    if (resolved.kind === "authorization") {
+      await answer(
+        { input_digest: resolved.seal, choice: "Autorizar el efecto" },
+        effectApprovalDigest(stopped.id, resolved.authorization?.planned ?? []),
+      );
+      return;
+    }
+    await answer(
+      resolved.kind === "human"
+        ? { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" }
+        : { input_digest: resolved.seal, decisions: { paso: stopped.id } },
+    );
+  }
+
+  it("ninguna transversal decide ya desde su documento: el recorrido llega al final", async () => {
+    // Las cinco que el piloto dejó atrás viajaron con PLAN, así que QUICK ya no
+    // tiene ninguna frontera legacy. Lo que el recorrido demuestra ahora es lo
+    // contrario de lo que demostraba: camina entero, y la rama y el script de la
+    // sesión siguen exigiendo salida real en el camino.
     await declare([]);
-    for (let step = 0; step < 10; step += 1) {
+    const seen: string[] = [];
+    for (let step = 0; step < 20; step += 1) {
       const { resolved } = await current();
-      if (resolved.kind === "legacy") {
-        expect(resolved.stopped?.id).toBe("quick.branch-precondition");
-        expect(resolved.stopped?.document).toBe("loops/CODE-POLICIES.md");
+      if (resolved.stopped === null) {
+        expect(seen).toContain("quick.branch-precondition");
+        expect(seen).toContain("quick.db-scripts-only");
         return;
       }
-      if (resolved.kind === "execution") {
-        await answer(resultFor(resolved));
-        continue;
-      }
-      await answer({ input_digest: resolved.seal, decisions: { paso: resolved.stopped?.id } });
+      expect(resolved.kind, resolved.stopped.id).not.toBe("legacy");
+      if (resolved.kind === "execution") seen.push(resolved.stopped.id);
+      await answerBoundary(resolved);
     }
-    throw new Error("el recorrido nunca llegó a la primera fila transversal");
+    throw new Error("el recorrido nunca llegó al final");
   });
 });
 

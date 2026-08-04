@@ -67,8 +67,10 @@ inference, the deferred-validation cycle and conditional Git authorization.
 
 Execution **no longer accepts in silence** a plan that would force it to invent its own structure. Two outcomes:
 
-- **Minor gap** — the plan is all but executable: an exit condition derivable from what is already written, the obvious evidence unnamed, micro-tasks to group. `plan-exec` may **normalize it with consent** — one structured-choice content question, labels `Normalizar y ejecutar` (recommended) | `Ir a plan-refine`. Normalizing edits the `### Fn` blocks in place, **adds no scope and moves no boundary**, and is recorded in `DECISION` + `CHECKPOINT`.
+- **Minor gap** — the plan is all but executable: an exit condition derivable from what is already written, the obvious evidence unnamed, micro-tasks to group. Normalizing edits the `### Fn` blocks in place, **adds no scope and moves no boundary**, and is recorded in `DECISION` + `CHECKPOINT`.
 - **Structural gap** — phases, contracts or journey are missing, or a change that **does** carry temporary behavior leaves its boundary undeclared. It does **not** improvise: record the finding in `CHECKPOINT`, hand off to [`plan-refine-loop`](../plan-refine-loop/LOOP.md) (`/w:plan-refine`) and resume execution over the refined plan.
+
+> **Which outcome a declared gap produces, and whether anybody is asked to consent, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Normalization is offered on a minor gap and on nothing else — a structural one is not something to consent to.
 
 > **A missing `Límite de simulación` is a gap only when there is something to simulate.** No task and no phase introduces temporary behavior → the block is legitimately absent and the gate passes; demanding it anyway pushes execution to invent a stub so the plan matches a template. The same holds for `Diferido` and every other conditional block.
 
@@ -117,10 +119,9 @@ reconciliation** in `CHECKPOINT`, never reported as published.
   one phase. A continuous unit follows `PLAN-EXECUTION-BATCHES`: no proof, runner, build, lint,
   review or commit between its phases.
 - Executes the phase's tasks; **skips** the ones already `- [x]` in the plan (the plan-doc is the per-task source of truth). **Micro steps stay internal** (canonical contract): they reach `CHECKPOINT` only when a resume needs them, never the plan.
-- **Marking order (hard rule):** mark a task when its local work finishes and each reached phase
-  `en ejecución`. After the whole unit is green, flip all its phases to `validada`. Each still
-  requires its proof, focused checks, exit condition and the combined review;
-  a blocker is never deferred into `validada`. **Never** because all its checkboxes are ticked.
+- **Marking order (hard rule):** a phase reaches `validada` only with its proof run and passed, its
+  exit condition true and the combined review green; a blocker is never deferred into `validada`.
+  **Never** because all its checkboxes are ticked.
 - **Intermediate states:** `bloqueada` = the phase is stopped on a live blocker — recorded in `CHECKPOINT` + the plan's `## Open questions`, back to `en ejecución` when it clears; it counts as **not validated**. A phase whose work is complete but whose operative check the AI **cannot run** (an unapplied migration — Delta 3) **stays `bloqueada`**: its finished tasks keep their boxes ticked, and the reason goes on its own `> Bloqueo:` line, dropped when the blocker clears. It counts as **not validated** until the check runs and passes. Never a silent `validada`.
 - **A blocker without a reason is not a blocker (hard rule).** Writing `> Estado: bloqueada` **always** writes its `> Bloqueo:` line in the same edit: a state that says "stopped" without saying on what is a dead end for whoever reads `aw status` next. The runtime tolerates a legacy block that states none (`blocker: null`) — this loop never produces one. `CHECKPOINT.Next` names **the action that unblocks it** ("apply migration 014, then re-run the persistence proof"), never the state it is in.
 - **Plan-doc residue (hard rule):** execution writes into the plan-doc **only** five things — checkbox flips (`- [ ]` → `- [x]`), the phase's own `> Estado:` line, its `> Bloqueo:` line while blocked, deferrals appended to its `## Open questions`, and the plan's own status mark (its `> Estado:` line and, on close, its `> Cierre:` line — Delta 6). The declared-gap hatch is Deltas 4, 5 and 7. Per-phase results, review-gate findings and metrics go to the session's `DECISION`/`CHECKPOINT` — **never** into the plan-doc. Phase blocks are updated **in place — NEVER append a duplicate `### Fn` block** (same contract as CHECKPOINT sections). The entry gate's consented normalization is the single exception, and it lands before execution starts.
@@ -154,10 +155,9 @@ On either return path: `CHECKPOINT` records the state reached and the trigger, t
 
 ## Delta 2 — Git policy: **safe branch + proposed commits**
 
-Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md). Inline: branch-check every source
-before the unit; after its green review, produce exactly one proposed commit per affected source.
-Use one consolidated approval, or the explicit conditional pre-authorization already recorded in
-`CHECKPOINT`. Never `push`/`--amend`/`--no-verify`.
+Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md), and its gating is the CLI's: this loop
+adds nothing of its own beyond running on a verified branch and never
+`push`/`--amend`/`--no-verify`.
 
 ## Delta 4 — Validation: phase proof + progressive tests
 
@@ -192,10 +192,8 @@ deferred with justification when they are not blockers.
   passed. In a continuous batch every phase waits for the batch review; an operative handoff leaves
   the affected phase `bloqueada` and the unit uncommitted.
 - **The plan's own state is the third axis, and it stays `open` during the whole run.** Every phase `validada` is **not** the plan closed: the final validation still has to run. Keep `> Estado: open` under the title while executing — stamping it on the first write if the plan carries none — and never write `done` from the counters — a legacy plan with every box ticked is not closed by that fact (§ *Legacy plans degrade safely*).
-- **Every phase `validada` + final validation passed** unlocks completion.
-  `Marcar plan done` is offered under no other condition. On the last batch, its one consolidated Git approval also authorizes
-  this mark before committing, so the status write lands in the same source commit. Explicit
-  green-commit pre-authorization applies it without another question.
+- **Every phase `validada` + final validation passed** unlocks completion, and on the last batch the
+  same Git approval covers this mark, so the status write lands in the same source commit.
 - **Marking done = ONE status line in the plan-doc**, under the title's blockquote: `> Estado: done`, updated in place on a re-run. The machine value **stands alone** — the date and session go on their own `> Cierre: YYYY-MM-DD · sesión NNN` line right under it, for the same reason a blocker never rides on a phase's state line. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
 - **Legacy status line, migrated on write.** A plan carrying the old single-line form (`> Estado: done — YYYY-MM-DD · sesión NNN`) is still **read** as closed; the first time this loop legitimately writes that document, it is rewritten to the two-line form. Compatibility is for reading old plans — every new write uses the normalized contract.
 - **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.

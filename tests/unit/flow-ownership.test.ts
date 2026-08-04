@@ -1,32 +1,16 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { WORKLINE_FLOWS, type WorklineFlow } from "../../src/application/capability/compose.js";
+import { describe, expect, it } from "vitest";
 import { advanceFlowRun, resolveBoundary } from "../../src/application/flow/advance.js";
-import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
-import { submitFlow } from "../../src/application/flow/submit.js";
-import { PathsService } from "../../src/application/paths-service.js";
 import { SELF_AUTHORIZABLE_CLASSES } from "../../src/domain/capability/effects.js";
 import { parseFlowAnswer } from "../../src/domain/flow/answer.js";
 import {
   FLOW_DECISIONS,
   type FlowDecision,
   decisionsOfScope,
-  effectsOf,
 } from "../../src/domain/flow/authority.js";
-import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import { renderDirectiveHuman } from "../../src/domain/flow/directive.js";
-import {
-  FLOW_RUN_STATE_FILE,
-  type FlowRunState,
-  applyTransition,
-  newRunState,
-  serializeRunState,
-  withBoundary,
-} from "../../src/domain/flow/run-state.js";
-import { normalizeNamespace } from "../../src/runtime/namespace.js";
-import { NodeFileSystem } from "../helpers/real-fs.js";
+import { newRunState, withApproval } from "../../src/domain/flow/run-state.js";
 
 /**
  * The migration is observable, or it is a claim.
@@ -114,8 +98,14 @@ describe("la propiedad de cada transición sale de un solo lugar", () => {
   it("ninguna fila legacy se atribuye por adelantado", () => {
     const premature = legacy.filter((decision) => decision.attribution !== undefined);
     expect(premature.map((decision) => decision.id)).toEqual([]);
-    // The axis is real in both directions: this plan starts with most rows legacy.
-    expect(legacy.length).toBeGreaterThan(owned.length);
+    // The axis is real in both directions. It started with most rows legacy and
+    // the PLAN tranche tipped it the other way — what the guard has to keep saying
+    // is that BOTH sides exist, because a registry with nothing left legacy would
+    // make the fallback path untested, and one with nothing owned would make the
+    // whole engine decorative. F17 is what empties the first set, and it retires
+    // the mechanism in the same phase.
+    expect(legacy.length).toBeGreaterThan(0);
+    expect(owned.length).toBeGreaterThan(0);
   });
 
   it("el documento de cada fila existe en el bundle, atribuya o no", async () => {
@@ -279,102 +269,60 @@ describe("la propiedad no puentea el gate de efectos", () => {
   });
 });
 
-describe("aprobar un efecto no es decidir el paso — sobre una corrida real", () => {
-  const fs = new NodeFileSystem();
-  let workdir: string;
-  let paths: PathsService;
-
+describe("aprobar un efecto no es decidir el paso", () => {
   /**
-   * The first flow that still has a doctrine-owned row which writes or runs.
+   * A doctrine-owned row that writes.
    *
-   * Derived, not hardcoded to a flow: QUICK used to be it and the pilot cutover
-   * moved it, so pinning a scope here would have made this scenario silently
-   * change subject. When the last tranche is migrated the throw says exactly that
-   * — this is a scenario about the migration, and it ends with it.
+   * It used to be DERIVED from the live registry — QUICK had one, then SPEC — but
+   * the PLAN cutover took the last one a flow had: what is still `legacy` in a
+   * flow no longer writes, and what still writes is the chassis, which no run
+   * state can carry because it is not a `WorklineFlow`. So the row is a fixture
+   * now. Nothing the scenario asserts changed; only where the row comes from, and
+   * saying that plainly beats a search that silently finds nothing.
    */
-  function legacyWriter(): { flow: WorklineFlow; row: FlowDecision } {
-    for (const flow of WORKLINE_FLOWS) {
-      const row = decisionsOfScope(flow).find(
-        (decision) =>
-          decision.ownership === "legacy" &&
-          (decision.effects ?? []).some((effect) => !SELF_AUTHORIZABLE_CLASSES.includes(effect)),
-      );
-      if (row !== undefined) return { flow, row };
-    }
-    throw new Error("ningún flow tiene ya una transición legacy que escriba: el escenario venció");
+  function legacyWriter(): FlowDecision {
+    return {
+      id: "fixture.escritura-legacy",
+      scope: "plan-exec",
+      title: "una transición que escribe y que la doctrina todavía decide",
+      authority: "cli",
+      ownership: "legacy",
+      document: "loops/plan-exec-loop/LOOP.md",
+      effects: ["mutate_overwrite"],
+    };
   }
 
-  const { flow: FLOW, row: WRITER } = legacyWriter();
-  const SESSION = `001-prueba-${FLOW}`;
-
-  function writer(): FlowDecision {
-    return WRITER;
-  }
-
-  /** Position a persisted run exactly where the engine would leave it: at `id`. */
-  async function positionAt(id: string): Promise<FlowRunState> {
-    const journey = decisionsOfScope(FLOW);
-    let state = newRunState(FLOW, SESSION);
-    for (const decision of journey) {
-      if (decision.id === id) break;
-      state = applyTransition(state, decision.id, effectsOf(decision));
-    }
-    state = withBoundary(state, id);
-    await writeFile(
-      join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE),
-      serializeRunState(state),
-      "utf8",
-    );
-    return state;
-  }
-
-  beforeEach(async () => {
-    workdir = await mkdtemp(join(tmpdir(), "aw-flow-ownership-"));
-    paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
-    await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
-    await writeFile(
-      join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
-      "# SESSION — prueba\n\n## Objective\nprobar\n",
-      "utf8",
-    );
-  });
-
-  afterEach(async () => {
-    await rm(workdir, { recursive: true, force: true });
-  });
-
-  it("la aprobación queda registrada y el paso legacy sigue esperando su fallback", async () => {
-    const target = writer();
-    const state = await positionAt(target.id);
-    const resolved = resolveBoundary(state, decisionsOfScope(FLOW));
-    expect(resolved.kind).toBe("authorization");
-
-    const result = await submitFlow(fs, paths, {
-      code: "001",
-      raw: JSON.stringify({ input_digest: resolved.seal, choice: "Autorizar el efecto" }),
-      approval: effectApprovalDigest(target.id, resolved.authorization?.planned ?? []),
-    });
-    if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
-
+  it("la aprobación queda registrada y el paso legacy sigue esperando su fallback", () => {
+    const target = legacyWriter();
+    const journey = [target];
     const gap = (target.effects ?? []).filter(
       (effect) => !SELF_AUTHORIZABLE_CLASSES.includes(effect),
     );
-    // Recorded: the authorization. NOT recorded: the effect as applied, because
-    // nothing ran — the boundary is now the `legacy` one for the SAME transition.
-    for (const effect of gap) {
-      expect(result.directive.authorizations).toContain(effect);
-      expect(result.directive.effects.applied).not.toContain(effect);
-    }
-    expect(result.directive.boundary.kind).toBe("legacy");
-    expect(result.directive.boundary.transition).toBe(target.id);
-    expect(result.directive.boundary.document).toBe(target.document);
-    expect(result.directive.applied).toEqual([]);
 
-    // And the persisted state says the same thing: position unchanged.
-    const read = await readRun(fs, locateRun(paths, SESSION));
-    if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
-    expect(read.state.applied).not.toContain(target.id);
-    expect(read.state.boundary).toBe(target.id);
+    // Unapproved, the effect outranks the migration axis: the boundary asks for the
+    // authorization even though the rule is doctrine's.
+    const asked = advanceFlowRun({ state: newRunState("plan-exec", "001-prueba-plan"), journey });
+    if (!asked.ok) throw new Error(`esperaba una frontera: ${asked.failure.code}`);
+    expect(asked.directive.boundary.kind).toBe("authorization");
+
+    // Approved, it becomes the `legacy` boundary for the SAME transition. Recorded:
+    // the authorization. NOT recorded: the effect as applied, because nothing ran.
+    const granted = advanceFlowRun({
+      state: withApproval(newRunState("plan-exec", "001-prueba-plan"), gap),
+      journey,
+    });
+    if (!granted.ok) throw new Error(`esperaba una frontera: ${granted.failure.code}`);
+    for (const effect of gap) {
+      expect(granted.directive.authorizations).toContain(effect);
+      expect(granted.directive.effects.applied).not.toContain(effect);
+    }
+    expect(granted.directive.boundary.kind).toBe("legacy");
+    expect(granted.directive.boundary.transition).toBe(target.id);
+    expect(granted.directive.boundary.document).toBe(target.document);
+    expect(granted.directive.applied).toEqual([]);
+    // And the state says the same thing: position unchanged.
+    expect(granted.state.applied).not.toContain(target.id);
+    expect(granted.state.boundary).toBe(target.id);
   });
 });
 

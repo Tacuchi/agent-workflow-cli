@@ -5,7 +5,7 @@ import {
   type ContextBudgetOutput,
   runContextBudget,
 } from "../../src/application/context/budget-service.js";
-import { decisionsOfScope } from "../../src/domain/flow/authority.js";
+import { FLOW_DECISIONS, decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 // Doctrine budget & form guards (informe 003 — weak-model clarity round).
@@ -52,6 +52,20 @@ async function readSurface(rel: string): Promise<string> {
     }
   }
   return parts.join("\n");
+}
+
+/**
+ * The labels a migrated row emits, read from the registry.
+ *
+ * The PLAN cutover moved every offer's alternatives out of the Markdown and into
+ * the row that emits them, so pinning them here still pins the product wording —
+ * it just reads it where it now lives. Pinning the doc after the rule left would
+ * have been pinning an echo.
+ */
+function labelsOf(id: string): string[] {
+  const row = FLOW_DECISIONS.find((decision) => decision.id === id);
+  if (row === undefined) throw new Error(`el registro ya no tiene '${id}'`);
+  return (row.alternatives ?? []).map((choice) => choice.label);
 }
 
 async function listMdFiles(dir: string): Promise<string[]> {
@@ -307,11 +321,11 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
     expect(planNew).toContain("Plan splittable");
     expect(planNew).toMatch(/traces to \*\*exactly one\*\*/);
     expect(planNew).toMatch(/partition/i);
-    expect(planNew).toContain("`Dividir en varios planes`");
-    expect(planNew).toContain("`Un solo plan`");
-    expect(planNew).toContain("`Guardar planes`");
-    // The single-plan branch survives the split round untouched.
-    expect(planNew).toContain("`Guardar plan`");
+    // Amended by the PLAN cutover: the offer's labels are the row's now. The
+    // single-plan branch still survives the split round — it is the option that
+    // declines, and the registry is where that is now checkable.
+    expect(labelsOf("plan-new.split-choice")).toEqual(["Dividir en varios planes", "Un solo plan"]);
+    expect(labelsOf("plan-new.save-confirmation")).toContain("Guardar plan");
   });
 
   it("plan-refine-loop adds only the refine semantics (original keeps path; [x] anchored)", async () => {
@@ -319,8 +333,9 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
     expect(planRefine).toContain("## Split gate — refine semantics");
     expect(planRefine).toContain("keeps its number/path");
     expect(planRefine).toContain("Completed tasks (`- [x]`) never move to a sibling");
-    expect(planRefine).toContain("`Guardar planes`");
-    expect(planRefine).toContain("`Guardar plan refinado`");
+    expect(labelsOf("plan-refine.save-confirmation")).toContain("Guardar plan refinado");
+    // And the split branch is a condition on the write, not a second question.
+    expect(labelsOf("plan-refine.save-confirmation")[0]).toBe("Guardar plan refinado");
   });
 
   it("the chassis stays clean — the split gates never migrate to the shared engine", async () => {
@@ -757,7 +772,14 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     expect(exec).toContain("**stays `bloqueada`**");
     expect(exec).toContain("A deferred check never counts as a passed one");
     expect(exec).toContain("a blocker is never deferred into `validada`");
-    expect(exec).toContain("`Marcar plan done` is offered under no other condition");
+    // The offer's condition is the journey's ORDER now: nothing can stamp `done`
+    // without having come through the final validation, and that validation is a
+    // delegated action, so it cannot be passed with a narration.
+    expect(exec).toContain("final validation passed** unlocks completion");
+    const plan = FLOW_DECISIONS.filter((row) => row.scope === "plan-exec").map((row) => row.id);
+    expect(plan.indexOf("plan-exec.plan-done")).toBeGreaterThan(
+      plan.indexOf("plan-exec.final-validation"),
+    );
     // The old escape hatch cannot come back anywhere in the bundle.
     for (const file of await listMdFiles(SKILL_ROOT)) {
       const rel = file.slice(SKILL_ROOT.length + 1);
@@ -828,9 +850,14 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     expect(refine).toContain("without inventing");
     expect(exec).toContain("## Entry gate \u2014 executability");
     expect(exec).toContain("no longer accepts in silence");
-    // Near-executable normalizes WITH consent; a structural gap goes back.
-    expect(exec).toContain("`Normalizar y ejecutar`");
-    expect(exec).toContain("`Ir a plan-refine`");
+    // Near-executable normalizes WITH consent; a structural gap goes back. Both
+    // labels moved to the row that emits them, and the doc keeps what each gap IS.
+    expect(exec).toContain("**Minor gap**");
+    expect(exec).toContain("**Structural gap**");
+    expect(labelsOf("plan-exec.normalization-consent")).toEqual([
+      "Normalizar y ejecutar",
+      "Ir a plan-refine",
+    ]);
   });
 
   it("the deviation gate lives only in plan-exec, with its three destinations", async () => {
@@ -1277,16 +1304,23 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
   it("planning infers maximal groups and never asks for a repository fact", async () => {
     const contract = await readRel(BATCHES);
     expect(contract).toContain("maximal consecutive `continuous` ranges");
-    for (const guard of [
-      "Every dependency is already satisfied",
-      "determines how a later phase must be built",
-      "irreversible external",
-      "required recovery boundary",
-      "reviewable as one unit",
-    ]) {
-      expect(contract, guard).toContain(guard);
+    // Amended by the PLAN cutover: the five facts that break eligibility are the
+    // signal vocabulary now, and the rows that observe them are what the guard
+    // reads. Enumerating them in the module too is what let a plan be grouped one
+    // way by the doc and another by the run.
+    for (const scope of ["plan-new", "plan-refine", "plan-exec"]) {
+      const row = decisionsOfScope(scope).find((decision) =>
+        decision.id.endsWith(".batch-eligibility-signal"),
+      );
+      expect(row?.signals, scope).toEqual([
+        "plan.dependency-outside-range",
+        "plan.result-shapes-later",
+        "plan.blocker-between-phases",
+        "plan.recovery-boundary",
+        "plan.not-one-reviewable-unit",
+      ]);
     }
-    expect(contract).toContain("planning writes it without asking");
+    expect(contract).toContain("not a preference question");
     for (const loop of ["plan-new-loop", "plan-refine-loop"]) {
       expect(await readSurface(`loops/${loop}/LOOP.md`), loop).toContain(
         "infer maximal phase partition",
@@ -1297,36 +1331,51 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
   it("execution re-infers from live state and may regroup without consent", async () => {
     const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
     expect(exec).toContain("## Runtime authority");
-    expect(exec).toContain("may merge or split the declared batches without asking");
-    expect(exec).toContain("current evidence wins");
+    expect(exec).toContain("current evidence wins over the declared");
     expect(exec).toContain("record batches + declaration drift in CHECKPOINT");
     expect(exec).toContain("missing `## Execution batches` is legacy compatibility");
   });
 
   it("continuous units defer every check and validate/review atomically at close", async () => {
     const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
-    expect(exec).toContain("run no phase proof, test runner, build, lint or closing review");
-    expect(exec).toContain("run every phase proof in order");
-    expect(exec).toContain("Review the whole batch diff once");
-    expect(exec).toContain("last pending batch also runs");
-    expect(exec).toContain("final validation here, before Git");
-    expect(exec).toContain("flip all batch phases to `validada`");
+    // The BOUNDARY stays doctrine's — it is what a continuous batch means — while
+    // the closing ORDER became the engine's, so the module states it once as a
+    // property and the registry's row order is what enforces it.
+    expect(exec).toContain("not the phase — is the execution boundary");
+    expect(exec).toContain("Continuous means all checks at batch close");
     expect(exec).toContain("No unproven phase becomes");
     expect(exec).toContain("combined changes remain uncommitted");
+    const plan = decisionsOfScope("plan-exec").map((row) => row.id);
+    for (const [earlier, later] of [
+      ["plan-exec.validation-execution", "plan-exec.review-findings"],
+      ["plan-exec.review-findings", "plan-exec.commit-enablement"],
+      ["plan-exec.commit-enablement", "plan-exec.commit-execution"],
+    ]) {
+      expect(plan.indexOf(later), `${earlier} → ${later}`).toBeGreaterThan(plan.indexOf(earlier));
+    }
   });
 
   it("Git closes one source commit with final approval or conditional pre-authorization", async () => {
     const policies = await readRel("loops/CODE-POLICIES.md");
     expect(policies).toContain("exactly one commit");
-    expect(policies).toContain("one consolidated approval");
-    expect(policies).toContain("pre-authorization conditional on all checks passing");
-    expect(policies).toContain("failed or unrun check never authorizes a commit");
-    expect(policies).toContain("intentionally co-mingles its internal phases");
+    expect(policies).toContain("intentionally co-mingles");
+    expect(policies).toContain("its internal phases in one reviewed commit");
+    // The gating moved: approving is a preference, committing is an effect that
+    // comes back as the sources' real git state, and neither can be reached
+    // without the delegated validation that precedes them.
+    const batches = await readRel("modules/PLAN-EXECUTION-BATCHES.md");
+    expect(batches).toContain("a check that never ran is not a green batch");
+    expect(labelsOf("plan-exec.commit-authorization")[0]).toBe("Aprobar los commits del batch");
+    const commit = decisionsOfScope("plan-exec").find(
+      (row) => row.id === "plan-exec.commit-execution",
+    );
+    expect(commit?.action?.evidence).toEqual(["plan.commits-por-fuente"]);
+    expect(commit?.effects).toContain("execute");
     expect(policies).not.toContain("two phases never co-mingle in one commit");
     const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
-    expect(exec).toContain("same authorization also marks the fully validated plan `done`");
-    expect(exec).toContain("before committing");
-    expect(exec).toContain("no second completion\nquestion or commit");
+    expect(exec).toContain("same Git approval covers this mark");
+    expect(exec).toContain("in the same source commit");
+    expect(batches).toContain("instead of asking a second time");
     expect(exec).toContain("if plan is not done:");
     expect(exec).toContain("when authorized → mark plan done");
     expect(exec).toContain("then commit that source once");

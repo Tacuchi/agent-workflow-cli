@@ -79,7 +79,7 @@ question that changed nothing, is NOT transcribed.
 
 > **Execution updates progress; refinement changes structure.** `plan-exec` updates the plan's operational state in place — task checkboxes, the phase `> Estado:` line with its `> Bloqueo:` line while blocked, declared deferrals and the plan's own status mark. It does **not** redesign contracts, phase shape or order, participating components, evidence or simulation boundaries: those structural changes are this loop's, and a change of functional behavior belongs to `spec-refine`.
 
-> **Normalize on write, never invent.** A save through this loop leaves the document on the current contract. The plan-level `> Estado:` line sits under the title — `open`, unless execution already closed it, and then with the date and session on their own `> Cierre:` line. Each `### Fn` carries its required blocks, and **no conditional block is written empty**: a phase with no temporary behavior gets no `Límite de simulación`, one with nothing excluded gets no `Diferido`. Normalizing is a rewrite of form — it never changes a phase's state, never ticks a box, and never closes a plan.
+> **Normalize on write, never invent.** A save through this loop leaves the document on the current contract, and **no conditional block is written empty**: a phase with no temporary behavior gets no `Límite de simulación`, one with nothing excluded gets no `Diferido`. Normalizing is a rewrite of form — it never changes a phase's state, never ticks a box, and never closes a plan.
 
 ## Delta 2 — Gap taxonomy (of "plan")
 
@@ -169,8 +169,10 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 ## Convergence / exit
 
 - **No material gaps** → **executability gate** (the *Sequence* checklist: contract · journey · phases · simulation · evidence · resumability, plus plan-new's coherence checks and the re-refine's own realignment check).
-- Passes → `Guardar plan refinado` (edits in place with confirmation) → `finalize`.
-- **Split branch**: `Guardar planes` edits the original reduced and writes the extracted siblings → `finalize`.
+- Passes → the save confirmation and, only after it, the in-place edit → `finalize`. On the split
+  branch the same step edits the original reduced and writes the extracted siblings.
+
+> **When the gate is evaluated, when the offer appears and with what alternatives, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. The write follows the confirmation, never the other way round.
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).
 
 > **After refining:** the plan goes to `plan-exec`, which re-checks this same gate on entry — a plan saved here should never bounce back for its structure.

@@ -76,12 +76,33 @@ describe("registro de autoridad — forma y unicidad", () => {
       "quick.success-criteria-authoring",
       "quick.success-criteria-ratification",
       "quick.deliverable-authoring",
+      "quick.review-findings",
+      "quick.commit-authorization",
       "spec-refine.baseline-scope",
       "spec-refine.gap-recognition",
       "spec-refine.ideation-consent",
       "spec-refine.content-authoring",
       "spec-refine.functional-ambiguity",
       "spec-refine.save-confirmation",
+      // PLAN's, and the shape repeats: the agent recognizes, the person prefers,
+      // the CLI decides when each is asked. Not one of them gained an `action`.
+      "plan-new.slug-derivation",
+      "plan-new.phase-shaping",
+      "plan-new.batch-eligibility-signal",
+      "plan-new.split-signal",
+      "plan-new.split-choice",
+      "plan-new.save-confirmation",
+      "plan-refine.journey-map",
+      "plan-refine.batch-eligibility-signal",
+      "plan-refine.split-signal",
+      "plan-refine.save-confirmation",
+      "plan-exec.entry-gap-recognition",
+      "plan-exec.normalization-consent",
+      "plan-exec.batch-eligibility-signal",
+      "plan-exec.implementation",
+      "plan-exec.deviation-recognition",
+      "plan-exec.review-findings",
+      "plan-exec.commit-authorization",
     ]);
   });
 
@@ -189,25 +210,48 @@ describe("registro de autoridad — el universo es el command registry", () => {
 });
 
 describe("registro de autoridad — la migración arranca observable", () => {
-  it("todo tramo de flow todavía decide algo desde la doctrina", () => {
+  it("solo SPEC y el chasis siguen decidiendo algo desde la doctrina", () => {
+    // Amended by the PLAN tranche, and this is the direction that matters: with
+    // QUICK, PLAN-new, PLAN-refine y PLAN-exec cut over, four of the five flows
+    // decide nothing from Markdown anymore. The guard keeps asserting the axis in
+    // both directions — it just states the CURRENT state instead of the initial
+    // one, which is the whole point of an observable migration.
+    const fullyMigrated = ["quick", "plan-new", "plan-refine", "plan-exec"];
     for (const flow of WORKLINE_FLOWS) {
-      expect(hasLegacyOwnership(flow), flow).toBe(true);
+      expect(hasLegacyOwnership(flow), flow).toBe(!fullyMigrated.includes(flow));
     }
+    // SPEC's four remain for a document reason, not an oversight: their modules
+    // are read by journeys outside this plan's tranches.
+    expect(hasLegacyOwnership("spec-refine")).toBe(true);
     expect(hasLegacyOwnership(CHASSIS_SCOPE)).toBe(true);
   });
 
   it("la migración se mide por DOCUMENTO, en las dos direcciones", () => {
     // The tranche is the document, not the scope. A rule stated in a document that
     // another still-legacy journey reads cannot be retired yet, so it cannot be
-    // migrated either — that is what kept QUICK's five transversal rows and the
-    // shared split gate behind. Both directions are asserted: nothing outside the
-    // cut-over documents is migrated, and nothing inside them is left behind.
+    // migrated either — that is what kept QUICK's five transversal rows behind
+    // until PLAN cut over, and what still keeps the shared split gate back. Both
+    // directions are asserted: nothing outside the cut-over documents is migrated,
+    // and nothing inside them is left behind.
     const inFlows = FLOW_DECISIONS.filter((decision) => flowOfScope(decision.scope) !== null);
     const migratedDocuments = new Set([
       QUICK_LOOP,
       "loops/spec-refine-loop/LOOP.md",
       "modules/SPEC-CHANGE-SHAPE.md",
       "modules/IDEATION-GATE.md",
+      // PLAN's own seven…
+      "loops/plan-new-loop/LOOP.md",
+      "loops/plan-refine-loop/LOOP.md",
+      "loops/plan-exec-loop/LOOP.md",
+      "modules/PLAN-EXECUTION-BATCHES.md",
+      "modules/PLAN-SPLIT-GATE.md",
+      "modules/PLAN-REFINE-SPLIT.md",
+      "modules/PLAN-INPUT.md",
+      // …and the two the code-editing loops share, whose only readers are `quick`
+      // and `plan-exec`. They travelled with PLAN because that is the run in which
+      // their last legacy reader stopped being one.
+      "loops/CODE-POLICIES.md",
+      "modules/DB-SCRIPTS-ONLY.md",
     ]);
     // The three a shipped command already owned predate the tranches.
     const commandOwned = new Set([
@@ -230,7 +274,7 @@ describe("registro de autoridad — la migración arranca observable", () => {
     expect(left.map((decision) => `${decision.id} → ${decision.document}`)).toEqual([]);
   });
 
-  it("QUICK migró 12 filas y SPEC 12, y ninguna de un documento compartido", () => {
+  it("PLAN cierra sus tres recorridos enteros y las cinco filas compartidas de QUICK", () => {
     const counted = (scope: string, document: string): number =>
       decisionsOfScope(scope).filter(
         (decision) => decision.document === document && decision.ownership === "cli-owned",
@@ -239,6 +283,18 @@ describe("registro de autoridad — la migración arranca observable", () => {
     expect(counted("spec-refine", "loops/spec-refine-loop/LOOP.md")).toBe(9);
     expect(counted("spec-refine", "modules/IDEATION-GATE.md")).toBe(2);
     expect(counted("spec-refine", "modules/SPEC-CHANGE-SHAPE.md")).toBe(1);
+    // PLAN's three journeys, whole — 48 rows, of which 9 are new: the eligibility
+    // observation and its isolation rule in each of the three, refine's own split
+    // signal, execution's entry-gap recognition, and the commit itself, which had
+    // no row because approving one used to be the last thing the registry knew
+    // about. And the five QUICK rows whose two shared documents only became
+    // retirable here.
+    const planScopes = ["plan-new", "plan-refine", "plan-exec"];
+    const plan = planScopes.flatMap((scope) => decisionsOfScope(scope));
+    expect(plan).toHaveLength(48);
+    expect(plan.filter((decision) => decision.ownership === "legacy")).toEqual([]);
+    expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
+    expect(counted("quick", "modules/DB-SCRIPTS-ONLY.md")).toBe(1);
     // Still doctrine's, and each for the same reason: their document belongs to a
     // journey nobody has cut over.
     const shared = FLOW_DECISIONS.filter(

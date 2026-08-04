@@ -41,6 +41,15 @@
     "plan.distinct-priorities": "the tranches are requested at different moments or priorities",
     "plan.far-beyond-s": "the plan far exceeds S-complexity phases",
     "plan.staging-requested": "the person asked for the work to be staged",
+    "plan.dependency-outside-range": "a phase of the range depends on something neither already satisfied nor an earlier phase of that same range",
+    "plan.result-shapes-later": "a phase result, proof, probe or human decision determines how a later phase has to be built",
+    "plan.blocker-between-phases": "an unresolved question, a live blocker, an operative handoff or an irreversible external action sits between the phases",
+    "plan.recovery-boundary": "an intermediate commit, release, review or deployment is a required recovery boundary",
+    "plan.not-one-reviewable-unit": "the combined change is not coherent, recoverable and reviewable as a single unit",
+    "plan.entry-gap-minor": "the plan is all but executable: the gap is derivable from what it already states, so it can be normalized in place",
+    "plan.entry-gap-structural": "phases, contracts or journey are missing, or temporary behavior leaves its boundary undeclared",
+    "plan.deviation-structural": "the change that appeared while implementing touches a contract, the participating components, the phase order or the simulation boundary",
+    "plan.deviation-functional": "the change that appeared while implementing touches the expected result, the scope, a business rule or an acceptance criterion",
     "chassis.context-pressure": "a fresh reader would need the CHECKPOINT to continue this run"
   },
   "commands": {
