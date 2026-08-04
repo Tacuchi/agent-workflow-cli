@@ -186,6 +186,29 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
     expect(read.state.attempts).toHaveLength(1);
   });
 
+  it("reenviar una respuesta RECHAZADA no es un reenvío: vuelve el motivo real", async () => {
+    // Lo destapó el recorrido real del cierre. Desde que los rechazos se
+    // persisten, y desde que el sello dejó de moverse cuando se anota uno, un
+    // reenvío rechazado encuentra su gemelo igual que uno aplicado. Contestarle
+    // «esto ya se había aplicado» —con outcome `completed`— le dice a quien
+    // ejecuta que la corrida terminó cuando está trabada, y le tapa la causa real
+    // para siempre: cada reintento recibía lo mismo.
+    const bad = JSON.stringify({ input_digest: await seal(), signals: ["señal.inventada"] });
+    const first = await submit(bad);
+    expect(first.error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
+
+    const again = await submit(bad);
+    expect(again.error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
+    expect(again.outcome).not.toBe("completed");
+
+    // Y cuenta para el tope, que es lo que termina degradando la frontera en vez
+    // de dejar a quien contesta en un bucle con el mismo error.
+    const read = await readRun(fs, locateRun(paths, SESSION));
+    if (!read.ok) throw new Error("esperaba leer la corrida");
+    expect(read.state.attempts).toHaveLength(2);
+    expect(read.state.applied).not.toContain(read.state.boundary);
+  });
+
   it("una corrida que nunca se detuvo no acepta respuestas: la frontera la emite el motor", async () => {
     // A freshly seeded run has no boundary in force. Answering it would mean the
     // caller assuming which boundary applies, which is precisely what the engine

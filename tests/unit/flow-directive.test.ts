@@ -33,14 +33,22 @@ function boundary(overrides: Partial<FlowBoundary> = {}): FlowBoundary {
     kind: "semantic",
     transition: "quick.entry-gate-signal",
     authority: "agent",
-    // A semantic, human or authorization boundary only exists for a transition
-    // this CLI owns: on a `legacy` row the engine returns the `legacy` boundary
-    // instead of asking about a step doctrine decides.
+    // A boundary that asks anything only exists for a transition this CLI owns.
+    // There is no longer a kind that means "doctrine decides this one", so an
+    // unowned row does not get a different boundary — it gets no boundary at all.
     ownership: "cli-owned",
     title: "reconocer cada señal de tamaño en el objetivo recibido",
     document: "loops/quick-loop/LOOP.md",
     ...overrides,
   };
+}
+
+/** A boundary whose transition does not declare the CLI's ownership. */
+function unownedBoundary(overrides: Partial<FlowBoundary> = {}): FlowBoundary {
+  // The cast is the only way to express it: the vocabulary has one member since
+  // the fallback was retired, so the compiler refuses the literal and this guard
+  // is what checks the engine refuses it too.
+  return { ...boundary(overrides), ownership: "sin-declarar" as never };
 }
 
 function request(): SemanticRequest {
@@ -156,11 +164,13 @@ describe("directiva de frontera — la forma válida", () => {
   });
 
   it("los motivos de frontera son el vocabulario cerrado de la spec", () => {
+    // Six, not seven: `legacy` left with the mechanism it existed for. It was the
+    // only kind whose next action sent the reader to a document instead of back to
+    // the engine, and nothing decides from a document any more.
     expect([...FLOW_BOUNDARY_KINDS]).toEqual([
       "semantic",
       "human",
       "authorization",
-      "legacy",
       "execution",
       "blocked",
       "final",
@@ -197,26 +207,31 @@ describe("directiva de frontera — la forma válida", () => {
     expect(invented.failure.code).toBe("FLOW_DIRECTIVE_STEP_REASON_MISMATCH");
   });
 
-  it("una frontera legacy declara el fallback y no ofrece nada que elegir", () => {
+  it("la proyección humana ya no ofrece ningún documento como regla a aplicar", () => {
+    // What this replaces: the same case used to build a `legacy` boundary and
+    // demand the line "fallback declarado: la regla vigente de …". The document
+    // still travels — whoever answers is entitled to know what explains the step —
+    // but no rendering presents it as something to go apply.
     const built = buildFlowDirective({
       ...BASE,
       boundary: boundary({
-        kind: "legacy",
-        authority: "cli",
-        ownership: "legacy",
-        transition: "quick.dedup-check",
-        title: "comprobar si ya existe trabajo equivalente",
+        kind: "human",
+        authority: "human",
+        transition: "quick.gate-choice",
+        title: "elegir si el trabajo entra por QUICK",
       }),
       outcome: "needs_input",
-      nextAction: "aplicá la regla vigente de loops/quick-loop/LOOP.md",
+      choices: [
+        { label: "Seguir", consequence: "el recorrido sigue", recommended: true },
+        { label: "Cerrar", consequence: "la corrida termina acá", recommended: false },
+      ],
+      nextAction: "elegí una alternativa",
     });
     if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
     expect(built.directive.boundary.document).toBe("loops/quick-loop/LOOP.md");
-    expect(built.directive.choices).toEqual([]);
-    expect(built.directive.request).toBeNull();
-    expect(renderDirectiveHuman(built.directive)).toContain(
-      "fallback declarado: la regla vigente de loops/quick-loop/LOOP.md",
-    );
+    const human = renderDirectiveHuman(built.directive);
+    expect(human).not.toContain("fallback declarado");
+    expect(human).not.toContain("regla vigente");
   });
 });
 
@@ -390,35 +405,25 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
       "FLOW_DIRECTIVE_EFFECT_UNAUTHORIZED",
     ],
     [
-      "una frontera legacy que no declara su fallback",
+      "una frontera semántica sobre una transición sin propiedad declarada",
       {
         ...BASE,
-        boundary: boundary({
-          kind: "legacy",
-          authority: "cli",
-          ownership: "legacy",
-          document: null,
-        }),
-        outcome: "needs_input",
-      },
-      "FLOW_DIRECTIVE_LEGACY_WITHOUT_FALLBACK",
-    ],
-    [
-      "una frontera semántica sobre una transición que la doctrina todavía decide",
-      {
-        ...BASE,
-        boundary: boundary({ ownership: "legacy" }),
+        boundary: unownedBoundary(),
         outcome: "needs_input",
         request: request(),
       },
       "FLOW_DIRECTIVE_OWNERSHIP_CONTRADICTED",
     ],
     [
-      "una frontera legacy sobre una transición ya migrada",
+      "una frontera humana sobre una transición sin propiedad declarada",
       {
         ...BASE,
-        boundary: boundary({ kind: "legacy", authority: "cli", ownership: "cli-owned" }),
+        boundary: unownedBoundary({ kind: "human", authority: "human" }),
         outcome: "needs_input",
+        choices: [
+          { label: "Seguir", consequence: "el recorrido sigue", recommended: true },
+          { label: "Cerrar", consequence: "la corrida termina acá", recommended: false },
+        ],
       },
       "FLOW_DIRECTIVE_OWNERSHIP_CONTRADICTED",
     ],
@@ -495,10 +500,10 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
       "FLOW_DIRECTIVE_ACTION_WITHOUT_RECOVERY",
     ],
     [
-      "una frontera de ejecución sobre una transición que la doctrina todavía decide",
+      "una frontera de ejecución sobre una transición sin propiedad declarada",
       {
         ...BASE,
-        boundary: boundary({ kind: "execution", authority: "cli", ownership: "legacy" }),
+        boundary: unownedBoundary({ kind: "execution", authority: "cli" }),
         outcome: "needs_input",
         action: delegated(),
       },

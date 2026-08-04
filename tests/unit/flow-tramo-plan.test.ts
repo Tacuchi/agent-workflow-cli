@@ -214,11 +214,22 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
     }
   });
 
-  it("los dos documentos compartidos que siguen siendo de la doctrina no se movieron", () => {
-    const spec = decisionsOfScope("spec-refine").filter((row) => row.ownership === "legacy");
-    expect(new Set(spec.map((row) => row.document))).toEqual(
-      new Set(["modules/SPLIT-GATE.md", "modules/DESIGN-REFERENCES.md"]),
+  it("los dos documentos compartidos que PLAN no podía tocar siguen sin ser suyos", () => {
+    // PLAN's boundary, asserted from PLAN's side. When this tranche ran, the two
+    // documents were still doctrine's and the case said so by listing them. The
+    // closing tranche resolved each on its own terms, so what PLAN can still claim
+    // is the thing that never changed: neither document is cited by a PLAN row.
+    const planned = ["plan-new", "plan-refine", "plan-exec"].flatMap((scope) =>
+      decisionsOfScope(scope),
     );
+    expect(planned.map((row) => row.document)).not.toContain("modules/SPLIT-GATE.md");
+    // PLAN cites `DESIGN-REFERENCES` exactly once, and NOT as part of the tranche:
+    // `plan-exec.design-precondition` was already owned by a shipped command
+    // before any of this, and it is attributed to that capability rather than to
+    // the marker this tranche put in PLAN's nine documents.
+    const design = planned.filter((row) => row.document === "modules/DESIGN-REFERENCES.md");
+    expect(design.map((row) => row.id)).toEqual(["plan-exec.design-precondition"]);
+    expect(design[0]?.attribution).toBe("`aw designs --plan`");
   });
 });
 

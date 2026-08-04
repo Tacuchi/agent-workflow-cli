@@ -7,7 +7,7 @@ import { parseFlowAnswer } from "../../src/domain/flow/answer.js";
 import {
   FLOW_DECISIONS,
   type FlowDecision,
-  decisionsOfScope,
+  journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
 import { renderDirectiveHuman } from "../../src/domain/flow/directive.js";
 import { newRunState, withApproval } from "../../src/domain/flow/run-state.js";
@@ -16,13 +16,14 @@ import { newRunState, withApproval } from "../../src/domain/flow/run-state.js";
  * The migration is observable, or it is a claim.
  *
  * Three things are checked here. The doctrine ATTRIBUTES every decision this CLI
- * already owns — the day a document stops saying who decides is the day the two
- * sources start drifting, and that day the suite fails. The directive carries the
+ * owns — the day a document stops saying who decides is the day the two sources
+ * start drifting, and that day the suite fails. The directive carries the
  * ownership of every step, so whoever executes sees with what authority the run
- * advanced instead of inferring it. And a step still owned by doctrine DECLARES
- * its fallback before running: the engine does not apply it, it hands it back
- * naming the document, and an answer that never names that document does not
- * advance the journey.
+ * advanced instead of inferring it. And a step whose ownership the registry does
+ * not declare STOPS the run: there is no document left to hand it to, so it comes
+ * back `blocked` naming itself, and no answer advances past it. That third one
+ * used to describe the opposite mechanism — the fallback — and it is the shape of
+ * its retirement that the cases below pin.
  *
  * What the attribution guard catches and what it does not, stated so nobody reads
  * more into it: it catches a document that STOPS attributing a migrated decision
@@ -41,9 +42,21 @@ const BUNDLE = resolve(__dirname, "..", "..", "skills", "w");
 const ATTRIBUTES_THE_DECIDER = /\baw [a-z-]+|CLI|capability|this command/;
 
 const owned = FLOW_DECISIONS.filter((decision) => decision.ownership === "cli-owned");
-const legacy = FLOW_DECISIONS.filter((decision) => decision.ownership === "legacy");
+const legacy = FLOW_DECISIONS.filter((decision) => decision.ownership !== "cli-owned");
 
-/** A two-step journey: the first migrated, the second still doctrine's. */
+/**
+ * A row that does not declare the CLI's ownership.
+ *
+ * The cast is the point, not a shortcut. The vocabulary has one member since the
+ * fallback was retired, so no literal can express this and the compiler is the
+ * first line of defence. The second line is the engine, and a guard that could
+ * not build the offending row would be asserting nothing about it.
+ */
+function unowned(row: Omit<FlowDecision, "ownership">): FlowDecision {
+  return { ...row, ownership: "sin-declarar" } as unknown as FlowDecision;
+}
+
+/** A two-step journey: the first owned, the second declaring no ownership. */
 function mixedJourney(): readonly FlowDecision[] {
   return [
     {
@@ -55,14 +68,13 @@ function mixedJourney(): readonly FlowDecision[] {
       document: "loops/quick-loop/LOOP.md",
       attribution: "aw flow advance",
     },
-    {
-      id: "fixture.legacy",
+    unowned({
+      id: "fixture.sin-propiedad",
       scope: "quick",
-      title: "el paso que la doctrina todavía decide",
+      title: "el paso cuya propiedad el registro no declara",
       authority: "cli",
-      ownership: "legacy",
       document: "loops/CODE-POLICIES.md",
-    },
+    }),
   ];
 }
 
@@ -95,17 +107,14 @@ describe("la propiedad de cada transición sale de un solo lugar", () => {
     }
   });
 
-  it("ninguna fila legacy se atribuye por adelantado", () => {
-    const premature = legacy.filter((decision) => decision.attribution !== undefined);
-    expect(premature.map((decision) => decision.id)).toEqual([]);
-    // The axis is real in both directions. It started with most rows legacy and
-    // the PLAN tranche tipped it the other way — what the guard has to keep saying
-    // is that BOTH sides exist, because a registry with nothing left legacy would
-    // make the fallback path untested, and one with nothing owned would make the
-    // whole engine decorative. F17 is what empties the first set, and it retires
-    // the mechanism in the same phase.
-    expect(legacy.length).toBeGreaterThan(0);
-    expect(owned.length).toBeGreaterThan(0);
+  it("no queda ninguna fila decidiendo desde la doctrina, y por eso el fallback se fue", () => {
+    // The axis used to be asserted in BOTH directions, and the reason was real: a
+    // registry with nothing left `legacy` would have left the fallback path
+    // untested. This phase emptied that set, so the guard says the thing that is
+    // now true and the mechanism travelled out in the same commit — an untested
+    // path is not what replaced it, an absent one is.
+    expect(legacy).toEqual([]);
+    expect(owned).toHaveLength(FLOW_DECISIONS.length);
   });
 
   it("el documento de cada fila existe en el bundle, atribuya o no", async () => {
@@ -121,14 +130,14 @@ describe("la propiedad de cada transición sale de un solo lugar", () => {
   });
 });
 
-describe("el escenario de la spec: una migrada seguida de una legacy", () => {
+describe("una transición sin propiedad del CLI bloquea, no vuelve a la doctrina", () => {
   const journey = mixedJourney();
 
-  it("la primera usa exclusivamente el resultado del CLI y la segunda se detiene", () => {
+  it("la primera usa exclusivamente el resultado del CLI y la segunda detiene la corrida", () => {
     const result = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey });
     if (!result.ok) throw new Error(`esperaba avanzar: ${result.failure.code}`);
 
-    // Applied: only the migrated one, and the trace says with what authority.
+    // Applied: only the owned one, and the trace says with what authority.
     expect(result.directive.applied).toEqual([
       {
         transition: "fixture.migrada",
@@ -138,80 +147,45 @@ describe("el escenario de la spec: una migrada seguida de una legacy", () => {
         reason: null,
       },
     ]);
-    // Stopped: the legacy one, as a boundary of its own kind — not as a semantic
-    // request nor as a set of alternatives the engine has no standing to offer.
-    expect(result.directive.boundary.kind).toBe("legacy");
-    expect(result.directive.boundary.transition).toBe("fixture.legacy");
-    expect(result.directive.boundary.ownership).toBe("legacy");
+    // Stopped: the unowned one, `blocked` — not a semantic request, not a set of
+    // alternatives, and no longer a kind of its own that sends the reader to a
+    // document. The engine has no standing to ask about it and nowhere to send it.
+    expect(result.directive.boundary.kind).toBe("blocked");
+    expect(result.directive.boundary.transition).toBe("fixture.sin-propiedad");
     expect(result.directive.request).toBeNull();
     expect(result.directive.choices).toEqual([]);
-    expect(result.directive.pending).toEqual(["fixture.legacy"]);
+    expect(result.directive.pending).toEqual(["fixture.sin-propiedad"]);
   });
 
-  it("el fallback queda declarado ANTES de ejecutarlo, con documento y acción", () => {
+  it("el bloqueo nombra la transición y dice que la ausencia de propiedad es el error", () => {
     const result = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey });
-    if (!result.ok) throw new Error("esperaba la frontera legacy");
-    expect(result.directive.boundary.document).toBe("loops/CODE-POLICIES.md");
-    expect(result.directive.next_action).toContain("loops/CODE-POLICIES.md");
-    expect(result.directive.next_action).toMatch(/aplicá la regla vigente/);
+    if (!result.ok) throw new Error("esperaba la frontera bloqueada");
+    expect(result.directive.error?.code).toBe("FLOW_TRANSITION_UNOWNED");
+    expect(result.directive.error?.message).toContain("fixture.sin-propiedad");
+    // And it says so out loud: what used to be a fallback is now a defect.
+    expect(result.directive.error?.action).toMatch(/es un error, no un fallback/);
   });
 
-  it("la proyección humana dice con qué autoridad avanzó cada paso y cuál es el fallback", () => {
+  it("la proyección humana ya no ofrece ningún documento como regla a aplicar", () => {
     const result = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey });
-    if (!result.ok) throw new Error("esperaba la frontera legacy");
+    if (!result.ok) throw new Error("esperaba la frontera bloqueada");
     const human = renderDirectiveHuman(result.directive);
     expect(human).toContain("fixture.migrada (cli · cli-owned)");
-    expect(human).toContain("fallback declarado: la regla vigente de loops/CODE-POLICIES.md");
-    expect(human).toContain("detenido en fixture.legacy · legacy");
+    expect(human).toContain("detenido en fixture.sin-propiedad");
+    // The line that used to send the reader to a document is gone with it.
+    expect(human).not.toContain("fallback declarado");
+    expect(human).not.toContain("loops/CODE-POLICIES.md");
   });
 
-  it("una respuesta que no declara el fallback no avanza el recorrido", () => {
+  it("no hay respuesta que la haga avanzar: un bloqueo no se contesta", () => {
     const state = newRunState("quick", "001-p-quick");
     const advanced = advanceFlowRun({ state, journey });
-    if (!advanced.ok) throw new Error("esperaba la frontera legacy");
+    if (!advanced.ok) throw new Error("esperaba la frontera bloqueada");
     const resolved = resolveBoundary(advanced.state, journey);
 
-    const parsed = parseFlowAnswer({
-      raw: JSON.stringify({ input_digest: resolved.seal }),
-      boundary: resolved.kind,
-      decision: resolved.stopped as FlowDecision,
-      seal: resolved.seal,
-      choices: resolved.choices,
-      approval: null,
-      expectedApproval: null,
-      declineLabel: "Cerrar",
-    });
-    if (parsed.ok) throw new Error("una respuesta sin fallback declarado no puede pasar");
-    expect(parsed.failure.code).toBe("FLOW_FALLBACK_UNDECLARED");
-    expect(parsed.failure.action).toContain("loops/CODE-POLICIES.md");
-  });
-
-  it("declarar OTRO documento tampoco sirve: el fallback es el que la frontera nombró", () => {
-    const state = newRunState("quick", "001-p-quick");
-    const advanced = advanceFlowRun({ state, journey });
-    if (!advanced.ok) throw new Error("esperaba la frontera legacy");
-    const resolved = resolveBoundary(advanced.state, journey);
-
-    const parsed = parseFlowAnswer({
-      raw: JSON.stringify({ input_digest: resolved.seal, fallback: "loops/CHASSIS.md" }),
-      boundary: resolved.kind,
-      decision: resolved.stopped as FlowDecision,
-      seal: resolved.seal,
-      choices: resolved.choices,
-      approval: null,
-      expectedApproval: null,
-      declineLabel: "Cerrar",
-    });
-    if (parsed.ok) throw new Error("un fallback distinto del declarado no puede pasar");
-    expect(parsed.failure.code).toBe("FLOW_FALLBACK_UNDECLARED");
-  });
-
-  it("declarado el fallback, la respuesta sobrevive y el paso queda trazado como legacy", () => {
-    const state = newRunState("quick", "001-p-quick");
-    const advanced = advanceFlowRun({ state, journey });
-    if (!advanced.ok) throw new Error("esperaba la frontera legacy");
-    const resolved = resolveBoundary(advanced.state, journey);
-
+    // This is the whole retirement in one assertion. Before, naming the document
+    // in `fallback` advanced the journey — the doctrine decided and the run took
+    // its word for it. There is no field left that does that.
     const parsed = parseFlowAnswer({
       raw: JSON.stringify({ input_digest: resolved.seal, fallback: "loops/CODE-POLICIES.md" }),
       boundary: resolved.kind,
@@ -220,123 +194,88 @@ describe("el escenario de la spec: una migrada seguida de una legacy", () => {
       choices: resolved.choices,
       approval: null,
       expectedApproval: null,
-      declineLabel: "Cerrar",
     });
-    if (!parsed.ok) throw new Error(`esperaba una respuesta válida: ${parsed.failure.code}`);
-    expect(parsed.answer.fallback).toBe("loops/CODE-POLICIES.md");
+    if (parsed.ok) throw new Error("una frontera bloqueada no admite respuesta");
+    expect(parsed.failure.code).toBe("FLOW_ANSWER_NOT_EXPECTED");
+    expect(parsed.failure.action).toMatch(/resolvé el bloqueo/);
   });
 });
 
-describe("la propiedad no puentea el gate de efectos", () => {
-  /**
-   * A doctrine-owned transition that really writes.
-   *
-   * It used to be DERIVED from the live registry — ten rows matched — and the
-   * chassis tranche took the last of them: what is still `legacy` today is four
-   * SPEC rows whose module belongs to another journey plus five command rows,
-   * and not one of them writes. So it is a fixture, like the twin scenario
-   * below. Nothing the scenario asserts changed; only where the row comes from.
-   */
-  function legacyWriter(): FlowDecision {
+describe("el gate de efectos y la propiedad, en el orden que quedó", () => {
+  /** A transition that really writes, and whose effect no run may grant itself. */
+  function writer(overrides: Partial<FlowDecision> = {}): FlowDecision {
     const row: FlowDecision = {
-      id: "fixture.escritura-doctrinal",
+      id: "fixture.escritura",
       scope: "quick",
-      title: "una transición que escribe y cuya regla sigue en el Markdown",
+      title: "una transición que escribe",
       authority: "cli",
-      ownership: "legacy",
+      ownership: "cli-owned",
       document: "loops/quick-loop/LOOP.md",
+      attribution: "aw flow advance",
       effects: ["mutate_overwrite"],
+      ...overrides,
     };
-    // The fixture is only useful if it still describes something the gate must
-    // handle: an effect no run may grant itself.
     const gap = (row.effects ?? []).filter((effect) => !SELF_AUTHORIZABLE_CLASSES.includes(effect));
     if (gap.length === 0) throw new Error("el fixture dejó de necesitar autorización");
     return row;
   }
 
-  it("un efecto sin autorizar gana sobre el eje de migración: la frontera es de autorización", () => {
-    // The bug this pins: answering ownership first would hand a transition that
-    // exercises `mutate_overwrite` or `execute` back to doctrine with its effects
-    // unapproved — the effect gate bypassed by a field about who decides the rule.
-    const writer = legacyWriter();
-    const journey = [writer];
-    const result = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey });
+  it("sobre una fila del CLI, un efecto sin autorizar sigue siendo frontera de autorización", () => {
+    const result = advanceFlowRun({
+      state: newRunState("quick", "001-p-quick"),
+      journey: [writer()],
+    });
     if (!result.ok) throw new Error(`esperaba una frontera: ${result.failure.code}`);
     expect(result.directive.boundary.kind).toBe("authorization");
-    expect(result.directive.boundary.ownership).toBe("legacy");
+    expect(result.directive.boundary.ownership).toBe("cli-owned");
     expect(result.directive.applied).toEqual([]);
     expect(result.state.effects.applied).toEqual([]);
   });
 
-  it("con el efecto ya autorizado vuelve a ser legacy, y sigue declarando su fallback", () => {
-    const writer = legacyWriter();
-    const base = newRunState("quick", "001-p-quick");
-    const authorized = { ...base, authorizations: [...(writer.effects ?? [])] };
-    const result = advanceFlowRun({ state: authorized, journey: [writer] });
-    if (!result.ok) throw new Error("esperaba la frontera legacy");
-    // Authorized, so no approval is pending — but the step is still doctrine's.
-    expect(result.directive.boundary.kind).toBe("legacy");
-    expect(result.directive.boundary.document).toBe(writer.document);
-    expect(result.directive.applied).toEqual([]);
-    // And the effect is planned without being applied: nothing ran.
-    expect(result.state.effects.applied).toEqual([]);
-  });
-});
-
-describe("aprobar un efecto no es decidir el paso", () => {
-  /**
-   * A doctrine-owned row that writes.
-   *
-   * It used to be DERIVED from the live registry — QUICK had one, then SPEC — but
-   * the PLAN cutover took the last one a flow had: what is still `legacy` in a
-   * flow no longer writes, and what still writes is the chassis, which no run
-   * state can carry because it is not a `WorklineFlow`. So the row is a fixture
-   * now. Nothing the scenario asserts changed; only where the row comes from, and
-   * saying that plainly beats a search that silently finds nothing.
-   */
-  function legacyWriter(): FlowDecision {
-    return {
-      id: "fixture.escritura-legacy",
-      scope: "plan-exec",
-      title: "una transición que escribe y que la doctrina todavía decide",
+  it("sin propiedad declarada NO se pide la autorización: bloquea antes de preguntar", () => {
+    // The order flipped here, deliberately. While the fallback existed the effect
+    // gate outranked ownership, because a doctrine-owned write still had to be
+    // approved before doctrine applied it. Nothing applies it now, so asking would
+    // be asking somebody to authorize an effect for a step that is going nowhere.
+    const row = unowned({
+      id: "fixture.escritura",
+      scope: "quick",
+      title: "una transición que escribe y no declara propiedad",
       authority: "cli",
-      ownership: "legacy",
+      document: "loops/quick-loop/LOOP.md",
+      effects: ["mutate_overwrite"],
+    });
+    const result = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey: [row] });
+    if (!result.ok) throw new Error(`esperaba una frontera: ${result.failure.code}`);
+    expect(result.directive.boundary.kind).toBe("blocked");
+    expect(result.directive.error?.code).toBe("FLOW_TRANSITION_UNOWNED");
+    expect(result.directive.choices).toEqual([]);
+    // Nothing approved, nothing applied, nothing planned as if it were about to be.
+    expect(result.state.authorizations).toEqual([]);
+    expect(result.state.effects.applied).toEqual([]);
+    expect(result.directive.applied).toEqual([]);
+  });
+
+  it("y una autorización ya concedida tampoco la desbloquea", () => {
+    // The sharpest form: approving the effect first does not buy the step. What
+    // was missing was never the approval.
+    const row = unowned({
+      id: "fixture.escritura",
+      scope: "plan-exec",
+      title: "una transición que escribe y no declara propiedad",
+      authority: "cli",
       document: "loops/plan-exec-loop/LOOP.md",
       effects: ["mutate_overwrite"],
-    };
-  }
-
-  it("la aprobación queda registrada y el paso legacy sigue esperando su fallback", () => {
-    const target = legacyWriter();
-    const journey = [target];
-    const gap = (target.effects ?? []).filter(
-      (effect) => !SELF_AUTHORIZABLE_CLASSES.includes(effect),
-    );
-
-    // Unapproved, the effect outranks the migration axis: the boundary asks for the
-    // authorization even though the rule is doctrine's.
-    const asked = advanceFlowRun({ state: newRunState("plan-exec", "001-prueba-plan"), journey });
-    if (!asked.ok) throw new Error(`esperaba una frontera: ${asked.failure.code}`);
-    expect(asked.directive.boundary.kind).toBe("authorization");
-
-    // Approved, it becomes the `legacy` boundary for the SAME transition. Recorded:
-    // the authorization. NOT recorded: the effect as applied, because nothing ran.
+    });
     const granted = advanceFlowRun({
-      state: withApproval(newRunState("plan-exec", "001-prueba-plan"), gap),
-      journey,
+      state: withApproval(newRunState("plan-exec", "001-prueba-plan"), ["mutate_overwrite"]),
+      journey: [row],
     });
     if (!granted.ok) throw new Error(`esperaba una frontera: ${granted.failure.code}`);
-    for (const effect of gap) {
-      expect(granted.directive.authorizations).toContain(effect);
-      expect(granted.directive.effects.applied).not.toContain(effect);
-    }
-    expect(granted.directive.boundary.kind).toBe("legacy");
-    expect(granted.directive.boundary.transition).toBe(target.id);
-    expect(granted.directive.boundary.document).toBe(target.document);
-    expect(granted.directive.applied).toEqual([]);
-    // And the state says the same thing: position unchanged.
-    expect(granted.state.applied).not.toContain(target.id);
-    expect(granted.state.boundary).toBe(target.id);
+    expect(granted.directive.boundary.kind).toBe("blocked");
+    expect(granted.directive.error?.code).toBe("FLOW_TRANSITION_UNOWNED");
+    expect(granted.directive.effects.applied).not.toContain("mutate_overwrite");
+    expect(granted.state.applied).not.toContain(row.id);
   });
 });
 
@@ -351,19 +290,22 @@ describe("una transición ya migrada no vuelve a manos de la doctrina", () => {
     expect(result.state.applied).toContain("fixture.migrada");
   });
 
-  it("sobre el registro vivo, ningún flow aplica todavía nada: todos son legacy", () => {
-    // The honest state of the migration, asserted rather than described. Each
-    // cutover phase moves one tranche, and this figure is what proves it moved.
+  it("sobre el registro vivo ningún recorrido puede bloquearse por propiedad", () => {
+    // The honest state of the migration, asserted rather than described. This case
+    // used to walk each flow expecting it to STOP at its first doctrine-owned row,
+    // and each cutover shrank what it found until the last tranche left it walking
+    // over an empty branch. Turned around, it is the closing claim: no journey has
+    // a row that could produce the block above.
     for (const flow of ["quick", "spec-refine", "plan-new", "plan-refine", "plan-exec"] as const) {
-      const rows = decisionsOfScope(flow);
+      const rows = journeyOfFlow(flow);
       expect(rows.length, flow).toBeGreaterThan(0);
+      expect(
+        rows.filter((row) => row.ownership !== "cli-owned").map((row) => row.id),
+        flow,
+      ).toEqual([]);
       const result = advanceFlowRun({ state: newRunState(flow, `001-p-${flow}`), journey: rows });
       if (!result.ok) throw new Error(`esperaba avanzar en ${flow}: ${result.failure.code}`);
-      const first = rows[0];
-      if (first?.ownership === "cli-owned") continue;
-      expect(result.directive.applied, flow).toEqual([]);
-      expect(result.directive.boundary.kind, flow).toBe("legacy");
-      expect(result.directive.boundary.document, flow).toBe(first?.document);
+      expect(result.directive.error?.code, flow).not.toBe("FLOW_TRANSITION_UNOWNED");
     }
   });
 });

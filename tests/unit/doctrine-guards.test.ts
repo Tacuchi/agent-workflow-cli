@@ -1016,7 +1016,13 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     // The command surface must state the asymmetry the loop implements.
     const command = await readSurface("commands/spec-refine.md");
     expect(command).toContain("## The two shape branches are not the same question");
-    expect(command).toContain("`Dividir en varias specs`");
+    // Split's offer is the registry's now — the closing tranche migrated the three
+    // rows behind it — so its labels are pinned where they live, exactly as PLAN's
+    // are. Replace's are still the document's: no row emits them.
+    expect(labelsOf("spec-refine.split-choice")).toEqual([
+      "Dividir en varias specs",
+      "Una sola spec",
+    ]);
     expect(command).toContain("`Crear una nueva spec`");
     expect(command).toContain("`Reformular esta spec`");
     expect(command).toContain("**no new file**");

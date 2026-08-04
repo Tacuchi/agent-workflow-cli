@@ -154,12 +154,14 @@ describe("el vocabulario de fronteras no se bifurca entre código y doctrina", (
     expect(documented).toEqual([...FLOW_BOUNDARY_KINDS].sort());
   });
 
-  it("la frontera legacy es la única que manda a leer un documento", async () => {
+  it("ninguna frontera manda ya a leer un documento", async () => {
+    // `legacy` was the only one that did, and it was the point of the row: read
+    // the declared document, apply its rule. With the fallback retired the row is
+    // gone, and no other kind may quietly inherit that instruction — a surface
+    // that sent someone to a document would be a surface deciding a step.
     const table = await rows();
-    const legacy = table.get("legacy" satisfies FlowBoundaryKind) ?? "";
-    expect(legacy).toContain("boundary.document");
+    expect(table.has("legacy" as FlowBoundaryKind)).toBe(false);
     for (const [kind, cells] of table) {
-      if (kind === "legacy") continue;
       expect(cells, kind).not.toContain("boundary.document");
     }
   });

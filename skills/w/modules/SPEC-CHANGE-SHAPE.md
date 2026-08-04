@@ -8,7 +8,7 @@ Loaded when the investigation may have changed the spec shape (signal `shape`).
 
 | Finding | What it asks | What it writes |
 |---|---|---|
-| **`split`** — independent functional outcomes discovered | `Dividir en varias specs` \| `Una sola spec` | the original, rewritten reduced, **plus** one new file per extracted outcome |
+| **`split`** — independent functional outcomes discovered | cardinality: one spec, or several siblings | the original, rewritten reduced, **plus** one new file per extracted outcome |
 | **`replace`** — the purpose itself changed | `Crear una nueva spec` \| `Reformular esta spec` | `Crear` → one **new** file, this spec untouched · `Reformular` → **no new file**: this same file, same number, same path |
 
 ## Change-shape gate
@@ -25,7 +25,7 @@ The investigation can reveal the draft's shape was wrong. Does the spec still ca
 
 **Split criterion** — the one `spec-new` already uses ([`SPLIT-GATE.md`](SPLIT-GATE.md), `spec-new`'s `split` module), never a different one: divide **only** when each part can be refined, accepted and planned on its own. Repos, technologies, layers or teams are **secondary evidence**, never the reason.
 
-**Split semantics (in place).** The offer enters the batch as a content question — `Dividir en varias specs` | `Una sola spec`; declining marks it **exhausted** for the run. On acceptance: the original **keeps its number/path**, rewritten reduced to its remaining outcome; each extracted outcome is minted with `aw next-number docs/specs` right before its write and is born **`status: draft`**. Siblings are **not** elaborated here — unlike the multi-plan gate, where `plan-exec` would break on a plan with no `## Tasks`; a draft spec is legitimate input to this very loop — so the run keeps refining the **reduced original** and reports `/w:spec-refine` as each sibling's next step. Every `## Origin` records "split from `docs/specs/NNN-spec-<slug>.md`" + the siblings **by path**. Closing action on this branch: `Guardar specs`.
+**Split semantics (in place).** The offer enters the batch as a content question. On acceptance: the original **keeps its number/path**, rewritten reduced to its remaining outcome; each extracted outcome is minted with `aw next-number docs/specs` right before its write and is born **`status: draft`**. Siblings are **not** elaborated here — unlike the multi-plan gate, where `plan-exec` would break on a plan with no `## Tasks`; a draft spec is legitimate input to this very loop — so the run keeps refining the **reduced original** and reports `/w:spec-refine` as each sibling's next step. Every `## Origin` records "split from `docs/specs/NNN-spec-<slug>.md`" + the siblings **by path**. Closing action on this branch: `Guardar specs`.
 
 **Replace semantics.** Its offer is its own — `Crear una nueva spec` | `Reformular esta spec`, **never** the split labels: what gets decided is which identity carries the new purpose. Recommend **a new spec** when the main functional outcome or the actor/consumer changed; **reformulating** when the user confirms this file is still the same unit of work and wants to keep its identity.
 

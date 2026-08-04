@@ -14,11 +14,13 @@
  * classified `agent` and stays there.
  *
  * `ownership` is the migration axis, and it is deliberately separate from
- * authority: `legacy` means the doctrine Markdown still decides it today,
- * `cli-owned` means this CLI does and the doctrine may no longer re-state it as
- * a rule. Every row starts `legacy` except the ones a shipped command already
- * owns — claiming otherwise would make the migration unobservable, which is the
- * one thing the initiative cannot afford.
+ * authority: `cli-owned` means this CLI decides WHEN the step is asked and the
+ * doctrine may no longer re-state it as a rule, while `authority` still answers
+ * who produces the answer. The axis started with a second value — `legacy`, "the
+ * doctrine Markdown still decides it" — and every row began there so the
+ * migration would be observable rather than asserted. It is now CLOSED: the
+ * vocabulary has one member, so a row that fails to declare ownership is a
+ * compile error instead of a silent return to a document.
  */
 
 import { WORKLINE_FLOWS, type WorklineFlow } from "../../application/capability/compose.js";
@@ -29,9 +31,17 @@ export const FLOW_AUTHORITIES = ["cli", "agent", "human"] as const;
 /** Who owns one decision: the CLI's rules, the agent's judgment, or the person. */
 export type FlowAuthority = (typeof FLOW_AUTHORITIES)[number];
 
-export const TRANSITION_OWNERSHIPS = ["cli-owned", "legacy"] as const;
+export const TRANSITION_OWNERSHIPS = ["cli-owned"] as const;
 
-/** Whether this CLI already decides it, or the doctrine still does. */
+/**
+ * That this CLI decides when the transition is asked.
+ *
+ * One member on purpose. The field survives the migration that emptied it because
+ * it is what the directive carries to whoever executes, and because keeping the
+ * vocabulary CLOSED is what stops a later row from re-opening the axis quietly: a
+ * second value would have to be added here, in the open, next to the mechanism
+ * that no longer exists to serve it.
+ */
 export type TransitionOwnership = (typeof TRANSITION_OWNERSHIPS)[number];
 
 /** Transversal rules of the chassis that no single flow owns. */
@@ -414,9 +424,14 @@ const CHANGE_SHAPE = "modules/SPEC-CHANGE-SHAPE.md";
  *
  * One marker per document, because the guard reads each row's own document: the
  * loop states it once for its nine rows, and each migrated module states it for
- * its own. A module read by a tranche that has NOT been cut over keeps its rule
- * and gets no marker — that is why `SPLIT-GATE.md` and `DESIGN-REFERENCES.md` are
- * absent here.
+ * its own. Three documents used to be absent from this list because a tranche that
+ * had not been cut over still read them; the closing tranche resolved each on its
+ * own terms. `SPEC-CHANGE-SHAPE.md` gained the split branch's steps, which were
+ * carrying `spec-new`'s document by mistake. `DESIGN-REFERENCES.md` attributes its
+ * one remaining row to `aw designs` rather than to this marker, because the CLI
+ * puts the inventory in front of the judgment instead of deciding the step.
+ * `SPLIT-GATE.md` keeps its rule and gets no marker at all: it belongs to
+ * `/w:spec-new`, which starts no loop, and the registry declares that exclusion.
  */
 const SPEC_ATTRIBUTION =
   "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
@@ -436,8 +451,8 @@ const DB_SCRIPTS_ONLY = "modules/DB-SCRIPTS-ONLY.md";
  * the two the code-editing loops share. `CODE-POLICIES.md` and
  * `DB-SCRIPTS-ONLY.md` are here for a reason worth stating: their only readers
  * are `quick` and `plan-exec`, and with PLAN cut over neither is doctrine's
- * anymore. Until this tranche they had to stay, because retiring a rule from a
- * document a still-legacy journey reads would leave that journey without it.
+ * anymore. Until that tranche they had to stay, because retiring a rule from a
+ * document an undirected journey reads would leave that journey without it.
  */
 const PLAN_ATTRIBUTION =
   "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
@@ -1102,13 +1117,21 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: CHANGE_SHAPE,
     attribution: SPEC_ATTRIBUTION,
   },
+  // The split branch of the shape gate, and its document is the shape module, not
+  // `SPLIT-GATE.md`. That was the mis-scoping this tranche had to resolve before
+  // it could migrate anything: the three rows carried `spec-new`'s document —
+  // which `spec-refine` never loads — so a real run stopped here handing the step
+  // back to a file its own read-set had not given it. The steps belong to
+  // `SPEC-CHANGE-SHAPE.md`, which already states this branch; the CRITERION stays
+  // stated once in `SPLIT-GATE.md`, and the shape module points at it.
   {
     id: "spec-refine.split-signal",
     scope: "spec-refine",
-    title: "reconocer cada señal de división en el pedido recibido",
+    title: "reconocer cada señal de división en la spec investigada",
     authority: "agent",
-    ownership: "legacy",
-    document: "modules/SPLIT-GATE.md",
+    ownership: "cli-owned",
+    document: CHANGE_SHAPE,
+    attribution: SPEC_ATTRIBUTION,
     signals: [
       "spec.independent-outcomes",
       "spec.enumerated-features",
@@ -1119,18 +1142,43 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "spec-refine.split-gate",
     scope: "spec-refine",
-    title: "aplicar el umbral de dos señales que dispara el gate de división",
+    title: "aplicar el umbral de dos señales que dispara la rama de división",
     authority: "cli",
-    ownership: "legacy",
-    document: "modules/SPLIT-GATE.md",
+    ownership: "cli-owned",
+    document: CHANGE_SHAPE,
+    attribution: SPEC_ATTRIBUTION,
   },
   {
     id: "spec-refine.split-choice",
     scope: "spec-refine",
     title: "elegir entre dividir en varias specs o conservar una sola",
     authority: "human",
-    ownership: "legacy",
-    document: "modules/SPLIT-GATE.md",
+    ownership: "cli-owned",
+    document: CHANGE_SHAPE,
+    attribution: SPEC_ATTRIBUTION,
+    // "Borderline, or evidence too thin to tell → one spec, NO QUESTION." Not the
+    // PLAN factory even though the number matches: that one counts PLAN's five
+    // signals over PLAN's document, and collapsing them would tie two gates that
+    // are free to move apart to a single literal.
+    condition: {
+      threshold: { observed: "spec-refine.split-signal", min: 2 },
+      otherwise:
+        "el umbral de dos señales no disparó: la spec conserva su forma y no se pregunta nada",
+    },
+    alternatives: [
+      {
+        label: "Dividir en varias specs",
+        consequence:
+          "el original queda reducido a su resultado restante y cada resultado extraído nace como spec hermana",
+        recommended: true,
+      },
+      {
+        label: "Una sola spec",
+        consequence:
+          "el gap queda agotado para esta corrida y el refinamiento sigue sobre esta spec",
+        recommended: false,
+      },
+    ],
   },
   {
     id: "spec-refine.gap-recognition",
@@ -1231,8 +1279,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "spec-refine",
     title: "juzgar si un baseline de diseño compatible sirve o hace falta una revisión nueva",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: "modules/DESIGN-REFERENCES.md",
+    // The judgment is the agent's and the criterion stays in the module. What the
+    // CLI owns is the step: `aw designs` is what puts the existing baselines in
+    // front of whoever judges, so the question is asked over a real inventory
+    // instead of a recollection.
+    attribution: "`aw designs` lists what the workspace already has",
   },
   {
     id: "spec-refine.design-publication",
@@ -2130,8 +2183,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: cmd("resume"),
     title: "elegir cuál de las continuaciones propuestas se ejecuta",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: "commands/resume.md",
+    // The person picks; what the CLI owns is the ballot. Which candidates appear,
+    // in what order and with what next command all come from `aw resume`, and the
+    // document says the offer is made over those and no others.
+    attribution: "only for CLI candidates",
   },
   // Continuity across prompts, contracted where it is executed. These rules were
   // the chassis' and could not become steps of a journey: they decide WHICH run a
@@ -2169,8 +2226,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: cmd("persist"),
     title: "clasificar la forma del trabajo ya hecho en la conversación",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: "commands/persist.md",
+    // Classifying is judgment and the routing table is the module's. What the CLI
+    // owns is that the classification is answered against the inventory `prepare`
+    // returned and admitted only through the digest `validate` hands back — a
+    // shape nobody may assert on their own word. That is the line this sentence
+    // draws, and it names who holds the other side of it.
+    attribution: "belong to `aw persist`",
   },
   {
     id: "persist.routing",
@@ -2187,8 +2250,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: cmd("context-plan"),
     title: "declarar qué señales observa la corrida",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: "commands/plan-exec.md",
+    // Recognizing that a case carries a signal is judgment; which signals exist
+    // and what each one loads is not. The invocation is the vocabulary: a signal
+    // outside it returns nothing, so the declaration is answered against the
+    // catalog instead of against whatever the reader remembers.
+    attribution: "aw context-plan --command plan-exec --signal",
   },
   {
     id: "context-plan.read-set",
@@ -2374,8 +2442,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: cmd("fix-git"),
     title: "interpretar la intención de cada conflicto de la fusión en curso",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: "commands/fix-git.md",
+    // Reading base/ours/theirs for intent is judgment. What is not: which files
+    // may be answered for, that the blob hashes still hold, and that a leftover
+    // marker is a rejection. The interpretation is supplied; nothing lands on it
+    // alone.
+    attribution: "the CLI owns the effects",
   },
   {
     id: "fix-git.resolution-write",
@@ -2392,8 +2465,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: cmd("export-reports"),
     title: "seleccionar y sintetizar el material de las sesiones que se promueve",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: "commands/export-reports.md",
+    // Synthesizing is authorship. What it may synthesize FROM is not: the corpus
+    // comes from `prepare`, so the promotion is over the sessions the CLI listed
+    // and not over whatever else the conversation remembers.
+    attribution: "`aw export-reports` owns the corpus, the numbering and the write",
   },
   {
     id: "export.numbering-and-write",
@@ -2412,8 +2489,18 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
  *
  * Read together with {@link FLOW_DECISIONS} this is the exhaustiveness claim:
  * every registered command is either classified or excluded on the record.
+ *
+ * The universe is TWO surfaces, not one. Most entries name an `aw` command, but a
+ * `/w:` command that starts no loop is a public journey just the same, and the
+ * only one of those the engine cannot direct earns its exclusion here rather than
+ * a second list: one field, one reason, one guard.
  */
 export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
+  {
+    command: "spec-new",
+    reason:
+      "comando `/w:` de una sola pasada que no abre loop: sin corrida que dirigir, su gate de división lo aplica el propio comando con la regla de modules/SPLIT-GATE.md, que por eso conserva su enunciado",
+  },
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },
   { command: "checkpoint-read", reason: "lectura del CHECKPOINT sin decidir continuación" },
@@ -2534,7 +2621,10 @@ export function trancheOfFlow(flow: WorklineFlow): FlowTranche {
   return flow === "spec-refine" ? "spec" : "plan";
 }
 
-/** Whether any transition of this scope still decides from the doctrine. */
-export function hasLegacyOwnership(scope: DecisionScope): boolean {
-  return decisionsOfScope(scope).some((decision) => decision.ownership === "legacy");
-}
+// `hasLegacyOwnership(scope)` lived here until the migration closed. It answered
+// "does anything in this scope still decide from the doctrine", and the honest
+// end of it is deletion, not an inverted twin: the answer is now `false` for
+// every scope by construction, and an exported predicate nothing in production
+// asks would be exactly the defect this initiative spent seventeen phases
+// removing — a declared surface with no consumer. The guards assert the closing
+// state over `FLOW_DECISIONS` directly, which is where it is true.

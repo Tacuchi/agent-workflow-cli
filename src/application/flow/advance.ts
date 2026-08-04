@@ -5,15 +5,16 @@
  * transition that is both the CLI's authority (`cli`) and the CLI's property
  * (`cli-owned`), one after another, without handing any of them back as work. It
  * stops at the FIRST transition it cannot apply — a judgment, a preference, an
- * effect nobody authorized, a step doctrine still decides, a blocker — or at the
- * end of the journey, and returns that boundary as a directive.
+ * effect nobody authorized, a blocker — or at the end of the journey, and returns
+ * that boundary as a directive.
  *
- * The two axes are not the same stop. Authority answers "is this derivable?";
- * ownership answers "does this CLI decide it yet?". A row that is derivable but
- * still doctrine's is handed back as a `legacy` boundary that DECLARES the
- * document about to decide it — applying it would record as the CLI's a step
- * whose rule nobody read. Both give way to one thing: an effect nobody
- * authorized stops the advance whoever owns the rule.
+ * Authority is the axis that decides WHICH boundary: "is this derivable, or does
+ * it need a judgment, a preference, an invocation?". Ownership used to be a second
+ * axis answering "does this CLI decide it yet?", and a row that was derivable but
+ * still doctrine's came back as a `legacy` boundary naming the document about to
+ * decide it. That axis is closed: every row of every public journey is the CLI's,
+ * so ownership no longer routes anything — it fails closed. Both give way to one
+ * thing: an effect nobody authorized stops the advance whoever owns the rule.
  *
  * The trace of what it applied lives in the run state, with the authority each
  * step moved under, so the advance is auditable after the fact instead of being a
@@ -121,15 +122,15 @@ export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
  *
  * The walk stops the moment authority changes hands, the moment the next
  * transition would exercise an effect nobody authorized (advancing automatically
- * never widens an authorization), the moment it reaches a step still owned by
- * doctrine — or the moment the step is delegated.
+ * never widens an authorization), the moment it reaches a step whose ownership the
+ * registry does not declare — or the moment the step is delegated.
  *
- * The last two stops are the same principle twice. Applying a `legacy` row would
- * record as decided-by-the-CLI a step whose rule lives in a document nobody has
- * read yet; applying a DELEGATED row would record as done a search, a seeding or
- * a validation that nothing ran. Both would be the engine claiming something it
- * cannot see, so both become boundaries: one declares its fallback, the other
- * names its invocation and waits for real output.
+ * The last two stops are the same principle twice. Applying an unowned row would
+ * record as decided-by-the-CLI a step the registry never said it decides; applying
+ * a DELEGATED row would record as done a search, a seeding or a validation that
+ * nothing ran. Both would be the engine claiming something it cannot see, so both
+ * become boundaries: one blocked naming what is missing, the other naming its
+ * invocation and waiting for real output.
  *
  * A CONDITIONAL step is the one case that neither applies nor stops: the walk
  * passes over it, records the omission with its cause, and keeps going whatever
@@ -157,7 +158,7 @@ function walk(
       continue;
     }
     if (decision.authority !== "cli") break;
-    if (decision.ownership !== "cli-owned") break;
+    if (!owned(decision)) break;
     if (authorizeTransition(decision, state.authorizations).missing.length > 0) break;
     if (actionOf(decision) !== null) break;
     state = applyTransition(state, decision.id, effectsOf(decision));
@@ -192,12 +193,13 @@ export function actionDigest(action: DelegatedAction): string {
  * authorities on "what is being asked", which is the drift this whole initiative
  * removes.
  *
- * Ownership is read FIRST, before authority: a step the CLI does not own yet is a
- * `legacy` boundary whatever its authority would be, because emitting a bounded
- * semantic request — or a set of alternatives — for a rule this CLI does not
- * decide would be the engine speaking for the doctrine. Only among the steps it
- * does own is the `cli` case the authorization boundary: there the walk never
- * stops for any other reason.
+ * Ownership is still read FIRST, before authority — but now it decides nothing
+ * except whether there is a boundary to emit at all. Emitting a bounded semantic
+ * request, or a set of alternatives, for a step the registry does not say this CLI
+ * owns would be the engine speaking for a document nobody read; with no fallback
+ * left to hand it to, that transition is `blocked`. Among the steps it does own,
+ * the `cli` case is the authorization boundary: there the walk never stops for any
+ * other reason.
  */
 export interface ResolvedBoundary {
   stopped: FlowDecision | null;
@@ -246,19 +248,31 @@ function emittedAction(
 /**
  * Why this boundary cannot be emitted at all — or `null` when it can.
  *
- * Three fail-closed causes, and they are ordered by what the reader can do about
- * them. An unbound placeholder and a `docs/` breach are defects OF THE REGISTRY:
- * the fix is a code change, and emitting either would print a command nobody can
- * run or one that writes outside the lane its flow is allowed. Exhaustion is a
- * defect of nothing — it is the run having asked the same thing as often as the
- * chassis permits, and the answer is to take the gap somewhere a person can
- * settle it rather than to ask a fourth time.
+ * Four fail-closed causes, ordered by what the reader can do about them.
+ * Ownership answers first and is the one this tranche added: with the fallback
+ * retired there is no document to hand the step back to, so a transition the
+ * registry does not say the CLI owns stops the run naming itself instead of
+ * silently becoming prose somebody has to go read. An unbound placeholder and a
+ * `docs/` breach are defects OF THE REGISTRY too: the fix is a code change, and
+ * emitting either would print a command nobody can run or one that writes outside
+ * the lane its flow is allowed. Exhaustion is a defect of nothing — it is the run
+ * having asked the same thing as often as the chassis permits, and the answer is
+ * to take the gap somewhere a person can settle it rather than to ask a fourth
+ * time.
  */
 function blockedCause(
   state: FlowRunState,
   stopped: FlowDecision,
   emitted: { unbound: string | null; outside: string | null },
 ): CapabilityFailure | null {
+  if (!owned(stopped)) {
+    return {
+      code: "FLOW_TRANSITION_UNOWNED",
+      message: `'${stopped.id}' no declara propiedad del CLI y ya no queda doctrina a la que devolverlo`,
+      action:
+        "declarála en el registro de autoridad: desde el cierre de la migración toda transición de un recorrido público es 'cli-owned', y la ausencia es un error, no un fallback",
+    };
+  }
   if (emitted.unbound !== null) {
     return {
       code: "FLOW_ACTION_UNBOUND",
@@ -301,6 +315,20 @@ function exhausted(state: FlowRunState, decision: FlowDecision): boolean {
 }
 
 /**
+ * Whether the registry says this CLI owns the step.
+ *
+ * The vocabulary has one member, so every row shipped in {@link FLOW_DECISIONS}
+ * answers `true` and the compiler is what keeps it that way. The check survives
+ * for the journeys this engine does NOT build itself: a caller hands `advanceFlow`
+ * a list of decisions, and reading a field is cheaper than trusting that whoever
+ * assembled it kept the invariant. The three places that ask are the walk, the
+ * blocked cause and the skip — one predicate, so they cannot disagree.
+ */
+function owned(decision: FlowDecision): boolean {
+  return decision.ownership === "cli-owned";
+}
+
+/**
  * Why an exhausted boundary is passed over — or `null` when it must not be.
  *
  * Degrading means what the chassis says it means: the gap stops being re-fired,
@@ -317,7 +345,7 @@ function exhausted(state: FlowRunState, decision: FlowDecision): boolean {
  */
 function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
   if (!exhausted(state, decision)) return null;
-  if (decision.ownership !== "cli-owned") return null;
+  if (!owned(decision)) return null;
   if (actionOf(decision) !== null) return null;
   if (authorizeTransition(decision, state.authorizations).missing.length > 0) return null;
   return `agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: ${DEGRADE_ACTION}`;
@@ -357,11 +385,6 @@ export function resolveBoundary(
   // whichever phase introduces such a row decides it instead of inheriting it.
   const authorization =
     stopped.authority === "cli" ? authorizeTransition(stopped, state.authorizations) : null;
-  // An effect nobody authorized outranks the migration axis. Approving an effect
-  // is not deciding a step: ten `legacy` rows exercise `mutate_overwrite` or
-  // `execute`, and letting ownership answer first would hand them to doctrine with
-  // their effects unapproved — the authorization gate bypassed by a field that has
-  // nothing to do with it.
   // A cause that blocks outranks all of it: the boundary that says "nothing can
   // continue and here is why" is never worth degrading into a question nobody can
   // answer.
@@ -387,15 +410,17 @@ export function resolveBoundary(
  * An effect nobody authorized outranks everything: approving an effect is not
  * deciding a step, and letting any other axis answer first would hand a writing
  * transition onwards with its effects unapproved — the authorization gate bypassed
- * by a field that has nothing to do with it. Ownership comes next, because
- * emitting a bounded request, a set of alternatives or an invocation for a rule
- * this CLI does not decide would be the engine speaking for the doctrine. Only
- * then does the mode matter: what remains is a judgment, an invocation to run, or
- * a preference.
+ * by a field that has nothing to do with it. Then the mode: what remains is a
+ * judgment, an invocation to run, or a preference.
+ *
+ * Ownership used to sit in the middle of that order, turning a step the CLI did
+ * not decide into its own kind of boundary. It no longer answers here at all —
+ * {@link blockedCause} refuses such a transition before this function runs, which
+ * is the difference between "read this document and come back" and "this cannot
+ * advance, and here is why".
  */
 function boundaryKind(stopped: FlowDecision, unauthorized: boolean): FlowBoundaryKind {
   if (unauthorized) return "authorization";
-  if (stopped.ownership !== "cli-owned") return "legacy";
   if (stopped.authority === "agent") return "semantic";
   return actionOf(stopped) === null ? "human" : "execution";
 }
@@ -627,10 +652,6 @@ function nextActionFor(boundary: FlowBoundary, resolved: ResolvedBoundary): stri
       const missing = resolved.authorization?.missing.join(", ") ?? "el efecto";
       return `${submit} con --approval ${digest}, autorizando ${missing} para '${stopped.title}'`;
     }
-    case "legacy":
-      // The document comes FIRST in the sentence: this step is not the CLI's, and
-      // the fallback has to be read before it runs, not justified afterwards.
-      return `aplicá la regla vigente de ${stopped.document} para '${stopped.title}' y después ${submit}, declarando ese fallback en 'fallback'`;
     case "execution": {
       // The exact invocation, projected — not a description of it. Whoever
       // executes should never have to reconstruct the command from prose, and the

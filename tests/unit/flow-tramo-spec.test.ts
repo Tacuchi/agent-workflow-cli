@@ -51,18 +51,27 @@ function rowOf(id: string): FlowDecision {
 }
 
 describe("el tramo SPEC migró lo suyo y nada de un documento compartido", () => {
-  it("el gate de división sigue siendo de la doctrina, con su motivo", () => {
+  it("el gate de división quedó en el módulo que este recorrido SÍ carga", () => {
+    // El motivo por el que estas tres filas se quedaron atrás resultó no ser el
+    // que esta guarda afirmaba. No era que otro recorrido cargara su módulo: era
+    // que llevaban el documento de `spec-new`, que `spec-refine` no carga nunca.
+    // Una corrida real se detenía acá remitiendo a un archivo que su propio
+    // read-set no le había dado.
     for (const id of [
       "spec-refine.split-signal",
       "spec-refine.split-gate",
       "spec-refine.split-choice",
     ]) {
       const row = rowOf(id);
-      expect(row.ownership, id).toBe("legacy");
-      // El motivo es verificable, no una nota: `plan-new` y `plan-refine` cargan
-      // ese mismo módulo, y retirarle la regla los dejaría sin ella.
-      expect(row.document, id).toBe("modules/SPLIT-GATE.md");
+      expect(row.ownership, id).toBe("cli-owned");
+      expect(row.document, id).toBe("modules/SPEC-CHANGE-SHAPE.md");
     }
+    // Y el umbral es el de la doctrina: dos señales, sobre las que esta rama
+    // declara — nunca las cinco del gate multi-plan.
+    const choice = rowOf("spec-refine.split-choice");
+    expect(choice.condition?.threshold.min).toBe(2);
+    expect(choice.condition?.threshold.observed).toBe("spec-refine.split-signal");
+    expect(rowOf("spec-refine.split-signal").signals).toHaveLength(4);
   });
 
   it("la confirmación de sobreescritura va ANTES del sello del status", () => {
@@ -213,13 +222,6 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
         decisions: { paso: stopped.id },
       };
     }
-    if (resolved.kind === "legacy") {
-      return {
-        input_digest: resolved.seal,
-        fallback: stopped.document,
-        choice: "Resolver la frontera",
-      };
-    }
     return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
   }
 
@@ -335,21 +337,24 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
     expect(sealed.effects.applied).toContain("mutate_overwrite");
   });
 
-  it("el recorrido se detiene en el gate de división como frontera legacy", async () => {
+  it("el recorrido llega al gate de división y lo pregunta él mismo, sin remitir a nada", async () => {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    for (let step = 0; step < 10; step += 1) {
+    for (let step = 0; step < 12; step += 1) {
       const { resolved } = await current();
-      if (resolved.kind === "legacy") {
-        expect(resolved.stopped?.document).toBe("modules/SPLIT-GATE.md");
-        // Y declara el fallback antes de que nadie lo ejecute.
-        expect(resolved.stopped?.id).toBe("spec-refine.split-signal");
+      if (resolved.stopped?.id === "spec-refine.split-signal") {
+        // Lo que antes era una frontera `legacy` que remitía a un documento ahora
+        // es la pregunta que el motor hace: un juicio acotado, con su vocabulario.
+        expect(resolved.kind).toBe("semantic");
+        expect(resolved.stopped?.document).toBe("modules/SPEC-CHANGE-SHAPE.md");
+        expect(resolved.error).toBeNull();
         return;
       }
       if (resolved.kind === "execution") {
         await answer(resultFor(resolved));
         continue;
       }
+      if (resolved.kind === "final") break;
       await answer({
         input_digest: resolved.seal,
         signals: [],

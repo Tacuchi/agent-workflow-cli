@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WORKLINE_FLOWS } from "../../src/application/capability/compose.js";
@@ -14,7 +14,6 @@ import {
   commandOfScope,
   decisionsOfScope,
   flowOfScope,
-  hasLegacyOwnership,
   trancheOfFlow,
 } from "../../src/domain/flow/authority.js";
 
@@ -86,10 +85,13 @@ describe("registro de autoridad — forma y unicidad", () => {
       "quick.review-findings",
       "quick.commit-authorization",
       "spec-refine.baseline-scope",
+      "spec-refine.split-signal",
+      "spec-refine.split-choice",
       "spec-refine.gap-recognition",
       "spec-refine.ideation-consent",
       "spec-refine.content-authoring",
       "spec-refine.functional-ambiguity",
+      "spec-refine.design-reuse",
       "spec-refine.save-confirmation",
       // PLAN's, and the shape repeats: the agent recognizes, the person prefers,
       // the CLI decides when each is asked. Not one of them gained an `action`.
@@ -112,10 +114,19 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.commit-authorization",
       // Contracted in their own command rather than walked: they decide which
       // line a prompt joins, or fire at whatever boundary the run is standing
-      // on. Neither shape is a step of a journey.
+      // on. Neither shape is a step of a journey. The five the closing tranche
+      // added are the same shape once more — reading a conflict's intent,
+      // classifying what a conversation produced, synthesizing a report: the
+      // judgment stayed exactly where it was, and what moved is that the command
+      // now decides what it is answered against.
+      "resume.route-choice",
       "resume.prompt-relatedness",
       "resume.escalation-consent",
+      "persist.shape-classification",
+      "context-plan.signal-declaration",
       "checkpoint-write.context-pressure-signal",
+      "fix-git.intent",
+      "export.selection",
     ]);
   });
 
@@ -216,48 +227,75 @@ describe("registro de autoridad — el universo es el command registry", () => {
     expect(both.map((entry) => entry.command)).toEqual([]);
   });
 
-  it("toda exclusión nombra un comando que existe", () => {
-    const ghosts = COMMAND_EXCLUSIONS.filter((entry) => !registered.has(entry.command));
+  it("toda exclusión nombra un comando que existe, en cualquiera de las dos superficies", () => {
+    const ghosts = COMMAND_EXCLUSIONS.filter(
+      (entry) => !registered.has(entry.command) && !slashCommands().includes(entry.command),
+    );
     expect(ghosts.map((entry) => entry.command)).toEqual([]);
+  });
+
+  /**
+   * The `/w:` commands, taken from the bundle rather than from a list.
+   *
+   * Same reason the `aw` universe is `ALL_COMMANDS` and not a copy of it: a
+   * second list would drift, and the whole point of exhaustiveness is that
+   * nobody can forget to add a row to it.
+   */
+  function slashCommands(): string[] {
+    return readdirSync(join(BUNDLE, "commands"))
+      .filter((file) => file.endsWith(".md") && file !== "README.md")
+      .map((file) => file.replace(/\.md$/, ""));
+  }
+
+  it("todo comando /w: es un flow, tiene filas o está excluido con motivo", () => {
+    // The second universe, and the gap that made it necessary: `spec-new` had
+    // neither rows nor an exclusion, which reads exactly like having been
+    // forgotten. It is not an `aw` command, so the registry-based guard above
+    // could never have seen it — a journey stays public whether or not the CLI
+    // ships a command by that name.
+    const flows = new Set<string>(WORKLINE_FLOWS);
+    const classified = new Set(
+      FLOW_DECISIONS.map((decision) => commandOfScope(decision.scope)).filter(
+        (command): command is string => command !== null,
+      ),
+    );
+    const excluded = new Set(COMMAND_EXCLUSIONS.map((entry) => entry.command));
+    const unclassified = slashCommands().filter(
+      (command) => !flows.has(command) && !classified.has(command) && !excluded.has(command),
+    );
+    expect(unclassified).toEqual([]);
+    // And the universe is real: five flows plus eleven commands with no loop.
+    expect(slashCommands()).toHaveLength(16);
   });
 });
 
-describe("registro de autoridad — la migración arranca observable", () => {
-  it("solo SPEC y cinco comandos siguen decidiendo algo desde la doctrina", () => {
-    // Amended by the transversal tranche, and this is the direction that matters:
-    // the chassis is now migrated too, so what is left is nine rows in two
-    // places. The guard keeps asserting the axis in both directions — it states
-    // the CURRENT state instead of the initial one, which is the whole point of
-    // an observable migration.
-    const fullyMigrated = ["quick", "plan-new", "plan-refine", "plan-exec"];
-    for (const flow of WORKLINE_FLOWS) {
-      expect(hasLegacyOwnership(flow), flow).toBe(!fullyMigrated.includes(flow));
+describe("registro de autoridad — la migración cerró observable", () => {
+  it("ningún recorrido decide ya nada desde la doctrina, y el vocabulario quedó cerrado", () => {
+    // The closing claim, and the last of a series: this case named the survivors
+    // after every cutover — QUICK's, then SPEC's, then the chassis' — down to the
+    // nine the previous tranche left. There are none. Stated as an empty set over
+    // the WHOLE registry rather than per scope, because "nothing left anywhere" is
+    // what makes retiring the fallback safe rather than a hope.
+    for (const scope of [...WORKLINE_FLOWS, CHASSIS_SCOPE]) {
+      const left = decisionsOfScope(scope).filter((row) => row.ownership !== "cli-owned");
+      expect(
+        left.map((row) => row.id),
+        scope,
+      ).toEqual([]);
     }
-    // SPEC's four remain for a document reason, not an oversight: their modules
-    // are read by journeys outside this plan's tranches.
-    expect(hasLegacyOwnership("spec-refine")).toBe(true);
-    expect(hasLegacyOwnership(CHASSIS_SCOPE)).toBe(false);
-    // And the exact nine, so "F17 closes the rest" is a checkable claim rather
-    // than a promise: four of SPEC and five of transversal commands.
-    const left = FLOW_DECISIONS.filter((decision) => decision.ownership === "legacy");
-    expect(left.map((decision) => decision.id)).toEqual([
-      "spec-refine.split-signal",
-      "spec-refine.split-gate",
-      "spec-refine.split-choice",
-      "spec-refine.design-reuse",
-      "resume.route-choice",
-      "persist.shape-classification",
-      "context-plan.signal-declaration",
-      "fix-git.intent",
-      "export.selection",
-    ]);
+    const left = FLOW_DECISIONS.filter((decision) => decision.ownership !== "cli-owned");
+    expect(left.map((decision) => decision.id)).toEqual([]);
+    // And the vocabulary itself closed, so the axis cannot be re-opened by a row:
+    // a second value would have to be added here, in the open.
+    expect(TRANSITION_OWNERSHIPS).toEqual(["cli-owned"]);
   });
 
   it("la migración se mide por DOCUMENTO, en las dos direcciones", () => {
     // The tranche is the document, not the scope. A rule stated in a document that
-    // another still-legacy journey reads cannot be retired yet, so it cannot be
-    // migrated either — that is what kept QUICK's five transversal rows behind
-    // until PLAN cut over, and what still keeps the shared split gate back. Both
+    // an undirected journey reads cannot be retired, so it cannot be migrated
+    // either — that is what kept QUICK's five transversal rows behind until PLAN
+    // cut over, and what kept the split gate back until this tranche found that
+    // the gate's rows were carrying `spec-new`'s document by mistake. Both
     // directions are asserted: nothing outside the cut-over documents is migrated,
     // and nothing inside them is left behind.
     const inFlows = FLOW_DECISIONS.filter((decision) => flowOfScope(decision.scope) !== null);
@@ -280,9 +318,13 @@ describe("registro de autoridad — la migración arranca observable", () => {
       "loops/CODE-POLICIES.md",
       "modules/DB-SCRIPTS-ONLY.md",
     ]);
-    // The three a shipped command already owned predate the tranches.
+    // The four a shipped command owns rather than a tranche. Three predate the
+    // tranches; `design-reuse` joined them in the closing one, attributed to
+    // `aw designs` because what the CLI owns there is putting the inventory in
+    // front of the judgment, not deciding it.
     const commandOwned = new Set([
       "spec-refine.design-publication",
+      "spec-refine.design-reuse",
       "plan-new.numbering",
       "plan-exec.design-precondition",
     ]);
@@ -296,9 +338,16 @@ describe("registro de autoridad — la migración arranca observable", () => {
     expect(early.map((decision) => `${decision.id} → ${decision.document}`)).toEqual([]);
 
     const left = inFlows.filter(
-      (decision) => decision.ownership === "legacy" && migratedDocuments.has(decision.document),
+      (decision) => decision.ownership !== "cli-owned" && migratedDocuments.has(decision.document),
     );
     expect(left.map((decision) => `${decision.id} → ${decision.document}`)).toEqual([]);
+
+    // The one document that stayed behind, and it is not an oversight: nothing in
+    // the registry points at it any more. `SPLIT-GATE.md` is `/w:spec-new`'s, a
+    // command that starts no loop, so its rule was never the CLI's to take.
+    expect(FLOW_DECISIONS.map((decision) => decision.document)).not.toContain(
+      "modules/SPLIT-GATE.md",
+    );
   });
 
   it("PLAN cierra sus tres recorridos enteros y las cinco filas compartidas de QUICK", () => {
@@ -309,7 +358,6 @@ describe("registro de autoridad — la migración arranca observable", () => {
     expect(counted("quick", QUICK_LOOP)).toBe(12);
     expect(counted("spec-refine", "loops/spec-refine-loop/LOOP.md")).toBe(9);
     expect(counted("spec-refine", "modules/IDEATION-GATE.md")).toBe(2);
-    expect(counted("spec-refine", "modules/SPEC-CHANGE-SHAPE.md")).toBe(1);
     // PLAN's three journeys, whole — 48 rows, of which 9 are new: the eligibility
     // observation and its isolation rule in each of the three, refine's own split
     // signal, execution's entry-gap recognition, and the commit itself, which had
@@ -319,19 +367,13 @@ describe("registro de autoridad — la migración arranca observable", () => {
     const planScopes = ["plan-new", "plan-refine", "plan-exec"];
     const plan = planScopes.flatMap((scope) => decisionsOfScope(scope));
     expect(plan).toHaveLength(48);
-    expect(plan.filter((decision) => decision.ownership === "legacy")).toEqual([]);
+    expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     expect(counted("quick", "modules/DB-SCRIPTS-ONLY.md")).toBe(1);
-    // Still doctrine's, and each for the same reason: their document belongs to a
-    // journey nobody has cut over.
-    const shared = FLOW_DECISIONS.filter(
-      (decision) => decision.ownership === "legacy" && decision.scope === "spec-refine",
-    );
-    expect(shared.map((decision) => decision.document)).toEqual([
-      "modules/SPLIT-GATE.md",
-      "modules/SPLIT-GATE.md",
-      "modules/SPLIT-GATE.md",
-      "modules/DESIGN-REFERENCES.md",
-    ]);
+    // The four that used to be listed here as "still doctrine's" — three of the
+    // split gate plus design reuse — are the ones the closing tranche took, and
+    // they moved to the documents `spec-refine` actually reads.
+    expect(counted("spec-refine", "modules/SPEC-CHANGE-SHAPE.md")).toBe(4);
+    expect(counted("spec-refine", "modules/DESIGN-REFERENCES.md")).toBe(2);
   });
 });

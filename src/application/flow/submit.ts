@@ -379,10 +379,10 @@ function actionDrift(state: FlowRunState, resolved: ResolvedBoundary): SubmitDec
 /**
  * Approving an effect is NOT deciding the step, and never executing it.
  *
- * On a transition doctrine still owns, the approval is recorded and the run stays
- * exactly where it is: the recalculated boundary is the `legacy` one for the same
- * transition, which declares its fallback before anything runs. Applying here
- * would let an approval smuggle in the very step whose rule nobody has read yet.
+ * The approval is recorded and the run stays exactly where it is: the recalculated
+ * boundary is the one for the SAME transition, so approving what a step exercises
+ * never doubles as deciding it. Applying here would let an approval smuggle in the
+ * step itself.
  *
  * On a DELEGATED transition the same hold, for the sharper reason: the approval
  * authorizes the effect and the recalculated boundary becomes the `execution` one,
@@ -434,6 +434,22 @@ function applyAndAdvance(
  * counted by hand, so its sequence and parent-linkage rules apply for free — and
  * a history that cannot be replayed is itself a refusal, not something to work
  * around. `null` means "a genuinely new attempt: carry on".
+ *
+ * A twin in the history is not enough, and the real walk of the closing tranche
+ * is what showed it. Since refusals started being persisted — and since the seal
+ * stopped moving when one is recorded, so that a caller's own refusal would not
+ * come back as staleness — resending a REFUSED answer looks exactly like
+ * resending an applied one. Both find their twin. Only one of them advanced
+ * anything, and answering the other with "this already applied" reports a run
+ * that is stuck as one that is done: `completed`, with the real cause (a mismatched
+ * approval, an invalid payload) replaced by a vague one, permanently, because
+ * every retry from then on gets the same reply.
+ *
+ * So the twin has to say which it was, and that fact is already in the state:
+ * the run moves past what it applies, so an attempt whose transition is not in
+ * `applied` never advanced anything. Derived rather than stored on the attempt,
+ * for the reason the registry gives everywhere it derives: two sources for one
+ * fact disagree eventually, and then the state is unusable.
  */
 function resendCheck(
   state: FlowRunState,
@@ -448,6 +464,18 @@ function resendCheck(
   const verdict = ledger.record(identity);
   if (!verdict.ok) return { ok: false, failure: verdict.failure };
   if (verdict.kind === "new") return null;
+  // The TWIN's transition, not this submission's: the identity is built over the
+  // boundary in force, and a resent applied answer is being sent at the next one.
+  // What is being asked is whether the step the twin answered ever moved.
+  const twin = state.attempts.find(
+    (past) =>
+      past.invocation_id === identity.invocation_id &&
+      past.request_digest === identity.request_digest,
+  );
+  // The twin was refused: this is a retry of the same wrong answer, so it gets
+  // the same real diagnosis again and counts toward the cap, which is what
+  // eventually degrades the boundary instead of leaving the caller looping.
+  if (twin !== undefined && !state.applied.includes(twin.transition)) return null;
   return reject(
     state,
     resolved,
