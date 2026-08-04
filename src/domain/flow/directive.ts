@@ -37,6 +37,7 @@ import type {
 import {
   type DelegatedAction,
   type FlowAuthority,
+  type FlowChoice,
   type FlowDecision,
   type FlowTranche,
   type TransitionOwnership,
@@ -70,13 +71,10 @@ export const FLOW_BOUNDARY_KINDS = [
 
 export type FlowBoundaryKind = (typeof FLOW_BOUNDARY_KINDS)[number];
 
-/** One alternative of a human boundary: what it is, and what it costs. */
-export interface FlowChoice {
-  label: string;
-  /** What choosing it produces. A choice without a consequence is not a choice. */
-  consequence: string;
-  recommended: boolean;
-}
+// The alternatives of a boundary are DATA OF THE DECISION — a migrated tranche
+// declares its own — so the type lives with the registry and is re-exported here,
+// where the directive that carries them is defined.
+export type { FlowChoice } from "./authority.js";
 
 export interface FlowBoundary {
   kind: FlowBoundaryKind;
@@ -98,26 +96,48 @@ export interface FlowBoundary {
 }
 
 /**
- * One applied transition, with the authority that moved it.
+ * What the run did with a step it passed: applied it, or skipped it because its
+ * condition did not hold.
+ *
+ * Two words rather than a boolean, and a closed vocabulary rather than prose: the
+ * trace is read by whoever resumes, and "the gate did not appear" has to be
+ * distinguishable from "the gate was answered" without anyone inferring it.
+ */
+export const FLOW_STEP_OUTCOMES = ["applied", "skipped"] as const;
+
+export type FlowStepOutcome = (typeof FLOW_STEP_OUTCOMES)[number];
+
+/**
+ * One transition the run passed, with the authority that moved it.
  *
  * The trace is a list of these instead of bare ids because during the migration
  * "it advanced" is not the whole truth: whoever executes has to see whether the
  * step came from a rule this CLI owns or from doctrine it merely recorded. The
- * pair travels with the step so the two facts can never be read apart.
+ * facts travel with the step so they can never be read apart.
  */
 export interface FlowStep {
   transition: string;
   authority: FlowAuthority;
   ownership: TransitionOwnership;
+  outcome: FlowStepOutcome;
+  /** Why it was skipped. Present only on a skipped step; never invented. */
+  reason: string | null;
 }
 
-/** Project a decision into the trace entry of having applied it. */
+/** Project a decision into the trace entry of having passed it. */
 export function stepOf(decision: FlowDecision): FlowStep {
   return {
     transition: decision.id,
     authority: decision.authority,
     ownership: decision.ownership,
+    outcome: "applied",
+    reason: null,
   };
+}
+
+/** Project a decision into the trace entry of having passed OVER it. */
+export function skippedStepOf(decision: FlowDecision, reason: string): FlowStep {
+  return { ...stepOf(decision), outcome: "skipped", reason };
 }
 
 export interface FlowDirective {
@@ -514,12 +534,25 @@ function checkOwnership(directive: FlowDirective): CapabilityFailure | null {
 
 function checkApplied(directive: FlowDirective): CapabilityFailure | null {
   const seen = new Set(directive.applied.map((step) => step.transition));
-  if (seen.size === directive.applied.length) return null;
-  return reject(
-    "FLOW_DIRECTIVE_APPLIED_REPEATED",
-    "la traza de esta invocación repite una transición",
-    "una transición se aplica una sola vez por recorrido",
-  );
+  if (seen.size !== directive.applied.length) {
+    return reject(
+      "FLOW_DIRECTIVE_APPLIED_REPEATED",
+      "la traza de esta invocación repite una transición",
+      "una transición se aplica una sola vez por recorrido",
+    );
+  }
+  // A skipped step without its cause is worse than no trace at all: it says the
+  // run passed a decision nobody made and gives the reader nothing to check.
+  for (const step of directive.applied) {
+    const omitted = step.outcome === "skipped";
+    if (omitted === (step.reason ?? "").trim().length > 0) continue;
+    return reject(
+      "FLOW_DIRECTIVE_STEP_REASON_MISMATCH",
+      `el paso '${step.transition}' declara '${step.outcome}' y ${omitted ? "no dice por qué se omitió" : "trae un motivo de omisión"}`,
+      "un paso omitido declara su motivo; uno aplicado no lleva ninguno",
+    );
+  }
+  return null;
 }
 
 const DIRECTIVE_CHECKS: readonly DirectiveCheck[] = [
@@ -568,9 +601,17 @@ function boundaryLines(directive: FlowDirective): string[] {
   }
   if (directive.applied.length > 0) {
     const trace = directive.applied
-      .map((step) => `${step.transition} (${step.authority} · ${step.ownership})`)
+      .map((step) => {
+        const base = `${step.transition} (${step.authority} · ${step.ownership}`;
+        // The omission carries its cause in the same breath: a step that reads
+        // "omitida" and nothing else sends the reader to the registry to find out
+        // why the run did not stop where the doctrine says it stops.
+        return step.outcome === "skipped"
+          ? `${base} · OMITIDA: ${step.reason ?? "sin motivo declarado"})`
+          : `${base})`;
+      })
       .join(", ");
-    lines.push(`aplicadas en esta invocación: ${trace}`);
+    lines.push(`pasos de esta invocación: ${trace}`);
   }
   if (directive.pending.length > 0) lines.push(`pendientes: ${directive.pending.length}`);
   return lines;

@@ -17,6 +17,7 @@ import {
   newRunState,
   parseRunState,
   serializeRunState,
+  skipTransition,
   withBoundary,
   withObservation,
   withPendingAction,
@@ -90,10 +91,12 @@ describe("estado de corrida — fail-closed", () => {
     expect(read.failure.code).toBe("FLOW_RUN_VERSION_UNSUPPORTED");
   });
 
-  it("un estado de la versión anterior se rechaza con re-adopción, sin migrar en silencio", () => {
-    // The v1 shape, written out: it predates the fields the engine now reads, and
-    // inventing them would fabricate history this file exists to make trustworthy.
-    const legacy = {
+  it("un estado de una versión anterior se rechaza con re-adopción, sin migrar en silencio", () => {
+    // Both older shapes, written out. Each predates fields the engine now reads,
+    // and inventing them would fabricate the history this file exists to make
+    // trustworthy — a run that started before the QUICK cutover has no record of
+    // what it skipped, and "nothing was skipped" is not a safe guess.
+    const v1 = {
       version: 1,
       flow: "quick",
       session: SESSION,
@@ -104,11 +107,33 @@ describe("estado de corrida — fail-closed", () => {
       attempts: [],
       digest: "da39a3ee5e6b4b0d3255bfef95601890afd80709",
     };
-    const read = parseRunState(JSON.stringify(legacy));
-    if (read.ok) throw new Error("un estado v1 no puede leerse como v2");
-    expect(read.failure.code).toBe("FLOW_RUN_VERSION_UNSUPPORTED");
-    expect(read.failure.action).toContain("--adopt");
-    expect(read.failure.action).toContain("migración automática");
+    const v2 = { ...v1, version: 2, pending_action: null, observations: [] };
+    for (const older of [v1, v2]) {
+      const read = parseRunState(JSON.stringify(older));
+      if (read.ok) throw new Error(`un estado v${older.version} no puede leerse como el vigente`);
+      expect(read.failure.code).toBe("FLOW_RUN_VERSION_UNSUPPORTED");
+      expect(read.failure.action).toContain("--adopt");
+      expect(read.failure.action).toContain("migración automática");
+    }
+  });
+
+  it("los pasos omitidos son un subconjunto de los que la corrida pasó", () => {
+    const state = newRunState("quick", SESSION);
+    const inconsistent = {
+      ...state,
+      applied: ["quick.entry-gate-signal"],
+      skipped: ["quick.gate-choice"],
+    };
+    const read = parseRunState(JSON.stringify(inconsistent));
+    if (read.ok) throw new Error("una omisión fuera del cursor no puede leerse");
+    expect(read.failure.code).toBe("FLOW_RUN_INVALID");
+  });
+
+  it("omitir avanza el cursor sin aplicar efecto alguno", () => {
+    const state = skipTransition(newRunState("quick", SESSION), "quick.gate-choice");
+    expect(state.applied).toEqual(["quick.gate-choice"]);
+    expect(state.skipped).toEqual(["quick.gate-choice"]);
+    expect(state.effects).toEqual({ planned: [], approved: [], applied: [] });
   });
 
   it("la acción pendiente y las observaciones se rechazan por forma", () => {

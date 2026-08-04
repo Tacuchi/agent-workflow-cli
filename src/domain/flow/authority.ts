@@ -109,6 +109,66 @@ export interface FlowDecision {
    * the boundary ambiguous. See {@link DelegatedAction}.
    */
   action?: DelegatedAction;
+  /**
+   * When this transition happens at all.
+   *
+   * Absent means always — the normal case. Present means the step is CONDITIONAL:
+   * the run passes over it without applying it when the named rule did not fire.
+   * A journey that always asked would not be equivalent to the doctrine it
+   * replaces, and one that silently dropped the step would leave the trace
+   * claiming a decision nobody made. See {@link TransitionCondition}.
+   */
+  condition?: TransitionCondition;
+  /**
+   * The alternatives this boundary emits, when they are the row's own.
+   *
+   * Absent means the generic pair (resolve / stop). A migrated tranche declares
+   * the exact options its doctrine used to enumerate, so the engine emits them
+   * verbatim instead of the caller re-deriving them from a document.
+   */
+  alternatives?: readonly FlowChoice[];
+}
+
+/** One alternative of a boundary that chooses: what it is, and what it costs. */
+export interface FlowChoice {
+  label: string;
+  /** What choosing it produces. A choice without a consequence is not a choice. */
+  consequence: string;
+  recommended: boolean;
+}
+
+/**
+ * A rule that turns observed signals into a verdict.
+ *
+ * Recognizing a signal is judgment and belongs to an `agent` row; counting them
+ * against a threshold is a rule and belongs to the CLI. This is that frontier,
+ * expressed as the two numbers it needs: whose signals, and how many.
+ *
+ * It is always reached through the {@link TransitionCondition} that reads it: a
+ * threshold declared where nothing consumes it would be a rule with no effect,
+ * and two rows that apply the same rule share the constant instead of restating
+ * the number.
+ */
+export interface SignalThreshold {
+  /** Transition whose declared signals it counts. */
+  observed: string;
+  /** How many DISTINCT declared signals make it fire. */
+  min: number;
+}
+
+/**
+ * The rule of a transition that only happens sometimes.
+ *
+ * It carries the threshold itself rather than pointing at the row that applies
+ * one: a condition and a decision are different things, and making one depend on
+ * the other's presence would mean a step could only be conditional where some
+ * other row happened to declare a rule. Two rows that share a threshold share the
+ * constant, which keeps the single source where a reader can see it.
+ */
+export interface TransitionCondition {
+  threshold: SignalThreshold;
+  /** Why the step is passed over when the rule did not fire. Never empty. */
+  otherwise: string;
 }
 
 /** A decision computes a verdict; writing is the exception that declares itself. */
@@ -125,6 +185,11 @@ export function effectsOf(decision: FlowDecision): readonly EffectClass[] {
  * Structured rather than a command string because the result has to be checkable
  * against it: "the executor ran something else" is only detectable if the two can
  * be compared field by field.
+ *
+ * Arguments and target may carry the run's own coordinates as placeholders
+ * ({@link RUN_PLACEHOLDERS}); the engine binds them from the run state BEFORE
+ * emitting the boundary, and the seal is computed over the bound form. A
+ * placeholder that reached whoever executes would be a command nobody can run.
  */
 export interface DelegatedInvocation {
   program: string;
@@ -134,6 +199,16 @@ export interface DelegatedInvocation {
   /** Payload for its stdin, when the invocation takes one. */
   input: string | null;
 }
+
+/**
+ * The run coordinates an invocation may reference, and nothing else.
+ *
+ * Closed on purpose: an invocation that could interpolate arbitrary state would
+ * be a template language, and a registry row would stop being readable as the
+ * exact thing that runs. These two are what a session-scoped command needs — the
+ * folder and its correlative — and both are facts the engine owns.
+ */
+export const RUN_PLACEHOLDERS = ["{session}", "{code}"] as const;
 
 /**
  * How a transition gets APPLIED — a mode orthogonal to authority, ownership and
@@ -171,6 +246,16 @@ export function actionOf(decision: FlowDecision): DelegatedAction | null {
   return decision.action ?? null;
 }
 
+/** What makes this transition happen at all, or `null` when it always does. */
+export function conditionOf(decision: FlowDecision): TransitionCondition | null {
+  return decision.condition ?? null;
+}
+
+/** The alternatives this row declares as its own, or `null` for the generic pair. */
+export function alternativesOf(decision: FlowDecision): readonly FlowChoice[] | null {
+  return decision.alternatives ?? null;
+}
+
 /**
  * A public command with no journey decision of its own, and why.
  *
@@ -185,6 +270,35 @@ export interface CommandExclusion {
 
 const CHASSIS = CHASSIS_SCOPE;
 const cmd = (name: string): DecisionScope => `${COMMAND_SCOPE_PREFIX}${name}`;
+
+/**
+ * What `loops/quick-loop/LOOP.md` says about who decides its deterministic steps.
+ *
+ * ONE marker for the whole tranche, not one per row: the guard demands the text
+ * be present in the document, and twelve variants of the same sentence would cost
+ * context budget to say the same thing twelve times. The document keeps the
+ * EXPLANATION of each rule and hands over the rule itself.
+ */
+const QUICK_ATTRIBUTION =
+  "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
+
+/**
+ * The entry gate's rule: two of the five declared signals.
+ *
+ * Shared by the row that APPLIES it and by the row that only happens when it
+ * fired, so the number lives once. Changing it here changes both, which is the
+ * whole reason it is a constant and not two literals.
+ */
+const ENTRY_SIZE_THRESHOLD: SignalThreshold = { observed: "quick.entry-gate-signal", min: 2 };
+
+/**
+ * The one thing a session-scoped action needs: this run's session.
+ *
+ * `aw` runs from the workspace root, so the target of a session-scoped
+ * invocation is the session it acts ON, and the correlative travels in the
+ * arguments. Both are bound from the run state before the boundary is emitted.
+ */
+const SESSION_TARGET = "{session}";
 
 const CHASSIS_MD = "loops/CHASSIS.md";
 const CODE_POLICIES_MD = "loops/CODE-POLICIES.md";
@@ -400,14 +514,20 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     effects: ["mutate_overwrite"],
   },
 
-  // ── QUICK — the pilot tranche ─────────────────────────────────────────────
+  // ── QUICK — the pilot tranche, and the first one this CLI decides ──────────
+  //
+  // Twelve rows migrated: every decision whose rule lived in the loop's own
+  // document. The five that live in CODE-POLICIES/DB-SCRIPTS-ONLY stay `legacy`
+  // on purpose — they are the OTHER four flows' rules too, and migrating them
+  // here would move a tranche nobody has cut over.
   {
     id: "quick.entry-gate-signal",
     scope: "quick",
     title: "reconocer cada señal de tamaño en el objetivo recibido",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
     signals: [
       "quick.needs-architecture",
       "quick.two-or-more-sources",
@@ -421,58 +541,153 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "quick",
     title: "aplicar el umbral de dos señales que dispara el gate de entrada",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
+    // The row is the MOMENT the verdict is computed; the rule itself is
+    // `ENTRY_SIZE_THRESHOLD`, read by every step conditional on it. Declaring the
+    // threshold here too would be a second copy that nothing reads.
   },
   {
     id: "quick.anti-duplicate",
     scope: "quick",
     title: "recomendar reanudar la spec o sesión que ya cubre este objetivo",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
+    // Conditional for the same reason the choice is: the search exists to change
+    // what the gate recommends, so on a task that never triggers the gate it is a
+    // read nobody asked for. The doctrine had it INSIDE the gate branch.
+    condition: {
+      threshold: ENTRY_SIZE_THRESHOLD,
+      otherwise: "el umbral no disparó: no hay gate que recomiende reanudar nada",
+    },
+    // The search is the board this CLI already projects — specs, plans and
+    // sessions in one read — so what the run credits is a real listing and not
+    // "I looked". Read-only, so it never stops to be authorized.
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      evidence: ["quick.board-listed"],
+      idempotent: true,
+      recovery:
+        "volvé a correr 'aw status --json' y devolvé su salida real; si el tablero no se puede leer, resolvé eso antes de seguir",
+    },
   },
   {
     id: "quick.gate-choice",
     scope: "quick",
     title: "elegir entre cambiar a SPEC, seguir en quick o recortar el alcance",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
+    // The gate only exists when it fired. Asking always would make the directed
+    // journey ask what the doctrine it replaces does not ask — and "borderline
+    // continues in quick without asking" is the doctrine's own words.
+    condition: {
+      threshold: ENTRY_SIZE_THRESHOLD,
+      otherwise: "el umbral de dos señales no disparó: la tarea sigue en quick sin preguntar nada",
+    },
+    alternatives: [
+      {
+        label: "Cambiar a SPEC",
+        consequence:
+          "no se crea sesión quick: la línea de trabajo pasa al flow SPEC con el objetivo original",
+        recommended: true,
+      },
+      {
+        label: "Seguir en quick",
+        consequence: "el recorrido continúa como quick con el objetivo tal cual llegó",
+        recommended: false,
+      },
+      {
+        label: "Recortar alcance",
+        consequence:
+          "el objetivo pasa a ser la sub-tarea que sí entra en un quick y el resto queda en BACKLOG",
+        recommended: false,
+      },
+    ],
   },
   {
     id: "quick.session-create",
     scope: "quick",
     title: "crear la sesión liviana de la tarea",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
     effects: ["local_additive"],
+    // The engine cannot author the descriptor or the objective — those are the
+    // caller's — so what it names is the read that proves the session it is
+    // running inside really exists as an artifact, with its SESSION.md.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["quick.session-present"],
+      idempotent: true,
+      recovery:
+        "creá la sesión con 'aw session-create --type quick --name <slug>-quick --objetivo \"<objetivo>\"' y volvé a devolver la lectura",
+    },
   },
   {
     id: "quick.success-criteria-authoring",
     scope: "quick",
     title: "redactar la prueba o la rúbrica proporcional del entregable",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
+    // One signal, and it is the one the next row's condition reads: whether what
+    // is being verified is a rubric a person has to ratify, or a check that runs.
+    signals: ["quick.deliverable-is-analysis"],
   },
   {
     id: "quick.success-criteria-ratification",
     scope: "quick",
     title: "ratificar la rúbrica cuando el entregable es análisis o diseño",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
+    condition: {
+      threshold: { observed: "quick.success-criteria-authoring", min: 1 },
+      otherwise:
+        "el entregable no es análisis ni diseño: su criterio es una prueba que corre, y no se ratifica",
+    },
   },
   {
     id: "quick.artifact-seed-order",
     scope: "quick",
     title: "sembrar objetivo, criterios y CHECKPOINT antes de trabajar",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
     effects: ["local_additive"],
+    // Verification-first is only real if the seed is checkable: the three pieces
+    // come back as the artifacts' actual content, not as a claim that they were
+    // written.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}", "--dump", "objetivo,checkpoint"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: [
+        "quick.objetivo-sembrado",
+        "quick.criterios-sembrados",
+        "quick.checkpoint-sembrado",
+      ],
+      idempotent: true,
+      recovery:
+        "sembrá lo que falte (objetivo, criterios de éxito y CHECKPOINT.Pending) y volvé a devolver el dump: sembrar de nuevo lo ya escrito no rompe nada",
+    },
   },
   {
     id: "quick.branch-precondition",
@@ -487,8 +702,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "quick",
     title: "producir el cambio mínimo o el análisis que la tarea pide",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
   },
   {
     id: "quick.db-scripts-only",
@@ -504,25 +720,47 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     scope: "quick",
     title: "aplicar el mismo umbral de señales cuando la tarea crece a mitad del loop",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
+    // "The same threshold" as the entry gate, and it is the same one: the mid-loop
+    // escalation re-applies `ENTRY_SIZE_THRESHOLD` over the signals declared then.
   },
   {
     id: "quick.escalation-destination",
     scope: "quick",
     title: "resolver SPEC en vivo y PLAN diferido como destinos de la escalación",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
   },
   {
     id: "quick.convergence-gate",
     scope: "quick",
     title: "evaluar los criterios proporcionales de la tarea",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
     effects: ["execute"],
+    // The criteria are authored per task, so no fixed runner can be named without
+    // inventing a rule this CLI does not have. What it CAN name is the artifact
+    // that holds them — and it demands back the real output of running them.
+    // `execute` is not self-authorizable, so the run stops to be authorized
+    // BEFORE this invocation is ever emitted.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-artifacts", "--code", "{code}", "--dump", "objetivo"],
+        target: SESSION_TARGET,
+        input: null,
+      },
+      evidence: ["quick.criterios-verdes"],
+      idempotent: true,
+      recovery:
+        "arreglá lo que el criterio reprobó y volvé a correr sus validaciones: la transición sigue pendiente hasta que su salida real vuelva en verde",
+    },
   },
   {
     id: "quick.review-precedence",

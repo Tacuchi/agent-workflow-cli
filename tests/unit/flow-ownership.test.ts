@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { WORKLINE_FLOWS, type WorklineFlow } from "../../src/application/capability/compose.js";
 import { advanceFlowRun, resolveBoundary } from "../../src/application/flow/advance.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
@@ -139,7 +140,13 @@ describe("el escenario de la spec: una migrada seguida de una legacy", () => {
 
     // Applied: only the migrated one, and the trace says with what authority.
     expect(result.directive.applied).toEqual([
-      { transition: "fixture.migrada", authority: "cli", ownership: "cli-owned" },
+      {
+        transition: "fixture.migrada",
+        authority: "cli",
+        ownership: "cli-owned",
+        outcome: "applied",
+        reason: null,
+      },
     ]);
     // Stopped: the legacy one, as a boundary of its own kind — not as a semantic
     // request nor as a set of alternatives the engine has no standing to offer.
@@ -273,24 +280,41 @@ describe("la propiedad no puentea el gate de efectos", () => {
 });
 
 describe("aprobar un efecto no es decidir el paso — sobre una corrida real", () => {
-  const SESSION = "001-prueba-quick";
   const fs = new NodeFileSystem();
   let workdir: string;
   let paths: PathsService;
 
-  /** The first real QUICK row that writes or runs something, still doctrine's. */
+  /**
+   * The first flow that still has a doctrine-owned row which writes or runs.
+   *
+   * Derived, not hardcoded to a flow: QUICK used to be it and the pilot cutover
+   * moved it, so pinning a scope here would have made this scenario silently
+   * change subject. When the last tranche is migrated the throw says exactly that
+   * — this is a scenario about the migration, and it ends with it.
+   */
+  function legacyWriter(): { flow: WorklineFlow; row: FlowDecision } {
+    for (const flow of WORKLINE_FLOWS) {
+      const row = decisionsOfScope(flow).find(
+        (decision) =>
+          decision.ownership === "legacy" &&
+          (decision.effects ?? []).some((effect) => !SELF_AUTHORIZABLE_CLASSES.includes(effect)),
+      );
+      if (row !== undefined) return { flow, row };
+    }
+    throw new Error("ningún flow tiene ya una transición legacy que escriba: el escenario venció");
+  }
+
+  const { flow: FLOW, row: WRITER } = legacyWriter();
+  const SESSION = `001-prueba-${FLOW}`;
+
   function writer(): FlowDecision {
-    const row = decisionsOfScope("quick").find((decision) =>
-      (decision.effects ?? []).some((effect) => !SELF_AUTHORIZABLE_CLASSES.includes(effect)),
-    );
-    if (row === undefined) throw new Error("QUICK ya no tiene una transición que escriba");
-    return row;
+    return WRITER;
   }
 
   /** Position a persisted run exactly where the engine would leave it: at `id`. */
   async function positionAt(id: string): Promise<FlowRunState> {
-    const journey = decisionsOfScope("quick");
-    let state = newRunState("quick", SESSION);
+    const journey = decisionsOfScope(FLOW);
+    let state = newRunState(FLOW, SESSION);
     for (const decision of journey) {
       if (decision.id === id) break;
       state = applyTransition(state, decision.id, effectsOf(decision));
@@ -322,7 +346,7 @@ describe("aprobar un efecto no es decidir el paso — sobre una corrida real", (
   it("la aprobación queda registrada y el paso legacy sigue esperando su fallback", async () => {
     const target = writer();
     const state = await positionAt(target.id);
-    const resolved = resolveBoundary(state, decisionsOfScope("quick"));
+    const resolved = resolveBoundary(state, decisionsOfScope(FLOW));
     expect(resolved.kind).toBe("authorization");
 
     const result = await submitFlow(fs, paths, {

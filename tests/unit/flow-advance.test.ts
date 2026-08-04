@@ -45,11 +45,14 @@ describe("aw flow advance — agota los pasos deterministas", () => {
     if (!result.ok) throw new Error(`esperaba avanzar: ${result.failure.code}`);
 
     expect(trace(result.directive)).toEqual(["fixture.uno", "fixture.dos", "fixture.tres"]);
-    // The trace carries the authority each step moved with, not only its id.
+    // The trace carries the authority each step moved with, not only its id —
+    // and whether the run applied it or passed over it.
     expect(result.directive.applied[0]).toEqual({
       transition: "fixture.uno",
       authority: "cli",
       ownership: "cli-owned",
+      outcome: "applied",
+      reason: null,
     });
     expect(result.directive.boundary.kind).toBe("semantic");
     expect(result.directive.boundary.transition).toBe("fixture.semantica");

@@ -18,6 +18,9 @@ import {
   trancheOfFlow,
 } from "../../src/domain/flow/authority.js";
 
+/** Where QUICK's own rules live — the exact boundary of the migrated tranche. */
+const QUICK_LOOP = "loops/quick-loop/LOOP.md";
+
 /**
  * The authority registry, checked in BOTH directions.
  *
@@ -50,11 +53,30 @@ describe("registro de autoridad — forma y unicidad", () => {
     }
   });
 
-  it("ninguna decisión cli-owned delega en juicio del agente o preferencia humana", () => {
-    const impossible = FLOW_DECISIONS.filter(
+  it("la propiedad no convierte juicio en regla: una fila migrada conserva su autoridad", () => {
+    // Until the QUICK cutover every `cli-owned` row happened to be `cli`, and this
+    // guard asserted that coincidence. It is not the invariant: ownership answers
+    // "does this CLI decide WHEN it is asked", authority answers "who produces the
+    // answer", and a migrated tranche moves the first without touching the second.
+    // What must stay impossible is the CLI claiming an agent's judgment or a
+    // person's preference as its own to materialize — which is exactly a row that
+    // DELEGATES an invocation without being `cli`.
+    const usurped = FLOW_DECISIONS.filter(
+      (decision) => decision.authority !== "cli" && actionOf(decision) !== null,
+    );
+    expect(usurped.map((decision) => decision.id)).toEqual([]);
+    // And the migrated non-`cli` rows are still non-`cli`: they come back as
+    // boundaries, they are not applied by the walk.
+    const migratedJudgment = FLOW_DECISIONS.filter(
       (decision) => decision.ownership === "cli-owned" && decision.authority !== "cli",
     );
-    expect(impossible.map((decision) => decision.id)).toEqual([]);
+    expect(migratedJudgment.map((decision) => decision.id)).toEqual([
+      "quick.entry-gate-signal",
+      "quick.gate-choice",
+      "quick.success-criteria-authoring",
+      "quick.success-criteria-ratification",
+      "quick.deliverable-authoring",
+    ]);
   });
 
   it("solo una decisión del CLI puede delegar su ejecución", () => {
@@ -168,15 +190,43 @@ describe("registro de autoridad — la migración arranca observable", () => {
     expect(hasLegacyOwnership(CHASSIS_SCOPE)).toBe(true);
   });
 
-  it("lo cli-owned es lo que un comando ya entregado posee hoy", () => {
+  it("lo migrado es QUICK entero y nada de otro tramo", () => {
     const owned = FLOW_DECISIONS.filter((decision) => decision.ownership === "cli-owned");
     expect(owned.length).toBeGreaterThan(0);
-    // No flow tranche is migrated yet: the cutovers are F11 · F13 · F14 · F15.
+    // QUICK is the first tranche cut over; SPEC, PLAN and the chassis follow, so
+    // the only migrated flow rows are QUICK's own plus the three a shipped command
+    // already owned. A row appearing here from another flow is a cutover that
+    // moved without its phase.
     const inFlows = owned.filter((decision) => flowOfScope(decision.scope) !== null);
-    expect(inFlows.map((decision) => decision.id)).toEqual([
+    const foreign = inFlows.filter(
+      (decision) => decision.scope !== "quick" && decision.document !== QUICK_LOOP,
+    );
+    expect(foreign.map((decision) => decision.id)).toEqual([
       "spec-refine.design-publication",
       "plan-new.numbering",
       "plan-exec.design-precondition",
+    ]);
+  });
+
+  it("el tramo QUICK migró sus 12 filas y NINGUNA transversal", () => {
+    const quick = decisionsOfScope("quick");
+    // The document is the boundary of the tranche, not the scope: five of QUICK's
+    // rows state their rule in CODE-POLICIES or DB-SCRIPTS-ONLY, which the other
+    // four flows read too. Migrating one of them here would cut over a tranche
+    // nobody planned — the drift this guard exists to catch.
+    const own = quick.filter((decision) => decision.document === QUICK_LOOP);
+    const transversal = quick.filter((decision) => decision.document !== QUICK_LOOP);
+    expect(own.length).toBe(12);
+    expect(own.every((decision) => decision.ownership === "cli-owned")).toBe(true);
+    expect(transversal.map((decision) => decision.ownership)).toEqual(
+      transversal.map(() => "legacy"),
+    );
+    expect(transversal.map((decision) => decision.document)).toEqual([
+      "loops/CODE-POLICIES.md",
+      "modules/DB-SCRIPTS-ONLY.md",
+      "loops/CODE-POLICIES.md",
+      "loops/CODE-POLICIES.md",
+      "loops/CODE-POLICIES.md",
     ]);
   });
 });

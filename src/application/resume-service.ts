@@ -1,6 +1,7 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { DesignRefState } from "./design/design-graph-service.js";
+import { projectRun } from "./flow/run-projection.js";
 import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { findArtifact } from "./session-artifacts.js";
@@ -72,7 +73,7 @@ export async function runResume(
 
   if (input.code !== undefined) return await resumeSession(fs, paths, index, input);
   if (input.target !== undefined) return resumeTarget(index, input.target);
-  return await resumePipeline(fs, index);
+  return await resumePipeline(fs, paths, index);
 }
 
 // ── explicit target ──────────────────────────────────────────────────────────
@@ -140,13 +141,17 @@ async function resumeSession(
   return {
     status: "proposal",
     via: "explicit",
-    proposal: await sessionProposal(fs, folder, path, session),
+    proposal: await sessionProposal(fs, paths, folder, path, session),
   };
 }
 
 // ── no target: the documental pipeline ───────────────────────────────────────
 
-async function resumePipeline(fs: FileSystemPort, index: WorklineIndex): Promise<ResumeOutcome> {
+async function resumePipeline(
+  fs: FileSystemPort,
+  paths: PathsService,
+  index: WorklineIndex,
+): Promise<ResumeOutcome> {
   const [head] = index.pipeline;
   if (head === undefined) {
     return { status: "idle", action: "no hay trabajo pendiente: el pipeline está vacío" };
@@ -160,18 +165,25 @@ async function resumePipeline(fs: FileSystemPort, index: WorklineIndex): Promise
   );
 
   if (tied.length > 1) {
-    const candidates = await Promise.all(tied.map((item) => pipelineProposal(fs, index, item)));
+    const candidates = await Promise.all(
+      tied.map((item) => pipelineProposal(fs, paths, index, item)),
+    );
     return {
       status: "candidates",
       candidates,
       action: `${tied.length} candidatos con la misma prioridad: elegí uno y volvé a invocar con su ruta`,
     };
   }
-  return { status: "proposal", via: "pipeline", proposal: await pipelineProposal(fs, index, head) };
+  return {
+    status: "proposal",
+    via: "pipeline",
+    proposal: await pipelineProposal(fs, paths, index, head),
+  };
 }
 
 async function pipelineProposal(
   fs: FileSystemPort,
+  paths: PathsService,
   index: WorklineIndex,
   item: PipelineItem,
 ): Promise<ResumeProposal> {
@@ -182,7 +194,7 @@ async function pipelineProposal(
   if (item.kind === "checkpoint-orphan") {
     const session = index.sessions.find((s) => s.folder === item.file);
     if (session !== undefined) {
-      return await sessionProposal(fs, session.folder, session.path, session);
+      return await sessionProposal(fs, paths, session.folder, session.path, session);
     }
   }
   const spec = index.specs.find((s) => s.file === item.file);
@@ -271,6 +283,7 @@ function describePlanNext(
 
 async function sessionProposal(
   fs: FileSystemPort,
+  paths: PathsService,
   folder: string,
   path: string,
   session: IndexedSession | undefined,
@@ -279,14 +292,22 @@ async function sessionProposal(
     (await readSection(fs, path, "session", "Objective")) ?? session?.summary ?? folder;
   const pending = await readSection(fs, path, "checkpoint", "Pending / Next");
   const completed = await readSection(fs, path, "checkpoint", "Completed");
+  // A run stopped at a boundary is a more precise answer than the CHECKPOINT's
+  // prose, and it is the only one that survives the conversation: it names the
+  // transition in force and, when something has to run, the exact invocation.
+  // The CHECKPOINT stays as the progress line — the two say different things.
+  const run = await projectRun(fs, paths, folder);
+  const directed = run !== null && run.boundary !== "final";
   return {
     kind: "session",
     file: folder,
     number: session?.code ?? null,
     objective,
     progress: completed === undefined ? "sin checkpoint" : `checkpoint presente: ${completed}`,
-    next: pending ?? "el checkpoint no declara trabajo pendiente",
-    command: `aw session-resume --code ${folder} --reopen`,
+    next: directed
+      ? `${run.summary}${pending === undefined ? "" : ` · CHECKPOINT: ${pending}`}`
+      : (pending ?? "el checkpoint no declara trabajo pendiente"),
+    command: directed ? run.command : `aw session-resume --code ${folder} --reopen`,
   };
 }
 

@@ -29,6 +29,7 @@ import {
   type DelegatedAction,
   type FlowDecision,
   actionOf,
+  alternativesOf,
   effectsOf,
 } from "../../domain/flow/authority.js";
 import {
@@ -42,12 +43,15 @@ import {
   type FlowDirective,
   type FlowStep,
   buildFlowDirective,
+  skippedStepOf,
   stepOf,
 } from "../../domain/flow/directive.js";
+import { bindAction, skipReason } from "../../domain/flow/rules.js";
 import {
   type FlowRunState,
   applyTransition,
   checkAgainstJourney,
+  skipTransition,
   withBoundary,
   withPendingAction,
 } from "../../domain/flow/run-state.js";
@@ -56,6 +60,7 @@ import {
   buildSemanticRequest,
   semanticDigest,
 } from "../semantic-operation/protocol.js";
+import { sessionNumericCode } from "../session-resolver.js";
 
 export interface AdvanceInput {
   state: FlowRunState;
@@ -119,6 +124,12 @@ export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
  * a validation that nothing ran. Both would be the engine claiming something it
  * cannot see, so both become boundaries: one declares its fallback, the other
  * names its invocation and waits for real output.
+ *
+ * A CONDITIONAL step is the one case that neither applies nor stops: the walk
+ * passes over it, records the omission with its cause, and keeps going whatever
+ * the step's authority would have been. That is checked first on purpose — a
+ * human boundary whose condition did not fire must never be emitted, or the
+ * migrated journey would ask a question the doctrine it replaces does not ask.
  */
 function walk(
   from: FlowRunState,
@@ -128,7 +139,14 @@ function walk(
   const applied: FlowStep[] = [];
   for (let index = state.applied.length; index < journey.length; index += 1) {
     const decision = journey[index];
-    if (decision === undefined || decision.authority !== "cli") break;
+    if (decision === undefined) break;
+    const skipped = skipReason(decision, journey, state.observations);
+    if (skipped !== null) {
+      state = skipTransition(state, decision.id);
+      applied.push(skippedStepOf(decision, skipped));
+      continue;
+    }
+    if (decision.authority !== "cli") break;
     if (decision.ownership !== "cli-owned") break;
     if (authorizeTransition(decision, state.authorizations).missing.length > 0) break;
     if (actionOf(decision) !== null) break;
@@ -182,6 +200,33 @@ export interface ResolvedBoundary {
   pending: string[];
   /** Seal of the boundary an answer has to quote back. */
   seal: string;
+  /** Why the run cannot continue, at a `blocked` boundary. */
+  error: CapabilityFailure | null;
+}
+
+/** The run's own coordinates, the only ones an invocation may reference. */
+function runBinding(state: FlowRunState): { session: string; code: string } {
+  return { session: state.session, code: sessionNumericCode(state.session) ?? state.session };
+}
+
+/**
+ * The action as this run would emit it: bound to its session, or refused.
+ *
+ * Every reader goes through here — the seal, the directive and the check `submit`
+ * runs against the result — so the invocation that gets sealed is the invocation
+ * that gets shown and the one the result is compared against. Binding in one of
+ * the three and not the others is how a run ends up rejecting its own action.
+ */
+function emittedAction(
+  state: FlowRunState,
+  stopped: FlowDecision | null,
+): { action: DelegatedAction | null; unbound: string | null } {
+  const declared = stopped === null ? null : actionOf(stopped);
+  if (declared === null) return { action: null, unbound: null };
+  const bound = bindAction(declared, runBinding(state));
+  return bound.ok
+    ? { action: bound.action, unbound: null }
+    : { action: null, unbound: bound.unbound };
 }
 
 export function resolveBoundary(
@@ -200,9 +245,10 @@ export function resolveBoundary(
       choices: [],
       pending,
       seal: boundarySeal(state, null),
+      error: null,
     };
   }
-  const action = actionOf(stopped);
+  const emitted = emittedAction(state, stopped);
   // Computed for `cli` rows only, which is where every row that really writes or
   // runs lives today (13 of them, all `cli`). The day a row with authority `agent`
   // or `human` declares a non-self-authorizable effect, this condition is the
@@ -216,16 +262,32 @@ export function resolveBoundary(
   // `execute`, and letting ownership answer first would hand them to doctrine with
   // their effects unapproved — the authorization gate bypassed by a field that has
   // nothing to do with it.
-  const kind = boundaryKind(stopped, (authorization?.missing.length ?? 0) > 0);
+  // An invocation this run cannot bind is a defect of the registry, not a step to
+  // hand to anybody: emitting it would print a placeholder where a command goes.
+  // It becomes a block — the one boundary that says "nothing can continue and here
+  // is why" — instead of degrading into a question nobody can answer.
+  const kind =
+    emitted.unbound === null
+      ? boundaryKind(stopped, (authorization?.missing.length ?? 0) > 0)
+      : "blocked";
   return {
     stopped,
     kind,
     authorization,
     request: kind === "semantic" ? boundaryRequest(stopped, state) : null,
-    action: kind === "execution" ? action : null,
+    action: kind === "execution" ? emitted.action : null,
     choices: choicesFor(kind, stopped, authorization),
     pending,
     seal: boundarySeal(state, stopped),
+    error:
+      emitted.unbound === null
+        ? null
+        : {
+            code: "FLOW_ACTION_UNBOUND",
+            message: `la acción de '${stopped.id}' referencia ${emitted.unbound} y esta corrida no puede resolverlo`,
+            action:
+              "corregí la invocación del registro: una acción solo referencia las coordenadas de la corrida",
+          },
   };
 }
 
@@ -276,7 +338,7 @@ function boundaryInputs(
   state: FlowRunState,
   stopped: FlowDecision | null,
 ): { state: string; transition: string | null; action: string | null } {
-  const action = stopped === null ? null : actionOf(stopped);
+  const action = emittedAction(state, stopped).action;
   return {
     state: state.digest,
     transition: stopped?.id ?? null,
@@ -322,6 +384,9 @@ export function directiveFor(
     action: resolved.action,
     choices: resolved.choices,
     authorizations: state.authorizations,
+    // The cause of a block travels with the boundary that declares it: a
+    // `blocked` directive without its error is refused at construction.
+    error: resolved.error,
     // The transition it stopped on is PLANNED even though nothing applied it: the
     // person is being asked to approve those exact classes.
     effects: {
@@ -362,19 +427,29 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
 }
 
 /**
- * A human boundary with no rule to break the tie.
+ * A human boundary: the alternatives the row declares, or the generic pair.
  *
- * Two alternatives and nothing inferred: continuing means the person decides how
- * this transition resolves, and stopping the run is always a real option. The
- * tranche that migrates the transition replaces these with its own alternatives.
+ * A migrated tranche names its own options — the ones its doctrine used to
+ * enumerate — and the engine emits them verbatim, which is what makes the
+ * directed journey equivalent to the one it replaces instead of merely similar.
+ * Whatever the row says, STOPPING is appended here and never comes from the row:
+ * declining is not one of the transition's outcomes, it is the run's right, and a
+ * tranche must not be able to write a boundary nobody can walk away from.
  */
 function humanChoices(decision: FlowDecision): FlowDirective["choices"] {
+  const own = alternativesOf(decision);
+  const resolve: FlowDirective["choices"] =
+    own === null
+      ? [
+          {
+            label: "Resolver la frontera",
+            consequence: `decidís '${decision.title}' y el recorrido sigue desde ahí`,
+            recommended: true,
+          },
+        ]
+      : own.map((choice) => ({ ...choice }));
   return [
-    {
-      label: "Resolver la frontera",
-      consequence: `decidís '${decision.title}' y el recorrido sigue desde ahí`,
-      recommended: true,
-    },
+    ...resolve,
     {
       label: "Cerrar",
       consequence: "el recorrido queda detenido acá, con su estado y su frontera persistidos",

@@ -114,6 +114,10 @@ function renderDetail(data: StatusOutput): string[] {
   ];
   for (const session of data.sessions.active) {
     lines.push(`  · ${session.folder} — ${session.summary} (${session.relative})`);
+    // A run stopped at a boundary is what that session is actually waiting on,
+    // and at an execution boundary the invocation is printed verbatim: whoever
+    // resumes must never have to reconstruct the command from prose.
+    if (session.flow !== null) lines.push(`      ${session.flow.summary}`);
   }
   if (data.discarded.length > 0) {
     lines.push(`Descartados: ${data.discarded.length}`);

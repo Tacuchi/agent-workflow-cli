@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { DESCRIPTION_MAX } from "../../src/application/plugin-doctor/skills.js";
 import { SKILL_DIR_NAME, splitCommandDoc } from "../../src/application/self/install-skill.js";
 import { DOCS_FOLDERS } from "../../src/application/workspace-init-service.js";
+import { decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 
 // Consistency guards for the `w` skill bundle. These catch CROSS-SKILL drift —
@@ -178,14 +179,21 @@ describe("QUICK escalation contract — quick-loop ↔ spec-refine-loop ↔ spec
     await expect(readSurface("commands/spec-new.md")).resolves.toBeTruthy();
   });
 
-  it("the size gate runs BEFORE the quick session is created (Sequence order)", async () => {
-    const quick = await readSurface(QUICK_LOOP);
-    const seq = quick.slice(quick.indexOf("## Sequence"));
-    const gate = seq.indexOf("exceeds a quick");
-    const create = seq.indexOf('create_or_resume("<slug>-quick")');
+  it("the size gate runs BEFORE the quick session is created (journey order)", async () => {
+    // The order used to be pinned as two strings in the Sequence block. The QUICK
+    // cutover moved the rule into the registry, so the invariant is asserted where
+    // it now decides: an escalated quick must never have created a session, and
+    // that is only true while these rows come first in the journey.
+    const ids = decisionsOfScope("quick").map((decision) => decision.id);
+    const gate = ids.indexOf("quick.entry-size-gate");
+    const choice = ids.indexOf("quick.gate-choice");
+    const create = ids.indexOf("quick.session-create");
     expect(gate).toBeGreaterThan(-1);
-    expect(create).toBeGreaterThan(-1);
-    expect(gate).toBeLessThan(create);
+    expect(choice).toBeGreaterThan(gate);
+    expect(create).toBeGreaterThan(choice);
+    // And the document no longer re-states the threshold it handed over.
+    const quick = await readSurface(QUICK_LOOP);
+    expect(quick).not.toContain("≥2 of:");
   });
 
   it("spec-refine-loop declares the quick escalation as a second Started-by path", async () => {

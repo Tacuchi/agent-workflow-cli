@@ -29,7 +29,7 @@ import { type EffectClass, isEffectClass } from "../capability/effects.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
 import type { FlowDecision } from "./authority.js";
 
-export const FLOW_RUN_STATE_VERSION = 2;
+export const FLOW_RUN_STATE_VERSION = 3;
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -81,8 +81,23 @@ export interface FlowRunState {
   flow: WorklineFlow;
   /** Session folder that owns the run (`NNN-<slug>-<flow>`). */
   session: string;
-  /** Transition ids already applied, in the order they were applied. */
+  /**
+   * Transition ids the run has already passed, in order — the journey's CURSOR.
+   *
+   * A member of {@link skipped} was passed WITHOUT being applied. Keeping both in
+   * one list is what makes the cursor a length instead of a search, and splitting
+   * them into two cursors is how a conditional step would silently desynchronize
+   * the run from its journey.
+   */
   applied: string[];
+  /**
+   * Ids the run passed over because their condition did not hold.
+   *
+   * Always a subset of {@link applied}: a conditional step that never happened is
+   * still accounted for, and the difference between "decided" and "did not apply"
+   * stays readable after the fact instead of being lost in a cursor.
+   */
+  skipped: string[];
   /** The transition the run is standing on, or null when nothing is pending. */
   boundary: string | null;
   /** The delegated action awaiting its result, or null when none is pending. */
@@ -118,6 +133,7 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
     flow,
     session,
     applied: [],
+    skipped: [],
     boundary: null,
     pending_action: null,
     observations: [],
@@ -151,6 +167,23 @@ export function applyTransition(
       approved: [...state.effects.approved],
       applied: union(state.effects.applied, effects),
     },
+  });
+}
+
+/**
+ * Pass over a conditional transition without applying it.
+ *
+ * The cursor advances — the journey is a sequence and the run has to leave the
+ * step behind — but nothing else moves: no effect is planned, none is applied,
+ * and the id lands in `skipped` so the trace can say the step was omitted rather
+ * than decided. A skip that only advanced the cursor would be indistinguishable
+ * from having applied it, which is the exact lie a conditional step invites.
+ */
+export function skipTransition(state: FlowRunState, decisionId: string): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    applied: [...state.applied, decisionId],
+    skipped: [...state.skipped, decisionId],
   });
 }
 
@@ -319,7 +352,12 @@ function checkShape(parsed: Record<string, unknown>): CapabilityFailure | null {
   if (typeof parsed.session !== "string" || parsed.session.trim().length === 0) {
     return invalid("no dice a qué sesión pertenece");
   }
-  if (!isStringArray(parsed.applied)) return invalid("no trae la lista de transiciones aplicadas");
+  const applied = parsed.applied;
+  if (!isStringArray(applied)) return invalid("no trae la lista de transiciones aplicadas");
+  if (!isStringArray(parsed.skipped)) return invalid("no trae la lista de transiciones omitidas");
+  if (parsed.skipped.some((id) => !applied.includes(id))) {
+    return invalid("declara una transición omitida que el recorrido nunca pasó");
+  }
   if (parsed.boundary !== null && typeof parsed.boundary !== "string") {
     return invalid("declara una frontera que no es un identificador");
   }

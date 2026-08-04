@@ -1,6 +1,7 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { DesignGraph } from "./design/design-graph-service.js";
+import { type FlowRunProjection, projectRun } from "./flow/run-projection.js";
 import type { PathsService } from "./paths-service.js";
 import {
   type IndexedDiscarded,
@@ -29,6 +30,13 @@ export interface StatusSession {
   summary: string;
   date: string;
   relative: string;
+  /**
+   * Where this session's directed run stands, or `null` when it has none.
+   *
+   * Read only for ACTIVE sessions: a closed one has nothing to resume, and the
+   * dashboard would pay one file read per session of the whole history to say so.
+   */
+  flow: FlowRunProjection | null;
 }
 
 export interface StatusOutput {
@@ -75,13 +83,15 @@ export async function runStatusCommand(
   const active: StatusSession[] = [];
   const closed: StatusSession[] = [];
   for (const session of index.sessions) {
-    (session.state === "closed" ? closed : active).push({
+    const isClosed = session.state === "closed";
+    (isClosed ? closed : active).push({
       code: session.code,
       folder: session.folder,
       type: session.type,
       summary: session.summary,
       date: session.date,
       relative: session.relative,
+      flow: isClosed ? null : await projectRun(fs, paths, session.folder),
     });
   }
 

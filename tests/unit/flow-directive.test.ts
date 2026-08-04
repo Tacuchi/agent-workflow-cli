@@ -15,7 +15,9 @@ import {
   FLOW_BOUNDARY_KINDS,
   FLOW_DIRECTIVE_KEYS,
   FLOW_DIRECTIVE_REUSED_KEYS,
+  FLOW_STEP_OUTCOMES,
   type FlowBoundary,
+  type FlowStep,
   buildFlowDirective,
   renderDirectiveHuman,
 } from "../../src/domain/flow/directive.js";
@@ -163,6 +165,36 @@ describe("directiva de frontera — la forma válida", () => {
       "blocked",
       "final",
     ]);
+    // Y lo que un paso pudo hacer también es cerrado: aplicarse u omitirse. Un
+    // tercer valor sería un estado que ninguna superficie sabe presentar.
+    expect([...FLOW_STEP_OUTCOMES]).toEqual(["applied", "skipped"]);
+  });
+
+  it("un paso omitido declara su motivo y uno aplicado no lo lleva", () => {
+    const step = { transition: "quick.gate-choice", authority: "human", ownership: "cli-owned" };
+    const built = buildFlowDirective({
+      ...BASE,
+      boundary: boundary({ kind: "semantic", authority: "agent" }),
+      request: request(),
+      outcome: "needs_input",
+      // La traza dice "omitida" sin decir por qué: eso es un paso que nadie puede
+      // auditar, y se rechaza al construir la directiva.
+      applied: [{ ...step, outcome: "skipped", reason: "" } as FlowStep],
+      nextAction: "seguí",
+    });
+    if (built.ok) throw new Error("una omisión sin motivo no puede construirse");
+    expect(built.failure.code).toBe("FLOW_DIRECTIVE_STEP_REASON_MISMATCH");
+
+    const invented = buildFlowDirective({
+      ...BASE,
+      boundary: boundary({ kind: "semantic", authority: "agent" }),
+      request: request(),
+      outcome: "needs_input",
+      applied: [{ ...step, outcome: "applied", reason: "porque sí" } as FlowStep],
+      nextAction: "seguí",
+    });
+    if (invented.ok) throw new Error("un paso aplicado no lleva motivo de omisión");
+    expect(invented.failure.code).toBe("FLOW_DIRECTIVE_STEP_REASON_MISMATCH");
   });
 
   it("una frontera legacy declara el fallback y no ofrece nada que elegir", () => {

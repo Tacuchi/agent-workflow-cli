@@ -219,15 +219,41 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
     const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
     let directive = adopted.directive;
-    for (let step = 0; step < 10 && directive.boundary.kind !== "authorization"; step += 1) {
+    for (let step = 0; step < 20 && directive.boundary.kind !== "authorization"; step += 1) {
       const resolved = await current();
-      const body =
-        resolved.kind === "semantic"
-          ? { input_digest: resolved.seal, decisions: { paso: resolved.stopped?.id } }
-          : { input_digest: resolved.seal, choice: "Resolver la frontera" };
-      directive = await answer(JSON.stringify(body));
+      directive = await answer(JSON.stringify(bodyFor(resolved)));
     }
     return directive;
+  }
+
+  /**
+   * Whatever the boundary in force admits — including the real output an
+   * `execution` boundary demands.
+   *
+   * QUICK's migrated tranche delegates its search, its seeding and its gate, so a
+   * walk that only knew how to answer judgments and preferences would stall
+   * before reaching the authorization this file is about.
+   */
+  function bodyFor(resolved: Awaited<ReturnType<typeof current>>): Record<string, unknown> {
+    if (resolved.kind === "semantic") {
+      return { input_digest: resolved.seal, decisions: { paso: resolved.stopped?.id } };
+    }
+    if (resolved.kind === "execution" && resolved.action !== null) {
+      const declared = effectsOf(resolved.stopped as FlowDecision);
+      return {
+        input_digest: resolved.seal,
+        outcome: "completed",
+        invocation: resolved.action.invocation,
+        validations: resolved.action.evidence.map((id) => ({
+          id,
+          passed: true,
+          detail: `salida real de ${id} en el fixture`,
+        })),
+        effects: { planned: [...declared], approved: [], applied: [...declared] },
+        output: null,
+      };
+    }
+    return { input_digest: resolved.seal, choice: "Resolver la frontera" };
   }
 
   it("declinar la autorización NO exige entregar la aprobación que se está negando", async () => {
@@ -282,16 +308,30 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
       raw: JSON.stringify({ input_digest: resolved.seal, choice: "Autorizar el efecto" }),
       approval: digest,
     });
-    if (!granted.ok) throw new Error("esperaba que la aprobación se aplicara");
+    if (!granted.ok) throw new Error("esperaba que la aprobación se registrara");
     expect(granted.directive.error).toBeNull();
     expect(granted.directive.authorizations).toContain("execute");
     expect(granted.directive.effects.approved).toContain("execute");
-    expect(granted.directive.effects.applied).toContain("execute");
+    // Approving is NOT running: the gate delegates its execution, so the run holds
+    // at the invocation and `execute` stays unapplied until real output comes back.
+    // Applying here would credit a test suite nobody ran — the whole point of the
+    // execution contract.
+    expect(granted.directive.boundary.kind).toBe("execution");
+    expect(granted.directive.effects.applied).not.toContain("execute");
+
+    const held = await readRun(fs, locateRun(paths, SESSION));
+    if (!held.ok) throw new Error("esperaba leer la corrida");
+    expect(held.state.authorizations).toContain("execute");
+    expect(held.state.effects.approved).toContain("execute");
+    expect(held.state.effects.applied).not.toContain("execute");
+
+    // And only the result closes it.
+    const executed = await answer(JSON.stringify(bodyFor(await current())));
+    expect(executed.error).toBeNull();
+    expect(executed.effects.applied).toContain("execute");
 
     const after = await readRun(fs, locateRun(paths, SESSION));
     if (!after.ok) throw new Error("esperaba leer la corrida");
-    expect(after.state.authorizations).toContain("execute");
-    expect(after.state.effects.approved).toContain("execute");
     expect(after.state.effects.applied).toContain("execute");
   });
 });

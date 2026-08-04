@@ -48,20 +48,20 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 
 ## QUICK delta — minimal ceremony
 
+> **Directed tranche:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document — it names the boundary in force, its alternatives, and the exact invocation when something has to run outside. What stays here is the *why*, plus every step that is judgment or preference.
+
 - **No phases, no plan-doc**: the prompt **is** the task (a single unit). No roadmap.
 - **Proportional verification-first** (minimal ceremony): even here the check is **seeded before**, sized to the task. Code: one test (bug repro → fix) or "existing build/lint/tests stay green" (chore). **Analysis/design**: a **short falsifiable rubric**, *ratified by the user* before pursuing it. It is the run's `SESSION.Success criteria` (see [chassis § *Verification-first*](../CHASSIS.md)).
 - **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, verify each source's expected branch (`aw check-branch`); **proposed** commit (approve first) — never `push`/`--amend`/`--no-verify`. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql` (read-only queries do run, via MCP).
 - **One session. One commit** proposed at the end (only if there were code changes), **after the proportional closing review gate** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate*): diff re-read + ambient conventions; fix or defer; nothing reaches the commit unreviewed.
-- **Entry SIZE GATE** (before creating the session): on receiving the objective, evaluate whether it **exceeds a quick**. It fires **only on clear signals** (≥2 of: needs architecture · ≥2 sources · multiple deliverables · large feature/refactor · ambiguous requirements needing elicitation); signals already resolved by *adopted context* do **not** fire (e.g. a host pre-analysis in this conversation that removed the ambiguity — chassis § *Adopted context*); borderline → **continue in quick without asking** (if it later grows, mid-loop escalation covers it). A **resume** of an existing quick does **not** re-fire the gate. If it fires → **structured-choice** (1 content question, recommendation first + `flow` control; `Cerrar` here = abort, nothing created yet):
-  - **`Cambiar a SPEC`** (recommended) → **no quick session is created**: run the *Live transition to SPEC* (next bullet).
-  - **`Seguir en quick`** → continue normally (`create_or_resume` + loop).
-  - **`Recortar alcance`** → the AI proposes the **sub-task that DOES fit** a quick; the loop continues with it (`SESSION.Objective` = the sub-task; the original prompt goes into the session's `## Origin`) and the rest is deferred to `BACKLOG` ("trimmed at the gate — may warrant its own spec, `/w:spec-new`").
-  - **Anti-duplicate** (the `create_or_resume` spirit): if a spec whose `## Origin` references this same objective already exists (or an equivalent `*-spec-refine` session), the recommended option becomes **resuming that spec** (`/w:spec-refine` semantics) — never a second draft.
+- **Entry SIZE GATE** (before creating the session): a quick that should have been a spec costs more than the ceremony it saved, so the size of the objective is judged **before** anything exists. Your part is recognizing the signals; the threshold, the question and its options are the CLI's. A signal already resolved by *adopted context* is **not** a signal (chassis § *Adopted context*). A **resume** of an existing quick never re-fires it.
+  - **`Recortar alcance`**, if chosen: propose the **sub-task that DOES fit** a quick (`SESSION.Objective` = the sub-task; the original prompt goes into `## Origin`) and defer the rest to `BACKLOG` ("trimmed at the gate — may warrant its own spec, `/w:spec-new`").
+  - **`Cambiar a SPEC`**, if chosen: **no quick session is created** — run the *Live transition to SPEC* (next bullet).
 - **Live transition to SPEC** (shared by the gate and mid-loop escalation). On acceptance, the work line **moves to the SPEC flow**: the explicit consent in the structured-choice **equals invoking the destination command** (*consented exception* — rule 3 of the *Continuity rule*, [`../../SKILL.md`](../../SKILL.md) § *Operating context*). On the SPEC side:
   1. **Materialize the draft** via the [`../../commands/spec-new.md`](../../commands/spec-new.md) procedure: `aw next-number docs/specs`, slug, schema, single-pass **NO RESEARCH** — its bounded reconnaissance does **not** re-fire (this run's context arrives adopted). `## Origin` = "escalated from `/w:quick`" + the original prompt (+ the origin quick session if it exists). The draft is born `status: draft`: only the SPEC gate promotes it to `ready-for-plan`.
   2. **Load and execute** [`../spec-refine-loop/LOOP.md`](../spec-refine-loop/LOOP.md) — over that spec (trampoline pattern).
   3. The run's session is that loop's **normal** `NNN-<slug>-spec-refine` (the CLI numbers it; its `## Origin` records the escalation). **Invariant 2 intact**: quick, while it is quick, never writes `docs/` — the draft is written by the SPEC flow, post-consent.
-- **Mid-loop escalation + handoff**: if the task grows (same gate signals) → propose moving up to **SPEC/PLAN** (structured-choice, recommendation first). If the user accepts:
+- **Mid-loop escalation + handoff**: if the task grows, declare the signals again — the CLI applies the same threshold and, if it fires, asks. If the user accepts moving up:
   1. The **already-edited code stays** in the working tree (never reverted) and is **recorded** in `CHECKPOINT` + `BACKLOG`: "uncommitted changes in `<source>` — decide commit/discard on resume" (the "rejected commit" pattern, [`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Safe git*).
   2. The quick session goes to `finalize` with the **pointer** in `BACKLOG`: to **PLAN** → "escalated to `docs/plans/PPP` — resume there" (**deferred** as today: seed + pointer, no live entry); to **SPEC** → "escalated to `docs/specs/NNN` — **continued live** (session `NNN-<slug>-spec-refine`)".
   3. The artifacts (`DECISION`, `SCRIPTS.sql`) **stay in the quick session** as referenceable context for the new session (never migrated).
@@ -71,21 +71,13 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 
 ```
 quick-loop(prompt):
-  # SIZE GATE — BEFORE creating a session; new work lines only (a resume does not re-fire it)
-  if the objective exceeds a quick (≥2 clear signals — see delta):
-    if a spec / spec-refine session for this objective already exists → recommend RESUMING it (/w:spec-refine)  # anti-duplicate
-    structured_choice(content: [Cambiar a SPEC (recommended), Seguir en quick, Recortar alcance],
-                      flow: [Compactar, Cerrar])           # Cerrar here = abort (nothing created yet)
-    Cambiar a SPEC   → live transition (see delta): draft (spec-new procedure) +
-                       load and execute ../spec-refine-loop/LOOP.md → END (no quick session)
-    Recortar alcance → objective = the proposed sub-task; the rest → BACKLOG when the session is created
-    Seguir en quick  → continue
-  s = create_or_resume("<slug>-quick")      # CLI prepends global NNN; always a light session
-  seed SESSION.Objective = the prompt
+  # The CLI drives the entry gate, its anti-duplicate search and the session, and
+  # stops at each boundary it cannot decide; it verifies the seeding afterwards.
+  # `Cambiar a SPEC` → live transition (see delta): draft (spec-new procedure) +
+  #                    load and execute ../spec-refine-loop/LOOP.md → END (no quick session)
   if the conversation already established analysis/conclusions →                 # adopted context (chassis)
     adopt them (SESSION.Origin = "adopted from host conversation"; reference in CONCLUSIONS) — never re-derive/re-ask
-  seed SESSION.Success criteria = the deliverable's check   # verification-first, BEFORE: test(s) if code · short RATIFIED rubric if analysis/design
-  seed CHECKPOINT.Pending/Next = the task (s)               # BEFORE: seed the intent (artifact-first)
+  author SESSION.Success criteria = the deliverable's check  # test(s) if code · short RATIFIED rubric if analysis/design
   work the task (minimal loop):
     if it edits code → verify each source's expected branch (`aw check-branch`); mismatch → pause + resolve
     produce the deliverable: edit code (minimal change) OR author the analysis/design
@@ -93,11 +85,11 @@ quick-loop(prompt):
     if DB change (DDL/DML) → SCRIPTS.sql (session artifact, DO NOT execute)
     if non-obvious decision → DECISION
     if doubt/gap → inline research, a probe OR structured-choice   # chassis § Proof of concept
-    if the task GROWS → propose escalating to SPEC/PLAN      # structured-choice, recommendation first
-        accepts PLAN → handoff (progress stays; BACKLOG→seeded plan — resume there, deferred) → goto finalize
-        accepts SPEC → handoff (progress stays; BACKLOG→"continued live") → finalize →
-                       live transition (see delta): draft if missing + spec-refine-loop
-  convergence gate: Success criteria green                   # tests green if code · rubric satisfied if analysis/design
+    if the task GROWS → declare the signals again; if the CLI asks and the user accepts:
+        PLAN → handoff (progress stays; BACKLOG→seeded plan — resume there, deferred) → goto finalize
+        SPEC → handoff (progress stays; BACKLOG→"continued live") → finalize →
+               live transition (see delta): draft if missing + spec-refine-loop
+  convergence gate: run the Success criteria and hand back their real output
   if there were code changes:
     closing review gate (proportional):                      # diff re-read + installed ambient conventions
         findings → fix (re-validate) OR defer justified (BACKLOG)
@@ -108,11 +100,11 @@ finalize: CHECKPOINT (AFTER: Pending→Completed) + BACKLOG (only if something i
 
 ## Convergence / exit
 
-- **Success criteria green** (proportional) + closing review gate passed and commit proposed if there was code (or skipping it approved) → `Cerrar`.
+- Closing review gate passed and commit proposed if there was code (or skipping it approved) → `Cerrar`.
 - `Cerrar`/`Compactar` (`flow` control) → persists `CHECKPOINT` + `BACKLOG` (resumable).
 - **No export**: nothing goes to `docs/`. Anything worth preserving → promoted separately via `export-*`, or escalated (to SPEC **live** — the line continues in spec-refine already as SPEC flow; to PLAN **deferred**, seed + pointer).
 
-> QUICK's *convergence gate* is **proportional verification-first**: a **short** `Success criteria` seeded at start (not the *absence* of a checklist — its minimal version) — for code, "the change does what the prompt asked + tests/build green"; for analysis/design, a short ratified rubric. Minimal ceremony by design, but **always with the check declared first**.
+> QUICK's *convergence gate* is **proportional verification-first**: a **short** `Success criteria` declared at start (not the *absence* of a checklist — its minimal version). The CLI evaluates it, and it evaluates the **real output** of running those criteria — a claim that they passed is not a result.
 
 ## Conditional modules
 
