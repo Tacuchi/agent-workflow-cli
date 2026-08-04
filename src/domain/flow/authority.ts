@@ -127,6 +127,21 @@ export interface FlowDecision {
    * verbatim instead of the caller re-deriving them from a document.
    */
   alternatives?: readonly FlowChoice[];
+  /**
+   * Where this transversal row is composed into every flow's journey.
+   *
+   * Only a `chassis` row carries one, and carrying it is what makes the row a
+   * STEP a real run crosses instead of an entry in an inventory. See
+   * {@link RunPlacement} and {@link journeyOfFlow}.
+   */
+  placement?: RunPlacement;
+  /**
+   * What already makes this rule true, when no run walks it as a step.
+   *
+   * Present exactly on the `cli-owned` rows that are neither steps of a journey
+   * nor owned by a command of their own. See {@link Realization}.
+   */
+  realized_by?: Realization;
 }
 
 /** One alternative of a boundary that chooses: what it is, and what it costs. */
@@ -267,6 +282,56 @@ export function alternativesOf(decision: FlowDecision): readonly FlowChoice[] | 
 }
 
 /**
+ * Where a transversal row sits inside a flow's journey.
+ *
+ * The chassis is not a `WorklineFlow`, so nothing walks `chassis` on its own: a
+ * run walks ONE flow, and a transversal step is only crossed if it is composed
+ * into that flow's journey at a declared position. `prefix` runs before the
+ * flow's own first step and `suffix` after its last — which is exactly the two
+ * positions the engine's transversal steps occupy, one establishing a constraint
+ * the whole run is held to, the other closing it.
+ *
+ * Declared as data next to the row for the same reason the journey itself is a
+ * table: a position computed in code would be a second place to look when asking
+ * "when does this happen?".
+ */
+export const RUN_PLACEMENTS = ["prefix", "suffix"] as const;
+
+export type RunPlacement = (typeof RUN_PLACEMENTS)[number];
+
+/**
+ * What already makes a rule true, for a row nothing walks and no command owns.
+ *
+ * The third way a migrated rule becomes observable. A row can be `cli-owned`
+ * without being a step — the CLI decides it, but by holding a shape everywhere
+ * rather than by stopping at one point — and the honest way to say that is to
+ * name the thing that holds it. Without this field such a row would be ownership
+ * asserted and nothing else, which is the one defect this migration cannot ship:
+ * the reviews of F11 and F12 already retired two surfaces that had no caller.
+ *
+ * Two kinds because there are two real answers. `engine` names a symbol in this
+ * codebase that enforces the rule on every boundary; `transitions` names the flow
+ * rows that INSTANCE it — a transversal rule whose every occurrence was already
+ * migrated as part of some tranche is realized by those rows and by nothing else.
+ * The guard checks both directions: the symbol exists in its module, the named
+ * rows exist and are themselves migrated, and no `cli-owned` row is left with no
+ * form at all.
+ */
+export type Realization =
+  | { kind: "engine"; module: string; symbol: string }
+  | { kind: "transitions"; ids: readonly string[] };
+
+/** How this row is observable when no run walks it, or `null` when one does. */
+export function realizationOf(decision: FlowDecision): Realization | null {
+  return decision.realized_by ?? null;
+}
+
+/** Where this row sits in a flow's journey, or `null` when it is the flow's own. */
+export function placementOf(decision: FlowDecision): RunPlacement | null {
+  return decision.placement ?? null;
+}
+
+/**
  * A public command with no journey decision of its own, and why.
  *
  * The exclusion is the honest half of exhaustiveness: `aw mcp` configures MCP
@@ -291,6 +356,32 @@ const cmd = (name: string): DecisionScope => `${COMMAND_SCOPE_PREFIX}${name}`;
  */
 const QUICK_ATTRIBUTION =
   "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
+
+/**
+ * What the engine's own document says about who decides its transversal steps.
+ *
+ * Deliberately the SAME sentence the tranches use. The chassis is the last
+ * document to hand its rules over, and reading the identical marker there is the
+ * point: a rule the CLI decides says so the same way wherever it used to live.
+ */
+const CHASSIS_ATTRIBUTION = QUICK_ATTRIBUTION;
+
+/**
+ * What `modules/COMPACTION.md` says about who decides compaction.
+ *
+ * Its own marker rather than the shared one: compaction is not a step of any
+ * journey — it fires at whatever boundary the run happens to be standing on —
+ * so the sentence names the command that executes it instead of the walk.
+ */
+const COMPACTION_ATTRIBUTION = "`aw checkpoint-write --can-pause`";
+
+/**
+ * What the continuity documents say about who resolves which line a prompt joins.
+ *
+ * Also its own: these rules fire BEFORE a run exists, so no directive can carry
+ * them. What decides is the session resolution of the commands named here.
+ */
+const CONTINUITY_ATTRIBUTION = "`aw resume`";
 
 /**
  * The entry gate's rule: two of the five declared signals.
@@ -397,14 +488,64 @@ const PLAN_SPLIT_SIGNALS = [
  */
 export const FLOW_DECISIONS: readonly FlowDecision[] = [
   // ── Transversal chassis: the engine every loop runs underneath its deltas ──
+  //
+  // Three forms of observable ownership live in this block, and which one a row
+  // takes is a fact about the RULE, not a preference. A row with a `placement` is
+  // composed into every flow's journey and a real run crosses it. A row with a
+  // `realized_by` is held by something that already exists — a symbol of this
+  // engine, or the flow rows that instance it. Everything else that used to be
+  // here moved to the scope of the command that executes it, because a rule that
+  // fires between prompts or at an arbitrary boundary is not a step of a journey.
+  {
+    id: "chassis.docs-boundary",
+    scope: CHASSIS,
+    title: "resolver en qué carpeta de docs puede escribir el loop",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    // First of the whole journey, and deliberately so: it fixes the only folders
+    // this run may write BEFORE any step that writes is even emitted. Resolved
+    // afterwards it would be a rule checked against writes that already happened.
+    placement: "prefix",
+  },
+  {
+    id: "chassis.research-exhaustion",
+    scope: CHASSIS,
+    title: "marcar un gap agotado tras el tope de intentos y degradarlo",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    // Same shape as the boundary above: the step fixes the cap the whole run is
+    // held to, and the engine applies it at every boundary. What it prevents is
+    // the loop the doctrine names — asking the same thing until something gives —
+    // by turning the attempt after the cap into a degradation with a destination.
+    placement: "prefix",
+  },
   {
     id: "chassis.session-create-or-resume",
     scope: CHASSIS,
     title: "abrir la sesión de la corrida o reanudar la existente",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
     effects: ["local_additive"],
+    // Not a step of the composed journey, and the reason is precise: every flow
+    // ALREADY opens with its own session row, so composing a sixth one would ask
+    // the same question twice per run. The rule is transversal; its occurrences
+    // are these five, and they are what make it true.
+    realized_by: {
+      kind: "transitions",
+      ids: [
+        "quick.session-create",
+        "spec-refine.session",
+        "plan-new.session",
+        "plan-refine.session",
+        "plan-exec.session",
+      ],
+    },
   },
   {
     id: "chassis.session-numbering",
@@ -414,185 +555,189 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
     attribution: "The CLI owns the number (hard rule)",
-  },
-  {
-    id: "chassis.session-locate",
-    scope: CHASSIS,
-    title: "localizar o reabrir una sesión existente por descriptor y origen",
-    authority: "cli",
-    ownership: "legacy",
-    document: "modules/SESSION-NUMBERING.md",
+    realized_by: { kind: "transitions", ids: ["session-create.numbering"] },
   },
   {
     id: "chassis.success-criteria-seed",
     scope: CHASSIS,
     title: "sembrar los criterios de éxito antes de ejecutar (verification-first)",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    // QUICK's two, and only QUICK's: it is the one flow whose deliverable has no
+    // document of its own, so its criteria have to be authored and ratified as a
+    // step. The other four take theirs from the spec or plan they already read —
+    // "referenced, not duplicated" — so there is nothing for them to seed, and
+    // inventing a row for each would be four steps that ask nothing.
+    realized_by: {
+      kind: "transitions",
+      ids: ["quick.success-criteria-authoring", "quick.success-criteria-ratification"],
+    },
   },
   {
     id: "chassis.gap-detection",
     scope: CHASSIS,
     title: "detectar los gaps materiales del trabajo",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    realized_by: {
+      kind: "transitions",
+      ids: ["spec-refine.gap-recognition", "plan-exec.entry-gap-recognition"],
+    },
   },
   {
     id: "chassis.gap-batching",
     scope: CHASSIS,
     title: "tomar un lote de a lo sumo 3 gaps por vuelta",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    // The engine holds the stricter form of the same rule: it stops at the FIRST
+    // step it cannot apply, so a run never carries more than one open boundary.
+    // "At most three" is the ceiling of a loop that batches; one is what a
+    // directed journey emits, and it satisfies the ceiling by construction.
+    realized_by: {
+      kind: "engine",
+      module: "src/application/flow/advance.ts",
+      symbol: "resolveBoundary",
+    },
   },
   {
     id: "chassis.resolver-selection",
     scope: CHASSIS,
     title: "elegir el resolvedor de un gap con la regla adoptar/investigar/probar/preguntar",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
-  },
-  {
-    id: "chassis.research-exhaustion",
-    scope: CHASSIS,
-    title: "marcar un gap agotado tras el tope de intentos y degradarlo",
-    authority: "cli",
-    ownership: "legacy",
-    document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    // The ask-vs-research discriminator IS the boundary taxonomy, already: a
+    // `semantic` boundary is the judgment the agent produces, a `human` one the
+    // preference only a person holds, an `execution` one the thing that has to be
+    // run. Choosing the resolver and classifying the boundary are one act.
+    realized_by: {
+      kind: "engine",
+      module: "src/application/flow/advance.ts",
+      symbol: "boundaryKind",
+    },
   },
   {
     id: "chassis.minimality-lens",
     scope: CHASSIS,
     title: "juzgar si el entregable pesa más de lo que sus criterios exigen",
     authority: "agent",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    realized_by: {
+      kind: "transitions",
+      ids: ["quick.review-findings", "plan-exec.review-findings"],
+    },
   },
   {
     id: "chassis.convergence-gate",
     scope: CHASSIS,
     title: "evaluar el gate de convergencia sobre los criterios de éxito",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    // One per flow, which is what "each heir names its own instance of this gate"
+    // means once the heirs stopped naming it in prose.
+    realized_by: {
+      kind: "transitions",
+      ids: [
+        "quick.convergence-gate",
+        "spec-refine.ready-gate",
+        "plan-new.coherence-gate",
+        "plan-refine.executability-gate",
+        "plan-exec.final-validation",
+      ],
+    },
   },
   {
     id: "chassis.criteria-flip",
     scope: CHASSIS,
     title: "marcar en verde los criterios que el gate aprobó",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    // The two rows that WRITE the approved state into the document the gate
+    // judged. `quick` has none because it has no document to write it into, and
+    // the two plan-authoring flows converge on a document they hand to the next
+    // flow rather than on one they mark green.
+    realized_by: {
+      kind: "transitions",
+      ids: ["spec-refine.status-promotion", "plan-exec.plan-done"],
+    },
   },
   {
     id: "chassis.structured-choice-shape",
     scope: CHASSIS,
     title: "armar la pregunta: hasta 3 de contenido más el control de flujo, recomendación primero",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    // Enforced at construction, not advised: a directive whose choices lack a
+    // consequence, or carry zero or two recommendations, is refused before it
+    // reaches anybody. That is stronger than the doctrine it replaces, which
+    // could only state the shape and hope.
+    realized_by: {
+      kind: "engine",
+      module: "src/domain/flow/directive.ts",
+      symbol: "checkChoices",
+    },
   },
   {
     id: "chassis.flow-control",
     scope: CHASSIS,
     title: "decidir Compactar o Cerrar en cualquier momento",
     authority: "human",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
-  },
-  {
-    id: "chassis.context-pressure-signal",
-    scope: CHASSIS,
-    title: "reconocer que la corrida está bajo presión de contexto",
-    authority: "agent",
-    ownership: "legacy",
-    document: "modules/COMPACTION.md",
-    signals: ["chassis.context-pressure"],
-  },
-  {
-    id: "chassis.compaction-mode",
-    scope: CHASSIS,
-    title: "elegir el modo de compactación confirm o auto desde la configuración",
-    authority: "cli",
-    ownership: "legacy",
-    document: "modules/COMPACTION.md",
-  },
-  {
-    id: "chassis.compaction-degradation",
-    scope: CHASSIS,
-    title: "degradar auto a confirm cuando el host no tiene mecanismo no interactivo",
-    authority: "cli",
-    ownership: "legacy",
-    document: "modules/COMPACTION.md",
-  },
-  {
-    id: "chassis.checkpoint-before-compacting",
-    scope: CHASSIS,
-    title: "exigir el CHECKPOINT escrito antes de que dispare cualquier compactación",
-    authority: "cli",
-    ownership: "legacy",
-    document: "modules/COMPACTION.md",
-  },
-  {
-    id: "chassis.prompt-new-work-line",
-    scope: CHASSIS,
-    title: "tratar un comando de flow como línea de trabajo nueva",
-    authority: "cli",
-    ownership: "legacy",
-    document: "modules/PROMPT-CONTINUITY.md",
-  },
-  {
-    id: "chassis.prompt-rerun",
-    scope: CHASSIS,
-    title: "re-ejecutar el mismo comando sobre la misma entrada como crear-o-reanudar",
-    authority: "cli",
-    ownership: "legacy",
-    document: SKILL_MD,
-  },
-  {
-    id: "chassis.prompt-bare-continues",
-    scope: CHASSIS,
-    title: "continuar la sesión más reciente ante un prompt sin comando",
-    authority: "cli",
-    ownership: "legacy",
-    document: "modules/PROMPT-CONTINUITY.md",
-  },
-  {
-    id: "chassis.prompt-relatedness",
-    scope: CHASSIS,
-    title: "juzgar si el prompt nuevo pertenece a la línea de trabajo abierta",
-    authority: "agent",
-    ownership: "legacy",
-    document: "modules/PROMPT-CONTINUITY.md",
-  },
-  {
-    id: "chassis.escalation-consent",
-    scope: CHASSIS,
-    title: "consentir una escalación que abre línea nueva sin comando",
-    authority: "human",
-    ownership: "legacy",
-    document: SKILL_MD,
-  },
-  {
-    id: "chassis.docs-boundary",
-    scope: CHASSIS,
-    title: "resolver en qué carpeta de docs puede escribir el loop",
-    authority: "cli",
-    ownership: "legacy",
-    document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    // The control is appended by the engine to every boundary that offers
+    // alternatives — never by the row, which is what keeps a tranche from writing
+    // a question nobody can walk away from or pause.
+    realized_by: {
+      kind: "engine",
+      module: "src/application/flow/advance.ts",
+      symbol: "flowControlChoices",
+    },
   },
   {
     id: "chassis.finalize",
     scope: CHASSIS,
     title: "persistir CHECKPOINT, escribir BACKLOG solo si algo quedó diferido y cerrar la sesión",
     authority: "cli",
-    ownership: "legacy",
+    ownership: "cli-owned",
     document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    // The only suffix: every flow ends the same way, and no flow row says so —
+    // each tranche stopped at its own last decision and the close was doctrine's.
+    placement: "suffix",
+    // Delegated for the reason every write is: closing the session upserts its
+    // HISTORY row, and a run that recorded "finalized" without that having
+    // happened would leave the durable register disagreeing with the session.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["session-close", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
+      evidence: ["chassis.sesion-cerrada"],
+      idempotent: true,
+      recovery:
+        "una sesión que no cerró deja la corrida abierta: no la marques finalizada — reparás la fila del registro con 'aw history-update' y volvés a cerrar",
+    },
   },
 
   // ── QUICK — the pilot tranche, and the first one this CLI decides ──────────
@@ -1988,6 +2133,37 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "legacy",
     document: "commands/resume.md",
   },
+  // Continuity across prompts, contracted where it is executed. These rules were
+  // the chassis' and could not become steps of a journey: they decide WHICH run a
+  // prompt belongs to, which is answered before any run state exists. What
+  // decides is `resolveSessionTarget` behind the three commands below.
+  {
+    id: "resume.bare-prompt-continues",
+    scope: cmd("resume"),
+    title: "continuar la sesión más reciente ante un prompt sin comando",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: "modules/PROMPT-CONTINUITY.md",
+    attribution: CONTINUITY_ATTRIBUTION,
+  },
+  {
+    id: "resume.prompt-relatedness",
+    scope: cmd("resume"),
+    title: "juzgar si el prompt nuevo pertenece a la línea de trabajo abierta",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: "modules/PROMPT-CONTINUITY.md",
+    attribution: CONTINUITY_ATTRIBUTION,
+  },
+  {
+    id: "resume.escalation-consent",
+    scope: cmd("resume"),
+    title: "consentir una escalación que abre línea nueva sin comando",
+    authority: "human",
+    ownership: "cli-owned",
+    document: SKILL_MD,
+    attribution: CONTINUITY_ATTRIBUTION,
+  },
   {
     id: "persist.shape-classification",
     scope: cmd("persist"),
@@ -2047,6 +2223,16 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     effects: ["local_additive"],
   },
   {
+    id: "session-create.new-work-line",
+    scope: cmd("session-create"),
+    title: "tratar un comando de flow como línea de trabajo nueva",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: "modules/PROMPT-CONTINUITY.md",
+    attribution: "`aw session-create`",
+    effects: ["local_additive"],
+  },
+  {
     id: "session-close.closure",
     scope: cmd("session-close"),
     title: "cerrar la sesión y actualizar su fila del registro durable",
@@ -2064,6 +2250,67 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: "modules/SESSION-NUMBERING.md",
     attribution: "`aw session-resume --code <NNN> --reopen`",
+    effects: ["mutate_overwrite"],
+  },
+  {
+    id: "session-resume.locate",
+    scope: cmd("session-resume"),
+    title: "localizar una sesión existente por descriptor y origen",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: "modules/SESSION-NUMBERING.md",
+    attribution: "`aw session-resume --code <NNN> --reopen`",
+  },
+  {
+    id: "session-resume.rerun-is-create-or-resume",
+    scope: cmd("session-resume"),
+    title: "re-ejecutar el mismo comando sobre la misma entrada como crear-o-reanudar",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: SKILL_MD,
+    attribution: "`aw session-resume --code <NNN> --reopen`",
+    effects: ["mutate_overwrite"],
+  },
+  // Compaction, contracted in the command the host already wires as its
+  // PreCompact hook. Not a step either, and for a sharper reason than continuity:
+  // it fires at whatever boundary the run is standing on, so no position in a
+  // journey could be its own.
+  {
+    id: "checkpoint-write.context-pressure-signal",
+    scope: cmd("checkpoint-write"),
+    title: "reconocer que la corrida está bajo presión de contexto",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: "modules/COMPACTION.md",
+    attribution: COMPACTION_ATTRIBUTION,
+    signals: ["chassis.context-pressure"],
+  },
+  {
+    id: "checkpoint-write.compaction-mode",
+    scope: cmd("checkpoint-write"),
+    title: "elegir el modo de compactación confirm o auto desde la configuración",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: "modules/COMPACTION.md",
+    attribution: COMPACTION_ATTRIBUTION,
+  },
+  {
+    id: "checkpoint-write.compaction-degradation",
+    scope: cmd("checkpoint-write"),
+    title: "degradar auto a confirm cuando el host no tiene mecanismo no interactivo",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: "modules/COMPACTION.md",
+    attribution: COMPACTION_ATTRIBUTION,
+  },
+  {
+    id: "checkpoint-write.before-compacting",
+    scope: cmd("checkpoint-write"),
+    title: "exigir el CHECKPOINT escrito antes de que dispare cualquier compactación",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: "modules/COMPACTION.md",
+    attribution: COMPACTION_ATTRIBUTION,
     effects: ["mutate_overwrite"],
   },
   {
@@ -2170,7 +2417,6 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },
   { command: "checkpoint-read", reason: "lectura del CHECKPOINT sin decidir continuación" },
-  { command: "checkpoint-write", reason: "escritura del snapshot que dispara el hook" },
   { command: "auto-compact-on-close", reason: "gatillo de cierre del host, sin regla propia" },
   { command: "resume-summary", reason: "resumen post-compactación sin decisión de recorrido" },
   { command: "stack", reason: "detección de stack informativa" },
@@ -2221,6 +2467,49 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
 export function decisionsOfScope(scope: DecisionScope): readonly FlowDecision[] {
   return FLOW_DECISIONS.filter((decision) => decision.scope === scope);
 }
+
+/**
+ * The journey a run of this flow actually walks: its own steps, with the
+ * transversal ones composed in at their declared positions.
+ *
+ * This function is the answer to why the chassis could not be migrated the way a
+ * flow tranche was. A run's cursor is an index into ONE list, and until now that
+ * list was `decisionsOfScope(flow)` — so every `chassis` row was unreachable by
+ * construction, and flipping one to `cli-owned` would have declared ownership of
+ * a step no run can cross. Composing is what turns the declaration into something
+ * a real run demonstrates.
+ *
+ * Every caller that walks, resolves or projects a run reads the journey from
+ * HERE. Two of them composing independently would put the same step at two
+ * positions, and a cursor is only meaningful against one list.
+ */
+export function journeyOfFlow(flow: WorklineFlow): readonly FlowDecision[] {
+  const transversal = decisionsOfScope(CHASSIS_SCOPE);
+  const at = (placement: RunPlacement): readonly FlowDecision[] =>
+    transversal.filter((decision) => decision.placement === placement);
+  return [...at("prefix"), ...decisionsOfScope(flow), ...at("suffix")];
+}
+
+/**
+ * The `docs/` folders a flow may write, as the chassis' boundary states them.
+ *
+ * A table rather than a rule with exceptions: the boundary is "its own flow's
+ * doc, plus the category of a capability it composes", and both halves are facts
+ * about the flow. `quick` writes none at all — it has no document — and that
+ * empty list is a real answer, not a missing entry, which is why the map is
+ * exhaustive over the five flows instead of falling back to a default.
+ *
+ * The `design` category is here rather than derived from the composition because
+ * whether a flow MAY publish a package revision is a property of the flow, not of
+ * whichever run happens to compose the capability.
+ */
+export const DOCS_BOUNDARY: Readonly<Record<WorklineFlow, readonly string[]>> = {
+  quick: [],
+  "spec-refine": ["docs/specs", "docs/designs"],
+  "plan-new": ["docs/plans"],
+  "plan-refine": ["docs/plans"],
+  "plan-exec": ["docs/plans", "docs/designs"],
+};
 
 /** The flow a scope names, or null for the chassis and for command scopes. */
 export function flowOfScope(scope: DecisionScope): WorklineFlow | null {

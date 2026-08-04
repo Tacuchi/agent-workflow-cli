@@ -2,6 +2,8 @@
 
 This document is the **common engine** of the Workline loops: the doctrine every loop runs underneath its deltas. **It is not a skill** — it is a referenced document: every loop orders it read from its `## Inherits`, **always, before its deltas**. If you edit the engine, edit it **here** — heirs never repeat it, they only reference it.
 
+> **When each step below happens is no longer this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. What stays is what each rule is FOR — the half no engine carries.
+
 ## Heirs (canonical list)
 
 The **5 loops** run this engine; each adds only its deltas:
@@ -67,13 +69,7 @@ The loop works **artifact-first**: the artifact is **seeded before** executing a
 
 ## Gap-driven convergent engine
 
-The common cycle — each heir instantiates it in its `## Sequence` with its own gap taxonomy:
-
-1. `detect_gaps(work)`, minus the *exhausted* gaps (see *Research*).
-2. If `∅` → **convergence gate** (see *Convergence / exit*).
-3. If there are gaps: take a batch (≤3) and **seed** `CHECKPOINT.Pending/Next` (*artifact-first*).
-4. Resolve each gap with its **resolver** per the *ask-vs-research rule*: human (structured-choice) · inline research · a probe (PoC) · a composed capability (e.g. `design`).
-5. **Integrate**, update `CHECKPOINT` → repeat.
+The common cycle — each heir instantiates it in its `## Sequence` with its own gap taxonomy: detect the gaps, seed `CHECKPOINT.Pending/Next` (*artifact-first*), resolve each with its resolver, integrate, repeat until none is left and the convergence gate can run. The pacing is the CLI's — one open boundary at a time, which meets the ≤3 ceiling by construction. Why it is gap-driven at all stays here: a plan fixed up front cannot notice what it did not know.
 
 ## Internal sessions (managed) — one session per run
 
@@ -87,12 +83,7 @@ The loop creates and manages its session under `.workflow/sessions/`; **the user
 
 ## Ask-vs-research rule (the discriminator)
 
-For every gap, a single question picks the resolver:
-
-> *"Was this already established in the current conversation?"* → **adopt it** (`adopted` module) — never re-ask or re-research settled conclusions.
-> *"Can I answer this by reading the repo/data?"* → **research** (autonomous).
-> *"Can I only answer it by RUNNING a small experiment?"* → **probe** (`probe` module).
-> *"Does it depend on what the user wants?"* → **ask the human** (structured-choice).
+Which resolver a gap gets is the kind of thing it is, and the CLI classifies it: a boundary's kind IS its resolver. Already **established in this conversation** → adopt it (`adopted` module), never re-ask a settled conclusion · answerable by **reading** the repo/data → research, autonomously · answerable only by **RUNNING a small experiment** → a probe (`probe` module) · dependent on **what the user wants** → ask the human. Why: asking a person what a file already says wastes the one resource the loop cannot regenerate, and guessing what only they decide is worse.
 
 ## Research: autonomy, scope & failure
 
@@ -101,16 +92,16 @@ Investigation is **inline**: an activity **inside the run's current session**, n
 - **Autonomous**: the AI investigates inline and reports **without asking permission**. The human learns of it at integration time and keeps control via the `flow` control.
 - **Scope**: the current conversation (settled conclusions are reused, never re-derived) + workspace + associated repos + DB MCPs.
 - **DB rule** — the single exception to autonomy: it lives in the `db` module and is loaded **before** any query runs.
-- **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes with status **`inconclusive`** in `CONCLUSIONS` and reports why. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the session's `BACKLOG` when the flow has no doc) — and marks it **"already tried via research"** (`attempts[gap]++`, `MAX` cap) so `detect_gaps` does **not** re-fire it in a loop. That is what guarantees convergence.
+- **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes with status **`inconclusive`** in `CONCLUSIONS` and reports why. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the session's `BACKLOG` when the flow has no doc) — instead of re-firing it. Counting the attempts and refusing the one past the cap is the CLI's; declaring where a degraded gap GOES is doctrine's, because a gap dropped without a destination is the convergence this engine promises, faked.
 
 ## Structured-choice (design & batching)
 
-**Canonical rule:** *structured-choice* = **≤3 content questions + 1 `flow` control**, always. Each option is a **short semantic label + one functional sentence** (outcome/trade-off or simple example), never a positional code. Use the richest current binding in [`HARNESS.md`](../harness/HARNESS.md); otherwise use labeled markdown.
+**Canonical form:** *structured-choice* = **≤3 content questions + 1 `flow` control**, always. Each option is a **short semantic label + one functional sentence** (outcome/trade-off or simple example), never a positional code. The CLI builds it and refuses a question that does not hold this form. Present it with the richest current binding in [`HARNESS.md`](../harness/HARNESS.md); otherwise labeled markdown.
 
-- **Flow:** `Compactar` | `Cerrar`; an unanswered control means continue (`Continuar` when the UI requires it). Under context pressure the loop **raises the choice itself**, recommending `Compactar`.
+- **Flow:** `Compactar` | `Cerrar`, appended to every boundary with alternatives — never the question's to omit, because one nobody can pause or leave is not a question. An unanswered control means continue (`Continuar` when the UI requires it). Under context pressure the loop **raises the choice itself**, recommending `Compactar`.
 - **Content/batching:** human gaps, pre-query MCP choice and the convergence action | `Preguntar algo más`; at most 3 per call. Honor a smaller native ceiling by reserving one question slot for `flow`; carry overflow, prioritizing blockers.
 - **Options/encoding:** prefer 2–3 alternatives. Map label/sentence to separate fields or `Label — functional sentence`. If it cannot fit, use labeled markdown; never truncate or merge candidates or duplicate a host-provided free-text option.
-- **Recommendation:** the first option is marked *recommended* and comes from research; the human ratifies or corrects it, never starts cold.
+- **Recommendation:** exactly one option is *recommended*, it comes first, and it comes from research; the human ratifies or corrects it, never starts cold.
 - **Text fallback:** answer by label; `Aceptar recomendaciones` accepts all first options. Never require composite coordinates such as `1A, 2A, 3A`.
 
 > Canonical labels (`Continuar`, `Compactar`, `Cerrar`, `Aceptar recomendaciones`, `Guardar plan`, …) stay verbatim; other user-facing text follows [`SKILL.md`](../SKILL.md) § *Language policy*.
@@ -129,12 +120,12 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 ## Convergence / exit
 
-- **No material gaps** → **convergence gate** (read-only) = **`Success criteria` green** (*verification-first*). Whatever fails **comes back as a gap**; if it passes → the loop **flips the green criteria** in `SESSION.md` (`- [ ]` → `- [x]`) and offers its closing action. The checklist must reflect the real final state: a criterion left unchecked at `finalize` needs an explicit reason. Each heir names its own instance of this gate.
-- `Cerrar` (the `flow` control, at any time) → `finalize`. **`finalize` always persists `CHECKPOINT.md`** (resumable) and, **only if** something was deferred, writes `BACKLOG.md` (close reason + the deferred items); closes the session and reports. Progress survives even without a prior `Compactar`.
+- **No material gaps** → **convergence gate** (read-only) = **`Success criteria` green** (*verification-first*). Whatever fails **comes back as a gap**; if it passes → the loop **flips the green criteria** in `SESSION.md` (`- [ ]` → `- [x]`) and offers its closing action. The checklist must reflect the real final state: a criterion left unchecked at `finalize` needs an explicit reason. Each heir names its own instance of this gate, and those instances are what realize it.
+- `Cerrar` (the `flow` control, at any time) → `finalize`, the last step of every journey. **`finalize` always persists `CHECKPOINT.md`** (resumable) and, **only if** something was deferred, writes `BACKLOG.md` (close reason + the deferred items); closes the session and reports. Progress survives even without a prior `Compactar`.
 
 ## docs/ boundary — no auto-export (hard rule)
 
-A loop writes into `docs/` **only** its own flow's doc (spec-refine: `docs/specs` · the three plan flows: `docs/plans` · quick: **none** — it never touches `docs/`) plus, when it composes a capability whose own deliverable is a `docs/` category, that category — today only the **UI Design Package** under `docs/designs` (`design`). **Published, never graduated**: the test is the origin, not the folder. No loop **graduates/promotes artifacts** into `docs/`: migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are done by the separate **`export-*`** skills, as an explicit later step; artifacts stay in their sessions until then. A task that creates a tool/utility has it documented in `docs/tools` by the ambient `creating-tools` skill (auto-discovered; Workline does not bind it).
+A loop writes into `docs/` **only** its own flow's doc plus, when it composes a capability whose own deliverable is a `docs/` category, that category — today only the **UI Design Package** under `docs/designs` (`design`). Which folders that is per flow, and refusing any delegated step whose target leaves them, is the CLI's. **Published, never graduated**: the test is the origin, not the folder. No loop **graduates/promotes artifacts** into `docs/`: migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are done by the separate **`export-*`** skills, as an explicit later step; artifacts stay in their sessions until then. A task that creates a tool/utility has it documented in `docs/tools` by the ambient `creating-tools` skill (auto-discovered; Workline does not bind it).
 
 ## Conditional modules
 

@@ -26,6 +26,7 @@
 
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
 import {
+  DOCS_BOUNDARY,
   type DelegatedAction,
   type FlowDecision,
   actionOf,
@@ -42,15 +43,20 @@ import {
   type FlowBoundaryKind,
   type FlowDirective,
   type FlowStep,
+  PAUSE_LABEL,
+  STOP_LABEL,
   buildFlowDirective,
   skippedStepOf,
   stepOf,
 } from "../../domain/flow/directive.js";
-import { bindAction, skipReason } from "../../domain/flow/rules.js";
+import { bindAction, docsBoundaryBreach, skipReason } from "../../domain/flow/rules.js";
 import {
   type FlowRunState,
+  MAX_BOUNDARY_ATTEMPTS,
   applyTransition,
+  attemptsAt,
   checkAgainstJourney,
+  positionDigest,
   skipTransition,
   withBoundary,
   withPendingAction,
@@ -140,7 +146,11 @@ function walk(
   for (let index = state.applied.length; index < journey.length; index += 1) {
     const decision = journey[index];
     if (decision === undefined) break;
-    const skipped = skipReason(decision, journey, state.observations);
+    // A condition that did not fire, or a boundary this run has already tried as
+    // often as it may. Both pass over the step and both say why — the trace has
+    // to distinguish "never happened" from "was given up on".
+    const skipped =
+      skipReason(decision, journey, state.observations) ?? exhaustionSkip(state, decision);
     if (skipped !== null) {
       state = skipTransition(state, decision.id);
       applied.push(skippedStepOf(decision, skipped));
@@ -220,13 +230,103 @@ function runBinding(state: FlowRunState): { session: string; code: string } {
 function emittedAction(
   state: FlowRunState,
   stopped: FlowDecision | null,
-): { action: DelegatedAction | null; unbound: string | null } {
+): { action: DelegatedAction | null; unbound: string | null; outside: string | null } {
   const declared = stopped === null ? null : actionOf(stopped);
-  if (declared === null) return { action: null, unbound: null };
+  if (declared === null) return { action: null, unbound: null, outside: null };
   const bound = bindAction(declared, runBinding(state));
-  return bound.ok
-    ? { action: bound.action, unbound: null }
-    : { action: null, unbound: bound.unbound };
+  if (!bound.ok) return { action: null, unbound: bound.unbound, outside: null };
+  // Checked on the BOUND form: a placeholder could resolve into a path, so
+  // validating the template would be validating something nobody runs.
+  const outside = docsBoundaryBreach(bound.action, state.flow);
+  return outside === null
+    ? { action: bound.action, unbound: null, outside: null }
+    : { action: null, unbound: null, outside };
+}
+
+/**
+ * Why this boundary cannot be emitted at all — or `null` when it can.
+ *
+ * Three fail-closed causes, and they are ordered by what the reader can do about
+ * them. An unbound placeholder and a `docs/` breach are defects OF THE REGISTRY:
+ * the fix is a code change, and emitting either would print a command nobody can
+ * run or one that writes outside the lane its flow is allowed. Exhaustion is a
+ * defect of nothing — it is the run having asked the same thing as often as the
+ * chassis permits, and the answer is to take the gap somewhere a person can
+ * settle it rather than to ask a fourth time.
+ */
+function blockedCause(
+  state: FlowRunState,
+  stopped: FlowDecision,
+  emitted: { unbound: string | null; outside: string | null },
+): CapabilityFailure | null {
+  if (emitted.unbound !== null) {
+    return {
+      code: "FLOW_ACTION_UNBOUND",
+      message: `la acción de '${stopped.id}' referencia ${emitted.unbound} y esta corrida no puede resolverlo`,
+      action:
+        "corregí la invocación del registro: una acción solo referencia las coordenadas de la corrida",
+    };
+  }
+  if (emitted.outside !== null) {
+    return {
+      code: "FLOW_DOCS_BOUNDARY_CROSSED",
+      message: `la acción de '${stopped.id}' escribe en ${emitted.outside} y el flow '${state.flow}' no tiene esa carpeta permitida`,
+      action: `este recorrido solo escribe ${describeAllowance(state.flow)}: promover algo a otra carpeta de docs es un paso 'export-*' aparte, nunca un efecto del loop`,
+    };
+  }
+  if (exhausted(state, stopped)) {
+    // Two different situations wear the same code, and saying which one this is
+    // matters: one continues on the next advance, the other cannot. Reporting the
+    // stricter message for both would tell somebody their run is stuck when it is
+    // about to move on.
+    const degradable = exhaustionSkip(state, stopped) !== null;
+    return {
+      code: "FLOW_BOUNDARY_EXHAUSTED",
+      message: `'${stopped.id}' agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: contestarlo otra vez sería el bucle que la regla evita`,
+      action: degradable
+        ? `${DEGRADE_ACTION}; el próximo 'aw flow advance' lo pasa por alto dejando dicho por qué y sigue con el resto`
+        : `${DEGRADE_ACTION}, y resolvé este paso fuera de la corrida antes de seguir: saltearlo daría por aprobado un efecto que nadie aprobó, o por hecho algo que nada corrió`,
+    };
+  }
+  return null;
+}
+
+/** Where a gap goes when the loop stops re-firing it — the chassis' destination. */
+const DEGRADE_ACTION =
+  "degradá el gap en vez de reintentarlo: llevalo a '## Open questions' del documento del flow —o al BACKLOG de la sesión si el flow no tiene documento— declarando que ya se intentó";
+
+/** Whether this run has already spent every attempt this boundary gets. */
+function exhausted(state: FlowRunState, decision: FlowDecision): boolean {
+  return attemptsAt(state, decision.id) >= MAX_BOUNDARY_ATTEMPTS;
+}
+
+/**
+ * Why an exhausted boundary is passed over — or `null` when it must not be.
+ *
+ * Degrading means what the chassis says it means: the gap stops being re-fired,
+ * it goes somewhere a person can settle it, and **the run goes on with the
+ * rest**. Blocking instead would be the dead end the rule exists to prevent — a
+ * boundary nobody can answer any more, on a run nobody can finish.
+ *
+ * Not every boundary may be passed over, and the exception is not a special
+ * case: a step that would EXERCISE something cannot be waved through. An
+ * authorization skipped is an effect nobody approved; a delegated step skipped
+ * is a search, a write or a check credited to nothing. Those stay blocked, and
+ * the block says so. What degrades is what only produces a verdict — a judgment
+ * or a preference — which is exactly the gap the doctrine degrades.
+ */
+function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
+  if (!exhausted(state, decision)) return null;
+  if (decision.ownership !== "cli-owned") return null;
+  if (actionOf(decision) !== null) return null;
+  if (authorizeTransition(decision, state.authorizations).missing.length > 0) return null;
+  return `agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: ${DEGRADE_ACTION}`;
+}
+
+/** The `docs/` folders a flow may write, said the way a person reads it. */
+function describeAllowance(flow: FlowRunState["flow"]): string {
+  const allowed = DOCS_BOUNDARY[flow];
+  return allowed.length === 0 ? "ninguna carpeta de docs" : allowed.join(" y ");
 }
 
 export function resolveBoundary(
@@ -262,14 +362,12 @@ export function resolveBoundary(
   // `execute`, and letting ownership answer first would hand them to doctrine with
   // their effects unapproved — the authorization gate bypassed by a field that has
   // nothing to do with it.
-  // An invocation this run cannot bind is a defect of the registry, not a step to
-  // hand to anybody: emitting it would print a placeholder where a command goes.
-  // It becomes a block — the one boundary that says "nothing can continue and here
-  // is why" — instead of degrading into a question nobody can answer.
+  // A cause that blocks outranks all of it: the boundary that says "nothing can
+  // continue and here is why" is never worth degrading into a question nobody can
+  // answer.
+  const blocked = blockedCause(state, stopped, emitted);
   const kind =
-    emitted.unbound === null
-      ? boundaryKind(stopped, (authorization?.missing.length ?? 0) > 0)
-      : "blocked";
+    blocked === null ? boundaryKind(stopped, (authorization?.missing.length ?? 0) > 0) : "blocked";
   return {
     stopped,
     kind,
@@ -279,15 +377,7 @@ export function resolveBoundary(
     choices: choicesFor(kind, stopped, authorization),
     pending,
     seal: boundarySeal(state, stopped),
-    error:
-      emitted.unbound === null
-        ? null
-        : {
-            code: "FLOW_ACTION_UNBOUND",
-            message: `la acción de '${stopped.id}' referencia ${emitted.unbound} y esta corrida no puede resolverlo`,
-            action:
-              "corregí la invocación del registro: una acción solo referencia las coordenadas de la corrida",
-          },
+    error: blocked,
   };
 }
 
@@ -340,7 +430,10 @@ function boundaryInputs(
 ): { state: string; transition: string | null; action: string | null } {
   const action = emittedAction(state, stopped).action;
   return {
-    state: state.digest,
+    // The POSITION, not the whole file: a refused attempt is recorded in the
+    // state, and sealing it in would make the caller's own refusal come back as
+    // staleness on their next try. See `positionDigest`.
+    state: positionDigest(state),
     transition: stopped?.id ?? null,
     action: action === null ? null : actionDigest(action),
   };
@@ -427,14 +520,45 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
 }
 
 /**
+ * The flow control, appended to every boundary that offers alternatives.
+ *
+ * BOTH halves, and the second one is what this phase added: the chassis' control
+ * is `Compactar | Cerrar`, and the engine only ever emitted `Cerrar` — so half
+ * the doctrine's own rule had no realization. Pausing under context pressure and
+ * stopping for good are different acts with different consequences, and a run
+ * that can only stop forces whoever is in it to choose between losing the thread
+ * and losing the work.
+ *
+ * Appended HERE and never by a row: a tranche must not be able to write a
+ * boundary nobody can walk away from or pause. Neither is recommended — the
+ * recommendation belongs to the content of the question, and nudging someone
+ * toward stopping or compacting would be the engine having an opinion about
+ * whether to keep going.
+ */
+export function flowControlChoices(stopping?: string): FlowDirective["choices"] {
+  return [
+    {
+      label: PAUSE_LABEL,
+      consequence:
+        "se persiste el CHECKPOINT y la corrida retoma en esta misma frontera después de compactar el contexto",
+      recommended: false,
+    },
+    {
+      label: STOP_LABEL,
+      consequence:
+        stopping ?? "el recorrido queda detenido acá, con su estado y su frontera persistidos",
+      recommended: false,
+    },
+  ];
+}
+
+/**
  * A human boundary: the alternatives the row declares, or the generic pair.
  *
  * A migrated tranche names its own options — the ones its doctrine used to
  * enumerate — and the engine emits them verbatim, which is what makes the
  * directed journey equivalent to the one it replaces instead of merely similar.
- * Whatever the row says, STOPPING is appended here and never comes from the row:
- * declining is not one of the transition's outcomes, it is the run's right, and a
- * tranche must not be able to write a boundary nobody can walk away from.
+ * Whatever the row says, the flow control is appended.
  */
 function humanChoices(decision: FlowDecision): FlowDirective["choices"] {
   const own = alternativesOf(decision);
@@ -448,14 +572,7 @@ function humanChoices(decision: FlowDecision): FlowDirective["choices"] {
           },
         ]
       : own.map((choice) => ({ ...choice }));
-  return [
-    ...resolve,
-    {
-      label: "Cerrar",
-      consequence: "el recorrido queda detenido acá, con su estado y su frontera persistidos",
-      recommended: false,
-    },
-  ];
+  return [...resolve, ...flowControlChoices()];
 }
 
 /**
@@ -476,11 +593,9 @@ function authorizationChoices(
       consequence: `'${decision.title}' ejerce ${missing} y el recorrido sigue; la autorización queda registrada en la corrida`,
       recommended: true,
     },
-    {
-      label: "Cerrar",
-      consequence: `no se ejerce ${missing} y el recorrido queda detenido acá, sin nada aplicado`,
-      recommended: false,
-    },
+    ...flowControlChoices(
+      `no se ejerce ${missing} y el recorrido queda detenido acá, sin nada aplicado`,
+    ),
   ];
 }
 

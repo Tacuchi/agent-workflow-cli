@@ -228,15 +228,29 @@ describe("el escenario de la spec: una migrada seguida de una legacy", () => {
 });
 
 describe("la propiedad no puentea el gate de efectos", () => {
-  /** A legacy transition that really writes: ten of them exist in the registry. */
+  /**
+   * A doctrine-owned transition that really writes.
+   *
+   * It used to be DERIVED from the live registry — ten rows matched — and the
+   * chassis tranche took the last of them: what is still `legacy` today is four
+   * SPEC rows whose module belongs to another journey plus five command rows,
+   * and not one of them writes. So it is a fixture, like the twin scenario
+   * below. Nothing the scenario asserts changed; only where the row comes from.
+   */
   function legacyWriter(): FlowDecision {
-    const row = FLOW_DECISIONS.find(
-      (decision) =>
-        decision.ownership === "legacy" &&
-        decision.authority === "cli" &&
-        (decision.effects ?? []).some((effect) => !SELF_AUTHORIZABLE_CLASSES.includes(effect)),
-    );
-    if (row === undefined) throw new Error("el registro ya no tiene una fila legacy que escriba");
+    const row: FlowDecision = {
+      id: "fixture.escritura-doctrinal",
+      scope: "quick",
+      title: "una transición que escribe y cuya regla sigue en el Markdown",
+      authority: "cli",
+      ownership: "legacy",
+      document: "loops/quick-loop/LOOP.md",
+      effects: ["mutate_overwrite"],
+    };
+    // The fixture is only useful if it still describes something the gate must
+    // handle: an effect no run may grant itself.
+    const gap = (row.effects ?? []).filter((effect) => !SELF_AUTHORIZABLE_CLASSES.includes(effect));
+    if (gap.length === 0) throw new Error("el fixture dejó de necesitar autorización");
     return row;
   }
 

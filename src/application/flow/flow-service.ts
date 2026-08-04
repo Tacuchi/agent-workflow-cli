@@ -7,7 +7,7 @@
  */
 
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
-import { decisionsOfScope } from "../../domain/flow/authority.js";
+import { journeyOfFlow } from "../../domain/flow/authority.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { type FlowRunState, newRunState } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -57,7 +57,7 @@ export async function advanceFlow(
       if ("failure" in seeded) return { ok: false, failure: seeded.failure };
       const advance = advanceFlowRun({
         state: seeded,
-        journey: decisionsOfScope(seeded.flow),
+        journey: journeyOfFlow(seeded.flow),
       });
       if (!advance.ok) return { ok: false, failure: advance.failure };
       return { ok: true, state: advance.state, value: advance.directive };

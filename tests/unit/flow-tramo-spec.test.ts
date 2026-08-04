@@ -12,8 +12,8 @@ import {
   type FlowDecision,
   actionOf,
   conditionOf,
-  decisionsOfScope,
   effectsOf,
+  journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
@@ -42,7 +42,7 @@ const fs = new NodeFileSystem();
 const SESSION = "021-tramo-spec-spec-refine";
 const CODE = "021";
 
-const JOURNEY = decisionsOfScope("spec-refine");
+const JOURNEY = journeyOfFlow("spec-refine");
 
 function rowOf(id: string): FlowDecision {
   const row = JOURNEY.find((decision) => decision.id === id);
@@ -86,6 +86,9 @@ describe("el tramo SPEC migró lo suyo y nada de un documento compartido", () =>
       "spec-refine.session",
       "spec-refine.ready-gate",
       "spec-refine.status-promotion",
+      // El cierre transversal, compuesto como sufijo: escribe la fila del
+      // registro durable, así que se acredita con salida real como cualquiera.
+      "chassis.finalize",
     ]);
     for (const decision of delegated) {
       const action = actionOf(decision);
@@ -262,7 +265,10 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
       output: null,
     });
     expect(claimed.error?.code).toBe("FLOW_EVIDENCE_MISSING");
-    expect((await current()).state.applied).toEqual([]);
+    // Los dos pasos transversales del prefijo ya se aplicaron —fijan la carpeta
+    // escribible y el tope de intentos antes de que nada corra—, así que lo que
+    // se afirma es lo que el resultado NO acreditó: la sesión sigue sin abrirse.
+    expect((await current()).state.applied).not.toContain("spec-refine.session");
   });
 
   it("sin disparador declarado, la ronda de ideación no se ofrece", async () => {
@@ -282,6 +288,7 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
     expect(resolved.choices.map((choice) => choice.label)).toEqual([
       "Explorar ideas",
       "Seguir sin ideación",
+      "Compactar",
       "Cerrar",
     ]);
     expect(state.skipped).not.toContain("spec-refine.ideation-consent");

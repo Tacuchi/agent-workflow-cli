@@ -12,7 +12,7 @@
  * match its journey says so instead of projecting a boundary nobody can trust.
  */
 
-import { decisionsOfScope } from "../../domain/flow/authority.js";
+import { journeyOfFlow } from "../../domain/flow/authority.js";
 import type { FlowBoundaryKind } from "../../domain/flow/directive.js";
 import { checkAgainstJourney } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -54,7 +54,7 @@ export async function projectRun(
       summary: `corrida ilegible (${read.failure.code}): ${read.failure.action}`,
     };
   }
-  const journey = decisionsOfScope(read.state.flow);
+  const journey = journeyOfFlow(read.state.flow);
   const incoherent = checkAgainstJourney(read.state, journey);
   if (incoherent !== null) {
     return {

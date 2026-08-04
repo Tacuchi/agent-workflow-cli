@@ -28,7 +28,7 @@ import {
   type ValidationOutcome,
 } from "../capability/protocol.js";
 import type { DelegatedAction, DelegatedInvocation, FlowDecision } from "./authority.js";
-import type { FlowBoundaryKind, FlowChoice } from "./directive.js";
+import { type FlowBoundaryKind, type FlowChoice, STOP_LABEL, isFlowControl } from "./directive.js";
 
 /**
  * What came back from a delegated invocation, in the vocabulary already
@@ -77,8 +77,6 @@ export interface ParseAnswerInput {
   /** `--approval <digest>`, and the digest the boundary actually demands. */
   approval: string | null;
   expectedApproval: string | null;
-  /** The alternative that refuses the boundary instead of resolving it. */
-  declineLabel: string;
   /** The sealed action, at an `execution` boundary: what the result is about. */
   action?: DelegatedAction | null;
 }
@@ -281,10 +279,11 @@ function approvalAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       result: null,
     },
   };
-  // DECLINING needs no approval, and demanding one would be absurd: it would ask
-  // the person to hand over the very approval they are refusing to give. The
-  // emitted alternative has to be answerable, or it is not an alternative.
-  if (choice === input.declineLabel) return accepted;
+  // The FLOW CONTROL needs no approval, and demanding one would be absurd: it
+  // would ask the person to hand over the very approval they are declining to
+  // give, or make pausing conditional on granting it. Both emitted alternatives
+  // have to be answerable, or they are not alternatives.
+  if (isFlowControl(choice)) return accepted;
 
   if (input.approval === null) {
     return {
@@ -292,7 +291,7 @@ function approvalAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       failure: {
         code: "FLOW_APPROVAL_MISSING",
         message: "esta frontera necesita una aprobación de efecto y no llegó ninguna",
-        action: `volvé a invocar con --approval ${input.expectedApproval ?? "<digest>"}, o respondé '${input.declineLabel}' para no autorizarla`,
+        action: `volvé a invocar con --approval ${input.expectedApproval ?? "<digest>"}, o respondé '${STOP_LABEL}' para no autorizarla`,
       },
     };
   }

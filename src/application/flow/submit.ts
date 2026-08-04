@@ -29,11 +29,16 @@ import {
   type DelegatedAction,
   type FlowDecision,
   actionOf,
-  decisionsOfScope,
   effectsOf,
+  journeyOfFlow,
 } from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
-import { type FlowDirective, stepOf } from "../../domain/flow/directive.js";
+import {
+  type FlowDirective,
+  PAUSE_LABEL,
+  STOP_LABEL,
+  stepOf,
+} from "../../domain/flow/directive.js";
 import {
   type FlowRunAttempt,
   type FlowRunState,
@@ -56,9 +61,6 @@ import {
   resolveBoundary,
 } from "./advance.js";
 import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
-
-/** The label that declines a boundary instead of resolving it. */
-export const DECLINE_LABEL = "Cerrar";
 
 export interface SubmitFlowInput {
   code?: string;
@@ -117,7 +119,7 @@ export async function submitFlow(
 type SubmitDecision = FlowRunMutation<FlowDirective>;
 
 function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
-  const journey = decisionsOfScope(state.flow);
+  const journey = journeyOfFlow(state.flow);
   const incoherent = checkAgainstJourney(state, journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
 
@@ -140,7 +142,12 @@ function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
   // looking it up under today's seal would never find it. A forged seal buys
   // nothing — matching a recorded attempt requires resending exactly what already
   // ran, and a retry applies nothing.
-  const identity = attemptIdentity(state, input, claimedSeal(input.raw) ?? resolved.seal);
+  const identity = attemptIdentity(
+    state,
+    input,
+    claimedSeal(input.raw) ?? resolved.seal,
+    resolved.stopped.id,
+  );
   // 1 · Resend, before anything else.
   const resend = resendCheck(state, resolved, identity);
   if (resend !== null) return resend;
@@ -154,7 +161,7 @@ function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
   if (drifted !== null) return drifted;
 
   // 2 · The boundary in force decides what is admissible.
-  const admissible = admit(state, resolved, resolved.stopped, input);
+  const admissible = admit(state, resolved, resolved.stopped, input, { journey, identity });
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
 
@@ -188,6 +195,7 @@ function admit(
   resolved: ResolvedBoundary,
   stopped: FlowDecision,
   input: SubmitFlowInput,
+  spent: SpentAttempt,
 ): { ok: true; answer: FlowAnswer } | { decision: SubmitDecision } {
   const expectedApproval =
     resolved.kind === "authorization"
@@ -201,24 +209,48 @@ function admit(
     choices: resolved.choices,
     approval: input.approval,
     expectedApproval,
-    declineLabel: DECLINE_LABEL,
     action: resolved.action,
   });
   if (!parsed.ok) {
-    return {
-      decision: reject(state, resolved, parsed.failure.message, {
-        code: parsed.failure.code,
-        action: parsed.failure.action,
-      }),
-    };
-  }
-  // Declining is a real answer, and it applies nothing.
-  if (parsed.answer.choice === DECLINE_LABEL) {
+    // An answer the boundary refused IS an attempt spent: it is the exact event
+    // the chassis' cap counts. Recorded here and nowhere else — a resend, a
+    // decline and a pause are not failed tries at resolving the gap.
     return {
       decision: reject(
         state,
         resolved,
-        `'${DECLINE_LABEL}': el recorrido queda detenido en esta frontera`,
+        parsed.failure.message,
+        { code: parsed.failure.code, action: parsed.failure.action },
+        spent,
+      ),
+    };
+  }
+  // The flow control is a real answer, and neither half applies anything. They
+  // are kept apart because the outcomes differ and the difference is the point:
+  // stopping ends the run here (`cancelled`), pausing keeps the very same
+  // boundary standing so the run picks it up after compacting (`needs_input`).
+  // Collapsing them would report a paused run as a cancelled one.
+  if (parsed.answer.choice === PAUSE_LABEL) {
+    return {
+      decision: reject(
+        state,
+        resolved,
+        `'${PAUSE_LABEL}': la frontera queda en pie y la corrida retoma acá`,
+        {
+          code: "FLOW_BOUNDARY_PAUSED",
+          action:
+            "escribí el CHECKPOINT con 'aw checkpoint-write', compactá, y volvé con 'aw flow advance' a esta misma frontera",
+          outcome: "needs_input",
+        },
+      ),
+    };
+  }
+  if (parsed.answer.choice === STOP_LABEL) {
+    return {
+      decision: reject(
+        state,
+        resolved,
+        `'${STOP_LABEL}': el recorrido queda detenido en esta frontera`,
         {
           code: "FLOW_BOUNDARY_DECLINED",
           action: "reanudá con 'aw flow advance' cuando quieras retomar esta frontera",
@@ -233,7 +265,7 @@ function admit(
   if (resolved.kind === "execution") {
     const verdict = executionVerdict(parsed.answer, resolved.action, effectsOf(stopped));
     if (verdict !== null) {
-      return { decision: reject(state, resolved, verdict.message, verdict.detail) };
+      return { decision: reject(state, resolved, verdict.message, verdict.detail, spent) };
     }
   }
   return parsed;
@@ -441,22 +473,38 @@ function reject(
   resolved: ResolvedBoundary,
   message: string,
   detail: { code: string; action: string; outcome?: CapabilityOutcome },
+  spent?: SpentAttempt,
 ): SubmitDecision {
-  const built = directiveFor(state, resolved, [], {
+  // A refused answer is the one rejection that CHANGES the run: the attempt is
+  // recorded, so the boundary that has been tried to its cap degrades instead of
+  // being emitted again. The boundary is recalculated over that state, which is
+  // what turns the last refusal into the degradation rather than into an
+  // identical question with a different error string.
+  const after = spent === undefined ? state : withAttempt(state, spent.identity);
+  const now = spent === undefined ? resolved : resolveBoundary(after, spent.journey);
+  const built = directiveFor(after, now, [], {
     // No outcome named ⇒ the boundary decides it: a finished journey reports
     // `completed`, an open one `needs_input`. Hardcoding one here would let a
     // rejection at the end of a run claim work is still pending.
     ...(detail.outcome === undefined ? {} : { outcome: detail.outcome }),
-    nextAction: `${message} — ${detail.action}`,
+    nextAction: `${message} — ${now.error?.action ?? detail.action}`,
   });
   if (!built.ok) return { ok: false, failure: built.failure };
   // Rewritten with the rejection's own code so the reason is machine-readable and
-  // not only prose in `next_action`.
+  // not only prose in `next_action` — unless the recalculated boundary is itself
+  // blocked, in which case ITS cause is the actionable one: answering again is no
+  // longer a way forward, and reporting the payload's error would suggest it is.
   const directive: FlowDirective = {
     ...built.directive,
-    error: { code: detail.code, message, action: detail.action },
+    error: now.error ?? { code: detail.code, message, action: detail.action },
   };
-  return { ok: true, state, value: directive, persist: false };
+  return { ok: true, state: after, value: directive, persist: spent !== undefined };
+}
+
+/** The attempt a refused answer spends, and the journey its boundary belongs to. */
+interface SpentAttempt {
+  journey: readonly FlowDecision[];
+  identity: FlowRunAttempt;
 }
 
 /**
@@ -471,6 +519,7 @@ function attemptIdentity(
   state: FlowRunState,
   input: SubmitFlowInput,
   seal: string,
+  transition: string,
 ): FlowRunAttempt {
   const digest = semanticDigest({ payload: input.raw, approval: input.approval });
   const prior = state.attempts.filter((past) => past.invocation_id === seal);
@@ -480,5 +529,13 @@ function attemptIdentity(
     attempt === 1
       ? null
       : (prior.find((past) => past.attempt === attempt - 1)?.request_digest ?? null);
-  return { invocation_id: seal, attempt, request_digest: digest, parent_request_digest: parent };
+  return {
+    invocation_id: seal,
+    attempt,
+    request_digest: digest,
+    parent_request_digest: parent,
+    // The seal moves with the state; the transition does not while the run
+    // stands there. It is what the cap counts over.
+    transition,
+  };
 }

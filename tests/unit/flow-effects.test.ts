@@ -12,11 +12,12 @@ import {
   SELF_AUTHORIZABLE_CLASSES,
 } from "../../src/domain/capability/effects.js";
 import type { FlowDecision } from "../../src/domain/flow/authority.js";
-import { decisionsOfScope, effectsOf } from "../../src/domain/flow/authority.js";
+import { effectsOf, journeyOfFlow } from "../../src/domain/flow/authority.js";
 import { authorizeTransition, effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { FLOW_RUN_STATE_FILE, newRunState } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 // The engine walks only what the CLI owns, and no tranche is migrated yet: over the
@@ -28,8 +29,13 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/domain/flow/authority.js")>();
   return {
     ...real,
-    decisionsOfScope: (scope: string) =>
-      real.decisionsOfScope(scope).map((row) => ({ ...row, ownership: "cli-owned" as const })),
+    // The composed journey is what production walks, so that is what the flip
+    // has to cover: mocking `decisionsOfScope` alone would leave the real
+    // composition reading the real rows.
+    journeyOfFlow: (flow: string) =>
+      real
+        .journeyOfFlow(flow as Parameters<typeof real.journeyOfFlow>[0])
+        .map((row) => ({ ...row, ownership: "cli-owned" as const })),
   };
 });
 
@@ -195,7 +201,7 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
   it("QUICK se detiene en su gate de convergencia, que corre pruebas", async () => {
     // `quick.convergence-gate` really runs a test runner, so it declares `execute`
     // and cannot be self-authorized: the run has to stop and ask.
-    const gate = decisionsOfScope("quick").find((row) => row.id === "quick.convergence-gate");
+    const gate = journeyOfFlow("quick").find((row) => row.id === "quick.convergence-gate");
     expect(effectsOf(gate as FlowDecision)).toEqual(["execute"]);
   });
 
@@ -203,7 +209,7 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
   async function current() {
     const read = await readRun(fs, locateRun(paths, SESSION));
     if (!read.ok) throw new Error("esperaba leer la corrida");
-    const resolved = resolveBoundary(read.state, decisionsOfScope("quick"));
+    const resolved = resolveBoundary(read.state, journeyOfFlow("quick"));
     if (resolved.stopped === null) throw new Error("el recorrido terminó sin pedir autorización");
     return resolved;
   }
@@ -271,7 +277,7 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
     expect(declined.error?.code).toBe("FLOW_BOUNDARY_DECLINED");
     expect(declined.effects.applied).not.toContain("execute");
     expect(declined.authorizations).not.toContain("execute");
-    expect(await readFile(statePath, "utf8")).toBe(before);
+    expect(decidedState(await readFile(statePath, "utf8"))).toEqual(decidedState(before));
   });
 
   it("aprobar registra la autorización y el efecto, y recién entonces se aplica", async () => {
@@ -293,12 +299,12 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
     });
     if (!wrong.ok) throw new Error("un rechazo de negocio viaja ok:true");
     expect(wrong.directive.error?.code).toBe("FLOW_APPROVAL_MISMATCH");
-    expect(await readFile(statePath, "utf8")).toBe(before);
+    expect(decidedState(await readFile(statePath, "utf8"))).toEqual(decidedState(before));
 
     // The right one does, and the ledger records all three moments.
     const read = await readRun(fs, locateRun(paths, SESSION));
     if (!read.ok) throw new Error("esperaba leer la corrida");
-    const resolved = resolveBoundary(read.state, decisionsOfScope("quick"));
+    const resolved = resolveBoundary(read.state, journeyOfFlow("quick"));
     const digest = effectApprovalDigest(
       resolved.stopped?.id ?? "",
       resolved.authorization?.planned ?? [],

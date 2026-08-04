@@ -29,7 +29,7 @@ import { type EffectClass, isEffectClass } from "../capability/effects.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
 import type { FlowDecision } from "./authority.js";
 
-export const FLOW_RUN_STATE_VERSION = 3;
+export const FLOW_RUN_STATE_VERSION = 4;
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -46,6 +46,48 @@ export interface FlowRunAttempt {
   attempt: number;
   request_digest: string;
   parent_request_digest: string | null;
+  /**
+   * The transition this attempt was answering.
+   *
+   * `invocation_id` cannot serve: it is the boundary's SEAL, and the seal moves
+   * every time the state does — including when a failed attempt is recorded. So
+   * counting how many times one boundary has been tried needs the one identity
+   * that does not move while the run stands there, which is the transition id.
+   */
+  transition: string;
+}
+
+/**
+ * How many times one boundary may be answered before the run degrades it.
+ *
+ * The chassis states the rule without a number ("`attempts[gap]++`, `MAX` cap")
+ * because the number is not doctrine — what is doctrine is that a gap must not
+ * be re-fired forever. Three is the smallest cap that still allows a genuine
+ * correction: a first answer, a fix after reading why it was refused, and one
+ * more. The fourth would be the loop the rule exists to prevent.
+ */
+export const MAX_BOUNDARY_ATTEMPTS = 3;
+
+/** How many attempts this run has already spent on one transition. */
+export function attemptsAt(state: FlowRunState, transition: string): number {
+  return state.attempts.filter((attempt) => attempt.transition === transition).length;
+}
+
+/**
+ * The seal of everything an answer was written AGAINST — attempts excluded.
+ *
+ * Not a second digest criterion: the same canonicalization over a deliberately
+ * narrower input, declared once, here. `digest` seals the file so tampering is
+ * detectable and must therefore cover every field. Staleness asks a different
+ * question — "did what this answer depends on move?" — and a failed attempt that
+ * was recorded moves nothing it depends on: same position, same boundary, same
+ * action, same effects. Sealing the attempts into it would report the caller's
+ * own previous refusal back to them as `FLOW_ANSWER_STALE`, replacing a precise
+ * reason ("this evidence is missing") with a vague one.
+ */
+export function positionDigest(state: FlowRunState): string {
+  const { attempts: _spent, digest: _seal, ...position } = state;
+  return semanticDigest(position);
 }
 
 /**
@@ -424,6 +466,7 @@ function isAttemptArray(value: unknown): value is FlowRunAttempt[] {
       typeof entry.invocation_id === "string" &&
       Number.isInteger(entry.attempt) &&
       typeof entry.request_digest === "string" &&
+      typeof entry.transition === "string" &&
       (entry.parent_request_digest === null || typeof entry.parent_request_digest === "string"),
   );
 }

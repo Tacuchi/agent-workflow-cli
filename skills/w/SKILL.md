@@ -89,11 +89,11 @@ Before any loop, the AI resolves its **operating context** on **every prompt** w
 **Continuity rule** (single source — the chassis and the loops reference here):
 
 1. **Flow command** = **new work line** → new session.
-2. **Exception — re-run:** the same command over the **same input** (e.g. `/w:spec-refine` over the same spec) does **not** open another line: `create_or_resume` locates that flow's session (descriptor + `## Origin`) and **resumes or reopens** it (removes `.closed`), never duplicating it.
-3. **Consented exception — escalation:** an **accepted escalation** inside a loop (e.g. quick → SPEC) opens a **new work line without a command**; the signal is the user's **explicit consent** in the structured-choice, equivalent to having invoked the destination flow's command.
-4. **Prompt with no command** = "same line" → continue/reopen the **most recent** session (the *last started*).
-5. Only if the prompt is clearly **unrelated**: offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to "no flow".
-6. **Convergence closes** the session; a later related prompt **reopens** it (resume removes `.closed`).
+2. **Prompt with no command** = "same line" → continue/reopen the **most recent** session (the *last started*).
+3. Only if the prompt is clearly **unrelated**: offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to "no flow".
+4. **Convergence closes** the session; a later related prompt **reopens** it (resume removes `.closed`).
+
+> **The two exceptions to #1 are not this document's call:** re-running the same command over the **same input** does not open another line — `aw session-resume --code <NNN> --reopen` locates that flow's session by descriptor and `## Origin` and resumes it instead of duplicating it — and an **accepted escalation** inside a loop (quick → SPEC) opens a new line **without** a command, which `aw resume` treats as equivalent to having invoked the destination flow's, because the consent was explicit. Both stay stated here for their reason, not their rule: a line must never fork because somebody re-ran a command, and never continue silently because somebody changed subject.
 
 It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+resume, applied to the next prompt) — agnostic doctrine, not a host hook. It applies to **every artifact** (`SCRIPTS.sql` is the worked example; QUICK case: `loops/quick-loop/LOOP.md`).
 

@@ -10,4 +10,6 @@ Loaded when a bare prompt continues an existing work line (signal `resume`).
 2. `"second prompt"` (**no command**, related work) → does **not** create another session: **continues/reopens the most recent one** (from step 1) and appends the new scripts to **that same** `SCRIPTS.sql`.
 3. `/w:quick "third prompt"` (**command** again) → **new** session, new loop.
 
-> The **command** signals "new work line"; a **bare prompt** means "same line" → by default continue/reopen the most recent session (the *last started*). Clearly unrelated → offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to the **no-flow** branch (write into `docs/` by convention + numbering). No workspace → **vanilla** behavior.
+> **Which line a prompt joins is not this document's call:** a command opens a new one through `aw session-create`, a bare prompt continues the most recent through `aw resume`. Both fire **before** a run exists, so no journey has a step for them. The reason stays: the **command** is the signal for "new work line", so nobody loses a thread by not typing one, or forks one by typing it twice.
+
+Whether a prompt really belongs to the open line is judgment. Clearly unrelated → offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to the **no-flow** branch (`docs/` by convention + numbering). No workspace → **vanilla** behavior.

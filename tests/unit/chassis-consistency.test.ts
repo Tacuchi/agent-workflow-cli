@@ -137,18 +137,25 @@ describe("Self-regulation (proactive compaction) — chasis ↔ harness (spec 00
     return module.slice(start);
   }
 
-  it("el chasis fija los dos modos, la config [compaction] y la degradación a confirm", async () => {
+  it("los dos modos, la config [compaction] y la degradación a confirm siguen nombrados, ya como contrato del CLI", async () => {
     const sub = await selfRegulationSubsection();
     expect(sub).toContain("`[compaction]`");
     expect(sub).toContain("`confirm` | `auto`");
     expect(sub).toMatch(/degrades to `confirm`/);
     expect(sub).toContain("`Compactar`");
+    // Enmendada por el tramo transversal: el documento ya no DECIDE cuál modo
+    // corre ni si el host puede honrarlo — lo decide `aw checkpoint-write
+    // --can-pause`, y decirlo es lo que hace observable esa propiedad. Los
+    // nombres siguen fijados porque el contrato sigue siendo ese; lo que cambió
+    // es quién lo aplica.
+    expect(sub).toContain("`aw checkpoint-write --can-pause`");
+    expect(sub).toContain("not this document's call");
   });
 
-  it("CHECKPOINT-antes-de-compactar es invariante explícita en todos los modos", async () => {
+  it("CHECKPOINT-antes-de-compactar sigue siendo invariante explícita en todos los modos", async () => {
     const sub = await selfRegulationSubsection();
     expect(sub).toContain("CHECKPOINT before compacting");
-    expect(sub).toContain("**before** any compaction fires");
+    expect(sub).toContain("holds in every mode");
   });
 
   it("sin umbrales numéricos: la detección es señal del host + fallback cualitativo (D4)", async () => {

@@ -8,7 +8,7 @@ import { locateRun, readRun } from "../../src/application/flow/run-state-service
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import type { FlowAuthority, FlowDecision } from "../../src/domain/flow/authority.js";
-import { decisionsOfScope, effectsOf } from "../../src/domain/flow/authority.js";
+import { effectsOf, journeyOfFlow } from "../../src/domain/flow/authority.js";
 import {
   FLOW_RUN_STATE_FILE,
   applyTransition,
@@ -18,6 +18,7 @@ import {
   withObservation,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 // The engine walks only what the CLI owns, and no tranche is migrated yet: over the
@@ -29,8 +30,13 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/domain/flow/authority.js")>();
   return {
     ...real,
-    decisionsOfScope: (scope: string) =>
-      real.decisionsOfScope(scope).map((row) => ({ ...row, ownership: "cli-owned" as const })),
+    // `journeyOfFlow` is what production walks, and it composes the transversal
+    // steps in itself — mocking only `decisionsOfScope` would leave the real
+    // composition calling the real rows and the two would disagree.
+    journeyOfFlow: (flow: string) =>
+      real
+        .journeyOfFlow(flow as Parameters<typeof real.journeyOfFlow>[0])
+        .map((row) => ({ ...row, ownership: "cli-owned" as const })),
   };
 });
 
@@ -130,7 +136,7 @@ describe("frontera humana — sobre una corrida real", () => {
 
   /** Leave a persisted run exactly where the engine would leave it: stopped at `id`. */
   async function seedRunAt(id: string): Promise<void> {
-    const journey = decisionsOfScope("plan-exec");
+    const journey = journeyOfFlow("plan-exec");
     let state = withObservation(newRunState("plan-exec", SESSION), {
       transition: "plan-exec.entry-gap-recognition",
       signals: ["plan.entry-gap-minor"],
@@ -157,7 +163,7 @@ describe("frontera humana — sobre una corrida real", () => {
   async function seal(): Promise<string> {
     const read = await readRun(fs, locateRun(paths, SESSION));
     if (!read.ok) throw new Error("esperaba leer la corrida");
-    return resolveBoundary(read.state, decisionsOfScope(read.state.flow)).seal;
+    return resolveBoundary(read.state, journeyOfFlow(read.state.flow)).seal;
   }
 
   it("una elección fuera del conjunto emitido se rechaza con acción y no escribe", async () => {
@@ -173,7 +179,12 @@ describe("frontera humana — sobre una corrida real", () => {
     // the doctrine used to enumerate — not the generic pair the engine falls back
     // to for a migrated row that names none.
     expect(result.directive.error?.action).toContain("Normalizar y ejecutar");
-    expect(await readFile(statePath(), "utf8")).toBe(before);
+    // A refused answer now SPENDS an attempt — that count is what the cap reads —
+    // so the file is not byte-identical any more. What must still be identical is
+    // everything the run decided: the cursor, what it skipped, the boundary in
+    // force, the effects and the observations. Asserting the whole file would be
+    // asserting that the cap does not work.
+    expect(decidedState(await readFile(statePath(), "utf8"))).toEqual(decidedState(before));
   });
 
   it("una respuesta sin elección es ambigua, no un default silencioso", async () => {

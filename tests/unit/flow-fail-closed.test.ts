@@ -7,7 +7,7 @@ import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { decisionsOfScope } from "../../src/domain/flow/authority.js";
+import { journeyOfFlow } from "../../src/domain/flow/authority.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import {
   FLOW_RUN_STATE_FILE,
@@ -15,6 +15,7 @@ import {
   serializeRunState,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 // The engine walks only what the CLI owns, and no tranche is migrated yet: over the
@@ -26,18 +27,29 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/domain/flow/authority.js")>();
   return {
     ...real,
-    decisionsOfScope: (scope: string) =>
-      real.decisionsOfScope(scope).map((row) => ({ ...row, ownership: "cli-owned" as const })),
+    // The composed journey is what production walks, so that is what the flip
+    // has to cover: mocking `decisionsOfScope` alone would leave the real
+    // composition reading the real rows.
+    journeyOfFlow: (flow: string) =>
+      real
+        .journeyOfFlow(flow as Parameters<typeof real.journeyOfFlow>[0])
+        .map((row) => ({ ...row, ownership: "cli-owned" as const })),
   };
 });
 
 /**
- * A response that does not serve changes NOTHING.
+ * A response that does not serve changes NOTHING it decided.
  *
  * The five failure modes are exercised over a real run and every one of them is
- * checked the same way: the state file has to come out byte for byte identical,
- * the rejection has to travel with `ok: true` inside the recalculated directive,
- * and it has to name a code and one valid action.
+ * checked the same way: everything the run DECIDED — cursor, skips, boundary,
+ * effects, observations, authorizations — has to come out identical, the
+ * rejection has to travel with `ok: true` inside the recalculated directive, and
+ * it has to name a code and one valid action.
+ *
+ * One field is deliberately outside that comparison: the attempt ledger. A
+ * refused answer spends an attempt, and the count is the whole mechanism behind
+ * the chassis' cap — asserting the file byte for byte would be asserting that
+ * the cap cannot work. The last test here is the other half of that claim.
  */
 
 const SESSION = "001-prueba-quick";
@@ -65,12 +77,22 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
   });
 
   const statePath = (): string => join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE);
-  const bytes = async (): Promise<string> => readFile(statePath(), "utf8");
+
+  /** Everything the run decided, with the attempt bookkeeping left out. */
+  const bytes = async (): Promise<string> =>
+    JSON.stringify(decidedState(await readFile(statePath(), "utf8")));
+
+  /** Put the run back where `beforeEach` left it, attempts included. */
+  const reseed = async (): Promise<void> => {
+    await rm(statePath());
+    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
+    if (!adopted.ok) throw new Error("esperaba re-adoptar la corrida");
+  };
 
   async function seal(): Promise<string> {
     const read = await readRun(fs, locateRun(paths, SESSION));
     if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
-    return resolveBoundary(read.state, decisionsOfScope(read.state.flow)).seal;
+    return resolveBoundary(read.state, journeyOfFlow(read.state.flow)).seal;
   }
 
   async function submit(raw: string, approval: string | null = null): Promise<FlowDirective> {
@@ -98,6 +120,11 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
     const before = await bytes();
     const seen: string[] = [];
     for (const [raw, code] of cases) {
+      // Fresh run per mode, on purpose: five refused answers in a row at ONE
+      // boundary is not five failure modes, it is the loop the cap stops — and
+      // the third of them would degrade the boundary before the fourth arrived.
+      // Each mode gets its own run so this file keeps testing what it is about.
+      await reseed();
       const directive = await submit(raw);
       expect(directive.error?.code, raw.slice(0, 40)).toBe(code);
       expect(directive.error?.action.length, code).toBeGreaterThan(0);

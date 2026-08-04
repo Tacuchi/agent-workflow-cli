@@ -16,6 +16,7 @@ import {
   decisionsOfScope,
   effectsOf,
   flowOfScope,
+  journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
@@ -47,9 +48,9 @@ const fs = new NodeFileSystem();
 const SESSION = "031-tramo-plan-plan-exec";
 const CODE = "031";
 
-const EXEC = decisionsOfScope("plan-exec");
-const NEW = decisionsOfScope("plan-new");
-const REFINE = decisionsOfScope("plan-refine");
+const EXEC = journeyOfFlow("plan-exec");
+const NEW = journeyOfFlow("plan-new");
+const REFINE = journeyOfFlow("plan-refine");
 
 function rowOf(journey: readonly FlowDecision[], id: string): FlowDecision {
   const row = journey.find((decision) => decision.id === id);
@@ -333,7 +334,10 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       output: null,
     });
     expect(claimed.error?.code).toBe("FLOW_EVIDENCE_MISSING");
-    expect((await current()).state.applied).toEqual([]);
+    // Los dos pasos transversales del prefijo ya se aplicaron —fijan la carpeta
+    // escribible y el tope de intentos antes de que nada corra—, así que lo que
+    // se afirma es lo que el resultado NO acreditó: la sesión sigue sin abrirse.
+    expect((await current()).state.applied).not.toContain("plan-exec.session");
   });
 
   it("sin hueco declarado, ni la severidad ni la normalización se preguntan", async () => {
@@ -350,6 +354,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(minor.resolved.choices.map((choice) => choice.label)).toEqual([
       "Normalizar y ejecutar",
       "Ir a plan-refine",
+      "Compactar",
       "Cerrar",
     ]);
     expect(minor.state.skipped).not.toContain("plan-exec.entry-gap-severity");
@@ -436,6 +441,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(approval.resolved.choices.map((choice) => choice.label)).toEqual([
       "Aprobar los commits del batch",
       "Dejar el batch sin commitear",
+      "Compactar",
       "Cerrar",
     ]);
 

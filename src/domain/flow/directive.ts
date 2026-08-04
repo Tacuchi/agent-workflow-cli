@@ -71,6 +71,24 @@ export const FLOW_BOUNDARY_KINDS = [
 
 export type FlowBoundaryKind = (typeof FLOW_BOUNDARY_KINDS)[number];
 
+/**
+ * The flow control's two labels — canonical, verbatim, on every host.
+ *
+ * They live in the domain because three layers need the same two strings and
+ * none of them may spell them differently: the engine appends them to a
+ * boundary, the answer parser lets either through without demanding whatever the
+ * boundary was asking for, and `submit` tells them apart to give each its own
+ * outcome. Pausing keeps the boundary and the work; stopping keeps the state and
+ * ends the run here. Neither resolves the question that was asked.
+ */
+export const PAUSE_LABEL = "Compactar";
+export const STOP_LABEL = "Cerrar";
+
+/** Whether a chosen label is the flow control rather than an answer. */
+export function isFlowControl(label: string | null): boolean {
+  return label === PAUSE_LABEL || label === STOP_LABEL;
+}
+
 // The alternatives of a boundary are DATA OF THE DECISION — a migrated tranche
 // declares its own — so the type lives with the registry and is re-exported here,
 // where the directive that carries them is defined.

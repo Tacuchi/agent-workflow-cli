@@ -13,8 +13,8 @@ import {
   type FlowDecision,
   actionOf,
   conditionOf,
-  decisionsOfScope,
   effectsOf,
+  journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
@@ -47,7 +47,7 @@ const fs = new NodeFileSystem();
 const SESSION = "007-tramo-quick-quick";
 const CODE = "007";
 
-const JOURNEY = decisionsOfScope("quick");
+const JOURNEY = journeyOfFlow("quick");
 
 function rowOf(id: string): FlowDecision {
   const row = JOURNEY.find((decision) => decision.id === id);
@@ -111,6 +111,10 @@ describe("el tramo QUICK migró como dato, no como prosa", () => {
       "quick.branch-precondition",
       "quick.db-scripts-only",
       "quick.convergence-gate",
+      // El cierre del chasis, compuesto como sufijo del recorrido: cerrar la
+      // sesión escribe su fila del registro durable, así que se acredita con
+      // salida real igual que cualquier otra escritura.
+      "chassis.finalize",
     ]);
   });
 });
@@ -268,7 +272,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(state.effects.applied).not.toContain("mutate_overwrite");
   });
 
-  it("dos señales presentan las tres alternativas propias más el cierre", async () => {
+  it("dos señales presentan las tres alternativas propias más el control de flujo", async () => {
     await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
     // Con el umbral disparado, la búsqueda anti-duplicado sí ocurre: es lo que
     // decide cuál alternativa se recomienda.
@@ -282,10 +286,14 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
       "Cambiar a SPEC",
       "Seguir en quick",
       "Recortar alcance",
+      // El control de flujo, ENTERO: pausar y cerrar son actos distintos y el
+      // chasis nombra los dos. Emitir solo `Cerrar` obligaba a elegir entre
+      // perder el hilo y perder el trabajo.
+      "Compactar",
       "Cerrar",
     ]);
-    // Cerrar nunca sale de la fila: el tramo no puede escribir una frontera de la
-    // que no se pueda salir.
+    // Ninguno de los dos sale de la fila: el tramo no puede escribir una frontera
+    // de la que no se pueda salir ni pausar.
     expect(directive.choices.filter((choice) => choice.recommended)).toHaveLength(1);
     const { state } = await current();
     expect(state.skipped).toEqual([]);
@@ -298,7 +306,11 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(directive.error?.code).toBe("FLOW_ANSWER_INVALID");
     const { state } = await current();
     expect(state.observations).toEqual([]);
-    expect(state.applied).toEqual([]);
+    // Los dos pasos transversales del prefijo YA se aplicaron —fijan la carpeta
+    // que este flow puede escribir y el tope de intentos, antes de cualquier
+    // pregunta—, así que "no persiste nada" se afirma sobre lo que la respuesta
+    // habría movido: la fila que contestaba sigue sin aplicar.
+    expect(state.applied).not.toContain("quick.entry-gate-signal");
     expect(state.skipped).toEqual([]);
   });
 

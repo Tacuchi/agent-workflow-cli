@@ -14,7 +14,9 @@
  * can run is worse than a boundary that says why it could not be built.
  */
 
+import type { WorklineFlow } from "../../application/capability/compose.js";
 import {
+  DOCS_BOUNDARY,
   type DelegatedAction,
   type FlowDecision,
   RUN_PLACEHOLDERS,
@@ -138,6 +140,37 @@ function unboundPlaceholder(action: DelegatedAction): string | null {
   for (const part of parts) {
     const found = PLACEHOLDER_SHAPE.exec(part);
     if (found !== null) return found[0];
+  }
+  return null;
+}
+
+/** Any `docs/<folder>` a string names, wherever inside it the path appears. */
+const DOCS_PATH = /(?:^|[\s"'=(,])(docs\/[A-Za-z0-9._-]+)/g;
+
+/**
+ * The `docs/` folder this action would write and this flow may not — or `null`.
+ *
+ * The chassis' hard rule is "no auto-export": a loop writes its own flow's
+ * document and nothing else, and promoting anything into another `docs/` folder
+ * is a separate, explicit step. Stated only in prose, the rule could be broken by
+ * a single registry row naming the wrong path, and the breach would be invisible
+ * until a run had already written outside its lane.
+ *
+ * Checked over the WHOLE invocation, not only its `target`: the path a command
+ * writes usually rides in an argument, and a boundary that inspected only the
+ * target would pass `aw export-manuals --out docs/manuals` with a target of `.`.
+ * Reading is not the concern — this is about what a delegated step may WRITE —
+ * but an action that only reads a foreign `docs/` folder has no reason to name it
+ * either, and refusing is the direction that costs a registry edit instead of an
+ * unauthorized write.
+ */
+export function docsBoundaryBreach(action: DelegatedAction, flow: WorklineFlow): string | null {
+  const allowed = DOCS_BOUNDARY[flow];
+  const parts = [...action.invocation.args, action.invocation.target];
+  for (const part of parts) {
+    for (const [, path] of part.matchAll(DOCS_PATH)) {
+      if (path !== undefined && !allowed.includes(path)) return path;
+    }
   }
   return null;
 }

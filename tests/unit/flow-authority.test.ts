@@ -71,6 +71,13 @@ describe("registro de autoridad — forma y unicidad", () => {
       (decision) => decision.ownership === "cli-owned" && decision.authority !== "cli",
     );
     expect(migratedJudgment.map((decision) => decision.id)).toEqual([
+      // The transversal three, and they are the sharpest case the guard makes:
+      // migrating a rule moved WHEN it is asked, never WHO answers. Detecting a
+      // gap and weighing a deliverable are still judgment; the flow control is
+      // still the person's. Not one of them gained an `action`.
+      "chassis.gap-detection",
+      "chassis.minimality-lens",
+      "chassis.flow-control",
       "quick.entry-gate-signal",
       "quick.gate-choice",
       "quick.success-criteria-authoring",
@@ -103,6 +110,12 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.deviation-recognition",
       "plan-exec.review-findings",
       "plan-exec.commit-authorization",
+      // Contracted in their own command rather than walked: they decide which
+      // line a prompt joins, or fire at whatever boundary the run is standing
+      // on. Neither shape is a step of a journey.
+      "resume.prompt-relatedness",
+      "resume.escalation-consent",
+      "checkpoint-write.context-pressure-signal",
     ]);
   });
 
@@ -210,12 +223,12 @@ describe("registro de autoridad — el universo es el command registry", () => {
 });
 
 describe("registro de autoridad — la migración arranca observable", () => {
-  it("solo SPEC y el chasis siguen decidiendo algo desde la doctrina", () => {
-    // Amended by the PLAN tranche, and this is the direction that matters: with
-    // QUICK, PLAN-new, PLAN-refine y PLAN-exec cut over, four of the five flows
-    // decide nothing from Markdown anymore. The guard keeps asserting the axis in
-    // both directions — it just states the CURRENT state instead of the initial
-    // one, which is the whole point of an observable migration.
+  it("solo SPEC y cinco comandos siguen decidiendo algo desde la doctrina", () => {
+    // Amended by the transversal tranche, and this is the direction that matters:
+    // the chassis is now migrated too, so what is left is nine rows in two
+    // places. The guard keeps asserting the axis in both directions — it states
+    // the CURRENT state instead of the initial one, which is the whole point of
+    // an observable migration.
     const fullyMigrated = ["quick", "plan-new", "plan-refine", "plan-exec"];
     for (const flow of WORKLINE_FLOWS) {
       expect(hasLegacyOwnership(flow), flow).toBe(!fullyMigrated.includes(flow));
@@ -223,7 +236,21 @@ describe("registro de autoridad — la migración arranca observable", () => {
     // SPEC's four remain for a document reason, not an oversight: their modules
     // are read by journeys outside this plan's tranches.
     expect(hasLegacyOwnership("spec-refine")).toBe(true);
-    expect(hasLegacyOwnership(CHASSIS_SCOPE)).toBe(true);
+    expect(hasLegacyOwnership(CHASSIS_SCOPE)).toBe(false);
+    // And the exact nine, so "F17 closes the rest" is a checkable claim rather
+    // than a promise: four of SPEC and five of transversal commands.
+    const left = FLOW_DECISIONS.filter((decision) => decision.ownership === "legacy");
+    expect(left.map((decision) => decision.id)).toEqual([
+      "spec-refine.split-signal",
+      "spec-refine.split-gate",
+      "spec-refine.split-choice",
+      "spec-refine.design-reuse",
+      "resume.route-choice",
+      "persist.shape-classification",
+      "context-plan.signal-declaration",
+      "fix-git.intent",
+      "export.selection",
+    ]);
   });
 
   it("la migración se mide por DOCUMENTO, en las dos direcciones", () => {

@@ -17,6 +17,7 @@ import {
   serializeRunState,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -92,7 +93,9 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
       },
     },
   ];
-  return { ...real, decisionsOfScope: () => journey };
+  // The fixture IS the whole journey here, transversal steps included: this
+  // file is about what an execution boundary does, not about composition.
+  return { ...real, journeyOfFlow: () => journey };
 });
 
 const SESSION = "001-prueba-quick";
@@ -120,7 +123,10 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
   });
 
   const statePath = (): string => join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE);
-  const bytes = async (): Promise<string> => readFile(statePath(), "utf8");
+  // The decided part only: a refused answer spends an attempt now, and that count
+  // is the mechanism behind the boundary cap. See `tests/helpers/decided-state.ts`.
+  const bytes = async (): Promise<string> =>
+    JSON.stringify(decidedState(await readFile(statePath(), "utf8")));
 
   async function state(): Promise<FlowRunState> {
     const read = await readRun(fs, locateRun(paths, SESSION));
@@ -130,8 +136,8 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
 
   async function seal(): Promise<string> {
     const current = await state();
-    const { decisionsOfScope } = await import("../../src/domain/flow/authority.js");
-    return resolveBoundary(current, decisionsOfScope(current.flow)).seal;
+    const { journeyOfFlow } = await import("../../src/domain/flow/authority.js");
+    return resolveBoundary(current, journeyOfFlow(current.flow)).seal;
   }
 
   async function submit(raw: string, approval: string | null = null): Promise<FlowDirective> {
@@ -143,6 +149,13 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
   /** Answer the semantic row so the run reaches the delegated one. */
   async function reachSeed(): Promise<FlowDirective> {
     return submit(JSON.stringify({ input_digest: await seal(), signals: ["fixture.senal-a"] }));
+  }
+
+  /** Put the run back where `beforeEach` left it, attempts included. */
+  async function reseed(): Promise<void> {
+    await rm(statePath());
+    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
+    if (!adopted.ok) throw new Error("esperaba re-adoptar la corrida");
   }
 
   /** A well-formed result for the seeding action, tweakable per case. */
@@ -283,16 +296,19 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
   });
 
   it("sin la evidencia exigida —o con una vacía— no aplica", async () => {
-    await reachSeed();
-    const before = await bytes();
-    const digest = await seal();
     for (const validations of [
       [],
       [{ id: "sesion-creada", passed: false, detail: "no se pudo crear" }],
       [{ id: "sesion-creada", passed: true, detail: "  " }],
       [{ id: "otra-cosa", passed: true, detail: "algo" }],
     ]) {
-      const directive = await submit(JSON.stringify(seedResult(digest, { validations })));
+      // A fresh run per shape: four refused results in a row at ONE boundary is
+      // not four ways of failing evidence, it is the loop the attempts cap stops,
+      // and the third would degrade the boundary before the fourth arrived.
+      await reseed();
+      await reachSeed();
+      const before = await bytes();
+      const directive = await submit(JSON.stringify(seedResult(await seal(), { validations })));
       expect(directive.error?.code, JSON.stringify(validations)).toBe("FLOW_EVIDENCE_MISSING");
       expect(directive.error?.message).toContain("sesion-creada");
       expect(await bytes()).toBe(before);
@@ -367,7 +383,9 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
 
 describe("la acción viaja sellada: cambiar cualquier campo vuelve stale el resultado", () => {
   const base: DelegatedAction = {
-    invocation: { program: "aw", args: ["status", "--json"], target: "docs/specs", input: null },
+    // Deliberately not a `docs/` path: the run is `quick`, which may write none,
+    // so a docs target would block the boundary before its seal is the subject.
+    invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
     evidence: ["busqueda"],
     idempotent: true,
     recovery: "volvé a correr la búsqueda",
@@ -390,7 +408,7 @@ describe("la acción viaja sellada: cambiar cualquier campo vuelve stale el resu
   const mutations: Array<[string, DelegatedAction]> = [
     ["el programa", { ...base, invocation: { ...base.invocation, program: "rg" } }],
     ["un argumento", { ...base, invocation: { ...base.invocation, args: ["status"] } }],
-    ["el target", { ...base, invocation: { ...base.invocation, target: "docs/plans" } }],
+    ["el target", { ...base, invocation: { ...base.invocation, target: "otra/carpeta" } }],
     ["el input", { ...base, invocation: { ...base.invocation, input: "algo" } }],
     ["la evidencia exigida", { ...base, evidence: ["otra"] }],
   ];
@@ -438,9 +456,9 @@ describe("autorización y ejecución son dos actos distintos", () => {
   }
 
   async function seal(): Promise<string> {
-    const { decisionsOfScope } = await import("../../src/domain/flow/authority.js");
+    const { journeyOfFlow } = await import("../../src/domain/flow/authority.js");
     const run = await current();
-    return resolveBoundary(run, decisionsOfScope(run.flow)).seal;
+    return resolveBoundary(run, journeyOfFlow(run.flow)).seal;
   }
 
   async function submit(raw: string, approval: string | null = null): Promise<FlowDirective> {
