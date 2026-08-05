@@ -584,7 +584,7 @@ async function collectDiscarded(
   try {
     const path = await findArtifact(session.path, artifact, fs);
     if (!path) return;
-    const items = listItems(parseMdSectionLoose(await fs.readText(path), heading));
+    const items = listItems(parseMdSectionLooseBilingual(await fs.readText(path), heading));
     if (items.length === 0) return;
     const ts = await resolveTimestamp(fs, path, undefined, now);
     for (const text of items) {
@@ -708,6 +708,18 @@ function relFromCwd(path: string, cwd: string): string {
 const parseMdSectionLoose = (text: string, heading: string): string | undefined =>
   parseMdSection(text, heading, normalizeHeading);
 
+/**
+ * Both halves at once: the bilingual aliases AND the loose heading normalization
+ * above. The discarded list is the reader that needs both.
+ *
+ * Kept apart from {@link parseMdSectionLoose} on purpose. Making that one
+ * bilingual would also have changed what counts as a legacy ready mark and how
+ * open questions are found — two behaviours nobody asked to move, on documents
+ * this change has no business reinterpreting.
+ */
+const parseMdSectionLooseBilingual = (text: string, heading: string): string | undefined =>
+  parseMdSectionBilingual(text, heading, normalizeHeading);
+
 function normalizeHeading(raw: string): string {
   return raw
     .trim()
@@ -722,7 +734,10 @@ function listItems(section: string | undefined): string[] {
   if (!section) return [];
   const out: string[] = [];
   for (const raw of section.split("\n")) {
-    const m = /^\s*[-*]\s+(.+?)\s*$/.exec(raw);
+    // Ordered lists count too. A `## Deferred` whose items were written `1.`/`2.`
+    // used to be dropped whole, in silence — and it was the two items naming how
+    // to unblock a plan that vanished that way.
+    const m = /^\s*(?:[-*]|\d+[.)])\s+(.+?)\s*$/.exec(raw);
     if (!m?.[1]) continue;
     const text = m[1].trim();
     if (text.length === 0) continue;

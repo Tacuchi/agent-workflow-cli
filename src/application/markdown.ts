@@ -134,6 +134,13 @@ function joinTrim(lines: string[]): string {
  * variants are accepted now so legacy/migrated artifacts both parse).
  */
 const KEYWORD_GROUPS: ReadonlyArray<readonly string[]> = [
+  // The two headings the DISCARDED list reads. They were the only ones in this
+  // table's whole vocabulary with no Spanish form, and the cost was silent: a
+  // `## Diferido` written by a loop whose user-facing language is Spanish simply
+  // did not exist for `aw status`, so deferred work disappeared instead of being
+  // reported.
+  ["Diferido", "Diferidos", "Deferred"],
+  ["Excluido", "Excluidos", "Excluded"],
   ["Descripción", "Descripcion", "Description"],
   ["Requerimiento", "Requirement"],
   ["Pregunta", "Question"],
@@ -239,10 +246,21 @@ export function parseMdValueBilingual(text: string, key: string): string | undef
 /**
  * Like {@link parseMdSection} but tries every alias of `heading` registered in
  * {@link KEYWORD_GROUPS}. Returns the first match.
+ *
+ * `normalizeName` passes straight through, and that pass-through is the point:
+ * bilingual matching and a caller's own heading normalization used to live in
+ * different functions, so a reader needing BOTH — aliases *and* tolerance for a
+ * legacy `## Deferred (text):` suffix — could only have one. The one that read
+ * the discarded list had the suffix half, so adding a Spanish alias to the table
+ * would have changed nothing.
  */
-export function parseMdSectionBilingual(text: string, heading: string): string | undefined {
+export function parseMdSectionBilingual(
+  text: string,
+  heading: string,
+  normalizeName?: (s: string) => string,
+): string | undefined {
   for (const candidate of bilingualAliases(heading)) {
-    const value = parseMdSection(text, candidate);
+    const value = parseMdSection(text, candidate, normalizeName);
     if (value !== undefined) return value;
   }
   return undefined;
