@@ -147,7 +147,7 @@ describe("selfDetectHosts — cuatro estados observables por host", () => {
     if (!result.ok || !result.data) throw new Error("expected data");
     for (const host of result.data.hosts) {
       const ids = host.capabilities.map((c) => c.id).sort();
-      expect(ids, host.target).toEqual(["commands", "hooks", "mcp", "skills"]);
+      expect(ids, host.target).toEqual(["commands", "hooks", "mcp", "skills", "structured-choice"]);
       for (const cap of host.capabilities) {
         expect(cap.detail.length, `${host.target}/${cap.id}`).toBeGreaterThan(0);
       }
@@ -158,5 +158,28 @@ describe("selfDetectHosts — cuatro estados observables por host", () => {
     // Claude sí: hooks nativos.
     const claude = result.data.hosts.find((h) => h.target === "claude");
     expect(claude?.capabilities.find((c) => c.id === "hooks")?.status).toBe("native");
+
+    // structured-choice ya no vive sólo en la doctrina: cada host informa el estado
+    // que la sonda verificó, y ninguno anuncia más de lo que sostiene.
+    const sc = (target: string) =>
+      result.data?.hosts
+        .find((h) => h.target === target)
+        ?.capabilities.find((c) => c.id === "structured-choice");
+    expect(sc("claude")?.status).toBe("native");
+    expect(sc("claude")?.detail).toContain("AskUserQuestion");
+    // Codex: la herramienta EXISTE y el router la niega en Default mode → degradado,
+    // nunca "native", y el detalle nombra por qué.
+    expect(sc("codex")?.status).toBe("degraded");
+    expect(sc("codex")?.detail).toContain("not reachable");
+    expect(sc("codex")?.detail).toContain("Default mode");
+    // Warp/Oz: sin superficie que anunciar.
+    expect(sc("oz")?.status).toBe("unsupported");
+    expect(sc("oz")?.detail).toContain("labeled markdown");
+    // Y todo host nativo dice CUÁNDO cae a markdown: "native" a secas se leería
+    // como "siempre nativo", y en tres de los cuatro no lo es.
+    for (const host of result.data.hosts) {
+      const cap = host.capabilities.find((c) => c.id === "structured-choice");
+      expect(cap?.detail, host.target).toContain("labeled markdown");
+    }
   });
 });

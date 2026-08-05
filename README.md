@@ -80,7 +80,7 @@ By default the CLI clears the target host's plugin cache before installing (opt 
 | Host | Level | SKILL | User-level commands | Hooks |
 |---|---|---|---|---|
 | `claude` | official | `~/.claude/skills/w/` | `~/.claude/commands/w/<n>.md` → `/w:<n>` | `~/.claude/settings.json` (JSON merge + backup) |
-| `codex` | official | `~/.codex/skills/w/` | synthesized skills `~/.codex/skills/w-<n>/` → `$w-<n>` (Codex reads no commands dir) | not armed (its hooks live in `config.toml`, not wired yet) |
+| `codex` | official | `~/.codex/skills/w/` | synthesized skills `~/.codex/skills/w-<n>/` → `$w-<n>` (Codex reads no commands dir) | **not armed, and not for lack of wiring**: they would go in `~/.codex/hooks.json` (Claude-shaped, every template event fits), but Codex requires an *interactive human review per hook* — writing the file does not arm it, and forging its `trusted_hash` would forge your approval |
 | `warp` | official | `~/.warp/skills/w/` | synthesized skills `~/.warp/skills/w-<n>/` → `/w-<n>` | none (no hook system) |
 | `gemini` | official | `~/.gemini/skills/w/` | synthesized skills `~/.gemini/skills/w-<n>/` (Antigravity `agy`) + `~/.gemini/commands/w/<n>.toml` → `/w:<n>` (legacy Gemini CLI) | not armed (extension-bundled) |
 | `kimi` | official · pre-1.0 | `~/.kimi-code/skills/w/` (also reads `~/.agents/skills`) | synthesized skills `~/.kimi-code/skills/w-<n>/` → `/skill:w-<n>` | `~/.kimi-code/config.toml` → managed `[[hooks]]` block (marked + backup) |

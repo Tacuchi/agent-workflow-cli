@@ -83,7 +83,14 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     "/w:export-reports",
   ],
 
-  // The 5 hooks of hooks.template.json — real matcher + what they fire.
+  // The events of hooks.template.json — real matcher + what they fire.
+  //
+  // What this list is NOT: a promise about any host. It is what the TEMPLATE
+  // declares; how much of it a given host really carries is per-host state, and the
+  // hosts view is where that lives (Kimi cannot express the PostCompact `prompt`
+  // hook and drops the SessionStart matcher; Codex has every event and still cannot
+  // be armed by an installer). `workflow-content.test.ts` pins this list to the
+  // template's own events so a hardcoded copy cannot drift from it.
   hooks: [
     {
       name: "SessionStart",

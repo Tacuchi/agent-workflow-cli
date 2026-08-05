@@ -223,13 +223,30 @@ describe("Structured-choice — opciones funcionales y bindings multi-host", () 
 
     const bindings = Object.fromEntries(header.map((column, index) => [column, row[index]]));
     expect(bindings["Claude Code"]).toContain("`AskUserQuestion`");
-    expect(bindings.Codex).toContain("`request_user_input` when exposed");
     expect(bindings["Kimi Code"]).toContain("`AskUserQuestion`");
-    expect(bindings["Gemini / Antigravity"]).toMatch(/`ask_user`.*`AskQuestion`/);
     expect(bindings.OpenCode).toContain("`question`");
     expect(bindings.Crush).toContain("`question`");
-    expect(bindings["Warp / Oz"]).toContain("no documented structured-choice surface");
+    expect(bindings["Warp / Oz"]).toContain("labeled markdown");
     expect(bindings.Generic).toContain("labeled markdown");
+
+    // Estas dos celdas las corrigió la sonda de 2026-08-04, y lo que se exige acá
+    // es MÁS que antes: no basta con nombrar la herramienta, la fila tiene que
+    // decir si se alcanza. "when exposed" no decía cuándo, y la respuesta real es
+    // "hoy, nunca".
+    expect(bindings.Codex).toContain("`request_user_input`");
+    expect(bindings.Codex).toMatch(/not reachable/);
+    expect(bindings.Codex).toContain("Default mode");
+    // La herramienta viva de gemini es `AskQuestion` (Antigravity); `ask_user` es
+    // del Gemini CLI retirado y NO está en el binario instalado. La fila tiene que
+    // nombrar la primera y desmentir la segunda, no listarlas como equivalentes.
+    expect(bindings["Gemini / Antigravity"]).toContain("`AskQuestion`");
+    expect(bindings["Gemini / Antigravity"]).toMatch(/`ask_user` is the retired/);
+
+    // Todo host nativo declara CUÁNDO cae a markdown: un binding sin condición se
+    // lee como "siempre nativo", y en tres de los cuatro no lo es.
+    for (const column of ["Kimi Code", "OpenCode"]) {
+      expect(bindings[column], column).toMatch(/labeled markdown/);
+    }
 
     const matrixColumnByHarness = {
       "claude-code": "Claude Code",

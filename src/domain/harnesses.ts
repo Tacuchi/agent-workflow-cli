@@ -260,10 +260,19 @@ export const HARNESSES: readonly HarnessSpec[] = [
     support: { tier: "official" },
     runtime: { bins: ["codex"], versionArgs: ["--version"] },
     configDir: { kind: "dir", path: "~/.codex" },
-    // Codex HAS hooks, in a different format (TOML) with no settled user-level
-    // syntax — declared, not managed: the surfaces say "available, not armed"
-    // instead of pretending the host has none.
-    hooks: { mechanism: "~/.codex/config.toml (plugin hooks/hooks.json)", managed: false },
+    // Codex HAS hooks and its user-level path is settled — `~/.codex/hooks.json`,
+    // Claude-shaped, with the 5 template events among its 11 (probe 2026-08-04:
+    // codex read and validated a file written there, clamping a timeout). What it
+    // does NOT allow is an installer arming them: every new or changed hook needs
+    // an interactive human review, persisted as `trusted_hash` in
+    // `[hooks.state]`. Writing the file is therefore not arming it, and forging
+    // that hash would forge the person's security decision — so this stays
+    // `managed: false` and the mechanism string says exactly why.
+    hooks: {
+      mechanism:
+        "~/.codex/hooks.json (Claude-shaped); each hook needs an interactive trust review in codex, recorded as trusted_hash in [hooks.state]",
+      managed: false,
+    },
     envMarkers: ["CODEX_HOME", "CODEX_CLI", "CODEX_RUNTIME"],
     mcpHostId: "codex",
     globalMcpPaths: {

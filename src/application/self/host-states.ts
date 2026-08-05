@@ -65,7 +65,7 @@ export type CapabilityStatus =
   | "unsupported";
 
 export interface HostCapability {
-  id: "skills" | "commands" | "hooks" | "mcp";
+  id: "skills" | "commands" | "structured-choice" | "hooks" | "mcp";
   status: CapabilityStatus;
   /** How it works here — the fallback when degraded, the reason when unsupported. */
   detail: string;
@@ -231,6 +231,15 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
             status: "unsupported",
             detail: "no commands dir and no skill-as-command wrappers installed for this host",
           },
+    // structured-choice is one of the two capabilities a loop cannot do without, and
+    // until now it lived only in doctrine: no surface could say what a host really
+    // does with a human boundary. Projected from the same catalog entry the
+    // installer stamps, so the state and the installed wrapper cannot disagree.
+    {
+      id: "structured-choice",
+      status: spec.structuredChoice.state,
+      detail: structuredChoiceDetail(spec),
+    },
     spec.hooks === null
       ? { id: "hooks", status: "unsupported", detail: "this host has no hook system" }
       : spec.hooks.managed
@@ -248,6 +257,27 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
         }
       : { id: "mcp", status: "native", detail: `written to its ${spec.mcpHostId} MCP config` },
   ];
+}
+
+/**
+ * One line for what a human boundary really does here.
+ *
+ * Every branch names the fallback condition, because "native" without it reads as
+ * "always native" — and on three of the four native hosts it is not.
+ */
+function structuredChoiceDetail(spec: HarnessSpec): string {
+  const binding = spec.structuredChoice;
+  const ceiling =
+    binding.ceilings === null
+      ? "no per-call ceiling declared"
+      : `${binding.ceilings.questions}×${binding.ceilings.options} per call`;
+  if (binding.state === "native" && binding.tool !== null) {
+    return `${binding.tool} (${ceiling}); labeled markdown when ${binding.fallbackReason}`;
+  }
+  if (binding.tool !== null) {
+    return `${binding.tool} exists but is not reachable (${binding.fallbackReason}) → labeled markdown`;
+  }
+  return `no native selection surface (${binding.fallbackReason}) → labeled markdown`;
 }
 
 function deriveStatus(present: boolean, runtime: RuntimeProbe, installed: boolean): HostStatus {

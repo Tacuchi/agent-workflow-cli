@@ -75,7 +75,9 @@ export function WorkflowTab({ ctx, isActive, onToast }: WorkflowTabProps) {
         ctx={ctx}
         isActive={isActive}
         {...(onToast ? { onToast } : {})}
-        hooksMetaSuffix={`hooks armed · SKILL + ${w.slashCommands.length} slash + ${w.hooks.length} hooks`}
+        // "template" and not "hooks", because how many of them a host really
+        // carries is what the host row itself reports.
+        hooksMetaSuffix={`hooks armed · SKILL + ${w.slashCommands.length} slash + ${w.hooks.length} template hooks`}
       />
     </Box>
   );
