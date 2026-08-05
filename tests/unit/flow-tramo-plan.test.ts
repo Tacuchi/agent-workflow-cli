@@ -393,7 +393,13 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
   });
 
   it("el estado de fase se autoriza primero y solo el resultado real lo aplica", async () => {
-    await walkTo("plan-exec.task-marking", []);
+    // Las filas que escriben, corren o commitean ahora se alcanzan sólo si se
+    // declaró que hay algo que hacer: sin señal se saltan, y ése es el arreglo.
+    await walkTo("plan-exec.task-marking", [
+      "plan.tasks-to-mark",
+      "plan.plan-closable",
+      "plan.commit-pending",
+    ]);
     const gate = await current();
     // `mutate_overwrite` no se autoriza solo: la corrida para ANTES de nombrar la
     // invocación que escribe en el plan-doc.
@@ -414,7 +420,11 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
   });
 
   it("una validación de fase en rojo no habilita nada de lo que viene después", async () => {
-    await walkTo("plan-exec.validation-execution", []);
+    await walkTo("plan-exec.validation-execution", [
+      "plan.tasks-to-mark",
+      "plan.plan-closable",
+      "plan.commit-pending",
+    ]);
     // `execute` no se autoriza solo, así que la corrida para acá DOS veces: una
     // para que alguien apruebe correr algo, y otra para exigir lo que salió.
     const gate = await current();
@@ -446,7 +456,11 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
   });
 
   it("aprobar los commits no los crea: el efecto vuelve a parar por su cuenta", async () => {
-    await walkTo("plan-exec.commit-authorization", []);
+    await walkTo("plan-exec.commit-authorization", [
+      "plan.tasks-to-mark",
+      "plan.plan-closable",
+      "plan.commit-pending",
+    ]);
     const approval = await current();
     expect(approval.resolved.kind).toBe("human");
     expect(approval.resolved.choices.map((choice) => choice.label)).toEqual([

@@ -82,6 +82,9 @@ describe("registro de autoridad — forma y unicidad", () => {
       "quick.success-criteria-authoring",
       "quick.success-criteria-ratification",
       "quick.deliverable-authoring",
+      // La frontera que declara si el quick tocó una base de datos: sin ella, la
+      // regla de scripts-only exigía un SCRIPTS.sql que no debía existir.
+      "quick.db-touched",
       "quick.review-findings",
       "quick.commit-authorization",
       "spec-refine.baseline-scope",
@@ -110,6 +113,10 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.batch-eligibility-signal",
       "plan-exec.implementation",
       "plan-exec.deviation-recognition",
+      // La frontera que declara qué queda por hacer al cerrar el batch. Sin ella,
+      // las tres filas que escriben, corren o commitean exigían su efecto aunque
+      // en un batch legítimo no hubiera nada que hacer.
+      "plan-exec.pending-effects",
       "plan-exec.review-findings",
       "plan-exec.commit-authorization",
       // Contracted in their own command rather than walked: they decide which
@@ -358,7 +365,7 @@ describe("registro de autoridad — la migración cerró observable", () => {
     expect(counted("quick", QUICK_LOOP)).toBe(12);
     expect(counted("spec-refine", "loops/spec-refine-loop/LOOP.md")).toBe(9);
     expect(counted("spec-refine", "modules/IDEATION-GATE.md")).toBe(2);
-    // PLAN's three journeys, whole — 48 rows, of which 9 are new: the eligibility
+    // PLAN's three journeys, whole — 49 rows, of which 10 are new: the eligibility
     // observation and its isolation rule in each of the three, refine's own split
     // signal, execution's entry-gap recognition, and the commit itself, which had
     // no row because approving one used to be the last thing the registry knew
@@ -366,10 +373,13 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // retirable here.
     const planScopes = ["plan-new", "plan-refine", "plan-exec"];
     const plan = planScopes.flatMap((scope) => decisionsOfScope(scope));
-    expect(plan).toHaveLength(48);
+    expect(plan).toHaveLength(49);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
-    expect(counted("quick", "modules/DB-SCRIPTS-ONLY.md")).toBe(1);
+    // Dos: la regla de scripts-only y la frontera que declara si hay base de datos
+    // que gobernar. La segunda es la que permite que la primera se aplique sólo
+    // donde tiene algo que hacer.
+    expect(counted("quick", "modules/DB-SCRIPTS-ONLY.md")).toBe(2);
     // The four that used to be listed here as "still doctrine's" — three of the
     // split gate plus design reuse — are the ones the closing tranche took, and
     // they moved to the documents `spec-refine` actually reads.

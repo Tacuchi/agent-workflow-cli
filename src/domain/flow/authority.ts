@@ -959,6 +959,20 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     attribution: QUICK_ATTRIBUTION,
   },
   {
+    id: "quick.db-touched",
+    scope: "quick",
+    title: "reconocer si la tarea llegó a tocar una base de datos",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: DB_SCRIPTS_ONLY,
+    attribution: PLAN_ATTRIBUTION,
+    // A quick that never went near a database has no statement to derive and no
+    // `SCRIPTS.sql` to hand back, so the row below it used to demand an artifact
+    // that should not exist. Declaring the signal is what lets the rule apply
+    // exactly where it has something to govern.
+    signals: ["quick.db-touched"],
+  },
+  {
     id: "quick.db-scripts-only",
     scope: "quick",
     title: "derivar todo DDL o DML al script de la sesión sin ejecutarlo",
@@ -967,6 +981,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: DB_SCRIPTS_ONLY,
     attribution: PLAN_ATTRIBUTION,
     effects: ["local_additive"],
+    condition: {
+      threshold: { observed: "quick.db-touched", of: ["quick.db-touched"], min: 1 },
+      otherwise: "la tarea no tocó ninguna base de datos: no hay sentencia que derivar",
+    },
     // Migrated with the PLAN tranche and not with QUICK, for the same reason
     // CODE-POLICIES was: `plan-exec` reads this module too, and retiring its rule
     // while execution still decided from it would have left that journey without
@@ -1973,6 +1991,26 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
+    id: "plan-exec.pending-effects",
+    scope: "plan-exec",
+    title: "reconocer qué queda por hacer al cerrar el batch",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // The three rows below it write, run or commit — and in a legitimate batch any
+    // of the three may have nothing to do: boxes already ticked by an earlier run,
+    // phases still pending, a batch with no code. Without this row each of them
+    // demanded its effect anyway, so the only truthful answer was to refuse, and a
+    // refused boundary that keeps being re-emitted exhausts and stops the run.
+    //
+    // The signals are POSITIVE — "there IS something to do" — because the engine's
+    // threshold is positive: a row applies when its signal was observed and is
+    // passed over when it was not. The inverse cannot be expressed, and inverting
+    // one by mistake would skip a step that DID apply, crediting work nobody did.
+    signals: ["plan.tasks-to-mark", "plan.plan-closable", "plan.commit-pending"],
+  },
+  {
     id: "plan-exec.task-marking",
     scope: "plan-exec",
     title: "marcar la tarea cuando su trabajo local termina",
@@ -1981,6 +2019,15 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    condition: {
+      threshold: {
+        observed: "plan-exec.pending-effects",
+        of: ["plan.tasks-to-mark"],
+        min: 1,
+      },
+      otherwise:
+        "ninguna casilla terminó su trabajo local en este batch: no hay nada que marcar en el plan",
+    },
     // The plan-doc is the per-task source of truth, and the engine does not edit
     // it — so the write is delegated and what comes back is the board's count of
     // ticked boxes. "I marked it" is the one thing this contract will not take.
@@ -2129,6 +2176,15 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    condition: {
+      threshold: {
+        observed: "plan-exec.pending-effects",
+        of: ["plan.plan-closable"],
+        min: 1,
+      },
+      otherwise:
+        "al plan le quedan fases sin validar: sellarlo acá sería marcarlo done desde los contadores",
+    },
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
       evidence: ["plan.estado-done-sellado"],
@@ -2146,6 +2202,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
     effects: ["execute", "local_additive"],
+    condition: {
+      threshold: {
+        observed: "plan-exec.pending-effects",
+        of: ["plan.commit-pending"],
+        min: 1,
+      },
+      otherwise: "ninguna fuente afectada quedó con cambios sin commitear: no hay commit que crear",
+    },
     // Approving is not committing. The authorization above is a preference; this
     // is the effect, and it comes back as the sources' real git state — which is
     // also the between-unit precondition the policy demands ("each working tree

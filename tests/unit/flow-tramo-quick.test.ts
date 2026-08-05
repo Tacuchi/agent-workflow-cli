@@ -451,23 +451,70 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
   async function answerBoundary(
     resolved: Awaited<ReturnType<typeof current>>["resolved"],
   ): Promise<void> {
+    await answerReturning(resolved);
+  }
+
+  /** Igual que {@link answerBoundary}, devolviendo la directiva recalculada. */
+  async function answerReturning(
+    resolved: Awaited<ReturnType<typeof current>>["resolved"],
+  ): Promise<FlowDirective> {
     const stopped = resolved.stopped as FlowDecision;
     if (resolved.kind === "execution") {
-      await answer(resultFor(resolved));
-      return;
+      return await answer(resultFor(resolved));
     }
     if (resolved.kind === "authorization") {
-      await answer(
+      return await answer(
         { input_digest: resolved.seal, choice: "Autorizar el efecto" },
         effectApprovalDigest(stopped.id, resolved.authorization?.planned ?? []),
       );
-      return;
     }
-    await answer(
+    return await answer(
       resolved.kind === "human"
         ? { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" }
-        : { input_digest: resolved.seal, decisions: { paso: stopped.id } },
+        : {
+            input_digest: resolved.seal,
+            // Declara TODAS las señales que la fila admite, para que el recorrido
+            // camine entero: una fila condicionada se salta cuando su señal no se
+            // observó, y este test existe para ver los pasos, no los saltos.
+            signals: [...(stopped.signals ?? [])],
+            decisions: { paso: stopped.id },
+          },
     );
+  }
+
+  /**
+   * Camina el recorrido entero declarando, en cada frontera semántica, las señales
+   * que `porFila` indique para ella — y todas las que la fila admita cuando no la
+   * menciona. Devuelve los pasos que quedaron omitidos, con su motivo.
+   */
+  async function walkDeclaring(
+    porFila: Record<string, string[]>,
+  ): Promise<Array<{ id: string; reason: string }>> {
+    const saltadas: Array<{ id: string; reason: string }> = [];
+    const recordar = (directive: FlowDirective): void => {
+      for (const applied of directive.applied) {
+        if (applied.outcome === "skipped") {
+          saltadas.push({ id: applied.transition, reason: applied.reason ?? "" });
+        }
+      }
+    };
+    recordar(await declare([]));
+    for (let step = 0; step < 20; step += 1) {
+      const { resolved } = await current();
+      if (resolved.stopped === null) return saltadas;
+      const stopped = resolved.stopped as FlowDecision;
+      const override = porFila[stopped.id];
+      recordar(
+        resolved.kind === "semantic" && override !== undefined
+          ? await answer({
+              input_digest: resolved.seal,
+              signals: override,
+              decisions: { paso: stopped.id },
+            })
+          : await answerReturning(resolved),
+      );
+    }
+    return saltadas;
   }
 
   it("ninguna transversal decide ya desde su documento: el recorrido llega al final", async () => {
@@ -489,6 +536,17 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
       await answerBoundary(resolved);
     }
     throw new Error("el recorrido nunca llegó al final");
+  });
+
+  // El otro sentido de la misma regla, y el que importa: un quick que no toca
+  // ninguna base de datos no tiene sentencia que derivar, así que la regla de
+  // scripts-only se SALTA con su razón en vez de exigir un SCRIPTS.sql que no
+  // debería existir. Antes exigía el efecto igual.
+  it("un quick que no toca base de datos se salta la regla de scripts-only, con su razón", async () => {
+    const saltadas = await walkDeclaring({ "quick.db-touched": [] });
+    const scripts = saltadas.find((x) => x.id === "quick.db-scripts-only");
+    expect(scripts, "la regla de scripts-only tenía que saltarse").toBeDefined();
+    expect(scripts?.reason).toContain("no tocó ninguna base de datos");
   });
 });
 

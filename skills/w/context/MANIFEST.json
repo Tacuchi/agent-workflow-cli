@@ -50,7 +50,11 @@
     "plan.entry-gap-structural": "phases, contracts or journey are missing, or temporary behavior leaves its boundary undeclared",
     "plan.deviation-structural": "the change that appeared while implementing touches a contract, the participating components, the phase order or the simulation boundary",
     "plan.deviation-functional": "the change that appeared while implementing touches the expected result, the scope, a business rule or an acceptance criterion",
-    "chassis.context-pressure": "a fresh reader would need the CHECKPOINT to continue this run"
+    "chassis.context-pressure": "a fresh reader would need the CHECKPOINT to continue this run",
+    "plan.tasks-to-mark": "at least one task of the batch finished its local work and its checkbox is still open",
+    "plan.plan-closable": "every phase of the plan will be validated once this batch closes, so the plan can be sealed done",
+    "plan.commit-pending": "at least one affected source carries uncommitted changes from this batch",
+    "quick.db-touched": "the task read from or wrote to a database, so there is a statement to derive into the session script"
   },
   "commands": {
     "quick": {
@@ -103,7 +107,9 @@
       ]
     },
     "spec-new": {
-      "core": ["commands/spec-new.md"],
+      "core": [
+        "commands/spec-new.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -120,7 +126,11 @@
       ]
     },
     "spec-refine": {
-      "core": ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
+      "core": [
+        "commands/spec-refine.md",
+        "loops/spec-refine-loop/LOOP.md",
+        "loops/CHASSIS.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -356,7 +366,9 @@
       ]
     },
     "status": {
-      "core": ["commands/status.md"],
+      "core": [
+        "commands/status.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -365,7 +377,9 @@
       ]
     },
     "resume": {
-      "core": ["commands/resume.md"],
+      "core": [
+        "commands/resume.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -374,7 +388,9 @@
       ]
     },
     "persist": {
-      "core": ["commands/persist.md"],
+      "core": [
+        "commands/persist.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -391,7 +407,9 @@
       ]
     },
     "fix-git": {
-      "core": ["commands/fix-git.md"],
+      "core": [
+        "commands/fix-git.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -400,7 +418,9 @@
       ]
     },
     "generate-launch": {
-      "core": ["commands/generate-launch.md"],
+      "core": [
+        "commands/generate-launch.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -413,7 +433,9 @@
       ]
     },
     "workspace-init": {
-      "core": ["commands/workspace-init.md"],
+      "core": [
+        "commands/workspace-init.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -426,7 +448,9 @@
       ]
     },
     "export-diagrams": {
-      "core": ["commands/export-diagrams.md"],
+      "core": [
+        "commands/export-diagrams.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -439,7 +463,9 @@
       ]
     },
     "export-manuals": {
-      "core": ["commands/export-manuals.md"],
+      "core": [
+        "commands/export-manuals.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -452,7 +478,9 @@
       ]
     },
     "export-reports": {
-      "core": ["commands/export-reports.md"],
+      "core": [
+        "commands/export-reports.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -465,7 +493,9 @@
       ]
     },
     "export-scripts": {
-      "core": ["commands/export-scripts.md"],
+      "core": [
+        "commands/export-scripts.md"
+      ],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",
@@ -481,7 +511,9 @@
   "capabilities": {
     "$comment": "Conformant capabilities: the same read-set question as a command, and deliberately NOT commands — no commands/<name>.md, no activation median, no reclassification as a single-pass command.",
     "design": {
-      "core": ["roles/design/CONTRACT.md"],
+      "core": [
+        "roles/design/CONTRACT.md"
+      ],
       "modules": []
     }
   },
