@@ -154,3 +154,42 @@ describe("GitCliAdapter — new git-flow ops", () => {
     expect(await new GitCliAdapter(p).conflictedFiles("/repo")).toEqual([]);
   });
 });
+
+// El defecto que cierra este bloque no tenia NINGUN test: el adaptador recortaba
+// un caracter del PRIMER archivo cambiado y su comentario llamaba a eso
+// «back-compat with prior consumers». No habia consumidor que dependiera de ello
+// ni prueba que lo fijara — sólo una ruta inexistente mostrada como si existiera.
+describe("GitCliAdapter — changedFiles lee el formato porcelain sin recortar", () => {
+  const porcelain = (stdout: string) =>
+    new ScriptedProcess([
+      { match: (_c, a) => a.includes("--porcelain"), result: { code: 0, stdout, stderr: "" } },
+    ]);
+
+  it("el PRIMER archivo sale completo, igual que los siguientes", async () => {
+    const p = porcelain(" M src/application/markdown.ts\n M src/adapters/git-cli.ts\n");
+    expect(await new GitCliAdapter(p).changedFiles("/repo")).toEqual([
+      "src/application/markdown.ts",
+      "src/adapters/git-cli.ts",
+    ]);
+  });
+
+  it("con un solo archivo tampoco se recorta", async () => {
+    const p = porcelain(" M src/domain/harnesses.ts\n");
+    expect(await new GitCliAdapter(p).changedFiles("/repo")).toEqual(["src/domain/harnesses.ts"]);
+  });
+
+  it("lee los codigos de estado de dos letras: staged, sin seguimiento y renombrado", async () => {
+    const p = porcelain("M  a.ts\n?? b.ts\nR  viejo.ts -> nuevo.ts\nA  c.ts\n");
+    expect(await new GitCliAdapter(p).changedFiles("/repo")).toEqual([
+      "a.ts",
+      "b.ts",
+      "viejo.ts -> nuevo.ts",
+      "c.ts",
+    ]);
+  });
+
+  it("un arbol limpio no devuelve una entrada vacia", async () => {
+    expect(await new GitCliAdapter(porcelain("")).changedFiles("/repo")).toEqual([]);
+    expect(await new GitCliAdapter(porcelain("\n")).changedFiles("/repo")).toEqual([]);
+  });
+});

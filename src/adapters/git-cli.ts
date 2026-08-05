@@ -64,14 +64,19 @@ export class GitCliAdapter implements GitPort {
 
   async changedFiles(repoPath: string): Promise<string[]> {
     const result = await this.mustRun("status", ["status", "--porcelain"], repoPath);
-    // NOTE: trim BEFORE splitting consumes the leading space of the first line
-    // in porcelain format (e.g., ` M path` → `M path`, then [3:] would be off
-    // by one). This quirk is preserved for back-compat with prior consumers.
-    const raw = result.stdout.trim();
-    return raw
+    // Split BEFORE trimming, and trim each line on its own.
+    //
+    // Trimming the whole output first ate the leading space of the FIRST porcelain
+    // line (` M path` → `M path`), so the `slice(3)` below came back one character
+    // short — and only ever on that line, which is what made it read as a path
+    // that simply does not exist (`rc/…` for `src/…`). The comment this replaces
+    // called the quirk back-compat for prior consumers; there were none. Every
+    // consumer (`aw sources`, `aw check-branch`, the branch hook) shows or counts
+    // paths, and no test pinned it either.
+    return result.stdout
       .split("\n")
-      .filter((line) => line.length > 3)
-      .map((line) => line.slice(3).trim());
+      .map((line) => line.slice(3).trim())
+      .filter((path) => path.length > 0);
   }
 
   async diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]> {
