@@ -112,6 +112,53 @@ export interface HarnessInvocation {
   note: string;
 }
 
+/**
+ * What a host's structured-choice really is TODAY, as the single source the
+ * installer stamps and the surfaces project.
+ *
+ * It exists because the doctrine alone cannot carry this: `HARNESS.md` documents
+ * the binding per host, but every wrapper we install ships the same neutral text,
+ * so nothing tells the agent which host it is running on or which mechanism to
+ * reach for. Installation is the one moment the target IS known, so the binding is
+ * stamped there — and a stamp can only be generated from data.
+ *
+ * The three states are the same vocabulary `capabilitiesFor` already projects, and
+ * they answer one question: which mechanism does a boundary use HERE.
+ *
+ * - `native` — the tool is reachable and it is what a boundary uses; labeled
+ *   markdown is the fallback for the cases `fallbackReason` names.
+ * - `degraded` — the mechanism exists in the runtime but is NOT reachable in the
+ *   mode Workline runs in, so markdown is the operative mechanism. Kept apart from
+ *   `unsupported` because the difference is actionable: there is an opt-in to name.
+ * - `unsupported` — no mechanism at all; markdown, always.
+ */
+export type StructuredChoiceState = "native" | "degraded" | "unsupported";
+
+export interface HarnessStructuredChoice {
+  state: StructuredChoiceState;
+  /** The host's native tool, when it has one at all — even one it does not reach. */
+  tool: string | null;
+  /**
+   * Per-call ceilings the host DECLARES. `null` means it declares none, and that is
+   * not an invitation to infer one: an invented ceiling silently drops questions.
+   */
+  ceilings: { questions: number; options: number } | null;
+  /** Where an option's functional sentence goes: its own field, or folded into the label. */
+  sentence: "field" | "in-label";
+  /** Cap the host puts on that sentence, when it caps it. `null` = uncapped. */
+  sentenceMaxChars: number | null;
+  /** The tool already offers a free-text answer → never add a duplicate `Other`. */
+  customAnswer: boolean;
+  /**
+   * Read against `state`: for `native`, WHEN labeled markdown takes over; for the
+   * other two, WHY it always does. One field, because a boundary only ever needs
+   * one answer — "under what condition am I not using the native mechanism".
+   */
+  fallbackReason: string;
+  /** What the claim rests on — doc, installed runtime or a real run — with its date. */
+  evidence: string;
+}
+
 /** The mention form every host that auto-discovers skills by description shares. */
 const MENTION: HarnessInvocation = {
   kind: "mention",
@@ -163,6 +210,12 @@ export interface HarnessSpec {
    * host cannot load a top-level skill at all. Discovery prints exactly this.
    */
   invocation: HarnessInvocation | null;
+  /**
+   * How a human boundary is really presented here. Single source for the install
+   * stamp and for the state every surface projects; `chassis-consistency` asserts
+   * it agrees with the `structured-choice` row of `HARNESS.md`.
+   */
+  structuredChoice: HarnessStructuredChoice;
 }
 
 export const HARNESSES: readonly HarnessSpec[] = [
@@ -187,6 +240,18 @@ export const HARNESSES: readonly HarnessSpec[] = [
     skillsDirs: [".claude/skills"],
     installTarget: "claude",
     invocation: MENTION,
+    structuredChoice: {
+      state: "native",
+      tool: "AskUserQuestion",
+      ceilings: { questions: 4, options: 4 },
+      sentence: "field",
+      sentenceMaxChars: null,
+      customAnswer: true,
+      fallbackReason:
+        "the call fails, or the asker is a subagent (the tool belongs to the main agent only)",
+      evidence:
+        "official docs 2026-08-02; the binding in daily use, and the regression plan 016 preserves",
+    },
   },
   {
     id: "codex",
@@ -218,6 +283,21 @@ export const HARNESSES: readonly HarnessSpec[] = [
     skillsDirs: [".agents/skills", ".codex/skills"],
     installTarget: "codex",
     invocation: MENTION,
+    // `degraded`, not `unsupported`: the tool IS in the runtime (its own router and
+    // TUI renderer name it), so what is missing is reachability — and that has an
+    // opt-in worth naming instead of a capability worth denying.
+    structuredChoice: {
+      state: "degraded",
+      tool: "request_user_input",
+      ceilings: { questions: 3, options: 3 },
+      sentence: "field",
+      sentenceMaxChars: null,
+      customAnswer: false,
+      fallbackReason:
+        "its router refuses the call in Default mode (`request_user_input is unavailable in Default mode`) and exec mode never offers it, while the opt-in `default_mode_request_user_input` is still under development",
+      evidence:
+        "probe 2026-08-04 on codex-cli 0.146.0: a real run hit the router refusal and the model listed its own tool set without it; `codex features list` reports the opt-in as 'under development false'",
+    },
   },
   {
     // Detection: OZ_RUN_ID takes priority over warp markers to handle overlap.
@@ -242,6 +322,18 @@ export const HARNESSES: readonly HarnessSpec[] = [
     skillsDirs: [".agents/skills"],
     installTarget: "oz",
     invocation: MENTION,
+    structuredChoice: {
+      state: "unsupported",
+      tool: null,
+      ceilings: null,
+      sentence: "in-label",
+      sentenceMaxChars: null,
+      customAnswer: false,
+      fallbackReason:
+        "its launcher is a 122-byte Bash shim inside Warp.app, with no tool surface of its own to reach",
+      evidence:
+        "probe 2026-08-04 on oz v0.2026.07.29.09.05: the shim carries no question-tool name at all",
+    },
   },
   {
     id: "warp",
@@ -274,6 +366,16 @@ export const HARNESSES: readonly HarnessSpec[] = [
     skillsDirs: [".warp/skills", ".agents/skills", ".claude/skills", ".codex/skills"],
     installTarget: "warp",
     invocation: MENTION,
+    structuredChoice: {
+      state: "unsupported",
+      tool: null,
+      ceilings: null,
+      sentence: "in-label",
+      sentenceMaxChars: null,
+      customAnswer: false,
+      fallbackReason: "no structured-choice surface is documented for it",
+      evidence: "official docs 2026-08-02; it ships no CLI, so there is nothing local to probe",
+    },
   },
   {
     // Gemini CLI (deprecated mid-2026) + Antigravity CLI (`agy`, successor;
@@ -314,6 +416,22 @@ export const HARNESSES: readonly HarnessSpec[] = [
     skillsDirs: [".agents/skills", ".gemini/skills"],
     installTarget: "gemini",
     invocation: MENTION,
+    // The tool is `AskQuestion`, NOT the deprecated Gemini CLI's `ask_user`: the
+    // live binary here is `agy`, and `ask_user` does not appear in it at all.
+    // Naming the retired one would stamp a tool no installed host answers to.
+    structuredChoice: {
+      state: "native",
+      tool: "AskQuestion",
+      ceilings: null,
+      // `AskQuestionOption` carries `id` and `text` and nothing else — there is no
+      // field for the sentence, so it rides inside the visible option string.
+      sentence: "in-label",
+      sentenceMaxChars: null,
+      customAnswer: true,
+      fallbackReason: "the call fails or the host disables the tool (`AskQuestionToolConfig`)",
+      evidence:
+        "probe 2026-08-04 on agy 1.0.16 (Antigravity, the successor that reuses ~/.gemini): its shipped proto declares `AskQuestionEntry` with `options`, `is_multi_select` and `write_in_response`, and `AskQuestionOption` with `id` + `text` only; no per-call ceiling is declared anywhere. The run itself is unverified — `agy --print` returned nothing within 150s",
+    },
   },
   {
     // OpenCode (sst/opencode). Config `opencode.json` ($schema); MCP under `mcp`
@@ -339,6 +457,18 @@ export const HARNESSES: readonly HarnessSpec[] = [
     skillsDirs: [".opencode/skills", ".agents/skills", ".claude/skills"],
     installTarget: "opencode",
     invocation: MENTION,
+    structuredChoice: {
+      state: "native",
+      tool: "question",
+      ceilings: null,
+      sentence: "field",
+      sentenceMaxChars: null,
+      customAnswer: true,
+      fallbackReason:
+        "a non-interactive run (`opencode run`) starts with the `question` permission set to `deny`, or the call fails",
+      evidence:
+        "probe 2026-08-04 on opencode 1.18.5: `QuestionOption` carries its own `label` and `description`, `custom` defaults to true, and no count ceiling is declared; the exported session of a real `run` showed `question` denied",
+    },
   },
   {
     // Crush (charmbracelet/crush). Config `crush.json` ($schema charm.land/crush.json);
@@ -375,6 +505,20 @@ export const HARNESSES: readonly HarnessSpec[] = [
     ],
     installTarget: "crush",
     invocation: MENTION,
+    structuredChoice: {
+      state: "native",
+      tool: "question",
+      ceilings: { questions: 5, options: 5 },
+      sentence: "field",
+      // The one host that CAPS the sentence. It matters: a consequence longer than
+      // this cannot be shortened to fit without losing content, which is a
+      // degradation to declare, not a trim to perform quietly.
+      sentenceMaxChars: 100,
+      customAnswer: true,
+      fallbackReason: "the call fails, or an option's consequence does not fit that cap",
+      evidence:
+        "probe 2026-08-04 on crush v0.87.0: ceilings 5×5, a description required on every question (<300 chars) and on every choice (<100 chars), and an automatic fill-in option, all read from the installed binary; the run itself could not be verified (expired auth)",
+    },
   },
   {
     // Kimi Code (MoonshotAI) — successor of the Python `kimi-cli`, shipped as a
@@ -422,6 +566,18 @@ export const HARNESSES: readonly HarnessSpec[] = [
       kind: "slash",
       template: "/skill:<name>",
       note: "probe 2026-07-29: las skills SON la superficie de comandos de Kimi Code",
+    },
+    structuredChoice: {
+      state: "native",
+      tool: "AskUserQuestion",
+      ceilings: { questions: 4, options: 4 },
+      sentence: "field",
+      sentenceMaxChars: null,
+      customAnswer: true,
+      fallbackReason:
+        "the call fails, or the permission mode is `auto` or the run is non-interactive (this host's own system rule forbids the call there)",
+      evidence:
+        "probe 2026-08-04 on kimi 0.31.1: the tool is in the default agent's list and its schema is 1-4 questions × 2-4 options with `label` + `description`; in `--prompt` it refused the call ('auto mode is active') and degraded to labeled markdown on its own, options and consequences intact",
     },
   },
 ] as const satisfies readonly HarnessSpec[];

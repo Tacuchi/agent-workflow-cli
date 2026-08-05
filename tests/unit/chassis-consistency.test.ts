@@ -248,6 +248,37 @@ describe("Structured-choice — opciones funcionales y bindings multi-host", () 
       expect(bindings[matrixColumnByHarness[spec.id]], spec.id).toBeTruthy();
     }
     expect(harness).not.toContain("this table is prose and no test reads it");
+
+    // El catálogo es la fuente que el instalador estampa y la matriz es la que un
+    // humano lee: si divergen, la superficie instalada le promete al agente un
+    // mecanismo que la doctrina no reconoce. Nadie más comparaba las dos.
+    for (const spec of HARNESSES) {
+      const cell = bindings[matrixColumnByHarness[spec.id]] ?? "";
+      const binding = spec.structuredChoice;
+      if (binding.tool === null) {
+        expect(binding.state, spec.id).toBe("unsupported");
+        expect(cell, spec.id).toMatch(/labeled markdown|no documented structured-choice surface/);
+      } else {
+        expect(cell, spec.id).toContain(`\`${binding.tool}\``);
+      }
+    }
+  });
+
+  it("todo host declara de qué depende su binding y cuándo cae a markdown", () => {
+    for (const spec of HARNESSES) {
+      const binding = spec.structuredChoice;
+      // Sin razón de fallback la degradación es invisible: el agente no sabe
+      // cuándo NO está usando el mecanismo nativo.
+      expect(binding.fallbackReason.trim().length, spec.id).toBeGreaterThan(0);
+      // Una afirmación sin fuente fechada es la que nadie puede volver a comprobar.
+      expect(binding.evidence, spec.id).toMatch(/20\d\d-\d\d-\d\d|20\d\d/);
+      // Techos inventados sería lo peor: o los declara el host, o no hay ninguno.
+      if (binding.ceilings !== null) {
+        expect(binding.ceilings.questions, spec.id).toBeGreaterThan(0);
+        expect(binding.ceilings.options, spec.id).toBeGreaterThan(1);
+      }
+      if (binding.state === "unsupported") expect(binding.tool, spec.id).toBeNull();
+    }
   });
 
   it("el binding preserva label y explicación incluso en superficies de un solo texto", async () => {

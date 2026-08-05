@@ -379,8 +379,12 @@ describe("selfInstallSkill", () => {
     expect(oc).not.toContain(CLAUDE_PLUGIN_BUNDLE_ROOT);
 
     // Crush: user:w:quick via ~/.crush/commands/w/quick.md — no frontmatter.
+    // The wrapper opens with the host binding stamped at install and continues
+    // into the authored body; what must NOT appear is a frontmatter delimiter,
+    // since Crush parses none and would render it as text.
     const crush = await readFile(join(home, ".crush/commands/w/quick.md"), "utf8");
-    expect(crush.startsWith("# quick — trampoline")).toBe(true);
+    expect(crush.startsWith("> **Structured-choice on this host (`crush`")).toBe(true);
+    expect(crush).toContain("# quick — trampoline");
     expect(crush).not.toContain("---");
     expect(crush).toContain("$ARGUMENTS");
     expect(crush).toContain("../../../.config/crush/skills/w/loops/quick-loop/LOOP.md");

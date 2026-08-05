@@ -51,8 +51,15 @@ export function descriptorLocatorValue(descriptor: CapabilityDescriptor): string
  * It says one thing: call the shared dispatcher. Restating the operations, the
  * effects or the `off` policy here would be the second contractual description
  * the whole layer exists to prevent — the model reads the descriptor next to it.
+ *
+ * `stamp` is the one exception, and it is not a second description of the
+ * capability: this file ends by saying a `needs_input` is answered right here, in
+ * the host's conversation, which makes it a place human boundaries are presented.
+ * A wrapper that says "ask here" without saying HOW to ask on this host leaves the
+ * question to be guessed. Absent (install target unknown, as in a unit test) the
+ * file is written exactly as before.
  */
-export function renderCapabilitySkill(descriptor: CapabilityDescriptor): string {
+export function renderCapabilitySkill(descriptor: CapabilityDescriptor, stamp?: string): string {
   const operations = descriptor.operations.map((o) => `\`${o.name}\``).join(", ");
   return [
     "---",
@@ -92,6 +99,7 @@ export function renderCapabilitySkill(descriptor: CapabilityDescriptor): string 
     "La conversación es la del host. Las preguntas de un `needs_input` se hacen acá mismo.",
     "El contrato de invocación completo — qué puede pedir cada caller — vive en",
     "`roles/design/CONTRACT.md` del bundle `w`, y no se repite acá.",
+    ...(stamp === undefined ? [] : ["", stamp]),
     "",
   ].join("\n");
 }
@@ -179,6 +187,7 @@ export type WrapperInstall =
 export async function installCapabilitySkill(
   root: string,
   descriptor: CapabilityDescriptor,
+  stamp?: string,
 ): Promise<WrapperInstall> {
   const dir = join(root, descriptor.name);
   const ownership = await inspectCapabilityDir(dir);
@@ -200,7 +209,7 @@ export async function installCapabilitySkill(
   // file that is not there yet, or a host reading mid-install sees a broken
   // locator instead of no skill at all.
   await writeFile(descriptorPath, renderDescriptorJson(descriptor), "utf8");
-  await writeFile(skillMd, renderCapabilitySkill(descriptor), "utf8");
+  await writeFile(skillMd, renderCapabilitySkill(descriptor, stamp), "utf8");
   return { ok: true, dir, files: [skillMd, descriptorPath] };
 }
 

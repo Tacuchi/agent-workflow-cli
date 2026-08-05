@@ -41,6 +41,9 @@ const { TARGET_ROOTS, COMMAND_SKILLS_HOSTS, HOOKS_MANAGED_TARGETS } = await impo
 const { USER_COMMANDS_BY_TARGET } = await import(
   join(ROOT, "dist", "application", "self", "install-skill.js")
 );
+const { stampForInstallTarget } = await import(
+  join(ROOT, "dist", "domain", "structured-choice-stamp.js")
+);
 
 const today = new Date().toISOString().slice(0, 10);
 const results = [];
@@ -89,10 +92,51 @@ function runCli(args, home) {
 }
 
 /**
- * What the catalog promises this host, as three independent observations. The
- * SAME three are checked after install (all must be present) and after uninstall
- * (all must be gone) — checking only the bundle on the way out would let a
- * regression that strands hooks or wrappers pass green.
+ * Every file an install writes under a throwaway HOME, so an observation can ask
+ * "does the surface SAY this" instead of only "does the file exist".
+ */
+function installedFiles(dir, acc = []) {
+  if (!existsSync(dir)) return acc;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) installedFiles(full, acc);
+    else acc.push(full);
+  }
+  return acc;
+}
+
+/**
+ * The files that ARE a surface on this host: the capability skill, its native
+ * command wrappers and its synthesized skill-as-command wrappers. Derived from the
+ * same catalog the installer reads, so a new host is covered by construction.
+ *
+ * Deliberately NOT the bundle: the doctrine under `w/` stays host-neutral, and
+ * `verifyInstall` checks exactly that.
+ */
+function surfaceFiles(target, home) {
+  const skillsRoot = join(home, ...TARGET_ROOTS[target]);
+  const native = USER_COMMANDS_BY_TARGET[target];
+  const synthesized =
+    COMMAND_SKILLS_HOSTS.has(target) && existsSync(skillsRoot)
+      ? readdirSync(skillsRoot, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && e.name.startsWith("w-"))
+          .flatMap((e) => installedFiles(join(skillsRoot, e.name)))
+      : [];
+  return [
+    ...installedFiles(join(skillsRoot, "design")),
+    ...(native === null ? [] : installedFiles(join(home, ...native.relpath.split("/")))),
+    ...synthesized,
+    // Only what the host reads AS instructions. The capability wrapper ships its
+    // descriptor next to its SKILL.md, and a JSON contract is not a place a
+    // sentence for the agent belongs.
+  ].filter((f) => f.endsWith(".md") || f.endsWith(".toml"));
+}
+
+/**
+ * What the catalog promises this host, as independent observations. The SAME ones
+ * are checked after install (all must be present) and after uninstall (all must be
+ * gone) — checking only the bundle on the way out would let a regression that
+ * strands hooks or wrappers pass green.
  */
 function observeArtifacts(spec, home) {
   const target = spec.installTarget;
@@ -102,6 +146,17 @@ function observeArtifacts(spec, home) {
   const observations = [
     { what: `bundle ${bundle}/SKILL.md`, present: existsSync(join(bundle, "SKILL.md")) },
   ];
+
+  // The binding a wrapper CARRIES, not just its existence. Before this, an install
+  // that shipped the neutral text everywhere passed every check on this list: the
+  // files were all there, and none of them said which host it was.
+  const surfaces = surfaceFiles(target, home);
+  observations.push({
+    what: `structured-choice binding stamped for '${target}' in every installed surface`,
+    present:
+      surfaces.length > 0 &&
+      surfaces.every((f) => readFileSync(f, "utf8").includes(stampForInstallTarget(target))),
+  });
 
   const nativeCommands = USER_COMMANDS_BY_TARGET[target];
   if (nativeCommands !== null) {
@@ -142,6 +197,16 @@ function verifyInstall(spec) {
     }
     for (const o of observeArtifacts(spec, home)) {
       if (!o.present) problems.push(`promised but missing after install: ${o.what}`);
+    }
+    // The canonical bundle is host-neutral on purpose: the per-host binding lives
+    // only in what is installed AS a surface. A stamped copy inside `w/` would put
+    // one host's mechanism into the doctrine every other host reads.
+    const bundle = join(home, ...TARGET_ROOTS[target], "w");
+    const stamp = stampForInstallTarget(target);
+    for (const file of installedFiles(bundle)) {
+      if (readFileSync(file, "utf8").includes(stamp)) {
+        problems.push(`canonical bundle is no longer host-neutral: ${file} carries the stamp`);
+      }
     }
 
     const uninstall = runCli(

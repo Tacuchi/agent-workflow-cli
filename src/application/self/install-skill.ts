@@ -6,6 +6,7 @@ import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import { DESIGN_DESCRIPTOR } from "../../domain/design/capability.js";
 import { type InstallTarget, harnessByInstallTarget } from "../../domain/harnesses.js";
+import { stampForInstallTarget } from "../../domain/structured-choice-stamp.js";
 import type { CommandResult } from "../../domain/types.js";
 import { installCapabilitySkill } from "../capability/wrapper.js";
 import { copyDir, hasValidFrontmatter } from "./install-plugin-skills.js";
@@ -536,7 +537,11 @@ async function installOneTarget(
   // entrypoint of a capability, and every host can load it. So it installs on
   // all of them, and `--skill-only` does not skip it — skipping it would leave
   // the capability declared and unreachable.
-  const capability = await installCapabilitySkill(dirname(dest), DESIGN_DESCRIPTOR);
+  const capability = await installCapabilitySkill(
+    dirname(dest),
+    DESIGN_DESCRIPTOR,
+    stampForInstallTarget(t.target),
+  );
   if (capability.ok) entry.capability_skill = DESIGN_DESCRIPTOR.name;
   else
     entry.capability_skill_conflict = `${capability.failure.message} — ${capability.failure.action}`;
@@ -671,7 +676,7 @@ async function synthesizeCommandSkills(
       await mkdir(destDir, { recursive: true });
       await writeFile(
         join(destDir, "SKILL.md"),
-        renderCommandSkill(skillName, raw, skillDest),
+        renderCommandSkill(skillName, raw, skillDest, target),
         "utf8",
       );
       count += 1;
@@ -682,7 +687,12 @@ async function synthesizeCommandSkills(
   return { count, warnings };
 }
 
-function renderCommandSkill(skillName: string, raw: string, bundleDest: string): string {
+function renderCommandSkill(
+  skillName: string,
+  raw: string,
+  bundleDest: string,
+  target: InstallTarget,
+): string {
   const { description, body } = splitCommandDoc(materializeBundleRoot(raw, bundleDest));
   const desc = description ?? `agent-workflow command ${skillName} (see body).`;
   const rewired = body.split("../").join("../w/");
@@ -694,6 +704,8 @@ function renderCommandSkill(skillName: string, raw: string, bundleDest: string):
     "---",
     "",
     `> ${COMMAND_SKILL_MARKER}. Treat the text accompanying this invocation as \`$ARGUMENTS\`. The full \`w\` bundle lives in the sibling directory \`../w/\`.`,
+    "",
+    stampForInstallTarget(target),
     "",
     rewired,
   ].join("\n");
@@ -721,14 +733,19 @@ function renderCommandWrapper(
   raw: string,
   bundleReferenceRoot: string,
   bundleDest: string,
+  target: InstallTarget,
 ): string {
   // commands/*.md is authored one level below the bundle root, hence its
   // `../loops`, `../modules`, … references. Native wrappers live elsewhere;
   // retarget that parent to the installed bundle before adapting the dialect.
   const materialized = materializeBundleRoot(raw, bundleDest);
   const rewired = materialized.split("../").join(`${bundleReferenceRoot}/`);
-  if (format === "claude-md") return rewired;
-  const { description, body } = splitCommandDoc(rewired);
+  const stamp = stampForInstallTarget(target);
+  // Claude keeps its frontmatter whole — it carries keys beyond `description`, so
+  // splitting and re-emitting would drop them. The stamp is inserted after it.
+  if (format === "claude-md") return withStamp(rewired, stamp);
+  const { description, body: authored } = splitCommandDoc(rewired);
+  const body = `${stamp}\n\n${authored}`;
   if (format === "gemini-toml") {
     const prompt = body.split("$ARGUMENTS").join("{{args}}");
     const lines: string[] = [];
@@ -745,6 +762,19 @@ function renderCommandWrapper(
   // crush-md: Crush parses no frontmatter — ship the body only. $ARGUMENTS
   // matches its ^\$[A-Z]+ named-argument rule, so Crush prompts for it.
   return body;
+}
+
+/**
+ * Inserts a block right after a doc's frontmatter, or at the top when it has none.
+ *
+ * Used only where the frontmatter must survive verbatim (the Claude wrapper): the
+ * other dialects already re-emit their own, so they compose the body directly.
+ */
+function withStamp(raw: string, stamp: string): string {
+  const match = raw.match(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/);
+  if (match === null) return `${stamp}\n\n${raw}`;
+  const body = raw.slice(match[0].length).replace(/^\s*\n/, "");
+  return `${match[0]}\n${stamp}\n\n${body}`;
 }
 
 async function installUserCommands(
@@ -786,7 +816,7 @@ async function installUserCommands(
       spec.format === "gemini-toml" ? entry.name.replace(/\.md$/, ".toml") : entry.name;
     await writeFile(
       join(destDir, destName),
-      renderCommandWrapper(spec.format, raw, bundleReferenceRoot, bundleDest),
+      renderCommandWrapper(spec.format, raw, bundleReferenceRoot, bundleDest, target),
       "utf8",
     );
     copied += 1;
