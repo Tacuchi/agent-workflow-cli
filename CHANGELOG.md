@@ -31,7 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Notes
 
 - **Codex sigue con hooks no gestionados, y ahora se sabe por qué**: exige una revisión humana interactiva por cada hook nuevo o modificado, persistida como `trusted_hash`. Escribir el archivo no lo arma, y fabricar ese hash sería falsificar una aprobación de seguridad.
-- **En crush, Gemini y opencode viaja el enforcement, no la resumabilidad** — ninguno soporta `SessionStart`, `SessionEnd` ni los eventos de compactación. Armarlos es trabajo de otra versión; la asimetría queda declarada, no simulada.
+- **Los hooks de crush, Gemini y opencode siguen sin armar, y su fila de catálogo sigue sin verificar.** Esta versión corrigió el mecanismo de hooks de Codex y la elección estructurada de los ocho hosts, pero no las filas de hooks de estos tres: Gemini todavía figura con `BeforeTool`, un evento que no existe en el binario `agy`, y crush con «preliminary» en vez de su `crush.json` → `hooks`. Verificarlas y armarlos es trabajo de la próxima versión. Lo único que esta versión garantiza sobre ellos es lo negativo: nadie escribe hooks ahí y ninguna superficie los reporta armados.
 
 ## [21.1.0] — 2026-08-04
 
