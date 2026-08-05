@@ -74,16 +74,31 @@ export interface HookSkip {
   reason: string;
 }
 
+/**
+ * A hook that DID install but not whole. Kept apart from {@link HookSkip} because
+ * the two say different things to whoever reads the install output: a skip means
+ * the hook is not there, a degradation means it is there and does less. Collapsing
+ * them would report a working hook as missing, or a missing one as working.
+ */
+export interface HookDegradation {
+  event: string;
+  /** What the host could not carry, and what it does instead. */
+  reason: string;
+}
+
 export interface HookTransformResult {
   entries: TomlHookEntry[];
   /** What could not be expressed in this host's dialect. Never empty silently. */
   skipped: HookSkip[];
+  /** What installed with something dropped. Also never silent. */
+  degraded: HookDegradation[];
 }
 
 /** Flattens the bundled template into Kimi's `[[hooks]]` entries. */
 export function hooksTemplateToToml(template: HooksTemplate): HookTransformResult {
   const entries: TomlHookEntry[] = [];
   const skipped: HookSkip[] = [];
+  const degraded: HookDegradation[] = [];
 
   for (const [event, groups] of Object.entries(template.hooks)) {
     if (!KIMI_HOOK_EVENTS.has(event)) {
@@ -96,30 +111,69 @@ export function hooksTemplateToToml(template: HooksTemplate): HookTransformResul
     }
     for (const group of groups as HookEntry[]) {
       for (const hook of group.hooks ?? []) {
-        if (typeof hook.command !== "string" || hook.command.length === 0) {
-          skipped.push({
-            event,
-            reason: `hook of type '${hook.type}' has no command — Kimi Code only runs command hooks`,
-          });
-          continue;
-        }
-        const matcher = carriedMatcher(event, group.matcher);
-        const timeout = clampTimeout(hook.timeout);
-        entries.push({
-          event,
-          ...(matcher === undefined ? {} : { matcher }),
-          command: hook.command,
-          ...(timeout === undefined ? {} : { timeout }),
-        });
+        const outcome = convertHook(event, group, hook);
+        if (outcome.skip !== undefined) skipped.push(outcome.skip);
+        if (outcome.degradation !== undefined) degraded.push(outcome.degradation);
+        if (outcome.entry !== undefined) entries.push(outcome.entry);
       }
     }
   }
-  return { entries, skipped };
+  return { entries, skipped, degraded };
 }
 
-function carriedMatcher(event: string, matcher: string | undefined): string | undefined {
+/**
+ * One template hook, as at most one entry plus at most one notice.
+ *
+ * The three outcomes are independent on purpose: a hook can install cleanly, be
+ * skipped entirely, or install AND report what it lost. Folding them into two
+ * would make the third indistinguishable from one of the others.
+ */
+function convertHook(
+  event: string,
+  group: HookEntry,
+  hook: HookEntry["hooks"][number],
+): { entry?: TomlHookEntry; skip?: HookSkip; degradation?: HookDegradation } {
+  if (typeof hook.command !== "string" || hook.command.length === 0) {
+    return {
+      skip: {
+        event,
+        reason: `hook of type '${hook.type}' has no command — Kimi Code only runs command hooks`,
+      },
+    };
+  }
+  const matcher = carriedMatcher(event, group.matcher);
+  const timeout = clampTimeout(hook.timeout);
+  const entry: TomlHookEntry = {
+    event,
+    ...(typeof matcher === "string" ? { matcher } : {}),
+    command: hook.command,
+    ...(timeout === undefined ? {} : { timeout }),
+  };
+  // The hook installs; what does not travel is its matcher. Reported because
+  // "declared degradation" and "silent drop" are the same bytes on disk and
+  // opposite things to a person reading the install output.
+  if (matcher === null) {
+    return {
+      entry,
+      degradation: {
+        event,
+        reason: `matcher '${group.matcher}' not carried — Kimi Code tests it against this event's own vocabulary, not the tool name, so the hook installs without matcher and therefore always fires`,
+      },
+    };
+  }
+  return { entry };
+}
+
+/**
+ * The matcher that travels: the value itself, `undefined` when there was none to
+ * carry, or `null` when one existed and had to be dropped.
+ *
+ * Three outcomes rather than two, because only the third is a degradation to
+ * report — a template group with no matcher at all loses nothing.
+ */
+function carriedMatcher(event: string, matcher: string | undefined): string | undefined | null {
   if (matcher === undefined || matcher.trim().length === 0) return undefined;
-  return TOOL_NAME_MATCH_EVENTS.has(event) ? matcher : undefined;
+  return TOOL_NAME_MATCH_EVENTS.has(event) ? matcher : null;
 }
 
 function clampTimeout(timeout: number | undefined): number | undefined {
@@ -254,6 +308,105 @@ export function countOurHookEntries(
     const command = (h as { command?: unknown })?.command;
     return typeof command === "string" && isOurCommand(command);
   }).length;
+}
+
+/** Every key Kimi's strict hook schema admits. Anything else fails `.strict()`. */
+const KIMI_HOOK_KEYS: ReadonlySet<string> = new Set(["event", "matcher", "command", "timeout"]);
+
+/**
+ * Why one `[[hooks]]` entry fails Kimi Code's schema, or `null` when it passes.
+ *
+ * The schema is `.strict()`, and that word is the whole reason this function has
+ * to exist: its loader drops the ENTIRE `hooks` section when a single entry fails
+ * validation. So the cost of one bad entry is not that entry — it is every hook in
+ * the file, ours and the user's alike.
+ */
+export function kimiHookEntryDefect(entry: unknown): string | null {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    return "not a table";
+  }
+  const record = entry as Record<string, unknown>;
+  const unknown = Object.keys(record).filter((key) => !KIMI_HOOK_KEYS.has(key));
+  if (unknown.length > 0) {
+    return `unknown key(s) ${unknown.join(", ")} — the schema is strict and rejects extras`;
+  }
+  if (typeof record.event !== "string" || record.event.length === 0) {
+    return "'event' is required and must be a string";
+  }
+  if (!KIMI_HOOK_EVENTS.has(record.event)) {
+    return `'${record.event}' is not one of the events Kimi Code defines`;
+  }
+  if (typeof record.command !== "string" || record.command.length === 0) {
+    return "'command' is required and must be a non-empty string";
+  }
+  if (record.matcher !== undefined && typeof record.matcher !== "string") {
+    return "'matcher' must be a string when present";
+  }
+  return timeoutDefect(record.timeout);
+}
+
+/** The one field with a range, kept apart so the schema above reads as a flat list. */
+function timeoutDefect(timeout: unknown): string | null {
+  if (timeout === undefined) return null;
+  if (typeof timeout !== "number" || !Number.isInteger(timeout)) {
+    return "'timeout' must be an integer number of seconds when present";
+  }
+  if (timeout < TIMEOUT_MIN || timeout > TIMEOUT_MAX) {
+    return `'timeout' must be between ${TIMEOUT_MIN} and ${TIMEOUT_MAX} seconds (got ${timeout})`;
+  }
+  return null;
+}
+
+export interface HookSectionDefect {
+  /** Position in the file's `hooks` array, so a person can find it. */
+  index: number;
+  /** Ours, or the user's own. It decides who has to fix it. */
+  ours: boolean;
+  event: string | null;
+  reason: string;
+}
+
+export type HooksSectionAudit =
+  /** The file does not parse as TOML at all: nothing can be said about its hooks. */
+  | { parsed: false; defects: readonly HookSectionDefect[] }
+  | { parsed: true; total: number; defects: readonly HookSectionDefect[] };
+
+/**
+ * Audits the `hooks` section a file WOULD have, entry by entry.
+ *
+ * Run against the prospective text before writing it, this is what turns "we
+ * transformed our own hooks correctly" into "the section that will exist is one
+ * the host will actually load". The two are not the same claim, and the gap
+ * between them is destructive: a single invalid entry the USER already had is
+ * enough for Kimi to discard the whole section, so writing our hooks next to it
+ * silently disarms them — and the install still says "installed".
+ */
+export function auditHooksSection(
+  text: string,
+  parseToml: (t: string) => unknown,
+): HooksSectionAudit {
+  let parsed: unknown;
+  try {
+    parsed = parseToml(text);
+  } catch {
+    return { parsed: false, defects: [] };
+  }
+  const hooks = (parsed as { hooks?: unknown })?.hooks;
+  if (!Array.isArray(hooks)) return { parsed: true, total: 0, defects: [] };
+  const defects: HookSectionDefect[] = [];
+  for (const [index, entry] of hooks.entries()) {
+    const reason = kimiHookEntryDefect(entry);
+    if (reason === null) continue;
+    const command = (entry as { command?: unknown } | null)?.command;
+    const event = (entry as { event?: unknown } | null)?.event;
+    defects.push({
+      index,
+      ours: typeof command === "string" && isOurCommand(command),
+      event: typeof event === "string" ? event : null,
+      reason,
+    });
+  }
+  return { parsed: true, total: hooks.length, defects };
 }
 
 /**

@@ -30,7 +30,8 @@ import {
 import type { HarnessVerification } from "../../domain/host-verification.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
 import { resolveWarpGlobalMcpPath } from "../multiroot/warp.js";
-import { countOurHookEntries } from "./hooks-toml.js";
+import { countOurHookEntries, hooksTemplateToToml } from "./hooks-toml.js";
+import { type HooksTemplate, resolveBundledHookTemplate } from "./install-hooks.js";
 import { SKILL_DIR_NAME, USER_COMMANDS_BY_TARGET } from "./install-skill.js";
 import { COMMAND_SKILLS_HOSTS, TARGET_ROOTS } from "./install-targets.js";
 
@@ -322,6 +323,26 @@ export interface HooksArmedReport {
 }
 
 /**
+ * What a host cannot carry from the bundled template — a DIFFERENT question from
+ * "are our hooks armed", and reported apart for that reason.
+ *
+ * `armed: true` alone overstates the case on a host that expresses only part of the
+ * set: it says "the hooks are there" while one of them silently is not. So the same
+ * declared losses the install output reports are readable from the state too, out
+ * of the same transform — two wordings would eventually disagree.
+ *
+ * Kept out of {@link HooksArmedReport} because answering it costs a template read,
+ * and the surfaces that only need the armed count should not pay for it.
+ */
+export interface HookTemplateLossReport {
+  target: InstallTarget;
+  /** One line per loss. Empty is a real answer: this host carries everything. */
+  losses: string[];
+  /** False when the template could not be read, so `losses` is unknown, not empty. */
+  template_read: boolean;
+}
+
+/**
  * Per-host "are OUR hooks in place" probes. Only hosts whose hooks Workline
  * MANAGES appear here — `hooksArmedProbeCoverage()` proves the two sets match,
  * so a host can never be declared managed while nothing can tell whether its
@@ -374,6 +395,51 @@ export function hooksArmedProbeCoverage(): InstallTarget[] {
     .filter((t) => HOOKS_ARMED_PROBES[t] === undefined);
 }
 
+/**
+ * What each managed host loses when the bundled template is adapted to it.
+ *
+ * Per-host and keyed like `HOOKS_ARMED_PROBES`, for the same reason: a host name
+ * spelled straight into a function body is exactly how the four registries in this
+ * codebase once drifted apart. A host absent from this map declares nothing to
+ * lose, which is the truth for a host that merges the template whole (Claude) and
+ * would be a lie waiting to happen for one that transforms it.
+ */
+const HOOK_TEMPLATE_LOSSES: Partial<Record<InstallTarget, (template: HooksTemplate) => string[]>> =
+  {
+    kimi: (template) => {
+      const { skipped, degraded } = hooksTemplateToToml(template);
+      return [
+        ...skipped.map((s) => `${s.event}: skipped — ${s.reason}`),
+        ...degraded.map((d) => `${d.event}: ${d.reason}`),
+      ];
+    },
+  };
+
+/**
+ * What each managed host cannot carry from the bundled template.
+ *
+ * Read once per report rather than per host: the template is one file and every
+ * adapter is pure, so a second read would only add a way for two hosts in the same
+ * report to disagree about what the template says.
+ */
+async function templateLosses(
+  ctx: CliContext,
+): Promise<{ read: boolean; byTarget: Map<InstallTarget, string[]> }> {
+  const byTarget = new Map<InstallTarget, string[]>();
+  const path = await resolveBundledHookTemplate();
+  if (path === null || !(await ctx.fs.exists(path))) return { read: false, byTarget };
+  let template: HooksTemplate;
+  try {
+    template = JSON.parse(await ctx.fs.readText(path));
+  } catch {
+    return { read: false, byTarget };
+  }
+  for (const [target, losses] of Object.entries(HOOK_TEMPLATE_LOSSES)) {
+    byTarget.set(target as InstallTarget, losses(template));
+  }
+  return { read: true, byTarget };
+}
+
 /** Hook state for every host whose hooks Workline manages. */
 export async function reportHooksArmed(ctx: CliContext): Promise<HooksArmedReport[]> {
   const home = ctx.env.homeDir();
@@ -389,6 +455,22 @@ export async function reportHooksArmed(ctx: CliContext): Promise<HooksArmedRepor
       return { target: spec.installTarget, label: spec.label, armed, path };
     }),
   );
+}
+
+/**
+ * What each managed host loses when the template is adapted to it.
+ *
+ * Its own entry point, called by the surfaces that DISPLAY the losses. Folding it
+ * into `reportHooksArmed` made every status refresh resolve and read the bundled
+ * template for a number it does not show — and the status tab's own test caught it.
+ */
+export async function reportHookTemplateLosses(ctx: CliContext): Promise<HookTemplateLossReport[]> {
+  const { read, byTarget } = await templateLosses(ctx);
+  return HARNESSES.filter((h) => h.hooks?.managed === true).map((spec) => ({
+    target: spec.installTarget,
+    losses: byTarget.get(spec.installTarget) ?? [],
+    template_read: read,
+  }));
 }
 
 /** Shared skills dirs — install destinations, never hosts. */

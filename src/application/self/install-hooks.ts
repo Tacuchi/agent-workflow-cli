@@ -1,10 +1,11 @@
 import { copyFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { parse as parseToml } from "smol-toml";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
-import { hooksTemplateToToml, upsertManagedHooksBlock } from "./hooks-toml.js";
+import { auditHooksSection, hooksTemplateToToml, upsertManagedHooksBlock } from "./hooks-toml.js";
 import {
   INSTALL_TARGETS,
   type InstallTarget,
@@ -31,7 +32,13 @@ export interface HooksTemplate {
 }
 
 export interface SelfInstallHooksData {
-  status: "installed" | "dry-run" | "noop" | "unsupported";
+  /**
+   * `blocked` = nothing was written on purpose. The prospective section carried an
+   * entry the host would reject, and since its loader discards the WHOLE section
+   * over one bad entry, writing would have disarmed every hook in the file —
+   * ours and the user's. Reported instead of applied.
+   */
+  status: "installed" | "dry-run" | "noop" | "unsupported" | "blocked";
   target: InstallTarget;
   config_path: string | null;
   events_installed: string[];
@@ -207,16 +214,34 @@ async function installKimiHooks(
   const configPath = join(ctx.env.homeDir(), ".kimi-code", "config.toml");
   const existing = (await ctx.fs.exists(configPath)) ? await ctx.fs.readText(configPath) : "";
 
-  const { entries, skipped } = hooksTemplateToToml(template);
+  const { entries, skipped, degraded } = hooksTemplateToToml(template);
   const eventsInstalled = [...new Set(entries.map((e) => e.event))];
   const next = upsertManagedHooksBlock(existing, entries).text;
 
-  const warning =
-    skipped.length > 0
-      ? `Not expressible in Kimi Code and therefore skipped: ${skipped
-          .map((s) => `${s.event} (${s.reason})`)
-          .join("; ")}.`
-      : undefined;
+  const notices: string[] = [];
+  if (skipped.length > 0) {
+    notices.push(
+      `Not expressible in Kimi Code and therefore skipped: ${skipped
+        .map((s) => `${s.event} (${s.reason})`)
+        .join("; ")}.`,
+    );
+  }
+  if (degraded.length > 0) {
+    notices.push(
+      `Installed with a declared degradation: ${degraded
+        .map((d) => `${d.event} (${d.reason})`)
+        .join("; ")}.`,
+    );
+  }
+  const warning = notices.length > 0 ? notices.join(" ") : undefined;
+
+  // The section that WOULD exist, judged before it exists. Validating only our own
+  // transform was not enough: one invalid entry the user already had is enough for
+  // Kimi to discard the whole `hooks` section, so appending ours beside it disarms
+  // everything — theirs and ours — while the install reports success.
+  const audit = auditHooksSection(next, parseToml);
+  const blocked = blockedResult(target, configPath, audit);
+  if (blocked !== null) return blocked;
 
   if (next === existing) {
     return {
@@ -267,6 +292,56 @@ async function installKimiHooks(
     },
     exitCode: 0,
   };
+}
+
+/**
+ * The refusal to write, or `null` when the prospective section is loadable.
+ *
+ * Two causes, and they are told apart because the fix differs. A section that does
+ * not parse is a broken file the person has to repair; a section that parses but
+ * carries an invalid ENTRY names which one and whose it is — a pre-existing entry
+ * of the user's is not something an installer may quietly rewrite, and one of ours
+ * would be our bug.
+ */
+function blockedResult(
+  target: InstallTarget,
+  configPath: string,
+  audit: ReturnType<typeof auditHooksSection>,
+): CommandResult<SelfInstallHooksData> | null {
+  // The transform's own notices are deliberately NOT appended here. They are
+  // phrased for a write that happened ("skipped", "installed with a degradation"),
+  // and nothing was written — so they would contradict the status. They stay
+  // visible where they are true: a successful install, and `reportHooksArmed`.
+  const blocked = (reason: string): CommandResult<SelfInstallHooksData> => ({
+    ok: true,
+    data: {
+      status: "blocked",
+      target,
+      config_path: configPath,
+      events_installed: [],
+      events_already_present: [],
+      backup_path: null,
+      warning: [
+        `Nothing was written to ${configPath}: ${reason}.`,
+        "Kimi Code discards its ENTIRE hooks section when one entry fails validation, so writing would have disarmed every hook in the file — yours included.",
+      ].join(" "),
+    },
+    exitCode: 0,
+  });
+
+  if (!audit.parsed) {
+    return blocked("the resulting file does not parse as TOML, so its hooks cannot be validated");
+  }
+  if (audit.defects.length === 0) return null;
+  const detail = audit.defects
+    .map(
+      (d) =>
+        `entry #${d.index}${d.event === null ? "" : ` (${d.event})`} ${d.ours ? "installed by Workline" : "already in your config"} — ${d.reason}`,
+    )
+    .join("; ");
+  return blocked(
+    `the resulting hooks section would carry ${audit.defects.length} invalid entry/entries: ${detail}`,
+  );
 }
 
 /** Claude Code: JSON merge into `~/.claude/settings.json` → `hooks{}`. */

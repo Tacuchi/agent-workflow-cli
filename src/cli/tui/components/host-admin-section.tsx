@@ -6,7 +6,10 @@ import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { selfCleanLegacy } from "../../../application/self/clean-legacy.js";
-import { reportHooksArmed } from "../../../application/self/host-states.js";
+import {
+  reportHookTemplateLosses,
+  reportHooksArmed,
+} from "../../../application/self/host-states.js";
 import {
   type InstallTarget,
   SKILL_DIR_NAME,
@@ -57,6 +60,12 @@ interface TargetRow {
   pill: string;
   installed: boolean;
   hooks_installed: boolean;
+  /**
+   * What this host cannot carry from the hooks template, as the state reports it.
+   * A row that says "hooks armed" and nothing else overstates a host that
+   * expresses only part of the set.
+   */
+  hook_degradations: string[];
   path: string;
 }
 
@@ -91,6 +100,10 @@ export function HostAdminSection({
     // reading Claude's settings.json and calling the answer global.
     const hooks = await reportHooksArmed(ctx).catch(() => []);
     const armedByTarget = new Map(hooks.map((h) => [h.target, h.armed]));
+    // A separate read on purpose: it costs a template resolve, and only this
+    // section shows it. The status tile that only counts armed hosts skips it.
+    const losses = await reportHookTemplateLosses(ctx).catch(() => []);
+    const degradationsByTarget = new Map(losses.map((l) => [l.target, l.losses]));
 
     const next: TargetRow[] = [];
     for (const host of HOSTS) {
@@ -102,6 +115,7 @@ export function HostAdminSection({
         pill: supportPill(host),
         installed: path ? await ctx.fs.exists(path) : false,
         hooks_installed: armedByTarget.get(host.id) === true,
+        hook_degradations: degradationsByTarget.get(host.id) ?? [],
         path: friendlyPath(host.id),
       });
     }
@@ -114,6 +128,7 @@ export function HostAdminSection({
         pill: `shared dir · read by ${dest.readBy.length} hosts`,
         installed: path ? await ctx.fs.exists(path) : false,
         hooks_installed: false,
+        hook_degradations: [],
         path: friendlyPath(dest.id),
       });
     }
@@ -354,6 +369,13 @@ export function HostAdminSection({
               name: focused.name,
               meta: `${focused.path}\n${focused.pill}${
                 focused.hooks_installed && hooksMetaSuffix ? `\n${hooksMetaSuffix}` : ""
+              }${
+                // A declared degradation is shown whether or not the hooks are
+                // armed: "this host cannot carry X" is true before installing too,
+                // and hiding it until then is how a user finds out by surprise.
+                focused.hook_degradations.length > 0
+                  ? `\ndegraded: ${focused.hook_degradations.join(" · ")}`
+                  : ""
               }`,
             }}
             statePill={{

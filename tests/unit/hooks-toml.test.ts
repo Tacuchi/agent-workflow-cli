@@ -9,7 +9,9 @@ import { describe, expect, it } from "vitest";
 import {
   MANAGED_BLOCK_BEGIN,
   MANAGED_BLOCK_END,
+  auditHooksSection,
   hooksTemplateToToml,
+  kimiHookEntryDefect,
   renderManagedHooksBlock,
   stripOurHookEntries,
   upsertManagedHooksBlock,
@@ -76,6 +78,23 @@ describe("hooksTemplateToToml", () => {
     // matchea y un hook que jamás dispara. Ausente = siempre, que es lo que ese
     // matcher expresa en Claude.
     expect(entries.find((e) => e.event === "SessionStart")?.matcher).toBeUndefined();
+  });
+
+  it("descartar el matcher es una DEGRADACIÓN declarada, no un descarte silencioso", () => {
+    const { degraded, skipped } = hooksTemplateToToml(TEMPLATE);
+    // Un solo evento pierde su matcher: SessionStart. PreToolUse lo conserva y
+    // PostCompact no traía ninguno, así que no pierden nada.
+    expect(degraded.map((d) => d.event)).toEqual(["SessionStart"]);
+    expect(degraded[0]?.reason).toContain("startup|resume|clear");
+    // Y no se confunde con un omitido: el hook de SessionStart SÍ se instala.
+    expect(skipped.map((s) => s.event)).toEqual(["PostCompact"]);
+  });
+
+  it("un grupo sin matcher no degrada nada: no hay nada que perder", () => {
+    const { degraded } = hooksTemplateToToml({
+      hooks: { SessionEnd: [{ matcher: "", hooks: [{ type: "command", command: "x" }] }] },
+    });
+    expect(degraded).toEqual([]);
   });
 
   it("el timeout se acota al rango que acepta el esquema (1..600 s)", () => {
@@ -223,5 +242,90 @@ describe("bloque gestionado en config.toml", () => {
     expect(parsed.default_model).toBe("kimi-code/k3");
     expect(parsed.hooks).toHaveLength(entries.length + 1);
     expect(parsed.hooks[0]).toEqual({ event: "SessionEnd", command: "my-own-script.sh" });
+  });
+});
+
+// El esquema estricto de kimi, validado como DATO antes de escribir. Existe por
+// una razón asimétrica: su loader descarta la sección `hooks` ENTERA ante una
+// sola entrada inválida, así que el costo de una entrada mala no es esa entrada
+// — son todos los hooks del archivo, los nuestros y los del usuario.
+describe("kimiHookEntryDefect", () => {
+  const valid = { event: "PreToolUse", matcher: "Bash", command: "x", timeout: 30 };
+
+  it("una entrada que cumple el esquema no tiene defecto", () => {
+    expect(kimiHookEntryDefect(valid)).toBeNull();
+    expect(kimiHookEntryDefect({ event: "Stop", command: "x" })).toBeNull();
+  });
+
+  it("rechaza lo que no es una tabla", () => {
+    for (const value of [null, undefined, 42, "x", ["a"]]) {
+      expect(kimiHookEntryDefect(value), String(value)).toBe("not a table");
+    }
+  });
+
+  it("el esquema es ESTRICTO: una clave de más invalida la entrada", () => {
+    expect(kimiHookEntryDefect({ ...valid, type: "command" })).toMatch(/unknown key\(s\) type/);
+  });
+
+  it("event y command son obligatorios, y el event tiene que existir en kimi", () => {
+    expect(kimiHookEntryDefect({ command: "x" })).toMatch(/'event' is required/);
+    expect(kimiHookEntryDefect({ event: "PreToolUse" })).toMatch(/'command' is required/);
+    expect(kimiHookEntryDefect({ event: "PreToolUse", command: "" })).toMatch(
+      /'command' is required/,
+    );
+    expect(kimiHookEntryDefect({ event: "PreCompactar", command: "x" })).toMatch(
+      /not one of the events/,
+    );
+  });
+
+  it("timeout: entero y dentro de 1..600", () => {
+    expect(kimiHookEntryDefect({ ...valid, timeout: 0 })).toMatch(/between 1 and 600/);
+    expect(kimiHookEntryDefect({ ...valid, timeout: 601 })).toMatch(/between 1 and 600/);
+    expect(kimiHookEntryDefect({ ...valid, timeout: 1.5 })).toMatch(/must be an integer/);
+    expect(kimiHookEntryDefect({ ...valid, timeout: "30" })).toMatch(/must be an integer/);
+  });
+});
+
+describe("auditHooksSection", () => {
+  it("una sección sana no tiene defectos y cuenta sus entradas", () => {
+    const text = renderManagedHooksBlock(hooksTemplateToToml(TEMPLATE).entries);
+    const audit = auditHooksSection(text, parseToml);
+    expect(audit.parsed).toBe(true);
+    if (audit.parsed) {
+      expect(audit.total).toBe(4);
+      expect(audit.defects).toEqual([]);
+    }
+  });
+
+  it("un archivo sin hooks es una sección válida y vacía, no un error", () => {
+    const audit = auditHooksSection('default_model = "k3"\n', parseToml);
+    expect(audit.parsed).toBe(true);
+    if (audit.parsed) expect(audit.total).toBe(0);
+  });
+
+  it("distingue de QUIÉN es la entrada inválida: la nuestra la firmamos, la del usuario no", () => {
+    const text = [
+      "[[hooks]]",
+      'event = "NoExiste"',
+      'command = "agent-workflow hook x"',
+      "",
+      "[[hooks]]",
+      'event = "TampocoExiste"',
+      'command = "mi-script.sh"',
+      "",
+    ].join("\n");
+    const audit = auditHooksSection(text, parseToml);
+    expect(audit.parsed).toBe(true);
+    if (!audit.parsed) return;
+    expect(audit.defects.map((d) => [d.index, d.ours, d.event])).toEqual([
+      [0, true, "NoExiste"],
+      [1, false, "TampocoExiste"],
+    ]);
+  });
+
+  it("un archivo que no parsea se reporta como tal, sin inventar defectos", () => {
+    const audit = auditHooksSection("esto = no [ es toml", parseToml);
+    expect(audit.parsed).toBe(false);
+    expect(audit.defects).toEqual([]);
   });
 });
