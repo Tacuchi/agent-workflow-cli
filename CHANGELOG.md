@@ -4,6 +4,16 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.4.1] — 2026-08-06
+
+**Detener un proceso deja de afirmar un éxito que nadie verificó.** `stopProcess` señalaba el árbol y marcaba el registro como `stopped` sin comprobar nada: `killTree` traga todo error a propósito —un pid ya muerto no es un fallo— y SIGTERM es asíncrono, así que un proceso que sobrevivía a la señal quedaba registrado como detenido, desaparecía del conteo de activos y seguía ocupando su puerto. Peor en la ruta de re-lanzamiento: sobre ese superviviente se lanzaba un segundo proceso, y el primero ya no estaba en la vista `running` de nadie. Ahora la detención se confirma contra el estado real del sistema y lo que se ve es lo que pasó. Sin dependencias npm nuevas, sin cambios en `ProcessPort`.
+
+### Changed
+
+- **`stopProcess` devuelve `{ stopped: boolean }` y solo marca el registro cuando el árbol murió de verdad.** La confirmación usa el `isAlive` que el puerto ya exponía (`kill(pid, 0)`): consulta de entrada —camino rápido, cero espera cuando ya cayó— y reintento cada 60 ms hasta 600 ms, porque SIGTERM no es instantáneo. Marcar `stopped` un proceso vivo era la mentira que después repetían el chip por fuente, el tile de procesos y el detector de colisiones.
+- **`relaunchProcess` y la ruta de colisión de la TUI ya no lanzan sobre un superviviente**: devuelven el error nuevo `stop_failed` de `LaunchResult` en vez de dejar dos procesos peleando por el mismo puerto.
+- **El panel de detalle de [Project] informa el resultado de «Detener»**: `notice` con el PID cuando murió, y aviso explícito cuando sigue vivo («sigue contando como activo; detenelo desde el sistema y refrescá»). El log operativo lo distingue: `info` cuando se detuvo, `warn` cuando no.
+
 ## [21.4.0] — 2026-08-06
 
 **El TUI muestra lo que se consulta, el CLI decide cuánto se gasta en modelo, y la evidencia de diseño se pide solo donde hay algo que ver.** Tres frentes independientes. La pestaña [Skills] listaba las 24 recomendadas mezcladas con todo lo detectado en el sistema y [Project] apilaba dos listas de ramas y una de procesos que nadie leía: ahora [Skills] abre proyectada a la semilla con un toggle, y [Project] queda en workspace + StatTiles + Sources, con un indicador por fuente de lo que está corriendo. En paralelo, el host anunciaba primitivas de subagentes y nada decidía cuándo pagarlas —y peor: un agente corriendo dentro de Warp se detectaba como Warp—, así que el gasto pasa a ser una regla del CLI y el host de agente se resuelve aparte del terminal. Y el gate de `handoff` exigía preview estática y renditions a todo criterio no-`not_visual`, incluidos los de interacción: un cambio de control pequeño pagaba un artefacto visual que no agregaba señal de aceptación. Sin dependencias npm nuevas.
