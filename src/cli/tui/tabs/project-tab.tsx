@@ -37,7 +37,6 @@ import { FlowResultView } from "../components/git-flow-actions.js";
 import { ListRow, type MetaChip } from "../components/list-row.js";
 import { notificationStackRows } from "../components/notification-stack.js";
 import { PageHead } from "../components/page-head.js";
-import { ProcessList } from "../components/process-list.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { type LaunchFormValue, SourceLaunchForm } from "../components/source-launch-form.js";
@@ -283,7 +282,6 @@ type Mode =
   // ===== Source removal =====
   | { kind: "confirm-remove"; alias: string }
   // ===== Source-launch + process management =====
-  | { kind: "process" } // process region focused
   | { kind: "launch-form"; alias: string; descriptor: LaunchDescriptor }
   | { kind: "busy"; label: string }
   | { kind: "collision"; req: LaunchRequest; existing: ProcessRecord }
@@ -292,6 +290,27 @@ type Mode =
 
 /** First per-source detail action: launch the app locally. */
 const LAUNCH_ACTION = { id: "launch", name: "Lanzar en local" } as const;
+
+/** One selectable row of the source detail panel, in render order. */
+type DetailItem =
+  | { kind: "launch" }
+  | { kind: "flow"; action: GitFlowAction }
+  | { kind: "proc"; op: ProcessOp; record: ProcessRecord }
+  | { kind: "remove" };
+
+type ProcessOp = "stop" | "relaunch" | "log";
+
+/**
+ * The three operations offered per `running` process of the selected source —
+ * the same ones the removed process region carried on x/r/o. No description:
+ * the row spells the profile and the PID, and the panel's remaining width
+ * would truncate one to a single cell.
+ */
+const PROCESS_OPS: Record<ProcessOp, string> = {
+  stop: "Detener",
+  relaunch: "Re-lanzar",
+  log: "Ver log",
+};
 
 /**
  * Indentation (marginLeft) of the SOURCES rows container. Passed as `indent`
@@ -312,9 +331,9 @@ const SOURCES_ROWS_INDENT = 2;
 // - this tab, fixed: PageHead (1 + 1 margin) + StatTile row (3 + 1 margin)
 //   + Sources SectionHead (1) + QuickActions (2 + 1 marginTop) = 10
 // - 1 slack: better one row short than a clipped active row.
-// The data-driven rows (description, warnings, the branch/process sections
-// below the list) and the NotificationStack height (0 unless a banner is
-// visible) are added per render — see `reservedRows` in Initialized.
+// The data-driven rows (description, warnings) and the NotificationStack height
+// (0 unless a banner is visible) are added per render — see `reservedRows` in
+// Initialized. Nothing renders below the list anymore (SPEC 019).
 const SOURCES_LIST_RESERVED_ROWS = 27;
 
 interface InitializedProps {
@@ -330,7 +349,6 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const totalSources = data.sources.length;
   const dirtySources = data.sources.filter((s) => s.dirty).length;
   const workingEntries = Object.entries(data.workingBranches);
-  const qaEntries = Object.entries(data.qaBranches);
 
   const home = ctx.env.homeDir();
   const shortName = deriveShortName(data.workspaceName, basename(data.workspacePath));
@@ -344,36 +362,37 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const hasSources = totalSources > 0;
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
-  const [processCursor, setProcessCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
 
   const processes = data.processes;
+  // Active processes per source alias: the source row's chip and the global
+  // tile both read from here, so "active" has one definition. `stopped` and
+  // `exited` records are history and never counted (SPEC 019).
+  const runningBySource = useMemo(() => {
+    const byAlias = new Map<string, number>();
+    for (const p of processes) {
+      if (p.state === "running") byAlias.set(p.sourceAlias, (byAlias.get(p.sourceAlias) ?? 0) + 1);
+    }
+    return byAlias;
+  }, [processes]);
   const runningCount = useMemo(
-    () => processes.filter((p) => p.state === "running").length,
-    [processes],
+    () => [...runningBySource.values()].reduce((total, n) => total + n, 0),
+    [runningBySource],
   );
 
   // Window over the SOURCES list: the shell clips overflow, so only the slice
   // around the cursor renders — the active row can never walk off-screen.
   // `reservedRows` adds the data-driven chrome to the static count: the
-  // description and warnings blocks above the list; the branch/process
-  // sections below it (head + marginTop + one row per entry, or one
-  // empty-hint row when the section renders empty); plus the NotificationStack
+  // description and warnings blocks above the list, plus the NotificationStack
   // height while a banner is visible (0 otherwise). rows=0 (non-TTY) → the
   // hook returns the whole list and nothing changes.
   const notifItems = useNotificationItems();
   const warningsRows = data.warnings.length > 0 ? Math.min(data.warnings.length, 3) + 2 : 0;
-  const workingRows = 2 + Math.max(workingEntries.length, 1);
-  const qaRows = qaEntries.length > 0 ? 2 + qaEntries.length : 0;
-  const processRows = 2 + Math.max(processes.length, 1);
   const reservedRows =
     SOURCES_LIST_RESERVED_ROWS +
     notificationStackRows(notifItems) +
     (description ? 2 : 0) +
-    warningsRows +
-    workingRows +
-    qaRows +
-    processRows;
+    warningsRows;
   const win = useListWindow(targets.length, cursor, reservedRows);
   const winEnd = win.start + win.visible;
   // Overflow indicator for the SectionHead hint slot (no extra terminal row).
@@ -511,8 +530,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   );
 
   // Global keys are locked for every mode except the plain list and the detail
-  // panel (its ↑↓ ⏎ esc don't collide with the globals); process mode keeps
-  // the lock — its r/x/o would hit the global `r` refresh. MCP/Skills policy.
+  // panel (its ↑↓ ⏎ esc don't collide with the globals). MCP/Skills policy.
   useLockWhile(mode.kind !== "list" && mode.kind !== "detail");
 
   const detailOpen = mode.kind === "detail";
@@ -522,18 +540,32 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     ? null
     : (data.sources.find((s) => s.alias === currentTarget) ?? null);
 
+  // The selected source's own active processes — what its detail panel can
+  // operate now that no process list exists.
+  const sourceProcesses = useMemo(
+    () =>
+      currentSource
+        ? processes.filter((p) => p.state === "running" && p.sourceAlias === currentSource.alias)
+        : [],
+    [processes, currentSource],
+  );
+
   // Detail-panel actions for the current target: a per-source "Lanzar en local"
-  // (only for real sources), the git-flow actions, and a destructive "Quitar del
-  // workspace" last (only for real sources, never for "all sources").
-  const detailItems = useMemo<
-    ({ kind: "launch" } | { kind: "flow"; action: GitFlowAction } | { kind: "remove" })[]
-  >(
+  // (only for real sources), the git-flow actions, one triplet per active
+  // process, and a destructive "Quitar del workspace" last (only for real
+  // sources, never for "all sources").
+  const detailItems = useMemo<DetailItem[]>(
     () => [
       ...(currentSource ? [{ kind: "launch" as const }] : []),
       ...FLOW_ACTIONS.map((a) => ({ kind: "flow" as const, action: a.id })),
+      ...sourceProcesses.flatMap((record): DetailItem[] => [
+        { kind: "proc", op: "stop", record },
+        { kind: "proc", op: "relaunch", record },
+        { kind: "proc", op: "log", record },
+      ]),
       ...(currentSource ? [{ kind: "remove" as const }] : []),
     ],
-    [currentSource],
+    [currentSource, sourceProcesses],
   );
 
   const runFlow = useCallback(
@@ -605,14 +637,10 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [ctx, onReload],
   );
 
-  // Sources list shortcuts (↑↓ navigate · ⏎ open panel · p processes · g git status).
+  // Sources list shortcuts (↑↓ navigate · ⏎ open panel · g git status).
   const handleListKey = useCallback(
     (input: string, key: { upArrow?: boolean; downArrow?: boolean; return?: boolean }) => {
       if (input === "g") return void onRunAction?.("git:status");
-      if (input === "p" && processes.length > 0) {
-        setProcessCursor(0);
-        return setMode({ kind: "process" });
-      }
       if (!hasSources) return;
       if (key.upArrow) return setCursor((c) => Math.max(0, c - 1));
       if (key.downArrow) return setCursor((c) => Math.min(targets.length - 1, c + 1));
@@ -621,7 +649,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         setMode({ kind: "detail" });
       }
     },
-    [hasSources, onRunAction, targets.length, processes.length],
+    [hasSources, onRunAction, targets.length],
   );
 
   // Side panel actions (↑↓ navigate · ⏎ run · esc close).
@@ -640,6 +668,11 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           if (currentSource) return void beginLaunch(currentSource.alias);
           return;
         }
+        if (item.kind === "proc") {
+          if (item.op === "stop") return void doStop(item.record);
+          if (item.op === "relaunch") return void doRelaunch(item.record);
+          return void doViewLog(item.record);
+        }
         if (item.kind === "remove") {
           if (currentSource) return setMode({ kind: "confirm-remove", alias: currentSource.alias });
           return;
@@ -647,22 +680,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         void runFlow(item.action);
       }
     },
-    [actionCursor, detailItems, currentSource, runFlow, beginLaunch],
-  );
-
-  // "process" mode: navigates the launched-processes section (x stop · r relaunch · o log).
-  const handleProcessKey = useCallback(
-    (input: string, key: { upArrow?: boolean; downArrow?: boolean; escape?: boolean }) => {
-      if (key.escape) return setMode({ kind: "list" });
-      if (key.upArrow) return setProcessCursor((c) => Math.max(0, c - 1));
-      if (key.downArrow) return setProcessCursor((c) => Math.min(processes.length - 1, c + 1));
-      const record = processes[processCursor];
-      if (!record) return;
-      if (input === "x") return void doStop(record);
-      if (input === "r") return void doRelaunch(record);
-      if (input === "o") return void doViewLog(record);
-    },
-    [processes, processCursor, doStop, doRelaunch, doViewLog],
+    [actionCursor, detailItems, currentSource, runFlow, beginLaunch, doStop, doRelaunch, doViewLog],
   );
 
   // Collision: stops the existing process and launches the requested one (with its values).
@@ -682,7 +700,6 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
       if (!isActive) return;
       if (mode.kind === "list") return handleListKey(input, key);
       if (mode.kind === "detail") return handleDetailKey(key);
-      if (mode.kind === "process") return handleProcessKey(input, key);
       if (mode.kind === "collision") {
         if (key.escape) setMode({ kind: "list" });
         else if (input === "r") void confirmRelaunch(mode.req, mode.existing);
@@ -842,6 +859,11 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         ? { name: LAUNCH_ACTION.name, description: "abre una terminal" }
         : { name: LAUNCH_ACTION.name, description: "no lanzable — sin comando detectado" };
     }
+    if (it.kind === "proc") {
+      return {
+        name: `${PROCESS_OPS[it.op]} · ${it.record.profile ?? "default"} (PID ${it.record.pid})`,
+      };
+    }
     if (it.kind === "remove") {
       return { name: "Quitar del workspace", description: "detach + poda bloque + scripts" };
     }
@@ -912,8 +934,8 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         />
       </Box>
 
-      {/* Layout with detail panel: list (sources + branches) on the left,
-          actions panel on the right when a source is selected. */}
+      {/* Layout with detail panel: the sources list on the left, actions panel
+          on the right when a source is selected. */}
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
           {hasSources ? (
@@ -937,6 +959,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
                     <SourceRow
                       key={source.alias}
                       source={source}
+                      running={runningBySource.get(source.alias) ?? 0}
                       active={i === cursor}
                       widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
                     />
@@ -955,22 +978,6 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
               </Box>
             </>
           ) : null}
-
-          <BranchList
-            label="Ramas de trabajo actuales"
-            entries={workingEntries}
-            emptyHint="(no working branches declared)"
-          />
-          {qaEntries.length > 0 ? (
-            <BranchList label="Ramas QA actuales" entries={qaEntries} />
-          ) : null}
-
-          <ProcessList
-            processes={processes}
-            cursor={processCursor}
-            focused={mode.kind === "process"}
-            widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
-          />
         </Box>
 
         {/* Detail panel — only once a source was selected with ⏎. */}
@@ -990,7 +997,6 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         <QuickActions
           actions={[
             { key: "⏎", label: "source actions" },
-            ...(processes.length > 0 ? [{ key: "p", label: "manage processes" }] : []),
             { key: "g", label: "git status" },
           ]}
         />
@@ -1001,10 +1007,13 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
 
 function SourceRow({
   source,
+  running,
   active,
   widthHint,
 }: {
   source: ProjectSource;
+  /** Processes of this source currently `running`; 0 renders no chip. */
+  running: number;
   active: boolean;
   widthHint: number;
 }) {
@@ -1017,53 +1026,21 @@ function SourceRow({
     source.commitCount === null
       ? { label: "—", tone: "dim" }
       : { label: `+${source.commitCount}`, tone: "accent" };
+  // Live activity, after the git chips: the dot is textual (never color alone)
+  // and the count is the source's own `running` total (SPEC 019).
+  const activity: MetaChip[] = running > 0 ? [{ label: `● ${running} running`, tone: "ok" }] : [];
   return (
     <ListRow
       icon={icons.diamond}
       iconActive={true}
       title={source.alias}
       subtitle={`main ${source.mainBranch}`}
-      meta={[commits, { label: status, tone: source.dirty ? "warn" : "ok" }]}
+      meta={[commits, { label: status, tone: source.dirty ? "warn" : "ok" }, ...activity]}
       state={{ label: `${icons.branch} ${branch}`, tone: "dim" }}
       chevron
       active={active}
       widthHint={widthHint}
     />
-  );
-}
-
-/** "Ramas …" section — one `◆ alias  ↳ branch` row per WORKSPACE block entry. */
-function BranchList({
-  label,
-  entries,
-  emptyHint,
-}: {
-  label: string;
-  entries: [string, string][];
-  emptyHint?: string;
-}) {
-  return (
-    <>
-      <SectionHead label={label} count={entries.length} marginTop={1} />
-      <Box marginLeft={2} flexDirection="column">
-        {entries.length > 0 ? (
-          entries.map(([alias, branch]) => (
-            <Box key={alias}>
-              <Text color={colors.accent}>{icons.diamond} </Text>
-              <Text color={colors.bright} bold>
-                {alias}
-              </Text>
-              <Box flexGrow={1} />
-              <Text color={colors.dim}>
-                {icons.branch} {branch}
-              </Text>
-            </Box>
-          ))
-        ) : emptyHint ? (
-          <Text color={colors.faint}>{emptyHint}</Text>
-        ) : null}
-      </Box>
-    </>
   );
 }
 

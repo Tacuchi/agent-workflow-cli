@@ -2,6 +2,8 @@
 // (installed → unmanaged → registered → recommended), detail with per-status
 // actions (unmanaged = informational) and an [a] wizard: source → picker →
 // third-party warning → register.
+// The list opens PROJECTED to the recommended seed and `t` toggles to every
+// detected skill (SPEC 019) — a view mode, not a second data source.
 // Backed by skills-manager; the `w` bundle administration lives in
 // [Workline] (HostAdminSection).
 
@@ -72,6 +74,15 @@ type Mode =
   | { kind: "wizard-warning"; source: string; pick: string }
   | { kind: "busy"; label: string };
 
+// The `filtered` mode's projection: the seed's names, whatever their status.
+// A Set because the seed is scanned once per rendered list.
+const RECOMMENDED_NAMES = new Set(RECOMMENDED_SKILLS.map((s) => s.name));
+
+/** Rows visible in the current mode: the whole list, or just the seed's. */
+function projectSkills(all: SkillListItem[], showAll: boolean): SkillListItem[] {
+  return showAll ? all : all.filter((s) => RECOMMENDED_NAMES.has(s.name));
+}
+
 const STATUS_GLYPH: Record<
   SkillListItem["status"],
   { glyph: string; active: boolean; tone: MetaTone }
@@ -85,11 +96,20 @@ const STATUS_GLYPH: Record<
 export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const [items, setItems] = useState<SkillListItem[]>([]);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
-  // Mirror of items to preserve the selection BY NAME across refresh: the
-  // list re-orders after every operation (installed→registered→recommended)
-  // and a numeric cursor would jump to another skill.
-  const itemsRef = useRef<SkillListItem[]>([]);
+  // View mode, local and unpersisted: every mount opens on the seed (SPEC 019).
+  const [showAll, setShowAll] = useState(false);
+  // Mirror of the VISIBLE rows to preserve the selection BY NAME when they
+  // change — a refresh re-orders the list (installed→registered→recommended)
+  // and the toggle re-projects it, so a numeric cursor would land on another
+  // skill. Assigned during render, so a callback reads the rows the user is
+  // actually looking at.
+  const visibleRef = useRef<SkillListItem[]>([]);
   const { stdout } = useStdout();
+
+  // Rows the active mode shows. `items` keeps the FULL list so the PageHead
+  // totals stay global — only the section's rows follow the mode.
+  const visible = useMemo(() => projectSkills(items, showAll), [items, showAll]);
+  visibleRef.current = visible;
 
   useLockWhile(mode.kind !== "list" && mode.kind !== "detail");
 
@@ -109,7 +129,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         : mode.kind === "confirm"
           ? "confirm"
           : "off",
-    listLen: items.length,
+    listLen: visible.length,
     actionsLen: actionsLenRef.current,
     onAdd: () => setMode({ kind: "wizard-source" }),
     onOpenDetail: () => setMode({ kind: "detail" }),
@@ -140,29 +160,38 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   // can't clip the active row.
   const notifItems = useNotificationItems();
   const listWindow = useListWindow(
-    items.length,
+    visible.length,
     cursor,
     SKILLS_LIST_RESERVED_ROWS + notificationStackRows(notifItems),
+  );
+
+  // Re-anchors the cursor when the visible rows change (refresh or mode
+  // toggle): the same skill stays selected if it survives, otherwise the
+  // cursor clamps to the new list.
+  const reanchorCursor = useCallback(
+    (next: SkillListItem[]) => {
+      setCursor((c) => {
+        const prevName = visibleRef.current[c]?.name;
+        const idx = prevName === undefined ? -1 : next.findIndex((s) => s.name === prevName);
+        return idx >= 0 ? idx : Math.min(Math.max(0, c), Math.max(0, next.length - 1));
+      });
+    },
+    [setCursor],
   );
 
   const refresh = useCallback(async () => {
     try {
       const next = await listSkills(ctx, RECOMMENDED_SKILLS);
-      setCursor((c) => {
-        const prevName = itemsRef.current[c]?.name;
-        const idx = prevName === undefined ? -1 : next.findIndex((s) => s.name === prevName);
-        return idx >= 0 ? idx : Math.min(Math.max(0, c), Math.max(0, next.length - 1));
-      });
-      itemsRef.current = next;
+      reanchorCursor(projectSkills(next, showAll));
       setItems(next);
     } catch (err) {
       onToast?.({ tone: "err", title: "Error loading skills", body: (err as Error).message });
     }
-  }, [ctx, onToast, setCursor]);
+  }, [ctx, onToast, reanchorCursor, showAll]);
 
   useOnMount(() => void refresh());
 
-  const current = items[cursor] ?? null;
+  const current = visible[cursor] ?? null;
   const installedCount = items.filter((s) => s.status === "installed").length;
   const unmanagedCount = items.filter((s) => s.status === "unmanaged").length;
   const registeredCount = items.filter((s) => s.status === "registered").length;
@@ -312,6 +341,19 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     [ctx, current, runAction],
   );
 
+  // input — `t` toggles the list mode (seed only ↔ every detected skill).
+  // Its own handler on purpose: `useListDetailKeys` is the shared machinery of
+  // the list tabs and this key belongs to this one.
+  useInput(
+    (input) => {
+      if (!isActive || (mode.kind !== "list" && mode.kind !== "detail")) return;
+      if (input !== "t" && input !== "T") return;
+      reanchorCursor(projectSkills(items, !showAll));
+      setShowAll((v) => !v);
+    },
+    { isActive },
+  );
+
   // input — wizard-source esc
   useInput(
     (_input, key) => {
@@ -400,8 +442,10 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const home = ctx.env.homeDir();
 
   // Visible-range indicator for the SectionHead hint slot — only when the
-  // window hides rows (consumes no extra terminal row).
-  const listRangeHint = windowRangeHint(listWindow, items.length);
+  // window hides rows (consumes no extra terminal row); it keeps priority over
+  // the mode hint, which QuickActions announces anyway.
+  const listRangeHint = windowRangeHint(listWindow, visible.length);
+  const modeHint = showAll ? "all skills · t show recommended" : "recommended only · t show all";
 
   return (
     <Box flexDirection="column">
@@ -418,8 +462,8 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
 
       <SectionHead
         label="Skills"
-        count={items.length}
-        hint={listRangeHint ?? "installed → unmanaged → registered → recommended"}
+        count={visible.length}
+        hint={listRangeHint ?? modeHint}
         {...(mode.kind.startsWith("wizard")
           ? { rightAction: "esc cancel" }
           : mode.kind === "detail" || mode.kind === "confirm"
@@ -430,7 +474,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
 
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
-          {items.slice(listWindow.start, listWindow.start + listWindow.visible).map((s, i) => {
+          {visible.slice(listWindow.start, listWindow.start + listWindow.visible).map((s, i) => {
             const glyph = STATUS_GLYPH[s.status];
             return (
               <ListRow
@@ -566,7 +610,12 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       </Box>
 
       <Box marginTop={1}>
-        <QuickActions actions={[{ key: "a", label: "add skill" }]} />
+        <QuickActions
+          actions={[
+            { key: "a", label: "add skill" },
+            { key: "t", label: showAll ? "show recommended" : "show all" },
+          ]}
+        />
       </Box>
     </Box>
   );

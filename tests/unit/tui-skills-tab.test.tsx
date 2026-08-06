@@ -17,6 +17,10 @@ import { FakeEnv } from "../helpers/fake-env.js";
 
 const ENTER = "\r";
 const DOWN = "\x1B[B";
+const UP = "\x1B[A";
+// The list opens projected to the recommended seed (SPEC 019): a skill outside
+// it is only reachable after this toggle.
+const TOGGLE = "t";
 const tick = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 
 // The tab uses the real skills-manager against a sandbox home (real adapter):
@@ -68,7 +72,9 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     const src = await makeSkillDir(workdir, "mi-skill");
     await registerSkill(ctx, { source: src });
 
-    const { lastFrame, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
+    const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    stdin.write(TOGGLE); // "mi-skill" no está en la semilla: se ve en modo todas
     await tick();
     const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
     expect(frame).toContain(
@@ -90,6 +96,8 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
 
     const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
     await tick();
+    stdin.write(TOGGLE); // "ajena" está fuera de la semilla
+    await tick();
     const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
     expect(frame).toContain(
       `0 installed · 1 unmanaged · 0 registered · ${RECOMMENDED_SKILLS.length} recommended`,
@@ -97,6 +105,10 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     expect(frame).toContain("ajena");
     expect(frame).toContain("softaworks/agent-toolkit");
 
+    // El toggle conserva la skill seleccionada (la primera de la semilla), que
+    // en la lista completa queda justo debajo de la única fila unmanaged.
+    stdin.write(UP);
+    await tick();
     stdin.write(ENTER); // first row = the unmanaged one (ranks above registered/recommended)
     await tick();
     const detail = (lastFrame() ?? "").replace(/\s+/g, " ");
@@ -143,6 +155,10 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
 
     const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
     await tick();
+    stdin.write(TOGGLE); // "local-skill" está fuera de la semilla
+    await tick();
+    stdin.write(UP); // la selección conservada baja una fila: la instalada encabeza
+    await tick();
     stdin.write(ENTER); // first row = the installed one (manager order)
     await tick();
     const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
@@ -161,6 +177,10 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     await installSkill(ctx, "local-skill");
 
     const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    stdin.write(TOGGLE); // "local-skill" está fuera de la semilla
+    await tick();
+    stdin.write(UP); // la selección conservada baja una fila: la instalada encabeza
     await tick();
     stdin.write(ENTER); // detail (actions: Reinstall, Uninstall, Remove)
     await tick();
@@ -225,8 +245,77 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     await tick(400);
     const after = (lastFrame() ?? "").replace(/\s+/g, " ");
     expect(after).toContain(`1 registered · ${RECOMMENDED_SKILLS.length} recommended`);
-    expect(after).toContain("nueva-skill");
+    stdin.write(TOGGLE); // la recién registrada no está en la semilla
+    await tick();
+    expect((lastFrame() ?? "").replace(/\s+/g, " ")).toContain("nueva-skill");
     unmount();
+  });
+
+  // ===== SPEC 019 — filtro por defecto a la semilla + toggle `t` =====
+
+  /** Registra una skill cuyo nombre NO figura en la semilla de recomendadas. */
+  async function registerOutsideSeed(ctx: CliContext): Promise<void> {
+    const src = await makeSkillDir(workdir, "fuera-de-semilla");
+    await registerSkill(ctx, { source: src });
+  }
+
+  it("abre filtrada: solo lista la semilla, con el modo anunciado y los totales globales intactos", async () => {
+    const ctx = buildCtx(home);
+    await registerOutsideSeed(ctx);
+
+    const { lastFrame, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(frame).not.toContain("fuera-de-semilla");
+    expect(frame).toContain("pdf"); // la semilla sí, cualquiera sea su estado
+    expect(frame).toContain("recommended only · t show all"); // hint del SectionHead
+    expect(frame).toContain("t show all"); // QuickAction
+    // El PageHead sigue contando TODO lo detectado, no solo lo visible.
+    expect(frame).toContain(
+      `0 installed · 1 registered · ${RECOMMENDED_SKILLS.length} recommended`,
+    );
+    unmount();
+  });
+
+  it("`t` alterna a la lista completa y vuelve, anunciando el modo activo", async () => {
+    const ctx = buildCtx(home);
+    await registerOutsideSeed(ctx);
+
+    const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    stdin.write(TOGGLE);
+    await tick();
+    const all = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(all).toContain("fuera-de-semilla");
+    expect(all).toContain("all skills · t show recommended");
+    expect(all).toContain("t show recommended");
+
+    stdin.write(TOGGLE);
+    await tick();
+    const back = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(back).not.toContain("fuera-de-semilla");
+    expect(back).toContain("recommended only · t show all");
+    unmount();
+  });
+
+  it("reabrir la pestaña vuelve al modo filtrado (el toggle no persiste)", async () => {
+    const ctx = buildCtx(home);
+    await registerOutsideSeed(ctx);
+
+    // Salir de la pestaña la desmonta (app.tsx la renderiza condicionalmente).
+    const first = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    first.stdin.write(TOGGLE);
+    await tick();
+    expect(first.lastFrame() ?? "").toContain("fuera-de-semilla");
+    first.unmount();
+
+    const again = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    const frame = (again.lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(frame).not.toContain("fuera-de-semilla");
+    expect(frame).toContain("recommended only · t show all");
+    again.unmount();
   });
 
   it("windowing: acota la lista al viewport y la última skill queda visible al llegar abajo", async () => {

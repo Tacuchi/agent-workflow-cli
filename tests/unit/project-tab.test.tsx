@@ -31,6 +31,9 @@ function workspaceMd(): string {
     "- Ramas de trabajo actuales:",
     "  - alpha: feature/x",
     "  - beta: feature/y",
+    // Declaradas para que "no se renderiza la lista QA" sea una aserción real.
+    "- Ramas QA actuales:",
+    "  - alpha: qa",
     MARKERS.end,
   ].join("\n");
 }
@@ -312,6 +315,20 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     expect(betaIdx - alphaIdx).toBe(1);
   });
 
+  it("tampoco con el chip de procesos, que ensancha la fila (misma regresión)", async () => {
+    const { lastFrame } = render(
+      <Framed>
+        <ProjectTab ctx={buildLaunchCtx()} isActive />
+      </Framed>,
+    );
+    await tick();
+    const lines = (lastFrame() ?? "").split("\n");
+    const alphaIdx = lines.findIndex((l) => l.includes("alpha"));
+    const betaIdx = lines.findIndex((l) => l.includes("beta"));
+    expect(lines[alphaIdx]).toContain("● 1 running"); // la fila ancha es la de alpha
+    expect(betaIdx - alphaIdx).toBe(1);
+  });
+
   it("ventana: con 30 fuentes el frame queda acotado al viewport y el cursor alcanza 'all sources'", async () => {
     const { stdin, lastFrame, stdout } = render(
       <ProjectTab ctx={buildCtx({ sourceCount: 30 })} isActive />,
@@ -374,22 +391,30 @@ const ALPHA_DESCRIPTOR = JSON.stringify({
   profiles: ["dev"],
 });
 
-const RUNNING_PROCESS = JSON.stringify([
-  {
-    id: "alpha__dev__4242",
-    sourceAlias: "alpha",
-    profile: "dev",
+/** One entry of the process registry; `state` is what the row chip reads. */
+function procRecord(
+  alias: string,
+  pid: number,
+  state: "running" | "stopped" | "exited" = "running",
+  profile: string | null = "dev",
+) {
+  return {
+    id: `${alias}__${profile ?? "default"}__${pid}`,
+    sourceAlias: alias,
+    profile,
     command: "npm",
     args: ["run", "dev"],
-    pid: 4242,
+    pid,
     startedAt: "2026-06-23T09:15:00.000Z",
-    logPath: "/ws/docs/logs/alpha-dev.log",
-    state: "running",
-  },
-]);
+    logPath: `/ws/docs/logs/${alias}-${pid}.log`,
+    state,
+  };
+}
 
-/** ctx where alpha has a launch descriptor and one running process is registered. */
-function buildLaunchCtx(): CliContext {
+const RUNNING_PROCESS = JSON.stringify([procRecord("alpha", 4242)]);
+
+/** ctx where alpha has a launch descriptor and the given process registry. */
+function buildLaunchCtx(processesJson: string = RUNNING_PROCESS): CliContext {
   return {
     fs: {
       exists: async (p: string) =>
@@ -398,7 +423,7 @@ function buildLaunchCtx(): CliContext {
         p === "/ws/.workflow/processes.json",
       readText: async (p: string) => {
         if (p === "/ws/.workflow/launch/alpha/launch.json") return ALPHA_DESCRIPTOR;
-        if (p === "/ws/.workflow/processes.json") return RUNNING_PROCESS;
+        if (p === "/ws/.workflow/processes.json") return processesJson;
         return workspaceMd();
       },
     },
@@ -445,7 +470,7 @@ describe("ProjectTab — lock de teclas globales (homologación)", () => {
     expect(lastFrame()).toContain("locked=false");
   });
 
-  it("el modo procesos SÍ retiene el lock (sus teclas r/x/o colisionan con el refresh global)", async () => {
+  it("la tecla `p` ya no abre modo alguno ni toma el lock (el modo procesos se eliminó)", async () => {
     const { stdin, lastFrame } = render(
       <InputLockProvider>
         <LockSpy />
@@ -453,20 +478,30 @@ describe("ProjectTab — lock de teclas globales (homologación)", () => {
       </InputLockProvider>,
     );
     await tick();
-    stdin.write("p"); // entra al modo procesos (hay un proceso running en este ctx)
+    stdin.write("p"); // había un proceso running: antes esto entraba al modo procesos
     await tick();
-    expect(lastFrame()).toContain("locked=true");
+    expect(lastFrame()).toContain("locked=false");
+    expect(lastFrame()).toContain("SOURCES"); // sigue en la lista
   });
 });
 
 describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
-  it("renderiza la sección de procesos (vacía) y el tile 'procesos'", async () => {
+  it("no renderiza secciones de ramas ni de procesos, pero conserva las StatTiles", async () => {
     const { lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
     await tick();
     const f = lastFrame() ?? "";
-    expect(f).toContain("PROCESOS LANZADOS");
-    expect(f).toContain("procesos");
-    expect(f).toContain("sin procesos");
+    // Secciones eliminadas (SPEC 019).
+    expect(f).not.toContain("PROCESOS LANZADOS");
+    expect(f).not.toContain("sin procesos");
+    expect(f).not.toContain("RAMAS DE TRABAJO ACTUALES");
+    expect(f).not.toContain("RAMAS QA ACTUALES");
+    expect(f).not.toContain("manage processes"); // QuickAction del modo `p`
+    // Los cinco tiles siguen ahí (StatTile mayúscula su label) con sus conteos.
+    for (const tile of ["GIT", "WORKING TREE", "SOURCES", "WORKING BRANCHES", "PROCESOS"]) {
+      expect(f).toContain(tile);
+    }
+    expect(f).toContain("0 dirty"); // working tree
+    expect(f).toContain("declared"); // working branches: las 2 declaradas siguen contadas
   });
 
   it("'Lanzar en local' aparece deshabilitada (no lanzable) en el panel de una fuente", async () => {
@@ -490,17 +525,91 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     expect(lastFrame() ?? "").toContain("sin comando de arranque detectable");
   });
 
-  it("lista un proceso en ejecución, muestra el tile en 1 y entra al modo procesos con 'p'", async () => {
+  /** The rendered row of a source (assertions cannot pass on chrome elsewhere). */
+  function sourceRow(frame: string, alias: string): string {
+    return frame.split("\n").find((l) => l.includes(alias)) ?? "";
+  }
+
+  it("la fila de la fuente con un proceso running muestra el chip; la otra no", async () => {
+    const { lastFrame } = render(<ProjectTab ctx={buildLaunchCtx()} isActive />);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(sourceRow(f, "alpha")).toContain("● 1 running");
+    expect(sourceRow(f, "beta")).not.toContain("running");
+    // El centinela no es una fuente real: nunca lleva chip.
+    expect(sourceRow(f, "all sources")).not.toContain("running");
+  });
+
+  it("el chip cuenta los procesos running de la fuente y jamás los stopped/exited", async () => {
+    const ctx = buildLaunchCtx(
+      JSON.stringify([
+        procRecord("alpha", 4242, "running", "dev"),
+        procRecord("alpha", 4243, "running", "test"),
+        procRecord("alpha", 1111, "stopped"),
+        procRecord("alpha", 2222, "exited"),
+        procRecord("beta", 3333, "stopped"),
+      ]),
+    );
+    const { lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(sourceRow(f, "alpha")).toContain("● 2 running");
+    // beta solo tiene historial → sin chip.
+    expect(sourceRow(f, "beta")).not.toContain("running");
+  });
+
+  it("sin procesos running ninguna fila lleva chip", async () => {
+    const ctx = buildLaunchCtx(JSON.stringify([procRecord("alpha", 1111, "stopped")]));
+    const { lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(sourceRow(f, "alpha")).not.toContain("running");
+    expect(f).not.toContain("●");
+  });
+
+  it("el panel de detalle ofrece detener/re-lanzar/ver log por proceso activo, entre git flow y Quitar", async () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={buildLaunchCtx()} isActive />);
     await tick();
-    let f = lastFrame() ?? "";
-    expect(f).toContain("PID 4242");
-    expect(f).toContain("running");
-    stdin.write("p"); // enter processes mode
+    stdin.write(ENTER); // panel de alpha (1 proceso running: dev · PID 4242)
     await tick();
-    f = lastFrame() ?? "";
-    expect(f).toContain("stop"); // processes-mode actions hint
-    expect(f).toContain("relaunch");
+    const f = lastFrame() ?? "";
+    for (const action of ["Detener · dev", "Re-lanzar · dev", "Ver log · dev"]) {
+      expect(f).toContain(action);
+    }
+    expect(f).toContain("PID 4242");
+    // Orden contractual: git flow → acciones de proceso → destructiva última.
+    expect(f.indexOf("Enviar a PROD")).toBeLessThan(f.indexOf("Detener · dev"));
+    expect(f.indexOf("Ver log · dev")).toBeLessThan(f.indexOf("Quitar del workspace"));
+  });
+
+  it("«Ver log» desde el detalle abre el log de ESE proceso", async () => {
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildLaunchCtx()} isActive />);
+    await tick();
+    stdin.write(ENTER); // panel de alpha
+    await tick();
+    // launch + 4 git-flow + Detener + Re-lanzar = 7 bajadas hasta "Ver log".
+    for (let i = 0; i < 7; i++) {
+      stdin.write(DOWN);
+      await tick(20);
+    }
+    stdin.write(ENTER);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("LOG · ALPHA · DEV"); // el SectionHead mayúscula su label
+    expect(f).toContain("/ws/docs/logs/alpha-4242.log");
+  });
+
+  it("una fuente sin procesos running no ofrece acciones de proceso en su detalle", async () => {
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildLaunchCtx()} isActive />);
+    await tick();
+    stdin.write(DOWN); // alpha → beta (sin procesos)
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("ACTIONS");
+    expect(f).not.toContain("Detener");
+    expect(f).not.toContain("Ver log");
   });
 
   it("una fuente con descriptor habilita 'Lanzar en local'", async () => {
