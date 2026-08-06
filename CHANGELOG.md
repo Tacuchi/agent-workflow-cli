@@ -4,6 +4,22 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.3.1] — 2026-08-05
+
+**Las listas de la TUI windowean al alto del terminal: la fila activa nunca vuelve a salirse de pantalla.** Hasta aquí ninguna lista windoweaba — todas renderizaban sus filas completas y el shell recortaba el exceso (`overflowY="hidden"`), así que con más filas que viewport el cursor llegaba a filas que nadie pintaba y la navegación era a ciegas; la lista de SOURCES del tab Project era la primera en notarlo. Un hook compartido nuevo acota cada lista al alto real con edge-scroll —la ventana solo se mueve cuando el cursor la abandona— y un indicador de rango (`5–13 de 31`) vive en el encabezado de sección sin gastar filas. Sin dependencias npm nuevas.
+
+### Added
+
+- **`useListWindow(count, cursor, reservedRows, maxVisible?)` + `windowRangeHint`** (`src/cli/tui/use-list-window.ts`) — ventana keyed a `useTerminalSize` con ajuste en fase de render (sin frame con ventana vieja); contrato no-TTY heredado: `rows=0` → la lista renderiza completa, así tests y pipes no cambian. Aplicado a las cinco listas navegables: SOURCES (Project), conexiones (MCP), skills, hosts+destinos (Workline) y logs (Status). Cada lista reserva además la altura del NotificationStack (`notificationStackRows` + `useNotificationItems`), así un toast o el banner de update tampoco recorta filas.
+
+### Changed
+
+- **Homologación de comportamientos entre tabs al patrón MCP/Skills**: cancelar una confirmación (`esc`/`n`) vuelve al panel de detalle en todas partes (Project volvía a la lista); el panel de detalle deja de retener el lock de teclas globales (lo retiene el modo procesos, cuyas `r`/`x`/`o` colisionan con el refresh global); los hints de skills se alinean («esc to close detail» · «esc cancel» en wizards).
+
+### Fixed
+
+- **El cursor de la sección de logs se salía de su ventana**: el cap fijo de 8 filas seguía clampeando al total de entradas, así que pasada la fila 8 ninguna fila se pintaba activa y ⏎ abría una entrada invisible. El cap sigue siendo 8 como decisión de diseño (`maxVisible`), pero la ventana ahora sigue al cursor.
+
 ## [21.3.0] — 2026-08-05
 
 **Cada host recibe instrucciones sobre su propio mecanismo, ninguna superficie anuncia lo que el host no sostiene, y un recorrido llega a su fin sin resolver pasos por fuera.** La presentación nativa de una frontera humana era doctrina neutra: los wrappers instalados llevaban el MISMO texto en los ocho hosts, así que nada le decía al agente en qué host corría ni qué mecanismo usar — y la detección en runtime no lo resuelve, porque `aw harness` responde `unknown` dentro de Kimi Code. Ahora el **binding por host se estampa en la instalación**, el único momento en que el destino se conoce, generado desde una fuente canónica única del catálogo. En paralelo, tres defectos que hacían perder trabajo en silencio: la instalación de hooks en Kimi podía escribir una sección que su loader descarta entera, el tablero no veía un diferido escrito en español o con lista numerada, y cuatro filas del motor exigían un efecto que en un batch válido puede no ocurrir. Sondas sobre los runtimes instalados —no sobre la doc— corrigieron además cuatro afirmaciones falsas del catálogo. Sin dependencias npm nuevas.
