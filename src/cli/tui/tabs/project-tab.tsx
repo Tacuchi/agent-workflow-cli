@@ -23,6 +23,7 @@ import {
   findCollision,
   launchSource,
   relaunchProcess,
+  stopFailed,
   stopProcess,
   tailLog,
 } from "../../../application/source-launch-service.js";
@@ -484,9 +485,30 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const doStop = useCallback(
     async (record: ProcessRecord) => {
       setMode({ kind: "busy", label: `Deteniendo ${record.sourceAlias}…` });
-      await stopProcess(launchDeps, record);
-      void ctx.logger?.info(formatTuiEvent(`stop ${record.sourceAlias} (PID ${record.pid})`, "ok"));
-      setMode({ kind: "list" });
+      const res = await stopProcess(launchDeps, record);
+      const event = `stop ${record.sourceAlias} (PID ${record.pid})`;
+      // A stop that did not kill anything is a warning, not an "ok": the daily
+      // log is the only trace once the notice is dismissed.
+      void ctx.logger?.log(
+        res.stopped ? "info" : "warn",
+        formatTuiEvent(event, res.stopped ? "ok" : "sigue vivo"),
+      );
+      setMode(
+        res.stopped
+          ? {
+              kind: "notice",
+              tone: "ok",
+              lines: [`Detenido ${record.sourceAlias} (PID ${record.pid}).`],
+            }
+          : {
+              kind: "notice",
+              tone: "err",
+              lines: [
+                `${record.sourceAlias} (PID ${record.pid}) sigue vivo tras la señal.`,
+                "Sigue contando como activo; detenelo desde el sistema y refrescá.",
+              ],
+            },
+      );
       await onReload?.();
     },
     [launchDeps, onReload, ctx],
@@ -687,8 +709,9 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const confirmRelaunch = useCallback(
     async (req: LaunchRequest, existing: ProcessRecord) => {
       setMode({ kind: "busy", label: `Re-lanzando ${req.alias}…` });
-      await stopProcess(launchDeps, existing);
-      const res = await launchSource(launchDeps, req);
+      const stop = await stopProcess(launchDeps, existing);
+      // Same rule as relaunchProcess: never launch over a survivor.
+      const res = stop.stopped ? await launchSource(launchDeps, req) : stopFailed(existing.pid);
       await finishRelaunch(req.alias, res);
     },
     [launchDeps, finishRelaunch],

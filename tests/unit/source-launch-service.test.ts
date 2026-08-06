@@ -251,11 +251,43 @@ describe("source-launch-service — launch/stop/relaunch", () => {
     writeDescriptor("app", descriptor({ profiles: [], params: [] }));
     const launched = await launchSource(deps, { alias: "app", profile: null, values: {} });
     if (!launched.ok) throw new Error("launch failed");
-    await stopProcess(deps, launched.record);
+    const res = await stopProcess(deps, launched.record);
+    expect(res.stopped).toBe(true);
     expect(proc.killed).toContain(launched.record.pid);
     const registry = new ProcessRegistryService(fs, proc, deps.paths.cwdProcessesFile());
     const listed = await registry.list();
     expect(listed.find((r) => r.id === launched.record.id)?.state).toBe("stopped");
+  });
+
+  it("stopProcess informa que NO murió y deja el registro sin tocar", async () => {
+    // A tree that outlives SIGTERM: `killTree` swallows the failure by design,
+    // so the survivor is only visible through the liveness check.
+    writeDescriptor("app", descriptor({ profiles: [], params: [] }));
+    const launched = await launchSource(deps, { alias: "app", profile: null, values: {} });
+    if (!launched.ok) throw new Error("launch failed");
+    proc.killTree = async (pid: number) => void proc.killed.push(pid); // no lo mata
+
+    const res = await stopProcess(deps, launched.record);
+    expect(res.stopped).toBe(false);
+    const registry = new ProcessRegistryService(fs, proc, deps.paths.cwdProcessesFile());
+    const listed = await registry.list();
+    // Marcarlo `stopped` sería la mentira: sigue vivo y sigue contando.
+    expect(listed.find((r) => r.id === launched.record.id)?.state).toBe("running");
+  });
+
+  it("relaunchProcess no lanza un segundo proceso si el primero sobrevivió", async () => {
+    writeDescriptor("app", descriptor({ profiles: [], params: [] }));
+    const first = await launchSource(deps, { alias: "app", profile: null, values: {} });
+    if (!first.ok) throw new Error("launch failed");
+    const spawnsBefore = proc.terminalSpawns.length;
+    proc.killTree = async (pid: number) => void proc.killed.push(pid); // no lo mata
+
+    const again = await relaunchProcess(deps, first.record);
+    expect(again.ok).toBe(false);
+    if (again.ok) return;
+    expect(again.error).toBe("stop_failed");
+    // Lo que evita: dos procesos peleando por el mismo puerto.
+    expect(proc.terminalSpawns.length).toBe(spawnsBefore);
   });
 
   it("relaunchProcess stops the old process and launches a fresh one", async () => {

@@ -413,8 +413,15 @@ function procRecord(
 
 const RUNNING_PROCESS = JSON.stringify([procRecord("alpha", 4242)]);
 
-/** ctx where alpha has a launch descriptor and the given process registry. */
-function buildLaunchCtx(processesJson: string = RUNNING_PROCESS): CliContext {
+/**
+ * ctx where alpha has a launch descriptor and the given process registry.
+ * `procOver` injects the kill/liveness pair a stop test needs (the default
+ * never kills anything: no test but a stop one exercises it).
+ */
+function buildLaunchCtx(
+  processesJson: string = RUNNING_PROCESS,
+  procOver: Record<string, unknown> = {},
+): CliContext {
   return {
     fs: {
       exists: async (p: string) =>
@@ -426,6 +433,8 @@ function buildLaunchCtx(processesJson: string = RUNNING_PROCESS): CliContext {
         if (p === "/ws/.workflow/processes.json") return processesJson;
         return workspaceMd();
       },
+      mkdirp: async () => {},
+      writeText: async () => {},
     },
     env: { cwd: () => "/ws", homeDir: () => "/home", get: () => undefined },
     git: {
@@ -438,6 +447,7 @@ function buildLaunchCtx(processesJson: string = RUNNING_PROCESS): CliContext {
     process: {
       run: async () => ({ code: 0, stdout: "", stderr: "" }),
       isAlive: async () => true, // running record stays running → no reconcile write
+      ...procOver,
     },
     paths: {
       workspaceDir: () => "/ws",
@@ -597,6 +607,51 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     const f = lastFrame() ?? "";
     expect(f).toContain("LOG · ALPHA · DEV"); // el SectionHead mayúscula su label
     expect(f).toContain("/ws/docs/logs/alpha-4242.log");
+  });
+
+  /** Baja hasta «Detener» (launch + 4 git-flow = 5) y la ejecuta. */
+  async function runStop(stdin: { write: (s: string) => void }, settle: number): Promise<void> {
+    stdin.write(ENTER); // panel de alpha
+    await tick();
+    for (let i = 0; i < 5; i++) {
+      stdin.write(DOWN);
+      await tick(20);
+    }
+    stdin.write(ENTER);
+    await tick(settle);
+  }
+
+  it("«Detener» confirma con el PID cuando el proceso murió", async () => {
+    const alive = new Set([4242]);
+    const ctx = buildLaunchCtx(RUNNING_PROCESS, {
+      killTree: async (pid: number) => void alive.delete(pid),
+      isAlive: async (pid: number) => alive.has(pid),
+    });
+    const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    await runStop(stdin, 200);
+    const f = lastFrame() ?? "";
+    expect(f).toContain("Detenido alpha");
+    expect(f).toContain("PID 4242");
+  });
+
+  it("«Detener» avisa cuando el proceso sigue vivo tras la señal, y lo loguea como warn", async () => {
+    // La mentira que esto reemplaza: antes decía «detenido» igual y el registro
+    // lo marcaba stopped aunque el árbol siguiera en pie.
+    const logger = fakeLogger();
+    const ctx = buildLaunchCtx(RUNNING_PROCESS, {
+      killTree: async () => {}, // no mata nada
+      isAlive: async () => true,
+    });
+    const { stdin, lastFrame } = render(
+      <ProjectTab ctx={{ ...ctx, logger } as unknown as CliContext} isActive />,
+    );
+    await tick();
+    await runStop(stdin, 900); // el confirmador agota su presupuesto
+    const f = lastFrame() ?? "";
+    expect(f).toContain("sigue vivo tras la señal");
+    const warn = logger.lines.find((l) => l.msg.includes("stop alpha"));
+    expect(warn?.level).toBe("warn");
   });
 
   it("una fuente sin procesos running no ofrece acciones de proceso en su detalle", async () => {

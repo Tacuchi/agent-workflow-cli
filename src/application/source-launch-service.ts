@@ -60,7 +60,12 @@ export type LaunchResult =
     }
   | {
       ok: false;
-      error: "no_descriptor" | "corrupt_descriptor" | "not_launchable" | "spawn_failed";
+      error:
+        | "no_descriptor"
+        | "corrupt_descriptor"
+        | "not_launchable"
+        | "spawn_failed"
+        | "stop_failed";
       message: string;
     };
 
@@ -238,10 +243,37 @@ export async function launchSource(deps: LaunchDeps, req: LaunchRequest): Promis
   }
 }
 
-/** Stop a process (kill its tree) and mark it stopped in the registry. */
-export async function stopProcess(deps: LaunchDeps, record: ProcessRecord): Promise<void> {
+/** What a stop actually achieved. `stopped: false` = the tree outlived the signal. */
+export interface StopResult {
+  stopped: boolean;
+}
+
+// `killTree` signals and returns: SIGTERM is asynchronous and the adapter
+// swallows every failure by design (a dead pid is not an error). So liveness is
+// polled instead of assumed — bounded, and it exits as soon as the pid is gone.
+const STOP_CONFIRM_BUDGET_MS = 600;
+const STOP_CONFIRM_STEP_MS = 60;
+
+/**
+ * Stop a process and report whether it actually died.
+ *
+ * The registry is only marked when the tree is really gone: recording `stopped`
+ * for a process still holding its port is the lie every caller then repeats.
+ */
+export async function stopProcess(deps: LaunchDeps, record: ProcessRecord): Promise<StopResult> {
   await deps.proc.killTree(record.pid);
-  await registry(deps).markStopped(record.id);
+  const stopped = await confirmDead(deps.proc, record.pid);
+  if (stopped) await registry(deps).markStopped(record.id);
+  return { stopped };
+}
+
+/** Polls the port's own liveness check until the pid is gone or the budget runs out. */
+async function confirmDead(proc: LaunchDeps["proc"], pid: number): Promise<boolean> {
+  for (let waited = 0; ; waited += STOP_CONFIRM_STEP_MS) {
+    if (!(await proc.isAlive(pid))) return true;
+    if (waited >= STOP_CONFIRM_BUDGET_MS) return false;
+    await new Promise((resolve) => setTimeout(resolve, STOP_CONFIRM_STEP_MS));
+  }
 }
 
 /** Relaunch = stop the existing process, then launch the same source+profile afresh. */
@@ -249,13 +281,25 @@ export async function relaunchProcess(
   deps: LaunchDeps,
   record: ProcessRecord,
 ): Promise<LaunchResult> {
-  await stopProcess(deps, record);
+  const stop = await stopProcess(deps, record);
+  // Launching over a survivor is how one process becomes two fighting for the
+  // same port — and the old one is no longer in the registry's `running` view.
+  if (!stop.stopped) return stopFailed(record.pid);
   // Reuse the same profile + persisted non-secret values (secrets re-default to empty).
   return launchSource(deps, {
     alias: record.sourceAlias,
     profile: record.profile,
     values: record.values ?? {},
   });
+}
+
+/** The launch outcome when the process that had to die is still running. */
+export function stopFailed(pid: number): Extract<LaunchResult, { ok: false }> {
+  return {
+    ok: false,
+    error: "stop_failed",
+    message: `El proceso (PID ${pid}) sigue vivo tras la señal: no se relanza para no duplicarlo.`,
+  };
 }
 
 /** Last `maxLines` of a process log (best-effort; empty when missing). */
