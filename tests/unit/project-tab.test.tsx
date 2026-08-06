@@ -416,11 +416,13 @@ const RUNNING_PROCESS = JSON.stringify([procRecord("alpha", 4242)]);
 /**
  * ctx where alpha has a launch descriptor and the given process registry.
  * `procOver` injects the kill/liveness pair a stop test needs (the default
- * never kills anything: no test but a stop one exercises it).
+ * never kills anything: no test but a stop one exercises it); `descriptorJson`
+ * swaps the launch descriptor (default: with profiles → opens the form).
  */
 function buildLaunchCtx(
   processesJson: string = RUNNING_PROCESS,
   procOver: Record<string, unknown> = {},
+  descriptorJson: string = ALPHA_DESCRIPTOR,
 ): CliContext {
   return {
     fs: {
@@ -429,7 +431,7 @@ function buildLaunchCtx(
         p === "/ws/.workflow/launch/alpha/launch.json" ||
         p === "/ws/.workflow/processes.json",
       readText: async (p: string) => {
-        if (p === "/ws/.workflow/launch/alpha/launch.json") return ALPHA_DESCRIPTOR;
+        if (p === "/ws/.workflow/launch/alpha/launch.json") return descriptorJson;
         if (p === "/ws/.workflow/processes.json") return processesJson;
         return workspaceMd();
       },
@@ -621,18 +623,24 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     await tick(settle);
   }
 
-  it("«Detener» confirma con el PID cuando el proceso murió", async () => {
+  it("«Detener» confirma con el PID cuando el proceso murió, y lo loguea como info", async () => {
+    const logger = fakeLogger();
     const alive = new Set([4242]);
     const ctx = buildLaunchCtx(RUNNING_PROCESS, {
       killTree: async (pid: number) => void alive.delete(pid),
       isAlive: async (pid: number) => alive.has(pid),
     });
-    const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    const { stdin, lastFrame } = render(
+      <ProjectTab ctx={{ ...ctx, logger } as unknown as CliContext} isActive />,
+    );
     await tick();
     await runStop(stdin, 200);
     const f = lastFrame() ?? "";
     expect(f).toContain("Detenido alpha");
     expect(f).toContain("PID 4242");
+    // Criterio 5 (spec 020): el log distingue el resultado — info al detener.
+    const line = logger.lines.find((l) => l.msg.includes("stop alpha"));
+    expect(line?.level).toBe("info");
   });
 
   it("«Detener» avisa cuando el proceso sigue vivo tras la señal, y lo loguea como warn", async () => {
@@ -743,6 +751,50 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     const f = lastFrame() ?? "";
     expect(f).toContain("Ya corre alpha");
     expect(f).toContain("re-lanzar");
+  });
+
+  /** Descriptor sin perfiles ni params: «Lanzar en local» lanza directo (perfil null). */
+  const DIRECT_DESCRIPTOR = JSON.stringify({
+    version: 1,
+    source: "alpha",
+    stack: "npm",
+    cwd: "/src/alpha",
+    command: "npm",
+    args: ["start"],
+    params: [],
+    profiles: [],
+  });
+
+  it("confirmar el re-lanzamiento en colisión con un superviviente no lanza proceso nuevo y muestra stop_failed", async () => {
+    // Criterio 4 (spec 020), cláusula «resolviendo una colisión»: la ruta del
+    // panel ya la demuestra el motor (relaunchProcess); esta prueba cablea el
+    // callback propio de la pantalla de colisión (confirmRelaunch → stopFailed).
+    let spawns = 0;
+    const ctx = buildLaunchCtx(
+      JSON.stringify([procRecord("alpha", 7777, "running", null)]),
+      {
+        killTree: async () => {}, // no mata: el proceso sobrevive a la señal
+        isAlive: async () => true,
+        spawnInTerminal: async () => {
+          spawns += 1;
+          return { pid: 9999, mode: "terminal" };
+        },
+      },
+      DIRECT_DESCRIPTOR,
+    );
+    const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER); // panel de alpha
+    await tick();
+    stdin.write(ENTER); // Lanzar en local → colisión (mismo alias + perfil null)
+    await tick();
+    expect(lastFrame() ?? "").toContain("Ya corre alpha");
+    stdin.write("r"); // confirmar re-lanzamiento: detiene… pero el proceso no muere
+    await tick(900); // el confirmador agota su presupuesto (600 ms)
+    const f = lastFrame() ?? "";
+    expect(f).toContain("sigue vivo tras la señal");
+    // Lo que evita: dos procesos peleando por el mismo puerto.
+    expect(spawns).toBe(0);
   });
 
   it("sin workspace inicializado: NO ofrece Lanzar ni la sección de procesos (AC12)", async () => {
