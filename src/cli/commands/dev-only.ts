@@ -1,4 +1,5 @@
 import {
+  isHarnessId,
   runHarness,
   runLogs,
   runNextNumber,
@@ -17,8 +18,15 @@ const HARNESS_IDS = HARNESSES.map((h) => h.id).join(" | ");
 export const harnessCommand: QtcCommand = {
   name: "harness",
   describe: `Identify the host harness from its env markers (${HARNESS_IDS} | unknown). 'unknown' is a legitimate answer — some hosts export no marker to their subprocesses; use 'self detect-hosts' for what is actually installed on the machine.`,
-  async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-    const data = runHarness((k) => ctx.env.get(k));
+  async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
+    const requested = args.values.get("host");
+    if (requested !== undefined && !isHarnessId(requested)) {
+      return fail(
+        "INVALID_INPUT",
+        `--host inválido: '${requested}'. Valores válidos: ${HARNESS_IDS}`,
+      );
+    }
+    const data = runHarness((k) => ctx.env.get(k), requested);
     return { ok: true, data, exitCode: 0 };
   },
 };

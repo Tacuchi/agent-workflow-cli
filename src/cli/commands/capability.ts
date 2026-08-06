@@ -16,7 +16,7 @@ import {
 } from "../../application/capability/compose.js";
 import type { DurableEffectPlan } from "../../application/capability/durable-effect.js";
 import type { SelectionPin } from "../../application/capability/resolution.js";
-import { runHarness } from "../../application/dev-only-services.js";
+import { isHarnessId, runHarness } from "../../application/dev-only-services.js";
 import type { CapabilityInputValue } from "../../domain/capability/protocol.js";
 import { renderReceiptHuman } from "../../domain/capability/protocol.js";
 import type { CapabilityRequest } from "../../domain/capability/protocol.js";
@@ -50,6 +50,13 @@ export const capabilityCommand: QtcCommand<CapabilityAttempt> = {
     "Usage: aw capability prepare --capability design --operation validate --input package=DES-001.",
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<CapabilityAttempt>> {
+    const requestedHost = args.values.get("host");
+    if (requestedHost !== undefined && !isHarnessId(requestedHost)) {
+      return fail(
+        "ARGS_INVALID",
+        `--host no reconoce '${requestedHost}'; elegí un host del catálogo instalado.`,
+      ) as CommandResult<CapabilityAttempt>;
+    }
     const verb = args.rest[0] as CapabilityVerb | undefined;
     if (verb === undefined || !VERBS.includes(verb)) {
       return fail(
@@ -87,7 +94,7 @@ export const capabilityCommand: QtcCommand<CapabilityAttempt> = {
         `--flow no reconoce '${flow}'; los flows son: ${WORKLINE_FLOWS.join(", ")}`,
       ) as CommandResult<CapabilityAttempt>;
     }
-    const dispatchContext = await ctx0(ctx);
+    const dispatchContext = await ctx0(ctx, requestedHost);
     const result =
       flow === undefined
         ? await dispatchCapability(input, dispatchContext)
@@ -150,14 +157,17 @@ function dispatchInputFrom(
  * so the explicit-root path could only ever be exercised by a test that passed
  * null by hand. A smoke run from `/tmp` is what surfaced it.
  */
-async function ctx0(ctx: CliContext): Promise<DispatchContext> {
+async function ctx0(
+  ctx: CliContext,
+  boundHost?: import("../../domain/harnesses.js").HarnessId,
+): Promise<DispatchContext> {
   const inWorkspace = await ctx.fs.exists(ctx.paths.cwdRoot());
   return {
     fs: ctx.fs,
     env: ctx.env,
     paths: ctx.paths,
     workspace: inWorkspace ? ctx.paths.workspaceDir() : null,
-    host: runHarness((k) => ctx.env.get(k)).harness,
+    host: runHarness((k) => ctx.env.get(k), boundHost).agent_host,
   };
 }
 

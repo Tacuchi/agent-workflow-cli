@@ -235,6 +235,7 @@ describe("la superficie instalada lleva el binding de su host (y el bundle canó
     const skill = await readFile(join(home, ".kimi-code/skills/design/SKILL.md"), "utf8");
     expect(skill).toContain("(`kimi`, stamped at install)");
     expect(skill).toContain("`AskUserQuestion`");
+    expect(skill).toContain("aw capability --host kimi prepare");
   });
 
   it("el bundle canónico instalado NO lleva stamp: la doctrina se mantiene host-agnóstica", async () => {

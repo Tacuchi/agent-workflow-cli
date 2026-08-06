@@ -1,4 +1,5 @@
 import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
+import { isHarnessId } from "../../application/dev-only-services.js";
 import { type AdvanceFlowResult, advanceFlow } from "../../application/flow/flow-service.js";
 import { type SubmitFlowResult, submitFlow } from "../../application/flow/submit.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
@@ -32,6 +33,13 @@ export const flowCommand: QtcCommand<FlowDirective> = {
   describe: `Avanza un recorrido de Workline hasta su primera frontera no determinista y devuelve su directiva. Verbos: ${VERBS.join(" | ")}. La respuesta de submit entra por stdin como JSON y la aprobación de efecto viaja aparte en --approval. Usage: aw flow advance --session <código> [--flow <flow> --adopt].`,
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<FlowDirective>> {
+    const requestedHost = args.values.get("host");
+    if (requestedHost !== undefined && !isHarnessId(requestedHost)) {
+      return fail(
+        "ARGS_INVALID",
+        `--host no reconoce '${requestedHost}'; elegí un host del catálogo instalado.`,
+      ) as CommandResult<FlowDirective>;
+    }
     const verb = args.rest[0];
     if (verb === undefined || !(VERBS as readonly string[]).includes(verb)) {
       return fail(

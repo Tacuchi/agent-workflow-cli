@@ -2,7 +2,7 @@
 
 This document is the **common engine** of the Workline loops: the doctrine every loop runs underneath its deltas. **It is not a skill** — it is a referenced document: every loop orders it read from its `## Inherits`, **always, before its deltas**. If you edit the engine, edit it **here** — heirs never repeat it, they only reference it.
 
-> **When each step below happens is no longer this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. What stays is what each rule is FOR — the half no engine carries.
+> **When each step below happens is no longer this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. They consume no model worker, subagent or external process: the CLI advances them locally to the first real frontier. What stays is what each rule is FOR — the half no engine carries.
 
 ## Heirs (canonical list)
 
@@ -45,7 +45,7 @@ The persistent objective needs a **checkable done-condition** — otherwise the 
 
 **Gate integrity (anti-gaming + independent verification).** The gate only counts if it is not gamed to pass. The loop does **not**: modify the check or loosen a `Success criterion` to force green; weaken, delete or skip tests/validations; use trivial or tautological asserts that always pass (the expected value comes from an independent source, never from the output itself); patch the test instead of fixing the cause (prefer fixing production code).
 
-Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration**: when the deliverable warrants it, the final verification is an **independent** pass (subagent or clean re-read) that does not assume the implementation is correct — *only command output counts*.
+Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration**: when the deliverable warrants it, the final verification is an **independent** pass (subagent only when the CLI's independent-partition rule admits it, or a clean re-read) that does not assume the implementation is correct — *only command output counts*.
 
 **Minimality (anti-over-engineering).** Passing the criteria is **necessary, not sufficient**: the gate also rejects a deliverable **heavier than its `Success criteria` require** — YAGNI at the deliverable's altitude. A spec can be coherent yet over-specified; a plan sound yet over-engineered; a diff green yet padded with reinvented stdlib, speculative abstractions or dead flexibility. At its own altitude the gate asks the laziest-that-works questions:
 

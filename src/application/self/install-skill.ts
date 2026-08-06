@@ -541,6 +541,7 @@ async function installOneTarget(
     dirname(dest),
     DESIGN_DESCRIPTOR,
     stampForInstallTarget(t.target),
+    harnessByInstallTarget(t.target)?.id,
   );
   if (capability.ok) entry.capability_skill = DESIGN_DESCRIPTOR.name;
   else
@@ -695,7 +696,7 @@ function renderCommandSkill(
 ): string {
   const { description, body } = splitCommandDoc(materializeBundleRoot(raw, bundleDest));
   const desc = description ?? `agent-workflow command ${skillName} (see body).`;
-  const rewired = body.split("../").join("../w/");
+  const rewired = bindHostInvocations(body.split("../").join("../w/"), target);
   return [
     "---",
     `name: ${skillName}`,
@@ -739,7 +740,10 @@ function renderCommandWrapper(
   // `../loops`, `../modules`, … references. Native wrappers live elsewhere;
   // retarget that parent to the installed bundle before adapting the dialect.
   const materialized = materializeBundleRoot(raw, bundleDest);
-  const rewired = materialized.split("../").join(`${bundleReferenceRoot}/`);
+  const rewired = bindHostInvocations(
+    materialized.split("../").join(`${bundleReferenceRoot}/`),
+    target,
+  );
   const stamp = stampForInstallTarget(target);
   // Claude keeps its frontmatter whole — it carries keys beyond `description`, so
   // splitting and re-emitting would drop them. The stamp is inserted after it.
@@ -762,6 +766,18 @@ function renderCommandWrapper(
   // crush-md: Crush parses no frontmatter — ship the body only. $ARGUMENTS
   // matches its ^\$[A-Z]+ named-argument rule, so Crush prompts for it.
   return body;
+}
+
+/**
+ * A per-host wrapper is the one place where the install target is certain.
+ * Preserve that fact in direct CLI calls so terminal markers cannot override
+ * the agent runtime selected by the installed surface. Shared `agents` skills
+ * deliberately stay unbound because several hosts read them.
+ */
+function bindHostInvocations(body: string, target: InstallTarget): string {
+  const host = harnessByInstallTarget(target)?.id;
+  if (host === undefined) return body;
+  return body.replace(/\baw (flow|capability)\b/g, `aw $1 --host ${host}`);
 }
 
 /**

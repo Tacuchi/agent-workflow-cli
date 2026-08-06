@@ -65,7 +65,7 @@ export type CapabilityStatus =
   | "unsupported";
 
 export interface HostCapability {
-  id: "skills" | "commands" | "structured-choice" | "hooks" | "mcp";
+  id: "skills" | "commands" | "structured-choice" | "subagent-dispatch" | "hooks" | "mcp";
   status: CapabilityStatus;
   /** How it works here — the fallback when degraded, the reason when unsupported. */
   detail: string;
@@ -240,6 +240,18 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
       status: spec.structuredChoice.state,
       detail: structuredChoiceDetail(spec),
     },
+    spec.execution.subagents === "parallel"
+      ? {
+          id: "subagent-dispatch",
+          status: "native",
+          detail: `${spec.execution.mechanism ?? "host workers"}; the CLI permits at most ${spec.execution.max_subagents} after proving independent semantic partitions`,
+        }
+      : {
+          id: "subagent-dispatch",
+          status: "unsupported",
+          detail:
+            "no native worker dispatch; deterministic steps stay in the CLI and semantic work stays inline",
+        },
     spec.hooks === null
       ? { id: "hooks", status: "unsupported", detail: "this host has no hook system" }
       : spec.hooks.managed

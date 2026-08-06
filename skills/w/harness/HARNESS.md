@@ -45,6 +45,29 @@ The capabilities the harness layer depends on, with their universal fallback (wh
 
 > **Only two capabilities are `must` for a loop's cycle**: `structured-choice` and `compaction`. Both degrade to a purely textual fallback → **any** harness with chat + a filesystem runs the full model. The rest (subagents, MCP, slash commands, native skills) is *enhancement*.
 
+## Resource authority — the CLI spends, the host supplies
+
+The host advertises primitives; the CLI owns whether their cost is justified.
+`aw harness` reports **`agent_host`** and **`terminal_host`** separately, so Codex
+inside Warp is not mistaken for Warp. A host-specific installed wrapper binds its
+own target explicitly; environment detection is the fallback, while a shared
+`.agents/skills` wrapper stays unbound because several hosts can read it.
+
+- A deterministic tranche dispatches **zero** model workers, subagents and
+  external processes. `aw flow advance` exhausts it locally until the first
+  semantic, human, authorization, execution, blocked or final frontier.
+- A semantic tranche is inline by default. It may use subagents only for three
+  or more independent partitions with no dependency and no overlapping writes;
+  then the CLI caps them at **3** (at most **4** model workers including the
+  coordinator). Human and authorization frontiers never fan out.
+- An execution frontier has one external invocation at a time and returns its
+  actual evidence; it is not a request to run more agents.
+- Token usage is recorded only when the host supplies a real count. Bytes,
+  context size and estimates are never relabeled as tokens.
+
+This lets a capable host contribute parallel analysis when it is cheaper than
+coordination, without turning a deterministic CLI rule into model work.
+
 ## Harness binding matrix
 
 Concrete mechanism per harness (matrix base verified **Jul-2026**; the `structured-choice` row re-verified **2026-08-04** and the Codex `hooks` row **2026-08-05**, both against the INSTALLED runtimes plus real runs — not docs; `~` partial). Antigravity CLI reuses Gemini's surfaces (`~/.gemini/`); Oz reuses Warp's (they share the **Warp / Oz** column, with MCP via flag — see the note under the matrix).
@@ -55,7 +78,7 @@ Concrete mechanism per harness (matrix base verified **Jul-2026**; the `structur
 | procedure-loading (skills) | `SKILL.md` `.claude/skills` | `SKILL.md` `.agents/skills` | `SKILL.md` `.kimi-code/skills`+`.agents/skills` (user and project tiers) | `SKILL.md` (agentskills) | `SKILL.md` `.opencode`+`.claude`+`.agents` | `SKILL.md` `~/.config/crush`+`.agents`+`.claude` (`.crush/skills` is project-only) | `SKILL.md` `.agents`+`.warp`+`.claude` | read-and-follow `.md` |
 | structured-choice | `AskUserQuestion` (**main-agent only**; 1–4 questions, 2–4 options; label + description; free-text always offered) | `request_user_input` **not reachable** (~): its router refuses it in Default mode and exec mode never offers it; opt-in `default_mode_request_user_input` still *under development* → labeled markdown | `AskUserQuestion` (1–4 questions, 2–4 options; label + description; free-text offered) — **not called in `auto`/non-interactive mode** by the host's own rule → labeled markdown | `AskQuestion` (Antigravity/`agy`, the live binary: option `text` only, **no description field** → `Label — sentence`; write-in; no ceiling declared). `ask_user` is the retired Gemini CLI's and is **absent** from `agy` | `question` (label + description as separate fields; `custom` free-text on by default; no ceiling declared) — **denied in a non-interactive run** → labeled markdown | `question` (≤5 questions, ≤5 choices; description required per question <300 chars and **per choice <100 chars**; automatic fill-in) | no structured-choice surface → labeled markdown | labeled markdown (label + sentence) |
 | compaction | `/compact` | Pre/PostCompact hooks | `/compact` + Pre/PostCompact hooks | ~ | `session.compacted` | ~ | ~ | CHECKPOINT + resume |
-| subagent-dispatch | `Task` (parallel) | `SubagentStart` / agents | sub-agents (`SubagentStart`/`SubagentStop`) | agents (`.gemini/agents`) | `.opencode/agent/*.md` | ~ | ~ (cloud agents) | inline |
+| subagent-dispatch | `Task` (parallel) | `agents` | `SubagentStart` | agents (`.gemini/agents`) | `.opencode/agent/*.md` | inline | inline (Oz cloud orchestration is not a direct worker binding) | inline |
 | persistent-context | `CLAUDE.md` (does **not** read AGENTS.md → symlink) | `AGENTS.md` | `AGENTS.md` (hierarchical) | `GEMINI.md` + `AGENTS.md` | `AGENTS.md` | `CRUSH.md` + `AGENTS.md` | `AGENTS.md` (auto) | `AGENTS.md` |
 | **host-memory** | `MEMORY.md` (cheap) + transcripts/`--resume` (deep) | `AGENTS.md` (static → fallback) | sessions with resume/fork (`kimi -S`) + `AGENTS.md` | `GEMINI.md`+`AGENTS.md` (static → fallback) | `AGENTS.md` (static → fallback) | `CRUSH.md`+`AGENTS.md` (static → fallback) | rules / history (~) | git/`docs/` + ask |
 | **web-research** | `WebSearch` / `WebFetch` | `web_search` (opt-in config) | moonshot search + fetch services | `google_web_search` + `web_fetch` | `webfetch` (~) | ~ | ~ (agent web access) | — (offline + declare) |
@@ -124,7 +147,7 @@ Proven pattern (Spec Kit, 30+ agents): **one canonical source** + generate/symli
 
 ## Command packaging (harness-specific)
 
-Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The **file** the harness executes wraps that contract in its native format — the installer (`aw self install-skill`) emits the right wrapper per host, retargets bundle-relative links to that host's installed `skills/w` directory and materializes the authored `${CLAUDE_PLUGIN_ROOT}/skills/w` token to the same absolute bundle for `aw context-plan --root`. Claude's plugin surface expands that token natively; installed wrappers never rely on the CLI's potentially different packaged copy:
+Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The **file** the harness executes wraps that contract in its native format — the installer (`aw self install-skill`) emits the right wrapper per host, retargets bundle-relative links to that host's installed `skills/w` directory, binds its flow/capability calls with `--host <target>`, and materializes the authored `${CLAUDE_PLUGIN_ROOT}/skills/w` token to the same absolute bundle for `aw context-plan --root`. Claude's plugin surface expands that token natively; installed wrappers never rely on the CLI's potentially different packaged copy:
 
 | Host | Wrapper installed | Invoked as |
 |---|---|---|

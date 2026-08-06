@@ -3,7 +3,7 @@ import {
   type CapabilityReadinessReport,
   capabilityReadiness,
 } from "../../application/capability/readiness.js";
-import { runHarness } from "../../application/dev-only-services.js";
+import { isHarnessId, runHarness } from "../../application/dev-only-services.js";
 import {
   checkInstalledBindings,
   resolveSkills,
@@ -38,7 +38,18 @@ export const skillsCommand: QtcCommand<SkillsData> = {
     "con --detail agrega readiness por capacidad, exposición y operación, la instancia exacta o el " +
     "floor, y la forma de invocación que el host soporta de verdad.",
 
-  async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult<SkillsData>> {
+  async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<SkillsData>> {
+    const requested = args.values.get("host");
+    if (requested !== undefined && !isHarnessId(requested)) {
+      return {
+        ok: false,
+        error: {
+          code: "INVALID_INPUT",
+          message: `--host inválido: '${requested}'. Usá un host del catálogo.`,
+        },
+        exitCode: 1,
+      };
+    }
     const resolution = await resolveSkills(ctx.fs, ctx.paths);
     const validation = await checkInstalledBindings(ctx.fs, ctx.env, resolution);
     const data: SkillsData = {
@@ -50,7 +61,7 @@ export const skillsCommand: QtcCommand<SkillsData> = {
         fs: ctx.fs,
         env: ctx.env,
         paths: ctx.paths,
-        host: runHarness((k) => ctx.env.get(k)).harness,
+        host: runHarness((k) => ctx.env.get(k), requested).agent_host,
       }),
     };
     return { ok: true, data, exitCode: 0 };

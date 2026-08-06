@@ -248,6 +248,12 @@ describe("el entrypoint físico se instala, se reinstala y se retira", () => {
     expect(text).not.toContain("off:");
   });
 
+  it("un wrapper instalado fija su host para que el terminal no reemplace al agente", () => {
+    const text = renderCapabilitySkill(DESIGN_DESCRIPTOR, undefined, "codex");
+    expect(text).toContain("aw capability --host codex prepare");
+    expect(text).not.toContain("aw capability prepare");
+  });
+
   it("install escribe el par y el descriptor publicado valida", async () => {
     const root = tempRoot();
     try {

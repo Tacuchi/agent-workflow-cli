@@ -1,5 +1,6 @@
 import { HOST_VERIFICATIONS, type HarnessVerification } from "./host-verification.js";
 import type { McpHost } from "./mcp-entry.js";
+import type { HostExecutionCapability } from "./resource-policy.js";
 
 export type Harness =
   | "claude-code"
@@ -216,6 +217,8 @@ export interface HarnessSpec {
    * it agrees with the `structured-choice` row of `HARNESS.md`.
    */
   structuredChoice: HarnessStructuredChoice;
+  /** Native worker-dispatch capacity. The CLI decides whether it may be used. */
+  execution: HostExecutionCapability;
 }
 
 export const HARNESSES: readonly HarnessSpec[] = [
@@ -252,6 +255,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       evidence:
         "official docs 2026-08-02; the binding in daily use, and the regression plan 016 preserves",
     },
+    execution: { subagents: "parallel", max_subagents: 3, mechanism: "Task" },
   },
   {
     id: "codex",
@@ -273,7 +277,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "~/.codex/hooks.json (Claude-shaped); each hook needs an interactive trust review in codex, recorded as trusted_hash in [hooks.state]",
       managed: false,
     },
-    envMarkers: ["CODEX_HOME", "CODEX_CLI", "CODEX_RUNTIME"],
+    envMarkers: ["CODEX_THREAD_ID", "CODEX_HOME", "CODEX_CLI", "CODEX_RUNTIME"],
     mcpHostId: "codex",
     globalMcpPaths: {
       darwin: "~/.codex/config.toml",
@@ -307,6 +311,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       evidence:
         "probe 2026-08-04 on codex-cli 0.146.0: a real run hit the router refusal and the model listed its own tool set without it; `codex features list` reports the opt-in as 'under development false'",
     },
+    execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
   },
   {
     // Detection: OZ_RUN_ID takes priority over warp markers to handle overlap.
@@ -343,6 +348,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       evidence:
         "probe 2026-08-04 on oz v0.2026.07.29.09.05: the shim carries no question-tool name at all",
     },
+    execution: { subagents: "none", max_subagents: 0, mechanism: null },
   },
   {
     id: "warp",
@@ -385,6 +391,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason: "no structured-choice surface is documented for it",
       evidence: "official docs 2026-08-02; it ships no CLI, so there is nothing local to probe",
     },
+    execution: { subagents: "none", max_subagents: 0, mechanism: null },
   },
   {
     // Gemini CLI (deprecated mid-2026) + Antigravity CLI (`agy`, successor;
@@ -441,6 +448,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       evidence:
         "probe 2026-08-04 on agy 1.0.16 (Antigravity, the successor that reuses ~/.gemini): its shipped proto declares `AskQuestionEntry` with `options`, `is_multi_select` and `write_in_response`, and `AskQuestionOption` with `id` + `text` only; no per-call ceiling is declared anywhere. The run itself is unverified — `agy --print` returned nothing within 150s",
     },
+    execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
   },
   {
     // OpenCode (sst/opencode). Config `opencode.json` ($schema); MCP under `mcp`
@@ -478,6 +486,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       evidence:
         "probe 2026-08-04 on opencode 1.18.5: `QuestionOption` carries its own `label` and `description`, `custom` defaults to true, and no count ceiling is declared; the exported session of a real `run` showed `question` denied",
     },
+    execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
   },
   {
     // Crush (charmbracelet/crush). Config `crush.json` ($schema charm.land/crush.json);
@@ -528,6 +537,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       evidence:
         "probe 2026-08-04 on crush v0.87.0: ceilings 5×5, a description required on every question (<300 chars) and on every choice (<100 chars), and an automatic fill-in option, all read from the installed binary; the run itself could not be verified (expired auth)",
     },
+    execution: { subagents: "none", max_subagents: 0, mechanism: null },
   },
   {
     // Kimi Code (MoonshotAI) — successor of the Python `kimi-cli`, shipped as a
@@ -588,6 +598,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       evidence:
         "probe 2026-08-04 on kimi 0.31.1: the tool is in the default agent's list and its schema is 1-4 questions × 2-4 options with `label` + `description`; in `--prompt` it refused the call ('auto mode is active') and degraded to labeled markdown on its own, options and consequences intact",
     },
+    execution: { subagents: "parallel", max_subagents: 3, mechanism: "SubagentStart" },
   },
 ] as const satisfies readonly HarnessSpec[];
 

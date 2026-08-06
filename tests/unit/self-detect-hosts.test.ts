@@ -147,7 +147,14 @@ describe("selfDetectHosts — cuatro estados observables por host", () => {
     if (!result.ok || !result.data) throw new Error("expected data");
     for (const host of result.data.hosts) {
       const ids = host.capabilities.map((c) => c.id).sort();
-      expect(ids, host.target).toEqual(["commands", "hooks", "mcp", "skills", "structured-choice"]);
+      expect(ids, host.target).toEqual([
+        "commands",
+        "hooks",
+        "mcp",
+        "skills",
+        "structured-choice",
+        "subagent-dispatch",
+      ]);
       for (const cap of host.capabilities) {
         expect(cap.detail.length, `${host.target}/${cap.id}`).toBeGreaterThan(0);
       }
@@ -175,6 +182,13 @@ describe("selfDetectHosts — cuatro estados observables por host", () => {
     // Warp/Oz: sin superficie que anunciar.
     expect(sc("oz")?.status).toBe("unsupported");
     expect(sc("oz")?.detail).toContain("labeled markdown");
+    const dispatch = (target: string) =>
+      result.data?.hosts
+        .find((h) => h.target === target)
+        ?.capabilities.find((c) => c.id === "subagent-dispatch");
+    expect(dispatch("codex")?.status).toBe("native");
+    expect(dispatch("codex")?.detail).toContain("at most 3");
+    expect(dispatch("warp")?.status).toBe("unsupported");
     // Y todo host nativo dice CUÁNDO cae a markdown: "native" a secas se leería
     // como "siempre nativo", y en tres de los cuatro no lo es.
     for (const host of result.data.hosts) {

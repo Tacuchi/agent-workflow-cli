@@ -1,7 +1,12 @@
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { HARNESSES, type Harness } from "../domain/harnesses.js";
+import { HARNESSES, type Harness, type HarnessId, harnessById } from "../domain/harnesses.js";
+import {
+  type HostExecutionCapability,
+  type ResourcePlan,
+  decideResources,
+} from "../domain/resource-policy.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { parseMdSection, parseMdValue } from "./markdown.js";
@@ -10,9 +15,22 @@ import type { PathsService } from "./paths-service.js";
 // ─── harness ────────────────────────────────────────────────────────────────
 
 export interface HarnessOutput {
+  /** @deprecated Use agent_host. Kept for callers of the previous JSON shape. */
   harness: Harness;
+  /** The agent runtime that owns model/tool execution. */
+  agent_host: Harness;
+  /** The terminal that carries the agent, when it can be observed separately. */
+  terminal_host: Harness;
+  /** Native dispatch primitive; the CLI's resource policy still controls use. */
+  execution: HostExecutionCapability;
+  /** The two no-guess defaults the CLI applies before any model work. */
+  resource_policy: {
+    deterministic: ResourcePlan;
+    semantic_default: ResourcePlan;
+  };
   supports_plan_subagent: boolean;
   detected_via: string;
+  terminal_detected_via: string;
   known_harnesses: string[];
   /**
    * Set when `harness` is `unknown`. Env markers are the only signal this
@@ -32,28 +50,42 @@ const UNKNOWN_NOTE =
  * signal a process has about its own parent. A host that exports none (Kimi
  * Code) legitimately answers `unknown`; see `note`.
  */
-export function runHarness(envGet: (k: string) => string | undefined): HarnessOutput {
+export function isHarnessId(value: string): value is HarnessId {
+  return harnessById(value as HarnessId) !== null;
+}
+
+/**
+ * Resolves the execution host independently from the terminal. An installed
+ * wrapper may bind its target explicitly; the live agent markers are the
+ * fallback. This prevents `TERM_PROGRAM=WarpTerminal` from masking Codex (or
+ * any other agent) that happens to run inside Warp.
+ */
+export function runHarness(
+  envGet: (k: string) => string | undefined,
+  boundHost?: HarnessId,
+): HarnessOutput {
   const knownHarnesses = [...HARNESSES.map((h) => h.id), "unknown"];
+  const terminal = detectTerminalHarness(envGet);
+
+  if (boundHost !== undefined) {
+    const spec = harnessById(boundHost);
+    // `boundHost` is typed, but keep this fail-closed guard for JS/API callers.
+    if (spec !== null) {
+      return outputFor(spec.id, `binding:${spec.id}`, terminal, knownHarnesses);
+    }
+  }
 
   // First-match over HARNESSES registry (oz before warp for overlap handling)
   for (const spec of HARNESSES) {
     for (const marker of spec.envMarkers) {
       if (envGet(marker)) {
-        return {
-          harness: spec.id,
-          supports_plan_subagent: spec.id === "claude-code",
-          detected_via: `env:${marker}`,
-          known_harnesses: knownHarnesses,
-        };
+        return outputFor(spec.id, `env:${marker}`, terminal, knownHarnesses);
       }
     }
-    if (spec.termProgramMatch && envGet("TERM_PROGRAM") === spec.termProgramMatch) {
-      return {
-        harness: spec.id,
-        supports_plan_subagent: spec.id === "claude-code",
-        detected_via: `env:TERM_PROGRAM=${spec.termProgramMatch}`,
-        known_harnesses: knownHarnesses,
-      };
+    // A terminal-only marker is a fallback agent signal, never precedence over
+    // an actual agent marker from an earlier catalog entry.
+    if (spec.id === "warp" && terminal.host === "warp") {
+      return outputFor("warp", terminal.via, terminal, knownHarnesses);
     }
   }
 
@@ -67,11 +99,61 @@ export function runHarness(envGet: (k: string) => string | undefined): HarnessOu
   // it answers it from binaries and config dirs, as separate states.
   return {
     harness: "unknown",
+    agent_host: "unknown",
+    terminal_host: terminal.host,
+    execution: { subagents: "none", max_subagents: 0, mechanism: null },
+    resource_policy: resourcePolicyFor({ subagents: "none", max_subagents: 0, mechanism: null }),
     supports_plan_subagent: false,
     detected_via: "unknown",
+    terminal_detected_via: terminal.via,
     known_harnesses: knownHarnesses,
     note: UNKNOWN_NOTE,
   };
+}
+
+function outputFor(
+  agentHost: HarnessId,
+  detectedVia: string,
+  terminal: { host: Harness; via: string },
+  knownHarnesses: string[],
+): HarnessOutput {
+  const execution = harnessById(agentHost)?.execution;
+  return {
+    harness: agentHost,
+    agent_host: agentHost,
+    terminal_host: terminal.host,
+    execution: execution ?? { subagents: "none", max_subagents: 0, mechanism: null },
+    resource_policy: resourcePolicyFor(
+      execution ?? { subagents: "none", max_subagents: 0, mechanism: null },
+    ),
+    supports_plan_subagent: execution?.subagents === "parallel",
+    detected_via: detectedVia,
+    terminal_detected_via: terminal.via,
+    known_harnesses: knownHarnesses,
+  };
+}
+
+function resourcePolicyFor(host: HostExecutionCapability): HarnessOutput["resource_policy"] {
+  return {
+    deterministic: decideResources({ boundary: "deterministic", host }),
+    semantic_default: decideResources({ boundary: "semantic", host }),
+  };
+}
+
+function detectTerminalHarness(envGet: (k: string) => string | undefined): {
+  host: Harness;
+  via: string;
+} {
+  const warp = harnessById("warp");
+  if (warp !== null) {
+    for (const marker of warp.envMarkers) {
+      if (envGet(marker)) return { host: "warp", via: `env:${marker}` };
+    }
+    if (warp.termProgramMatch && envGet("TERM_PROGRAM") === warp.termProgramMatch) {
+      return { host: "warp", via: `env:TERM_PROGRAM=${warp.termProgramMatch}` };
+    }
+  }
+  return { host: "unknown", via: "unknown" };
 }
 
 // ─── profiles ───────────────────────────────────────────────────────────────

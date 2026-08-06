@@ -21,6 +21,7 @@ import {
   CAPABILITY_DESCRIPTOR_METADATA_KEY,
   type CapabilityDescriptor,
 } from "../../domain/capability/descriptor.js";
+import type { HarnessId } from "../../domain/harnesses.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 
 /**
@@ -59,8 +60,13 @@ export function descriptorLocatorValue(descriptor: CapabilityDescriptor): string
  * question to be guessed. Absent (install target unknown, as in a unit test) the
  * file is written exactly as before.
  */
-export function renderCapabilitySkill(descriptor: CapabilityDescriptor, stamp?: string): string {
+export function renderCapabilitySkill(
+  descriptor: CapabilityDescriptor,
+  stamp?: string,
+  boundHost?: HarnessId,
+): string {
   const operations = descriptor.operations.map((o) => `\`${o.name}\``).join(", ");
+  const command = boundHost === undefined ? "aw capability" : `aw capability --host ${boundHost}`;
   return [
     "---",
     `name: ${descriptor.name}`,
@@ -81,10 +87,10 @@ export function renderCapabilitySkill(descriptor: CapabilityDescriptor, stamp?: 
     `Toda invocación pasa por el dispatcher compartido, con la operación (${operations}) viajando en el envelope:`,
     "",
     "```",
-    `aw capability prepare --capability ${descriptor.name} --operation <op> [--input k=v ...]`,
-    "aw capability continue --request <request.json> [--input k=v ...]",
-    "aw capability validate --request <request.json>   # stdin: la respuesta autorada",
-    "aw capability apply --plan <plan.json> --approval <digest>",
+    `${command} prepare --capability ${descriptor.name} --operation <op> [--input k=v ...]`,
+    `${command} continue --request <request.json> [--input k=v ...]`,
+    `${command} validate --request <request.json>   # stdin: la respuesta autorada`,
+    `${command} apply --plan <plan.json> --approval <digest>`,
     "```",
     "",
     "Cada intento devuelve `outcome`, `output` y `receipt`. Un `needs_input` se contesta con",
@@ -188,6 +194,7 @@ export async function installCapabilitySkill(
   root: string,
   descriptor: CapabilityDescriptor,
   stamp?: string,
+  boundHost?: HarnessId,
 ): Promise<WrapperInstall> {
   const dir = join(root, descriptor.name);
   const ownership = await inspectCapabilityDir(dir);
@@ -209,7 +216,7 @@ export async function installCapabilitySkill(
   // file that is not there yet, or a host reading mid-install sees a broken
   // locator instead of no skill at all.
   await writeFile(descriptorPath, renderDescriptorJson(descriptor), "utf8");
-  await writeFile(skillMd, renderCapabilitySkill(descriptor, stamp), "utf8");
+  await writeFile(skillMd, renderCapabilitySkill(descriptor, stamp, boundHost), "utf8");
   return { ok: true, dir, files: [skillMd, descriptorPath] };
 }
 
