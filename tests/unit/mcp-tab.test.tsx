@@ -1,3 +1,4 @@
+import type { EventEmitter } from "node:events";
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 
@@ -42,11 +43,13 @@ vi.mock("../../src/application/self/mcp-config.js", () => ({
   })),
 }));
 
+import { selfMcpConfig } from "../../src/application/self/mcp-config.js";
 import { McpTab } from "../../src/cli/tui/tabs/mcp-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
 
 const ctx = {} as unknown as CliContext;
 const ENTER = "\r";
+const DOWN = "\x1B[B";
 const tick = () => new Promise((r) => setTimeout(r, 80));
 
 describe("McpTab — user-scope install", () => {
@@ -84,4 +87,47 @@ describe("McpTab — user-scope install", () => {
     expect(frame).toContain("DB_REPORTING_DSN"); // suggested from the alias
     expect(frame.toLowerCase()).toContain("save + install"); // review step, not yet saved
   });
+
+  it("windows the connections list to the viewport and keeps the last row reachable", async () => {
+    // 40 connections overflow a rows=20 viewport (the chrome reserves 22 rows).
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      nombre: `db-${String(i + 1).padStart(2, "0")}`,
+      server_name: `srv-${i + 1}`,
+      dsn_var: `DB_${String(i + 1).padStart(2, "0")}_DSN`,
+      dsn_visible: true,
+      instalado: {
+        claude: "no",
+        codex: "no",
+        warp: "no",
+        gemini: "no",
+        opencode: "no",
+        crush: "no",
+        kimi: "no",
+      },
+    }));
+    // One-shot override of the module mock above — consumed by the mount refresh.
+    vi.mocked(selfMcpConfig).mockResolvedValueOnce({
+      ok: true,
+      data: { connections: many },
+    } as never);
+
+    const { lastFrame, stdin, stdout } = render(<McpTab ctx={ctx} isActive />);
+    await tick();
+    // ink-testing-library's fake stdout has no `rows`: fake a 20-row TTY + resize.
+    const fake = stdout as EventEmitter & { rows?: number };
+    fake.rows = 20;
+    fake.emit("resize");
+    await tick();
+
+    for (let i = 0; i < 39; i++) {
+      stdin.write(DOWN);
+      await tick();
+    }
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("db-40"); // the cursor reached the last connection
+    expect(frame).not.toContain("db-01"); // the top of the list scrolled out
+    expect(frame.split("\n").length).toBeLessThanOrEqual(20);
+    expect(frame).toContain("de 40"); // range indicator in the SectionHead hint
+  }, 15000);
 });

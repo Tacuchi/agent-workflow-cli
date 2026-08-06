@@ -1,7 +1,8 @@
-import { Box } from "ink";
+import { Box, Text } from "ink";
 import { render } from "ink-testing-library";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
+import { InputLockProvider, useInputLock } from "../../src/cli/tui/input-lock.js";
 import { ProjectTab } from "../../src/cli/tui/tabs/project-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
 
@@ -34,6 +35,24 @@ function workspaceMd(): string {
   ].join("\n");
 }
 
+/** Workspace block with `n` sources (s0..sN) and no Status section → empty branch lists. */
+function workspaceMdWithSources(n: number): string {
+  const rows = Array.from({ length: n }, (_, i) => `| s${i} | /src/s${i} | main |`);
+  return [
+    MARKERS.start,
+    "## Proyecto",
+    "",
+    "WS",
+    "",
+    "## Fuentes",
+    "",
+    "| Alias | Path | Rama principal |",
+    "|---|---|---|",
+    ...rows,
+    MARKERS.end,
+  ].join("\n");
+}
+
 interface FakeLogger {
   lines: { level: string; msg: string }[];
   info: (m: string) => Promise<void>;
@@ -60,13 +79,17 @@ function buildCtx(
     failGit?: boolean;
     /** stdout of the own-commit counter per BASE ref; absent base = unknown revision. */
     ownCommits?: Record<string, string>;
+    /** When set, the workspace declares this many sources instead of alpha/beta. */
+    sourceCount?: number;
   } = {},
 ): CliContext {
+  const md =
+    opts.sourceCount === undefined ? workspaceMd() : workspaceMdWithSources(opts.sourceCount);
   return {
     logger: opts.logger,
     fs: {
       exists: async (p: string) => p === "/ws/CLAUDE.md",
-      readText: async () => workspaceMd(),
+      readText: async () => md,
     },
     env: {
       cwd: () => "/ws",
@@ -288,6 +311,54 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     // the bug they are adjacent (diff 1).
     expect(betaIdx - alphaIdx).toBe(1);
   });
+
+  it("ventana: con 30 fuentes el frame queda acotado al viewport y el cursor alcanza 'all sources'", async () => {
+    const { stdin, lastFrame, stdout } = render(
+      <ProjectTab ctx={buildCtx({ sourceCount: 30 })} isActive />,
+    );
+    await tick();
+    // Non-TTY (rows=0) renders all 31 rows; fake a 24-row viewport so the
+    // window kicks in (useListWindow re-renders on `resize`).
+    const fakeStdout = stdout as unknown as { rows?: number; emit(event: string): boolean };
+    fakeStdout.rows = 24;
+    fakeStdout.emit("resize");
+    await tick();
+    // Walk to the last target: the "all sources" sentinel (index 30 of 31).
+    for (let i = 0; i < 30; i++) {
+      stdin.write(DOWN);
+      await tick(20);
+    }
+    const f = lastFrame() ?? "";
+    // The focused row is always painted (the bug: the cursor walked onto rows
+    // the shell clipped, so the user navigated blind).
+    expect(f).toContain("all sources");
+    // Bounded: the old code rendered all 31 list rows and blew past 24 lines.
+    expect(f.split("\n").length).toBeLessThanOrEqual(24);
+    // Range indicator next to the Sources head (en-dash, no extra row spent).
+    expect(f).toContain("de 31");
+  });
+
+  it("cancelar «Quitar del workspace» (n) vuelve al panel de detalle, no a la lista", async () => {
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
+    await tick();
+    stdin.write(ENTER); // panel on alpha
+    await tick();
+    // Detail actions for a source: launch · 4 git-flow · remove (the last one).
+    for (let i = 0; i < 5; i++) {
+      stdin.write(DOWN);
+      await tick(20);
+    }
+    stdin.write(ENTER); // → confirm-remove
+    await tick();
+    expect(lastFrame() ?? "").toContain("¿Quitar alpha del workspace?");
+    stdin.write("n"); // cancel
+    await tick();
+    const f = lastFrame() ?? "";
+    // Back to the detail panel (reference: mcp/skills tabs), not the bare list.
+    expect(f).toContain("ACTIONS");
+    expect(f).toContain("Quitar del workspace"); // the remove action, as panel item
+    expect(f).not.toContain("¿Quitar alpha del workspace?"); // confirm screen gone
+  });
 });
 
 // ===== F3 — launching + process administration =====
@@ -352,6 +423,41 @@ function buildLaunchCtx(): CliContext {
     },
   } as unknown as CliContext;
 }
+
+describe("ProjectTab — lock de teclas globales (homologación)", () => {
+  function LockSpy() {
+    const { locked } = useInputLock();
+    return <Text>{`locked=${locked}`}</Text>;
+  }
+
+  it("el panel de detalle NO retiene el lock global (alineado con mcp/skills/host-admin)", async () => {
+    const { stdin, lastFrame } = render(
+      <InputLockProvider>
+        <LockSpy />
+        <ProjectTab ctx={buildCtx()} isActive />
+      </InputLockProvider>,
+    );
+    await tick();
+    expect(lastFrame()).toContain("locked=false");
+    stdin.write(ENTER); // abre el panel de detalle sobre alpha
+    await tick();
+    // Antes: useLockWhile(mode.kind !== "list") bloqueaba q/r/tab/1-6 con el panel abierto.
+    expect(lastFrame()).toContain("locked=false");
+  });
+
+  it("el modo procesos SÍ retiene el lock (sus teclas r/x/o colisionan con el refresh global)", async () => {
+    const { stdin, lastFrame } = render(
+      <InputLockProvider>
+        <LockSpy />
+        <ProjectTab ctx={buildLaunchCtx()} isActive />
+      </InputLockProvider>,
+    );
+    await tick();
+    stdin.write("p"); // entra al modo procesos (hay un proceso running en este ctx)
+    await tick();
+    expect(lastFrame()).toContain("locked=true");
+  });
+});
 
 describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
   it("renderiza la sección de procesos (vacía) y el tile 'procesos'", async () => {

@@ -35,6 +35,7 @@ import {
 } from "../components/detail-panel.js";
 import { FlowResultView } from "../components/git-flow-actions.js";
 import { ListRow, type MetaChip } from "../components/list-row.js";
+import { notificationStackRows } from "../components/notification-stack.js";
 import { PageHead } from "../components/page-head.js";
 import { ProcessList } from "../components/process-list.js";
 import { QuickActions } from "../components/quick-actions.js";
@@ -43,8 +44,10 @@ import { type LaunchFormValue, SourceLaunchForm } from "../components/source-lau
 import { StatTile } from "../components/stat-tile.js";
 import { WorkspaceInitForm } from "../components/workspace-init-form.js";
 import { useLockWhile } from "../input-lock.js";
+import { useNotificationItems } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
+import { useListWindow, windowRangeHint } from "../use-list-window.js";
 
 export interface ProjectTabProps {
   ctx: CliContext;
@@ -300,6 +303,20 @@ const LAUNCH_ACTION = { id: "launch", name: "Lanzar en local" } as const;
  */
 const SOURCES_ROWS_INDENT = 2;
 
+// Terminal rows eaten around the SOURCES list, handed to `useListWindow` so the
+// active row never clips under app.tsx's `overflowY="hidden"` (same accounting
+// style as rowWidth for width / HOSTS_LIST_RESERVED_ROWS in host-admin-section):
+// - app shell: ScreenFrame border+paddingY (4) + HomeHeader (2 lines + 1 margin)
+//   + TabBar (1 line + 2 border) + tab content box border+paddingY (4)
+//   + HomeFooter (1 line + 1 margin) = 16
+// - this tab, fixed: PageHead (1 + 1 margin) + StatTile row (3 + 1 margin)
+//   + Sources SectionHead (1) + QuickActions (2 + 1 marginTop) = 10
+// - 1 slack: better one row short than a clipped active row.
+// The data-driven rows (description, warnings, the branch/process sections
+// below the list) and the NotificationStack height (0 unless a banner is
+// visible) are added per render — see `reservedRows` in Initialized.
+const SOURCES_LIST_RESERVED_ROWS = 27;
+
 interface InitializedProps {
   ctx: CliContext;
   data: ProjectTabData;
@@ -335,6 +352,32 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     () => processes.filter((p) => p.state === "running").length,
     [processes],
   );
+
+  // Window over the SOURCES list: the shell clips overflow, so only the slice
+  // around the cursor renders — the active row can never walk off-screen.
+  // `reservedRows` adds the data-driven chrome to the static count: the
+  // description and warnings blocks above the list; the branch/process
+  // sections below it (head + marginTop + one row per entry, or one
+  // empty-hint row when the section renders empty); plus the NotificationStack
+  // height while a banner is visible (0 otherwise). rows=0 (non-TTY) → the
+  // hook returns the whole list and nothing changes.
+  const notifItems = useNotificationItems();
+  const warningsRows = data.warnings.length > 0 ? Math.min(data.warnings.length, 3) + 2 : 0;
+  const workingRows = 2 + Math.max(workingEntries.length, 1);
+  const qaRows = qaEntries.length > 0 ? 2 + qaEntries.length : 0;
+  const processRows = 2 + Math.max(processes.length, 1);
+  const reservedRows =
+    SOURCES_LIST_RESERVED_ROWS +
+    notificationStackRows(notifItems) +
+    (description ? 2 : 0) +
+    warningsRows +
+    workingRows +
+    qaRows +
+    processRows;
+  const win = useListWindow(targets.length, cursor, reservedRows);
+  const winEnd = win.start + win.visible;
+  // Overflow indicator for the SectionHead hint slot (no extra terminal row).
+  const rangeHint = windowRangeHint(win, targets.length);
 
   // Deps for the source-launch service. `baseEnv` = the real process env so the
   // child inherits PATH etc.; params/profile are layered on at resolve time.
@@ -467,9 +510,10 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
     [ctx.fs],
   );
 
-  // The detail panel (and the in-flight flow) block the global keys; the base
-  // list lets them through.
-  useLockWhile(mode.kind !== "list");
+  // Global keys are locked for every mode except the plain list and the detail
+  // panel (its ↑↓ ⏎ esc don't collide with the globals); process mode keeps
+  // the lock — its r/x/o would hit the global `r` refresh. MCP/Skills policy.
+  useLockWhile(mode.kind !== "list" && mode.kind !== "detail");
 
   const detailOpen = mode.kind === "detail";
   const currentTarget = targets[cursor] ?? ALL_SOURCES;
@@ -645,7 +689,9 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         return;
       }
       if (mode.kind === "confirm-remove") {
-        if (key.escape || input === "n" || input === "N") setMode({ kind: "list" });
+        // Cancel returns to the detail panel the confirm was launched from
+        // (same as the MCP/Skills tabs), not all the way to the list.
+        if (key.escape || input === "n" || input === "N") setMode({ kind: "detail" });
         else if (input === "y" || input === "Y") void doRemove(mode.alias);
         return;
       }
@@ -876,25 +922,36 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
                 label="Sources"
                 count={totalSources}
                 marginTop={0}
+                // Overflow indicator without spending a terminal row: the range
+                // of the window currently rendered, only when rows hide above
+                // or below.
+                {...(rangeHint ? { hint: rangeHint } : {})}
                 rightAction={detailOpen ? "esc to close detail" : "↑↓ select · ⏎ actions"}
               />
               <Box marginLeft={SOURCES_ROWS_INDENT} flexDirection="column">
-                {data.sources.map((s, i) => (
-                  <SourceRow
-                    key={s.alias}
-                    source={s}
-                    active={i === cursor}
-                    widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
-                  />
-                ))}
-                <ListRow
-                  icon={icons.diamond}
-                  title="all sources"
-                  subtitle={`aplica a las ${totalSources} fuentes`}
-                  chevron
-                  active={cursor === targets.length - 1}
-                  widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
-                />
+                {targets.slice(win.start, winEnd).map((target, offset) => {
+                  const i = win.start + offset;
+                  // The last target is the "all sources" sentinel, not a source.
+                  const source = target === ALL_SOURCES ? undefined : data.sources[i];
+                  return source ? (
+                    <SourceRow
+                      key={source.alias}
+                      source={source}
+                      active={i === cursor}
+                      widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
+                    />
+                  ) : (
+                    <ListRow
+                      key={ALL_SOURCES}
+                      icon={icons.diamond}
+                      title="all sources"
+                      subtitle={`aplica a las ${totalSources} fuentes`}
+                      chevron
+                      active={i === cursor}
+                      widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
+                    />
+                  );
+                })}
               </Box>
             </>
           ) : null}

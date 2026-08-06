@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 import { humanizeRelativeEs } from "../../../application/humanize-es.js";
 import type { LogEntry } from "../data/logs.js";
 import { useInputLock } from "../input-lock.js";
+import { useNotificationItems } from "../notification-center.js";
 import { colors } from "../theme.js";
+import { useListWindow, windowRangeHint } from "../use-list-window.js";
+import { notificationStackRows } from "./notification-stack.js";
 import { SectionHead } from "./section-head.js";
 
 export interface LogsSectionProps {
@@ -20,9 +23,23 @@ export interface LogsSectionProps {
   onOpenWith: (entry: LogEntry, app: string) => void;
   /** Leave the section (return focus to the tiles strip). */
   onExit: () => void;
-  /** Max rows shown before a "+N más" hint. */
+  /** Design cap on visible rows; the window may show fewer on short terminals. */
   cap?: number;
 }
+
+// Terminal rows eaten around the logs list when it lives in the Status tab —
+// the window hook subtracts them so the selected row never clips. Accounting:
+// - app shell: ScreenFrame border+paddingY (4) + HomeHeader (3) + TabBar (3)
+//   + tab content box border+paddingY (4) + HomeFooter (2) = 16
+// - StatusTab above: PageHead (2) + tiles strip (3 + 1 margin) + divider (1)
+//   + SectionHead "Skill coverage" (1 + 1 margin) + progress line (1)
+//   + host chips row (2 — flexWrap wraps on narrow terminals) = 12
+// - this section: SectionHead "Logs" (1 + 1 margin) + hints / app-input line
+//   (1 + 1 margin) = 4
+// - 1 slack: better one row short than a clipped selected row.
+// Plus, added per render at the call site: the NotificationStack height
+// (notificationStackRows — 0 unless a banner is visible).
+const LOGS_LIST_RESERVED_ROWS = 33;
 
 /** One row per daily log; `~/…` for brevity, newest first (already sorted). */
 export function LogsSection({
@@ -98,15 +115,25 @@ export function LogsSection({
   );
 
   const clock = now ?? new Date();
-  const shown = logs.slice(0, cap);
-  const extra = logs.length - shown.length;
+  // Windowed view: `cap` stays the design cap, but on a short terminal the
+  // window shrinks further and FOLLOWS `sel` — the selected row is always
+  // rendered, so ⏎ can never open an off-screen entry.
+  const notifItems = useNotificationItems();
+  const win = useListWindow(
+    logs.length,
+    clampedSel,
+    LOGS_LIST_RESERVED_ROWS + notificationStackRows(notifItems),
+    cap,
+  );
+  const winEnd = win.start + win.visible;
+  const shown = logs.slice(win.start, winEnd);
 
   return (
     <Box flexDirection="column">
       <SectionHead
         label="Logs"
         count={logs.length}
-        hint="global · más nuevo primero"
+        hint={windowRangeHint(win, logs.length) ?? "global · más nuevo primero"}
         marginTop={1}
       />
       <Box marginLeft={2} flexDirection="column">
@@ -114,7 +141,7 @@ export function LogsSection({
           <Text color={colors.faint}> (sin logs todavía — el CLI aún no registró actividad)</Text>
         ) : (
           shown.map((entry, i) => {
-            const active = focused && i === clampedSel;
+            const active = focused && win.start + i === clampedSel;
             return (
               <Box key={entry.path}>
                 <Text color={active ? colors.accent : colors.dim}>{active ? "› " : "  "}</Text>
@@ -127,7 +154,6 @@ export function LogsSection({
             );
           })
         )}
-        {extra > 0 ? <Text color={colors.faint}> +{extra} más</Text> : null}
         {appInput !== null ? (
           <Box marginTop={1}>
             <Text color={colors.accent}>abrir con: </Text>

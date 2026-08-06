@@ -29,20 +29,31 @@ import { ConfirmBanner } from "../components/confirm-banner.js";
 import { type DetailAction, DetailPanel } from "../components/detail-panel.js";
 import { InputPrompt } from "../components/input-prompt.js";
 import { ListRow, type MetaTone } from "../components/list-row.js";
+import { notificationStackRows } from "../components/notification-stack.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { RECOMMENDED_SKILLS } from "../data/recommended-skills.js";
 import { useLockWhile } from "../input-lock.js";
-import type { ToastBridgeInput } from "../notification-center.js";
+import { type ToastBridgeInput, useNotificationItems } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
 import { useListDetailKeys } from "../use-list-detail-keys.js";
+import { useListWindow, windowRangeHint } from "../use-list-window.js";
 import { useOnMount } from "../use-on-mount.js";
 
 // Derived from the engine's own replica list — the four places that used to
 // spell "Claude, Gemini" by hand went stale the moment a replica host changed.
 const REPLICA_LABELS = REPLICA_HOST_LABELS.join(", ");
+
+// Rows the chrome consumes around the skills list; the window (useListWindow)
+// gets what remains of the viewport:
+//   app shell 16 = ScreenFrame border+paddingY 4 · HomeHeader 3 (2 rows +
+//     marginBottom) · TabBar 3 (border + row) · tab content box
+//     border+paddingY 4 · HomeFooter 2 (marginTop + row)
+//   this tab 6 = PageHead 2 (row + marginBottom) · SectionHead 1 ·
+//     QuickActions 3 (marginTop + rule + keys)
+const SKILLS_LIST_RESERVED_ROWS = 22;
 
 export interface SkillsTabProps {
   ctx: CliContext;
@@ -120,6 +131,19 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       }
     },
   });
+
+  // Windowed slice of the skills list (shared hook): renders only the rows
+  // that fit the viewport, following the cursor at the edges. Non-TTY
+  // (unknown height) → the whole list renders, as before. The window derives
+  // from the cursor only — the by-name selection across refresh is untouched.
+  // The NotificationStack height joins the reservation so a visible banner
+  // can't clip the active row.
+  const notifItems = useNotificationItems();
+  const listWindow = useListWindow(
+    items.length,
+    cursor,
+    SKILLS_LIST_RESERVED_ROWS + notificationStackRows(notifItems),
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -375,6 +399,10 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const overlayVisible = mode.kind !== "list";
   const home = ctx.env.homeDir();
 
+  // Visible-range indicator for the SectionHead hint slot — only when the
+  // window hides rows (consumes no extra terminal row).
+  const listRangeHint = windowRangeHint(listWindow, items.length);
+
   return (
     <Box flexDirection="column">
       <PageHead
@@ -391,14 +419,18 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       <SectionHead
         label="Skills"
         count={items.length}
-        hint="installed → unmanaged → registered → recommended"
-        {...(overlayVisible ? { rightAction: "esc to close" } : {})}
+        hint={listRangeHint ?? "installed → unmanaged → registered → recommended"}
+        {...(mode.kind.startsWith("wizard")
+          ? { rightAction: "esc cancel" }
+          : mode.kind === "detail" || mode.kind === "confirm"
+            ? { rightAction: "esc to close detail" }
+            : {})}
         marginTop={0}
       />
 
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
-          {items.map((s, i) => {
+          {items.slice(listWindow.start, listWindow.start + listWindow.visible).map((s, i) => {
             const glyph = STATUS_GLYPH[s.status];
             return (
               <ListRow
@@ -414,7 +446,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
                 meta={s.mode === "copy" ? [{ label: "copy", tone: "warn" }] : []}
                 state={{ label: s.status, tone: glyph.tone }}
                 chevron
-                active={cursor === i}
+                active={listWindow.start + i === cursor}
                 dimmed={mode.kind.startsWith("wizard")}
                 widthHint={rowWidth(stdout?.columns, overlayVisible)}
               />

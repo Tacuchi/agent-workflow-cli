@@ -15,14 +15,16 @@ import { ConfirmBanner } from "../components/confirm-banner.js";
 import { type DetailAction, DetailPanel } from "../components/detail-panel.js";
 import { InputPrompt } from "../components/input-prompt.js";
 import { ListRow } from "../components/list-row.js";
+import { notificationStackRows } from "../components/notification-stack.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
 import { useLockWhile } from "../input-lock.js";
-import type { ToastBridgeInput } from "../notification-center.js";
+import { type ToastBridgeInput, useNotificationItems } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
 import { useListDetailKeys } from "../use-list-detail-keys.js";
+import { useListWindow, windowRangeHint } from "../use-list-window.js";
 import { useOnMount } from "../use-on-mount.js";
 import {
   INSTALLABLE_MCP_HOSTS,
@@ -36,6 +38,17 @@ import {
 
 // Hosts the picker offers, from the registry — never a hardcoded "claude".
 const HOST_CHOICES: readonly McpHost[] = INSTALLABLE_MCP_HOSTS;
+
+// Rows the chrome consumes around the connections list; the window
+// (useListWindow) gets what remains of the viewport:
+//   app shell 16 = ScreenFrame border+paddingY 4 · HomeHeader 3 (2 rows +
+//     marginBottom) · TabBar 3 (border + row) · tab content box
+//     border+paddingY 4 · HomeFooter 2 (marginTop + row)
+//   this tab 6 = PageHead 2 (row + marginBottom) · SectionHead 1 ·
+//     QuickActions 3 (marginTop + rule + keys)
+// Plus, added per render at the call site: the NotificationStack height
+// (notificationStackRows — 0 unless a banner is visible).
+const MCP_LIST_RESERVED_ROWS = 22;
 
 type Mode =
   | { kind: "list" }
@@ -114,6 +127,17 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       });
     },
   });
+
+  // Windowed slice of the connections list (shared hook): renders only the
+  // rows that fit the viewport, following the cursor at the edges. Non-TTY
+  // (unknown height) → the whole list renders, as before. The NotificationStack
+  // height joins the reservation so a visible banner can't clip the active row.
+  const notifItems = useNotificationItems();
+  const listWindow = useListWindow(
+    connections.length,
+    cursor,
+    MCP_LIST_RESERVED_ROWS + notificationStackRows(notifItems),
+  );
 
   // Host picker keys (↑↓ · ⏎ install · esc back). Its own handler: the shared
   // list/detail hook is off in this mode.
@@ -314,6 +338,10 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
   const inWizard = mode.kind.startsWith("wizard");
   const overlayOpen = mode.kind !== "list" && mode.kind !== "busy";
 
+  // Visible-range indicator for the SectionHead hint slot — only when the
+  // window hides rows (consumes no extra terminal row).
+  const listRangeHint = windowRangeHint(listWindow, connections.length);
+
   return (
     <Box flexDirection="column">
       <PageHead
@@ -329,6 +357,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
           <SectionHead
             label="Connections"
             count={connections.length}
+            {...(listRangeHint ? { hint: listRangeHint } : {})}
             {...(inWizard
               ? { rightAction: "esc cancel" }
               : mode.kind === "detail" || mode.kind === "confirm-delete"
@@ -349,20 +378,22 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
             </Box>
           ) : (
             <Box marginTop={0} flexDirection="column">
-              {connections.map((c, i) => (
-                <ListRow
-                  key={c.nombre}
-                  icon={icons.diamond}
-                  iconActive={true}
-                  title={c.nombre}
-                  subtitle={`${c.dsn_var} · ${c.server_name}`}
-                  state={installStatusPill(c.instalado.claude)}
-                  chevron
-                  active={i === cursor}
-                  dimmed={inWizard}
-                  widthHint={rowWidth(stdout?.columns, overlayOpen)}
-                />
-              ))}
+              {connections
+                .slice(listWindow.start, listWindow.start + listWindow.visible)
+                .map((c, i) => (
+                  <ListRow
+                    key={c.nombre}
+                    icon={icons.diamond}
+                    iconActive={true}
+                    title={c.nombre}
+                    subtitle={`${c.dsn_var} · ${c.server_name}`}
+                    state={installStatusPill(c.instalado.claude)}
+                    chevron
+                    active={listWindow.start + i === cursor}
+                    dimmed={inWizard}
+                    widthHint={rowWidth(stdout?.columns, overlayOpen)}
+                  />
+                ))}
             </Box>
           )}
 

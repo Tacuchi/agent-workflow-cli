@@ -31,6 +31,17 @@ export interface NotificationBannerProps {
  * is highlighted as `inverse bold`. The rest render `dim` with the
  * `key label · key label` convention, followed by `x dismiss`.
  */
+/**
+ * Rows this banner occupies in the terminal: the main line (1) plus the
+ * optional body line (1). Used by `notificationStackRows` so windowed lists
+ * can reserve the stack's height. WARNING: the math mirrors the JSX below —
+ * a title long enough to wrap to two lines is NOT accounted (same caveat as
+ * every reserved-rows constant in the app).
+ */
+export function notificationBannerRows(item: NotificationItem): number {
+  return item.body ? 2 : 1;
+}
+
 export function NotificationBanner({ item }: NotificationBannerProps) {
   const toneColor = TONE_COLOR[item.tone];
   const toneIcon = TONE_ICON[item.tone];

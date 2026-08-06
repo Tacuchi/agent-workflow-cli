@@ -221,3 +221,13 @@ export function useNotifications(): NotificationCenterApi {
   }
   return ctx;
 }
+
+/**
+ * Provider-TOLERANT read of the items array: `[]` when no provider is
+ * mounted. Windowed lists use it to reserve the NotificationStack's height;
+ * unlike `useNotifications` it must not throw, because most unit tests mount
+ * the tabs bare (the app runtime always has the provider).
+ */
+export function useNotificationItems(): NotificationItem[] {
+  return useContext(NotificationCenterContext)?.items ?? [];
+}

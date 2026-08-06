@@ -5,7 +5,7 @@ import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { WORKFLOW_CONTENT } from "../../src/cli/tui/data/workflow-content.js";
-import { HOSTS } from "../../src/cli/tui/hosts.js";
+import { HOSTS, SHARED_DESTINATIONS } from "../../src/cli/tui/hosts.js";
 import { WorkflowTab } from "../../src/cli/tui/tabs/workflow-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { FLOW_DECISIONS } from "../../src/domain/flow/authority.js";
@@ -144,5 +144,33 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
     const frame = await renderFlat();
     expect(frame).toContain("Claude Code");
     expect(frame).not.toContain("hooks armed");
+  });
+
+  // La lista de targets se acota a la altura del terminal (useListWindow): con
+  // un viewport chico la ventana sigue al cursor y la última fila se alcanza.
+  it("ventana: viewport chico acota el frame y el cursor alcanza la última fila", async () => {
+    const { lastFrame, stdin, stdout } = render(<WorkflowTab ctx={buildCtx(home)} isActive />);
+    await new Promise((r) => setTimeout(r, 80));
+    const fullLines = (lastFrame() ?? "").split("\n").length;
+    // Non-TTY (rows=0) renders every row; shrink the viewport to force a window.
+    const fakeStdout = stdout as unknown as { rows?: number; emit(event: string): boolean };
+    fakeStdout.rows = 32; // 32 - HOSTS_LIST_RESERVED_ROWS(28) → 4 rows visibles
+    fakeStdout.emit("resize");
+    await new Promise((r) => setTimeout(r, 40));
+    const total = HOSTS.length + SHARED_DESTINATIONS.length;
+    let frame = lastFrame() ?? "";
+    // Overflow indicator in the HOSTS head: window range with en-dash.
+    expect(frame).toContain(`1–4 de ${total}`);
+    expect(frame.split("\n").length).toBeLessThan(fullLines);
+    // Walk to the last row: the window follows and the row renders.
+    for (let i = 0; i < total - 1; i++) {
+      stdin.write("\x1B[B");
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    frame = lastFrame() ?? "";
+    expect(frame).toContain(`${total - 3}–${total} de ${total}`);
+    expect(frame).toContain(SHARED_DESTINATIONS[SHARED_DESTINATIONS.length - 1]?.name ?? "");
+    // The first host scrolled out of the window.
+    expect(frame).not.toContain(HOSTS[0]?.name ?? "");
   });
 });

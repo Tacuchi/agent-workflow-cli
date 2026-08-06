@@ -23,12 +23,14 @@ import type { ParsedArgs } from "../../parser.js";
 import type { CliContext } from "../../types.js";
 import { HOSTS, SHARED_DESTINATIONS, supportPill } from "../hosts.js";
 import { useLockWhile } from "../input-lock.js";
-import type { ToastBridgeInput } from "../notification-center.js";
+import { type ToastBridgeInput, useNotificationItems } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
 import { colors, icons } from "../theme.js";
+import { useListWindow, windowRangeHint } from "../use-list-window.js";
 import { ConfirmBanner } from "./confirm-banner.js";
 import { type DetailAction, DetailPanel } from "./detail-panel.js";
 import { ListRow } from "./list-row.js";
+import { notificationStackRows } from "./notification-stack.js";
 import { QuickActions } from "./quick-actions.js";
 import { SectionHead } from "./section-head.js";
 
@@ -76,6 +78,20 @@ type Mode = { kind: "list" } | { kind: "detail" } | { kind: "confirm-uninstall";
 // Derived from the backend's own target map so the section can't drift from what
 // `self install/uninstall-skill` actually supports (clean-legacy v14.5.1 lesson).
 const BACKED_INSTALL_TARGETS: ReadonlySet<string> = new Set(Object.keys(TARGET_ROOTS));
+
+// Terminal rows eaten around the targets list, subtracted by the window hook so
+// the active row never clips under app.tsx's `overflowY="hidden"`. Accounting:
+// - app shell: ScreenFrame border+paddingY (4) + HomeHeader (2 lines + 1 margin)
+//   + TabBar (1 line + 2 border) + tab content box border+paddingY (4)
+//   + HomeFooter (1 line + 1 margin) = 16
+// - WorkflowTab above this section: PageHead (1 + 1 margin) + overview (1)
+//   + Flows strip (1) + Engine row (1 + 1 margin) = 6
+// - this section: SectionHead "Hosts" (1) + SectionHead "Shared destinations"
+//   (1) + empty-state QuickActions bar (2 + 1 margin) = 5
+// - 1 slack: better one row short than a clipped active row.
+// Plus, added per render at the call site: the NotificationStack height
+// (notificationStackRows — 0 unless a banner is visible).
+const HOSTS_LIST_RESERVED_ROWS = 28;
 
 export function HostAdminSection({
   ctx,
@@ -147,6 +163,23 @@ export function HostAdminSection({
   const sharedRows = rows.filter((r) => r.kind === "shared");
   const installedCount = hostRows.filter((s) => s.installed).length;
   const totalCount = hostRows.length;
+
+  // Window over the COMBINED rows (hosts first, then shared destinations — the
+  // order `refresh` pushes them): on a short terminal only the slice around the
+  // cursor renders. The slices below re-derive each group's share of the window;
+  // combined index of a rendered host row is `win.start + i`, of a shared row
+  // `hostRows.length + sharedSliceStart + i`.
+  const notifItems = useNotificationItems();
+  const win = useListWindow(
+    rows.length,
+    cursor,
+    HOSTS_LIST_RESERVED_ROWS + notificationStackRows(notifItems),
+  );
+  const winEnd = win.start + win.visible;
+  const rangeHint = windowRangeHint(win, rows.length);
+  const hostSlice = hostRows.slice(win.start, Math.min(winEnd, hostRows.length));
+  const sharedSliceStart = Math.max(0, win.start - hostRows.length);
+  const sharedSlice = sharedRows.slice(sharedSliceStart, Math.max(0, winEnd - hostRows.length));
 
   useEffect(() => {
     onSummary?.({ installed: installedCount, total: totalCount });
@@ -307,13 +340,16 @@ export function HostAdminSection({
       <SectionHead
         label="Hosts"
         count={totalCount}
+        // Overflow indicator without spending a terminal row: the range of the
+        // window currently rendered, only when rows hide above or below.
+        {...(rangeHint ? { hint: rangeHint } : {})}
         {...(detailVisible ? { rightAction: "esc to close detail" } : {})}
         marginTop={0}
       />
 
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
-          {hostRows.map((s, i) => (
+          {hostSlice.map((s, i) => (
             <ListRow
               key={s.id}
               icon={icons.diamond}
@@ -329,19 +365,19 @@ export function HostAdminSection({
                 tone: s.installed ? "ok" : "dim",
               }}
               chevron
-              active={cursor === i}
+              active={cursor === win.start + i}
               widthHint={rowWidth(stdout?.columns, detailVisible)}
             />
           ))}
 
-          {sharedRows.length > 0 ? (
+          {sharedSlice.length > 0 ? (
             <>
               <SectionHead
                 label="Shared destinations"
                 count={sharedRows.length}
                 rightAction="not hosts — never counted as such"
               />
-              {sharedRows.map((s, i) => (
+              {sharedSlice.map((s, i) => (
                 <ListRow
                   key={s.id}
                   icon={icons.diamond}
@@ -354,7 +390,7 @@ export function HostAdminSection({
                     tone: s.installed ? "ok" : "dim",
                   }}
                   chevron
-                  active={cursor === hostRows.length + i}
+                  active={cursor === hostRows.length + sharedSliceStart + i}
                   widthHint={rowWidth(stdout?.columns, detailVisible)}
                 />
               ))}

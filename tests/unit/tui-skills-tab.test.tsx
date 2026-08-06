@@ -1,10 +1,15 @@
+import type { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import { installSkill, registerSkill } from "../../src/application/self/skills-manager.js";
+import {
+  installSkill,
+  listSkills,
+  registerSkill,
+} from "../../src/application/self/skills-manager.js";
 import { RECOMMENDED_SKILLS } from "../../src/cli/tui/data/recommended-skills.js";
 import { SkillsTab } from "../../src/cli/tui/tabs/skills-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -223,4 +228,32 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     expect(after).toContain("nueva-skill");
     unmount();
   });
+
+  it("windowing: acota la lista al viewport y la última skill queda visible al llegar abajo", async () => {
+    const ctx = buildCtx(home);
+    // The recommended seed alone overflows a rows=20 viewport (chrome reserves
+    // 22 rows). The manager's own order decides which skill is last.
+    const all = await listSkills(ctx, RECOMMENDED_SKILLS);
+    const total = all.length;
+    const lastName = all[total - 1]?.name ?? "";
+
+    const { lastFrame, stdin, stdout, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    // ink-testing-library's fake stdout has no `rows`: fake a 20-row TTY + resize.
+    const fake = stdout as EventEmitter & { rows?: number };
+    fake.rows = 20;
+    fake.emit("resize");
+    await tick();
+
+    for (let i = 0; i < total - 1; i++) {
+      stdin.write(DOWN);
+      await tick(30);
+    }
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain(lastName); // the cursor reached the last skill
+    expect(frame.split("\n").length).toBeLessThanOrEqual(20);
+    expect(frame).toContain(`de ${total}`); // range indicator in the hint slot
+    unmount();
+  }, 15000);
 });

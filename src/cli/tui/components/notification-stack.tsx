@@ -1,12 +1,28 @@
 import { Box, Text } from "ink";
 import type { NotificationItem } from "../notification-center.js";
 import { colors } from "../theme.js";
-import { NotificationBanner } from "./notification-banner.js";
+import { NotificationBanner, notificationBannerRows } from "./notification-banner.js";
 
 export interface NotificationStackProps {
   items: NotificationItem[];
   /** Max items visible at once (newest first). Default 3. */
   max?: number;
+}
+
+/**
+ * Exact row count the stack occupies for `items` — 0 when empty; otherwise the
+ * per-banner heights of the visible slice + the `+N more` overflow line + the
+ * container's marginBottom. Windowed lists add this to their `reservedRows` so
+ * a visible banner can't clip the list's bottom rows. WARNING: the math
+ * mirrors the JSX below — keep both in sync (banner heights live in
+ * `notificationBannerRows`).
+ */
+export function notificationStackRows(items: NotificationItem[], max = 3): number {
+  if (items.length === 0) return 0;
+  const visible = items.slice(-max);
+  const overflow = items.length - visible.length;
+  const bannerRows = visible.reduce((sum, item) => sum + notificationBannerRows(item), 0);
+  return bannerRows + (overflow > 0 ? 1 : 0) + 1; // +1 = marginBottom
 }
 
 /**
