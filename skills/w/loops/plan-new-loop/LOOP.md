@@ -6,7 +6,8 @@ description: >-
   TECHNICAL-NOTE level + Tasks phased by verifiable functional state
   (### Fn blocks with live state),
   code/impact-mapping research, planning gap taxonomy, and promotion of the
-  design closure to handoff via `design`
+  design closure to handoff via `design`: reuse a valid one, promote the rest,
+  then pin the roots
   when the plan includes UI. If the spec is not refined it suggests
   spec-refine first. Started by /w:plan-new; resumable. Invoke when a spec
   must become an executable plan.
@@ -137,7 +138,7 @@ Replaces the spec gap taxonomy with a planning-oriented one:
 | Missing deps | order unclear | research / human |
 | Spec criteria uncovered | tasks don't trace to acceptance criteria | the AI derives + human confirms |
 | Unaddressed risks | technical risks unmitigated/undeclared | human / **probe** (Delta 5) |
-| UI without design *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## Design references` in the spec, or UI tasks) and pins no exact root, or its roots are not `handoff` | **`design`** (promote the closure, pin the roots) |
+| UI without design *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## Design references` in the spec, or UI tasks) and pins no exact root, or its roots are not `handoff` | **`design`** (promote the closure, pin the roots — reusing an already valid compact handoff instead of re-promoting it) |
 
 > **Author the Solution the laziest-that-works way** (chassis § *Minimality*, generative side): reuse what the codebase/stdlib/platform already provides before proposing new abstractions, layers or dependencies — the coherence gate then only *confirms* minimality, never repairs over-engineering after the fact.
 
@@ -161,7 +162,7 @@ plan-new-loop(spec):
     gaps = detect_gaps(work)  (Delta 2 taxonomy)  minus the exhausted ones
     if gaps == ∅: break
     batch ≤3 → seed CHECKPOINT.Pending/Next → resolve each gap:
-      research · human (structured-choice) · probe · design (promote closure + pin roots)
+      research · human (structured-choice) · probe · design (reuse valid handoff or promote missing closure + pin roots)
     integrate + update CHECKPOINT
   coherence gate (read-only) = Success criteria green:
     - every spec criterion traces to a phase/task (split: exactly one sibling)

@@ -60,20 +60,28 @@ describe("F3 · cada screen `handoff` conserva evidencia visual local", () => {
     expect(verdict.failures.some((f) => f.message.includes("no enumera estados"))).toBe(true);
   });
 
+  it("un criterio de interacción no exige rendition ni storyboard", () => {
+    const interaction = COMPLETE.replace(
+      MATRIX,
+      "    classification: interaction\n    states: [default, error]\n    renditions: []\n    reason: null\n",
+    );
+    const verdict = gate(interaction);
+    expect(verdict.failures).toEqual([]);
+    expect(verdict.attainable).toBe("handoff");
+  });
+
   it("un criterio 'not_visual' sin razón se rechaza, y con razón pasa", () => {
     const sinRazon = COMPLETE.replace(MATRIX, "    classification: not_visual\n    reason: null\n");
     expect(gate(sinRazon).failures.some((f) => f.message.includes("no dice por qué"))).toBe(true);
 
-    // Con razón la matriz está completa; lo que sigue faltando es la preview del
-    // estado base, y el diagnóstico es ESE — no el del criterio.
+    // Con razón la matriz está completa. Al no quedar ningún criterio visual,
+    // no se fabrica una preview sólo para satisfacer el antiguo gate.
     const conRazon = COMPLETE.replace(
       MATRIX,
       "    classification: not_visual\n    reason: es una regla de retención sin superficie visible\n",
     );
     const verdict = gate(conRazon);
-    expect(verdict.failures.map((f) => f.message)).toEqual([
-      expect.stringContaining("estado base"),
-    ]);
+    expect(verdict.failures).toEqual([]);
   });
 
   // AC-REN-01, la mitad que NO cambia: `outline` sigue sin deberle una rendition.
@@ -220,7 +228,7 @@ describe("F3 · el gate cruza la matriz de la screen con la cobertura de la rend
     expect(failures.some((f) => f.message.includes("no cubre error"))).toBe(true);
   });
 
-  it("un criterio 'interaction' exige una rendition con trigger, transición y outcome", () => {
+  it("un criterio 'interaction' se valida por estados, no por un storyboard redundante", () => {
     const parsed = validateDesignArtifact(
       COMPLETE.replace("    classification: visual\n", "    classification: interaction\n"),
       "screen",
@@ -229,13 +237,14 @@ describe("F3 · el gate cruza la matriz de la screen con la cobertura de la rend
     if (!parsed.ok || parsed.value === null) throw new Error("la variante no validó");
     const interactiva = parsed.value as ScreenArtifact;
 
-    // Con evidencia, pasa.
+    // Aunque cite una rendition, la evidencia de interacción no es una condición
+    // adicional de publicación: la interacción queda en los estados y pruebas.
     expect(crossVisualEvidence(CATALOG, interactiva, FILE, () => rendition())).toEqual([]);
-    // Sin evidencia, el criterio queda sin demostrar.
-    const failures = crossVisualEvidence(CATALOG, interactiva, FILE, () =>
-      rendition({ interaction_evidence: null }),
-    );
-    expect(failures.some((f) => f.message.includes("trigger, transición y outcome"))).toBe(true);
+    expect(
+      crossVisualEvidence(CATALOG, interactiva, FILE, () =>
+        rendition({ interaction_evidence: null }),
+      ),
+    ).toEqual([]);
   });
 
   it("una preview en un formato que exige proveedor no cuenta como evidencia local", () => {

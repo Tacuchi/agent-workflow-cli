@@ -196,8 +196,9 @@ function checkHandoff(
  * `handoff` screen now owes two things:
  *
  * 1. a classification for every criterion it traces, and
- * 2. a local preview of its `default_state` — the criterion that shows the base
- *    state has to enumerate it AND enumerate a rendition of it.
+ * 2. a local preview of its `default_state` only when it declares a visual
+ *    acceptance criterion — the criterion that shows the base state has to
+ *    enumerate it AND enumerate a rendition of it.
  *
  * Both are checked HERE, against the document alone, and only the document's own
  * claims. Whether the enumerated rendition exists, was cut from this revision and
@@ -218,10 +219,9 @@ function checkVisualEvidence(artifact: DesignArtifact, file: string): DesignFail
     failures.push(...checkClassified(entry, file));
   }
 
-  const base = screen.trace.filter(
-    (e) => e.classification !== "not_visual" && e.states.includes(screen.default_state),
-  );
-  if (!base.some((e) => e.renditions.length > 0)) {
+  const visual = screen.trace.filter((e) => e.classification === "visual");
+  const base = visual.filter((e) => e.states.includes(screen.default_state));
+  if (visual.length > 0 && !base.some((e) => e.renditions.length > 0)) {
     failures.push({
       code: "DESIGN_EVIDENCE_INSUFFICIENT",
       artifact: file,
@@ -270,10 +270,10 @@ function checkClassified(entry: ScreenTraceEntry, file: string): DesignFailure[]
       ),
     );
   }
-  if (entry.renditions.length === 0) {
+  if (entry.classification === "visual" && entry.renditions.length === 0) {
     failures.push(
       incomplete(
-        `es '${entry.classification}' y no enumera renditions`,
+        "es 'visual' y no enumera renditions",
         "referenciá en 'renditions' la evidencia visual que lo muestra",
       ),
     );

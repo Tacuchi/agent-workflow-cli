@@ -41,11 +41,12 @@ The package is the deliverable. A spec **references** it; it never contains it.
 ## Composed by
 
 - **`spec-refine-loop`** — the requirement involves UI: reuse a compatible
-  baseline or open an `outline` revision, and leave only `## Design references`
-  in the spec document.
-- **`plan-new-loop` · `plan-refine-loop`** — the plan consumes UI: promote to
-  `handoff` exactly the closure the plan consumes, and write the exact roots
-  into each phase or task.
+  baseline or, for a compact delta, publish the exact `handoff` in one pass;
+  expanded work opens an `outline` revision. The spec leaves only `## Design
+  references`.
+- **`plan-new-loop` · `plan-refine-loop`** — the plan consumes UI: reuse that
+  valid handoff, or promote exactly the missing closure, and write the exact
+  roots into each phase or task.
 - **`plan-exec-loop`** — reads and validates; **never redesigns**. A design that
   turns out wrong stops execution and goes back to the refining loop.
 
@@ -111,6 +112,9 @@ what is not yet decided. A document may declare `handoff` only when:
   revision and digest;
 - no essential section answers with a **rendition and nothing else**: an
   approved image is not the current semantics and is not a WCAG conformance.
+- a screen with a **visual** criterion preserves a local static preview of its
+  default state; a purely interaction/non-visual screen does not fabricate a
+  storyboard just to satisfy this gate.
 
 ### Governance: four independent dimensions
 

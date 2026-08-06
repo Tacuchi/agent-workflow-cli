@@ -34,21 +34,24 @@ cannot be superseded without editing it.
 Publishing the package is the loop writing a composed deliverable through the
 CLI, not graduating a session artifact (chassis § *docs/ boundary*).
 
-## `handoff` asks to SEE it
+## Evidence and lifecycle
 
-A `handoff` screen owes evidence, not only prose: a local static preview of its
-`default_state`, and a `trace` classifying every criterion `visual`,
-`interaction` or `not_visual`. A package published under the earlier gate can stop
-qualifying; it reports `DESIGN_VISUAL_EVIDENCE_REQUIRED` with the screen, the
-criterion and the fix.
+`trace` marks each criterion `visual`, `interaction` or `not_visual`. Preview
+only visual acceptance; interaction relies on states, semantics and implementation
+proof, never a storyboard merely to satisfy format.
+
+The CLI marks a delta **compact** only with an existing surface, ≤2 screens, and
+no journey, rule, token, asset, external dependency, blocker or adaptation.
+Compact publishes one `handoff` for PLAN to reuse. Otherwise it is **expanded**:
+SPEC keeps `outline`; PLAN promotes only its consumed closure. The model authors
+content, not this routing.
 
 ## SPEC — close the requirement at `outline`
 
 1. **Reuse before minting.** `aw designs` lists what the workspace already has; a
    compatible baseline is reused rather than given a second identity.
-2. **Otherwise open an `outline` revision.** Not a shortcut: the spec closes *what*
-   the interface must accomplish and legitimately still holds unknowns. `handoff`
-   is PLAN's call — PLAN knows what will actually be implemented.
+2. **Classify the lifecycle.** Compact publishes `handoff` now; otherwise open
+   `outline`, which may hold unknowns until PLAN promotes its implemented roots.
 3. **Publish, then reference.** Citing a baseline that was never published is the
    dangling reference this contract removes.
 
@@ -66,9 +69,8 @@ before `## Decisions`.
    reach the rules, tokens and assets they depend on. It stops there. `flow_refs`
    is *not* followed — it is the inverse relation, and following it drags in
    designs the plan never consumes.
-4. **Promote exactly that closure to `handoff`**, nothing else. Ten screens in
-   `outline` and three promoted is a package's normal shape; promoting it wholesale
-   because one task needed one screen makes maturity meaningless.
+4. **Reuse a valid `handoff`, or promote exactly the missing closure.** A compact
+   handoff from SPEC is already the plan's baseline, not work to repeat.
 5. **Publish the revision**, then write the roots.
 
 The plan declares its own `## Design references` — same block — after

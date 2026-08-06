@@ -7,8 +7,9 @@ import type { DesignFailure } from "./validation.js";
  * The other half of the elevated `handoff` gate: does the evidence a screen
  * CITES actually show what the screen says it shows?
  *
- * `maturity.ts` judges the document alone — every criterion classified, the base
- * state enumerated with a rendition. That is all one file can prove. But a
+ * `maturity.ts` judges the document alone — every criterion classified and, if
+ * visual acceptance exists, the base state enumerated with a rendition. That is
+ * all one file can prove. But a
  * reference to `DES-001/VIS-003@r1` is a claim about another document, and the
  * whole point of requiring visual evidence is defeated if the reference is enough
  * on its own: a screen could cite a rendition of a different screen, of an older
@@ -48,16 +49,18 @@ export function crossVisualEvidence(
   const loaded = new Map<string, DesignRendition>();
   let cited = 0;
 
+  const hasVisualCriterion = screen.trace.some((entry) => entry.classification === "visual");
   for (const entry of screen.trace) {
-    if (entry.classification === null || entry.classification === "not_visual") continue;
+    // Interaction behavior is specified and verified through its declared
+    // states and implementation checks. Requiring a storyboard or prototype
+    // here made a small control change pay for a second visual artifact that
+    // did not add an acceptance signal.
+    if (entry.classification !== "visual") continue;
     for (const ref of entry.renditions) {
       cited += 1;
       const rendition = resolve(catalog, ref, file, readRendition, loaded, failures);
       if (rendition === null) continue;
       failures.push(...checkBacksClaim(screen, entry, ref, rendition, file));
-    }
-    if (entry.classification === "interaction") {
-      failures.push(...checkInteractionEvidence(entry, loaded, file));
     }
   }
 
@@ -65,7 +68,7 @@ export function crossVisualEvidence(
   // preview estática» sería un segundo diagnóstico del mismo problema, y el
   // primero es el que se arregla.
   if (cited > 0 && loaded.size === 0) return failures;
-  failures.push(...checkStaticPreview(screen, loaded, file));
+  if (hasVisualCriterion) failures.push(...checkStaticPreview(screen, loaded, file));
   return failures;
 }
 
@@ -153,30 +156,6 @@ function checkBacksClaim(
     );
   }
   return failures;
-}
-
-/**
- * AC-REN-02, last clause: an `interaction` entry evidences trigger, transition
- * and outcome. A picture of the end state is not that, so at least one of the
- * renditions it cites has to be the prototype or storyboard that shows it.
- */
-function checkInteractionEvidence(
-  entry: ScreenTraceEntry,
-  loaded: Map<string, DesignRendition>,
-  file: string,
-): DesignFailure[] {
-  const cited = entry.renditions.map((ref) => loaded.get(ref)).filter((r) => r !== undefined);
-  if (cited.length === 0) return []; // ya reportado como cita colgante
-  if (cited.some((r) => r.interaction_evidence !== null)) return [];
-  return [
-    {
-      code: "DESIGN_VISUAL_EVIDENCE_REQUIRED",
-      artifact: file,
-      message: `trace['${entry.criterion}'] es 'interaction' y ninguna de sus renditions evidencia trigger, transición y outcome`,
-      action:
-        "agregá un prototipo o un storyboard estático con 'interaction_evidence', o reclasificá el criterio como 'visual'",
-    },
-  ];
 }
 
 /**
