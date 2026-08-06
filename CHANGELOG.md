@@ -4,6 +4,41 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.4.0] — 2026-08-06
+
+**El TUI muestra lo que se consulta, el CLI decide cuánto se gasta en modelo, y la evidencia de diseño se pide solo donde hay algo que ver.** Tres frentes independientes. La pestaña [Skills] listaba las 24 recomendadas mezcladas con todo lo detectado en el sistema y [Project] apilaba dos listas de ramas y una de procesos que nadie leía: ahora [Skills] abre proyectada a la semilla con un toggle, y [Project] queda en workspace + StatTiles + Sources, con un indicador por fuente de lo que está corriendo. En paralelo, el host anunciaba primitivas de subagentes y nada decidía cuándo pagarlas —y peor: un agente corriendo dentro de Warp se detectaba como Warp—, así que el gasto pasa a ser una regla del CLI y el host de agente se resuelve aparte del terminal. Y el gate de `handoff` exigía preview estática y renditions a todo criterio no-`not_visual`, incluidos los de interacción: un cambio de control pequeño pagaba un artefacto visual que no agregaba señal de aceptación. Sin dependencias npm nuevas.
+
+### Added
+
+- **Filtro por defecto en [Skills] con toggle `t`** — la lista abre proyectada a `RECOMMENDED_SKILLS` (cualquiera sea el estado de cada skill) y `t` alterna a todo lo detectado. El modo se anuncia en el hint del SectionHead (`recommended only · t show all` / `all skills · t show recommended`) y en las QuickActions, el `count` de la sección sigue al modo y los totales del PageHead siguen siendo globales. Es un `useState` del tab: cada apertura arranca filtrada. El cursor se conserva por nombre al alternar, o clampea si la skill activa queda fuera.
+- **Indicador de procesos por fuente en [Project]** — la fila de [Sources] lleva el chip `● N running` cuando esa fuente tiene N ≥ 1 procesos activos, recalculado en cada reload (carga, lanzar, detener, relanzar, refresh). Cuenta solo `state === "running"`: los registros `stopped`/`exited` son historial y no aparecen en ningún lado. El centinela «all sources» no lleva chip.
+- **Gestión de procesos desde el panel de detalle de la fuente** — `Detener` / `Re-lanzar` / `Ver log · <perfil> (PID)` por cada proceso activo, entre las acciones de git flow y la destructiva «Quitar del workspace». Reemplaza al modo `p` con las mismas operaciones: quitar la lista no podía costar la capacidad de operar lo que está corriendo.
+- **`src/domain/resource-policy.ts` — el gasto de ejecución es una regla del CLI, no del host.** `decideResources` devuelve la única estrategia admisible para una frontera: la determinista no despacha trabajador de modelo alguno, la de ejecución tiene una invocación externa y devuelve su evidencia, y la semántica es inline salvo que haya tres o más particiones independientes —sin dependencias entre sí y sin escrituras solapadas— sobre un host capaz; ahí el tope es 3 subagentes y 4 trabajadores de modelo contando el coordinador. `validateResourceUsage` rechaza un recibo que reclame más de lo autorizado. Las fronteras humana y de autorización nunca abren en abanico.
+- **`aw harness` distingue `agent_host` de `terminal_host`** y reporta además la primitiva nativa del host (`execution`) y las dos decisiones que el CLI aplica antes de cualquier trabajo de modelo (`resource_policy.deterministic` y `resource_policy.semantic_default`). El campo `harness` se conserva como deprecado para quien consuma la forma anterior del JSON.
+- **`--host <id>` en `aw harness`, `aw capability`, `aw flow` y `aw skills`** — fija el host de agente explícitamente en vez de deducirlo del entorno. Un id que no está en el catálogo se rechaza con el listado válido, nunca se ignora en silencio.
+- **`subagent-dispatch` es una capacidad proyectada** — `aw self detect-hosts` la informa por host: `native` nombrando la primitiva y el tope que el CLI permite tras probar particiones independientes, o `unsupported` diciendo que el trabajo semántico se queda inline.
+- **`HarnessSpec.execution` por host en el catálogo** — `Task` en Claude Code, `agents` en Codex, Antigravity y OpenCode, `SubagentStart` en Kimi; Oz, Warp y Crush declaran que no tienen despacho directo.
+- **Ciclo `compact` / `expanded` del paquete de diseño** — un delta compacto (superficie existente, ≤2 pantallas, sin journey, regla, token, asset, dependencia externa, bloqueo ni adaptación) publica su `handoff` en un solo paso desde SPEC y PLAN lo reusa; lo expandido mantiene el camino de siempre (SPEC en `outline`, PLAN promueve solo la clausura que implementa). La ruta la decide el CLI, no el modelo.
+
+### Changed
+
+- **[Project] se adelgaza a workspace + avisos + StatTiles + Sources.** Salen «Ramas de trabajo actuales», «Ramas QA actuales» y «Procesos lanzados», y con ellas el modo de navegación `p` con su cursor, su handler, su QuickAction y su lock de teclas globales; la tecla `p` queda libre. Las StatTiles conservan los conteos globales que esas listas mostraban. `reservedRows` se recalcula sin las secciones eliminadas.
+- **Los wrappers instalados por host atan sus llamadas al CLI con `--host <target>`.** La instalación es el único momento en que el destino se conoce con certeza; preservarlo evita que un marcador de terminal pise al runtime de agente que esa superficie eligió. Los wrappers compartidos en `.agents/skills` quedan deliberadamente sin atar, porque varios hosts los leen.
+- **Un marcador de terminal ya no tiene precedencia sobre un marcador de agente.** La detección recorre el catálogo por marcadores propios primero y solo cae al terminal como último recurso.
+- **La evidencia visual se exige solo a los criterios `visual`.** Una pantalla `handoff` debe una preview estática de su `default_state` únicamente si declara aceptación visual; un criterio `interaction` se especifica y se verifica por sus estados declarados y su prueba de implementación. Antes todo criterio no-`not_visual` debía renditions, y uno de interacción debía además un prototipo o storyboard con `interaction_evidence`.
+- **La fila `subagent-dispatch` de `HARNESS.md` se corrige contra el catálogo**: Crush y Warp pasan a `inline` (la orquestación en la nube de Oz no es un binding directo de trabajador) y Codex y Kimi quedan con la primitiva que realmente exponen.
+- **`CHASSIS.md` declara que los tramos deterministas no consumen trabajador de modelo, subagente ni proceso externo**, y que la verificación independiente usa subagente solo cuando la regla de particiones independientes del CLI lo admite.
+
+### Fixed
+
+- **Codex dentro de Warp se identificaba como Warp.** `TERM_PROGRAM=WarpTerminal` ganaba sobre el marcador real del agente, así que el binding, las capacidades y el mecanismo de structured-choice que se aplicaban eran los del terminal. `agent_host` y `terminal_host` son ahora dos respuestas distintas.
+- **`CODEX_THREAD_ID` faltaba entre los marcadores de entorno de Codex**, que era justamente el que exporta a sus subprocesos.
+
+### Removed
+
+- **`src/cli/tui/components/process-list.tsx`** — sin consumidores tras el adelgazamiento de [Project].
+- **`checkInteractionEvidence`** — el chequeo que obligaba a un criterio de interacción a citar un prototipo o storyboard.
+
 ## [21.3.1] — 2026-08-05
 
 **Las listas de la TUI windowean al alto del terminal: la fila activa nunca vuelve a salirse de pantalla.** Hasta aquí ninguna lista windoweaba — todas renderizaban sus filas completas y el shell recortaba el exceso (`overflowY="hidden"`), así que con más filas que viewport el cursor llegaba a filas que nadie pintaba y la navegación era a ciegas; la lista de SOURCES del tab Project era la primera en notarlo. Un hook compartido nuevo acota cada lista al alto real con edge-scroll —la ventana solo se mueve cuando el cursor la abandona— y un indicador de rango (`5–13 de 31`) vive en el encabezado de sección sin gastar filas. Sin dependencias npm nuevas.
