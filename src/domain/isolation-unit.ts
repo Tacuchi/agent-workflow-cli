@@ -70,12 +70,17 @@ export function unitPath(root: string, identity: UnitIdentity): string {
 }
 
 /**
- * Read a unit's identity back out of its path, or `null` when the path is not a
- * unit of ours.
+ * Read a unit's identity out of a path AT or INSIDE a unit, or `null` when the
+ * path belongs to no unit of ours.
  *
  * This is the inverse of {@link unitPath} and the reason no registry is needed:
  * a worktree git reports can be attributed to its workspace, source and session
  * from its location alone.
+ *
+ * It reads a path *inside* the unit too, because the caller that matters most is
+ * the branch check, and what that one holds is the file being edited — not the
+ * tree's root. Demanding the exact root made every edit inside a unit resolve to
+ * "belongs to no source", which is the silence this whole reading exists to end.
  */
 export function parseUnitPath(root: string, path: string): UnitIdentity | null {
   const prefix = `${normalize(root)}/`;
@@ -85,7 +90,7 @@ export function parseUnitPath(root: string, path: string): UnitIdentity | null {
     .slice(prefix.length)
     .split("/")
     .filter((p) => p.length > 0);
-  if (parts.length !== 3) return null;
+  if (parts.length < 3) return null;
   const [workspaceKey, alias, session] = parts as [string, string, string];
   return { workspaceKey, alias, session };
 }

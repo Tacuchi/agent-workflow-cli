@@ -1,9 +1,8 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { expectedWorkBranch, findOwningSource } from "./branch-resolver.js";
+import { type CheckBranchOutput, runCheckBranch } from "./check-branch-service.js";
 import { parseHookPayload } from "./hook-common.js";
-import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 const TOOLS_OF_INTEREST = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -27,68 +26,42 @@ export interface BranchCheckInput {
   displayName?: string;
 }
 
+/**
+ * The git-safe invariant at the moment of the edit.
+ *
+ * The verdict is NOT computed here: it is `aw check-branch`'s, so the hook and
+ * the command can never drift into two different answers about the same file.
+ * What lives here is the hook's own half — which tools to watch, how to read the
+ * payload, and how to say "no" in a way whoever is blocked can act on.
+ */
 export async function runBranchCheckHook(input: BranchCheckInput): Promise<BranchCheckResult> {
-  const target = await resolveBranchCheckTarget(input);
-  if (!target) return { exitCode: 0 };
-  return verifyBranch(input, target);
-}
-
-interface ResolvedTarget {
-  source: ProjectFuente;
-  expected: string;
-}
-
-async function resolveBranchCheckTarget(input: BranchCheckInput): Promise<ResolvedTarget | null> {
   const payload = parseHookPayload(input.stdin);
-  if (!payload) return null;
+  if (!payload) return { exitCode: 0 };
 
   const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
-  if (!TOOLS_OF_INTEREST.has(toolName)) return null;
+  if (!TOOLS_OF_INTEREST.has(toolName)) return { exitCode: 0 };
   const filePath = extractFilePath(payload.tool_input);
-  if (!filePath) return null;
+  if (!filePath) return { exitCode: 0 };
 
-  const block = await readWorkspaceBlock(input.fs, input.env.cwd(), input.paths.blockMarkers());
-  if (!block) return null;
-  const source = findOwningSource(block.fuentes, filePath);
-  if (!source) return null;
+  // The conversation's own identity travels in the SAME payload the tool call
+  // arrives in, so reading it costs nothing extra — and it is what tells one
+  // concurrent flow's unit from another's.
+  const contextId = typeof payload.session_id === "string" ? payload.session_id : undefined;
 
-  // Expected = the source's declared WORKING branch (from the WORKSPACE block).
-  // No declared working branch → no expectation → no-op (allow).
-  const expected = expectedWorkBranch(source, block.working_branches);
-  if (expected === null) return null;
-  return { source, expected };
-}
+  const verdict = await runCheckBranch(input.fs, input.env, input.git, input.paths, {
+    fileArg: filePath,
+    ...(contextId !== undefined && contextId.length > 0 ? { contextId } : {}),
+  });
+  if (verdict.match) return { exitCode: 0 };
+  // A source that is missing or is not a repo is not something an edit can fix,
+  // and blocking on it would make an unrelated misconfiguration look like a
+  // branch violation. That case stayed permissive before this feature; it stays.
+  if (verdict.is_repo === false) return { exitCode: 0 };
 
-async function verifyBranch(
-  input: BranchCheckInput,
-  target: ResolvedTarget,
-): Promise<BranchCheckResult> {
-  const { source, expected } = target;
-  if (!(await input.fs.exists(source.path))) return { exitCode: 0 };
-  if (!(await input.git.isGitRepo(source.path))) return { exitCode: 0 };
-  const current = (await input.git.currentBranch(source.path)) ?? null;
-  if (current === null || current === expected) return { exitCode: 0 };
-  const changedFiles = await safeChangedFiles(input.git, source.path);
   return {
     exitCode: 2,
-    stderr: formatBlockMessage({
-      alias: source.alias,
-      path: source.path,
-      current,
-      expected,
-      dirty: changedFiles.length > 0,
-      changedFiles,
-      displayName: input.displayName ?? "agent-workflow",
-    }),
+    stderr: formatBlockMessage(verdict, input.displayName ?? "agent-workflow"),
   };
-}
-
-async function safeChangedFiles(git: GitPort, repoPath: string): Promise<string[]> {
-  try {
-    return await git.changedFiles(repoPath);
-  } catch {
-    return [];
-  }
 }
 
 function extractFilePath(toolInput: unknown): string | null {
@@ -101,27 +74,56 @@ function extractFilePath(toolInput: unknown): string | null {
   return null;
 }
 
-interface BlockMessageInput {
-  alias: string;
-  path: string;
-  current: string;
-  expected: string;
-  dirty: boolean;
-  changedFiles: string[];
-  displayName: string;
-}
+/**
+ * Why the edit is refused and what unblocks it.
+ *
+ * Every branch here ends in an action, because a hook that only says "no" makes
+ * the invariant hostile: the agent that is blocked has to be handed the exact
+ * command, not a rule to go and look up.
+ */
+function formatBlockMessage(verdict: CheckBranchOutput, displayName: string): string {
+  const head = `[${displayName}]`;
+  const source = `  Fuente:        ${verdict.alias} (${verdict.path})`;
 
-function formatBlockMessage(info: BlockMessageInput): string {
+  if (verdict.reason === "outside_unit") {
+    return [
+      `${head} Esta fuente se está editando por unidad de aislamiento, y este archivo queda fuera.`,
+      source,
+      `  Unidad esperada: ${verdict.expected_unit?.path ?? "(la de tu sesión)"}`,
+      `  Rama:            ${verdict.expected_unit?.branch ?? "aw/<sesión>"}`,
+      "",
+      `Obtené tu unidad y volvé a editar dentro de ella:\n  ${verdict.remedy}`,
+      "",
+      `Referencia: ${REFERENCE_DOC}`,
+      "",
+    ].join("\n");
+  }
+
+  if (verdict.reason === "other_session_unit") {
+    return [
+      `${head} Ese árbol es la unidad de aislamiento de OTRA sesión.`,
+      source,
+      `  Unidad ajena:  ${verdict.actual_unit?.path} (sesión ${verdict.actual_unit?.session})`,
+      `  Tu unidad:     ${verdict.expected_unit?.path ?? "(todavía no existe)"}`,
+      "",
+      `Editá en la tuya:\n  ${verdict.remedy}`,
+      "",
+      `Referencia: ${REFERENCE_DOC}`,
+      "",
+    ].join("\n");
+  }
+
   const lines: string[] = [
-    `[${info.displayName}] Rama de trabajo incorrecta para esta fuente.`,
-    `  Fuente:        ${info.alias} (${info.path})`,
-    `  Rama actual:   ${info.current}`,
-    `  Rama esperada: ${info.expected}`,
+    `${head} Rama de trabajo incorrecta para esta fuente.`,
+    source,
+    `  Rama actual:   ${verdict.current_branch}`,
+    `  Rama esperada: ${verdict.expected_work_branch}`,
   ];
-  if (info.dirty) {
-    let preview = info.changedFiles.slice(0, 5).join(", ");
-    if (info.changedFiles.length > 5) preview += ", ...";
-    lines.push(`  Cambios sin commit (${info.changedFiles.length} archivo(s)): ${preview}`);
+  const changed = verdict.changed_files ?? [];
+  if (changed.length > 0) {
+    let preview = changed.slice(0, 5).join(", ");
+    if (changed.length > 5) preview += ", ...";
+    lines.push(`  Cambios sin commit (${changed.length} archivo(s)): ${preview}`);
     lines.push("");
     lines.push(
       "Pausar y avisar al usuario. NO ejecutar git stash/reset/clean/checkout. " +
@@ -131,7 +133,7 @@ function formatBlockMessage(info: BlockMessageInput): string {
   } else {
     lines.push("");
     lines.push(
-      `Pedir confirmacion al usuario para ejecutar \`git checkout ${info.expected}\` en esta fuente y luego reintentar la edicion.`,
+      `Pedir confirmacion al usuario para ejecutar \`git checkout ${verdict.expected_work_branch}\` en esta fuente y luego reintentar la edicion.`,
     );
   }
   lines.push("");

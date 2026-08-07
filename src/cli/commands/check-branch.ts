@@ -1,5 +1,6 @@
 import { runCheckBranch } from "../../application/check-branch-service.js";
 import type { CommandResult } from "../../domain/types.js";
+import { readContextId } from "../context-id.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
@@ -20,6 +21,8 @@ export const checkBranchCommand: QtcCommand = {
     if (pathArg !== undefined) input.pathArg = pathArg;
     if (fileArg !== undefined) input.fileArg = fileArg;
     if (session !== undefined) input.sessionCode = session;
+    const contextId = readContextId(ctx.env);
+    if (contextId !== undefined) input.contextId = contextId;
 
     const data = await runCheckBranch(ctx.fs, ctx.env, ctx.git, ctx.paths, input);
     const exit: 0 | 1 | 2 = strict && data.match === false ? 2 : 0;
