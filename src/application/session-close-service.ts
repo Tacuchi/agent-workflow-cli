@@ -31,6 +31,15 @@ export interface SessionCloseOutput {
   history_error?: string;
   /** Conversation associations dropped because they pointed at this session. */
   bindings_invalidated: number;
+  /**
+   * Units this session still holds, with the command that integrates each one.
+   *
+   * Closing does NOT integrate and does not release: the work in a unit is
+   * commits nobody has merged yet, and a close that quietly disposed of them
+   * would be the one way this feature could lose work. So the close SAYS it,
+   * and leaves the decision where it belongs.
+   */
+  pending_integration?: Array<{ alias: string; branch: string; path: string; command: string }>;
 }
 
 export interface SessionCloseFullOutput {
@@ -51,6 +60,7 @@ export async function runSessionClose(
   fs: FileSystemPort,
   paths: PathsService,
   input: SessionCloseInput,
+  isolation?: IsolationReader,
 ): Promise<SessionCloseResult> {
   // Closing is destructive to continuity: it always names its target. Falling
   // back to "the sole active one" would let a conversation close a line it
@@ -85,7 +95,35 @@ export async function runSessionClose(
     ...(closure.history ? { history: closure.history } : {}),
     ...(closure.history_error !== undefined ? { history_error: closure.history_error } : {}),
   };
+  const held = await heldUnits(isolation, session.folder);
+  if (held.length > 0) sessionClose.pending_integration = held;
   return { sessionClose };
+}
+
+/** Reads this workspace's live isolation units; absent when the caller has no git port. */
+export type IsolationReader = () => Promise<
+  Array<{ alias: string; session: string; path: string; branch: string }>
+>;
+
+async function heldUnits(
+  isolation: IsolationReader | undefined,
+  folder: string,
+): Promise<NonNullable<SessionCloseOutput["pending_integration"]>> {
+  if (isolation === undefined) return [];
+  let units: Awaited<ReturnType<IsolationReader>>;
+  try {
+    units = await isolation();
+  } catch {
+    return [];
+  }
+  return units
+    .filter((u) => u.session === folder)
+    .map((u) => ({
+      alias: u.alias,
+      branch: u.branch,
+      path: u.path,
+      command: `aw worktree integrate --source ${u.alias} --code ${folder}`,
+    }));
 }
 
 interface Closure {

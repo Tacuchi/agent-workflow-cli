@@ -39,7 +39,7 @@ export const resumeCommand: QtcCommand<ResumeOutcome> = {
       ...(contextId !== undefined ? { contextId } : {}),
     };
 
-    const outcome = await runResume(ctx.fs, ctx.env, ctx.paths, input);
+    const outcome = await runResume(ctx.fs, ctx.env, ctx.paths, { ...input, git: ctx.git });
     if (outcome.status === "invalid_target") {
       return {
         ok: false,

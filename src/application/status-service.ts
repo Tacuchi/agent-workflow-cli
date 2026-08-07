@@ -1,5 +1,6 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { GitPort } from "../ports/git.js";
 import type { DesignGraph } from "./design/design-graph-service.js";
 import { type FlowRunProjection, projectRun } from "./flow/run-projection.js";
 import type { PathsService } from "./paths-service.js";
@@ -9,8 +10,10 @@ import {
   type IndexedSpec,
   type IndexedWorkspace,
   type PipelineItem,
+  type SessionUnit,
   buildWorklineIndex,
 } from "./workline-index-service.js";
+import type { OrphanUnit } from "./worktree-service.js";
 
 /**
  * `status` projected out of the Workline index.
@@ -37,6 +40,8 @@ export interface StatusSession {
    * dashboard would pay one file read per session of the whole history to say so.
    */
   flow: FlowRunProjection | null;
+  /** Isolation units this flow is editing in; empty when it took none. */
+  units: SessionUnit[];
 }
 
 export interface StatusOutput {
@@ -52,6 +57,8 @@ export interface StatusOutput {
   pipeline: PipelineItem[];
   /** the design traceability graph, so a broken reference is visible without opening files */
   designs: DesignGraph;
+  /** Units that outlived their session: pending cleanup, never cleaned on their own. */
+  orphan_units: OrphanUnit[];
   counts: {
     specs: number;
     specs_refined: number;
@@ -65,6 +72,8 @@ export interface StatusOutput {
 
 export interface StatusInput {
   now?: Date;
+  /** Read isolation units too; without it the output is the pre-units one. */
+  git?: GitPort;
 }
 
 /**
@@ -92,6 +101,7 @@ export async function runStatusCommand(
       date: session.date,
       relative: session.relative,
       flow: isClosed ? null : await projectRun(fs, paths, session.folder),
+      units: session.units,
     });
   }
 
@@ -103,6 +113,7 @@ export async function runStatusCommand(
     discarded: index.discarded,
     pipeline: index.pipeline,
     designs: index.designs,
+    orphan_units: index.orphan_units,
     counts: {
       specs: index.specs.length,
       specs_refined: index.specs.filter((s) => s.refined).length,

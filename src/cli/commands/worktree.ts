@@ -6,18 +6,20 @@ import type { QtcCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-const ACTIONS = new Set<WorktreeInput["action"]>(["ensure", "list", "release"]);
+const ACTIONS = new Set<WorktreeInput["action"]>(["ensure", "list", "release", "integrate"]);
 
 export const worktreeCommand: QtcCommand = {
   name: "worktree",
   describe:
     "Isolation unit of a flow: one git worktree of a source on its own branch, so concurrent flows never share a working tree. " +
     "The unit lives at ~/<ns>/worktrees/<workspace>/<alias>/<session> on branch aw/<session>; the path IS the registry and " +
-    "`git worktree list` its live view. Usage: aw worktree ensure|list|release [--source <alias>] [--code <NNN>].",
+    "`git worktree list` its live view. `integrate` merges the flow's branch into the source's declared working branch and gives the unit back; " +
+    "a conflict is reported with its files and routed to `aw fix-git --path`, never resolved on its own. " +
+    "Usage: aw worktree ensure|list|release|integrate [--source <alias>] [--code <NNN>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const action = args.rest[0] as WorktreeInput["action"] | undefined;
     if (action === undefined || !ACTIONS.has(action)) {
-      const usage = "uso: worktree ensure|list|release [--source <alias>] [--code <NNN>]";
+      const usage = "uso: worktree ensure|list|release|integrate [--source <alias>] [--code <NNN>]";
       return fail("INVALID_INPUT", usage, { error: usage });
     }
     const alias = flagValue(args, "source");

@@ -2,6 +2,7 @@ import {
   type SessionCloseInput,
   runSessionClose,
 } from "../../application/session-close-service.js";
+import { runWorktree } from "../../application/worktree-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
@@ -20,7 +21,15 @@ export const sessionCloseCommand: QtcCommand = {
     const refs = args.values.get("refs");
     if (refs !== undefined) input.refs = refs;
 
-    const data = await runSessionClose(ctx.fs, ctx.paths, input);
+    // A close that stayed silent about the units the session still holds would
+    // be the one way a flow's uncommitted-upstream work disappears from view.
+    const data = await runSessionClose(ctx.fs, ctx.paths, input, async () => {
+      const listed = await runWorktree(
+        { fs: ctx.fs, env: ctx.env, git: ctx.git, paths: ctx.paths },
+        { action: "list" },
+      );
+      return "units" in listed ? listed.units : [];
+    });
     if ("sessionError" in data) return failSessionResolution(data.sessionError);
     if ("error" in data) return fail(data.code ?? "INVALID_INPUT", data.error, data);
     return { ok: true, data: data.sessionClose, exitCode: 0 };

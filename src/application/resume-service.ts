@@ -1,5 +1,6 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { GitPort } from "../ports/git.js";
 import type { DesignRefState } from "./design/design-graph-service.js";
 import { projectRun } from "./flow/run-projection.js";
 import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
@@ -11,6 +12,7 @@ import {
   type IndexedSession,
   type IndexedSpec,
   type PipelineItem,
+  type SessionUnit,
   type WorklineIndex,
   buildWorklineIndex,
 } from "./workline-index-service.js";
@@ -34,6 +36,8 @@ export interface ResumeInput {
   code?: string;
   contextId?: string;
   now?: Date;
+  /** Read isolation units too, so two concurrent flows are told apart. */
+  git?: GitPort;
 }
 
 export interface ResumeProposal {
@@ -53,6 +57,12 @@ export interface ResumeProposal {
    * key would say "design: []" about work that has no design at all.
    */
   design?: Array<{ state: DesignRefState; baseline: string; detail: string | null }>;
+  /**
+   * Isolation units this flow edits in. Present only when it took some — which
+   * is what tells two concurrent flows apart: without it `resume` proposes the
+   * same next step to both and neither learns which tree is its own.
+   */
+  units?: SessionUnit[];
 }
 
 export type ResumeOutcome =
@@ -69,6 +79,7 @@ export async function runResume(
 ): Promise<ResumeOutcome> {
   const index = await buildWorklineIndex(fs, env, paths, {
     ...(input.now !== undefined ? { now: input.now } : {}),
+    ...(input.git !== undefined ? { git: input.git } : {}),
   });
 
   if (input.code !== undefined) return await resumeSession(fs, paths, index, input);
@@ -308,6 +319,7 @@ async function sessionProposal(
       ? `${run.summary}${pending === undefined ? "" : ` · CHECKPOINT: ${pending}`}`
       : (pending ?? "el checkpoint no declara trabajo pendiente"),
     command: directed ? run.command : `aw session-resume --code ${folder} --reopen`,
+    ...(session !== undefined && session.units.length > 0 ? { units: session.units } : {}),
   };
 }
 

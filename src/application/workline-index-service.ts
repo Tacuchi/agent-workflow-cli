@@ -1,6 +1,7 @@
 import { basename, join, relative } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { GitPort } from "../ports/git.js";
 import { localDateIso } from "./dates.js";
 import { type DesignGraph, buildDesignGraph } from "./design/design-graph-service.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
@@ -13,6 +14,7 @@ import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { findArtifact } from "./session-artifacts.js";
 import { SessionsService } from "./sessions-service.js";
+import { type OrphanUnit, runWorktree } from "./worktree-service.js";
 
 /**
  * The one reading of the workspace's Workline documents.
@@ -115,6 +117,20 @@ export interface IndexedSession {
   linked_doc: string | null;
   date: string;
   relative: string;
+  /**
+   * Isolation units this session is editing in, one per source it took.
+   * Empty when the session is not isolated — which is every session in a
+   * workspace that never asked for a unit, so the reading stays honest for
+   * the single-flow case instead of implying an isolation that is not there.
+   */
+  units: SessionUnit[];
+}
+
+/** One flow's isolation unit, as the index reports it. */
+export interface SessionUnit {
+  alias: string;
+  path: string;
+  branch: string;
 }
 
 export type DiscardedKind = "deferred" | "excluded";
@@ -161,10 +177,23 @@ export interface WorklineIndex {
   pipeline: PipelineItem[];
   /** `spec → package → flow/screen → plan/task`, with its four reference states. */
   designs: DesignGraph;
+  /**
+   * Units that outlived the session that took them: reported, never cleaned up
+   * on their own. A unit nobody claims is disk and a held branch, and the only
+   * thing worse than leaving one behind is deleting it while its work is still
+   * uncommitted.
+   */
+  orphan_units: OrphanUnit[];
 }
 
 export interface WorklineIndexInput {
   now?: Date;
+  /**
+   * Read isolation units too. Optional on purpose: without it the index answers
+   * exactly what it answered before units existed, so every caller that does not
+   * care about them keeps its output byte for byte.
+   */
+  git?: GitPort;
 }
 
 /**
@@ -185,6 +214,10 @@ export async function buildWorklineIndex(
   const specs = await readSpecs(fs, cwd, now);
   const plans = await readPlans(fs, cwd, specs, now);
   const sessions = await readSessions(fs, env, paths, now);
+  const isolation = await readIsolation(fs, env, paths, input.git);
+  for (const session of sessions) {
+    session.units = isolation.bySession.get(session.folder) ?? [];
+  }
   const discarded = await readDiscarded(fs, sessions, cwd, now);
   const designs = await buildDesignGraph(fs, cwd, [
     ...specs.map((s) => ({ file: s.file, kind: "spec" as const })),
@@ -199,7 +232,39 @@ export async function buildWorklineIndex(
     discarded,
     pipeline: derivePipeline(specs, plans, sessions),
     designs,
+    orphan_units: isolation.orphans,
   };
+}
+
+/**
+ * Isolation units of this workspace, grouped by the session that owns each one.
+ *
+ * `aw worktree list` is the single reading — the same one the command surface
+ * answers with — so `status`, `resume` and `worktree list` can never disagree
+ * about which flow is editing where.
+ */
+async function readIsolation(
+  fs: FileSystemPort,
+  env: EnvPort,
+  paths: PathsService,
+  git: GitPort | undefined,
+): Promise<{ bySession: Map<string, SessionUnit[]>; orphans: OrphanUnit[] }> {
+  const empty = { bySession: new Map<string, SessionUnit[]>(), orphans: [] };
+  if (git === undefined) return empty;
+  let listed: Awaited<ReturnType<typeof runWorktree>>;
+  try {
+    listed = await runWorktree({ fs, env, git, paths }, { action: "list" });
+  } catch {
+    return empty;
+  }
+  if (!("units" in listed)) return empty;
+  const bySession = new Map<string, SessionUnit[]>();
+  for (const unit of listed.units) {
+    const current = bySession.get(unit.session) ?? [];
+    current.push({ alias: unit.alias, path: unit.path, branch: unit.branch });
+    bySession.set(unit.session, current);
+  }
+  return { bySession, orphans: listed.orphans };
 }
 
 // ── pipeline ─────────────────────────────────────────────────────────────────
@@ -540,6 +605,7 @@ async function readSessions(
       linked_doc: await readLinkedDoc(fs, primary),
       date: ts.date,
       relative: ts.relative,
+      units: [],
     });
   }
   return out;

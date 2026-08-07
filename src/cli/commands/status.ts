@@ -15,7 +15,7 @@ export const statusCommand: QtcCommand<StatusOutput> = {
     "Usage: aw status [--format human|json] [--detail].",
 
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult<StatusOutput>> {
-    const data = await runStatusCommand(ctx.fs, ctx.env, ctx.paths);
+    const data = await runStatusCommand(ctx.fs, ctx.env, ctx.paths, { git: ctx.git });
     return { ok: true, data, exitCode: 0 };
   },
 

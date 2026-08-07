@@ -83,21 +83,137 @@ export interface WorktreeDeps {
   paths: PathsService;
 }
 
+export interface WorktreeIntegrateOutput {
+  alias: string;
+  session: string;
+  /** Branch the unit's work was merged INTO. */
+  into: string;
+  branch: string;
+  integrated: boolean;
+  /** Files left in conflict; empty on a clean integration. */
+  conflicted: string[];
+  /** Whether the unit was given back — a conflicted merge keeps it. */
+  released: boolean;
+  /** What to run next: resolve the conflict, or nothing. */
+  next: string | null;
+}
+
 export interface WorktreeInput {
-  action: "ensure" | "list" | "release";
+  action: "ensure" | "list" | "release" | "integrate";
   alias?: string;
   sessionCode?: string;
   contextId?: string;
 }
 
+export type WorktreeOutput =
+  | WorktreeEnsureOutput
+  | WorktreeListOutput
+  | WorktreeReleaseOutput
+  | WorktreeIntegrateOutput
+  | WorktreeError;
+
 export async function runWorktree(
   deps: WorktreeDeps,
   input: WorktreeInput,
-): Promise<WorktreeEnsureOutput | WorktreeListOutput | WorktreeReleaseOutput | WorktreeError> {
+): Promise<WorktreeOutput> {
   if (input.action === "list") return listUnits(deps);
   const target = await resolveTarget(deps, input);
   if ("error" in target) return target;
-  return input.action === "ensure" ? ensureUnit(deps, target) : releaseUnit(deps, target);
+  if (input.action === "ensure") return ensureUnit(deps, target);
+  if (input.action === "integrate") return integrateUnit(deps, target);
+  return releaseUnit(deps, target);
+}
+
+/**
+ * Merge the flow's branch into the source's declared working branch.
+ *
+ * **Merge and never rebase**, and the reason is not taste: the git port already
+ * carries merge plus the three-stage conflict machinery `aw fix-git` reads, so a
+ * conflict has somewhere to go. A rebase would need new primitives AND would
+ * rewrite commits the flow already treated as done.
+ *
+ * The ORDER is whoever closes last, and that is what makes the second
+ * integration start from what the first one left: the merge runs against the
+ * live branch in the main checkout, not against a snapshot taken earlier.
+ */
+async function integrateUnit(
+  deps: WorktreeDeps,
+  target: ResolvedTarget,
+): Promise<WorktreeIntegrateOutput | WorktreeError> {
+  const { source, path, branch, base, identity } = target;
+  if (!(await deps.git.isGitRepo(source.path))) {
+    return {
+      error: "not_a_repo",
+      message: `${source.alias} (${source.path}) no es un repositorio git`,
+    };
+  }
+  const units = await deps.git.worktreeList(source.path);
+  if (!units.some((w) => samePath(w.path, path))) {
+    return {
+      error: "unit_absent",
+      message: `${source.alias} no tiene una unidad para ${identity.session}`,
+      hint: `creála con 'aw worktree ensure --source ${source.alias} --code ${identity.session}'`,
+    };
+  }
+
+  // Both preconditions are refusals BEFORE anything moves: a merge started over
+  // uncommitted work is the one state where "report the conflict" is no longer
+  // enough, because the losing side was never recorded anywhere.
+  if (await deps.git.isDirty(path)) {
+    return {
+      error: "unit_not_committed",
+      message: `la unidad de ${identity.session} tiene cambios sin commitear`,
+      hint: "commiteá el trabajo del flujo en su unidad antes de integrarlo",
+    };
+  }
+  if (await deps.git.isDirty(source.path)) {
+    return {
+      error: "checkout_dirty",
+      message: `el checkout principal de ${source.alias} tiene cambios sin commitear`,
+      hint: "commiteá o guardá esos cambios: la integración no los va a mezclar con los del flujo",
+    };
+  }
+
+  // Never switch the user's branch to make the command succeed. The declared
+  // working branch is where the checkout is SUPPOSED to be — the git-safe
+  // invariant says so — and a checkout that is somewhere else is a state the
+  // person has to see, not one to be quietly corrected under a merge.
+  const current = await deps.git.currentBranch(source.path);
+  if (current !== base) {
+    return {
+      error: "checkout_off_branch",
+      message: `el checkout principal de ${source.alias} está en '${current}' y la integración va a '${base}'`,
+      hint: `posicioná el checkout en '${base}' y volvé a integrar; la integración nunca cambia de rama por su cuenta`,
+    };
+  }
+  const merge = await deps.git.merge(source.path, branch);
+
+  if (!merge.ok) {
+    return {
+      alias: source.alias,
+      session: identity.session,
+      into: base,
+      branch,
+      integrated: false,
+      conflicted: merge.conflicted,
+      // The unit SURVIVES a conflict: its commits are the only copy of one side
+      // of the merge, and releasing it here would delete them to tidy up.
+      released: false,
+      next: `aw fix-git --path ${source.path}`,
+    };
+  }
+
+  const release = await releaseUnit(deps, target);
+  return {
+    alias: source.alias,
+    session: identity.session,
+    into: base,
+    branch,
+    integrated: true,
+    conflicted: [],
+    released: "released" in release ? release.released : false,
+    next: null,
+  };
 }
 
 interface ResolvedTarget {
