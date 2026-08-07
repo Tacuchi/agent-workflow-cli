@@ -150,7 +150,7 @@ export async function prepareExport(
     };
   }
 
-  const next = (await runNextNumber(fs, env, { directory: policy.dir, dryRun: true })).next;
+  const next = (await runNextNumber(fs, env, paths, { directory: policy.dir, dryRun: true })).next;
   const date = selection.date ?? localDateIso(new Date());
   const unit =
     policy.shape === "dossier" ? `${policy.dir}/${next}-export-${category}-${date}` : policy.dir;
@@ -326,7 +326,7 @@ export async function applyExport(
 
   const policy = POLICIES[input.prepared.category];
   const result = await withCwdLock(fs, paths, async () => {
-    const minted = (await runNextNumber(fs, env, { directory: policy.dir })).next;
+    const minted = (await runNextNumber(fs, env, paths, { directory: policy.dir })).next;
     const artifacts = (parsed.value.artifacts ?? []).map((artifact) =>
       renumber(artifact, input.prepared, minted, policy),
     );

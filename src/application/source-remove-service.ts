@@ -59,7 +59,12 @@ export async function removeSource(
   await runProjectMdUpsertWrite(fs, env, paths, { op: "init", removeAliases: [alias] });
 
   // 4. Stop running processes launched from this source.
-  const registry = new ProcessRegistryService(fs, proc, paths.cwdProcessesFile());
+  const registry = new ProcessRegistryService(
+    fs,
+    proc,
+    paths.cwdProcessesFile(),
+    paths.cwdLockFile(),
+  );
   const running = (await registry.list()).filter(
     (r) => r.sourceAlias === alias && r.state === "running",
   );

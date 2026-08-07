@@ -15,6 +15,10 @@ recorded as uncommitted in `CHECKPOINT` and `BACKLOG`. Between units each workin
 explicitly acknowledged; a `continuous` batch is the narrow exception that intentionally co-mingles
 its internal phases in one reviewed commit, and no batch may co-mingle with another.
 
+Concurrent flows never share a working tree: each edits in its own **isolation unit** — a worktree
+of the source on its own branch (`aw worktree ensure | list | release`), released at close. An edit
+outside it is blocked, and the block names the command that creates one.
+
 > **When the branch is verified, when a commit becomes available and what an approval covers is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Approving is the person's act and committing is a separate effect that comes back as the sources' real git state — which is also what makes "the checks passed" impossible to assert without having run them.
 
 ## Closing review gate (conventions, pre-commit)

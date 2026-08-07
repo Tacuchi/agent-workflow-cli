@@ -4,6 +4,7 @@ import type {
   DiffNumstatEntry,
   GitPort,
   MergeResult,
+  WorktreeEntry,
 } from "../ports/git.js";
 import type { ProcessPort, RunOptions, RunResult } from "../ports/process.js";
 
@@ -212,6 +213,90 @@ export class GitCliAdapter implements GitPort {
   async commit(repoPath: string, message: string): Promise<void> {
     await this.mustRun("commit", ["commit", "-m", message], repoPath);
   }
+
+  async worktreeList(repoPath: string): Promise<WorktreeEntry[]> {
+    const result = await this.mustRun(
+      "worktree list",
+      ["worktree", "list", "--porcelain"],
+      repoPath,
+    );
+    return parseWorktreePorcelain(result.stdout);
+  }
+
+  async worktreeAdd(
+    repoPath: string,
+    worktreePath: string,
+    branch: string,
+    base: string | null,
+  ): Promise<void> {
+    const args =
+      base === null
+        ? ["worktree", "add", worktreePath, branch]
+        : ["worktree", "add", "-b", branch, worktreePath, base];
+    await this.mustRun(`worktree add ${branch}`, args, repoPath);
+  }
+
+  async worktreeRemove(repoPath: string, worktreePath: string): Promise<void> {
+    // Never `--force`: a tree with uncommitted work is the user's, and deleting
+    // it to make a command succeed is the one failure mode this whole feature
+    // exists to prevent.
+    await this.mustRun(
+      `worktree remove ${worktreePath}`,
+      ["worktree", "remove", worktreePath],
+      repoPath,
+    );
+  }
+
+  async worktreePrune(repoPath: string): Promise<void> {
+    await this.mustRun("worktree prune", ["worktree", "prune"], repoPath);
+  }
+
+  async branchExists(repoPath: string, branch: string): Promise<boolean> {
+    const result = await this.process.run(
+      "git",
+      ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+      this.opts(repoPath),
+    );
+    return result.code === 0;
+  }
+}
+
+/**
+ * `git worktree list --porcelain`: records separated by a blank line, one
+ * `key value` per line. The FIRST record is the repository's own working tree.
+ *
+ * `branch` arrives as a full ref (`refs/heads/aw/103-x`) and a detached tree
+ * carries a bare `detached` line instead — so an absent branch is a real state,
+ * not a parse failure.
+ */
+export function parseWorktreePorcelain(stdout: string): WorktreeEntry[] {
+  const entries: WorktreeEntry[] = [];
+  let current: WorktreeEntry | null = null;
+  for (const raw of stdout.split("\n")) {
+    const line = raw.trim();
+    if (line.length === 0) {
+      current = null;
+      continue;
+    }
+    const [key, ...rest] = line.split(" ");
+    const value = rest.join(" ");
+    if (key === "worktree") {
+      current = {
+        path: value,
+        head: null,
+        branch: null,
+        main: entries.length === 0,
+        prunable: false,
+      };
+      entries.push(current);
+      continue;
+    }
+    if (current === null) continue;
+    if (key === "HEAD") current.head = value;
+    else if (key === "branch") current.branch = value.replace(/^refs\/heads\//, "");
+    else if (key === "prunable") current.prunable = true;
+  }
+  return entries;
 }
 
 /**

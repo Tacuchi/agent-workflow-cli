@@ -10,6 +10,20 @@ export interface MergeResult {
   conflicted: string[];
 }
 
+/** One entry of `git worktree list --porcelain`. */
+export interface WorktreeEntry {
+  /** Absolute path of the working directory. */
+  path: string;
+  /** HEAD commit; `null` on a branch with no commit yet. */
+  head: string | null;
+  /** Short branch name (`aw/103-slug`); `null` when the worktree is detached. */
+  branch: string | null;
+  /** The repository's OWN working tree — always the first entry git reports. */
+  main: boolean;
+  /** git found the directory gone: `git worktree prune` is what clears it. */
+  prunable: boolean;
+}
+
 export interface GitPort {
   isGitRepo(repoPath: string): Promise<boolean>;
   currentBranch(repoPath: string): Promise<string | undefined>;
@@ -49,6 +63,34 @@ export interface GitPort {
    * never `--amend`, never a push — those stay outside this port on purpose.
    */
   commit(repoPath: string, message: string): Promise<void>;
+  /**
+   * `git worktree list --porcelain`.
+   *
+   * This is the LIVE registry of a source's isolation units: git already knows
+   * which trees exist, on which branch each one sits, and which ones lost their
+   * directory. A registry file of our own could only ever be a second opinion
+   * about the same facts — and the one that goes stale.
+   */
+  worktreeList(repoPath: string): Promise<WorktreeEntry[]>;
+  /**
+   * `git worktree add` at `worktreePath` on `branch`. With `base` it creates the
+   * branch there (`-b`); with `base: null` it checks out a branch that already
+   * exists. Throws on failure — including git's own refusal to put the same
+   * branch in two worktrees, which is what makes occupancy inherited rather
+   * than implemented.
+   */
+  worktreeAdd(
+    repoPath: string,
+    worktreePath: string,
+    branch: string,
+    base: string | null,
+  ): Promise<void>;
+  /** `git worktree remove <path>`. Throws when the tree has uncommitted work. */
+  worktreeRemove(repoPath: string, worktreePath: string): Promise<void>;
+  /** `git worktree prune`: drops the administrative entries of vanished trees. */
+  worktreePrune(repoPath: string): Promise<void>;
+  /** True when `branch` already exists locally. */
+  branchExists(repoPath: string, branch: string): Promise<boolean>;
 }
 
 export interface ConflictStage {

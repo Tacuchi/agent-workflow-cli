@@ -9,6 +9,7 @@ import {
 } from "../domain/resource-policy.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { withCwdLock } from "./lock-service.js";
 import { parseMdSection, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 
@@ -288,22 +289,93 @@ export interface NextNumberOutput {
   current_max: number;
   next: string;
   files: string[];
+  /**
+   * The file this call CLAIMED, materialized on disk — `null` for the pure
+   * query. A consulted number is a guess about a directory nobody is holding;
+   * a claimed one is a possession, and the difference is the whole point.
+   */
+  claimed_path: string | null;
 }
 
 export interface NextNumberInput {
   directory: string;
   /** Pure query: never creates the directory (plan/dry-run mode). */
   dryRun?: boolean;
+  /**
+   * Claim the correlative by materializing `<NNN>-<claim>` inside the directory.
+   * The scan and the creation happen inside ONE workspace-lock boundary, so no
+   * other flow can read the same maximum; the exclusive creation then makes the
+   * name itself unshareable even if the lock ever expires underneath.
+   */
+  claim?: string;
 }
+
+/**
+ * How long a mint waits for another flow's lock before giving up.
+ *
+ * A claim cannot fail fast the way `HISTORY.md` does: whoever asked is about to
+ * write a document, and telling them "busy, retry" hands the number to nobody
+ * while both flows are still running. The scan+create it protects takes
+ * milliseconds, so a bounded wait absorbs real contention without hiding a
+ * genuinely stuck holder — that one still surfaces as busy.
+ */
+const CLAIM_LOCK_WAIT_MS = 10_000;
+
+/** Upper bound on numbers skipped because a concurrent flow already took them. */
+const MAX_CLAIM_PROBES = 50;
 
 export async function runNextNumber(
   fs: FileSystemPort,
   env: EnvPort,
+  paths: PathsService,
   input: NextNumberInput,
 ): Promise<NextNumberOutput> {
   const cwd = env.cwd();
-  const { directory, dryRun = false } = input;
+  const { directory, dryRun = false, claim } = input;
   const target = isAbsolute(directory) ? directory : join(cwd, directory);
+  const wantsClaim = claim !== undefined && claim.length > 0 && !dryRun;
+
+  if (!wantsClaim) return scan(fs, target, dryRun);
+  // The claim becomes a real filesystem write, so it is a name and never a path:
+  // a separator would let `--claim ../…` mint outside the directory the caller
+  // named — and every caller of this is a command-line argument.
+  if (/[\\/]/.test(claim as string)) {
+    throw new Error(
+      `el reclamo '${claim}' no puede contener separadores de ruta: es el resto del nombre del archivo, no una ruta`,
+    );
+  }
+
+  const claimed = await withCwdLock(
+    fs,
+    paths,
+    async () => {
+      const state = await scan(fs, target, false);
+      let number = state.current_max + 1;
+      for (let probe = 0; probe < MAX_CLAIM_PROBES; probe++, number++) {
+        const nnn = String(number).padStart(3, "0");
+        // Taken by NUMBER: another document already holds this correlative under
+        // a different slug, so the name is free while the number is not.
+        if (state.files.some((name) => name.startsWith(`${nnn}-`))) continue;
+        const path = join(target, `${nnn}-${claim}`);
+        const { created } = await fs.writeTextExclusive(path, "");
+        if (created) return { ...state, next: nnn, claimed_path: normalize(path) };
+      }
+      throw new Error(
+        `no se pudo reclamar un correlativo en ${target}: ${MAX_CLAIM_PROBES} números consecutivos ya estaban tomados`,
+      );
+    },
+    { waitMs: CLAIM_LOCK_WAIT_MS },
+  );
+
+  if ("error" in claimed) throw new Error(`no se pudo reclamar el correlativo: ${claimed.error}`);
+  return claimed;
+}
+
+async function scan(
+  fs: FileSystemPort,
+  target: string,
+  dryRun: boolean,
+): Promise<NextNumberOutput> {
   const exists = await fs.exists(target);
   let created = false;
   if (!exists && !dryRun) {
@@ -325,11 +397,16 @@ export async function runNextNumber(
   }
   const currentMax = numbers.length > 0 ? Math.max(...numbers) : 0;
   return {
-    directory: target.split("\\").join("/"),
+    directory: normalize(target),
     exists,
     created,
     current_max: currentMax,
     next: String(currentMax + 1).padStart(3, "0"),
     files,
+    claimed_path: null,
   };
+}
+
+function normalize(path: string): string {
+  return path.split("\\").join("/");
 }

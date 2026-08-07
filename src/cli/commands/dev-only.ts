@@ -58,16 +58,22 @@ export const logsCommand: QtcCommand = {
 export const nextNumberCommand: QtcCommand = {
   name: "next-number",
   describe:
-    "Compute next NNN correlative for a directory, creating it when missing. Usage: aw next-number <directorio> [--dry-run].",
+    "Compute next NNN correlative for a directory, creating it when missing. With --claim <resto-del-nombre> the number is CLAIMED instead of consulted: the file is materialized under the workspace lock, so two concurrent flows never receive the same NNN. Usage: aw next-number <directorio> [--claim <resto-del-nombre>] [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dir = args.rest[0];
     if (!dir) {
-      const usage = "uso: next-number <directorio> [--dry-run]";
+      const usage = "uso: next-number <directorio> [--claim <resto-del-nombre>] [--dry-run]";
       return fail("INVALID_INPUT", usage, { error: usage });
     }
-    const data = await runNextNumber(ctx.fs, ctx.env, {
+    const claim = args.values.get("claim");
+    if (claim !== undefined && args.flags.has("--dry-run")) {
+      const message = "--claim y --dry-run se excluyen: un reclamo escribe, una consulta no";
+      return fail("INVALID_INPUT", message, { error: message });
+    }
+    const data = await runNextNumber(ctx.fs, ctx.env, ctx.paths, {
       directory: dir,
       dryRun: args.flags.has("--dry-run"),
+      ...(claim !== undefined ? { claim } : {}),
     });
     return { ok: true, data, exitCode: 0 };
   },

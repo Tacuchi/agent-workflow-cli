@@ -49,4 +49,14 @@ export interface FileSystemPort {
   symlink(target: string, path: string): Promise<void>;
   /** Stat without following symlinks; `null` when the path does not exist. */
   lstat(path: string): Promise<LinkStat | null>;
+  /**
+   * The OS's canonical path, symlinks resolved; the input unchanged when the
+   * path does not exist yet.
+   *
+   * Needed wherever a path we BUILT has to be compared with one an external tool
+   * REPORTS: git answers with the resolved path, so on macOS (`/tmp` →
+   * `/private/tmp`) or any home behind a symlink the two spellings of the same
+   * directory would otherwise never match.
+   */
+  realPath(path: string): Promise<string>;
 }

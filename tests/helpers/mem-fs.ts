@@ -106,6 +106,11 @@ export class MemFs implements FileSystemPort {
     if (this.dirMtime.has(p) || this.children.has(p)) return { type: "dir", isSymlink: false };
     return null;
   }
+
+  /** No symlinks in memory: every path is already its own canonical form. */
+  async realPath(p: string): Promise<string> {
+    return p;
+  }
 }
 
 function parentOf(p: string): string {

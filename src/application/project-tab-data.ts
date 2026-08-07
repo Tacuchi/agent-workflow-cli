@@ -165,7 +165,12 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
   }
 
   // Background processes — the registry reconciles liveness in list().
-  const registry = new ProcessRegistryService(fs, proc, paths.cwdProcessesFile());
+  const registry = new ProcessRegistryService(
+    fs,
+    proc,
+    paths.cwdProcessesFile(),
+    paths.cwdLockFile(),
+  );
   const processes = await safeRun(
     "processes",
     () => registry.list(),

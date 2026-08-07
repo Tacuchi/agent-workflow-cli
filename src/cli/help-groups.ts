@@ -44,6 +44,9 @@ const GROUPS: readonly CommandGroup[] = [
       "detach-multiroot",
       "visibility",
       "check-branch",
+      // The isolation unit of a flow: a worktree per (source, session) so two
+      // flows never share a working tree.
+      "worktree",
     ],
   },
   {

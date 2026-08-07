@@ -2464,6 +2464,20 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     attribution: "The CLI owns the number (hard rule)",
   },
   {
+    id: "worktree.unit-lifecycle",
+    scope: cmd("worktree"),
+    title: "entregar, listar y liberar la unidad de aislamiento de un flujo",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: CODE_POLICIES_MD,
+    attribution: "aw worktree ensure | list | release",
+    // Creating and removing a working tree is a real effect on the source, and
+    // the answer to "is this unit free?" is git's, not a narration's: a run that
+    // could declare itself the owner of a tree it never got is exactly the
+    // collision the unit exists to prevent.
+    effects: ["mutate_overwrite"],
+  },
+  {
     id: "capability.routing",
     scope: cmd("capability"),
     title: "resolver ruta, autorización de efectos y receipt de un intento",

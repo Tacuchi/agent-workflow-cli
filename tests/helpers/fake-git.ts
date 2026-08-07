@@ -1,4 +1,4 @@
-import type { DiffNumstatEntry, GitPort, MergeResult } from "../../src/ports/git.js";
+import type { DiffNumstatEntry, GitPort, MergeResult, WorktreeEntry } from "../../src/ports/git.js";
 
 /** A recorded GitPort call: method name + positional args. */
 export interface GitCall {
@@ -43,6 +43,10 @@ export interface RecordingGitOptions {
   conflicted?: string[];
   /** Incoming (theirs) branch name returned by `mergeOrigin()` while mid-merge. */
   mergeOrigin?: string;
+  /** Extra worktrees per repo, appended after the repo's own (main) tree. */
+  worktrees?: Record<string, WorktreeEntry[]>;
+  /** Branches `branchExists` answers true for. */
+  existingBranches?: string[];
 }
 
 /**
@@ -163,6 +167,31 @@ export class RecordingGit implements GitPort {
   async mergeOrigin(repo: string): Promise<string | undefined> {
     this.calls.push({ op: "mergeOrigin", repo });
     return this.isMergingIn(repo) ? this.opts.mergeOrigin : undefined;
+  }
+
+  async worktreeList(repo: string): Promise<WorktreeEntry[]> {
+    this.calls.push({ op: "worktreeList", repo });
+    return [
+      { path: repo, head: null, branch: this.branchOf(repo), main: true, prunable: false },
+      ...(this.opts.worktrees?.[repo] ?? []),
+    ];
+  }
+
+  async worktreeAdd(repo: string, path: string, branch: string, _base: string | null) {
+    this.calls.push({ op: "worktreeAdd", repo, arg: `${branch} ${path}` });
+  }
+
+  async worktreeRemove(repo: string, path: string): Promise<void> {
+    this.calls.push({ op: "worktreeRemove", repo, arg: path });
+  }
+
+  async worktreePrune(repo: string): Promise<void> {
+    this.calls.push({ op: "worktreePrune", repo });
+  }
+
+  async branchExists(repo: string, branch: string): Promise<boolean> {
+    this.calls.push({ op: "branchExists", repo, arg: branch });
+    return this.opts.existingBranches?.includes(branch) ?? false;
   }
 
   /** Helper for tests that drive resume: clear the mid-merge state everywhere. */

@@ -1,4 +1,5 @@
 import { dirname, join } from "node:path";
+import { unitsRoot } from "../domain/isolation-unit.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { Namespace } from "../runtime/namespace.js";
@@ -64,6 +65,15 @@ export class PathsService {
   }
   userCoreLibMarker(): string {
     return join(this.userRoot(), "lib", `.${this.ns}-core-version`);
+  }
+  /**
+   * Root of every flow's isolation units, across every workspace.
+   *
+   * Deliberately OUTSIDE any repository: a worktree nested inside its own source
+   * would show up in that source's status, its ignores and its own scans.
+   */
+  userUnitsDir(): string {
+    return unitsRoot(this.userRoot());
   }
 
   // cwd-level (.${ns}/... in current workspace)

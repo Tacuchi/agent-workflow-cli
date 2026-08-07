@@ -5,6 +5,7 @@ import {
   open,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   stat,
@@ -131,6 +132,18 @@ export class NodeFileSystem implements FileSystemPort {
       return { type, isSymlink: s.isSymbolicLink() };
     } catch (err) {
       if ((err as NodeError).code === "ENOENT") return null;
+      throw err;
+    }
+  }
+
+  async realPath(path: string): Promise<string> {
+    try {
+      return await realpath(path);
+    } catch (err) {
+      // A path that is not there yet has no canonical form; the caller compares
+      // it against something that does not exist either, so the raw spelling is
+      // the honest answer instead of an invented one.
+      if ((err as NodeError).code === "ENOENT") return path;
       throw err;
     }
   }

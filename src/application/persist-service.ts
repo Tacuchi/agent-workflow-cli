@@ -106,7 +106,7 @@ export async function preparePersist(
   for (const [name, category] of Object.entries(CATEGORIES) as Array<
     [PersistCategory, (typeof CATEGORIES)[PersistCategory]]
   >) {
-    const next = await runNextNumber(fs, env, { directory: category.dir, dryRun: true });
+    const next = await runNextNumber(fs, env, paths, { directory: category.dir, dryRun: true });
     const docs = await readCategory(fs, join(cwd, category.dir), category.dir, category.infix);
     for (const doc of docs) {
       readSet.push(doc.file);
@@ -339,7 +339,7 @@ export async function applyPersist(
     const path =
       preview.mode === "update" && preview.target !== null
         ? preview.target
-        : `${category.dir}/${(await runNextNumber(fs, env, { directory: category.dir })).next}-${category.infix}-${slugOf(artifact.path, category.infix)}.md`;
+        : `${category.dir}/${(await runNextNumber(fs, env, paths, { directory: category.dir })).next}-${category.infix}-${slugOf(artifact.path, category.infix)}.md`;
 
     return await publishArtifacts(fs, paths.workspaceDir(), [{ path, content: artifact.content }], {
       overwrite: preview.mode === "update",

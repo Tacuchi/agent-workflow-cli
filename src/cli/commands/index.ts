@@ -53,6 +53,7 @@ import { stackCommand } from "./stack.js";
 import { statusCommand } from "./status.js";
 import { visibilityCommand } from "./visibility.js";
 import { workspaceInitCommand } from "./workspace-init.js";
+import { worktreeCommand } from "./worktree.js";
 
 export const ALL_COMMANDS: readonly QtcCommand[] = [
   sessionsCommand,
@@ -92,6 +93,7 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   hookCommand,
   mcpCommand,
   visibilityCommand,
+  worktreeCommand,
   harnessCommand,
   profilesCommand,
   logsCommand,

@@ -93,6 +93,12 @@ function buildCtx(
     fs: {
       exists: async (p: string) => p === "/ws/CLAUDE.md",
       readText: async () => md,
+      // The process registry now serializes its read-modify-write on the
+      // workspace lock, so the stub answers the lock's own calls too.
+      mkdirp: async () => {},
+      writeText: async () => {},
+      writeTextExclusive: async () => ({ created: true }),
+      remove: async () => {},
     },
     env: {
       cwd: () => "/ws",
@@ -133,6 +139,7 @@ function buildCtx(
       workspaceDir: () => "/ws",
       blockMarkers: () => MARKERS,
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
+      cwdLockFile: () => "/ws/.workflow/.lock",
       cwdDocsLogsDir: () => "/ws/docs/logs",
       cwdLaunchDir: () => "/ws/.workflow/launch",
     },
@@ -437,6 +444,9 @@ function buildLaunchCtx(
       },
       mkdirp: async () => {},
       writeText: async () => {},
+      // The registry serializes its read-modify-write on the workspace lock.
+      writeTextExclusive: async () => ({ created: true }),
+      remove: async () => {},
     },
     env: { cwd: () => "/ws", homeDir: () => "/home", get: () => undefined },
     git: {
@@ -455,6 +465,7 @@ function buildLaunchCtx(
       workspaceDir: () => "/ws",
       blockMarkers: () => MARKERS,
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
+      cwdLockFile: () => "/ws/.workflow/.lock",
       cwdDocsLogsDir: () => "/ws/docs/logs",
       cwdLaunchDir: () => "/ws/.workflow/launch",
     },
@@ -737,6 +748,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
         workspaceDir: () => "/ws",
         blockMarkers: () => MARKERS,
         cwdProcessesFile: () => "/ws/.workflow/processes.json",
+        cwdLockFile: () => "/ws/.workflow/.lock",
         cwdDocsLogsDir: () => "/ws/docs/logs",
         cwdLaunchDir: () => "/ws/.workflow/launch",
       },
@@ -811,6 +823,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
         workspaceDir: () => "/ws",
         blockMarkers: () => MARKERS,
         cwdProcessesFile: () => "/ws/.workflow/processes.json",
+        cwdLockFile: () => "/ws/.workflow/.lock",
         cwdDocsLogsDir: () => "/ws/docs/logs",
         cwdLaunchDir: () => "/ws/.workflow/launch",
       },

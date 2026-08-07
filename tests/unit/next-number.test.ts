@@ -4,24 +4,28 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
+import { PathsService } from "../../src/application/paths-service.js";
+import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
 describe("runNextNumber", () => {
   let workspace: string;
   let env: FakeEnv;
   let fs: NodeFileSystem;
+  let paths: PathsService;
 
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "next-number-"));
     env = new FakeEnv(workspace, workspace);
     fs = new NodeFileSystem();
+    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
   });
   afterEach(() => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
   it("crea el directorio faltante on-demand (created=true, exists reporta el estado previo)", async () => {
-    const result = await runNextNumber(fs, env, { directory: "docs/specs" });
+    const result = await runNextNumber(fs, env, paths, { directory: "docs/specs" });
     expect(result.exists).toBe(false);
     expect(result.created).toBe(true);
     expect(result.next).toBe("001");
@@ -31,7 +35,7 @@ describe("runNextNumber", () => {
   });
 
   it("--dry-run es consulta pura: nunca crea el directorio", async () => {
-    const result = await runNextNumber(fs, env, { directory: "docs/plans", dryRun: true });
+    const result = await runNextNumber(fs, env, paths, { directory: "docs/plans", dryRun: true });
     expect(result.exists).toBe(false);
     expect(result.created).toBe(false);
     expect(result.next).toBe("001");
@@ -44,7 +48,7 @@ describe("runNextNumber", () => {
     writeFileSync(join(dir, "001-informe.md"), "x");
     mkdirSync(join(dir, "003-export-scripts-2026-07-03"));
     writeFileSync(join(dir, "sin-numero.md"), "x");
-    const result = await runNextNumber(fs, env, { directory: "docs/reports" });
+    const result = await runNextNumber(fs, env, paths, { directory: "docs/reports" });
     expect(result.exists).toBe(true);
     expect(result.created).toBe(false);
     expect(result.current_max).toBe(3);
@@ -55,7 +59,7 @@ describe("runNextNumber", () => {
 
   it("path absoluto se respeta tal cual (no se une al cwd)", async () => {
     const abs = join(workspace, "otro", "lado");
-    const result = await runNextNumber(fs, env, { directory: abs });
+    const result = await runNextNumber(fs, env, paths, { directory: abs });
     expect(result.created).toBe(true);
     expect(existsSync(abs)).toBe(true);
     expect(result.directory).toBe(abs.split("\\").join("/"));
@@ -65,7 +69,7 @@ describe("runNextNumber", () => {
     const dir = join(workspace, "docs", "scripts");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "007-x.sql"), "-- x");
-    const result = await runNextNumber(fs, env, { directory: "docs/scripts", dryRun: true });
+    const result = await runNextNumber(fs, env, paths, { directory: "docs/scripts", dryRun: true });
     expect(result.exists).toBe(true);
     expect(result.created).toBe(false);
     expect(result.next).toBe("008");

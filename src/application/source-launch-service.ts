@@ -171,7 +171,12 @@ export function findCollision(
 }
 
 function registry(deps: LaunchDeps): ProcessRegistryService {
-  return new ProcessRegistryService(deps.fs, deps.proc, deps.paths.cwdProcessesFile());
+  return new ProcessRegistryService(
+    deps.fs,
+    deps.proc,
+    deps.paths.cwdProcessesFile(),
+    deps.paths.cwdLockFile(),
+  );
 }
 
 /** Launch a source: ensure descriptor (on-demand gen) → resolve → spawnInTerminal → register. */

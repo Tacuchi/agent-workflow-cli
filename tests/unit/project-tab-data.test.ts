@@ -108,6 +108,7 @@ function buildDeps({
       cwdSessionsDir: () => "/ws/.workflow/sessions",
       cwdHistoryFile: () => "/ws/.workflow/HISTORY.md",
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
+      cwdLockFile: () => "/ws/.workflow/.lock",
       cwdDocsLogsDir: () => "/ws/docs/logs",
     } as never,
   };
