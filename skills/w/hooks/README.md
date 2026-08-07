@@ -7,7 +7,7 @@
 | Event | Hook | Purpose |
 |---|---|---|
 | `SessionStart` | namespace pin | Pins the workspace namespace to `workflow` (so `.workflow/` resolves). |
-| `PreToolUse` (Edit/Write) | `hook branch-check` | Verifies the expected work branch before any file edit (git-safe invariant). |
+| `PreToolUse` (Edit/Write) | `hook branch-check` | Verifies the flow's line of work before any file edit — its isolation unit's branch, or the declared work branch when the source has no units (git-safe invariant). |
 | `PreToolUse` (`execute_sql`) | `hook sql-mutation-guard` | Blocks DML/DDL over MCP — reads only (DB scripts-only invariant). |
 | `PreToolUse` (Bash) | `hook git-commit-advisor` | **Advisory (does not block)**: warns if a `git commit` message lacks the active session's `sessionNNN` tag (traceability). Does **not** inspect `push`/`--amend`/`--no-verify`. |
 | `SessionEnd` | `auto-compact-on-close` | Writes `CHECKPOINT.md` on close — the resume key (*CHECKPOINT always* — chassis § Convergence / exit). |

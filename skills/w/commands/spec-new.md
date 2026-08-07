@@ -25,7 +25,7 @@ Generates `docs/specs/NNN-spec-<slug>.md` in a single pass from the prompt in `$
 
 1. **Reconnaissance** — one shallow look at the terrain before any scope decision: adopt what the conversation settled, identify the candidate sources (`aw sources --no-git`, or the `WORKSPACE` block), look at their surface, stop. **Budget: ≤5 reads + ≤3 searches** — a cap, never a target. Never run code, query a database or search the web. Full rules: module `RECONNAISSANCE`.
 2. **Split gate** — before writing anything, judge whether the prompt bundles several **independent functional outcomes**. Borderline or thin evidence → **one spec, no question** (hypothesis to `## Assumptions`, doubt to `## Open questions`). Only clear signals earn the command's single structured-choice offer. Full rules: module `SPLIT-GATE`.
-3. **Number and slug** — `aw next-number docs/specs` returns JSON; use `next` as `NNN`. Derive `<slug>` from the Requirement: short kebab-case, only `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars.
+3. **Number and slug** — `aw next-number docs/specs --claim spec-<slug>.md` CLAIMS the number and returns `claimed_path`. Derive `<slug>` from the Requirement: short kebab-case, only `[a-z0-9-]`, ≤ ~5 words / ≤ 40 chars.
 4. **Write** `docs/specs/NNN-spec-<slug>.md`, framing `$ARGUMENTS` into the draft schema below; reconnaissance findings land **only** where the filling notes allow. On an accepted split: repeat 3-4 per part, minting immediately before each write.
 5. **Report** the generated file(s) and the next step (`/w:spec-refine docs/specs/NNN-spec-<slug>.md`).
 

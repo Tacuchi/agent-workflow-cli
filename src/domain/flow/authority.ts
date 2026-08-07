@@ -1449,7 +1449,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     authority: "cli",
     ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
-    attribution: "`aw next-number docs/plans`",
+    attribution: "aw next-number docs/plans --claim",
   },
   {
     id: "plan-new.phase-shaping",

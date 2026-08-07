@@ -16,8 +16,10 @@ explicitly acknowledged; a `continuous` batch is the narrow exception that inten
 its internal phases in one reviewed commit, and no batch may co-mingle with another.
 
 Concurrent flows never share a working tree: each edits in its own **isolation unit** — a worktree
-of the source on its own branch (`aw worktree ensure | list | release`), released at close. An edit
-outside it is blocked, and the block names the command that creates one.
+of the source on its own branch (`aw worktree ensure | list | release`). An edit outside it is
+blocked naming the command that creates one, and at close `aw worktree integrate` merges that
+branch into the source's declared work branch; a conflict is reported and routed to
+`aw fix-git --path`, never resolved alone.
 
 > **When the branch is verified, when a commit becomes available and what an approval covers is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Approving is the person's act and committing is a separate effect that comes back as the sources' real git state — which is also what makes "the checks passed" impossible to assert without having run them.
 
@@ -36,10 +38,6 @@ same gate before any pending commit.
 - **Findings**: **fix** them in the working tree and **re-run validation** (the gate does not replace the tests: it re-verifies after fixing), or **defer them justified** (→ the plan's `Open questions` + `BACKLOG`; in quick, `BACKLOG`); the non-obvious → `DECISION`. Gate integrity (see [`CHASSIS.md`](CHASSIS.md) § *Verification-first*): never weaken a check or lower a convention to pass.
 - **Artifact-first + verification-first**: seed `CHECKPOINT.Next = "review <batch/task>"`; Success
   criteria require the whole diff to pass before commits.
-
-## Location
-
-Same as the chassis: code-editing loops reference it as `../CODE-POLICIES.md` — the `w/loops/` tree is installed intact on every host (chassis § *Reference resolution*).
 
 ## Conditional modules
 

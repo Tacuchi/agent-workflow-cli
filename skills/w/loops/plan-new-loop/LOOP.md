@@ -32,7 +32,7 @@ PLAN
 ## Writes
 `docs/plans/PPP-plan-<slug>.md` (`generate`; **overwrites with confirmation** if it exists) — or **several sibling plans** when an accepted split applies (§ *Split gate (multi-plan)*). With UI, also the design revision it publishes under `docs/designs` (chassis § *docs/ boundary*). It never graduates/exports anything else to `docs/` — that is separate `export-*` work.
 
-> **Naming** follows [`PLAN-INPUT`](../../modules/PLAN-INPUT.md) § *Numbering*: `aw next-number docs/plans` mints `PPP` and the slug is short kebab-case from the Requirement. To locate plans, glob `docs/plans/PPP-plan-*.md`.
+> **Naming** follows [`PLAN-INPUT`](../../modules/PLAN-INPUT.md) § *Numbering*: `aw next-number docs/plans --claim plan-<slug>.md` CLAIMS `PPP` — two concurrent flows never get the same one. To locate plans, glob `docs/plans/PPP-plan-*.md`.
 
 > **Adoption (command mode 4):** an **externally-built plan** (host plan mode, hand-written, another agent) is materialized by the **command** in a single pass — this loop does not run: transcribe + normalize into the Delta 1 schema, `## Origin` = "adopted from <source>" + attribution; then `plan-refine` closes schema gaps (its coherence gate degrades for spec-less plans). See `../../modules/PLAN-INPUT.md` (the command's `input` module).
 

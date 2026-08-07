@@ -50,7 +50,7 @@ And **always** forbidden, even when the user asks for a commit: `--no-verify` (r
 
 ### Branch verification (before editing)
 
-The expected branch is **never assumed from the current branch** — the user may have switched it by hand. Verify against each source's declared work branch before any `Write/Edit`.
+The expected branch is **never assumed from the current branch** — the user may have switched it by hand. Verify against the flow's own line of work before any `Write/Edit`: its isolation unit's branch when the source has units (`aw worktree`), the source's declared work branch when it has none.
 
 **Primary mechanism**: `aw check-branch --source <alias>` (or `--file <path-of-the-imminent-edit>`; `--strict` returns exit 2 on mismatch — useful as a gate). It returns the per-source fields already computed: `alias`, `path`, `main_branch` (base), `expected_work_branch`, `current_branch`, `match` (`current == expected`), `dirty` (uncommitted changes). **Fallback** (loose repo without workspace/CLI): compute them with direct read-only git (`git branch --show-current` + `git status --porcelain`) plus the session's declared branch.
 
