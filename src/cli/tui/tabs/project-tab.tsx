@@ -739,13 +739,11 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         if (key.escape || key.return) setMode({ kind: "list" });
         return;
       }
-      if (mode.kind === "result") {
-        // ⏎/r re-runs (= resume on conflict) · esc back to the list.
-        if (key.escape) {
-          setMode({ kind: "list" });
-          void onReload?.();
-        } else if (key.return || input === "r") void runFlow(mode.action);
-      }
+      // `result` handles its own keys: FlowResultView owns the cursor, the
+      // horizontal window and the conflict detail, and calls back for the two
+      // consequences that are the tab's (re-run, and back+reload). Keeping a
+      // branch here too would give `r` and `esc` two handlers — Ink delivers
+      // input to every active hook.
     },
     { isActive },
   );
@@ -765,7 +763,18 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   }
 
   if (mode.kind === "result") {
-    return <FlowResultView action={mode.action} result={mode.result} />;
+    return (
+      <FlowResultView
+        action={mode.action}
+        result={mode.result}
+        isActive={isActive}
+        onRerun={() => void runFlow(mode.action)}
+        onBack={() => {
+          setMode({ kind: "list" });
+          void onReload?.();
+        }}
+      />
+    );
   }
 
   if (mode.kind === "launch-form") {

@@ -8,9 +8,17 @@ import type { CliContext } from "../../src/cli/types.js";
 
 const ENTER = "\r";
 const DOWN = "\x1B[B";
+const ESC = "\x1B";
 const tick = (ms = 80) => new Promise((r) => setTimeout(r, ms));
 
 const MARKERS = { start: "<!-- WORKFLOW-PROJECT-START -->", end: "<!-- WORKFLOW-PROJECT-END -->" };
+
+/** ink-testing-library exposes `columns` as a getter: redefine it, then resize. */
+function setCols(stdout: unknown, cols: number) {
+  const fake = stdout as { emit(event: string): boolean };
+  Object.defineProperty(fake, "columns", { value: cols, configurable: true });
+  fake.emit("resize");
+}
 
 function workspaceMd(): string {
   return [
@@ -220,7 +228,12 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
   });
 
   it("ejecuta 'Alinear con PROD' (sync) sobre la fuente y muestra el resultado", async () => {
-    const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx()} isActive />);
+    const { stdin, lastFrame, stdout } = render(<ProjectTab ctx={buildCtx()} isActive />);
+    await tick();
+    // `merge prod→work` es el ÚLTIMO paso del plan sync: con el ancho por
+    // defecto la cadena no cabe y queda fuera de la ventana horizontal. Un
+    // terminal ancho la muestra entera, que es lo que esta prueba afirma.
+    setCols(stdout, 200);
     await tick();
     stdin.write(ENTER); // open panel (action 0 = "Lanzar en local")
     await tick();
@@ -231,6 +244,50 @@ describe("ProjectTab — navegación de sources + panel lateral de acciones", ()
     const f = lastFrame() ?? "";
     expect(f).toContain("completed");
     expect(f).toContain("merge prod→work");
+  });
+
+  it("en el resultado ⏎ NO reejecuta, r sí y esc vuelve al listado recargando (spec 022 · 6)", async () => {
+    // Las tres consecuencias en una sola prueba porque el riesgo es la COLISIÓN:
+    // Ink entrega input a todos los hooks activos, así que una tecla con dos
+    // handlers dispararía git dos veces sin que nada más lo delate.
+    const logger = fakeLogger();
+    // El reload no es un prop: `esc` dispara el `loadData` interno de la pestaña,
+    // que se observa por la re-lectura real del workspace.
+    const ctx = buildCtx({ logger });
+    const fs = ctx.fs as unknown as { readText: (p: string) => Promise<string> };
+    const readText = fs.readText.bind(fs);
+    let reads = 0;
+    fs.readText = async (p: string) => {
+      reads += 1;
+      return readText(p);
+    };
+    const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER); // abre el panel
+    await tick();
+    stdin.write(DOWN); // → Alinear con PROD
+    await tick();
+    stdin.write(ENTER); // ejecuta
+    await tick();
+    const runs = () => logger.lines.filter((l) => l.msg.includes("git-flow sync")).length;
+    expect(runs()).toBe(1);
+    expect(lastFrame() ?? "").toMatch(/alpha\s+ok/); // el resultado está montado
+
+    stdin.write(ENTER); // ya no es alias de reejecución
+    await tick();
+    expect(runs()).toBe(1);
+
+    stdin.write("r"); // la única reejecución/reanudación
+    await tick();
+    expect(runs()).toBe(2);
+
+    const readsBeforeBack = reads;
+    stdin.write(ESC);
+    await tick();
+    const back = lastFrame() ?? "";
+    expect(back).toContain("SOURCES");
+    expect(back).toContain("all sources");
+    expect(reads).toBeGreaterThan(readsBeforeBack); // volver refresca
   });
 
   it("«Enviar a Desarrollo» despacha to-dev (no basta con que se llame así)", async () => {
