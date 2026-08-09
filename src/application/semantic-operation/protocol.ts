@@ -159,7 +159,7 @@ export function parseSemanticResponse(
     };
   }
 
-  const artifacts = checkArtifacts(envelope.artifacts, request);
+  const artifacts = parseSemanticArtifacts(envelope.artifacts, request);
   if (!artifacts.ok) return artifacts;
 
   return {
@@ -231,7 +231,18 @@ function checkHeader(
   return null;
 }
 
-function checkArtifacts(raw: unknown, request: SemanticRequest): SemanticParse<SemanticArtifact[]> {
+/**
+ * The candidate artifacts, checked against the request that asked for them.
+ *
+ * Exported because the flow engine receives artifacts on an answer that is NOT a
+ * full semantic envelope, and a second implementation of "is this destination
+ * legal, is it a duplicate, does it fit the limits" is how one caller ends up
+ * enforcing the allowlist and the other not.
+ */
+export function parseSemanticArtifacts(
+  raw: unknown,
+  request: SemanticRequest,
+): SemanticParse<SemanticArtifact[]> {
   if (!Array.isArray(raw) || raw.length === 0) {
     return { ok: false, failure: invalid("una respuesta 'proposed' debe traer artifacts") };
   }

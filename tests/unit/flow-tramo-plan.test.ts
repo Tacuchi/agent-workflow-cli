@@ -81,15 +81,24 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
 
   it("en refine la escritura va DESPUÉS del gate y de la confirmación", () => {
     // El registro tenía las dos escrituras por delante del gate, así que la
-    // persona habría confirmado un plan ya sobrescrito. La secuencia del
-    // documento dice `Guardar → edit in place (with confirmation)`.
-    expect(at(REFINE, "plan-refine.save-confirmation")).toBeGreaterThan(
+    // persona habría confirmado un plan ya sobrescrito. Hoy hay UNA sola
+    // escritura y su lugar es el mismo: después del gate, después de la propuesta
+    // y después de la aprobación. Reducir el original y extraer los hermanos
+    // dejó de ser una escritura — decide qué bytes se proponen — y por eso va
+    // antes: lo que se aprueba es el resultado de esa decisión, ya visible.
+    expect(at(REFINE, "plan-refine.save-proposal")).toBeGreaterThan(
       at(REFINE, "plan-refine.executability-gate"),
     );
-    for (const write of ["plan-refine.split-in-place", "plan-refine.normalize-on-write"]) {
-      expect(at(REFINE, write), write).toBeGreaterThan(at(REFINE, "plan-refine.save-confirmation"));
-      expect(effectsOf(rowOf(REFINE, write)), write).toContain("mutate_overwrite");
-    }
+    expect(at(REFINE, "plan-refine.split-in-place")).toBeLessThan(
+      at(REFINE, "plan-refine.save-proposal"),
+    );
+    expect(at(REFINE, "plan-refine.save-confirmation")).toBeGreaterThan(
+      at(REFINE, "plan-refine.save-proposal"),
+    );
+    expect(at(REFINE, "plan-refine.publication")).toBeGreaterThan(
+      at(REFINE, "plan-refine.save-confirmation"),
+    );
+    expect(effectsOf(rowOf(REFINE, "plan-refine.publication"))).toContain("mutate_overwrite");
   });
 
   it("un chequeo no corrido no puede habilitar un commit: la regla es posicional", () => {
@@ -482,11 +491,33 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(after.state.applied).toContain("plan-exec.commit-authorization");
     expect(after.state.applied).not.toContain("plan-exec.commit-execution");
 
-    // Y el commit, cuando llega, es un efecto con su propia invocación.
+    // El sello `done` pide su propia autorización, y eso es lo que el grant
+    // acotado cambió: antes bastaba con haber aprobado UN `mutate_overwrite` en
+    // cualquier paso anterior de la corrida —marcar tareas, mover el estado de una
+    // fase— para que este quedara cubierto de arrastre. Cada escritura se autoriza
+    // por lo que es.
     const stamp = await current();
-    const stamped = await answer(resultFor(stamp.resolved));
+    expect(stamp.resolved.kind).toBe("authorization");
+    await answer(
+      { input_digest: stamp.resolved.seal, choice: "Autorizar el efecto" },
+      effectApprovalDigest("plan-exec.plan-done", stamp.resolved.authorization?.planned ?? []),
+    );
+
+    // Y el commit, cuando llega, se autoriza por sí mismo antes de nombrarse: que
+    // la validación de la fase haya podido `execute` no compra crear commits.
+    const running = await current();
+    const stamped = await answer(resultFor(running.resolved));
     expect(stamped.boundary.transition).toBe("plan-exec.commit-execution");
-    expect(stamped.boundary.kind).toBe("execution");
-    expect(stamped.action?.invocation.args).toEqual(["sources", "--verbose"]);
+    expect(stamped.boundary.kind).toBe("authorization");
+    const commit = await current();
+    const authorized = await answer(
+      { input_digest: commit.resolved.seal, choice: "Autorizar el efecto" },
+      effectApprovalDigest(
+        "plan-exec.commit-execution",
+        commit.resolved.authorization?.planned ?? [],
+      ),
+    );
+    expect(authorized.boundary.kind).toBe("execution");
+    expect(authorized.action?.invocation.args).toEqual(["sources", "--verbose"]);
   });
 });

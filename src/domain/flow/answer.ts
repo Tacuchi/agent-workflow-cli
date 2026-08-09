@@ -16,6 +16,11 @@
  * and the person would never see the boundary they have to answer over.
  */
 
+import type {
+  SemanticArtifact,
+  SemanticRequest,
+} from "../../application/semantic-operation/protocol.js";
+import { parseSemanticArtifacts } from "../../application/semantic-operation/protocol.js";
 import { COMPLETENESS_VALUES, type Completeness } from "../capability/descriptor.js";
 import { type EffectClass, isEffectClass } from "../capability/effects.js";
 import {
@@ -27,7 +32,12 @@ import {
   type OperationOutput,
   type ValidationOutcome,
 } from "../capability/protocol.js";
-import type { DelegatedAction, DelegatedInvocation, FlowDecision } from "./authority.js";
+import {
+  type DelegatedAction,
+  type DelegatedInvocation,
+  type FlowDecision,
+  proposalContractOf,
+} from "./authority.js";
 import { type FlowBoundaryKind, type FlowChoice, STOP_LABEL, isFlowControl } from "./directive.js";
 
 /**
@@ -58,6 +68,14 @@ export interface FlowAnswer {
   choice: string | null;
   /** The execution result, at an `execution` boundary. */
   result: FlowExecutionResult | null;
+  /**
+   * The exact bytes to write, at an authoring boundary that proposes.
+   *
+   * Empty everywhere else, and that is enforced rather than assumed: a boundary
+   * that declares no proposal contract accepts no artifacts at all, so a row
+   * cannot start writing files by having somebody send some.
+   */
+  artifacts: SemanticArtifact[];
 }
 
 export type FlowAnswerParse =
@@ -77,6 +95,15 @@ export interface ParseAnswerInput {
   expectedApproval: string | null;
   /** The sealed action, at an `execution` boundary: what the result is about. */
   action?: DelegatedAction | null;
+  /**
+   * The request this boundary emitted, at an authoring boundary that proposes.
+   *
+   * Passed in rather than rebuilt because the allowed destinations and the limits
+   * the artifacts get checked against have to be the ones the sender was SHOWN:
+   * validating against a freshly derived request would let the two drift, and the
+   * write boundary is exactly the thing that must not.
+   */
+  request?: SemanticRequest | null;
 }
 
 export function parseFlowAnswer(input: ParseAnswerInput): FlowAnswerParse {
@@ -161,6 +188,7 @@ function checkSeal(
 }
 
 function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput): FlowAnswerParse {
+  const proposes = proposalContractOf(input.decision);
   const declared = new Set(input.decision.signals ?? []);
   const raw = body.signals;
   if (raw !== undefined && !isStringArray(raw)) {
@@ -171,19 +199,10 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
   if (decisions !== undefined && !isRecord(decisions)) {
     return { ok: false, failure: invalid("'decisions' tiene que ser un objeto") };
   }
-  // Neither an observation nor a decision: nothing the CLI can act on, and
-  // guessing which of the two was meant is exactly what it must not do.
-  if (signals.length === 0 && (decisions === undefined || Object.keys(decisions).length === 0)) {
-    return {
-      ok: false,
-      failure: {
-        code: "FLOW_ANSWER_AMBIGUOUS",
-        message: "la respuesta no declara ninguna señal ni ninguna decisión",
-        action:
-          "declarás las señales que observás en 'signals', o lo que el contrato pide en 'decisions'",
-      },
-    };
-  }
+  const substance = checkSubstance(body, { signals, decisions, proposes: proposes !== null });
+  if (substance !== null) return { ok: false, failure: substance };
+  const artifacts = proposes === null ? EMPTY : parseArtifacts(body.artifacts, input);
+  if (!Array.isArray(artifacts)) return { ok: false, failure: artifacts.failure };
   for (const signal of signals) {
     if (declared.has(signal)) continue;
     return {
@@ -206,8 +225,97 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       decisions: isRecord(decisions) ? decisions : {},
       choice: null,
       result: null,
+      artifacts,
     },
   };
+}
+
+const EMPTY: SemanticArtifact[] = [];
+
+/**
+ * Whether the answer says anything the CLI can act on — and the right thing.
+ *
+ * Three refusals, and each names a different way an answer can be empty for the
+ * boundary it is answering. An authoring boundary asked for BYTES, so signals and
+ * decisions do not substitute for them: advancing without the proposal would walk
+ * the run into a confirmation with nothing to preview and an approval with
+ * nothing to grant over. And a boundary that proposes nothing accepts no
+ * artifacts at all — bytes with no declared destination, no effect class and
+ * nobody to approve them are precisely the write this contract forbids.
+ */
+function checkSubstance(
+  body: Record<string, unknown>,
+  answered: { signals: readonly string[]; decisions: unknown; proposes: boolean },
+): CapabilityFailure | null {
+  const hasArtifacts = Array.isArray(body.artifacts) && body.artifacts.length > 0;
+  if (hasArtifacts && !answered.proposes) {
+    return {
+      code: "FLOW_ARTIFACTS_NOT_EXPECTED",
+      message: "esta frontera no propone ningún efecto local y no admite artefactos",
+      action: "contestá con lo que el contrato pide; los bytes se entregan donde el CLI los pide",
+    };
+  }
+  if (answered.proposes && !hasArtifacts) {
+    return {
+      code: "FLOW_ARTIFACTS_MISSING",
+      message: "esta frontera pide los bytes exactos y la respuesta no trae ninguno",
+      action:
+        "devolvé en 'artifacts' cada archivo con su 'path' y su 'content'; sin propuesta no hay nada que previsualizar ni que aprobar",
+    };
+  }
+  const decisions = answered.decisions;
+  const empty =
+    answered.signals.length === 0 &&
+    !hasArtifacts &&
+    (decisions === undefined || Object.keys(decisions as Record<string, unknown>).length === 0);
+  if (!empty) return null;
+  return {
+    code: "FLOW_ANSWER_AMBIGUOUS",
+    message: "la respuesta no declara ninguna señal ni ninguna decisión",
+    action:
+      "declarás las señales que observás en 'signals', o lo que el contrato pide en 'decisions'",
+  };
+}
+
+/**
+ * The proposed bytes, checked by the SAME rules the semantic protocol applies.
+ *
+ * Destination allowlist, duplicates and size limits all come from the request the
+ * boundary emitted, through `parseSemanticArtifacts` — reused rather than
+ * restated, because a second path check is how one entry point ends up enforcing
+ * the write boundary and the other not.
+ *
+ * What comes back is path and content and nothing else. Whether a destination
+ * already exists — and therefore whether writing it REPLACES something — is a
+ * fact about the workspace, so it is observed where the workspace is readable and
+ * never asserted by the sender: a preview that said "creates" because somebody
+ * typed so would be the one line of it a person most needs to trust.
+ */
+function parseArtifacts(
+  raw: unknown,
+  input: ParseAnswerInput,
+): SemanticArtifact[] | { failure: CapabilityFailure } {
+  const request = input.request ?? null;
+  if (request === null) {
+    return {
+      failure: {
+        code: "FLOW_ARTIFACTS_NOT_EXPECTED",
+        message: "la frontera propone efectos locales pero no emitió su contrato de destinos",
+        action: "volvé a correr 'aw flow advance' para recibir la frontera con su request vigente",
+      },
+    };
+  }
+  const parsed = parseSemanticArtifacts(raw, request);
+  if (!parsed.ok) {
+    return {
+      failure: {
+        code: parsed.failure.code,
+        message: parsed.failure.message,
+        action: parsed.failure.action,
+      },
+    };
+  }
+  return parsed.value;
 }
 
 function choiceAnswer(body: Record<string, unknown>, input: ParseAnswerInput): FlowAnswerParse {
@@ -240,6 +348,7 @@ function choiceAnswer(body: Record<string, unknown>, input: ParseAnswerInput): F
       decisions: {},
       choice,
       result: null,
+      artifacts: EMPTY,
     },
   };
 }
@@ -270,6 +379,7 @@ function approvalAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       decisions: {},
       choice,
       result: null,
+      artifacts: EMPTY,
     },
   };
   // The FLOW CONTROL needs no approval, and demanding one would be absurd: it
@@ -383,6 +493,7 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
       decisions: {},
       choice: null,
       result: { outcome: outcome as CapabilityOutcome, invocation, output, validations, effects },
+      artifacts: EMPTY,
     },
   };
 }

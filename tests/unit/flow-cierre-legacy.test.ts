@@ -15,6 +15,7 @@ import {
   type FlowDecision,
   effectsOf,
   journeyOfFlow,
+  proposalContractOf,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import { FLOW_BOUNDARY_KINDS } from "../../src/domain/flow/directive.js";
@@ -201,7 +202,9 @@ describe("la corrida real de SPEC llega al final, que antes era imposible", () =
   function resultFor(resolved: Resolved, stopped: FlowDecision): Record<string, unknown> {
     const action = resolved.action;
     if (action === null) throw new Error("una frontera de ejecución sin invocación");
-    const declared = effectsOf(stopped);
+    // Una publicación aplica lo que su propuesta sellada dice, no el techo que la
+    // fila declara: proponer un archivo nuevo no ejerce `mutate_overwrite`.
+    const declared = resolved.proposal?.effects ?? effectsOf(stopped);
     return {
       input_digest: resolved.seal,
       outcome: "completed",
@@ -227,6 +230,23 @@ describe("la corrida real de SPEC llega al final, que antes era imposible", () =
       };
     }
     if (resolved.kind === "semantic") {
+      // Una frontera de autoría pide BYTES: contestarle con una decisión sería
+      // avanzar hacia una confirmación sin nada que previsualizar.
+      const proposes = proposalContractOf(stopped);
+      if (proposes !== null) {
+        return {
+          body: {
+            input_digest: resolved.seal,
+            artifacts: [
+              {
+                path: `${proposes.destinations[0]}/001-spec-cierre-legacy.md`,
+                content: "---\nstatus: ready-for-plan\n---\n\n# Spec 001\n",
+              },
+            ],
+          },
+          approval: null,
+        };
+      }
       return {
         body: { input_digest: resolved.seal, signals: [], decisions: { paso: stopped.id } },
         approval: null,

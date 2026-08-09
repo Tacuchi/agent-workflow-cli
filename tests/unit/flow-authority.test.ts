@@ -95,6 +95,9 @@ describe("registro de autoridad — forma y unicidad", () => {
       "spec-refine.content-authoring",
       "spec-refine.functional-ambiguity",
       "spec-refine.design-reuse",
+      // Los bytes exactos los redacta el agente; el CLI los sella, los muestra y
+      // los escribe. Autoría y publicación quedan de lados distintos de la línea.
+      "spec-refine.save-proposal",
       "spec-refine.save-confirmation",
       // PLAN's, and the shape repeats: the agent recognizes, the person prefers,
       // the CLI decides when each is asked. Not one of them gained an `action`.
@@ -103,10 +106,15 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-new.batch-eligibility-signal",
       "plan-new.split-signal",
       "plan-new.split-choice",
+      "plan-new.save-proposal",
       "plan-new.save-confirmation",
       "plan-refine.journey-map",
       "plan-refine.batch-eligibility-signal",
       "plan-refine.split-signal",
+      // Reducir el original y extraer los hermanos DECIDE qué bytes se proponen:
+      // dejó de ser una escritura delegada después de la confirmación.
+      "plan-refine.split-in-place",
+      "plan-refine.save-proposal",
       "plan-refine.save-confirmation",
       "plan-exec.entry-gap-recognition",
       "plan-exec.normalization-consent",
@@ -363,7 +371,10 @@ describe("registro de autoridad — la migración cerró observable", () => {
         (decision) => decision.document === document && decision.ownership === "cli-owned",
       ).length;
     expect(counted("quick", QUICK_LOOP)).toBe(12);
-    expect(counted("spec-refine", "loops/spec-refine-loop/LOOP.md")).toBe(9);
+    // Diez desde que el guardado es una propuesta sellada: entra la fila que
+    // entrega los bytes y la que los publica, y sale la promoción del status —
+    // el sello viaja DENTRO de esos bytes, así que ya no es una escritura aparte.
+    expect(counted("spec-refine", "loops/spec-refine-loop/LOOP.md")).toBe(10);
     expect(counted("spec-refine", "modules/IDEATION-GATE.md")).toBe(2);
     // PLAN's three journeys, whole — 49 rows, of which 10 are new: the eligibility
     // observation and its isolation rule in each of the three, refine's own split
@@ -373,7 +384,11 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // retirable here.
     const planScopes = ["plan-new", "plan-refine", "plan-exec"];
     const plan = planScopes.flatMap((scope) => decisionsOfScope(scope));
-    expect(plan).toHaveLength(49);
+    // 49 + 4: cada uno de plan-new y plan-refine gana la fila que entrega los
+    // bytes y la que los publica. `plan-refine.normalize-on-write` se fue: la
+    // forma normalizada es una propiedad de los bytes propuestos, no una segunda
+    // escritura del mismo documento.
+    expect(plan).toHaveLength(52);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos

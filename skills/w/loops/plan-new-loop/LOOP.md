@@ -176,12 +176,11 @@ plan-new-loop(spec):
     - minimality: no solution/phase/task heavier than Final behavior requires
     - (UI) every screen/UI task pins an exact root against a declared baseline · that closure is handoff · nothing outside it was promoted
     whatever fails → comes back as a gap
-  if split accepted: work = N sibling plans
-    structured_choice(content: [Guardar planes, Preguntar algo más], flow: [Compactar, Cerrar])
-    Guardar planes → mint + write each sibling
-  else:
-    structured_choice(content: [Guardar plan, Preguntar algo más], flow: [Compactar, Cerrar])
-    Guardar → write docs/plans/PPP-plan-<slug>.md (confirmation if it exists)
+  hand the CLI the exact bytes of the plan — and of the siblings, if the split was accepted
+  the CLI seals them into ONE proposal and shows its preview: destination, weight, what it replaces
+    structured_choice(content: [Aprobar y guardar, Refinar], flow: [Compactar, Cerrar])
+    Aprobar y guardar → the CLI writes every file of the preview, together or not at all
+    Refinar          → nothing is written and the generation stays open
 finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close session + report
 ```
 

@@ -104,7 +104,7 @@ Investigation is **inline**: an activity **inside the run's current session**, n
 - **Recommendation:** exactly one option is *recommended*, it comes first, and it comes from research; the human ratifies or corrects it, never starts cold.
 - **Text fallback:** answer by label; `Aceptar recomendaciones` accepts all first options. Never require composite coordinates such as `1A, 2A, 3A`.
 
-> Canonical labels (`Continuar`, `Compactar`, `Cerrar`, `Aceptar recomendaciones`, `Guardar plan`, …) stay verbatim; other user-facing text follows [`SKILL.md`](../SKILL.md) § *Language policy*.
+> Canonical labels (`Continuar`, `Compactar`, `Cerrar`, `Aprobar y guardar`, `Refinar`, …) stay verbatim; other user-facing text follows [`SKILL.md`](../SKILL.md) § *Language policy*.
 
 ## Compact / resume
 

@@ -261,11 +261,16 @@ describe("Split contract — spec-new ↔ plan-new-loop ↔ plan-refine-loop", (
     expect(planRefine).toContain("keeps its number/path");
   });
 
-  it("both plan Sequences carry the split closing branch (Guardar planes)", async () => {
+  // El cierre de la rama split dejó de ser una pregunta propia: los hermanos
+  // viajan en la MISMA propuesta sellada que el plan, así que una sola vista
+  // previa los enumera y una sola aprobación los cubre. Lo que cada Sequence
+  // tiene que seguir diciendo es que la rama split escribe hermanos.
+  it("both plan Sequences close the split inside the one sealed proposal", async () => {
     for (const rel of ["loops/plan-new-loop/LOOP.md", "loops/plan-refine-loop/LOOP.md"]) {
       const text = await readSurface(rel);
       const seq = text.slice(text.indexOf("## Sequence"));
-      expect(seq, rel).toContain("Guardar planes");
+      expect(seq, rel).toContain("Aprobar y guardar");
+      expect(seq, rel).toMatch(/sibling/i);
     }
   });
 

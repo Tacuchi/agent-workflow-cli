@@ -27,9 +27,11 @@ import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
 import { canonicalJson, semanticDigest } from "../../application/semantic-operation/protocol.js";
 import { type EffectClass, isEffectClass } from "../capability/effects.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
+import type { LocalProposal } from "../proposal.js";
 import type { FlowDecision } from "./authority.js";
+import type { EffectGrant } from "./authorization.js";
 
-export const FLOW_RUN_STATE_VERSION = 5;
+export const FLOW_RUN_STATE_VERSION = 6;
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -200,8 +202,23 @@ export interface FlowRunState {
   observations: FlowObservation[];
   /** What this CLI really ran, in order — the run's material trace. */
   events: FlowRunEvent[];
-  /** Effect classes this run already has authorization for. */
-  authorizations: EffectClass[];
+  /**
+   * Approvals this run holds, each scoped to the exact seal it was given over.
+   *
+   * A list of effect CLASSES used to live here, and it was too wide by
+   * construction: approving `mutate_overwrite` once authorized every later
+   * transition of the run to overwrite. A grant names its seal, so it covers the
+   * boundary or the proposal it was given for and nothing that comes after.
+   */
+  authorizations: EffectGrant[];
+  /**
+   * The exact local change awaiting its single decision, or `null`.
+   *
+   * One at a time on purpose: the preview a person is shown and the bytes that
+   * get written have to be the same thing, and a queue of proposals would make
+   * "the one that was approved" a lookup instead of an identity.
+   */
+  proposal: LocalProposal | null;
   /** Effects across their three moments, so a partial effect is expressible. */
   effects: EffectLedger;
   attempts: FlowRunAttempt[];
@@ -235,6 +252,7 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
     observations: [],
     events: [],
     authorizations: [],
+    proposal: null,
     effects: { planned: [], approved: [], applied: [] },
     attempts: [],
   });
@@ -357,23 +375,41 @@ export function withAttempt(state: FlowRunState, attempt: FlowRunAttempt): FlowR
 }
 
 /**
- * Grant the run an authorization the person just gave.
+ * Grant the run an authorization the person just gave, over its exact seal.
  *
- * The classes land in BOTH `authorizations` — what the run may exercise from here
- * on — and `effects.approved` — the ledger moment. The two are the same split the
+ * The classes land in the ledger's `approved` moment too — the same split the
  * capability contract already makes between the request's authorizations and the
- * receipt's approved effects, and the directive enforces `approved ⊆ authorizations`.
+ * receipt's approved effects. What changed is the first half: the run no longer
+ * holds a bare class, it holds a grant that names what it was given over, so a
+ * later transition with a different seal is not covered by it.
+ *
+ * Re-granting the same seal REPLACES rather than accumulates: an approval given
+ * twice over the identical proposal is one approval, and a list that grew each
+ * time would make "how wide is this grant" depend on how many times somebody
+ * retried.
  */
-export function withApproval(state: FlowRunState, effects: readonly EffectClass[]): FlowRunState {
+export function withApproval(state: FlowRunState, grant: EffectGrant): FlowRunState {
   return sealRunState({
     ...withoutSeal(state),
-    authorizations: union(state.authorizations, effects),
+    authorizations: [...state.authorizations.filter((held) => held.digest !== grant.digest), grant],
     effects: {
-      planned: union(state.effects.planned, effects),
-      approved: union(state.effects.approved, effects),
+      planned: union(state.effects.planned, grant.classes),
+      approved: union(state.effects.approved, grant.classes),
       applied: [...state.effects.applied],
     },
   });
+}
+
+/**
+ * Seat the exact local change awaiting its decision, or clear it.
+ *
+ * Cleared after it is published — and that is not housekeeping: a proposal left
+ * standing after its bytes landed would be a preview of a change that is already
+ * on disk, and the next boundary that asks "is there something to approve?" would
+ * answer yes about the past.
+ */
+export function withProposal(state: FlowRunState, proposal: LocalProposal | null): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), proposal });
 }
 
 function union(current: readonly EffectClass[], added: readonly EffectClass[]): EffectClass[] {
@@ -495,6 +531,21 @@ function checkShape(parsed: Record<string, unknown>): CapabilityFailure | null {
   if (parsed.boundary !== null && typeof parsed.boundary !== "string") {
     return invalid("declara una frontera que no es un identificador");
   }
+  return checkRecordShape(parsed, invalid);
+}
+
+/**
+ * The half of the shape that is records rather than the cursor.
+ *
+ * Split from {@link checkShape} only so each half stays readable; the order is
+ * still the contract — every one of these is refused before the seal is judged,
+ * because a file whose fields cannot be trusted must not be graded on whether its
+ * digest matches.
+ */
+function checkRecordShape(
+  parsed: Record<string, unknown>,
+  invalid: (why: string) => CapabilityFailure,
+): CapabilityFailure | null {
   if (!isPendingAction(parsed.pending_action)) {
     return invalid("declara una acción pendiente sin transición o sin sello");
   }
@@ -504,8 +555,11 @@ function checkShape(parsed: Record<string, unknown>): CapabilityFailure | null {
   if (!isEventArray(parsed.events)) {
     return invalid("trae una traza material con un evento incompleto");
   }
-  if (!isEffectClassArray(parsed.authorizations)) {
-    return invalid("declara autorizaciones que no son clases de efecto");
+  if (!isGrantArray(parsed.authorizations)) {
+    return invalid("declara una autorización sin el sello sobre el que fue otorgada");
+  }
+  if (!isProposal(parsed.proposal)) {
+    return invalid("declara una propuesta local sin sus bytes, sus destinos o su sello");
   }
   if (!isEffectLedger(parsed.effects)) return invalid("no trae el registro de efectos completo");
   if (!isAttemptArray(parsed.attempts)) return invalid("trae un historial de intentos inválido");
@@ -527,6 +581,64 @@ function isStringArray(value: unknown): value is string[] {
 
 function isEffectClassArray(value: unknown): value is EffectClass[] {
   return Array.isArray(value) && value.every(isEffectClass);
+}
+
+/**
+ * A grant is only trustworthy if it says what it was given OVER.
+ *
+ * The seal is the field that makes it scoped, so a persisted grant without one is
+ * exactly the old class-only authorization wearing a new name — refused rather
+ * than read as covering everything.
+ */
+function isGrantArray(value: unknown): value is EffectGrant[] {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry.digest === "string" &&
+      entry.digest.length > 0 &&
+      isStringArray(entry.destinations) &&
+      isEffectClassArray(entry.classes),
+  );
+}
+
+function isProposal(value: unknown): value is LocalProposal | null {
+  if (value === null) return true;
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.operation === "string" &&
+    typeof value.digest === "string" &&
+    isProposalArtifacts(value.artifacts) &&
+    isProposalBases(value.bases) &&
+    isProposalScope(value.scope) &&
+    isEffectClassArray(value.effects) &&
+    isEffectClassArray(value.requires_approval)
+  );
+}
+
+/** A proposal with no artifacts proposes nothing: there would be nothing to seal. */
+function isProposalArtifacts(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry.path === "string" &&
+      typeof entry.content === "string" &&
+      typeof entry.overwrite === "boolean",
+  );
+}
+
+function isProposalBases(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) && typeof entry.path === "string" && typeof entry.digest === "string",
+  );
+}
+
+function isProposalScope(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return typeof value.sensitive_sources === "boolean" && typeof value.scope_expanded === "boolean";
 }
 
 function isEffectLedger(value: unknown): value is EffectLedger {

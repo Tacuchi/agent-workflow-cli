@@ -25,6 +25,7 @@
  * registry — not this file — is where a new transition is added.
  */
 
+import type { EffectClass } from "../../domain/capability/effects.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
 import {
   DOCS_BOUNDARY,
@@ -33,13 +34,18 @@ import {
   actionOf,
   alternativesOf,
   effectsOf,
+  internalActionOf,
+  proposalContractOf,
+  publishApprovalOf,
 } from "../../domain/flow/authority.js";
 import {
+  type SealedSubject,
   type TransitionAuthorization,
   authorizeTransition,
   effectApprovalDigest,
 } from "../../domain/flow/authorization.js";
 import {
+  type DirectiveProposal,
   type FlowBoundary,
   type FlowBoundaryKind,
   type FlowDirective,
@@ -151,7 +157,9 @@ function walk(
     // often as it may. Both pass over the step and both say why — the trace has
     // to distinguish "never happened" from "was given up on".
     const skipped =
-      skipReason(decision, journey, state.observations) ?? exhaustionSkip(state, decision);
+      skipReason(decision, journey, state.observations) ??
+      nothingToPublish(state, decision) ??
+      exhaustionSkip(state, decision);
     if (skipped !== null) {
       state = skipTransition(state, decision.id);
       applied.push(skippedStepOf(decision, skipped));
@@ -159,7 +167,12 @@ function walk(
     }
     if (decision.authority !== "cli") break;
     if (!owned(decision)) break;
-    if (authorizeTransition(decision, state.authorizations).missing.length > 0) break;
+    if (
+      authorizeTransition(decision, state.authorizations, subjectOf(state, decision)).missing
+        .length > 0
+    ) {
+      break;
+    }
     if (actionOf(decision) !== null) break;
     state = applyTransition(state, decision.id, effectsOf(decision));
     applied.push(stepOf(decision));
@@ -208,6 +221,8 @@ export interface ResolvedBoundary {
   request: SemanticRequest | null;
   /** The invocation to run, at an `execution` boundary. */
   action: DelegatedAction | null;
+  /** The sealed local change this boundary decides or publishes, when there is one. */
+  proposal: DirectiveProposal | null;
   choices: FlowDirective["choices"];
   pending: string[];
   /** Seal of the boundary an answer has to quote back. */
@@ -329,6 +344,21 @@ function owned(decision: FlowDecision): boolean {
 }
 
 /**
+ * A publication with nothing to publish is passed over, never asked about.
+ *
+ * This is what makes `Refinar` cost nothing. Declining clears the proposal, and a
+ * publish row that then stopped would ask the person to authorize an overwrite
+ * for bytes they just declined — the exact second question this contract removes,
+ * reappearing on the path where it makes least sense. Skipping it says out loud
+ * that nothing was written, which a silent advance would not.
+ */
+function nothingToPublish(state: FlowRunState, decision: FlowDecision): string | null {
+  if (internalActionOf(decision)?.operation !== "proposal.publish") return null;
+  if (state.proposal !== null) return null;
+  return "no quedó ninguna propuesta aprobada: no se escribió nada";
+}
+
+/**
  * Why an exhausted boundary is passed over — or `null` when it must not be.
  *
  * Degrading means what the chassis says it means: the gap stops being re-fired,
@@ -347,7 +377,12 @@ function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | n
   if (!exhausted(state, decision)) return null;
   if (!owned(decision)) return null;
   if (actionOf(decision) !== null) return null;
-  if (authorizeTransition(decision, state.authorizations).missing.length > 0) return null;
+  if (
+    authorizeTransition(decision, state.authorizations, subjectOf(state, decision)).missing.length >
+    0
+  ) {
+    return null;
+  }
   return `agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: ${DEGRADE_ACTION}`;
 }
 
@@ -370,6 +405,7 @@ export function resolveBoundary(
       authorization: null,
       request: null,
       action: null,
+      proposal: null,
       choices: [],
       pending,
       seal: boundarySeal(state, null),
@@ -377,6 +413,11 @@ export function resolveBoundary(
     };
   }
   const emitted = emittedAction(state, stopped);
+  // The standing proposal belongs to the boundary that DECIDES it and to the one
+  // that PUBLISHES it, and to no other: a row unrelated to the proposal must not
+  // inherit its scope into the authorization verdict, which is the whole point of
+  // sealing the grant.
+  const subject = subjectOf(state, stopped);
   // Computed for `cli` rows only, which is where every row that really writes or
   // runs lives today (13 of them, all `cli`). The day a row with authority `agent`
   // or `human` declares a non-self-authorizable effect, this condition is the
@@ -384,7 +425,9 @@ export function resolveBoundary(
   // before the agent has produced what gets written is not obviously right, so
   // whichever phase introduces such a row decides it instead of inheriting it.
   const authorization =
-    stopped.authority === "cli" ? authorizeTransition(stopped, state.authorizations) : null;
+    stopped.authority === "cli"
+      ? authorizeTransition(stopped, state.authorizations, subject)
+      : null;
   // A cause that blocks outranks all of it: the boundary that says "nothing can
   // continue and here is why" is never worth degrading into a question nobody can
   // answer.
@@ -397,10 +440,49 @@ export function resolveBoundary(
     authorization,
     request: kind === "semantic" ? boundaryRequest(stopped, state) : null,
     action: kind === "execution" ? emitted.action : null,
+    proposal: subject === null ? null : previewOfState(state),
     choices: choicesFor(kind, stopped, authorization),
     pending,
     seal: boundarySeal(state, stopped),
     error: blocked,
+  };
+}
+
+/**
+ * The proposal this transition is about, or `null` when it is about none.
+ *
+ * Two rows qualify and they are the two halves of one decision: the human row
+ * that shows the preview and grants, and the `cli` row that writes it. Anything
+ * else standing while a proposal is seated gets `null`, so an unrelated step
+ * cannot borrow the proposal's scope — or its grant.
+ */
+function subjectOf(state: FlowRunState, stopped: FlowDecision): SealedSubject | null {
+  const proposal = state.proposal;
+  if (proposal === null) return null;
+  const decides = publishApprovalOf(stopped) !== null;
+  const publishes = internalActionOf(stopped)?.operation === "proposal.publish";
+  if (!decides && !publishes) return null;
+  return { digest: proposal.digest, scope: proposal.scope, effects: proposal.effects };
+}
+
+/** What a transition really exercises: its sealed proposal's effects, or its own. */
+export function effectsOfTransition(
+  state: FlowRunState,
+  decision: FlowDecision,
+): readonly EffectClass[] {
+  return subjectOf(state, decision)?.effects ?? effectsOf(decision);
+}
+
+/** The preview the boundary carries: destinations and effects, never the bytes. */
+function previewOfState(state: FlowRunState): DirectiveProposal | null {
+  const proposal = state.proposal;
+  if (proposal === null) return null;
+  return {
+    digest: proposal.digest,
+    preview: proposal.preview,
+    effects: proposal.effects,
+    requires_approval: proposal.requires_approval,
+    scope: proposal.scope,
   };
 }
 
@@ -501,7 +583,8 @@ export function directiveFor(
     request: resolved.request,
     action: resolved.action,
     choices: resolved.choices,
-    authorizations: state.authorizations,
+    proposal: resolved.proposal,
+    authorizations: resolved.authorization?.covered ?? [],
     // The cause of a block travels with the boundary that declares it: a
     // `blocked` directive without its error is refused at construction.
     error: resolved.error,
@@ -523,22 +606,42 @@ export function directiveFor(
  *
  * It reuses the existing `SemanticRequest` whole — contract, staleness seal,
  * allowed destinations, limits and a visible `read_set` so the cost is auditable
- * — instead of inventing a second envelope. A flow boundary asks for a judgment,
- * not for files, which is why it declares no writable destination at all.
+ * — instead of inventing a second envelope. A flow boundary normally asks for a
+ * judgment, not for files, and then it declares no writable destination at all.
+ *
+ * An AUTHORING row is the exception, and its destinations are not a courtesy:
+ * they are the write boundary, enforced by the protocol's own path check, so a
+ * proposal that reaches outside the folders the row declared never gets sealed —
+ * let alone approved.
  */
 export function boundaryRequest(decision: FlowDecision, state: FlowRunState): SemanticRequest {
   const vocabulary = decision.signals ?? [];
+  const proposes = proposalContractOf(decision);
   const taxonomy =
     vocabulary.length === 0
       ? "Esta frontera no admite señales: contestá en 'decisions' lo que el contrato pide."
       : `Declarás en 'signals' solo las que observás, de este vocabulario cerrado: ${vocabulary.join(", ")}. Una señal fuera de él no avanza el recorrido. El umbral sobre las señales lo aplica el CLI, no vos.`;
+  // What the authoring row asks for, said once: the exact bytes. Everything the
+  // handshake needs afterwards — el sello, la vista previa, el grant, la escritura
+  // atómica y el índice — lo deriva el CLI, y decirlo acá es lo que evita que el
+  // host se ponga a construir digests o referencias por su cuenta.
+  const authoring =
+    proposes === null
+      ? ""
+      : ` Devolvé en 'artifacts' los bytes exactos que hay que escribir, cada uno con su 'path' dentro de ${proposes.destinations.join(", ")}. El CLI sella la propuesta, la muestra como vista previa y la escribe entera o no la escribe: vos no armás digests, envelopes ni referencias.`;
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera. ${taxonomy} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera. ${taxonomy}${authoring} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
-    allowedDestinations: [],
-    limits: { max_artifacts: 0, max_artifact_bytes: 0 },
+    allowedDestinations: proposes === null ? [] : [...proposes.destinations],
+    limits:
+      proposes === null
+        ? { max_artifacts: 0, max_artifact_bytes: 0 }
+        : {
+            max_artifacts: proposes.limits.maxArtifacts,
+            max_artifact_bytes: proposes.limits.maxArtifactBytes,
+          },
     readSet: [decision.document],
     readSetBytes: 0,
   });

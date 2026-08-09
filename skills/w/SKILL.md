@@ -195,7 +195,7 @@ One language per plane — never mix them:
 | Doctrine (this bundle: chassis, loops, commands, roles, exports, harness) | **English** |
 | **Section headings** of artifacts and docs (`## Requirement`, `## Completed`, …) | **English** (parse contract) |
 | Everything **user-facing**: structured-choice questions, reports, dashboards, the **content** the AI writes into artifacts and `docs/` deliverables, commit messages | **the user's language** (this product: Spanish) |
-| Literal option labels (`Continuar`, `Compactar`, `Cerrar`, `Aceptar recomendaciones`, `Guardar plan`, …) | canonical product strings — use them **verbatim** |
+| Literal option labels (`Continuar`, `Compactar`, `Cerrar`, `Aceptar recomendaciones`, `Aprobar y guardar`, `Refinar`, …) | canonical product strings — use them **verbatim** |
 | Domain terms (class/route/table names, e.g. the QTC fleet) | the domain's ubiquitous language (Spanish) — never translated |
 
 ### The 6 hard invariants

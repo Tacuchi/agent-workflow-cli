@@ -26,13 +26,15 @@
 
 import type { EffectClass } from "../../domain/capability/effects.js";
 import type { InternalActionPlan } from "../../domain/flow/authority.js";
+import type { LocalProposal } from "../../domain/proposal.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
 import { runArtifactsCommand } from "../artifacts-service.js";
+import { applyLocalProposal } from "../local-proposal.js";
 import { parseMdSectionBilingual } from "../markdown.js";
-import type { PathsService } from "../paths-service.js";
+import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { runSessionClose } from "../session-close-service.js";
@@ -42,6 +44,15 @@ import { runStatusCommand } from "../status-service.js";
 export interface InternalActionRun {
   session: string;
   code: string;
+  /**
+   * The sealed local change the run is holding, when it has one.
+   *
+   * It travels with the coordinates rather than being looked up, for the same
+   * reason `dump` travels in the declaration: the executor must publish the exact
+   * proposal the approval named, and re-reading it from anywhere else would open
+   * the window where what was approved and what gets written are two things.
+   */
+  proposal: LocalProposal | null;
 }
 
 export interface InternalActionOutcome {
@@ -84,7 +95,62 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
         return artifacts(deps, run, plan.dump ?? null);
       case "session.close":
         return close(deps, run);
+      case "proposal.publish":
+        return publish(deps, run);
     }
+  };
+}
+
+/**
+ * Write the run's approved proposal — all of it, or none of it.
+ *
+ * It goes through the SAME `applyLocalProposal` the capability's `apply` stage
+ * uses, so the approval seal, the compare-and-swap and the all-or-nothing
+ * publication are one implementation and not two that could disagree about when a
+ * write is legitimate. The approval it hands over is the proposal's own seal:
+ * reaching this row at all means `authorizeTransition` found a grant given over
+ * exactly that seal, and a grant over anything else never gets here.
+ */
+async function publish(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
+  const proposal = run.proposal;
+  if (proposal === null) {
+    return refusal(
+      "proposal.publish",
+      "la corrida no tiene ninguna propuesta sellada que publicar",
+      canonicalJson({ proposal: null }),
+    );
+  }
+  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  const applied = await applyLocalProposal(deps.fs, deps.paths, {
+    root,
+    proposal,
+    approval: { digest: proposal.digest, granted: proposal.requires_approval },
+    selfAuthorized: proposal.effects.filter(
+      (effect) => !proposal.requires_approval.includes(effect),
+    ),
+  });
+  if (!applied.ok) {
+    return refusal(
+      "proposal.publish",
+      `${applied.failure.message} — ${applied.failure.action}`,
+      canonicalJson({ failure: applied.failure, applied: applied.applied }),
+    );
+  }
+  const result = applied.result;
+  const destinations = proposal.artifacts.map((a) => a.path);
+  return {
+    ok: true,
+    summary: result.already_applied
+      ? `la propuesta ya estaba aplicada: ${destinations.join(", ")} sin cambios`
+      : `publicado: ${result.written.join(", ")}`,
+    output: canonicalJson({ ...result, digest: proposal.digest, destinations }),
+    // Only what really landed. A re-entry that found the bytes already there
+    // credits the same classes — the effect IS applied — and the summary is what
+    // distinguishes "now" from "already", which is the honest split.
+    effects: [...result.applied],
   };
 }
 

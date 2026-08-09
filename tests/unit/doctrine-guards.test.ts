@@ -325,7 +325,10 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
     // single-plan branch still survives the split round — it is the option that
     // declines, and the registry is where that is now checkable.
     expect(labelsOf("plan-new.split-choice")).toEqual(["Dividir en varios planes", "Un solo plan"]);
-    expect(labelsOf("plan-new.save-confirmation")).toContain("Guardar plan");
+    // The save is now ONE decision over a sealed proposal, so both branches —
+    // one plan or N siblings — end at the same pair of labels. Two labels for
+    // what is one write was the second question this phase removed.
+    expect(labelsOf("plan-new.save-confirmation")).toEqual(["Aprobar y guardar", "Refinar"]);
   });
 
   it("plan-refine-loop adds only the refine semantics (original keeps path; [x] anchored)", async () => {
@@ -333,9 +336,10 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
     expect(planRefine).toContain("## Split gate — refine semantics");
     expect(planRefine).toContain("keeps its number/path");
     expect(planRefine).toContain("Completed tasks (`- [x]`) never move to a sibling");
-    expect(labelsOf("plan-refine.save-confirmation")).toContain("Guardar plan refinado");
-    // And the split branch is a condition on the write, not a second question.
-    expect(labelsOf("plan-refine.save-confirmation")[0]).toBe("Guardar plan refinado");
+    // And the split branch is a condition on the CONTENT, not a second question:
+    // the extracted siblings travel in the same proposal as the reduced original,
+    // so one preview and one approval cover the whole write.
+    expect(labelsOf("plan-refine.save-confirmation")).toEqual(["Aprobar y guardar", "Refinar"]);
   });
 
   it("the chassis stays clean — the split gates never migrate to the shared engine", async () => {

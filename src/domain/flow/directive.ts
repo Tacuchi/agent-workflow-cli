@@ -34,6 +34,7 @@ import type {
   Degradation,
   EffectLedger,
 } from "../capability/protocol.js";
+import type { PreviewEntry, ProposalScope } from "../proposal.js";
 import {
   type DelegatedAction,
   type FlowAuthority,
@@ -192,8 +193,25 @@ export interface FlowDirective {
   action: DelegatedAction | null;
   /** Non-empty exactly at a human or authorization boundary. */
   choices: FlowChoice[];
+  /**
+   * Present exactly at a boundary that decides a sealed local proposal: what
+   * lands where, how much it weighs and what it replaces.
+   *
+   * The bytes are NOT here. Whoever authored them already has them, and copying
+   * them into the directive would make the preview a second copy of the content
+   * that can drift from the sealed one. What the engine adds is the part nobody
+   * else can compute: the seal, the destinations and the effects.
+   */
+  proposal: DirectiveProposal | null;
   effects: EffectLedger;
-  /** Effect classes this run is allowed to exercise. */
+  /**
+   * Effect classes covered AT THE BOUNDARY IN FORCE — never a run-wide permit.
+   *
+   * It used to be the run's accumulated classes, which is exactly the leak the
+   * scoped grant closes: approving one overwrite left the list saying the run
+   * could overwrite anything. A grant is given over a seal, so what a directive
+   * can honestly report is what the boundary it stands on is covered for.
+   */
   authorizations: EffectClass[];
   degradations: Degradation[];
   error: CapabilityFailure | null;
@@ -221,6 +239,7 @@ export const FLOW_DIRECTIVE_KEYS = [
   "request",
   "action",
   "choices",
+  "proposal",
   "effects",
   "authorizations",
   "degradations",
@@ -244,6 +263,24 @@ export const FLOW_DIRECTIVE_REUSED_KEYS: Readonly<Record<string, string>> = {
     "las clases de efecto autorizadas del request de capacidad, con el mismo nombre y tipo",
 };
 
+/**
+ * The sealed local change a boundary is deciding.
+ *
+ * `digest` is what makes an identical retry free: the same proposal produces the
+ * same seal, the grant already given over it still matches, and nobody is asked
+ * twice. Anything material that changes changes the seal, and the question comes
+ * back with a new preview.
+ */
+export interface DirectiveProposal {
+  digest: string;
+  preview: PreviewEntry[];
+  /** What publishing it exercises. */
+  effects: EffectClass[];
+  /** Of those, the ones the person has to approve for it to happen at all. */
+  requires_approval: EffectClass[];
+  scope: ProposalScope;
+}
+
 export interface BuildDirectiveInput {
   flow: WorklineFlow;
   session: string;
@@ -255,6 +292,7 @@ export interface BuildDirectiveInput {
   request?: SemanticRequest | null;
   action?: DelegatedAction | null;
   choices?: readonly FlowChoice[];
+  proposal?: DirectiveProposal | null;
   effects?: Partial<EffectLedger>;
   authorizations?: readonly EffectClass[];
   degradations?: readonly Degradation[];
@@ -280,6 +318,7 @@ export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
     request: input.request ?? null,
     action: input.action ?? null,
     choices: [...(input.choices ?? [])],
+    proposal: input.proposal ?? null,
     effects: {
       planned: [...(input.effects?.planned ?? [])],
       approved: [...(input.effects?.approved ?? [])],
@@ -498,15 +537,14 @@ function checkEffectLedger(directive: FlowDirective): CapabilityFailure | null {
       );
     }
   }
-  const granted = new Set(directive.authorizations);
-  for (const effect of directive.effects.approved) {
-    if (granted.has(effect)) continue;
-    return reject(
-      "FLOW_DIRECTIVE_EFFECT_UNAUTHORIZED",
-      `el efecto '${effect}' figura aprobado y ninguna autorización de la corrida lo cubre`,
-      "pedí la autorización en una frontera humana antes de aprobar el efecto",
-    );
-  }
+  // `approved ⊆ authorizations` used to be checked here too, and it stopped being
+  // checkable when the permit stopped being run-wide: `authorizations` now reports
+  // what the BOUNDARY IN FORCE is covered for, so a directive standing on a later
+  // step legitimately says nothing about the grant given for an earlier proposal —
+  // and comparing the accumulated ledger against it would refuse every honest
+  // directive. The invariant did not disappear: `withApproval` writes the grant and
+  // the `approved` moment from the same object, so they cannot diverge at the only
+  // place either of them is produced.
   return null;
 }
 

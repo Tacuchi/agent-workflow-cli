@@ -25,7 +25,11 @@ import {
   findOperation,
 } from "../../domain/capability/descriptor.js";
 import { authorizeEffects } from "../../domain/capability/effects.js";
-import type { EffectAuthorizationResult, EffectPolicy } from "../../domain/capability/effects.js";
+import type {
+  EffectAuthorizationResult,
+  EffectClass,
+  EffectPolicy,
+} from "../../domain/capability/effects.js";
 import {
   type CapabilityFailure,
   type CapabilityInputValue,
@@ -42,20 +46,16 @@ import {
   newInvocationId,
   receiptPersistence,
 } from "../../domain/capability/protocol.js";
+import type { ProposalBase } from "../../domain/proposal.js";
 import { RETIRED_SKILL_IDENTITIES, classifyCapabilityBinding } from "../../domain/skills.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import { applyLocalProposal, reconcileAfterFailure } from "../local-proposal.js";
+import type { ProposalApproval } from "../local-proposal.js";
 import type { PathsService } from "../paths-service.js";
 import type { PublishableArtifact } from "../semantic-operation/publish.js";
 import { resolveSkills } from "../skills-resolver-service.js";
-import {
-  type DurableEffectPlan,
-  type EffectApproval,
-  type EffectBase,
-  applyDurableEffect,
-  prepareDurableEffect,
-  reconcileAfterFailure,
-} from "./durable-effect.js";
+import { type DurableEffectPlan, prepareDurableEffect } from "./durable-effect.js";
 import { buildCapabilityInventory } from "./installed-inventory.js";
 import {
   type CapabilityResolution,
@@ -95,7 +95,7 @@ export type HandlerResult =
       kind: "durable";
       artifacts: PublishableArtifact[];
       output: OperationOutput;
-      base?: EffectBase | null;
+      base?: ProposalBase | null;
     };
 
 export interface CapabilityHandler {
@@ -158,7 +158,7 @@ export interface DispatchInput {
   answer?: string | null;
   /** `apply` only. */
   plan?: DurableEffectPlan | null;
-  approval?: EffectApproval | null;
+  approval?: ProposalApproval | null;
   /** `apply`/`validate` only: the request the plan belongs to. */
   request?: CapabilityRequest | null;
   /** `continue` only: the pin the previous attempt was resolved under. */
@@ -295,7 +295,7 @@ async function attemptStage(
     {
       kind: "needs_input",
       gaps: [
-        `aprobación visible para: ${prepared.plan.requires_approval.join(", ") || "publicar los artefactos propuestos"}`,
+        `aprobación visible para: ${prepared.plan.proposal.requires_approval.join(", ") || "publicar los artefactos propuestos"}`,
       ],
     },
     { plan: prepared.plan, output: result.output, authorization },
@@ -337,9 +337,9 @@ async function applyStage(
     ctx.effectPolicy,
   );
 
-  const applied = await applyDurableEffect(ctx.fs, ctx.paths, {
+  const applied = await applyLocalProposal(ctx.fs, ctx.paths, {
     root: ctx.workspace,
-    plan: input.plan,
+    proposal: input.plan.proposal,
     approval: input.approval,
     selfAuthorized: authorization.selfAuthorized,
   });
@@ -348,7 +348,10 @@ async function applyStage(
     // reconciliation — never a shrug that reads as "nothing happened".
     const reconciliation = reconcileAfterFailure(
       "failed",
-      applied.applied.map((cls) => ({ class: cls, what: `efecto '${cls}' ya aplicado` })),
+      applied.applied.map((cls: EffectClass) => ({
+        class: cls,
+        what: `efecto '${cls}' ya aplicado`,
+      })),
     );
     return receiptOf(
       input.request,

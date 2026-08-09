@@ -392,18 +392,12 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
       },
       "FLOW_DIRECTIVE_EFFECT_UNPLANNED",
     ],
-    [
-      "un efecto aprobado que ninguna autorización cubre",
-      {
-        ...BASE,
-        boundary: boundary(),
-        outcome: "needs_input",
-        request: request(),
-        effects: { planned: ["network_external"], approved: ["network_external"] },
-        authorizations: [],
-      },
-      "FLOW_DIRECTIVE_EFFECT_UNAUTHORIZED",
-    ],
+    // `approved ⊆ authorizations` ya no es una combinación mentirosa, porque
+    // `authorizations` dejó de ser un permiso de corrida: reporta lo que cubre LA
+    // FRONTERA VIGENTE. Una directiva parada en un paso posterior no dice nada del
+    // grant que se dio para una propuesta anterior, y compararlos rechazaría
+    // directivas honestas. El invariante vive donde se produce: `withApproval`
+    // escribe el grant y el momento `approved` desde el mismo objeto.
     [
       "una frontera semántica sobre una transición sin propiedad declarada",
       {

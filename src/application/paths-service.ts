@@ -155,7 +155,22 @@ export async function resolveWorkspaceRoot(
   env: EnvPort,
   paths: PathsService,
 ): Promise<string> {
-  const start = env.cwd();
+  return resolveWorkspaceRootFrom(fs, paths, env.cwd());
+}
+
+/**
+ * The same walk, for a caller that holds no `EnvPort`.
+ *
+ * It starts from the paths service's own working directory, which is the value
+ * `env.cwd()` was used to build it with — so the two entry points cannot resolve
+ * to different roots, which is the only reason a second one is safe to have.
+ */
+export async function resolveWorkspaceRootFrom(
+  fs: FileSystemPort,
+  paths: PathsService,
+  from: string = paths.workspaceDir(),
+): Promise<string> {
+  const start = from;
   const wfMarker = `.${paths.namespace}`;
   let dir = start;
   while (true) {

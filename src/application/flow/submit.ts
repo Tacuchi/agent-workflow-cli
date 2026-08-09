@@ -21,14 +21,18 @@
  * `renderHuman`, and a boundary nobody can see is a boundary that did not happen.
  */
 
+import { join } from "node:path";
+import { type EffectClass, authorizeEffects } from "../../domain/capability/effects.js";
 import { AttemptLedger } from "../../domain/capability/protocol.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
 import { type FlowAnswer, claimedSeal, parseFlowAnswer } from "../../domain/flow/answer.js";
 import {
   type FlowDecision,
   actionOf,
-  effectsOf,
+  internalActionOf,
   journeyOfFlow,
+  proposalContractOf,
+  publishApprovalOf,
 } from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
 import {
@@ -47,9 +51,13 @@ import {
   withAttempt,
   withBoundary,
   withObservation,
+  withProposal,
 } from "../../domain/flow/run-state.js";
+import { destinationsOf, sealProposal } from "../../domain/proposal.js";
+import { baseDigest } from "../../domain/proposal.js";
+import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import type { PathsService } from "../paths-service.js";
+import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import {
@@ -57,6 +65,7 @@ import {
   actionDigest,
   advanceFlowRun,
   directiveFor,
+  effectsOfTransition,
   resolveBoundary,
 } from "./advance.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
@@ -93,6 +102,11 @@ export async function submitFlow(
   if (resolution.outcome !== "resolved") return { ok: false, session: resolution };
 
   const location = locateRun(paths, resolution.session.folder);
+  // Read the destinations BEFORE taking the lock, so the decision below stays
+  // pure. What this observation buys is the honest half of the preview — whether
+  // a write creates or replaces, and what it would replace — and the race it
+  // leaves open is exactly the one the compare-and-swap closes at publish time.
+  const snapshot = await observeDestinations(fs, paths, input.raw);
   const applied = await applyUnderLock<SubmitOutcome>(fs, location, (current) => {
     if (current === null) {
       return {
@@ -104,7 +118,7 @@ export async function submitFlow(
         },
       };
     }
-    return decide(current, input);
+    return decide(current, input, snapshot);
   });
 
   if (!applied.ok) return { ok: false, failure: applied.failure };
@@ -151,7 +165,66 @@ interface SubmitOutcome {
  */
 type SubmitDecision = FlowRunMutation<SubmitOutcome>;
 
-function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
+/** What each candidate destination looked like just before the answer was judged. */
+type DestinationSnapshot = ReadonlyMap<string, { exists: boolean; digest: string }>;
+
+/**
+ * Stat the destinations the payload names, without trusting anything else in it.
+ *
+ * The paths come from raw JSON and are used for nothing but deciding which files
+ * to look at; whether each one is a LEGAL destination is settled later by the
+ * boundary's own allowlist. Doing it here is what keeps the whole decision —
+ * including the seal — reproducible without a filesystem.
+ *
+ * The shape check is NOT redundant with that allowlist. Reading is an effect, and
+ * an absolute path or a `..` would have this function open a file outside the
+ * workspace before anybody decided the destination was admissible. Nothing would
+ * leak — the entry is discarded when validation rejects the path — but "read only
+ * what you were asked to read" is not a property to leave resting on what happens
+ * to the result afterwards.
+ */
+async function observeDestinations(
+  fs: FileSystemPort,
+  paths: PathsService,
+  raw: string,
+): Promise<DestinationSnapshot> {
+  const snapshot = new Map<string, { exists: boolean; digest: string }>();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return snapshot;
+  }
+  const artifacts = (parsed as { artifacts?: unknown } | null)?.artifacts;
+  if (!Array.isArray(artifacts) || artifacts.length === 0) return snapshot;
+  const root = await resolveWorkspaceRootFrom(fs, paths);
+  for (const entry of artifacts) {
+    const path = (entry as { path?: unknown })?.path;
+    if (typeof path !== "string") continue;
+    const relative = path.trim();
+    if (relative.length === 0 || snapshot.has(relative)) continue;
+    if (!checkSafeRelativePath(relative).ok) continue;
+    const absolute = join(root, relative);
+    if (!(await fs.exists(absolute))) {
+      snapshot.set(relative, { exists: false, digest: "" });
+      continue;
+    }
+    try {
+      snapshot.set(relative, { exists: true, digest: baseDigest(await fs.readText(absolute)) });
+    } catch {
+      // Unreadable is not "absent": treating it as a fresh create would propose a
+      // silent overwrite of something nobody could show the person.
+      snapshot.set(relative, { exists: true, digest: "" });
+    }
+  }
+  return snapshot;
+}
+
+function decide(
+  state: FlowRunState,
+  input: SubmitFlowInput,
+  snapshot: DestinationSnapshot,
+): SubmitDecision {
   const journey = journeyOfFlow(state.flow);
   const incoherent = checkAgainstJourney(state, journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
@@ -200,8 +273,20 @@ function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
 
   // 3 · Apply: the answer is the INPUT to the CLI's decision, so what advances is
   // the transition, never the sender's own verdict.
+  //
+  // Two things can happen here besides advancing, and both are approvals: the
+  // classic one over an effect class named by a boundary, and the one this phase
+  // added — a single `Aprobar y guardar` that grants over the exact proposal the
+  // preview showed. Neither ever applies the step by itself.
+  const sealed = sealFrom(state, resolved.stopped, parsed.answer, snapshot);
+  if ("failure" in sealed) {
+    return reject(state, resolved, sealed.failure.message, {
+      code: sealed.failure.code,
+      action: sealed.failure.action,
+    });
+  }
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
-  const approved = granted.length > 0 ? withApproval(state, granted) : state;
+  const approved = grantOf(sealed.state, resolved, parsed.answer, granted);
   // An approval NEVER applies a step by itself. Two reasons it must hold, and the
   // second is the one this phase exists for: doctrine may still own the rule, or
   // the step may be delegated — and an approval that applied a delegated
@@ -213,6 +298,137 @@ function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
   return holds
     ? holdAfterApproval(approved, journey, identity)
     : applyAndAdvance(approved, journey, resolved.stopped, identity, parsed.answer);
+}
+
+/**
+ * Seat the proposal an authoring answer just handed over — sealed, not believed.
+ *
+ * Three things are DERIVED here and none of them is taken from the sender: whether
+ * each destination already exists (so the preview says "replaces" only when it
+ * does), the compare-and-swap base of every destination that does, and the effect
+ * classes the write really exercises. The row's declared effects are the ceiling,
+ * and a proposal that would reach past it is refused rather than quietly widened —
+ * a save row that never declared `mutate_overwrite` may not overwrite because the
+ * bytes happened to land on an existing file.
+ */
+function sealFrom(
+  state: FlowRunState,
+  stopped: FlowDecision,
+  answer: FlowAnswer,
+  snapshot: DestinationSnapshot,
+): { state: FlowRunState } | { failure: CapabilityFailure } {
+  const contract = proposalContractOf(stopped);
+  if (contract === null || answer.artifacts.length === 0) return { state };
+
+  // A destination nobody looked at cannot be previewed. Defaulting it to "creates"
+  // would be the one line of the preview a person most needs to trust, guessed —
+  // so an unobserved path is a refusal, not a default.
+  const unseen = answer.artifacts.filter((artifact) => !snapshot.has(artifact.path));
+  if (unseen.length > 0) {
+    return {
+      failure: {
+        code: "FLOW_PROPOSAL_DESTINATION_UNOBSERVED",
+        message: `no se pudo mirar el estado vigente de ${unseen.map((a) => a.path).join(", ")}`,
+        action: "volvé a enviar la propuesta con destinos relativos dentro del workspace",
+      },
+    };
+  }
+  const artifacts = answer.artifacts.map((artifact) => ({
+    path: artifact.path,
+    content: artifact.content,
+    overwrite: snapshot.get(artifact.path)?.exists === true,
+  }));
+  const effects: EffectClass[] = [];
+  if (artifacts.some((a) => !a.overwrite)) effects.push("local_additive");
+  if (artifacts.some((a) => a.overwrite)) effects.push("mutate_overwrite");
+  const beyond = effects.filter((effect) => !contract.effects.includes(effect));
+  if (beyond.length > 0) {
+    return {
+      failure: {
+        code: "FLOW_PROPOSAL_BEYOND_CONTRACT",
+        message: `la propuesta ejercería ${beyond.join(", ")} y esta frontera no lo declara`,
+        action: `proponé sólo efectos de: ${contract.effects.join(", ")}`,
+      },
+    };
+  }
+  const bases = artifacts
+    .filter((a) => a.overwrite)
+    .map((a) => ({ path: a.path, digest: snapshot.get(a.path)?.digest ?? "" }));
+  const unreadable = bases.filter((base) => base.digest.length === 0);
+  if (unreadable.length > 0) {
+    return {
+      failure: {
+        code: "FLOW_PROPOSAL_BASE_UNREADABLE",
+        message: `no se pudo leer el contenido vigente de ${unreadable.map((b) => b.path).join(", ")}`,
+        action: "no se propone sobrescribir lo que no se puede mostrar: revisá permisos",
+      },
+    };
+  }
+  const authorization = authorizeEffects(
+    effects.map((effect) => ({
+      class: effect,
+      idempotent: true,
+      authorization: "invocation" as const,
+      approval: "none" as const,
+    })),
+    { sensitiveSources: false, scopeExpanded: false },
+  );
+  return {
+    state: withProposal(
+      state,
+      sealProposal({
+        operation: `flow.${stopped.id}`,
+        artifacts,
+        bases,
+        // No flow row reads a sensitive source or reaches past what it shows
+        // today. The fields are sealed anyway: the day one does, the digest
+        // changes and every grant given under the old scope stops matching.
+        scope: { sensitive_sources: false, scope_expanded: false },
+        effects,
+        requiresApproval: authorization.needsPreflight,
+      }),
+    ),
+  };
+}
+
+/**
+ * The grant this answer produced, scoped to what it was given over.
+ *
+ * `Aprobar y guardar` at a publishing row is one decision that covers the whole
+ * preview, and the seal is the proposal's own: a later boundary, or the same
+ * proposal after any material edit, does not match it. Choosing anything else —
+ * `Refinar`, `Compactar`, `Cerrar` — grants nothing, which is what makes
+ * "`Refinar` produces no effects" a property rather than a promise.
+ */
+function grantOf(
+  state: FlowRunState,
+  resolved: ResolvedBoundary,
+  answer: FlowAnswer,
+  granted: readonly EffectClass[],
+): FlowRunState {
+  const stopped = resolved.stopped;
+  const proposal = state.proposal;
+  const approve = stopped === null ? null : publishApprovalOf(stopped);
+  if (approve !== null && proposal !== null) {
+    if (answer.choice === approve) {
+      return withApproval(state, {
+        digest: proposal.digest,
+        destinations: destinationsOf(proposal),
+        classes: [...proposal.requires_approval],
+      });
+    }
+    // Declining unseats the proposal, and that is what makes `Refinar` cost
+    // nothing: the publication downstream finds nothing to publish and is skipped
+    // saying so, instead of stopping to ask for an authorization over bytes the
+    // person just turned down.
+    return withProposal(state, null);
+  }
+  if (granted.length === 0 || resolved.authorization === null) return state;
+  return withApproval(state, {
+    digest: resolved.authorization.seal,
+    destinations: [],
+    classes: [...granted],
+  });
 }
 
 /**
@@ -243,6 +459,7 @@ function admit(
     approval: input.approval,
     expectedApproval,
     action: resolved.action,
+    request: resolved.request,
   });
   if (!parsed.ok) {
     // An answer the boundary refused IS an attempt spent: it is the exact event
@@ -296,7 +513,14 @@ function admit(
   // run with its evidence and its whole effect keeps the boundary standing: the
   // work stays pending, with the recovery the action declared.
   if (resolved.kind === "execution") {
-    const verdict = executionVerdict(parsed.answer.result, resolved.action, effectsOf(stopped));
+    // The row's `effects` are the ceiling and the sealed proposal is what really
+    // happens: demanding an overwrite from a publication that only creates files
+    // would leave the transition pending for an effect nobody could produce.
+    const verdict = executionVerdict(
+      parsed.answer.result,
+      resolved.action,
+      effectsOfTransition(state, stopped),
+    );
     if (verdict !== null) {
       return { decision: reject(state, resolved, verdict.message, verdict.detail, spent) };
     }
@@ -366,7 +590,14 @@ function applyAndAdvance(
     answer.signals.length > 0
       ? withObservation(approved, { transition: stopped.id, signals: answer.signals })
       : approved;
-  next = applyTransition(next, stopped.id, effectsOf(stopped));
+  next = applyTransition(next, stopped.id, effectsOfTransition(next, stopped));
+  // A published proposal is spent, whoever published it. This is the degraded
+  // path — no internal executor, so the caller ran the write and returned its
+  // result — and leaving the proposal seated would keep a preview of bytes that
+  // are already on disk standing in front of the next boundary.
+  if (internalActionOf(stopped)?.operation === "proposal.publish") {
+    next = withProposal(next, null);
+  }
   next = withAttempt(next, identity);
   // The boundary follows the position, always: handing the engine a state whose
   // boundary still names the transition just applied is exactly the incoherence

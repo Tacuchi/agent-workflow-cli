@@ -105,16 +105,19 @@ describe("efectos que pueden no ocurrir — la fila los condiciona", () => {
   it("las demás filas delegadas con efecto NO cambiaron: su efecto siempre ocurre", () => {
     const condicionadas = new Set(CONDICIONADAS.map((x) => x.id));
     const resto = delegatedWithEffects().filter((row) => !condicionadas.has(row.id));
-    // Doce, y ninguna con condición. Si una gana una, es una decisión que hay que
-    // justificar acá: dar condición a una fila cuyo efecto sí ocurre siempre abre
-    // un camino para declarar hecho lo que no se hizo.
+    // Doce, y ninguna con condición. Si una gana una, es una decisión que hay
+    // que justificar acá: dar condición a una fila cuyo efecto sí ocurre siempre
+    // abre un camino para declarar hecho lo que no se hizo.
+    //
+    // Siguen siendo doce, con tres altas y tres bajas: entran las publicaciones de
+    // propuesta —spec, plan y plan refinado—, que escriben SIEMPRE porque sólo se
+    // llega a ellas con una propuesta sellada y aprobada; salen las tres
+    // escrituras que absorbieron (`spec-refine.status-promotion`,
+    // `plan-refine.split-in-place` y `plan-refine.normalize-on-write`).
+    // `split-in-place` sobrevive como fila sin efecto: decide qué bytes se
+    // proponen, y su condición ya no gobierna ninguna escritura.
     expect(resto.length).toBe(12);
-    // Una sola de las doce tiene condición, y es la que existía ANTES: es el molde
-    // que las cuatro copiaron — la única fila del registro que ya combinaba efecto
-    // con `condition.threshold` y su `otherwise`.
-    expect(resto.filter((row) => conditionOf(row) !== null).map((row) => row.id)).toEqual([
-      "plan-refine.split-in-place",
-    ]);
+    expect(resto.filter((row) => conditionOf(row) !== null).map((row) => row.id)).toEqual([]);
   });
 
   it("ninguna otra fila del registro condiciona sobre estas señales", () => {

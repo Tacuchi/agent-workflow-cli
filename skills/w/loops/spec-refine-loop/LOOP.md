@@ -46,7 +46,7 @@ Closing *every* gap turns the spec into a premature plan. Close what changes **w
 **Adopt, do not repeat.** `spec-new`'s **facts** are reused; its **assumptions** are re-validated **only when one blocks a gap**; its `Open questions` are re-classified by destination; its one-vs-many hypothesis is re-judged at the *Change-shape gate*. The shallow sweep is never re-run wholesale. Keep the labels distinct — a spec that blurs them cannot be gated: **fact** (backed by repo, data or docs) · **inference** (unproven) · **user decision** · **deferred decision** (owner declared) · **open question** (can still move the contract).
 
 ## Writes
-Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Guardar especificación refinada`): completes sections, **adds** `## Decisions`, closes `Open questions` as they get resolved, and stamps the frontmatter `status: ready-for-plan`. Since it overwrites an existing doc, it asks the user's **confirmation**.
+Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Aprobar y guardar`): completes sections, **adds** `## Decisions`, closes `Open questions` as they get resolved, and stamps the frontmatter `status: ready-for-plan`. The stamp travels **inside the proposed bytes** — it is a projection of the same save, not a second write to authorize afterwards. Since it overwrites an existing doc, the preview says so and the person approves it **once**.
 
 > **Not every shape decision creates a file** (§ *Change-shape gate*). An accepted **split** writes the reduced original **and** the extracted sibling specs; a replacement by **`Crear una nueva spec`** writes one new file and leaves this one untouched; **`Reformular esta spec`** creates nothing — it edits this same file, same number, same path. Every write, new or overwriting, is confirmed first.
 
@@ -203,9 +203,11 @@ spec-refine-loop(spec):
       ideation offer declined → mark that gap exhausted    # anti re-fire; on-demand entry stays open
   # no BLOCKING gaps → the CLI evaluates the ready-for-plan gate over the run's
   # Success criteria and asks for their real state; whatever fails comes back as a gap.
-  Guardar            → edit_in_place_with_confirm(spec) + stamp status: ready-for-plan ; goto finalize
-                       # split branch → also mint + write the extracted siblings as status: draft
-  Preguntar algo más → continue
+  hand the CLI the exact bytes of the refined spec, with status: ready-for-plan already stamped in them
+                       # split branch → the same bytes carry the extracted siblings as status: draft
+  the CLI seals them into ONE proposal and shows its preview: destination, weight, what it replaces
+  Aprobar y guardar  → the CLI writes every file of the preview, together or not at all ; goto finalize
+  Refinar            → nothing is written and the refinement stays open
   flow Compactar/Cerrar → handle the same way
 finalize:
   write CHECKPOINT (refine_session)                     # always persisted

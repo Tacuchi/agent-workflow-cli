@@ -93,18 +93,24 @@ describe("autorización por transición — una sola política, la ya entregada"
     }
   });
 
-  it("una autorización previa cubre SU clase y ninguna otra", () => {
-    const granted: EffectClass[] = ["mutate_overwrite"];
+  it("un grant cubre SU sello y ninguna otra transición, ni siquiera de su clase", () => {
+    const over = (transition: string, classes: EffectClass[]) => [
+      { digest: effectApprovalDigest(transition, classes), destinations: [], classes },
+    ];
+    const granted = over("fixture.x", ["mutate_overwrite"]);
     expect(
       authorizeTransition(decision("fixture.x", ["mutate_overwrite"]), granted).missing,
     ).toEqual([]);
-    // Nothing inherits: approving an overwrite never buys running code.
+    // Nothing inherits: approving an overwrite never buys running code…
     expect(authorizeTransition(decision("fixture.y", ["execute"]), granted).missing).toEqual([
       "execute",
     ]);
-    expect(authorizeTransition(decision("fixture.z", ["destructive"]), granted).missing).toEqual([
-      "destructive",
-    ]);
+    // …and it does not even buy the SAME class on another transition, which is the
+    // leak the scoped grant closes: one approved overwrite used to authorize every
+    // later write of the run.
+    expect(
+      authorizeTransition(decision("fixture.w", ["mutate_overwrite"]), granted).missing,
+    ).toEqual(["mutate_overwrite"]);
   });
 
   it("el sello de aprobación describe el CONJUNTO, no el orden en que se listó", () => {
@@ -164,7 +170,16 @@ describe("el avance con autorización suficiente aplica y lo registra", () => {
 
   it("con la autorización ya concedida, la misma transición avanza", () => {
     const journey = [decision("fixture.sobrescribe", ["mutate_overwrite"])];
-    const seeded = { ...newRunState("quick", SESSION), authorizations: ["mutate_overwrite"] };
+    const seeded = {
+      ...newRunState("quick", SESSION),
+      authorizations: [
+        {
+          digest: effectApprovalDigest("fixture.sobrescribe", ["mutate_overwrite"]),
+          destinations: [],
+          classes: ["mutate_overwrite" as EffectClass],
+        },
+      ],
+    };
     const result = advanceFlowRun({
       state: { ...seeded, digest: newRunState("quick", SESSION).digest },
       journey,
@@ -327,7 +342,8 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
 
     const held = await readRun(fs, locateRun(paths, SESSION));
     if (!held.ok) throw new Error("esperaba leer la corrida");
-    expect(held.state.authorizations).toContain("execute");
+    expect(held.state.authorizations.flatMap((grant) => grant.classes)).toContain("execute");
+    expect(held.state.authorizations.map((grant) => grant.digest)).toEqual([digest]);
     expect(held.state.effects.approved).toContain("execute");
     expect(held.state.effects.applied).not.toContain("execute");
 

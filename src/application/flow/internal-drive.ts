@@ -36,7 +36,6 @@ import {
   type DelegatedAction,
   type FlowDecision,
   type InternalActionPlan,
-  effectsOf,
   internalActionOf,
   journeyOfFlow,
 } from "../../domain/flow/authority.js";
@@ -51,11 +50,12 @@ import {
   withBoundary,
   withEvent,
   withPendingAction,
+  withProposal,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { sessionNumericCode } from "../session-resolver.js";
-import { advanceFlowRun, directiveFor, resolveBoundary } from "./advance.js";
+import { advanceFlowRun, directiveFor, effectsOfTransition, resolveBoundary } from "./advance.js";
 import type { InternalActionExecutor, InternalActionOutcome } from "./internal-actions.js";
 import { type FlowRunLocation, type FlowRunMutation, applyUnderLock } from "./run-state-service.js";
 
@@ -131,6 +131,7 @@ async function run(
   const coordinates = {
     session: state.session,
     code: sessionNumericCode(state.session) ?? state.session,
+    proposal: state.proposal,
   };
   try {
     return await executor(pending.plan, coordinates);
@@ -228,7 +229,10 @@ function accept(
   outcome: InternalActionOutcome,
 ): FlowRunMutation<{ directive: FlowDirective; advanced: boolean }> {
   const journey = journeyOfFlow(state.flow);
-  const declared = effectsOf(pending.decision);
+  // What the row declares is the CEILING; what a sealed proposal really does is
+  // the effect. Judging the publication against the ceiling would refuse a
+  // proposal that only creates files on a row that also permits overwriting.
+  const declared = effectsOfTransition(state, pending.decision);
   const verdict = executionVerdict(resultOf(pending, outcome), pending.action, declared);
   const outputDigest = semanticDigest({ output: outcome.output });
 
@@ -285,6 +289,10 @@ function accept(
     evidence: [...pending.action.evidence],
   });
   next = applyTransition(next, pending.decision.id, declared);
+  // A published proposal is spent. Leaving it seated would keep a preview of
+  // bytes that are already on disk standing in front of the next boundary, and the
+  // grant given over its seal would outlive the thing it was given for.
+  if (pending.plan.operation === "proposal.publish") next = withProposal(next, null);
   // The pending action is cleared explicitly rather than left for the next
   // `withPendingAction` to overwrite: between applying and re-advancing the state
   // is persisted, and a state that still named an action nobody is waiting on

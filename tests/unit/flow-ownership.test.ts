@@ -9,6 +9,7 @@ import {
   type FlowDecision,
   journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
+import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import { renderDirectiveHuman } from "../../src/domain/flow/directive.js";
 import { newRunState, withApproval } from "../../src/domain/flow/run-state.js";
 
@@ -268,7 +269,11 @@ describe("el gate de efectos y la propiedad, en el orden que quedó", () => {
       effects: ["mutate_overwrite"],
     });
     const granted = advanceFlowRun({
-      state: withApproval(newRunState("plan-exec", "001-prueba-plan"), ["mutate_overwrite"]),
+      state: withApproval(newRunState("plan-exec", "001-prueba-plan"), {
+        digest: effectApprovalDigest("fixture.escritura", ["mutate_overwrite"]),
+        destinations: [],
+        classes: ["mutate_overwrite"],
+      }),
       journey: [row],
     });
     if (!granted.ok) throw new Error(`esperaba una frontera: ${granted.failure.code}`);

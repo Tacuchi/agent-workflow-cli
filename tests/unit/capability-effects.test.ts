@@ -1,15 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  applyDurableEffect,
-  baseDigest,
-  prepareDurableEffect,
-  reconcileAfterFailure,
-} from "../../src/application/capability/durable-effect.js";
+import { prepareDurableEffect } from "../../src/application/capability/durable-effect.js";
+import { applyLocalProposal, reconcileAfterFailure } from "../../src/application/local-proposal.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import {
-  SEMANTIC_PROTOCOL_VERSION,
-  approvalDigest,
-} from "../../src/application/semantic-operation/protocol.js";
+import { baseDigest } from "../../src/domain/proposal.js";
+
 import { findOperation } from "../../src/domain/capability/descriptor.js";
 import type { CapabilityOperation } from "../../src/domain/capability/descriptor.js";
 import {
@@ -173,28 +167,38 @@ describe("nada durable se aplica sin request, output, autorización y base valid
     expect(prepared.failure.code).toBe("CAPABILITY_EFFECT_NOT_DURABLE");
   });
 
-  it("el preview y el sello reutilizan el protocolo existente, sin un segundo apply", () => {
+  it("un solo sello cubre bytes, base y alcance: cambiar cualquiera lo invalida", () => {
     const request = requestFor("create", CREATE_INPUTS);
-    const prepared = prepareDurableEffect({
-      request,
-      authorization: authorizeEffects(create.effects, NO_CONTEXT),
-      artifacts: ARTIFACTS,
-    });
-    expect(prepared.ok).toBe(true);
-    if (!prepared.ok) return;
-    // El mismo approvalDigest del handshake semántico, calculado aparte.
-    expect(prepared.plan.approval_digest).toBe(
-      approvalDigest({
-        version: SEMANTIC_PROTOCOL_VERSION,
-        operation: "design.create",
-        input_digest: request.semantic_inputs_digest,
-        state: "proposed",
+    const prepare = (over: Partial<Parameters<typeof prepareDurableEffect>[0]> = {}) => {
+      const prepared = prepareDurableEffect({
+        request,
+        authorization: authorizeEffects(create.effects, NO_CONTEXT),
         artifacts: ARTIFACTS,
-      }),
-    );
-    expect(prepared.plan.preview).toEqual([
-      { path: ARTIFACTS[0]?.path, bytes: 3, overwrite: false },
-    ]);
+        ...over,
+      });
+      if (!prepared.ok) throw new Error("prepare falló");
+      return prepared.plan.proposal;
+    };
+
+    const plain = prepare();
+    expect(plain.preview).toEqual([{ path: ARTIFACTS[0]?.path, bytes: 3, overwrite: false }]);
+    // Idéntico: mismo sello. Es lo que permite reintentar sin volver a preguntar.
+    expect(prepare().digest).toBe(plain.digest);
+
+    // La base entra en el sello: publicar sobre otra revisión NO es la misma
+    // propuesta aunque los bytes coincidan.
+    const based = prepare({
+      base: { path: "docs/designs/DES-001/x.json", digest: baseDigest("a") },
+    });
+    expect(based.digest).not.toBe(plain.digest);
+    expect(
+      prepare({ base: { path: "docs/designs/DES-001/x.json", digest: baseDigest("b") } }).digest,
+    ).not.toBe(based.digest);
+
+    // Y los bytes, obviamente.
+    expect(
+      prepare({ artifacts: [{ path: ARTIFACTS[0]?.path ?? "", content: "otro" }] }).digest,
+    ).not.toBe(plain.digest);
   });
 
   it("un efecto externo sin aprobación no llega a llamar y dice datos, destino y efecto", async () => {
@@ -210,20 +214,20 @@ describe("nada durable se aplica sin request, output, autorización y base valid
     });
     expect(prepared.ok).toBe(true);
     if (!prepared.ok) return;
-    expect(prepared.plan.requires_approval).toEqual(["network_external"]);
+    expect(prepared.plan.proposal.requires_approval).toEqual(["network_external"]);
     // Datos y destino visibles ANTES de cualquier llamada.
-    expect(prepared.plan.preview[0]?.path).toBe(ARTIFACTS[0]?.path);
+    expect(prepared.plan.proposal.preview[0]?.path).toBe(ARTIFACTS[0]?.path);
 
     const fs = new MemFs();
-    const applied = await applyDurableEffect(fs, paths, {
+    const applied = await applyLocalProposal(fs, paths, {
       root: "/work",
-      plan: prepared.plan,
-      approval: { digest: prepared.plan.approval_digest, granted: [] },
+      proposal: prepared.plan.proposal,
+      approval: { digest: prepared.plan.proposal.digest, granted: [] },
       selfAuthorized: external.selfAuthorized,
     });
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.failure.code).toBe("CAPABILITY_APPROVAL_MISSING");
+    expect(applied.failure.code).toBe("PROPOSAL_APPROVAL_MISSING");
     expect(applied.failure.message).toContain("network_external");
     expect(applied.applied, "nada se aplicó").toEqual([]);
     expect(fs.writes.size).toBe(0);
@@ -237,15 +241,15 @@ describe("nada durable se aplica sin request, output, autorización y base valid
       artifacts: ARTIFACTS,
     });
     if (!prepared.ok) throw new Error("prepare falló");
-    const applied = await applyDurableEffect(new MemFs(), paths, {
+    const applied = await applyLocalProposal(new MemFs(), paths, {
       root: "/work",
-      plan: prepared.plan,
+      proposal: prepared.plan.proposal,
       approval: { digest: "otro", granted: [] },
       selfAuthorized: ["local_additive"],
     });
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.failure.code).toBe("CAPABILITY_APPROVAL_MISMATCH");
+    expect(applied.failure.code).toBe("PROPOSAL_APPROVAL_MISMATCH");
   });
 
   it("publicar contra una base que se movió se detiene antes de escribir", async () => {
@@ -259,15 +263,15 @@ describe("nada durable se aplica sin request, output, autorización y base valid
     if (!prepared.ok) throw new Error("prepare falló");
 
     const fs = new MemFs().file("/work/docs/designs/DES-001/baseline.json", "nuevo");
-    const applied = await applyDurableEffect(fs, paths, {
+    const applied = await applyLocalProposal(fs, paths, {
       root: "/work",
-      plan: prepared.plan,
-      approval: { digest: prepared.plan.approval_digest, granted: [] },
+      proposal: prepared.plan.proposal,
+      approval: { digest: prepared.plan.proposal.digest, granted: [] },
       selfAuthorized: ["local_additive"],
     });
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.failure.code).toBe("CAPABILITY_BASE_STALE");
+    expect(applied.failure.code).toBe("PROPOSAL_BASE_STALE");
     expect(fs.writes.has("/work/docs/designs/DES-001/manifest.json")).toBe(false);
   });
 
@@ -278,10 +282,10 @@ describe("nada durable se aplica sin request, output, autorización y base valid
     if (!prepared.ok) throw new Error("prepare falló");
 
     const fs = new MemFs();
-    const applied = await applyDurableEffect(fs, paths, {
+    const applied = await applyLocalProposal(fs, paths, {
       root: "/work",
-      plan: prepared.plan,
-      approval: { digest: prepared.plan.approval_digest, granted: [] },
+      proposal: prepared.plan.proposal,
+      approval: { digest: prepared.plan.proposal.digest, granted: [] },
       selfAuthorized: authorization.selfAuthorized,
     });
     expect(applied.ok).toBe(true);

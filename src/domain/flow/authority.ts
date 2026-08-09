@@ -138,6 +138,25 @@ export interface FlowDecision {
    */
   alternatives?: readonly FlowChoice[];
   /**
+   * This row's answer carries the exact bytes a later boundary approves.
+   *
+   * Only an `agent` row may declare it: authoring the content is judgment, and
+   * the CLI is what seals, previews, authorizes and writes it. The declaration is
+   * the write boundary — an artifact outside {@link ProposalContract.destinations}
+   * never reaches the seal. See {@link ProposalContract}.
+   */
+  proposes?: ProposalContract;
+  /**
+   * This human row decides the standing proposal, and its `approve` label is the
+   * one alternative that grants.
+   *
+   * The grant is scoped to that proposal's seal, so it authorizes the bytes,
+   * destinations, bases, scope and effect classes the preview showed and nothing
+   * else. Every other alternative — including the flow control — produces no
+   * effect at all.
+   */
+  publishes?: { approve: string };
+  /**
    * Where this transversal row is composed into every flow's journey.
    *
    * Only a `chassis` row carries one, and carrying it is what makes the row a
@@ -206,6 +225,37 @@ export interface TransitionCondition {
   otherwise: string;
 }
 
+/**
+ * What an authoring row may hand back as the exact local change.
+ *
+ * The destinations are an allowlist, not a hint: they travel into the semantic
+ * request the boundary emits and the protocol refuses an artifact that lands
+ * outside them, so "the CLI decides where a flow may write" stays a property of
+ * the contract instead of a review someone performs.
+ *
+ * The effects are declared once, here, and the row that publishes reads them off
+ * the sealed proposal. Restating them on the publishing row would be a second
+ * answer to "what does this do", and the two could disagree about a class the
+ * person was shown.
+ */
+export interface ProposalContract {
+  /** Workspace-relative folders (or exact files) the artifacts may land in. */
+  destinations: readonly string[];
+  /** What publishing them really exercises. */
+  effects: readonly EffectClass[];
+  limits: { maxArtifacts: number; maxArtifactBytes: number };
+}
+
+/** The proposal contract of an authoring row, or `null` when it proposes nothing. */
+export function proposalContractOf(decision: FlowDecision): ProposalContract | null {
+  return decision.proposes ?? null;
+}
+
+/** The approve label of a row that decides a standing proposal, or `null`. */
+export function publishApprovalOf(decision: FlowDecision): string | null {
+  return decision.publishes?.approve ?? null;
+}
+
 /** A decision computes a verdict; writing is the exception that declares itself. */
 export const DEFAULT_TRANSITION_EFFECTS: readonly EffectClass[] = ["read_only"];
 
@@ -255,10 +305,14 @@ export const RUN_PLACEHOLDERS = ["{session}", "{code}"] as const;
  * NEVER interpreted — they stay as the equivalent command a person would run to
  * obtain the same reading, which is what keeps the two comparable.
  *
- * The three members are exactly the deterministic surface the plan names: the
- * board, the sessions' own artifacts (their reading and their seeding) and the
- * close. Everything that rewrites a document the engine does not own, runs code,
+ * The four members are exactly the deterministic surface the plan names: the
+ * board, the sessions' own artifacts (their reading and their seeding), the close
+ * and the publication of an already approved proposal. Everything that runs code,
  * touches git or produces a judgment is deliberately NOT here.
+ *
+ * Publishing is the one that writes documents the engine does not author, and it
+ * is admissible for a reason the others do not need: it writes NOTHING of its own
+ * — only the exact bytes a person approved, under the seal they approved them by.
  */
 export const INTERNAL_ACTION_OPERATIONS = [
   /** Project the workspace board — what `aw status --json` returns. */
@@ -267,6 +321,8 @@ export const INTERNAL_ACTION_OPERATIONS = [
   "session.artifacts",
   /** Close the session and upsert its HISTORY row. */
   "session.close",
+  /** Write the run's approved proposal, all of it or none of it. */
+  "proposal.publish",
 ] as const;
 
 export type InternalActionOperation = (typeof INTERNAL_ACTION_OPERATIONS)[number];
@@ -287,6 +343,9 @@ export const INTERNAL_OPERATION_EFFECTS: Readonly<
   "workspace.board": ["read_only"],
   "session.artifacts": ["read_only", "local_additive"],
   "session.close": ["read_only", "local_additive", "mutate_overwrite"],
+  // Creating and replacing, both real — and which of the two happens is decided
+  // by the proposal, not by the row: what the row declares here is the ceiling.
+  "proposal.publish": ["local_additive", "mutate_overwrite"],
 };
 
 /**
@@ -311,7 +370,16 @@ export type InternalActionPlan =
    * to that line for a human reader would silently change what runs.
    */
   | { operation: "session.artifacts"; dump?: readonly string[] }
-  | { operation: "session.close" };
+  | { operation: "session.close" }
+  /**
+   * Publish the exact proposal the run is holding — all of it or none of it.
+   *
+   * It takes no parameters at all, and that is the safety property: what gets
+   * written is the sealed proposal in the state, so a row cannot widen the write
+   * by declaring a destination, and the approval that authorized it named the
+   * same seal.
+   */
+  | { operation: "proposal.publish" };
 
 export type ActionExecution =
   | ({ kind: "internal" } & InternalActionPlan)
@@ -369,10 +437,15 @@ export function actionOf(decision: FlowDecision): DelegatedAction | null {
  *
  * One predicate for every caller — the walk, the driver and the guard — so none of
  * them can answer "does the CLI run this itself?" differently from the others.
+ *
+ * An action with no `execution` at all cannot happen through the type, and it is
+ * still read defensively: the answer for a malformed row is "not the CLI's", which
+ * fails closed. Throwing instead would take down every caller that merely ASKS the
+ * question — and asking it is now on the path of every boundary.
  */
 export function internalActionOf(decision: FlowDecision): InternalActionPlan | null {
   const action = actionOf(decision);
-  if (action === null || action.execution.kind !== "internal") return null;
+  if (action === null || action.execution?.kind !== "internal") return null;
   const { kind: _internal, ...plan } = action.execution;
   return plan;
 }
@@ -782,9 +855,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // judged. `quick` has none because it has no document to write it into, and
     // the two plan-authoring flows converge on a document they hand to the next
     // flow rather than on one they mark green.
+    //
+    // SPEC's used to be a promotion of its own, `status: ready-for-plan` written
+    // after the save. It is now the publication: the stamp travels inside the
+    // approved bytes, so the row that marks the criteria green is the row that
+    // writes them — one document, one write.
     realized_by: {
       kind: "transitions",
-      ids: ["spec-refine.status-promotion", "plan-exec.plan-done"],
+      ids: ["spec-refine.publication", "plan-exec.plan-done"],
     },
   },
   {
@@ -1461,9 +1539,27 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
+    id: "spec-refine.save-proposal",
+    scope: "spec-refine",
+    title: "entregar los bytes exactos de la spec refinada, con su status ya sellado",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
+    // The stamp travels INSIDE these bytes, and that is the whole reason the
+    // separate promotion row is gone: `status: ready-for-plan` is a projection of
+    // the same save, so writing it apart made the person confirm one half and
+    // authorize the other. One document, one proposal, one write.
+    proposes: {
+      destinations: ["docs/specs"],
+      effects: ["local_additive", "mutate_overwrite"],
+      limits: { maxArtifacts: 8, maxArtifactBytes: 256 * 1024 },
+    },
+  },
+  {
     id: "spec-refine.save-confirmation",
     scope: "spec-refine",
-    title: "confirmar la sobreescritura de la spec",
+    title: "aprobar la vista previa de la spec y guardarla",
     authority: "human",
     ownership: "cli-owned",
     document: SPEC_LOOP,
@@ -1472,42 +1568,37 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // was promoting the status and asking for the overwrite afterwards, so the
     // person would have been confirming a write that already happened. The
     // doctrine's own line is `edit_in_place_with_confirm(spec) + stamp`.
+    publishes: { approve: "Aprobar y guardar" },
     alternatives: [
       {
-        label: "Guardar especificación refinada",
-        consequence: "la spec se sobrescribe en su lugar y queda sellada como ready-for-plan",
+        label: "Aprobar y guardar",
+        consequence:
+          "se escriben exactamente los archivos de la vista previa —la spec en su lugar, sellada como ready-for-plan— y no se vuelve a preguntar por esos efectos",
         recommended: true,
       },
       {
-        label: "Preguntar algo más",
-        consequence: "el refinamiento sigue abierto y la spec queda como está",
+        label: "Refinar",
+        consequence: "el refinamiento sigue abierto, no se escribe nada y la spec queda como está",
         recommended: false,
       },
     ],
   },
   {
-    id: "spec-refine.status-promotion",
+    id: "spec-refine.publication",
     scope: "spec-refine",
-    title: "promover el status de la spec a ready-for-plan",
+    title: "publicar la propuesta aprobada de la spec en un solo acto",
     authority: "cli",
     ownership: "cli-owned",
     document: SPEC_LOOP,
     attribution: SPEC_ATTRIBUTION,
-    effects: ["mutate_overwrite"],
-    // The stamp is a write on a document the engine does not edit, so what it
-    // demands back is the board's own reading of that document's status. The
-    // effect is not self-authorizable: the run stops to be authorized before this
-    // invocation is ever named.
+    effects: ["local_additive", "mutate_overwrite"],
     action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-      execution: {
-        kind: "external",
-        reason: "promover el frontmatter reescribe un documento que este motor no edita",
-      },
-      evidence: ["spec.status-ready-for-plan"],
+      invocation: { program: "aw", args: ["flow", "advance"], target: ".", input: null },
+      execution: { kind: "internal", operation: "proposal.publish" },
+      evidence: ["spec.propuesta-publicada"],
       idempotent: true,
       recovery:
-        "sellá 'status: ready-for-plan' en la spec y volvé a devolver la lectura del tablero; si el sello no está, la transición sigue pendiente",
+        "la publicación es todo-o-nada: si falló, nada quedó escrito y se reintenta el mismo contenido sin volver a aprobar; si la base cambió, volvé a redactar la propuesta sobre el documento vigente",
     },
   },
 
@@ -1703,26 +1794,63 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
+    id: "plan-new.save-proposal",
+    scope: "plan-new",
+    title: "entregar los bytes exactos del plan y de los hermanos que se extraigan",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_NEW_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // The generation used to write with NO effect row at all: the person confirmed
+    // and the document appeared, with the engine crediting nothing. The proposal
+    // is what makes that write visible — enumerated, weighed and sealed before it
+    // is approved.
+    proposes: {
+      destinations: ["docs/plans"],
+      effects: ["local_additive"],
+      limits: { maxArtifacts: 8, maxArtifactBytes: 256 * 1024 },
+    },
+  },
+  {
     id: "plan-new.save-confirmation",
     scope: "plan-new",
-    title: "confirmar la escritura del plan o de sus hermanos",
+    title: "aprobar la vista previa del plan y guardarlo",
     authority: "human",
     ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
     attribution: PLAN_ATTRIBUTION,
+    publishes: { approve: "Aprobar y guardar" },
     alternatives: [
       {
-        label: "Guardar plan",
+        label: "Aprobar y guardar",
         consequence:
-          "el plan se escribe en docs/plans, y si el split fue aceptado se escriben también sus hermanos",
+          "se escriben exactamente los archivos de la vista previa en docs/plans, hermanos incluidos si el split fue aceptado",
         recommended: true,
       },
       {
-        label: "Preguntar algo más",
+        label: "Refinar",
         consequence: "la generación sigue abierta y no se escribe ningún documento",
         recommended: false,
       },
     ],
+  },
+  {
+    id: "plan-new.publication",
+    scope: "plan-new",
+    title: "publicar la propuesta aprobada del plan en un solo acto",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: PLAN_NEW_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    effects: ["local_additive"],
+    action: {
+      invocation: { program: "aw", args: ["flow", "advance"], target: ".", input: null },
+      execution: { kind: "internal", operation: "proposal.publish" },
+      evidence: ["plan.propuesta-publicada"],
+      idempotent: true,
+      recovery:
+        "la publicación es todo-o-nada: si falló, no quedó ningún documento a medias y se reintenta el mismo contenido sin volver a aprobar",
+    },
   },
   {
     id: "plan-new.adoption",
@@ -1850,52 +1978,19 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
-    id: "plan-refine.save-confirmation",
-    scope: "plan-refine",
-    title: "confirmar la sobreescritura del plan refinado",
-    authority: "human",
-    ownership: "cli-owned",
-    document: PLAN_REFINE_LOOP,
-    attribution: PLAN_ATTRIBUTION,
-    alternatives: [
-      {
-        label: "Guardar plan refinado",
-        consequence:
-          "el plan se edita en su lugar con su traza de refinamiento, y si el split fue aceptado se escriben los hermanos extraídos",
-        recommended: true,
-      },
-      {
-        label: "Preguntar algo más",
-        consequence: "el refinamiento sigue abierto y el plan queda como está",
-        recommended: false,
-      },
-    ],
-  },
-  {
     id: "plan-refine.split-in-place",
     scope: "plan-refine",
     title: "reducir el plan original y extraer los hermanos sin mover trabajo completado",
-    authority: "cli",
+    authority: "agent",
     ownership: "cli-owned",
     document: PLAN_REFINE_SPLIT,
     attribution: PLAN_ATTRIBUTION,
-    effects: ["local_additive", "mutate_overwrite"],
-    // AFTER the confirmation, and the doctrine's own sequence is why: the save
-    // branch reads `Guardar planes → edit original reduced (confirmation) + write
-    // extracted siblings`. The registry had both writes ahead of the gate and of
-    // the confirmation — the same defect the SPEC tranche found in its stamp, so
-    // the order moved to where the document puts it.
-    action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-      execution: {
-        kind: "external",
-        reason: "extraer los hermanos reescribe documentos que este motor no edita",
-      },
-      evidence: ["plan.hermanos-extraidos"],
-      idempotent: true,
-      recovery:
-        "reducí el original en su lugar, escribí los hermanos extraídos y volvé a devolver la lectura; una tarea ya marcada nunca se muda a un hermano",
-    },
+    // It used to be a delegated WRITE after the confirmation, which is what made
+    // the refinement ask twice: once to confirm the plan and again to authorize
+    // the siblings. Reducing the original and extracting the siblings is drafting
+    // — it decides what the bytes are — so it happens BEFORE the proposal and its
+    // result is visible where it belongs, as files enumerated in the preview.
+    // Nothing is credited here: this row no longer claims a write happened.
     condition: {
       threshold: splitThreshold("plan-refine.split-signal"),
       otherwise:
@@ -1903,28 +1998,63 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
-    id: "plan-refine.normalize-on-write",
+    id: "plan-refine.save-proposal",
     scope: "plan-refine",
-    title: "normalizar la forma sin escribir bloques condicionales vacíos ni tocar estados",
+    title:
+      "entregar los bytes exactos del plan refinado, ya normalizado, sin bloques condicionales vacíos y sin tocar estados ni casillas",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // The normalization rule lives in this row's own contract now, and that is the
+    // merge that removes a write: normalizing the form is not a second edit of the
+    // plan, it is what the drafted bytes already are. A separate row for it wrote
+    // the same document twice and asked to be authorized for the second half.
+    proposes: {
+      destinations: ["docs/plans"],
+      effects: ["local_additive", "mutate_overwrite"],
+      limits: { maxArtifacts: 8, maxArtifactBytes: 256 * 1024 },
+    },
+  },
+  {
+    id: "plan-refine.save-confirmation",
+    scope: "plan-refine",
+    title: "aprobar la vista previa del plan refinado y guardarlo",
+    authority: "human",
+    ownership: "cli-owned",
+    document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    publishes: { approve: "Aprobar y guardar" },
+    alternatives: [
+      {
+        label: "Aprobar y guardar",
+        consequence:
+          "se escriben exactamente los archivos de la vista previa —el plan en su lugar y los hermanos extraídos, si los hay— y no se vuelve a preguntar por esos efectos",
+        recommended: true,
+      },
+      {
+        label: "Refinar",
+        consequence: "el refinamiento sigue abierto, no se escribe nada y el plan queda como está",
+        recommended: false,
+      },
+    ],
+  },
+  {
+    id: "plan-refine.publication",
+    scope: "plan-refine",
+    title: "publicar la propuesta aprobada del plan refinado en un solo acto",
     authority: "cli",
     ownership: "cli-owned",
     document: PLAN_REFINE_LOOP,
     attribution: PLAN_ATTRIBUTION,
-    effects: ["mutate_overwrite"],
-    // A write on a document the engine does not edit, so it is delegated like
-    // every other one. It had neither action nor evidence, which meant the run
-    // recorded "normalized" for something nothing performed — the phantom
-    // confirmation this whole contract exists to refuse.
+    effects: ["local_additive", "mutate_overwrite"],
     action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-      execution: {
-        kind: "external",
-        reason: "normalizar la forma reescribe el plan, y este motor no lo edita",
-      },
-      evidence: ["plan.forma-normalizada"],
+      invocation: { program: "aw", args: ["flow", "advance"], target: ".", input: null },
+      execution: { kind: "internal", operation: "proposal.publish" },
+      evidence: ["plan.propuesta-publicada"],
       idempotent: true,
       recovery:
-        "normalizá la forma sin tocar estados ni casillas y volvé a devolver la lectura; normalizar de nuevo lo ya normalizado no rompe nada",
+        "la publicación es todo-o-nada: el original reducido y sus hermanos entran juntos o no entra ninguno; si la base cambió, volvé a redactar la propuesta sobre el plan vigente",
     },
   },
 

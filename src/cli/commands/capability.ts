@@ -142,7 +142,7 @@ function dispatchInputFrom(
     plan: carried.plan,
     pin: carried.pin,
     ...(approval !== undefined
-      ? { approval: { digest: approval, granted: carried.plan?.requires_approval ?? [] } }
+      ? { approval: { digest: approval, granted: carried.plan?.proposal.requires_approval ?? [] } }
       : {}),
     answer: carried.answer,
   };

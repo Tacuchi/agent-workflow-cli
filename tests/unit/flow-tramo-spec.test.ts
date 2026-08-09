@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +15,7 @@ import {
   conditionOf,
   effectsOf,
   journeyOfFlow,
+  proposalContractOf,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
@@ -39,6 +41,12 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
  */
 
 const fs = new NodeFileSystem();
+/** Los bytes exactos que la frontera de autoría entrega, con su sello ya dentro. */
+const SPEC_ARTIFACT = (proposes: { destinations: readonly string[] }) => ({
+  path: `${proposes.destinations[0]}/001-spec-tramo.md`,
+  content: "---\nstatus: ready-for-plan\n---\n\n# Spec 001 — tramo\n",
+});
+
 const SESSION = "021-tramo-spec-spec-refine";
 const CODE = "021";
 
@@ -83,7 +91,14 @@ describe("el tramo SPEC migró lo suyo y nada de un documento compartido", () =>
     expect(ids.indexOf("spec-refine.save-confirmation")).toBeGreaterThan(
       ids.indexOf("spec-refine.ready-gate"),
     );
-    expect(ids.indexOf("spec-refine.status-promotion")).toBeGreaterThan(
+    // El sello del status ya no es una transición: viaja DENTRO de los bytes que
+    // la propuesta sella, así que lo que va después de la confirmación es la
+    // publicación — una sola escritura que deja documento y sello juntos.
+    expect(ids).not.toContain("spec-refine.status-promotion");
+    expect(ids.indexOf("spec-refine.save-proposal")).toBeGreaterThan(
+      ids.indexOf("spec-refine.ready-gate"),
+    );
+    expect(ids.indexOf("spec-refine.publication")).toBeGreaterThan(
       ids.indexOf("spec-refine.save-confirmation"),
     );
   });
@@ -94,7 +109,7 @@ describe("el tramo SPEC migró lo suyo y nada de un documento compartido", () =>
     expect(delegated.map((decision) => decision.id)).toEqual([
       "spec-refine.session",
       "spec-refine.ready-gate",
-      "spec-refine.status-promotion",
+      "spec-refine.publication",
       // El cierre transversal, compuesto como sufijo: escribe la fila del
       // registro durable, así que se acredita con salida real como cualquiera.
       "chassis.finalize",
@@ -191,7 +206,9 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
   ): Record<string, unknown> {
     const action = resolved.action;
     if (action === null) throw new Error("esta frontera no nombra ninguna acción");
-    const declared = effectsOf(resolved.stopped as FlowDecision);
+    // Una publicación aplica lo que su propuesta sellada dice, no el techo de la
+    // fila: proponer un archivo nuevo no ejerce `mutate_overwrite`.
+    const declared = resolved.proposal?.effects ?? effectsOf(resolved.stopped as FlowDecision);
     return {
       input_digest: resolved.seal,
       outcome: "completed",
@@ -215,6 +232,12 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
     const stopped = resolved.stopped as FlowDecision;
     if (resolved.kind === "execution") return resultFor(resolved);
     if (resolved.kind === "semantic") {
+      const proposes = proposalContractOf(stopped);
+      // Una frontera de autoría pide BYTES; contestarle con una decisión sería
+      // llegar a la confirmación sin nada que previsualizar.
+      if (proposes !== null) {
+        return { input_digest: resolved.seal, artifacts: [SPEC_ARTIFACT(proposes)] };
+      }
       const vocabulary = stopped.signals ?? [];
       return {
         input_digest: resolved.seal,
@@ -305,36 +328,63 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
     expect(state.skipped).toContain("spec-refine.ideation-consent");
   });
 
-  it("el sello del status se autoriza primero y solo el resultado lo aplica", async () => {
-    await walkTo("spec-refine.status-promotion", []);
+  it("una sola pregunta cubre la propuesta entera: aprobar publica documento y sello juntos", async () => {
+    await walkTo("spec-refine.save-confirmation", []);
     const gate = await current();
-    // `mutate_overwrite` no se autoriza solo: la corrida para ANTES de nombrar la
-    // invocación que sella el documento.
-    expect(gate.resolved.kind).toBe("authorization");
-    expect(gate.resolved.action).toBeNull();
+    // La vista previa viaja CON la pregunta: destino, peso y si reemplaza. Y no
+    // hay una segunda frontera de autorización — el sello del status va dentro de
+    // los mismos bytes, así que no queda ningún efecto suelto que aprobar aparte.
+    expect(gate.resolved.kind).toBe("human");
+    expect(gate.resolved.proposal?.preview.map((entry) => entry.path)).toEqual([
+      "docs/specs/001-spec-tramo.md",
+    ]);
+    expect(gate.resolved.proposal?.effects).toEqual(["local_additive"]);
+    expect(gate.resolved.choices.map((choice) => choice.label)).toEqual([
+      "Aprobar y guardar",
+      "Refinar",
+      "Compactar",
+      "Cerrar",
+    ]);
 
-    const granted = await answer(
-      { input_digest: gate.resolved.seal, choice: "Autorizar el efecto" },
-      effectApprovalDigest(
-        "spec-refine.status-promotion",
-        gate.resolved.authorization?.planned ?? [],
-      ),
-    );
-    expect(granted.boundary.kind).toBe("execution");
-    expect(granted.effects.applied).not.toContain("mutate_overwrite");
+    const sealed = gate.resolved.proposal?.digest;
+    const approved = await answer({
+      input_digest: gate.resolved.seal,
+      choice: "Aprobar y guardar",
+    });
+    // La aprobación NO escribe: la publicación es el paso siguiente, y sin
+    // ejecutor interno vuelve como la acción que alguien tiene que correr.
+    expect(approved.boundary.transition).toBe("spec-refine.publication");
+    expect(existsSync(join(workdir, "docs/specs/001-spec-tramo.md"))).toBe(false);
 
-    const running = await current();
-    const stale = await answer(
-      resultFor(running.resolved, {
-        effects: { planned: ["mutate_overwrite"], approved: [], applied: [] },
-      }),
-    );
-    expect(stale.error?.code).toBe("FLOW_EFFECT_PARTIAL");
-    expect((await current()).state.effects.applied).not.toContain("mutate_overwrite");
+    const held = await current();
+    // El grant quedó atado al sello de ESTA propuesta, y a ningún otro.
+    expect(held.state.authorizations.map((grant) => grant.digest)).toEqual([sealed]);
+    expect(held.state.authorizations[0]?.destinations).toEqual(["docs/specs/001-spec-tramo.md"]);
 
-    const sealed = await answer(resultFor(running.resolved));
-    expect(sealed.error).toBeNull();
-    expect(sealed.effects.applied).toContain("mutate_overwrite");
+    const published = await answer(resultFor(held.resolved));
+    expect(published.error).toBeNull();
+    expect(published.effects.applied).toContain("local_additive");
+    // Y la propuesta queda gastada: nada sigue ofreciendo previsualizar bytes que
+    // ya están en disco.
+    expect((await current()).state.proposal).toBeNull();
+  });
+
+  it("Refinar no produce ningún efecto y deja la propuesta intacta", async () => {
+    await walkTo("spec-refine.save-confirmation", []);
+    const gate = await current();
+
+    const refined = await answer({ input_digest: gate.resolved.seal, choice: "Refinar" });
+    const after = await current();
+    expect(existsSync(join(workdir, "docs/specs/001-spec-tramo.md"))).toBe(false);
+    expect(after.state.authorizations).toEqual([]);
+    // Y la publicación no vuelve como una segunda pregunta: se salta DICIENDO que
+    // no se escribió nada, en vez de pedir autorizar una sobreescritura que la
+    // persona acaba de rechazar.
+    expect(after.state.proposal).toBeNull();
+    expect(after.state.skipped).toContain("spec-refine.publication");
+    expect(
+      refined.applied.find((step) => step.transition === "spec-refine.publication")?.reason,
+    ).toContain("no se escribió nada");
   });
 
   it("el recorrido llega al gate de división y lo pregunta él mismo, sin remitir a nada", async () => {

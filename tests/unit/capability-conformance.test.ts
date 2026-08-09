@@ -344,11 +344,14 @@ describe("C5 · barrido de llamadores: nada interno queda sin caller ni sin expl
     },
     {
       symbol: "baseDigest",
-      module: "src/application/capability/durable-effect.ts",
+      // Se mudó con el sello: la propuesta local es de las dos superficies —la
+      // capacidad y el motor de flujos— así que su digest de base vive donde
+      // ambas lo alcanzan, no dentro del adaptador de una de ellas.
+      module: "src/domain/proposal.ts",
       why: "sella la base de compare-and-swap; el floor de design todavía no resuelve una base a ruta (payload del plan 013)",
       conformanceCaller: "tests/unit/capability-effects.test.ts",
       productionFallback:
-        "checkBase la usa al aplicar, así que en cuanto un handler declare base el camino ya está cerrado",
+        "checkBases la usa al aplicar, y el guardado de spec/plan ya sella la base del documento que sobrescribe",
     },
   ] as const;
 

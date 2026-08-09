@@ -230,7 +230,12 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
       const { digest: _seal, ...rest } = current;
       await writeFile(
         statePath(),
-        serializeRunState(sealRunState({ ...rest, authorizations: ["read_only"] })),
+        serializeRunState(
+          sealRunState({
+            ...rest,
+            authorizations: [{ digest: "otra-corrida", destinations: [], classes: ["read_only"] }],
+          }),
+        ),
         "utf8",
       );
       return executor(plan, run);

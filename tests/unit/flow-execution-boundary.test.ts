@@ -516,7 +516,7 @@ describe("autorización y ejecución son dos actos distintos", () => {
     // The approval was recorded and NOTHING was applied by it.
     expect(directive.applied).toEqual([]);
     const run = await current();
-    expect(run.authorizations).toContain("execute");
+    expect(run.authorizations.flatMap((grant) => grant.classes)).toContain("execute");
     expect(run.effects.applied).not.toContain("execute");
     expect(run.applied).not.toContain("fixture.validate");
     expect(run.pending_action?.transition).toBe("fixture.validate");
