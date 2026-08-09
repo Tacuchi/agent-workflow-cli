@@ -1,6 +1,7 @@
 import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
 import { isHarnessId } from "../../application/dev-only-services.js";
 import { type AdvanceFlowResult, advanceFlow } from "../../application/flow/flow-service.js";
+import { internalActionExecutor } from "../../application/flow/internal-actions.js";
 import { type SubmitFlowResult, submitFlow } from "../../application/flow/submit.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { renderDirectiveHuman } from "../../domain/flow/directive.js";
@@ -66,6 +67,18 @@ export const flowCommand: QtcCommand<FlowDirective> = {
     // Only `submit` reads stdin: an `advance` that waited on a pipe would hang a
     // caller that has nothing to send yet — the same split `capability` makes
     // between `prepare` and the stages that carry content.
+    // Built from the live context and handed to BOTH verbs: an internal action is
+    // internal wherever the run happens to be standing, and giving only `advance`
+    // an executor would make the same step deterministic or delegated depending on
+    // which verb reached it.
+    const executor = internalActionExecutor({
+      fs: ctx.fs,
+      env: ctx.env,
+      paths: ctx.paths,
+      git: ctx.git,
+      runtime: ctx.runtime,
+    });
+
     if (verb === "submit") {
       const approval = args.values.get("approval");
       return project(
@@ -73,6 +86,7 @@ export const flowCommand: QtcCommand<FlowDirective> = {
           ...session,
           raw: await readRequiredStdin(),
           approval: approval ?? null,
+          executor,
         }),
       );
     }
@@ -82,6 +96,7 @@ export const flowCommand: QtcCommand<FlowDirective> = {
         ...session,
         ...(flow !== undefined ? { flow } : {}),
         adopt: args.flags.has("--adopt"),
+        executor,
       }),
     );
   },

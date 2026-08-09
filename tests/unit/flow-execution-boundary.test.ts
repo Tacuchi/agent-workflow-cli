@@ -220,7 +220,11 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
       serializeRunState(
         sealRunState({
           ...rest,
-          pending_action: { transition: "fixture.seed", digest: "sello-de-otra-accion" },
+          pending_action: {
+            transition: "fixture.seed",
+            digest: "sello-de-otra-accion",
+            attempted: false,
+          },
         }),
       ),
       "utf8",

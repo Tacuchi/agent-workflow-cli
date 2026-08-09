@@ -21,12 +21,10 @@
  * `renderHuman`, and a boundary nobody can see is a boundary that did not happen.
  */
 
-import type { EffectClass } from "../../domain/capability/effects.js";
 import { AttemptLedger } from "../../domain/capability/protocol.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
 import { type FlowAnswer, claimedSeal, parseFlowAnswer } from "../../domain/flow/answer.js";
 import {
-  type DelegatedAction,
   type FlowDecision,
   actionOf,
   effectsOf,
@@ -39,6 +37,7 @@ import {
   STOP_LABEL,
   stepOf,
 } from "../../domain/flow/directive.js";
+import { executionVerdict } from "../../domain/flow/execution-result.js";
 import {
   type FlowRunAttempt,
   type FlowRunState,
@@ -60,6 +59,8 @@ import {
   directiveFor,
   resolveBoundary,
 } from "./advance.js";
+import type { InternalActionExecutor } from "./internal-actions.js";
+import { driveInternalActions } from "./internal-drive.js";
 import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
 
 export interface SubmitFlowInput {
@@ -69,6 +70,8 @@ export interface SubmitFlowInput {
   raw: string;
   /** `--approval <digest>`, apart from the payload on purpose. */
   approval: string | null;
+  /** How this process materializes internal actions. See {@link driveInternalActions}. */
+  executor?: InternalActionExecutor;
 }
 
 export type SubmitFlowResult =
@@ -90,7 +93,7 @@ export async function submitFlow(
   if (resolution.outcome !== "resolved") return { ok: false, session: resolution };
 
   const location = locateRun(paths, resolution.session.folder);
-  const applied = await applyUnderLock<FlowDirective>(fs, location, (current) => {
+  const applied = await applyUnderLock<SubmitOutcome>(fs, location, (current) => {
     if (current === null) {
       return {
         ok: false,
@@ -105,7 +108,37 @@ export async function submitFlow(
   });
 
   if (!applied.ok) return { ok: false, failure: applied.failure };
-  return { ok: true, directive: applied.value };
+  // An answer that ADVANCED the run can leave it standing on an internal action —
+  // an approval of the close is exactly that — and stopping here would hand back a
+  // step this same process is about to be asked to run.
+  //
+  // A REFUSED answer never drives: the directive it produced is the refusal, and
+  // replacing it with whatever the CLI did next would tell the sender their answer
+  // was fine. The run stays where the refusal left it.
+  if (!applied.value.advanced) return { ok: true, directive: applied.value.directive };
+  const driven = await driveInternalActions(fs, location, input.executor, {
+    ok: true,
+    state: applied.state,
+    value: applied.value.directive,
+  });
+  if (!driven.ok) return { ok: false, failure: driven.failure };
+  return { ok: true, directive: driven.value };
+}
+
+/**
+ * The directive an answer produced, and whether the answer APPLIED something.
+ *
+ * `true` covers the approval that holds as much as the transition that advances:
+ * both moved the state, and both can leave the run standing somewhere this process
+ * may continue from. What it excludes is every refusal.
+ *
+ * The flag is not derivable afterwards: a refusal and an application both come
+ * back as a recalculated directive over a state, and only the decision that built
+ * it knows which of the two it was.
+ */
+interface SubmitOutcome {
+  directive: FlowDirective;
+  advanced: boolean;
 }
 
 /**
@@ -116,7 +149,7 @@ export async function submitFlow(
  * only branches that return a NEW state are the two that legitimately applied
  * something.
  */
-type SubmitDecision = FlowRunMutation<FlowDirective>;
+type SubmitDecision = FlowRunMutation<SubmitOutcome>;
 
 function decide(state: FlowRunState, input: SubmitFlowInput): SubmitDecision {
   const journey = journeyOfFlow(state.flow);
@@ -263,93 +296,12 @@ function admit(
   // run with its evidence and its whole effect keeps the boundary standing: the
   // work stays pending, with the recovery the action declared.
   if (resolved.kind === "execution") {
-    const verdict = executionVerdict(parsed.answer, resolved.action, effectsOf(stopped));
+    const verdict = executionVerdict(parsed.answer.result, resolved.action, effectsOf(stopped));
     if (verdict !== null) {
       return { decision: reject(state, resolved, verdict.message, verdict.detail, spent) };
     }
   }
   return parsed;
-}
-
-/**
- * Why this execution result does not apply the transition — or `null` when it does.
- *
- * Three verdicts, and each one is the answer to a way a run could claim work that
- * never happened: an outcome that is not `completed` did not finish; evidence that
- * is missing, failed or empty means nothing came back from the tool; and an effect
- * ledger short of what the row declared means the invocation got partway. The
- * recovery the action declared travels in every one of them, because a run stopped
- * without a next step is the dead end this whole contract refuses.
- */
-function executionVerdict(
-  answer: FlowAnswer,
-  action: DelegatedAction | null,
-  declared: readonly EffectClass[],
-): {
-  message: string;
-  detail: { code: string; action: string; outcome?: CapabilityOutcome };
-} | null {
-  const result = answer.result;
-  if (result === null || action === null) {
-    return {
-      message: "la respuesta no trae el resultado de la invocación",
-      detail: {
-        code: "FLOW_RESULT_INVALID",
-        action:
-          "devolvé el resultado real de la acción: outcome, invocación, validaciones y efectos",
-      },
-    };
-  }
-  if (result.outcome !== "completed") {
-    return {
-      message: `la invocación devolvió '${result.outcome}': la transición sigue pendiente`,
-      detail: {
-        code: "FLOW_EXECUTION_NOT_COMPLETED",
-        action: action.recovery,
-        outcome: result.outcome,
-      },
-    };
-  }
-  const missing = action.evidence.filter((id) => {
-    const found = result.validations.find((validation) => validation.id === id);
-    return found === undefined || !found.passed || (found.detail ?? "").trim().length === 0;
-  });
-  if (missing.length > 0) {
-    return {
-      message: `falta la evidencia real de ${missing.join(", ")}`,
-      detail: {
-        code: "FLOW_EVIDENCE_MISSING",
-        action: `devolvé cada validación exigida con 'passed' y su 'detail' — la salida de la herramienta, no una afirmación. ${action.recovery}`,
-      },
-    };
-  }
-  const applied = new Set(result.effects.applied);
-  const partial = declared.filter((effect) => !applied.has(effect));
-  if (partial.length > 0) {
-    return {
-      message: `la invocación declara completa pero no aplicó ${partial.join(", ")}`,
-      detail: {
-        code: "FLOW_EFFECT_PARTIAL",
-        action: action.recovery,
-        outcome: "needs_input",
-      },
-    };
-  }
-  // Completeness is not an outcome — it answers "does what came back cover what
-  // was asked?" — so an attempt that FINISHED can still hand back a partial
-  // output. Ignoring that here would let the run credit a search that returned
-  // half its matches as if it had returned all of them.
-  if (result.output?.completeness === "partial") {
-    return {
-      message: "la invocación terminó pero su salida declara cobertura parcial",
-      detail: {
-        code: "FLOW_EFFECT_PARTIAL",
-        action: action.recovery,
-        outcome: "needs_input",
-      },
-    };
-  }
-  return null;
 }
 
 /**
@@ -396,7 +348,7 @@ function holdAfterApproval(
 ): SubmitDecision {
   const held = advanceFlowRun({ state: withAttempt(approved, identity), journey, applied: [] });
   if (!held.ok) return { ok: false, failure: held.failure };
-  return { ok: true, state: held.state, value: held.directive };
+  return { ok: true, state: held.state, value: { directive: held.directive, advanced: true } };
 }
 
 /** The answer survived: the transition applies and the run keeps advancing. */
@@ -423,7 +375,11 @@ function applyAndAdvance(
 
   const advanced = advanceFlowRun({ state: next, journey, applied: [stepOf(stopped)] });
   if (!advanced.ok) return { ok: false, failure: advanced.failure };
-  return { ok: true, state: advanced.state, value: advanced.directive };
+  return {
+    ok: true,
+    state: advanced.state,
+    value: { directive: advanced.directive, advanced: true },
+  };
 }
 
 /**
@@ -526,7 +482,12 @@ function reject(
     ...built.directive,
     error: now.error ?? { code: detail.code, message, action: detail.action },
   };
-  return { ok: true, state: after, value: directive, persist: spent !== undefined };
+  return {
+    ok: true,
+    state: after,
+    value: { directive, advanced: false },
+    persist: spent !== undefined,
+  };
 }
 
 /** The attempt a refused answer spends, and the journey its boundary belongs to. */

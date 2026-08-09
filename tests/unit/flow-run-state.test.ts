@@ -18,6 +18,7 @@ import {
   parseRunState,
   serializeRunState,
   skipTransition,
+  withActionAttempted,
   withBoundary,
   withObservation,
   withPendingAction,
@@ -153,10 +154,24 @@ describe("estado de corrida — fail-closed", () => {
   it("la acción pendiente se pone y se limpia, y la observación no se duplica", () => {
     const pending = { transition: "fixture.a", digest: "sello" };
     const waiting = withPendingAction(newRunState("quick", SESSION), pending);
-    expect(waiting.pending_action).toEqual(pending);
+    // Emitida, todavía no empezada: la marca nace en falso y sólo la escribe el
+    // paso que está por ejercer el efecto.
+    expect(waiting.pending_action).toEqual({ ...pending, attempted: false });
     // Clearing matters as much: a run that moved on would otherwise tell whoever
     // resumes it to run something the engine no longer expects.
     expect(withPendingAction(waiting, null).pending_action).toBeNull();
+
+    // Re-emitir la MISMA acción no puede olvidar que ya se empezó: cada advance
+    // recalcula la frontera, y una marca reseteada al pasar por acá haría ver
+    // intacta una corrida que no lo está.
+    const begun = withActionAttempted(waiting);
+    expect(begun.pending_action?.attempted).toBe(true);
+    expect(withPendingAction(begun, pending).pending_action?.attempted).toBe(true);
+    // Otra acción es otra cosa: la marca no viaja de una a la siguiente.
+    expect(
+      withPendingAction(begun, { transition: "fixture.b", digest: "sello" }).pending_action
+        ?.attempted,
+    ).toBe(false);
 
     const once = withObservation(waiting, { transition: "fixture.a", signals: ["s1"] });
     const twice = withObservation(once, { transition: "fixture.a", signals: ["s1", "s2"] });

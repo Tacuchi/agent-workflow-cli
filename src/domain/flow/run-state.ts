@@ -29,7 +29,7 @@ import { type EffectClass, isEffectClass } from "../capability/effects.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
 import type { FlowDecision } from "./authority.js";
 
-export const FLOW_RUN_STATE_VERSION = 4;
+export const FLOW_RUN_STATE_VERSION = 5;
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -103,6 +103,20 @@ export interface FlowPendingAction {
   transition: string;
   /** Seal over program, arguments, target, input and demanded evidence. */
   digest: string;
+  /**
+   * Whether this run already BEGAN materializing the action in its own process.
+   *
+   * The one fact re-entry cannot derive. Everything else about an internal
+   * execution comes from the registry — which operation, whether repeating it is
+   * safe, what evidence it owes — but "we had already started when the process
+   * died" is only knowable if it was written down before the effect happened.
+   * That is why it is persisted in its own write, ahead of the operation: a run
+   * that comes back finding it `true` knows the world may already have moved, so
+   * an idempotent operation is confirmed by running it again and a non-idempotent
+   * one stops at its boundary with the recovery the row declares, instead of
+   * being applied a second time.
+   */
+  attempted: boolean;
 }
 
 /**
@@ -117,6 +131,44 @@ export interface FlowObservation {
   transition: string;
   signals: string[];
 }
+
+/**
+ * Something that MATERIALLY happened, kept because nothing else records it.
+ *
+ * The cursor already says which transitions the run passed and which it skipped,
+ * and re-deriving a skip's cause from the registry is exact — so neither is an
+ * event. What no other field can reconstruct is the outcome of an operation this
+ * CLI actually ran: what came back, what it applied, and why it failed when it
+ * did. That is the trace a person reads to answer "what happened, and with what
+ * evidence", and it is deliberately the only thing here: an event log that
+ * restated the cursor would be a second source for the run's own position.
+ *
+ * The real output is kept as its SEAL plus a summary the operation itself
+ * computed. The bytes were already consumed by the verdict that judged them; what
+ * outlives the invocation is proof of WHICH bytes those were, so a later reading
+ * cannot quietly become a different one.
+ */
+export type FlowRunEvent =
+  | {
+      kind: "executed";
+      transition: string;
+      operation: string;
+      /** One line, derived from the operation's own output. Never a claim. */
+      summary: string;
+      /** Seal over the real output the verdict consumed. */
+      output_digest: string;
+      effects: EffectClass[];
+      evidence: string[];
+    }
+  | {
+      kind: "failed";
+      transition: string;
+      operation: string;
+      code: string;
+      message: string;
+      /** The next action, so a stopped run is never a dead end. */
+      recovery: string;
+    };
 
 export interface FlowRunState {
   version: number;
@@ -146,6 +198,8 @@ export interface FlowRunState {
   pending_action: FlowPendingAction | null;
   /** Validated observations a later rule consumes. */
   observations: FlowObservation[];
+  /** What this CLI really ran, in order — the run's material trace. */
+  events: FlowRunEvent[];
   /** Effect classes this run already has authorization for. */
   authorizations: EffectClass[];
   /** Effects across their three moments, so a partial effect is expressible. */
@@ -179,6 +233,7 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
     boundary: null,
     pending_action: null,
     observations: [],
+    events: [],
     authorizations: [],
     effects: { planned: [], approved: [], applied: [] },
     attempts: [],
@@ -243,9 +298,46 @@ export function withBoundary(state: FlowRunState, boundary: string | null): Flow
  */
 export function withPendingAction(
   state: FlowRunState,
-  pending: FlowPendingAction | null,
+  pending: Omit<FlowPendingAction, "attempted"> | null,
 ): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), pending_action: pending });
+  // Re-emitting the SAME action must not forget that it was already begun. Every
+  // advance recomputes the boundary, so a caller that came back after a crash
+  // passes through here before the re-entry is decided — and a mark reset on the
+  // way in would make the run look untouched at exactly the moment it is not.
+  const current = state.pending_action;
+  const attempted =
+    pending !== null &&
+    current !== null &&
+    current.transition === pending.transition &&
+    current.digest === pending.digest &&
+    current.attempted;
+  return sealRunState({
+    ...withoutSeal(state),
+    pending_action: pending === null ? null : { ...pending, attempted },
+  });
+}
+
+/**
+ * Mark the pending action as begun, in its own write, BEFORE anything happens.
+ *
+ * Separate from {@link withPendingAction} on purpose: emitting a boundary and
+ * starting to materialize it are two moments, and collapsing them would record
+ * the intent at a time when nothing has yet been risked — which is precisely when
+ * the mark is worthless. Recording it afterwards is worse: the crash it exists to
+ * survive happens in between.
+ */
+export function withActionAttempted(state: FlowRunState): FlowRunState {
+  const pending = state.pending_action;
+  if (pending === null || pending.attempted) return state;
+  return sealRunState({
+    ...withoutSeal(state),
+    pending_action: { ...pending, attempted: true },
+  });
+}
+
+/** Append one material event to the run's trace, re-sealing the result. */
+export function withEvent(state: FlowRunState, event: FlowRunEvent): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), events: [...state.events, event] });
 }
 
 /** Keep a validated observation for the rule that consumes it later. */
@@ -409,6 +501,9 @@ function checkShape(parsed: Record<string, unknown>): CapabilityFailure | null {
   if (!isObservationArray(parsed.observations)) {
     return invalid("trae observaciones que no son señales declaradas por transición");
   }
+  if (!isEventArray(parsed.events)) {
+    return invalid("trae una traza material con un evento incompleto");
+  }
   if (!isEffectClassArray(parsed.authorizations)) {
     return invalid("declara autorizaciones que no son clases de efecto");
   }
@@ -446,8 +541,43 @@ function isEffectLedger(value: unknown): value is EffectLedger {
 function isPendingAction(value: unknown): value is FlowPendingAction | null {
   if (value === null) return true;
   return (
-    isRecord(value) && typeof value.transition === "string" && typeof value.digest === "string"
+    isRecord(value) &&
+    typeof value.transition === "string" &&
+    typeof value.digest === "string" &&
+    typeof value.attempted === "boolean"
   );
+}
+
+/**
+ * Whether the trace is well-formed, per kind.
+ *
+ * Checked by discriminant rather than by "has some fields": an `executed` event
+ * missing its seal and a `failed` one missing its recovery are the two shapes that
+ * would make the trace unusable for the thing it exists for — proving what came
+ * back, and saying what to do about what did not.
+ */
+function isEventArray(value: unknown): value is FlowRunEvent[] {
+  if (!Array.isArray(value)) return false;
+  return value.every((entry) => {
+    if (!isRecord(entry)) return false;
+    if (typeof entry.transition !== "string" || typeof entry.operation !== "string") return false;
+    if (entry.kind === "executed") {
+      return (
+        typeof entry.summary === "string" &&
+        typeof entry.output_digest === "string" &&
+        isEffectClassArray(entry.effects) &&
+        isStringArray(entry.evidence)
+      );
+    }
+    if (entry.kind === "failed") {
+      return (
+        typeof entry.code === "string" &&
+        typeof entry.message === "string" &&
+        typeof entry.recovery === "string"
+      );
+    }
+    return false;
+  });
 }
 
 function isObservationArray(value: unknown): value is FlowObservation[] {

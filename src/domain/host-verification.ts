@@ -24,12 +24,12 @@ export interface HarnessVerification {
 }
 
 export const HOST_VERIFICATIONS: Partial<Record<HarnessId, HarnessVerification>> = {
-  "claude-code": { version: "2.1.222", at: "2026-08-05", depth: "install" },
-  codex: { version: "0.146.0", at: "2026-08-05", depth: "install" },
-  oz: { version: "0.2026.07.29.09.05.stable_02", at: "2026-08-05", depth: "invocation" },
-  warp: { version: null, at: "2026-08-05", depth: "install" },
-  gemini: { version: "1.0.16", at: "2026-08-05", depth: "install" },
-  opencode: { version: "1.18.5", at: "2026-08-05", depth: "invocation" },
-  crush: { version: "0.87.0", at: "2026-08-05", depth: "invocation" },
-  kimi: { version: "0.31.1", at: "2026-08-05", depth: "install" },
+  "claude-code": { version: "2.1.226", at: "2026-08-09", depth: "install" },
+  codex: { version: "0.147.0", at: "2026-08-09", depth: "install" },
+  oz: { version: "0.2026.08.05.09.03.stable_01", at: "2026-08-09", depth: "invocation" },
+  warp: { version: null, at: "2026-08-09", depth: "install" },
+  gemini: { version: "1.0.16", at: "2026-08-09", depth: "install" },
+  opencode: { version: "1.18.15", at: "2026-08-09", depth: "invocation" },
+  crush: { version: "0.88.1", at: "2026-08-09", depth: "invocation" },
+  kimi: { version: "0.34.0", at: "2026-08-09", depth: "install" },
 };

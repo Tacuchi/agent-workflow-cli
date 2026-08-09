@@ -522,7 +522,11 @@ describe("la equivalencia no es un acuerdo entre hosts: no hay entrada de host",
     // nunca al motor. Un segundo dato tomado del entorno sería una entrada de
     // host por la puerta de atrás.
     expect(command).toContain("readContextId(ctx.env)");
-    expect(command.match(/ctx\.env/g) ?? []).toHaveLength(1);
+    // Lo que el guardián refuta es una LECTURA del entorno que no sea esa: una
+    // variable consultada acá sería la rama por host entrando por la puerta de
+    // atrás. Pasarle el port a un servicio no lo es —todos los servicios reciben
+    // sus ports— y por eso lo prohibido es el acceso, no la mención.
+    expect(command).not.toMatch(/ctx\.env\./);
     expect(command).toContain("contextId");
   });
 });

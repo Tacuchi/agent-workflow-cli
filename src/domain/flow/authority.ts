@@ -246,6 +246,78 @@ export interface DelegatedInvocation {
 export const RUN_PLACEHOLDERS = ["{session}", "{code}"] as const;
 
 /**
+ * The Workline operations this CLI materializes inside its own process.
+ *
+ * A CLOSED union, and closed is the whole point of it. An action executed
+ * internally is one nobody read as a command line first, so what may run that way
+ * has to be enumerable, auditable and impossible to widen with data: the row names
+ * an operation, never a program. `invocation.program` and `invocation.args` are
+ * NEVER interpreted — they stay as the equivalent command a person would run to
+ * obtain the same reading, which is what keeps the two comparable.
+ *
+ * The three members are exactly the deterministic surface the plan names: the
+ * board, the sessions' own artifacts (their reading and their seeding) and the
+ * close. Everything that rewrites a document the engine does not own, runs code,
+ * touches git or produces a judgment is deliberately NOT here.
+ */
+export const INTERNAL_ACTION_OPERATIONS = [
+  /** Project the workspace board — what `aw status --json` returns. */
+  "workspace.board",
+  /** Read, and where the command seeds them, a session's own artifacts. */
+  "session.artifacts",
+  /** Close the session and upsert its HISTORY row. */
+  "session.close",
+] as const;
+
+export type InternalActionOperation = (typeof INTERNAL_ACTION_OPERATIONS)[number];
+
+/**
+ * The effect classes each internal operation can really apply.
+ *
+ * Read by the guard, not by the runtime: at runtime the executor reports what it
+ * ACTUALLY applied and the same `executionVerdict` that judges an external result
+ * refuses anything short of the row's declared effects. This table is what makes
+ * the mismatch a failing test instead of a run that discovers it — a row declaring
+ * `mutate_overwrite` while its operation only reads can never be satisfied, and
+ * finding that out at the boundary is finding it out too late.
+ */
+export const INTERNAL_OPERATION_EFFECTS: Readonly<
+  Record<InternalActionOperation, readonly EffectClass[]>
+> = {
+  "workspace.board": ["read_only"],
+  "session.artifacts": ["read_only", "local_additive"],
+  "session.close": ["read_only", "local_additive", "mutate_overwrite"],
+};
+
+/**
+ * Who materializes a delegated action: this CLI, or whoever called it.
+ *
+ * The classification is DECLARED, never inferred. Inferring it — "the program is
+ * `aw`, so we can run it" — would make every future row internal by accident, and
+ * the one property this union exists to hold is that widening the executor is a
+ * visible edit. `external` carries its reason for the same reason a blocker
+ * carries its cause: a boundary that says "you run this" without saying why the
+ * CLI will not is a dead end for whoever reads it.
+ */
+export type InternalActionPlan =
+  | { operation: "workspace.board" }
+  /**
+   * The artifact kinds whose content the transition needs, or none for the
+   * presence report.
+   *
+   * Declared HERE and not read off `invocation.args`, which is what keeps "the
+   * arguments are never interpreted" true rather than nearly true. Parsing them
+   * would make the row's command line an input to the executor, and a flag added
+   * to that line for a human reader would silently change what runs.
+   */
+  | { operation: "session.artifacts"; dump?: readonly string[] }
+  | { operation: "session.close" };
+
+export type ActionExecution =
+  | ({ kind: "internal" } & InternalActionPlan)
+  | { kind: "external"; reason: string };
+
+/**
  * How a transition gets APPLIED — a mode orthogonal to authority, ownership and
  * effects.
  *
@@ -264,6 +336,17 @@ export const RUN_PLACEHOLDERS = ["{session}", "{code}"] as const;
 export interface DelegatedAction {
   invocation: DelegatedInvocation;
   /**
+   * Who runs it — required, so a new row cannot arrive without answering.
+   *
+   * The field is not optional and has no default: an omitted class would have to
+   * fall back to something, and either fallback is wrong. Defaulting to `internal`
+   * would let a row be executed without anybody deciding it may be; defaulting to
+   * `external` would silently keep a deterministic step as a round-trip and look
+   * exactly like a decision. So the compiler asks, and the guard checks that the
+   * answer is coherent with the row's effects.
+   */
+  execution: ActionExecution;
+  /**
    * Ids of the validations whose REAL output has to come back, non-empty.
    *
    * An action whose result nobody can check is a confirmation, and a confirmation
@@ -279,6 +362,19 @@ export interface DelegatedAction {
 /** The delegated action of a transition, or `null` when the engine applies it itself. */
 export function actionOf(decision: FlowDecision): DelegatedAction | null {
   return decision.action ?? null;
+}
+
+/**
+ * What this transition runs in-process, or `null` when whoever called it must.
+ *
+ * One predicate for every caller — the walk, the driver and the guard — so none of
+ * them can answer "does the CLI run this itself?" differently from the others.
+ */
+export function internalActionOf(decision: FlowDecision): InternalActionPlan | null {
+  const action = actionOf(decision);
+  if (action === null || action.execution.kind !== "internal") return null;
+  const { kind: _internal, ...plan } = action.execution;
+  return plan;
 }
 
 /** What makes this transition happen at all, or `null` when it always does. */
@@ -748,6 +844,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: ".",
         input: null,
       },
+      execution: { kind: "internal", operation: "session.close" },
       evidence: ["chassis.sesion-cerrada"],
       idempotent: true,
       recovery:
@@ -810,6 +907,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // "I looked". Read-only, so it never stops to be authorized.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: { kind: "internal", operation: "workspace.board" },
       evidence: ["quick.board-listed"],
       idempotent: true,
       recovery:
@@ -870,6 +968,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: { kind: "internal", operation: "session.artifacts" },
       evidence: ["quick.session-present"],
       idempotent: true,
       recovery:
@@ -921,6 +1020,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: {
+        kind: "internal",
+        operation: "session.artifacts",
+        dump: ["objetivo", "checkpoint"],
+      },
       evidence: [
         "quick.objetivo-sembrado",
         "quick.criterios-sembrados",
@@ -943,6 +1047,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // --source resolves no target and passes unconditionally.
     action: {
       invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason:
+          "la rama esperada de cada fuente es un veredicto sobre git, y un workspace sin fuentes declaradas no lo tiene: leerlo desde adentro diría 'verificada' donde no hay nada que verificar",
+      },
       evidence: ["quick.rama-verificada"],
       idempotent: true,
       recovery:
@@ -997,6 +1106,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: { kind: "internal", operation: "session.artifacts", dump: ["scripts"] },
       evidence: ["quick.scripts-derivados"],
       idempotent: true,
       recovery:
@@ -1043,6 +1153,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         args: ["session-artifacts", "--code", "{code}", "--dump", "objetivo"],
         target: SESSION_TARGET,
         input: null,
+      },
+      execution: {
+        kind: "external",
+        reason:
+          "los criterios verdes exigen haber CORRIDO la prueba del entregable, y correr código nunca es una operación interna",
       },
       evidence: ["quick.criterios-verdes"],
       idempotent: true,
@@ -1111,6 +1226,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: { kind: "internal", operation: "session.artifacts" },
       evidence: ["spec.session-present"],
       idempotent: true,
       recovery:
@@ -1333,6 +1449,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: {
+        kind: "external",
+        reason:
+          "el checklist de ready-for-plan es un juicio sobre lo que dice la spec, no la lectura del artefacto que lo contiene",
+      },
       evidence: ["spec.ready-for-plan-checklist"],
       idempotent: true,
       recovery:
@@ -1379,6 +1500,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // invocation is ever named.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason: "promover el frontmatter reescribe un documento que este motor no edita",
+      },
       evidence: ["spec.status-ready-for-plan"],
       idempotent: true,
       recovery:
@@ -1405,6 +1530,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // that somebody looked. Suggesting is the outcome; it never blocks.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: { kind: "internal", operation: "workspace.board" },
       evidence: ["plan.spec-status-leido"],
       idempotent: true,
       recovery:
@@ -1427,6 +1553,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: { kind: "internal", operation: "session.artifacts" },
       evidence: ["plan.session-present"],
       idempotent: true,
       recovery:
@@ -1564,6 +1691,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: {
+        kind: "external",
+        reason:
+          "la coherencia del plan es un juicio sobre lo que dice, no la lectura del artefacto que lo contiene",
+      },
       evidence: ["plan.coherence-checklist"],
       idempotent: true,
       recovery:
@@ -1619,6 +1751,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: { kind: "internal", operation: "session.artifacts" },
       evidence: ["plan.session-present"],
       idempotent: true,
       recovery:
@@ -1705,6 +1838,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: {
+        kind: "external",
+        reason:
+          "la forma ejecutable del plan es un juicio sobre lo que dice, no la lectura del artefacto que lo contiene",
+      },
       evidence: ["plan.executability-checklist"],
       idempotent: true,
       recovery:
@@ -1749,6 +1887,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // the order moved to where the document puts it.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason: "extraer los hermanos reescribe documentos que este motor no edita",
+      },
       evidence: ["plan.hermanos-extraidos"],
       idempotent: true,
       recovery:
@@ -1775,6 +1917,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // confirmation this whole contract exists to refuse.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason: "normalizar la forma reescribe el plan, y este motor no lo edita",
+      },
       evidence: ["plan.forma-normalizada"],
       idempotent: true,
       recovery:
@@ -1799,6 +1945,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         target: SESSION_TARGET,
         input: null,
       },
+      execution: { kind: "internal", operation: "session.artifacts" },
       evidence: ["plan.session-present"],
       idempotent: true,
       recovery:
@@ -1819,6 +1966,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // the gate's finding, not a detail to wave through.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason:
+          "la forma ejecutable del plan es un juicio sobre lo que dice, no la lectura del tablero que lo lista",
+      },
       evidence: ["plan.forma-ejecutable"],
       idempotent: true,
       recovery:
@@ -1947,6 +2099,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // its current branch, the expected one and whether they match.
     action: {
       invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason:
+          "la rama esperada de cada fuente es un veredicto sobre git, y un workspace sin fuentes declaradas no lo tiene",
+      },
       evidence: ["plan.rama-verificada"],
       idempotent: true,
       recovery:
@@ -2033,6 +2190,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // ticked boxes. "I marked it" is the one thing this contract will not take.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason: "marcar la casilla reescribe el plan-doc, y este motor no lo edita",
+      },
       evidence: ["plan.casillas-marcadas"],
       idempotent: true,
       recovery:
@@ -2055,6 +2216,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // when a state and its boxes disagree.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason:
+          "escribir el '> Estado:' de la fase reescribe el plan-doc, y este motor no lo edita",
+      },
       evidence: ["plan.estado-de-fase-aplicado"],
       idempotent: true,
       recovery:
@@ -2081,6 +2247,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         args: ["session-artifacts", "--code", "{code}", "--dump", "objetivo"],
         target: SESSION_TARGET,
         input: null,
+      },
+      execution: {
+        kind: "external",
+        reason: "correr las pruebas de fase es ejecutar código, nunca una operación interna",
       },
       evidence: ["plan.validaciones-de-fase-verdes"],
       idempotent: true,
@@ -2125,6 +2295,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // so it is read, not asserted.
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason:
+          "la validación final es el gate de convergencia del recorrido: darlo por verde desde una lectura sería aprobarlo sin correrlo",
+      },
       evidence: ["plan.validacion-final-verde"],
       idempotent: true,
       recovery:
@@ -2187,6 +2362,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
     action: {
       invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason: "sellar el done reescribe el plan-doc, y este motor no lo edita",
+      },
       evidence: ["plan.estado-done-sellado"],
       idempotent: true,
       recovery:
@@ -2216,6 +2395,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // clean or explicitly acknowledged").
     action: {
       invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason: "crear un commit es un efecto sobre git que este ejecutor no aplica",
+      },
       evidence: ["plan.commits-por-fuente"],
       idempotent: false,
       recovery:

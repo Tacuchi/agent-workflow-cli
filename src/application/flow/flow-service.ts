@@ -15,6 +15,8 @@ import { WORKLINE_FLOWS, type WorklineFlow } from "../capability/compose.js";
 import type { PathsService } from "../paths-service.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import { advanceFlowRun } from "./advance.js";
+import type { InternalActionExecutor } from "./internal-actions.js";
+import { driveInternalActions } from "./internal-drive.js";
 import { applyUnderLock, locateRun } from "./run-state-service.js";
 
 export interface AdvanceFlowInput {
@@ -24,6 +26,15 @@ export interface AdvanceFlowInput {
   flow?: string;
   /** Initialize the run state of a legacy session instead of refusing. */
   adopt: boolean;
+  /**
+   * How this process materializes the actions the registry classifies internal.
+   *
+   * Optional because not every caller can supply one, and the absence is a real
+   * answer rather than a hole: without it an internal action is emitted as the
+   * boundary it always was, with its invocation, and nothing is credited. See
+   * {@link driveInternalActions}.
+   */
+  executor?: InternalActionExecutor;
 }
 
 export type AdvanceFlowResult =
@@ -66,7 +77,16 @@ export async function advanceFlow(
   );
 
   if (!applied.ok) return { ok: false, failure: applied.failure };
-  return { ok: true, directive: applied.value };
+  // Deciding stopped at the first delegated step; executing continues past every
+  // one of them this process owns. Two calls and not one loop, because the walk is
+  // pure and the execution is not.
+  const driven = await driveInternalActions(fs, location, input.executor, {
+    ok: true,
+    state: applied.state,
+    value: applied.value,
+  });
+  if (!driven.ok) return { ok: false, failure: driven.failure };
+  return { ok: true, directive: driven.value };
 }
 
 /**
