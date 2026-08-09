@@ -104,11 +104,11 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
   });
 
   // The compatibility floor: every command that existed before spec 012 keeps
-  // emitting JSON in a terminal, exactly as it did then. Commands added LATER
-  // adopt the projection by design — reusing output-mode.ts is the pattern this
-  // plan established, not drift — so they are listed here, by name, one line per
-  // adopter. What the guard still refuses is a command acquiring a renderer
-  // without anyone declaring that it should.
+  // emitting JSON in a terminal, exactly as it did then — the floor is about the
+  // DEFAULT output mode, so an older command may still gain a projection for
+  // `--format human` without breaking it. Adopters are listed here, by name, one
+  // line per adopter, whether they arrived later or adopted it later. What the
+  // guard refuses is a command acquiring a renderer without anyone declaring it.
   const LATER_ADOPTERS: readonly string[] = [
     "context-budget", // plan 010 — the context budget report
     "context-plan", // plan 010 — the read-set an invocation must load
@@ -116,6 +116,7 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     "capability", // plan 014 — the attempt's receipt, projected from the same data
     "skills", // plan 014 — capability readiness, widened only under --detail
     "flow", // plan 015 — the boundary directive, derived from the same directive
+    "session-artifacts", // plan 022 — el recorrido de la sesión, bajo --format human
   ];
 
   it("no undeclared command acquired a human projection", () => {

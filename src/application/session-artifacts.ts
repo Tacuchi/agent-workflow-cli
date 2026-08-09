@@ -40,6 +40,87 @@ export const ARTIFACT_FILENAMES: Record<ArtifactKind, readonly string[]> = {
   technical_note: ["TECHNICAL-NOTE.md"],
 };
 
+/**
+ * What each artifact is FOR: who writes it, what fact it owns, who reads it.
+ *
+ * The catalog exists because "una fuente por hecho" is only checkable if every
+ * artifact says which fact it owns. Without it the rule is prose: two artifacts
+ * can drift into telling the same story, a new kind can arrive owning nothing, and
+ * nobody notices until two surfaces answer the same question differently.
+ *
+ * `primary_source` is the load-bearing column — it is what the session narrative
+ * attributes each of its lines to. `consumers` names the PUBLIC surfaces, so an
+ * artifact nothing reads is visible as such instead of quietly accumulating.
+ *
+ * Kept next to {@link ARTIFACT_FILENAMES} on purpose: the two are the same
+ * decision seen from two sides, and a kind added to one and forgotten in the other
+ * is exactly what the coverage test refuses.
+ */
+export interface ArtifactRole {
+  /** Who writes it — a loop, a CLI command, or the person. */
+  producer: string;
+  /** The fact this artifact is the primary place for. */
+  primary_source: string;
+  /** Public surfaces that read it. Empty means nothing reads it yet, and says so. */
+  consumers: readonly string[];
+  /** Present only for a kind kept alive to READ old sessions, never written. */
+  legacy?: true;
+}
+
+export const ARTIFACT_CATALOG: Record<ArtifactKind, ArtifactRole> = {
+  session: {
+    producer: "aw session-create (el loop dueño de la corrida)",
+    primary_source: "el objetivo, el origen y los criterios de éxito de la sesión",
+    consumers: ["aw session-artifacts", "aw status", "aw resume", "export-*"],
+  },
+  objective: {
+    producer: "sesiones anteriores al rediseño",
+    primary_source: "el objetivo, en sesiones que nacieron antes de SESSION.md",
+    consumers: ["aw session-artifacts", "aw resume"],
+    legacy: true,
+  },
+  decisions: {
+    producer: "el loop, a medida que decide",
+    primary_source: "las decisiones no obvias y su razón",
+    consumers: ["aw session-artifacts", "export-reports"],
+  },
+  conclusions: {
+    producer: "la investigación inline de la corrida",
+    primary_source: "el veredicto de una investigación y por qué quedó así",
+    consumers: ["aw session-artifacts", "aw resume", "export-reports"],
+  },
+  tasks: {
+    producer: "el loop que descompone trabajo dentro de la sesión",
+    primary_source: "las tareas de la sesión y su avance",
+    consumers: ["aw session-artifacts", "aw status"],
+  },
+  checkpoint: {
+    producer: "aw checkpoint-write y el loop en cada frontera",
+    primary_source: "qué se completó, qué queda y cuál es el próximo paso",
+    consumers: ["aw checkpoint-read", "aw resume", "aw resume-summary", "aw status"],
+  },
+  backlog: {
+    producer: "el cierre de la corrida, sólo si algo quedó diferido",
+    primary_source: "lo diferido y por qué",
+    consumers: ["aw session-artifacts", "aw resume"],
+  },
+  scripts_sql: {
+    producer: "el loop que toca base de datos, sin ejecutarlo",
+    primary_source: "el DDL/DML derivado de la corrida",
+    consumers: ["aw session-artifacts", "export-scripts"],
+  },
+  analysis_file: {
+    producer: "la investigación inline de la corrida",
+    primary_source: "la evidencia cruda que la investigación recogió",
+    consumers: ["aw session-artifacts", "export-reports"],
+  },
+  technical_note: {
+    producer: "el loop, cuando el detalle técnico excede al CHECKPOINT",
+    primary_source: "el detalle técnico que no cabe en el recorrido humano",
+    consumers: ["aw session-artifacts"],
+  },
+};
+
 /** Canonical EN UPPERCASE filename for `kind`. Use when writing a new artifact. */
 export function canonicalArtifactFilename(kind: ArtifactKind): string {
   const names = ARTIFACT_FILENAMES[kind];

@@ -3,9 +3,8 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { DesignRefState } from "./design/design-graph-service.js";
 import { projectRun } from "./flow/run-projection.js";
-import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
-import { findArtifact } from "./session-artifacts.js";
+import { buildSessionNarrative } from "./session-narrative.js";
 import { resolveSessionTarget } from "./session-resolver.js";
 import {
   type IndexedPlan,
@@ -292,6 +291,16 @@ function describePlanNext(
   return "continuar por la primera fase no validada";
 }
 
+/**
+ * A session's proposal, answered from the session's own narrative.
+ *
+ * It used to parse `Objective`, `Completed` and `Pending / Next` with a private
+ * reader living right here — a third resolver for headings two other modules also
+ * resolved, and the reason `checkpoint-read` could report nothing while `resume`
+ * reported the truth. The narrative is the one projection now, so what `resume`
+ * says is by construction what `SESSION.md` shows and what `session-artifacts`
+ * returns.
+ */
 async function sessionProposal(
   fs: FileSystemPort,
   paths: PathsService,
@@ -299,42 +308,25 @@ async function sessionProposal(
   path: string,
   session: IndexedSession | undefined,
 ): Promise<ResumeProposal> {
-  const objective =
-    (await readSection(fs, path, "session", "Objective")) ?? session?.summary ?? folder;
-  const pending = await readSection(fs, path, "checkpoint", "Pending / Next");
-  const completed = await readSection(fs, path, "checkpoint", "Completed");
-  // A run stopped at a boundary is a more precise answer than the CHECKPOINT's
-  // prose, and it is the only one that survives the conversation: it names the
-  // transition in force and, when something has to run, the exact invocation.
-  // The CHECKPOINT stays as the progress line — the two say different things.
+  const narrative = await buildSessionNarrative(fs, paths, {
+    folder,
+    path,
+    ...(session?.code !== undefined ? { code: session.code } : {}),
+  });
   const run = await projectRun(fs, paths, folder);
   const directed = run !== null && run.boundary !== "final";
+  const [result] = narrative.results;
   return {
     kind: "session",
     file: folder,
     number: session?.code ?? null,
-    objective,
-    progress: completed === undefined ? "sin checkpoint" : `checkpoint presente: ${completed}`,
-    next: directed
-      ? `${run.summary}${pending === undefined ? "" : ` · CHECKPOINT: ${pending}`}`
-      : (pending ?? "el checkpoint no declara trabajo pendiente"),
+    objective: narrative.objective?.text ?? session?.summary ?? folder,
+    progress:
+      result === undefined
+        ? `sesión ${narrative.phase}, sin avance registrado`
+        : `sesión ${narrative.phase}: ${result.text}`,
+    next: narrative.next?.text ?? "el checkpoint no declara trabajo pendiente",
     command: directed ? run.command : `aw session-resume --code ${folder} --reopen`,
     ...(session !== undefined && session.units.length > 0 ? { units: session.units } : {}),
   };
-}
-
-async function readSection(
-  fs: FileSystemPort,
-  sessionPath: string,
-  artifact: "session" | "checkpoint",
-  heading: string,
-): Promise<string | undefined> {
-  try {
-    const file = await findArtifact(sessionPath, artifact, fs);
-    if (!file) return undefined;
-    const section = parseMdSectionBilingual(await fs.readText(file), heading);
-    return section === undefined ? undefined : firstNonEmptyLine(section);
-  } catch {
-    return undefined;
-  }
 }

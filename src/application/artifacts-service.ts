@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { SessionNarrative } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
@@ -7,6 +8,7 @@ import { type TaskItem, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact, listExistingArtifacts } from "./session-artifacts.js";
+import { buildSessionNarrative } from "./session-narrative.js";
 import {
   type SessionResolutionError,
   resolveSessionTarget,
@@ -15,6 +17,8 @@ import {
 
 export interface ArtifactsInput {
   code?: string;
+  /** Omit the narrative — the technical detail on its own. */
+  noNarrative?: boolean;
   verbose?: boolean;
   /** Opaque conversation id; resolution falls back to its durable association. */
   contextId?: string;
@@ -53,6 +57,16 @@ export interface ArtifactsOutput {
   state: string;
   artifacts: ArtifactsBlock;
   branch?: string;
+  /**
+   * The human reading of the session — the SAME projection `SESSION.md` carries
+   * and `resume` answers from.
+   *
+   * Counts and presence flags say what EXISTS; they were never able to say what
+   * happened, and a person asking "what did this session do?" had to open the
+   * files and reconstruct it. The projection is built here rather than described,
+   * so this surface cannot drift from the block on disk.
+   */
+  narrative?: SessionNarrative;
 }
 
 export type ArtifactsResult = ArtifactsOutput | { sessionError: SessionResolutionError };
@@ -103,6 +117,15 @@ export async function runArtifactsCommand(
   };
   if (session.branch !== undefined || verbose) {
     result.branch = session.branch ?? "";
+  }
+  if (input.noNarrative !== true) {
+    // The code is left to derive: `session.code` is whatever the caller typed —
+    // the folder name when they named the folder — and the narrative's own code
+    // is the session's correlative, which is one fact with one answer.
+    result.narrative = await buildSessionNarrative(fs, paths, {
+      folder: session.folder,
+      path: session.path,
+    });
   }
   return result;
 }

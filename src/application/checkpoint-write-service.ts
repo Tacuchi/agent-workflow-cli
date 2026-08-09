@@ -12,6 +12,7 @@ import {
   unresolvedDetail,
 } from "./lifecycle-target.js";
 import type { PathsService } from "./paths-service.js";
+import { writeSessionNarrative } from "./session-narrative.js";
 import type { SessionCandidate, SessionEntry, SessionResolutionError } from "./session-resolver.js";
 
 const PLACEHOLDER_MARKER = "_[AI:";
@@ -94,6 +95,10 @@ export async function runCheckpointWrite(
   const md = formatCheckpointMd(state);
   await fs.mkdirp(session.path);
   await fs.writeText(cpPath, md);
+  // The CHECKPOINT is where progress lives, so writing one is exactly when the
+  // session's entry point stops being current. Refreshed here and never on a
+  // read, which is what keeps a `status` or a `resume` from rewriting history.
+  await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
 
   return {
     session: session.folder,

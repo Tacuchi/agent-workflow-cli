@@ -20,7 +20,15 @@ import {
   sessionReadRequest,
 } from "./session-resolver.js";
 
-const PLACEHOLDER_MARKER = "_[AI:";
+/**
+ * What an unfilled CHECKPOINT section still says.
+ *
+ * Exported because it is not this module's private business: a line that still
+ * carries it is the TEMPLATE asking to be written, and any reader that presents
+ * it as content is reporting a fact nobody stated. `computeCheckpointStatus`
+ * calls such a checkpoint `draft`; everything else has to be able to agree.
+ */
+export const PLACEHOLDER_MARKER = "_[AI:";
 const DEFAULT_STALE_THRESHOLD_SECONDS = 300;
 
 export interface CheckpointFields {
@@ -44,6 +52,67 @@ export interface CheckpointStatus {
   age_seconds: number | null;
 }
 
+/**
+ * The three sections a CHECKPOINT really has today, whatever it is called.
+ *
+ * The artifact's contract is `## Completed` · `## Pending / Next` · `## Open
+ * questions`, and every reader in this codebase used to resolve headings on its
+ * own: this file asked for `Lo último que hice` and `Próximo paso` — the shape the
+ * template abandoned — so every field it returned came back `null` for every
+ * modern session, while `resume` read the canonical headings with a private
+ * parser and got the real thing. Two readers, two answers, and the one wired into
+ * `checkpoint-read` and the post-compact payload was the blind one.
+ *
+ * One reader now, canonical first and the historic names as fallbacks. Fallback
+ * and not migration: a session written before the redesign is still readable, and
+ * nothing rewrites it to make it so.
+ */
+export interface CheckpointNarrative {
+  path: string;
+  /** What is already done — `## Completed`, or the older "last action". */
+  completed: string | null;
+  /** What comes next — `## Pending / Next`, or the older "next step". */
+  pending: string | null;
+  /** Live doubts, when the artifact carries the section at all. */
+  openQuestions: string | null;
+}
+
+/** `## Completed`, with the headings that meant the same thing before it. */
+function readCompleted(text: string): string | null {
+  return (
+    parseMdSectionBilingual(text, "Completed") ??
+    parseMdSectionBilingual(text, "Lo último que hice") ??
+    parseMdSectionBilingual(text, "Last action") ??
+    null
+  );
+}
+
+/** `## Pending / Next`, with its predecessors. */
+function readPending(text: string): string | null {
+  return (
+    parseMdSectionBilingual(text, "Pending / Next") ??
+    parseMdSectionBilingual(text, "Pending") ??
+    parseMdSectionBilingual(text, "Próximo paso") ??
+    parseMdSectionBilingual(text, "Next step") ??
+    null
+  );
+}
+
+export async function readCheckpointNarrative(
+  fs: FileSystemPort,
+  sessionPath: string,
+): Promise<CheckpointNarrative | null> {
+  const path = join(sessionPath, "CHECKPOINT.md");
+  if (!(await fs.exists(path))) return null;
+  const text = await fs.readText(path);
+  return {
+    path,
+    completed: readCompleted(text),
+    pending: readPending(text),
+    openQuestions: parseMdSectionBilingual(text, "Open questions") ?? null,
+  };
+}
+
 export async function readLatestCheckpoint(
   fs: FileSystemPort,
   sessionPath: string,
@@ -55,8 +124,10 @@ export async function readLatestCheckpoint(
     path,
     actualizado: parseMdValue(text, "Actualizado") ?? null,
     avance: parseMdValue(text, "Avance") ?? null,
-    ultimo: parseMdSectionBilingual(text, "Lo último que hice") ?? null,
-    proximo: parseMdSectionBilingual(text, "Próximo paso") ?? null,
+    // The canonical sections answer the same two questions the legacy ones did,
+    // so they fill the same fields instead of a parallel pair nobody reads.
+    ultimo: readCompleted(text),
+    proximo: readPending(text),
     decisiones: parseMdSectionBilingual(text, "Decisiones recientes") ?? null,
     archivos:
       parseMdSectionBilingual(text, "Archivos tocados (post-último-commit)") ??
@@ -143,6 +214,12 @@ function splitSections(text: string): [string, string][] {
 
 function sectionToField(header: string): string | null {
   const h = stripAccentsLower(header);
+  // The artifact's own headings, first: a placeholder left inside `Completed` or
+  // `Pending / Next` used to map to nothing, so a half-written CHECKPOINT read as
+  // `complete`. Same three names the narrative reader resolves.
+  if (h === "completed") return "ultimo";
+  if (h.startsWith("pending")) return "proximo";
+  if (h.startsWith("open questions")) return "contexto";
   // EN canon (R3) — emitted by current write paths.
   if (h === "last action" || h.startsWith("last action")) return "ultimo";
   if (h === "next step" || h.startsWith("next step")) return "proximo";

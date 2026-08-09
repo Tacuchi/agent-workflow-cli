@@ -1,4 +1,5 @@
 import { basename, join, relative } from "node:path";
+import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -13,6 +14,7 @@ import { type SpecEvidence, parseSpecRelation } from "./parsers/spec-relation.js
 import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { findArtifact } from "./session-artifacts.js";
+import { readSessionPhase } from "./session-narrative.js";
 import { SessionsService } from "./sessions-service.js";
 import { type OrphanUnit, runWorktree } from "./worktree-service.js";
 
@@ -112,6 +114,16 @@ export interface IndexedSession {
   type: string | null;
   summary: string;
   state: "active" | "closed";
+  /**
+   * The session's own reading of itself — `abierta`, `reanudada` or `cerrada`.
+   *
+   * `state` answers whether the folder is closed; this answers whether anybody
+   * has come back to it, which is the difference between a session waiting to
+   * start and one somebody left mid-way. Derived by the same rule the narrative
+   * uses, from the same reader, so the board and the session's own entry point
+   * cannot describe it differently.
+   */
+  phase: SessionPhase;
   has_checkpoint: boolean;
   /** the spec/plan its `## Origin` points at, when it points at one */
   linked_doc: string | null;
@@ -601,6 +613,7 @@ async function readSessions(
       type: s.type ?? null,
       summary: s.summary ?? s.folder,
       state: s.state === "closed" ? "closed" : "active",
+      phase: await readSessionPhase(fs, s.path, s.state === "closed"),
       has_checkpoint: checkpoint !== null && checkpoint !== undefined,
       linked_doc: await readLinkedDoc(fs, primary),
       date: ts.date,

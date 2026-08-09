@@ -114,7 +114,13 @@ async function artifacts(
   run: InternalActionRun,
   dump: readonly string[] | null,
 ): Promise<InternalActionOutcome> {
-  const report = await runArtifactsCommand(deps.fs, deps.env, deps.paths, { code: run.code });
+  // The presence report, without the narrative: this operation checks that the
+  // artifacts are THERE, and projecting the session's whole reading to answer
+  // that would be work nobody asked for on every advance.
+  const report = await runArtifactsCommand(deps.fs, deps.env, deps.paths, {
+    code: run.code,
+    noNarrative: true,
+  });
   if ("sessionError" in report) {
     return refusal(
       "session.artifacts",

@@ -162,9 +162,14 @@ describe("runResume — an explicit target wins over the pipeline", () => {
     expect(out.proposal).toMatchObject({
       kind: "session",
       objective: "ejecutar el plan 008",
-      next: "- cerrar F3",
+      // Sin la viñeta: el próximo paso ahora viene de la narrativa, que lee cada
+      // ítem como un hecho y no como una línea de Markdown.
+      next: "cerrar F3",
       command: "aw session-resume --code 049-x-plan-exec --reopen",
     });
+    // Y esa narrativa dice de qué estado viene: una sesión con avance registrado
+    // es una que alguien dejó y retomó, no una recién abierta.
+    expect(out.proposal.progress).toContain("sesión");
   });
 });
 

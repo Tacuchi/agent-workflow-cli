@@ -1,3 +1,4 @@
+import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -31,6 +32,16 @@ export interface StatusSession {
   folder: string;
   type: string | null;
   summary: string;
+  /**
+   * `abierta` | `reanudada` | `cerrada` — the session's own reading of itself.
+   *
+   * The board already said `active`/`closed`, which answers whether the folder is
+   * open and nothing else. This is the distinction somebody scanning the board
+   * needs: a session waiting to start and one somebody left mid-way look
+   * identical under `active`. Derived by the same rule the session's own entry
+   * point uses, so the two cannot describe it differently.
+   */
+  phase: SessionPhase;
   date: string;
   relative: string;
   /**
@@ -98,6 +109,7 @@ export async function runStatusCommand(
       folder: session.folder,
       type: session.type,
       summary: session.summary,
+      phase: session.phase,
       date: session.date,
       relative: session.relative,
       flow: isClosed ? null : await projectRun(fs, paths, session.folder),

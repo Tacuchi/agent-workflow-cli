@@ -21,5 +21,56 @@
       }
     },
     "decisiones_count": 3
+  },
+  "narrative": {
+    "session": "session001-dev-foo",
+    "code": "001",
+    "phase": "abierta",
+    "objective": null,
+    "sequence": [],
+    "tasks": [],
+    "decisions": [
+      {
+        "state": "aplicado",
+        "text": "Stack TypeScript + Vitest — Elegimos TS estricto + Vitest 2.1 para alinear con el resto del repo.",
+        "detail": null,
+        "source": {
+          "artifact": "DECISIONES.md",
+          "locator": "DEC-001"
+        }
+      },
+      {
+        "state": "aplicado",
+        "text": "ESM puro — Sin CJS fallback. Node ≥18 cubre el universo target.",
+        "detail": null,
+        "source": {
+          "artifact": "DECISIONES.md",
+          "locator": "DEC-002"
+        }
+      },
+      {
+        "state": "aplicado",
+        "text": "graduada — → docs/decisiones/003-formato-output.md",
+        "detail": "graduada",
+        "source": {
+          "artifact": "DECISIONES.md",
+          "locator": "DEC-003"
+        }
+      }
+    ],
+    "results": [],
+    "evidence": [],
+    "pending": [],
+    "next": null,
+    "links": [
+      {
+        "label": "DECISIONES.md",
+        "path": "./DECISIONES.md"
+      },
+      {
+        "label": "TASKS.md",
+        "path": "./TASKS.md"
+      }
+    ]
   }
 }

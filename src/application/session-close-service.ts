@@ -5,6 +5,7 @@ import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
 import { invalidateBindingsTo } from "./session-binding-service.js";
+import { writeSessionNarrative } from "./session-narrative.js";
 import {
   CLOSED_MARKER,
   type SessionEntry,
@@ -97,6 +98,10 @@ export async function runSessionClose(
   };
   const held = await heldUnits(isolation, session.folder);
   if (held.length > 0) sessionClose.pending_integration = held;
+  // Last write of the session's life, and the one that matters most: whoever
+  // opens a closed session months later reads the block, and a block left saying
+  // "abierta" would be the closing act failing to record itself.
+  await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
   return { sessionClose };
 }
 
