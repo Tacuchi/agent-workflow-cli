@@ -211,6 +211,15 @@ async function judgeReference(
   }
 
   // 3. Is what the task consumes implementable?
+  //
+  // A ROOT pin consumes the revision, not a node of a graph: there is no closure
+  // to walk and no maturity ladder to climb. For a simple design that is the
+  // whole truth — its content is one document the resolver already confirmed is
+  // there, byte for byte. Running the package closure over it would demand a
+  // `handoff` from artifacts that do not exist, which is exactly the "fingir
+  // screens, flows o madurez" this route removes.
+  if (reference.artifact === null) return { ...base, ready: true };
+
   const root = `${reference.artifact.package}/${reference.artifact.artifact}@r${reference.artifact.revision}`;
   const closure = computeClosure(loaded.manifest, [root], loaded.read);
   if (closure.failures.length > 0) {
@@ -242,7 +251,14 @@ async function judgeReference(
 function ownerOf(text: string, raw: string, planPath: string): GateOwner {
   const lines = text.split(/\r?\n/);
   let phase: string | null = null;
+  let declaring = false;
   for (const [i, line] of lines.entries()) {
+    // The `## Design references` block DECLARES; it never consumes. Skipping it
+    // matters for a root pin, whose literal text (`DES-001@r1`) appears in the
+    // declaration too — attributing the consumption there would point whoever
+    // reads the diagnostic at the wrong line of the wrong section.
+    if (/^##\s/.test(line)) declaring = line.trim() === "## Design references";
+    if (declaring) continue;
     const heading = /^###\s+(F\d+)\b/.exec(line);
     if (heading !== null) phase = heading[1] as string;
     if (!line.includes(raw)) continue;

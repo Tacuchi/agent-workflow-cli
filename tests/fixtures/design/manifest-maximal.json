@@ -1,6 +1,7 @@
 {
   "schema": "workline.design-manifest/v1",
   "id": "DES-001",
+  "mode": "package",
   "title": "Alta y baja de miembros",
   "created": "2026-08-02",
   "derived_from": null,

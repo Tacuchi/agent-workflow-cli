@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { DesignRouteMode } from "../../domain/design/expansion.js";
 import {
   type CurrentBaseline,
   DESIGNS_DIR,
@@ -23,6 +24,13 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 export interface DesignPackageEntry {
   /** Null when the manifest could not be read or failed validation. */
   id: string | null;
+  /**
+   * Which shape this package is, so every consumer discriminates on ONE field
+   * instead of inferring it from an empty catalog. Null while the manifest does
+   * not validate: an unreadable package has no mode to report, and answering
+   * `package` there would be a guess wearing a default.
+   */
+  mode: DesignRouteMode | null;
   /**
    * The `id` the manifest CLAIMS, even when it did not validate. Lets a broken
    * package be named in a diagnostic instead of reading as "no existe": those
@@ -112,6 +120,7 @@ async function readPackage(
   const manifestPath = `${path}/${DESIGN_MANIFEST_FILE}`;
   const base: DesignPackageEntry = {
     id: null,
+    mode: null,
     title: null,
     path,
     manifest_path: manifestPath,
@@ -164,9 +173,10 @@ async function readPackage(
 
 function project(
   manifest: DesignManifest,
-): Pick<DesignPackageEntry, "id" | "title" | "current_baseline" | "manifest"> {
+): Pick<DesignPackageEntry, "id" | "mode" | "title" | "current_baseline" | "manifest"> {
   return {
     id: manifest.id,
+    mode: manifest.mode,
     title: manifest.title,
     current_baseline: manifest.current_baseline,
     manifest,

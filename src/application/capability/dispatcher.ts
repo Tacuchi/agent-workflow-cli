@@ -288,6 +288,14 @@ async function attemptStage(
   }
   // A durable candidate is not an applied one. The attempt stops here with the
   // preview and the seal, and `apply` is a separate, authorized step.
+  //
+  // The gap NAMES the two alternatives instead of describing an authorization.
+  // This is the one human boundary of the whole route, and what a person decides
+  // is not "which effect classes do I grant" — it is whether this preview gets
+  // saved. The classes still travel in the proposal, where the grant reads them.
+  const preview = prepared.plan.proposal.preview
+    .map((e) => `${e.path} (${e.bytes} B${e.overwrite ? ", reemplaza" : ""})`)
+    .join(" · ");
   return receiptOf(
     request,
     descriptor,
@@ -295,7 +303,9 @@ async function attemptStage(
     {
       kind: "needs_input",
       gaps: [
-        `aprobación visible para: ${prepared.plan.proposal.requires_approval.join(", ") || "publicar los artefactos propuestos"}`,
+        `vista previa: ${preview}`,
+        "Aprobar y guardar — se escriben exactamente esos archivos y no se vuelve a preguntar por esos efectos",
+        "Refinar — no se escribe nada y la propuesta se vuelve a redactar",
       ],
     },
     { plan: prepared.plan, output: result.output, authorization },
@@ -525,7 +535,7 @@ function receiptOf(
 
 function nextAction(result: HandlerResult, resolution: CapabilityResolution): string {
   if (result.kind === "needs_input") {
-    return "contestá con 'aw capability continue' o, si hay una propuesta, aprobala y corré 'apply'";
+    return "contestá con 'aw capability continue'; si ya hay vista previa, elegí 'Aprobar y guardar' (corré 'apply' con su digest) o 'Refinar' (no corras nada y redactá de nuevo)";
   }
   if (result.kind === "blocked") return result.failure.action;
   if (result.kind === "durable") return "revisá la propuesta y aprobala para aplicarla";

@@ -34,7 +34,17 @@ export interface SpecDesignReference {
 /** What a PLAN phase or task adds: the exact artifacts it will implement. */
 export interface TaskDesignReference {
   baseline: BaselineRef;
-  artifact: ArtifactRef;
+  /**
+   * The artifact the task implements, or null when it pins the design by its
+   * ROOT.
+   *
+   * A simple design has no catalog to point into: its whole content is one
+   * document, so `DES-007@r1` IS the complete reference. Making the artifact
+   * optional is what lets a plan consume it without inventing a screen id that
+   * exists nowhere — which is the "sin fingir screens, flows o madurez" half of
+   * the contract, expressed in the type rather than in a convention.
+   */
+  artifact: ArtifactRef | null;
   /** The literal text, so a diagnostic can quote what the author wrote. */
   raw: string;
 }
@@ -203,27 +213,46 @@ export function parseTaskDesignReferences(text: string, artifact: string): TaskR
   const failures: DesignFailure[] = [];
   const seen = new Set<string>();
   const pinned = new Set<string>();
+  // The declared block is where a document says WHICH baselines it closed on.
+  // Scanning it for task references too would turn every declaration into a
+  // consumption — so a package-mode plan that declares `DES-001@r4` and pins
+  // `DES-001@r4 / SCR-002@r1` would suddenly also claim to consume the root.
+  const body = withoutDeclaredBlock(text);
 
   for (const match of text.matchAll(TASK_REFERENCE_SHAPE)) {
     const raw = match[0];
     if (seen.has(raw)) continue;
     seen.add(raw);
 
-    const left = match[1] as string;
-    const right = match[2] as string;
-    const baseline = parseBaselineRef(left);
-    if (baseline === null) {
-      const near = approximate(left, artifact, `referencia de tarea '${raw}'`);
-      failures.push(near ?? malformed(raw, left, artifact));
+    const read = readTwoPart(match[1] as string, match[2] as string, raw, artifact);
+    if ("code" in read) {
+      failures.push(read);
       continue;
     }
-    const artifactRef = parseArtifactRef(`${baseline.package}/${right}`);
-    if (artifactRef === null) {
-      failures.push(malformed(raw, right, artifact));
+    pinned.add(read.baseline.package);
+    references.push(read);
+  }
+
+  // The ROOT form: `DES-007@r1` with no artifact half. It is a complete reference
+  // for a design that has no catalog, and the gate is what answers whether the
+  // package it names really is one — the grammar cannot know.
+  for (const match of body.matchAll(ROOT_REFERENCE_SHAPE)) {
+    const raw = match[0];
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    const baseline = parseBaselineRef(raw);
+    // Shaped like a root pin and not one — `DES-0001@r1` is a second spelling of
+    // an identity, and every comparison downstream is by string. Reported for
+    // the same reason the two-part form is: a reference silently ignored is
+    // worse than one rejected.
+    if (baseline === null) {
+      failures.push(
+        approximate(raw, artifact, "referencia de tarea") ?? malformed(raw, raw, artifact),
+      );
       continue;
     }
     pinned.add(baseline.package);
-    references.push({ baseline, artifact: artifactRef, raw });
+    references.push({ baseline, artifact: null, raw });
   }
 
   // A package named without being pinned is the exact failure this contract
@@ -236,6 +265,44 @@ export function parseTaskDesignReferences(text: string, artifact: string): TaskR
     failures.push(near ?? malformed(value, value, artifact));
   }
   return { references, failures };
+}
+
+/** `DES-001@r4 / SCR-002@r2#empty` — both halves, or the reason it is not one. */
+function readTwoPart(
+  left: string,
+  right: string,
+  raw: string,
+  artifact: string,
+): TaskDesignReference | DesignFailure {
+  const baseline = parseBaselineRef(left);
+  if (baseline === null) {
+    return (
+      approximate(left, artifact, `referencia de tarea '${raw}'`) ?? malformed(raw, left, artifact)
+    );
+  }
+  const artifactRef = parseArtifactRef(`${baseline.package}/${right}`);
+  if (artifactRef === null) return malformed(raw, right, artifact);
+  return { baseline, artifact: artifactRef, raw };
+}
+
+/**
+ * `DES-007@r1` standing alone — no `/artifact` half after it.
+ *
+ * The lookahead is what keeps it from eating the left side of a two-part
+ * reference: `DES-001@r4 / SCR-002@r1` must be read by `TASK_REFERENCE_SHAPE` as
+ * one thing, not by this one as a root plus leftovers.
+ */
+const ROOT_REFERENCE_SHAPE = /DES-[0-9]{3,}@r[1-9][0-9]{0,5}(?!\s*\/)(?![\w@-])/g;
+
+/** The document minus its `## Design references` block, which declares and never consumes. */
+function withoutDeclaredBlock(markdown: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.trim() === SPEC_SECTION);
+  if (start === -1) return markdown;
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((l) => /^##\s/.test(l));
+  const after = end === -1 ? [] : rest.slice(end);
+  return [...lines.slice(0, start), ...after].join("\n");
 }
 
 function malformed(raw: string, part: string, artifact: string): DesignFailure {

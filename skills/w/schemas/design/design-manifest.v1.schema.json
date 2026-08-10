@@ -28,6 +28,10 @@
       "type": "string",
       "pattern": "^DES-(?:[0-9]{3}|[1-9][0-9]{3,})$"
     },
+    "mode": {
+      "description": "Which shape this package is. `simple` publishes one authored DESIGN.md and catalogs nothing; `package` is the full dossier of flows, screens, rules, tokens and renditions. Optional, and absent means `package` — every dossier published before the simple route stays readable without a migration.",
+      "enum": ["simple", "package"]
+    },
     "title": {
       "description": "Human name of the package.",
       "type": "string",

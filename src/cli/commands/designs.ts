@@ -57,7 +57,10 @@ export const designsCommand: QtcCommand<DesignsOutput> = {
       const baseline =
         pkg.current_baseline === null ? "sin baseline" : `@r${pkg.current_baseline.revision}`;
       const identity = pkg.id ?? "(sin identidad)";
-      const head = `${identity}  ${baseline}  ${pkg.path}`;
+      // The mode decides how the entry is consumed — by its root or by an
+      // artifact — so it belongs on the listing line and not behind `--detail`.
+      const mode = pkg.mode === null ? "?" : pkg.mode;
+      const head = `${identity}  ${mode}  ${baseline}  ${pkg.path}`;
       if (pkg.ok || !context.detail) return head;
       return [
         head,

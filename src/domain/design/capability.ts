@@ -86,7 +86,7 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
   contract_version: CAPABILITY_CONTRACT_VERSION,
   name: DESIGN_CAPABILITY,
   purpose:
-    "producir, actualizar, juzgar, proyectar y sellar un UI Design Package v1 sobre un contrato único",
+    "producir, actualizar, juzgar, proyectar y sellar un diseño sobre un contrato único: un DESIGN.md legible por defecto, el UI Design Package v1 cuando una señal observable lo pide",
   exposure: ["direct", "compose"],
   default_operation: null,
   operations: [
@@ -106,7 +106,14 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       inputs: [
         { name: "title", kind: "text", required: true, sensitivity: "public", schema: null },
         { name: "sources", kind: "reference", required: true, sensitivity: "public", schema: null },
-        { name: "target", kind: "text", required: true, sensitivity: "public", schema: null },
+        // NOT required, and the `workspace: "optional"` note below is why: inside
+        // a workspace the destination IS `docs/designs/`, and on the simple route
+        // the CLI derives the exact folder from the title. Demanding it anyway
+        // made the documented default unreachable through the contract that
+        // documents it, and asked the caller to administer a path the CLI knows.
+        // `resolveOutputRoot` is the real gate: outside a workspace, no root
+        // declared still means nothing written.
+        { name: "target", kind: "text", required: false, sensitivity: "public", schema: null },
         {
           name: "profile",
           kind: "selection",
@@ -117,9 +124,20 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
         { name: "context", kind: "text", required: false, sensitivity: "public", schema: null },
         // The maturity the caller ASKS FOR. Declared as an input because the
         // answer "you got `outline`, not `handoff`" only means something
-        // against something that was requested.
+        // against something that was requested. It belongs to the expanded route:
+        // a simple design has no ladder, and asking for one there answers null.
         {
           name: "maturity",
+          kind: "selection",
+          required: false,
+          sensitivity: "public",
+          schema: null,
+        },
+        // The SEMANTIC half of the expansion vocabulary. Optional because simple
+        // is the default: an invocation that declares nothing gets one readable
+        // document, which is the whole point of the route.
+        {
+          name: "expansion",
           kind: "selection",
           required: false,
           sensitivity: "public",
@@ -150,7 +168,13 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       interaction: "needs_input",
       inputs: [
         { name: "package", kind: "reference", required: true, sensitivity: "public", schema: null },
-        { name: "base", kind: "reference", required: true, sensitivity: "public", schema: null },
+        // Required by the ROUTE, not by the envelope. On the expanded route the
+        // compare-and-swap base is the caller's claim and the handler refuses an
+        // update without it. On the simple route the CLI re-reads the manifest
+        // and seals its digest itself — a stronger check than a declared string,
+        // and one the caller cannot get wrong — so demanding it here would only
+        // ask somebody to administer a revision the route exists to derive.
+        { name: "base", kind: "reference", required: false, sensitivity: "public", schema: null },
         {
           name: "sources",
           kind: "reference",
@@ -161,6 +185,13 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
         { name: "context", kind: "text", required: false, sensitivity: "public", schema: null },
         {
           name: "maturity",
+          kind: "selection",
+          required: false,
+          sensitivity: "public",
+          schema: null,
+        },
+        {
+          name: "expansion",
           kind: "selection",
           required: false,
           sensitivity: "public",

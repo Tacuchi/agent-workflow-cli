@@ -317,23 +317,30 @@ describe("los schemas de diseño publicados y sus validadores no derivan", () =>
   it.each(CONTRACTS.map((c) => [c.name, c] as const))(
     "%s — omitir una clave obligatoria de primer nivel produce un fallo",
     (_name, contract) => {
-      const tolerated: string[] = [];
-      let checked = 0;
-      for (const key of analyze(contract).required) {
-        if (key.includes(".") || key.includes("[")) continue;
-        checked += 1;
-        if (!contract.runWithout(key).ok) continue;
-        tolerated.push(key);
-      }
+      const { declared, required } = analyze(contract);
+      const root = (path: string): boolean => !path.includes(".") && !path.includes("[");
+
       // El piso viene de una fuente INDEPENDIENTE del schema: la tabla de claves
       // del validador. Compararlo contra el propio `required` que se itera sería
-      // una tautología — no podría fallar nunca.
-      const validatorRootKeys = (contract.allowedKeys[""] ?? []).length;
-      expect(validatorRootKeys, "el validador declara claves de raíz").toBeGreaterThan(0);
-      expect(checked, "claves obligatorias probadas vs claves de raíz del validador").toBe(
-        validatorRootKeys,
-      );
+      // una tautología — no podría fallar nunca. Cada clave del validador cae de
+      // un lado o del otro, y las dos mitades se comprueban: una clave que pase
+      // de obligatoria a opcional cambia de columna, nunca desaparece del guard.
+      const validatorRootKeys = [...(contract.allowedKeys[""] ?? [])].sort();
+      expect(validatorRootKeys.length, "el validador declara claves de raíz").toBeGreaterThan(0);
+      expect(
+        [...declared].filter(root).sort(),
+        "claves de raíz del schema vs las del validador",
+      ).toEqual(validatorRootKeys);
+
+      const tolerated: string[] = [];
+      const refused: string[] = [];
+      for (const key of validatorRootKeys) {
+        const withoutIt = contract.runWithout(key).ok;
+        if (required.has(key) && withoutIt) tolerated.push(key);
+        if (!required.has(key) && !withoutIt) refused.push(key);
+      }
       expect(tolerated, "claves que el schema exige y el validador acepta ausentes").toEqual([]);
+      expect(refused, "claves opcionales del schema que el validador exige igual").toEqual([]);
     },
   );
 });

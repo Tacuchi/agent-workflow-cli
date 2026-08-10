@@ -36,10 +36,14 @@ export interface ResolvedBaseline {
 }
 
 export interface ResolvedArtifact extends ResolvedBaseline {
-  artifact_id: string;
-  artifact_revision: number;
-  /** Workspace-relative path of the flow or screen document. */
-  artifact_path: string;
+  /**
+   * Null when the reference pins the design by its ROOT — the whole shape of a
+   * simple design, which has no catalog to point into.
+   */
+  artifact_id: string | null;
+  artifact_revision: number | null;
+  /** Workspace-relative path of the flow or screen document; null on a root pin. */
+  artifact_path: string | null;
   /** The state anchor the reference names, when it names one. */
   state?: string;
 }
@@ -200,6 +204,30 @@ export function resolveTaskReference(
   if (!baseline.ok) return baseline;
 
   const pkg = index.packages.find((p) => p.id === reference.baseline.package) as DesignPackageEntry;
+
+  // A ROOT pin consumes the revision itself. It is the only legal form for a
+  // simple design and a legitimate one for a package — "this task implements the
+  // whole revision" — so it resolves as soon as the baseline does.
+  if (reference.artifact === null) {
+    return {
+      ok: true,
+      value: { ...baseline.value, artifact_id: null, artifact_revision: null, artifact_path: null },
+    };
+  }
+
+  // The asymmetry is the point: a simple design does not have this artifact
+  // MISSING, it has no catalog at all, and telling the author to "publish the
+  // one that is missing" would send them to build the package the route exists
+  // to avoid.
+  if (pkg.mode === "simple") {
+    return fail(
+      "DESIGN_REFERENCE_MISSING",
+      artifact,
+      `${reference.raw}: ${pkg.id} es un diseño simple y no cataloga artefactos`,
+      `referencialo por su raíz, '${reference.baseline.package}@r${reference.baseline.revision}': todo su contenido es un solo DESIGN.md`,
+    );
+  }
+
   const entry = findCatalogEntry(pkg, reference.artifact);
   if (entry === null) {
     return fail(
@@ -254,7 +282,9 @@ export async function resolveStateAnchor(
   resolved: ResolvedArtifact,
   artifact: string,
 ): Promise<Resolution<ResolvedArtifact>> {
-  if (resolved.state === undefined) return { ok: true, value: resolved };
+  if (resolved.state === undefined || resolved.artifact_path === null) {
+    return { ok: true, value: resolved };
+  }
 
   const absolute = join(workspace, resolved.artifact_path);
   if (!(await fs.exists(absolute))) {

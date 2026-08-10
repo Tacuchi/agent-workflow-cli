@@ -32,11 +32,20 @@ Resolution: built-in default → `~/.workflow/skills.toml` (global) →
 ## Purpose
 
 Given a UI requirement, author the **semantic** design of its journeys and
-surfaces into a package that outlives the session that produced it: durable,
+surfaces into something that outlives the session that produced it: durable,
 versioned, referenceable by digest, and complete enough that an implementation
 can be planned against it without reopening the design conversation.
 
-The package is the deliverable. A spec **references** it; it never contains it.
+The **default deliverable is one readable `DESIGN.md`** — `## Objetivo`,
+`## Diseño propuesto`, `## Validación`, plus `## Recorrido`, `## Decisiones` or
+`## Abiertos` only when they say something. The CLI derives its identity,
+revision, digest and minimal manifest; nobody authoring a design administers any
+of that. The full package below is the **expanded** shape, and it appears only
+with a declared or derived cause — the closed vocabulary lives in
+[`CONTRACT.md`](CONTRACT.md) § *Two shapes, one contract*.
+
+Whichever shape it takes, the design is the deliverable. A spec **references**
+it; it never contains it.
 
 ## Composed by
 
@@ -56,7 +65,16 @@ and the curation. This skill contributes what a correct package looks like.
 
 ## Knowledge
 
-### Package layout
+### Simple layout — the default
+
+```
+docs/designs/NNN-design-<slug>/
+  DESIGN.md                     the ONLY authored file
+  design-manifest.json          derived: mode simple, one baseline, empty catalog
+  revisions/DESIGN-rNNN.md      the exact bytes of a revision a newer one superseded
+```
+
+### Package layout — the expanded shape
 
 ```
 docs/designs/NNN-design-<slug>/

@@ -22,6 +22,7 @@
 
 import { checkSafeRelativePath } from "../safe-path.js";
 import type { DesignMaturity } from "./artifact.js";
+import type { DesignRouteMode, FiredSignal } from "./expansion.js";
 import type { DesignSource, SourceReport } from "./sources.js";
 import { handoffGapsFrom } from "./sources.js";
 import type { DesignFailure } from "./validation.js";
@@ -125,11 +126,27 @@ export interface DesignReceiptFields {
   indexable: boolean;
   maturity: {
     requested: DesignMaturity | null;
-    attained: DesignMaturity;
+    /**
+     * Null on the simple route, and null is the honest answer there: a maturity
+     * ladder is a property of a catalog of flows and screens, and a design that
+     * is one document has none to climb. Reporting `outline` instead would let a
+     * consumer read "not ready yet" into a design that is complete.
+     */
+    attained: DesignMaturity | null;
   };
   sources: DesignSource[];
   /** Rendition ids produced or refreshed by this attempt. */
   renditions: string[];
+  /**
+   * Which route this attempt took and WHY — the answer to "what is this extra
+   * structure for". Simple carries an empty signal list and no cause; every
+   * package artifact beyond the simple document traces back to one of them.
+   */
+  route: {
+    mode: DesignRouteMode;
+    signals: FiredSignal[];
+    cause: string | null;
+  };
 }
 
 export interface AttainedMaturity {

@@ -1,5 +1,6 @@
 import { checkSafeRelativePath } from "../safe-path.js";
 import { CANONICAL_SCHEMAS } from "./capability.js";
+import type { DesignRouteMode } from "./expansion.js";
 import {
   ARTIFACT_PREFIX,
   type DesignArtifactKind,
@@ -14,6 +15,7 @@ import {
 } from "./identity.js";
 import { type NamedKind, baselinePath, checkGovernanceNaming, checkNaming } from "./naming.js";
 import { secretFailures } from "./secrets.js";
+import { SIMPLE_DESIGN_FILE, archivedDesignPath } from "./simple.js";
 import {
   type AllowedKeys,
   type DesignFailure,
@@ -126,6 +128,17 @@ export interface CurrentBaseline {
 export interface DesignManifest {
   schema: string;
   id: string;
+  /**
+   * Which shape this package is, and therefore which rules apply to it.
+   *
+   * Absent in the file means `package`, which is what keeps every dossier
+   * published before the simple route readable and validatable without a
+   * migration: an optional key with a default costs nothing to the manifests that
+   * never heard of it. It is stored rather than derived from an empty catalog
+   * because "no artifacts yet" and "no artifacts ever" are different states, and
+   * guessing between them would put a package mid-authoring on the simple rules.
+   */
+  mode: DesignRouteMode;
   title: string;
   created: string;
   /** `DES-000@r3` when this package forked another; never a second live line. */
@@ -161,6 +174,7 @@ export const ALLOWED_KEYS: AllowedKeys = {
   "": [
     "schema",
     "id",
+    "mode",
     "title",
     "created",
     "derived_from",
@@ -246,6 +260,11 @@ export function validateDesignManifest(
     );
   }
 
+  // Read BEFORE the baselines and the catalog: both of them are judged by rules
+  // this answer selects, and reading them first would apply the package rules to
+  // a simple design and then blame it for obeying its own contract.
+  const mode = readMode(r, raw, artifact);
+
   const title = r.read(raw, "title");
   if (!isNonEmptyString(title)) {
     r.invalid(
@@ -283,9 +302,10 @@ export function validateDesignManifest(
     );
   }
 
-  const baselines = readBaselines(r, raw, artifact, id);
+  const baselines = readBaselines(r, raw, artifact, id, mode);
   const currentBaseline = readCurrentBaseline(r, raw, artifact, baselines);
   const catalog = readCatalog(r, raw, artifact);
+  if (mode === "simple") checkSimpleShape(r, artifact, catalog);
   const currentness = readCurrentness(r, raw, artifact, id, catalog);
   checkSupersedesIntegrity(r, artifact, id, catalog);
   const governance = readGovernance(r, raw, artifact, baselines, id);
@@ -297,6 +317,7 @@ export function validateDesignManifest(
   return done(r, {
     schema: DESIGN_MANIFEST_SCHEMA_ID,
     id: id as string,
+    mode,
     title: title as string,
     created: created as string,
     derived_from: derivedFrom as string | null,
@@ -309,11 +330,49 @@ export function validateDesignManifest(
   });
 }
 
+/**
+ * The route this package runs on. Absent is `package`, and the default is what
+ * makes the field additive: nothing already published has to be rewritten.
+ */
+function readMode(r: Reader, raw: Record<string, unknown>, artifact: string): DesignRouteMode {
+  const value = r.read(raw, "mode");
+  if (value === undefined || value === null) return "package";
+  if (value === "simple" || value === "package") return value;
+  r.invalid(
+    artifact,
+    `'mode' no es un modo conocido: ${JSON.stringify(value)}`,
+    "usá 'simple' para un diseño de un solo DESIGN.md, 'package' para el dossier completo, o quitá la clave",
+  );
+  return "package";
+}
+
+/**
+ * What `simple` costs: nothing in the catalog.
+ *
+ * A simple design has one authored document and derives the rest. The moment it
+ * catalogs a screen or a flow it has artifacts, revisions and a maturity ladder —
+ * it IS a package, and calling it simple would make every consumer read it under
+ * rules its content does not obey.
+ */
+function checkSimpleShape(r: Reader, artifact: string, catalog: DesignCatalog): void {
+  const populated = Object.entries(catalog)
+    .filter(([, list]) => Array.isArray(list) && list.length > 0)
+    .map(([key]) => key);
+  if (populated.length === 0) return;
+  r.fail(
+    "DESIGN_FIELD_INVALID",
+    artifact,
+    `un package en modo 'simple' no cataloga artefactos y este declara: ${populated.join(", ")}`,
+    "vacialo, o declará 'mode': 'package' — un diseño con catálogo ya es el recorrido ampliado",
+  );
+}
+
 function readBaselines(
   r: Reader,
   raw: Record<string, unknown>,
   artifact: string,
   packageId: unknown,
+  mode: DesignRouteMode,
 ): BaselineEntry[] {
   const out: BaselineEntry[] = [];
   const seen = new Set<number>();
@@ -324,10 +383,41 @@ function readBaselines(
     artifact,
     " (vacío si el package todavía no publicó)",
   )) {
-    const parsed = readBaselineEntry(r, entry, artifact, seen, packageId);
+    const parsed = readBaselineEntry(r, entry, artifact, seen, packageId, mode);
     if (parsed !== null) out.push(parsed);
   }
   return out;
+}
+
+/**
+ * Where a revision's bytes have to live, and it depends on the route.
+ *
+ * In `package` mode the baseline is a sealing document of its own and its name
+ * carries the revision. In `simple` mode there IS no such document: the revision
+ * seals the bytes of the design itself, so the path is the design — `DESIGN.md`
+ * while it is current, the archived copy once a newer one supersedes it.
+ */
+function checkBaselinePathName(
+  r: Reader,
+  artifact: string,
+  label: string,
+  path: string,
+  packageId: string,
+  revision: number,
+  mode: DesignRouteMode,
+): void {
+  const expected =
+    mode === "simple"
+      ? [SIMPLE_DESIGN_FILE, archivedDesignPath(revision)]
+      : [baselinePath(packageId, revision)];
+  if (expected.includes(path)) return;
+  r.invalid(
+    artifact,
+    `${label}: '${path}' no es el nombre de esa revisión`,
+    mode === "simple"
+      ? `apuntá a '${SIMPLE_DESIGN_FILE}' si es la vigente, o a '${archivedDesignPath(revision)}' si ya la superó otra`
+      : `renombralo a '${expected[0]}': la revisión va en el path para que publicar la siguiente no pise esta`,
+  );
 }
 
 function readBaselineEntry(
@@ -336,6 +426,7 @@ function readBaselineEntry(
   artifact: string,
   seen: Set<number>,
   packageId: unknown,
+  mode: DesignRouteMode,
 ): BaselineEntry | null {
   const revision = r.read(entry, "baselines[].revision");
   const path = r.read(entry, "baselines[].path");
@@ -363,14 +454,7 @@ function readBaselineEntry(
   }
   seen.add(revision);
   if (checkPackagePath(r, artifact, `${label}.path`, path) && isPackageId(packageId)) {
-    const expected = baselinePath(packageId, revision);
-    if (path !== expected) {
-      r.invalid(
-        artifact,
-        `${label}: '${String(path)}' no es el nombre de esa revisión`,
-        `renombralo a '${expected}': la revisión va en el path para que publicar la siguiente no pise esta`,
-      );
-    }
+    checkBaselinePathName(r, artifact, label, String(path), packageId, revision, mode);
   }
   if (!isDigest(digest)) {
     r.invalid(
