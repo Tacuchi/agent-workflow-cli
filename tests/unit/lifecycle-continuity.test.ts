@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runResumeSummary } from "../../src/application/checkpoint-service.js";
 import {
   runAutoCompactOnClose,
@@ -236,8 +236,8 @@ describe("lifecycle surfaces never write to a closed session", () => {
 });
 
 describe("checkpoint-write CLI — exit codes carry the capability decision", () => {
-  function ctxFor(fs: MemFs): CliContext {
-    return { fs, env, git, paths } as unknown as CliContext;
+  function ctxFor(fs: MemFs, envOverride: FakeEnv = env): CliContext {
+    return { fs, env: envOverride, git, paths } as unknown as CliContext;
   }
 
   function argv(flags: string[], values: [string, string][] = []) {
@@ -290,5 +290,45 @@ describe("checkpoint-write CLI — exit codes carry the capability decision", ()
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
     expect(checkpointsWritten(fs)).toEqual([`${sessionsDir}/044-nueva-plan-exec/CHECKPOINT.md`]);
+  });
+
+  // The reported loop (quick 115): /compact held, the agent runs the suggested
+  // `--code` fix, /compact holds again — nothing ever bound the conversation
+  // because the agent's shell carries no AW_CONTEXT_ID. With the host-exported
+  // id as fallback, the --code run binds, and the NEXT hook run resolves.
+  it("the host-exported id makes a --code run bind, so the retry resolves", async () => {
+    const fs = seedTwoActive();
+    const hostEnv = new FakeEnv("/home/u", "/cwd", { CLAUDE_CODE_SESSION_ID: "conv-claude" });
+    const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
+
+    const fix = await checkpointWriteCommand.execute(
+      argv(["--can-pause"], [["code", "044"]]),
+      ctxFor(fs, hostEnv),
+    );
+    expect(fix.exitCode).toBe(0);
+
+    const retry = await checkpointWriteCommand.execute(argv(["--can-pause"]), ctxFor(fs, hostEnv));
+    expect(retry.ok).toBe(true);
+    expect(retry.exitCode).toBe(0);
+  });
+
+  // Claude Code shows stderr for a held compaction; the stdout envelope it
+  // never shows. Without this line the person sees only the generic block.
+  it("a held compaction tells the person on stderr what to run", async () => {
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
+      const result = await checkpointWriteCommand.execute(
+        argv(["--can-pause"]),
+        ctxFor(seedTwoActive()),
+      );
+      expect(result.exitCode).toBe(2);
+      const notice = spy.mock.calls.map((call) => String(call[0])).join("");
+      expect(notice).toContain("aw checkpoint-write --code");
+      expect(notice).toContain("020-vieja-quick");
+      expect(notice).toContain("044-nueva-plan-exec");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -13,13 +13,32 @@ import type { EnvPort } from "../ports/env.js";
  */
 export const CONTEXT_ID_ENV = "AW_CONTEXT_ID";
 
+/**
+ * Host-exported conversation ids, consulted only when the agreed var is absent.
+ *
+ * Claude Code exports its conversation UUID to every tool subshell and to its
+ * hook processes, and passes the same value as the hook payload's `session_id`
+ * — one conversation, one id, whichever surface reads it. Without this
+ * fallback, the `aw` calls an agent runs (session-create, a `--code` fix)
+ * carried no identity at all: no conversation ever got bound, so a pausable
+ * PreCompact held every compaction of a workspace with two active sessions,
+ * and retrying could never recover.
+ */
+const HOST_CONTEXT_ID_ENVS = ["CLAUDE_CODE_SESSION_ID"] as const;
+
 export type ContextIdResolution =
   | { ok: true; contextId?: string }
   | { ok: false; code: "CONTEXT_ID_CONFLICT"; message: string };
 
 /** The conversation id from the environment alone (non-hook invocations). */
 export function readContextId(env: EnvPort): string | undefined {
-  return nonEmpty(env.get(CONTEXT_ID_ENV));
+  const agreed = nonEmpty(env.get(CONTEXT_ID_ENV));
+  if (agreed !== undefined) return agreed;
+  for (const name of HOST_CONTEXT_ID_ENVS) {
+    const fromHost = nonEmpty(env.get(name));
+    if (fromHost !== undefined) return fromHost;
+  }
+  return undefined;
 }
 
 /**
