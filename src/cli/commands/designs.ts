@@ -1,9 +1,11 @@
+import { gatePackageContent } from "../../application/design/design-content-gate-service.js";
 import {
   type DesignGateReport,
   gatePlanDesign,
 } from "../../application/design/design-gate-service.js";
 import {
   type DesignIndex,
+  type DesignPackageEntry,
   readDesignIndex,
   resolveDesignPackage,
 } from "../../application/design/design-index-service.js";
@@ -23,8 +25,10 @@ export const designsCommand: QtcCommand<DesignsOutput> = {
   describe:
     "List the UI Design Packages under docs/designs/, resolve one by identity, or run " +
     "the plan-exec precondition gate over a plan. Resolution goes through the manifest " +
-    "id, never the folder: a renamed or moved package still resolves. Usage: aw designs " +
-    "[--id DES-NNN] [--plan docs/plans/PPP-plan-<slug>.md] [--require-approval].",
+    "id, never the folder: a renamed or moved package still resolves. `--id` always runs " +
+    "the content gate over the package's current revisions; the listing stays structural " +
+    "unless `--deep` runs it on every package. Usage: aw designs [--id DES-NNN] [--deep] " +
+    "[--plan docs/plans/PPP-plan-<slug>.md] [--require-approval].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DesignsOutput>> {
     const plan = args.values.get("plan");
     if (plan !== undefined) return gate(plan, args, ctx);
@@ -34,7 +38,11 @@ export const designsCommand: QtcCommand<DesignsOutput> = {
     if (id === undefined) {
       // The listing answers "what exists and where"; the whole catalog of every
       // package would drown that. `--id` keeps it, because that IS the detail view.
-      const packages = index.packages.map((p) => ({ ...p, manifest: null }));
+      const deep = args.flags.has("--deep");
+      const entries = deep
+        ? await Promise.all(index.packages.map((p) => withContentGate(ctx, p)))
+        : index.packages;
+      const packages = entries.map((p) => ({ ...p, manifest: null }));
       return { ok: true, data: { ...index, packages }, exitCode: 0 };
     }
 
@@ -44,7 +52,10 @@ export const designsCommand: QtcCommand<DesignsOutput> = {
         action: `revisá 'aw designs' para ver las identidades publicadas bajo ${index.root}/`,
       } as unknown as DesignsOutput);
     }
-    return { ok: true, data: { package: found }, exitCode: 0 };
+    // The detail view owes the whole answer: the index covers the structure and
+    // the content gate covers what the current revisions claim. A package sealed
+    // without gating reads fine until this runs.
+    return { ok: true, data: { package: await withContentGate(ctx, found) }, exitCode: 0 };
   },
 
   renderHuman(result: CommandResult<DesignsOutput>, context: HumanRenderContext): string {
@@ -81,6 +92,20 @@ export const designsCommand: QtcCommand<DesignsOutput> = {
     return `${body.trimEnd()}\n`;
   },
 };
+
+/**
+ * The entry with its content-gate findings folded in. The command result stays
+ * `ok: true` — the question was answered — and the ENTRY carries the verdict,
+ * exactly as a broken manifest does in the listing.
+ */
+async function withContentGate(
+  ctx: CliContext,
+  entry: DesignPackageEntry,
+): Promise<DesignPackageEntry> {
+  const findings = await gatePackageContent(ctx.fs, ctx.paths.workspaceDir(), entry);
+  if (findings.length === 0) return entry;
+  return { ...entry, ok: false, failures: [...entry.failures, ...findings] };
+}
 
 /**
  * The precondition gate as a command result.

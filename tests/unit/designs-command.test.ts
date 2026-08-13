@@ -86,3 +86,110 @@ describe("aw designs --id — resolver por identidad", () => {
     expect((result.data as { action: string }).action).toContain("aw designs");
   });
 });
+
+const fixture = (name: string): string =>
+  readFileSync(fileURLToPath(new URL(`../fixtures/design/${name}`, import.meta.url)), "utf8");
+
+const PKG = "docs/designs/001-design-alta";
+
+/** A whole package: manifest, and the current revisions passing their own gate. */
+function healthy(): MemFs {
+  return (
+    new MemFs()
+      .file(`${WS}/${PKG}/design-manifest.json`, MANIFEST)
+      // La revisión SUPERADA es ilegible a propósito: el gate mira el estado
+      // actual del catálogo, no la historia ya sellada.
+      .file(`${WS}/${PKG}/flows/FLW-001-r001-alta-miembro.md`, "esto ya no es un documento\n")
+      .file(
+        `${WS}/${PKG}/flows/FLW-001-r002-alta-miembro.md`,
+        fixture("FLW-001-r002-alta-miembro.md"),
+      )
+      .file(
+        `${WS}/${PKG}/screens/SCR-001-r001-formulario-alta.md`,
+        fixture("SCR-001-r002-formulario-alta.md"),
+      )
+      .file(
+        `${WS}/${PKG}/renditions/VIS-001-r001-formulario-alta/rendition.json`,
+        fixture("rendition-VIS-001-r001.json"),
+      )
+  );
+}
+
+/**
+ * El escenario del reporte: manifest y baseline válidos, y debajo un flow que
+ * viola el contrato (`trace` con claves de screen) y una screen 'handoff' con
+ * criterio visual sin evidencia.
+ */
+function brokenContent(): MemFs {
+  const flow = fixture("FLW-001-r002-alta-miembro.md").replace(
+    "    source: docs/specs/046-spec-nacimiento-familias.md",
+    "    source: docs/specs/046-spec-nacimiento-familias.md\n    classification: visual",
+  );
+  const screen = fixture("SCR-001-r002-formulario-alta.md").replace(
+    "    renditions: [DES-001/VIS-001@r1]",
+    "    renditions: []",
+  );
+  return healthy()
+    .file(`${WS}/${PKG}/flows/FLW-001-r002-alta-miembro.md`, flow)
+    .file(`${WS}/${PKG}/screens/SCR-001-r001-formulario-alta.md`, screen);
+}
+
+describe("aw designs — el gate de contenido sobre lo ya publicado", () => {
+  it("--id siempre lo corre: el package roto sale ok:false con los hallazgos reales", async () => {
+    const result = await run(brokenContent(), ["--id", "DES-001"]);
+    const data = result.data as {
+      package: { ok: boolean; failures: Array<{ code: string }> };
+    };
+    expect(result.ok).toBe(true);
+    expect(data.package.ok).toBe(false);
+    const codes = data.package.failures.map((f) => f.code);
+    expect(codes).toContain("DESIGN_KEY_UNKNOWN");
+    expect(codes).toContain("DESIGN_MATURITY_INCOMPLETE");
+  });
+
+  it("el listado sin --deep se mantiene barato: el mismo package sale ok:true", async () => {
+    const result = await run(brokenContent(), []);
+    const data = result.data as { packages: Array<{ ok: boolean; failures: unknown[] }> };
+    expect(data.packages[0]?.ok).toBe(true);
+    expect(data.packages[0]?.failures).toEqual([]);
+  });
+
+  it("el listado con --deep corre el gate por package y lo marca", async () => {
+    const result = await run(brokenContent(), ["--deep"]);
+    const data = result.data as {
+      packages: Array<{ ok: boolean; failures: Array<{ code: string }> }>;
+    };
+    expect(data.packages[0]?.ok).toBe(false);
+    expect(data.packages[0]?.failures.map((f) => f.code)).toContain("DESIGN_KEY_UNKNOWN");
+  });
+
+  it("y con --detail ese listado imprime el diagnóstico del gate", async () => {
+    const result = await run(brokenContent(), ["--deep"]);
+    const text = designsCommand.renderHuman?.(result, { detail: true }) ?? "";
+    expect(text).toContain("no admite la clave 'classification'");
+  });
+
+  it("un archivo vigente que falta en disco se reporta, no crashea", async () => {
+    const fs = healthy();
+    await fs.remove(`${WS}/${PKG}/screens/SCR-001-r001-formulario-alta.md`);
+    const result = await run(fs, ["--id", "DES-001"]);
+    const data = result.data as {
+      package: { ok: boolean; failures: Array<{ code: string; artifact: string }> };
+    };
+    expect(data.package.ok).toBe(false);
+    const missing = data.package.failures.find((f) => f.code === "DESIGN_REFERENCE_FILE_MISSING");
+    expect(missing?.artifact).toBe(`${PKG}/screens/SCR-001-r001-formulario-alta.md`);
+  });
+
+  it("un package sano sigue ok:true — y la revisión superada no se rejuzga", async () => {
+    const byId = await run(healthy(), ["--id", "DES-001"]);
+    const detail = byId.data as { package: { ok: boolean; failures: unknown[] } };
+    expect(detail.package.ok).toBe(true);
+    expect(detail.package.failures).toEqual([]);
+
+    const deep = await run(healthy(), ["--deep"]);
+    const listing = deep.data as { packages: Array<{ ok: boolean; failures: unknown[] }> };
+    expect(listing.packages[0]?.ok).toBe(true);
+    expect(listing.packages[0]?.failures).toEqual([]);
+  });
+});
