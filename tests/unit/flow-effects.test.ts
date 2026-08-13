@@ -31,11 +31,13 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
     ...real,
     // The composed journey is what production walks, so that is what the flip
     // has to cover: mocking `decisionsOfScope` alone would leave the real
-    // composition reading the real rows.
+    // composition reading the real rows. Custody is stripped for the same
+    // reason ownership is flipped: over the live rows the run's own bookkeeping
+    // no longer stops, and this file's subject is the authorization net itself.
     journeyOfFlow: (flow: string) =>
       real
         .journeyOfFlow(flow as Parameters<typeof real.journeyOfFlow>[0])
-        .map((row) => ({ ...row, ownership: "cli-owned" as const })),
+        .map((row) => ({ ...row, ownership: "cli-owned" as const, custody: undefined })),
   };
 });
 

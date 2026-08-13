@@ -32,13 +32,14 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
  *    agente declara qué hecho observable rompe la elegibilidad; el CLI decide qué
  *    cuesta ese hecho. Un rango sin hechos declarados entra continuo, y el paso
  *    que lo aísla queda omitido con su motivo.
- * 2. **Toda escritura pasa por la acción sellada, y la precondición va antes.**
- *    El estado de fase, las casillas y el sello `done` son escrituras sobre un
- *    documento que el motor no edita: se autorizan primero y solo el resultado
- *    real las aplica.
- * 3. **Un chequeo no corrido nunca habilita un commit, y autorizar no es
+ * 2. **Toda escritura pasa por la acción sellada, y la custodia no es crédito.**
+ *    El estado de fase, las casillas y el sello `done` son la contabilidad de la
+ *    propia corrida sobre su plan-doc: custodia de la corrida —sin preflight— y
+ *    solo el resultado real las aplica.
+ * 3. **Un chequeo no corrido nunca habilita un commit, y aprobar no es
  *    ejecutar.** La habilitación está detrás de la validación delegada y de la
- *    revisión, y el commit es un efecto propio con su propia evidencia.
+ *    revisión; aprobar los commits ES autorizar su efecto, y la ejecución sigue
+ *    exigiendo su propia evidencia.
  * 4. **El tramo es el documento.** `CODE-POLICIES` y `DB-SCRIPTS-ONLY` viajaron
  *    acá porque sus únicos lectores —`quick` y `plan-exec`— ya están migrados;
  *    `SPLIT-GATE` y `DESIGN-REFERENCES` siguen siendo de la doctrina.
@@ -401,7 +402,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(state.applied).toContain("plan-exec.batch-isolation");
   });
 
-  it("el estado de fase se autoriza primero y solo el resultado real lo aplica", async () => {
+  it("la contabilidad del plan llega como ejecución y solo el resultado real la aplica", async () => {
     // Las filas que escriben, corren o commitean ahora se alcanzan sólo si se
     // declaró que hay algo que hacer: sin señal se saltan, y ése es el arreglo.
     await walkTo("plan-exec.task-marking", [
@@ -409,21 +410,16 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       "plan.plan-closable",
       "plan.commit-pending",
     ]);
+    // Tildar la casilla es la corrida llevando la marca de avance de su propio
+    // plan-doc: custodia de la corrida — sin preflight — pero la escritura sigue
+    // delegada y nada se acredita sin la lectura real del tablero.
     const gate = await current();
-    // `mutate_overwrite` no se autoriza solo: la corrida para ANTES de nombrar la
-    // invocación que escribe en el plan-doc.
-    expect(gate.resolved.kind).toBe("authorization");
-    expect(gate.resolved.action).toBeNull();
+    expect(gate.resolved.stopped?.id).toBe("plan-exec.task-marking");
+    expect(gate.resolved.kind).toBe("execution");
+    expect(gate.resolved.action).not.toBeNull();
+    expect(gate.state.effects.applied).not.toContain("mutate_overwrite");
 
-    const granted = await answer(
-      { input_digest: gate.resolved.seal, choice: "Autorizar el efecto" },
-      effectApprovalDigest("plan-exec.task-marking", gate.resolved.authorization?.planned ?? []),
-    );
-    expect(granted.boundary.kind).toBe("execution");
-    expect(granted.effects.applied).not.toContain("mutate_overwrite");
-
-    const running = await current();
-    const sealed = await answer(resultFor(running.resolved));
+    const sealed = await answer(resultFor(gate.resolved));
     expect(sealed.error).toBeNull();
     expect(sealed.effects.applied).toContain("mutate_overwrite");
   });
@@ -434,18 +430,11 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       "plan.plan-closable",
       "plan.commit-pending",
     ]);
-    // `execute` no se autoriza solo, así que la corrida para acá DOS veces: una
-    // para que alguien apruebe correr algo, y otra para exigir lo que salió.
-    const gate = await current();
-    expect(gate.resolved.kind).toBe("authorization");
-    await answer(
-      { input_digest: gate.resolved.seal, choice: "Autorizar el efecto" },
-      effectApprovalDigest(
-        "plan-exec.validation-execution",
-        gate.resolved.authorization?.planned ?? [],
-      ),
-    );
+    // Correr las pruebas que el plan declara es la corrida verificándose a sí
+    // misma: custodia cubre el `execute` y la frontera llega como ejecución. Lo
+    // innegociable no era el preflight sino la salida real, y eso queda.
     const running = await current();
+    expect(running.resolved.stopped?.id).toBe("plan-exec.validation-execution");
     expect(running.resolved.kind).toBe("execution");
 
     const failed = await answer(
@@ -464,7 +453,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(after.resolved.stopped?.id).toBe("plan-exec.validation-execution");
   });
 
-  it("aprobar los commits no los crea: el efecto vuelve a parar por su cuenta", async () => {
+  it("aprobar los commits ES el grant, y el commit sigue exigiendo su resultado real", async () => {
     await walkTo("plan-exec.commit-authorization", [
       "plan.tasks-to-mark",
       "plan.plan-closable",
@@ -483,41 +472,33 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       input_digest: approval.resolved.seal,
       choice: "Aprobar los commits del batch",
     });
-    // La aprobación aplicó la preferencia y NADA más. Y lo siguiente NO es el
-    // commit: es el sello `done`, porque la escritura del estado tiene que entrar
-    // en ese mismo commit y no quedar huérfana después de él.
+    // La aprobación aplicó la preferencia Y registró el grant sobre el sello
+    // exacto de la ejecución del commit: decidir una vez es autorizar una vez, y
+    // el grant no cubre ninguna otra transición. Lo siguiente NO es el commit:
+    // es el sello `done`, porque la escritura del estado tiene que entrar en ese
+    // mismo commit y no quedar huérfana después de él.
     expect(approved.boundary.transition).toBe("plan-exec.plan-done");
     const after = await current();
     expect(after.state.applied).toContain("plan-exec.commit-authorization");
     expect(after.state.applied).not.toContain("plan-exec.commit-execution");
+    const commitSeal = effectApprovalDigest("plan-exec.commit-execution", [
+      ...effectsOf(rowOf(EXEC, "plan-exec.commit-execution")),
+    ]);
+    expect(after.state.authorizations.map((grant) => grant.digest)).toContain(commitSeal);
 
-    // El sello `done` pide su propia autorización, y eso es lo que el grant
-    // acotado cambió: antes bastaba con haber aprobado UN `mutate_overwrite` en
-    // cualquier paso anterior de la corrida —marcar tareas, mover el estado de una
-    // fase— para que este quedara cubierto de arrastre. Cada escritura se autoriza
-    // por lo que es.
-    const stamp = await current();
-    expect(stamp.resolved.kind).toBe("authorization");
-    await answer(
-      { input_digest: stamp.resolved.seal, choice: "Autorizar el efecto" },
-      effectApprovalDigest("plan-exec.plan-done", stamp.resolved.authorization?.planned ?? []),
-    );
-
-    // Y el commit, cuando llega, se autoriza por sí mismo antes de nombrarse: que
-    // la validación de la fase haya podido `execute` no compra crear commits.
-    const running = await current();
-    const stamped = await answer(resultFor(running.resolved));
+    // El sello `done` es la marca de avance del propio plan-doc: custodia de la
+    // corrida, frontera de ejecución directa — y sigue delegado, así que solo la
+    // lectura real del tablero lo acredita.
+    expect(after.resolved.kind).toBe("execution");
+    const stamped = await answer(resultFor(after.resolved));
     expect(stamped.boundary.transition).toBe("plan-exec.commit-execution");
-    expect(stamped.boundary.kind).toBe("authorization");
-    const commit = await current();
-    const authorized = await answer(
-      { input_digest: commit.resolved.seal, choice: "Autorizar el efecto" },
-      effectApprovalDigest(
-        "plan-exec.commit-execution",
-        commit.resolved.authorization?.planned ?? [],
-      ),
-    );
-    expect(authorized.boundary.kind).toBe("execution");
-    expect(authorized.action?.invocation.args).toEqual(["sources", "--verbose"]);
+    // El commit no re-pregunta: el grant humano ya viaja con la corrida y la
+    // frontera emitida nombra la invocación — que todavía tiene que volver con el
+    // estado git real de las fuentes.
+    expect(stamped.boundary.kind).toBe("execution");
+    expect(stamped.action?.invocation.args).toEqual(["sources", "--verbose"]);
+    // El grant no aplicó nada: la transición del commit sigue pendiente de su
+    // salida real (el `execute` del ledger es el de la validación ya corrida).
+    expect((await current()).state.applied).not.toContain("plan-exec.commit-execution");
   });
 });

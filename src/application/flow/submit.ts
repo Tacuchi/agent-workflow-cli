@@ -29,6 +29,8 @@ import { type FlowAnswer, claimedSeal, parseFlowAnswer } from "../../domain/flow
 import {
   type FlowDecision,
   actionOf,
+  approvalGrantOf,
+  effectsOf,
   internalActionOf,
   journeyOfFlow,
   proposalContractOf,
@@ -286,7 +288,7 @@ function decide(
     });
   }
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
-  const approved = grantOf(sealed.state, resolved, parsed.answer, granted);
+  const approved = grantOf(sealed.state, resolved, parsed.answer, granted, journey);
   // An approval NEVER applies a step by itself. Two reasons it must hold, and the
   // second is the one this phase exists for: doctrine may still own the rule, or
   // the step may be delegated — and an approval that applied a delegated
@@ -396,15 +398,19 @@ function sealFrom(
  *
  * `Aprobar y guardar` at a publishing row is one decision that covers the whole
  * preview, and the seal is the proposal's own: a later boundary, or the same
- * proposal after any material edit, does not match it. Choosing anything else —
- * `Refinar`, `Compactar`, `Cerrar` — grants nothing, which is what makes
- * "`Refinar` produces no effects" a property rather than a promise.
+ * proposal after any material edit, does not match it. A human row that declares
+ * `authorizes` makes the same move for a delegated execution: its approve label
+ * grants over the linked transition's exact seal, so deciding once never gets
+ * re-asked downstream worded as an effect. Choosing anything else — `Refinar`,
+ * `Compactar`, `Cerrar`, declining the commit — grants nothing, which is what
+ * makes "`Refinar` produces no effects" a property rather than a promise.
  */
 function grantOf(
   state: FlowRunState,
   resolved: ResolvedBoundary,
   answer: FlowAnswer,
   granted: readonly EffectClass[],
+  journey: readonly FlowDecision[],
 ): FlowRunState {
   const stopped = resolved.stopped;
   const proposal = state.proposal;
@@ -422,6 +428,21 @@ function grantOf(
     // saying so, instead of stopping to ask for an authorization over bytes the
     // person just turned down.
     return withProposal(state, null);
+  }
+  const link = stopped === null ? null : approvalGrantOf(stopped);
+  if (link !== null && answer.choice === link.approve) {
+    const target = journey.find((row) => row.id === link.transition);
+    // A link to a transition this journey does not walk grants nothing: the
+    // authorization boundary downstream stays standing, which is the failure
+    // that shows itself instead of hiding.
+    if (target !== undefined) {
+      const classes = [...effectsOf(target)];
+      return withApproval(state, {
+        digest: effectApprovalDigest(target.id, classes),
+        destinations: [],
+        classes,
+      });
+    }
   }
   if (granted.length === 0 || resolved.authorization === null) return state;
   return withApproval(state, {

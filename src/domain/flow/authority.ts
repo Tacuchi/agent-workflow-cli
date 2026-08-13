@@ -86,6 +86,24 @@ export interface FlowDecision {
    */
   effects?: readonly EffectClass[];
   /**
+   * Whose books the declared effects write: the run's own, or somebody else's.
+   *
+   * `"run"` says every effect this row exercises lands on the run's own
+   * bookkeeping — its session artifacts, its flow state, the progress marks of
+   * the flow's own document, or running the checks the run itself declared.
+   * The authorization gate covers those without a preflight: whoever started
+   * the run consented to it keeping its own books, and a person asked to
+   * "authorize" them has nothing left to decide. The cover is bounded twice —
+   * it never reaches `destructive` or `network_external` whatever the row
+   * claims (the gate is fail-closed about them), and a standing proposal is
+   * never covered by it, because sealed bytes are somebody's material, not
+   * bookkeeping.
+   *
+   * Absent means the effects reach past the run's own ledger and the ordinary
+   * preflight applies.
+   */
+  custody?: "run";
+  /**
    * Signals the agent may declare at THIS boundary, by id.
    *
    * Only an `agent` row carries them, and they are the exact frontier the spec
@@ -156,6 +174,16 @@ export interface FlowDecision {
    * effect at all.
    */
   publishes?: { approve: string };
+  /**
+   * This human row's `approve` label authorizes the named transition's effects.
+   *
+   * The move {@link publishes} makes for a sealed proposal, for a delegated
+   * execution instead: approving IS the authorization, so the run does not stop
+   * again downstream to re-ask the decision it just took, worded as an effect.
+   * The grant is computed over the target transition's own seal and covers that
+   * transition and nothing else; every other alternative grants nothing.
+   */
+  authorizes?: { approve: string; transition: string };
   /**
    * Where this transversal row is composed into every flow's journey.
    *
@@ -254,6 +282,18 @@ export function proposalContractOf(decision: FlowDecision): ProposalContract | n
 /** The approve label of a row that decides a standing proposal, or `null`. */
 export function publishApprovalOf(decision: FlowDecision): string | null {
   return decision.publishes?.approve ?? null;
+}
+
+/** Whose books this row's effects write: the run's own, or nobody's to assume. */
+export function custodyOf(decision: FlowDecision): "run" | null {
+  return decision.custody ?? null;
+}
+
+/** The effect grant a human row's approve label carries, or `null`. */
+export function approvalGrantOf(
+  decision: FlowDecision,
+): { approve: string; transition: string } | null {
+  return decision.authorizes ?? null;
 }
 
 /** A decision computes a verdict; writing is the exception that declares itself. */
@@ -909,6 +949,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: CHASSIS_MD,
     attribution: CHASSIS_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    // Closing its own session is the canonical run bookkeeping: CHECKPOINT,
+    // BACKLOG and the HISTORY row are the run's own ledger, so custody covers
+    // the overwrite and nobody is asked to authorize the chassis keeping its
+    // books.
+    custody: "run",
     // The only suffix: every flow ends the same way, and no flow row says so —
     // each tranche stopped at its own last decision and the close was doctrine's.
     placement: "suffix",
@@ -1223,8 +1268,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // The criteria are authored per task, so no fixed runner can be named without
     // inventing a rule this CLI does not have. What it CAN name is the artifact
     // that holds them — and it demands back the real output of running them.
-    // `execute` is not self-authorizable, so the run stops to be authorized
-    // BEFORE this invocation is ever emitted.
+    // Running the checks the run itself declared is the run keeping its own
+    // books, so custody covers the `execute` and the boundary emitted is the
+    // execution one — what stays non-negotiable is the real output.
+    custody: "run",
     action: {
       invocation: {
         program: "aw",
@@ -2306,6 +2353,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    // The checkbox is the run's own progress mark on the flow's document —
+    // bookkeeping under run custody, so no preflight; the board's real reading
+    // is still what applies it.
+    custody: "run",
     condition: {
       threshold: {
         observed: "plan-exec.pending-effects",
@@ -2339,6 +2390,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    // The `> Estado:` line is the run's own phase ledger on the flow's document:
+    // run custody, no preflight — the precondition below is what really guards it.
+    custody: "run",
     // The precondition is what this row exists for: `validada` requires the proof
     // to have RUN and passed, never the checkboxes. The state line is a write on a
     // document the engine does not own, so the board's reading of that line is the
@@ -2366,6 +2420,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     effects: ["execute"],
+    // Running the proofs the plan itself declares is the run verifying its own
+    // work: custody covers the `execute`, and the real output stays mandatory.
+    custody: "run",
     // The proofs are authored per phase, so no fixed runner can be named without
     // inventing a rule this CLI does not have. What it CAN name is the artifact
     // holding the run's criteria, and it demands the real output of having run
@@ -2457,6 +2514,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
+    // Approving here IS authorizing the commit effect downstream: the grant is
+    // computed over `commit-execution`'s exact seal, so the person decides once
+    // and the run never re-asks the same decision worded as an effect.
+    authorizes: {
+      approve: "Aprobar los commits del batch",
+      transition: "plan-exec.commit-execution",
+    },
     alternatives: [
       {
         label: "Aprobar los commits del batch",
@@ -2481,6 +2545,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     effects: ["mutate_overwrite"],
+    // The done seal is the last progress mark of the flow's own document: run
+    // custody — its condition and the board's reading are the guards that count.
+    custody: "run",
     condition: {
       threshold: {
         observed: "plan-exec.pending-effects",
@@ -2519,10 +2586,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       },
       otherwise: "ninguna fuente afectada quedó con cambios sin commitear: no hay commit que crear",
     },
-    // Approving is not committing. The authorization above is a preference; this
-    // is the effect, and it comes back as the sources' real git state — which is
-    // also the between-unit precondition the policy demands ("each working tree
-    // clean or explicitly acknowledged").
+    // Approving is not committing: the human approval above already carries the
+    // grant over this row's exact seal, and what applies the transition is still
+    // the sources' real git state coming back — which is also the between-unit
+    // precondition the policy demands ("each working tree clean or explicitly
+    // acknowledged").
     action: {
       invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
       execution: {

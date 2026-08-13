@@ -18,6 +18,16 @@
  * transition of the run authorized to overwrite anything. A grant is now scoped
  * to the exact thing that was shown — a sealed proposal, or a named transition's
  * exact effects — and covers nothing else.
+ *
+ * Custody is the one cover that comes from the registry instead of a person, and
+ * it is not a second policy over classes — it is the axis the taxonomy does not
+ * carry: WHOSE books the effect writes. A row declared `custody: "run"` only
+ * touches the run's own ledger (its session, its state, the progress marks of
+ * the flow's own document, the checks the run itself declared), so a preflight
+ * would ask a person to authorize the chassis keeping its books — a question
+ * with nothing to decide. The cover is bounded twice: never over a sealed
+ * proposal (bytes are material, not bookkeeping) and never over the two classes
+ * outside {@link CUSTODY_COVERABLE_CLASSES}, whatever the row claims.
  */
 
 import { semanticDigest } from "../../application/semantic-operation/protocol.js";
@@ -27,7 +37,22 @@ import {
   authorizeEffects,
 } from "../capability/effects.js";
 import type { ProposalScope } from "../proposal.js";
-import { type FlowDecision, effectsOf } from "./authority.js";
+import { type FlowDecision, custodyOf, effectsOf } from "./authority.js";
+
+/**
+ * What run custody may cover, and the two classes it never will.
+ *
+ * Rewriting its own artifacts and running its own declared checks are the run
+ * keeping its books. Destroying something no later run can reconstruct, or
+ * leaving the machine, are not bookkeeping under any description — a row
+ * claiming custody over them stays uncovered, whatever it declares.
+ */
+export const CUSTODY_COVERABLE_CLASSES: readonly EffectClass[] = [
+  "read_only",
+  "local_additive",
+  "mutate_overwrite",
+  "execute",
+];
 
 /**
  * One approval, scoped to what it was given over.
@@ -107,13 +132,20 @@ export function authorizeTransition(
   });
   const seal = subject?.digest ?? effectApprovalDigest(decision.id, planned);
   const held = heldFor(grants, seal);
+  // Run custody covers only the row's OWN effects: a standing proposal is
+  // somebody's sealed bytes, so it keeps its preflight whoever publishes it.
+  const custody = subject === null && custodyOf(decision) === "run";
+  const coveredByCustody = (effect: EffectClass): boolean =>
+    custody && CUSTODY_COVERABLE_CLASSES.includes(effect);
   return {
     planned,
     covered: [
       ...verdict.selfAuthorized,
-      ...verdict.needsPreflight.filter((effect) => held.has(effect)),
+      ...verdict.needsPreflight.filter((effect) => held.has(effect) || coveredByCustody(effect)),
     ],
-    missing: verdict.needsPreflight.filter((effect) => !held.has(effect)),
+    missing: verdict.needsPreflight.filter(
+      (effect) => !held.has(effect) && !coveredByCustody(effect),
+    ),
     seal,
   };
 }
