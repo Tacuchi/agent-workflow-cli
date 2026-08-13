@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { reservationMarker } from "../domain/reservation.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { historyFields, upsertHistoryRow } from "./history-update-service.js";
 import { withCwdLock } from "./lock-service.js";
@@ -41,6 +42,25 @@ export interface SessionCloseOutput {
    * and leaves the decision where it belongs.
    */
   pending_integration?: Array<{ alias: string; branch: string; path: string; command: string }>;
+  /**
+   * Numbering reservations this session held and never completed, now removed.
+   *
+   * The opposite decision from a unit, for the opposite reason: a unit holds
+   * commits nobody merged, and a reservation holds NOTHING — it is a claimed
+   * correlative whose document was never written. Leaving it behind is what put
+   * empty files in `docs/plans` that later readers had to interpret. Only slots
+   * still holding exactly this session's marker are released; anything published,
+   * edited or owned elsewhere is left alone.
+   */
+  reservations_released?: string[];
+  /**
+   * Non-fatal: close succeeds even if the reservations could not be scanned.
+   *
+   * Reported rather than swallowed, for the same reason `history_error` is: a
+   * slot that could not be given back is still held, and an empty
+   * `reservations_released` would say "there was nothing to release".
+   */
+  reservations_error?: string;
 }
 
 export interface SessionCloseFullOutput {
@@ -98,6 +118,11 @@ export async function runSessionClose(
   };
   const held = await heldUnits(isolation, session.folder);
   if (held.length > 0) sessionClose.pending_integration = held;
+  const reservations = await releaseReservations(fs, paths, session.folder);
+  if (reservations.released.length > 0) {
+    sessionClose.reservations_released = reservations.released;
+  }
+  if (reservations.error !== undefined) sessionClose.reservations_error = reservations.error;
   // Last write of the session's life, and the one that matters most: whoever
   // opens a closed session months later reads the block, and a block left saying
   // "abierta" would be the closing act failing to record itself.
@@ -129,6 +154,49 @@ async function heldUnits(
       path: u.path,
       command: `aw worktree integrate --source ${u.alias} --code ${folder}`,
     }));
+}
+
+/**
+ * Give back every correlative this session claimed and never wrote into.
+ *
+ * Bytes-exact and owner-scoped, which is the whole safety argument: the only
+ * files it can remove are the ones still holding this session's own marker, so a
+ * published document, a slot somebody edited and another session's reservation
+ * are all invisible to it. Non-fatal — a close that failed over garbage
+ * collection would strand a session — but never silent: what it could not scan
+ * comes back as the error beside what it did release, because an empty list and
+ * an unreadable directory are different facts.
+ *
+ * The scan walks every immediate subdirectory of `docs/`, not a list of
+ * categories: the claim mechanism is category-agnostic, and a hardcoded list is a
+ * second place to update the day something else claims a number.
+ */
+async function releaseReservations(
+  fs: FileSystemPort,
+  paths: PathsService,
+  folder: string,
+): Promise<{ released: string[]; error?: string }> {
+  const marker = reservationMarker(folder);
+  const docs = join(paths.workspaceDir(), "docs");
+  const released: string[] = [];
+  try {
+    if (!(await fs.exists(docs))) return { released };
+    for (const category of await fs.list(docs)) {
+      if (category.type !== "dir") continue;
+      for (const entry of await fs.list(category.path)) {
+        if (entry.type !== "file" || !/^\d{3}-/.test(entry.name)) continue;
+        if ((await fs.readText(entry.path)) !== marker) continue;
+        await fs.remove(entry.path);
+        released.push(`docs/${category.name}/${entry.name}`);
+      }
+    }
+  } catch (error) {
+    return {
+      released: released.sort(),
+      error: `no se pudo revisar las reservas de ${folder} en docs/: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  return { released: released.sort() };
 }
 
 interface Closure {

@@ -25,4 +25,4 @@ Loaded when the input is not plainly a `ready-for-plan` spec (signal `input`).
 
 ## Numbering
 
-The plan is named `docs/plans/PPP-plan-<slug>.md`; `aw next-number docs/plans --claim plan-<slug>.md` claims it; the slug comes from the Requirement. It does **not inherit the spec's `NNN`** — the link is established by reference in `## Origin`, never by number.
+The plan is named `docs/plans/PPP-plan-<slug>.md`; `aw next-number docs/plans --claim plan-<slug>.md --code <NNN>` claims it **for its run**; the slug comes from the Requirement. It does **not inherit the spec's `NNN`** — the link is established by reference in `## Origin`, never by number.

@@ -5,6 +5,7 @@ import {
   runNextNumber,
   runProfiles,
 } from "../../application/dev-only-services.js";
+import { resolveSessionTarget } from "../../application/session-resolver.js";
 import { HARNESSES } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
@@ -58,11 +59,12 @@ export const logsCommand: QtcCommand = {
 export const nextNumberCommand: QtcCommand = {
   name: "next-number",
   describe:
-    "Compute next NNN correlative for a directory, creating it when missing. With --claim <resto-del-nombre> the number is CLAIMED instead of consulted: the file is materialized under the workspace lock, so two concurrent flows never receive the same NNN. Usage: aw next-number <directorio> [--claim <resto-del-nombre>] [--dry-run].",
+    "Compute next NNN correlative for a directory, creating it when missing. With --claim <resto-del-nombre> the number is CLAIMED instead of consulted: the file is materialized under the workspace lock, so two concurrent flows never receive the same NNN. With --code <NNN> the reservation BELONGS to that session — only its own sealed proposal can complete it, asking again returns the same slot, and closing the session releases it if it never did. Usage: aw next-number <directorio> [--claim <resto-del-nombre>] [--code <NNN>] [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dir = args.rest[0];
     if (!dir) {
-      const usage = "uso: next-number <directorio> [--claim <resto-del-nombre>] [--dry-run]";
+      const usage =
+        "uso: next-number <directorio> [--claim <resto-del-nombre>] [--code <NNN>] [--dry-run]";
       return fail("INVALID_INPUT", usage, { error: usage });
     }
     const claim = args.values.get("claim");
@@ -70,10 +72,28 @@ export const nextNumberCommand: QtcCommand = {
       const message = "--claim y --dry-run se excluyen: un reclamo escribe, una consulta no";
       return fail("INVALID_INPUT", message, { error: message });
     }
+    const code = args.values.get("code");
+    if (code !== undefined && claim === undefined) {
+      const message = "--code sólo tiene sentido con --claim: una consulta no reserva nada";
+      return fail("INVALID_INPUT", message, { error: message });
+    }
+    // Asking for an owner and getting an anonymous slot instead is the one
+    // outcome that must not happen quietly: the caller would believe its run
+    // holds a reservation nobody can attribute to it.
+    let owner: string | undefined;
+    if (code !== undefined) {
+      const resolution = await resolveSessionTarget(ctx.fs, ctx.paths, { code });
+      if (resolution.outcome !== "resolved") {
+        const message = `no se pudo resolver la sesión '${code}' que reclamaría el correlativo`;
+        return fail("INVALID_INPUT", message, { error: message, sessionError: resolution });
+      }
+      owner = resolution.session.folder;
+    }
     const data = await runNextNumber(ctx.fs, ctx.env, ctx.paths, {
       directory: dir,
       dryRun: args.flags.has("--dry-run"),
       ...(claim !== undefined ? { claim } : {}),
+      ...(owner !== undefined ? { owner } : {}),
     });
     return { ok: true, data, exitCode: 0 };
   },

@@ -1663,11 +1663,40 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "plan-new.numbering",
     scope: "plan-new",
-    title: "asignar el correlativo del documento del plan",
+    title: "reclamar para esta corrida el correlativo del documento del plan",
     authority: "cli",
     ownership: "cli-owned",
-    document: PLAN_NEW_LOOP,
+    // The numbering contract is `PLAN-INPUT` § *Numbering* and the loop says so
+    // itself ("Naming follows PLAN-INPUT"): the invocation lives there once, and
+    // this row cites the document that actually rules it.
+    document: PLAN_INPUT,
     attribution: "aw next-number docs/plans --claim",
+    // The row used to be attribution and nothing else: no effect, no evidence, no
+    // result. So the number was "assigned" by whoever narrated it, and the engine
+    // credited a transition that had never touched the workspace — which is also
+    // why nothing downstream could tell this run's slot from a stranger's file.
+    // The claim is a WRITE and now travels as one, with the slot it produced as
+    // the evidence.
+    effects: ["local_additive"],
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["next-number", "docs/plans", "--claim", "plan-<slug>.md", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
+      execution: {
+        kind: "external",
+        reason:
+          "el nombre del reclamo lleva el slug que esta corrida acaba de derivar, y el motor no lo tiene: la reserva la materializa el comando y devuelve su claimed_path",
+      },
+      evidence: ["plan.numero-reclamado"],
+      // Asking again returns the SAME slot: the claim recognizes a reservation this
+      // session already holds under this name instead of minting a second one.
+      idempotent: true,
+      recovery:
+        "volvé a correr el reclamo con el mismo --claim y el mismo --code: devuelve la reserva que ya tenés. Sin claimed_path no hay slot que completar, y sin --code la reserva es de nadie y el guardado la rechazará",
+    },
   },
   {
     id: "plan-new.phase-shaping",

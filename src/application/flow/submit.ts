@@ -55,6 +55,7 @@ import {
 } from "../../domain/flow/run-state.js";
 import { destinationsOf, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
+import { reservationMarker } from "../../domain/reservation.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
@@ -333,14 +334,31 @@ function sealFrom(
       },
     };
   }
-  const artifacts = answer.artifacts.map((artifact) => ({
-    path: artifact.path,
-    content: artifact.content,
-    overwrite: snapshot.get(artifact.path)?.exists === true,
-  }));
+  // The bytes this run's own claim left at a destination it reserved. Comparing
+  // digests is what makes "mine and untouched" one check: a slot somebody
+  // published into, edited, or claimed for another session no longer matches.
+  const reservation = baseDigest(reservationMarker(state.session));
+  const artifacts = answer.artifacts.map((artifact) => {
+    const seen = snapshot.get(artifact.path);
+    return {
+      path: artifact.path,
+      content: artifact.content,
+      overwrite: seen?.exists === true,
+      /**
+       * Completing THIS run's reservation replaces no document.
+       *
+       * The file is there because this run put it there to hold the number, and
+       * nothing was ever published into it — so the write is additive in the only
+       * sense the classes measure: nobody's content is lost. A destination that
+       * exists for any other reason stays `mutate_overwrite`, which is what keeps
+       * a save row declaring only `local_additive` from reaching a real plan.
+       */
+      reserved: seen?.exists === true && seen.digest === reservation,
+    };
+  });
   const effects: EffectClass[] = [];
-  if (artifacts.some((a) => !a.overwrite)) effects.push("local_additive");
-  if (artifacts.some((a) => a.overwrite)) effects.push("mutate_overwrite");
+  if (artifacts.some((a) => !a.overwrite || a.reserved)) effects.push("local_additive");
+  if (artifacts.some((a) => a.overwrite && !a.reserved)) effects.push("mutate_overwrite");
   const beyond = effects.filter((effect) => !contract.effects.includes(effect));
   if (beyond.length > 0) {
     return {
