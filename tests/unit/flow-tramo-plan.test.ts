@@ -48,6 +48,26 @@ const fs = new NodeFileSystem();
 const SESSION = "031-tramo-plan-plan-exec";
 const CODE = "031";
 
+const ALIAS = "acme";
+const PLAN_DOC = "docs/plans/031-plan-tramo.md";
+const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-PROJECT-START -->
+## Proyecto
+
+Tramo plan.
+
+## Fuentes
+
+| Alias | Path | Rama principal |
+|---|---|---|
+| ${ALIAS} | /tmp/acme | main |
+
+## Status
+
+- Ramas de trabajo actuales:
+  - ${ALIAS}: main
+<!-- AGENT-WORKFLOW-PROJECT-END -->
+`;
+
 const EXEC = journeyOfFlow("plan-exec");
 const NEW = journeyOfFlow("plan-new");
 const REFINE = journeyOfFlow("plan-refine");
@@ -170,15 +190,59 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
     expect(offenders.map((row) => row.id)).toEqual([]);
   });
 
-  it("la precondición de rama lee TODAS las fuentes, no una lectura que pasa sola", () => {
+  it("la precondición de rama nunca es una lectura que pasa sola", () => {
     // `aw check-branch` sin --source no resuelve ningún target y contesta
     // `match: true` incondicional: nombrarlo acá habría acreditado "rama
     // verificada" contra un comando que no miró nada. Lo destapó el recorrido
     // real, igual que el defecto del flag en el tramo QUICK.
-    for (const id of ["plan-exec.branch-precondition", "quick.branch-precondition"]) {
-      const row = FLOW_DECISIONS.find((decision) => decision.id === id) as FlowDecision;
-      expect(actionOf(row)?.invocation.args, id).toEqual(["sources", "--verbose"]);
+    //
+    // `quick` sigue leyendo TODAS las fuentes declaradas, que es su caso: edita
+    // el checkout. `plan-exec` no — edita en unidades, y `aw sources` informa el
+    // checkout compartido, así que con dos corridas sobre el mismo source esa
+    // lectura daba verde por la rama de trabajo de otro. Su evidencia es la
+    // lectura ligada a la sesión, donde una fuente sin unidad simplemente no
+    // aparece.
+    const quick = FLOW_DECISIONS.find((d) => d.id === "quick.branch-precondition") as FlowDecision;
+    expect(actionOf(quick)?.invocation.args).toEqual(["sources", "--verbose"]);
+
+    const exec = rowOf(EXEC, "plan-exec.branch-precondition");
+    expect(actionOf(exec)?.invocation.args).toEqual(["worktree", "list", "--code", "{code}"]);
+    expect(actionOf(exec)?.evidence).toEqual(["plan.rama-verificada"]);
+    // Y el commit se acredita sobre las mismas unidades, por lo mismo: el commit
+    // aterriza en la rama de la unidad, no en el checkout.
+    const commit = rowOf(EXEC, "plan-exec.commit-execution");
+    expect(actionOf(commit)?.invocation.args).toEqual(["worktree", "list", "--code", "{code}"]);
+  });
+
+  it("la unidad se adquiere ANTES de la primera escritura, y sobre el scope que el CLI validó", () => {
+    // El orden ES la regla: una unidad obtenida después de la primera edición es
+    // un aislamiento que no aisló nada. Y el scope va antes que la adquisición
+    // porque es lo que dice cuántas unidades hay que adquirir.
+    for (const [earlier, later] of [
+      ["plan-exec.source-scope", "plan-exec.unit-acquisition"],
+      ["plan-exec.unit-acquisition", "plan-exec.branch-precondition"],
+      ["plan-exec.branch-precondition", "plan-exec.implementation"],
+    ]) {
+      expect(at(EXEC, later), `${earlier} → ${later}`).toBeGreaterThan(at(EXEC, earlier));
     }
+    const scope = rowOf(EXEC, "plan-exec.source-scope");
+    // Juicio del agente, sin acción ni efecto propio: lo que la respuesta trae son
+    // datos, y validarlos es del CLI.
+    expect(scope.authority).toBe("agent");
+    expect(actionOf(scope)).toBeNull();
+    expect(scope.scopes_sources).toBe(true);
+
+    const acquire = rowOf(EXEC, "plan-exec.unit-acquisition");
+    expect(acquire.authority).toBe("cli");
+    expect(effectsOf(acquire)).toEqual(["local_additive"]);
+    // Interna: el CLI tiene el servicio de worktrees y pedirle a otro que lo corra
+    // sería devolverle trabajo que este proceso hace. Idempotente, que es lo que
+    // hace que reanudar reutilice la misma unidad en vez de cortar otra.
+    expect(actionOf(acquire)?.execution).toEqual({
+      kind: "internal",
+      operation: "worktree.ensure",
+    });
+    expect(actionOf(acquire)?.idempotent).toBe(true);
   });
 
   it("cada acción delegada del tramo invoca un comando registrado", () => {
@@ -255,6 +319,16 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       "# SESSION — tramo plan\n\n## Objective\nejecutar el plan de prueba\n",
       "utf8",
     );
+    // El workspace de verdad, porque el scope se valida contra él: la tabla de
+    // Fuentes es lo único que decide si un alias existe, y el plan es el
+    // documento contra el que se comprueba que ese alias esté nombrado.
+    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await mkdir(join(workdir, "docs", "plans"), { recursive: true });
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      `# Plan 031 — tramo\n\n## Impacted\n\n- **${ALIAS}:** el motor de flows.\n`,
+      "utf8",
+    );
   });
 
   afterEach(async () => {
@@ -311,7 +385,10 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       return {
         input_digest: resolved.seal,
         signals: signals.filter((signal) => vocabulary.includes(signal)),
-        decisions: { paso: stopped.id },
+        decisions:
+          stopped.scopes_sources === true
+            ? { plan: PLAN_DOC, sources: [ALIAS] }
+            : { paso: stopped.id },
       };
     }
     return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
@@ -518,6 +595,9 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       ),
     );
     expect(authorized.boundary.kind).toBe("execution");
-    expect(authorized.action?.invocation.args).toEqual(["sources", "--verbose"]);
+    // Y la invocación que se emite es la lectura por unidad, ligada al código de
+    // la sesión: el commit del batch aterriza en la rama de la unidad, y leer el
+    // checkout compartido acá dejaría verde un batch que no commiteó nada.
+    expect(authorized.action?.invocation.args).toEqual(["worktree", "list", "--code", CODE]);
   });
 });

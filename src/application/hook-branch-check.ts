@@ -99,6 +99,24 @@ function formatBlockMessage(verdict: CheckBranchOutput, displayName: string): st
     ].join("\n");
   }
 
+  if (verdict.reason === "unknown_identity") {
+    return [
+      `${head} Esta fuente se edita por unidades de aislamiento y no se pudo resolver a qué sesión pertenece esta conversación.`,
+      source,
+      `  Motivo:        ${verdict.error ?? "identidad ausente o ambigua"}`,
+      ...(verdict.actual_unit === null || verdict.actual_unit === undefined
+        ? []
+        : [
+            `  Unidad del archivo: ${verdict.actual_unit.path} (sesión ${verdict.actual_unit.session})`,
+          ]),
+      "",
+      `No se escribe en un árbol sin saber de quién es. Declará la sesión y reintentá:\n  ${verdict.remedy}`,
+      "",
+      `Referencia: ${REFERENCE_DOC}`,
+      "",
+    ].join("\n");
+  }
+
   if (verdict.reason === "other_session_unit") {
     return [
       `${head} Ese árbol es la unidad de aislamiento de OTRA sesión.`,

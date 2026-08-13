@@ -147,6 +147,15 @@ export interface FlowDecision {
    */
   proposes?: ProposalContract;
   /**
+   * This row's answer FIXES the run's scope: its plan and the sources it edits.
+   *
+   * Only an `agent` row may declare it — which sources a plan touches is read off
+   * the plan, and the engine never read it — and what the answer hands over is
+   * checked before it is persisted: every alias against the WORKSPACE block, and
+   * the plan against the document it names. See {@link FlowRunScope}.
+   */
+  scopes_sources?: true;
+  /**
    * This human row decides the standing proposal, and its `approve` label is the
    * one alternative that grants.
    *
@@ -256,6 +265,11 @@ export function publishApprovalOf(decision: FlowDecision): string | null {
   return decision.publishes?.approve ?? null;
 }
 
+/** Whether this row's answer is what fixes the run's plan and its sources. */
+export function scopesSources(decision: FlowDecision): boolean {
+  return decision.scopes_sources === true;
+}
+
 /** A decision computes a verdict; writing is the exception that declares itself. */
 export const DEFAULT_TRANSITION_EFFECTS: readonly EffectClass[] = ["read_only"];
 
@@ -321,6 +335,8 @@ export const INTERNAL_ACTION_OPERATIONS = [
   "session.artifacts",
   /** Close the session and upsert its HISTORY row. */
   "session.close",
+  /** Obtain the run's isolation unit on every source its scope declares. */
+  "worktree.ensure",
   /** Write the run's approved proposal, all of it or none of it. */
   "proposal.publish",
 ] as const;
@@ -343,6 +359,11 @@ export const INTERNAL_OPERATION_EFFECTS: Readonly<
   "workspace.board": ["read_only"],
   "session.artifacts": ["read_only", "local_additive"],
   "session.close": ["read_only", "local_additive", "mutate_overwrite"],
+  // A unit is a new working tree on a new branch, inside the run's own namespace:
+  // it replaces nothing and it destroys nothing. That the CLI reaches git to make
+  // it is not what the class measures — `workspace.board` already reads git the
+  // same way and is `read_only`.
+  "worktree.ensure": ["local_additive"],
   // Creating and replacing, both real — and which of the two happens is decided
   // by the proposal, not by the row: what the row declares here is the ceiling.
   "proposal.publish": ["local_additive", "mutate_overwrite"],
@@ -371,6 +392,14 @@ export type InternalActionPlan =
    */
   | { operation: "session.artifacts"; dump?: readonly string[] }
   | { operation: "session.close" }
+  /**
+   * Obtain one isolation unit per source the run declared, before it edits any.
+   *
+   * It takes no parameters either, and for the same reason `proposal.publish`
+   * does not: what it may touch is the run's own persisted scope, so a row cannot
+   * widen the acquisition by naming a source the run never fixed.
+   */
+  | { operation: "worktree.ensure" }
   /**
    * Publish the exact proposal the run is holding — all of it or none of it.
    *
@@ -2243,30 +2272,91 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     attribution: "`aw designs --plan`",
   },
   {
-    id: "plan-exec.branch-precondition",
+    id: "plan-exec.source-scope",
     scope: "plan-exec",
-    title: "verificar la rama de cada fuente afectada antes del batch",
+    title: "fijar el plan de la corrida y las fuentes exactas que va a editar",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    // Which sources a plan touches is read off the plan, and the engine never read
+    // one — so this is judgment, and it is the only thing here that is. What the
+    // answer hands over is CHECKED before it is persisted: an alias the WORKSPACE
+    // block does not declare, or one the plan never names, is refused. That is the
+    // half a rule can hold; the other half is why the row exists at all.
+    //
+    // It carries no signals on purpose. A vocabulary would be a verdict over a
+    // fixed taxonomy, and the aliases of a workspace are not one.
+    scopes_sources: true,
+  },
+  {
+    id: "plan-exec.unit-acquisition",
+    scope: "plan-exec",
+    title: "adquirir la unidad de aislamiento de cada fuente del scope antes de editar",
     authority: "cli",
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
-    // "Before editing… verify EVERY current branch" — every, so the read has to
-    // cover every declared source. `aw check-branch` cannot: without --source it
-    // resolves no target and answers `match: true` unconditionally, which would
-    // credit "branch verified" against a command that checked nothing. The real
-    // walk is what surfaced that. `aw sources` enriches each declared source with
-    // its current branch, the expected one and whether they match.
+    effects: ["local_additive"],
+    // BEFORE `plan-exec.implementation`, and the position is the whole rule: the
+    // policy says a loop that edits code edits inside its unit, and a unit obtained
+    // after the first write would be an isolation nobody was ever isolated by.
+    //
+    // Idempotent because the underlying service is: a unit that already exists is
+    // returned as it is, which is what makes resuming reuse the same tree instead
+    // of cutting a second one — and what makes the effect true on re-entry, since
+    // the tree IS there however it got there.
     action: {
-      invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      invocation: {
+        program: "aw",
+        args: ["worktree", "ensure", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
+      execution: { kind: "internal", operation: "worktree.ensure" },
+      evidence: ["plan.unidades-adquiridas"],
+      idempotent: true,
+      recovery:
+        "adquirí una unidad por alias del scope con 'aw worktree ensure --source <alias> --code <NNN>'; si la rama está tomada por otro árbol, es otro flujo el que la tiene y hay que cerrarlo o liberarla, nunca forzarla",
+    },
+  },
+  {
+    id: "plan-exec.branch-precondition",
+    scope: "plan-exec",
+    title: "verificar la rama y el árbol de la unidad de cada fuente antes del batch",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    // "Before editing… verify EVERY current branch" — every, y bajo aislamiento la
+    // rama que importa es la de la UNIDAD, no la del checkout compartido. Leía
+    // `aw sources --verbose`, que informa el checkout: con dos corridas sobre el
+    // mismo source esa lectura da verde en la rama de trabajo de alguien más y
+    // acredita "rama verificada" contra un árbol que este flujo no edita.
+    //
+    // `aw worktree list --code` es la lectura ligada a la sesión: sólo las unidades
+    // de esta corrida, cada una con su path, su rama `aw/<sesión>`, su estado sucio
+    // y su HEAD. Una fuente del scope sin unidad no aparece, y esa ausencia es
+    // exactamente lo que deja la frontera pendiente.
+    //
+    // (`aw check-branch` sigue sin poder servir acá: sin --source no resuelve
+    // ningún target y contesta `match: true` incondicional.)
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["worktree", "list", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
       execution: {
         kind: "external",
         reason:
-          "la rama esperada de cada fuente es un veredicto sobre git, y un workspace sin fuentes declaradas no lo tiene",
+          "la unidad esperada de cada fuente es un veredicto sobre git, y una corrida sin unidades todavía no lo tiene",
       },
       evidence: ["plan.rama-verificada"],
       idempotent: true,
       recovery:
-        "resolvé la rama de la fuente que no coincide y volvé a leer las fuentes: nunca limpies ni cambies de rama sin confirmación",
+        "a la fuente del scope que no tiene su unidad, dásela con 'aw worktree ensure --source <alias> --code <NNN>' y volvé a leer; nunca limpies ni cambies de rama sin confirmación",
     },
   },
   {
@@ -2549,11 +2639,21 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       otherwise: "ninguna fuente afectada quedó con cambios sin commitear: no hay commit que crear",
     },
     // Approving is not committing. The authorization above is a preference; this
-    // is the effect, and it comes back as the sources' real git state — which is
-    // also the between-unit precondition the policy demands ("each working tree
-    // clean or explicitly acknowledged").
+    // is the effect, and it comes back as the real git state of the trees this run
+    // actually edited — which is also the between-unit precondition the policy
+    // demands ("each working tree clean or explicitly acknowledged").
+    //
+    // Read off the UNITS for the same reason the branch precondition is: a commit
+    // lands in the unit's branch, and `aw sources --verbose` would report the
+    // shared checkout — clean, because nothing was ever written there — so a batch
+    // that committed nothing at all could still come back green.
     action: {
-      invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      invocation: {
+        program: "aw",
+        args: ["worktree", "list", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
       execution: {
         kind: "external",
         reason: "crear un commit es un efecto sobre git que este ejecutor no aplica",

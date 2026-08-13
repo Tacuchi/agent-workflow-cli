@@ -122,7 +122,14 @@ describe("efectos que pueden no ocurrir — la fila los condiciona", () => {
     // `plan-refine.split-in-place` y `plan-refine.normalize-on-write`).
     // `split-in-place` sobrevive como fila sin efecto: decide qué bytes se
     // proponen, y su condición ya no gobierna ninguna escritura.
-    expect(resto.length).toBe(13);
+    //
+    // La decimocuarta es `plan-exec.unit-acquisition`, y tampoco lleva condición
+    // por la misma razón: el scope que la habilita NUNCA está vacío —una corrida
+    // que no aísla ninguna fuente no tiene dónde escribir, y el CLI rechaza esa
+    // respuesta— así que la unidad se crea siempre. Y cuando ya existe, el efecto
+    // igual ocurre: el árbol ESTÁ, que es la misma lectura que hace la
+    // publicación de una propuesta ya aplicada.
+    expect(resto.length).toBe(14);
     expect(resto.filter((row) => conditionOf(row) !== null).map((row) => row.id)).toEqual([]);
   });
 

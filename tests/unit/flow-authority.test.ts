@@ -119,6 +119,11 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.entry-gap-recognition",
       "plan-exec.normalization-consent",
       "plan-exec.batch-eligibility-signal",
+      // Qué fuentes toca un plan lo dice el PLAN, y el motor nunca leyó uno: la
+      // fila entrega ese juicio y el CLI lo valida contra el workspace antes de
+      // persistirlo. Es la única de la jornada que devuelve datos en vez de
+      // señales, y por eso no declara vocabulario.
+      "plan-exec.source-scope",
       "plan-exec.implementation",
       "plan-exec.deviation-recognition",
       // La frontera que declara qué queda por hacer al cerrar el batch. Sin ella,
@@ -388,7 +393,11 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // bytes y la que los publica. `plan-refine.normalize-on-write` se fue: la
     // forma normalizada es una propiedad de los bytes propuestos, no una segunda
     // escritura del mismo documento.
-    expect(plan).toHaveLength(52);
+    // 52 + 2, las dos de `plan-exec` que hacen del aislamiento un paso del
+    // recorrido y no una regla que alguien recuerda: la que fija el plan y las
+    // fuentes que la corrida edita, y la que adquiere su unidad en cada una antes
+    // de la primera escritura.
+    expect(plan).toHaveLength(54);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos

@@ -59,12 +59,30 @@ export interface WorktreeError {
 
 export type WorktreeEnsureOutput = IsolationUnit & { visibility: "attached" | "unavailable" };
 
+/**
+ * One live unit as the list reports it: what it is, plus what its tree is doing.
+ *
+ * `dirty` and `head` are the two facts a branch or commit boundary needs and the
+ * ones no other reading of this workspace can supply — `aw sources` answers them
+ * about the shared checkout, which under isolation is precisely the tree the flow
+ * does NOT edit. `null` on either means the read failed, never "clean" and never
+ * "no commit": a tree nobody could stat must not pass as a tree with nothing
+ * pending.
+ */
+export type ListedUnit = IsolationUnit & {
+  session_active: boolean;
+  dirty: boolean | null;
+  head: string | null;
+};
+
 export interface WorktreeListOutput {
   workspace_key: string;
-  units: Array<IsolationUnit & { session_active: boolean }>;
+  units: ListedUnit[];
   orphans: OrphanUnit[];
   /** Sources whose worktrees could not be read; their units are NOT in the lists. */
   unreadable: Array<{ alias: string; error: string }>;
+  /** The session the list was narrowed to, when the caller named one. */
+  session?: string;
 }
 
 export interface WorktreeReleaseOutput {
@@ -116,7 +134,7 @@ export async function runWorktree(
   deps: WorktreeDeps,
   input: WorktreeInput,
 ): Promise<WorktreeOutput> {
-  if (input.action === "list") return listUnits(deps);
+  if (input.action === "list") return listUnits(deps, input);
   const target = await resolveTarget(deps, input);
   if ("error" in target) return target;
   if (input.action === "ensure") return ensureUnit(deps, target);
@@ -388,43 +406,114 @@ async function releaseUnit(
   };
 }
 
-async function listUnits(deps: WorktreeDeps): Promise<WorktreeListOutput> {
+/**
+ * The workspace's live units — every one of them, or only one session's.
+ *
+ * The filter is what makes this reading usable as a run's own evidence: a flow
+ * asking "is my tree there, on my branch, with my work committed?" must not be
+ * answered with somebody else's unit, and a list that always returned all of them
+ * would leave that narrowing to whoever read the output. Naming a session that
+ * cannot be resolved is REFUSED rather than widened back to everything.
+ *
+ * It narrows on an explicit `--code` and on nothing else. The conversation's own
+ * binding is deliberately not consulted: this is also the inventory command that
+ * surfaces orphans, and one that quietly showed only the caller's units would hide
+ * exactly the trees nobody is going to come back for.
+ */
+async function listUnits(
+  deps: WorktreeDeps,
+  input: WorktreeInput,
+): Promise<WorktreeListOutput | WorktreeError> {
+  const narrowed = await narrowTo(deps, input.sessionCode);
+  if (typeof narrowed !== "string" && narrowed !== null) return narrowed;
+  const only = narrowed;
+
   const block = await readWorkspaceBlock(deps.fs, deps.env.cwd(), deps.paths.blockMarkers());
   const key = workspaceKey(deps.paths.workspaceDir());
   const root = await canonicalUnitsRoot(deps);
   const sessions = await sessionStates(deps);
 
-  const units: WorktreeListOutput["units"] = [];
+  const units: ListedUnit[] = [];
   const orphans: OrphanUnit[] = [];
   const unreadable: WorktreeListOutput["unreadable"] = [];
   for (const source of block?.fuentes ?? []) {
-    if (!(await deps.git.isGitRepo(source.path))) continue;
-    let trees: WorktreeEntry[];
-    try {
-      trees = await deps.git.worktreeList(source.path);
-    } catch (err) {
+    const scanned = await scanSource(deps, source, { root, key, only, sessions });
+    if ("error" in scanned) {
       // Reported, never skipped in silence: a source whose trees cannot be read
       // would otherwise show up as "no units", which is the one answer that is
       // certainly wrong — its flows are exactly the ones nobody would clean up.
-      unreadable.push({ alias: source.alias, error: (err as Error).message });
+      unreadable.push({ alias: source.alias, error: scanned.error });
       continue;
     }
-    for (const tree of trees) {
-      const identity = tree.main ? null : parseUnitPath(root, tree.path);
-      if (identity === null || identity.workspaceKey !== key) continue;
-      const reason = orphanReason(identity.session, sessions, tree.prunable);
-      if (reason === null) units.push(liveUnit(identity, source.path, tree));
-      else orphans.push(orphanOf(identity, tree, reason));
-    }
+    units.push(...scanned.units);
+    orphans.push(...scanned.orphans);
   }
-  return { workspace_key: key, units, orphans, unreadable };
+  return {
+    workspace_key: key,
+    units,
+    orphans,
+    unreadable,
+    ...(only !== null ? { session: only } : {}),
+  };
 }
 
-function liveUnit(
+/** What one source contributes to the list, or why its trees could not be read. */
+async function scanSource(
+  deps: WorktreeDeps,
+  source: ProjectFuente,
+  ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
+): Promise<{ units: ListedUnit[]; orphans: OrphanUnit[] } | { error: string }> {
+  const empty = { units: [], orphans: [] };
+  // Not a repo is not unreadable: it has no worktrees to report, and calling it
+  // an error would put every non-git source in front of the reader forever.
+  if (!(await deps.git.isGitRepo(source.path))) return empty;
+  let trees: WorktreeEntry[];
+  try {
+    trees = await deps.git.worktreeList(source.path);
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+  const units: ListedUnit[] = [];
+  const orphans: OrphanUnit[] = [];
+  for (const tree of trees) {
+    const identity = tree.main ? null : parseUnitPath(ctx.root, tree.path);
+    if (identity === null || identity.workspaceKey !== ctx.key) continue;
+    if (ctx.only !== null && identity.session !== ctx.only) continue;
+    const reason = orphanReason(identity.session, ctx.sessions, tree.prunable);
+    if (reason === null) units.push(await liveUnit(deps, identity, source.path, tree));
+    else orphans.push(orphanOf(identity, tree, reason));
+  }
+  return { units, orphans };
+}
+
+/**
+ * The session folder the list is narrowed to: `null` for the whole workspace, or
+ * the refusal when the caller named one nobody can resolve.
+ */
+async function narrowTo(
+  deps: WorktreeDeps,
+  code: string | undefined,
+): Promise<string | null | WorktreeError> {
+  if (code === undefined) return null;
+  const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
+    code,
+    allowClosed: true,
+    bind: false,
+  });
+  if (resolution.outcome === "resolved") return resolution.session.folder;
+  return {
+    error: "session_unresolved",
+    message: `se pidió la lista de '${code}' y no se pudo resolver esa sesión`,
+    hint: "pasá --code <NNN> con la sesión del flujo",
+  };
+}
+
+async function liveUnit(
+  deps: WorktreeDeps,
   identity: UnitIdentity,
   sourcePath: string,
   tree: WorktreeEntry,
-): WorktreeListOutput["units"][number] {
+): Promise<ListedUnit> {
   return {
     alias: identity.alias,
     source_path: sourcePath,
@@ -433,7 +522,18 @@ function liveUnit(
     branch: tree.branch ?? unitBranch(identity.session),
     created: false,
     session_active: true,
+    dirty: await treeDirty(deps, tree.path),
+    head: tree.head,
   };
+}
+
+/** `null` when git could not answer — never the reassuring half of a boolean. */
+async function treeDirty(deps: WorktreeDeps, path: string): Promise<boolean | null> {
+  try {
+    return await deps.git.isDirty(path);
+  } catch {
+    return null;
+  }
 }
 
 function orphanOf(

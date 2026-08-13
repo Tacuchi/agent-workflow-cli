@@ -26,6 +26,7 @@
 
 import type { EffectClass } from "../../domain/capability/effects.js";
 import type { InternalActionPlan } from "../../domain/flow/authority.js";
+import type { FlowRunScope } from "../../domain/flow/run-state.js";
 import type { LocalProposal } from "../../domain/proposal.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -39,11 +40,21 @@ import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { runSessionClose } from "../session-close-service.js";
 import { runStatusCommand } from "../status-service.js";
+import { type IsolationUnit, runWorktree } from "../worktree-service.js";
 
 /** The run's own coordinates — the only scope an internal operation may touch. */
 export interface InternalActionRun {
   session: string;
   code: string;
+  /**
+   * The plan and the sources the run fixed, when it already has them.
+   *
+   * It travels with the coordinates for the same reason the proposal does: the
+   * acquisition must obtain units for exactly the sources the run declared and
+   * had validated, and re-deriving that list from anywhere else would open the
+   * window where what was scoped and what gets isolated are two things.
+   */
+  scope: FlowRunScope | null;
   /**
    * The sealed local change the run is holding, when it has one.
    *
@@ -95,9 +106,73 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
         return artifacts(deps, run, plan.dump ?? null);
       case "session.close":
         return close(deps, run);
+      case "worktree.ensure":
+        return ensureUnits(deps, run);
       case "proposal.publish":
         return publish(deps, run);
     }
+  };
+}
+
+/**
+ * Give the run one isolation unit per source it scoped — all of them, or none
+ * credited.
+ *
+ * It goes through the SAME `runWorktree` the public command calls, so where a
+ * unit lives, which branch it sits on and what happens when somebody else already
+ * holds that branch are one implementation and not two that could disagree about
+ * whose tree a flow is entitled to.
+ *
+ * The first refusal stops it, and that is deliberate: a partial acquisition would
+ * leave the run believing it is isolated on the sources it got while the boundary
+ * it is about to cross — "implement" — writes to all of them. The units already
+ * obtained are NOT undone, because they are idempotent and the retry reuses them.
+ */
+async function ensureUnits(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
+  const scope = run.scope;
+  if (scope === null) {
+    return refusal(
+      "worktree.ensure",
+      "la corrida no fijó qué fuentes edita: no hay unidad que adquirir",
+      canonicalJson({ scope: null }),
+    );
+  }
+  const acquired: IsolationUnit[] = [];
+  for (const alias of scope.sources) {
+    const result = await runWorktree(
+      { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
+      { action: "ensure", alias, sessionCode: run.code },
+    );
+    if ("error" in result) {
+      return refusal(
+        "worktree.ensure",
+        `${alias}: ${result.message}${result.hint === undefined ? "" : ` — ${result.hint}`}`,
+        canonicalJson({ alias, failure: result, acquired }),
+      );
+    }
+    // `ensure` answers with the unit; the union's other members belong to verbs
+    // this call never asks for. Narrowed rather than cast: the day one of them
+    // could come back, this is where the compiler says so.
+    if (!("source_path" in result)) {
+      return refusal(
+        "worktree.ensure",
+        `${alias}: la adquisición no devolvió una unidad`,
+        canonicalJson({ alias, result }),
+      );
+    }
+    acquired.push(result);
+  }
+  return {
+    ok: true,
+    summary: `unidades de ${run.session}: ${acquired.map((unit) => `${unit.alias} → ${unit.branch}`).join(", ")}`,
+    output: canonicalJson({ plan: scope.plan, units: acquired }),
+    // The tree IS there, however it got there — the same reading `proposal.publish`
+    // makes of a re-entry that finds the bytes already written. Crediting nothing
+    // when `created` is false would refuse the resumption this row is idempotent for.
+    effects: ["local_additive"],
   };
 }
 

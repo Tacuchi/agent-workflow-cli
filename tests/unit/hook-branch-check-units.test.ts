@@ -168,7 +168,7 @@ describe("runBranchCheckHook — la línea de trabajo es la unidad del flujo", (
     expect(result.stderr).toContain("aw worktree ensure --source acme --code 103-uno-plan-exec");
   });
 
-  it("caso 3b — sin identidad de conversación, el checkout sigue bloqueado mientras haya una unidad", async () => {
+  it("caso 3b — con la identidad sin resolver, el checkout sigue bloqueado y dice por qué", async () => {
     await ensure("103");
 
     const result = await runBranchCheckHook({
@@ -176,10 +176,50 @@ describe("runBranchCheckHook — la línea de trabajo es la unidad del flujo", (
       stdin: edit(join(source, "src", "foo.ts")),
     });
 
-    // Degradación declarada: sin saber de quién es el flujo no se puede exigir
-    // UNA unidad, pero el aislamiento del checkout principal se conserva.
+    // Dos sesiones activas y ninguna asociación: el resolver no puede decir de
+    // quién es este flujo. Antes eso se aplanaba a "sin sesión" y el mensaje
+    // ofrecía un `<NNN>` de relleno; ahora el motivo viaja, porque es lo que la
+    // persona tiene que arreglar.
     expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain("aw worktree ensure --source acme --code <NNN>");
+    expect(result.stderr).toContain("no se pudo resolver a qué sesión");
+    expect(result.stderr).toContain("2 sesiones activas");
+    expect(result.stderr).toContain("--code");
+  });
+
+  it("caso 3c — con la identidad sin resolver, editar DENTRO de una unidad tampoco pasa", async () => {
+    const mine = await ensure("103");
+
+    const result = await runBranchCheckHook({
+      ...deps,
+      stdin: edit(join(mine.path, "src", "foo.ts")),
+    });
+
+    // La regresión que este caso fija: una identidad ausente o ambigua daba
+    // `null`, y con `null` CUALQUIER unidad contestaba `inside_own_unit`. Con dos
+    // corridas vivas eso autorizaba escribir en el árbol de la otra — exactamente
+    // lo que el aislamiento existe para impedir. No saber de quién es un árbol no
+    // es permiso para escribir en él.
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("no se pudo resolver a qué sesión");
+    expect(result.stderr).toContain(mine.path);
+  });
+
+  it("caso 3d — una sola sesión activa sigue resolviendo sola: la unidad propia pasa", async () => {
+    rmSync(join(workspace, ".workflow", "sessions", "104-dos-plan-exec"), {
+      recursive: true,
+      force: true,
+    });
+    const mine = await ensure("103");
+
+    const result = await runBranchCheckHook({
+      ...deps,
+      stdin: edit(join(mine.path, "src", "foo.ts")),
+    });
+
+    // El fail-closed no se paga en el workspace normal: con una única sesión
+    // activa la precedencia la resuelve sin que nadie declare nada, que es el
+    // caso en el que está casi todo el mundo.
+    expect(result.exitCode).toBe(0);
   });
 
   it("caso 4 — sin ninguna unidad, la verificación es exactamente la de antes: rama correcta pasa", async () => {

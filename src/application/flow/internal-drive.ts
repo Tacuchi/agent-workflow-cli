@@ -131,6 +131,7 @@ async function run(
   const coordinates = {
     session: state.session,
     code: sessionNumericCode(state.session) ?? state.session,
+    scope: state.scope,
     proposal: state.proposal,
   };
   try {
