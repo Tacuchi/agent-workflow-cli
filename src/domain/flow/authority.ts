@@ -2592,9 +2592,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     attribution: PLAN_ATTRIBUTION,
     // BEFORE Git, and the real walk is what proved it: the registry had inherited
     // an order where the plan was committed and only then validated and stamped.
-    // Both documents say the opposite — "last Batch also runs final validation
-    // before Git", and "mark plan done, then commit once per affected source", so
-    // that the status write rides in the same commit instead of orphaning it.
+    // The document says the opposite — "last Batch also runs final validation
+    // before Git" — and that half has not moved. What moved is where the `done`
+    // seal sits relative to Git: see `plan-exec.unit-integration`.
     // The convergence gate of PLAN-exec. The board is what distinguishes the three
     // states this rule turns on — every phase green with no closure reads
     // `final_validation_pending`, and a deferred check keeps its phase blocked —
@@ -2656,39 +2656,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ],
   },
   {
-    id: "plan-exec.plan-done",
-    scope: "plan-exec",
-    title: "escribir el estado done del plan con su línea de cierre",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: PLAN_EXEC_LOOP,
-    attribution: PLAN_ATTRIBUTION,
-    effects: ["mutate_overwrite"],
-    // The done seal is the last progress mark of the flow's own document: run
-    // custody — its condition and the board's reading are the guards that count.
-    custody: "run",
-    condition: {
-      threshold: {
-        observed: "plan-exec.pending-effects",
-        of: ["plan.plan-closable"],
-        min: 1,
-      },
-      otherwise:
-        "al plan le quedan fases sin validar: sellarlo acá sería marcarlo done desde los contadores",
-    },
-    action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-      execution: {
-        kind: "external",
-        reason: "sellar el done reescribe el plan-doc, y este motor no lo edita",
-      },
-      evidence: ["plan.estado-done-sellado"],
-      idempotent: true,
-      recovery:
-        "escribí '> Estado: done' y su '> Cierre:' en la línea de abajo y volvé a devolver la lectura; si el tablero no lo lee cerrado, la transición sigue pendiente",
-    },
-  },
-  {
     id: "plan-exec.commit-execution",
     scope: "plan-exec",
     title: "crear un commit por fuente afectada y dejar cada árbol limpio o reconocido",
@@ -2729,6 +2696,86 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       idempotent: false,
       recovery:
         "una fuente que quedó con cambios sin commitear deja el batch SIN commitear: registralo así en CHECKPOINT y BACKLOG en vez de commitear a medias",
+    },
+  },
+  {
+    id: "plan-exec.unit-integration",
+    scope: "plan-exec",
+    title: "integrar cada unidad de la sesión en la rama de trabajo de su fuente",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // The two classes a merge really applies: it runs git, and it moves files in
+    // a checkout that already had contents. No `custody: "run"` — this is the one
+    // row of the journey whose effect lands OUTSIDE the run's own ledger, on the
+    // branch everybody else reads, so it stops to be authorized. That stop is not
+    // the commit approval asked twice: approving the commits of a batch decides
+    // what gets recorded in the run's own unit, and this decides that it lands on
+    // the shared branch. Two decisions, and only the second can conflict.
+    effects: ["execute", "mutate_overwrite"],
+    // Why this row exists at all, and why HERE. A run that isolates its writing
+    // ends holding commits that live on `aw/<session>` and nowhere else: without
+    // this transition the journey reported "finished" over work no branch anybody
+    // reads contains. It sits AFTER the commit because a merge of uncommitted work
+    // has no losing side to report, and BEFORE the `done` seal because sealing a
+    // plan whose result is still only in a unit would make `done` true of nothing.
+    //
+    // Delegated, not internal, although this CLI owns the service: a merge into
+    // the source's working branch writes on somebody else's books, and its failure
+    // mode — a conflict — opens a journey (`aw fix-git`) that is a person's, not
+    // this executor's. What comes back is the command's own per-unit report.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["worktree", "integrate", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
+      execution: {
+        kind: "external",
+        reason: "un merge sobre la rama compartida es un efecto que este ejecutor no aplica",
+      },
+      evidence: ["plan.unidades-integradas"],
+      // Re-entrant on purpose: this is the transition a conflict comes BACK to.
+      // Integrating an already-integrated session is a no-op that reports the same
+      // thing, which is what lets the recovery end where it started.
+      idempotent: true,
+      recovery:
+        "una unidad en conflicto conserva su merge y sus commits: resolvé con 'aw fix-git --path <fuente>' (prepare → apply → commit --confirm) y volvé a correr la integración; la transición sigue pendiente mientras la sesión conserve una unidad",
+    },
+  },
+  {
+    id: "plan-exec.plan-done",
+    scope: "plan-exec",
+    title: "escribir el estado done del plan con su línea de cierre",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    effects: ["mutate_overwrite"],
+    // The done seal is the last progress mark of the flow's own document: run
+    // custody — its condition and the board's reading are the guards that count.
+    custody: "run",
+    condition: {
+      threshold: {
+        observed: "plan-exec.pending-effects",
+        of: ["plan.plan-closable"],
+        min: 1,
+      },
+      otherwise:
+        "al plan le quedan fases sin validar: sellarlo acá sería marcarlo done desde los contadores",
+    },
+    action: {
+      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      execution: {
+        kind: "external",
+        reason: "sellar el done reescribe el plan-doc, y este motor no lo edita",
+      },
+      evidence: ["plan.estado-done-sellado"],
+      idempotent: true,
+      recovery:
+        "escribí '> Estado: done' y su '> Cierre:' en la línea de abajo y volvé a devolver la lectura; si el tablero no lo lee cerrado, la transición sigue pendiente",
     },
   },
 

@@ -18,6 +18,18 @@ export interface SessionCloseInput {
   code?: string;
   /** Optional refs for the HISTORY row (`kind:val` CSV; free text renders as-is). */
   refs?: string;
+  /**
+   * Refuse to close while the session still holds an isolation unit.
+   *
+   * OFF by default, and the asymmetry is the decision: a person running
+   * `aw session-close` is closing a line on purpose and may have reasons this
+   * service cannot see, so it gets the receipt and the close. A FLOW finalizing
+   * itself is not deciding anything — it is reporting that a run is over — and a
+   * run whose result still lives only on `aw/<session>` is not over. So the
+   * directed close passes this, and the refusal is what keeps "finished" from
+   * being written over work no branch anybody reads contains.
+   */
+  requireIntegrated?: boolean;
 }
 
 export interface SessionCloseOutput {
@@ -43,6 +55,23 @@ export interface SessionCloseOutput {
    */
   pending_integration?: Array<{ alias: string; branch: string; path: string; command: string }>;
   /**
+   * How to get back to a session that closed still holding units.
+   *
+   * Reported beside `pending_integration` and only with it, because without it
+   * the receipt hands out a command that no longer works: every integrate command
+   * above resolves its session, and a closed one is refused. Naming the reopen is
+   * what keeps the remedy usable after the act that made it necessary.
+   */
+  reopen?: string;
+  /**
+   * Non-fatal, and never silent: the isolation state could not be read.
+   *
+   * Same rule as `reservations_error`, for the same reason — an absent
+   * `pending_integration` beside this field means "nobody could tell", which is
+   * a different fact from "there was nothing to integrate".
+   */
+  pending_integration_error?: string;
+  /**
    * Numbering reservations this session held and never completed, now removed.
    *
    * The opposite decision from a unit, for the opposite reason: a unit holds
@@ -67,6 +96,19 @@ export interface SessionCloseFullOutput {
   sessionClose: SessionCloseOutput;
 }
 
+/** The close that did NOT happen, and everything needed to make it possible. */
+export interface SessionCloseHeldOutput {
+  sessionHeld: {
+    code: string;
+    folder: string;
+    closed: false;
+    reason: string;
+    pending_integration: NonNullable<SessionCloseOutput["pending_integration"]>;
+    /** One call that integrates every unit of this session, in alias order. */
+    integrate: string;
+  };
+}
+
 export interface SessionCloseError {
   error: string;
   code?: string;
@@ -74,6 +116,7 @@ export interface SessionCloseError {
 
 export type SessionCloseResult =
   | SessionCloseFullOutput
+  | SessionCloseHeldOutput
   | SessionCloseError
   | { sessionError: SessionResolutionError };
 
@@ -98,6 +141,14 @@ export async function runSessionClose(
   const checkpointPath = canonicalArtifactPath(session.path, "checkpoint");
   await ensureFile(fs, checkpointPath, "# CHECKPOINT\n");
 
+  // BEFORE the marker, and that is the whole of it: `.closed` is what makes the
+  // integrate commands below stop resolving, so a check that ran after writing it
+  // would be a receipt for a state it had just made harder to leave.
+  const units = await heldUnits(isolation, session.folder);
+  if (input.requireIntegrated === true && (units.held.length > 0 || units.error !== undefined)) {
+    return refuseHeld(session.code ?? input.code, session.folder, units);
+  }
+
   const refs = input.refs?.trim();
   const closure = await closeUnderLock(fs, paths, session, {
     code: session.code ?? input.code,
@@ -116,13 +167,8 @@ export async function runSessionClose(
     ...(closure.history ? { history: closure.history } : {}),
     ...(closure.history_error !== undefined ? { history_error: closure.history_error } : {}),
   };
-  const held = await heldUnits(isolation, session.folder);
-  if (held.length > 0) sessionClose.pending_integration = held;
-  const reservations = await releaseReservations(fs, paths, session.folder);
-  if (reservations.released.length > 0) {
-    sessionClose.reservations_released = reservations.released;
-  }
-  if (reservations.error !== undefined) sessionClose.reservations_error = reservations.error;
+  reportHeld(sessionClose, session.folder, units);
+  reportReservations(sessionClose, await releaseReservations(fs, paths, session.folder));
   // Last write of the session's life, and the one that matters most: whoever
   // opens a closed session months later reads the block, and a block left saying
   // "abierta" would be the closing act failing to record itself.
@@ -130,30 +176,83 @@ export async function runSessionClose(
   return { sessionClose };
 }
 
+/** Units survived the close: say so, and say how to come back for them. */
+function reportHeld(output: SessionCloseOutput, folder: string, units: HeldUnits): void {
+  if (units.error !== undefined) output.pending_integration_error = units.error;
+  if (units.held.length === 0) return;
+  output.pending_integration = units.held;
+  output.reopen = `aw session-resume --code ${folder} --reopen`;
+}
+
+function reportReservations(
+  output: SessionCloseOutput,
+  reservations: { released: string[]; error?: string },
+): void {
+  if (reservations.released.length > 0) output.reservations_released = reservations.released;
+  if (reservations.error !== undefined) output.reservations_error = reservations.error;
+}
+
+/** The close that stopped, told so the reader can act without asking anything else. */
+function refuseHeld(code: string, folder: string, units: HeldUnits): SessionCloseHeldOutput {
+  return {
+    sessionHeld: {
+      code,
+      folder,
+      closed: false,
+      reason:
+        units.error !== undefined
+          ? `no se pudo comprobar si la sesión conserva unidades — ${units.error}`
+          : `la sesión todavía tiene ${units.held.length} unidad(es) sin integrar: su trabajo son commits que no están en ninguna rama de trabajo`,
+      pending_integration: units.held,
+      integrate: `aw worktree integrate --code ${folder}`,
+    },
+  };
+}
+
 /** Reads this workspace's live isolation units; absent when the caller has no git port. */
 export type IsolationReader = () => Promise<
   Array<{ alias: string; session: string; path: string; branch: string }>
 >;
 
+/** What the session holds, and whether that reading could be made at all. */
+interface HeldUnits {
+  held: NonNullable<SessionCloseOutput["pending_integration"]>;
+  error?: string;
+}
+
+/**
+ * The units this session holds — or the fact that nobody could tell.
+ *
+ * The two are different answers and this used to flatten them into one: an
+ * unreadable isolation state came back as an empty list, which reads as "there is
+ * nothing to integrate". Harmless while closing only REPORTED; not harmless now
+ * that it can refuse, because the one state that must never close silently is
+ * exactly the one whose evidence could not be read.
+ */
 async function heldUnits(
   isolation: IsolationReader | undefined,
   folder: string,
-): Promise<NonNullable<SessionCloseOutput["pending_integration"]>> {
-  if (isolation === undefined) return [];
+): Promise<HeldUnits> {
+  if (isolation === undefined) return { held: [] };
   let units: Awaited<ReturnType<IsolationReader>>;
   try {
     units = await isolation();
-  } catch {
-    return [];
+  } catch (error) {
+    return {
+      held: [],
+      error: `no se pudieron leer las unidades de ${folder}: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
-  return units
-    .filter((u) => u.session === folder)
-    .map((u) => ({
-      alias: u.alias,
-      branch: u.branch,
-      path: u.path,
-      command: `aw worktree integrate --source ${u.alias} --code ${folder}`,
-    }));
+  return {
+    held: units
+      .filter((u) => u.session === folder)
+      .map((u) => ({
+        alias: u.alias,
+        branch: u.branch,
+        path: u.path,
+        command: `aw worktree integrate --source ${u.alias} --code ${folder}`,
+      })),
+  };
 }
 
 /**

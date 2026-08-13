@@ -10,11 +10,25 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
 import { resolveSourceBranches } from "./branch-resolver.js";
+import { locateRun, readRun } from "./flow/run-state-service.js";
+import { withCwdLock } from "./lock-service.js";
 import { runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
 import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
-import { listSessionFolders, resolveSessionTarget } from "./session-resolver.js";
+import {
+  type SessionResolutionError,
+  listSessionFolders,
+  resolveSessionTarget,
+} from "./session-resolver.js";
+
+/**
+ * How long an integration waits for the workspace lock before giving up.
+ *
+ * Longer than the registry's and the claim's, because what is behind this lock is
+ * a merge: the wait is bounded by another merge finishing, not by a file write.
+ */
+const INTEGRATE_LOCK_WAIT_MS = 10_000;
 
 /**
  * Lifecycle of a flow's isolation unit: obtain one, see the live ones, give one
@@ -103,6 +117,8 @@ export interface WorktreeDeps {
 
 export interface WorktreeIntegrateOutput {
   alias: string;
+  /** The repository the merge landed in — what `aw fix-git --path` needs. */
+  source_path: string;
   session: string;
   /** Branch the unit's work was merged INTO. */
   into: string;
@@ -113,6 +129,39 @@ export interface WorktreeIntegrateOutput {
   /** Whether the unit was given back — a conflicted merge keeps it. */
   released: boolean;
   /** What to run next: resolve the conflict, or nothing. */
+  next: string | null;
+}
+
+/**
+ * Every unit of one session, integrated one by one over the live branch.
+ *
+ * This is the form the directed run invokes, and the reason it exists is that a
+ * run scopes SOURCES, not a source: naming one alias per call would make the
+ * journey's integration boundary either wrong for a two-source plan or a
+ * placeholder the engine cannot fill. Alias order is the order, so two readings
+ * of the same session report the same sequence.
+ *
+ * Nothing is aborted by a neighbour: each entry is its own merge into its own
+ * repository, so a conflict in one alias must not hide whether the others landed
+ * — the receipt is the whole set, and `pending` is what is left to act on.
+ */
+export interface WorktreeIntegrateSessionOutput {
+  session: string;
+  /**
+   * The plan this session's run executes, or `null` when it has no flow state.
+   *
+   * It is here because a conflict is read by a person who has two flows open: the
+   * files and the branch say WHERE the merge stopped, and only this says which
+   * piece of work it was.
+   */
+  plan: string | null;
+  /** One entry per unit, in alias order: the merge, or why it was refused. */
+  results: Array<WorktreeIntegrateOutput | (WorktreeError & { alias: string })>;
+  /** Aliases whose work is on the working branch and whose unit was given back. */
+  integrated: string[];
+  /** Aliases still holding a unit: conflicted, or refused before merging. */
+  pending: string[];
+  /** What to run for the first pending alias; `null` when nothing is pending. */
   next: string | null;
 }
 
@@ -128,6 +177,7 @@ export type WorktreeOutput =
   | WorktreeListOutput
   | WorktreeReleaseOutput
   | WorktreeIntegrateOutput
+  | WorktreeIntegrateSessionOutput
   | WorktreeError;
 
 export async function runWorktree(
@@ -135,11 +185,65 @@ export async function runWorktree(
   input: WorktreeInput,
 ): Promise<WorktreeOutput> {
   if (input.action === "list") return listUnits(deps, input);
+  // Integrating without naming a source is not a missing argument: it is the
+  // whole session, which is what a run holds and what a close has to answer for.
+  if (input.action === "integrate" && input.alias === undefined) {
+    return integrateSession(deps, input);
+  }
   const target = await resolveTarget(deps, input);
   if ("error" in target) return target;
   if (input.action === "ensure") return ensureUnit(deps, target);
   if (input.action === "integrate") return integrateUnit(deps, target);
   return releaseUnit(deps, target);
+}
+
+/**
+ * Integrate every unit the session holds, in alias order.
+ *
+ * The session is resolved ONCE and each alias goes through the same single-unit
+ * path, so what a person gets running the command per source and what the run
+ * gets from one call are the same merges in the same order.
+ */
+async function integrateSession(
+  deps: WorktreeDeps,
+  input: WorktreeInput,
+): Promise<WorktreeIntegrateSessionOutput | WorktreeError> {
+  const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
+    ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
+    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
+  });
+  if (resolution.outcome !== "resolved") return sessionRefusal(resolution);
+  const session = resolution.session.folder;
+  const listed = await listUnits(deps, { action: "list" });
+  if ("error" in listed) return listed;
+  const mine = listed.units.filter((unit) => unit.session === session);
+  const results: WorktreeIntegrateSessionOutput["results"] = [];
+  const integrated: string[] = [];
+  const pending: string[] = [];
+  let next: string | null = null;
+  for (const unit of [...mine].sort((a, b) => a.alias.localeCompare(b.alias))) {
+    const target = await resolveTarget(deps, { ...input, alias: unit.alias });
+    const result = "error" in target ? target : await integrateUnit(deps, target);
+    if ("error" in result) {
+      results.push({ ...result, alias: unit.alias });
+      pending.push(unit.alias);
+      next ??= `aw worktree integrate --source ${unit.alias} --code ${session}`;
+      continue;
+    }
+    results.push(result);
+    if (result.integrated) integrated.push(unit.alias);
+    else {
+      pending.push(unit.alias);
+      next ??= result.next;
+    }
+  }
+  return { session, plan: await planOf(deps, session), results, integrated, pending, next };
+}
+
+/** The plan the session's run declared, or `null` when there is no readable run. */
+async function planOf(deps: WorktreeDeps, session: string): Promise<string | null> {
+  const read = await readRun(deps.fs, locateRun(deps.paths, session));
+  return read.ok ? (read.state.scope?.plan ?? null) : null;
 }
 
 /**
@@ -204,16 +308,39 @@ async function integrateUnit(
       hint: `posicioná el checkout en '${base}' y volvé a integrar; la integración nunca cambia de rama por su cuenta`,
     };
   }
-  const merge = await deps.git.merge(source.path, branch);
+  // The merge itself is the serialized part, and only it. Two runs integrating
+  // into the same checkout would fight over one index and one MERGE_HEAD, and the
+  // loser would find a repository mid-merge it never started. Waiting rather than
+  // failing fast for the same reason a correlative claim waits: by the time this
+  // lock is taken there is committed work with nowhere else to go, so losing the
+  // race would lose real work instead of a retry.
+  const merged = await withCwdLock(
+    deps.fs,
+    deps.paths,
+    async () => {
+      const merge = await deps.git.merge(source.path, branch);
+      if (merge.ok) return { ok: true as const };
+      return { ok: false as const, conflicted: merge.conflicted };
+    },
+    { waitMs: INTEGRATE_LOCK_WAIT_MS },
+  );
+  if ("error" in merged) {
+    return {
+      error: "integration_locked",
+      message: `no se pudo serializar la integración de ${source.alias}: ${merged.error}`,
+      hint: "esperá a que la otra integración termine y volvé a integrar; el merge no se empieza a medias",
+    };
+  }
 
-  if (!merge.ok) {
+  if (!merged.ok) {
     return {
       alias: source.alias,
+      source_path: source.path,
       session: identity.session,
       into: base,
       branch,
       integrated: false,
-      conflicted: merge.conflicted,
+      conflicted: merged.conflicted,
       // The unit SURVIVES a conflict: its commits are the only copy of one side
       // of the merge, and releasing it here would delete them to tidy up.
       released: false,
@@ -224,6 +351,7 @@ async function integrateUnit(
   const release = await releaseUnit(deps, target);
   return {
     alias: source.alias,
+    source_path: source.path,
     session: identity.session,
     into: base,
     branch,
@@ -276,13 +404,7 @@ async function resolveTarget(
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
   });
-  if (resolution.outcome !== "resolved") {
-    return {
-      error: "session_unresolved",
-      message: "una unidad de aislamiento pertenece a una sesión y no se pudo resolver cuál",
-      hint: "pasá --code <NNN> con la sesión del flujo",
-    };
-  }
+  if (resolution.outcome !== "resolved") return sessionRefusal(resolution);
   const session = resolution.session.folder;
   const identity: UnitIdentity = {
     workspaceKey: workspaceKey(deps.paths.workspaceDir()),
@@ -295,6 +417,24 @@ async function resolveTarget(
     path: unitPath(await canonicalUnitsRoot(deps), identity),
     branch: unitBranch(session),
     base: resolveSourceBranches(source, block).work,
+  };
+}
+
+/**
+ * A unit's session could not be resolved — said with the resolver's own words.
+ *
+ * The refusal used to be written here, and it flattened every reason into "pasá
+ * --code <NNN>": useless advice to somebody who already passed one, and actively
+ * wrong for the case this feature creates. A session that CLOSED still holding a
+ * unit resolves to a refusal whose action is `aw session-resume --code <NNN>
+ * --reopen` — the only move that gets the work merged — and rewriting it into a
+ * generic hint is what turned the receipt's own remedy into a dead end.
+ */
+function sessionRefusal(resolution: SessionResolutionError): WorktreeError {
+  return {
+    error: "session_unresolved",
+    message: `una unidad de aislamiento pertenece a una sesión: ${resolution.message}`,
+    hint: resolution.action,
   };
 }
 

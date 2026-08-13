@@ -156,7 +156,7 @@ async function ensureUnits(
     // `ensure` answers with the unit; the union's other members belong to verbs
     // this call never asks for. Narrowed rather than cast: the day one of them
     // could come back, this is where the compiler says so.
-    if (!("source_path" in result)) {
+    if (!("created" in result)) {
       return refusal(
         "worktree.ensure",
         `${alias}: la adquisición no devolvió una unidad`,
@@ -364,20 +364,51 @@ function hasContent(value: unknown): boolean {
   return typeof content === "string" && content.trim().length > 0;
 }
 
+/**
+ * Close the run's session — and refuse to, while it still holds a unit.
+ *
+ * The reader is the same one `aw session-close` builds, so what the flow sees and
+ * what a person sees are one reading of `git worktree list`. What differs is what
+ * each does with it: the public command reports and closes, this one stops. A
+ * directed run reaching here is declaring itself over, and a run whose result is
+ * still only on `aw/<session>` is not over — closing would put the last chance to
+ * notice behind a `.closed` marker that also makes the remedy stop resolving.
+ */
 async function close(
   deps: InternalActionDeps,
   run: InternalActionRun,
 ): Promise<InternalActionOutcome> {
-  const result = await runSessionClose(deps.fs, deps.paths, { code: run.code });
+  const result = await runSessionClose(
+    deps.fs,
+    deps.paths,
+    { code: run.code, requireIntegrated: true },
+    async () => {
+      const listed = await runWorktree(
+        { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
+        { action: "list" },
+      );
+      // A list that did not come back is NOT "no units": the close refuses on it,
+      // which is the whole point of asking before writing the marker.
+      if (!("units" in listed)) throw new Error(JSON.stringify(listed));
+      return listed.units;
+    },
+  );
+  if ("sessionHeld" in result) {
+    const held = result.sessionHeld;
+    return refusal(
+      "session.close",
+      `${held.reason} — integralas con '${held.integrate}'`,
+      canonicalJson(result),
+    );
+  }
   if (!("sessionClose" in result)) {
     const why = "sessionError" in result ? canonicalJson(result.sessionError) : result.error;
     return refusal("session.close", `la sesión no cerró: ${why}`, canonicalJson(result));
   }
   const closed = result.sessionClose;
-  const pending = closed.pending_integration ?? [];
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${pending.length > 0 ? ` · ${pending.length} unidad(es) sin integrar` : ""}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

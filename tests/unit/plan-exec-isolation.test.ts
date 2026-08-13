@@ -8,21 +8,17 @@ import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { runCheckBranch } from "../../src/application/check-branch-service.js";
-import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
-import { internalActionExecutor } from "../../src/application/flow/internal-actions.js";
-import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runResume } from "../../src/application/resume-service.js";
 import { runSources } from "../../src/application/sources-service.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
 import { type WorktreeListOutput, runWorktree } from "../../src/application/worktree-service.js";
-import { type FlowDecision, effectsOf, journeyOfFlow } from "../../src/domain/flow/authority.js";
-import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import { FLOW_RUN_STATE_FILE } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+import { planExecWalk } from "../helpers/plan-exec-walk.js";
 
 /**
  * Dos `plan-exec` sobre el MISMO source, cada uno en lo suyo.
@@ -90,7 +86,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     git: GitCliAdapter;
     paths: PathsService;
   };
-  const EXEC = journeyOfFlow("plan-exec");
+  let walk: ReturnType<typeof planExecWalk>;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "aw-f2-"));
@@ -114,6 +110,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
       git: new GitCliAdapter(new NodeProcess()),
       paths: new PathsService(normalizeNamespace("agent-workflow"), home, workspace),
     };
+    walk = planExecWalk(deps, { sources: [ALIAS] });
 
     writeFileSync(join(workspace, "CLAUDE.md"), block(source, otro));
     mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
@@ -141,96 +138,10 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     writeFileSync(file, JSON.stringify({ version: 1, bindings: { [key]: folder } }, null, 2));
   }
 
-  function executor() {
-    return internalActionExecutor({
-      fs: deps.fs,
-      env: deps.env,
-      paths: deps.paths,
-      git: deps.git,
-    });
-  }
-
-  async function current(folder: string) {
-    const read = await readRun(deps.fs, locateRun(deps.paths, folder));
-    if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
-    return { state: read.state, resolved: resolveBoundary(read.state, EXEC) };
-  }
-
-  /** Whatever the boundary in force admits — the run's own plan where it is asked. */
-  function bodyFor(
-    run: typeof UNO,
-    resolved: Awaited<ReturnType<typeof current>>["resolved"],
-  ): Record<string, unknown> {
-    const stopped = resolved.stopped as FlowDecision;
-    if (resolved.kind === "execution") {
-      const action = resolved.action;
-      if (action === null) throw new Error("esta frontera no nombra ninguna acción");
-      return {
-        input_digest: resolved.seal,
-        outcome: "completed",
-        invocation: action.invocation,
-        validations: action.evidence.map((id) => ({
-          id,
-          passed: true,
-          detail: `salida real de ${id}`,
-        })),
-        effects: {
-          planned: [...effectsOf(stopped)],
-          approved: [],
-          applied: [...effectsOf(stopped)],
-        },
-        output: null,
-      };
-    }
-    if (resolved.kind === "semantic") {
-      return {
-        input_digest: resolved.seal,
-        signals: [],
-        decisions:
-          stopped.scopes_sources === true
-            ? { plan: run.plan, sources: [ALIAS] }
-            : { paso: stopped.id },
-      };
-    }
-    return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
-  }
-
-  /** Adopt and answer until the run stands on `id`. Internal actions run for real. */
-  async function walkTo(run: typeof UNO, id: string): Promise<void> {
-    const adopted = await advanceFlow(deps.fs, deps.paths, {
-      code: run.code,
-      flow: "plan-exec",
-      adopt: true,
-      executor: executor(),
-    });
-    if (!adopted.ok) throw new Error(`esperaba adoptar ${run.folder}`);
-    for (let step = 0; step < 40; step += 1) {
-      const { resolved } = await current(run.folder);
-      if (resolved.stopped === null || resolved.stopped.id === id) return;
-      const approval =
-        resolved.kind === "authorization"
-          ? effectApprovalDigest(resolved.stopped.id, resolved.authorization?.planned ?? [])
-          : null;
-      const result = await submitFlow(deps.fs, deps.paths, {
-        code: run.code,
-        raw: JSON.stringify(
-          approval === null
-            ? bodyFor(run, resolved)
-            : { input_digest: resolved.seal, choice: "Autorizar el efecto" },
-        ),
-        approval,
-        executor: executor(),
-      });
-      if (!result.ok)
-        throw new Error(`un rechazo de negocio viaja ok:true: ${JSON.stringify(result)}`);
-    }
-    throw new Error(`${run.folder} nunca llegó a '${id}'`);
-  }
-
   /** Both runs up to the first row that writes code, with their units acquired. */
   async function bothIsolated(): Promise<{ uno: string; dos: string }> {
-    await walkTo(UNO, "plan-exec.implementation");
-    await walkTo(DOS, "plan-exec.implementation");
+    await walk.walkTo(UNO, "plan-exec.implementation");
+    await walk.walkTo(DOS, "plan-exec.implementation");
     const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
     const of = (folder: string): string => {
       const unit = listed.units.find((entry) => entry.session === folder);
@@ -252,13 +163,13 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
 
   /** Answer the scope boundary with `decisions`, whatever they are. */
   async function declareScope(run: typeof UNO, decisions: Record<string, unknown>) {
-    await walkTo(run, "plan-exec.source-scope");
-    const { resolved } = await current(run.folder);
+    await walk.walkTo(run, "plan-exec.source-scope");
+    const { resolved } = await walk.current(run.folder);
     const result = await submitFlow(deps.fs, deps.paths, {
       code: run.code,
       raw: JSON.stringify({ input_digest: resolved.seal, signals: [], decisions }),
       approval: null,
-      executor: executor(),
+      executor: walk.executor(),
     });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     return result.directive;
@@ -289,7 +200,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     for (const [caso, decisions, code] of casos) {
       const directive = await declareScope(UNO, decisions);
       expect(directive.error?.code, caso).toBe(code);
-      const { state, resolved } = await current(UNO.folder);
+      const { state, resolved } = await walk.current(UNO.folder);
       // Nada se fijó y nada se adquirió: la frontera sigue en pie.
       expect(state.scope, caso).toBeNull();
       expect(resolved.stopped?.id, caso).toBe("plan-exec.source-scope");
@@ -311,8 +222,8 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
 
     // Y el scope quedó en el estado dirigido, no en la memoria de nadie: es lo
     // que hace distinguibles a dos corridas que por lo demás son idénticas.
-    const uno = await current(UNO.folder);
-    const dos = await current(DOS.folder);
+    const uno = await walk.current(UNO.folder);
+    const dos = await walk.current(DOS.folder);
     expect(uno.state.scope).toEqual({ plan: UNO.plan, sources: [ALIAS] });
     expect(dos.state.scope).toEqual({ plan: DOS.plan, sources: [ALIAS] });
     expect(uno.state.applied).toContain("plan-exec.unit-acquisition");
@@ -328,7 +239,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     const again = await advanceFlow(deps.fs, deps.paths, {
       code: UNO.code,
       flow: "plan-exec",
-      executor: executor(),
+      executor: walk.executor(),
     });
     expect(again.ok).toBe(true);
     const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;

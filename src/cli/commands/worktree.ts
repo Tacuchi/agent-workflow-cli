@@ -13,8 +13,9 @@ export const worktreeCommand: QtcCommand = {
   describe:
     "Isolation unit of a flow: one git worktree of a source on its own branch, so concurrent flows never share a working tree. " +
     "The unit lives at ~/<ns>/worktrees/<workspace>/<alias>/<session> on branch aw/<session>; the path IS the registry and " +
-    "`git worktree list` its live view. `integrate` merges the flow's branch into the source's declared working branch and gives the unit back; " +
-    "a conflict is reported with its files and routed to `aw fix-git --path`, never resolved on its own. " +
+    "`git worktree list` its live view. `integrate` merges the flow's branch into the source's declared working branch and gives the unit back — " +
+    "one source with --source, or every unit of the session in alias order with only --code; a conflict is reported with its plan, files and " +
+    "source path and routed to `aw fix-git --path`, never resolved on its own. " +
     "`list` shows every unit and orphan of the workspace, or only one session's with --code, each with its branch, dirty state and HEAD. " +
     "Usage: aw worktree ensure|list|release|integrate [--source <alias>] [--code <NNN>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

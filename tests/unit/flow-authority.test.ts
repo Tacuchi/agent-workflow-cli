@@ -397,7 +397,11 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // recorrido y no una regla que alguien recuerda: la que fija el plan y las
     // fuentes que la corrida edita, y la que adquiere su unidad en cada una antes
     // de la primera escritura.
-    expect(plan).toHaveLength(54);
+    // 54 + 1, la que cierra ese aislamiento por el otro extremo: sin
+    // `plan-exec.unit-integration` el recorrido terminaba informando "listo" sobre
+    // commits que sólo existían en `aw/<sesión>`. Abrir la unidad y devolverla son
+    // dos pasos del mismo recorrido, y ninguno de los dos puede ser una costumbre.
+    expect(plan).toHaveLength(55);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos

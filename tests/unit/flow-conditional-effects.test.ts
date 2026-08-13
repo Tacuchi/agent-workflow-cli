@@ -129,7 +129,13 @@ describe("efectos que pueden no ocurrir — la fila los condiciona", () => {
     // respuesta— así que la unidad se crea siempre. Y cuando ya existe, el efecto
     // igual ocurre: el árbol ESTÁ, que es la misma lectura que hace la
     // publicación de una propuesta ya aplicada.
-    expect(resto.length).toBe(14);
+    //
+    // La decimoquinta es `plan-exec.unit-integration`, sin condición por el mismo
+    // motivo que su gemela de apertura: la corrida llega acá con una unidad por
+    // cada fuente de su scope, así que siempre hay algo que integrar. Condicionarla
+    // sería exactamente el camino que este test cierra — una fila que se puede
+    // saltar es una fila que puede declarar integrado lo que sigue en su rama.
+    expect(resto.length).toBe(15);
     expect(resto.filter((row) => conditionOf(row) !== null).map((row) => row.id)).toEqual([]);
   });
 

@@ -1383,12 +1383,21 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     expect(commit?.effects).toContain("execute");
     expect(policies).not.toContain("two phases never co-mingle in one commit");
     const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
-    expect(exec).toContain("same Git approval covers this mark");
-    expect(exec).toContain("in the same source commit");
+    // El enunciado del guard no cambió —un commit por fuente, con aprobación o
+    // preautorización— pero DÓS de sus frases sí, y por una razón material: decían
+    // que el sello `done` viajaba en la misma aprobación de Git y aterrizaba "in
+    // the same source commit". Con la corrida editando en unidades de aislamiento
+    // eso no puede ocurrir: el plan-doc vive en el workspace y el commit del batch
+    // aterriza en la rama de la unidad, que son dos repositorios distintos. Lo
+    // único que quedaba de aquel orden era sellar `done` sobre trabajo que todavía
+    // no estaba en ninguna rama de trabajo, así que la doctrina pasa a decir lo que
+    // de verdad protege: commitear, integrar, y recién entonces sellar.
+    expect(exec).toContain("commit each unit, integrate it, and only then seal `done`");
+    expect(exec).toContain("a session holding a live unit does NOT close");
     expect(batches).toContain("instead of asking a second time");
     expect(exec).toContain("if plan is not done:");
-    expect(exec).toContain("when authorized → mark plan done");
-    expect(exec).toContain("then commit that source once");
+    expect(exec).toContain("then mark plan done");
+    expect(exec).toContain("one consolidated approval for all source commits");
   });
 
   it("CHECKPOINT carries the effective group, drift and reusable authorization", async () => {
