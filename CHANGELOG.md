@@ -4,6 +4,18 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.7.1] — 2026-08-13
+
+### Added
+
+- **`aw designs` gana `--deep` en el listado**: corre el gate de contenido (madurez y cruce de evidencia visual) sobre las revisiones vigentes de cada package y fusiona los hallazgos en `failures`/`ok`. Sin `--deep` el listado sigue barato: solo valida manifiesto y baseline vía el índice.
+
+### Fixed
+
+- **La ruta package de `design` (`create`/`update`) publicaba los artefactos tal cual los autoraba el consumidor**: sin sellar `baselines/`, sin derivar `design-manifest.json` y sin correr ningún gate, y aun así reportaba `completeness: "complete"` — un árbol inválido quedaba publicado y nadie lo detectaba. Ahora el CLI deriva y sella `design-manifest.json`, `baselines/` y `PACKAGE.md`, como ya hacía la ruta simple, y corre el gate de madurez en `validate`: un árbol inválido sale `blocked` antes de escribirse. El consumidor ya no autora manifiesto ni baseline a mano (incluirlos en `artifacts` sale `DESIGN_FIELD_INVALID`); en `create` el CLI asigna el id (`DES-NNN`) y la carpeta y los publica en el `inventory` del request, y el frontmatter de cada artefacto declara ese id; en `update` el `base` declarado se compara contra la revisión vigente y, si difiere, sale `DESIGN_BASE_STALE`.
+- **`aw designs --id <PKG>` reportaba `ok: true` con el contenido roto**: solo validaba manifiesto y baseline, así que un package publicado por la ruta verbatim podía arrastrar violaciones del contrato sin que nadie las viera. Ahora corre además el gate de contenido sobre las revisiones vigentes del catálogo y lo incluye en `failures`/`ok`.
+- **Los gaps de `prepare`/`continue` no exponían el `input_digest`**, y contestar exigía reimplementar `canonicalJson`; ahora viaja como línea `input_digest: <digest>` y se copia tal cual. El error `SEMANTIC_STALE` nombra el digest esperado.
+
 ## [21.7.0] — 2026-08-09
 
 **Workline pasa a dejar una memoria que una persona puede leer, y a cobrar sólo la complejidad que hace falta.** Hasta acá el motor convertía *toda* `action` en una frontera de ejecución para el host —incluso cuando el CLI podía resolverla localmente y con certeza—, la memoria se repartía entre artefactos internos cuyos consumidores contaban relatos distintos, guardar una propuesta y autorizar su escritura eran dos decisiones separadas, y `design` exigía manifest, revisión y madurez hasta para un cambio de una sola pantalla. Ahora el CLI **ejecuta en proceso** sus operaciones deterministas y registra qué corrió y con qué evidencia; cada sesión se lee **desde una sola entrada** que dice qué pasó, por qué y de qué archivo sale cada dato; specs, planes y diseños comparten **una vista previa sellada y una sola decisión** (`Aprobar y guardar` | `Refinar`); y un diseño cohesivo se publica como **un `DESIGN.md` legible**, con el package completo reservado para una causa registrada. Sin dependencias npm nuevas.
