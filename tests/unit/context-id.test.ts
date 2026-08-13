@@ -71,6 +71,40 @@ describe("resolveContextId — one identity from env and/or hook stdin", () => {
   });
 });
 
+describe("readContextId — the host's exported conversation id is a fallback identity", () => {
+  function envWithVars(vars: Record<string, string>): FakeEnv {
+    return new FakeEnv("/home/u", "/cwd", vars);
+  }
+
+  // The confirmed defect (quick 115): every `aw` an agent runs (session-create,
+  // a `--code` fix) carried NO identity — AW_CONTEXT_ID is nobody's export — so
+  // no conversation ever got bound, and a pausable PreCompact blocked every
+  // compaction of a workspace with two active sessions, with no way out.
+  it("falls back to CLAUDE_CODE_SESSION_ID when AW_CONTEXT_ID is absent", () => {
+    expect(readContextId(envWithVars({ CLAUDE_CODE_SESSION_ID: "conv-host" }))).toBe("conv-host");
+  });
+
+  it("AW_CONTEXT_ID keeps precedence over the host var", () => {
+    expect(
+      readContextId(
+        envWithVars({ [CONTEXT_ID_ENV]: "conv-agreed", CLAUDE_CODE_SESSION_ID: "conv-host" }),
+      ),
+    ).toBe("conv-agreed");
+  });
+
+  it("a blank host var is no identity", () => {
+    expect(readContextId(envWithVars({ CLAUDE_CODE_SESSION_ID: "   " }))).toBeUndefined();
+  });
+
+  // A hook process inherits the same env the agent's shell sees, so the
+  // fallback var and the payload's session_id name the SAME conversation.
+  it("host var agreeing with the hook payload resolves without conflict", () => {
+    expect(
+      resolveContextId(envWithVars({ CLAUDE_CODE_SESSION_ID: "conv-x" }), hookPayload("conv-x")),
+    ).toEqual({ ok: true, contextId: "conv-x" });
+  });
+});
+
 describe("readHookStdin — bounded, so a hand-run command never hangs", () => {
   /** A pipe nobody ever writes to and nobody closes: an agent shell tool's fd 0. */
   function idleStdin(): Readable {

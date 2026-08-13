@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { actionDigest, resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
@@ -25,6 +25,23 @@ import { FLOW_RUN_STATE_FILE } from "../../src/domain/flow/run-state.js";
 import { HARNESSES } from "../../src/domain/harnesses.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+
+// La equivalencia se afirma cruzando TODAS las clases de frontera, y sobre las
+// filas vivas la custodia de la corrida dejó al QUICK sin ninguna
+// `authorization`. El flip la restituye despojando la custodia — mismo
+// movimiento que `flow-effects.test.ts` — para que la clase siga recorrida sin
+// inventar filas: el sujeto de este archivo es la equivalencia entre hosts, no
+// qué filas piden preflight.
+vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/domain/flow/authority.js")>();
+  return {
+    ...real,
+    journeyOfFlow: (flow: string) =>
+      real
+        .journeyOfFlow(flow as Parameters<typeof real.journeyOfFlow>[0])
+        .map((row) => ({ ...row, custody: undefined })),
+  };
+});
 
 /**
  * La misma frontera en cualquier host, y reanudable sin la conversación.

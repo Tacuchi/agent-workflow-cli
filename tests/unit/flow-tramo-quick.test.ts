@@ -392,7 +392,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(state.skipped).not.toContain("quick.success-criteria-ratification");
   });
 
-  it("el gate de convergencia se autoriza primero y recién el resultado lo aplica", async () => {
+  it("el gate de convergencia llega como ejecución y recién el resultado lo aplica", async () => {
     await declare([]);
     // Caminar hasta el gate contestando lo que cada frontera admite.
     for (let step = 0; step < 25; step += 1) {
@@ -417,32 +417,27 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
       await answer({ input_digest: resolved.seal, choice: "Resolver la frontera" });
     }
 
-    // `execute` no se autoriza solo: la corrida para ANTES de nombrar la invocación.
+    // Correr los criterios que la corrida misma declaró es contabilidad propia:
+    // custodia de la corrida cubre el `execute` y la frontera emitida nombra la
+    // invocación directamente, sin preflight que nadie tenga nada que decidir.
     const gate = await current();
     expect(gate.resolved.stopped?.id).toBe("quick.convergence-gate");
-    expect(gate.resolved.kind).toBe("authorization");
-    expect(gate.resolved.action).toBeNull();
+    expect(gate.resolved.kind).toBe("execution");
+    expect(gate.resolved.action).not.toBeNull();
+    expect(gate.resolved.authorization?.missing ?? []).toEqual([]);
 
-    const granted = await answer(
-      { input_digest: gate.resolved.seal, choice: "Autorizar el efecto" },
-      effectApprovalDigest("quick.convergence-gate", gate.resolved.authorization?.planned ?? []),
-    );
-    // Autorizar no es correr: la frontera recalculada es la de ejecución.
-    expect(granted.boundary.kind).toBe("execution");
-    expect(granted.effects.applied).not.toContain("execute");
-
-    const running = await current();
-    expect(running.state.applied).not.toContain("quick.convergence-gate");
-    // Una validación que falló no cierra el gate.
+    // La custodia no es crédito: nada se aplica hasta que vuelve salida real, y
+    // una validación que falló no cierra el gate.
+    expect(gate.state.applied).not.toContain("quick.convergence-gate");
     const failed = await answer(
-      resultFor(running.resolved, {
+      resultFor(gate.resolved, {
         validations: [{ id: "quick.criterios-verdes", passed: false, detail: "2 tests en rojo" }],
       }),
     );
     expect(failed.error?.code).toBe("FLOW_EVIDENCE_MISSING");
     expect((await current()).state.effects.applied).not.toContain("execute");
 
-    const green = await answer(resultFor(running.resolved));
+    const green = await answer(resultFor(gate.resolved));
     expect(green.error).toBeNull();
     expect(green.effects.applied).toContain("execute");
   });

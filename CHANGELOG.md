@@ -4,6 +4,20 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.8.0] — 2026-08-13
+
+**El chasis administra sus propios libros, y `/compact` deja de trabarse.** Hasta acá la puerta de autorización decidía solo por clase de efecto, así que la corrida paraba a pedir «Autorizar el efecto» por su propia contabilidad —cerrar su sesión, tildar su plan, correr los criterios ya declarados: 2 paradas por quick, 6 por plan-exec— y el commit de plan-exec se preguntaba DOS veces (la aprobación humana no registraba ningún grant). Y el hook PreCompact bloqueaba `/compact` en un deadlock sin salida cuando la conversación no tenía binding con ≥2 sesiones activas: el remedio que el agente podía correr no ligaba nada y el aviso salía por stdout, que el host no muestra al bloquear. Sin dependencias npm nuevas y sin migración: el estado de corrida persistido sigue en su versión — la custodia se lee del registro al resolver cada frontera.
+
+### Changed
+
+- **Custodia de la corrida (`custody: "run"`)**: las filas cuyos efectos ejercen sobre la contabilidad de la propia corrida —sus artefactos de sesión, su estado, las marcas de avance del doc del flow, correr los criterios que la corrida misma declaró— quedan cubiertas sin preflight: la frontera emitida es directamente la de ejecución, y la salida real sigue siendo obligatoria. Seis filas la declaran (`chassis.finalize`, `quick.convergence-gate`, `plan-exec.task-marking`, `plan-exec.phase-state-transition`, `plan-exec.validation-execution`, `plan-exec.plan-done`). El techo es fail-closed: la custodia **jamás** cubre `destructive` ni `network_external` —declare lo que declare la fila— ni una propuesta sellada (los bytes aprobables son material de alguien, no contabilidad), y la lista de filas con custodia está pinada por test: agregarla a una fila nueva es una edición consciente. La frontera `authorization` sigue existiendo como red para efectos fuera de custodia.
+- **Aprobar los commits ES autorizarlos (`authorizes` en el registro)**: `plan-exec.commit-authorization` declara a qué transición autoriza su label afirmativo, y al responder «Aprobar los commits del batch» el submit registra el `EffectGrant` sobre el sello exacto de `plan-exec.commit-execution` — el mismo movimiento que `Aprobar y guardar` ya hacía para las propuestas selladas, ahora para la ejecución delegada. Una decisión, una pregunta: la re-pregunta «Autorizar el efecto» sobre el commit desaparece, y la ejecución sigue exigiendo el estado git real de las fuentes para aplicarse. Un enlace hacia una transición que la jornada no camina no otorga nada: la frontera de autorización aguas abajo queda en pie y el defecto se ve.
+
+### Fixed
+
+- **`/compact` quedaba retenido en un deadlock cuando la conversación no tenía binding y había ≥2 sesiones activas** (`SESSION_AMBIGUOUS` + `--can-pause` → exit 2): la identidad solo se leía de `AW_CONTEXT_ID`, que ningún host exporta, así que ni `session-create` ni `checkpoint-write --code` ligaban la conversación y reintentar no cambiaba nada. `readContextId` ahora cae a las variables que el host sí exporta (`CLAUDE_CODE_SESSION_ID`, lista extensible para el resto de la matriz): cada `session-create` liga la conversación a su sesión al nacer y el PreCompact resuelve por binding aunque haya N sesiones paralelas. `AW_CONTEXT_ID` conserva la precedencia como variable acordada, y una variable de host en blanco no es identidad.
+- **Una compactación retenida no le decía a nadie cómo destrabarse**: el sobre con las candidatas salía por stdout, que el host no muestra en un PreCompact bloqueado. La rama `blocked` ahora emite por stderr el aviso accionable con el comando exacto (`compactación retenida: … corré 'aw checkpoint-write --code <NNN>' …`) y las carpetas candidatas; el envelope JSON de stdout queda intacto como contrato máquina.
+
 ## [21.7.1] — 2026-08-13
 
 ### Added

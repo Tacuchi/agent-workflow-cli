@@ -4,11 +4,12 @@ import {
   runCheckpointWrite,
 } from "../../application/checkpoint-write-service.js";
 import type { LifecycleOptions } from "../../application/lifecycle-target.js";
+import type { SessionResolutionError } from "../../application/session-resolver.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readHookStdin, resolveContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
-import { fail, failSessionResolution } from "../render.js";
+import { fail, failSessionResolution, writeStderr } from "../render.js";
 import type { CliContext } from "../types.js";
 
 /**
@@ -46,13 +47,24 @@ export const checkpointWriteCommand: QtcCommand = {
 
     const data = await runCheckpointWrite(ctx.fs, ctx.env, ctx.git, ctx.paths, options);
     // Pausable host: exit 2 is the host-level "hold the compaction" signal, and
-    // the envelope carries the candidates the human picks from.
+    // the envelope carries the candidates the human picks from. The host shows
+    // a person only stderr for a held compaction — the stdout envelope stays
+    // machine-facing — so the one actionable line goes on that channel too.
     if ("blocked" in data) {
+      writeStderr(blockedNotice(data.sessionError));
       return { ...failSessionResolution(data.sessionError), exitCode: 2 };
     }
     return { ok: true, data, exitCode: 0 };
   },
 };
+
+function blockedNotice(error: SessionResolutionError): string {
+  const candidates = error.candidates.map((c) => c.folder).join(" | ");
+  return (
+    `compactación retenida: ${error.message} — ` +
+    `corré 'aw checkpoint-write --code <NNN>' y volvé a compactar (candidatas: ${candidates})\n`
+  );
+}
 
 export const autoCompactOnCloseCommand: QtcCommand = {
   name: "auto-compact-on-close",
