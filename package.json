@@ -7,12 +7,7 @@
     "agent-workflow": "dist/cli/main.js",
     "aw": "dist/cli/main.js"
   },
-  "files": [
-    "dist",
-    "skills",
-    "LICENSE",
-    "README.md"
-  ],
+  "files": ["dist", "skills", "LICENSE", "README.md"],
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
