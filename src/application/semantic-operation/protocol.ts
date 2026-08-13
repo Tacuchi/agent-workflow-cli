@@ -217,11 +217,13 @@ function checkHeader(
   }
   // The staleness seal: the world moved between prepare and this answer, so the
   // inventory, the numbering and the duplicate check it reasoned over are gone.
+  // The expected digest travels in the message: re-running prepare is the fix,
+  // and nobody should have to reimplement `canonicalJson` to name it.
   if (envelope.input_digest !== request.input_digest) {
     return {
       code: "SEMANTIC_STALE",
-      message: "la respuesta responde a un estado anterior del workspace",
-      action: "volvé a correr prepare y respondé sobre el request nuevo",
+      message: `la respuesta responde a un estado anterior del workspace (este request espera 'input_digest' ${request.input_digest})`,
+      action: `volvé a correr prepare y respondé sobre el request nuevo, con 'input_digest': '${request.input_digest}'`,
     };
   }
   const state = envelope.state;

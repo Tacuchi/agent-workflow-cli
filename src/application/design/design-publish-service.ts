@@ -52,6 +52,11 @@ import { type DesignIndex, readDesignIndex } from "./design-index-service.js";
  * all-or-nothing by construction, and the new revision's files are written
  * EXCLUSIVELY so a concurrent publication loses the race instead of being
  * silently overwritten.
+ *
+ * Steps 2+3 live in {@link buildPackageCandidate}, exported on its own because
+ * the capability route needs exactly the same candidate WITHOUT the write: its
+ * `validate` stage hands the artifacts to the durable handshake, which is the
+ * one that publishes them once approved.
  */
 
 export interface PublishFile {
@@ -137,13 +142,104 @@ export async function publishDesignRevision(
     };
   }
 
-  const catalog = mergeCatalog(manifest, input.files, input.dataAuthorization);
+  const candidate = await buildPackageCandidate(fs, workspace, {
+    manifest,
+    packagePath,
+    files: input.files,
+    published: input.published,
+    ...(input.dataAuthorization !== undefined
+      ? { dataAuthorization: input.dataAuthorization }
+      : {}),
+  });
+  if (!candidate.ok) return { ok: false, failures: candidate.failures };
+
+  // The documents go LAST, after the manifest switched the package to the new
+  // revision: a reference is only ever visible pointing at a baseline that is
+  // already there. `publishArtifacts` rolls the whole batch back either way.
+  const published = await publishArtifacts(fs, workspace, [
+    ...candidate.value.artifacts,
+    ...(input.documents ?? []).map((d) => ({ ...d, overwrite: true })),
+  ]);
+  if (!published.ok)
+    return { ok: false, failures: [publishFailure(published.failure, packagePath)] };
+  return {
+    ok: true,
+    value: {
+      revision: candidate.value.revision,
+      baseline: candidate.value.baseline,
+      written: published.value.written,
+    },
+  };
+}
+
+export interface PackageCandidateInput {
+  /**
+   * The manifest this revision builds on: the current one, or the initial one
+   * a `create` synthesized. It is READ, never written back here.
+   */
+  manifest: DesignManifest;
+  /** Workspace-relative package folder. */
+  packagePath: string;
+  /** Paths RELATIVE TO THE PACKAGE (`flows/...`, `renditions/...`). */
+  files: PublishFile[];
+  /** Publication date. Passed in: the domain never reads the clock. */
+  published: string;
+  dataAuthorization?: string;
+}
+
+export type PackageCandidate =
+  | {
+      ok: true;
+      value: {
+        /** Workspace-relative, with their overwrite flags — ready for the durable handshake. */
+        artifacts: PublishableArtifact[];
+        revision: number;
+        baseline: DesignBaseline;
+        /** The manifest as this revision leaves it. */
+        manifest: DesignManifest;
+      };
+    }
+  | { ok: false; failures: DesignFailure[] };
+
+/**
+ * The whole candidate of a package revision — merged catalog, sealed baseline,
+ * derived manifest, projections — validated BEFORE anything is written, and
+ * never written here.
+ *
+ * This is the publish half the capability route was missing: it wrote the
+ * authored files verbatim and nobody sealed anything. The gates run in the same
+ * order as a direct publication, so a candidate that fails here names exactly
+ * what a publication would have refused.
+ */
+export async function buildPackageCandidate(
+  fs: FileSystemPort,
+  workspace: string,
+  input: PackageCandidateInput,
+): Promise<PackageCandidate> {
+  const unsafe = input.files.flatMap((f) => pathFailure(f.path));
+  if (unsafe.length > 0) return { ok: false, failures: unsafe };
+
+  const catalog = mergeCatalog(input.manifest, input.files, input.dataAuthorization);
   if ("failures" in catalog) return { ok: false, failures: catalog.failures };
+
+  // A file this revision introduces must not be on disk yet. Today that is only
+  // discovered by the exclusive WRITE; checking it here is what lets the
+  // proposal route fail inside `validate`, before the first byte moves. It runs
+  // AFTER the catalog merge: a revision already catalogued is diagnosed as the
+  // duplicate it is, not as a lost race.
+  const collisions = await alreadyPublished(fs, workspace, input.packagePath, input.files);
+  if (collisions.length > 0) return { ok: false, failures: collisions };
 
   // Los archivos locales de una rendition se comprueban antes que las citas: una
   // preview que no está, que no es la que su rendition declara o que se cuelga de
   // una URL remota no puede respaldar nada, y decirlo así nombra la causa real.
-  const local = await checkLocalEvidence(fs, workspace, packagePath, catalog.value, input.files);
+  const local = await checkLocalEvidence(
+    fs,
+    workspace,
+    input.packagePath,
+    catalog.value,
+    input.files,
+  );
   if (local.length > 0) return { ok: false, failures: local };
 
   // La evidencia visual se cruza acá, con el catálogo YA fusionado: una rendition
@@ -152,33 +248,66 @@ export async function publishDesignRevision(
   const evidence = await crossPublishedEvidence(
     fs,
     workspace,
-    packagePath,
+    input.packagePath,
     catalog.value,
     input.files,
   );
   if (evidence.length > 0) return { ok: false, failures: evidence };
 
-  const revision = (manifest.current_baseline?.revision ?? 0) + 1;
-  const selection = await buildSelection(fs, workspace, packagePath, catalog.value, input.files);
+  const revision = (input.manifest.current_baseline?.revision ?? 0) + 1;
+  const selection = await buildSelection(
+    fs,
+    workspace,
+    input.packagePath,
+    catalog.value,
+    input.files,
+  );
   if ("failures" in selection) return { ok: false, failures: selection.failures };
 
-  const baseline = sealBaseline(manifest, revision, input.published, selection.value);
-  const nextManifest = nextManifestOf(manifest, catalog.value, baseline);
+  const baseline = sealBaseline(input.manifest, revision, input.published, selection.value);
+  const nextManifest = nextManifestOf(input.manifest, catalog.value, baseline);
 
-  const failures = validateCandidate(nextManifest, baseline, packagePath);
+  const failures = validateCandidate(nextManifest, baseline, input.packagePath);
   if (failures.length > 0) return { ok: false, failures };
 
-  const artifacts = candidateArtifacts(packagePath, nextManifest, baseline, input.files);
-  // The documents go LAST, after the manifest switched the package to the new
-  // revision: a reference is only ever visible pointing at a baseline that is
-  // already there. `publishArtifacts` rolls the whole batch back either way.
-  const published = await publishArtifacts(fs, workspace, [
-    ...artifacts,
-    ...(input.documents ?? []).map((d) => ({ ...d, overwrite: true })),
-  ]);
-  if (!published.ok)
-    return { ok: false, failures: [publishFailure(published.failure, packagePath)] };
-  return { ok: true, value: { revision, baseline, written: published.value.written } };
+  return {
+    ok: true,
+    value: {
+      artifacts: candidateArtifacts(input.packagePath, nextManifest, baseline, input.files),
+      revision,
+      baseline,
+      manifest: nextManifest,
+    },
+  };
+}
+
+/**
+ * The exclusivity check, said early and in this domain's terms.
+ *
+ * Same verdict the exclusive write produces, but BEFORE anything is written:
+ * a path this revision introduces that already sits in the package means the
+ * line moved under the caller — or the caller is re-publishing a sealed
+ * revision, which is the same race lost earlier.
+ */
+async function alreadyPublished(
+  fs: FileSystemPort,
+  workspace: string,
+  packagePath: string,
+  files: PublishFile[],
+): Promise<DesignFailure[]> {
+  const failures: DesignFailure[] = [];
+  for (const file of files) {
+    if (!(await fs.exists(join(workspace, packagePath, file.path)))) continue;
+    const artifact = `${packagePath}/${file.path}`;
+    failures.push({
+      code: "DESIGN_BASE_STALE",
+      artifact,
+      message: `'${artifact}' ya existe: alguien publicó esta revisión mientras preparabas`,
+      action:
+        "releé el package y rehacé la revisión sobre la base nueva: una publicada no se reescribe",
+    });
+  }
+  return failures;
 }
 
 /**

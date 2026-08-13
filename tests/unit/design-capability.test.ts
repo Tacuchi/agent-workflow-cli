@@ -1,14 +1,23 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import "../../src/application/capability/design-handler.js";
+import {
+  type DispatchContext,
+  type DispatchResult,
+  dispatchCapability,
+} from "../../src/application/capability/dispatcher.js";
+import { readDesignIndex } from "../../src/application/design/design-index-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import { resolveSkills } from "../../src/application/skills-resolver-service.js";
 import { skillsCommand } from "../../src/cli/commands/skills.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import type { CapabilityInputValue } from "../../src/domain/capability/protocol.js";
 import { validateDesignArtifact } from "../../src/domain/design/artifact.js";
 import { validateDesignBaseline } from "../../src/domain/design/baseline.js";
 import {
@@ -362,5 +371,307 @@ describe("la frontera con la Spec 014 está escrita y no duplicada (AC-CAP-04)",
     }
     expect(reparto).toMatch(/only thing that touches the filesystem/i);
     expect(reparto).toMatch(/data to be validated\*?, never an instruction to be trusted/i);
+  });
+});
+
+describe("la ruta package deriva y sella como la simple", () => {
+  const HOME = "/home/u";
+  const WS = "/work";
+  /** What create mints over an empty index: DES-001, and its folder from the title. */
+  const FOLDER = "docs/designs/001-design-alta-de-miembro";
+  const EXPANSION = "design.independent-outcomes";
+  const FLOW_PATH_R1 = `${FOLDER}/flows/FLW-001-r001-alta-miembro.md`;
+  const FLOW_PATH_R2 = `${FOLDER}/flows/FLW-001-r002-alta-miembro.md`;
+
+  const fixture = (name: string): string =>
+    readFileSync(resolve(__dirname, "..", "fixtures", "design", name), "utf8");
+
+  // The fixture publishes FLW-001@r2; a create renumbers it r1 superseding no
+  // one, exactly as `design-publish.test.ts` does for a package's first line.
+  const FLOW_R1 = fixture("FLW-001-r002-alta-miembro.md")
+    .replace("revision: 2", "revision: 1")
+    .replace("supersedes: DES-001/FLW-001@r1", "supersedes: null");
+  const FLOW_R2 = fixture("FLW-001-r002-alta-miembro.md");
+
+  function ctx(fs: MemFs): DispatchContext {
+    return {
+      fs,
+      env: new FakeEnv(HOME, WS),
+      paths: new PathsService(normalizeNamespace("workflow"), HOME, WS),
+      workspace: WS,
+      host: "claude-code",
+    };
+  }
+
+  const input = (name: string, value: unknown): CapabilityInputValue => ({
+    name,
+    value,
+    provenance: { kind: "text", origin: "caller", seal: null, sensitivity: "public" },
+  });
+
+  const createInputs = (): CapabilityInputValue[] => [
+    input("title", "Alta de miembro"),
+    input("sources", ["docs/requisitos.md"]),
+    input("expansion", EXPANSION),
+  ];
+
+  const updateInputs = (base: string): CapabilityInputValue[] => [
+    input("package", "DES-001"),
+    input("base", base),
+    input("expansion", EXPANSION),
+  ];
+
+  /**
+   * The `input_digest` an authored answer has to carry, recomputed from the
+   * inputs rather than read back from the attempt — same discipline as the
+   * simple route's tests.
+   */
+  function digestOfInputs(inputs: CapabilityInputValue[]): string {
+    return semanticDigest(
+      [...inputs]
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+        .map((i) => ({ name: i.name, value: i.value })),
+    );
+  }
+
+  function answer(
+    inputs: CapabilityInputValue[],
+    operation: string,
+    artifacts: Array<{ path: string; content: string }>,
+  ): string {
+    return JSON.stringify({
+      version: 1,
+      operation,
+      input_digest: digestOfInputs(inputs),
+      state: "proposed",
+      artifacts,
+    });
+  }
+
+  async function validateWith(
+    fs: MemFs,
+    operation: string,
+    inputs: CapabilityInputValue[],
+    artifacts: Array<{ path: string; content: string }>,
+  ): Promise<DispatchResult> {
+    return dispatchCapability(
+      {
+        verb: "validate",
+        capability: "design",
+        operation,
+        route: "direct",
+        inputs,
+        answer: answer(inputs, `design.${operation}`, artifacts),
+      },
+      ctx(fs),
+    );
+  }
+
+  async function applyValidated(
+    fs: MemFs,
+    validated: DispatchResult,
+    operation: string,
+  ): Promise<DispatchResult> {
+    if (!validated.ok) throw new Error("validate falló antes de apply");
+    const plan = validated.attempt.plan;
+    if (plan === null) throw new Error("validate no produjo plan");
+    return dispatchCapability(
+      {
+        verb: "apply",
+        capability: "design",
+        operation,
+        route: "direct",
+        request: validated.attempt.request,
+        plan,
+        approval: { digest: plan.proposal.digest, granted: plan.proposal.requires_approval },
+      },
+      ctx(fs),
+    );
+  }
+
+  /** A package with its r1 published, as the update scenarios start from. */
+  async function publishCreate(fs: MemFs): Promise<void> {
+    const inputs = createInputs();
+    const validated = await validateWith(fs, "create", inputs, [
+      { path: FLOW_PATH_R1, content: FLOW_R1 },
+    ]);
+    const applied = await applyValidated(fs, validated, "create");
+    if (!applied.ok || applied.attempt.receipt.outcome !== "completed") {
+      throw new Error("el create de partida no aplicó");
+    }
+  }
+
+  /** Nothing under `docs/` — the lock the mechanism writes is not the package. */
+  const docWrites = (fs: MemFs): string[] =>
+    [...fs.writes.keys()].filter((p) => p.includes("/docs/"));
+
+  it("create prepare → validate → apply deja un package íntegro, sellado por el CLI", async () => {
+    const fs = new MemFs();
+    const inputs = createInputs();
+
+    const prepared = await dispatchCapability(
+      { verb: "prepare", capability: "design", operation: "create", route: "direct", inputs },
+      ctx(fs),
+    );
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    expect(prepared.attempt.receipt.outcome).toBe("needs_input");
+    const gaps = prepared.attempt.receipt.gaps.join("\n");
+    // El contrato ya fija el id y la carpeta, y dice qué NO se autora.
+    expect(gaps).toContain("DES-001");
+    expect(gaps).toContain(FOLDER);
+    expect(gaps).toContain("design-manifest.json");
+    expect(gaps).toContain(`input_digest: ${digestOfInputs(inputs)}`);
+
+    const validated = await validateWith(fs, "create", inputs, [
+      { path: FLOW_PATH_R1, content: FLOW_R1 },
+    ]);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    expect(validated.attempt.plan).not.toBeNull();
+    // Nada escrito todavía: el manifest y el baseline llegan con el apply.
+    expect(docWrites(fs)).toEqual([]);
+    expect(validated.attempt.output?.completeness).toBe("partial");
+    const fields = (
+      validated.attempt.output?.value as {
+        design: { package: string | null; path: string | null; baseline: unknown };
+      }
+    ).design;
+    expect(fields.package).toBe("DES-001");
+    expect(fields.path).toBe(FOLDER);
+    expect(fields.baseline).toEqual({ revision: 1, digest: expect.any(String) });
+
+    const applied = await applyValidated(fs, validated, "create");
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.attempt.receipt.outcome).toBe("completed");
+
+    // El índice lo lee íntegro — la ruta verbatim dejaba el árbol sin sellar.
+    const index = await readDesignIndex(fs, WS);
+    const entry = index.packages.find((p) => p.id === "DES-001");
+    expect(entry?.ok).toBe(true);
+    expect(entry?.mode).toBe("package");
+    expect(entry?.current_baseline?.revision).toBe(1);
+
+    // Y el baseline lo escribió el CLI: la respuesta no traía ni manifest ni baseline.
+    const baseline = validateDesignBaseline(
+      JSON.parse(await fs.readText(`${WS}/${FOLDER}/baselines/DES-001-r001.json`)),
+      "baselines/DES-001-r001.json",
+    );
+    expect(baseline.failures).toEqual([]);
+    expect(baseline.value?.digest).toBe(entry?.current_baseline?.digest);
+    expect(baseline.value?.selection.map((s) => s.path)).toEqual([
+      "flows/FLW-001-r001-alta-miembro.md",
+    ]);
+    const manifest = validateDesignManifest(
+      JSON.parse(await fs.readText(`${WS}/${FOLDER}/design-manifest.json`)),
+      "design-manifest.json",
+    );
+    expect(manifest.failures).toEqual([]);
+  });
+
+  it("un documento que viola el gate sale blocked en validate y no se escribe nada", async () => {
+    const fs = new MemFs();
+    const inputs = createInputs();
+    // Claves de SCREEN en el trace de un flow: el contrato del documento las cierra.
+    const broken = FLOW_R1.replace(
+      "    source: docs/specs/046-spec-nacimiento-familias.md",
+      [
+        "    source: docs/specs/046-spec-nacimiento-familias.md",
+        "    classification: visual",
+        "    states: [default]",
+        "    renditions: [DES-001/VIS-001@r1]",
+        "    reason: null",
+      ].join("\n"),
+    );
+
+    const validated = await validateWith(fs, "create", inputs, [
+      { path: FLOW_PATH_R1, content: broken },
+    ]);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    expect(validated.attempt.receipt.outcome).toBe("blocked");
+    expect(validated.attempt.receipt.error?.code).toBe("DESIGN_KEY_UNKNOWN");
+    expect(validated.attempt.plan).toBeNull();
+    expect(docWrites(fs)).toEqual([]);
+  });
+
+  it.each(["design-manifest.json", "baselines/DES-001-r001.json", "PACKAGE.md"])(
+    "autorar '%s' a mano sale blocked: lo deriva y sella el CLI",
+    async (derived) => {
+      const fs = new MemFs();
+      const inputs = createInputs();
+      const validated = await validateWith(fs, "create", inputs, [
+        { path: FLOW_PATH_R1, content: FLOW_R1 },
+        { path: `${FOLDER}/${derived}`, content: "{}\n" },
+      ]);
+      expect(validated.ok).toBe(true);
+      if (!validated.ok) return;
+      expect(validated.attempt.receipt.outcome).toBe("blocked");
+      expect(validated.attempt.receipt.error?.code).toBe("DESIGN_FIELD_INVALID");
+      expect(validated.attempt.receipt.error?.action).toContain("deriva y sella");
+      expect(docWrites(fs)).toEqual([]);
+    },
+  );
+
+  it("update con la base vigente publica r2 con su parent_baseline", async () => {
+    const fs = new MemFs();
+    await publishCreate(fs);
+
+    const inputs = updateInputs("DES-001@r1");
+    const prepared = await dispatchCapability(
+      { verb: "prepare", capability: "design", operation: "update", route: "direct", inputs },
+      ctx(fs),
+    );
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    expect(prepared.attempt.receipt.outcome).toBe("needs_input");
+
+    const validated = await validateWith(fs, "update", inputs, [
+      { path: FLOW_PATH_R2, content: FLOW_R2 },
+    ]);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    expect(validated.attempt.plan).not.toBeNull();
+
+    const applied = await applyValidated(fs, validated, "update");
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.attempt.receipt.outcome).toBe("completed");
+
+    const baseline = validateDesignBaseline(
+      JSON.parse(await fs.readText(`${WS}/${FOLDER}/baselines/DES-001-r002.json`)),
+      "baselines/DES-001-r002.json",
+    );
+    expect(baseline.failures).toEqual([]);
+    expect(baseline.value?.revision).toBe(2);
+    expect(baseline.value?.parent_baseline).toBe("DES-001@r1");
+
+    const index = await readDesignIndex(fs, WS);
+    const entry = index.packages.find((p) => p.id === "DES-001");
+    expect(entry?.ok).toBe(true);
+    expect(entry?.current_baseline?.revision).toBe(2);
+  });
+
+  it("y una base que no es la vigente frena el update antes de pedir contenido", async () => {
+    const fs = new MemFs();
+    await publishCreate(fs);
+    const antes = docWrites(fs);
+
+    const prepared = await dispatchCapability(
+      {
+        verb: "prepare",
+        capability: "design",
+        operation: "update",
+        route: "direct",
+        inputs: updateInputs("DES-001@r9"),
+      },
+      ctx(fs),
+    );
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    expect(prepared.attempt.receipt.outcome).toBe("blocked");
+    expect(prepared.attempt.receipt.error?.code).toBe("DESIGN_BASE_STALE");
+    expect(docWrites(fs)).toEqual(antes);
   });
 });

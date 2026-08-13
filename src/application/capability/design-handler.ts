@@ -15,6 +15,7 @@
  * contain and waits for one — that is a question, not a failure.
  */
 
+import { join } from "node:path";
 import type { CapabilityFailure, ValidationOutcome } from "../../domain/capability/protocol.js";
 import { requireAdapter } from "../../domain/design/adapter.js";
 import { DESIGN_DESCRIPTOR, DESIGN_OPERATIONS } from "../../domain/design/capability.js";
@@ -30,11 +31,19 @@ import {
   deriveStructuralSignals,
   judgeExpansion,
 } from "../../domain/design/expansion.js";
+import {
+  DESIGN_MANIFEST_FILE,
+  DESIGN_MANIFEST_SCHEMA_ID,
+  type DesignManifest,
+} from "../../domain/design/manifest.js";
 import { DESIGN_ADAPTERS } from "../../domain/design/profiles.js";
 import {
   SIMPLE_CORE_SECTIONS,
   SIMPLE_DESIGN_FILE,
   SIMPLE_SECTIONS,
+  designFolder,
+  designSlug,
+  nextPackageId,
 } from "../../domain/design/simple.js";
 import {
   type DesignSource,
@@ -42,8 +51,17 @@ import {
   classifySource,
   reportSources,
 } from "../../domain/design/sources.js";
+import { type ProposalBase, baseDigest } from "../../domain/proposal.js";
 import { localDateIso } from "../dates.js";
-import { readDesignIndex, resolveDesignPackage } from "../design/design-index-service.js";
+import {
+  type DesignIndex,
+  readDesignIndex,
+  resolveDesignPackage,
+} from "../design/design-index-service.js";
+import {
+  type PackageCandidateInput,
+  buildPackageCandidate,
+} from "../design/design-publish-service.js";
 import { checkRecordPrecondition } from "../design/design-record-service.js";
 import {
   type SimpleTarget,
@@ -221,7 +239,13 @@ async function authoring(ctx: HandlerContext): Promise<HandlerResult> {
   if (ctx.verb !== "validate") {
     return {
       kind: "needs_input",
-      gaps: [request.contract, `destinos permitidos: ${request.allowed_destinations.join(", ")}`],
+      gaps: [
+        request.contract,
+        `destinos permitidos: ${request.allowed_destinations.join(", ")}`,
+        // Answering means quoting this digest back verbatim; naming it here saves
+        // the caller from reimplementing `canonicalJson` to recompute it.
+        `input_digest: ${request.input_digest}`,
+      ],
     };
   }
   if (ctx.answer === null || ctx.answer.trim().length === 0) {
@@ -251,7 +275,27 @@ interface RouteDecision {
   destinations: string[];
   /** Present exactly on the simple route: the identity and folder already fixed. */
   target: SimpleTarget | null;
+  /**
+   * Present on the package route when the target could be derived BEFORE the
+   * contract was published (create/update over the index). Null there means the
+   * verbatim path: `render`/`record`, or an authoring call with no index.
+   */
+  packageTarget: PackageTarget | null;
   root: OutputRoot;
+}
+
+/**
+ * What a package-route create/update publishes over, fixed before any byte is
+ * authored — the mirror of {@link SimpleTarget} on the expanded route.
+ */
+interface PackageTarget {
+  packageId: string;
+  /** Workspace-relative package folder. */
+  path: string;
+  /** The revision this publication will mint: 1 for a new package. */
+  revision: number;
+  /** The current manifest, or the initial one a create synthesized. */
+  manifest: DesignManifest;
 }
 
 type RouteResolution =
@@ -307,31 +351,7 @@ async function decideRoute(
     index === null ||
     !isIndexable(root)
   ) {
-    // The compare-and-swap base is the caller's claim on this route, and a safety
-    // check that can be omitted is one nobody performs. It is demanded HERE
-    // rather than in the descriptor because the simple route derives it instead.
-    if (ctx.operation.name === "update" && textInput(ctx, "base") === null) {
-      return {
-        ok: false,
-        failure: {
-          code: "DESIGN_FIELD_INVALID",
-          message: "actualizar un package declara sobre qué revisión se preparó",
-          action:
-            "pasá 'base' con la revisión vigente (por ejemplo DES-001@r3), o null si el package no publicó ninguna",
-        },
-      };
-    }
-    return {
-      ok: true,
-      value: {
-        verdict,
-        contract: contractFor(ctx.operation.name),
-        inventory: { root: root.root, mode: root.kind },
-        destinations: [root.root],
-        target: null,
-        root,
-      },
-    };
+    return packageRoute(ctx, verdict, index, root);
   }
 
   const resolved = resolveSimpleTarget(index, ctx.operation.name, {
@@ -359,8 +379,201 @@ async function decideRoute(
       // the one destination, so anything else is not a design it can publish.
       destinations: [`${resolved.value.path}/${SIMPLE_DESIGN_FILE}`],
       target: resolved.value,
+      packageTarget: null,
       root,
     },
+  };
+}
+
+/**
+ * The package route: sealed when the target can be derived, verbatim when not.
+ *
+ * The compare-and-swap base is the caller's claim on this route, and a safety
+ * check that can be omitted is one nobody performs. It is demanded HERE rather
+ * than in the descriptor because the simple route derives it instead.
+ */
+function packageRoute(
+  ctx: HandlerContext,
+  verdict: ExpansionVerdict,
+  index: DesignIndex | null,
+  root: OutputRoot,
+): RouteResolution {
+  if (ctx.operation.name === "update" && textInput(ctx, "base") === null) {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_FIELD_INVALID",
+        message: "actualizar un package declara sobre qué revisión se preparó",
+        action:
+          "pasá 'base' con la revisión vigente (por ejemplo DES-001@r3), o null si el package no publicó ninguna",
+      },
+    };
+  }
+
+  // KNOWN LIMITATION: `render`/`record` — and a create/update with no index to
+  // derive from (outside a workspace or outside `docs/designs/`) — still run
+  // the verbatim path: the answer is published as authored, with no derived
+  // manifest, baseline or gate. Only create/update over the index seal.
+  if (index === null || !AUTHORING_OPERATIONS.includes(ctx.operation.name) || !isIndexable(root)) {
+    return {
+      ok: true,
+      value: {
+        verdict,
+        contract: contractFor(ctx.operation.name),
+        inventory: { root: root.root, mode: root.kind },
+        destinations: [root.root],
+        target: null,
+        packageTarget: null,
+        root,
+      },
+    };
+  }
+
+  const resolved = resolvePackageTarget(ctx, index);
+  if (!resolved.ok) return { ok: false, failure: resolved.failure };
+  const target = resolved.value;
+  return {
+    ok: true,
+    value: {
+      verdict,
+      contract: packageContract(ctx.operation.name, target),
+      inventory: {
+        root: root.root,
+        mode: "package",
+        package: target.packageId,
+        revision: target.revision,
+        path: target.path,
+      },
+      // The package folder, not the taxonomy root: the destination check is
+      // segment-based, so every artifact lands INSIDE this package or nowhere.
+      destinations: [target.path],
+      target: null,
+      packageTarget: target,
+      root,
+    },
+  };
+}
+
+/**
+ * The package route's target, derived BEFORE the contract is published.
+ *
+ * `create` mints the identity and the folder from the title, over an initial
+ * manifest that exists only to give the candidate builder a line to start from.
+ * `update` locates the package BY IDENTITY and checks the declared base against
+ * the line in force — the same compare-and-swap `publishDesignRevision` runs,
+ * moved to the moment the contract is fixed instead of discovered mid-publish.
+ */
+function resolvePackageTarget(
+  ctx: HandlerContext,
+  index: DesignIndex,
+): { ok: true; value: PackageTarget } | { ok: false; failure: CapabilityFailure } {
+  if (ctx.operation.name === "create") {
+    const title = textInput(ctx, "title");
+    if (title === null) {
+      return {
+        ok: false,
+        failure: {
+          code: "DESIGN_FIELD_INVALID",
+          message: "un package nuevo necesita un título",
+          action: "pasá 'title' con el nombre humano del diseño: de ahí salen la carpeta y el id",
+        },
+      };
+    }
+    const packageId = nextPackageId(index.packages.map((p) => p.id ?? p.declared_id));
+    return {
+      ok: true,
+      value: {
+        packageId,
+        path: designFolder(index.root, packageId, designSlug(title)),
+        revision: 1,
+        manifest: initialPackageManifest(packageId, title, localDateIso(new Date())),
+      },
+    };
+  }
+
+  const named = packageInput(ctx);
+  if (named === null) {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_FIELD_INVALID",
+        message: "actualizar un package necesita la identidad del que se continúa",
+        action: "pasá 'package' con su id, por ejemplo DES-007",
+      },
+    };
+  }
+  const found = index.packages.find((p) => p.id === named) ?? null;
+  if (found === null || found.manifest === null) {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_PACKAGE_NOT_FOUND",
+        message: `no hay ningún package ${named} legible bajo ${index.root}/`,
+        action: `revisá 'aw designs' para ver las identidades publicadas bajo ${index.root}/`,
+      },
+    };
+  }
+  const manifest = found.manifest;
+  const current = manifest.current_baseline;
+  const actual = current === null ? null : `${manifest.id}@r${current.revision}`;
+  // The declared base is text on the wire: "null" is how a caller states the
+  // package never published, which the failure below already advertised. The
+  // null case cannot happen — `decideRoute` demands the input first — and the
+  // guard keeps that a fact of this function, not of its caller.
+  const declaredRaw = textInput(ctx, "base");
+  if (declaredRaw === null) {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_FIELD_INVALID",
+        message: "actualizar un package declara sobre qué revisión se preparó",
+        action:
+          "pasá 'base' con la revisión vigente (por ejemplo DES-001@r3), o null si el package no publicó ninguna",
+      },
+    };
+  }
+  const declared = declaredRaw === "null" ? null : declaredRaw;
+  if (declared !== actual) {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_BASE_STALE",
+        message: `declaraste base ${declared ?? "ninguna revisión"} y la vigente es ${actual ?? "ninguna"}`,
+        action:
+          "releé el package y rehacé la revisión sobre la base nueva: una publicada no se reescribe",
+      },
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      packageId: manifest.id,
+      path: found.path,
+      revision: (current?.revision ?? 0) + 1,
+      manifest,
+    },
+  };
+}
+
+/**
+ * The manifest a `create` starts from: the empty catalog every package begins
+ * with, so the candidate builder sees the same shape it sees on an update. It
+ * is never written as-is — the first publication writes the DERIVED one.
+ */
+function initialPackageManifest(packageId: string, title: string, created: string): DesignManifest {
+  return {
+    schema: DESIGN_MANIFEST_SCHEMA_ID,
+    id: packageId,
+    mode: "package",
+    title,
+    created,
+    derived_from: null,
+    current_baseline: null,
+    baselines: [],
+    catalog: { flows: [], screens: [], rules: [], tokens: [], renditions: [], assets: [] },
+    currentness: [],
+    governance: { reviews: [], revocations: [] },
+    relations: { specs: [], plans: [] },
   };
 }
 
@@ -437,22 +650,110 @@ async function simpleProposal(
   };
 }
 
-/** The expanded route's durable step — the package the agent authored, unchanged. */
-function packageProposal(
+/**
+ * The expanded route's durable step.
+ *
+ * With a derived target (create/update over the index) the CLI owns the seal:
+ * the authored artifacts are candidate files, and the manifest, the baseline
+ * and `PACKAGE.md` are DERIVED here — the same candidate `publishDesignRevision`
+ * publishes, so the gate verdict the `012` computes runs NOW, inside `validate`,
+ * and an invalid tree is blocked before the first byte moves.
+ *
+ * Without one (`render`/`record`, or no index to derive from) the package is
+ * published exactly as authored. That verbatim path is the known limitation
+ * `decideRoute` documents, not a second contract.
+ */
+async function packageProposal(
   ctx: HandlerContext,
   report: SourceReport,
   route: RouteDecision,
   answered: readonly { path: string; content: string }[],
-): HandlerResult {
-  const artifacts = answered.map((a) => ({ path: a.path, content: a.content }));
-  // The gate verdict the `012` computes is not available until the package is
-  // on disk, so a proposal can never claim more than `outline` here — which is
-  // exactly the rule that stops a partial from being promoted.
-  const maturity = attainedMaturity(requestedMaturity(ctx), "outline", report);
+): Promise<HandlerResult> {
+  const target = route.packageTarget;
+  if (target === null) {
+    const artifacts = answered.map((a) => ({ path: a.path, content: a.content }));
+    const maturity = attainedMaturity(requestedMaturity(ctx), "outline", report);
+    const fields: DesignReceiptFields = {
+      package: packageInput(ctx),
+      baseline: null,
+      path: route.root.root,
+      root: route.root.kind,
+      indexable: isIndexable(route.root),
+      maturity: { requested: requestedMaturity(ctx), attained: maturity.attained },
+      sources: report.sources,
+      renditions: [],
+      route: routeOf(route.verdict),
+    };
+
+    return {
+      kind: "durable",
+      artifacts,
+      output: {
+        value: { design: fields, artifacts: artifacts.map((a) => a.path), gaps: maturity.gaps },
+        reference: null,
+        // The durable step has not run yet, so nothing is published. Claiming
+        // `complete` here would let a gate accept a proposal as a package.
+        completeness: "partial",
+      },
+      base: null,
+    };
+  }
+
+  // From workspace-relative to package-relative, which is the vocabulary the
+  // candidate builder speaks. The destination check already confined every
+  // answer to the package folder, so the prefix always strips.
+  const prefix = `${target.path}/`;
+  const files: PackageCandidateInput["files"] = [];
+  for (const artifact of answered) {
+    const relative = artifact.path.slice(prefix.length);
+    if (CLI_DERIVED_FILES.includes(relative) || relative.startsWith("baselines/")) {
+      return {
+        kind: "blocked",
+        failure: {
+          code: "DESIGN_FIELD_INVALID",
+          message: `'${artifact.path}' no se autora: lo deriva y sella el CLI`,
+          action:
+            "quitalo de 'artifacts': el CLI deriva y sella design-manifest.json, baselines/ y PACKAGE.md a partir de los artefactos normativos",
+        },
+      };
+    }
+    files.push({ path: relative, content: artifact.content });
+  }
+
+  // The target only exists when `decideRoute` read the index, which it only
+  // does inside a workspace.
+  const candidate = await buildPackageCandidate(ctx.fs, ctx.workspace as string, {
+    manifest: target.manifest,
+    packagePath: target.path,
+    files,
+    published: localDateIso(new Date()),
+  });
+  if (!candidate.ok) {
+    // The gate's own verdict, with its real code and next action: this is where
+    // an invalid tree stops being publishable instead of being sealed verbatim.
+    const first = candidate.failures[0];
+    return {
+      kind: "blocked",
+      failure: {
+        code: first?.code ?? "DESIGN_FIELD_INVALID",
+        message: first?.message ?? "el package no cumple el contrato de publicación",
+        action: first?.action ?? "corregí los artefactos y volvé a responder",
+      },
+    };
+  }
+
+  // The gate passed over the merged catalog, so the verdict a proposal may
+  // claim is what THIS revision's flows and screens claim for themselves — the
+  // ones already sealed were judged when they were published.
+  const maturity = attainedMaturity(
+    requestedMaturity(ctx),
+    claimedMaturity(candidate.value.manifest, files),
+    report,
+  );
   const fields: DesignReceiptFields = {
-    package: packageInput(ctx),
-    baseline: null,
-    path: route.root.root,
+    package: target.packageId,
+    baseline: { revision: candidate.value.revision, digest: candidate.value.baseline.digest },
+    path: target.path,
     root: route.root.kind,
     indexable: isIndexable(route.root),
     maturity: { requested: requestedMaturity(ctx), attained: maturity.attained },
@@ -463,16 +764,55 @@ function packageProposal(
 
   return {
     kind: "durable",
-    artifacts,
+    artifacts: candidate.value.artifacts,
     output: {
-      value: { design: fields, artifacts: artifacts.map((a) => a.path), gaps: maturity.gaps },
+      value: {
+        design: fields,
+        artifacts: candidate.value.artifacts.map((a) => a.path),
+        gaps: maturity.gaps,
+      },
       reference: null,
       // The durable step has not run yet, so nothing is published. Claiming
       // `complete` here would let a gate accept a proposal as a package.
       completeness: "partial",
     },
-    base: null,
+    base: await packageManifestBase(ctx, target),
   };
+}
+
+/** Package-relative file paths the CLI derives and seals — authoring one is rejected. */
+const CLI_DERIVED_FILES: readonly string[] = [DESIGN_MANIFEST_FILE, "PACKAGE.md"];
+
+/**
+ * The maturity this revision's own flows and screens claim, as the merged
+ * catalog recorded it: `outline` as soon as one of them claims no more, and
+ * `handoff` when none says otherwise — the kinds without a maturity ladder
+ * have no vote.
+ */
+function claimedMaturity(
+  manifest: DesignManifest,
+  files: PackageCandidateInput["files"],
+): "outline" | "handoff" {
+  const introduced = new Set(files.map((f) => f.path));
+  const claims = [...manifest.catalog.flows, ...manifest.catalog.screens]
+    .filter((entry) => introduced.has(entry.path))
+    .map((entry) => entry.maturity);
+  return claims.includes("outline") ? "outline" : "handoff";
+}
+
+/**
+ * The compare-and-swap base of a package proposal: the manifest as it stood
+ * when the candidate was computed. Null when there is nothing on disk to have
+ * moved — a create is protected by its destinations not existing.
+ */
+async function packageManifestBase(
+  ctx: HandlerContext,
+  target: PackageTarget,
+): Promise<ProposalBase | null> {
+  const path = `${target.path}/${DESIGN_MANIFEST_FILE}`;
+  const absolute = join(ctx.workspace as string, path);
+  if (!(await ctx.fs.exists(absolute))) return null;
+  return { path, digest: baseDigest(await ctx.fs.readText(absolute)) };
 }
 
 /** The verdict as the receipt states it: mode, signals and the one-line cause. */
@@ -608,6 +948,32 @@ function contractFor(operation: string): string {
       "Sellá la decisión de gobierno sobre la revisión indicada, sin tocar el contenido del package.",
   };
   return `${perOperation[operation] ?? ""} ${shared}`.trim();
+}
+
+/**
+ * What a valid answer is on the SEALED package route: the normative artifacts,
+ * and nothing the CLI derives.
+ *
+ * The split is the same one the simple route states: the agent authors content,
+ * the CLI owns identity, sealing and projections. Naming the derived files in
+ * the contract is what keeps a hand-authored manifest or baseline from coming
+ * back as an answer — those arrive as a rejection, not as a silent overwrite.
+ */
+function packageContract(operation: string, target: PackageTarget): string {
+  const perOperation: Record<string, string> = {
+    create: "Autorá la PRIMERA revisión del package a partir de las fuentes declaradas.",
+    update:
+      "Autorá la revisión SIGUIENTE sobre la base declarada. No reescribas revisiones ya selladas.",
+  };
+  return [
+    perOperation[operation] ?? "",
+    `El id asignado es '${target.packageId}' y la carpeta '${target.path}': ambos van en el 'inventory' del request.`,
+    `El frontmatter de cada artefacto declara ese id de package (por ejemplo '${target.packageId}/FLW-001').`,
+    "NO autores 'design-manifest.json', nada bajo 'baselines/' ni 'PACKAGE.md': el CLI los deriva y sella a partir de tus artefactos, y rechaza la respuesta si los incluye.",
+    "Respondé un único objeto JSON con 'version', 'operation', 'input_digest', 'state': 'proposed' y 'artifacts': [{path, content}]. Cada 'path' es relativo al workspace y cae dentro de los destinos permitidos. Ningún artefacto inventa un formato: los del UI Design Package v1 son los únicos aceptados.",
+  ]
+    .join(" ")
+    .trim();
 }
 
 function inputValue(ctx: HandlerContext, name: string): unknown {
