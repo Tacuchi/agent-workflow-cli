@@ -253,6 +253,54 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
     expect(await bytes()).toBe(before);
   });
 
+  /**
+   * Un campo ausente y un valor fuera del vocabulario son fallas DISTINTAS.
+   *
+   * Compartían una sola frase y la frase describía nada más que la segunda. El
+   * costo se midió en el probe multihost: un host que había anidado todo su
+   * resultado bajo `execution` leyó «'outcome' tiene que ser uno de …», corrigió
+   * el VALOR exactamente como se le pedía, conservó el envoltorio, recibió el
+   * mismo mensaje y quemó los intentos que le quedaban hasta abandonar la sesión.
+   * Un diagnóstico que nombra el campo equivocado convierte a un ejecutor
+   * obediente en un bucle.
+   */
+  it("un 'outcome' fuera del vocabulario lo dice, que es el único caso donde esa frase es cierta", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const directive = await submit(
+      JSON.stringify(seedResult(await seal(), { outcome: "success" })),
+    );
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("tiene que ser uno de");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("un 'outcome' anidado en otro objeto se nombra por su envoltorio, no por su valor", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const { outcome: _fuera, ...resto } = seedResult(await seal());
+    const directive = await submit(
+      JSON.stringify({ input_digest: await seal(), execution: { ...resto, outcome: "completed" } }),
+    );
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("'execution'");
+    expect(directive.error?.message).toContain("nivel superior");
+    // Lo que rompía: mandar a revisar el vocabulario cuando el valor era correcto.
+    expect(directive.error?.message).not.toContain("tiene que ser uno de");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("un 'outcome' simplemente ausente dice que falta, sin inventarle un culpable", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const { outcome: _fuera, ...resto } = seedResult(await seal());
+    const directive = await submit(JSON.stringify({ ...resto, input_digest: await seal() }));
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("no trae 'outcome'");
+    expect(directive.error?.message).not.toContain("tiene que ser uno de");
+    expect(await bytes()).toBe(before);
+  });
+
   it("un resultado que no declara qué se ejecutó no avanza", async () => {
     await reachSeed();
     const before = await bytes();

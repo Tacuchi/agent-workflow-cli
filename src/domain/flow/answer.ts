@@ -431,6 +431,11 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
     return { ok: false, failure: badResult("esta frontera no declara ninguna acción delegada") };
   }
   const outcome = body.outcome;
+  // Absent and out-of-vocabulary are DIFFERENT failures and no longer share a
+  // sentence. They used to, and the sentence described only the second one.
+  if (outcome === undefined) {
+    return { ok: false, failure: badResult(missingOutcome(body)) };
+  }
   if (
     typeof outcome !== "string" ||
     !(CAPABILITY_OUTCOMES as readonly string[]).includes(outcome)
@@ -496,6 +501,34 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
       artifacts: EMPTY,
     },
   };
+}
+
+/**
+ * Why a result carries no `outcome`, said as the thing to fix.
+ *
+ * A missing field and a field outside the vocabulary answered the same sentence,
+ * and that sentence described only the second one. The cost was measured, not
+ * imagined: a host that had nested its whole result under `execution` read
+ * "'outcome' has to be one of …", corrected the VALUE exactly as instructed, kept
+ * the envelope, got the identical message back, and burned its remaining attempts
+ * before abandoning the session. A diagnostic that names the wrong field turns an
+ * obedient executor into a loop.
+ *
+ * The envelope is NAMED when one is really there rather than guessed from a list
+ * of likely words: any top-level value that is itself a record carrying `outcome`
+ * is the wrapper, whatever it was called. Wrapping is the natural wrong guess —
+ * the directive the reader just answered carries an `action.execution` object of
+ * its own — so pointing straight at it costs one line and saves the loop.
+ */
+function missingOutcome(body: Record<string, unknown>): string {
+  const wrapper = Object.entries(body).find(
+    ([, value]) => isRecord(value) && "outcome" in value,
+  )?.[0];
+  const where =
+    wrapper === undefined
+      ? "el resultado no trae 'outcome'"
+      : `el resultado trae su 'outcome' anidado dentro de '${wrapper}'`;
+  return `${where}: los campos del resultado van en el nivel superior del JSON, no envueltos en otro objeto`;
 }
 
 /** Which field of the invocation differs, in the order a reader would check them. */
