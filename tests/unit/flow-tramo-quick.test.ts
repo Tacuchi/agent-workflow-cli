@@ -155,7 +155,8 @@ describe("las reglas del tramo, sobre observaciones que nadie filtró", () => {
     const action = actionOf(rowOf("quick.session-create"));
     if (action === null) throw new Error("quick.session-create dejó de delegar");
 
-    const bound = bindAction(action, { session: SESSION, code: CODE });
+    const binding = { session: SESSION, code: CODE, slug: "tramo-quick" };
+    const bound = bindAction(action, binding);
     if (!bound.ok) throw new Error(`esperaba ligar la acción: ${bound.unbound}`);
     expect(bound.action.invocation.args).toEqual(["session-artifacts", "--code", CODE]);
     expect(bound.action.invocation.target).toBe(SESSION);
@@ -164,9 +165,17 @@ describe("las reglas del tramo, sobre observaciones que nadie filtró", () => {
     // ejecutar un comando con una llave adentro.
     const typo = bindAction(
       { ...action, invocation: { ...action.invocation, target: "{sesion}" } },
-      { session: SESSION, code: CODE },
+      binding,
     );
     expect(typo).toEqual({ ok: false, unbound: "{sesion}" });
+
+    // Y una coordenada del conjunto que ESTA corrida no tiene se niega igual: la
+    // ausencia se propaga como placeholder vivo, nunca como cadena vacía.
+    const sinSlug = bindAction(
+      { ...action, invocation: { ...action.invocation, target: "plan-{slug}.md" } },
+      { ...binding, slug: null },
+    );
+    expect(sinSlug).toEqual({ ok: false, unbound: "{slug}" });
   });
 });
 
@@ -575,12 +584,13 @@ describe("resume y status proyectan la frontera vigente", () => {
     const semantic = await projectRun(fs, paths, SESSION);
     expect(semantic?.boundary).toBe("semantic");
     expect(semantic?.transition).toBe("quick.entry-gate-signal");
-    // El comando de flow se identifica con `--session`, que es el flag que el
-    // comando lee: proyectar `--code` fue un comando que no corre, y se descubrió
-    // recorriendo el flow de verdad.
-    expect(semantic?.command).toContain("--session");
-    expect(semantic?.summary).not.toContain("--code ");
-    expect(semantic?.command).toBe(`aw flow advance --session ${SESSION}`);
+    // Lo que se fija sigue siendo lo mismo —el flag proyectado tiene que ser uno
+    // que el comando `flow` LEA, porque proyectar otro deja un comando que no
+    // corre— y lo que cambió es cuál: `aw flow` acepta `--code`, la misma
+    // ortografía que `worktree`, `check-branch` y `sources`. Antes proyectaba
+    // `--session` justamente porque era el único que leía.
+    expect(semantic?.command).toContain("--code");
+    expect(semantic?.command).toBe(`aw flow advance --code ${SESSION}`);
 
     const submitted = await submitFlow(fs, paths, {
       code: CODE,
@@ -627,7 +637,7 @@ describe("resume y status proyectan la frontera vigente", () => {
     expect(projected?.summary).toContain("FLOW_RUN_VERSION_UNSUPPORTED");
     // Exacto, no "contiene --adopt": el flag con el que se identifica la sesión es
     // el que el comando `flow` lee, y proyectar otro deja un comando que no corre.
-    expect(projected?.command).toBe(`aw flow advance --session ${SESSION} --adopt`);
+    expect(projected?.command).toBe(`aw flow advance --code ${SESSION} --adopt`);
     // Y el archivo sigue intacto: proyectar es leer.
     const raw = await readFile(join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE), "utf8");
     expect(raw).toContain('"version":2');

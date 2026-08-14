@@ -253,6 +253,100 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
     expect(await bytes()).toBe(before);
   });
 
+  /**
+   * Un campo ausente y un valor fuera del vocabulario son fallas DISTINTAS.
+   *
+   * Compartían una sola frase y la frase describía nada más que la segunda. El
+   * costo se midió en el probe multihost: un host que había anidado todo su
+   * resultado bajo `execution` leyó «'outcome' tiene que ser uno de …», corrigió
+   * el VALOR exactamente como se le pedía, conservó el envoltorio, recibió el
+   * mismo mensaje y quemó los intentos que le quedaban hasta abandonar la sesión.
+   * Un diagnóstico que nombra el campo equivocado convierte a un ejecutor
+   * obediente en un bucle.
+   */
+  it("un 'outcome' fuera del vocabulario lo dice, que es el único caso donde esa frase es cierta", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const directive = await submit(
+      JSON.stringify(seedResult(await seal(), { outcome: "success" })),
+    );
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("tiene que ser uno de");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("un 'outcome' anidado en otro objeto se nombra por su envoltorio, no por su valor", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const { outcome: _fuera, ...resto } = seedResult(await seal());
+    const directive = await submit(
+      JSON.stringify({ input_digest: await seal(), execution: { ...resto, outcome: "completed" } }),
+    );
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("'execution'");
+    expect(directive.error?.message).toContain("nivel superior");
+    // Lo que rompía: mandar a revisar el vocabulario cuando el valor era correcto.
+    expect(directive.error?.message).not.toContain("tiene que ser uno de");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("un 'outcome' simplemente ausente dice que falta, sin inventarle un culpable", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const { outcome: _fuera, ...resto } = seedResult(await seal());
+    const directive = await submit(JSON.stringify({ ...resto, input_digest: await seal() }));
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("no trae 'outcome'");
+    expect(directive.error?.message).not.toContain("tiene que ser uno de");
+    expect(await bytes()).toBe(before);
+  });
+
+  /**
+   * El rechazo de `validations` nombra la forma, no un tipo de TypeScript.
+   *
+   * El mensaje anterior decía «la lista de ValidationOutcome del resultado»: un
+   * nombre que no aparece en ningún documento que el host pueda leer, sin las tres
+   * claves ni los ids que la frontera exige. Costó ONCE sesiones descartables a un
+   * host —objetivo declarado: «descubrir el contrato de aw flow submit»— y otro
+   * host, por separado, hizo la misma conjetura equivocada: `name` donde va `id` y
+   * `evidence` donde va `detail`. Lo que corta el bucle es que el mensaje diga qué
+   * claves TRAJO la entrada, porque convierte una búsqueda en un renombre.
+   */
+  it("una validación con las claves equivocadas dice cuáles trajo y cuál falta", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const directive = await submit(
+      JSON.stringify(
+        seedResult(await seal(), {
+          // La forma exacta que mandaron los dos hosts del probe.
+          validations: [{ name: "sesion-creada", passed: true, evidence: "creada" }],
+        }),
+      ),
+    );
+
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("no trae 'id'");
+    expect(directive.error?.message).toContain("name");
+    expect(directive.error?.message).toContain("evidence");
+    // Y ya no nombra un tipo que el host no puede leer en ningún lado.
+    expect(directive.error?.message).not.toContain("ValidationOutcome");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("una lista que no es lista nombra la forma y los ids que la frontera pide", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const directive = await submit(
+      JSON.stringify(seedResult(await seal(), { validations: "todo bien" })),
+    );
+
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("{id, passed, detail}");
+    // Los ids no se describen en abstracto: son los que ESTA frontera declaró.
+    expect(directive.error?.message).toContain("sesion-creada");
+    expect(await bytes()).toBe(before);
+  });
+
   it("un resultado que no declara qué se ejecutó no avanza", async () => {
     await reachSeed();
     const before = await bytes();

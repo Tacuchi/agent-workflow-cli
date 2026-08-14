@@ -26,6 +26,7 @@
 
 import type { EffectClass } from "../../domain/capability/effects.js";
 import type { InternalActionPlan } from "../../domain/flow/authority.js";
+import type { FlowRunScope } from "../../domain/flow/run-state.js";
 import type { LocalProposal } from "../../domain/proposal.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -40,11 +41,21 @@ import { canonicalJson } from "../semantic-operation/protocol.js";
 import { runSessionClose } from "../session-close-service.js";
 import { recordPublication } from "../session-custody-recorder.js";
 import { runStatusCommand } from "../status-service.js";
+import { type IsolationUnit, runWorktree } from "../worktree-service.js";
 
 /** The run's own coordinates — the only scope an internal operation may touch. */
 export interface InternalActionRun {
   session: string;
   code: string;
+  /**
+   * The plan and the sources the run fixed, when it already has them.
+   *
+   * It travels with the coordinates for the same reason the proposal does: the
+   * acquisition must obtain units for exactly the sources the run declared and
+   * had validated, and re-deriving that list from anywhere else would open the
+   * window where what was scoped and what gets isolated are two things.
+   */
+  scope: FlowRunScope | null;
   /**
    * The sealed local change the run is holding, when it has one.
    *
@@ -96,9 +107,73 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
         return artifacts(deps, run, plan.dump ?? null);
       case "session.close":
         return close(deps, run);
+      case "worktree.ensure":
+        return ensureUnits(deps, run);
       case "proposal.publish":
         return publish(deps, run);
     }
+  };
+}
+
+/**
+ * Give the run one isolation unit per source it scoped — all of them, or none
+ * credited.
+ *
+ * It goes through the SAME `runWorktree` the public command calls, so where a
+ * unit lives, which branch it sits on and what happens when somebody else already
+ * holds that branch are one implementation and not two that could disagree about
+ * whose tree a flow is entitled to.
+ *
+ * The first refusal stops it, and that is deliberate: a partial acquisition would
+ * leave the run believing it is isolated on the sources it got while the boundary
+ * it is about to cross — "implement" — writes to all of them. The units already
+ * obtained are NOT undone, because they are idempotent and the retry reuses them.
+ */
+async function ensureUnits(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
+  const scope = run.scope;
+  if (scope === null) {
+    return refusal(
+      "worktree.ensure",
+      "la corrida no fijó qué fuentes edita: no hay unidad que adquirir",
+      canonicalJson({ scope: null }),
+    );
+  }
+  const acquired: IsolationUnit[] = [];
+  for (const alias of scope.sources) {
+    const result = await runWorktree(
+      { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
+      { action: "ensure", alias, sessionCode: run.code },
+    );
+    if ("error" in result) {
+      return refusal(
+        "worktree.ensure",
+        `${alias}: ${result.message}${result.hint === undefined ? "" : ` — ${result.hint}`}`,
+        canonicalJson({ alias, failure: result, acquired }),
+      );
+    }
+    // `ensure` answers with the unit; the union's other members belong to verbs
+    // this call never asks for. Narrowed rather than cast: the day one of them
+    // could come back, this is where the compiler says so.
+    if (!("created" in result)) {
+      return refusal(
+        "worktree.ensure",
+        `${alias}: la adquisición no devolvió una unidad`,
+        canonicalJson({ alias, result }),
+      );
+    }
+    acquired.push(result);
+  }
+  return {
+    ok: true,
+    summary: `unidades de ${run.session}: ${acquired.map((unit) => `${unit.alias} → ${unit.branch}`).join(", ")}`,
+    output: canonicalJson({ plan: scope.plan, units: acquired }),
+    // The tree IS there, however it got there — the same reading `proposal.publish`
+    // makes of a re-entry that finds the bytes already written. Crediting nothing
+    // when `created` is false would refuse the resumption this row is idempotent for.
+    effects: ["local_additive"],
   };
 }
 
@@ -297,20 +372,51 @@ function hasContent(value: unknown): boolean {
   return typeof content === "string" && content.trim().length > 0;
 }
 
+/**
+ * Close the run's session — and refuse to, while it still holds a unit.
+ *
+ * The reader is the same one `aw session-close` builds, so what the flow sees and
+ * what a person sees are one reading of `git worktree list`. What differs is what
+ * each does with it: the public command reports and closes, this one stops. A
+ * directed run reaching here is declaring itself over, and a run whose result is
+ * still only on `aw/<session>` is not over — closing would put the last chance to
+ * notice behind a `.closed` marker that also makes the remedy stop resolving.
+ */
 async function close(
   deps: InternalActionDeps,
   run: InternalActionRun,
 ): Promise<InternalActionOutcome> {
-  const result = await runSessionClose(deps.fs, deps.paths, { code: run.code });
+  const result = await runSessionClose(
+    deps.fs,
+    deps.paths,
+    { code: run.code, requireIntegrated: true },
+    async () => {
+      const listed = await runWorktree(
+        { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
+        { action: "list" },
+      );
+      // A list that did not come back is NOT "no units": the close refuses on it,
+      // which is the whole point of asking before writing the marker.
+      if (!("units" in listed)) throw new Error(JSON.stringify(listed));
+      return listed.units;
+    },
+  );
+  if ("sessionHeld" in result) {
+    const held = result.sessionHeld;
+    return refusal(
+      "session.close",
+      `${held.reason} — integralas con '${held.integrate}'`,
+      canonicalJson(result),
+    );
+  }
   if (!("sessionClose" in result)) {
     const why = "sessionError" in result ? canonicalJson(result.sessionError) : result.error;
     return refusal("session.close", `la sesión no cerró: ${why}`, canonicalJson(result));
   }
   const closed = result.sessionClose;
-  const pending = closed.pending_integration ?? [];
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${pending.length > 0 ? ` · ${pending.length} unidad(es) sin integrar` : ""}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

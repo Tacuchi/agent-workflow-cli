@@ -31,7 +31,7 @@ import type { LocalProposal } from "../proposal.js";
 import type { FlowDecision } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
 
-export const FLOW_RUN_STATE_VERSION = 6;
+export const FLOW_RUN_STATE_VERSION = 7;
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -172,11 +172,36 @@ export type FlowRunEvent =
       recovery: string;
     };
 
+/**
+ * What this run may touch: the plan it executes and the sources it edits.
+ *
+ * Two facts that only look unrelated. A run that edits code needs its own
+ * isolation unit per source BEFORE the first write, and "which sources" is not
+ * derivable from anything the engine holds — the plan says it, and the plan is a
+ * document the engine never read. So both are fixed once, at a boundary, and
+ * persisted: the acquisition knows which units to obtain, the branch and commit
+ * boundaries know which trees to read, and `status`/`resume` can finally say
+ * WHICH plan a session is executing instead of leaving two concurrent runs
+ * indistinguishable.
+ *
+ * `sources` is never empty. A `plan-exec` that isolates nothing has nowhere to
+ * write, and admitting an empty list would make the acquisition's effect
+ * conditional on a scope somebody could leave blank.
+ */
+export interface FlowRunScope {
+  /** Workspace-relative plan document this run executes. */
+  plan: string;
+  /** Aliases of the WORKSPACE block this run may edit — non-empty, no repeats. */
+  sources: string[];
+}
+
 export interface FlowRunState {
   version: number;
   flow: WorklineFlow;
   /** Session folder that owns the run (`NNN-<slug>-<flow>`). */
   session: string;
+  /** The plan and the sources this run isolates, or `null` before it fixed them. */
+  scope: FlowRunScope | null;
   /**
    * Transition ids the run has already passed, in order — the journey's CURSOR.
    *
@@ -245,6 +270,7 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
     version: FLOW_RUN_STATE_VERSION,
     flow,
     session,
+    scope: null,
     applied: [],
     skipped: [],
     boundary: null,
@@ -401,6 +427,18 @@ export function withApproval(state: FlowRunState, grant: EffectGrant): FlowRunSt
 }
 
 /**
+ * Fix what this run isolates, once.
+ *
+ * REPLACES rather than merges, and the boundary that produces it is answered
+ * once per run: a scope that grew by accumulation would let a later answer widen
+ * what the units — and every branch and commit reading built on them — cover,
+ * which is the silent scope expansion the whole isolation model exists to stop.
+ */
+export function withScope(state: FlowRunState, scope: FlowRunScope): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), scope });
+}
+
+/**
  * Seat the exact local change awaiting its decision, or clear it.
  *
  * Cleared after it is published — and that is not housekeeping: a proposal left
@@ -522,6 +560,9 @@ function checkShape(parsed: Record<string, unknown>): CapabilityFailure | null {
   if (typeof parsed.session !== "string" || parsed.session.trim().length === 0) {
     return invalid("no dice a qué sesión pertenece");
   }
+  if (!isScope(parsed.scope)) {
+    return invalid("declara un scope sin su plan o sin ninguna fuente");
+  }
   const applied = parsed.applied;
   if (!isStringArray(applied)) return invalid("no trae la lista de transiciones aplicadas");
   if (!isStringArray(parsed.skipped)) return invalid("no trae la lista de transiciones omitidas");
@@ -600,6 +641,21 @@ function isGrantArray(value: unknown): value is EffectGrant[] {
       isStringArray(entry.destinations) &&
       isEffectClassArray(entry.classes),
   );
+}
+
+/**
+ * A scope is only trustworthy if it names BOTH halves.
+ *
+ * An empty `sources` is refused here rather than at the boundary alone: the file
+ * outlives the invocation that wrote it, and a run resumed with an empty scope
+ * would acquire no unit and then read branches and commits off nothing at all.
+ */
+function isScope(value: unknown): value is FlowRunScope | null {
+  if (value === null) return true;
+  if (!isRecord(value)) return false;
+  if (typeof value.plan !== "string" || value.plan.trim().length === 0) return false;
+  if (!isStringArray(value.sources) || value.sources.length === 0) return false;
+  return value.sources.every((alias) => alias.trim().length > 0);
 }
 
 function isProposal(value: unknown): value is LocalProposal | null {

@@ -24,6 +24,35 @@ export function flagValue(args: ParsedArgs, name: string): string | undefined {
   return args.values.get(name);
 }
 
+/**
+ * The session a command is being pointed at: `--code`, with `--session` as its
+ * surviving alias.
+ *
+ * One reader for every surface that names a session, because the two spellings
+ * were a real divergence and not a cosmetic one: `aw worktree` took `--code`
+ * while `aw check-branch` took `--session`, so the same conversation asking "is
+ * this my tree?" and "give me my tree" had to spell its own identity two ways —
+ * and a flag that lands nowhere is silently no identity at all, which is the
+ * failure mode the isolation check must not have.
+ *
+ * Two spellings that DISAGREE are refused rather than arbitrated: picking either
+ * would mean writing in, or verifying, the wrong flow's tree.
+ */
+export function sessionCodeFlag(
+  args: ParsedArgs,
+): { ok: true; code?: string } | { ok: false; message: string } {
+  const code = args.values.get("code");
+  const alias = args.values.get("session");
+  if (code !== undefined && alias !== undefined && code !== alias) {
+    return {
+      ok: false,
+      message: `--code dice '${code}' y --session dice '${alias}': nombran sesiones distintas, resolvé cuál corresponde`,
+    };
+  }
+  const chosen = code ?? alias;
+  return chosen === undefined ? { ok: true } : { ok: true, code: chosen };
+}
+
 // Flag names (without leading `--`) that accept repetition. Each occurrence
 // pushes onto `valuesMulti`; non-multi flags continue to use `values` (last
 // occurrence wins) for back-compat.

@@ -10,12 +10,26 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
 import { resolveSourceBranches } from "./branch-resolver.js";
+import { locateRun, readRun } from "./flow/run-state-service.js";
+import { withCwdLock } from "./lock-service.js";
 import { runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
 import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { recordIntegration, recordUnitTaken } from "./session-custody-recorder.js";
-import { listSessionFolders, resolveSessionTarget } from "./session-resolver.js";
+import {
+  type SessionResolutionError,
+  listSessionFolders,
+  resolveSessionTarget,
+} from "./session-resolver.js";
+
+/**
+ * How long an integration waits for the workspace lock before giving up.
+ *
+ * Longer than the registry's and the claim's, because what is behind this lock is
+ * a merge: the wait is bounded by another merge finishing, not by a file write.
+ */
+const INTEGRATE_LOCK_WAIT_MS = 10_000;
 
 /**
  * Lifecycle of a flow's isolation unit: obtain one, see the live ones, give one
@@ -60,12 +74,30 @@ export interface WorktreeError {
 
 export type WorktreeEnsureOutput = IsolationUnit & { visibility: "attached" | "unavailable" };
 
+/**
+ * One live unit as the list reports it: what it is, plus what its tree is doing.
+ *
+ * `dirty` and `head` are the two facts a branch or commit boundary needs and the
+ * ones no other reading of this workspace can supply — `aw sources` answers them
+ * about the shared checkout, which under isolation is precisely the tree the flow
+ * does NOT edit. `null` on either means the read failed, never "clean" and never
+ * "no commit": a tree nobody could stat must not pass as a tree with nothing
+ * pending.
+ */
+export type ListedUnit = IsolationUnit & {
+  session_active: boolean;
+  dirty: boolean | null;
+  head: string | null;
+};
+
 export interface WorktreeListOutput {
   workspace_key: string;
-  units: Array<IsolationUnit & { session_active: boolean }>;
+  units: ListedUnit[];
   orphans: OrphanUnit[];
   /** Sources whose worktrees could not be read; their units are NOT in the lists. */
   unreadable: Array<{ alias: string; error: string }>;
+  /** The session the list was narrowed to, when the caller named one. */
+  session?: string;
 }
 
 export interface WorktreeReleaseOutput {
@@ -86,6 +118,8 @@ export interface WorktreeDeps {
 
 export interface WorktreeIntegrateOutput {
   alias: string;
+  /** The repository the merge landed in — what `aw fix-git --path` needs. */
+  source_path: string;
   session: string;
   /** Branch the unit's work was merged INTO. */
   into: string;
@@ -96,6 +130,39 @@ export interface WorktreeIntegrateOutput {
   /** Whether the unit was given back — a conflicted merge keeps it. */
   released: boolean;
   /** What to run next: resolve the conflict, or nothing. */
+  next: string | null;
+}
+
+/**
+ * Every unit of one session, integrated one by one over the live branch.
+ *
+ * This is the form the directed run invokes, and the reason it exists is that a
+ * run scopes SOURCES, not a source: naming one alias per call would make the
+ * journey's integration boundary either wrong for a two-source plan or a
+ * placeholder the engine cannot fill. Alias order is the order, so two readings
+ * of the same session report the same sequence.
+ *
+ * Nothing is aborted by a neighbour: each entry is its own merge into its own
+ * repository, so a conflict in one alias must not hide whether the others landed
+ * — the receipt is the whole set, and `pending` is what is left to act on.
+ */
+export interface WorktreeIntegrateSessionOutput {
+  session: string;
+  /**
+   * The plan this session's run executes, or `null` when it has no flow state.
+   *
+   * It is here because a conflict is read by a person who has two flows open: the
+   * files and the branch say WHERE the merge stopped, and only this says which
+   * piece of work it was.
+   */
+  plan: string | null;
+  /** One entry per unit, in alias order: the merge, or why it was refused. */
+  results: Array<WorktreeIntegrateOutput | (WorktreeError & { alias: string })>;
+  /** Aliases whose work is on the working branch and whose unit was given back. */
+  integrated: string[];
+  /** Aliases still holding a unit: conflicted, or refused before merging. */
+  pending: string[];
+  /** What to run for the first pending alias; `null` when nothing is pending. */
   next: string | null;
 }
 
@@ -111,18 +178,73 @@ export type WorktreeOutput =
   | WorktreeListOutput
   | WorktreeReleaseOutput
   | WorktreeIntegrateOutput
+  | WorktreeIntegrateSessionOutput
   | WorktreeError;
 
 export async function runWorktree(
   deps: WorktreeDeps,
   input: WorktreeInput,
 ): Promise<WorktreeOutput> {
-  if (input.action === "list") return listUnits(deps);
+  if (input.action === "list") return listUnits(deps, input);
+  // Integrating without naming a source is not a missing argument: it is the
+  // whole session, which is what a run holds and what a close has to answer for.
+  if (input.action === "integrate" && input.alias === undefined) {
+    return integrateSession(deps, input);
+  }
   const target = await resolveTarget(deps, input);
   if ("error" in target) return target;
   if (input.action === "ensure") return ensureUnit(deps, target);
   if (input.action === "integrate") return integrateUnit(deps, target);
   return releaseUnit(deps, target);
+}
+
+/**
+ * Integrate every unit the session holds, in alias order.
+ *
+ * The session is resolved ONCE and each alias goes through the same single-unit
+ * path, so what a person gets running the command per source and what the run
+ * gets from one call are the same merges in the same order.
+ */
+async function integrateSession(
+  deps: WorktreeDeps,
+  input: WorktreeInput,
+): Promise<WorktreeIntegrateSessionOutput | WorktreeError> {
+  const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
+    ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
+    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
+  });
+  if (resolution.outcome !== "resolved") return sessionRefusal(resolution);
+  const session = resolution.session.folder;
+  const listed = await listUnits(deps, { action: "list" });
+  if ("error" in listed) return listed;
+  const mine = listed.units.filter((unit) => unit.session === session);
+  const results: WorktreeIntegrateSessionOutput["results"] = [];
+  const integrated: string[] = [];
+  const pending: string[] = [];
+  let next: string | null = null;
+  for (const unit of [...mine].sort((a, b) => a.alias.localeCompare(b.alias))) {
+    const target = await resolveTarget(deps, { ...input, alias: unit.alias });
+    const result = "error" in target ? target : await integrateUnit(deps, target);
+    if ("error" in result) {
+      results.push({ ...result, alias: unit.alias });
+      pending.push(unit.alias);
+      next ??= `aw worktree integrate --source ${unit.alias} --code ${session}`;
+      continue;
+    }
+    results.push(result);
+    if (result.integrated) integrated.push(unit.alias);
+    else {
+      pending.push(unit.alias);
+      next ??= result.next;
+    }
+  }
+  return { session, plan: await planOf(deps, session), results, integrated, pending, next };
+}
+
+/** The plan the session's run declared, or `null` when there is no readable run. */
+async function planOf(deps: WorktreeDeps, session: string): Promise<string | null> {
+  const read = await readRun(deps.fs, locateRun(deps.paths, session));
+  return read.ok ? (read.state.scope?.plan ?? null) : null;
 }
 
 /**
@@ -187,20 +309,45 @@ async function integrateUnit(
       hint: `posicioná el checkout en '${base}' y volvé a integrar; la integración nunca cambia de rama por su cuenta`,
     };
   }
-  // Read before merging: after it, the value the branch had is only reachable
-  // through the new commit, and the receipt is what makes the integration
-  // attributable without reading anybody's commit message.
-  const beforeMerge = await deps.git.head(source.path).catch(() => null);
-  const merge = await deps.git.merge(source.path, branch);
+  // The merge itself is the serialized part, and only it. Two runs integrating
+  // into the same checkout would fight over one index and one MERGE_HEAD, and the
+  // loser would find a repository mid-merge it never started. Waiting rather than
+  // failing fast for the same reason a correlative claim waits: by the time this
+  // lock is taken there is committed work with nowhere else to go, so losing the
+  // race would lose real work instead of a retry.
+  //
+  // The pre-merge HEAD is read INSIDE the lock, next to the merge it describes.
+  // Reading it outside would leave a window in which another integration lands
+  // between the read and the merge, and the receipt would then attribute this
+  // integration over a value the branch no longer had.
+  const merged = await withCwdLock(
+    deps.fs,
+    deps.paths,
+    async () => {
+      const before = await deps.git.head(source.path).catch(() => null);
+      const merge = await deps.git.merge(source.path, branch);
+      if (merge.ok) return { ok: true as const, before };
+      return { ok: false as const, conflicted: merge.conflicted };
+    },
+    { waitMs: INTEGRATE_LOCK_WAIT_MS },
+  );
+  if ("error" in merged) {
+    return {
+      error: "integration_locked",
+      message: `no se pudo serializar la integración de ${source.alias}: ${merged.error}`,
+      hint: "esperá a que la otra integración termine y volvé a integrar; el merge no se empieza a medias",
+    };
+  }
 
-  if (!merge.ok) {
+  if (!merged.ok) {
     return {
       alias: source.alias,
+      source_path: source.path,
       session: identity.session,
       into: base,
       branch,
       integrated: false,
-      conflicted: merge.conflicted,
+      conflicted: merged.conflicted,
       // The unit SURVIVES a conflict: its commits are the only copy of one side
       // of the merge, and releasing it here would delete them to tidy up.
       released: false,
@@ -212,11 +359,12 @@ async function integrateUnit(
     alias: source.alias,
     sourcePath: source.path,
     into: base,
-    before: beforeMerge,
+    before: merged.before,
   });
   const release = await releaseUnit(deps, target);
   return {
     alias: source.alias,
+    source_path: source.path,
     session: identity.session,
     into: base,
     branch,
@@ -269,13 +417,7 @@ async function resolveTarget(
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
   });
-  if (resolution.outcome !== "resolved") {
-    return {
-      error: "session_unresolved",
-      message: "una unidad de aislamiento pertenece a una sesión y no se pudo resolver cuál",
-      hint: "pasá --code <NNN> con la sesión del flujo",
-    };
-  }
+  if (resolution.outcome !== "resolved") return sessionRefusal(resolution);
   const session = resolution.session.folder;
   const identity: UnitIdentity = {
     workspaceKey: workspaceKey(deps.paths.workspaceDir()),
@@ -288,6 +430,24 @@ async function resolveTarget(
     path: unitPath(await canonicalUnitsRoot(deps), identity),
     branch: unitBranch(session),
     base: resolveSourceBranches(source, block).work,
+  };
+}
+
+/**
+ * A unit's session could not be resolved — said with the resolver's own words.
+ *
+ * The refusal used to be written here, and it flattened every reason into "pasá
+ * --code <NNN>": useless advice to somebody who already passed one, and actively
+ * wrong for the case this feature creates. A session that CLOSED still holding a
+ * unit resolves to a refusal whose action is `aw session-resume --code <NNN>
+ * --reopen` — the only move that gets the work merged — and rewriting it into a
+ * generic hint is what turned the receipt's own remedy into a dead end.
+ */
+function sessionRefusal(resolution: SessionResolutionError): WorktreeError {
+  return {
+    error: "session_unresolved",
+    message: `una unidad de aislamiento pertenece a una sesión: ${resolution.message}`,
+    hint: resolution.action,
   };
 }
 
@@ -435,43 +595,114 @@ async function releaseUnit(
   };
 }
 
-async function listUnits(deps: WorktreeDeps): Promise<WorktreeListOutput> {
+/**
+ * The workspace's live units — every one of them, or only one session's.
+ *
+ * The filter is what makes this reading usable as a run's own evidence: a flow
+ * asking "is my tree there, on my branch, with my work committed?" must not be
+ * answered with somebody else's unit, and a list that always returned all of them
+ * would leave that narrowing to whoever read the output. Naming a session that
+ * cannot be resolved is REFUSED rather than widened back to everything.
+ *
+ * It narrows on an explicit `--code` and on nothing else. The conversation's own
+ * binding is deliberately not consulted: this is also the inventory command that
+ * surfaces orphans, and one that quietly showed only the caller's units would hide
+ * exactly the trees nobody is going to come back for.
+ */
+async function listUnits(
+  deps: WorktreeDeps,
+  input: WorktreeInput,
+): Promise<WorktreeListOutput | WorktreeError> {
+  const narrowed = await narrowTo(deps, input.sessionCode);
+  if (typeof narrowed !== "string" && narrowed !== null) return narrowed;
+  const only = narrowed;
+
   const block = await readWorkspaceBlock(deps.fs, deps.env.cwd(), deps.paths.blockMarkers());
   const key = workspaceKey(deps.paths.workspaceDir());
   const root = await canonicalUnitsRoot(deps);
   const sessions = await sessionStates(deps);
 
-  const units: WorktreeListOutput["units"] = [];
+  const units: ListedUnit[] = [];
   const orphans: OrphanUnit[] = [];
   const unreadable: WorktreeListOutput["unreadable"] = [];
   for (const source of block?.fuentes ?? []) {
-    if (!(await deps.git.isGitRepo(source.path))) continue;
-    let trees: WorktreeEntry[];
-    try {
-      trees = await deps.git.worktreeList(source.path);
-    } catch (err) {
+    const scanned = await scanSource(deps, source, { root, key, only, sessions });
+    if ("error" in scanned) {
       // Reported, never skipped in silence: a source whose trees cannot be read
       // would otherwise show up as "no units", which is the one answer that is
       // certainly wrong — its flows are exactly the ones nobody would clean up.
-      unreadable.push({ alias: source.alias, error: (err as Error).message });
+      unreadable.push({ alias: source.alias, error: scanned.error });
       continue;
     }
-    for (const tree of trees) {
-      const identity = tree.main ? null : parseUnitPath(root, tree.path);
-      if (identity === null || identity.workspaceKey !== key) continue;
-      const reason = orphanReason(identity.session, sessions, tree.prunable);
-      if (reason === null) units.push(liveUnit(identity, source.path, tree));
-      else orphans.push(orphanOf(identity, tree, reason));
-    }
+    units.push(...scanned.units);
+    orphans.push(...scanned.orphans);
   }
-  return { workspace_key: key, units, orphans, unreadable };
+  return {
+    workspace_key: key,
+    units,
+    orphans,
+    unreadable,
+    ...(only !== null ? { session: only } : {}),
+  };
 }
 
-function liveUnit(
+/** What one source contributes to the list, or why its trees could not be read. */
+async function scanSource(
+  deps: WorktreeDeps,
+  source: ProjectFuente,
+  ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
+): Promise<{ units: ListedUnit[]; orphans: OrphanUnit[] } | { error: string }> {
+  const empty = { units: [], orphans: [] };
+  // Not a repo is not unreadable: it has no worktrees to report, and calling it
+  // an error would put every non-git source in front of the reader forever.
+  if (!(await deps.git.isGitRepo(source.path))) return empty;
+  let trees: WorktreeEntry[];
+  try {
+    trees = await deps.git.worktreeList(source.path);
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+  const units: ListedUnit[] = [];
+  const orphans: OrphanUnit[] = [];
+  for (const tree of trees) {
+    const identity = tree.main ? null : parseUnitPath(ctx.root, tree.path);
+    if (identity === null || identity.workspaceKey !== ctx.key) continue;
+    if (ctx.only !== null && identity.session !== ctx.only) continue;
+    const reason = orphanReason(identity.session, ctx.sessions, tree.prunable);
+    if (reason === null) units.push(await liveUnit(deps, identity, source.path, tree));
+    else orphans.push(orphanOf(identity, tree, reason));
+  }
+  return { units, orphans };
+}
+
+/**
+ * The session folder the list is narrowed to: `null` for the whole workspace, or
+ * the refusal when the caller named one nobody can resolve.
+ */
+async function narrowTo(
+  deps: WorktreeDeps,
+  code: string | undefined,
+): Promise<string | null | WorktreeError> {
+  if (code === undefined) return null;
+  const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
+    code,
+    allowClosed: true,
+    bind: false,
+  });
+  if (resolution.outcome === "resolved") return resolution.session.folder;
+  return {
+    error: "session_unresolved",
+    message: `se pidió la lista de '${code}' y no se pudo resolver esa sesión`,
+    hint: "pasá --code <NNN> con la sesión del flujo",
+  };
+}
+
+async function liveUnit(
+  deps: WorktreeDeps,
   identity: UnitIdentity,
   sourcePath: string,
   tree: WorktreeEntry,
-): WorktreeListOutput["units"][number] {
+): Promise<ListedUnit> {
   return {
     alias: identity.alias,
     source_path: sourcePath,
@@ -480,7 +711,18 @@ function liveUnit(
     branch: tree.branch ?? unitBranch(identity.session),
     created: false,
     session_active: true,
+    dirty: await treeDirty(deps, tree.path),
+    head: tree.head,
   };
+}
+
+/** `null` when git could not answer — never the reassuring half of a boolean. */
+async function treeDirty(deps: WorktreeDeps, path: string): Promise<boolean | null> {
+  try {
+    return await deps.git.isDirty(path);
+  } catch {
+    return null;
+  }
 }
 
 function orphanOf(

@@ -192,8 +192,17 @@ deferred with justification when they are not blockers.
   passed. In a continuous batch every phase waits for the batch review; an operative handoff leaves
   the affected phase `bloqueada` and the unit uncommitted.
 - **The plan's own state is the third axis, and it stays `open` during the whole run.** Every phase `validada` is **not** the plan closed: the final validation still has to run. Keep `> Estado: open` under the title while executing — stamping it on the first write if the plan carries none — and never write `done` from the counters — a legacy plan with every box ticked is not closed by that fact (§ *Legacy plans degrade safely*).
-- **Every phase `validada` + final validation passed** unlocks completion, and on the last batch the
-  same Git approval covers this mark, so the status write lands in the same source commit.
+- **Every phase `validada` + final validation passed** unlocks completion, and the mark is written
+  **after Git**: commit each unit, integrate it, and only then seal `done`. A run that isolates its
+  writing holds commits that live on `aw/<session>` and nowhere else, so a `done` stamped before the
+  merge would be true of no branch anybody reads.
+- **Integrating is part of closing, not a chore after it.** `aw worktree integrate --code <NNN>`
+  merges every unit of the session into its source's working branch, in alias order, one at a time
+  over the live branch — never a rebase, a force, a push or a silent branch switch. A **conflict is a
+  live state, not a failure**: the unit, its commits and the merge are kept, the receipt names the
+  plan, the source and the files, and `aw fix-git --path <source>` (`prepare` → `apply` →
+  `commit --confirm`) resolves it; then integrate again to confirm and give the unit back. The plan
+  is not `done` and the session does not close while a unit is still alive.
 - **Marking done = ONE status line in the plan-doc**, under the title's blockquote: `> Estado: done`, updated in place on a re-run. The machine value **stands alone** — the date and session go on their own `> Cierre: YYYY-MM-DD · sesión NNN` line right under it, for the same reason a blocker never rides on a phase's state line. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
 - **Legacy status line, migrated on write.** A plan carrying the old single-line form (`> Estado: done — YYYY-MM-DD · sesión NNN`) is still **read** as closed; the first time this loop legitimately writes that document, it is rewritten to the two-line form. Compatibility is for reading old plans — every new write uses the normalized contract.
 - **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.
@@ -235,30 +244,31 @@ plan-exec-loop(PPP-plan-<slug>.md):
     if any proof/check/review/exit condition is not green:
       preserve actual states + combined uncommitted diff; record unblocking action; stop
     set every Batch phase > Estado: validada; update CHECKPOINT
-    prepare exactly one commit per affected source
-      if last Batch + final validation green:
-        pre-authorized → mark plan done, then commit once per affected source without asking
-        otherwise → structured_choice(content: [Marcar plan done, Preguntar algo más], flow: [Compactar, Cerrar])
-          Marcar plan done → approve; mark done; commit all source changes once
-      else if pre-authorized → commit without another question
+    prepare exactly one commit per affected source, in its own isolation unit
+      pre-authorized → commit without another question
       else → one consolidated approval for all source commits
       rejected → changes stay; record "batch uncommitted"
+    if last Batch + final validation green:
+      integrate: aw worktree integrate --code NNN            # every unit, alias order, live branch
+        conflict → keep unit + merge; report plan/source/files; aw fix-git --path <source>
+                   (prepare → apply → commit --confirm) → integrate again → release
+        refused (dirty checkout / off branch / uncommitted unit) → fix what it names; retry
+      then mark plan done: > Estado: done + > Cierre: YYYY-MM-DD · sesión NNN under the title (Delta 6)
     next-batch precondition: working trees clean or acknowledged
   if no Batch ran and phases are already validada:
-    run final validation now
-    if green:
-      use the same pre-authorized/final structured-choice completion branch
-      when authorized → mark plan done with > Estado: done + > Cierre: YYYY-MM-DD · sesión NNN under the title (Delta 6), then commit that source once
+    run final validation now; if green → same integrate-then-mark-done branch
   if plan is not done:
     the plan-level > Estado: stays open → CHECKPOINT.Next = the action that unblocks the phase(s)
   # NO export: artifacts stay in the session; a separate export-* promotes them
 finalize: CHECKPOINT (+ BACKLOG if something is deferred) + close session + report
+  a session holding a live unit does NOT close: integrate it, or record why it stays
 ```
 
 ## Convergence / exit
 
 - **Every phase `validada`** + final validation passed + every effective batch reviewed before its
-  commits → `Marcar plan done`. Any pending/running/blocked phase keeps the plan open.
+  commits + every unit integrated → `Marcar plan done`. Any pending/running/blocked phase keeps the
+  plan open, and so does any unit still holding commits.
 - A **structural deviation** or a **functional change** exits this loop without converging (§ *Deviation gate*): `CHECKPOINT` + `finalize`, and the work continues in `plan-refine` / `spec-refine`. Same exit when the entry gate finds a structural gap.
 - `Cerrar` (`flow` control, at any time) → `finalize` persists `CHECKPOINT` (and `BACKLOG` only if something remained unexecuted / uncommitted / unapplied), closes the session, reports.
 - Promoting artifacts to `docs/` (via `export-*`) is **always** a later, explicit step outside this loop.

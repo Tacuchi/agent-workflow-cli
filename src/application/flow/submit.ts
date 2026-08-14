@@ -35,6 +35,7 @@ import {
   journeyOfFlow,
   proposalContractOf,
   publishApprovalOf,
+  scopesSources,
 } from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
 import {
@@ -54,11 +55,14 @@ import {
   withBoundary,
   withObservation,
   withProposal,
+  withScope,
 } from "../../domain/flow/run-state.js";
 import { destinationsOf, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
+import { reservationMarker } from "../../domain/reservation.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
@@ -104,11 +108,12 @@ export async function submitFlow(
   if (resolution.outcome !== "resolved") return { ok: false, session: resolution };
 
   const location = locateRun(paths, resolution.session.folder);
-  // Read the destinations BEFORE taking the lock, so the decision below stays
-  // pure. What this observation buys is the honest half of the preview — whether
-  // a write creates or replaces, and what it would replace — and the race it
-  // leaves open is exactly the one the compare-and-swap closes at publish time.
-  const snapshot = await observeDestinations(fs, paths, input.raw);
+  // Read the workspace BEFORE taking the lock, so the decision below stays pure.
+  // What this observation buys is the honest half of the preview — whether a write
+  // creates or replaces, and what it would replace — plus the two facts a declared
+  // scope is checked against. The race it leaves open on the destinations is
+  // exactly the one the compare-and-swap closes at publish time.
+  const snapshot = await observe(fs, paths, input.raw);
   const applied = await applyUnderLock<SubmitOutcome>(fs, location, (current) => {
     if (current === null) {
       return {
@@ -171,6 +176,84 @@ type SubmitDecision = FlowRunMutation<SubmitOutcome>;
 type DestinationSnapshot = ReadonlyMap<string, { exists: boolean; digest: string }>;
 
 /**
+ * What a DECLARED scope gets checked against — read from the workspace, never
+ * from the payload.
+ *
+ * Two halves with different strengths, and saying which is which is the point.
+ * `declared` is the WORKSPACE block's alias list and it is decisive: an alias the
+ * workspace does not declare is not a source, full stop. `mentioned` is the set
+ * of those aliases the plan document names anywhere in its text, and it can only
+ * catch one thing — a source the plan never talks about. It cannot confirm the
+ * reverse, because a plan legitimately names sources to declare them OUT of
+ * impact. The judgment "these are the ones this plan edits" stays the agent's;
+ * what the CLI holds is that it cannot be a source nobody declared, nor one the
+ * plan never mentions.
+ *
+ * `null` on either means it could not be read at all, which is a refusal rather
+ * than an empty check.
+ */
+interface ScopeSnapshot {
+  declared: string[] | null;
+  /** The plan path the payload named; `null` when it named none. */
+  plan: string | null;
+  mentioned: string[] | null;
+}
+
+interface Observation {
+  destinations: DestinationSnapshot;
+  scope: ScopeSnapshot;
+}
+
+async function observe(fs: FileSystemPort, paths: PathsService, raw: string): Promise<Observation> {
+  return {
+    destinations: await observeDestinations(fs, paths, raw),
+    scope: await observeScope(fs, paths, raw),
+  };
+}
+
+/**
+ * The workspace's declared aliases and the named plan's text, when the payload
+ * declares a scope at all.
+ *
+ * Nothing is read when it does not: every other boundary would pay a block parse
+ * and a document read for a field it never sends.
+ */
+async function observeScope(
+  fs: FileSystemPort,
+  paths: PathsService,
+  raw: string,
+): Promise<ScopeSnapshot> {
+  const empty: ScopeSnapshot = { declared: null, plan: null, mentioned: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return empty;
+  }
+  const decisions = (parsed as { decisions?: unknown } | null)?.decisions;
+  if (typeof decisions !== "object" || decisions === null) return empty;
+  const asked = (decisions as { sources?: unknown }).sources;
+  if (!Array.isArray(asked)) return empty;
+
+  const root = await resolveWorkspaceRootFrom(fs, paths);
+  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const declared = block === null ? null : block.fuentes.map((source) => source.alias);
+
+  const named = (decisions as { plan?: unknown }).plan;
+  const plan = typeof named === "string" ? named.trim() : null;
+  if (plan === null || plan.length === 0 || !checkSafeRelativePath(plan).ok) {
+    return { declared, plan, mentioned: null };
+  }
+  let text: string;
+  try {
+    text = await fs.readText(join(root, plan));
+  } catch {
+    return { declared, plan, mentioned: null };
+  }
+  return { declared, plan, mentioned: (declared ?? []).filter((alias) => text.includes(alias)) };
+}
+
+/**
  * Stat the destinations the payload names, without trusting anything else in it.
  *
  * The paths come from raw JSON and are used for nothing but deciding which files
@@ -225,7 +308,7 @@ async function observeDestinations(
 function decide(
   state: FlowRunState,
   input: SubmitFlowInput,
-  snapshot: DestinationSnapshot,
+  snapshot: Observation,
 ): SubmitDecision {
   const journey = journeyOfFlow(state.flow);
   const incoherent = checkAgainstJourney(state, journey);
@@ -280,7 +363,14 @@ function decide(
   // classic one over an effect class named by a boundary, and the one this phase
   // added — a single `Aprobar y guardar` that grants over the exact proposal the
   // preview showed. Neither ever applies the step by itself.
-  const sealed = sealFrom(state, resolved.stopped, parsed.answer, snapshot);
+  const scoped = scopeFrom(state, resolved.stopped, parsed.answer, snapshot.scope);
+  if ("failure" in scoped) {
+    return reject(state, resolved, scoped.failure.message, {
+      code: scoped.failure.code,
+      action: scoped.failure.action,
+    });
+  }
+  const sealed = sealFrom(scoped.state, resolved.stopped, parsed.answer, snapshot.destinations);
   if ("failure" in sealed) {
     return reject(state, resolved, sealed.failure.message, {
       code: sealed.failure.code,
@@ -300,6 +390,101 @@ function decide(
   return holds
     ? holdAfterApproval(approved, journey, identity)
     : applyAndAdvance(approved, journey, resolved.stopped, identity, parsed.answer);
+}
+
+/**
+ * Fix the run's plan and its sources — checked against the workspace, not taken.
+ *
+ * The order of the refusals is the contract: shape, then the workspace, then the
+ * plan. A malformed list must not be reported as "unknown alias", and an alias
+ * nobody declared must not be reported as "your plan does not name it" — the two
+ * have different fixes, and the second would send somebody to edit a document
+ * when what is wrong is the alias they typed.
+ */
+function scopeFrom(
+  state: FlowRunState,
+  stopped: FlowDecision,
+  answer: FlowAnswer,
+  snapshot: ScopeSnapshot,
+): { state: FlowRunState } | { failure: CapabilityFailure } {
+  if (!scopesSources(stopped)) return { state };
+
+  const asked = answer.decisions.sources;
+  const sources = Array.isArray(asked)
+    ? asked.filter((alias): alias is string => typeof alias === "string").map((a) => a.trim())
+    : null;
+  if (sources === null || sources.length === 0 || sources.some((alias) => alias.length === 0)) {
+    return {
+      failure: invalidScope(
+        "esta frontera fija qué fuentes edita la corrida y la respuesta no trae ninguna",
+        "devolvé en 'decisions.sources' los alias exactos que el plan afecta, y en 'decisions.plan' su documento",
+      ),
+    };
+  }
+  if (new Set(sources).size !== sources.length) {
+    return {
+      failure: invalidScope(
+        "el scope declara la misma fuente dos veces",
+        "una unidad por alias: declarás cada fuente una sola vez",
+      ),
+    };
+  }
+  const plan = snapshot.plan;
+  if (plan === null || plan.length === 0) {
+    return {
+      failure: invalidScope(
+        "el scope no dice qué plan ejecuta esta corrida",
+        "devolvé en 'decisions.plan' la ruta del plan dentro del workspace (docs/plans/PPP-plan-<slug>.md)",
+      ),
+    };
+  }
+  const declared = snapshot.declared;
+  if (declared === null) {
+    return {
+      failure: {
+        code: "FLOW_SCOPE_UNKNOWN_SOURCE",
+        message: "el workspace no declara ninguna fuente contra la cual validar el scope",
+        action: "declará las fuentes en la tabla Fuentes del bloque WORKSPACE y volvé a contestar",
+      },
+    };
+  }
+  const unknown = sources.filter((alias) => !declared.includes(alias));
+  if (unknown.length > 0) {
+    return {
+      failure: {
+        code: "FLOW_SCOPE_UNKNOWN_SOURCE",
+        message: `el workspace no declara ${unknown.join(", ")}`,
+        action: `las fuentes declaradas son: ${declared.join(", ")}`,
+      },
+    };
+  }
+  const mentioned = snapshot.mentioned;
+  if (mentioned === null) {
+    return {
+      failure: {
+        code: "FLOW_SCOPE_PLAN_UNREADABLE",
+        message: `no se pudo leer el plan '${plan}' contra el cual se valida el scope`,
+        action:
+          "devolvé en 'decisions.plan' la ruta relativa de un plan existente del workspace: el scope no se fija contra un documento que nadie puede mostrar",
+      },
+    };
+  }
+  const absent = sources.filter((alias) => !mentioned.includes(alias));
+  if (absent.length > 0) {
+    return {
+      failure: {
+        code: "FLOW_SCOPE_NOT_IN_PLAN",
+        message: `'${plan}' no nombra ${absent.join(", ")}`,
+        action:
+          "el scope es lo que el plan declara afectado: sacá esa fuente, o llevá el ensanchamiento a /w:plan-refine antes de editarla",
+      },
+    };
+  }
+  return { state: withScope(state, { plan, sources }) };
+}
+
+function invalidScope(message: string, action: string): CapabilityFailure {
+  return { code: "FLOW_ANSWER_INVALID", message, action };
 }
 
 /**
@@ -335,14 +520,31 @@ function sealFrom(
       },
     };
   }
-  const artifacts = answer.artifacts.map((artifact) => ({
-    path: artifact.path,
-    content: artifact.content,
-    overwrite: snapshot.get(artifact.path)?.exists === true,
-  }));
+  // The bytes this run's own claim left at a destination it reserved. Comparing
+  // digests is what makes "mine and untouched" one check: a slot somebody
+  // published into, edited, or claimed for another session no longer matches.
+  const reservation = baseDigest(reservationMarker(state.session));
+  const artifacts = answer.artifacts.map((artifact) => {
+    const seen = snapshot.get(artifact.path);
+    return {
+      path: artifact.path,
+      content: artifact.content,
+      overwrite: seen?.exists === true,
+      /**
+       * Completing THIS run's reservation replaces no document.
+       *
+       * The file is there because this run put it there to hold the number, and
+       * nothing was ever published into it — so the write is additive in the only
+       * sense the classes measure: nobody's content is lost. A destination that
+       * exists for any other reason stays `mutate_overwrite`, which is what keeps
+       * a save row declaring only `local_additive` from reaching a real plan.
+       */
+      reserved: seen?.exists === true && seen.digest === reservation,
+    };
+  });
   const effects: EffectClass[] = [];
-  if (artifacts.some((a) => !a.overwrite)) effects.push("local_additive");
-  if (artifacts.some((a) => a.overwrite)) effects.push("mutate_overwrite");
+  if (artifacts.some((a) => !a.overwrite || a.reserved)) effects.push("local_additive");
+  if (artifacts.some((a) => a.overwrite && !a.reserved)) effects.push("mutate_overwrite");
   const beyond = effects.filter((effect) => !contract.effects.includes(effect));
   if (beyond.length > 0) {
     return {

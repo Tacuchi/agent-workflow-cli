@@ -14,7 +14,7 @@
 
 import { journeyOfFlow } from "../../domain/flow/authority.js";
 import type { FlowBoundaryKind } from "../../domain/flow/directive.js";
-import { checkAgainstJourney } from "../../domain/flow/run-state.js";
+import { type FlowRunScope, checkAgainstJourney } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PathsService } from "../paths-service.js";
 import { resolveBoundary } from "./advance.js";
@@ -31,6 +31,16 @@ export interface FlowRunProjection {
   command: string;
   /** One line: where the run stands. */
   summary: string;
+  /**
+   * The plan this run executes and the sources it isolates, or `null`.
+   *
+   * Read from the same file the boundary comes from, which is what makes two
+   * concurrent runs distinguishable at all: without it every open `plan-exec`
+   * session looks like every other one, and `resume` proposes the same next step
+   * to both. The units are projected beside it from `worktree list` — one says
+   * what the run MAY edit, the other which trees it actually holds.
+   */
+  scope: FlowRunScope | null;
 }
 
 export async function projectRun(
@@ -50,8 +60,11 @@ export async function projectRun(
       transition: null,
       title: null,
       invocation: null,
-      command: `aw flow advance --session ${folder} --adopt`,
+      command: `aw flow advance --code ${folder} --adopt`,
       summary: `corrida ilegible (${read.failure.code}): ${read.failure.action}`,
+      // Unreadable means unreadable: a scope quoted off a state the engine
+      // refuses would be the one field of this projection nobody could trust.
+      scope: null,
     };
   }
   const journey = journeyOfFlow(read.state.flow);
@@ -63,8 +76,9 @@ export async function projectRun(
       transition: read.state.boundary,
       title: null,
       invocation: null,
-      command: `aw flow advance --session ${folder}`,
+      command: `aw flow advance --code ${folder}`,
       summary: `${incoherent.message} — ${incoherent.action}`,
+      scope: read.state.scope,
     };
   }
   const resolved = resolveBoundary(read.state, journey);
@@ -78,6 +92,7 @@ export async function projectRun(
       invocation: null,
       command: `aw session-close --code ${folder}`,
       summary: "el recorrido no tiene transiciones pendientes",
+      scope: read.state.scope,
     };
   }
   const invocation =
@@ -93,10 +108,11 @@ export async function projectRun(
     // At an execution boundary what continues the run is the invocation itself —
     // anything else would send whoever resumes to re-derive the command from
     // prose, which is exactly what the sealed action exists to prevent.
-    command: invocation ?? `aw flow advance --session ${folder}`,
+    command: invocation ?? `aw flow advance --code ${folder}`,
     summary:
       invocation === null
         ? `frontera ${resolved.kind} en ${stopped.id} — ${stopped.title}`
-        : `frontera execution en ${stopped.id} — ejecutá '${invocation}' y devolvé su salida real con 'aw flow submit --session ${folder}'`,
+        : `frontera execution en ${stopped.id} — ejecutá '${invocation}' y devolvé su salida real con 'aw flow submit --code ${folder}'`,
+    scope: read.state.scope,
   };
 }

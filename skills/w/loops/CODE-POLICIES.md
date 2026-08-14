@@ -1,9 +1,9 @@
 # CODE-POLICIES — policies for code-editing loops
 
 They apply to **`plan-exec-loop`** (per effective batch) and **`quick-loop`** (the single task;
-**proportional** gate): each reads this doc with the chassis. Document loops do not edit code and
-do not load it. These policies own the DB scripts-only, safe Git and closing-review invariants;
-code loops keep only a short inline floor for advisory hosts.
+**proportional** gate): each reads this doc with the chassis, and no document loop loads it. These
+policies own the DB scripts-only, safe Git and closing-review invariants; code loops keep only a
+short inline floor for advisory hosts.
 
 ## Safe git — verified branch + proposed commits
 
@@ -15,13 +15,13 @@ recorded as uncommitted in `CHECKPOINT` and `BACKLOG`. Between units each workin
 explicitly acknowledged; a `continuous` batch is the narrow exception that intentionally co-mingles
 its internal phases in one reviewed commit, and no batch may co-mingle with another.
 
-Concurrent flows never share a working tree: each edits in its own **isolation unit** — a worktree
-of the source on its own branch (`aw worktree ensure | list | release`). An edit outside it is
-blocked naming the command that creates one, and at close `aw worktree integrate` merges that
-branch into the source's declared work branch; a conflict is reported and routed to
-`aw fix-git --path`, never resolved alone.
+Concurrent flows never share a working tree: a run declares its sources and takes an **isolation
+unit** in each before writing — a worktree on its own branch
+(`aw worktree ensure | list | release`), where branch and commits are read. An edit outside is
+blocked naming the command that gets one, and at close `aw worktree integrate` merges each into
+the source's work branch; a conflict is reported, routed to `aw fix-git --path`, never alone.
 
-> **When the branch is verified, when a commit becomes available and what an approval covers is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Approving is the person's act and committing is a separate effect that comes back as the sources' real git state — which is also what makes "the checks passed" impossible to assert without having run them.
+> **When the branch is verified, when a commit becomes available and what an approval covers is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Approving is the person's act and committing is a separate effect that comes back as the units' own git state — which is what makes "the checks passed" impossible to assert without having run them.
 
 ## Closing review gate (conventions, pre-commit)
 

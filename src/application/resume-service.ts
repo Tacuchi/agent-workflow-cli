@@ -1,3 +1,4 @@
+import type { FlowRunScope } from "../domain/flow/run-state.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -62,6 +63,15 @@ export interface ResumeProposal {
    * same next step to both and neither learns which tree is its own.
    */
   units?: SessionUnit[];
+  /**
+   * The plan this run executes and the sources it may edit, when it fixed them.
+   *
+   * The other half of telling two runs apart, and the half that survives a
+   * released unit: the units say which trees are held right now, the scope says
+   * which plan the session belongs to at all. Both come from the same reading
+   * `status` projects — never a second derivation.
+   */
+  scope?: FlowRunScope;
 }
 
 export type ResumeOutcome =
@@ -328,5 +338,6 @@ async function sessionProposal(
     next: narrative.next?.text ?? "el checkpoint no declara trabajo pendiente",
     command: directed ? run.command : `aw session-resume --code ${folder} --reopen`,
     ...(session !== undefined && session.units.length > 0 ? { units: session.units } : {}),
+    ...(run !== null && run.scope !== null ? { scope: run.scope } : {}),
   };
 }

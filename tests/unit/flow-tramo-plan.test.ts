@@ -49,6 +49,26 @@ const fs = new NodeFileSystem();
 const SESSION = "031-tramo-plan-plan-exec";
 const CODE = "031";
 
+const ALIAS = "acme";
+const PLAN_DOC = "docs/plans/031-plan-tramo.md";
+const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-PROJECT-START -->
+## Proyecto
+
+Tramo plan.
+
+## Fuentes
+
+| Alias | Path | Rama principal |
+|---|---|---|
+| ${ALIAS} | /tmp/acme | main |
+
+## Status
+
+- Ramas de trabajo actuales:
+  - ${ALIAS}: main
+<!-- AGENT-WORKFLOW-PROJECT-END -->
+`;
+
 const EXEC = journeyOfFlow("plan-exec");
 const NEW = journeyOfFlow("plan-new");
 const REFINE = journeyOfFlow("plan-refine");
@@ -111,16 +131,53 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
     for (const [earlier, later] of [
       ["plan-exec.validation-execution", "plan-exec.review-findings"],
       ["plan-exec.review-findings", "plan-exec.final-validation"],
-      // La validación final va ANTES de Git y el sello `done` ANTES del commit:
-      // el recorrido real destapó el orden inverso, heredado del registro, que
-      // habría dejado el plan commiteado y solo después validado y cerrado.
+      // La validación final va ANTES de Git, y eso no se movió: el recorrido real
+      // destapó el orden inverso, heredado del registro, que habría dejado el plan
+      // commiteado y sólo después validado.
       ["plan-exec.final-validation", "plan-exec.commit-enablement"],
       ["plan-exec.commit-enablement", "plan-exec.commit-authorization"],
-      ["plan-exec.commit-authorization", "plan-exec.plan-done"],
-      ["plan-exec.plan-done", "plan-exec.commit-execution"],
+      // Lo que SÍ se movió es el sello `done`, y va después de Git. Este test lo
+      // fijaba al revés con una justificación que el aislamiento dejó sin objeto:
+      // el `done` iba antes del commit "para que la escritura del estado entre en
+      // ese mismo commit". Con la corrida editando en una unidad eso ya no puede
+      // pasar —el plan-doc vive en el workspace y el commit aterriza en la rama de
+      // la unidad, que son dos repos— así que lo único que quedaba del orden viejo
+      // era sellar `done` sobre trabajo que todavía no estaba en ninguna rama de
+      // trabajo. El orden nuevo dice la verdad: commitear la unidad, integrarla, y
+      // recién entonces declarar cerrado el plan.
+      ["plan-exec.commit-authorization", "plan-exec.commit-execution"],
+      ["plan-exec.commit-execution", "plan-exec.unit-integration"],
+      ["plan-exec.unit-integration", "plan-exec.plan-done"],
     ]) {
       expect(at(EXEC, later), `${earlier} → ${later}`).toBeGreaterThan(at(EXEC, earlier));
     }
+  });
+
+  it("la integración es la única fila del recorrido que escribe fuera de la corrida", () => {
+    const integration = rowOf(EXEC, "plan-exec.unit-integration");
+    expect(effectsOf(integration)).toEqual(["execute", "mutate_overwrite"]);
+    // Sin custodia, a propósito: `custody: "run"` cubre lo que la corrida se
+    // escribe a sí misma, y un merge sobre la rama de trabajo de la fuente es lo
+    // contrario. Por eso para en una frontera de autorización, y por eso NO
+    // alcanza con la aprobación de los commits: aprobar qué se registra en la
+    // unidad propia y aprobar que eso aterrice en la rama compartida son dos
+    // decisiones, y sólo la segunda puede chocar con el trabajo de otro.
+    expect(integration.custody).toBeUndefined();
+    expect(
+      EXEC.filter((row) => actionOf(row) !== null && row.custody === undefined).map((r) => r.id),
+    ).toContain("plan-exec.unit-integration");
+    // Delegada aunque este CLI tenga el servicio: su modo de falla —un conflicto—
+    // abre un recorrido de persona (`aw fix-git`), no de ejecutor.
+    expect(actionOf(integration)?.execution.kind).toBe("external");
+    expect(actionOf(integration)?.invocation.args).toEqual([
+      "worktree",
+      "integrate",
+      "--code",
+      "{code}",
+    ]);
+    // Re-entrante: es la transición a la que VUELVE un conflicto resuelto.
+    expect(actionOf(integration)?.idempotent).toBe(true);
+    expect(actionOf(integration)?.recovery).toContain("fix-git");
   });
 
   it("autorizar no es ejecutar: el commit es un efecto propio con su evidencia", () => {
@@ -171,15 +228,59 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
     expect(offenders.map((row) => row.id)).toEqual([]);
   });
 
-  it("la precondición de rama lee TODAS las fuentes, no una lectura que pasa sola", () => {
+  it("la precondición de rama nunca es una lectura que pasa sola", () => {
     // `aw check-branch` sin --source no resuelve ningún target y contesta
     // `match: true` incondicional: nombrarlo acá habría acreditado "rama
     // verificada" contra un comando que no miró nada. Lo destapó el recorrido
     // real, igual que el defecto del flag en el tramo QUICK.
-    for (const id of ["plan-exec.branch-precondition", "quick.branch-precondition"]) {
-      const row = FLOW_DECISIONS.find((decision) => decision.id === id) as FlowDecision;
-      expect(actionOf(row)?.invocation.args, id).toEqual(["sources", "--verbose"]);
+    //
+    // `quick` sigue leyendo TODAS las fuentes declaradas, que es su caso: edita
+    // el checkout. `plan-exec` no — edita en unidades, y `aw sources` informa el
+    // checkout compartido, así que con dos corridas sobre el mismo source esa
+    // lectura daba verde por la rama de trabajo de otro. Su evidencia es la
+    // lectura ligada a la sesión, donde una fuente sin unidad simplemente no
+    // aparece.
+    const quick = FLOW_DECISIONS.find((d) => d.id === "quick.branch-precondition") as FlowDecision;
+    expect(actionOf(quick)?.invocation.args).toEqual(["sources", "--verbose"]);
+
+    const exec = rowOf(EXEC, "plan-exec.branch-precondition");
+    expect(actionOf(exec)?.invocation.args).toEqual(["worktree", "list", "--code", "{code}"]);
+    expect(actionOf(exec)?.evidence).toEqual(["plan.rama-verificada"]);
+    // Y el commit se acredita sobre las mismas unidades, por lo mismo: el commit
+    // aterriza en la rama de la unidad, no en el checkout.
+    const commit = rowOf(EXEC, "plan-exec.commit-execution");
+    expect(actionOf(commit)?.invocation.args).toEqual(["worktree", "list", "--code", "{code}"]);
+  });
+
+  it("la unidad se adquiere ANTES de la primera escritura, y sobre el scope que el CLI validó", () => {
+    // El orden ES la regla: una unidad obtenida después de la primera edición es
+    // un aislamiento que no aisló nada. Y el scope va antes que la adquisición
+    // porque es lo que dice cuántas unidades hay que adquirir.
+    for (const [earlier, later] of [
+      ["plan-exec.source-scope", "plan-exec.unit-acquisition"],
+      ["plan-exec.unit-acquisition", "plan-exec.branch-precondition"],
+      ["plan-exec.branch-precondition", "plan-exec.implementation"],
+    ]) {
+      expect(at(EXEC, later), `${earlier} → ${later}`).toBeGreaterThan(at(EXEC, earlier));
     }
+    const scope = rowOf(EXEC, "plan-exec.source-scope");
+    // Juicio del agente, sin acción ni efecto propio: lo que la respuesta trae son
+    // datos, y validarlos es del CLI.
+    expect(scope.authority).toBe("agent");
+    expect(actionOf(scope)).toBeNull();
+    expect(scope.scopes_sources).toBe(true);
+
+    const acquire = rowOf(EXEC, "plan-exec.unit-acquisition");
+    expect(acquire.authority).toBe("cli");
+    expect(effectsOf(acquire)).toEqual(["local_additive"]);
+    // Interna: el CLI tiene el servicio de worktrees y pedirle a otro que lo corra
+    // sería devolverle trabajo que este proceso hace. Idempotente, que es lo que
+    // hace que reanudar reutilice la misma unidad en vez de cortar otra.
+    expect(actionOf(acquire)?.execution).toEqual({
+      kind: "internal",
+      operation: "worktree.ensure",
+    });
+    expect(actionOf(acquire)?.idempotent).toBe(true);
   });
 
   it("cada acción delegada del tramo invoca un comando registrado", () => {
@@ -256,6 +357,16 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       "# SESSION — tramo plan\n\n## Objective\nejecutar el plan de prueba\n",
       "utf8",
     );
+    // El workspace de verdad, porque el scope se valida contra él: la tabla de
+    // Fuentes es lo único que decide si un alias existe, y el plan es el
+    // documento contra el que se comprueba que ese alias esté nombrado.
+    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await mkdir(join(workdir, "docs", "plans"), { recursive: true });
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      `# Plan 031 — tramo\n\n## Impacted\n\n- **${ALIAS}:** el motor de flows.\n`,
+      "utf8",
+    );
   });
 
   afterEach(async () => {
@@ -312,7 +423,10 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       return {
         input_digest: resolved.seal,
         signals: signals.filter((signal) => vocabulary.includes(signal)),
-        decisions: { paso: stopped.id },
+        decisions:
+          stopped.scopes_sources === true
+            ? { plan: PLAN_DOC, sources: [ALIAS] }
+            : { paso: stopped.id },
       };
     }
     return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
@@ -474,10 +588,11 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     });
     // La aprobación aplicó la preferencia Y registró el grant sobre el sello
     // exacto de la ejecución del commit: decidir una vez es autorizar una vez, y
-    // el grant no cubre ninguna otra transición. Lo siguiente NO es el commit:
-    // es el sello `done`, porque la escritura del estado tiene que entrar en ese
-    // mismo commit y no quedar huérfana después de él.
-    expect(approved.boundary.transition).toBe("plan-exec.plan-done");
+    // el grant no cubre ninguna otra transición. Lo siguiente ES el commit, que es
+    // el orden que el aislamiento impone: primero se registra el trabajo en la
+    // unidad, después se lo lleva a la rama compartida, y sólo al final se sella el
+    // plan.
+    expect(approved.boundary.transition).toBe("plan-exec.commit-execution");
     const after = await current();
     expect(after.state.applied).toContain("plan-exec.commit-authorization");
     expect(after.state.applied).not.toContain("plan-exec.commit-execution");
@@ -486,19 +601,41 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     ]);
     expect(after.state.authorizations.map((grant) => grant.digest)).toContain(commitSeal);
 
-    // El sello `done` es la marca de avance del propio plan-doc: custodia de la
-    // corrida, frontera de ejecución directa — y sigue delegado, así que solo la
-    // lectura real del tablero lo acredita.
-    expect(after.resolved.kind).toBe("execution");
-    const stamped = await answer(resultFor(after.resolved));
-    expect(stamped.boundary.transition).toBe("plan-exec.commit-execution");
     // El commit no re-pregunta: el grant humano ya viaja con la corrida y la
     // frontera emitida nombra la invocación — que todavía tiene que volver con el
-    // estado git real de las fuentes.
-    expect(stamped.boundary.kind).toBe("execution");
-    expect(stamped.action?.invocation.args).toEqual(["sources", "--verbose"]);
+    // estado git real. Y esa invocación es la lectura por unidad, ligada al código
+    // de la sesión: el commit del batch aterriza en la rama de la unidad, y leer el
+    // checkout compartido acá dejaría verde un batch que no commiteó nada.
+    expect(after.resolved.kind).toBe("execution");
+    expect(approved.action?.invocation.args).toEqual(["worktree", "list", "--code", CODE]);
     // El grant no aplicó nada: la transición del commit sigue pendiente de su
     // salida real (el `execute` del ledger es el de la validación ya corrida).
-    expect((await current()).state.applied).not.toContain("plan-exec.commit-execution");
+    const committed = await answer(resultFor(after.resolved));
+
+    // Y acá está la frontera que el grant del commit NO cubre: integrar escribe en
+    // la rama que todos leen, no en los libros de la corrida, así que se pregunta.
+    // Que sea una autorización distinta es el enunciado: aprobar los commits de un
+    // batch no es aprobar que aterricen sobre el trabajo de otro.
+    expect(committed.boundary.transition).toBe("plan-exec.unit-integration");
+    expect(committed.boundary.kind).toBe("authorization");
+    const pending = await current();
+    const authorized = await answer(
+      { input_digest: pending.resolved.seal, choice: "Autorizar el efecto" },
+      effectApprovalDigest(
+        "plan-exec.unit-integration",
+        pending.resolved.authorization?.planned ?? [],
+      ),
+    );
+    expect(authorized.boundary.kind).toBe("execution");
+    expect(authorized.action?.invocation.args).toEqual(["worktree", "integrate", "--code", CODE]);
+
+    // Recién después del merge se sella el plan: el `done` es la marca de avance
+    // del propio plan-doc (custodia de la corrida) y ahora es verdad de una rama
+    // que alguien puede leer.
+    const integrated = await answer(resultFor((await current()).resolved));
+    expect(integrated.boundary.transition).toBe("plan-exec.plan-done");
+    expect(integrated.boundary.kind).toBe("execution");
+    expect(integrated.action?.invocation.args).toEqual(["status", "--json"]);
+    expect((await current()).state.applied).toContain("plan-exec.unit-integration");
   });
 });

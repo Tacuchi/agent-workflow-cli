@@ -196,6 +196,27 @@ export function sessionNumericCode(folder: string): string | null {
   return m?.[1] ?? null;
 }
 
+/**
+ * The slug a session folder carries: `roles-ficha` for `067-roles-ficha-plan-new`.
+ *
+ * The folder is `NNN-<slug>-<flow>` by construction — that is the name
+ * `session-create` is told to use, and the loops spell it that way — so the slug
+ * is a fact the engine already holds rather than something a run has to narrate.
+ * The flow is passed in and matched as a SUFFIX instead of being guessed: a slug
+ * may itself end in a word a flow name starts with, and the flow the state knows
+ * is the only unambiguous place to cut.
+ *
+ * `null` for a folder that does not fit the shape, and null is the point of the
+ * return type: a slug this function had to invent would end up in a filename.
+ */
+export function sessionSlug(folder: string, flow: string): string | null {
+  const rest = folder.match(/^(?:session)?\d+-(.+)$/)?.[1];
+  const suffix = `-${flow}`;
+  if (rest === undefined || !rest.endsWith(suffix)) return null;
+  const slug = rest.slice(0, -suffix.length);
+  return slug.length > 0 ? slug : null;
+}
+
 export async function resolveSessionTarget(
   fs: FileSystemPort,
   paths: PathsService,

@@ -28,10 +28,20 @@ export const sessionCloseCommand: QtcCommand = {
         { fs: ctx.fs, env: ctx.env, git: ctx.git, paths: ctx.paths },
         { action: "list" },
       );
-      return "units" in listed ? listed.units : [];
+      // Never the reassuring half: an unreadable list comes back as the error the
+      // receipt reports, not as "this session held nothing".
+      if (!("units" in listed)) throw new Error(JSON.stringify(listed));
+      return listed.units;
     });
     if ("sessionError" in data) return failSessionResolution(data.sessionError);
     if ("error" in data) return fail(data.code ?? "INVALID_INPUT", data.error, data);
+    // Unreachable from here on purpose: this surface never asks for the refusal
+    // (see `requireIntegrated`). It is handled rather than cast away so the day
+    // somebody wires the flag through, the command answers with the remedy
+    // instead of crashing on a shape it never expected.
+    if ("sessionHeld" in data) {
+      return fail("SESSION_UNITS_PENDING", data.sessionHeld.reason, data.sessionHeld);
+    }
     return { ok: true, data: data.sessionClose, exitCode: 0 };
   },
 };

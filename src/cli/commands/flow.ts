@@ -7,7 +7,7 @@ import type { FlowDirective } from "../../domain/flow/directive.js";
 import { renderDirectiveHuman } from "../../domain/flow/directive.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId, readRequiredStdin } from "../context-id.js";
-import type { ParsedArgs } from "../parser.js";
+import { type ParsedArgs, sessionCodeFlag } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import { fail, failSemantic, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
@@ -57,10 +57,13 @@ export const flowCommand: QtcCommand<FlowDirective> = {
       ) as CommandResult<FlowDirective>;
     }
 
-    const code = args.values.get("session");
+    const named = sessionCodeFlag(args);
+    if (!named.ok) {
+      return fail("ARGS_INVALID", named.message) as CommandResult<FlowDirective>;
+    }
     const contextId = readContextId(ctx.env);
     const session = {
-      ...(code !== undefined ? { code } : {}),
+      ...(named.code !== undefined ? { code: named.code } : {}),
       ...(contextId !== undefined ? { contextId } : {}),
     };
 

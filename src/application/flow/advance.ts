@@ -56,7 +56,12 @@ import {
   skippedStepOf,
   stepOf,
 } from "../../domain/flow/directive.js";
-import { bindAction, docsBoundaryBreach, skipReason } from "../../domain/flow/rules.js";
+import {
+  type RunBinding,
+  bindAction,
+  docsBoundaryBreach,
+  skipReason,
+} from "../../domain/flow/rules.js";
 import {
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
@@ -73,7 +78,7 @@ import {
   buildSemanticRequest,
   semanticDigest,
 } from "../semantic-operation/protocol.js";
-import { sessionNumericCode } from "../session-resolver.js";
+import { sessionNumericCode, sessionSlug } from "../session-resolver.js";
 
 export interface AdvanceInput {
   state: FlowRunState;
@@ -232,8 +237,15 @@ export interface ResolvedBoundary {
 }
 
 /** The run's own coordinates, the only ones an invocation may reference. */
-function runBinding(state: FlowRunState): { session: string; code: string } {
-  return { session: state.session, code: sessionNumericCode(state.session) ?? state.session };
+function runBinding(state: FlowRunState): RunBinding {
+  return {
+    session: state.session,
+    code: sessionNumericCode(state.session) ?? state.session,
+    // Read off the folder, not off a narration: the run's own session is named
+    // `NNN-<slug>-<flow>`, so the slug the numbering claim needs is already a
+    // fact the engine holds by the time this boundary is emitted.
+    slug: sessionSlug(state.session, state.flow),
+  };
 }
 
 /**

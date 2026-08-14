@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { HARNESSES, type Harness, type HarnessId, harnessById } from "../domain/harnesses.js";
+import { reservationMarker } from "../domain/reservation.js";
 import {
   type HostExecutionCapability,
   type ResourcePlan,
@@ -295,6 +296,23 @@ export interface NextNumberOutput {
    * a claimed one is a possession, and the difference is the whole point.
    */
   claimed_path: string | null;
+  /**
+   * The session the reservation belongs to — `null` for an anonymous claim.
+   *
+   * An owned reservation is the half that makes completing it a different act
+   * from overwriting a document: whoever holds the slot can fill it, and nobody
+   * else can. `spec-new` runs outside any session and legitimately claims
+   * anonymously; its write does not travel through a sealed proposal.
+   */
+  claimed_owner: string | null;
+  /**
+   * True when this call handed back a reservation it already held.
+   *
+   * The claim is a WRITE, so a resumed run asking again would otherwise mint a
+   * second number and abandon the first — which is the orphan this field exists
+   * to make visible rather than merely absent.
+   */
+  claim_reused: boolean;
 }
 
 export interface NextNumberInput {
@@ -308,6 +326,15 @@ export interface NextNumberInput {
    * name itself unshareable even if the lock ever expires underneath.
    */
   claim?: string;
+  /**
+   * The session that will own the reservation, when the caller has one.
+   *
+   * Without it the slot is anonymous and behaves exactly as it did before: an
+   * empty file nobody can claim as theirs. With it the slot carries its owner,
+   * which is what lets a later sealed proposal complete THIS run's reservation
+   * without asking to overwrite whatever happens to be at that path.
+   */
+  owner?: string;
 }
 
 /**
@@ -331,7 +358,7 @@ export async function runNextNumber(
   input: NextNumberInput,
 ): Promise<NextNumberOutput> {
   const cwd = env.cwd();
-  const { directory, dryRun = false, claim } = input;
+  const { directory, dryRun = false, claim, owner } = input;
   const target = isAbsolute(directory) ? directory : join(cwd, directory);
   const wantsClaim = claim !== undefined && claim.length > 0 && !dryRun;
 
@@ -345,11 +372,27 @@ export async function runNextNumber(
     );
   }
 
+  const marker = owner === undefined ? "" : reservationMarker(owner);
   const claimed = await withCwdLock(
     fs,
     paths,
     async () => {
       const state = await scan(fs, target, false);
+      // Re-entry, before minting anything: a run that already holds this exact
+      // slot gets it back. Handing it a second number instead would abandon the
+      // first one, and an abandoned reservation is the empty document nobody is
+      // coming back for.
+      const held =
+        owner === undefined ? null : await heldReservation(fs, target, state.files, claim, marker);
+      if (held !== null) {
+        return {
+          ...state,
+          next: held.nnn,
+          claimed_path: normalize(held.path),
+          claimed_owner: owner ?? null,
+          claim_reused: true,
+        };
+      }
       let number = state.current_max + 1;
       for (let probe = 0; probe < MAX_CLAIM_PROBES; probe++, number++) {
         const nnn = String(number).padStart(3, "0");
@@ -357,8 +400,16 @@ export async function runNextNumber(
         // a different slug, so the name is free while the number is not.
         if (state.files.some((name) => name.startsWith(`${nnn}-`))) continue;
         const path = join(target, `${nnn}-${claim}`);
-        const { created } = await fs.writeTextExclusive(path, "");
-        if (created) return { ...state, next: nnn, claimed_path: normalize(path) };
+        const { created } = await fs.writeTextExclusive(path, marker);
+        if (created) {
+          return {
+            ...state,
+            next: nnn,
+            claimed_path: normalize(path),
+            claimed_owner: owner ?? null,
+            claim_reused: false,
+          };
+        }
       }
       throw new Error(
         `no se pudo reclamar un correlativo en ${target}: ${MAX_CLAIM_PROBES} números consecutivos ya estaban tomados`,
@@ -369,6 +420,34 @@ export async function runNextNumber(
 
   if ("error" in claimed) throw new Error(`no se pudo reclamar el correlativo: ${claimed.error}`);
   return claimed;
+}
+
+/**
+ * The slot this owner already holds under this exact name, if any.
+ *
+ * Matched by name AND by bytes: a file called `007-plan-x.md` that holds a
+ * document, an empty legacy claim or another session's marker is not this run's
+ * reservation, and returning it would be exactly the silent overwrite the whole
+ * mechanism exists to refuse.
+ */
+async function heldReservation(
+  fs: FileSystemPort,
+  target: string,
+  files: readonly string[],
+  claim: string,
+  marker: string,
+): Promise<{ nnn: string; path: string } | null> {
+  for (const name of files) {
+    const nnn = name.slice(0, 3);
+    if (!/^\d{3}$/.test(nnn) || name.slice(3) !== `-${claim}`) continue;
+    const path = join(target, name);
+    try {
+      if ((await fs.readText(path)) === marker) return { nnn, path };
+    } catch {
+      // Unreadable is not "mine": it stays taken by number and the mint moves on.
+    }
+  }
+  return null;
 }
 
 async function scan(
@@ -404,6 +483,8 @@ async function scan(
     next: String(currentMax + 1).padStart(3, "0"),
     files,
     claimed_path: null,
+    claimed_owner: null,
+    claim_reused: false,
   };
 }
 

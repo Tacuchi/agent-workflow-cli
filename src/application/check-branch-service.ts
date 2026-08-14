@@ -140,10 +140,18 @@ export async function runCheckBranch(
 /**
  * The verdict when the source HAS isolation units.
  *
- * Three answers, in the order that makes each one cheap to act on: the edit is
- * in this flow's unit (allowed, and its branch still verified), it is in another
+ * Four answers, in the order that makes each one cheap to act on: the identity of
+ * the flow could not be established at all (blocked — see below), the edit is in
+ * this flow's unit (allowed, and its branch still verified), it is in another
  * flow's unit (blocked — that tree belongs to somebody else), or it is outside
  * every unit (blocked, with the command that gets one).
+ *
+ * The first answer is the one that fails CLOSED, and it is the whole point of the
+ * order. An unresolved identity used to be indistinguishable from "no session
+ * asked", both flattened to `null`, and a `null` identity let any unit answer
+ * `inside_own_unit` — so the exact situation this feature exists for, two live
+ * sessions and a conversation the resolver calls ambiguous, authorized editing
+ * ANY of the trees. Not knowing whose tree it is is not permission to write in it.
  */
 async function unitVerdict(
   fs: FileSystemPort,
@@ -155,22 +163,40 @@ async function unitVerdict(
 ): Promise<CheckBranchOutput> {
   const file = input.fileArg ?? input.pathArg ?? null;
   const actual = file === null ? null : (units.find((u) => inside(file, u.path)) ?? null);
-  const session = await flowSession(fs, paths, input);
-  const expected = session === null ? null : (units.find((u) => u.session === session) ?? null);
+  const identity = await flowSession(fs, paths, input);
 
+  if (identity.kind !== "resolved") {
+    return {
+      alias: target.alias,
+      path: target.path,
+      session_code: input.sessionCode ?? null,
+      actual_unit: actual,
+      // There is no expected unit to name: which one it would be is precisely
+      // what could not be resolved.
+      expected_unit: null,
+      match: false,
+      reason: "unknown_identity",
+      error: identity.reason,
+      work_branch: actual?.branch ?? null,
+      remedy: identity.action,
+    };
+  }
+
+  const session = identity.session;
+  const expected = units.find((u) => u.session === session) ?? null;
   const base = {
     alias: target.alias,
     path: target.path,
-    session_code: session ?? input.sessionCode ?? null,
+    session_code: session,
     actual_unit: actual,
     expected_unit: expected,
   };
 
   if (actual !== null) {
-    // Inside a unit. When the conversation names a session, the unit has to be
-    // that one: a flow editing another flow's tree is the collision the whole
+    // Inside a unit, and the conversation's session is known: the unit has to be
+    // that one. A flow editing another flow's tree is the collision the whole
     // feature exists to prevent, and it looks like ordinary work until it lands.
-    if (session !== null && actual.session !== session) {
+    if (actual.session !== session) {
       return {
         ...base,
         match: false,
@@ -189,11 +215,8 @@ async function unitVerdict(
     match: false,
     reason: "outside_unit",
     expected_unit: wanted,
-    work_branch: wanted?.branch ?? null,
-    remedy:
-      session === null
-        ? `aw worktree ensure --source ${target.alias} --code <NNN>`
-        : `aw worktree ensure --source ${target.alias} --code ${session}`,
+    work_branch: wanted.branch,
+    remedy: `aw worktree ensure --source ${target.alias} --code ${session}`,
   };
 }
 
@@ -229,34 +252,41 @@ async function unitsOf(
   return refs;
 }
 
+/** Who this conversation is working as — resolved, or why it could not be. */
+type FlowIdentity =
+  | { kind: "resolved"; session: string }
+  | { kind: "unresolved"; reason: string; action: string };
+
 /**
- * The session this conversation is working as, or `null`.
+ * The session this conversation is working as.
+ *
+ * The whole precedence is walked, always — an explicit `--code`, then the
+ * conversation's binding, then the sole active session — instead of giving up
+ * when neither was passed. Giving up was what made a workspace with one session
+ * and one with three answer the same thing, and the second is exactly where the
+ * answer must not be "whatever tree you are in".
  *
  * READ-ONLY on purpose (`bind: false`): a branch check runs on every edit, and a
- * check that wrote the conversation association would turn a verification into
- * a state change nobody asked for.
+ * check that wrote the conversation association would turn a verification into a
+ * state change nobody asked for.
  */
 async function flowSession(
   fs: FileSystemPort,
   paths: PathsService,
   input: CheckBranchInput,
-): Promise<string | null> {
-  if (input.sessionCode === undefined && input.contextId === undefined) return null;
+): Promise<FlowIdentity> {
   const resolution = await resolveSessionTarget(fs, paths, {
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
     bind: false,
   });
-  return resolution.outcome === "resolved" ? resolution.session.folder : null;
+  if (resolution.outcome === "resolved") {
+    return { kind: "resolved", session: resolution.session.folder };
+  }
+  return { kind: "unresolved", reason: resolution.message, action: resolution.action };
 }
 
-function unitFor(
-  session: string | null,
-  paths: PathsService,
-  unitsRoot: string,
-  alias: string,
-): UnitRef | null {
-  if (session === null) return null;
+function unitFor(session: string, paths: PathsService, unitsRoot: string, alias: string): UnitRef {
   return {
     session,
     path: `${unitsRoot}/${workspaceKeyOf(paths.workspaceDir())}/${alias}/${session}`,

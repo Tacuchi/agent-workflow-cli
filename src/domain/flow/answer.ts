@@ -431,6 +431,11 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
     return { ok: false, failure: badResult("esta frontera no declara ninguna acción delegada") };
   }
   const outcome = body.outcome;
+  // Absent and out-of-vocabulary are DIFFERENT failures and no longer share a
+  // sentence. They used to, and the sentence described only the second one.
+  if (outcome === undefined) {
+    return { ok: false, failure: badResult(missingOutcome(body)) };
+  }
   if (
     typeof outcome !== "string" ||
     !(CAPABILITY_OUTCOMES as readonly string[]).includes(outcome)
@@ -467,10 +472,7 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
   }
   const validations = readValidations(body.validations);
   if (validations === null) {
-    return {
-      ok: false,
-      failure: badResult("'validations' tiene que ser la lista de ValidationOutcome del resultado"),
-    };
+    return { ok: false, failure: badResult(badValidations(body.validations, action.evidence)) };
   }
   const effects = readLedger(body.effects);
   if (effects === null) {
@@ -496,6 +498,74 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
       artifacts: EMPTY,
     },
   };
+}
+
+/**
+ * Why a result carries no `outcome`, said as the thing to fix.
+ *
+ * A missing field and a field outside the vocabulary answered the same sentence,
+ * and that sentence described only the second one. The cost was measured, not
+ * imagined: a host that had nested its whole result under `execution` read
+ * "'outcome' has to be one of …", corrected the VALUE exactly as instructed, kept
+ * the envelope, got the identical message back, and burned its remaining attempts
+ * before abandoning the session. A diagnostic that names the wrong field turns an
+ * obedient executor into a loop.
+ *
+ * The envelope is NAMED when one is really there rather than guessed from a list
+ * of likely words: any top-level value that is itself a record carrying `outcome`
+ * is the wrapper, whatever it was called. Wrapping is the natural wrong guess —
+ * the directive the reader just answered carries an `action.execution` object of
+ * its own — so pointing straight at it costs one line and saves the loop.
+ */
+function missingOutcome(body: Record<string, unknown>): string {
+  const wrapper = Object.entries(body).find(
+    ([, value]) => isRecord(value) && "outcome" in value,
+  )?.[0];
+  const where =
+    wrapper === undefined
+      ? "el resultado no trae 'outcome'"
+      : `el resultado trae su 'outcome' anidado dentro de '${wrapper}'`;
+  return `${where}: los campos del resultado van en el nivel superior del JSON, no envueltos en otro objeto`;
+}
+
+/**
+ * Why the validations list was rejected — as the shape to send, not as a type name.
+ *
+ * The message this replaced said "'validations' has to be the list of
+ * ValidationOutcome of the result". `ValidationOutcome` is a TypeScript type: it
+ * appears in no document the caller can read, and the sentence never states the
+ * three keys or the ids the boundary demands. The cost was measured, and it is
+ * the largest this defect class has produced: one host opened ELEVEN throwaway
+ * sessions whose declared objective was "discover the contract of `aw flow
+ * submit`", all eleven stalling at the same boundary; a second host, independently
+ * and without seeing the first, made the same wrong guess. Both sent `name` where
+ * the parser wants `id` and `evidence` where it wants `detail` — not bad guesses
+ * so much as guesses with nothing to read.
+ *
+ * So the message names the shape, lists the evidence ids THIS boundary declared,
+ * and — the part that ends the loop — reports the keys the offending entry
+ * actually carries. "It does not bring 'id' (it brings: name, passed, evidence)"
+ * turns a search into a rename. Reporting the real keys instead of matching a
+ * table of likely aliases keeps it honest: it describes what arrived rather than
+ * guessing what was meant.
+ */
+function badValidations(value: unknown, evidence: readonly string[]): string {
+  const pedidas = evidence.length > 0 ? ` (${evidence.join(", ")})` : "";
+  const shape = `una lista de objetos {id, passed, detail}, uno por cada evidencia que esta frontera pide${pedidas}`;
+  if (!Array.isArray(value)) return `'validations' tiene que ser ${shape}`;
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) return `la validación ${index + 1} no es un objeto; se espera ${shape}`;
+    const keys = Object.keys(entry);
+    const seen = keys.length > 0 ? ` (trae: ${keys.join(", ")})` : " (viene vacía)";
+    if (typeof entry.id !== "string") return `la validación ${index + 1} no trae 'id'${seen}`;
+    if (typeof entry.passed !== "boolean") {
+      return `la validación '${entry.id}' no trae 'passed' booleano${seen}`;
+    }
+    if (entry.detail !== undefined && entry.detail !== null && typeof entry.detail !== "string") {
+      return `la validación '${entry.id}' trae un 'detail' que no es texto: ahí va la salida real del comando`;
+    }
+  }
+  return `'validations' tiene que ser ${shape}`;
 }
 
 /** Which field of the invocation differs, in the order a reader would check them. */

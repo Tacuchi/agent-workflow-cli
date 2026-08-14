@@ -105,9 +105,15 @@ describe("efectos que pueden no ocurrir — la fila los condiciona", () => {
   it("las demás filas delegadas con efecto NO cambiaron: su efecto siempre ocurre", () => {
     const condicionadas = new Set(CONDICIONADAS.map((x) => x.id));
     const resto = delegatedWithEffects().filter((row) => !condicionadas.has(row.id));
-    // Doce, y ninguna con condición. Si una gana una, es una decisión que hay
+    // Trece, y ninguna con condición. Si una gana una, es una decisión que hay
     // que justificar acá: dar condición a una fila cuyo efecto sí ocurre siempre
     // abre un camino para declarar hecho lo que no se hizo.
+    //
+    // La decimotercera es `plan-new.numbering`, que dejó de ser sólo atribución:
+    // el reclamo del correlativo ESCRIBE el slot en `docs/plans` —siempre, sin
+    // condición— y ahora viaja como la acción delegada que es, con la reserva que
+    // produjo como evidencia. Antes el motor acreditaba la transición sin que nada
+    // hubiera tocado el workspace.
     //
     // Siguen siendo doce, con tres altas y tres bajas: entran las publicaciones de
     // propuesta —spec, plan y plan refinado—, que escriben SIEMPRE porque sólo se
@@ -116,7 +122,20 @@ describe("efectos que pueden no ocurrir — la fila los condiciona", () => {
     // `plan-refine.split-in-place` y `plan-refine.normalize-on-write`).
     // `split-in-place` sobrevive como fila sin efecto: decide qué bytes se
     // proponen, y su condición ya no gobierna ninguna escritura.
-    expect(resto.length).toBe(12);
+    //
+    // La decimocuarta es `plan-exec.unit-acquisition`, y tampoco lleva condición
+    // por la misma razón: el scope que la habilita NUNCA está vacío —una corrida
+    // que no aísla ninguna fuente no tiene dónde escribir, y el CLI rechaza esa
+    // respuesta— así que la unidad se crea siempre. Y cuando ya existe, el efecto
+    // igual ocurre: el árbol ESTÁ, que es la misma lectura que hace la
+    // publicación de una propuesta ya aplicada.
+    //
+    // La decimoquinta es `plan-exec.unit-integration`, sin condición por el mismo
+    // motivo que su gemela de apertura: la corrida llega acá con una unidad por
+    // cada fuente de su scope, así que siempre hay algo que integrar. Condicionarla
+    // sería exactamente el camino que este test cierra — una fila que se puede
+    // saltar es una fila que puede declarar integrado lo que sigue en su rama.
+    expect(resto.length).toBe(15);
     expect(resto.filter((row) => conditionOf(row) !== null).map((row) => row.id)).toEqual([]);
   });
 

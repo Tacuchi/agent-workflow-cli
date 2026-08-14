@@ -9,6 +9,7 @@ import {
   FLOW_AUTHORITIES,
   FLOW_DECISIONS,
   FLOW_TRANCHES,
+  RUN_PLACEHOLDERS,
   TRANSITION_OWNERSHIPS,
   actionOf,
   commandOfScope,
@@ -119,6 +120,11 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.entry-gap-recognition",
       "plan-exec.normalization-consent",
       "plan-exec.batch-eligibility-signal",
+      // Qué fuentes toca un plan lo dice el PLAN, y el motor nunca leyó uno: la
+      // fila entrega ese juicio y el CLI lo valida contra el workspace antes de
+      // persistirlo. Es la única de la jornada que devuelve datos en vez de
+      // señales, y por eso no declara vocabulario.
+      "plan-exec.source-scope",
       "plan-exec.implementation",
       "plan-exec.deviation-recognition",
       // La frontera que declara qué queda por hacer al cerrar el batch. Sin ella,
@@ -167,6 +173,38 @@ describe("registro de autoridad — forma y unicidad", () => {
       for (const id of action.evidence) expect(id.trim().length, decision.id).toBeGreaterThan(0);
       // Recoverable: a partial result has to have somewhere to go.
       expect(action.recovery.trim().length, decision.id).toBeGreaterThan(10);
+    }
+  });
+
+  /**
+   * La notación de la prosa NO es la notación de una invocación.
+   *
+   * `PLAN-INPUT` dice `plan-<slug>.md` y hace bien: le habla a quien lee. Esa
+   * línea se copió a una fila, y en una fila los ángulos no ligan con nada ni los
+   * ve el guard de placeholder vivo, así que la plantilla llegó entera a quien
+   * ejecuta: el agente que la sustituyó bien dejó de coincidir con lo sellado y el
+   * que la corrió literal creó un archivo llamado como la plantilla.
+   *
+   * Se fija la CLASE y no el caso: lo que hay que impedir es que la próxima fila
+   * vuelva a traer una metavariable de documento, cualquiera sea su nombre.
+   */
+  it("ninguna invocación lleva una metavariable de prosa: los huecos son del conjunto cerrado", () => {
+    const metavariable = /<[a-z][a-z0-9_-]*>/i;
+    for (const decision of FLOW_DECISIONS) {
+      const action = actionOf(decision);
+      if (action === null) continue;
+      const parts = [
+        action.invocation.program,
+        ...action.invocation.args,
+        action.invocation.target,
+      ];
+      for (const part of parts) {
+        expect(metavariable.test(part), `${decision.id} → ${part}`).toBe(false);
+      }
+      // Y todo hueco con llaves es uno que el motor sabe ligar.
+      for (const found of parts.join(" ").match(/\{[a-z0-9_-]+\}/gi) ?? []) {
+        expect(RUN_PLACEHOLDERS as readonly string[], decision.id).toContain(found);
+      }
     }
   });
 
@@ -389,7 +427,15 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // bytes y la que los publica. `plan-refine.normalize-on-write` se fue: la
     // forma normalizada es una propiedad de los bytes propuestos, no una segunda
     // escritura del mismo documento.
-    expect(plan).toHaveLength(52);
+    // 52 + 2, las dos de `plan-exec` que hacen del aislamiento un paso del
+    // recorrido y no una regla que alguien recuerda: la que fija el plan y las
+    // fuentes que la corrida edita, y la que adquiere su unidad en cada una antes
+    // de la primera escritura.
+    // 54 + 1, la que cierra ese aislamiento por el otro extremo: sin
+    // `plan-exec.unit-integration` el recorrido terminaba informando "listo" sobre
+    // commits que sólo existían en `aw/<sesión>`. Abrir la unidad y devolverla son
+    // dos pasos del mismo recorrido, y ninguno de los dos puede ser una costumbre.
+    expect(plan).toHaveLength(55);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos
