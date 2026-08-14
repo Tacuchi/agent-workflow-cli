@@ -213,16 +213,19 @@ async function collectSession(
   if (facts === null) return;
   collector.deletes.push({ path: node.path, kind: "directory", digest: null });
 
+  const custody = facts.custody;
   for (const unit of facts.units) {
     collector.units.push({
       alias: unit.alias,
       session: facts.folder,
       path: unit.path,
       branch: unit.branch,
+      // From the custody's own record of that source; empty when a legacy session
+      // has a unit but no custody, and then the unit is reported rather than touched.
+      repo: custody?.sources.find((s) => s.alias === unit.alias)?.path ?? "",
     });
   }
 
-  const custody = facts.custody;
   if (custody === null) return;
   collector.readSet.push({ id: `custody:${facts.folder}`, digest: custody.digest });
 

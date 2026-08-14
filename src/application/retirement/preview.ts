@@ -40,8 +40,8 @@ export interface RetirementPreview {
     alias: string;
     ref: string;
     expected_old: string | null;
-    prepared_tip: string;
-    expected_tree: string | null;
+    expected_tree: string;
+    revert_count: number;
   } | null;
   /** Isolation units the retirement reconciles. */
   units: Array<{ alias: string; session: string; branch: string }>;
@@ -89,8 +89,8 @@ export function retirementPreview(proposal: RetirementProposal): RetirementPrevi
             alias: proposal.publication.alias,
             ref: proposal.publication.ref,
             expected_old: proposal.publication.expected_old,
-            prepared_tip: proposal.publication.prepared_tip,
             expected_tree: proposal.publication.expected_tree,
+            revert_count: proposal.publication.revert_count,
           },
     units: proposal.units.map((unit) => ({
       alias: unit.alias,
@@ -147,7 +147,7 @@ export function renderRetirementPreview(preview: RetirementPreview): string {
   if (preview.publication !== null) {
     const p = preview.publication;
     section(lines, "Punto de commit (el único)", [
-      `${p.alias} · ${p.ref} · de ${(p.expected_old ?? "inexistente").slice(0, 12)} a ${p.prepared_tip.slice(0, 12)}`,
+      `${p.alias} · ${p.ref} · desde ${(p.expected_old ?? "inexistente").slice(0, 12)} · ${p.revert_count} revert(s) hasta el árbol ${p.expected_tree.slice(0, 12)}`,
     ]);
   }
   section(

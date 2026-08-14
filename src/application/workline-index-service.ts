@@ -13,6 +13,7 @@ import { parseProjectBlock } from "./parsers/project-block.js";
 import { type SpecEvidence, parseSpecRelation } from "./parsers/spec-relation.js";
 import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
+import { listPendingJournals } from "./retirement/journal.js";
 import { findArtifact } from "./session-artifacts.js";
 import { readSessionPhase } from "./session-narrative.js";
 import { SessionsService } from "./sessions-service.js";
@@ -196,6 +197,29 @@ export interface WorklineIndex {
    * uncommitted.
    */
   orphan_units: OrphanUnit[];
+  /**
+   * Retirements left IN FLIGHT — neither applied nor undone.
+   *
+   * Reported, and reported prominently, because while one exists this board is not
+   * a description anybody can act on: a session may be gone from disk while its row
+   * is unwritten, or a ref may have moved while the filesystem has not caught up.
+   * The projection must not present that as a finished state — and a READ must not
+   * finish it either, since recovering is a mutation. What a read owes is the
+   * visible fact plus the command that converges it.
+   */
+  pending_retirements: PendingRetirement[];
+}
+
+export interface PendingRetirement {
+  /** The approval digest — the argument that finishes this exact operation. */
+  digest: string;
+  command: string;
+  target: string;
+  /** How far the process that died believed it got. Never the deciding fact. */
+  phase: string;
+  opened: string;
+  /** The exact command that converges it. */
+  next: string;
 }
 
 export interface WorklineIndexInput {
@@ -245,7 +269,41 @@ export async function buildWorklineIndex(
     pipeline: derivePipeline(specs, plans, sessions),
     designs,
     orphan_units: isolation.orphans,
+    pending_retirements: await readPendingRetirements(fs, paths),
   };
+}
+
+/**
+ * The retirements in flight, as the board has to show them.
+ *
+ * A journal that cannot be parsed is reported as pending too, with its reason: an
+ * unreadable journal is the one case where we know least and must say most, since
+ * the operation it describes may have passed its commit point.
+ */
+async function readPendingRetirements(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<PendingRetirement[]> {
+  const pending = await listPendingJournals(fs, paths);
+  const out: PendingRetirement[] = pending.journals.map((journal) => ({
+    digest: journal.digest,
+    command: journal.proposal.event.command,
+    target: journal.proposal.event.key,
+    phase: journal.phase,
+    opened: journal.opened,
+    next: `aw ${journal.proposal.event.command} apply ${journal.proposal.event.key} --approval ${journal.digest}`,
+  }));
+  for (const broken of pending.unreadable) {
+    out.push({
+      digest: "ilegible",
+      command: "retiro",
+      target: broken.path,
+      phase: "ilegible",
+      opened: "",
+      next: `inspeccioná ${broken.path}: ${broken.reason}`,
+    });
+  }
+  return out;
 }
 
 /**

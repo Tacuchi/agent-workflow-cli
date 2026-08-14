@@ -115,11 +115,17 @@ export interface RetirementRevert {
  * second commit point would mean a window where half the retirement is published.
  * A scope that would need two is refused while it is still a proposal.
  *
- * The three fields are what make the swap verifiable rather than hopeful.
+ * The two sealed fields are what make the swap verifiable rather than hopeful.
  * `expected_old` is the compare-and-swap base — the ref must still be there or the
- * world moved. `prepared_tip` is what it becomes, built and rehearsed beforehand.
- * `expected_tree` is what the working tree must end up holding, so "it worked" is
- * a comparison and not a belief.
+ * world moved. `expected_tree` is the RESULT: the tree the reverts produce.
+ *
+ * The result is sealed as a TREE and never as a commit id, and that is not a
+ * detail. A commit's id includes its timestamp, so the same reverts built one
+ * second later are a different commit — sealing the id would make every
+ * authorization expire within the second it was granted, and an `apply` that
+ * rebuilt them would refuse its own work. A tree is content-addressed: the same
+ * reverts always produce the same tree, whenever they are built. So the identity of
+ * the commit is free to differ and the RESULT is what is pinned.
  */
 export interface RetirementPublication {
   alias: string;
@@ -129,10 +135,10 @@ export interface RetirementPublication {
   ref: string;
   /** The value the ref must still have; `null` = it must not exist yet. */
   expected_old: string | null;
-  /** The commit the ref becomes. */
-  prepared_tip: string;
-  /** Tree of `prepared_tip` — the result the working tree is synced to. */
-  expected_tree: string | null;
+  /** The tree the reverts produce — reproducible, and therefore the seal. */
+  expected_tree: string;
+  /** How many revert commits land on top of `expected_old`. */
+  revert_count: number;
 }
 
 /** An isolation unit the retirement reconciles (releases or leaves). */
@@ -141,6 +147,14 @@ export interface RetirementUnit {
   session: string;
   path: string;
   branch: string;
+  /**
+   * The source repository the unit was cut from.
+   *
+   * Sealed here rather than resolved when the unit is given back: by then the
+   * session whose custody held that mapping is being removed, so re-deriving it
+   * would come back empty exactly when it is needed.
+   */
+  repo: string;
 }
 
 /** The one durable Workline trace a successful retirement leaves. */

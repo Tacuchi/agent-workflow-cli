@@ -200,8 +200,11 @@ describe("atribución de efectos Git — fixtures de cada estado, sin reescribir
       ref: "refs/heads/aw/unit",
       expected_old: receipt.after,
     });
-    expect(attribution.publication?.prepared_tip).not.toBe(receipt.after);
+    // El resultado se sella como ÁRBOL y no como id de commit: dos construcciones
+    // de los mismos reverts dan commits distintos (el id lleva su timestamp) y el
+    // mismo árbol, así que el árbol es lo único que puede aprobarse.
     expect(attribution.publication?.expected_tree).toEqual(expect.any(String));
+    expect(attribution.publication?.revert_count).toBe(1);
     // Nada se aplicó: el ref sigue donde estaba y el original sigue alcanzable.
     expect(git(source, "rev-parse", "refs/heads/aw/unit")).toBe(receipt.after);
     expect(gitFails(source, "cat-file", "-e", receipt.after)).toBe(false);
@@ -235,7 +238,8 @@ describe("atribución de efectos Git — fixtures de cada estado, sin reescribir
     // Dos padres → el primero es el lado que sobrevive, y es un hecho del commit.
     expect(attribution.reverts[0]?.parents).toHaveLength(2);
     expect(attribution.reverts[0]?.mainline).toBe(1);
-    expect(attribution.publication?.prepared_tip).toEqual(expect.any(String));
+    expect(attribution.publication?.expected_tree).toEqual(expect.any(String));
+    expect(attribution.publication?.revert_count).toBe(1);
   });
 
   it("marca como publicado un commit que ya alcanza un remoto, sin proponer ningún push", async () => {

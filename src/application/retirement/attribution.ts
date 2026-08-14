@@ -396,6 +396,14 @@ async function rehearse(
       };
     }
 
+    const expectedTree = await git.treeOf(worktree, preparedTip);
+    if (expectedTree === null) {
+      return {
+        reason: `no se pudo leer el árbol resultante del ensayo en ${source.alias}`,
+        contested: [],
+        action: "revisá el repositorio y volvé a preparar; nada se aplicó",
+      };
+    }
     return {
       reverts,
       publication: {
@@ -403,8 +411,8 @@ async function rehearse(
         repo,
         ref,
         expected_old: expectedOld,
-        prepared_tip: preparedTip,
-        expected_tree: await git.treeOf(repo, preparedTip),
+        expected_tree: expectedTree,
+        revert_count: reverts.length,
       },
     };
   } finally {
