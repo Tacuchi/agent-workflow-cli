@@ -301,6 +301,52 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
     expect(await bytes()).toBe(before);
   });
 
+  /**
+   * El rechazo de `validations` nombra la forma, no un tipo de TypeScript.
+   *
+   * El mensaje anterior decía «la lista de ValidationOutcome del resultado»: un
+   * nombre que no aparece en ningún documento que el host pueda leer, sin las tres
+   * claves ni los ids que la frontera exige. Costó ONCE sesiones descartables a un
+   * host —objetivo declarado: «descubrir el contrato de aw flow submit»— y otro
+   * host, por separado, hizo la misma conjetura equivocada: `name` donde va `id` y
+   * `evidence` donde va `detail`. Lo que corta el bucle es que el mensaje diga qué
+   * claves TRAJO la entrada, porque convierte una búsqueda en un renombre.
+   */
+  it("una validación con las claves equivocadas dice cuáles trajo y cuál falta", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const directive = await submit(
+      JSON.stringify(
+        seedResult(await seal(), {
+          // La forma exacta que mandaron los dos hosts del probe.
+          validations: [{ name: "sesion-creada", passed: true, evidence: "creada" }],
+        }),
+      ),
+    );
+
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("no trae 'id'");
+    expect(directive.error?.message).toContain("name");
+    expect(directive.error?.message).toContain("evidence");
+    // Y ya no nombra un tipo que el host no puede leer en ningún lado.
+    expect(directive.error?.message).not.toContain("ValidationOutcome");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("una lista que no es lista nombra la forma y los ids que la frontera pide", async () => {
+    await reachSeed();
+    const before = await bytes();
+    const directive = await submit(
+      JSON.stringify(seedResult(await seal(), { validations: "todo bien" })),
+    );
+
+    expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(directive.error?.message).toContain("{id, passed, detail}");
+    // Los ids no se describen en abstracto: son los que ESTA frontera declaró.
+    expect(directive.error?.message).toContain("sesion-creada");
+    expect(await bytes()).toBe(before);
+  });
+
   it("un resultado que no declara qué se ejecutó no avanza", async () => {
     await reachSeed();
     const before = await bytes();
