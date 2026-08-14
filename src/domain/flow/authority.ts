@@ -344,10 +344,21 @@ export interface DelegatedInvocation {
  *
  * Closed on purpose: an invocation that could interpolate arbitrary state would
  * be a template language, and a registry row would stop being readable as the
- * exact thing that runs. These two are what a session-scoped command needs — the
- * folder and its correlative — and both are facts the engine owns.
+ * exact thing that runs. These three are what a session-scoped command needs —
+ * the folder, its correlative and its slug — and all three are facts the engine
+ * owns, read off the session folder it already has.
+ *
+ * The slug joined the set for a defect the closed vocabulary is exactly what
+ * prevents. A row wrote its slug as `<slug>` — the metavariable the PROSE uses,
+ * copied into a machine-readable invocation. Angle brackets bind to nothing and
+ * the unbound-placeholder guard does not recognize them either, so the template
+ * travelled intact to whoever executes. The honest agent substituted it and its
+ * report no longer matched the sealed invocation; the literal one created a file
+ * named after the template. Documents and invocations do NOT share a notation:
+ * prose says `<slug>` to a reader, a row says `{slug}` to the engine, and only
+ * the second one fails closed when the run cannot supply it.
  */
-export const RUN_PLACEHOLDERS = ["{session}", "{code}"] as const;
+export const RUN_PLACEHOLDERS = ["{session}", "{code}", "{slug}"] as const;
 
 /**
  * The Workline operations this CLI materializes inside its own process.
@@ -1757,14 +1768,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     action: {
       invocation: {
         program: "aw",
-        args: ["next-number", "docs/plans", "--claim", "plan-<slug>.md", "--code", "{code}"],
+        args: ["next-number", "docs/plans", "--claim", "plan-{slug}.md", "--code", "{code}"],
         target: ".",
         input: null,
       },
       execution: {
         kind: "external",
         reason:
-          "el nombre del reclamo lleva el slug que esta corrida acaba de derivar, y el motor no lo tiene: la reserva la materializa el comando y devuelve su claimed_path",
+          "la reserva la materializa el comando bajo el candado del workspace y devuelve su claimed_path: el motor nombra el reclamo pero no lo mintea",
       },
       evidence: ["plan.numero-reclamado"],
       // Asking again returns the SAME slot: the claim recognizes a reservation this

@@ -84,6 +84,16 @@ export function skipReason(
 export interface RunBinding {
   session: string;
   code: string;
+  /**
+   * The slug of the run's session folder, or `null` when it carries none.
+   *
+   * Nullable rather than defaulted: a missing slug interpolated into a `--claim`
+   * would mint a document under a name nobody asked for, and it would be a name
+   * every later reader has to guess about. Left unbound it reaches
+   * {@link unboundPlaceholder} and the boundary refuses, which is the answer a
+   * run that cannot supply its own coordinate deserves.
+   */
+  slug: string | null;
 }
 
 export type ActionBinding = { ok: true; action: DelegatedAction } | { ok: false; unbound: string };
@@ -103,15 +113,19 @@ export function bindAction(action: DelegatedAction, binding: RunBinding): Action
   // Driven by the closed set, not by two hardcoded replacements: the vocabulary
   // and what it binds to are one decision, and splitting them is how a declared
   // placeholder ends up with nothing replacing it.
-  const value: Record<(typeof RUN_PLACEHOLDERS)[number], string> = {
+  const value: Record<(typeof RUN_PLACEHOLDERS)[number], string | null> = {
     "{session}": binding.session,
     "{code}": binding.code,
+    "{slug}": binding.slug,
   };
   const bind = (text: string): string =>
-    RUN_PLACEHOLDERS.reduce(
-      (bound, placeholder) => bound.split(placeholder).join(value[placeholder]),
-      text,
-    );
+    RUN_PLACEHOLDERS.reduce((bound, placeholder) => {
+      // A coordinate this run does not have is left ALONE, not replaced by an
+      // empty string: the survivor is what the guard below turns into a refusal,
+      // while a blank would emit `plan-.md` as if it were a name somebody chose.
+      const replacement = value[placeholder];
+      return replacement === null ? bound : bound.split(placeholder).join(replacement);
+    }, text);
   const bound: DelegatedAction = {
     ...action,
     invocation: {

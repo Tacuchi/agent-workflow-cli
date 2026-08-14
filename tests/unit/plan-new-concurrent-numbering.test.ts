@@ -122,6 +122,13 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     return result.directive;
   }
 
+  /** El valor que sigue a una bandera dentro de la invocación sellada. */
+  function argAfter(args: readonly string[], flag: string): string {
+    const value = args[args.indexOf(flag) + 1];
+    if (value === undefined) throw new Error(`la invocación sellada no trae '${flag}'`);
+    return value;
+  }
+
   /** El destino que este recorrido reservó, relativo al workspace. */
   function reserved(run: Walker): string {
     if (run.claimed === null) throw new Error(`la corrida ${run.code} todavía no reclamó`);
@@ -145,9 +152,13 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
       const declared = resolved.proposal?.effects ?? stopped.effects ?? ["read_only"];
       let detail = `salida de ${stopped.id}`;
       if (stopped.id === "plan-new.numbering") {
+        // El reclamo sale de la invocación SELLADA, no de un nombre que la prueba
+        // arma por su cuenta. Armarlo aparte es lo que dejó pasar `plan-<slug>.md`
+        // durante todo un lote: el helper ejecutaba el slug real y reportaba la
+        // plantilla, así que las dos mitades nunca se encontraban.
         const claimed = await runNextNumber(fs, new FakeEnv(workdir, workdir), paths, {
-          directory: "docs/plans",
-          claim: `plan-${run.slug}.md`,
+          directory: argAfter(action.invocation.args, "next-number"),
+          claim: argAfter(action.invocation.args, "--claim"),
           owner: run.folder,
         });
         run.claimed = claimed.next;
@@ -338,6 +349,81 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     });
     expect(stranger.claimed_path).not.toBe(first.claimed_path);
     expect(await plans()).toHaveLength(2);
+  });
+
+  /**
+   * Las DOS mitades del defecto que encontró el probe multihost.
+   *
+   * La fila declaraba su reclamo como `plan-<slug>.md`, con ÁNGULOS: `bindAction`
+   * sólo liga un conjunto cerrado con llaves y el guard de placeholder vivo sólo
+   * ve esa forma, así que la plantilla viajaba entera hasta quien ejecuta. Y como
+   * `invocationMismatch` exige igualdad literal, el agente que sustituía BIEN era
+   * el que se rompía: reportaba el slug real, no coincidía con lo sellado, quemaba
+   * sus intentos y quedaba `blocked` con una reserva huérfana. El que corría la
+   * plantilla al pie de la letra creaba en disco un `NNN-plan-<slug>.md`.
+   *
+   * Las dos mitades se fijan juntas a propósito: ligar sin verificar dejaría pasar
+   * cualquier otro nombre, y verificar sin ligar es exactamente el estado que
+   * rompía. Ninguna de las dos sola describe el contrato.
+   */
+  it("la numeración se sella con el slug ligado y rechaza un resultado con la plantilla", async () => {
+    const alpha = walker("201", "alpha");
+    await walkTo(alpha, "plan-new.numbering");
+
+    const { resolved } = await current(alpha);
+    const action = resolved.action;
+    if (action === null) throw new Error("la numeración dejó de delegar su invocación");
+
+    // Mitad 1 — lo sellado es ejecutable tal cual: ni una llave ni un ángulo vivos.
+    expect(action.invocation.args).toEqual([
+      "next-number",
+      "docs/plans",
+      "--claim",
+      "plan-alpha.md",
+      "--code",
+      "201",
+    ]);
+    for (const arg of action.invocation.args) {
+      expect(arg).not.toMatch(/[{<][a-z_-]+[}>]/);
+    }
+
+    // Mitad 2 — reportar la plantilla es reportar otra invocación, y se rechaza.
+    const impostor = await answer(alpha, {
+      input_digest: resolved.seal,
+      outcome: "completed",
+      invocation: {
+        ...action.invocation,
+        args: action.invocation.args.map((arg) =>
+          arg === "plan-alpha.md" ? "plan-<slug>.md" : arg,
+        ),
+      },
+      validations: action.evidence.map((id) => ({ id, passed: true, detail: "reserva" })),
+      effects: { planned: ["local_additive"], approved: [], applied: ["local_additive"] },
+      output: null,
+    });
+
+    expect(impostor.error?.code).toBe("FLOW_ACTION_MISMATCH");
+    expect(impostor.error?.message).toContain("plan-<slug>.md");
+    // Y no se acreditó nada: la corrida sigue parada en la misma frontera.
+    const after = await current(alpha);
+    expect(after.resolved.stopped?.id).toBe("plan-new.numbering");
+  });
+
+  it("una corrida cuya sesión no lleva slug se niega en vez de reclamar un nombre inventado", async () => {
+    const folder = "203-plan-new";
+    await mkdir(join(paths.cwdSessionsDir(), folder), { recursive: true });
+    await writeFile(join(paths.cwdSessionsDir(), folder, "SESSION.md"), SESSION_MD("x"), "utf8");
+    const mudo: Walker = { code: "203", folder, slug: "", claimed: null };
+
+    await walkTo(mudo, "plan-new.numbering");
+    const { resolved } = await current(mudo);
+
+    expect(resolved.action).toBeNull();
+    expect(resolved.error?.code).toBe("FLOW_ACTION_UNBOUND");
+    expect(resolved.error?.message).toContain("{slug}");
+    // Sin nombre no hay reserva, y la negativa llega ANTES de tocar el disco: la
+    // carpeta que el reclamo habría creado ni siquiera nació.
+    expect(await fs.exists(join(workdir, "docs/plans"))).toBe(false);
   });
 
   it("cerrar sin publicar devuelve el correlativo en vez de dejar un plan vacío", async () => {

@@ -155,7 +155,8 @@ describe("las reglas del tramo, sobre observaciones que nadie filtró", () => {
     const action = actionOf(rowOf("quick.session-create"));
     if (action === null) throw new Error("quick.session-create dejó de delegar");
 
-    const bound = bindAction(action, { session: SESSION, code: CODE });
+    const binding = { session: SESSION, code: CODE, slug: "tramo-quick" };
+    const bound = bindAction(action, binding);
     if (!bound.ok) throw new Error(`esperaba ligar la acción: ${bound.unbound}`);
     expect(bound.action.invocation.args).toEqual(["session-artifacts", "--code", CODE]);
     expect(bound.action.invocation.target).toBe(SESSION);
@@ -164,9 +165,17 @@ describe("las reglas del tramo, sobre observaciones que nadie filtró", () => {
     // ejecutar un comando con una llave adentro.
     const typo = bindAction(
       { ...action, invocation: { ...action.invocation, target: "{sesion}" } },
-      { session: SESSION, code: CODE },
+      binding,
     );
     expect(typo).toEqual({ ok: false, unbound: "{sesion}" });
+
+    // Y una coordenada del conjunto que ESTA corrida no tiene se niega igual: la
+    // ausencia se propaga como placeholder vivo, nunca como cadena vacía.
+    const sinSlug = bindAction(
+      { ...action, invocation: { ...action.invocation, target: "plan-{slug}.md" } },
+      { ...binding, slug: null },
+    );
+    expect(sinSlug).toEqual({ ok: false, unbound: "{slug}" });
   });
 });
 

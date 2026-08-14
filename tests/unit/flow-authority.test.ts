@@ -9,6 +9,7 @@ import {
   FLOW_AUTHORITIES,
   FLOW_DECISIONS,
   FLOW_TRANCHES,
+  RUN_PLACEHOLDERS,
   TRANSITION_OWNERSHIPS,
   actionOf,
   commandOfScope,
@@ -172,6 +173,38 @@ describe("registro de autoridad — forma y unicidad", () => {
       for (const id of action.evidence) expect(id.trim().length, decision.id).toBeGreaterThan(0);
       // Recoverable: a partial result has to have somewhere to go.
       expect(action.recovery.trim().length, decision.id).toBeGreaterThan(10);
+    }
+  });
+
+  /**
+   * La notación de la prosa NO es la notación de una invocación.
+   *
+   * `PLAN-INPUT` dice `plan-<slug>.md` y hace bien: le habla a quien lee. Esa
+   * línea se copió a una fila, y en una fila los ángulos no ligan con nada ni los
+   * ve el guard de placeholder vivo, así que la plantilla llegó entera a quien
+   * ejecuta: el agente que la sustituyó bien dejó de coincidir con lo sellado y el
+   * que la corrió literal creó un archivo llamado como la plantilla.
+   *
+   * Se fija la CLASE y no el caso: lo que hay que impedir es que la próxima fila
+   * vuelva a traer una metavariable de documento, cualquiera sea su nombre.
+   */
+  it("ninguna invocación lleva una metavariable de prosa: los huecos son del conjunto cerrado", () => {
+    const metavariable = /<[a-z][a-z0-9_-]*>/i;
+    for (const decision of FLOW_DECISIONS) {
+      const action = actionOf(decision);
+      if (action === null) continue;
+      const parts = [
+        action.invocation.program,
+        ...action.invocation.args,
+        action.invocation.target,
+      ];
+      for (const part of parts) {
+        expect(metavariable.test(part), `${decision.id} → ${part}`).toBe(false);
+      }
+      // Y todo hueco con llaves es uno que el motor sabe ligar.
+      for (const found of parts.join(" ").match(/\{[a-z0-9_-]+\}/gi) ?? []) {
+        expect(RUN_PLACEHOLDERS as readonly string[], decision.id).toContain(found);
+      }
     }
   });
 
