@@ -98,6 +98,41 @@ export interface RetirementRevert {
   ref: string;
   /** Whether the commit is reachable from a remote-tracking ref already. */
   published: boolean;
+  /**
+   * The parent kept when the commit is a merge (git's `-m`), `null` otherwise.
+   *
+   * Read from the RECORDED parents rather than chosen at apply time: which side of
+   * a merge survives is a fact about the commit, not a preference of whoever
+   * happens to run the revert later.
+   */
+  mainline: number | null;
+}
+
+/**
+ * The single commit point the git side of a retirement hinges on.
+ *
+ * One per proposal, never more: two refs cannot be moved as one operation, and a
+ * second commit point would mean a window where half the retirement is published.
+ * A scope that would need two is refused while it is still a proposal.
+ *
+ * The three fields are what make the swap verifiable rather than hopeful.
+ * `expected_old` is the compare-and-swap base — the ref must still be there or the
+ * world moved. `prepared_tip` is what it becomes, built and rehearsed beforehand.
+ * `expected_tree` is what the working tree must end up holding, so "it worked" is
+ * a comparison and not a belief.
+ */
+export interface RetirementPublication {
+  alias: string;
+  /** Absolute path of the repository whose ref moves. */
+  repo: string;
+  /** Full ref name (`refs/heads/main`). */
+  ref: string;
+  /** The value the ref must still have; `null` = it must not exist yet. */
+  expected_old: string | null;
+  /** The commit the ref becomes. */
+  prepared_tip: string;
+  /** Tree of `prepared_tip` — the result the working tree is synced to. */
+  expected_tree: string | null;
 }
 
 /** An isolation unit the retirement reconciles (releases or leaves). */
@@ -138,6 +173,8 @@ export interface RetirementProposal {
   units: RetirementUnit[];
   dirty: RetirementDirtyChange[];
   reverts: RetirementRevert[];
+  /** The one ref this retirement moves, or `null` when it moves none. */
+  publication: RetirementPublication | null;
   event: RetirementEvent;
   read_set: ReadSetEntry[];
   digest: string;
@@ -182,6 +219,7 @@ export function retirementDigest(body: Omit<RetirementProposal, "digest">): stri
       .map((d) => ({ ...d, paths: [...d.paths].sort(order) }))
       .sort((a, b) => order(a.alias, b.alias)),
     reverts: body.reverts,
+    publication: body.publication,
     event: body.event,
     read_set: [...body.read_set].sort((a, b) => order(a.id, b.id)),
   });

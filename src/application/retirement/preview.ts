@@ -29,6 +29,20 @@ export interface RetirementPreview {
   local_changes: Array<{ alias: string; tree: string; paths: string[]; exclusive_unit: boolean }>;
   /** Commits that get a revert commit — never a rewrite. */
   reverts: Array<{ alias: string; commit: string; ref: string; published: boolean }>;
+  /**
+   * The single ref the retirement moves, and the value it must still have.
+   *
+   * Shown because it is the operation's hinge: it is what turns "the commits get
+   * reverted" into a statement somebody can check afterwards, and what says which
+   * branch is about to gain a commit.
+   */
+  publication: {
+    alias: string;
+    ref: string;
+    expected_old: string | null;
+    prepared_tip: string;
+    expected_tree: string | null;
+  } | null;
   /** Isolation units the retirement reconciles. */
   units: Array<{ alias: string; session: string; branch: string }>;
   /** Conversation associations that stop resolving. */
@@ -68,6 +82,16 @@ export function retirementPreview(proposal: RetirementProposal): RetirementPrevi
       ref: revert.ref,
       published: revert.published,
     })),
+    publication:
+      proposal.publication === null
+        ? null
+        : {
+            alias: proposal.publication.alias,
+            ref: proposal.publication.ref,
+            expected_old: proposal.publication.expected_old,
+            prepared_tip: proposal.publication.prepared_tip,
+            expected_tree: proposal.publication.expected_tree,
+          },
     units: proposal.units.map((unit) => ({
       alias: unit.alias,
       session: unit.session,
@@ -120,6 +144,12 @@ export function renderRetirementPreview(preview: RetirementPreview): string {
         `${r.alias} ${r.commit.slice(0, 12)} → ${r.ref}${r.published ? " · publicado: el push queda pendiente y externo" : ""}`,
     ),
   );
+  if (preview.publication !== null) {
+    const p = preview.publication;
+    section(lines, "Punto de commit (el único)", [
+      `${p.alias} · ${p.ref} · de ${(p.expected_old ?? "inexistente").slice(0, 12)} a ${p.prepared_tip.slice(0, 12)}`,
+    ]);
+  }
   section(
     lines,
     "Unidades que se reconcilian",

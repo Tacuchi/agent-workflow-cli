@@ -25,6 +25,50 @@ export interface WorktreeEntry {
 }
 
 /**
+ * One path git reports as changed, in the detail an attribution needs.
+ *
+ * `changedFiles` answers "which paths moved" and that is not enough to decide
+ * whether a change may be discarded: a rename is two paths, an exec-bit flip is a
+ * change with identical content, an untracked file has no HEAD side at all, and a
+ * symlink or a binary cannot be restored by writing text. Each of those is a
+ * different decision, so each one is a field rather than a guess.
+ */
+export interface LocalChange {
+  /** Path as git spells it, relative to the repository root. */
+  path: string;
+  /** Where a rename came FROM; `null` when the change is not a rename. */
+  from: string | null;
+  /** The XY code verbatim (`M.`, `.M`, `R.`, `D.`, `??`, `!!`). */
+  code: string;
+  /** The index differs from HEAD. */
+  staged: boolean;
+  /** The working tree differs from the index. */
+  unstaged: boolean;
+  untracked: boolean;
+  /** Octal mode in HEAD (`100644`, `100755`, `120000`); `null` when absent. */
+  head_mode: string | null;
+  /** Octal mode in the working tree; `null` when the path is gone. */
+  worktree_mode: string | null;
+}
+
+/** A git operation left half-done in the repository. */
+export type GitOperationState = "clean" | "merge" | "revert" | "cherry-pick" | "rebase";
+
+/** The outcome of an operation that either happens or explains itself. */
+export interface GitAttempt {
+  ok: boolean;
+  /** Why it refused, verbatim from git. Empty on success. */
+  why: string;
+}
+
+/** The outcome of rehearsing a revert: conflicts are named, nothing is committed. */
+export interface RevertRehearsal {
+  ok: boolean;
+  conflicted: string[];
+  why: string;
+}
+
+/**
  * What a commit really produced: the ref's value before it, after it, and the
  * parents of the new commit.
  *
@@ -132,6 +176,82 @@ export interface GitPort {
    * and the refs are the only fact that says so.
    */
   refsContaining(repoPath: string, sha: string): Promise<string[]>;
+
+  // ── The typed surface a retirement is allowed to use ────────────────────────
+  //
+  // Every question below is asked through a named operation with parsed output.
+  // No service builds a git command line: a destructive flow that could pass a
+  // string through to git would put the whole safety argument in the hands of
+  // whoever composed that string.
+
+  /** `git status --porcelain=v2 -z`, parsed. Untracked included, ignored excluded. */
+  localChanges(repoPath: string): Promise<LocalChange[]>;
+  /** The value of one ref, or `null` when it does not exist. */
+  refValue(repoPath: string, ref: string): Promise<string | null>;
+  /** The tree object a revision points at — what "the expected result" IS. */
+  treeOf(repoPath: string, rev: string): Promise<string | null>;
+  /**
+   * Every path a revision's tree contains (`git ls-tree -r --name-only`).
+   *
+   * Needed for the one collision `read-tree -n -m` does not report: a path the
+   * target tree would CREATE where an untracked file already sits. Without `-u`
+   * git has no working tree to check, and with `-u` it would be doing the switch —
+   * so the dry run answers about tracked content only, and this closes the rest.
+   */
+  treePaths(repoPath: string, rev: string): Promise<string[]>;
+  /** Whether a git operation is half-done, so nothing is attempted over it. */
+  operationState(repoPath: string): Promise<GitOperationState>;
+  /** True when `ancestor` is reachable from `descendant`. */
+  isAncestor(repoPath: string, ancestor: string, descendant: string): Promise<boolean>;
+  /**
+   * A worktree at `path` on a DETACHED head at `rev`.
+   *
+   * Detached on purpose: rehearsing a revert must not create a branch somebody
+   * could later mistake for work, and it must not be able to move a real ref.
+   */
+  worktreeAddDetached(repoPath: string, worktreePath: string, rev: string): Promise<void>;
+  /**
+   * `git revert --no-commit` inside a worktree — the rehearsal.
+   *
+   * It writes only in that temporary tree and commits nothing, which is what makes
+   * "this revert would conflict" answerable BEFORE anybody approves it.
+   * `mainline` picks which parent of a merge is kept.
+   */
+  rehearseRevert(
+    worktreePath: string,
+    sha: string,
+    mainline: number | null,
+  ): Promise<RevertRehearsal>;
+  /** Commit whatever the rehearsal staged in that worktree. */
+  commitIn(worktreePath: string, message: string): Promise<CommitReceipt>;
+  /**
+   * Whether the working tree could be moved onto `rev` — asked without doing it
+   * (`git read-tree -n -m`).
+   *
+   * This is a PRECONDITION and not a step: the compare-and-swap moves the ref and
+   * not the tree, so a sync that could refuse has to refuse before the swap. After
+   * the swap there is no way back that is not a rewrite, and a refusal there would
+   * be a partial success nobody can resolve.
+   */
+  canSyncTree(repoPath: string, rev: string): Promise<GitAttempt>;
+  /** The same move, performed (`git read-tree -u -m`). Never `reset --hard`. */
+  syncTree(repoPath: string, rev: string): Promise<GitAttempt>;
+  /**
+   * `git update-ref <ref> <next> <expectedOld>` — the single commit point.
+   *
+   * The expected old value is the whole point: it turns "publish the result" into
+   * an operation that either happens exactly once or reports that the world moved.
+   */
+  updateRefCas(
+    repoPath: string,
+    ref: string,
+    next: string,
+    expectedOld: string | null,
+  ): Promise<GitAttempt>;
+  /** Point a private ref at a commit, so a prepared result stays reachable. */
+  setRef(repoPath: string, ref: string, sha: string): Promise<GitAttempt>;
+  /** Drop a ref this operation created. Never used on a ref it did not create. */
+  deleteRef(repoPath: string, ref: string): Promise<GitAttempt>;
 }
 
 export interface ConflictStage {

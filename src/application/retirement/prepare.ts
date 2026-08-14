@@ -11,6 +11,7 @@
  * descriptions that disagree.
  */
 
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type ClosureEntry,
@@ -19,6 +20,7 @@ import {
   type RetirementEvent,
   type RetirementMode,
   type RetirementProposal,
+  type RetirementPublication,
   type RetirementRestore,
   type RetirementUnit,
   sealRetirementProposal,
@@ -110,6 +112,7 @@ async function buildProposal(
   const blocks: AttributionBlock[] = [];
   const dirty: RetirementProposal["dirty"] = [];
   const reverts: RetirementProposal["reverts"] = [];
+  const publications: RetirementPublication[] = [];
 
   const restored = new Set<string>();
   for (const entry of closure.entries) {
@@ -122,6 +125,7 @@ async function buildProposal(
         units,
         dirty,
         reverts,
+        publications,
         blocks,
         readSet,
       });
@@ -168,6 +172,9 @@ async function buildProposal(
       units,
       dirty,
       reverts,
+      // More than one would mean two commit points; the attribution refuses that
+      // shape upstream, so reaching here with two is impossible by construction.
+      publication: publications[0] ?? null,
       event: eventOf(closure, targetText, finalDeletes, restores),
       read_set: readSet,
     }),
@@ -182,6 +189,7 @@ interface SessionCollector {
   units: RetirementUnit[];
   dirty: RetirementProposal["dirty"];
   reverts: RetirementProposal["reverts"];
+  publications: RetirementPublication[];
   blocks: AttributionBlock[];
   readSet: ReadSetEntry[];
 }
@@ -241,10 +249,14 @@ async function collectSession(
     collector.restored.add(artifact.path);
   }
 
-  const attribution = await attributeGitEffects(deps.git, custody);
+  const attribution = await attributeGitEffects(deps.git, custody, {
+    scratchDir: tmpdir(),
+    opId: facts.folder,
+  });
   collector.dirty.push(...attribution.dirty);
   collector.reverts.push(...attribution.reverts);
   collector.blocks.push(...attribution.blocks);
+  if (attribution.publication !== null) collector.publications.push(attribution.publication);
   for (const source of custody.sources) {
     const tree = source.unit_path ?? source.path;
     collector.readSet.push({
