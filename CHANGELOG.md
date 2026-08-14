@@ -4,6 +4,15 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.10.1] — 2026-08-14
+
+**`fix-git` ya no resuelve a ciegas sobre una rama que pudo ser recreada.** Cuando una rama remota se limpia borrándola y recreándola desde `main`, cualquier copia local anterior conserva commits que fueron retirados a propósito; mergearla o empujarla los reintroducía sin que nadie lo pidiera, y el skill no miraba. Ahora la verificación es piso duro antes de cualquier resolución, y las resoluciones a un lado completo sin evidencia quedan prohibidas.
+
+### Fixed
+
+- **`fix-git` frena ante un upstream recreado, antes de tocar el merge.** El primer paso es `git fetch` LEYENDO su salida: una línea `forced update` delata que la rama fue borrada y recreada —la señal sobrevive aunque `main` no haya avanzado, donde el grafo por sí solo es mudo— y `git rev-list --left-right --count HEAD...@{upstream}` con ambos lados en positivo la corrobora. Al dispararse, el skill se detiene y propone la resincronización conservando el trabajo local (rama `respaldo-<fecha>` + `reset --hard @{upstream}`, que la persona decide), en vez de mergear o empujar los commits retirados. La rama entrante de un merge pedido se verifica igual (`<branch>...<branch>@{upstream}`).
+- **El piso duro cierra los atajos destructivos.** `--force`, `reset --hard` y `merge --abort` se suman a la lista de movimientos que sólo se proponen y nunca se ejecutan, y tomar un lado completo de un conflicto sin evidencia deja de ser una resolución válida. El blindaje cabe en el presupuesto de contexto del comando: el documento quedó en 2519 bytes, bajo el techo que el guard G1 deriva del baseline congelado.
+
 ## [21.10.0] — 2026-08-14
 
 **Dos recorridos concurrentes ya no se pisan, y el probe multihost que lo demuestra encontró tres defectos que ningún test de un proceso podía ver.** Hasta acá `plan-new` reclamaba un correlativo que después su propio guardado rechazaba llenar, `plan-exec` leía y commiteaba el checkout compartido sin adquirir ninguna unidad, y el cierre no miraba si quedaba una unidad viva — así que dos flujos sobre la misma fuente se atribuían trabajo ajeno y dejaban unidades huérfanas. Ahora la reserva pertenece a la corrida, cada `plan-exec` fija su alcance y edita sólo dentro de su unidad, y la integración precede al sello del plan. La conformidad se verificó end-to-end con dos hosts reales (Codex y Claude Code) sobre la misma máquina y el mismo workspace, en el caso limpio y en el conflictivo.
