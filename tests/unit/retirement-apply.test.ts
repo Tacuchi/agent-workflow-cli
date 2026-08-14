@@ -484,4 +484,30 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // queda declarado en el resultado en vez de forzado o silenciado.
     expect(rowsFor(proposal.digest)).toBe(1);
   });
+
+  it("un lock de workspace ocupado bloquea sin tocar nada", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const proposal = await proposalFor("discard", "plan:024");
+    const before = readFileSync(join(workspace, planPath), "utf-8");
+    // Un holder vivo del lock del workspace: la sección crítica es inalcanzable, y
+    // un retiro que empezara igual sería un retiro sin coordinación.
+    mkdirSync(join(workspace, ".workflow"), { recursive: true });
+    writeFileSync(
+      join(workspace, ".workflow", ".lock"),
+      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
+    );
+
+    const outcome = await applyRetirement(deps, {
+      mode: "discard",
+      target: "plan:024",
+      approval: proposal.digest,
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejection.message).toContain("lock ocupado");
+    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(before);
+    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(history()).not.toContain("## Retiros");
+    expect(existsSync(journalDir(paths))).toBe(false);
+  });
 });

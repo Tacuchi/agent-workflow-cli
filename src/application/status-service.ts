@@ -5,11 +5,13 @@ import type { GitPort } from "../ports/git.js";
 import type { DesignGraph } from "./design/design-graph-service.js";
 import { type FlowRunProjection, projectRun } from "./flow/run-projection.js";
 import type { PathsService } from "./paths-service.js";
+import { type TerminalEvent, readEvents } from "./retirement/history-events.js";
 import {
   type IndexedDiscarded,
   type IndexedPlan,
   type IndexedSpec,
   type IndexedWorkspace,
+  type PendingRetirement,
   type PipelineItem,
   type SessionUnit,
   buildWorklineIndex,
@@ -64,6 +66,19 @@ export interface StatusOutput {
     closed: StatusSession[];
   };
   discarded: IndexedDiscarded[];
+  /**
+   * Terminal retirement events, read from `HISTORY.md`'s own append-only ledger.
+   *
+   * Deliberately NOT folded into `discarded`, which means items a session deferred
+   * or excluded from its scope: one of those is recoverable and the other is not,
+   * and a board where "discarded" means both is a board nobody can act on.
+   */
+  terminal_events: TerminalEvent[];
+  /**
+   * Retirements in flight. While one is here, nothing on this board is a settled
+   * reading — and finishing it is a mutation, so what a read owes is the fact.
+   */
+  pending_retirements: PendingRetirement[];
   /** what is left to do, in priority order — the same list `resume` routes from */
   pipeline: PipelineItem[];
   /** the design traceability graph, so a broken reference is visible without opening files */
@@ -77,6 +92,8 @@ export interface StatusOutput {
     sessions_active: number;
     sessions_closed: number;
     discarded: number;
+    /** How many retirements the ledger records. */
+    terminal_events: number;
     pending: number;
   };
 }
@@ -99,6 +116,7 @@ export async function runStatusCommand(
   input: StatusInput = {},
 ): Promise<StatusOutput> {
   const index = await buildWorklineIndex(fs, env, paths, input);
+  const events = await readEvents(fs, paths);
 
   const active: StatusSession[] = [];
   const closed: StatusSession[] = [];
@@ -123,6 +141,8 @@ export async function runStatusCommand(
     plans: index.plans,
     sessions: { active, closed },
     discarded: index.discarded,
+    terminal_events: events,
+    pending_retirements: index.pending_retirements,
     pipeline: index.pipeline,
     designs: index.designs,
     orphan_units: index.orphan_units,
@@ -133,6 +153,7 @@ export async function runStatusCommand(
       sessions_active: active.length,
       sessions_closed: closed.length,
       discarded: index.discarded.length,
+      terminal_events: events.length,
       pending: index.pipeline.length,
     },
   };

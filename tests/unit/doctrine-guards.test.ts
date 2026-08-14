@@ -153,20 +153,20 @@ describe("Doctrine guards — G1 · context budget derived from a frozen baselin
     }
   });
 
-  it("every one of the 16 commands is at least 20% under its baseline", async () => {
+  it("every one of the 18 commands is at least 20% under its baseline", async () => {
     const result = await measure();
     const perCommand = result.budget.filter((line) => line.metric.startsWith("activation."));
-    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(16);
+    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(18);
     const offenders = perCommand
       .filter((line) => line.ok === false)
       .map((line) => `${line.metric}: ${line.actual} B > ${line.target} B`);
     expect(offenders).toEqual([]);
   });
 
-  it("covers all 16 commands, not the 6 flows the retired table listed", async () => {
+  it("covers all 18 commands, not the 6 flows the retired table listed", async () => {
     const result = await measure();
-    expect(result.guaranteed).toHaveLength(16);
-    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(16);
+    expect(result.guaranteed).toHaveLength(18);
+    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(18);
   });
 
   it("every journey the manifest declares is actually measured", async () => {

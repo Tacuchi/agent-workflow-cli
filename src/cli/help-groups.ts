@@ -75,6 +75,10 @@ const GROUPS: readonly CommandGroup[] = [
       // to load, and which documents it actually has to load.
       "context-budget",
       "context-plan",
+      // Retirement: `discard` takes a node and everything it exclusively owns;
+      // `reset` puts an incomplete session's inputs back. Both all-or-nothing.
+      "discard",
+      "reset",
     ],
   },
   {

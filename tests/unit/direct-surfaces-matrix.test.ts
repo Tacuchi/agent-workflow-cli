@@ -117,6 +117,11 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     "skills", // plan 014 — capability readiness, widened only under --detail
     "flow", // plan 015 — the boundary directive, derived from the same directive
     "session-artifacts", // plan 022 — el recorrido de la sesión, bajo --format human
+    // plan 024 — la vista previa de un retiro y su resultado. La proyección humana
+    // es obligatoria acá, no opcional: lo que una persona aprueba es exactamente
+    // este texto, y el JSON del host de agente sale del mismo objeto sellado.
+    "discard",
+    "reset",
   ];
 
   it("no undeclared command acquired a human projection", () => {

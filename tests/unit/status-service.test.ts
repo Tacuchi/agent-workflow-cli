@@ -133,6 +133,9 @@ describe("runStatusCommand — full dashboard", () => {
     expect(out.counts).toEqual({
       specs: 2,
       specs_refined: 1,
+      // El ledger de retiros arranca vacío y se cuenta aparte de `discarded`:
+      // uno es lo que una sesión postergó, el otro lo que ya no existe.
+      terminal_events: 0,
       plans: 1,
       sessions_active: 1,
       sessions_closed: 1,

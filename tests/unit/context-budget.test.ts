@@ -55,9 +55,9 @@ describe("context measurement — the instrument the gates read", () => {
     }
   });
 
-  it("budgets all 16 commands, not just the 6 flows the ceiling covered", async () => {
+  it("budgets all 18 commands, not just the 6 flows the ceiling covered", async () => {
     const result = await runContextBudget(fs, { root: BUNDLE_ROOT });
-    expect(result.guaranteed).toHaveLength(16);
+    expect(result.guaranteed).toHaveLength(18);
     // The ten commands with no loop were never budgeted before: their guaranteed
     // load is their own body, and that is now a line like any other.
     const status = result.guaranteed.find((g) => g.command === "status");
@@ -71,7 +71,7 @@ describe("context measurement — the instrument the gates read", () => {
     });
     const baseline = JSON.parse(await readFile(BASELINE_PATH, "utf8"));
     expect(result.discovery.bytes).toBeLessThanOrEqual(baseline.discovery.bytes);
-    expect(result.activation.entries).toHaveLength(16);
+    expect(result.activation.entries).toHaveLength(18);
     expect(result.execution.journeys).toHaveLength(6);
   });
 
@@ -156,7 +156,7 @@ describe("context manifest — the bundle describes its own graph", () => {
 
   it("loads the real bundle manifest", async () => {
     const manifest = await loadManifest(fs, BUNDLE_ROOT);
-    expect(Object.keys(manifest.commands)).toHaveLength(16);
+    expect(Object.keys(manifest.commands)).toHaveLength(18);
     expect(manifest.journeys).toHaveLength(6);
   });
 

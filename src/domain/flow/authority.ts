@@ -2960,6 +2960,16 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
     reason:
       "comando `/w:` de una sola pasada que no abre loop: sin corrida que dirigir, su gate de división lo aplica el propio comando con la regla de modules/SPLIT-GATE.md, que por eso conserva su enunciado",
   },
+  {
+    command: "discard",
+    reason:
+      "comando transversal de retiro: no abre WorklineFlow ni sesión a propósito, porque puede terminar borrando la sesión que lo dirigiera. Su autoridad es su propio contrato: `prepare` read-only y `apply` con el digest exacto, recomputado bajo el lock del workspace",
+  },
+  {
+    command: "reset",
+    reason:
+      "comando transversal de retiro: mismo contrato que `discard` en modo restauración, sin corrida propia por la misma razón — la sesión que vuelve atrás es la que se retira",
+  },
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },
   { command: "checkpoint-read", reason: "lectura del CHECKPOINT sin decidir continuación" },

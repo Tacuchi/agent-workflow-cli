@@ -57,10 +57,106 @@
     "quick.db-touched": "the task read from or wrote to a database, so there is a statement to derive into the session script"
   },
   "commands": {
-    "quick": {
+    "discard": {
+      "core": ["commands/discard.md"],
+      "modules": []
+    },
+    "export-diagrams": {
+      "core": ["commands/export-diagrams.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "exports/export-diagrams/EXPORT.md",
+          "signal": "authoring"
+        }
+      ]
+    },
+    "export-manuals": {
+      "core": ["commands/export-manuals.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "exports/export-manuals/EXPORT.md",
+          "signal": "authoring"
+        }
+      ]
+    },
+    "export-reports": {
+      "core": ["commands/export-reports.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "exports/export-reports/EXPORT.md",
+          "signal": "authoring"
+        }
+      ]
+    },
+    "export-scripts": {
+      "core": ["commands/export-scripts.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "exports/export-scripts/EXPORT.md",
+          "signal": "authoring"
+        }
+      ]
+    },
+    "fix-git": {
+      "core": ["commands/fix-git.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        }
+      ]
+    },
+    "generate-launch": {
+      "core": ["commands/generate-launch.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/LAUNCH-DETECTION.md",
+          "signal": "detection"
+        }
+      ]
+    },
+    "persist": {
+      "core": ["commands/persist.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/PERSIST-ROUTING.md",
+          "signal": "classification"
+        },
+        {
+          "path": "modules/ADOPTED-CONTEXT.md",
+          "signal": "adopted"
+        }
+      ]
+    },
+    "plan-exec": {
       "core": [
-        "commands/quick.md",
-        "loops/quick-loop/LOOP.md",
+        "commands/plan-exec.md",
+        "loops/plan-exec-loop/LOOP.md",
+        "modules/PLAN-EXECUTION-BATCHES.md",
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md"
       ],
@@ -70,15 +166,15 @@
           "signal": "plan-mode"
         },
         {
-          "path": "modules/ADOPTED-CONTEXT.md",
-          "signal": "adopted"
+          "path": "modules/EXEC-PROBE-TASKS.md",
+          "signal": "probe"
         },
         {
           "path": "modules/PROBE.md",
           "signal": "probe"
         },
         {
-          "path": "modules/DB-RESEARCH-RULE.md",
+          "path": "modules/EXEC-DB-POLICY.md",
           "signal": "db",
           "requires": "external-data"
         },
@@ -88,77 +184,21 @@
           "requires": "external-data"
         },
         {
-          "path": "modules/DESIGN-REFERENCES.md",
-          "signal": "ui"
+          "path": "modules/DB-RESEARCH-RULE.md",
+          "signal": "db",
+          "requires": "external-data"
         },
         {
-          "path": "modules/COMPACTION.md",
-          "signal": "compaction",
-          "requires": "compaction"
-        },
-        {
-          "path": "modules/SESSION-NUMBERING.md",
-          "signal": "sessions"
-        },
-        {
-          "path": "modules/PROMPT-CONTINUITY.md",
-          "signal": "resume"
-        }
-      ]
-    },
-    "spec-new": {
-      "core": ["commands/spec-new.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "modules/RECONNAISSANCE.md",
-          "signal": "reconnaissance"
-        },
-        {
-          "path": "modules/SPLIT-GATE.md",
-          "signal": "split"
-        }
-      ]
-    },
-    "spec-refine": {
-      "core": ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "modules/SPEC-CHANGE-SHAPE.md",
-          "signal": "shape"
-        },
-        {
-          "path": "modules/SPEC-REFINE-KEYS.md",
-          "signal": "resume"
+          "path": "modules/SIMULATION-LIFECYCLE.md",
+          "signal": "simulation"
         },
         {
           "path": "modules/DESIGN-REFERENCES.md",
           "signal": "ui"
-        },
-        {
-          "path": "modules/IDEATION-GATE.md",
-          "signal": "web",
-          "requires": "web-research"
         },
         {
           "path": "modules/ADOPTED-CONTEXT.md",
           "signal": "adopted"
-        },
-        {
-          "path": "modules/PROBE.md",
-          "signal": "probe"
-        },
-        {
-          "path": "modules/DB-RESEARCH-RULE.md",
-          "signal": "db",
-          "requires": "external-data"
         },
         {
           "path": "modules/COMPACTION.md",
@@ -300,11 +340,10 @@
         }
       ]
     },
-    "plan-exec": {
+    "quick": {
       "core": [
-        "commands/plan-exec.md",
-        "loops/plan-exec-loop/LOOP.md",
-        "modules/PLAN-EXECUTION-BATCHES.md",
+        "commands/quick.md",
+        "loops/quick-loop/LOOP.md",
         "loops/CHASSIS.md",
         "loops/CODE-POLICIES.md"
       ],
@@ -314,15 +353,15 @@
           "signal": "plan-mode"
         },
         {
-          "path": "modules/EXEC-PROBE-TASKS.md",
-          "signal": "probe"
+          "path": "modules/ADOPTED-CONTEXT.md",
+          "signal": "adopted"
         },
         {
           "path": "modules/PROBE.md",
           "signal": "probe"
         },
         {
-          "path": "modules/EXEC-DB-POLICY.md",
+          "path": "modules/DB-RESEARCH-RULE.md",
           "signal": "db",
           "requires": "external-data"
         },
@@ -332,21 +371,90 @@
           "requires": "external-data"
         },
         {
-          "path": "modules/DB-RESEARCH-RULE.md",
-          "signal": "db",
-          "requires": "external-data"
+          "path": "modules/DESIGN-REFERENCES.md",
+          "signal": "ui"
         },
         {
-          "path": "modules/SIMULATION-LIFECYCLE.md",
-          "signal": "simulation"
+          "path": "modules/COMPACTION.md",
+          "signal": "compaction",
+          "requires": "compaction"
+        },
+        {
+          "path": "modules/SESSION-NUMBERING.md",
+          "signal": "sessions"
+        },
+        {
+          "path": "modules/PROMPT-CONTINUITY.md",
+          "signal": "resume"
+        }
+      ]
+    },
+    "reset": {
+      "core": ["commands/reset.md"],
+      "modules": []
+    },
+    "resume": {
+      "core": ["commands/resume.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        }
+      ]
+    },
+    "spec-new": {
+      "core": ["commands/spec-new.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/RECONNAISSANCE.md",
+          "signal": "reconnaissance"
+        },
+        {
+          "path": "modules/SPLIT-GATE.md",
+          "signal": "split"
+        }
+      ]
+    },
+    "spec-refine": {
+      "core": ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        },
+        {
+          "path": "modules/SPEC-CHANGE-SHAPE.md",
+          "signal": "shape"
+        },
+        {
+          "path": "modules/SPEC-REFINE-KEYS.md",
+          "signal": "resume"
         },
         {
           "path": "modules/DESIGN-REFERENCES.md",
           "signal": "ui"
         },
         {
+          "path": "modules/IDEATION-GATE.md",
+          "signal": "web",
+          "requires": "web-research"
+        },
+        {
           "path": "modules/ADOPTED-CONTEXT.md",
           "signal": "adopted"
+        },
+        {
+          "path": "modules/PROBE.md",
+          "signal": "probe"
+        },
+        {
+          "path": "modules/DB-RESEARCH-RULE.md",
+          "signal": "db",
+          "requires": "external-data"
         },
         {
           "path": "modules/COMPACTION.md",
@@ -368,54 +476,6 @@
         }
       ]
     },
-    "resume": {
-      "core": ["commands/resume.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        }
-      ]
-    },
-    "persist": {
-      "core": ["commands/persist.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "modules/PERSIST-ROUTING.md",
-          "signal": "classification"
-        },
-        {
-          "path": "modules/ADOPTED-CONTEXT.md",
-          "signal": "adopted"
-        }
-      ]
-    },
-    "fix-git": {
-      "core": ["commands/fix-git.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        }
-      ]
-    },
-    "generate-launch": {
-      "core": ["commands/generate-launch.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "modules/LAUNCH-DETECTION.md",
-          "signal": "detection"
-        }
-      ]
-    },
     "workspace-init": {
       "core": ["commands/workspace-init.md"],
       "modules": [
@@ -426,58 +486,6 @@
         {
           "path": "modules/WORKSPACE-SCAFFOLD.md",
           "signal": "scaffold"
-        }
-      ]
-    },
-    "export-diagrams": {
-      "core": ["commands/export-diagrams.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "exports/export-diagrams/EXPORT.md",
-          "signal": "authoring"
-        }
-      ]
-    },
-    "export-manuals": {
-      "core": ["commands/export-manuals.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "exports/export-manuals/EXPORT.md",
-          "signal": "authoring"
-        }
-      ]
-    },
-    "export-reports": {
-      "core": ["commands/export-reports.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "exports/export-reports/EXPORT.md",
-          "signal": "authoring"
-        }
-      ]
-    },
-    "export-scripts": {
-      "core": ["commands/export-scripts.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "exports/export-scripts/EXPORT.md",
-          "signal": "authoring"
         }
       ]
     }

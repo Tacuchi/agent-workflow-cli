@@ -39,6 +39,7 @@ import { releaseDataCommand } from "./release-data.js";
 import { removeSourceCommand } from "./remove-source.js";
 import { resumeSummaryCommand } from "./resume-summary.js";
 import { resumeCommand } from "./resume.js";
+import { discardCommand, resetCommand } from "./retirement.js";
 import { selfCommand } from "./self.js";
 import { sessionArtifactsCommand } from "./session-artifacts.js";
 import { sessionCloseCommand } from "./session-close.js";
@@ -98,6 +99,11 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   profilesCommand,
   logsCommand,
   nextNumberCommand,
+  // Retirement: the two cross-cutting commands that take work away. They open no
+  // flow and create no session, because a retirement can end by deleting the very
+  // session that drove it.
+  discardCommand,
+  resetCommand,
   bootstrapDsnCommand,
   codeScanCommand,
   pluginCacheCommand,
