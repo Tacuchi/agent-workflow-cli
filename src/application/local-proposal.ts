@@ -61,6 +61,26 @@ export interface ApplyProposalInput {
   approval: ProposalApproval;
   /** Classes the invocation authorized by itself, applied without approval. */
   selfAuthorized: readonly EffectClass[];
+  /**
+   * Seal each destination's PREVIOUS state — called before the first byte lands.
+   *
+   * Before, and not after, and not only on success: the previous bytes stop
+   * existing the moment the write happens, so a hook that ran afterwards could
+   * only ever record the result as its own baseline. A publication that then
+   * fails leaves a baseline equal to what is still on disk, which restores to the
+   * same bytes — harmless. The opposite order has no harmless case: a process
+   * that died between writing and recording would leave a file nobody can
+   * attribute to the run that created it.
+   */
+  recordBaseline?: (destinations: readonly PublishedDestination[]) => Promise<void>;
+}
+
+/** One destination and the bytes it held before a publication touched it. */
+export interface PublishedDestination {
+  /** Workspace-relative path. */
+  path: string;
+  /** `null` when nothing was there — the artifact is BORN by this publication. */
+  previous: string | null;
 }
 
 export async function applyLocalProposal(
@@ -82,6 +102,9 @@ export async function applyLocalProposal(
 
   const stale = await checkBases(fs, input);
   if (stale !== null) return { ok: false, failure: stale, applied: [] };
+
+  const sealed = await sealBaseline(fs, input);
+  if (sealed !== null) return { ok: false, failure: sealed, applied: [] };
 
   const outcome = await withCwdLock(fs, paths, async () =>
     publishArtifacts(fs, input.root, publishable(input.proposal.artifacts)),
@@ -116,6 +139,43 @@ export async function applyLocalProposal(
     ok: true,
     result: { written: outcome.value.written, applied, already_applied: false },
   };
+}
+
+/**
+ * Seal every destination's previous state, or refuse the publication.
+ *
+ * A failure here stops the write, and that is the point: the baseline is what
+ * makes the publication retirable later, so publishing without it would deliver a
+ * promise nobody can keep. It comes back as a FAILURE rather than an exception
+ * because every other refusal on this path does — a caller that gets an envelope
+ * for a stale base and a throw for an unreadable one has two error models.
+ *
+ * A path that is not there is `null` — "nothing was there". A read that FAILS for
+ * any other reason is the refusal, never a quiet `null`: a baseline that says
+ * "absent" about a file it could not read is how a restore turns into a delete.
+ */
+async function sealBaseline(
+  fs: FileSystemPort,
+  input: ApplyProposalInput,
+): Promise<CapabilityFailure | null> {
+  if (input.recordBaseline === undefined) return null;
+  const destinations: PublishedDestination[] = [];
+  try {
+    for (const artifact of input.proposal.artifacts) {
+      const absolute = join(input.root, artifact.path);
+      const previous = (await fs.exists(absolute)) ? await fs.readText(absolute) : null;
+      destinations.push({ path: artifact.path, previous });
+    }
+    await input.recordBaseline(destinations);
+  } catch (err) {
+    return {
+      code: "PROPOSAL_BASELINE_UNSEALED",
+      message: `no se pudo sellar el estado previo de los destinos: ${err instanceof Error ? err.message : String(err)}`,
+      action:
+        "resolvé el acceso a esos destinos y volvé a aplicar: publicar sin baseline deja una escritura que nadie puede retirar",
+    };
+  }
+  return null;
 }
 
 function publishable(artifacts: readonly ProposalArtifact[]): PublishableArtifact[] {

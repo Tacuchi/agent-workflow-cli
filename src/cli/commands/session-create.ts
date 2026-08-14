@@ -12,9 +12,11 @@ import type { CliContext } from "../types.js";
 export const sessionCreateCommand: QtcCommand = {
   name: "session-create",
   describe:
-    "Create an internal session folder + SESSION.md. Flags: --type {research|refine|exec|quick} --name <folder> --objetivo <text> [--from <origin>].",
+    "Create an internal session folder + SESSION.md and seal its custody (typed parents + byte-exact baseline of every declared input). Flags: --type {research|refine|exec|quick} --name <folder> --objetivo <text> [--from <origin>] [--input <ruta-relativa> (repeatable)].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionCreateInput = {};
+    const inputs = args.valuesMulti.get("input");
+    if (inputs !== undefined) input.inputs = inputs;
     const type = args.values.get("type");
     if (type !== undefined) input.type = type;
     const name = args.values.get("name");

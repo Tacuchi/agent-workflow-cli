@@ -13,6 +13,7 @@ import { type FlowRunState, newRunState } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { WORKLINE_FLOWS, type WorklineFlow } from "../capability/compose.js";
 import type { PathsService } from "../paths-service.js";
+import { recordFlowAdoption } from "../session-custody-recorder.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import { advanceFlowRun } from "./advance.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
@@ -59,6 +60,9 @@ export async function advanceFlow(
 
   const session = resolution.session.folder;
   const location = locateRun(paths, session);
+  // Read BEFORE the advance: afterwards the state file always exists, so this is
+  // the only moment that can tell an adoption from an ordinary advance.
+  const adopting = input.adopt && !(await fs.exists(location.statePath));
 
   const applied = await applyUnderLock<FlowDirective>(
     fs,
@@ -77,6 +81,8 @@ export async function advanceFlow(
   );
 
   if (!applied.ok) return { ok: false, failure: applied.failure };
+  // What the session IS, recorded once, from the adoption that really happened.
+  if (adopting) await recordFlowAdoption({ fs, paths }, session, applied.state.flow);
   // Deciding stopped at the first delegated step; executing continues past every
   // one of them this process owns. Two calls and not one loop, because the walk is
   // pure and the execution is not.

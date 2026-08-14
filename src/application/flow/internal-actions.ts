@@ -38,6 +38,7 @@ import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { runSessionClose } from "../session-close-service.js";
+import { recordPublication } from "../session-custody-recorder.js";
 import { runStatusCommand } from "../status-service.js";
 
 /** The run's own coordinates — the only scope an internal operation may touch. */
@@ -131,6 +132,13 @@ async function publish(
     selfAuthorized: proposal.effects.filter(
       (effect) => !proposal.requires_approval.includes(effect),
     ),
+    // The run's session owns whatever this publication creates or overwrites, and
+    // the baseline is sealed while the previous bytes still exist. A legacy
+    // session with no custody records nothing and publishes exactly as before.
+    recordBaseline: (destinations) =>
+      recordPublication({ fs: deps.fs, paths: deps.paths }, run.session, destinations).then(
+        () => undefined,
+      ),
   });
   if (!applied.ok) {
     return refusal(

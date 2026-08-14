@@ -113,6 +113,40 @@ function migrateLegacyTable(text: string, cells: string[]): string | null {
   return out.join("\n");
 }
 
+/**
+ * Highest session number the table has ever mentioned, or 0 when it mentions
+ * none.
+ *
+ * The live sessions folder cannot answer this on its own any more: a retired
+ * session's folder is GONE, and a counter that only reads folders would hand its
+ * number to the next session created. Two different runs would then share an
+ * identity — the same row key, the same unit branch, the same `--code` — and the
+ * second one would inherit the first one's history. `HISTORY.md` is append-only,
+ * so it remembers what the filesystem no longer does.
+ *
+ * A file that cannot be read yields 0 rather than throwing: numbering must still
+ * work in a workspace whose history was never created, and the folder scan is
+ * the other half of the maximum.
+ */
+export async function maxHistoryNumber(fs: FileSystemPort, historyFile: string): Promise<number> {
+  let text: string;
+  try {
+    if (!(await fs.exists(historyFile))) return 0;
+    text = await fs.readText(historyFile);
+  } catch {
+    return 0;
+  }
+  let max = 0;
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|")) continue;
+    const first = trimmed.split("|")[1]?.trim() ?? "";
+    const m = first.match(/^(?:session)?(\d{3,})(?:-|$)/);
+    if (m?.[1]) max = Math.max(max, Number.parseInt(m[1], 10));
+  }
+  return max;
+}
+
 export async function upsertRow(
   fs: FileSystemPort,
   historyFile: string,

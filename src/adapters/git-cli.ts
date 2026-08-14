@@ -1,4 +1,5 @@
 import type {
+  CommitReceipt,
   ConflictStage,
   ConflictStages,
   DiffNumstatEntry,
@@ -210,8 +211,58 @@ export class GitCliAdapter implements GitPort {
     await this.mustRun(`add ${path}`, ["add", "--", path], repoPath);
   }
 
-  async commit(repoPath: string, message: string): Promise<void> {
+  async commit(repoPath: string, message: string): Promise<CommitReceipt> {
+    // HEAD is read BEFORE the commit: after it, the previous value is only
+    // reachable through the new commit's own parents, and on the repository's
+    // first commit it is not reachable at all.
+    const before = await this.headSha(repoPath);
     await this.mustRun("commit", ["commit", "-m", message], repoPath);
+    const after = await this.headSha(repoPath);
+    if (after === null) {
+      throw new Error(`git commit failed in ${repoPath}: HEAD sigue sin apuntar a un commit`);
+    }
+    return {
+      branch: (await this.currentBranch(repoPath)) ?? null,
+      before,
+      after,
+      parents: await this.parentsOf(repoPath, after),
+    };
+  }
+
+  async head(repoPath: string): Promise<string | null> {
+    return this.headSha(repoPath);
+  }
+
+  /** `null` on an unborn HEAD — a fresh repository with no commit yet. */
+  private async headSha(repoPath: string): Promise<string | null> {
+    const result = await this.process.run("git", ["rev-parse", "HEAD"], this.opts(repoPath));
+    if (result.code !== 0) return null;
+    const sha = result.stdout.trim();
+    return sha.length > 0 ? sha : null;
+  }
+
+  private async parentsOf(repoPath: string, sha: string): Promise<string[]> {
+    const result = await this.process.run(
+      "git",
+      ["rev-list", "--parents", "-n", "1", sha],
+      this.opts(repoPath),
+    );
+    if (result.code !== 0) return [];
+    // `<sha> <parent…>` — the commit itself leads, so its parents are the rest.
+    return result.stdout.trim().split(/\s+/).slice(1);
+  }
+
+  async refsContaining(repoPath: string, sha: string): Promise<string[]> {
+    const result = await this.process.run(
+      "git",
+      ["for-each-ref", "--format=%(refname)", `--contains=${sha}`],
+      this.opts(repoPath),
+    );
+    if (result.code !== 0) return [];
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
   }
 
   async worktreeList(repoPath: string): Promise<WorktreeEntry[]> {

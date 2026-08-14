@@ -24,11 +24,37 @@ export interface WorktreeEntry {
   prunable: boolean;
 }
 
+/**
+ * What a commit really produced: the ref's value before it, after it, and the
+ * parents of the new commit.
+ *
+ * `parents` is what a revert cannot do without: reverting a merge needs to be
+ * told which side to keep, and the answer is a fact about the commit rather than
+ * a preference of whoever reverts it later.
+ */
+export interface CommitReceipt {
+  /** The branch the commit landed on; `null` on a detached HEAD. */
+  branch: string | null;
+  /** HEAD before the commit; `null` when this was the repository's first. */
+  before: string | null;
+  /** The commit that was created. */
+  after: string;
+  parents: string[];
+}
+
 export interface GitPort {
   isGitRepo(repoPath: string): Promise<boolean>;
   currentBranch(repoPath: string): Promise<string | undefined>;
   isDirty(repoPath: string): Promise<boolean>;
   changedFiles(repoPath: string): Promise<string[]>;
+  /**
+   * The commit HEAD points at; `null` on an unborn HEAD.
+   *
+   * A branch NAME is not a baseline — it keeps meaning something different as
+   * work lands on it — so what a session records when it first touches a source
+   * is the commit, which never changes.
+   */
+  head(repoPath: string): Promise<string | null>;
   /** Files touched in HEAD diff: `git diff --numstat HEAD`. */
   diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]>;
   /** `git checkout <branch>`. Throws on failure. */
@@ -61,8 +87,13 @@ export interface GitPort {
   /**
    * `git commit -m <message>` on the staged content. Never `--no-verify`,
    * never `--amend`, never a push — those stay outside this port on purpose.
+   *
+   * It RETURNS what it did. A commit whose SHAs are read back later can only be
+   * matched to the run that made it by guessing — by its message, its author or
+   * its timestamp — and none of those is evidence. The receipt is the evidence,
+   * and it is the only thing a revert proposal is allowed to build on.
    */
-  commit(repoPath: string, message: string): Promise<void>;
+  commit(repoPath: string, message: string): Promise<CommitReceipt>;
   /**
    * `git worktree list --porcelain`.
    *
@@ -91,6 +122,16 @@ export interface GitPort {
   worktreePrune(repoPath: string): Promise<void>;
   /** True when `branch` already exists locally. */
   branchExists(repoPath: string, branch: string): Promise<boolean>;
+  /**
+   * Full names of every ref that CONTAINS `sha` (`git for-each-ref --contains`).
+   *
+   * What it is for is deciding whether undoing a commit is a local matter. A
+   * commit reachable from a remote-tracking ref has been published: reverting it
+   * locally is legitimate, rewriting it is not, and publishing that revert is
+   * somebody else's separate action. Both halves need to know which case it is,
+   * and the refs are the only fact that says so.
+   */
+  refsContaining(repoPath: string, sha: string): Promise<string[]>;
 }
 
 export interface ConflictStage {

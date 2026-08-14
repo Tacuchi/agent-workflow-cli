@@ -14,6 +14,7 @@ import { runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
 import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
+import { recordIntegration, recordUnitTaken } from "./session-custody-recorder.js";
 import { listSessionFolders, resolveSessionTarget } from "./session-resolver.js";
 
 /**
@@ -186,6 +187,10 @@ async function integrateUnit(
       hint: `posicioná el checkout en '${base}' y volvé a integrar; la integración nunca cambia de rama por su cuenta`,
     };
   }
+  // Read before merging: after it, the value the branch had is only reachable
+  // through the new commit, and the receipt is what makes the integration
+  // attributable without reading anybody's commit message.
+  const beforeMerge = await deps.git.head(source.path).catch(() => null);
   const merge = await deps.git.merge(source.path, branch);
 
   if (!merge.ok) {
@@ -203,6 +208,12 @@ async function integrateUnit(
     };
   }
 
+  await recordIntegration(deps, identity.session, {
+    alias: source.alias,
+    sourcePath: source.path,
+    into: base,
+    before: beforeMerge,
+  });
   const release = await releaseUnit(deps, target);
   return {
     alias: source.alias,
@@ -315,7 +326,11 @@ async function ensureUnit(
 
   const mine = existing.find((w) => samePath(w.path, path));
   if (mine !== undefined) {
-    // Idempotent: the unit is already there, on its own branch.
+    // Idempotent: the unit is already there, on its own branch. The baseline is
+    // sealed here too — it is idempotent by alias, so the FIRST reading wins and a
+    // second `ensure` can never overwrite it with a state the session produced.
+    const sealed = await sealBaseline(deps, target);
+    if (sealed !== null) return sealed;
     return { ...unitOf(target, false), visibility: await attach(deps, path) };
   }
 
@@ -343,7 +358,39 @@ async function ensureUnit(
       hint: `verificá que la rama base '${base}' exista en ${source.alias}`,
     };
   }
+  const sealed = await sealBaseline(deps, target);
+  if (sealed !== null) return sealed;
   return { ...unitOf(target, true), visibility: await attach(deps, path) };
+}
+
+/**
+ * Seal how the source stood before this unit gets edited, or refuse the unit.
+ *
+ * Taking a unit is the moment a session starts being able to mutate a source, so
+ * it is the moment its baseline has to exist. A custody that is present but
+ * unreadable REFUSES here rather than proceeding: the session already carries the
+ * promise that it can be retired, and letting it mutate under a broken record is
+ * how that promise turns out to be unkeepable later — when the work is done and
+ * nobody can say what was there before. A session with no custody at all is a
+ * legacy one and passes through untouched.
+ */
+async function sealBaseline(
+  deps: WorktreeDeps,
+  target: ResolvedTarget,
+): Promise<WorktreeError | null> {
+  const update = await recordUnitTaken(deps, target.identity.session, {
+    alias: target.source.alias,
+    sourcePath: target.source.path,
+    unitPath: target.path,
+    unitBranch: target.branch,
+    base: target.base,
+  });
+  if (update.status !== "unreadable") return null;
+  return {
+    error: "custody_unreadable",
+    message: `la custodia de ${target.identity.session} no se puede leer: ${update.reason}`,
+    hint: "restaurá o retirá el registro de custodia de la sesión antes de editar la fuente; sin baseline no hay retiro que prometer",
+  };
 }
 
 async function releaseUnit(

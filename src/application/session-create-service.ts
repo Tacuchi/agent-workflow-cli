@@ -1,10 +1,16 @@
 import { join } from "node:path";
+import { checkSafeRelativePath } from "../domain/safe-path.js";
+import type { CustodyArtifact } from "../domain/session/custody.js";
 import type { SessionType } from "../domain/types.js";
+import { type WorklineNodeId, nodeFromDocPath } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { localDateIso } from "./dates.js";
+import { maxHistoryNumber } from "./history-table.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
 import { bindContextToSession, readBindingRegistry } from "./session-binding-service.js";
+import { baselineOf, birthCustody, custodyPath, writeCustody } from "./session-custody-service.js";
 import { renderSessionMarkdown } from "./templates/session.js";
 
 const VALID_TYPES = ["research", "refine", "exec", "quick"] as const;
@@ -17,6 +23,15 @@ export interface SessionCreateInput {
   originRaw?: string;
   /** Opaque conversation id; the new session becomes its associated line. */
   contextId?: string;
+  /**
+   * Workspace-relative artifacts the run RECEIVES and may modify.
+   *
+   * Declared at creation because that is the only moment their previous bytes
+   * still exist to be sealed. A run that names its input here can be reset to the
+   * exact state it started from; one that does not can only ever be discarded,
+   * and `discard/reset prepare` says so instead of guessing.
+   */
+  inputs?: readonly string[];
 }
 
 export interface SessionCreateRecordOutput {
@@ -27,6 +42,10 @@ export interface SessionCreateRecordOutput {
   folder: string;
   path: string;
   session_path: string;
+  /** Where the sealed custody landed — the run's baseline, not a human artifact. */
+  custody_path: string;
+  /** Declared inputs whose previous state the custody now holds. */
+  inputs: string[];
   origin?: string;
 }
 
@@ -49,7 +68,20 @@ export async function runSessionCreate(
   if ("error" in validated) return validated;
   const { type, name, objetivo } = validated;
 
-  const folderInfo = await claimSessionFolder(fs, paths, name, input.contextId);
+  // Baselines are read BEFORE the claim so the bytes sealed are the ones that
+  // existed before this session could touch anything, and a declared input that
+  // cannot be read fails the creation instead of producing a custody that
+  // pretends to know what it received.
+  const baselines = await readBaselines(fs, paths, input.inputs ?? []);
+  if ("error" in baselines) return baselines;
+
+  const folderInfo = await claimSessionFolder(
+    fs,
+    paths,
+    name,
+    input.contextId,
+    baselines.artifacts,
+  );
   if ("error" in folderInfo) return folderInfo;
 
   const sessionPath = folderInfo.sessionPath;
@@ -72,10 +104,51 @@ export async function runSessionCreate(
     folder: folderInfo.folder,
     path: sessionPath,
     session_path: sessionFilePath,
+    custody_path: folderInfo.custodyPath,
+    inputs: baselines.artifacts.map((a) => a.path),
   };
   if (origin && origin.length > 0) record.origin = origin;
 
   return { sessionCreate: record };
+}
+
+type Baselines = { artifacts: CustodyArtifact[] } | SessionCreateError;
+
+/**
+ * The sealed previous state of every declared input, or the refusal.
+ *
+ * The path guard is the workspace's own (`checkSafeRelativePath`), the same one
+ * every other write boundary uses: a second, hand-rolled version of "is this
+ * relative" is how two boundaries end up disagreeing about which paths are
+ * allowed. A repeated input is collapsed rather than sealed twice — the baseline
+ * of a path is one fact.
+ */
+async function readBaselines(
+  fs: FileSystemPort,
+  paths: PathsService,
+  inputs: readonly string[],
+): Promise<Baselines> {
+  const artifacts: CustodyArtifact[] = [];
+  const root = paths.workspaceDir();
+  for (const raw of inputs) {
+    const safe = checkSafeRelativePath(raw);
+    if (!safe.ok) {
+      return {
+        error: `--input '${raw}' tiene que ser una ruta relativa al workspace: ${safe.why}`,
+        code: "INVALID_INPUT",
+      };
+    }
+    if (artifacts.some((a) => a.path === safe.path)) continue;
+    try {
+      artifacts.push(await baselineOf(fs, root, safe.path));
+    } catch (err) {
+      return {
+        error: `no se pudo sellar el estado previo de '${safe.path}': ${err instanceof Error ? err.message : String(err)}`,
+        code: "CUSTODY_BASELINE_UNREADABLE",
+      };
+    }
+  }
+  return { artifacts };
 }
 
 interface ValidatedInput {
@@ -109,18 +182,26 @@ interface FolderInfo {
   folder: string;
   number: string;
   sessionPath: string;
+  custodyPath: string;
 }
 
 /**
- * Claim number + folder + conversation association under ONE lock: two
+ * Claim number + folder + custody + conversation association under ONE lock: two
  * concurrent creations must not read the same counter and race for the same
- * `NNN`, and the new line must belong to its conversation the moment it exists.
+ * `NNN`, and the new line must belong to its conversation — and hold its sealed
+ * baseline — the moment it exists.
+ *
+ * The custody is written INSIDE the critical section for the same reason the
+ * number is minted there: a session that becomes visible before its baseline is
+ * sealed is a session another process can start driving, and the first mutation
+ * would then land against a custody nobody had written yet.
  */
 async function claimSessionFolder(
   fs: FileSystemPort,
   paths: PathsService,
   name: string,
   contextId: string | undefined,
+  artifacts: readonly CustodyArtifact[],
 ): Promise<FolderInfo | SessionCreateError> {
   const id = contextId?.trim() ?? "";
   // `failure` (not `error`) so the busy-lock envelope `withCwdLock` returns
@@ -147,15 +228,29 @@ async function claimSessionFolder(
     // `NNN-` prefix is assigned here. A descriptor that already carries a leading
     // `NNN-` is normalized away first so the prefix can't double up.
     const descriptor = name.replace(/^\d{3}-/, "");
-    const number = await nextSessionNumber(fs, sessionsDir);
+    const number = await nextSessionNumber(fs, paths, sessionsDir);
     const folder = `${number}-${descriptor}`;
     const sessionPath = join(sessionsDir, folder);
     if (await fs.exists(sessionPath)) {
       return { ok: false, failure: { error: `Ya existe ${sessionPath}` } };
     }
     await fs.mkdirp(sessionPath);
+    await writeCustody(
+      fs,
+      sessionPath,
+      birthCustody({
+        subject: { kind: "session", key: folder },
+        subjectPath: sessionPath,
+        parents: parentsOf(artifacts),
+        artifacts,
+        created: localDateIso(new Date()),
+      }),
+    );
     if (id.length > 0) await bindContextToSession(fs, paths, id, folder);
-    return { ok: true, info: { folder, number, sessionPath } };
+    return {
+      ok: true,
+      info: { folder, number, sessionPath, custodyPath: custodyPath(sessionPath) },
+    };
   });
 
   if ("error" in result) return { error: result.error, code: "LOCK_BUSY" };
@@ -163,14 +258,44 @@ async function claimSessionFolder(
 }
 
 /**
- * Next global session number: scan `.workflow/sessions/` for any entry whose name
- * starts with a 3-digit code and return max+1, zero-padded. Type-agnostic — one
- * sequence for every session regardless of kind. Legacy `sessionNNN-…` folders
- * (no leading digit) don't match and are ignored, so the new sequence starts fresh.
+ * The typed parents a set of declared inputs implies.
+ *
+ * An input is the document the run works ON, so the document IS its parent — and
+ * the edge is provable, because the path was declared by the caller and its
+ * identity is fixed by the workspace layout. An input that names no spec or plan
+ * (a checkpoint, a loose file) contributes no parent rather than a guessed one.
  */
-async function nextSessionNumber(fs: FileSystemPort, sessionsDir: string): Promise<string> {
+function parentsOf(artifacts: readonly CustodyArtifact[]): WorklineNodeId[] {
+  const parents: WorklineNodeId[] = [];
+  for (const artifact of artifacts) {
+    const node = nodeFromDocPath(artifact.path);
+    if (node === null) continue;
+    if (parents.some((p) => p.kind === node.kind && p.key === node.key)) continue;
+    parents.push(node);
+  }
+  return parents;
+}
+
+/**
+ * Next global session number: the maximum of what the sessions folder holds and
+ * what `HISTORY.md` remembers, plus one, zero-padded. Type-agnostic — one
+ * sequence for every session regardless of kind.
+ *
+ * HISTORY is read as well as the folder because a RETIRED session leaves no
+ * folder behind: scanning live directories alone would hand `119` to a new
+ * session after the old `119` was discarded, and the two would then share a row
+ * key, a unit branch and a `--code`. Numbering is monotonic even across
+ * deletions — an identity is spent once. Legacy `sessionNNN-…` folders carry no
+ * leading digit and are ignored by the folder half, while the history half still
+ * recognizes their rows.
+ */
+async function nextSessionNumber(
+  fs: FileSystemPort,
+  paths: PathsService,
+  sessionsDir: string,
+): Promise<string> {
   const entries = await fs.list(sessionsDir);
-  let max = 0;
+  let max = await maxHistoryNumber(fs, paths.cwdHistoryFile());
   for (const entry of entries) {
     const m = entry.name.match(/^(\d{3})/);
     if (m?.[1]) max = Math.max(max, Number.parseInt(m[1], 10));
