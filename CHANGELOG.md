@@ -4,6 +4,34 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.12.0] — 2026-08-15
+
+**Un recorrido trabado dejó de ser un callejón sin salida, y la directiva que el CLI emite volvió a ser ejecutable tal cual.** La invocación se sellaba con el número desnudo de la sesión, que en un workspace con una carpeta legacy homónima casa con dos: ejecutarla verbatim fallaba por ambigüedad y corregirla a mano la convertía en otra invocación que el `submit` rechazaba, así que a los tres intentos la frontera quedaba agotada sin salida. El techo, además, lo gastaban los errores de tipeo del sobre —no las respuestas insuficientes—, una ejecución que fallaba no agotaba ni degradaba sino que se colgaba, y el único reset existente era restaurar a mano una copia del ledger. El contrato del sobre, en fin, sólo se aprendía quemando intentos.
+
+### Added
+
+- **`aw flow recover`.** Devuelve los intentos de la frontera agotada vigente conservando todo lo ya aplicado: recuperar no es reiniciar. Se niega con causa cuando esa frontera ya ejerció efectos, cuando la frontera vigente todavía es contestable y cuando se nombra otra. Y es un evento **registrado**, no un borrado: recuperar y después restaurar una copia vieja tampoco devuelve intentos.
+- **El contrato del sobre de `submit` se lee en `aw flow --help`**, por tipo de frontera y con sus trampas nombradas: que `input_digest` es el `state_digest` que la directiva rotula `continuidad:`; que el digest de `--approval` no es ése sino el que la directiva nombra en `siguiente:`; que `validations` son `{id, passed, detail}` y `effects` un registro `{planned, approved, applied}`, no una lista. Descubrirlo a ciegas le había costado once sesiones descartables a un host.
+- **Una frontera agotada queda registrada como tal**, distinguible de una contestada y de una salteada por condición, con su causa. Antes aparecía en `applied` junto a las realmente aplicadas y en `skipped` junto a las salteadas, con las degradaciones vacías.
+
+### Changed
+
+- **La directiva liga el folder de la sesión, no su número.** Es la única identidad que resuelve siempre a una sola sesión, y como el registro usa ese hueco en 19 invocaciones —todas en posiciones que aceptan un folder—, ligarlo en el punto donde se liga las repara todas de una vez. Con eso el recorrido deja de depender de la salud del correlativo de sesiones, que se arregla aparte. La proyección de reanudación ya usaba el folder: ahora las dos convenciones son una.
+- **Un intento es una respuesta evaluada.** Una tabla cerrada clasifica cada código de rechazo en «el sobre no se pudo entender como respuesta a esta frontera» (no gasta) y «se entendió y resultó insuficiente» (gasta). Un código sin clasificar gasta, para que el techo no se apague por omisión, y un guard recorre el parser, el veredicto y el submit para que ninguno quede sin lado.
+- **El cierre de la sesión es del runtime.** La doctrina embarcada le pedía al agente que corriera `session-close`, cosa que el `finalize` ya hace por su cuenta; obedecerla a mitad de recorrido dejaba al siguiente avance parado sobre una sesión cerrada. Ahora el chasis lo dice al revés, y el error de sesión cerrada nombra la operación exacta que la reabre, con el folder adentro.
+
+### Fixed
+
+- **Una ejecución que falla ya no se cuelga.** No agotaba ni degradaba —la excepción salía temprano ante cualquier fila con acción delegada, y una ejecución interna fallida no registraba intento—, así que avanzar cinco veces devolvía cinco veces el mismo error con el ledger vacío. Ahora registra su intento y termina agotando o degradando con causa, sin degradar por su cuenta una frontera que sencillamente todavía nadie ejecutó, y sin degradar nunca una fila con efecto material: ésas quedan agotadas, con `recover` como salida declarada.
+- **El techo de intentos dejó de ser evadible.** El contador vive fuera del blob sellado **y fuera de la carpeta de la sesión** —mientras vivía adentro, un `cp -r` de esa carpeta se lo llevaba y la evasión llegaba con la forma de un backup— y va sellado con la clave de la sesión adentro, de modo que editarlo a mano se rechaza como cualquier otro archivo de la corrida. Un contador que perdona más intentos de los que registró también se rechaza, y borrarlo habiendo un piso sellado en el estado falla cerrado en vez de reconstruirse en silencio.
+- **Las negativas propias de `submit` cobran intento.** Los rechazos de alcance y de propuesta no lo hacían, así que contestar la frontera de alcance con un alias que el plan no nombra no agotaba, no degradaba y no se recuperaba: un bucle sin techo.
+- **Reabrir una sesión deja coherente el bloque que el CLI administra.** Tras reabrir, `aw sessions` la daba por activa mientras el bloque dentro de `SESSION.md` seguía declarándola cerrada — y ese bloque es lo primero que lee un agente al retomar, incluido en el payload de reanudación.
+
+### Notes
+
+- **Compatibilidad.** Los campos nuevos del estado son opcionales: un `.flow-run.json` escrito por la versión anterior se lee, camina y agota, y uno nuevo sin intentos gastados queda byte-idéntico al de antes. Un recorrido cuya sesión no tiene contador todavía asume el valor conservador y lo siembra en la próxima escritura.
+- **Cómo se verificó.** Una revisión adversarial rechazó la primera implementación con cuatro bloqueantes —el contador evadible por restore, el contador sin sellar, la guarda de `recover` fail-open y las negativas de `submit` sin cobrar—, todos reproducidos sobre un workspace real. Cada uno quedó cerrado con una prueba que se pone roja al revertir el arreglo.
+
 ## [21.11.0] — 2026-08-15
 
 **El launcher de `dbhub` encontraba el DSN sólo si el nombre de la conexión coincidía exactamente con el de la variable, y el doctor de visibilidad señalaba un archivo que podía no existir.** Registrar la conexión como `qtc-cert` derivaba `DB_QTC_CERT_DSN` y fallaba aunque el DSN estuviera en `DB_CERT_DSN` —que es justo lo que escribe `aw bootstrap-dsn`—, y el mensaje nombraba una sola variable sin mencionar las dos salidas que ya existían. Además el banner ASCII del servidor viajaba por el mismo canal que el protocolo JSON-RPC. Del lado de visibilidad, el diagnóstico decía leer `.claude/settings.json` incluso cuando la configuración vivía en `settings.local.json`.
