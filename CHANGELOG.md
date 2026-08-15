@@ -4,7 +4,28 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [22.0.0] — En preparación
+## [22.0.1] — 2026-08-15
+
+**El gate source-bounded era insatisfacible en un workspace con el árbol sucio, grande y con acentos.** `aw flow submit` rechazaba toda evidencia `workline.source-bounded` con `WORKLINE_CHECKOUT_PROOF_STALE` —«el checkout cambió desde que se capturó la prueba»— sin que el checkout cambiara. No había respuesta correcta posible y cada intento quemaba uno de los tres de la frontera. Como los cinco loops exigen esa evidencia para converger, el workspace afectado se quedaba sin ruta de cierre por `aw flow`.
+
+### Fixed
+
+- **La salida de un proceso se decodifica una sola vez, sobre el flujo entero.** Se acumulaba con un `toString()` por chunk: toda secuencia UTF-8 multibyte partida en un borde de pipe se volvía carácter de reemplazo, y dónde parte un pipe no es estable entre corridas. Medido sobre un diff de 4,5 MB en español: 4.500.324 bytes tras decodificar contra 4.500.171 reales. Alcanza a toda lectura de git con acentos, no sólo a la huella.
+- **La huella del checkout se hashea en bytes y no se decodifica en ningún punto.** `git diff --binary` es binario por su propio flag; convertirlo a texto ataba el digest a una codificación que no le aporta nada. Con eso `checkoutDigest` dejaba de ser reproducible, y como `validateCheckoutProof` lo compara contra un recálculo del momento, ningún valor podía coincidir jamás.
+- **Un archivo sin trackear que git no puede hashear deja de tirar el checkout entero.** Un symlink colgante, un enlace a un directorio o un archivo sin permiso de lectura hacían fallar su `hash-object`, y ese fallo descartaba la fuente completa del conjunto elegible: el submit contestaba `WORKLINE_CHECKOUT_PROOF_INVALID` —«la fuente no pertenece al checkout adquirido»— sobre un checkout que existe y es legible, de forma permanente mientras el enlace existiera, y quemando un intento cada vez. Es el mismo bloqueo por otra puerta: ahora la entrada se hace constar en la huella y el resto del árbol se sigue probando.
+- **El tamaño de un blob en conflicto vuelve a ser el que git guardó.** `readStage` medía bytes sobre el texto ya decodificado, así que un blob que no fuera UTF-8 se reportaba con otro tamaño.
+- **Dos mensajes de error dejan de llegar mutilados**: el de una conexión MCP que falla y el de un `git` de instalación de skills acumulaban su stderr con el mismo defecto.
+
+### Changed
+
+- **Un rechazo por fuente inválida nombra las elegibles.** `WORKLINE_CHECKOUT_PROOF_INVALID` decía qué fuente no pertenecía al checkout adquirido, no cuáles sí. Son `workspace` y las unidades aisladas de la sesión, nunca la ruta real del repo declarado en `Fuentes`, y averiguarlo costaba intentos de frontera.
+- **Un digest que no sobrevive a su propio recálculo se informa como tal.** El submit toma la huella dos veces, en paralelo, y cuando difieren el rechazo dice que el árbol cambia mientras se valida o que la huella no es reproducible, en vez de mandar a buscar un cambio que puede no existir. Sigue siendo `WORKLINE_CHECKOUT_PROOF_STALE`: el vocabulario de códigos no cambia.
+
+### Notes
+
+- **Una prueba capturada con 22.0.0 puede vencer una vez al validar con 22.0.1**, y sólo si su árbol disparaba el defecto: un diff no-ASCII que superara un chunk. En ese caso no existía prueba válida posible, así que recapturarla era el camino de todos modos. Un árbol limpio, o uno cuyo diff sea ASCII puro, conserva su digest.
+
+## [22.0.0] — 2026-08-15
 
 ### Breaking
 
