@@ -4,6 +4,29 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.15.0] — 2026-08-15
+
+**El bloque que el CLI administra dentro de `CLAUDE.md` y `AGENTS.md` adoptaba lo ajeno o lo borraba, según dónde estuviera escrito.** Su recorrido era posicional: abierta la sección de ramas, cualquier línea con forma de par clave-valor se tomaba como una rama más y el render la devolvía anidada bajo ese encabezado, perpetuándola. Y lo que cayera fuera de esa sección corría peor suerte: desaparecía sin aviso en la reescritura siguiente.
+
+### Changed
+
+- **Una rama se reconoce por su forma más una clave que el bloque ya declara**, no por dónde aparece. Una nota que se parece a un registro deja de convertirse en una rama de trabajo.
+- **Lo ajeno se conserva verbatim, en el lugar donde estaba.** Cada línea preservada viaja con el registro que la precedía, así que una nota entre «Última actividad» e «Histórico» vuelve exactamente ahí. Se conserva en vez de declararse perdida porque declarar sigue destruyendo. Una sección propia entera —un `## Notas` con su cuerpo— también sobrevive: las cuatro secciones del bloque se leen por nombre, así que todo lo que viviera bajo otro encabezado era invisible para el parser y no volvía nunca.
+- **Lo que el CLI escribió y ya no puede honrar se poda y se declara**, y la declaración aparece en la vista humana, no sólo en el JSON: `workspace-init` tiene proyección humana, así que el JSON no se imprime por defecto y una pérdida declarada sólo ahí no llegaba a nadie.
+- **Reconciliar poda las ramas cuya fuente ya no se declara.** Antes la fuente salía de la tabla y su rama quedaba huérfana.
+- **Cambiar el nombre del proyecto preserva su descripción.** Pasarlo reemplazaba la sección entera, borrando la prosa con exit 0 y sin advertencia.
+- **La vista previa corre el mismo plan que la corrida**, y distingue lo que ya existe de lo que se va a crear. Informaba valores enlatados, idénticos en un workspace virgen y en uno ya inicializado.
+- **El bloque vive en dos archivos y ahora se lee de los dos**: una nota escrita sólo en `AGENTS.md` —el que lee Codex— se perdía en la reescritura siguiente.
+
+### Fixed
+
+- **Un retiro que no puede restaurar nada lo dice antes de aplicar.** Ninguna skill declaraba las entradas de su sesión, así que toda sesión nacía sin artefactos y `reset` borraba la sesión, restauraba cero archivos y devolvía éxito. Ahora las entradas las **deriva el CLI** desde el documento que el flujo ya conoce: una skill que puede olvidarse es un contrato que se rompe solo.
+- **El rechazo por falta de custodia nombra lo que verificó.** Afirmaba que la sesión «nació antes de que existiera el registro» incluso sobre una carpeta creada después de esa release: era una inferencia por ausencia de archivo vendida como fecha de nacimiento.
+
+### Notes
+
+- **Compatibilidad.** El formato del bloque no cambia y los goldens siguen intactos. Un bloque escrito a mano o por un CLI anterior, con sus entradas sin indentar, se sigue leyendo: la indentación no identifica un registro, sólo decide dónde va una línea con forma de registro y clave desconocida — indentada es residuo propio y se poda declarándolo, al ras es la nota de alguien y se conserva.
+
 ## [21.14.0] — 2026-08-15
 
 **Un plan podía prometer una validación que nadie iba a poder ejecutar.** Nada impedía redactar una fase cuya condición de terminado exigiera producción o el producto ya desplegado, y el defecto se descubría tarde y de la peor forma: el plan corría hasta esa fase y quedaba bloqueado sin salida, porque nada en una corrida aplica nada a producción. Pasó dos veces con dos planes distintos — uno cuya fase era «producción recupera el acceso», otro esperando que un tercero normalizara datos allá.
