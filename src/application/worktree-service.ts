@@ -210,6 +210,7 @@ async function integrateSession(
   input: WorktreeInput,
 ): Promise<WorktreeIntegrateSessionOutput | WorktreeError> {
   const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
+    intent: "write",
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
   });
@@ -414,6 +415,7 @@ async function resolveTarget(
   }
 
   const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
+    intent: "write",
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
   });
@@ -685,6 +687,7 @@ async function narrowTo(
 ): Promise<string | null | WorktreeError> {
   if (code === undefined) return null;
   const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
+    intent: "read",
     code,
     allowClosed: true,
     bind: false,

@@ -1,11 +1,11 @@
 import { removeSource } from "../../application/source-remove-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const removeSourceCommand: QtcCommand = {
+export const removeSourceCommand: CliCommand = {
   name: "remove-source",
   describe:
     "Remove a source from the workspace: detach multi-root visibility, prune the WORKSPACE block (Fuentes + working/qa branches), stop its processes, and delete .workflow/launch/<alias>. Does NOT delete the repo. Usage: aw remove-source <alias>.",

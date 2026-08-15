@@ -1,3 +1,4 @@
+import { coreDocumentLocations } from "../domain/docs-canon.js";
 import type { FlowRunScope } from "../domain/flow/run-state.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -91,6 +92,14 @@ export async function runResume(
     ...(input.git !== undefined ? { git: input.git } : {}),
   });
 
+  if (index.docs_canon_error !== undefined) {
+    return {
+      status: "invalid_target",
+      target: input.target ?? input.code ?? "",
+      action: `el canon documental no es válido: ${index.docs_canon_error}. Corregilo antes de reanudar trabajo`,
+    };
+  }
+
   if (input.code !== undefined) return await resumeSession(fs, paths, index, input);
   if (input.target !== undefined) return resumeTarget(index, input.target);
   return await resumePipeline(fs, paths, index);
@@ -119,7 +128,7 @@ function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
     return {
       status: "invalid_target",
       target,
-      action: `ningún documento coincide con '${target}': pasá una ruta docs/specs|docs/plans o el número, o usá --code para una sesión`,
+      action: `ningún documento coincide con '${target}': pasá una ruta bajo ${coreDocumentLocations()} o el número, o usá --code para una sesión`,
     };
   }
   if (matches.length > 1) {

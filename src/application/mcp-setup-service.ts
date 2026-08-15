@@ -1,11 +1,10 @@
 import {
+  type McpConnectionRef,
   type McpEntry,
   type McpHost,
-  type McpInstance,
   type McpWriteOpts,
   type McpWriteResult,
   buildMcpEntry,
-  normalizeMcpInstance,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import { writeMcpEntry } from "./mcp-host-writer.js";
@@ -19,12 +18,11 @@ import {
 
 export interface McpSetupInput {
   hosts: McpHost[];
-  instances: McpInstance[];
+  connections: McpConnectionRef[];
   scope: "workspace" | "global";
   workspace?: string;
   dryRun?: boolean;
   force?: boolean;
-  dsnVars?: Record<string, string>;
 }
 
 export interface McpSetupResult {
@@ -52,11 +50,8 @@ export function runMcpSetup(env: EnvPort, input: McpSetupInput): McpSetupResult 
   const errors: McpErrorRecord[] = [];
 
   for (const host of input.hosts) {
-    for (const instance of input.instances) {
-      const entry: McpEntry = buildMcpEntry(
-        instance,
-        input.dsnVars?.[normalizeMcpInstance(instance)],
-      );
+    for (const connection of input.connections) {
+      const entry: McpEntry = buildMcpEntry(connection.name, connection.dsnVar);
       try {
         const result = writeMcpEntry(host, entry, { scopeDir, kind: input.scope }, opts);
         if (result.action === "skipped-idempotent") {
@@ -65,7 +60,7 @@ export function runMcpSetup(env: EnvPort, input: McpSetupInput): McpSetupResult 
           applied.push(result);
         }
       } catch (err) {
-        errors.push(toErrorRecord(host, instance, scopeDir, err));
+        errors.push(toErrorRecord(host, connection.name, scopeDir, err));
       }
     }
   }

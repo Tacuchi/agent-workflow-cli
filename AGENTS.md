@@ -30,7 +30,7 @@ This file provides guidance to AI coding agents working with code in this reposi
 ## Architecture
 
 - Hexagonal: `domain/` (pure types, no I/O) → `ports/` (interfaces) → `adapters/` (Node implementations). Business logic lives in `application/*-service.ts` and must be I/O-free — all fs/env/git/process access goes through ports injected via `CliContext`.
-- CLI: every subcommand is a `QtcCommand` in `src/cli/commands/`, declared in `ALL_COMMANDS` (`src/cli/commands/index.ts`, which `main.ts` registers) and slotted into a family in `src/cli/help-groups.ts`. Adding a command means doing both.
+- CLI: every subcommand is a `CliCommand` in `src/cli/commands/`, declared in `ALL_COMMANDS` (`src/cli/commands/index.ts`, which `main.ts` registers) and slotted into a family in `src/cli/help-groups.ts`. Adding a command means doing both.
 - Namespace abstraction: all workspace artifacts live under `.<namespace>/` (default `workflow` → `.workflow/`). Resolved via `--namespace` flag → `AW_NAMESPACE` → workspace auto-detect → user config → default.
 - `skills/w/` is pure markdown + JSON — NOT compiled by `tsc` (which builds `src/` only). It ships in the npm tarball.
 

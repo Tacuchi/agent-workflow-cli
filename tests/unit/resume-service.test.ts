@@ -39,6 +39,17 @@ function session(fs: MemFs, folder: string, objective: string, origin: string, p
 // ── no target: the documental pipeline ───────────────────────────────────────
 
 describe("runResume — without a target it follows the documental priority", () => {
+  it("fails closed when the core documentary canon is invalid", async () => {
+    const fs = workspace();
+    fs.file("/cwd/.workflow/skills.toml", '[docs]\nspec = "knowledge/specs"\n');
+
+    const out = await resume(fs);
+
+    expect(out.status).toBe("invalid_target");
+    if (out.status !== "invalid_target") return;
+    expect(out.action).toContain("canon documental");
+  });
+
   it("recommends the unrefined spec over a partial plan and a loose checkpoint", async () => {
     const fs = workspace();
     fs.file("/cwd/docs/specs/001-spec-borrador.md", DRAFT);

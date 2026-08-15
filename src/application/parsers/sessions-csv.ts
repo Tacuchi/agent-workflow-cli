@@ -1,7 +1,6 @@
+import { isCorrelative, sameCorrelative } from "../../domain/correlative.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { listSessionFolders, parseSessionFolder } from "../session-resolver.js";
-
-const SESSION_CODE_RE = /^\d{1,3}$/;
+import { listSessionFolders, sessionNumericCode } from "../session-resolver.js";
 
 export class SessionsCsvError extends Error {
   readonly code: "INVALID_INPUT" | "UNKNOWN_SESSION";
@@ -26,20 +25,17 @@ export function parseSessionsCsv(input: string): string[] {
     throw new SessionsCsvError("INVALID_INPUT", "--sessions vacío");
   }
   const normalized: string[] = [];
-  const seen = new Set<string>();
   for (const t of tokens) {
-    if (!SESSION_CODE_RE.test(t)) {
+    if (!isCorrelative(t)) {
       throw new SessionsCsvError(
         "INVALID_INPUT",
-        `--sessions: token inválido '${t}' (esperado: 1-3 dígitos)`,
+        `--sessions: token inválido '${t}' (esperado: correlativo de al menos 3 dígitos)`,
       );
     }
-    const padded = t.padStart(3, "0");
-    if (seen.has(padded)) {
-      throw new SessionsCsvError("INVALID_INPUT", `--sessions: código duplicado '${padded}'`);
+    if (normalized.some((existing) => sameCorrelative(existing, t))) {
+      throw new SessionsCsvError("INVALID_INPUT", `--sessions: código duplicado '${t}'`);
     }
-    seen.add(padded);
-    normalized.push(padded);
+    normalized.push(t);
   }
   return normalized;
 }
@@ -49,13 +45,20 @@ export async function validateSessionsExist(
   sessionsDir: string,
   codes: readonly string[],
 ): Promise<void> {
-  const folders = await listSessionFolders(fs, sessionsDir);
-  const present = new Set<string>();
-  for (const f of folders) {
-    const { code } = parseSessionFolder(f.name);
-    if (code !== null) present.add(code);
+  for (const code of codes) {
+    if (isCorrelative(code)) continue;
+    throw new SessionsCsvError(
+      "INVALID_INPUT",
+      `--sessions: token inválido '${code}' (esperado: correlativo de al menos 3 dígitos)`,
+    );
   }
-  const missing = codes.filter((c) => !present.has(c));
+  const folders = await listSessionFolders(fs, sessionsDir);
+  const present: string[] = [];
+  for (const f of folders) {
+    const code = sessionNumericCode(f.name);
+    if (code !== null) present.push(code);
+  }
+  const missing = codes.filter((code) => !present.some((found) => sameCorrelative(found, code)));
   if (missing.length > 0) {
     throw new SessionsCsvError(
       "UNKNOWN_SESSION",

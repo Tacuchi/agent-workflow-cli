@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runGitFlow } from "../../src/application/git-flow-service.js";
-import type { DefaultBranches } from "../../src/application/parsers/project-block.js";
+import type {
+  DefaultBranches,
+  ProjectBlockMarkers,
+} from "../../src/application/parsers/project-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { renderProjectBlock } from "../../src/application/render/project-block.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -20,7 +23,11 @@ interface SourceSpec {
   qa?: string;
 }
 
-function blockFor(sources: SourceSpec[], defaults?: DefaultBranches): string {
+function blockFor(
+  sources: SourceSpec[],
+  defaults: DefaultBranches | undefined,
+  markers: ProjectBlockMarkers,
+): string {
   const workingBranches: Record<string, string> = {};
   const qaBranches: Record<string, string> = {};
   for (const s of sources) {
@@ -35,6 +42,7 @@ function blockFor(sources: SourceSpec[], defaults?: DefaultBranches): string {
     ...(defaults ? { defaultBranches: defaults } : {}),
     workingBranches,
     qaBranches,
+    markers,
   });
 }
 
@@ -75,7 +83,11 @@ describe("git-flow service", () => {
   }
 
   async function writeBlock(sources: SourceSpec[], defaults?: DefaultBranches): Promise<void> {
-    await writeFile(join(cwd, "CLAUDE.md"), blockFor(sources, defaults), "utf8");
+    await writeFile(
+      join(cwd, "CLAUDE.md"),
+      blockFor(sources, defaults, paths().blockMarkers()),
+      "utf8",
+    );
   }
 
   it("sync: pull work → checkout prod+pull → checkout work + merge prod", async () => {

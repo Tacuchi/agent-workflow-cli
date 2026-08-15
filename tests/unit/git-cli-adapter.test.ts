@@ -193,3 +193,39 @@ describe("GitCliAdapter — changedFiles lee el formato porcelain sin recortar",
     expect(await new GitCliAdapter(porcelain("\n")).changedFiles("/repo")).toEqual([]);
   });
 });
+
+describe("GitCliAdapter — huella del checkout", () => {
+  const fingerprint = (patch: string) =>
+    new ScriptedProcess([
+      {
+        match: (_c, args) => args[0] === "diff" && args.includes("--binary"),
+        result: { code: 0, stdout: patch, stderr: "" },
+      },
+      {
+        match: (_c, args) => args[0] === "status" && args.includes("--porcelain=v2"),
+        result: {
+          code: 0,
+          stdout: "1 .M N... 100644 100644 100644 abc abc src/policy.ts\0",
+          stderr: "",
+        },
+      },
+      {
+        match: (_c, args) => args[0] === "ls-files" && args.includes("--others"),
+        result: { code: 0, stdout: "scratch.txt\0", stderr: "" },
+      },
+      {
+        match: (_c, args) => args[0] === "hash-object",
+        result: { code: 0, stdout: "untracked-blob\n", stderr: "" },
+      },
+    ]);
+
+  it("cambia cuando cambian los bytes aunque status siga nombrando el mismo archivo", async () => {
+    const before = await new GitCliAdapter(
+      fingerprint("diff --git a/src/policy.ts\n-old\n+one\n"),
+    ).checkoutFingerprint("/repo");
+    const after = await new GitCliAdapter(
+      fingerprint("diff --git a/src/policy.ts\n-old\n+two\n"),
+    ).checkoutFingerprint("/repo");
+    expect(after).not.toBe(before);
+  });
+});

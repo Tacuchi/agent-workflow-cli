@@ -450,7 +450,7 @@ describe("registro de autoridad — la migración cerró observable", () => {
   });
 });
 
-describe("registro de autoridad — cert-only se pide donde se juzga", () => {
+describe("registro de autoridad — source-bounded se pide donde se juzga", () => {
   /**
    * La regla: ninguna fase, tarea o gate puede NECESITAR producción ni el
    * producto desplegado para validarse. Dos planes reales quedaron trabados por
@@ -462,27 +462,32 @@ describe("registro de autoridad — cert-only se pide donde se juzga", () => {
    * cada evidencia, así que la regla no puede disolverse en un «el checklist
    * pasó» genérico.
    */
-  const CERT_ONLY = "plan.cert-only";
+  const SOURCE_BOUNDED = "workline.source-bounded";
 
-  it.each(["plan-new.coherence-gate", "plan-refine.executability-gate", "spec-refine.ready-gate"])(
-    "%s la exige junto a su checklist",
-    (id) => {
-      const decision = FLOW_DECISIONS.find((row) => row.id === id);
-      expect(decision, id).toBeDefined();
-      const action = actionOf(decision as (typeof FLOW_DECISIONS)[number]);
-      expect(action?.evidence, id).toContain(CERT_ONLY);
-      // Junto a, nunca en lugar de: el gate sigue pidiendo su checklist propio.
-      expect((action?.evidence ?? []).length, id).toBeGreaterThan(1);
-    },
-  );
+  it.each([
+    "quick.convergence-gate",
+    "plan-new.coherence-gate",
+    "plan-refine.executability-gate",
+    "spec-refine.ready-gate",
+    "plan-exec.entry-gate",
+  ])("%s la exige junto a su checklist", (id) => {
+    const decision = FLOW_DECISIONS.find((row) => row.id === id);
+    expect(decision, id).toBeDefined();
+    const action = actionOf(decision as (typeof FLOW_DECISIONS)[number]);
+    expect(action?.evidence, id).toContain(SOURCE_BOUNDED);
+    // Junto a, nunca en lugar de: el gate sigue pidiendo su checklist propio.
+    expect((action?.evidence ?? []).length, id).toBeGreaterThan(1);
+  });
 
-  it("no la pide ninguna otra frontera: el juicio vive en los gates de promoción", () => {
+  it("no la pide ninguna otra frontera: el juicio vive en los gates de cierre", () => {
     const asking = FLOW_DECISIONS.filter((decision) =>
-      (actionOf(decision)?.evidence ?? []).includes(CERT_ONLY),
+      (actionOf(decision)?.evidence ?? []).includes(SOURCE_BOUNDED),
     ).map((decision) => decision.id);
     expect(asking.sort()).toEqual([
+      "plan-exec.entry-gate",
       "plan-new.coherence-gate",
       "plan-refine.executability-gate",
+      "quick.convergence-gate",
       "spec-refine.ready-gate",
     ]);
   });

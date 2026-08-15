@@ -3,6 +3,7 @@ import {
   type ExportCategory,
   type ExportPrepared,
   type ExportSelection,
+  SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS,
   applyExport,
   conflictingScopeFlags,
   prepareExport,
@@ -626,17 +627,7 @@ describe("la consolidación de scripts declara el estado final neto", () => {
   it("el contrato de scripts publica la doctrina completa", async () => {
     const fs = workspace();
     const contract = (await prepare(fs, "scripts")).request.contract;
-    for (const clause of [
-      "ESTADO FINAL NETO",
-      "nace y muere dentro de la secuencia se omite",
-      "lo migrado va directo a su forma final",
-      "aunque ningún script lo elimine",
-      "orden seguro para las dependencias",
-      "no el reverso literal de los forwards",
-      "contra el código además de las sesiones y la base",
-      "identidades concretas y semillas de prueba",
-      "funciones reutilizables, tablas maestras y el registro de menú/rol",
-    ]) {
+    for (const clause of SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS) {
       expect(contract, clause).toContain(clause);
     }
   });

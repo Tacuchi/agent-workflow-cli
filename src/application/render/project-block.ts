@@ -12,7 +12,7 @@ import {
   BLOCK_PLACEHOLDER_FUENTES,
   BLOCK_PLACEHOLDER_PROYECTO,
   BLOCK_PLACEHOLDER_STACK,
-  LEGACY_QTC_MARKERS,
+  DEFAULT_PROJECT_BLOCK_MARKERS,
 } from "../parsers/project-block.js";
 
 export interface RenderProjectBlockInput {
@@ -27,12 +27,12 @@ export interface RenderProjectBlockInput {
   preservedLines?: PreservedLine[];
   /** Path used in the "Histórico:" line. Default `.workflow/HISTORY.md`. */
   historicoPath?: string;
-  /** Markers used to wrap the block. Default = legacy QTC markers (kept for back-compat parsing). */
+  /** Markers used to wrap the block. Defaults to the Workline project block. */
   markers?: ProjectBlockMarkers;
 }
 
 export function renderProjectBlock(input: RenderProjectBlockInput): string {
-  const markers = input.markers ?? LEGACY_QTC_MARKERS;
+  const markers = input.markers ?? DEFAULT_PROJECT_BLOCK_MARKERS;
   const historicoPath = input.historicoPath ?? ".workflow/HISTORY.md";
   const last = input.lastActivity ?? localMinuteIso();
   const kept = input.preservedLines;

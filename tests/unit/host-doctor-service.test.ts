@@ -80,8 +80,8 @@ describe("runHostDoctor", () => {
     const { fs, env, proc } = buildScenario({
       jqInPath: false,
       plugins: [
-        { marketplace: "qtc-marketplace", pluginDir: "qtc", name: "qtc" },
-        { marketplace: "qtc-marketplace", pluginDir: "agent-workflow", name: "agent-workflow" },
+        { marketplace: "sample-marketplace", pluginDir: "sample", name: "sample" },
+        { marketplace: "sample-marketplace", pluginDir: "agent-workflow", name: "agent-workflow" },
       ],
     });
     const r = await runHostDoctor(fs, env, proc);

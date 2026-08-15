@@ -170,7 +170,10 @@ describe("project-block · una sección propia dentro del bloque sobrevive (AC-0
 
   it("se conserva y vuelve completa, encabezado incluido", () => {
     const clean = renderProjectBlock({ ...BASE, workingBranches: { core: "feature/x" } });
-    const dirty = clean.replace("<!-- QTC-PROJECT-END -->", `${NOTAS}\n\n<!-- QTC-PROJECT-END -->`);
+    const dirty = clean.replace(
+      "<!-- WORKFLOW-PROJECT-END -->",
+      `${NOTAS}\n\n<!-- WORKFLOW-PROJECT-END -->`,
+    );
 
     const parsed = parseProjectBlock(dirty);
     expect(parsed?.preserved_lines).toEqual([
@@ -193,7 +196,10 @@ describe("project-block · una sección propia dentro del bloque sobrevive (AC-0
 
   it("y la segunda reescritura no la mueve ni la duplica", () => {
     const clean = renderProjectBlock({ ...BASE, workingBranches: { core: "feature/x" } });
-    const dirty = clean.replace("<!-- QTC-PROJECT-END -->", `${NOTAS}\n\n<!-- QTC-PROJECT-END -->`);
+    const dirty = clean.replace(
+      "<!-- WORKFLOW-PROJECT-END -->",
+      `${NOTAS}\n\n<!-- WORKFLOW-PROJECT-END -->`,
+    );
     const once = rewrite(dirty);
     expect(rewrite(once)).toBe(once);
     expect(once.match(/## Notas/g)).toHaveLength(1);

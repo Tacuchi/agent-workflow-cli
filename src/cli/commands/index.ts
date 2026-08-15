@@ -4,8 +4,7 @@
 // global-help describe map is built from it, and `main.ts` registers this array
 // directly (order here = order in the grouped `--help` listing).
 
-import type { QtcCommand } from "../registry.js";
-import { bootstrapDsnCommand } from "./bootstrap-dsn.js";
+import type { CliCommand } from "../registry.js";
 import { capabilityCommand } from "./capability.js";
 import { checkBranchCommand } from "./check-branch.js";
 import { checkpointReadCommand } from "./checkpoint-read.js";
@@ -57,7 +56,7 @@ import { workspaceInitCommand } from "./workspace-init.js";
 import { workspaceMigrateCommand } from "./workspace-migrate.js";
 import { worktreeCommand } from "./worktree.js";
 
-export const ALL_COMMANDS: readonly QtcCommand[] = [
+export const ALL_COMMANDS: readonly CliCommand[] = [
   sessionsCommand,
   statusCommand,
   resumeCommand,
@@ -105,7 +104,6 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   // session that drove it.
   discardCommand,
   resetCommand,
-  bootstrapDsnCommand,
   codeScanCommand,
   pluginCacheCommand,
   pluginDoctorCommand,

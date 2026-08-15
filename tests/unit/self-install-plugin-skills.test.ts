@@ -106,12 +106,12 @@ describe("selfInstallPluginSkills", () => {
   it("con --namespace patchea name: en frontmatter y usa <ns>-<name>", async () => {
     makeSkillDir(fromDir, "session");
     await selfInstallPluginSkills(
-      buildArgs({ from: fromDir, target: "warp", namespace: "qtc" }),
+      buildArgs({ from: fromDir, target: "warp", namespace: "sample" }),
       buildCtx(homeDir),
     );
-    const destSkillMd = join(homeDir, ".warp", "skills", "qtc-session", "SKILL.md");
+    const destSkillMd = join(homeDir, ".warp", "skills", "sample-session", "SKILL.md");
     const content = readFileSync(destSkillMd, "utf-8");
-    expect(content).toContain("name: qtc-session");
+    expect(content).toContain("name: sample-session");
   });
 
   it("idempotencia: sin --force, segunda corrida retorna skipped", async () => {

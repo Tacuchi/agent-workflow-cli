@@ -25,6 +25,11 @@
 
 import { WORKLINE_FLOWS, type WorklineFlow } from "../../application/capability/compose.js";
 import type { EffectClass } from "../capability/effects.js";
+import { DEFAULT_CORE_DOCS_CANON } from "../docs-canon.js";
+import { SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
+
+const SPEC_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.spec;
+const PLAN_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.plan;
 
 export const FLOW_AUTHORITIES = ["cli", "agent", "human"] as const;
 
@@ -694,16 +699,13 @@ const PLAN_INPUT = "modules/PLAN-INPUT.md";
 const DB_SCRIPTS_ONLY = "modules/DB-SCRIPTS-ONLY.md";
 
 /**
- * Cert-only, asked at the gate that decides whether a document may promote.
+ * Source-bounded, asked at the gate that decides whether a document may promote.
  *
- * The rule: no phase, task or gate may NEED production or the deployed product
- * to be validated. Two real plans stalled on it — one whose phase was "producción
- * recupera el acceso", another waiting on a third party to normalize data there —
- * and both were unfinishable by construction, because nothing in a run applies
- * anything to production. What genuinely needs it ships as prepared script +
- * runbook + declared handoff, OUTSIDE any phase; reading production (data
- * read-only, code, branches) stays allowed, and a local check may exist but never
- * blocks a phase from closing.
+ * The rule: a phase closes only on proof obtained from its declared checkout.
+ * Remote reads remain research snapshots and a real operational application is a
+ * handoff, never a validation condition. This is structural evidence rather than
+ * a vocabulary blacklist: a source, relative cwd and current checkout digest are
+ * what make the claim reproducible.
  *
  * It rides as an evidence id and not as doctrine prose because this is where the
  * judgment happens: the gate hands back one `{id, passed, detail}` per evidence,
@@ -711,7 +713,6 @@ const DB_SCRIPTS_ONLY = "modules/DB-SCRIPTS-ONLY.md";
  * a general "the checklist passed". The `detail` is where the reader learns which
  * phase, if any, was reformulated.
  */
-const CERT_ONLY_EVIDENCE = "plan.cert-only";
 
 /**
  * What PLAN's documents say about who decides their deterministic steps.
@@ -1344,7 +1345,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         reason:
           "los criterios verdes exigen haber CORRIDO la prueba del entregable, y correr código nunca es una operación interna",
       },
-      evidence: ["quick.criterios-verdes"],
+      evidence: ["quick.criterios-verdes", SOURCE_BOUNDED_EVIDENCE],
       idempotent: true,
       recovery:
         "arreglá lo que el criterio reprobó y volvé a correr sus validaciones: la transición sigue pendiente hasta que su salida real vuelva en verde",
@@ -1639,10 +1640,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         reason:
           "el checklist de ready-for-plan es un juicio sobre lo que dice la spec, no la lectura del artefacto que lo contiene",
       },
-      evidence: ["spec.ready-for-plan-checklist", CERT_ONLY_EVIDENCE],
+      evidence: ["spec.ready-for-plan-checklist", SOURCE_BOUNDED_EVIDENCE],
       idempotent: true,
       recovery:
-        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real. Una fase que sólo se valida en producción se reformula para validarse en cert, o lo que exige producción sale de la fase y se entrega como script + runbook + handoff declarado",
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con prueba del checkout. Una aplicación fuera del checkout sale de la fase y se entrega como script + runbook + handoff declarado",
     },
   },
   {
@@ -1658,7 +1659,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // the same save, so writing it apart made the person confirm one half and
     // authorize the other. One document, one proposal, one write.
     proposes: {
-      destinations: ["docs/specs"],
+      destinations: [SPEC_DOCS_DIR],
       effects: ["local_additive", "mutate_overwrite"],
       limits: { maxArtifacts: 8, maxArtifactBytes: 256 * 1024 },
     },
@@ -1777,7 +1778,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // itself ("Naming follows PLAN-INPUT"): the invocation lives there once, and
     // this row cites the document that actually rules it.
     document: PLAN_INPUT,
-    attribution: "aw next-number docs/plans --claim",
+    attribution: `aw next-number ${PLAN_DOCS_DIR} --claim`,
     // The row used to be attribution and nothing else: no effect, no evidence, no
     // result. So the number was "assigned" by whoever narrated it, and the engine
     // credited a transition that had never touched the workspace — which is also
@@ -1788,7 +1789,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     action: {
       invocation: {
         program: "aw",
-        args: ["next-number", "docs/plans", "--claim", "plan-{slug}.md", "--code", "{code}"],
+        args: ["next-number", PLAN_DOCS_DIR, "--claim", "plan-{slug}.md", "--code", "{code}"],
         target: ".",
         input: null,
       },
@@ -1923,10 +1924,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         reason:
           "la coherencia del plan es un juicio sobre lo que dice, no la lectura del artefacto que lo contiene",
       },
-      evidence: ["plan.coherence-checklist", CERT_ONLY_EVIDENCE],
+      evidence: ["plan.coherence-checklist", SOURCE_BOUNDED_EVIDENCE],
       idempotent: true,
       recovery:
-        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real. Una fase que sólo se valida en producción se reformula para validarse en cert, o lo que exige producción sale de la fase y se entrega como script + runbook + handoff declarado",
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con prueba del checkout. Una aplicación fuera del checkout sale de la fase y se entrega como script + runbook + handoff declarado",
     },
   },
   {
@@ -1942,7 +1943,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // is what makes that write visible — enumerated, weighed and sealed before it
     // is approved.
     proposes: {
-      destinations: ["docs/plans"],
+      destinations: [PLAN_DOCS_DIR],
       effects: ["local_additive"],
       limits: { maxArtifacts: 8, maxArtifactBytes: 256 * 1024 },
     },
@@ -1959,8 +1960,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     alternatives: [
       {
         label: "Aprobar y guardar",
-        consequence:
-          "se escriben exactamente los archivos de la vista previa en docs/plans, hermanos incluidos si el split fue aceptado",
+        consequence: `se escriben exactamente los archivos de la vista previa en ${PLAN_DOCS_DIR}, hermanos incluidos si el split fue aceptado`,
         recommended: true,
       },
       {
@@ -2107,10 +2107,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         reason:
           "la forma ejecutable del plan es un juicio sobre lo que dice, no la lectura del artefacto que lo contiene",
       },
-      evidence: ["plan.executability-checklist", CERT_ONLY_EVIDENCE],
+      evidence: ["plan.executability-checklist", SOURCE_BOUNDED_EVIDENCE],
       idempotent: true,
       recovery:
-        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real. Una fase que sólo se valida en producción se reformula para validarse en cert, o lo que exige producción sale de la fase y se entrega como script + runbook + handoff declarado",
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con prueba del checkout. Una aplicación fuera del checkout sale de la fase y se entrega como script + runbook + handoff declarado",
     },
   },
   {
@@ -2147,7 +2147,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // plan, it is what the drafted bytes already are. A separate row for it wrote
     // the same document twice and asked to be authorized for the second half.
     proposes: {
-      destinations: ["docs/plans"],
+      destinations: [PLAN_DOCS_DIR],
       effects: ["local_additive", "mutate_overwrite"],
       limits: { maxArtifacts: 8, maxArtifactBytes: 256 * 1024 },
     },
@@ -2237,7 +2237,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         reason:
           "la forma ejecutable del plan es un juicio sobre lo que dice, no la lectura del tablero que lo lista",
       },
-      evidence: ["plan.forma-ejecutable"],
+      evidence: ["plan.forma-ejecutable", SOURCE_BOUNDED_EVIDENCE],
       idempotent: true,
       recovery:
         "volvé a correr 'aw status --json' y devolvé su salida real; si el plan no se puede leer, eso ES el hallazgo del gate",
@@ -3220,7 +3220,6 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "plugin-cache", reason: "mantenimiento de caché" },
   { command: "host-doctor", reason: "diagnóstico de hosts" },
   { command: "release-data", reason: "datos de release del paquete" },
-  { command: "bootstrap-dsn", reason: "configuración de credenciales de desarrollo" },
   { command: "hook", reason: "punto de entrada de los hooks del host" },
   { command: "mcp", reason: "configuración de servidores MCP" },
   { command: "self", reason: "instalación y mantenimiento del propio CLI" },
@@ -3272,10 +3271,10 @@ export function journeyOfFlow(flow: WorklineFlow): readonly FlowDecision[] {
  */
 export const DOCS_BOUNDARY: Readonly<Record<WorklineFlow, readonly string[]>> = {
   quick: [],
-  "spec-refine": ["docs/specs", "docs/designs"],
-  "plan-new": ["docs/plans"],
-  "plan-refine": ["docs/plans"],
-  "plan-exec": ["docs/plans", "docs/designs"],
+  "spec-refine": [SPEC_DOCS_DIR, "docs/designs"],
+  "plan-new": [PLAN_DOCS_DIR],
+  "plan-refine": [PLAN_DOCS_DIR],
+  "plan-exec": [PLAN_DOCS_DIR, "docs/designs"],
 };
 
 /** The flow a scope names, or null for the chassis and for command scopes. */

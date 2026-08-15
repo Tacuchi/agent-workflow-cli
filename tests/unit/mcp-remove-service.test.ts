@@ -6,6 +6,8 @@ import { runMcpRemove } from "../../src/application/mcp-remove-service.js";
 import { runMcpSetup } from "../../src/application/mcp-setup-service.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
+const ALPHA = { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" };
+
 describe("runMcpRemove", () => {
   let workspace: string;
   let env: FakeEnv;
@@ -22,7 +24,7 @@ describe("runMcpRemove", () => {
   it("remueve entradas existentes por host e instancia", () => {
     const setup = runMcpSetup(env, {
       hosts: ["claude", "codex"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace,
     });
@@ -30,7 +32,7 @@ describe("runMcpRemove", () => {
 
     const result = runMcpRemove(env, {
       hosts: ["claude", "codex"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace,
     });
@@ -42,7 +44,7 @@ describe("runMcpRemove", () => {
   it("es idempotente cuando la entrada no existe", () => {
     const result = runMcpRemove(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace,
     });
@@ -54,7 +56,7 @@ describe("runMcpRemove", () => {
   it("scope=global sin --force ni --dry-run retorna refusal con exit 2", () => {
     const result = runMcpRemove(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "global",
     });
     expect("ok" in result).toBe(true);

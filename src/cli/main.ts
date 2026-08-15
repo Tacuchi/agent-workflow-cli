@@ -22,7 +22,7 @@ import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
 import { type MenuAction, shouldShowInteractiveMenu } from "./interactive-menu.js";
 import { type OutputMode, resolveOutputMode } from "./output-mode.js";
 import { parseArgv } from "./parser.js";
-import { CommandRegistry, type QtcCommand } from "./registry.js";
+import { type CliCommand, CommandRegistry } from "./registry.js";
 import {
   emitError,
   fail,
@@ -142,7 +142,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   }
 }
 
-function emit(result: CommandResult, command: QtcCommand, mode: OutputMode): void {
+function emit(result: CommandResult, command: CliCommand, mode: OutputMode): void {
   if (result.ok && result.data === undefined) {
     // Command already wrote stdout itself (custom rendering); nothing more to emit.
     return;
@@ -165,7 +165,7 @@ function emit(result: CommandResult, command: QtcCommand, mode: OutputMode): voi
  */
 function renderHuman(
   result: CommandResult,
-  command: QtcCommand,
+  command: CliCommand,
   mode: OutputMode,
 ): string | undefined {
   if (command.renderHuman === undefined) return undefined;
@@ -243,7 +243,7 @@ function printHelp(commands: string[]): void {
   writeStdout(`${lines.join("\n")}\n`);
 }
 
-function printCommandHelp(command: QtcCommand): void {
+function printCommandHelp(command: CliCommand): void {
   writeStdout(`${commandHelpText(command)}\n`);
 }
 

@@ -1,11 +1,11 @@
 import { runSources } from "../../application/sources-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type ParsedArgs, sessionCodeFlag } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const sourcesCommand: QtcCommand = {
+export const sourcesCommand: CliCommand = {
   name: "sources",
   describe:
     "List sources from <NS>-PROJECT block with git status enrichment. " +

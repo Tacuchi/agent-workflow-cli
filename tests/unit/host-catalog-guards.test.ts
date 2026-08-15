@@ -122,7 +122,7 @@ describe("escritor MCP: un archivo distinto por host", () => {
   // host nuevo sin rama escribía en crush.json sin error alguno. Con dos hosts
   // apuntando al mismo archivo este test falla.
   it("ningún host escribe en el archivo de otro (global)", () => {
-    const entry = buildMcpEntry("guard", undefined, "darwin");
+    const entry = buildMcpEntry("guard", "GUARD_DATABASE_URL", "darwin");
     const targets = MCP_FILE_HOSTS.map(
       (host) => writeMcpEntry(host, entry, { scopeDir, kind: "global" }, { dryRun: true }).target,
     );
@@ -130,7 +130,7 @@ describe("escritor MCP: un archivo distinto por host", () => {
   });
 
   it("ningún host escribe en el archivo de otro (workspace)", () => {
-    const entry = buildMcpEntry("guard", undefined, "darwin");
+    const entry = buildMcpEntry("guard", "GUARD_DATABASE_URL", "darwin");
     const targets = MCP_FILE_HOSTS.map(
       (host) =>
         writeMcpEntry(host, entry, { scopeDir, kind: "workspace" }, { dryRun: true }).target,

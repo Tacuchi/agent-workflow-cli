@@ -1,5 +1,5 @@
 ---
-description: Use to promote the type-B `SCRIPTS.sql` artifacts of N sessions into a docs/scripts/ bundle — continuous forwards plus rollback. `aw export-scripts` checks the bundle shape and NEVER executes SQL. Never automatic.
+description: Use to promote the type-B `SCRIPTS.sql` artifacts of N sessions into a docs/scripts/ bundle — continuous forwards plus rollback. `aw export-scripts` checks shape and NEVER executes SQL. Never automatic.
 argument-hint: "[--sessions <ids>] [--since <YYYY-MM-DD>] [--source <alias>]"
 allowed-tools: ["Bash", "Read"]
 ---
@@ -14,8 +14,14 @@ allowed-tools: ["Bash", "Read"]
 ## What it produces
 
 - `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`: `00-ROLLBACK.sql` and `README.md`, both required, + forwards `NN-<nombre>.sql` numbered **continuously from 01**; the CLI rejects a gap.
-- Neither the AI nor the CLI executes the SQL: the bundle is for a human or DBA to apply.
+- Neither the AI nor the CLI executes the SQL: its application is a non-blocking handoff to an authorized operator.
 - Never write into `docs/` with a file tool: one pass, all or nothing, no session or loop created/touched.
+
+## Net final state
+
+Publish the final state, not a session chronology: omit transients, write migrations in final form,
+and reconcile code before delivery. Rollback safely reverses it; exclude concrete identities and test seeds.
+`ESTADO FINAL NETO` · `orden seguro para las dependencias` · `objetos compartidos y necesarios para el estado final`
 
 ## More context
 

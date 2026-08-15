@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { leadingCorrelative } from "../domain/correlative.js";
 import { reservationMarker } from "../domain/reservation.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { historyFields, sharedNumberError, upsertHistoryRow } from "./history-update-service.js";
@@ -131,7 +132,11 @@ export async function runSessionClose(
   // back to "the sole active one" would let a conversation close a line it
   // never selected.
   if (!input.code) return { error: "--code es obligatorio" };
-  const resolution = await resolveSessionTarget(fs, paths, { code: input.code, allowClosed: true });
+  const resolution = await resolveSessionTarget(fs, paths, {
+    code: input.code,
+    allowClosed: true,
+    intent: "write",
+  });
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;
 
@@ -295,7 +300,9 @@ async function releaseReservations(
     for (const category of await fs.list(docs)) {
       if (category.type !== "dir") continue;
       for (const entry of await fs.list(category.path)) {
-        if (entry.type !== "file" || !/^\d{3}-/.test(entry.name)) continue;
+        if (entry.type !== "file" || leadingCorrelative(entry.name) === null) {
+          continue;
+        }
         if ((await fs.readText(entry.path)) !== marker) continue;
         await fs.remove(entry.path);
         released.push(`docs/${category.name}/${entry.name}`);

@@ -16,7 +16,7 @@ describe("readMcpEntry — Claude (project scope = .mcp.json)", () => {
   });
 
   it("retorna exists=false si .mcp.json no existe", () => {
-    const snap = readMcpEntry("claude", scopeDir, "cert");
+    const snap = readMcpEntry("claude", scopeDir, "alpha");
     expect(snap.exists).toBe(false);
     expect(snap.target).toBe(join(scopeDir, ".mcp.json"));
   });
@@ -26,7 +26,7 @@ describe("readMcpEntry — Claude (project scope = .mcp.json)", () => {
       join(scopeDir, ".mcp.json"),
       JSON.stringify({ mcpServers: { other: { command: "x", args: [], env: {} } } }),
     );
-    const snap = readMcpEntry("claude", scopeDir, "cert");
+    const snap = readMcpEntry("claude", scopeDir, "alpha");
     expect(snap.exists).toBe(false);
   });
 
@@ -35,24 +35,24 @@ describe("readMcpEntry — Claude (project scope = .mcp.json)", () => {
       join(scopeDir, ".mcp.json"),
       JSON.stringify({
         mcpServers: {
-          cert: {
+          alpha: {
             command: "agent-workflow",
-            args: ["mcp", "dbhub", "cert"],
+            args: ["mcp", "dbhub", "--instance", "alpha"],
             env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
           },
         },
       }),
     );
-    const snap = readMcpEntry("claude", scopeDir, "cert");
+    const snap = readMcpEntry("claude", scopeDir, "alpha");
     expect(snap.exists).toBe(true);
     expect(snap.command).toBe("agent-workflow");
-    expect(snap.args).toEqual(["mcp", "dbhub", "cert"]);
+    expect(snap.args).toEqual(["mcp", "dbhub", "--instance", "alpha"]);
     expect(snap.env).toEqual({ MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" });
   });
 
   it("retorna exists=false si JSON inválido", () => {
     writeFileSync(join(scopeDir, ".mcp.json"), "{ not valid json");
-    const snap = readMcpEntry("claude", scopeDir, "cert");
+    const snap = readMcpEntry("claude", scopeDir, "alpha");
     expect(snap.exists).toBe(false);
   });
 
@@ -61,10 +61,10 @@ describe("readMcpEntry — Claude (project scope = .mcp.json)", () => {
     writeFileSync(
       join(scopeDir, ".claude", "settings.json"),
       JSON.stringify({
-        mcpServers: { cert: { command: "agent-workflow", args: [], env: {} } },
+        mcpServers: { alpha: { command: "agent-workflow", args: [], env: {} } },
       }),
     );
-    const snap = readMcpEntry("claude", scopeDir, "cert");
+    const snap = readMcpEntry("claude", scopeDir, "alpha");
     expect(snap.exists).toBe(false);
   });
 });
@@ -84,15 +84,15 @@ describe("readMcpEntry — Claude (global scope = ~/.claude.json)", () => {
       JSON.stringify({
         numStartups: 1,
         mcpServers: {
-          cert: {
+          alpha: {
             command: "agent-workflow",
-            args: ["mcp", "dbhub", "cert"],
+            args: ["mcp", "dbhub", "--instance", "alpha"],
             env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
           },
         },
       }),
     );
-    const snap = readMcpEntry("claude", scopeDir, "cert", "global");
+    const snap = readMcpEntry("claude", scopeDir, "alpha", "global");
     expect(snap.exists).toBe(true);
     expect(snap.target).toBe(join(scopeDir, ".claude.json"));
     expect(snap.command).toBe("agent-workflow");
@@ -113,27 +113,27 @@ describe("readMcpEntry — Codex", () => {
     writeFileSync(
       join(scopeDir, ".codex", "config.toml"),
       `
-[mcp_servers.prod]
+[mcp_servers.beta]
 command = "agent-workflow"
-args = ["mcp", "dbhub", "prod"]
+args = ["mcp", "dbhub", "--instance", "beta"]
 
-[mcp_servers.prod.env]
+[mcp_servers.beta.env]
 MAX_ROWS = "1000"
 READONLY = "true"
 TRANSPORT = "stdio"
 `,
     );
-    const snap = readMcpEntry("codex", scopeDir, "prod");
+    const snap = readMcpEntry("codex", scopeDir, "beta");
     expect(snap.exists).toBe(true);
     expect(snap.command).toBe("agent-workflow");
-    expect(snap.args).toEqual(["mcp", "dbhub", "prod"]);
+    expect(snap.args).toEqual(["mcp", "dbhub", "--instance", "beta"]);
     expect(snap.env).toEqual({ MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" });
   });
 
   it("retorna exists=false si TOML inválido", () => {
     mkdirSync(join(scopeDir, ".codex"), { recursive: true });
     writeFileSync(join(scopeDir, ".codex", "config.toml"), "[invalid =");
-    const snap = readMcpEntry("codex", scopeDir, "cert");
+    const snap = readMcpEntry("codex", scopeDir, "alpha");
     expect(snap.exists).toBe(false);
   });
 });
@@ -148,7 +148,7 @@ describe("readMcpEntry — Warp (.warp/.mcp.json, DEC-W3)", () => {
   });
 
   it("retorna exists=false si .warp/.mcp.json no existe", () => {
-    const snap = readMcpEntry("warp", scopeDir, "cert");
+    const snap = readMcpEntry("warp", scopeDir, "alpha");
     expect(snap.exists).toBe(false);
     expect(snap.target).toBe(join(scopeDir, ".warp", ".mcp.json"));
   });
@@ -159,19 +159,19 @@ describe("readMcpEntry — Warp (.warp/.mcp.json, DEC-W3)", () => {
       join(scopeDir, ".warp", ".mcp.json"),
       JSON.stringify({
         mcpServers: {
-          cert: {
+          alpha: {
             command: "agent-workflow",
-            args: ["mcp", "dbhub", "cert"],
+            args: ["mcp", "dbhub", "--instance", "alpha"],
             env: { MAX_ROWS: "500" },
           },
         },
       }),
     );
-    const snap = readMcpEntry("warp", scopeDir, "cert");
+    const snap = readMcpEntry("warp", scopeDir, "alpha");
     expect(snap.exists).toBe(true);
     expect(snap.host).toBe("warp");
     expect(snap.command).toBe("agent-workflow");
-    expect(snap.args).toEqual(["mcp", "dbhub", "cert"]);
+    expect(snap.args).toEqual(["mcp", "dbhub", "--instance", "alpha"]);
     expect(snap.env).toEqual({ MAX_ROWS: "500" });
   });
 
@@ -181,7 +181,7 @@ describe("readMcpEntry — Warp (.warp/.mcp.json, DEC-W3)", () => {
       join(scopeDir, ".warp", ".mcp.json"),
       JSON.stringify({ mcpServers: { other: { command: "x" } } }),
     );
-    const snap = readMcpEntry("warp", scopeDir, "cert");
+    const snap = readMcpEntry("warp", scopeDir, "alpha");
     expect(snap.exists).toBe(false);
   });
 });
@@ -202,11 +202,11 @@ describe("readMcpEntry — round-trip real vs writeMcpEntry (todos los hosts JSO
 
   for (const host of ["gemini", "opencode", "crush"] as const) {
     it(`${host}: lo escrito por writeMcpEntry se lee de vuelta idéntico`, () => {
-      const entry = buildMcpEntry("cert", "DB_CERT_DSN");
+      const entry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL");
       const written = writeMcpEntry(host, entry, { scopeDir });
       expect(written.action).toBe("written");
 
-      const snap = readMcpEntry(host, scopeDir, "cert");
+      const snap = readMcpEntry(host, scopeDir, "alpha");
       expect(snap.exists).toBe(true);
       expect(snap.command).toBe(entry.command);
       expect(snap.args).toEqual(entry.args);

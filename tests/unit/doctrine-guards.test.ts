@@ -352,10 +352,9 @@ describe("Doctrine guards — G13 · tooling gate (docs/tools) pins", () => {
   // Pin the tooling-gate round: the closing review gate must keep steering
   // reusable auxiliary tooling to docs/tools (the family-rag silent-miss
   // lesson — spec 007), and the orientation must keep the human-findable
-  // pointer. The ambient framing is part of the pin: no binding verb, no
-  // plugin coupling in the gate — the marketplace id lives ONLY in the
-  // pointer, as a non-binding locator; the degraded path defers (declared
-  // gap), it never has the loop write docs/tools itself (invariant 2).
+  // pointer. The ambient framing is part of the pin: no binding verb or plugin
+  // coupling in the gate; the degraded path defers (declared gap), it never has
+  // the loop write docs/tools itself (invariant 2).
   it("CODE-POLICIES' closing review gate carries the Tooling check (ambient framing + declared-gap degradation)", async () => {
     const policies = await readRel("loops/CODE-POLICIES.md");
     const section = policies.slice(policies.indexOf("## Closing review gate"));
@@ -366,15 +365,15 @@ describe("Doctrine guards — G13 · tooling gate (docs/tools) pins", () => {
     expect(gate).toContain("docs/tools/<slug>/");
     expect(gate).toContain("never writes `docs/tools` itself");
     expect(gate).toContain("declare the gap");
-    // The gate stays unbound — the marketplace id belongs to the pointer only.
-    expect(gate).not.toContain("qtc-marketplace");
+    // The gate stays unbound — orientation does not name a required plugin.
+    expect(gate).not.toContain("tool-builder@");
   });
 
-  it("the w orientation keeps the user-findable Tools pointer (skill + non-binding plugin locator + gate reference)", async () => {
+  it("the w orientation keeps the user-findable Tools pointer (skill + gate reference)", async () => {
     const skill = await readRel("SKILL.md");
     const pointer = skill.split("\n").find((l) => l.includes("**Tools pointer:**")) ?? "";
     expect(pointer).toContain("`creating-tools`");
-    expect(pointer).toContain("tool-builder@qtc-marketplace");
+    expect(pointer).toContain("may be installed independently");
     expect(pointer).toContain("Closing review gate");
     expect(pointer).toContain("does **not** depend");
   });

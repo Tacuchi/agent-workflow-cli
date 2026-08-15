@@ -52,7 +52,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 
 - **No phases, no plan-doc**: the prompt **is** the task (a single unit). No roadmap.
 - **Proportional verification-first** (minimal ceremony): even here the check is **seeded before**, sized to the task. Code: one test (bug repro → fix) or "existing build/lint/tests stay green" (chore). **Analysis/design**: a **short falsifiable rubric**, *ratified by the user* before pursuing it. It is the run's `SESSION.Success criteria` (see [chassis § *Verification-first*](../CHASSIS.md)).
-- **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, verify each source's expected branch (`aw check-branch`); **proposed** commit (approve first) — never `push`/`--amend`/`--no-verify`. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql` (read-only queries do run, via MCP).
+- **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, verify each source's expected branch (`aw check-branch`); **proposed** commit (approve first) — never `push`/`--amend`/`--no-verify`. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql`; fixture/ephemeral checks are local proof and any remote read is research context, never closure.
 - **One session. One commit** proposed at the end (only if there were code changes), **after the proportional closing review gate** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate*): diff re-read + ambient conventions; fix or defer; nothing reaches the commit unreviewed.
 - **Entry SIZE GATE** (before creating the session): a quick that should have been a spec costs more than the ceremony it saved, so the size of the objective is judged **before** anything exists. Your part is recognizing the signals; the threshold, the question and its options are the CLI's. A signal already resolved by *adopted context* is **not** a signal (chassis § *Adopted context*). A **resume** of an existing quick never re-fires it.
   - **`Recortar alcance`**, if chosen: propose the **sub-task that DOES fit** a quick (`SESSION.Objective` = the sub-task; the original prompt goes into `## Origin`) and defer the rest to `BACKLOG` ("trimmed at the gate — may warrant its own spec, `/w:spec-new`").
@@ -81,7 +81,7 @@ quick-loop(prompt):
   work the task (minimal loop):
     if it edits code → verify each source's expected branch (`aw check-branch`); mismatch → pause + resolve
     produce the deliverable: edit code (minimal change) OR author the analysis/design
-    if read-only DB query → SCRIPTS.sql + execute read-only
+    if fixture/ephemeral DB check → run it from the checkout + capture its proof
     if DB change (DDL/DML) → SCRIPTS.sql (session artifact, DO NOT execute)
     if non-obvious decision → DECISION
     if doubt/gap → inline research, a probe OR structured-choice   # chassis § Proof of concept

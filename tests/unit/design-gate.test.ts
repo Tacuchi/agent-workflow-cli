@@ -388,4 +388,13 @@ describe("aw designs --plan — el veredicto como resultado de comando", () => {
     expect(report.blocked).toBe(true);
     expect(failures(report)[0]?.code).toBe("DESIGN_GATE_PLAN_MISSING");
   });
+
+  it("no consume un Markdown seguro fuera del directorio canónico de planes", async () => {
+    const fs = workspace().file(`${WS}/notes/012-plan-ajeno.md`, "# Plan\n");
+
+    const report = await gatePlanDesign(fs, WS, "notes/012-plan-ajeno.md");
+
+    expect(report.blocked).toBe(true);
+    expect(failures(report)[0]?.code).toBe("DESIGN_GATE_PLAN_OUTSIDE_CANON");
+  });
 });

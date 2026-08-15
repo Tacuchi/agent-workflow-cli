@@ -168,7 +168,22 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
         input_digest: resolved.seal,
         outcome: "completed",
         invocation: action.invocation,
-        validations: action.evidence.map((id) => ({ id, passed: true, detail })),
+        validations: action.evidence.map((id) => ({
+          id,
+          passed: true,
+          detail,
+          ...(id === "workline.source-bounded"
+            ? {
+                proof: {
+                  kind: "inspection" as const,
+                  source: "workspace",
+                  relative_cwd: ".",
+                  checkout_digest: "test-checkout",
+                  invocation: { artifact: "tests/unit/plan-new-concurrent-numbering.test.ts" },
+                },
+              }
+            : {}),
+        })),
         effects: { planned: [...declared], approved: [], applied: [...declared] },
         output: null,
       });
@@ -398,7 +413,22 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
           arg === "plan-alpha.md" ? "plan-<slug>.md" : arg,
         ),
       },
-      validations: action.evidence.map((id) => ({ id, passed: true, detail: "reserva" })),
+      validations: action.evidence.map((id) => ({
+        id,
+        passed: true,
+        detail: "reserva",
+        ...(id === "workline.source-bounded"
+          ? {
+              proof: {
+                kind: "inspection" as const,
+                source: "workspace",
+                relative_cwd: ".",
+                checkout_digest: "test-checkout",
+                invocation: { artifact: "tests/unit/plan-new-concurrent-numbering.test.ts" },
+              },
+            }
+          : {}),
+      })),
       effects: { planned: ["local_additive"], approved: [], applied: ["local_additive"] },
       output: null,
     });

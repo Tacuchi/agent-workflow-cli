@@ -78,12 +78,22 @@ describe("rebind/close race — one conversation never steals another's line", (
   it("a concurrent close and rebind leave a valid registry and no closed target bound", async () => {
     const fs = new InterleavingFs({ lenient: true });
     seed(["001-a-quick", "002-b-quick"], fs);
-    await resolveSessionTarget(fs, paths, { code: "001", contextId: "conv-a", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      code: "001",
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
 
     // conv-b claims 002 at the same moment conv-a's session is being closed.
     const [closed, bound] = await Promise.all([
       runSessionClose(fs, paths, { code: "001" }),
-      resolveSessionTarget(fs, paths, { code: "002", contextId: "conv-b", bind: true }),
+      resolveSessionTarget(fs, paths, {
+        code: "002",
+        contextId: "conv-b",
+        bind: true,
+        intent: "write",
+      }),
     ]);
 
     // Whatever the interleaving, the registry stays parseable...
@@ -103,7 +113,12 @@ describe("rebind/close race — one conversation never steals another's line", (
   it("closing under contention never half-closes: marker and bindings agree", async () => {
     const fs = new InterleavingFs({ lenient: true });
     seed(["001-a-quick"], fs);
-    await resolveSessionTarget(fs, paths, { code: "001", contextId: "conv-a", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      code: "001",
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
 
     const [first, second] = await Promise.all([
       runSessionClose(fs, paths, { code: "001" }),
@@ -165,7 +180,7 @@ describe("the full identity matrix resolves one target or one actionable error",
     {
       name: "several active, legacy explicit code",
       folders: [{ folder: "001-a-quick" }, { folder: "session007-legacy" }],
-      request: { code: "7" },
+      request: { code: "007" },
       expect: { folder: "session007-legacy" },
     },
     {
@@ -263,7 +278,7 @@ describe("the full identity matrix resolves one target or one actionable error",
   it.each(rows.map((r) => [r.name, r] as const))("%s", async (_name, row) => {
     const fs = buildMatrixFs(row);
     const before = fs.writes.size;
-    const result = await resolveSessionTarget(fs, paths, row.request);
+    const result = await resolveSessionTarget(fs, paths, { intent: "read", ...row.request });
     assertOutcome(result, row.expect);
     // Resolution alone never mutates: `bind` is off in every row here.
     expect(fs.writes.size).toBe(before);

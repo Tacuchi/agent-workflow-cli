@@ -52,6 +52,7 @@ export async function readSessionArtifacts(
   // (dumping a finished session's artifacts is the normal case) and `bind` is
   // off: a release/inspection dump is not how a conversation picks its line.
   const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "read",
     code: sessionCode,
     allowClosed: true,
   });

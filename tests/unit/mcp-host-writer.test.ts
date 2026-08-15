@@ -14,6 +14,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
 import { type McpHost, buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
+const alphaEntry = () => buildMcpEntry("alpha", "ALPHA_DATABASE_URL");
+const betaEntry = () => buildMcpEntry("beta", "BETA_DATABASE_URL");
+
 describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
   let scopeDir: string;
 
@@ -24,17 +27,22 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea .mcp.json inicial con la entrada cert", () => {
-    const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+  it("crea .mcp.json inicial con la entrada alpha", () => {
+    const result = writeMcpEntry("claude", alphaEntry(), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.backup).toBeNull();
     const mcpJsonPath = join(scopeDir, ".mcp.json");
     expect(result.target).toBe(mcpJsonPath);
     const content = JSON.parse(readFileSync(mcpJsonPath, "utf-8"));
-    expect(content.mcpServers.cert).toEqual({
+    expect(content.mcpServers.alpha).toEqual({
       command: "agent-workflow",
-      args: ["mcp", "dbhub", "cert"],
-      env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+      args: ["mcp", "dbhub", "--instance", "alpha"],
+      env: {
+        DBHUB_DSN_VAR: "ALPHA_DATABASE_URL",
+        MAX_ROWS: "1000",
+        READONLY: "true",
+        TRANSPORT: "stdio",
+      },
     });
   });
 
@@ -44,19 +52,19 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
       mcpServers: { other: { command: "x", args: [], env: {} } },
     };
     writeFileSync(mcpJsonPath, JSON.stringify(initial, null, 2));
-    writeMcpEntry("claude", buildMcpEntry("prod"), { scopeDir });
+    writeMcpEntry("claude", betaEntry(), { scopeDir });
     const content = JSON.parse(readFileSync(mcpJsonPath, "utf-8"));
     expect(content.mcpServers.other).toBeDefined();
-    expect(content.mcpServers.prod).toBeDefined();
+    expect(content.mcpServers.beta).toBeDefined();
   });
 
   it("backup transitorio: tras write OK no quedan .bak.<ts> en disco y result.backup es null", () => {
     const mcpJsonPath = join(scopeDir, ".mcp.json");
     writeFileSync(
       mcpJsonPath,
-      JSON.stringify({ mcpServers: { cert: { command: "old", args: [], env: {} } } }, null, 2),
+      JSON.stringify({ mcpServers: { alpha: { command: "old", args: [], env: {} } } }, null, 2),
     );
-    const result = writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    const result = writeMcpEntry("claude", alphaEntry(), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.backup).toBeNull();
     const baks = readdirSync(scopeDir).filter((f) => f.startsWith(".mcp.json.bak."));
@@ -68,7 +76,7 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     writeFileSync(mcpJsonPath, JSON.stringify({ mcpServers: {} }, null, 2));
     writeFileSync(`${mcpJsonPath}.bak.1`, "stale");
     writeFileSync(`${mcpJsonPath}.bak.99999`, "stale");
-    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    writeMcpEntry("claude", alphaEntry(), { scopeDir });
     const baks = readdirSync(scopeDir).filter((f) => f.startsWith(".mcp.json.bak."));
     expect(baks).toHaveLength(0);
   });
@@ -82,13 +90,13 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
         {
           permissions: { additionalDirectories: ["/some/path"] },
           // Shape from this tool's legacy era (dbhub) — it IS ours.
-          mcpServers: { cert: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} } },
+          mcpServers: { alpha: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} } },
         },
         null,
         2,
       ),
     );
-    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    writeMcpEntry("claude", alphaEntry(), { scopeDir });
     const legacy = JSON.parse(readFileSync(legacyPath, "utf-8"));
     expect(legacy.permissions.additionalDirectories).toEqual(["/some/path"]);
     expect(legacy.mcpServers).toBeUndefined();
@@ -102,7 +110,7 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
       JSON.stringify(
         {
           mcpServers: {
-            cert: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} },
+            alpha: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} },
             keep: { command: "x", args: [], env: {} },
           },
         },
@@ -110,28 +118,28 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
         2,
       ),
     );
-    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    writeMcpEntry("claude", alphaEntry(), { scopeDir });
     const legacy = JSON.parse(readFileSync(legacyPath, "utf-8"));
-    expect(legacy.mcpServers.cert).toBeUndefined();
+    expect(legacy.mcpServers.alpha).toBeUndefined();
     expect(legacy.mcpServers.keep).toBeDefined();
   });
 
   it("legacy cleanup conserva una entrada homónima ajena (guard de ownership)", () => {
-    // Same name 'cert', but the server is the user's (mentions neither dbhub nor
+    // Same name 'alpha', but the server is the user's (mentions neither dbhub nor
     // agent-workflow): at global scope that file is the real ~/.claude/settings.json.
     const legacyPath = join(scopeDir, ".claude", "settings.json");
     mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     writeFileSync(
       legacyPath,
       JSON.stringify(
-        { mcpServers: { cert: { command: "node", args: ["my-cert-server.js"], env: {} } } },
+        { mcpServers: { alpha: { command: "node", args: ["my-alpha-server.js"], env: {} } } },
         null,
         2,
       ),
     );
-    writeMcpEntry("claude", buildMcpEntry("cert"), { scopeDir });
+    writeMcpEntry("claude", alphaEntry(), { scopeDir });
     const legacy = JSON.parse(readFileSync(legacyPath, "utf-8"));
-    expect(legacy.mcpServers.cert.args).toEqual(["my-cert-server.js"]);
+    expect(legacy.mcpServers.alpha.args).toEqual(["my-alpha-server.js"]);
   });
 });
 
@@ -148,7 +156,7 @@ describe("writeMcpEntry — Claude (~/.claude.json, global scope)", () => {
   it("escribe en .claude.json cuando scope.kind=global, preservando otras claves del archivo", () => {
     const claudeJsonPath = join(scopeDir, ".claude.json");
     writeFileSync(claudeJsonPath, JSON.stringify({ numStartups: 42, mcpServers: {} }, null, 2));
-    const result = writeMcpEntry("claude", buildMcpEntry("cert"), {
+    const result = writeMcpEntry("claude", alphaEntry(), {
       scopeDir,
       kind: "global",
     });
@@ -156,7 +164,7 @@ describe("writeMcpEntry — Claude (~/.claude.json, global scope)", () => {
     expect(result.target).toBe(claudeJsonPath);
     const content = JSON.parse(readFileSync(claudeJsonPath, "utf-8"));
     expect(content.numStartups).toBe(42);
-    expect(content.mcpServers.cert).toBeDefined();
+    expect(content.mcpServers.alpha).toBeDefined();
   });
 });
 
@@ -170,41 +178,46 @@ describe("writeMcpEntry — Codex (config.toml)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea config.toml inicial con [mcp_servers.cert] y [mcp_servers.cert.env]", () => {
-    const result = writeMcpEntry("codex", buildMcpEntry("cert"), { scopeDir });
+  it("crea config.toml inicial con [mcp_servers.alpha] y su entorno", () => {
+    const result = writeMcpEntry("codex", alphaEntry(), { scopeDir });
     expect(result.action).toBe("written");
     const configPath = join(scopeDir, ".codex", "config.toml");
     const text = readFileSync(configPath, "utf-8");
-    expect(text).toContain("[mcp_servers.cert]");
-    expect(text).toContain("[mcp_servers.cert.env]");
+    expect(text).toContain("[mcp_servers.alpha]");
+    expect(text).toContain("[mcp_servers.alpha.env]");
     const parsed = parseToml(text) as Record<string, unknown>;
-    const mcp = (parsed.mcp_servers as Record<string, unknown>)?.cert as Record<string, unknown>;
+    const mcp = (parsed.mcp_servers as Record<string, unknown>)?.alpha as Record<string, unknown>;
     expect(mcp).toBeDefined();
     expect(mcp.command).toBe("agent-workflow");
-    expect(mcp.args).toEqual(["mcp", "dbhub", "cert"]);
-    expect(mcp.env).toEqual({ MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" });
+    expect(mcp.args).toEqual(["mcp", "dbhub", "--instance", "alpha"]);
+    expect(mcp.env).toEqual({
+      DBHUB_DSN_VAR: "ALPHA_DATABASE_URL",
+      MAX_ROWS: "1000",
+      READONLY: "true",
+      TRANSPORT: "stdio",
+    });
   });
 
   it("preserva sección anterior no relacionada (additional_writable_roots)", () => {
     const configPath = join(scopeDir, ".codex", "config.toml");
     mkdirSync(join(scopeDir, ".codex"), { recursive: true });
     writeFileSync(configPath, 'additional_writable_roots = [\n  "/path/a",\n  "/path/b"\n]\n');
-    writeMcpEntry("codex", buildMcpEntry("prod"), { scopeDir });
+    writeMcpEntry("codex", betaEntry(), { scopeDir });
     const text = readFileSync(configPath, "utf-8");
     expect(text).toContain("additional_writable_roots");
     expect(text).toContain('"/path/a"');
     expect(text).toContain('"/path/b"');
-    expect(text).toContain("[mcp_servers.prod]");
+    expect(text).toContain("[mcp_servers.beta]");
   });
 
   it("ambas instancias coexisten en el mismo config.toml", () => {
-    writeMcpEntry("codex", buildMcpEntry("cert"), { scopeDir });
-    writeMcpEntry("codex", buildMcpEntry("prod"), { scopeDir });
+    writeMcpEntry("codex", alphaEntry(), { scopeDir });
+    writeMcpEntry("codex", betaEntry(), { scopeDir });
     const configPath = join(scopeDir, ".codex", "config.toml");
     const parsed = parseToml(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
     const mcp = parsed.mcp_servers as Record<string, unknown>;
-    expect(mcp.cert).toBeDefined();
-    expect(mcp.prod).toBeDefined();
+    expect(mcp.alpha).toBeDefined();
+    expect(mcp.beta).toBeDefined();
   });
 });
 
@@ -218,17 +231,22 @@ describe("writeMcpEntry — Warp (.warp/.mcp.json, project scope)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea .warp/.mcp.json inicial con mcpServers.cert", () => {
-    const result = writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir });
+  it("crea .warp/.mcp.json inicial con mcpServers.alpha", () => {
+    const result = writeMcpEntry("warp", alphaEntry(), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.host).toBe("warp");
     const mcpPath = join(scopeDir, ".warp", ".mcp.json");
     expect(result.target).toBe(mcpPath);
     const content = JSON.parse(readFileSync(mcpPath, "utf-8"));
-    expect(content.mcpServers.cert).toEqual({
+    expect(content.mcpServers.alpha).toEqual({
       command: "agent-workflow",
-      args: ["mcp", "dbhub", "cert"],
-      env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+      args: ["mcp", "dbhub", "--instance", "alpha"],
+      env: {
+        DBHUB_DSN_VAR: "ALPHA_DATABASE_URL",
+        MAX_ROWS: "1000",
+        READONLY: "true",
+        TRANSPORT: "stdio",
+      },
     });
   });
 
@@ -239,18 +257,18 @@ describe("writeMcpEntry — Warp (.warp/.mcp.json, project scope)", () => {
       mcpPath,
       JSON.stringify({ mcpServers: { other: { command: "x", args: [], env: {} } } }, null, 2),
     );
-    writeMcpEntry("warp", buildMcpEntry("prod"), { scopeDir });
+    writeMcpEntry("warp", betaEntry(), { scopeDir });
     const content = JSON.parse(readFileSync(mcpPath, "utf-8"));
     expect(content.mcpServers.other).toBeDefined();
-    expect(content.mcpServers.prod).toBeDefined();
+    expect(content.mcpServers.beta).toBeDefined();
   });
 
-  it("cert y prod coexisten en .warp/.mcp.json", () => {
-    writeMcpEntry("warp", buildMcpEntry("cert"), { scopeDir });
-    writeMcpEntry("warp", buildMcpEntry("prod"), { scopeDir });
+  it("alpha y beta coexisten en .warp/.mcp.json", () => {
+    writeMcpEntry("warp", alphaEntry(), { scopeDir });
+    writeMcpEntry("warp", betaEntry(), { scopeDir });
     const content = JSON.parse(readFileSync(join(scopeDir, ".warp", ".mcp.json"), "utf-8"));
-    expect(content.mcpServers.cert).toBeDefined();
-    expect(content.mcpServers.prod).toBeDefined();
+    expect(content.mcpServers.alpha).toBeDefined();
+    expect(content.mcpServers.beta).toBeDefined();
   });
 });
 
@@ -263,17 +281,22 @@ describe("writeMcpEntry — Gemini (.gemini/settings.json, mcpServers)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea .gemini/settings.json con mcpServers.cert (shape command/args/env)", () => {
-    const result = writeMcpEntry("gemini", buildMcpEntry("cert"), { scopeDir });
+  it("crea .gemini/settings.json con mcpServers.alpha (shape command/args/env)", () => {
+    const result = writeMcpEntry("gemini", alphaEntry(), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.host).toBe("gemini");
     const file = join(scopeDir, ".gemini", "settings.json");
     expect(result.target).toBe(file);
     const content = JSON.parse(readFileSync(file, "utf-8"));
-    expect(content.mcpServers.cert).toEqual({
+    expect(content.mcpServers.alpha).toEqual({
       command: "agent-workflow",
-      args: ["mcp", "dbhub", "cert"],
-      env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+      args: ["mcp", "dbhub", "--instance", "alpha"],
+      env: {
+        DBHUB_DSN_VAR: "ALPHA_DATABASE_URL",
+        MAX_ROWS: "1000",
+        READONLY: "true",
+        TRANSPORT: "stdio",
+      },
     });
   });
 
@@ -281,10 +304,10 @@ describe("writeMcpEntry — Gemini (.gemini/settings.json, mcpServers)", () => {
     const file = join(scopeDir, ".gemini", "settings.json");
     mkdirSync(join(scopeDir, ".gemini"), { recursive: true });
     writeFileSync(file, JSON.stringify({ theme: "dark", mcpServers: {} }, null, 2));
-    writeMcpEntry("gemini", buildMcpEntry("prod"), { scopeDir });
+    writeMcpEntry("gemini", betaEntry(), { scopeDir });
     const content = JSON.parse(readFileSync(file, "utf-8"));
     expect(content.theme).toBe("dark");
-    expect(content.mcpServers.prod).toBeDefined();
+    expect(content.mcpServers.beta).toBeDefined();
   });
 });
 
@@ -297,17 +320,22 @@ describe("writeMcpEntry — OpenCode (opencode.json, mcp: type local)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea opencode.json con mcp.cert (type local, command array, environment)", () => {
-    const result = writeMcpEntry("opencode", buildMcpEntry("cert"), { scopeDir });
+  it("crea opencode.json con mcp.alpha (type local, command array, environment)", () => {
+    const result = writeMcpEntry("opencode", alphaEntry(), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.host).toBe("opencode");
     const file = join(scopeDir, "opencode.json");
     expect(result.target).toBe(file);
     const content = JSON.parse(readFileSync(file, "utf-8"));
-    expect(content.mcp.cert).toEqual({
+    expect(content.mcp.alpha).toEqual({
       type: "local",
-      command: ["agent-workflow", "mcp", "dbhub", "cert"],
-      environment: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+      command: ["agent-workflow", "mcp", "dbhub", "--instance", "alpha"],
+      environment: {
+        DBHUB_DSN_VAR: "ALPHA_DATABASE_URL",
+        MAX_ROWS: "1000",
+        READONLY: "true",
+        TRANSPORT: "stdio",
+      },
       enabled: true,
     });
   });
@@ -318,21 +346,21 @@ describe("writeMcpEntry — OpenCode (opencode.json, mcp: type local)", () => {
       file,
       JSON.stringify({ model: "x", mcp: { other: { type: "local", command: ["y"] } } }, null, 2),
     );
-    writeMcpEntry("opencode", buildMcpEntry("prod"), { scopeDir });
+    writeMcpEntry("opencode", betaEntry(), { scopeDir });
     const content = JSON.parse(readFileSync(file, "utf-8"));
     expect(content.model).toBe("x");
     expect(content.mcp.other).toBeDefined();
-    expect(content.mcp.prod).toBeDefined();
+    expect(content.mcp.beta).toBeDefined();
   });
 
   it("scope global → ~/.config/opencode/opencode.json (XDG)", () => {
-    const result = writeMcpEntry("opencode", buildMcpEntry("cert"), {
+    const result = writeMcpEntry("opencode", alphaEntry(), {
       scopeDir,
       kind: "global",
     });
     expect(result.target).toBe(join(scopeDir, ".config", "opencode", "opencode.json"));
     const content = JSON.parse(readFileSync(result.target, "utf-8"));
-    expect(content.mcp.cert.type).toBe("local");
+    expect(content.mcp.alpha.type).toBe("local");
   });
 });
 
@@ -345,18 +373,23 @@ describe("writeMcpEntry — Crush (crush.json, mcp: type stdio)", () => {
     rmSync(scopeDir, { recursive: true, force: true });
   });
 
-  it("crea crush.json con mcp.cert (type stdio, command/args/env)", () => {
-    const result = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir });
+  it("crea crush.json con mcp.alpha (type stdio, command/args/env)", () => {
+    const result = writeMcpEntry("crush", alphaEntry(), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.host).toBe("crush");
     const file = join(scopeDir, "crush.json");
     expect(result.target).toBe(file);
     const content = JSON.parse(readFileSync(file, "utf-8"));
-    expect(content.mcp.cert).toEqual({
+    expect(content.mcp.alpha).toEqual({
       type: "stdio",
       command: "agent-workflow",
-      args: ["mcp", "dbhub", "cert"],
-      env: { MAX_ROWS: "1000", READONLY: "true", TRANSPORT: "stdio" },
+      args: ["mcp", "dbhub", "--instance", "alpha"],
+      env: {
+        DBHUB_DSN_VAR: "ALPHA_DATABASE_URL",
+        MAX_ROWS: "1000",
+        READONLY: "true",
+        TRANSPORT: "stdio",
+      },
     });
   });
 
@@ -373,18 +406,18 @@ describe("writeMcpEntry — Crush (crush.json, mcp: type stdio)", () => {
         2,
       ),
     );
-    writeMcpEntry("crush", buildMcpEntry("prod"), { scopeDir });
+    writeMcpEntry("crush", betaEntry(), { scopeDir });
     const content = JSON.parse(readFileSync(file, "utf-8"));
     expect(content.$schema).toBe("https://charm.land/crush.json");
     expect(content.mcp.other).toBeDefined();
-    expect(content.mcp.prod).toBeDefined();
+    expect(content.mcp.beta).toBeDefined();
   });
 
   it("scope global → ~/.config/crush/crush.json (XDG)", () => {
-    const result = writeMcpEntry("crush", buildMcpEntry("cert"), { scopeDir, kind: "global" });
+    const result = writeMcpEntry("crush", alphaEntry(), { scopeDir, kind: "global" });
     expect(result.target).toBe(join(scopeDir, ".config", "crush", "crush.json"));
     const content = JSON.parse(readFileSync(result.target, "utf-8"));
-    expect(content.mcp.cert.type).toBe("stdio");
+    expect(content.mcp.alpha.type).toBe("stdio");
   });
 });
 
@@ -412,15 +445,15 @@ describe("writeMcpEntry — idempotencia y dry-run (todos los hosts)", () => {
 
   for (const { host, targetRel } of HOSTS) {
     it(`${host}: segunda corrida con misma entrada → skipped-idempotent (sin backup)`, () => {
-      writeMcpEntry(host, buildMcpEntry("cert"), { scopeDir });
-      const second = writeMcpEntry(host, buildMcpEntry("cert"), { scopeDir });
+      writeMcpEntry(host, alphaEntry(), { scopeDir });
+      const second = writeMcpEntry(host, alphaEntry(), { scopeDir });
       expect(second.action).toBe("skipped-idempotent");
       expect(second.backup).toBeNull();
     });
 
     it(`${host}: dry-run no escribe el archivo destino`, () => {
       const target = join(scopeDir, ...targetRel);
-      const result = writeMcpEntry(host, buildMcpEntry("cert"), { scopeDir }, { dryRun: true });
+      const result = writeMcpEntry(host, alphaEntry(), { scopeDir }, { dryRun: true });
       expect(result.action).toBe("dry-run");
       expect(existsSync(target)).toBe(false);
     });

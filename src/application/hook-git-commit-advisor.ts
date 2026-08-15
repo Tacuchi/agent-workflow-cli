@@ -1,14 +1,15 @@
 import { join } from "node:path";
+import { CORRELATIVE_SOURCE } from "../domain/correlative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { parseHookPayload } from "./hook-common.js";
 import type { PathsService } from "./paths-service.js";
-import { CLOSED_MARKER, listSessionFolders, parseSessionFolder } from "./session-resolver.js";
+import { CLOSED_MARKER, listSessionFolders, sessionNumericCode } from "./session-resolver.js";
 
 const REFERENCE_DOC = "skills/session/references/commits-policy.md";
 const GIT_COMMIT_RE = /\bgit\s+commit\b/;
 const COMMIT_MSG_RE = /\s-m\s+(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/;
-const SESSION_TAG_RE = /session\d{3}/i;
+const SESSION_TAG_RE = new RegExp(`\\bsession${CORRELATIVE_SOURCE}\\b`, "i");
 
 export interface GitCommitAdvisorResult {
   exitCode: 0;
@@ -49,7 +50,7 @@ export async function runGitCommitAdvisor(
   const activeFolder = await findUniqueActiveSession(input.fs, input.paths);
   if (!activeFolder) return { exitCode: 0 };
 
-  const { code: sessionCode } = parseSessionFolder(activeFolder);
+  const sessionCode = sessionNumericCode(activeFolder);
   if (!sessionCode) return { exitCode: 0 };
 
   if (SESSION_TAG_RE.test(message)) return { exitCode: 0 };
@@ -110,7 +111,7 @@ function formatAdvisorMessage(info: AdvisorInfo): string {
     `  Esperado: incluir tag \`session${info.sessionCode}\` (ej. al final: "(session${info.sessionCode})")`,
     "",
     "Este advisor NO bloquea — el commit procederá. Sugerencia: ajustar el mensaje",
-    "para incluir el tag de sesión y mantener trazabilidad con qtc:commits-policy.",
+    "para incluir el tag de sesión y mantener trazabilidad con la política de commits.",
     "",
     "Bypass: AW_COMMIT_ADVISOR=off",
     `Referencia: ${REFERENCE_DOC}`,

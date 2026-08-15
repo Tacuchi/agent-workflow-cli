@@ -5,11 +5,11 @@ import {
 } from "../../application/context/budget-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const contextBudgetCommand: QtcCommand<ContextBudgetOutput> = {
+export const contextBudgetCommand: CliCommand<ContextBudgetOutput> = {
   name: "context-budget",
   describe:
     "Mide el costo de contexto del bundle w en sus tres tramos (discovery, activación, ejecución) y lo compara contra un baseline congelado. " +

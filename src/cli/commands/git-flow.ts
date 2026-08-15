@@ -5,13 +5,13 @@ import {
 } from "../../application/git-flow-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 const ACTIONS: ReadonlySet<string> = new Set(["sync", "to-dev", "to-qa", "to-prod"]);
 
-export const gitFlowCommand: QtcCommand = {
+export const gitFlowCommand: CliCommand = {
   name: "git-flow",
   describe:
     "Run a per-source git flow. Usage: aw git-flow <sync|to-dev|to-qa|to-prod> " +

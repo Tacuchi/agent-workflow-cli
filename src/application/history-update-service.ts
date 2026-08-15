@@ -53,9 +53,19 @@ export async function runHistoryUpdate(
   //
   // A live session answers that question; so does a row named whole, which is
   // the only way left once the folder is gone. Anything else does not write.
-  const resolution = await resolveSessionTarget(fs, paths, { code, allowClosed: true });
-  if (resolution.outcome !== "resolved" && !(await namesAnExistingRow(fs, paths, code))) {
-    return { sessionError: resolution };
+  const resolution = await resolveSessionTarget(fs, paths, {
+    code,
+    allowClosed: true,
+    intent: "write",
+  });
+  if (resolution.outcome !== "resolved") {
+    // A row may outlive its folder and is repairable when named exactly. A
+    // numeric collision is different: the resolver already established that a
+    // WRITE has no durable target, so an existing row cannot turn that refusal
+    // into a disk mutation.
+    if (resolution.code === "SESSION_AMBIGUOUS" || !(await namesAnExistingRow(fs, paths, code))) {
+      return { sessionError: resolution };
+    }
   }
   const session = resolution.outcome === "resolved" ? resolution.session : null;
 
@@ -89,7 +99,6 @@ async function namesAnExistingRow(
   paths: PathsService,
   code: string,
 ): Promise<boolean> {
-  if (normalizeCode(code) !== code) return false;
   const historyFile = paths.cwdHistoryFile();
   if (!(await fs.exists(historyFile))) return false;
   const rows = readHistoryRows(await fs.readText(historyFile));
@@ -174,7 +183,12 @@ export function historyFields(
   const sesionName = input.sesionName || session?.name;
   const date = input.date || session?.date;
   return {
-    code: normalizeCode(code),
+    // Command input may use an old short spelling (`7`) but a resolved live
+    // session already carries the one durable number. Use that shared reading
+    // before building the HISTORY key; otherwise `7` + `007-foo` becomes the
+    // invented key `7-007-foo`. A retired row has no live folder to canonicalise
+    // against, so its exact key stays the repair target.
+    code: session === null ? code : (sessionNumericCode(session.folder) ?? code),
     ...(sesionName !== undefined ? { sesionName } : {}),
     ...(date !== undefined ? { date } : {}),
     state: input.state ?? "active",
@@ -188,8 +202,4 @@ function validate(input: HistoryUpdateInput): HistoryUpdateError | null {
     return { error: "state debe ser 'active' o 'closed'" };
   }
   return null;
-}
-
-function normalizeCode(code: string): string {
-  return code.includes("session") ? (code.replace("session", "").split("-")[0] ?? code) : code;
 }

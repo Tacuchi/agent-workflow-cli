@@ -5,11 +5,11 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import { readHookStdin, resolveContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const resumeSummaryCommand: QtcCommand = {
+export const resumeSummaryCommand: CliCommand = {
   name: "resume-summary",
   describe:
     "Compact resume payload for the PostCompact hook. " +

@@ -9,9 +9,10 @@ import {
   readDesignIndex,
   resolveDesignPackage,
 } from "../../application/design/design-index-service.js";
+import { DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -20,15 +21,9 @@ type DesignsOutput =
   | { package: NonNullable<ReturnType<typeof resolveDesignPackage>> }
   | DesignGateReport;
 
-export const designsCommand: QtcCommand<DesignsOutput> = {
+export const designsCommand: CliCommand<DesignsOutput> = {
   name: "designs",
-  describe:
-    "List the UI Design Packages under docs/designs/, resolve one by identity, or run " +
-    "the plan-exec precondition gate over a plan. Resolution goes through the manifest " +
-    "id, never the folder: a renamed or moved package still resolves. `--id` always runs " +
-    "the content gate over the package's current revisions; the listing stays structural " +
-    "unless `--deep` runs it on every package. Usage: aw designs [--id DES-NNN] [--deep] " +
-    "[--plan docs/plans/PPP-plan-<slug>.md] [--require-approval].",
+  describe: `List the UI Design Packages under docs/designs/, resolve one by identity, or run the plan-exec precondition gate over a plan. Resolution goes through the manifest id, never the folder: a renamed or moved package still resolves. \`--id\` always runs the content gate over the package's current revisions; the listing stays structural unless \`--deep\` runs it on every package. Usage: aw designs [--id DES-NNN] [--deep] [--plan ${DEFAULT_CORE_DOCS_CANON.plan}/PPP-plan-<slug>.md] [--require-approval].`,
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DesignsOutput>> {
     const plan = args.values.get("plan");
     if (plan !== undefined) return gate(plan, args, ctx);

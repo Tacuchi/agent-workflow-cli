@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import {
   type CapabilityAttempt,
   type CapabilityVerb,
@@ -17,13 +18,17 @@ import {
 import type { DurableEffectPlan } from "../../application/capability/durable-effect.js";
 import type { SelectionPin } from "../../application/capability/resolution.js";
 import { isHarnessId, runHarness } from "../../application/dev-only-services.js";
+import { resolveCoreDocsCanon } from "../../application/docs-canon-service.js";
 import type { CapabilityInputValue } from "../../domain/capability/protocol.js";
 import { renderReceiptHuman } from "../../domain/capability/protocol.js";
 import type { CapabilityRequest } from "../../domain/capability/protocol.js";
+import { DEFAULT_CORE_DOCS_CANON, coreDocumentKindForPath } from "../../domain/docs-canon.js";
+import { baseDigest } from "../../domain/proposal.js";
+import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail, failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -60,9 +65,9 @@ const VERBS: readonly CapabilityVerb[] = ["prepare", "continue", "validate", "ap
 const PROTOCOL = [
   "Protocolo de `aw capability` — los cuatro verbos son ETAPAS de un mismo intento, no una conversación con memoria:",
   "",
-  "  siempre    Repetí --capability, --operation y TODOS los --input de la etapa anterior, en cada etapa. El request se reconstruye entero cada vez y su `input_digest` sella exactamente esos inputs: uno que falte o cambie devuelve SEMANTIC_STALE en vez de continuar.",
+  "  siempre    Repetí --capability, --operation, TODOS los --input y --consumer-document si lo usaste, en cada etapa. El request se reconstruye entero cada vez y su `input_digest` sella exactamente esos inputs: uno que falte o cambie devuelve SEMANTIC_STALE en vez de continuar.",
   "",
-  "  canal      Lo que no es flag entra por STDIN, como un único objeto JSON. No hay ningún flag de archivo: ni --answer, ni --plan, ni --request.",
+  "  canal      Lo que no es flag entra por STDIN, como un único objeto JSON. No hay flags de archivo para --answer, --plan ni --request. Un `consumer_document` se adjunta con --consumer-document destino=bytes-finales.",
   "",
   "  prepare    No lee stdin. Devuelve `needs_input` y en `gaps` el contrato, los destinos permitidos y el `input_digest` que hay que copiar.",
   "",
@@ -78,9 +83,9 @@ const PROTOCOL = [
   '  continue   stdin: {"parent": <el request del intento que se contesta>}. Es la etapa de una operación que preguntó, no un reintento de prepare.',
 ].join("\n");
 
-export const capabilityCommand: QtcCommand<CapabilityAttempt> = {
+export const capabilityCommand: CliCommand<CapabilityAttempt> = {
   name: "capability",
-  describe: `Invoca una capacidad conformante por su contrato: prepare | continue | validate | apply. La operación viaja en --operation y cada intento devuelve envelope, output y receipt. Usage: aw capability prepare --capability design --operation validate --input package=DES-001.
+  describe: `Invoca una capacidad conformante por su contrato: prepare | continue | validate | apply. La operación viaja en --operation y cada intento devuelve envelope, output y receipt. Usage: aw capability prepare --capability design --operation validate --input package=DES-001 [--consumer-document ${DEFAULT_CORE_DOCS_CANON.plan}/NNN-plan-x.md=.workflow/final-plan.md].
 
 ${PROTOCOL}`,
 
@@ -108,7 +113,7 @@ ${PROTOCOL}`,
       ) as CommandResult<CapabilityAttempt>;
     }
 
-    const inputs = parseInputs(args);
+    const inputs = await parseInputs(args, ctx);
     if (!inputs.ok) return fail("ARGS_INVALID", inputs.why) as CommandResult<CapabilityAttempt>;
 
     // Only the two stages that carry authored content or an approval read stdin.
@@ -220,7 +225,10 @@ interface ParsedInputs {
  * truth: a value typed on a command line came from whoever typed it, and
  * claiming a locator or a digest for it would be a verifiability nobody has.
  */
-function parseInputs(args: ParsedArgs): ParsedInputs | { ok: false; why: string } {
+async function parseInputs(
+  args: ParsedArgs,
+  ctx: CliContext,
+): Promise<ParsedInputs | { ok: false; why: string }> {
   const raw = args.valuesMulti.get("input") ?? [];
   const single = args.values.get("input");
   const all = single === undefined ? raw : [...raw, single];
@@ -234,7 +242,88 @@ function parseInputs(args: ParsedArgs): ParsedInputs | { ok: false; why: string 
       provenance: { kind: "text", origin: "caller", seal: null, sensitivity: "public" },
     });
   }
+  const consumer = args.values.get("consumer-document");
+  if (consumer !== undefined) {
+    if (values.some((value) => value.name === "consumer_document")) {
+      return {
+        ok: false,
+        why: "usá sólo --consumer-document para consumer_document; --input no puede declarar su attachment",
+      };
+    }
+    const attachment = await readConsumerAttachment(consumer, ctx);
+    if (!attachment.ok) return attachment;
+    values.push(attachment.value);
+  }
   return { ok: true, values };
+}
+
+/**
+ * Read the two immutable sides of a consumer attachment without inventing a
+ * second transport protocol. `target=final-bytes` lets a composed flow retain
+ * the old document as its CAS base while it authors the final bytes elsewhere
+ * in the checkout. Both paths are confined before either file is read.
+ */
+async function readConsumerAttachment(
+  raw: string,
+  ctx: CliContext,
+): Promise<{ ok: true; value: CapabilityInputValue } | { ok: false; why: string }> {
+  const separator = raw.indexOf("=");
+  if (separator <= 0 || separator === raw.length - 1) {
+    return {
+      ok: false,
+      why: `--consumer-document espera '${DEFAULT_CORE_DOCS_CANON.spec}|${DEFAULT_CORE_DOCS_CANON.plan}/documento.md=archivo-con-bytes-finales.md'`,
+    };
+  }
+  const target = raw.slice(0, separator).trim();
+  const finalBytes = raw.slice(separator + 1).trim();
+  const safeTarget = checkSafeRelativePath(target);
+  const safeBytes = checkSafeRelativePath(finalBytes);
+  if (!safeTarget.ok || !safeBytes.ok) {
+    return {
+      ok: false,
+      why: "--consumer-document sólo lee rutas relativas seguras dentro del workspace",
+    };
+  }
+  const canon = await resolveCoreDocsCanon(ctx.fs, ctx.paths);
+  if (!canon.ok) {
+    return {
+      ok: false,
+      why: `--consumer-document no puede validar el canon documental: ${canon.error}`,
+    };
+  }
+  if (coreDocumentKindForPath(safeTarget.path, canon.canon) === null) {
+    return {
+      ok: false,
+      why: `--consumer-document sólo puede reemplazar una spec bajo ${canon.canon.spec}/ o un plan bajo ${canon.canon.plan}/`,
+    };
+  }
+  const root = ctx.paths.workspaceDir();
+  const targetPath = join(root, safeTarget.path);
+  const bytesPath = join(root, safeBytes.path);
+  try {
+    const [base, content] = await Promise.all([
+      ctx.fs.readText(targetPath),
+      ctx.fs.readText(bytesPath),
+    ]);
+    return {
+      ok: true,
+      value: {
+        name: "consumer_document",
+        value: content,
+        provenance: {
+          kind: "attachment",
+          origin: safeTarget.path,
+          seal: baseDigest(base),
+          sensitivity: "public",
+        },
+      },
+    };
+  } catch {
+    return {
+      ok: false,
+      why: "--consumer-document no pudo leer el documento base o el archivo con los bytes finales",
+    };
+  }
 }
 
 interface Carried {

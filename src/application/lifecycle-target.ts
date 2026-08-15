@@ -59,6 +59,7 @@ export async function resolveLifecycleTarget(
   // `allowClosed` stays off: a lifecycle surface writes or restores state, and
   // a closed line is not a valid destination for either.
   const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "write",
     ...(options.code !== undefined ? { code: options.code } : {}),
     ...(options.contextId !== undefined ? { contextId: options.contextId } : {}),
     bind: binding === "bind",

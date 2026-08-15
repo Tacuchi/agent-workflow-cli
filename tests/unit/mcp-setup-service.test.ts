@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runMcpSetup } from "../../src/application/mcp-setup-service.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
+const ALPHA = { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" };
+const BETA = { name: "beta", dsnVar: "BETA_DATABASE_URL" };
+
 describe("runMcpSetup", () => {
   let workspace: string;
   let home: string;
@@ -19,10 +22,10 @@ describe("runMcpSetup", () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("aplica las 4 combinaciones host×instance en una corrida", () => {
+  it("aplica las 4 combinaciones host×conexión en una corrida", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude", "codex"],
-      instances: ["cert", "prod"],
+      connections: [ALPHA, BETA],
       scope: "workspace",
       workspace,
     });
@@ -37,13 +40,13 @@ describe("runMcpSetup", () => {
   it("idempotencia: segunda corrida marca todo como skipped", () => {
     runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace,
     });
     const second = runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace,
     });
@@ -55,7 +58,7 @@ describe("runMcpSetup", () => {
   it("dry-run no escribe", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude", "codex"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace,
       dryRun: true,
@@ -68,7 +71,7 @@ describe("runMcpSetup", () => {
   it("acepta conexiones custom y normaliza el nombre del server", () => {
     const result = runMcpSetup(env, {
       hosts: ["codex"],
-      instances: ["reporting"],
+      connections: [{ name: "reporting", dsnVar: "REPORTING_DATABASE_URL" }],
       scope: "workspace",
       workspace,
     });
@@ -77,13 +80,12 @@ describe("runMcpSetup", () => {
     expect(result.applied[0]?.name).toBe("reporting");
   });
 
-  it("incluye DBHUB_DSN_VAR cuando la conexión usa una variable DSN custom", () => {
+  it("incluye la variable DSN exacta registrada", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["reporting"],
+      connections: [{ name: "reporting", dsnVar: "REPORTING_DATABASE_URL" }],
       scope: "workspace",
       workspace,
-      dsnVars: { reporting: "REPORTING_DATABASE_URL" },
     });
     if ("ok" in result) throw new Error("did not expect refusal");
     expect(result.applied[0]?.name).toBe("reporting");
@@ -92,7 +94,7 @@ describe("runMcpSetup", () => {
   it("scope=global sin --force ni --dry-run retorna refusal con exit 2", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "global",
     });
     expect("ok" in result).toBe(true);
@@ -105,7 +107,7 @@ describe("runMcpSetup", () => {
   it("scope=global con --force escribe en el home inyectado (EnvPort), no en el real", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "global",
       force: true,
       workspace,
@@ -119,7 +121,7 @@ describe("runMcpSetup", () => {
   it("scope=global con --dry-run NO retorna refusal", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "global",
       dryRun: true,
       workspace,

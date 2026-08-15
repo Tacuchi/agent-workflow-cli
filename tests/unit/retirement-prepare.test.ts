@@ -143,6 +143,16 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     return outcome.proposal;
   }
 
+  it("fails closed before resolving a target when the core documentary canon is invalid", async () => {
+    write(".workflow/skills.toml", '[docs]\nplan = "knowledge/plans"\n');
+
+    const outcome = await prepare("discard", "plan:024");
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejection.code).toBe("DOCS_CANON_INVALID");
+  });
+
   it("acepta cada clase de objetivo: cualificado, ruta, carpeta y quick", async () => {
     write(specFile("025"), SPEC("025"));
     write(planFile("024"), PLAN("024", "025"));

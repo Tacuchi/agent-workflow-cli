@@ -136,6 +136,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "skip-warp",
   "skip-oz",
   "standalone-sql",
+  "all-connections",
 ]);
 
 // Plugin flags always consume the next token as their value and land on

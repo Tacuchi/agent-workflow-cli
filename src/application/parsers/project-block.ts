@@ -107,9 +107,9 @@ export interface ProjectBlockMarkers {
   end: string;
 }
 
-export const LEGACY_QTC_MARKERS: ProjectBlockMarkers = {
-  start: "<!-- QTC-PROJECT-START -->",
-  end: "<!-- QTC-PROJECT-END -->",
+export const DEFAULT_PROJECT_BLOCK_MARKERS: ProjectBlockMarkers = {
+  start: "<!-- WORKFLOW-PROJECT-START -->",
+  end: "<!-- WORKFLOW-PROJECT-END -->",
 };
 
 /**
@@ -133,14 +133,9 @@ const STACK_KEY_MAP: Record<string, keyof ProjectStack> = {
 
 export function parseProjectBlock(
   text: string,
-  markers: ProjectBlockMarkers = LEGACY_QTC_MARKERS,
+  markers: ProjectBlockMarkers = DEFAULT_PROJECT_BLOCK_MARKERS,
 ): ParsedProjectBlock | null {
-  const primary = parseWithMarkers(text, markers);
-  if (primary !== null) return primary;
-  if (markers.start !== LEGACY_QTC_MARKERS.start) {
-    return parseWithMarkers(text, LEGACY_QTC_MARKERS);
-  }
-  return null;
+  return parseWithMarkers(text, markers);
 }
 
 function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedProjectBlock | null {

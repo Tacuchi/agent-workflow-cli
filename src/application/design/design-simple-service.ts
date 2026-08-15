@@ -34,9 +34,16 @@ import {
   simpleMaturity,
   validateSimpleDesign,
 } from "../../domain/design/simple.js";
+import type { CoreDocsCanon } from "../../domain/docs-canon.js";
 import type { ProposalArtifact, ProposalBase } from "../../domain/proposal.js";
-import { baseDigest } from "../../domain/proposal.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import {
+  type ConsumerDocument,
+  checkConsumerBase,
+  checkConsumerReference,
+  checkConsumerShape,
+  withConsumerRelation,
+} from "./consumer-document.js";
 import type { DesignIndex } from "./design-index-service.js";
 
 /** Where a simple design is about to be written, and under which identity. */
@@ -50,6 +57,8 @@ export interface SimpleTarget {
   supersedes: number | null;
   /** The existing manifest, when this continues a package. */
   manifest: DesignManifest | null;
+  /** The exact manifest snapshot {@link manifest} was resolved from. */
+  manifest_base: ProposalBase | null;
 }
 
 export type SimpleResolution =
@@ -100,6 +109,7 @@ export function resolveSimpleTarget(
         revision: 1,
         supersedes: null,
         manifest: null,
+        manifest_base: null,
       },
     };
   }
@@ -149,6 +159,7 @@ export function resolveSimpleTarget(
       revision: current + 1,
       supersedes: current === 0 ? null : current,
       manifest: found.manifest,
+      manifest_base: found.manifest_base,
     },
   };
 }
@@ -159,6 +170,10 @@ export interface SimpleProposalInput {
   document: string;
   /** Publication date. Passed in: this layer never reads the clock. */
   published: string;
+  /** Optional spec/plan published with this new design baseline. */
+  consumer_document?: ConsumerDocument | null;
+  /** Resolved at the handler boundary; direct callers stay on the canonical default. */
+  docs_canon?: CoreDocsCanon;
 }
 
 export interface SimpleProposal {
@@ -200,9 +215,17 @@ export async function buildSimpleProposal(
 ): Promise<SimpleProposalResult> {
   const { target } = input;
   const documentPath = `${target.path}/${SIMPLE_DESIGN_FILE}`;
+  const consumer = input.consumer_document ?? null;
 
   const parsed = validateSimpleDesign(input.document, documentPath);
   if (!parsed.ok || parsed.value === null) return { ok: false, failures: parsed.failures };
+
+  if (consumer !== null) {
+    const shape = checkConsumerShape(consumer, input.docs_canon);
+    if (shape !== null) return { ok: false, failures: [shape] };
+    const consumerBase = await checkConsumerBase(fs, workspace, consumer);
+    if (consumerBase !== null) return { ok: false, failures: [consumerBase] };
+  }
 
   const digest = `sha256:${createHash("sha256").update(input.document, "utf8").digest("hex")}`;
   const artifacts: ProposalArtifact[] = [];
@@ -237,18 +260,34 @@ export async function buildSimpleProposal(
     overwrite: target.supersedes !== null,
   });
 
-  const manifest = nextManifest(target, parsed.value.title, digest, input.published);
+  const manifest = nextManifest(target, parsed.value.title, digest, input.published, consumer);
+  if (consumer !== null) {
+    const reference = checkConsumerReference(consumer, {
+      package: target.packageId,
+      revision: target.revision,
+      digest,
+    });
+    if (reference !== null) return { ok: false, failures: [reference] };
+  }
   artifacts.push({
     path: `${target.path}/${DESIGN_MANIFEST_FILE}`,
     content: `${JSON.stringify(manifest, null, 2)}\n`,
     overwrite: target.manifest !== null,
   });
+  if (consumer !== null) {
+    // The package is complete before the consumer moves. A final failure rolls
+    // the whole set back through the shared publish boundary.
+    artifacts.push({ path: consumer.path, content: consumer.content, overwrite: true });
+  }
 
   return {
     ok: true,
     value: {
       artifacts,
-      base: await manifestBase(fs, workspace, target),
+      // The target's manifest and base came from the same index read.  Do not
+      // re-read now: a concurrent update must make this proposal stale at
+      // apply, never bless candidate bytes derived from the earlier manifest.
+      base: target.manifest_base,
       digest,
       revision: target.revision,
       packageId: target.packageId,
@@ -270,6 +309,7 @@ function nextManifest(
   title: string,
   digest: string,
   published: string,
+  consumer: ConsumerDocument | null,
 ): DesignManifest {
   const previous = target.manifest;
   const baselines = (previous?.baselines ?? []).map((b) => ({
@@ -285,37 +325,21 @@ function nextManifest(
     published,
   });
 
-  return {
-    schema: previous?.schema ?? DESIGN_MANIFEST_SCHEMA_ID,
-    id: target.packageId,
-    mode: "simple",
-    title,
-    created: previous?.created ?? published,
-    derived_from: previous?.derived_from ?? null,
-    current_baseline: { revision: target.revision, path: SIMPLE_DESIGN_FILE, digest },
-    baselines,
-    catalog: { flows: [], screens: [], rules: [], tokens: [], renditions: [], assets: [] },
-    currentness: [],
-    governance: previous?.governance ?? { reviews: [], revocations: [] },
-    relations: previous?.relations ?? { specs: [], plans: [] },
-  };
-}
-
-/**
- * The compare-and-swap base: the manifest as it stood when this was computed.
- *
- * Null for a brand-new design — there is nothing to have moved. The publication
- * of a first revision is protected by its destinations not existing, which
- * `applyLocalProposal` enforces through `overwrite: false`.
- */
-async function manifestBase(
-  fs: FileSystemPort,
-  workspace: string,
-  target: SimpleTarget,
-): Promise<ProposalBase | null> {
-  if (target.manifest === null) return null;
-  const path = `${target.path}/${DESIGN_MANIFEST_FILE}`;
-  const absolute = join(workspace, path);
-  if (!(await fs.exists(absolute))) return null;
-  return { path, digest: baseDigest(await fs.readText(absolute)) };
+  return withConsumerRelation(
+    {
+      schema: previous?.schema ?? DESIGN_MANIFEST_SCHEMA_ID,
+      id: target.packageId,
+      mode: "simple",
+      title,
+      created: previous?.created ?? published,
+      derived_from: previous?.derived_from ?? null,
+      current_baseline: { revision: target.revision, path: SIMPLE_DESIGN_FILE, digest },
+      baselines,
+      catalog: { flows: [], screens: [], rules: [], tokens: [], renditions: [], assets: [] },
+      currentness: [],
+      governance: previous?.governance ?? { reviews: [], revocations: [] },
+      relations: previous?.relations ?? { specs: [], plans: [] },
+    },
+    consumer,
+  );
 }

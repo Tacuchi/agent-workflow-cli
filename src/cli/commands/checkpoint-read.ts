@@ -2,11 +2,11 @@ import { runCheckpointRead } from "../../application/checkpoint-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const checkpointReadCommand: QtcCommand = {
+export const checkpointReadCommand: CliCommand = {
   name: "checkpoint-read",
   describe:
     "Read CHECKPOINT.md of the conversation's session (or --code). " +

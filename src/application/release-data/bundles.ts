@@ -1,7 +1,12 @@
 import { join } from "node:path";
+import {
+  CORRELATIVE_SOURCE,
+  compareCorrelatives,
+  sameCorrelative,
+} from "../../domain/correlative.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PathsService } from "../paths-service.js";
-import { collectFilesByExt, getDocsDir, sessionCodeInt } from "./common.js";
+import { collectFilesByExt, getDocsDir, sessionCorrelative } from "./common.js";
 
 export interface GraduatedBundle {
   nnn: string;
@@ -16,9 +21,13 @@ export interface GraduatedBundle {
 }
 
 /** Modern export-scripts bundle naming (see exports/export-scripts SKILL). */
-const MODERN_BUNDLE_RE = /^(\d{3})-(export-scripts-\d{4}-\d{2}-\d{2})$/;
+const MODERN_BUNDLE_RE = new RegExp(
+  `^(${CORRELATIVE_SOURCE})-(export-scripts-\\d{4}-\\d{2}-\\d{2})$`,
+);
 /** Pre-redesign per-session graduation naming. */
-const LEGACY_BUNDLE_RE = /^(\d{3})-session(\d{3})-(.+)$/;
+const LEGACY_BUNDLE_RE = new RegExp(
+  `^(${CORRELATIVE_SOURCE})-session(${CORRELATIVE_SOURCE})-(.+)$`,
+);
 
 export async function listGraduatedBundles(
   fs: FileSystemPort,
@@ -35,10 +44,10 @@ export async function listGraduatedBundles(
   const scriptsDir = join(docsDir, "scripts");
   if (!(await fs.exists(scriptsDir))) return [];
 
-  const targetCode = options.sessionCode ? sessionCodeInt(options.sessionCode) : null;
+  const targetCode = sessionCorrelative(options.sessionCode);
   const dirEntries = (await fs.list(scriptsDir))
     .filter((e) => e.type === "dir")
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(compareBundleEntries);
 
   const bundles: GraduatedBundle[] = [];
   for (const entry of dirEntries) {
@@ -47,7 +56,7 @@ export async function listGraduatedBundles(
     // The session filter only applies to legacy bundles (modern ones are cross-session).
     if (
       targetCode !== null &&
-      (parsed.session_code === null || Number.parseInt(parsed.session_code, 10) !== targetCode)
+      (parsed.session_code === null || !sameCorrelative(parsed.session_code, targetCode))
     ) {
       continue;
     }
@@ -64,6 +73,18 @@ export async function listGraduatedBundles(
     });
   }
   return bundles;
+}
+
+function compareBundleEntries(
+  left: { name: string; path: string },
+  right: { name: string; path: string },
+): number {
+  const leftNumber = parseBundleName(left.name)?.nnn;
+  const rightNumber = parseBundleName(right.name)?.nnn;
+  if (leftNumber !== undefined && rightNumber !== undefined) {
+    return compareCorrelatives(leftNumber, rightNumber) || left.name.localeCompare(right.name);
+  }
+  return left.name.localeCompare(right.name);
 }
 
 function parseBundleName(

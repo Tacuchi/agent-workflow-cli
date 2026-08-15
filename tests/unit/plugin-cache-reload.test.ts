@@ -90,9 +90,12 @@ describe("selfReloadPluginCache", () => {
   it("reload claude → cleared-only + hint para reiniciar host", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    await seedClaudeCacheWithSkills(home, "qtc-marketplace", "qtc", "2.3.0", ["rules"]);
+    await seedClaudeCacheWithSkills(home, "sample-marketplace", "sample", "2.3.0", ["rules"]);
 
-    const result = await selfReloadPluginCache(buildArgs({ plugin: "qtc", target: "claude" }), ctx);
+    const result = await selfReloadPluginCache(
+      buildArgs({ plugin: "sample", target: "claude" }),
+      ctx,
+    );
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("cleared-only");
@@ -104,7 +107,10 @@ describe("selfReloadPluginCache", () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
 
-    const result = await selfReloadPluginCache(buildArgs({ plugin: "qtc", target: "claude" }), ctx);
+    const result = await selfReloadPluginCache(
+      buildArgs({ plugin: "sample", target: "claude" }),
+      ctx,
+    );
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("nothing");
@@ -114,19 +120,25 @@ describe("selfReloadPluginCache", () => {
   it("reload warp con cache de claude disponible → clear + reinstall", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    await seedClaudeCacheWithSkills(home, "qtc-marketplace", "qtc", "2.3.0", ["rules", "session"]);
+    await seedClaudeCacheWithSkills(home, "sample-marketplace", "sample", "2.3.0", [
+      "rules",
+      "session",
+    ]);
     // Pre-install some old skills in warp
-    const oldWarpDir = join(home, ".warp", "skills", "qtc-old-skill");
+    const oldWarpDir = join(home, ".warp", "skills", "sample-old-skill");
     await mkdir(oldWarpDir, { recursive: true });
     await writeFile(join(oldWarpDir, "SKILL.md"), "---\nname: x\n---\n", "utf8");
 
-    const result = await selfReloadPluginCache(buildArgs({ plugin: "qtc", target: "warp" }), ctx);
+    const result = await selfReloadPluginCache(
+      buildArgs({ plugin: "sample", target: "warp" }),
+      ctx,
+    );
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("reloaded");
     expect(await fs.exists(oldWarpDir)).toBe(false); // old one deleted
-    expect(await fs.exists(join(home, ".warp", "skills", "qtc-rules"))).toBe(true);
-    expect(await fs.exists(join(home, ".warp", "skills", "qtc-session"))).toBe(true);
+    expect(await fs.exists(join(home, ".warp", "skills", "sample-rules"))).toBe(true);
+    expect(await fs.exists(join(home, ".warp", "skills", "sample-session"))).toBe(true);
     expect(result.data?.reinstalled.length).toBe(2);
   });
 
@@ -134,7 +146,10 @@ describe("selfReloadPluginCache", () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
 
-    const result = await selfReloadPluginCache(buildArgs({ plugin: "qtc", target: "warp" }), ctx);
+    const result = await selfReloadPluginCache(
+      buildArgs({ plugin: "sample", target: "warp" }),
+      ctx,
+    );
 
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("SOURCE_NOT_FOUND");
@@ -152,27 +167,27 @@ describe("selfReloadPluginCache", () => {
     );
 
     const result = await selfReloadPluginCache(
-      buildArgs({ plugin: "qtc", target: "warp", from: externalSkillsDir }),
+      buildArgs({ plugin: "sample", target: "warp", from: externalSkillsDir }),
       ctx,
     );
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("reloaded");
-    expect(await fs.exists(join(home, ".warp", "skills", "qtc-myskill"))).toBe(true);
+    expect(await fs.exists(join(home, ".warp", "skills", "sample-myskill"))).toBe(true);
   });
 
   it("reload warp --dry-run no toca filesystem", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    await seedClaudeCacheWithSkills(home, "qtc-marketplace", "qtc", "2.3.0", ["rules"]);
+    await seedClaudeCacheWithSkills(home, "sample-marketplace", "sample", "2.3.0", ["rules"]);
 
     const result = await selfReloadPluginCache(
-      buildArgs({ plugin: "qtc", target: "warp" }, ["--dry-run"]),
+      buildArgs({ plugin: "sample", target: "warp" }, ["--dry-run"]),
       ctx,
     );
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("dry-run");
-    expect(await fs.exists(join(home, ".warp", "skills", "qtc-rules"))).toBe(false);
+    expect(await fs.exists(join(home, ".warp", "skills", "sample-rules"))).toBe(false);
   });
 });

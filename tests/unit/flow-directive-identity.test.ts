@@ -9,17 +9,11 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
- * La directiva que el motor emite tiene que ser EJECUTABLE TAL CUAL.
+ * A colliding correlation is readable by exact folder but never writable.
  *
- * El defecto que esto fija: la invocación se sellaba con el número desnudo de la
- * sesión (`--code 047`), que en un workspace con una carpeta legacy homónima
- * casa con DOS sesiones. Ejecutar la propia directiva fallaba por ambigüedad, y
- * corregirla a mano la convertía en otra invocación que el `submit` rechazaba
- * por discrepancia — la directiva del propio CLI era insatisfacible, y a los
- * tres intentos la frontera quedaba agotada sin salida.
- *
- * La prueba no mira el string: toma el `--code` que la directiva emitió y lo
- * pasa por el resolvedor real, que es quien lo va a resolver en producción.
+ * The resolver used to let a flow mutate one of two durable records sharing
+ * `047`. The v22 rule stops the write before its first state file and names the
+ * workspace migration/rename that restores a unique record key.
  */
 
 const fs = new NodeFileSystem();
@@ -52,30 +46,26 @@ describe("la identidad que emite una directiva resuelve a una sola sesión", () 
   it("el fixture es genuinamente ambiguo: el número desnudo casa con dos sesiones", async () => {
     // Sin esto la prueba de abajo pasaría en un workspace donde nada podía
     // fallar, que es la forma más común de que una regresión no se note.
-    const ambiguous = await resolveSessionTarget(fs, paths, { code: BARE });
+    const ambiguous = await resolveSessionTarget(fs, paths, { code: BARE, intent: "read" });
     expect(ambiguous.outcome).toBe("error");
     if (ambiguous.outcome !== "error") return;
     expect(ambiguous.code).toBe("SESSION_AMBIGUOUS");
   });
 
-  it("el `--code` de la directiva resuelve, ejecutado verbatim", async () => {
-    // `spec-refine` delega ya en su primera frontera, así que la invocación
-    // sellada se puede leer sin atravesar medio recorrido para llegar a ella.
-    const adopted = await advanceFlow(fs, paths, {
+  it("una directiva que escribiría sobre la colisión deriva primero a migración", async () => {
+    // `advanceFlow` muta el estado durable de la corrida. Aunque se le nombre
+    // una carpeta exacta, el nuevo contrato no permite elegir una fila HISTORY
+    // mientras la serie comparte correlativo; una lectura sí puede resolverla.
+    const attempted = await advanceFlow(fs, paths, {
       code: SESSION,
       flow: "spec-refine",
       adopt: true,
     });
-    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-
-    const args = adopted.directive.action?.invocation.args;
-    if (args === undefined) throw new Error("la primera frontera dejó de delegar su invocación");
-    const emitted = args[args.indexOf("--code") + 1];
-    expect(emitted).toBeDefined();
-
-    const resolved = await resolveSessionTarget(fs, paths, { code: emitted as string });
-    expect(resolved.outcome).toBe("resolved");
-    if (resolved.outcome !== "resolved") return;
-    expect(resolved.session.folder).toBe(SESSION);
+    expect(attempted.ok).toBe(false);
+    if (attempted.ok) return;
+    if (!("session" in attempted)) throw new Error("expected a session resolution refusal");
+    expect(attempted.session.code).toBe("SESSION_AMBIGUOUS");
+    expect(attempted.session.action).toContain("workspace-migrate");
+    expect(attempted.session.action).toContain("renombrá");
   });
 });

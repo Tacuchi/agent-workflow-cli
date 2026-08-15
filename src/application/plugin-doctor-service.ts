@@ -21,11 +21,7 @@ import { validateExportedSkills } from "./plugin-doctor/exported-skills.js";
 import { parseHooks } from "./plugin-doctor/hooks.js";
 import { parseManifests } from "./plugin-doctor/manifests.js";
 import { validateMcp } from "./plugin-doctor/mcp.js";
-import {
-  checkFrontendDesignGeneralization,
-  checkReadmeSync,
-  checkSkillsFrontmatter,
-} from "./plugin-doctor/skills.js";
+import { checkReadmeSync, checkSkillsFrontmatter } from "./plugin-doctor/skills.js";
 
 export type {
   DoctorFinding,
@@ -79,7 +75,6 @@ export async function runPluginDoctor(
 
   const skillsResult = await checkSkillsFrontmatter(skillsDir, fs);
   const readmeResult = await checkReadmeSync(readmePath, skillsResult.skillsCount, fs);
-  const fdFindings = await checkFrontendDesignGeneralization(skillsDir, pluginRoot, fs);
   const manifestsResult = await parseManifests(pluginRoot, fs, input.pluginVersion ?? null);
   const pluginVersion = manifestsResult.canonicalVersion ?? "unknown";
   const fallbackName = basename(pluginRoot) || `${paths.namespace}-${flow}`;
@@ -98,7 +93,6 @@ export async function runPluginDoctor(
   const findings = [
     ...skillsResult.findings,
     ...readmeResult.findings,
-    ...fdFindings,
     ...manifestsResult.findings,
     ...hooksResult.findings,
     ...mcpResult.findings,

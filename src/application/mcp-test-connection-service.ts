@@ -1,13 +1,13 @@
 // Real MCP connection test: runs `npx -y @bytebase/dbhub` with the DSN
-// resolved from the shell env or the bootstrap file. If dbhub starts without
+// resolved from the shell env or the local dsn.env file. If dbhub starts without
 // fatal errors (it sits waiting for MCP input on stdio), the connection is
 // considered valid. If dbhub fails quickly with stderr, the test fails with the detail.
 import { spawn } from "node:child_process";
-import { type DsnResolution, resolveDsnFromCandidates } from "./dsn-reader-service.js";
+import { type DsnResolution, resolveExactDsn } from "./dsn-reader-service.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface McpTestConnectionInput {
-  /** DSN env var name (e.g. DB_CERT_DSN). */
+  /** Exact registered DSN env var name (e.g. ALPHA_DATABASE_URL). */
   dsnVar: string;
   env: Record<string, string | undefined>;
   paths: PathsService;
@@ -39,10 +39,8 @@ export async function testMcpConnection(
 }
 
 function resolveDsnString(input: McpTestConnectionInput): DsnResolution | null {
-  // The tester is given the exact variable name to probe (the caller already
-  // picked it), so it hands the shared resolver a single candidate — unlike the
-  // launcher, which derives the organisation-prefix alternatives.
-  return resolveDsnFromCandidates([input.dsnVar], input.env, input.paths);
+  // The caller supplies the exact variable declared by the registry.
+  return resolveExactDsn(input.dsnVar, input.env, input.paths);
 }
 
 function spawnDbhub(

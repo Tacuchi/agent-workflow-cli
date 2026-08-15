@@ -28,7 +28,7 @@ import {
 import type { RetirementMode } from "../../domain/retirement/proposal.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import type { CliContext } from "../types.js";
 
 type Action = "prepare" | "apply";
@@ -73,7 +73,7 @@ function usage(mode: RetirementMode): string {
   return `uso: ${mode} prepare <objetivo> | ${mode} apply <objetivo> --approval <digest>`;
 }
 
-function retirementCommand(mode: RetirementMode): QtcCommand<RetirementOutput> {
+function retirementCommand(mode: RetirementMode): CliCommand<RetirementOutput> {
   return {
     name: mode,
     describe: describeOf(mode),

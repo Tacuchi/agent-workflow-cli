@@ -3,19 +3,13 @@
 // reaches the MCP JSON-RPC channel (see DbhubBannerFilter).
 import { spawn } from "node:child_process";
 import type { Readable } from "node:stream";
+import type { DsnResolution } from "./dsn-reader-service.js";
+import { resolveExactDsn } from "./dsn-reader-service.js";
 import {
-  normalizeDsnVarName,
-  validateDsnVarName,
-  validateMcpInstance,
-} from "../domain/mcp-entry.js";
-import {
-  type DsnResolution,
-  dsnKeyCandidates,
-  resolveDsnFromCandidates,
-} from "./dsn-reader-service.js";
+  type StoredMcpConnection,
+  resolveMcpConnectionSelection,
+} from "./mcp-connections-service.js";
 import type { PathsService } from "./paths-service.js";
-
-export const DBHUB_DSN_VAR_ENV = "DBHUB_DSN_VAR";
 
 export interface DbhubLauncherDeps {
   /** Returns process.env (or test override). */
@@ -45,12 +39,15 @@ export class DbhubLauncherError extends Error {
   }
 }
 
-export function resolveDsn(instance: string, deps: DbhubLauncherDeps): DbhubResolvedDsn {
-  const candidates = dsnVarCandidates(instance, deps);
+export function resolveDsn(
+  instance: string | undefined,
+  deps: DbhubLauncherDeps,
+): DbhubResolvedDsn {
+  const connection = resolveRegisteredConnection(instance, deps);
   let resolved: DsnResolution | null = null;
   let fileError: string | null = null;
   try {
-    resolved = resolveDsnFromCandidates(candidates, deps.env, deps.paths);
+    resolved = resolveExactDsn(connection.dsnVar, deps.env, deps.paths);
   } catch (err) {
     // An unreadable dsn.env (a directory in its place, a permission or race
     // error) surfaces as this launcher's own diagnostic naming the cause,
@@ -58,73 +55,42 @@ export function resolveDsn(instance: string, deps: DbhubLauncherDeps): DbhubReso
     fileError = err instanceof Error ? err.message : String(err);
   }
   if (resolved === null) {
-    throw new DbhubLauncherError(buildUnresolvedDsnMessage(instance, candidates, deps, fileError));
+    throw new DbhubLauncherError(buildUnresolvedDsnMessage(connection, deps, fileError));
   }
-  reportNonCanonicalVariable(resolved, candidates, deps);
   return resolved;
 }
 
-/**
- * Variable names to probe, most specific first. An explicit DBHUB_DSN_VAR names
- * the variable exactly — no prefix-dropping candidates are derived from it.
- */
-function dsnVarCandidates(instance: string, deps: DbhubLauncherDeps): [string, ...string[]] {
-  const configured = deps.env[DBHUB_DSN_VAR_ENV];
-  if (configured !== undefined && configured.trim().length > 0) {
-    const validation = validateDsnVarName(configured);
-    if (!validation.ok) {
-      throw new DbhubLauncherError(
-        `[dbhub-mcp-runner] ${DBHUB_DSN_VAR_ENV} inválida '${configured}': ${validation.error}`,
-      );
-    }
-    return [normalizeDsnVarName(validation.value)];
-  }
-  const [canonical, ...rest] = dsnKeyCandidates(instance);
-  if (canonical === undefined) {
-    throw new DbhubLauncherError(
-      `[dbhub-mcp-runner] la conexión '${instance}' no deriva ninguna variable DSN`,
-    );
-  }
-  return [canonical, ...rest];
-}
-
-/**
- * A DSN found under a non-canonical name is a resolution the user did not
- * spell out: say which variable was used and which one was missing, so the
- * mismatch never passes as a silent default.
- */
-function reportNonCanonicalVariable(
-  resolved: DsnResolution,
-  candidates: readonly [string, ...string[]],
+function resolveRegisteredConnection(
+  instance: string | undefined,
   deps: DbhubLauncherDeps,
-): void {
-  const canonical = candidates[0];
-  if (resolved.variable === canonical) return;
-  const origin = resolved.source === "env" ? "process.env" : deps.paths.userDsnFile();
-  stderrWriter(deps)(
-    `[dbhub-mcp-runner] usando ${resolved.variable} (desde ${origin}) porque ${canonical} no está definida.\n`,
-  );
+): StoredMcpConnection {
+  const selection = resolveMcpConnectionSelection(deps.paths, {
+    ...(instance !== undefined ? { instance } : {}),
+  });
+  if (!selection.ok) throw new DbhubLauncherError(`[dbhub-mcp-runner] ${selection.message}`);
+  const connection = selection.connections[0];
+  if (connection === undefined) {
+    throw new DbhubLauncherError("[dbhub-mcp-runner] la selección MCP no produjo una conexión");
+  }
+  return connection;
 }
 
 function buildUnresolvedDsnMessage(
-  instance: string,
-  candidates: readonly [string, ...string[]],
+  connection: StoredMcpConnection,
   deps: DbhubLauncherDeps,
   fileError: string | null,
 ): string {
   const dsnFile = deps.paths.userDsnFile();
-  const probed = candidates.length === 1 ? "la variable" : "estas variables, en orden";
   const where =
     fileError === null
       ? `primero en process.env y después en ${dsnFile}`
       : `primero en process.env; ${dsnFile} no se pudo leer (${fileError})`;
   return [
-    `[dbhub-mcp-runner] no encontré el DSN de la conexión '${instance}'.`,
-    `Probé ${probed}: ${candidates.join(", ")} — ${where}.`,
-    `Salidas: exportá ${candidates[0]} en ~/.zshenv (macOS/Linux) o System Environment (Windows)`,
-    `y reabrí el host desde una terminal donde 'echo $${candidates[0]}' devuelva valor;`,
-    `o nombrá la variable exacta con ${DBHUB_DSN_VAR_ENV} en el entorno del servidor MCP;`,
-    `o registrá la conexión con 'aw mcp setup --instance ${instance} --dsn-var <NOMBRE>'.`,
+    `[dbhub-mcp-runner] no encontré el DSN de la conexión registrada '${connection.name}'.`,
+    `La conexión exige ${connection.dsnVar} — ${where}.`,
+    `Exportá ${connection.dsnVar} en ~/.zshenv (macOS/Linux) o System Environment (Windows)`,
+    `y reabrí el host desde una terminal donde 'echo $${connection.dsnVar}' devuelva valor;`,
+    `o actualizá su registro con 'aw self mcp use-env --name ${connection.name} --dsn-var <VARIABLE>'.`,
   ].join(" ");
 }
 
@@ -223,7 +189,7 @@ function startsJsonRpc(line: Buffer): boolean {
 }
 
 export interface DbhubLauncherInput {
-  instance: string;
+  instance?: string;
   deps: DbhubLauncherDeps;
 }
 
@@ -236,14 +202,7 @@ export interface DbhubLauncherResult {
  * Resolves only when the spawned child exits.
  */
 export async function runDbhubLauncher(input: DbhubLauncherInput): Promise<DbhubLauncherResult> {
-  const validation = validateMcpInstance(input.instance);
-  if (!validation.ok) {
-    throw new DbhubLauncherError(
-      `[dbhub-mcp-runner] instance inválido '${input.instance}': ${validation.error}`,
-    );
-  }
-  const instance = validation.value;
-  const { dsn } = resolveDsn(instance, input.deps);
+  const { dsn } = resolveDsn(input.instance, input.deps);
 
   const isWin = input.deps.platform === "win32";
   const cmd = isWin ? "npx.cmd" : "npx";

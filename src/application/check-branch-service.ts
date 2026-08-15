@@ -276,6 +276,7 @@ async function flowSession(
   input: CheckBranchInput,
 ): Promise<FlowIdentity> {
   const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "read",
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
     bind: false,

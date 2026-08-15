@@ -70,6 +70,9 @@ The **UI unspecified** gap (when the requirement involves UI; see *Gap taxonomy*
 
 > **Two levels of the same capability:** a compact SPEC may already close its exact roots at `handoff`; otherwise SPEC keeps an `outline` reference and PLAN promotes exactly the closure it implements. A valid handoff is reused, never re-authored. One package, two questions — never two formats.
 
+> **Compound publication:** a new baseline carries this final spec as `consumer_document`
+> (path + base digest); package, manifest and spec publish or roll back together.
+
 Other transversal capabilities the engine always uses: `research` (**inline** — chassis § *Research*), `sql` (DB rule inside research — chassis). All resolved by config; `off` → the loop continues without the capability and, if it was needed, says so or asks. The spec's **prose** follows the **ambient** writing conventions (the host auto-applies an installed writing skill if present), not a composed role.
 
 > **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
@@ -224,6 +227,7 @@ finalize:
   - every **blocking** functional decision is resolved, and every remaining question carries its destination;
   - **Minimality** — no gold-plating: every criterion and scope item earns its place (chassis § *Minimality*); speculative scope is cut or deferred, and no technical solution was imposed that the requirement did not ask for;
   - `PLAN` can continue without inventing behavior, scope or product decisions.
+  - its gate evidence is checkout-bounded: local inspection/commands may establish it; a deployed product, host runtime or remote query is context or handoff, never a closing condition.
 - Whatever fails **comes back as a gap**. A question owned by `PLAN` **never** fails the gate: it is recorded with its destination, not closed.
 - Passes → `edit_in_place_with_confirm(spec)` + `status: ready-for-plan` → `finalize`. The stamp only counts once the document really carries it.
 - `Cerrar` → the chassis `finalize` (always persists `CHECKPOINT`; `BACKLOG` **only if** something is deferred — here: close reason + deferred `Open questions`).

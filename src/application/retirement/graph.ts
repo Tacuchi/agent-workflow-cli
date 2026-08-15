@@ -15,6 +15,7 @@
  */
 
 import { join, relative } from "node:path";
+import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
 import type { SessionCustody } from "../../domain/session/custody.js";
 import { CUSTODY_FILE, custodyCompleteness } from "../../domain/session/custody.js";
 import {
@@ -128,7 +129,10 @@ export interface BuiltGraph {
   index: WorklineIndex;
 }
 
-export async function buildRetirementGraph(deps: GraphDeps): Promise<BuiltGraph> {
+export async function buildRetirementGraph(
+  deps: GraphDeps,
+  canon: CoreDocsCanon = DEFAULT_CORE_DOCS_CANON,
+): Promise<BuiltGraph> {
   const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, {
     ...(deps.git !== undefined ? { git: deps.git } : {}),
   });
@@ -150,9 +154,9 @@ export async function buildRetirementGraph(deps: GraphDeps): Promise<BuiltGraph>
   }
 
   for (const session of index.sessions) {
-    const node = await sessionNode(deps, root, session);
+    const node = await sessionNode(deps, root, session, canon);
     graph.add(node);
-    linkSession(graph, node, session);
+    linkSession(graph, node, session, canon);
   }
   return { graph, index };
 }
@@ -181,14 +185,19 @@ function addDoc(
  * `## Origin` merely mentions it, and recording that as `origin-prose` is what
  * lets the closure stop rather than treat the two as equivalent.
  */
-function linkSession(graph: RetirementGraph, node: GraphNode, session: IndexedSession): void {
+function linkSession(
+  graph: RetirementGraph,
+  node: GraphNode,
+  session: IndexedSession,
+  canon: CoreDocsCanon,
+): void {
   const custody = node.session?.custody ?? null;
   if (custody !== null && custody.parents.length > 0) {
     for (const parent of custody.parents) graph.addEdge(node.id, parent, "custody");
     return;
   }
   if (session.linked_doc === null) return;
-  const linked = nodeFromDocPath(session.linked_doc);
+  const linked = nodeFromDocPath(session.linked_doc, canon);
   if (linked !== null) graph.addEdge(node.id, linked, "origin-prose");
 }
 
@@ -196,13 +205,14 @@ async function sessionNode(
   deps: GraphDeps,
   root: string,
   session: IndexedSession,
+  canon: CoreDocsCanon,
 ): Promise<GraphNode> {
   const read = await readCustody(deps.fs, session.path);
   const facts: SessionNodeFacts = {
     folder: session.folder,
     state: session.state,
     type: session.type,
-    completion: await completionOf(deps, session, read),
+    completion: await completionOf(deps, session, read, canon),
     custody: read.status === "present" ? read.custody : null,
     custody_gap: custodyGap(read),
     units: session.units,
@@ -250,11 +260,12 @@ async function completionOf(
   deps: GraphDeps,
   session: IndexedSession,
   read: CustodyRead,
+  canon: CoreDocsCanon,
 ): Promise<SessionCompletion> {
   const run = await readRun(deps.fs, locateRun(deps.paths, session.folder));
   if (run.ok) return run.state.boundary === null ? "converged" : "incomplete";
   if (read.status !== "present") return "unknown";
-  return (await artifactConverged(deps, read.custody)) ? "converged" : "incomplete";
+  return (await artifactConverged(deps, read.custody, canon)) ? "converged" : "incomplete";
 }
 
 /**
@@ -264,9 +275,13 @@ async function completionOf(
  * this is the guard that decides a destructive question and it should not depend
  * on a projection that may have been built for another purpose.
  */
-async function artifactConverged(deps: GraphDeps, custody: SessionCustody): Promise<boolean> {
+async function artifactConverged(
+  deps: GraphDeps,
+  custody: SessionCustody,
+  canon: CoreDocsCanon = DEFAULT_CORE_DOCS_CANON,
+): Promise<boolean> {
   for (const parent of custody.parents) {
-    const path = docPathOf(deps, custody, parent);
+    const path = docPathOf(deps, custody, parent, canon);
     if (path === null) continue;
     let text: string;
     try {
@@ -285,9 +300,10 @@ function docPathOf(
   deps: GraphDeps,
   custody: SessionCustody,
   parent: WorklineNodeId,
+  canon: CoreDocsCanon = DEFAULT_CORE_DOCS_CANON,
 ): string | null {
   const artifact = custody.artifacts.find((a) => {
-    const node = nodeFromDocPath(a.path);
+    const node = nodeFromDocPath(a.path, canon);
     return node !== null && node.kind === parent.kind && node.key === parent.key;
   });
   return artifact === undefined ? null : join(deps.paths.workspaceDir(), artifact.path);

@@ -209,7 +209,22 @@ describe("la corrida real de SPEC llega al final, que antes era imposible", () =
       input_digest: resolved.seal,
       outcome: "completed",
       invocation: action.invocation,
-      validations: action.evidence.map((id) => ({ id, passed: true, detail: `salida de ${id}` })),
+      validations: action.evidence.map((id) => ({
+        id,
+        passed: true,
+        detail: `salida de ${id}`,
+        ...(id === "workline.source-bounded"
+          ? {
+              proof: {
+                kind: "inspection" as const,
+                source: "workspace",
+                relative_cwd: ".",
+                checkout_digest: "test-checkout",
+                invocation: { artifact: "tests/unit/flow-cierre-legacy.test.ts" },
+              },
+            }
+          : {}),
+      })),
       effects: { planned: [...declared], approved: [], applied: [...declared] },
       output: null,
     };

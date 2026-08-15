@@ -9,14 +9,14 @@ import { resolveSessionTarget } from "../../application/session-resolver.js";
 import { HARNESSES } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 // Derived from the catalog: the describe used to name two hosts out of seven.
 const HARNESS_IDS = HARNESSES.map((h) => h.id).join(" | ");
 
-export const harnessCommand: QtcCommand = {
+export const harnessCommand: CliCommand = {
   name: "harness",
   describe: `Identify the host harness from its env markers (${HARNESS_IDS} | unknown). 'unknown' is a legitimate answer — some hosts export no marker to their subprocesses; use 'self detect-hosts' for what is actually installed on the machine.`,
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
@@ -32,7 +32,7 @@ export const harnessCommand: QtcCommand = {
   },
 };
 
-export const profilesCommand: QtcCommand = {
+export const profilesCommand: CliCommand = {
   name: "profiles",
   describe: "Resolve user preferences from the namespace's user-config.md.",
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
@@ -41,7 +41,7 @@ export const profilesCommand: QtcCommand = {
   },
 };
 
-export const logsCommand: QtcCommand = {
+export const logsCommand: CliCommand = {
   name: "logs",
   describe: "View or clear the CLI log. Usage: aw logs [--tail <n>] [--clear].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
@@ -56,7 +56,7 @@ export const logsCommand: QtcCommand = {
   },
 };
 
-export const nextNumberCommand: QtcCommand = {
+export const nextNumberCommand: CliCommand = {
   name: "next-number",
   describe:
     "Compute next NNN correlative for a directory, creating it when missing. With --claim <resto-del-nombre> the number is CLAIMED instead of consulted: the file is materialized under the workspace lock, so two concurrent flows never receive the same NNN. With --code <NNN> the reservation BELONGS to that session — only its own sealed proposal can complete it, asking again returns the same slot, and closing the session releases it if it never did. Usage: aw next-number <directorio> [--claim <resto-del-nombre>] [--code <NNN>] [--dry-run].",
@@ -82,7 +82,7 @@ export const nextNumberCommand: QtcCommand = {
     // holds a reservation nobody can attribute to it.
     let owner: string | undefined;
     if (code !== undefined) {
-      const resolution = await resolveSessionTarget(ctx.fs, ctx.paths, { code });
+      const resolution = await resolveSessionTarget(ctx.fs, ctx.paths, { code, intent: "write" });
       if (resolution.outcome !== "resolved") {
         const message = `no se pudo resolver la sesión '${code}' que reclamaría el correlativo`;
         return fail("INVALID_INPUT", message, { error: message, sessionError: resolution });

@@ -175,18 +175,11 @@
         },
         {
           "path": "modules/EXEC-DB-POLICY.md",
-          "signal": "db",
-          "requires": "external-data"
+          "signal": "db"
         },
         {
           "path": "modules/DB-SCRIPTS-ONLY.md",
-          "signal": "db",
-          "requires": "external-data"
-        },
-        {
-          "path": "modules/DB-RESEARCH-RULE.md",
-          "signal": "db",
-          "requires": "external-data"
+          "signal": "db"
         },
         {
           "path": "modules/SIMULATION-LIFECYCLE.md",

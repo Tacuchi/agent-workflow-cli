@@ -1,10 +1,10 @@
 import { runStack } from "../../application/stack-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
-export const stackCommand: QtcCommand = {
+export const stackCommand: CliCommand = {
   name: "stack",
   describe:
     "Detect stack of the project (language/framework/db/build). " +

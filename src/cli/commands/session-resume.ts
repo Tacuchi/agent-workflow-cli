@@ -5,11 +5,11 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const sessionResumeCommand: QtcCommand = {
+export const sessionResumeCommand: CliCommand = {
   name: "session-resume",
   describe:
     "Load resume payload for a session (objetivo + checkpoint). With --reopen, reactivate it if closed (inter-turn continuity). " +

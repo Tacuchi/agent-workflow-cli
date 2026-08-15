@@ -8,6 +8,7 @@ import {
   type DispatchResult,
   dispatchCapability,
 } from "../../src/application/capability/dispatcher.js";
+import { localDateIso } from "../../src/application/dates.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import { designsCommand } from "../../src/cli/commands/designs.js";
@@ -22,6 +23,7 @@ import {
   renderDesignMd,
   renderPackageMd,
 } from "../../src/domain/design/projections.js";
+import { baseDigest } from "../../src/domain/proposal.js";
 import type { DirEntry } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { packageCandidate } from "../helpers/design-package.js";
@@ -562,6 +564,36 @@ const input = (name: string, value: unknown): CapabilityInputValue => ({
   provenance: { kind: "text", origin: "caller", seal: null, sensitivity: "public" },
 });
 
+function consumerInput(path: string, content: string, base: string): CapabilityInputValue {
+  return {
+    name: "consumer_document",
+    value: content,
+    provenance: {
+      kind: "attachment",
+      origin: path,
+      seal: baseDigest(base),
+      sensitivity: "public",
+    },
+  };
+}
+
+function consumerMarkdown(revision: number, digest: string): string {
+  const padded = String(revision).padStart(3, "0");
+  return [
+    "# Plan 031 — consumidor atómico",
+    "",
+    "## Design references",
+    "",
+    `package: DES-001@r${revision}`,
+    `baseline_hint: ${PKG}/baselines/DES-001-r${padded}.json`,
+    `digest: ${digest}`,
+    "",
+    "## Tasks",
+    "",
+    "- [ ] T1.1 — Consumir la revisión publicada.",
+  ].join("\n");
+}
+
 /** The `input_digest` an authored answer has to quote, recomputed from the inputs. */
 function digestOfInputs(inputs: CapabilityInputValue[]): string {
   return semanticDigest(
@@ -739,6 +771,51 @@ describe("publicar por la ruta de paquete: o el árbol queda legible, o no se es
     expect(prepared.attempt.receipt.error?.message).toContain("la vigente es DES-001@r1");
     expect(prepared.attempt.receipt.error?.action).toContain("una publicada no se reescribe");
     expect(await snapshot(fs)).toEqual(antes);
+  });
+
+  it("no adopta como base un manifest que cambió después del snapshot que derivó el candidato", async () => {
+    const fs = workspace();
+    const manifestPath = `${WS}/${PKG}/design-manifest.json`;
+    const original = await fs.readText(manifestPath);
+    const concurrent = JSON.stringify(
+      {
+        ...(JSON.parse(original) as Record<string, unknown>),
+        title: "Alta cambiada por otro autor",
+      },
+      null,
+      2,
+    );
+
+    // The index receives M1, then another writer lands M2 before the candidate
+    // is built. The proposal must retain M1 as its CAS base and fail at apply;
+    // re-reading only to make the base would silently overwrite M2 with M1's
+    // derived candidate.
+    const readText = fs.readText.bind(fs);
+    let interleaved = false;
+    fs.readText = async (path: string): Promise<string> => {
+      const content = await readText(path);
+      if (path === manifestPath && !interleaved) {
+        interleaved = true;
+        fs.file(manifestPath, concurrent);
+      }
+      return content;
+    };
+
+    const validated = await validateWith(fs, "update", updateInputs("DES-001@r1"), [
+      { path: `${PKG}/${NEW_FLOW.path}`, content: NEW_FLOW.content },
+    ]);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    expect(validated.attempt.receipt.outcome).toBe("needs_input");
+
+    const beforeApply = await snapshot(fs);
+    const applied = await applyValidated(fs, validated, "update");
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.attempt.receipt.outcome).toBe("blocked");
+    expect(applied.attempt.receipt.error?.code).toBe("PROPOSAL_BASE_STALE");
+    expect(await fs.readText(manifestPath)).toBe(concurrent);
+    expect(await snapshot(fs)).toEqual(beforeApply);
   });
 
   it("un package ROTO se nombra; no se lee como inexistente", async () => {
@@ -950,6 +1027,215 @@ describe("una publicación que no acuña revisión: publica adentro del package,
     const artifacts = validated.attempt.plan?.proposal.artifacts ?? [];
     expect(artifacts.find((a) => a.path.endsWith("PACKAGE.md"))?.overwrite).toBe(true);
     expect(artifacts.find((a) => a.path.endsWith("REV-001.json"))?.overwrite).toBe(false);
+  });
+});
+
+describe("la revisión y su consumidor se publican en un único lote", () => {
+  const CONSUMER_PATH = "docs/plans/031-plan-consumidor-atomico.md";
+  const CONSUMER_BEFORE = "# Plan 031 — versión anterior\n";
+
+  async function consumerFor(fs: MemFs): Promise<{
+    content: string;
+    input: CapabilityInputValue;
+  }> {
+    const preview = await candidate(fs, [NEW_FLOW], localDateIso(new Date()));
+    if (!preview.ok) throw new Error(preview.failures[0]?.message);
+    const content = consumerMarkdown(preview.value.revision, preview.value.baseline.digest);
+    return { content, input: consumerInput(CONSUMER_PATH, content, CONSUMER_BEFORE) };
+  }
+
+  it("relaciona el manifest, sella ambas bases y escribe el consumidor al final", async () => {
+    const fs = workspace();
+    fs.file(`${WS}/${CONSUMER_PATH}`, CONSUMER_BEFORE);
+    const consumer = await consumerFor(fs);
+    const inputs = [...updateInputs("DES-001@r1"), consumer.input];
+
+    const validated = await validateWith(fs, "update", inputs, [
+      { path: `${PKG}/${NEW_FLOW.path}`, content: NEW_FLOW.content },
+    ]);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    const plan = validated.attempt.plan;
+    expect(plan).not.toBeNull();
+    if (plan === null) return;
+
+    const last = plan.proposal.artifacts[plan.proposal.artifacts.length - 1];
+    expect(last?.path).toBe(CONSUMER_PATH);
+    expect(plan.proposal.bases.map((base) => base.path)).toEqual([
+      `${PKG}/design-manifest.json`,
+      CONSUMER_PATH,
+    ]);
+
+    const applied = await applyValidated(fs, validated, "update");
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.attempt.receipt.outcome).toBe("completed");
+
+    const manifest = JSON.parse(
+      await fs.readText(`${WS}/${PKG}/design-manifest.json`),
+    ) as DesignManifest;
+    // La relación nueva se incorpora sin borrar el consumidor histórico que
+    // ya declaraba el manifest de partida.
+    expect(manifest.relations.plans).toEqual([
+      "docs/plans/012-plan-paquete-diseno-ui-y-flows.md",
+      CONSUMER_PATH,
+    ]);
+    expect(await fs.readText(`${WS}/${CONSUMER_PATH}`)).toBe(consumer.content);
+    expect(await fs.readText(`${WS}/${PKG}/PACKAGE.md`)).toContain(CONSUMER_PATH);
+  });
+
+  it("una refinería compuesta no puede acuñar un baseline sin su consumidor", async () => {
+    const result = await dispatchCapability(
+      {
+        verb: "prepare",
+        capability: "design",
+        operation: "update",
+        route: "compose",
+        flow: "plan-refine",
+        inputs: updateInputs("DES-001@r1"),
+      },
+      ctx(workspace()),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.code).toBe("DESIGN_CONSUMER_REQUIRED");
+  });
+
+  it("rechaza un attachment que ya quedó stale antes de preparar el lote", async () => {
+    const fs = workspace();
+    fs.file(`${WS}/${CONSUMER_PATH}`, "# Plan 031 — bytes vigentes\n");
+    const stale = consumerInput(CONSUMER_PATH, "# Plan 031 — final\n", CONSUMER_BEFORE);
+
+    const result = await validateWith(
+      fs,
+      "update",
+      [...updateInputs("DES-001@r1"), stale],
+      [{ path: `${PKG}/${NEW_FLOW.path}`, content: NEW_FLOW.content }],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.code).toBe("DESIGN_CONSUMER_BASE_STALE");
+  });
+
+  it("vuelve a comprobar la base del consumidor al aplicar", async () => {
+    const fs = workspace();
+    fs.file(`${WS}/${CONSUMER_PATH}`, CONSUMER_BEFORE);
+    const consumer = await consumerFor(fs);
+    const beforePackage = await snapshot(fs);
+    const validated = await validateWith(
+      fs,
+      "update",
+      [...updateInputs("DES-001@r1"), consumer.input],
+      [{ path: `${PKG}/${NEW_FLOW.path}`, content: NEW_FLOW.content }],
+    );
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    fs.file(`${WS}/${CONSUMER_PATH}`, "# Plan 031 — cambió tras la vista previa\n");
+    const applied = await applyValidated(fs, validated, "update");
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.attempt.receipt.outcome).toBe("blocked");
+    expect(applied.attempt.receipt.error?.code).toBe("PROPOSAL_BASE_STALE");
+    expect(await snapshot(fs)).toEqual(beforePackage);
+  });
+
+  it.each([
+    [
+      "proveniencia que no es attachment",
+      {
+        name: "consumer_document",
+        value: "# Plan\n",
+        provenance: {
+          kind: "text",
+          origin: CONSUMER_PATH,
+          seal: baseDigest(CONSUMER_BEFORE),
+          sensitivity: "public",
+        },
+      } satisfies CapabilityInputValue,
+      "DESIGN_CONSUMER_INVALID",
+    ],
+    [
+      "path que sale del workspace",
+      {
+        name: "consumer_document",
+        value: "# Plan\n",
+        provenance: {
+          kind: "attachment",
+          origin: "../fuera.md",
+          seal: baseDigest(CONSUMER_BEFORE),
+          sensitivity: "public",
+        },
+      } satisfies CapabilityInputValue,
+      "DESIGN_PATH_UNSAFE",
+    ],
+  ])("rechaza %s", async (_case, invalid, code) => {
+    const result = await dispatch(new MemFs(), "prepare", "update", [
+      ...updateInputs("DES-001@r1"),
+      invalid,
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.code).toBe(code);
+  });
+
+  it("rechaza una referencia del consumidor que no fija el baseline candidato", async () => {
+    const fs = workspace();
+    fs.file(`${WS}/${CONSUMER_PATH}`, CONSUMER_BEFORE);
+    const preview = await candidate(fs, [NEW_FLOW], localDateIso(new Date()));
+    if (!preview.ok) throw new Error(preview.failures[0]?.message);
+    const staleReference = consumerMarkdown(1, preview.value.baseline.digest);
+    const stale = consumerInput(CONSUMER_PATH, staleReference, CONSUMER_BEFORE);
+
+    const result = await validateWith(
+      fs,
+      "update",
+      [...updateInputs("DES-001@r1"), stale],
+      [{ path: `${PKG}/${NEW_FLOW.path}`, content: NEW_FLOW.content }],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.code).toBe("DESIGN_CONSUMER_REFERENCE_STALE");
+  });
+
+  it("un fallo al escribir el consumidor restaura también el package", async () => {
+    const fs = workspace();
+    // El lock liberado es estado operacional preexistente, no parte del lote de
+    // publicación. Sembrarlo hace que el snapshot compruebe el rollback de los
+    // artefactos sin atribuirle una creación normal de la capa de lock.
+    fs.file(`${WS}/.workflow/.lock`, "");
+    fs.file(`${WS}/${CONSUMER_PATH}`, CONSUMER_BEFORE);
+    const consumer = await consumerFor(fs);
+    const before = await snapshot(fs, WS);
+    const validated = await validateWith(
+      fs,
+      "update",
+      [...updateInputs("DES-001@r1"), consumer.input],
+      [{ path: `${PKG}/${NEW_FLOW.path}`, content: NEW_FLOW.content }],
+    );
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    const writeText = fs.writeText.bind(fs);
+    let consumerWrites = 0;
+    fs.writeText = async (path: string, content: string): Promise<void> => {
+      if (path === `${WS}/${CONSUMER_PATH}` && consumerWrites++ === 0) {
+        throw new Error("disco lleno al reemplazar el consumidor");
+      }
+      return writeText(path, content);
+    };
+    const applied = await applyValidated(fs, validated, "update");
+    fs.writeText = writeText;
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.attempt.receipt.outcome).toBe("blocked");
+    expect(await snapshot(fs, WS)).toEqual(before);
   });
 });
 

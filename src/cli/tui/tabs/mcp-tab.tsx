@@ -80,7 +80,7 @@ export interface McpTabProps {
   onToast?: (msg: ToastBridgeInput) => void;
 }
 
-// Crash-safe DSN visibility check (env + bootstrap dsn file) for the review
+// Crash-safe DSN visibility check (env + local dsn file) for the review
 // step's badge. Defensive: a malformed ctx reads as "not visible", never throws.
 function safeDsnVisible(ctx: CliContext, dsnVar: string): boolean {
   try {
@@ -347,7 +347,7 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       <PageHead
         title="MCP"
         count={{ label: `${connections.length} databases · mcp-connections.json`, tone: "accent" }}
-        action={<Text color={colors.mute}>aliases match mcp_databases[] · consumed by skills</Text>}
+        action={<Text color={colors.mute}>registered aliases · consumed by skills</Text>}
       />
 
       {/* with-detail layout */}

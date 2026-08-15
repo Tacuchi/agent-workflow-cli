@@ -127,7 +127,7 @@ function formatBlockMessage(
     "",
     "Para excepciones puntuales delegadas por el usuario, usar:",
     "  AW_SQL_GUARD=off               # desactiva el hook por completo",
-    "  AW_SQL_GUARD_ALLOW=cert        # permite sólo cert (no prod)",
+    "  AW_SQL_GUARD_ALLOW=<servidor> # permite sólo ese servidor",
     "",
   ].join("\n")}\n`;
 }

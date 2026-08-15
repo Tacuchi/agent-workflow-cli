@@ -26,9 +26,17 @@ import { checkDataAuthorization } from "../../domain/design/render-bundle.js";
 import { type DesignRendition, validateDesignRendition } from "../../domain/design/rendition.js";
 import { KIND_LIST } from "../../domain/design/revision.js";
 import { crossVisualEvidence } from "../../domain/design/visual-evidence.js";
+import type { CoreDocsCanon } from "../../domain/docs-canon.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PublishableArtifact } from "../semantic-operation/publish.js";
+import {
+  type ConsumerDocument,
+  checkConsumerBase,
+  checkConsumerReference,
+  checkConsumerShape,
+  withConsumerRelation,
+} from "./consumer-document.js";
 
 /**
  * The candidate of a package revision: all of it, or none of it.
@@ -81,6 +89,13 @@ export interface PackageCandidateInput {
    * durable, shareable dossier.
    */
   dataAuthorization?: string;
+  /**
+   * Optional spec/plan that moves with the package revision. When present it
+   * is validated, attached to the manifest relation and written LAST.
+   */
+  consumer_document?: ConsumerDocument | null;
+  /** Resolved at the handler boundary; direct callers stay on the canonical default. */
+  docs_canon?: CoreDocsCanon;
 }
 
 export type PackageCandidate =
@@ -114,6 +129,14 @@ export async function buildPackageCandidate(
 ): Promise<PackageCandidate> {
   const unsafe = input.files.flatMap((f) => pathFailure(f.path));
   if (unsafe.length > 0) return { ok: false, failures: unsafe };
+
+  const consumer = input.consumer_document ?? null;
+  if (consumer !== null) {
+    const shape = checkConsumerShape(consumer, input.docs_canon);
+    if (shape !== null) return { ok: false, failures: [shape] };
+    const consumerBase = await checkConsumerBase(fs, workspace, consumer);
+    if (consumerBase !== null) return { ok: false, failures: [consumerBase] };
+  }
 
   const catalog = mergeCatalog(input.manifest, input.files, input.dataAuthorization);
   if ("failures" in catalog) return { ok: false, failures: catalog.failures };
@@ -169,7 +192,12 @@ export async function buildPackageCandidate(
   if ("failures" in selection) return { ok: false, failures: selection.failures };
 
   const baseline = sealBaseline(input.manifest, revision, input.published, selection.value);
-  const nextManifest = nextManifestOf(input.manifest, catalog.value, baseline);
+  const nextManifest = nextManifestOf(input.manifest, catalog.value, baseline, consumer);
+
+  if (consumer !== null) {
+    const reference = checkConsumerReference(consumer, baseline);
+    if (reference !== null) return { ok: false, failures: [reference] };
+  }
 
   const failures = validateCandidate(nextManifest, baseline, input.packagePath);
   if (failures.length > 0) return { ok: false, failures };
@@ -177,7 +205,13 @@ export async function buildPackageCandidate(
   return {
     ok: true,
     value: {
-      artifacts: candidateArtifacts(input.packagePath, nextManifest, baseline, input.files),
+      artifacts: candidateArtifacts(
+        input.packagePath,
+        nextManifest,
+        baseline,
+        input.files,
+        consumer,
+      ),
       revision,
       baseline,
       manifest: nextManifest,
@@ -832,24 +866,28 @@ function nextManifestOf(
   manifest: DesignManifest,
   catalog: DesignManifest["catalog"],
   baseline: DesignBaseline,
+  consumer: ConsumerDocument | null,
 ): DesignManifest {
   const path = baselinePath(manifest.id, baseline.revision);
-  return {
-    ...manifest,
-    catalog,
-    currentness: deriveCurrentness(manifest.id, catalog),
-    baselines: [
-      ...manifest.baselines,
-      {
-        revision: baseline.revision,
-        path,
-        digest: baseline.digest,
-        parent_baseline: baseline.parent_baseline,
-        published: baseline.published,
-      },
-    ],
-    current_baseline: { revision: baseline.revision, path, digest: baseline.digest },
-  };
+  return withConsumerRelation(
+    {
+      ...manifest,
+      catalog,
+      currentness: deriveCurrentness(manifest.id, catalog),
+      baselines: [
+        ...manifest.baselines,
+        {
+          revision: baseline.revision,
+          path,
+          digest: baseline.digest,
+          parent_baseline: baseline.parent_baseline,
+          published: baseline.published,
+        },
+      ],
+      current_baseline: { revision: baseline.revision, path, digest: baseline.digest },
+    },
+    consumer,
+  );
 }
 
 /**
@@ -912,6 +950,7 @@ function candidateArtifacts(
   manifest: DesignManifest,
   baseline: DesignBaseline,
   files: PublishFile[],
+  consumer: ConsumerDocument | null,
 ): PublishableArtifact[] {
   const at = (path: string): string => `${packagePath}/${path}`;
   return [
@@ -941,5 +980,11 @@ function candidateArtifacts(
       content: `${JSON.stringify(manifest, null, 2)}\n`,
       overwrite: true,
     },
+    // The package must be complete and point at its new baseline before its
+    // consumer moves. `publishArtifacts` rolls the whole batch back if this
+    // final overwrite fails.
+    ...(consumer === null
+      ? []
+      : [{ path: consumer.path, content: consumer.content, overwrite: true }]),
   ];
 }

@@ -1,3 +1,10 @@
+import { CORRELATIVE_SOURCE } from "./correlative.js";
+import {
+  type CoreDocsCanon,
+  DEFAULT_CORE_DOCS_CANON,
+  coreDocumentKindForPath,
+} from "./docs-canon.js";
+
 /**
  * The identity of a Workline node, said the same way by everybody who points at
  * one.
@@ -39,8 +46,6 @@ export function formatNodeId(id: WorklineNodeId): string {
   return `${id.kind}:${id.key}`;
 }
 
-const DOC_PATH_RE = /(?:^|\/)docs\/(specs|plans)\/(\d{3})-(spec|plan)(?:-[^/]*)?\.md$/i;
-
 /**
  * The node a document path IS — `docs/plans/024-plan-x.md` is `plan:024`.
  *
@@ -50,10 +55,21 @@ const DOC_PATH_RE = /(?:^|\/)docs\/(specs|plans)\/(\d{3})-(spec|plan)(?:-[^/]*)?
  * what the document is DERIVED from is a different question, answered by the
  * document's own `Derived from` line or by a session's sealed custody.
  */
-export function nodeFromDocPath(path: string): WorklineNodeId | null {
-  const m = DOC_PATH_RE.exec(path.split("\\").join("/"));
-  if (m?.[2] === undefined) return null;
-  return { kind: m[1]?.toLowerCase() === "specs" ? "spec" : "plan", key: m[2] };
+export function nodeFromDocPath(
+  path: string,
+  canon: Pick<CoreDocsCanon, "spec" | "plan"> = DEFAULT_CORE_DOCS_CANON,
+): WorklineNodeId | null {
+  const normalized = path.split("\\").join("/");
+  const kind = coreDocumentKindForPath(normalized, canon);
+  if (kind === null) return null;
+  const directory = canon[kind].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `(?:^|/)${directory}/(${CORRELATIVE_SOURCE})-${kind}(?:-[^/]*)?\\.md$`,
+    "i",
+  );
+  const match = re.exec(normalized);
+  if (match?.[1] === undefined) return null;
+  return { kind, key: match[1] };
 }
 
 /**

@@ -16,6 +16,8 @@ import {
   parseTaskDesignReferences,
 } from "../../domain/design/reference.js";
 import { reportRetiredDesign } from "../../domain/design/retired.js";
+import { DEFAULT_CORE_DOCS_CANON, coreDocumentKindForPath } from "../../domain/docs-canon.js";
+import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { type DesignIndex, readDesignIndex } from "./design-index-service.js";
 import {
@@ -82,7 +84,22 @@ export async function gatePlanDesign(
   policy: ApprovalPolicy = { requireApproval: false },
 ): Promise<DesignGateReport> {
   const empty = { plan: planPath, declared: [], verdicts: [] };
-  const absolute = join(workspace, planPath);
+  const safe = checkSafeRelativePath(planPath);
+  if (!safe.ok || coreDocumentKindForPath(safe.path, DEFAULT_CORE_DOCS_CANON) !== "plan") {
+    return {
+      ...empty,
+      blocked: true,
+      failures: [
+        {
+          code: "DESIGN_GATE_PLAN_OUTSIDE_CANON",
+          artifact: planPath,
+          message: `'${planPath}' no es un plan Markdown bajo ${DEFAULT_CORE_DOCS_CANON.plan}/`,
+          action: `pasá la ruta segura de un plan bajo ${DEFAULT_CORE_DOCS_CANON.plan}/`,
+        },
+      ],
+    };
+  }
+  const absolute = join(workspace, safe.path);
   if (!(await fs.exists(absolute))) {
     return {
       ...empty,

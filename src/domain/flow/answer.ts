@@ -32,6 +32,7 @@ import {
   type OperationOutput,
   type ValidationOutcome,
 } from "../capability/protocol.js";
+import type { CheckoutProof } from "../source-boundary.js";
 import {
   type DelegatedAction,
   type DelegatedInvocation,
@@ -146,6 +147,10 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // outside the allowlist, a duplicate, an oversized artifact.
   SEMANTIC_PATH_REJECTED: "envelope",
   SEMANTIC_RESPONSE_INVALID: "envelope",
+  // The workspace's documentation layout is invalid before the boundary can
+  // inspect an answer. The flow returns its corrective action, but no attempt
+  // was made at the pending decision.
+  DOCS_CANON_INVALID: "envelope",
   // The registry moved under a run in flight, so the invocation the result is
   // about is no longer the one this build emits. Nothing about the ANSWER was
   // weighed, and the next `advance` re-binds the action by itself.
@@ -159,6 +164,9 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // The execution verdict's own vocabulary: it judges a result that WAS read.
   FLOW_EXECUTION_NOT_COMPLETED: "evaluated",
   FLOW_EVIDENCE_MISSING: "evaluated",
+  WORKLINE_CHECKOUT_PROOF_MISSING: "evaluated",
+  WORKLINE_CHECKOUT_PROOF_INVALID: "evaluated",
+  WORKLINE_CHECKOUT_PROOF_STALE: "evaluated",
   FLOW_EFFECT_PARTIAL: "evaluated",
   // The scope boundary's own vocabulary. Its answer is `decisions.sources` plus
   // `decisions.plan`, and every one of these means the CLI read them and found
@@ -167,6 +175,14 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   FLOW_SCOPE_UNKNOWN_SOURCE: "evaluated",
   FLOW_SCOPE_NOT_IN_PLAN: "evaluated",
   FLOW_SCOPE_PLAN_UNREADABLE: "evaluated",
+  // The submitted scope named a plan and the CLI read it, but its location
+  // violates the canonical documentation boundary.
+  FLOW_SCOPE_PLAN_OUTSIDE_CANON: "evaluated",
+  PLAN_SOURCE_BOUNDARY_MISSING: "evaluated",
+  PLAN_SOURCE_UNKNOWN: "evaluated",
+  PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
+  PLAN_SOURCE_EXTERNAL_CLOSURE: "evaluated",
+  PLAN_SOURCE_LOCAL_PROOF_MISSING: "evaluated",
   // The authoring boundary's: the bytes arrived and what they would do is not
   // what the row declares, or their destination could not be read.
   FLOW_PROPOSAL_BEYOND_CONTRACT: "evaluated",
@@ -708,9 +724,48 @@ function readValidations(value: unknown): ValidationOutcome[] | null {
     if (typeof entry.id !== "string" || typeof entry.passed !== "boolean") return null;
     const detail = entry.detail === undefined ? null : entry.detail;
     if (detail !== null && typeof detail !== "string") return null;
-    out.push({ id: entry.id, passed: entry.passed, detail });
+    const proof = entry.proof === undefined ? undefined : readCheckoutProof(entry.proof);
+    if (proof === null) return null;
+    out.push({
+      id: entry.id,
+      passed: entry.passed,
+      detail,
+      ...(proof !== undefined ? { proof } : {}),
+    });
   }
   return out;
+}
+
+function readCheckoutProof(value: unknown): CheckoutProof | null {
+  if (!isRecord(value)) return null;
+  if (value.kind !== "command" && value.kind !== "inspection") return null;
+  if (
+    typeof value.source !== "string" ||
+    typeof value.relative_cwd !== "string" ||
+    typeof value.checkout_digest !== "string" ||
+    !isRecord(value.invocation)
+  ) {
+    return null;
+  }
+  const invocation = value.invocation;
+  if (value.kind === "command") {
+    if (typeof invocation.program !== "string" || !isStringArray(invocation.args)) return null;
+    return {
+      kind: "command",
+      source: value.source,
+      relative_cwd: value.relative_cwd,
+      checkout_digest: value.checkout_digest,
+      invocation: { program: invocation.program, args: invocation.args },
+    };
+  }
+  if (typeof invocation.artifact !== "string") return null;
+  return {
+    kind: "inspection",
+    source: value.source,
+    relative_cwd: value.relative_cwd,
+    checkout_digest: value.checkout_digest,
+    invocation: { artifact: invocation.artifact },
+  };
 }
 
 function readLedger(value: unknown): EffectLedger | null {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   CommitReceipt,
   ConflictStage,
@@ -83,6 +84,55 @@ export class GitCliAdapter implements GitPort {
       .split("\n")
       .map((line) => line.slice(3).trim())
       .filter((path) => path.length > 0);
+  }
+
+  /**
+   * A content-sensitive fingerprint for checkout-bound proof.
+   *
+   * Git's porcelain status deliberately omits the bytes of a modified file, so
+   * it cannot distinguish two edits to the same already-dirty path.  The patch
+   * covers tracked content and mode changes; porcelain v2 preserves status and
+   * submodule facts; untracked files need their own blob ids because `git diff
+   * HEAD` does not include them.  The value never leaves the checkout and is
+   * only used as an opaque component of `CheckoutProof.checkout_digest`.
+   */
+  async checkoutFingerprint(repoPath: string): Promise<string> {
+    const [patch, status, untracked] = await Promise.all([
+      this.mustRun(
+        "diff for checkout fingerprint",
+        ["diff", "--binary", "--full-index", "--no-ext-diff", "HEAD", "--"],
+        repoPath,
+      ),
+      this.mustRun("status for checkout fingerprint", ["status", "--porcelain=v2", "-z"], repoPath),
+      this.mustRun(
+        "untracked files for checkout fingerprint",
+        ["ls-files", "--others", "--exclude-standard", "-z"],
+        repoPath,
+      ),
+    ]);
+    const hash = createHash("sha256");
+    hash.update("patch\0", "utf8");
+    hash.update(patch.stdout, "utf8");
+    hash.update("status\0", "utf8");
+    hash.update(status.stdout, "utf8");
+
+    const paths = untracked.stdout
+      .split("\0")
+      .filter((path) => path.length > 0)
+      .sort();
+    for (const path of paths) {
+      const blob = await this.mustRun(
+        "untracked blob for checkout fingerprint",
+        ["hash-object", "--no-filters", "--", path],
+        repoPath,
+      );
+      hash.update("untracked\0", "utf8");
+      hash.update(path, "utf8");
+      hash.update("\0", "utf8");
+      hash.update(blob.stdout.trim(), "utf8");
+      hash.update("\0", "utf8");
+    }
+    return `sha256:${hash.digest("hex")}`;
   }
 
   async diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]> {

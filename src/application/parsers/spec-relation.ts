@@ -1,3 +1,5 @@
+import { CORRELATIVE_SOURCE, compareCorrelatives } from "../../domain/correlative.js";
+import { DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
 import { parseMdSectionBilingual, scanMarkdown } from "../markdown.js";
 
 /**
@@ -11,14 +13,9 @@ export type ParsedSpecRelation =
   | { status: "ambiguous"; numbers: string[]; evidence: SpecEvidence }
   | { status: "absent" };
 
-// Spec documents are `docs/specs/NNN-spec-<slug>.md`; the trailing character
-// class stops at the punctuation that surrounds a path in prose (backticks,
-// parens, quotes) so a Markdown link or an inline-code path still matches.
-const SPEC_PATH_RE = /docs\/specs\/(\d{3})-spec[^\s`)"']*\.md/g;
-
 // `Spec 011` / `spec 011` — a bare number is NOT evidence: `sesión 047` and
 // `baseline 044` would match it, and the whole point is to never guess.
-const SPEC_REFERENCE_RE = /\bspec\s+(\d{3})\b/gi;
+const SPEC_REFERENCE_RE = new RegExp(`\\bspec\\s+(${CORRELATIVE_SOURCE})\\b`, "gi");
 
 const DERIVED_FROM_RE = /derived from/i;
 
@@ -41,11 +38,15 @@ const DERIVED_FROM_RE = /derived from/i;
  * Two different specs at the same level is `ambiguous`, not a coin flip:
  * a human wrote something contradictory and only a human should settle it.
  */
-export function parseSpecRelation(text: string): ParsedSpecRelation {
+export function parseSpecRelation(
+  text: string,
+  specDir: string = DEFAULT_CORE_DOCS_CANON.spec,
+): ParsedSpecRelation {
+  const specPath = specPathPattern(specDir);
   const origin = parseMdSectionBilingual(text, "Origin") ?? "";
   const levels: ReadonlyArray<{ evidence: SpecEvidence; numbers: string[] }> = [
-    { evidence: "derived-from", numbers: derivedFromNumbers(text) },
-    { evidence: "origin-path", numbers: matchNumbers(origin, SPEC_PATH_RE) },
+    { evidence: "derived-from", numbers: derivedFromNumbers(text, specPath) },
+    { evidence: "origin-path", numbers: matchNumbers(origin, specPath) },
     { evidence: "spec-reference", numbers: matchNumbers(origin, SPEC_REFERENCE_RE) },
   ];
 
@@ -63,7 +64,7 @@ export function parseSpecRelation(text: string): ParsedSpecRelation {
  * between the title and the first `##` section. Bounded there so a plan that
  * quotes the marker inside its own prose does not re-declare its origin.
  */
-function derivedFromNumbers(text: string): string[] {
+function derivedFromNumbers(text: string, specPath: RegExp): string[] {
   const { lines, fenced, headings } = scanMarkdown(text);
   const firstSection = headings.find((h) => h.level >= 2);
   const end = firstSection?.line ?? lines.length;
@@ -73,9 +74,15 @@ function derivedFromNumbers(text: string): string[] {
     const line = lines[i];
     if (line === undefined || fenced[i] === true) continue;
     if (!DERIVED_FROM_RE.test(line)) continue;
-    found.push(...matchNumbers(line, SPEC_PATH_RE));
+    found.push(...matchNumbers(line, specPath));
   }
   return dedupe(found);
+}
+
+/** Match a spec path under the workspace's declared documentary canon. */
+function specPathPattern(specDir: string): RegExp {
+  const escaped = specDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`${escaped}/(${CORRELATIVE_SOURCE})-spec[^\\s\`)"']*\\.md`, "g");
 }
 
 function matchNumbers(text: string, pattern: RegExp): string[] {
@@ -90,5 +97,5 @@ function matchNumbers(text: string, pattern: RegExp): string[] {
 }
 
 function dedupe(numbers: string[]): string[] {
-  return [...new Set(numbers)].sort();
+  return [...new Set(numbers)].sort(compareCorrelatives);
 }

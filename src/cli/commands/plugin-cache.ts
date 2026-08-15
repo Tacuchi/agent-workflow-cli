@@ -2,11 +2,11 @@ import { selfClearPluginCache } from "../../application/self/plugin-cache-clear.
 import { selfReloadPluginCache } from "../../application/self/plugin-cache-reload.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const pluginCacheCommand: QtcCommand = {
+export const pluginCacheCommand: CliCommand = {
   name: "plugin-cache",
   describe:
     "Limpia o recarga el cache de un plugin instalado en un host. Subcomandos: clear, reload. Flags: --plugin <ns> --target <claude|codex|warp|agents> [--from <path>] [--dry-run].",

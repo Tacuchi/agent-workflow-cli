@@ -1,3 +1,4 @@
+import { CORRELATIVE_SOURCE, isCorrelative } from "../domain/correlative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
@@ -59,6 +60,20 @@ interface ResolvedPolicy extends Omit<CategoryPolicy, "overwritable"> {
   overwritable: string | null;
 }
 
+/**
+ * The generated contract for `export-scripts`, also mirrored by its direct
+ * command guide. Keep its semantic anchors exported so a small parity guard
+ * catches doctrine that drifts away from what the CLI actually sends.
+ */
+export const SCRIPTS_FINAL_STATE_CONTRACT =
+  "Un dossier con 00-ROLLBACK.sql y README.md obligatorios, más los forwards NN-<nombre>.sql numerados de forma continua desde 01. El CLI NUNCA ejecuta SQL. El bundle publica el ESTADO FINAL NETO de la secuencia, no una réplica por sesión: lo que nace y muere dentro de la secuencia se omite; lo migrado va directo a su forma final; lo que el contexto declara retirado se omite aunque ningún script lo elimine. 00-ROLLBACK.sql invierte ese ESTADO FINAL en orden seguro para las dependencias, no el reverso literal de los forwards. Reconciliá contra el código además de las sesiones y la base. Excluí identidades concretas y semillas de prueba; conservá sólo objetos compartidos y necesarios para el estado final.";
+
+export const SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS = [
+  "ESTADO FINAL NETO",
+  "orden seguro para las dependencias",
+  "objetos compartidos y necesarios para el estado final",
+] as const;
+
 const POLICIES: Record<ExportCategory, CategoryPolicy> = {
   diagrams: {
     dir: "docs/diagrams",
@@ -91,14 +106,7 @@ const POLICIES: Record<ExportCategory, CategoryPolicy> = {
     shape: "dossier",
     required: ["00-ROLLBACK.sql", "README.md"],
     extensions: [".sql", ".md"],
-    // The net-final-state doctrine travels HERE, in the contract the composer
-    // must obey, and not in the `skills/w` bundle: the bundle's context budget
-    // is a frozen gate with 121 B of headroom and this is ~700 B, so shipping it
-    // there would mean cutting live doctrine to pay for it. The contract reaches
-    // the same reader at the exact moment the bundle is being written, and its
-    // bytes are request bytes, which no frozen gate prices.
-    contract:
-      "Un dossier con 00-ROLLBACK.sql y README.md obligatorios, más los forwards NN-<nombre>.sql numerados de forma continua desde 01. El CLI NUNCA ejecuta SQL. El bundle publica el ESTADO FINAL NETO de la secuencia, no una réplica por sesión: lo que nace y muere dentro de la secuencia se omite; lo migrado va directo a su forma final; lo que el contexto declara retirado se omite aunque ningún script lo elimine. 00-ROLLBACK.sql invierte ese ESTADO FINAL en orden seguro para las dependencias, no el reverso literal de los forwards. Reconciliá contra el código además de las sesiones y la base. Excluí identidades concretas y semillas de prueba; conservá funciones reutilizables, tablas maestras y el registro de menú/rol.",
+    contract: SCRIPTS_FINAL_STATE_CONTRACT,
   },
 };
 
@@ -303,8 +311,6 @@ async function readCorpus(
 // ── the scope, travelling between stages ─────────────────────────────────────
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const NEXT_RE = /^\d{3,}$/;
-
 /**
  * The scope an answer echoes back, so `validate` and `apply` rebuild the
  * preparation the answer was written against.
@@ -340,7 +346,7 @@ function scopeShapeError(scope: Record<string, unknown>): string | null {
   if (typeof scope.date !== "string" || !DATE_RE.test(scope.date)) {
     return "'date' tiene que ser YYYY-MM-DD";
   }
-  if (typeof scope.next !== "string" || !NEXT_RE.test(scope.next)) {
+  if (typeof scope.next !== "string" || !isCorrelative(scope.next)) {
     return "'next' tiene que ser el correlativo de 3 dígitos";
   }
   if (scope.sessions !== undefined && !isStringArray(scope.sessions)) {
@@ -556,7 +562,9 @@ function renumber(
 ): SemanticArtifact {
   if (artifact.path === policy.overwritable) return artifact;
   if (policy.shape === "document") {
-    const name = artifact.path.slice(policy.dir.length + 1).replace(/^\d{3}-/, "");
+    const name = artifact.path
+      .slice(policy.dir.length + 1)
+      .replace(new RegExp(`^${CORRELATIVE_SOURCE}-`), "");
     return { path: `${policy.dir}/${minted}-${name}`, content: artifact.content };
   }
   // The number to move is the UNIT's own, which is its LAST segment — never the
@@ -565,7 +573,9 @@ function renumber(
   // replacement: the export would be approved into `docs/003-manuales/…` and
   // written into `docs/001-manuales/…`, a folder outside `allowed_destinations`
   // that nothing downstream re-checks.
-  const unitName = prepared.unit.slice(policy.dir.length + 1).replace(/^\d{3}-/, `${minted}-`);
+  const unitName = prepared.unit
+    .slice(policy.dir.length + 1)
+    .replace(new RegExp(`^${CORRELATIVE_SOURCE}-`), `${minted}-`);
   const unit = `${policy.dir}/${unitName}`;
   return {
     path: `${unit}/${artifact.path.slice(prepared.unit.length + 1)}`,

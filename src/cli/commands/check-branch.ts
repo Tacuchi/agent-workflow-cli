@@ -2,11 +2,11 @@ import { runCheckBranch } from "../../application/check-branch-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId } from "../context-id.js";
 import { type ParsedArgs, flagValue, sessionCodeFlag } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const checkBranchCommand: QtcCommand = {
+export const checkBranchCommand: CliCommand = {
   name: "check-branch",
   describe:
     "Verify a source branch vs expected work branch — or, when the source has isolation units, whether the file falls in THIS flow's unit. " +

@@ -48,6 +48,9 @@ can establish.
 ## Writes
 Updates `docs/plans/PPP-plan-<slug>.md` **in place** (when the user picks `Aprobar y guardar`): completes/adjusts sections and **adds** `## Refinement decisions`. Since it overwrites an existing doc, the preview says so and the person approves it **once**. On an accepted split (§ *Split gate — refine semantics*) the same proposal also **creates** the extracted sibling plans (newly minted `docs/plans` files) — one preview, one decision, one all-or-nothing write. It writes `docs/plans` and, when the refine **touches UI**, the **revision it publishes** — scoped to the artifacts the delta actually affects — of the design package under `docs/designs` (chassis § *docs/ boundary*; see [`DESIGN-REFERENCES.md`](../../modules/DESIGN-REFERENCES.md)). It never graduates/exports anything else to `docs/` — that is separate `export-*` work.
 
+> **Revision + consumer:** a new baseline carries the final plan as `consumer_document`
+> (path + base digest); package, manifest and plan publish or roll back together.
+
 ## Inherits
 
 Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **always before** these deltas. *(If `../` does not resolve: `CHASSIS.md` next to this file — global layout rule, chassis § Reference resolution.)*
@@ -127,6 +130,8 @@ This loop's instance of the chassis convergence gate — the same one `plan-exec
 - **Contract** — relevant inputs, outputs and observable states identified; the final behavior matches the spec; no functional criterion invented here.
 - **Journey** — main components identified, order reasonable, repo/process boundaries visible, the described architecture the one the project actually has.
 - **Phases** — each leaves a verifiable state with its exit condition, none is a list of layers or files, the order allows early integration, deferrals are explicit.
+- **Source boundary** — the plan declares `> Límite de ejecución: checkout`, each phase declares `> Fuentes:`, every task carries `_(fuentes: …)_`, aliases resolve through `AGENTS.md > Fuentes` (or reserved `workspace`) and task sources stay within their phase.
+- **Source-bounded semantics** — read the meaning of every task, phase validation and exit condition. A deployed product, installed host, MCP connection or remote URL may be research context or `Handoff operativo`, never a prerequisite or proof of closure; rewrite it as a fixture, ephemeral dependency or checkout inspection. This is semantic review, not a word denylist.
 - **Simulation** *(only when the change carries one)* — initial boundary identified, every displacement foreseen, one phase owns the retirement, nothing can stay active by accident. No temporary behavior → the check does not apply, and no empty `Límite de simulación` is required.
 - **Evidence** — every phase declares its primary proof, per-layer tests are justified, the same scenario is not duplicated by default, declared risks have evidence or an explicit deferral.
 - **Execution batches** — every phase appears once; maximal continuous ranges cross no decision, proof, handoff, irreversible action or required recovery boundary.
@@ -152,7 +157,7 @@ plan-refine-loop(plan):
       design (revisions only for the artifacts this refine affects; behavior/acceptance → spec-refine first)
     integrate + update CHECKPOINT                              # artifact-first cycle
   executability gate (read-only) = Success criteria green:
-    - contract · journey · phases · simulation · evidence · execution batches · resumability (§ Executability gate)
+    - contract · journey · phases · source boundary · simulation · evidence · execution batches · resumability (§ Executability gate)
     - plan-new checklist (criterion→task · Final behavior block of Solution · deps · Impacted↔Solution · UI→exact roots · minimality)
       # spec-less plan (adopted/hand-written): criteria anchor to the plan's own Final behavior block/Validations (see Delta 2)
     - re-refine's own check: the plan is REALIGNED with what changed

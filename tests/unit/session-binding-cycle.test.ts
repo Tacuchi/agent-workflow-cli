@@ -51,7 +51,11 @@ async function boundFolder(fs: FakeFs, contextId: string): Promise<string | unde
 describe("binding registry — privacy and shape", () => {
   it("persists only the SHA-256 of the conversation id, never the raw value", async () => {
     const fs = seed([{ folder: "001-sola-quick" }]);
-    await resolveSessionTarget(fs, paths, { contextId: "super-secret-conversation", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      contextId: "super-secret-conversation",
+      bind: true,
+      intent: "write",
+    });
     const raw = await fs.readText(bindingsFile);
     expect(raw).not.toContain("super-secret-conversation");
     expect(raw).toContain(hashContextId("super-secret-conversation"));
@@ -75,28 +79,55 @@ describe("manual cycle — the conversation keeps its own line", () => {
 
   it("the sole-active fallback associates the conversation for later operations", async () => {
     const fs = seed([{ folder: "001-sola-quick" }]);
-    const first = await resolveSessionTarget(fs, paths, { contextId: "conv-a", bind: true });
+    const first = await resolveSessionTarget(fs, paths, {
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
     expect(first.outcome === "resolved" && first.via).toBe("sole_active");
 
     // A second session appears; a NEW process must still land on the associated
     // one instead of becoming ambiguous.
     fs.file(`${sessionsDir}/002-otra-quick/SESSION.md`, "# SESSION — 002-otra-quick\n");
-    const later = await resolveSessionTarget(fs, newProcessPaths(), { contextId: "conv-a" });
+    const later = await resolveSessionTarget(fs, newProcessPaths(), {
+      contextId: "conv-a",
+      intent: "read",
+    });
     expect(later.outcome === "resolved" && later.session.folder).toBe("001-sola-quick");
     expect(later.outcome === "resolved" && later.via).toBe("binding");
   });
 
   it("re-associating one conversation leaves every other association untouched", async () => {
     const fs = seed([{ folder: "001-a-quick" }, { folder: "002-b-quick" }]);
-    await resolveSessionTarget(fs, paths, { code: "001", contextId: "conv-a", bind: true });
-    await resolveSessionTarget(fs, paths, { code: "002", contextId: "conv-b", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      code: "001",
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
+    await resolveSessionTarget(fs, paths, {
+      code: "002",
+      contextId: "conv-b",
+      bind: true,
+      intent: "write",
+    });
 
     // conv-a moves to 002; conv-b must not move with it.
-    await resolveSessionTarget(fs, paths, { code: "002", contextId: "conv-a", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      code: "002",
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
     expect(await boundFolder(fs, "conv-a")).toBe("002-b-quick");
     expect(await boundFolder(fs, "conv-b")).toBe("002-b-quick");
 
-    await resolveSessionTarget(fs, paths, { code: "001", contextId: "conv-b", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      code: "001",
+      contextId: "conv-b",
+      bind: true,
+      intent: "write",
+    });
     expect(await boundFolder(fs, "conv-a")).toBe("002-b-quick");
     expect(await boundFolder(fs, "conv-b")).toBe("001-a-quick");
   });
@@ -107,26 +138,38 @@ describe("manual cycle — the conversation keeps its own line", () => {
   // no-op and must stay lock-free.
   it("a read whose association already points here survives a held lock", async () => {
     const fs = seed([{ folder: "001-a-quick" }, { folder: "002-b-quick" }]);
-    await resolveSessionTarget(fs, paths, { code: "001", contextId: "conv-a", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      code: "001",
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
     await holdWorkspaceLock(fs);
 
     const again = await resolveSessionTarget(fs, paths, {
       code: "001",
       contextId: "conv-a",
       bind: true,
+      intent: "write",
     });
     expect(again.outcome === "resolved" && again.session.folder).toBe("001-a-quick");
   });
 
   it("a read that WOULD re-associate under a held lock fails visibly, never silently", async () => {
     const fs = seed([{ folder: "001-a-quick" }, { folder: "002-b-quick" }]);
-    await resolveSessionTarget(fs, paths, { code: "001", contextId: "conv-a", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      code: "001",
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
     await holdWorkspaceLock(fs);
 
     const moved = await resolveSessionTarget(fs, paths, {
       code: "002",
       contextId: "conv-a",
       bind: true,
+      intent: "write",
     });
     expect(moved.outcome === "error" && moved.code).toBe("SESSION_BINDING_INVALID");
     expect(await boundFolder(fs, "conv-a")).toBe("001-a-quick");
@@ -139,6 +182,7 @@ describe("manual cycle — the conversation keeps its own line", () => {
       contextId: "conv-a",
       allowClosed: true,
       bind: true,
+      intent: "write",
     });
     expect(await boundFolder(fs, "conv-a")).toBeUndefined();
   });
@@ -170,8 +214,18 @@ describe("session-resume — reopen is always an explicit selection", () => {
 describe("session-close — releases only the associations pointing at it", () => {
   it("invalidates its own bindings and leaves the other conversation intact", async () => {
     const fs = seed([{ folder: "001-a-quick" }, { folder: "002-b-quick" }]);
-    await resolveSessionTarget(fs, paths, { code: "001", contextId: "conv-a", bind: true });
-    await resolveSessionTarget(fs, paths, { code: "002", contextId: "conv-b", bind: true });
+    await resolveSessionTarget(fs, paths, {
+      code: "001",
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
+    await resolveSessionTarget(fs, paths, {
+      code: "002",
+      contextId: "conv-b",
+      bind: true,
+      intent: "write",
+    });
 
     const closed = await runSessionClose(fs, paths, { code: "001" });
     if (!("sessionClose" in closed)) throw new Error("expected a successful close");
@@ -180,7 +234,10 @@ describe("session-close — releases only the associations pointing at it", () =
     expect(await boundFolder(fs, "conv-b")).toBe("002-b-quick");
 
     // conv-b's line and its resolution are untouched by the other's close.
-    const still = await resolveSessionTarget(fs, newProcessPaths(), { contextId: "conv-b" });
+    const still = await resolveSessionTarget(fs, newProcessPaths(), {
+      contextId: "conv-b",
+      intent: "read",
+    });
     expect(still.outcome === "resolved" && still.session.folder).toBe("002-b-quick");
   });
 });

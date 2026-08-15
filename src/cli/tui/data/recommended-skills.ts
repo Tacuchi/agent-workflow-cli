@@ -1,7 +1,7 @@
 // Seed of recommended external skills for the [Skills] tab — hardcoded to
 // avoid I/O during render (workflow-content pattern).
 //
-// Drift point: mirror of qtc-plugins-marketplace/README.md § "Skills externas
+// Drift point: mirror of the companion marketplace README § "Skills externas
 // recomendadas" — if that section changes, update this file (and vice versa).
 // Counts are derived with `.length` — do NOT hardcode counts in strings.
 //
@@ -89,7 +89,7 @@ export const RECOMMENDED_SKILLS: readonly SeedSkill[] = [
     source: "softaworks/agent-toolkit",
     description: "Evaluate SKILL.md design quality.",
   },
-  // Stack gaps (research 001) — on-stack coverage the QTC plugins do not provide
+  // Stack gaps (research 001) — on-stack coverage the companion plugins do not provide
   {
     name: "spring-boot-testing",
     source: "github/awesome-copilot",

@@ -23,7 +23,7 @@ PLAN
 `/w:plan-exec` — **resumable** (same chassis mechanism; here resume keys off the plan-doc phase states + checkboxes + CHECKPOINT, see Delta 1).
 
 ## Reads
-`docs/plans/PPP-plan-<slug>.md` (locate via the `docs/plans/PPP-plan-*.md` glob or the exact path from the command argument) **and its source spec** (resolved through the plan's `## Origin`) — the entry gate reads both. It runs **any** plan, whether or not it passed through [`plan-refine-loop`](../plan-refine-loop/LOOP.md) — plan-refine is auxiliary, not mandatory; no gate requires it. What it does require is an **executable shape** (§ *Entry gate — executability*). If the plan pins design, it also reads the **UI Design Package** revisions its `## Design references` and its tasks name — **read-only**, at the exact revision each one fixed (§ *Design precondition gate*).
+`docs/plans/PPP-plan-<slug>.md` (locate via the `docs/plans/PPP-plan-*.md` glob or the exact path from the command argument) **and its source spec** (resolved through the plan's `## Origin`) — the entry gate reads both. It runs any plan whose source contract is executable: `> Límite de ejecución: checkout`, explicit phase/task sources and aliases from `AGENTS.md > Fuentes`. A legacy or v21 plan that lacks it fails closed to [`plan-refine-loop`](../plan-refine-loop/LOOP.md); plan-refine remains auxiliary only after that contract exists. If the plan pins design, it also reads the **UI Design Package** revisions its `## Design references` and its tasks name — **read-only**, at the exact revision each one fixed (§ *Design precondition gate*).
 
 ## Writes
 - `docs/plans/PPP-plan-<slug>.md` (**read/update**, living doc: phase/task state, `Open questions`).
@@ -44,7 +44,7 @@ inference, the deferred-validation cycle and conditional Git authorization.
 
 ## Composes
 
-`git` (safe branch + proposed commits) · `sql` (DB rule). Both resolved via `.workflow/skills.toml`; `off` → the loop continues without the capability and, if it was needed, says so or asks.
+`git` (safe branch + proposed commits). `plan-exec` does **not** load `external-data`: its proof comes from the acquired checkout only. SQL fixture/ephemeral tests are ordinary local commands; remote MCP reads belong to earlier research, never this loop.
 
 > **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
 
@@ -59,11 +59,14 @@ inference, the deferred-validation cycle and conditional Git authorization.
 ## Entry gate — executability
 
 **Before touching code**, read the plan and its spec and check the shape execution depends on:
+this is § *Entry gate — executability*. Once that shape exists, plan-refine is auxiliary, not mandatory.
 
-1. every phase declares its `Resultado`, its `Condición de salida` and its `Validación de fase`;
-2. if temporary behavior exists, its current boundary and retirement phase are identifiable; otherwise the simulation check is not applicable;
-3. the primary proof of the first `pendiente` phase is identifiable;
-4. no structural contradiction is evident (a phase that undoes an earlier one, evidence nobody can produce).
+1. the plan declares `> Límite de ejecución: checkout`; every phase has `> Fuentes:` and every task has `_(fuentes: …)_`; aliases resolve through `AGENTS.md > Fuentes` (except reserved `workspace`) and task sources are a subset of their phase;
+2. every phase declares its `Resultado`, its `Condición de salida` and its `Validación de fase`;
+3. if temporary behavior exists, its current boundary and retirement phase are identifiable; otherwise the simulation check is not applicable;
+4. the primary proof of the first `pendiente` phase is identifiable and is a checkout command or inspection;
+5. no structural contradiction is evident (a phase that undoes an earlier one, evidence nobody can produce).
+6. reading the phase prose shows that no deployed product, installed host, MCP connection or remote URL is a validation or exit condition; those observations belong to research or `Handoff operativo`, never the closure path.
 
 Execution **no longer accepts in silence** a plan that would force it to invent its own structure. Two outcomes:
 
@@ -122,8 +125,8 @@ reconciliation** in `CHECKPOINT`, never reported as published.
 - **Marking order (hard rule):** a phase reaches `validada` only with its proof run and passed, its
   exit condition true and the combined review green; a blocker is never deferred into `validada`.
   **Never** because all its checkboxes are ticked.
-- **Intermediate states:** `bloqueada` = the phase is stopped on a live blocker — recorded in `CHECKPOINT` + the plan's `## Open questions`, back to `en ejecución` when it clears; it counts as **not validated**. A phase whose work is complete but whose operative check the AI **cannot run** (an unapplied migration — Delta 3) **stays `bloqueada`**: its finished tasks keep their boxes ticked, and the reason goes on its own `> Bloqueo:` line, dropped when the blocker clears. It counts as **not validated** until the check runs and passes. Never a silent `validada`.
-- **A blocker without a reason is not a blocker (hard rule).** Writing `> Estado: bloqueada` **always** writes its `> Bloqueo:` line in the same edit: a state that says "stopped" without saying on what is a dead end for whoever reads `aw status` next. The runtime tolerates a legacy block that states none (`blocker: null`) — this loop never produces one. `CHECKPOINT.Next` names **the action that unblocks it** ("apply migration 014, then re-run the persistence proof"), never the state it is in.
+- **Intermediate states:** `bloqueada` = the phase is stopped on a live checkout blocker — recorded in `CHECKPOINT` + the plan's `## Open questions`, back to `en ejecución` when it clears; it counts as **not validated**. A proof that cannot run **stays `bloqueada`**. A deferred check never counts as a passed one. A script awaiting real-world application is a **handoff**, not a blocker: local fixture/ephemeral validation can still establish the promised behavior and the phase may become `validada`.
+- **A blocker without a reason is not a blocker (hard rule).** Writing `> Estado: bloqueada` **always** writes its `> Bloqueo:` line in the same edit: a state that says "stopped" without saying on what is a dead end for whoever reads `aw status` next. The runtime tolerates a legacy block that states none (`blocker: null`) — this loop never produces one. `CHECKPOINT.Next` names **the action that unblocks it** in the checkout, never an operator's deployed run.
 - **Plan-doc residue (hard rule):** execution writes into the plan-doc **only** five things — checkbox flips (`- [ ]` → `- [x]`), the phase's own `> Estado:` line, its `> Bloqueo:` line while blocked, deferrals appended to its `## Open questions`, and the plan's own status mark (its `> Estado:` line and, on close, its `> Cierre:` line — Delta 6). The declared-gap hatch is Deltas 4, 5 and 7. Per-phase results, review-gate findings and metrics go to the session's `DECISION`/`CHECKPOINT` — **never** into the plan-doc. Phase blocks are updated **in place — NEVER append a duplicate `### Fn` block** (same contract as CHECKPOINT sections). The entry gate's consented normalization is the single exception, and it lands before execution starts.
 - **CHECKPOINT per execution unit:** record its effective grouping, functional states, simulation
   boundary when applicable, checks/results, decisions, deferrals and next intent. The task boxes
@@ -175,9 +178,10 @@ adds nothing of its own beyond running on a verified branch and never
 - Each added test is re-weighed at the closing review gate ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate* → *Test-value lens*, tag `overtest`): over-testing is a **finding to fix or justify**, never an automatic rejection.
 - Also run the plan's `## Validations` (cross-cutting rules and constraints) + the Final behavior block of `## Solution` (legacy plans: the `## Final behavior` section) + the spec's acceptance/success criteria (its `## Scenarios`, if present, are ready-made test cases: GIVEN=arrange · WHEN=act · THEN=assert).
 - A validation that **runs and fails** → back into the phase (gap): no advancing, no `validada`.
-- **Validation depending on an unapplied migration**: since the AI never executes the DML, it **cannot run it read-only** → the check is **deferred** (handoff to a DBA) and the phase **stays `bloqueada`**. A phase whose implementation is finished but whose operative proof cannot run does not become `validada`: the work may be complete and its boxes ticked, but the state waits until the proof runs and passes. The reason goes on its `> Bloqueo:` line, in `CHECKPOINT`, in the plan's `## Open questions` and in `BACKLOG`, marked "verification pending until the SQL is applied". (Reuses the chassis degrade/defer pattern + `MAX` cap → avoids the "back to the task" loop.)
 
-> The **final validation** is PLAN-exec's **convergence gate** = **`Success criteria` green** (*verification-first*; analogous to SPEC's *analyze gate* and plan-new's *coherence gate*): the plan is not marked *done* until it passes. A deferred check never counts as a passed one — it keeps its phase `bloqueada` and the plan open. For code these are **runnable tests** (TDD); for non-executable DB migrations, a **rubric** (SCRIPTS.sql valid + reviewed).
+- **SQL delivery**: validate the migration's behavior against a fixture or ephemeral database in the acquired checkout. The forward/rollback script is delivered through `SCRIPTS.sql` and `export-scripts`; a real application is an optional handoff and never keeps a phase or the plan open.
+
+> The **final validation** is PLAN-exec's **convergence gate** = **`Success criteria` green** (*verification-first*; analogous to SPEC's *analyze gate* and plan-new's *coherence gate*): the plan is not marked *done* until local proof passes. For code and persistence these are checkout commands/tests; a script's real-world application is never a closing criterion.
 
 ## Delta 5 — Closing review gate (conventions, pre-commit)
 

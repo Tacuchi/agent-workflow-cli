@@ -189,8 +189,9 @@ describe("un hub con serie legacy queda operable después de migrarlo", () => {
     expect(applied.rows_seeded).toEqual(["session008-otra"]);
     const rows = readHistoryRows(await fs.readText(HISTORY));
     expect(rows.map((r) => r.key)).toEqual(["007-triage", "008-otra"]);
-    // La sesión nunca declaró su fecha, y eso se dice en vez de disimularlo.
-    expect(applied.rows_dated_today).toEqual(["session008-otra"]);
+    // La sesión nunca declaró su fecha: la migración guarda la ausencia, no la fecha de hoy.
+    expect(applied.rows_without_date).toEqual(["session008-otra"]);
+    expect(rows.find((r) => r.key.startsWith("008"))?.date).toBe("—");
 
     // El número queda gastado aunque mañana la carpeta se archive.
     const withoutFolders = hub({ history: await fs.readText(HISTORY) });
@@ -213,7 +214,7 @@ describe("un hub con serie legacy queda operable después de migrarlo", () => {
     const applied = await applyWorkspaceMigration(fs, paths);
     if ("error" in applied) throw new Error(applied.error);
 
-    expect(applied.rows_dated_today).toEqual([]);
+    expect(applied.rows_without_date).toEqual([]);
     const rows = readHistoryRows(await fs.readText(HISTORY));
     expect(rows.find((r) => r.key.startsWith("008"))?.date).toBe("2025-11-04");
   });

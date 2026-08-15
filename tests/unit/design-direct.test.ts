@@ -332,6 +332,41 @@ describe("F10 · crear fuera de un workspace: un contrato que se pueda contestar
 });
 
 describe("F10 · el receipt lleva los campos de dominio y ninguna ruta simula handoff", () => {
+  it("refuses a compound-design entry when the core documentary canon is invalid", async () => {
+    const fs = new MemFs().file(
+      `${WORKSPACE}/.workflow/skills.toml`,
+      '[docs]\nspec = "knowledge/specs"\n',
+    );
+    const result = await dispatchCapability(
+      {
+        verb: "prepare",
+        capability: "design",
+        operation: "create",
+        route: "direct",
+        target: DESIGNS_DIR,
+        inputs: [
+          text("title", "Alta"),
+          text("sources", ["docs/requisitos.md"]),
+          {
+            name: "consumer_document",
+            value: "# Plan final\n",
+            provenance: {
+              kind: "attachment",
+              origin: "docs/plans/001-plan-consumidor.md",
+              seal: "0".repeat(64),
+              sensitivity: "public",
+            },
+          },
+        ],
+      },
+      context(WORKSPACE, fs),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.error?.code).toBe("DOCS_CANON_INVALID");
+  });
+
   it("una creación directa reporta package, raíz, indexabilidad, madurez y fuentes", async () => {
     const result = await dispatchCapability(
       {
@@ -534,5 +569,57 @@ describe("F10 · el CLI decide 'fuera de un workspace' por la regla real del rep
     const result = await capabilityCommand.execute(CREATE, cliContext(fs));
     expect(result.ok).toBe(true);
     expect(result.data?.receipt.error?.code).toBe("DESIGN_OUTPUT_ROOT_UNSAFE");
+  });
+
+  it("transporta el consumidor compuesto como attachment con base del documento, no como texto", async () => {
+    const target = "docs/plans/031-plan-demo.md";
+    const finalBytes = ".workflow/final-plan.md";
+    const fs = new MemFs()
+      .dir(`${WORKSPACE}/.workflow`)
+      .file(`${WORKSPACE}/${target}`, "# Plan previo\n")
+      .file(`${WORKSPACE}/${finalBytes}`, "# Plan final\n");
+    const result = await capabilityCommand.execute(
+      args(
+        [
+          ["capability", "design"],
+          ["operation", "create"],
+          ["target", "/tmp/mis-disenos"],
+          ["consumer-document", `${target}=${finalBytes}`],
+        ],
+        ["title=Alta", "sources=a.md", "target=/tmp/mis-disenos"],
+      ),
+      cliContext(fs),
+    );
+    const consumer = result.data?.request.inputs.find(
+      (input) => input.name === "consumer_document",
+    );
+    expect(consumer).toMatchObject({
+      value: "# Plan final\n",
+      provenance: { kind: "attachment", origin: target, sensitivity: "public" },
+    });
+    expect(consumer?.provenance.seal).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("no lee un consumidor fuera de docs/specs o docs/plans", async () => {
+    const target = ".workflow/private.md";
+    const finalBytes = ".workflow/final-plan.md";
+    const fs = new MemFs()
+      .dir(`${WORKSPACE}/.workflow`)
+      .file(`${WORKSPACE}/${target}`, "secreto\n")
+      .file(`${WORKSPACE}/${finalBytes}`, "# Plan final\n");
+    const result = await capabilityCommand.execute(
+      args(
+        [
+          ["capability", "design"],
+          ["operation", "create"],
+          ["target", "/tmp/mis-disenos"],
+          ["consumer-document", `${target}=${finalBytes}`],
+        ],
+        ["title=Alta", "sources=a.md", "target=/tmp/mis-disenos"],
+      ),
+      cliContext(fs),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("ARGS_INVALID");
   });
 });

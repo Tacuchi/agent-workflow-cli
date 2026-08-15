@@ -4,17 +4,16 @@ import {
   type ResumeProposal,
   runResume,
 } from "../../application/resume-service.js";
+import { DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import type { CliContext } from "../types.js";
 
-export const resumeCommand: QtcCommand<ResumeOutcome> = {
+export const resumeCommand: CliCommand<ResumeOutcome> = {
   name: "resume",
-  describe:
-    "Qué retomar y con qué comando exacto, derivado del pipeline documental. Read-only: propone la ruta, nunca la ejecuta. " +
-    "Usage: aw resume [<docs/specs|docs/plans path | número>] [--code <sesión>] [--format human|json] [--detail].",
+  describe: `Qué retomar y con qué comando exacto, derivado del pipeline documental. Read-only: propone la ruta, nunca la ejecuta. Usage: aw resume [<${DEFAULT_CORE_DOCS_CANON.spec}|${DEFAULT_CORE_DOCS_CANON.plan} path | número>] [--code <sesión>] [--format human|json] [--detail].`,
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ResumeOutcome>> {
     const target = args.rest[0];

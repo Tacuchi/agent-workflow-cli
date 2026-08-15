@@ -8,8 +8,8 @@ import {
 
 describe("suggestDsnVar", () => {
   it("builds DB_<ALIAS>_DSN from a kebab alias", () => {
-    expect(suggestDsnVar("cert")).toBe("DB_CERT_DSN");
-    expect(suggestDsnVar("prod")).toBe("DB_PROD_DSN");
+    expect(suggestDsnVar("alpha")).toBe("DB_ALPHA_DSN");
+    expect(suggestDsnVar("beta")).toBe("DB_BETA_DSN");
     expect(suggestDsnVar("my-db")).toBe("DB_MY_DB_DSN");
   });
 

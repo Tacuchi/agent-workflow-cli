@@ -29,6 +29,7 @@ import {
 } from "../../domain/capability/effects.js";
 import { AttemptLedger } from "../../domain/capability/protocol.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
+import { DEFAULT_CORE_DOCS_CANON, coreDocumentKindForPath } from "../../domain/docs-canon.js";
 import {
   type FlowAnswer,
   claimedSeal,
@@ -69,15 +70,24 @@ import {
   withProposal,
   withScope,
 } from "../../domain/flow/run-state.js";
+import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
 import { destinationsOf, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
 import { reservationMarker } from "../../domain/reservation.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import type { GitPort } from "../../ports/git.js";
+import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
+import {
+  type CheckoutState,
+  checkoutDigest,
+  sourceAliasesOfPlan,
+  validatePlanSourceBoundary,
+} from "../source-boundary-policy.js";
 import {
   type ResolvedBoundary,
   actionDigest,
@@ -99,6 +109,8 @@ export interface SubmitFlowInput {
   approval: string | null;
   /** How this process materializes internal actions. See {@link driveInternalActions}. */
   executor?: InternalActionExecutor;
+  /** Live checkout reader used to verify source-bounded evidence. */
+  git?: GitPort;
 }
 
 export type SubmitFlowResult =
@@ -111,7 +123,19 @@ export async function submitFlow(
   paths: PathsService,
   input: SubmitFlowInput,
 ): Promise<SubmitFlowResult> {
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  if (!canon.ok) {
+    return {
+      ok: false,
+      failure: {
+        code: "DOCS_CANON_INVALID",
+        message: canon.error,
+        action: "corregí [docs] para conservar el layout documental canónico antes de responder",
+      },
+    };
+  }
   const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "write",
     ...(input.code !== undefined ? { code: input.code } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
     allowClosed: false,
@@ -125,7 +149,7 @@ export async function submitFlow(
   // creates or replaces, and what it would replace — plus the two facts a declared
   // scope is checked against. The race it leaves open on the destinations is
   // exactly the one the compare-and-swap closes at publish time.
-  const snapshot = await observe(fs, paths, input.raw);
+  const snapshot = await observe(fs, paths, input.raw, resolution.session.folder, input.git);
   const applied = await applyUnderLock<SubmitOutcome>(fs, location, (current) => {
     if (current === null) {
       return {
@@ -208,18 +232,32 @@ interface ScopeSnapshot {
   declared: string[] | null;
   /** The plan path the payload named; `null` when it named none. */
   plan: string | null;
-  mentioned: string[] | null;
+  /** Exact aliases declared structurally by the plan's phases. */
+  sources: string[] | null;
+  /** Structural policy failures; `null` means the plan could not be read. */
+  boundary_failures: ReturnType<typeof validatePlanSourceBoundary> | null;
+  /** A plan outside the resolved core canon is never a flow scope. */
+  plan_error: string | null;
 }
 
 interface Observation {
   destinations: DestinationSnapshot;
   scope: ScopeSnapshot;
+  /** `null` when this caller has no live Git reader (pure/test callers). */
+  checkouts: CheckoutState[] | null;
 }
 
-async function observe(fs: FileSystemPort, paths: PathsService, raw: string): Promise<Observation> {
+async function observe(
+  fs: FileSystemPort,
+  paths: PathsService,
+  raw: string,
+  session: string,
+  git: GitPort | undefined,
+): Promise<Observation> {
   return {
     destinations: await observeDestinations(fs, paths, raw),
     scope: await observeScope(fs, paths, raw),
+    checkouts: await observeCheckouts(fs, paths, session, git),
   };
 }
 
@@ -235,7 +273,13 @@ async function observeScope(
   paths: PathsService,
   raw: string,
 ): Promise<ScopeSnapshot> {
-  const empty: ScopeSnapshot = { declared: null, plan: null, mentioned: null };
+  const empty: ScopeSnapshot = {
+    declared: null,
+    plan: null,
+    sources: null,
+    boundary_failures: null,
+    plan_error: null,
+  };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -254,15 +298,98 @@ async function observeScope(
   const named = (decisions as { plan?: unknown }).plan;
   const plan = typeof named === "string" ? named.trim() : null;
   if (plan === null || plan.length === 0 || !checkSafeRelativePath(plan).ok) {
-    return { declared, plan, mentioned: null };
+    return { ...empty, declared, plan };
+  }
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  if (!canon.ok) return { ...empty, declared, plan, plan_error: canon.error };
+  if (coreDocumentKindForPath(plan, canon.canon) !== "plan") {
+    return {
+      ...empty,
+      declared,
+      plan,
+      plan_error: `el plan debe estar bajo ${canon.canon.plan}/ y ser un Markdown de plan`,
+    };
   }
   let text: string;
   try {
     text = await fs.readText(join(root, plan));
   } catch {
-    return { declared, plan, mentioned: null };
+    return { ...empty, declared, plan };
   }
-  return { declared, plan, mentioned: (declared ?? []).filter((alias) => text.includes(alias)) };
+  return {
+    declared,
+    plan,
+    sources: sourceAliasesOfPlan(text),
+    boundary_failures: validatePlanSourceBoundary(text, declared ?? []),
+    plan_error: null,
+  };
+}
+
+/**
+ * Fresh checkout states for source-bounded proof verification.
+ *
+ * `workspace` is the documentary checkout. Every other source is resolved to
+ * the isolation unit of THIS session, so a proof cannot borrow another run's
+ * worktree merely by spelling its alias.
+ */
+async function observeCheckouts(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: string,
+  git: GitPort | undefined,
+): Promise<CheckoutState[] | null> {
+  if (git === undefined) return null;
+  let root: string;
+  let block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
+  try {
+    root = await resolveWorkspaceRootFrom(fs, paths);
+    block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  } catch {
+    return [];
+  }
+  const candidates: Array<{ source: string; path: string }> = [{ source: "workspace", path: root }];
+  if (block !== null) {
+    try {
+      const units = await fs.realPath(paths.userUnitsDir());
+      const key = workspaceKey(paths.workspaceDir());
+      for (const source of block.fuentes) {
+        candidates.push({
+          source: source.alias,
+          path: unitPath(units, { workspaceKey: key, alias: source.alias, session }),
+        });
+      }
+    } catch {
+      // A run without isolated units can still prove its documentary checkout.
+      // Any proof naming another source stays invalid because it is absent below.
+    }
+  }
+
+  const states: CheckoutState[] = [];
+  for (const candidate of candidates) {
+    try {
+      if (!(await fs.exists(candidate.path)) || !(await git.isGitRepo(candidate.path))) continue;
+      const [head, dirty, changed, worktreeFingerprint] = await Promise.all([
+        git.head(candidate.path),
+        git.isDirty(candidate.path),
+        git.changedFiles(candidate.path),
+        git.checkoutFingerprint(candidate.path),
+      ]);
+      states.push({
+        source: candidate.source,
+        digest: checkoutDigest({
+          source: candidate.source,
+          head,
+          dirty,
+          changed_files: changed,
+          worktree_fingerprint: worktreeFingerprint,
+        }),
+      });
+    } catch {
+      // An unreadable checkout is deliberately absent from the eligible set; a
+      // proof against it fails closed instead of being treated as a clean tree.
+    }
+  }
+  return states;
 }
 
 /**
@@ -365,7 +492,7 @@ function decide(
   if (drifted !== null) return drifted;
 
   // 2 · The boundary in force decides what is admissible.
-  const admissible = admit(state, resolved, resolved.stopped, input, cost);
+  const admissible = admit(state, resolved, resolved.stopped, input, cost, snapshot.checkouts);
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
 
@@ -416,9 +543,9 @@ function decide(
  *
  * The order of the refusals is the contract: shape, then the workspace, then the
  * plan. A malformed list must not be reported as "unknown alias", and an alias
- * nobody declared must not be reported as "your plan does not name it" — the two
- * have different fixes, and the second would send somebody to edit a document
- * when what is wrong is the alias they typed.
+ * nobody declared must not be reported as a source-contract failure — the two
+ * have different fixes. The document's structural contract is then checked as a
+ * whole, not by finding a word anywhere in its prose.
  */
 function scopeFrom(
   state: FlowRunState,
@@ -453,12 +580,21 @@ function scopeFrom(
     return {
       failure: invalidScope(
         "el scope no dice qué plan ejecuta esta corrida",
-        "devolvé en 'decisions.plan' la ruta del plan dentro del workspace (docs/plans/PPP-plan-<slug>.md)",
+        `devolvé en 'decisions.plan' la ruta del plan dentro del workspace (${DEFAULT_CORE_DOCS_CANON.plan}/PPP-plan-<slug>.md)`,
       ),
     };
   }
+  if (snapshot.plan_error !== null) {
+    return {
+      failure: {
+        code: "FLOW_SCOPE_PLAN_OUTSIDE_CANON",
+        message: snapshot.plan_error,
+        action: `devolvé un plan Markdown bajo ${DEFAULT_CORE_DOCS_CANON.plan}/ después de corregir el canon si corresponde`,
+      },
+    };
+  }
   const declared = snapshot.declared;
-  if (declared === null) {
+  if (declared === null && sources.some((alias) => alias !== "workspace")) {
     return {
       failure: {
         code: "FLOW_SCOPE_UNKNOWN_SOURCE",
@@ -467,18 +603,20 @@ function scopeFrom(
       },
     };
   }
-  const unknown = sources.filter((alias) => !declared.includes(alias));
+  const declaredAliases = declared ?? [];
+  const unknown = sources.filter(
+    (alias) => alias !== "workspace" && !declaredAliases.includes(alias),
+  );
   if (unknown.length > 0) {
     return {
       failure: {
         code: "FLOW_SCOPE_UNKNOWN_SOURCE",
         message: `el workspace no declara ${unknown.join(", ")}`,
-        action: `las fuentes declaradas son: ${declared.join(", ")}`,
+        action: `las fuentes declaradas son: ${declaredAliases.join(", ")}`,
       },
     };
   }
-  const mentioned = snapshot.mentioned;
-  if (mentioned === null) {
+  if (snapshot.boundary_failures === null || snapshot.sources === null) {
     return {
       failure: {
         code: "FLOW_SCOPE_PLAN_UNREADABLE",
@@ -488,14 +626,31 @@ function scopeFrom(
       },
     };
   }
-  const absent = sources.filter((alias) => !mentioned.includes(alias));
-  if (absent.length > 0) {
+  const structural = snapshot.boundary_failures[0];
+  if (structural !== undefined) {
+    return {
+      failure: {
+        code: structural.code,
+        message: structural.message,
+        action:
+          "el plan no cumple el límite checkout: abrilo con /w:plan-refine y declará las fuentes por fase y tarea",
+      },
+    };
+  }
+  const declaredByPlan = snapshot.sources;
+  const missing = declaredByPlan.filter((alias) => !sources.includes(alias));
+  const extra = sources.filter((alias) => !declaredByPlan.includes(alias));
+  if (missing.length > 0 || extra.length > 0) {
+    const difference = [
+      ...(missing.length > 0 ? [`faltan ${missing.join(", ")}`] : []),
+      ...(extra.length > 0 ? [`sobran ${extra.join(", ")}`] : []),
+    ];
     return {
       failure: {
         code: "FLOW_SCOPE_NOT_IN_PLAN",
-        message: `'${plan}' no nombra ${absent.join(", ")}`,
+        message: `'${plan}' no coincide con sus fuentes declaradas: ${difference.join("; ")}`,
         action:
-          "el scope es lo que el plan declara afectado: sacá esa fuente, o llevá el ensanchamiento a /w:plan-refine antes de editarla",
+          "el scope es exactamente la unión de las fuentes de fase: corregí el plan con /w:plan-refine antes de editar",
       },
     };
   }
@@ -695,6 +850,7 @@ function admit(
   stopped: FlowDecision,
   input: SubmitFlowInput,
   cost: RejectionCost,
+  checkouts: readonly CheckoutState[] | null,
 ): { ok: true; answer: FlowAnswer } | { decision: SubmitDecision } {
   const expectedApproval =
     resolved.kind === "authorization"
@@ -774,6 +930,7 @@ function admit(
       parsed.answer.result,
       resolved.action,
       effectsOfTransition(state, stopped),
+      checkouts,
     );
     if (verdict !== null) {
       const trace = declaredTrace(stopped, resolved, parsed.answer, verdict);

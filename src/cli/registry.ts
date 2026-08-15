@@ -7,7 +7,7 @@ export interface HumanRenderContext {
   detail: boolean;
 }
 
-export interface QtcCommand<O = unknown> {
+export interface CliCommand<O = unknown> {
   name: string;
   describe?: string;
   execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<O>>;
@@ -23,16 +23,16 @@ export interface QtcCommand<O = unknown> {
 }
 
 export class CommandRegistry {
-  private readonly commands = new Map<string, QtcCommand>();
+  private readonly commands = new Map<string, CliCommand>();
 
-  register(command: QtcCommand): void {
+  register(command: CliCommand): void {
     if (this.commands.has(command.name)) {
       throw new Error(`Command '${command.name}' is already registered`);
     }
     this.commands.set(command.name, command);
   }
 
-  resolve(name: string): QtcCommand | undefined {
+  resolve(name: string): CliCommand | undefined {
     return this.commands.get(name);
   }
 

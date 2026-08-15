@@ -182,6 +182,32 @@ describe("un upsert conserva las celdas que nadie nombró", () => {
   });
 });
 
+describe("las entradas legacy se normalizan antes de escribir HISTORY", () => {
+  it("un código corto que resolvió 007 no inventa una fila 7-007", async () => {
+    const fs = hub(["007-corto-quick"], SLIM_TABLE);
+    const result = await runHistoryUpdate(fs, paths, { code: "7", state: "closed" });
+    if ("error" in result || "sessionError" in result) throw new Error(JSON.stringify(result));
+    expect(result.code).toBe("007");
+    const text = await fs.readText(HISTORY);
+    expect(text).toMatch(/^\| 007-corto-quick \| .* \| closed \| — \|$/m);
+    expect(text).not.toContain("| 7-007-corto-quick |");
+  });
+
+  it("una fila legacy retirada sólo se repara cuando se la nombra exactamente", async () => {
+    const table = `${SLIM_TABLE}| session007-retirada-quick | 2026-03-01 | active | — |\n`;
+    const fs = hub([], table);
+    const result = await runHistoryUpdate(fs, paths, {
+      code: "session007-retirada-quick",
+      state: "closed",
+    });
+    if ("error" in result || "sessionError" in result) throw new Error(JSON.stringify(result));
+    expect(result.action).toBe("updated");
+    expect(await fs.readText(HISTORY)).toContain(
+      "| session007-retirada-quick | 2026-03-01 | closed | — |",
+    );
+  });
+});
+
 describe("sin una identidad que resuelva a una sola sesión no se escribe", () => {
   const COLLIDING = ["047-algo-quick", "session047-legacy-x"] as const;
   const TABLE = `${SLIM_TABLE}| 047-algo-quick | 2026-03-04 | active | docs/x.md |\n`;
@@ -197,11 +223,14 @@ describe("sin una identidad que resuelva a una sola sesión no se escribe", () =
 
   it("la salida que sugiere el error es satisfacible: la carpeta exacta resuelve a una sola", async () => {
     const fs = hub(COLLIDING, TABLE);
-    const ambiguous = await resolveSessionTarget(fs, paths, { code: "047" });
+    const ambiguous = await resolveSessionTarget(fs, paths, { code: "047", intent: "read" });
     if (ambiguous.outcome !== "error") throw new Error("expected an ambiguity");
     expect(ambiguous.action).toContain("session047-legacy-x");
 
-    const exact = await resolveSessionTarget(fs, paths, { code: "session047-legacy-x" });
+    const exact = await resolveSessionTarget(fs, paths, {
+      code: "session047-legacy-x",
+      intent: "read",
+    });
     if (exact.outcome !== "resolved") throw new Error(`unexpected: ${exact.message}`);
     expect(exact.session.folder).toBe("session047-legacy-x");
   });

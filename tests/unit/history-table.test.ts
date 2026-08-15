@@ -303,6 +303,36 @@ describe("history-table — migration never destroys unmappable content", () => 
     expect(text).toContain("| 058-nueva-plan-exec | 2026-07-01 | active | — |");
   });
 
+  it("preserves a legacy row's date by its header when the table cannot migrate", async () => {
+    const fs = new FakeFs({ lenient: true });
+    await fs.mkdirp("/cwd/.workflow");
+    await fs.writeText(
+      HISTORY,
+      "# Session History\n\n" +
+        "| # | Flujo | Sesión | Estado | Fecha | Resumen | Refs |\n" +
+        "| 001 | dev | alpha | active | 2025-01-12 | alpha | docs/a.md |\n",
+    );
+
+    await upsertRow(fs, HISTORY, { code: "001", sesionName: "001-alpha", state: "closed" });
+
+    expect(await fs.readText(HISTORY)).toContain("| 001-alpha | 2025-01-12 | closed | — |");
+  });
+
+  it("records an unknown legacy date as an em dash, never the migration day", async () => {
+    const fs = new FakeFs({ lenient: true });
+    await fs.mkdirp("/cwd/.workflow");
+    await fs.writeText(
+      HISTORY,
+      "# Session History\n\n" +
+        "| # | Flujo | Sesión | Estado | Resumen | Refs |\n" +
+        "| 001 | dev | alpha | active | alpha | docs/a.md |\n",
+    );
+
+    await upsertRow(fs, HISTORY, { code: "001", sesionName: "001-alpha", state: "closed" });
+
+    expect(await fs.readText(HISTORY)).toContain("| 001-alpha | — | closed | — |");
+  });
+
   it("snapshots before replacing a row of a shape it cannot map", async () => {
     const unmappable =
       "# Session History\n\n" +

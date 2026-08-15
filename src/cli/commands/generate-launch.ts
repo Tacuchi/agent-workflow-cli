@@ -5,11 +5,11 @@ import {
 import type { LaunchMode } from "../../application/source-launch-scripts-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const generateLaunchCommand: QtcCommand<GenerateLaunchResult> = {
+export const generateLaunchCommand: CliCommand<GenerateLaunchResult> = {
   name: "generate-launch",
   describe:
     "(Re)generate the per-source launch scripts (.workflow/launch/<alias>/: launch.json + run.sh + run.ps1) by detecting each source's stack. Idempotent: pristine files are regenerated, hand-edited ones preserved (--force overwrites them). Reads sources from the WORKSPACE block; the launch flow also generates these on demand at the first launch. Each source gets a launch MODE — interactive (owns the TTY, for TUIs) or server (background + log) — overridable with --mode; --command overrides the detected run command for a single source. " +

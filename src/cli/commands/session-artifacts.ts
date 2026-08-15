@@ -8,7 +8,7 @@ import type { NarrativeFact } from "../../domain/session/narrative.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -22,7 +22,7 @@ const DUMP_KINDS = new Set([
   "scripts",
 ]);
 
-export const sessionArtifactsCommand: QtcCommand = {
+export const sessionArtifactsCommand: CliCommand = {
   name: "session-artifacts",
   describe:
     "Consolidated view of a session's artifacts. Default: counts + presence flags. " +

@@ -1,7 +1,7 @@
 import {
+  type McpConnectionRef,
   type McpEntry,
   type McpHost,
-  type McpInstance,
   type McpWriteOpts,
   type McpWriteResult,
   buildMcpEntry,
@@ -18,7 +18,7 @@ import {
 
 export interface McpRemoveInput {
   hosts: McpHost[];
-  instances: McpInstance[];
+  connections: McpConnectionRef[];
   scope: "workspace" | "global";
   workspace?: string;
   dryRun?: boolean;
@@ -53,8 +53,8 @@ export function runMcpRemove(
   const errors: McpErrorRecord[] = [];
 
   for (const host of input.hosts) {
-    for (const instance of input.instances) {
-      const entry: McpEntry = buildMcpEntry(instance);
+    for (const connection of input.connections) {
+      const entry: McpEntry = buildMcpEntry(connection.name, connection.dsnVar);
       try {
         const result = removeMcpEntry(host, entry, { scopeDir, kind: input.scope }, opts);
         if (result.action === "skipped-idempotent") {
@@ -63,7 +63,7 @@ export function runMcpRemove(
           removed.push(result);
         }
       } catch (err) {
-        errors.push(toErrorRecord(host, instance, scopeDir, err));
+        errors.push(toErrorRecord(host, connection.name, scopeDir, err));
       }
     }
   }

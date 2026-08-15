@@ -43,11 +43,11 @@ function buildCtx(home: string): CliContext {
   };
 }
 
-// Seed a legacy `qtc-*` skill dir under <home>/<root>/skills/.
+// Seed the default legacy skill dir under <home>/<root>/skills/.
 async function seedLegacy(
   home: string,
   root: string,
-  skillName = "qtc-old-skill",
+  skillName = "agent-workflow-manager",
 ): Promise<string> {
   const path = join(home, root, "skills", skillName);
   await mkdir(path, { recursive: true });

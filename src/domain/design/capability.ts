@@ -143,6 +143,17 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
           sensitivity: "public",
           schema: null,
         },
+        // A composing spec/plan may publish its exact final bytes with the
+        // design revision. Optional so direct design invocations still publish
+        // a package on their own; when present, the handler requires the
+        // attachment provenance to identify the consumer and its CAS base.
+        {
+          name: "consumer_document",
+          kind: "attachment",
+          required: false,
+          sensitivity: "public",
+          schema: null,
+        },
       ],
       output: {
         kind: "value_and_reference",
@@ -193,6 +204,13 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
         {
           name: "expansion",
           kind: "selection",
+          required: false,
+          sensitivity: "public",
+          schema: null,
+        },
+        {
+          name: "consumer_document",
+          kind: "attachment",
           required: false,
           sensitivity: "public",
           schema: null,

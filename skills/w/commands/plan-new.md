@@ -13,6 +13,7 @@ allowed-tools:
 # plan-new — trampoline to the planning loop
 
 SPEC → PLAN bridge. Turns the "what" (refined spec) into the "how" (plan). Delegates to `plan-new-loop` (Layer 2).
+An unready or legacy spec is input, never a block.
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >

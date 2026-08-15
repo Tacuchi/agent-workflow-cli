@@ -26,9 +26,15 @@ describe("parsePhases — the machine state is one exact value", () => {
     const out = parsePhases(plan);
     expect(out).toMatchObject({ total: 3, validated: 1 });
     expect(out.items).toEqual([
-      { n: 1, name: "El carrito acepta un cupón", state: "validada", blocker: null },
-      { n: 2, name: "El descuento viaja al backend", state: "en ejecución", blocker: null },
-      { n: 3, name: "El descuento se persiste", state: "pendiente", blocker: null },
+      { n: 1, name: "El carrito acepta un cupón", state: "validada", sources: null, blocker: null },
+      {
+        n: 2,
+        name: "El descuento viaja al backend",
+        state: "en ejecución",
+        sources: null,
+        blocker: null,
+      },
+      { n: 3, name: "El descuento se persiste", state: "pendiente", sources: null, blocker: null },
     ]);
   });
 

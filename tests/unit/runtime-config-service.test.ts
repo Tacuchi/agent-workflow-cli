@@ -9,7 +9,7 @@ import { MemFs } from "../helpers/mem-fs.js";
 const HOME = "/home/test";
 const USER_CONFIG = join(HOME, ".workflow", "agent-workflow", "runtime.json");
 
-function makeQtcPathsForTest(home: string): PathsService {
+function makePathsForTest(home: string): PathsService {
   return new PathsService(normalizeNamespace("workflow"), home, "/cwd");
 }
 
@@ -21,7 +21,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
   beforeEach(() => {
     fs = new MemFs();
     env = new FakeEnv(HOME, "/cwd");
-    paths = makeQtcPathsForTest(HOME);
+    paths = makePathsForTest(HOME);
   });
 
   it("returns default when no env and no user config", async () => {
@@ -101,11 +101,11 @@ describe("RuntimeConfigService.resolveRuntime", () => {
       displayName: "Acme Workflow",
       mcpGuards: {
         sqlMutation: {
-          toolPattern: "^mcp__plugin.*(cert|prod).*__execute_sql$",
-          serverPattern: "(cert|prod)",
+          toolPattern: "^mcp__plugin.*(alpha|beta).*__execute_sql$",
+          serverPattern: "(alpha|beta)",
         },
       },
-      expectedMcpServers: ["cert", "prod"],
+      expectedMcpServers: ["alpha", "beta"],
       // `session` (like the other retired hint keys) is ignored: only
       // `migrate` has consumers.
       slashCommands: { migrate: "/acme-core:migrate", session: "/acme-core:session" },
@@ -115,8 +115,8 @@ describe("RuntimeConfigService.resolveRuntime", () => {
     const resolved = await service.resolveRuntime();
 
     expect(resolved.displayName).toBe("Acme Workflow");
-    expect(resolved.mcpGuards?.sqlMutation?.toolPattern).toContain("(cert|prod)");
-    expect(resolved.expectedMcpServers).toEqual(["cert", "prod"]);
+    expect(resolved.mcpGuards?.sqlMutation?.toolPattern).toContain("(alpha|beta)");
+    expect(resolved.expectedMcpServers).toEqual(["alpha", "beta"]);
     expect(resolved.slashCommands).toEqual({ migrate: "/acme-core:migrate" });
   });
 

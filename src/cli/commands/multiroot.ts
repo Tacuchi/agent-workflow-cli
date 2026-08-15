@@ -1,7 +1,7 @@
 import { type MultirootInput, runMultiroot } from "../../application/multiroot-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
 function buildInput(args: ParsedArgs): MultirootInput {
@@ -22,7 +22,7 @@ function buildInput(args: ParsedArgs): MultirootInput {
   return input;
 }
 
-export const attachMultirootCommand: QtcCommand = {
+export const attachMultirootCommand: CliCommand = {
   name: "attach-multiroot",
   describe:
     "Configura visibilidad multi-root en Claude Code y Codex CLI. " +
@@ -34,7 +34,7 @@ export const attachMultirootCommand: QtcCommand = {
   },
 };
 
-export const detachMultirootCommand: QtcCommand = {
+export const detachMultirootCommand: CliCommand = {
   name: "detach-multiroot",
   describe:
     "Quita visibilidad multi-root previamente configurada. " +

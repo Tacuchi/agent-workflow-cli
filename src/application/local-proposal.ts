@@ -93,22 +93,11 @@ export async function applyLocalProposal(
 
   const applied = appliedClasses(input);
 
-  if (await alreadyLanded(fs, input.root, input.proposal.artifacts)) {
-    return {
-      ok: true,
-      result: { written: [], applied, already_applied: true },
-    };
-  }
-
-  const stale = await checkBases(fs, input);
-  if (stale !== null) return { ok: false, failure: stale, applied: [] };
-
-  const sealed = await sealBaseline(fs, input);
-  if (sealed !== null) return { ok: false, failure: sealed, applied: [] };
-
-  const outcome = await withCwdLock(fs, paths, async () =>
-    publishArtifacts(fs, input.root, publishable(input.proposal.artifacts)),
-  );
+  // The re-entry check, every CAS read, the custody baseline and the write are
+  // one critical section. Checking bases before taking the lock would leave a
+  // M1 -> M2 window: a candidate derived from M1 could validate M1, wait for a
+  // different publisher, then overwrite M2 once it obtained the lock.
+  const outcome = await withCwdLock(fs, paths, () => applyCritical(fs, input));
   if ("error" in outcome) {
     return {
       ok: false,
@@ -120,25 +109,68 @@ export async function applyLocalProposal(
       applied: [],
     };
   }
-  if (!outcome.ok) {
-    // `publishArtifacts` is all-or-nothing and rolls back, so nothing landed —
-    // and saying so explicitly is what makes the empty list a claim rather than
-    // an omission.
+
+  if (outcome.kind === "already") {
+    return {
+      ok: true,
+      result: { written: [], applied, already_applied: true },
+    };
+  }
+  if (outcome.kind === "refused") {
     return {
       ok: false,
-      failure: {
-        code: outcome.failure.code,
-        message: outcome.failure.message,
-        action: outcome.failure.action,
-      },
+      failure: outcome.failure,
       applied: [],
     };
   }
 
   return {
     ok: true,
-    result: { written: outcome.value.written, applied, already_applied: false },
+    result: { written: outcome.written, applied, already_applied: false },
   };
+}
+
+/** What the one exclusive publication section determined. */
+type CriticalProposalOutcome =
+  | { kind: "already" }
+  | { kind: "refused"; failure: CapabilityFailure }
+  | { kind: "written"; written: string[] };
+
+/**
+ * Re-read, seal and publish while holding the workspace lock.
+ *
+ * `alreadyLanded` comes first on purpose: an idempotent retry observes the
+ * exact finished bytes and succeeds even though its base was changed by that
+ * very earlier publication. Every other read describes a candidate that has
+ * not landed, so it must happen under the same lock that owns its write.
+ */
+async function applyCritical(
+  fs: FileSystemPort,
+  input: ApplyProposalInput,
+): Promise<CriticalProposalOutcome> {
+  if (await alreadyLanded(fs, input.root, input.proposal.artifacts)) return { kind: "already" };
+
+  const stale = await checkBases(fs, input);
+  if (stale !== null) return { kind: "refused", failure: stale };
+
+  const sealed = await sealBaseline(fs, input);
+  if (sealed !== null) return { kind: "refused", failure: sealed };
+
+  const published = await publishArtifacts(fs, input.root, publishable(input.proposal.artifacts));
+  if (!published.ok) {
+    // `publishArtifacts` is all-or-nothing and rolls back, so nothing landed —
+    // and saying so explicitly is what makes the empty list a claim rather than
+    // an omission.
+    return {
+      kind: "refused",
+      failure: {
+        code: published.failure.code,
+        message: published.failure.message,
+        action: published.failure.action,
+      },
+    };
+  }
+  return { kind: "written", written: published.value.written };
 }
 
 /**

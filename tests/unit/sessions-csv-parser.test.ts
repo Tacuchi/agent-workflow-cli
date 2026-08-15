@@ -7,16 +7,16 @@ import {
 import { MemFs as FakeFs } from "../helpers/mem-fs.js";
 
 describe("parseSessionsCsv", () => {
-  it("returns single code padded to 3 digits", () => {
-    expect(parseSessionsCsv("55")).toEqual(["055"]);
+  it("requires the three-digit minimum", () => {
+    expect(() => parseSessionsCsv("55")).toThrow(/al menos 3 dígitos/);
   });
 
   it("returns multiple codes preserving order", () => {
     expect(parseSessionsCsv("055,057,061")).toEqual(["055", "057", "061"]);
   });
 
-  it("normalizes mixed padding", () => {
-    expect(parseSessionsCsv("55,57,061")).toEqual(["055", "057", "061"]);
+  it("accepts correlatives beyond 999 without truncating them", () => {
+    expect(parseSessionsCsv("999,1000,1001")).toEqual(["999", "1000", "1001"]);
   });
 
   it("trims whitespace around tokens", () => {
@@ -39,17 +39,17 @@ describe("parseSessionsCsv", () => {
     }
   });
 
-  it("throws INVALID_INPUT on >3 digit token", () => {
-    expect(() => parseSessionsCsv("0055")).toThrow(/inválido/);
+  it("accepts a wider valid token", () => {
+    expect(parseSessionsCsv("0055")).toEqual(["0055"]);
   });
 
-  it("throws INVALID_INPUT on duplicates (post-normalization)", () => {
+  it("throws INVALID_INPUT on numeric duplicates", () => {
     try {
-      parseSessionsCsv("055,55");
+      parseSessionsCsv("055,0055");
       throw new Error("should have thrown");
     } catch (e) {
       expect((e as SessionsCsvError).code).toBe("INVALID_INPUT");
-      expect((e as SessionsCsvError).message).toContain("055");
+      expect((e as SessionsCsvError).message).toContain("0055");
     }
   });
 

@@ -2,6 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { runHarness } from "../../application/dev-only-services.js";
+import {
+  type StoredMcpConnection,
+  resolveMcpConnectionSelection,
+} from "../../application/mcp-connections-service.js";
 import { DbhubLauncherError, runDbhubLauncher } from "../../application/mcp-dbhub-launcher.js";
 import { runMcpDoctor } from "../../application/mcp-doctor-service.js";
 import { runMcpRemove } from "../../application/mcp-remove-service.js";
@@ -16,31 +20,36 @@ import {
   resolveWarpProjectMcpPath,
 } from "../../application/multiroot/warp.js";
 import { MCP_FILE_HOSTS, harnessById } from "../../domain/harnesses.js";
-import {
-  DEFAULT_MCP_INSTANCES,
-  type McpHost,
-  type McpInstance,
-  mcpEntryNameFor,
-  validateDsnVarName,
-  validateMcpInstance,
-} from "../../domain/mcp-entry.js";
+import { type McpHost, type McpInstance, mcpEntryNameFor } from "../../domain/mcp-entry.js";
 import type { CommandResult, ExitCode } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 // File-writing hosts — single source in the domain (excludes oz, which has no
 // file writer). The TUI's host picker reads the same list.
 const FILE_HOSTS: readonly McpHost[] = MCP_FILE_HOSTS;
-const HOST_VALUES: ReadonlySet<string> = new Set([...FILE_HOSTS, "both", "all"]);
+const HOST_VALUES: ReadonlySet<string> = new Set([...FILE_HOSTS, "all"]);
 
-export const mcpCommand: QtcCommand = {
+export const mcpCommand: CliCommand = {
   name: "mcp",
   describe:
-    "MCP server tooling. Subcomandos: dbhub <instance> | setup/remove/doctor [--host h] [--instance i] [--workspace dir] [--global] [--dry-run] [--force] | warp-status.",
+    "MCP server tooling. Connections come from mcp-connections.json. Subcomandos: dbhub [--instance i] | setup/remove/doctor [--host h] [--instance i|--all-connections] [--workspace dir] [--global] [--dry-run] [--force] | warp-status.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const subcommand = args.rest[0];
+    if (
+      (subcommand === "setup" ||
+        subcommand === "remove" ||
+        subcommand === "doctor" ||
+        subcommand === "warp-status") &&
+      args.rest.length > 1
+    ) {
+      return fail(
+        "INVALID_INPUT",
+        "Los subcomandos MCP no aceptan una conexión posicional. Usá --instance <nombre> o --all-connections cuando el subcomando permite fan-out.",
+      );
+    }
     if (subcommand === "dbhub") return runDbhubSub(args, ctx);
     if (subcommand === "setup") return runSetupSub(args, ctx);
     if (subcommand === "remove") return runRemoveSub(args, ctx);
@@ -48,22 +57,27 @@ export const mcpCommand: QtcCommand = {
     if (subcommand === "warp-status") return runWarpStatusSub(args, ctx);
     return fail(
       "INVALID_INPUT",
-      "mcp requiere subcomando: dbhub <instance> | setup | remove | doctor | warp-status",
+      "mcp requiere subcomando: dbhub [--instance <nombre>] | setup | remove | doctor | warp-status",
     );
   },
 };
 
 async function runDbhubSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-  const instance = args.rest[1];
-  if (!instance) {
+  if (args.rest[1] !== undefined) {
     return fail(
       "INVALID_INPUT",
-      "mcp dbhub requiere nombre de conexión. Ej: cert, prod o reporting",
+      "mcp dbhub no acepta una conexión posicional. Usá --instance <nombre>.",
     );
+  }
+  const connections = resolveConnections(args, ctx, false);
+  if (!("value" in connections)) return connections;
+  const connection = connections.value[0];
+  if (connection === undefined) {
+    return fail("NO_MCP_CONNECTIONS", "No hay conexiones MCP seleccionadas para dbhub.");
   }
   try {
     const result = await runDbhubLauncher({
-      instance,
+      instance: connection.name,
       deps: {
         env: { ...process.env },
         paths: ctx.paths,
@@ -82,21 +96,18 @@ async function runDbhubSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
 async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
   const hosts = resolveHosts(args, ctx);
   if (!("value" in hosts)) return hosts;
-  const instances = resolveInstances(args);
-  if (!("value" in instances)) return instances;
-  const dsnVars = resolveDsnVars(args, instances.value);
-  if (!("value" in dsnVars)) return dsnVars;
+  const connections = resolveConnections(args, ctx, true);
+  if (!("value" in connections)) return connections;
 
   const workspace = args.values.get("workspace");
   const scope: "workspace" | "global" = args.flags.has("--global") ? "global" : "workspace";
   const result = runMcpSetup(ctx.env, {
     hosts: hosts.value,
-    instances: instances.value,
+    connections: connections.value,
     scope,
     ...(workspace !== undefined ? { workspace } : {}),
     dryRun: args.flags.has("--dry-run"),
     force: args.flags.has("--force"),
-    ...(dsnVars.value !== undefined ? { dsnVars: dsnVars.value } : {}),
   });
 
   if ("ok" in result) {
@@ -105,7 +116,13 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
 
   const hasErrors = result.errors.length > 0;
   const warpHints = !hasErrors
-    ? buildWarpHintsFor(hosts.value, instances.value, scope, ctx, workspace)
+    ? buildWarpHintsFor(
+        hosts.value,
+        connections.value.map((connection) => connection.name),
+        scope,
+        ctx,
+        workspace,
+      )
     : [];
   return {
     ok: !hasErrors,
@@ -180,13 +197,13 @@ function readMcpServersFromFile(file: string): string[] {
 async function runRemoveSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
   const hosts = resolveHosts(args, ctx);
   if (!("value" in hosts)) return hosts;
-  const instances = resolveInstances(args);
-  if (!("value" in instances)) return instances;
+  const connections = resolveConnections(args, ctx, true);
+  if (!("value" in connections)) return connections;
 
   const workspace = args.values.get("workspace");
   const result = runMcpRemove(ctx.env, {
     hosts: hosts.value,
-    instances: instances.value,
+    connections: connections.value,
     scope: args.flags.has("--global") ? "global" : "workspace",
     ...(workspace !== undefined ? { workspace } : {}),
     dryRun: args.flags.has("--dry-run"),
@@ -216,18 +233,15 @@ async function runRemoveSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
 async function runDoctorSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
   const hosts = resolveHosts(args, ctx);
   if (!("value" in hosts)) return hosts;
-  const instances = resolveInstances(args);
-  if (!("value" in instances)) return instances;
-  const dsnVars = resolveDsnVars(args, instances.value);
-  if (!("value" in dsnVars)) return dsnVars;
+  const connections = resolveConnections(args, ctx, true);
+  if (!("value" in connections)) return connections;
 
   const workspace = args.values.get("workspace");
   const data = runMcpDoctor(ctx.env, ctx.paths, {
     hosts: hosts.value,
-    instances: instances.value,
+    connections: connections.value,
     scope: args.flags.has("--global") ? "global" : "workspace",
     ...(workspace !== undefined ? { workspace } : {}),
-    ...(dsnVars.value !== undefined ? { dsnVars: dsnVars.value } : {}),
   });
 
   const okCount = data.summary.ok;
@@ -275,43 +289,41 @@ export function resolveHosts(
     );
   }
   if (!HOST_VALUES.has(flag)) {
-    const validList = [...FILE_HOSTS, "both", "all"].join(" | ");
+    const validList = [...FILE_HOSTS, "all"].join(" | ");
     return fail("INVALID_INPUT", `--host inválido: '${flag}'. Valores válidos: ${validList}`);
   }
-  if (flag === "both" || flag === "all") return { value: [...FILE_HOSTS] };
+  if (flag === "all") return { value: [...FILE_HOSTS] };
   return { value: [flag as McpHost] };
 }
 
-function resolveInstances(args: ParsedArgs): { value: McpInstance[] } | CommandResult {
-  const flag = args.values.get("instance");
-  if (flag === undefined) return { value: [...DEFAULT_MCP_INSTANCES] };
-  if (flag === "both") return { value: [...DEFAULT_MCP_INSTANCES] };
-  const validation = validateMcpInstance(flag);
-  if (!validation.ok) {
-    return fail("INVALID_INPUT", `--instance inválido: '${flag}'. ${validation.error}`);
-  }
-  return { value: [validation.value] };
-}
-
-function resolveDsnVars(
+function resolveConnections(
   args: ParsedArgs,
-  instances: McpInstance[],
-): { value: Record<string, string> | undefined } | CommandResult {
-  const flag = args.values.get("dsn-var");
-  if (flag === undefined) return { value: undefined };
-  if (instances.length !== 1) {
+  ctx: CliContext,
+  allowAll: boolean,
+): { value: StoredMcpConnection[] } | CommandResult {
+  if (args.values.has("dsn-var") || args.flags.has("--dsn-var")) {
     return fail(
-      "INVALID_INPUT",
-      "--dsn-var requiere una sola conexión. Pasá también --instance <nombre>",
+      "MCP_DSN_OVERRIDE_UNSUPPORTED",
+      "La variable DSN se declara sólo en mcp-connections.json mediante 'aw self mcp use-env'.",
     );
   }
-  const validation = validateDsnVarName(flag);
-  if (!validation.ok) {
-    return fail("INVALID_INPUT", validation.error);
+  const allConnections = args.flags.has("--all-connections");
+  if (args.values.has("all-connections")) {
+    return fail("INVALID_INPUT", "--all-connections no recibe valor.");
   }
-  const instance = instances[0];
-  if (instance === undefined) return { value: undefined };
-  return { value: { [instance]: validation.value } };
+  if (allConnections && !allowAll) {
+    return fail(
+      "MCP_CONNECTION_SELECTION_CONFLICT",
+      "mcp dbhub ejecuta una sola conexión; usá --instance <nombre>.",
+    );
+  }
+  const instance = args.values.get("instance");
+  const selection = resolveMcpConnectionSelection(ctx.paths, {
+    ...(instance !== undefined ? { instance } : {}),
+    ...(allConnections ? { allConnections: true } : {}),
+  });
+  if (!selection.ok) return fail(selection.code, selection.message);
+  return { value: selection.connections };
 }
 
 function clampExit(code: number): ExitCode {

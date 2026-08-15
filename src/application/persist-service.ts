@@ -1,7 +1,9 @@
 import { join } from "node:path";
+import { CORRELATIVE_SOURCE, compareCorrelatives } from "../domain/correlative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { runNextNumber } from "./dev-only-services.js";
+import { type CoreDocsCanon, resolveCoreDocsCanon } from "./docs-canon-service.js";
 import { withCwdLock } from "./lock-service.js";
 import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
@@ -29,12 +31,14 @@ import { publishArtifacts } from "./semantic-operation/publish.js";
  */
 
 const CATEGORIES = {
-  research: { dir: "docs/research", infix: "research" },
-  spec: { dir: "docs/specs", infix: "spec" },
-  plan: { dir: "docs/plans", infix: "plan" },
+  research: { infix: "research" },
+  spec: { infix: "spec" },
+  plan: { infix: "plan" },
 } as const;
 
 export type PersistCategory = keyof typeof CATEGORIES;
+
+type PersistCategoryLayout = Record<PersistCategory, { dir: string; infix: string }>;
 
 const OPERATION = "persist";
 const LIMITS = { max_artifacts: 1, max_artifact_bytes: 256 * 1024 };
@@ -97,14 +101,17 @@ export async function preparePersist(
   fs: FileSystemPort,
   env: EnvPort,
   paths: PathsService,
-): Promise<SemanticRequest> {
+): Promise<SemanticParse<SemanticRequest>> {
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  if (!canon.ok) return { ok: false, failure: canonFailure(canon.error) };
+  const categories = persistLayout(canon.canon);
   const cwd = paths.workspaceDir();
-  const inventory: PersistInventory = { categories: emptyCategories() };
+  const inventory: PersistInventory = { categories: emptyCategories(categories) };
   const readSet: string[] = [];
   let readSetBytes = 0;
 
-  for (const [name, category] of Object.entries(CATEGORIES) as Array<
-    [PersistCategory, (typeof CATEGORIES)[PersistCategory]]
+  for (const [name, category] of Object.entries(categories) as Array<
+    [PersistCategory, PersistCategoryLayout[PersistCategory]]
   >) {
     const next = await runNextNumber(fs, env, paths, { directory: category.dir, dryRun: true });
     const docs = await readCategory(fs, join(cwd, category.dir), category.dir, category.infix);
@@ -115,19 +122,22 @@ export async function preparePersist(
     inventory.categories[name] = { destination: category.dir, next: next.next, docs };
   }
 
-  return buildSemanticRequest({
-    operation: OPERATION,
-    // The seal covers the whole inventory: a document appearing anywhere in
-    // docs/ between prepare and apply invalidates the duplicate check AND the
-    // consultative numbering the answer reasoned over.
-    inputs: inventory,
-    contract: CONTRACT,
-    inventory,
-    allowedDestinations: Object.values(CATEGORIES).map((c) => c.dir),
-    limits: LIMITS,
-    readSet,
-    readSetBytes,
-  });
+  return {
+    ok: true,
+    value: buildSemanticRequest({
+      operation: OPERATION,
+      // The seal covers the whole inventory: a document appearing anywhere in
+      // docs/ between prepare and apply invalidates the duplicate check AND the
+      // consultative numbering the answer reasoned over.
+      inputs: inventory,
+      contract: CONTRACT,
+      inventory,
+      allowedDestinations: Object.values(categories).map((c) => c.dir),
+      limits: LIMITS,
+      readSet,
+      readSetBytes,
+    }),
+  };
 }
 
 async function readCategory(
@@ -137,7 +147,7 @@ async function readCategory(
   infix: string,
 ): Promise<PersistDoc[]> {
   if (!(await safeExists(fs, dir))) return [];
-  const pattern = new RegExp(`^(\\d{3})-${infix}(?:-(.+))?\\.md$`, "i");
+  const pattern = new RegExp(`^(${CORRELATIVE_SOURCE})-${infix}(?:-(.+))?\\.md$`, "i");
   const out: PersistDoc[] = [];
   let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
   try {
@@ -161,7 +171,7 @@ async function readCategory(
       // skip unreadable doc
     }
   }
-  return out.sort((a, b) => a.number.localeCompare(b.number));
+  return out.sort((a, b) => compareCorrelatives(a.number, b.number));
 }
 
 function summarize(text: string): string {
@@ -190,7 +200,10 @@ export function validatePersist(
     return { ok: false, failure: reject("la respuesta no trae ningún artefacto") };
   }
 
-  const category = CATEGORIES[decisions.value.category];
+  const category = categoryFromRequest(request, decisions.value.category);
+  if (category === null) {
+    return { ok: false, failure: canonFailure("el request no declara el destino de la categoría") };
+  }
   const shape = checkFilename(artifact.path, category.dir, category.infix, decisions.value.slug);
   if (shape !== null) return { ok: false, failure: shape };
 
@@ -274,7 +287,7 @@ function checkFilename(
   infix: string,
   slug: string,
 ): SemanticFailure | null {
-  const expected = new RegExp(`^${dir}/\\d{3}-${infix}-${slug}\\.md$`);
+  const expected = new RegExp(`^${dir}/${CORRELATIVE_SOURCE}-${infix}-${slug}\\.md$`);
   if (expected.test(path)) return null;
   return reject(`'${path}' no respeta ${dir}/NNN-${infix}-${slug}.md`);
 }
@@ -322,10 +335,14 @@ export async function applyPersist(
   }
 
   const preview = validated.value.preview;
-  const category = CATEGORIES[preview.category];
+  const category = categoryFromRequest(input.request, preview.category);
+  if (category === null) {
+    return { ok: false, failure: canonFailure("el request no declara el destino de la categoría") };
+  }
   const result = await withCwdLock(fs, paths, async () => {
     const fresh = await preparePersist(fs, env, paths);
-    if (fresh.input_digest !== input.request.input_digest) {
+    if (!fresh.ok) return { ok: false as const, failure: fresh.failure };
+    if (fresh.value.input_digest !== input.request.input_digest) {
       return {
         ok: false as const,
         failure: {
@@ -364,16 +381,43 @@ export async function applyPersist(
 }
 
 function slugOf(path: string, infix: string): string {
-  return new RegExp(`\\d{3}-${infix}-(.+)\\.md$`).exec(path)?.[1] ?? "sin-slug";
+  return new RegExp(`${CORRELATIVE_SOURCE}-${infix}-(.+)\\.md$`).exec(path)?.[1] ?? "sin-slug";
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function emptyCategories(): PersistInventory["categories"] {
+function emptyCategories(categories: PersistCategoryLayout): PersistInventory["categories"] {
   return {
-    research: { destination: CATEGORIES.research.dir, next: "001", docs: [] },
-    spec: { destination: CATEGORIES.spec.dir, next: "001", docs: [] },
-    plan: { destination: CATEGORIES.plan.dir, next: "001", docs: [] },
+    research: { destination: categories.research.dir, next: "001", docs: [] },
+    spec: { destination: categories.spec.dir, next: "001", docs: [] },
+    plan: { destination: categories.plan.dir, next: "001", docs: [] },
+  };
+}
+
+function persistLayout(canon: CoreDocsCanon): PersistCategoryLayout {
+  return {
+    research: { dir: canon.research, infix: CATEGORIES.research.infix },
+    spec: { dir: canon.spec, infix: CATEGORIES.spec.infix },
+    plan: { dir: canon.plan, infix: CATEGORIES.plan.infix },
+  };
+}
+
+function categoryFromRequest(
+  request: SemanticRequest,
+  category: PersistCategory,
+): { dir: string; infix: string } | null {
+  const inventory = request.inventory as PersistInventory;
+  const destination = inventory.categories?.[category]?.destination;
+  if (typeof destination !== "string") return null;
+  return { dir: destination, infix: CATEGORIES[category].infix };
+}
+
+function canonFailure(message: string): SemanticFailure {
+  return {
+    code: "DOCS_CANON_INVALID",
+    message,
+    action:
+      "corregí la tabla [docs] de skills.toml o quitá la entrada para usar el destino por defecto",
   };
 }
 

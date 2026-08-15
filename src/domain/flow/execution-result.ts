@@ -17,8 +17,13 @@
  * this contract refuses.
  */
 
+import {
+  type CheckoutState,
+  validateCheckoutProof,
+} from "../../application/source-boundary-policy.js";
 import type { EffectClass } from "../capability/effects.js";
 import type { CapabilityOutcome } from "../capability/protocol.js";
+import { SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
 import type { FlowExecutionResult } from "./answer.js";
 import type { DelegatedAction } from "./authority.js";
 
@@ -31,6 +36,7 @@ export function executionVerdict(
   result: FlowExecutionResult | null,
   action: DelegatedAction | null,
   declared: readonly EffectClass[],
+  checkoutStates: readonly CheckoutState[] | null = null,
 ): ExecutionRefusal | null {
   if (result === null || action === null) {
     return {
@@ -64,6 +70,16 @@ export function executionVerdict(
         action: `devolvé cada validación exigida con 'passed' y su 'detail' — la salida de la herramienta, no una afirmación. ${action.recovery}`,
       },
     };
+  }
+  if (action.evidence.includes(SOURCE_BOUNDED_EVIDENCE)) {
+    const validation = result.validations.find((item) => item.id === SOURCE_BOUNDED_EVIDENCE);
+    const proof = validateCheckoutProof(validation?.proof, checkoutStates);
+    if (proof !== null) {
+      return {
+        message: proof.message,
+        detail: { code: proof.code, action: action.recovery, outcome: "needs_input" },
+      };
+    }
   }
   const applied = new Set(result.effects.applied);
   const partial = declared.filter((effect) => !applied.has(effect));

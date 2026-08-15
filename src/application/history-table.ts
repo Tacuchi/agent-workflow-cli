@@ -1,6 +1,12 @@
 // The history file path itself is resolved by callers via
 // `PathsService.cwdHistoryFile()` and passed in.
 import { join } from "node:path";
+import {
+  correlativeValue,
+  leadingCorrelative,
+  maxCorrelative,
+  prefixedCorrelative,
+} from "../domain/correlative.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
 
@@ -99,6 +105,13 @@ interface MigratedTable {
   lossy: boolean;
 }
 
+interface LegacyMigrationState {
+  out: string[];
+  headerDone: boolean;
+  tableClosed: boolean;
+  lossy: boolean;
+}
+
 /**
  * Rewrite a legacy table (7-col `# | Flujo | Sesión | …` or 6-col without
  * Flujo) into the slim 4-col shape, mapping every data row by header index:
@@ -121,34 +134,47 @@ function migrateLegacyTable(text: string, cells: string[]): MigratedTable | null
   const columns = legacyColumns(cells);
   if (columns === null) return null; // no row key → unmappable
 
-  const out: string[] = [];
-  let headerDone = false;
-  let tableClosed = false;
-  let lossy = false;
+  const state: LegacyMigrationState = {
+    out: [],
+    headerDone: false,
+    tableClosed: false,
+    lossy: false,
+  };
   for (const line of text.split("\n")) {
-    const isPipeLine = line.trim().startsWith("|");
-    if (headerDone && !tableClosed && !isPipeLine) {
-      tableClosed = true; // the history table ended — everything below is verbatim
-    }
-    if (tableClosed || !isPipeLine) {
-      out.push(line);
-      continue;
-    }
-    if (!headerDone) {
-      // Header + separator collapse into the slim template's pair.
-      if (isSeparator(line)) {
-        headerDone = true;
-        out.push("| Sesión | Fecha | Estado | Refs |");
-        out.push("|--------|-------|--------|------|");
-      }
-      continue;
-    }
-    const mapped = migrateLegacyRow(line, columns);
-    if (mapped.lossy) lossy = true;
-    out.push(mapped.row);
+    migrateLegacyLine(line, columns, state);
   }
-  if (!headerDone) return null; // separator never matched → do not touch the file
-  return { text: out.join("\n"), lossy };
+  if (!state.headerDone) return null; // separator never matched → do not touch the file
+  return { text: state.out.join("\n"), lossy: state.lossy };
+}
+
+function migrateLegacyLine(
+  line: string,
+  columns: LegacyColumns,
+  state: LegacyMigrationState,
+): void {
+  const isPipeLine = line.trim().startsWith("|");
+  if (state.headerDone && !state.tableClosed && !isPipeLine) {
+    state.tableClosed = true; // the history table ended — everything below is verbatim
+  }
+  if (state.tableClosed || !isPipeLine) {
+    state.out.push(line);
+    return;
+  }
+  if (!state.headerDone) {
+    migrateLegacyHeader(line, state);
+    return;
+  }
+  const mapped = migrateLegacyRow(line, columns);
+  if (mapped.lossy) state.lossy = true;
+  state.out.push(mapped.row);
+}
+
+function migrateLegacyHeader(line: string, state: LegacyMigrationState): void {
+  if (!isSeparator(line)) return;
+  // Header + separator collapse into the slim template's pair.
+  state.headerDone = true;
+  state.out.push("| Sesión | Fecha | Estado | Refs |");
+  state.out.push("|--------|-------|--------|------|");
 }
 
 interface LegacyColumns {
@@ -182,6 +208,15 @@ function isSeparator(line: string): boolean {
   return /^\|[\s|:-]+\|?$/.test(line.trim());
 }
 
+/**
+ * A legacy date is evidence, not a default. An empty/missing `Fecha` header
+ * therefore becomes the durable unknown marker rather than the day an upsert
+ * happened to run.
+ */
+function legacyDate(value: string | undefined): string {
+  return value?.trim() || "—";
+}
+
 /** One legacy row in the current shape, and whether mapping it dropped content. */
 function migrateLegacyRow(line: string, columns: LegacyColumns): { row: string; lossy: boolean } {
   const parts = line.split("|").map((c) => c.trim());
@@ -193,7 +228,11 @@ function migrateLegacyRow(line: string, columns: LegacyColumns): { row: string; 
     row: buildRow({
       code: code || sesion,
       sesionName: sesion || code,
-      date: cell(columns.fecha),
+      // A legacy row did not acquire a date merely because its table acquired
+      // the slim shape. The header is the only authority for that cell; when
+      // it never named one, make that absence durable instead of stamping the
+      // day this migration happened.
+      date: legacyDate(cell(columns.fecha)),
       state: cell(columns.estado),
       refs: cell(columns.refs) || "—",
     }),
@@ -216,23 +255,36 @@ function migrateLegacyRow(line: string, columns: LegacyColumns): { row: string; 
  * work in a workspace whose history was never created, and the folder scan is
  * the other half of the maximum.
  */
-export async function maxHistoryNumber(fs: FileSystemPort, historyFile: string): Promise<number> {
+export async function maxHistoryCorrelative(
+  fs: FileSystemPort,
+  historyFile: string,
+): Promise<string | null> {
   let text: string;
   try {
-    if (!(await fs.exists(historyFile))) return 0;
+    if (!(await fs.exists(historyFile))) return null;
     text = await fs.readText(historyFile);
   } catch {
-    return 0;
+    return null;
   }
-  let max = 0;
+  const correlatives: string[] = [];
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("|")) continue;
     const first = trimmed.split("|")[1]?.trim() ?? "";
-    const m = first.match(/^(?:session)?(\d{3,})(?:-|$)/);
-    if (m?.[1]) max = Math.max(max, Number.parseInt(m[1], 10));
+    const correlative = historyCorrelative(first);
+    if (correlative !== null) correlatives.push(correlative);
   }
-  return max;
+  return maxCorrelative(correlatives);
+}
+
+/**
+ * Compatibility projection for callers that still display `current_max` as a
+ * JSON number. New counters use {@link maxHistoryCorrelative} and never depend
+ * on this lossy projection.
+ */
+export async function maxHistoryNumber(fs: FileSystemPort, historyFile: string): Promise<number> {
+  const maximum = await maxHistoryCorrelative(fs, historyFile);
+  return maximum === null ? 0 : Number.parseInt(maximum, 10);
 }
 
 /** One row of the durable record, as the table holds it. */
@@ -290,9 +342,13 @@ function rowFrom(line: string, columns: LegacyColumns): HistoryRow {
 }
 
 /** The numeric identity a row key or a `--code` carries; `null` when it has none. */
-function identityNumber(value: string): number | null {
-  const m = value.match(/^(?:session)?(\d+)(?:-|$)/);
-  return m?.[1] === undefined ? null : Number.parseInt(m[1], 10);
+function identityNumber(value: string): bigint | null {
+  const correlative = historyCorrelative(value);
+  return correlative === null ? null : correlativeValue(correlative);
+}
+
+function historyCorrelative(value: string): string | null {
+  return prefixedCorrelative(value, "session") ?? leadingCorrelative(value);
 }
 
 /**
@@ -339,18 +395,27 @@ function findRow(lines: readonly string[], code: string): ExistingRow | null {
  * put there — an update of the state silently deleting a cell nobody mentioned.
  * A cell is only ever rewritten by somebody who named it.
  *
- * Defaults apply to a row being BORN, never to one being updated: a session with
- * no declared date gets today (the day its record was written) once, and every
- * later upsert preserves it instead of re-dating it.
+ * Defaults apply to a current-model row being BORN, never to one being updated:
+ * a session with no declared date gets today (the day its record was written)
+ * once, and every later upsert preserves it instead of re-dating it. A legacy
+ * row is different: its header is its evidence, so a missing date stays `—`.
  */
-function mergeRow(row: HistoryRowInput, existing: ExistingRow | null): string {
+function mergeRow(
+  row: HistoryRowInput,
+  existing: ExistingRow | null,
+  unmigratedLegacyColumns: LegacyColumns | null,
+): string {
   const previous =
     existing !== null && existing.cells.length === SLIM_COLUMNS ? existing.cells : [];
+  const legacyExistingDate =
+    existing !== null && unmigratedLegacyColumns !== null
+      ? legacyDate(existing.cells[unmigratedLegacyColumns.fecha])
+      : undefined;
   const key =
     row.sesionName !== undefined
       ? rowKey(row.code, row.sesionName)
       : (previous[0] ?? rowKey(row.code, undefined));
-  return `| ${key} | ${row.date ?? previous[1] ?? localDateIso(new Date())} | ${row.state} | ${row.refs ?? previous[3] ?? "—"} |`;
+  return `| ${key} | ${row.date ?? legacyExistingDate ?? previous[1] ?? localDateIso(new Date())} | ${row.state} | ${row.refs ?? previous[3] ?? "—"} |`;
 }
 
 /**
@@ -409,6 +474,7 @@ export async function upsertRow(
   let migrated = false;
   let lossy = false;
   const cells = headerCells(previous);
+  const originalLegacyColumns = isLegacyHeader(cells) ? legacyColumns(cells) : null;
   if (isLegacyHeader(cells)) {
     const rewritten = migrateLegacyTable(previous, cells);
     // Unmappable legacy table (hand-edited, no separator): leave it verbatim and
@@ -422,7 +488,7 @@ export async function upsertRow(
 
   const lines = text.split("\n");
   const existing = findRow(lines, row.code);
-  const merged = mergeRow(row, existing);
+  const merged = mergeRow(row, existing, migrated ? null : originalLegacyColumns);
 
   if (existing === null) {
     if (lossy) await snapshotLegacy(fs, historyFile, previous);

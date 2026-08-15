@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { upsertMcpConnection } from "../../src/application/mcp-connections-service.js";
 import {
   DbhubBannerFilter,
   type DbhubLauncherDeps,
@@ -13,15 +14,13 @@ import {
 import { PathsService } from "../../src/application/paths-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
-describe("resolveDsn — candidate chain", () => {
+describe("resolveDsn — registered exact variable", () => {
   let tmpRoot: string;
   let paths: PathsService;
-  let notes: string[];
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), "dbhub-launcher-"));
     paths = new PathsService(normalizeNamespace("workflow"), tmpRoot, tmpRoot);
-    notes = [];
   });
 
   afterEach(() => {
@@ -32,10 +31,11 @@ describe("resolveDsn — candidate chain", () => {
     env,
     paths,
     platform: "darwin",
-    stderr: (chunk) => {
-      notes.push(chunk);
-    },
   });
+
+  const register = (name: string, dsnVar: string): void => {
+    upsertMcpConnection(paths, { name, dsnVar });
+  };
 
   const writeDsnFile = (body: string): void => {
     const file = paths.userDsnFile();
@@ -43,102 +43,77 @@ describe("resolveDsn — candidate chain", () => {
     writeFileSync(file, body);
   };
 
-  it("resolves the canonical variable silently and reports where it came from", () => {
-    const resolved = resolveDsn("cert", depsWith({ DB_CERT_DSN: "postgres://env" }));
+  it("resolves the exact variable registered for the selected connection", () => {
+    register("alpha", "ALPHA_DATABASE_URL");
+    const resolved = resolveDsn("alpha", depsWith({ ALPHA_DATABASE_URL: "postgres://env" }));
     expect(resolved).toEqual({
       dsn: "postgres://env",
-      variable: "DB_CERT_DSN",
+      variable: "ALPHA_DATABASE_URL",
       source: "env",
     });
-    expect(notes).toEqual([]);
   });
 
-  it("accepts the alias without the organisation prefix and says so on stderr", () => {
-    const resolved = resolveDsn("qtc-cert", depsWith({ DB_CERT_DSN: "postgres://env" }));
-    expect(resolved.variable).toBe("DB_CERT_DSN");
-    expect(resolved.source).toBe("env");
-    expect(notes).toHaveLength(1);
-    expect(notes[0]).toContain("DB_CERT_DSN");
-    expect(notes[0]).toContain("DB_QTC_CERT_DSN");
-    expect(notes[0]).toContain("process.env");
+  it("uses the sole registered connection when no instance is supplied", () => {
+    register("alpha", "ALPHA_DATABASE_URL");
+    const resolved = resolveDsn(undefined, depsWith({ ALPHA_DATABASE_URL: "postgres://env" }));
+    expect(resolved.variable).toBe("ALPHA_DATABASE_URL");
   });
 
-  it("names the dsn.env file when the non-canonical value was persisted there", () => {
-    writeDsnFile("DB_CERT_DSN=postgres://file\n");
-    const resolved = resolveDsn("qtc-cert", depsWith({}));
+  it("reads the exact registered variable from dsn.env", () => {
+    register("beta", "BETA_DATABASE_URL");
+    writeDsnFile("BETA_DATABASE_URL=postgres://file\n");
+    const resolved = resolveDsn("beta", depsWith({}));
     expect(resolved).toEqual({
       dsn: "postgres://file",
-      variable: "DB_CERT_DSN",
+      variable: "BETA_DATABASE_URL",
       source: "dsn.env",
     });
-    expect(notes[0]).toContain(paths.userDsnFile());
   });
 
-  it("gives an exported variable precedence over a persisted, more specific one", () => {
-    writeDsnFile("DB_QTC_CERT_DSN=postgres://file\n");
-    const resolved = resolveDsn("qtc-cert", depsWith({ DB_CERT_DSN: "postgres://env" }));
-    expect(resolved).toEqual({
-      dsn: "postgres://env",
-      variable: "DB_CERT_DSN",
-      source: "env",
-    });
-  });
-
-  it("gives the most specific candidate precedence inside the same source", () => {
-    writeDsnFile("DB_QTC_CERT_DSN=postgres://specific\nDB_CERT_DSN=postgres://generic\n");
-    const resolved = resolveDsn("qtc-cert", depsWith({}));
-    expect(resolved.dsn).toBe("postgres://specific");
-    expect(resolved.variable).toBe("DB_QTC_CERT_DSN");
-    expect(notes).toEqual([]);
-  });
-
-  it("lists every candidate, both lookup places and both real ways out", () => {
+  it("does not fall back to a variable derived from the connection name", () => {
+    register("tenant-alpha", "TENANT_ALPHA_DATABASE_URL");
     let message = "";
     try {
-      resolveDsn("qtc-cert", depsWith({}));
+      resolveDsn("tenant-alpha", depsWith({ ALPHA_DATABASE_URL: "postgres://env" }));
     } catch (err) {
       message = err instanceof DbhubLauncherError ? err.message : String(err);
     }
-    expect(message).toContain("DB_QTC_CERT_DSN");
-    expect(message).toContain("DB_CERT_DSN");
-    expect(message).toContain("process.env");
-    expect(message).toContain(paths.userDsnFile());
-    expect(message).toContain("DBHUB_DSN_VAR");
-    expect(message).toContain("--dsn-var");
-    expect(message).toContain("qtc-cert");
+    expect(message).toContain("TENANT_ALPHA_DATABASE_URL");
+    expect(message).toContain("tenant-alpha");
   });
 
-  it("probes only DBHUB_DSN_VAR when it is set — no derived candidates", () => {
-    const deps = depsWith({ DBHUB_DSN_VAR: "MY_DSN", DB_CERT_DSN: "postgres://env" });
-    expect(() => resolveDsn("qtc-cert", deps)).toThrow(DbhubLauncherError);
-    try {
-      resolveDsn("qtc-cert", deps);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "";
-      expect(message).toContain("MY_DSN");
-      expect(message).not.toContain("DB_QTC_CERT_DSN");
-    }
-  });
-
-  it("uses the value of an explicit DBHUB_DSN_VAR without any stderr note", () => {
-    const resolved = resolveDsn("qtc-cert", depsWith({ DBHUB_DSN_VAR: "my_dsn", MY_DSN: "x" }));
-    expect(resolved).toEqual({ dsn: "x", variable: "MY_DSN", source: "env" });
-    expect(notes).toEqual([]);
-  });
-
-  it("rejects an invalid DBHUB_DSN_VAR by name", () => {
-    expect(() => resolveDsn("cert", depsWith({ DBHUB_DSN_VAR: "1-bad" }))).toThrow(
-      /DBHUB_DSN_VAR inválida '1-bad'/,
+  it("ignores DBHUB_DSN_VAR as an override", () => {
+    register("alpha", "ALPHA_DATABASE_URL");
+    const resolved = resolveDsn(
+      "alpha",
+      depsWith({ DBHUB_DSN_VAR: "OTHER_DATABASE_URL", ALPHA_DATABASE_URL: "postgres://env" }),
     );
+    expect(resolved.variable).toBe("ALPHA_DATABASE_URL");
+  });
+
+  it("fails closed when no connection is registered", () => {
+    expect(() => resolveDsn(undefined, depsWith({}))).toThrow(/No hay conexiones MCP registradas/);
+  });
+
+  it("requires --instance when more than one connection is registered", () => {
+    register("alpha", "ALPHA_DATABASE_URL");
+    register("beta", "BETA_DATABASE_URL");
+    expect(() => resolveDsn(undefined, depsWith({}))).toThrow(/Indicá --instance/);
+  });
+
+  it("rejects an unregistered explicit connection", () => {
+    register("alpha", "ALPHA_DATABASE_URL");
+    expect(() => resolveDsn("beta", depsWith({}))).toThrow(/no está registrada/);
   });
 
   it("reports an unreadable dsn.env instead of pretending the DSN is absent", () => {
     // A directory where the file should be: the read fails, and the diagnostic
     // must name that cause rather than the generic "no está exportada".
+    register("alpha", "ALPHA_DATABASE_URL");
     mkdirSync(paths.userDsnFile(), { recursive: true });
     let message = "";
     try {
-      resolveDsn("cert", depsWith({}));
+      resolveDsn("alpha", depsWith({}));
     } catch (err) {
       message = err instanceof Error ? err.message : "";
     }

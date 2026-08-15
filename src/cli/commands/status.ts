@@ -5,10 +5,10 @@ import {
 } from "../../application/status-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import type { CliContext } from "../types.js";
 
-export const statusCommand: QtcCommand<StatusOutput> = {
+export const statusCommand: CliCommand<StatusOutput> = {
   name: "status",
   describe:
     "Read-only workspace dashboard: specs, plans, sessions y descartados con fechas relativas en español. " +

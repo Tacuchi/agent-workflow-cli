@@ -85,6 +85,8 @@ export interface StatusOutput {
   designs: DesignGraph;
   /** Units that outlived their session: pending cleanup, never cleaned on their own. */
   orphan_units: OrphanUnit[];
+  /** Invalid `[docs]` config: no documentary path was guessed. */
+  docs_canon_error?: string;
   counts: {
     specs: number;
     specs_refined: number;
@@ -146,6 +148,7 @@ export async function runStatusCommand(
     pipeline: index.pipeline,
     designs: index.designs,
     orphan_units: index.orphan_units,
+    ...(index.docs_canon_error !== undefined ? { docs_canon_error: index.docs_canon_error } : {}),
     counts: {
       specs: index.specs.length,
       specs_refined: index.specs.filter((s) => s.refined).length,

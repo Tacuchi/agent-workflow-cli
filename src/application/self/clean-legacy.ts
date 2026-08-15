@@ -73,10 +73,8 @@ const ALL_TARGETS: readonly InstallTarget[] = Object.keys(
 ) as InstallTarget[];
 const TARGET_CHOICES: readonly CleanLegacyTargetChoice[] = [...ALL_TARGETS, "all"];
 
-// Default legacy patterns left over from pre-v7.0.0 plugins:
-// - `qtc-*` — from qtc-workflow-plugin v3.x (37 skills with this prefix)
-// - `agent-workflow-manager` — pre-v3.x SKILL name (single entry, full match)
-const DEFAULT_LEGACY_PREFIXES: readonly string[] = ["qtc-", "agent-workflow-manager"];
+// Default legacy pattern left over from pre-v3.x installs (single entry, full match).
+const DEFAULT_LEGACY_PREFIXES: readonly string[] = ["agent-workflow-manager"];
 
 export async function selfCleanLegacy(
   args: ParsedArgs,

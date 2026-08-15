@@ -32,6 +32,7 @@ import { formatNodeId } from "../../domain/workline-node.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
+import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { readBindingRegistry } from "../session-binding-service.js";
@@ -66,7 +67,19 @@ export async function prepareRetirement(
   deps: PrepareDeps,
   input: PrepareInput,
 ): Promise<PrepareOutcome> {
-  const parsed = parseTargetSelector(input.target);
+  const canon = await resolveCoreDocsCanon(deps.fs, deps.paths);
+  if (!canon.ok) {
+    return {
+      ok: false,
+      rejection: {
+        code: "DOCS_CANON_INVALID",
+        message: canon.error,
+        candidates: [],
+        action: "corregí [docs] para conservar el layout canónico antes de preparar un retiro",
+      },
+    };
+  }
+  const parsed = parseTargetSelector(input.target, canon.canon);
   if (!parsed.ok) {
     return {
       ok: false,
@@ -79,7 +92,7 @@ export async function prepareRetirement(
     };
   }
 
-  const { graph } = await buildRetirementGraph(deps);
+  const { graph } = await buildRetirementGraph(deps, canon.canon);
   const found = resolveTarget(graph, parsed.selector);
   if (!found.ok) return { ok: false, rejection: found.rejection };
 

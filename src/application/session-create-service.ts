@@ -1,10 +1,13 @@
 import { join } from "node:path";
+import { CORRELATIVE_SOURCE } from "../domain/correlative.js";
+import { type CoreDocsCanon, coreDocumentDirectory } from "../domain/docs-canon.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { CustodyArtifact } from "../domain/session/custody.js";
 import type { SessionType } from "../domain/types.js";
 import { type WorklineNodeId, nodeFromDocPath } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
+import { resolveCoreDocsCanon } from "./docs-canon-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
@@ -80,8 +83,19 @@ export async function runSessionCreate(
   if ("error" in validated) return validated;
   const { type, name, objetivo } = validated;
 
+  // The session's custody is a lifecycle reader of the core document graph.
+  // Resolve it before looking for a derived input; a malformed or relocated
+  // core canon must not silently make a session with an empty baseline.
+  const resolvedCanon = await resolveCoreDocsCanon(fs, paths);
+  if (!resolvedCanon.ok) {
+    return { error: resolvedCanon.error, code: "DOCS_CANON_INVALID" };
+  }
+
   const declared = input.inputs ?? [];
-  const derived = declared.length > 0 ? EMPTY_DERIVATION : await deriveInputs(fs, paths, name);
+  const derived =
+    declared.length > 0
+      ? EMPTY_DERIVATION
+      : await deriveInputs(fs, paths, name, resolvedCanon.canon);
 
   // Baselines are read BEFORE the claim so the bytes sealed are the ones that
   // existed before this session could touch anything, and a declared input that
@@ -96,6 +110,7 @@ export async function runSessionCreate(
     name,
     input.contextId,
     baselines.artifacts,
+    resolvedCanon.canon,
   );
   if ("error" in folderInfo) return folderInfo;
 
@@ -146,11 +161,11 @@ export async function runSessionCreate(
  * plan, whose number does not exist yet, so what it receives is the spec it
  * derives from. `quick` is absent because a quick works on no document.
  */
-const FLOW_INPUTS: ReadonlyArray<{ flow: string; dir: string; kind: string }> = [
-  { flow: "spec-refine", dir: "specs", kind: "spec" },
-  { flow: "plan-new", dir: "specs", kind: "spec" },
-  { flow: "plan-refine", dir: "plans", kind: "plan" },
-  { flow: "plan-exec", dir: "plans", kind: "plan" },
+const FLOW_INPUTS: ReadonlyArray<{ flow: string; kind: "spec" | "plan" }> = [
+  { flow: "spec-refine", kind: "spec" },
+  { flow: "plan-new", kind: "spec" },
+  { flow: "plan-refine", kind: "plan" },
+  { flow: "plan-exec", kind: "plan" },
 ];
 
 interface Derivation {
@@ -173,6 +188,7 @@ async function deriveInputs(
   fs: FileSystemPort,
   paths: PathsService,
   name: string,
+  canon: CoreDocsCanon,
 ): Promise<Derivation> {
   const descriptor = sessionDescriptor(name);
   const flow = FLOW_INPUTS.find((f) => descriptor.endsWith(`-${f.flow}`));
@@ -180,8 +196,8 @@ async function deriveInputs(
   const slug = descriptor.slice(0, -(flow.flow.length + 1));
   if (slug.length === 0) return EMPTY_DERIVATION;
 
-  const relativeDir = `docs/${flow.dir}`;
-  const wanted = new RegExp(`^\\d{3}-${flow.kind}-${escapeRegExp(slug)}\\.md$`, "i");
+  const relativeDir = coreDocumentDirectory(canon, flow.kind);
+  const wanted = new RegExp(`^${CORRELATIVE_SOURCE}-${flow.kind}-${escapeRegExp(slug)}\\.md$`, "i");
   const found = await listNames(fs, join(paths.workspaceDir(), relativeDir), wanted);
   const only = found.length === 1 ? found[0] : undefined;
   if (only !== undefined) return { paths: [`${relativeDir}/${only}`] };
@@ -264,7 +280,7 @@ async function readBaselines(
  * slug `028-x`.
  */
 function sessionDescriptor(name: string): string {
-  return name.replace(/^\d{3}-/, "");
+  return name.replace(new RegExp(`^${CORRELATIVE_SOURCE}-`), "");
 }
 
 interface ValidatedInput {
@@ -318,6 +334,7 @@ async function claimSessionFolder(
   name: string,
   contextId: string | undefined,
   artifacts: readonly CustodyArtifact[],
+  canon: CoreDocsCanon,
 ): Promise<FolderInfo | SessionCreateError> {
   const id = contextId?.trim() ?? "";
   // `failure` (not `error`) so the busy-lock envelope `withCwdLock` returns
@@ -358,7 +375,7 @@ async function claimSessionFolder(
       birthCustody({
         subject: { kind: "session", key: folder },
         subjectPath: sessionPath,
-        parents: parentsOf(artifacts),
+        parents: parentsOf(artifacts, canon),
         artifacts,
         created: localDateIso(new Date()),
       }),
@@ -382,10 +399,10 @@ async function claimSessionFolder(
  * identity is fixed by the workspace layout. An input that names no spec or plan
  * (a checkpoint, a loose file) contributes no parent rather than a guessed one.
  */
-function parentsOf(artifacts: readonly CustodyArtifact[]): WorklineNodeId[] {
+function parentsOf(artifacts: readonly CustodyArtifact[], canon: CoreDocsCanon): WorklineNodeId[] {
   const parents: WorklineNodeId[] = [];
   for (const artifact of artifacts) {
-    const node = nodeFromDocPath(artifact.path);
+    const node = nodeFromDocPath(artifact.path, canon);
     if (node === null) continue;
     if (parents.some((p) => p.kind === node.kind && p.key === node.key)) continue;
     parents.push(node);

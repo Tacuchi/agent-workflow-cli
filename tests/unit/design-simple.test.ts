@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import "../../src/application/capability/design-handler.js";
 import type { DispatchContext } from "../../src/application/capability/dispatcher.js";
 import { dispatchCapability } from "../../src/application/capability/dispatcher.js";
+import type { ConsumerDocument } from "../../src/application/design/consumer-document.js";
 import { gatePlanDesign } from "../../src/application/design/design-gate-service.js";
 import { readDesignIndex } from "../../src/application/design/design-index-service.js";
 import {
@@ -21,6 +22,7 @@ import { validateDesignManifest } from "../../src/domain/design/manifest.js";
 import { parseTaskDesignReferences } from "../../src/domain/design/reference.js";
 import { designSlug, nextPackageId, validateSimpleDesign } from "../../src/domain/design/simple.js";
 import type { DesignSource } from "../../src/domain/design/sources.js";
+import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -420,6 +422,96 @@ describe("T4.3 · el índice, los resolvers y el gate consumen el diseño simple
     const r1 = manifest?.baselines.find((b) => b.revision === 1);
     expect(r1?.digest).toBe(before);
     expect(r1?.path).toBe("revisions/DESIGN-r001.md");
+  });
+
+  it("mantiene como CAS la misma lectura de manifest desde la que derivó la revisión", async () => {
+    const fs = await published(new MemFs({ lenient: true }));
+    const manifestPath = `${WS}/docs/designs/001-design-alta-de-miembro/design-manifest.json`;
+    const snapshot = await fs.readText(manifestPath);
+    const index = await readDesignIndex(fs, WS);
+    const target = resolveSimpleTarget(index, "update", { title: null, packageId: "DES-001" });
+    expect(target.ok).toBe(true);
+    if (!target.ok) return;
+
+    // M2 arrives after the target captured M1. Its bytes must not become the
+    // base of a candidate that still derives its manifest from M1.
+    fs.file(
+      manifestPath,
+      JSON.stringify(
+        { ...(JSON.parse(snapshot) as Record<string, unknown>), title: "Cambio concurrente" },
+        null,
+        2,
+      ),
+    );
+    const built = await buildSimpleProposal(fs, WS, {
+      target: target.value,
+      document: DOCUMENT.replace("sin recargar", "sin recargar y con aviso"),
+      published: "2026-08-10",
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.value.base?.digest).toBe(baseDigest(snapshot));
+  });
+
+  it("un diseño simple adjunta el consumidor al final y registra su relación", async () => {
+    const fs = new MemFs({ lenient: true });
+    const index = await readDesignIndex(fs, WS);
+    const target = resolveSimpleTarget(index, "create", {
+      title: "Alta de miembro",
+      packageId: null,
+    });
+    expect(target.ok).toBe(true);
+    if (!target.ok) return;
+
+    const preview = await buildSimpleProposal(fs, WS, {
+      target: target.value,
+      document: DOCUMENT,
+      published: "2026-08-10",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const consumerPath = "docs/specs/032-spec-consumidor-atomico.md";
+    const consumerBefore = "# Spec 032 — anterior\n";
+    fs.file(`${WS}/${consumerPath}`, consumerBefore);
+    const consumerContent = [
+      "# Spec 032 — consumidor atómico",
+      "",
+      "## Design references",
+      "",
+      "package: DES-001@r1",
+      `baseline_hint: ${target.value.path}/DESIGN.md`,
+      `digest: ${preview.value.digest}`,
+      "",
+      "## Scope",
+      "",
+      "In: el consumidor se mueve con el diseño.",
+    ].join("\n");
+    const consumer: ConsumerDocument = {
+      kind: "spec",
+      path: consumerPath,
+      content: consumerContent,
+      base: { path: consumerPath, digest: baseDigest(consumerBefore) },
+    };
+
+    const built = await buildSimpleProposal(fs, WS, {
+      target: target.value,
+      document: DOCUMENT,
+      published: "2026-08-10",
+      consumer_document: consumer,
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+
+    const last = built.value.artifacts[built.value.artifacts.length - 1];
+    expect(last?.path).toBe(consumerPath);
+    const manifestArtifact = built.value.artifacts.find((artifact) =>
+      artifact.path.endsWith("design-manifest.json"),
+    );
+    const manifest = JSON.parse(manifestArtifact?.content ?? "{}") as {
+      relations: { specs: string[] };
+    };
+    expect(manifest.relations.specs).toEqual([consumerPath]);
   });
 });
 

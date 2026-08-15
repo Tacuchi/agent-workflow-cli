@@ -60,11 +60,11 @@ describe("formatConnectionsTable", () => {
   });
 
   it("una conexión sin instalar: – en todas las columnas de host", () => {
-    const out = formatConnectionsTable([view("cert", "DB_CERT_DSN")]);
+    const out = formatConnectionsTable([view("alpha", "ALPHA_DATABASE_URL")]);
     const lines = out.split("\n");
     expect(lines).toHaveLength(5);
-    expect(lines[3]).toContain("│ cert");
-    expect(lines[3]).toContain("DB_CERT_DSN");
+    expect(lines[3]).toContain("│ alpha");
+    expect(lines[3]).toContain("ALPHA_DATABASE_URL");
     expect(statusCells(lines[3] ?? "")).toEqual(Array(HOST_COUNT).fill("–"));
   });
 

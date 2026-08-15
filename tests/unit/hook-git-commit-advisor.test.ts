@@ -92,7 +92,7 @@ describe("runGitCommitAdvisor", () => {
     expect(r.stderr).toBeUndefined();
   });
 
-  it("caso B: git commit con -m pero sin QTC-PROJECT block → exit 0 silent", async () => {
+  it("caso B: git commit con -m pero sin project block → exit 0 silent", async () => {
     const stdin = JSON.stringify({
       tool_name: "Bash",
       tool_input: { command: 'git commit -m "fix algo"' },
@@ -102,7 +102,7 @@ describe("runGitCommitAdvisor", () => {
     expect(r.stderr).toBeUndefined();
   });
 
-  it("caso B.2: git commit con -m y QTC-PROJECT pero sin sesión activa → exit 0 silent", async () => {
+  it("caso B.2: git commit con project block pero sin sesión activa → exit 0 silent", async () => {
     writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sessions: [] }));
     const stdin = JSON.stringify({
       tool_name: "Bash",
@@ -189,6 +189,32 @@ describe("runGitCommitAdvisor", () => {
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toBeDefined();
     expect(r.stderr).toContain("session077");
+  });
+
+  it("preserva el correlativo completo al cruzar 999 y reconoce su tag", async () => {
+    mkActiveSession("1000-corte-plan-exec");
+    const missing = await runGitCommitAdvisor({
+      stdin: JSON.stringify({
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "corte"' },
+      }),
+      fs,
+      env,
+      paths,
+    });
+    expect(missing.stderr).toContain("session1000");
+    expect(missing.stderr).not.toContain("session1000-corte-plan-exec");
+
+    const tagged = await runGitCommitAdvisor({
+      stdin: JSON.stringify({
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "corte (session1000)"' },
+      }),
+      fs,
+      env,
+      paths,
+    });
+    expect(tagged.stderr).toBeUndefined();
   });
 
   it("caso I: múltiples sesiones activas → no-op (no hay sesión única)", async () => {

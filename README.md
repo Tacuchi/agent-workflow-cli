@@ -1,6 +1,6 @@
 # @tacuchi/agent-workflow-cli
 
-Agnostic runtime CLI for **Workline** — the **stages + loops + artifacts** system for agent work. Bundles the universal **`w`** skill set (`w` = *workline*) and pairs with optional company-specific plugins for multi-empresa parametrization.
+Agnostic runtime CLI for **Workline** — the **stages + loops + artifacts** system for agent work. Bundles the universal **`w`** skill set (`w` = *workline*) and supports optional plugins without making them a core dependency.
 
 The CLI exposes two binaries: `agent-workflow` (canonical) and `aw` (short alias).
 
@@ -32,7 +32,7 @@ Workline has three layers plus a permanent `docs/` zone:
 
 A `### Fn` phase is a **verifiable state of the system**, not a batch of technical tasks. It answers one question: *what can the system do or demonstrate at the end that it could not at the start?* The contract is defined **once** in `skills/w/loops/plan-new-loop/LOOP.md` (§ *Phase contract*); the other two plan loops reference it and never redefine it.
 
-- **Phase shape** — required always: `Resultado` · `Trabajo` · `Validación de fase` · `Condición de salida`. Conditional, each only when its condition holds: `Estado inicial`, `Recorrido afectado`, `Dependencias`, `Límite de simulación` and `Diferido`. A conditional block is **never written empty** — no `no aplica` placeholders. Granularity is semantic: a task is a unit of purpose that may touch several files, never an edit operation ("create class X").
+- **Phase shape** — required always: `Resultado` · `Trabajo` · `Validación de fase` · `Condición de salida` and `> Fuentes:`. The plan also declares `> Límite de ejecución: checkout`; every task names a non-empty subset of its phase sources with `_(fuentes: …)_`. Conditional, each only when its condition holds: `Estado inicial`, `Recorrido afectado`, `Dependencias`, `Límite de simulación` and `Diferido`. A conditional block is **never written empty** — no `no aplica` placeholders. Granularity is semantic: a task is a unit of purpose that may touch several files, never an edit operation ("create class X").
 - **Phase state** — one `> Estado:` line per phase (`pendiente` | `en ejecución` | `bloqueada` | `validada`), machine state that `aw status` parses. A phase reaches `validada` only with its proof green, its exit condition true and the closing review gate passed — **never** because its checkboxes are ticked. A `bloqueada` phase states what it waits on in its own `> Bloqueo:` line.
 - **Plan state** — one `> Estado:` line under the title (`open` | `done`), plus a `> Cierre: YYYY-MM-DD · sesión NNN` line on close. It is the third axis, not a summary of the other two: every phase validated with no closure is a plan still `open`, awaiting its **final validation**.
 - **Temporary simulation** — **only when the change carries one**, and then planned with a lifecycle: where it is born, how it moves (`antes → después`), which phase retires it, and what prevents it from being selected in a production runtime. A change with no temporary behavior declares no boundary and no gate asks for one. A stub still live on the main path with no declared removal is a review finding.
@@ -99,7 +99,7 @@ Opt-out flags: `--skill-only`, `--no-commands`, `--no-hooks`. Override the sourc
 
 **official** — Claude Code, Codex, Warp, Gemini/Antigravity, Kimi Code. **best-effort** — Oz, OpenCode, Crush. `agents` is a shared destination, not a host, and never counts as one.
 
-The difference is what gets *checked*, not what gets installed: `npm run smoke:hosts` probes every host's runtime and version, and for the official ones it additionally installs into a throwaway `HOME` and verifies that the artifacts on disk are the ones this table promises — bundle, command surface, hooks — then uninstalls and verifies they are gone. Its result is written to `src/domain/host-verification.ts`, and that file is the **only** source of a "verified" claim anywhere in the CLI: a host no run has covered is shown as `unverified`, never as verified. `npm run smoke:hosts -- --check` runs the same checks without writing the ledger.
+The difference is what gets *checked*, not what gets installed: local fixtures verify the artifacts this checkout generates. `npm run smoke:hosts` remains an optional operator observation of installed runtimes; it never closes a Workline phase or substitutes checkout proof. Any host state recorded by an operator is informational, and a host without that observation remains `unverified`.
 
 Re-verify when a release touches a host. A host marked **pre-1.0** (Kimi Code, Crush, Oz) can change its surface between its own releases faster than we re-check — Kimi Code ships roughly twice a week — so the table states the version a run actually proved and the date it proved it. It is a claim about that version, not a promise about the next one.
 
@@ -124,21 +124,9 @@ Running `agent-workflow` (or `aw`) with no arguments opens the tab-based TUI:
 | **Status** | Doctor dashboard: CLI / hosts / hooks / MCP tiles + daily operational logs. The hosts tile jumps to [Workline]. |
 | **Workline** | Per-host administration of the bundled `w` SKILL (install / reinstall / uninstall, `hooks armed` state) plus a compact flows overview. |
 | **Project** | Workspace sources, branches and git-flow actions. |
-| **MCP** | dbhub connections. **Install writes the host's user-scope config** (e.g. `~/.claude.json`, `~/.codex/config.toml`) — never the project `.mcp.json`; install once, use it in every project. `aw mcp setup` remains the workspace-capable CLI path (workspace by default; `--workspace <dir>` / `--global --force`). |
+| **MCP** | dbhub connections. `mcp-connections.json` is the only authority for connection names and exact DSN variables: register with `aw self mcp use-env --name alpha --dsn-var ALPHA_DATABASE_URL`. Direct MCP operations select the sole connection, require `--instance <name>` when several exist, or use an explicit `--all-connections` fan-out. **Install writes the host's user-scope config** (e.g. `~/.claude.json`, `~/.codex/config.toml`) — never the project `.mcp.json`; `aw mcp setup` remains the workspace-capable path (workspace by default; `--workspace <dir>` / `--global --force`). |
 | **Skills** | Standalone third-party skills manager (skills.sh model): register from `owner/repo`, a git URL (`#ref` supported) or an absolute local path; install materializes a canonical copy in `~/.agents/skills/<name>` (the open-standard dir every non-Claude host scans) plus a symlink replica in `~/.claude/skills/<name>` (copy fallback where symlinks are unavailable). Seeded with the recommended external skills from the companion marketplace README — keep both lists in sync. |
 | **Config** | Namespace, host-targeting preferences, and the workspace branch defaults (written to the WORKSPACE block). |
-
-## Multi-empresa via profile.json
-
-A `profile.json` parametrizes the bundled skills for a company (namespace, lexicon, MCP databases, custom anchors). Resolution cascade (highest precedence first):
-
-1. `--profile <path>` flag
-2. `AW_PROFILE` env var
-3. `~/.config/agent-workflow/profile.json` (user-level)
-4. `<cwd>/.<namespace>/profile.json` (workspace-level)
-5. Embedded `DEFAULT_PROFILE` (agnostic defaults)
-
-Companion plugins package this profile + optional custom skills.
 
 ## Namespace resolution
 

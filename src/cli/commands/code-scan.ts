@@ -1,10 +1,10 @@
 import { type ScanPattern, runCodeScan } from "../../application/code-scan-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
-export const codeScanCommand: QtcCommand = {
+export const codeScanCommand: CliCommand = {
   name: "code-scan",
   describe:
     "Scan files for release patterns (localhost, secrets, TODOs, ...). " +

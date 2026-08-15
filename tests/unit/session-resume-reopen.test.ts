@@ -112,7 +112,7 @@ describe("SESSION_CLOSED — el error enseña la salida", () => {
   // que en un workspace con una carpeta legacy homónima resuelve a dos sesiones.
   it("la acción nombra la operación exacta, con la carpeta y no un placeholder", async () => {
     const fs = buildFs({ closed: true });
-    const resolution = await resolveSessionTarget(fs, paths, { code: "003" });
+    const resolution = await resolveSessionTarget(fs, paths, { code: "003", intent: "read" });
     if (resolution.outcome !== "error") throw new Error("se esperaba SESSION_CLOSED");
     expect(resolution.code).toBe("SESSION_CLOSED");
     expect(resolution.action).toContain(`aw session-resume --code ${folder} --reopen`);
@@ -121,7 +121,7 @@ describe("SESSION_CLOSED — el error enseña la salida", () => {
 
   it("esa acción, ejecutada tal cual, devuelve la sesión al recorrido", async () => {
     const fs = buildFs({ closed: true });
-    const resolution = await resolveSessionTarget(fs, paths, { code: "003" });
+    const resolution = await resolveSessionTarget(fs, paths, { code: "003", intent: "read" });
     if (resolution.outcome !== "error") throw new Error("se esperaba SESSION_CLOSED");
     // La invocación se lee del propio error: si dejara de ser ejecutable verbatim,
     // esta prueba se cae en vez de seguir comprobando una que nadie emite.
@@ -135,7 +135,7 @@ describe("SESSION_CLOSED — el error enseña la salida", () => {
     if ("error" in resumed) throw new Error(`unexpected error: ${resumed.error}`);
     expect(resumed.state).toBe("active");
     // Y el recorrido vuelve a resolver: `advance`/`submit` piden allowClosed:false.
-    const again = await resolveSessionTarget(fs, paths, { code: "003" });
+    const again = await resolveSessionTarget(fs, paths, { code: "003", intent: "read" });
     expect(again.outcome).toBe("resolved");
   });
 });

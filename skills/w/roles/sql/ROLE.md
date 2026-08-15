@@ -21,7 +21,7 @@ description: >-
 
 Author database changes as **versioned SQL scripts**, never executing them. Two modes:
 
-- **Read-only** (query): read schema/data via MCP to understand the domain (research, planning).
+- **Read-only** (query): read schema/data through a registered connection to understand the domain (research, planning).
 - **Write-to-script** (change): every DB mutation is written to the session's `SCRIPTS.sql`; the **user applies it**, never the AI.
 
 ## Composed by
@@ -35,11 +35,11 @@ Author database changes as **versioned SQL scripts**, never executing them. Two 
 
 ### Rule zero — never execute SQL (invariant 4)
 
-The AI **never executes DML/DDL** against any DB, through any channel (MCP, `psql`, `Bash`, an app driver). Migrations stay in `SCRIPTS.sql` and the **user applies them**. If the temptation "verify by applying" appears, refuse and ask the user to run it.
+The AI **never executes DML/DDL** against any DB, through any channel (MCP, `psql`, `Bash`, an app driver). Migrations stay in `SCRIPTS.sql` and external application is a handoff. Local fixture or ephemeral-DB tests may verify the checkout contract; a deployed application is never a closing requirement.
 
-- **Read-only reads via MCP**: `SELECT`, schema inspection, counts — OK. No `INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE`.
-- The DB MCPs (cert/prod) are **READONLY** by contract.
-- Single exception, which does NOT relax the rule: if the user explicitly asks "run it yourself against cert", still confirm per block and never assume broadened authorization.
+- **Read-only remote reads**: `SELECT`, schema inspection, counts — research context only. No `INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE`.
+- Choose only a registered connection; the registry, not environment-name conventions, supplies its exact DSN variable.
+- A remote snapshot is recorded before plan approval and is never refreshed from `plan-exec`.
 
 ### Staging — a single `SCRIPTS.sql` per session
 
@@ -53,7 +53,7 @@ Every statement is **appended** with a pair of comment markers:
 ```sql
 -- @category: 01-ddl-tablas
 -- @stmt: 01-crear-tabla-usuarios
-CREATE TABLE IF NOT EXISTS esq_credito.tb_usuarios (
+CREATE TABLE IF NOT EXISTS <schema>.<table> (
   ...
 );
 ```
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS esq_credito.tb_usuarios (
 
   Only 4 fields. Author/Date/long notes do NOT go in the header (a free block below, if needed). If the engine is not Postgres, state it in `Objeto:`.
 - **Idempotency**: `CREATE TABLE IF NOT EXISTS`, `DROP ... IF EXISTS`, `CREATE OR REPLACE`, `ON CONFLICT`.
-- **Explicit schema** always (`esq_credito.tb_x`, never `public.`).
+- **Explicit schema when the project has one** (`<schema>.<table>`); never invent a schema name or assume `public`.
 - **CTEs over DO/LOOP**: one transformation = chained `WITH ... AS` + one final `INSERT/UPDATE/DELETE`. Avoid `DO $$ ... LOOP ... END $$` when the result is achievable declaratively (easier to audit and revert). Exception: dynamic object discovery (FKs/columns/constraints) — document the reason in `Objeto:`.
 - **Parametrized queries** always (never string concatenation) — in any SQL that ends up in app code.
 - Never create `fn_*`/`sp_*` to reuse logic exclusive to one script; use a CTE or inline.
@@ -124,10 +124,10 @@ CREATE TABLE IF NOT EXISTS esq_credito.tb_usuarios (
 | `CREATE INDEX idx_...` | `DROP INDEX IF EXISTS idx_...;` |
 | `CREATE SEQUENCE seq_...` | `DROP SEQUENCE IF EXISTS seq_...;` |
 | `CREATE OR REPLACE FUNCTION fn_x(...)` | `DROP FUNCTION IF EXISTS fn_x(<signature>);` |
-| `UPDATE/DELETE` with a backup in `esq_audit.tb_bkp_*` | `UPDATE … FROM esq_audit.tb_bkp_…` |
+| `UPDATE/DELETE` with a declared backup table | `UPDATE … FROM <backup_schema>.<backup_table>` |
 | `INSERT INTO tb_x VALUES (...)` | `DELETE FROM tb_x WHERE <natural key / range>;` (never DELETE without WHERE) |
 
-**Irreversible → manual "Fase 5" block** (outside the transaction, one line per case): `TRUNCATE`, `DROP COLUMN`/`DROP TABLE` without backup, lossy `ALTER COLUMN TYPE`, `DROP ... CASCADE`, `DELETE/UPDATE` without a backup in `esq_audit`. To make a destructive change reversible, write the backup in the same forward (`esq_audit.tb_bkp_<table>_sNNN`).
+**Irreversible → manual "Fase 5" block** (outside the transaction, one line per case): `TRUNCATE`, `DROP COLUMN`/`DROP TABLE` without backup, lossy `ALTER COLUMN TYPE`, `DROP ... CASCADE`, `DELETE/UPDATE` without a declared backup. To make a destructive change reversible, write the project-appropriate backup in the same forward (`<backup_schema>.<backup_table>`).
 
 ## Output
 

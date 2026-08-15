@@ -5,7 +5,7 @@ import {
 import { runWorktree } from "../../application/worktree-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 import { type FlagContract, reviewFlags, unknownFlagMessage } from "./unknown-flags.js";
@@ -15,7 +15,7 @@ import { type FlagContract, reviewFlags, unknownFlagMessage } from "./unknown-fl
 // came back as a clean close.
 const FLAGS: FlagContract = { known: ["code", "refs"] };
 
-export const sessionCloseCommand: QtcCommand = {
+export const sessionCloseCommand: CliCommand = {
   name: "session-close",
   describe:
     "Close a session: write the .closed marker, release the conversation bindings pointing at it and upsert its HISTORY.md row. " +

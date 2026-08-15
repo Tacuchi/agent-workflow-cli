@@ -191,11 +191,11 @@ describe("nada durable se aplica sin request, output, autorización y base valid
     // La base entra en el sello: publicar sobre otra revisión NO es la misma
     // propuesta aunque los bytes coincidan.
     const based = prepare({
-      base: { path: "docs/designs/DES-001/x.json", digest: baseDigest("a") },
+      bases: [{ path: "docs/designs/DES-001/x.json", digest: baseDigest("a") }],
     });
     expect(based.digest).not.toBe(plain.digest);
     expect(
-      prepare({ base: { path: "docs/designs/DES-001/x.json", digest: baseDigest("b") } }).digest,
+      prepare({ bases: [{ path: "docs/designs/DES-001/x.json", digest: baseDigest("b") }] }).digest,
     ).not.toBe(based.digest);
 
     // Y los bytes, obviamente.
@@ -261,7 +261,7 @@ describe("nada durable se aplica sin request, output, autorización y base valid
       request,
       authorization: authorizeEffects(create.effects, NO_CONTEXT),
       artifacts: ARTIFACTS,
-      base: { path: "docs/designs/DES-001/baseline.json", digest: baseDigest("viejo") },
+      bases: [{ path: "docs/designs/DES-001/baseline.json", digest: baseDigest("viejo") }],
     });
     if (!prepared.ok) throw new Error("prepare falló");
 
@@ -275,6 +275,46 @@ describe("nada durable se aplica sin request, output, autorización y base valid
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.failure.code).toBe("PROPOSAL_BASE_STALE");
+    expect(fs.writes.has("/work/docs/designs/DES-001/manifest.json")).toBe(false);
+  });
+
+  it("relee la base dentro del lock si otro escritor se intercala al adquirirlo", async () => {
+    const request = requestFor("create", CREATE_INPUTS);
+    const basePath = "docs/designs/DES-001/baseline.json";
+    const prepared = prepareDurableEffect({
+      request,
+      authorization: authorizeEffects(create.effects, NO_CONTEXT),
+      artifacts: ARTIFACTS,
+      bases: [{ path: basePath, digest: baseDigest("M1") }],
+    });
+    if (!prepared.ok) throw new Error("prepare falló");
+
+    const fs = new MemFs().file(`/work/${basePath}`, "M1");
+    const writeExclusive = fs.writeTextExclusive.bind(fs);
+    let interleaved = false;
+    fs.writeTextExclusive = async (path: string, content: string) => {
+      const created = await writeExclusive(path, content);
+      // A competing writer lands M2 after the prior implementation would have
+      // checked M1, but before the exclusive publication section begins.
+      if (path === paths.cwdLockFile() && created.created && !interleaved) {
+        interleaved = true;
+        fs.file(`/work/${basePath}`, "M2");
+      }
+      return created;
+    };
+
+    const applied = await applyLocalProposal(fs, paths, {
+      root: "/work",
+      proposal: prepared.plan.proposal,
+      approval: { digest: prepared.plan.proposal.digest, granted: [] },
+      selfAuthorized: ["local_additive"],
+    });
+
+    expect(interleaved).toBe(true);
+    expect(applied.ok).toBe(false);
+    if (applied.ok) return;
+    expect(applied.failure.code).toBe("PROPOSAL_BASE_STALE");
+    expect(await fs.readText(`/work/${basePath}`)).toBe("M2");
     expect(fs.writes.has("/work/docs/designs/DES-001/manifest.json")).toBe(false);
   });
 

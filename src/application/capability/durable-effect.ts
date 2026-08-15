@@ -45,7 +45,8 @@ export interface PrepareDurableEffectInput {
   request: CapabilityRequest;
   authorization: EffectAuthorizationResult;
   artifacts: PublishableArtifact[];
-  base?: ProposalBase | null;
+  /** All compare-and-swap bases a compound candidate depends on. */
+  bases?: ProposalBase[];
 }
 
 const DURABLE_CLASSES: readonly EffectClass[] = [
@@ -105,7 +106,7 @@ export function prepareDurableEffect(input: PrepareDurableEffectInput): Prepared
           content: a.content,
           overwrite: a.overwrite === true,
         })),
-        bases: input.base == null ? [] : [input.base],
+        bases: input.bases ?? [],
         // The capability's own policy inputs, sealed rather than assumed: an
         // attempt that read a sensitive source is not the same proposal as one
         // that did not, even when every byte matches.

@@ -57,13 +57,13 @@ describe("mcp-host-paths — global config resolution (writer/reader/detect sing
 
 describe("buildMcpEntry — Windows cmd shim", () => {
   it("posix keeps the plain bin; win32 wraps in cmd /c (npm bin is a .cmd shim)", () => {
-    const posix = buildMcpEntry("cert", undefined, "darwin");
+    const posix = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "darwin");
     expect(posix.command).toBe("agent-workflow");
-    expect(posix.args).toEqual(["mcp", "dbhub", "cert"]);
+    expect(posix.args).toEqual(["mcp", "dbhub", "--instance", "alpha"]);
 
-    const win = buildMcpEntry("cert", undefined, "win32");
+    const win = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "win32");
     expect(win.command).toBe("cmd");
-    expect(win.args).toEqual(["/c", "agent-workflow", "mcp", "dbhub", "cert"]);
+    expect(win.args).toEqual(["/c", "agent-workflow", "mcp", "dbhub", "--instance", "alpha"]);
   });
 });
 
@@ -90,7 +90,7 @@ describe("global-scope round-trip write↔read (opencode/crush with XDG)", () =>
 
   it("opencode global honors XDG_CONFIG_HOME end-to-end (writer and reader agree)", () => {
     process.env.XDG_CONFIG_HOME = join(scopeDir, "xdg");
-    const entry = buildMcpEntry("cert", undefined, "darwin");
+    const entry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "darwin");
     const result = writeMcpEntry("opencode", entry, { scopeDir, kind: "global" });
     expect(result.action).toBe("written");
     expect(result.target).toBe(join(scopeDir, "xdg", "opencode", "opencode.json"));
@@ -101,7 +101,7 @@ describe("global-scope round-trip write↔read (opencode/crush with XDG)", () =>
   });
 
   it("crush global (unix default path) round-trips writer↔reader", () => {
-    const entry = buildMcpEntry("cert", undefined, "darwin");
+    const entry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "darwin");
     const result = writeMcpEntry("crush", entry, { scopeDir, kind: "global" });
     expect(result.target).toBe(join(scopeDir, ".config", "crush", "crush.json"));
     expect(JSON.parse(readFileSync(result.target, "utf8")).mcp[entry.name]).toBeTruthy();
@@ -111,7 +111,7 @@ describe("global-scope round-trip write↔read (opencode/crush with XDG)", () =>
   });
 
   it("warp global round-trips writer↔reader on the registry path for this platform", () => {
-    const entry = buildMcpEntry("cert", undefined, "darwin");
+    const entry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "darwin");
     const result = writeMcpEntry("warp", entry, { scopeDir, kind: "global" });
     const snapshot = readMcpEntry("warp", scopeDir, entry.name, "global");
     expect(snapshot.target).toBe(result.target);

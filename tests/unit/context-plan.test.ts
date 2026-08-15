@@ -72,18 +72,18 @@ describe("context-plan — the resolver returns what the doctrine already orders
 
   it("a signalled invocation adds its module and nothing else", async () => {
     const bare = await runContextPlan(fs, { command: "plan-exec", root: BUNDLE_ROOT });
-    // The DB modules declare a capability dependency, so the capability is
-    // declared here too — otherwise this is the fallback case, not this one.
+    // plan-exec loads only its checkout DB doctrine: remote data is deliberately
+    // not a capability of this loop.
     const withDb = await runContextPlan(fs, {
       command: "plan-exec",
       signals: ["db"],
-      capabilities: ["external-data"],
       root: BUNDLE_ROOT,
     });
     const added = withDb.read_set.filter((e) => !bare.read_set.some((b) => b.path === e.path));
     expect(added.length).toBeGreaterThan(0);
     expect(added.every((e) => e.kind === "module" && e.signal === "db")).toBe(true);
     expect(withDb.bytes).toBeGreaterThan(bare.bytes);
+    expect(withDb.degraded).toBe(false);
     // The core is untouched and still first: the hard floor never ends up
     // behind a conditional module.
     expect(withDb.read_set.slice(0, bare.read_set.length).map((e) => e.path)).toEqual(
@@ -313,14 +313,12 @@ describe("profile selection — capabilities and evidence, never a host name", (
     const once = await runContextPlan(fs, {
       command: "plan-exec",
       signals: ["db", "probe"],
-      capabilities: ["external-data"],
       root: BUNDLE_ROOT,
     });
     for (let i = 0; i < 3; i += 1) {
       const again = await runContextPlan(fs, {
         command: "plan-exec",
         signals: ["probe", "db"], // same set, different order
-        capabilities: ["external-data"],
         root: BUNDLE_ROOT,
       });
       expect(again.profile).toBe(once.profile);
@@ -337,8 +335,8 @@ describe("profile selection — capabilities and evidence, never a host name", (
     });
     expect(plan.degraded).toBe(true);
     const notice = plan.notice ?? "";
-    // Two unmet capabilities, ONE notice.
-    expect(plan.receipt.fallback.reasons.length).toBeGreaterThan(1);
+    // DB no longer asks for remote data; only compaction is unavailable.
+    expect(plan.receipt.fallback.reasons.length).toBe(1);
     expect(notice.match(/^Contexto (ampliado|degradado)/g)).toHaveLength(1);
     expect(notice).toMatch(/Impacto/);
     // It never asks the user to pick a profile.

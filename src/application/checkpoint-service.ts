@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { compareCorrelatives } from "../domain/correlative.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import {
   type LifecycleTarget,
@@ -14,7 +15,6 @@ import {
   type SessionEntry,
   type SessionResolutionError,
   listSessionFolders,
-  parseSessionFolder,
   resolveSessionTarget,
   sessionNumericCode,
   sessionReadRequest,
@@ -475,7 +475,7 @@ export async function findRecentClosedWithArtifacts(
 
   for (const folder of folders) {
     if (activeSet.has(folder.name)) continue;
-    const { code } = parseSessionFolder(folder.name);
+    const code = sessionNumericCode(folder.name);
     if (code === null) continue;
     if (!(await fs.exists(join(folder.path, CLOSED_MARKER)))) continue;
     let mtimeMs: number;
@@ -501,7 +501,7 @@ export async function findRecentClosedWithArtifacts(
     });
   }
 
-  out.sort((a, b) => b.code.localeCompare(a.code));
+  out.sort((a, b) => compareCorrelatives(b.code, a.code) || a.folder.localeCompare(b.folder));
   return out;
 }
 

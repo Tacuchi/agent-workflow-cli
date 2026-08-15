@@ -9,7 +9,7 @@ import type { SemanticRequest } from "../../application/semantic-operation/proto
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail, failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -18,7 +18,7 @@ type PersistData =
   | ({ stage: "validate" } & PersistValidation)
   | ({ stage: "apply" } & PersistApplied);
 
-export const persistCommand: QtcCommand<PersistData> = {
+export const persistCommand: CliCommand<PersistData> = {
   name: "persist",
   describe:
     "Adopta trabajo terminado de la conversación en docs/ (research | spec | plan) en una sola operación. " +
@@ -30,34 +30,18 @@ export const persistCommand: QtcCommand<PersistData> = {
     // The request is never carried between stages: each one rebuilds it from
     // the workspace. That is what makes the handshake stateless AND what
     // detects staleness — a docs/ that moved yields a different digest.
+    if (stage !== "prepare" && stage !== "validate" && stage !== "apply") {
+      return fail("ARGS_INVALID", "uso: aw persist prepare | validate | apply --approval <digest>");
+    }
+    const prepared = await preparePersist(ctx.fs, ctx.env, ctx.paths);
+    if (!prepared.ok) return failSemantic(prepared.failure);
     if (stage === "prepare") {
-      const request = await preparePersist(ctx.fs, ctx.env, ctx.paths);
-      return { ok: true, data: { stage: "prepare", request }, exitCode: 0 };
+      return { ok: true, data: { stage, request: prepared.value }, exitCode: 0 };
     }
 
-    if (stage === "validate" || stage === "apply") {
-      const raw = await readRequiredStdin();
-      const request = await preparePersist(ctx.fs, ctx.env, ctx.paths);
-
-      if (stage === "validate") {
-        const result = validatePersist(raw, request);
-        if (!result.ok) return failSemantic(result.failure);
-        return { ok: true, data: { stage: "validate", ...result.value }, exitCode: 0 };
-      }
-
-      const approval = args.values.get("approval");
-      if (approval === undefined) {
-        return fail(
-          "ARGS_INVALID",
-          "apply exige --approval <digest>: el que devolvió validate y aprobó el usuario",
-        );
-      }
-      const result = await applyPersist(ctx.fs, ctx.env, ctx.paths, { raw, request, approval });
-      if (!result.ok) return failSemantic(result.failure);
-      return { ok: true, data: { stage: "apply", ...result.value }, exitCode: 0 };
-    }
-
-    return fail("ARGS_INVALID", "uso: aw persist prepare | validate | apply --approval <digest>");
+    const raw = await readRequiredStdin();
+    if (stage === "validate") return validateStage(raw, prepared.value);
+    return await applyStage(args, ctx, raw, prepared.value);
   },
 
   renderHuman(result: CommandResult<PersistData>, context: HumanRenderContext): string {
@@ -87,3 +71,27 @@ export const persistCommand: QtcCommand<PersistData> = {
     return `persist · escrito ${data.written.join(", ")} (${data.category}, ${data.mode})\n`;
   },
 };
+
+function validateStage(raw: string, request: SemanticRequest): CommandResult<PersistData> {
+  const result = validatePersist(raw, request);
+  if (!result.ok) return failSemantic(result.failure);
+  return { ok: true, data: { stage: "validate", ...result.value }, exitCode: 0 };
+}
+
+async function applyStage(
+  args: ParsedArgs,
+  ctx: CliContext,
+  raw: string,
+  request: SemanticRequest,
+): Promise<CommandResult<PersistData>> {
+  const approval = args.values.get("approval");
+  if (approval === undefined) {
+    return fail(
+      "ARGS_INVALID",
+      "apply exige --approval <digest>: el que devolvió validate y aprobó el usuario",
+    );
+  }
+  const result = await applyPersist(ctx.fs, ctx.env, ctx.paths, { raw, request, approval });
+  if (!result.ok) return failSemantic(result.failure);
+  return { ok: true, data: { stage: "apply", ...result.value }, exitCode: 0 };
+}

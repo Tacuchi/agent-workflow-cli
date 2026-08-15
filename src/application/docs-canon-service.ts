@@ -1,4 +1,5 @@
 import { parse as parseToml } from "smol-toml";
+import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../domain/docs-canon.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { PathsService } from "./paths-service.js";
@@ -25,8 +26,40 @@ import type { PathsService } from "./paths-service.js";
  * default and never reads a file that is not there.
  */
 
-/** Category → workspace-relative folder, for the categories that declare one. */
-export type DocsCanon = Readonly<Record<string, string>>;
+/** Every document category the CLI may publish or index. */
+export const DOCS_CATEGORIES = [
+  "research",
+  "spec",
+  "plan",
+  "diagrams",
+  "manuals",
+  "reports",
+  "scripts",
+] as const;
+
+export type DocsCategory = (typeof DOCS_CATEGORIES)[number];
+
+/** The three categories that form Workline's document graph. */
+export const CORE_DOC_CATEGORIES = ["research", "spec", "plan"] as const;
+
+export type CoreDocsCategory = (typeof CORE_DOC_CATEGORIES)[number];
+
+export { DEFAULT_CORE_DOCS_CANON } from "../domain/docs-canon.js";
+export type { CoreDocsCanon } from "../domain/docs-canon.js";
+
+const CORE_DOC_CATEGORY_SET: ReadonlySet<string> = new Set(CORE_DOC_CATEGORIES);
+
+/** Current layout when the workspace has no `[docs]` table. */
+export const DEFAULT_DOCS_CANON: Readonly<Record<DocsCategory, string>> = {
+  ...DEFAULT_CORE_DOCS_CANON,
+  diagrams: "docs/diagrams",
+  manuals: "docs/manuals",
+  reports: "docs/reports",
+  scripts: "docs/scripts",
+};
+
+/** Category → workspace-relative folder, for the requested categories. */
+export type DocsCanon = Readonly<Partial<Record<DocsCategory, string>>>;
 
 export type DocsCanonResult = { ok: true; canon: DocsCanon } | { ok: false; error: string };
 
@@ -35,21 +68,40 @@ const TABLE = "docs";
 export async function resolveDocsCanon(
   fs: FileSystemPort,
   paths: PathsService,
-  categories: readonly string[],
+  categories: readonly DocsCategory[],
 ): Promise<DocsCanonResult> {
   const canon: Record<string, string> = {};
+  for (const category of categories) canon[category] = DEFAULT_DOCS_CANON[category];
   // Workspace last: it overrides the user-global default, same order as skills.
   for (const path of [paths.userSkillsToml(), paths.cwdSkillsToml()]) {
     if (!(await fs.exists(path))) continue;
     const level = await readDocsTable(fs, path);
     if (!level.ok) return level;
     for (const [category, dir] of Object.entries(level.table)) {
-      const checked = checkDestination(path, category, dir, categories);
+      const checked = checkDestination(path, category, dir);
       if (!checked.ok) return checked;
-      canon[category] = checked.dir;
+      if (categories.includes(category as DocsCategory)) canon[category] = checked.dir;
     }
   }
   return { ok: true, canon };
+}
+
+/** Resolve research/spec/plan together so their writers and readers agree. */
+export async function resolveCoreDocsCanon(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<{ ok: true; canon: CoreDocsCanon } | { ok: false; error: string }> {
+  const resolved = await resolveDocsCanon(fs, paths, CORE_DOC_CATEGORIES);
+  if (!resolved.ok) return resolved;
+  const research = resolved.canon.research;
+  const spec = resolved.canon.spec;
+  const plan = resolved.canon.plan;
+  // Defaults are installed above; keep this guard because config is an external
+  // boundary and a missing path must never fall through to a second literal.
+  if (research === undefined || spec === undefined || plan === undefined) {
+    return { ok: false, error: "el canon documental no resolvió research, spec y plan" };
+  }
+  return { ok: true, canon: { research, spec, plan } };
 }
 
 async function readDocsTable(
@@ -74,12 +126,11 @@ function checkDestination(
   path: string,
   category: string,
   dir: unknown,
-  categories: readonly string[],
 ): { ok: true; dir: string } | { ok: false; error: string } {
-  if (!categories.includes(category)) {
+  if (!(DOCS_CATEGORIES as readonly string[]).includes(category)) {
     return {
       ok: false,
-      error: `${path}: [${TABLE}] no reconoce '${category}'; las categorías son: ${categories.join(", ")}`,
+      error: `${path}: [${TABLE}] no reconoce '${category}'; las categorías son: ${DOCS_CATEGORIES.join(", ")}`,
     };
   }
   if (typeof dir !== "string") {
@@ -101,6 +152,20 @@ function checkDestination(
     return {
       ok: false,
       error: `${path}: [${TABLE}].${category} = '${dir}' apunta a un directorio oculto; el canon documental publica documentos, no estado interno de la herramienta`,
+    };
+  }
+  // Core document routes are read by flow, retirement, custody and design
+  // boundaries that have not all adopted DocsCanon yet. Accepting a custom
+  // route here would let persist/index see one tree while a later lifecycle
+  // write still targets another. Keep the shared defaults centralised now and
+  // refuse a relocation until that migration is complete.
+  if (
+    CORE_DOC_CATEGORY_SET.has(category) &&
+    safe.path !== DEFAULT_DOCS_CANON[category as CoreDocsCategory]
+  ) {
+    return {
+      ok: false,
+      error: `${path}: [${TABLE}].${category} todavía no admite un destino personalizado; flow, retiro, custodia y diseño siguen cerrados sobre el layout canónico`,
     };
   }
   return { ok: true, dir: safe.path };

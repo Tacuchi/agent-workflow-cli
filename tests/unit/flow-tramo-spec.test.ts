@@ -217,6 +217,17 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
         id,
         passed: true,
         detail: `salida real de ${id}`,
+        ...(id === "workline.source-bounded"
+          ? {
+              proof: {
+                kind: "inspection" as const,
+                source: "workspace",
+                relative_cwd: ".",
+                checkout_digest: "test-checkout",
+                invocation: { artifact: "tests/unit/flow-tramo-spec.test.ts" },
+              },
+            }
+          : {}),
       })),
       effects: { planned: [...declared], approved: [], applied: [...declared] },
       output: null,

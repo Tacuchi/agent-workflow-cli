@@ -39,6 +39,15 @@ describe("una capacidad conformante declara su contrato", () => {
     expect(DESIGN_DESCRIPTOR.operations.map((o) => o.name)).toEqual([...DESIGN_OPERATIONS]);
   });
 
+  it("create y update admiten el attachment opcional del documento consumidor", () => {
+    for (const operation of ["create", "update"]) {
+      const input = findOperation(DESIGN_DESCRIPTOR, operation)?.inputs.find(
+        (candidate) => candidate.name === "consumer_document",
+      );
+      expect(input).toMatchObject({ kind: "attachment", required: false, sensitivity: "public" });
+    }
+  });
+
   // El descriptor REFERENCIA los formatos del package; no los redefine ni se
   // convierte en otro. Un schema inventado acá sería un segundo formato de
   // diseño entrando por la puerta de atrás.

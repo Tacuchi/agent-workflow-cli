@@ -4,10 +4,10 @@ import {
 } from "../../application/plugin-doctor-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
-export const pluginDoctorCommand: QtcCommand = {
+export const pluginDoctorCommand: CliCommand = {
   name: "plugin-doctor",
   describe:
     "Health check del plugin (frontmatter, manifests, hooks, MCP, exports). " +

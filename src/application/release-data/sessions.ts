@@ -1,12 +1,13 @@
 import { join } from "node:path";
+import { compareCorrelatives, sameCorrelative } from "../../domain/correlative.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
-import { validateSessionsExist } from "../parsers/sessions-csv.js";
+import { SessionsCsvError, validateSessionsExist } from "../parsers/sessions-csv.js";
 import type { PathsService } from "../paths-service.js";
 import { relpath } from "../paths.js";
 import { listExistingArtifacts } from "../session-artifacts.js";
 import { type SessionEntry, buildSessionEntry, listSessionFolders } from "../session-resolver.js";
-import { sessionCodeInt } from "./common.js";
+import { sessionCorrelative } from "./common.js";
 
 export interface ReleaseSession extends SessionEntry {
   is_legacy_format?: boolean;
@@ -31,14 +32,14 @@ export async function listSessionsForRelease(
   const sessionsDir = paths.cwdSessionsDir();
   if (!(await fs.exists(sessionsDir))) return [];
 
-  const sessionsFilter = options.sessions;
+  const sessionsFilter = normalizeSessionFilters(options.sessions);
   const useDiscrete = sessionsFilter !== undefined && sessionsFilter.length > 0;
   if (useDiscrete) {
     await validateSessionsExist(fs, sessionsDir, sessionsFilter);
   }
   const filter: ReleaseFilter = {
-    wanted: useDiscrete ? new Set(sessionsFilter) : null,
-    sinceInt: useDiscrete ? null : sessionCodeInt(options.since),
+    wanted: useDiscrete ? sessionsFilter : null,
+    since: useDiscrete ? null : sessionCorrelative(options.since),
     includeOpen,
     includeClosed,
   };
@@ -55,18 +56,50 @@ export async function listSessionsForRelease(
 }
 
 interface ReleaseFilter {
-  wanted: Set<string> | null;
-  sinceInt: number | null;
+  wanted: string[] | null;
+  since: string | null;
   includeOpen: boolean;
   includeClosed: boolean;
 }
 
+/**
+ * `export-*` also replays a sealed scope, and older scopes named a session by
+ * its folder rather than only its number. Normalize those input spellings here;
+ * the filter and every persisted artifact still use a complete correlative.
+ */
+function normalizeSessionFilters(input: readonly string[] | undefined): string[] | undefined {
+  if (input === undefined) return undefined;
+  const normalized: string[] = [];
+  for (const raw of input) {
+    const code = sessionCorrelative(raw);
+    if (code === null) {
+      throw new SessionsCsvError(
+        "INVALID_INPUT",
+        `--sessions: token inválido '${raw}' (esperado: correlativo o carpeta de sesión)`,
+      );
+    }
+    if (normalized.some((existing) => sameCorrelative(existing, code))) {
+      throw new SessionsCsvError("INVALID_INPUT", `--sessions: código duplicado '${raw}'`);
+    }
+    normalized.push(code);
+  }
+  return normalized;
+}
+
 function includeReleaseEntry(entry: ReleaseSession, filter: ReleaseFilter): boolean {
+  const code = sessionCorrelative(entry.folder) ?? sessionCorrelative(entry.code);
   if (filter.wanted !== null) {
-    if (entry.code === null || !filter.wanted.has(entry.code)) return false;
+    const matchesWanted = filter.wanted.some((wanted) => {
+      const wantedCode = sessionCorrelative(wanted);
+      return wantedCode !== null && code !== null && sameCorrelative(wantedCode, code);
+    });
+    if (!matchesWanted) {
+      return false;
+    }
   } else {
-    const codeInt = sessionCodeInt(entry.code);
-    if (filter.sinceInt !== null && codeInt !== null && codeInt <= filter.sinceInt) return false;
+    if (filter.since !== null && code !== null && compareCorrelatives(code, filter.since) <= 0) {
+      return false;
+    }
   }
   if (entry.state === "active" && !filter.includeOpen) return false;
   if (entry.state === "closed" && !filter.includeClosed) return false;

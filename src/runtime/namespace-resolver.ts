@@ -13,8 +13,6 @@ export interface ResolvedNamespace {
 export const DEFAULT_NAMESPACE = "workflow";
 export const ENV_VAR_NAMESPACE = "AW_NAMESPACE";
 
-const LEGACY_NAMESPACE_DENYLIST = new Set<string>(["qtc"]);
-
 /**
  * Absolute path to the CLI's global namespace-pin file. Single source shared by
  * the resolver (reads it, source "config") and `aw self namespace --pin` (writes
@@ -63,7 +61,6 @@ export class NamespaceResolver {
       if (!entry.name.startsWith(".")) continue;
       const candidate = entry.name.slice(1);
       if (!NAMESPACE_REGEX.test(candidate)) continue;
-      if (LEGACY_NAMESPACE_DENYLIST.has(candidate)) continue;
       const sessionsPath = join(entry.path, "sessions");
       if (await this.fs.exists(sessionsPath)) {
         matches.push(candidate as Namespace);

@@ -9,6 +9,8 @@ import {
   validateDesignManifest,
 } from "../../domain/design/manifest.js";
 import { isRecord } from "../../domain/design/validation.js";
+import type { ProposalBase } from "../../domain/proposal.js";
+import { baseDigest } from "../../domain/proposal.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 
 /**
@@ -41,6 +43,12 @@ export interface DesignPackageEntry {
   /** Workspace-relative directory the package lives in RIGHT NOW. */
   path: string;
   manifest_path: string;
+  /**
+   * The compare-and-swap base of the exact manifest bytes parsed into
+   * {@link manifest}.  A publication must carry this snapshot forward instead
+   * of re-reading the manifest after it has derived candidate bytes from it.
+   */
+  manifest_base: ProposalBase | null;
   current_baseline: CurrentBaseline | null;
   /**
    * The validated manifest, for whoever needs to resolve inside the package
@@ -124,6 +132,7 @@ async function readPackage(
     title: null,
     path,
     manifest_path: manifestPath,
+    manifest_base: null,
     declared_id: null,
     current_baseline: null,
     manifest: null,
@@ -146,9 +155,11 @@ async function readPackage(
     };
   }
 
+  let content: string;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await fs.readText(manifestAbs));
+    content = await fs.readText(manifestAbs);
+    parsed = JSON.parse(content);
   } catch (err) {
     return {
       ...base,
@@ -163,12 +174,28 @@ async function readPackage(
     };
   }
 
+  // This is deliberately derived from the SAME read whose bytes are parsed
+  // below.  Re-reading here would turn a concurrent M1 -> M2 update into a
+  // proposal calculated from M1 but protected by M2, which is no CAS at all.
+  const manifestBase: ProposalBase = { path: manifestPath, digest: baseDigest(content) };
+
   const declared = isRecord(parsed) && typeof parsed.id === "string" ? parsed.id : null;
   const validation = validateDesignManifest(parsed, manifestPath);
   if (!validation.ok || validation.value === null) {
-    return { ...base, declared_id: declared, failures: validation.failures };
+    return {
+      ...base,
+      manifest_base: manifestBase,
+      declared_id: declared,
+      failures: validation.failures,
+    };
   }
-  return { ...base, declared_id: declared, ...project(validation.value), ok: true };
+  return {
+    ...base,
+    manifest_base: manifestBase,
+    declared_id: declared,
+    ...project(validation.value),
+    ok: true,
+  };
 }
 
 function project(

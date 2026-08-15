@@ -1,4 +1,4 @@
-# QTC Session History
+# Session History
 
 | Sesión | Fecha | Estado | Refs |
 |--------|-------|--------|------|

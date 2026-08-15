@@ -28,8 +28,8 @@ export interface PreviewSentinel {
 export interface PreviewRow {
   folder: string;
   state: string;
-  /** `null` = the session declared no date; the row is born with today's. */
-  date: string | null;
+  /** `—` = the legacy session never declared a date. */
+  date: string;
 }
 
 export interface WorkspaceMigrationPreview {
@@ -125,10 +125,8 @@ export function renderMigrationApplied(applied: WorkspaceMigrationApplied): stri
   if (applied.rows_seeded.length > 0) {
     lines.push(`Filas reservadas: ${applied.rows_seeded.join(", ")}`);
   }
-  if (applied.rows_dated_today.length > 0) {
-    lines.push(
-      `Sin fecha declarada — su fila nació con la de hoy: ${applied.rows_dated_today.join(", ")}`,
-    );
+  if (applied.rows_without_date.length > 0) {
+    lines.push(`Sin fecha declarada — su fila conserva —: ${applied.rows_without_date.join(", ")}`);
   }
   if (lines.length === 1) lines.push("No había nada que migrar.");
   lines.push(`Próximo correlativo: ${applied.next_correlative}`);
@@ -145,8 +143,8 @@ function conflictLines(conflicts: readonly MigrationConflict[]): string[] {
   return lines;
 }
 
-function dateNote(date: string | null): string {
-  return date === null ? "sin fecha declarada: la fila nace con la de hoy" : date;
+function dateNote(date: string): string {
+  return date === "—" ? "sin fecha declarada: la fila conserva —" : date;
 }
 
 function countOf(total: number, singular: string, plural: string): string {

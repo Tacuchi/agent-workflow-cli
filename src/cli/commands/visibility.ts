@@ -6,11 +6,11 @@ import {
 } from "../../application/visibility-doctor-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const visibilityCommand: QtcCommand<VisibilityDoctorResult> = {
+export const visibilityCommand: CliCommand<VisibilityDoctorResult> = {
   name: "visibility",
   describe:
     "Inspector de visibilidad multi-root del hub. Subcomandos: doctor [--workspace dir] [--global] " +

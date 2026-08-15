@@ -9,7 +9,7 @@ export type SessionState = "active" | "closed";
 
 export type ExitCode = 0 | 1 | 2;
 
-export interface QtcError {
+export interface CliError {
   code: string;
   message: string;
   details?: Record<string, unknown>;
@@ -18,6 +18,6 @@ export interface QtcError {
 export interface CommandResult<T = unknown> {
   ok: boolean;
   data?: T;
-  error?: QtcError;
+  error?: CliError;
   exitCode: ExitCode;
 }

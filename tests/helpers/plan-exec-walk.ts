@@ -74,6 +74,17 @@ function resultFor(
       id,
       passed: true,
       detail: `salida real de ${id}`,
+      ...(id === "workline.source-bounded"
+        ? {
+            proof: {
+              kind: "inspection" as const,
+              source: "workspace",
+              relative_cwd: ".",
+              checkout_digest: "test-checkout",
+              invocation: { artifact: "tests/helpers/plan-exec-walk.ts" },
+            },
+          }
+        : {}),
     })),
     effects: {
       planned: [...effectsOf(stopped)],

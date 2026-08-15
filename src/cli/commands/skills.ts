@@ -11,7 +11,7 @@ import {
 import type { ResolvedSkills } from "../../domain/skills.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import type { CliContext } from "../types.js";
 
 interface SkillsData {
@@ -31,7 +31,7 @@ interface SkillsData {
   capabilities: CapabilityReadinessReport[];
 }
 
-export const skillsCommand: QtcCommand<SkillsData> = {
+export const skillsCommand: CliCommand<SkillsData> = {
   name: "skills",
   describe:
     "Show resolved capability→skill bindings (skills.toml cascade). Usage: aw skills [--detail] — " +

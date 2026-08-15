@@ -1,23 +1,21 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+  type McpConnectionRef,
   type McpDriftReport,
   type McpHost,
-  type McpInstance,
   buildMcpEntry,
-  normalizeMcpInstance,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
-import { dsnKeyCandidates, dsnKeyForInstance, readBootstrapDsn } from "./dsn-reader-service.js";
+import { readDsnFile } from "./dsn-reader-service.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
 import { resolveScopeDir } from "./mcp-scope-common.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface McpDoctorInput {
   hosts: McpHost[];
-  instances: McpInstance[];
+  connections: McpConnectionRef[];
   scope: "workspace" | "global";
   workspace?: string;
-  dsnVars?: Record<string, string>;
 }
 
 export interface McpDoctorResult {
@@ -39,12 +37,12 @@ export function runMcpDoctor(
   input: McpDoctorInput,
 ): McpDoctorResult {
   const scopeDir = resolveScopeDir(env, input);
-  const dsn = readBootstrapDsn(paths);
+  const dsn = readDsnFile(paths);
   const reports: McpDriftReport[] = [];
 
   for (const host of input.hosts) {
-    for (const instance of input.instances) {
-      reports.push(buildReport(env, host, instance, scopeDir, dsn, input.scope, input.dsnVars));
+    for (const connection of input.connections) {
+      reports.push(buildReport(env, host, connection, scopeDir, dsn, input.scope));
     }
   }
 
@@ -62,26 +60,15 @@ export function runMcpDoctor(
 function buildReport(
   env: EnvPort,
   host: McpHost,
-  instance: McpInstance,
+  connection: McpConnectionRef,
   scopeDir: string,
-  dsn: ReturnType<typeof readBootstrapDsn>,
+  dsn: ReturnType<typeof readDsnFile>,
   scope: "workspace" | "global",
-  dsnVars: Record<string, string> | undefined,
 ): McpDriftReport {
-  const declaredVar = dsnVars?.[normalizeMcpInstance(instance)];
-  const entry = buildMcpEntry(instance, declaredVar);
+  const entry = buildMcpEntry(connection.name, connection.dsnVar);
   const snapshot = readMcpEntry(host, scopeDir, entry.name, scope);
-  // Probe the same chain the launcher probes, in the same order. A doctor that
-  // only knows the canonical name reports `missing-dsn` for a connection the
-  // launcher would start happily — a diagnosis contradicting the runtime is
-  // worse than none. What gets reported is the variable that carries the value,
-  // never the canonical name assumed.
-  const candidates = declaredVar !== undefined ? [declaredVar] : dsnKeyCandidates(instance);
-  const resolvedKey =
-    candidates.find((key) => Boolean(env.get(key))) ??
-    (dsn.exists ? candidates.find((key) => Boolean(dsn.values[key])) : undefined);
-  const dsnKey = resolvedKey ?? candidates[0] ?? dsnKeyForInstance(instance);
-  const dsnPresent = resolvedKey !== undefined;
+  const dsnKey = connection.dsnVar;
+  const dsnPresent = Boolean(env.get(dsnKey)) || Boolean(dsn.values[dsnKey]);
 
   const dsnInfo = {
     path: dsn.path,
@@ -93,7 +80,7 @@ function buildReport(
   if (!snapshot.exists) {
     return {
       host,
-      instance,
+      instance: connection.name,
       scope,
       target: snapshot.target,
       dsn: dsnInfo,
@@ -101,7 +88,7 @@ function buildReport(
       status: dsnPresent ? "missing-mcp" : "missing-dsn",
       detail: dsnPresent
         ? `Falta entrada MCP '${entry.name}' en ${snapshot.target}`
-        : `Ni DSN ni MCP registrados para ${instance}`,
+        : `Ni DSN ni MCP registrados para ${connection.name}`,
     };
   }
 
@@ -109,7 +96,7 @@ function buildReport(
   if (!dsnPresent) {
     return {
       host,
-      instance,
+      instance: connection.name,
       scope,
       target: snapshot.target,
       dsn: dsnInfo,
@@ -122,7 +109,7 @@ function buildReport(
   if (!matches) {
     return {
       host,
-      instance,
+      instance: connection.name,
       scope,
       target: snapshot.target,
       dsn: dsnInfo,
@@ -134,7 +121,7 @@ function buildReport(
 
   return {
     host,
-    instance,
+    instance: connection.name,
     scope,
     target: snapshot.target,
     dsn: dsnInfo,

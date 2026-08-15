@@ -11,7 +11,7 @@ import type { SemanticRequest } from "../../application/semantic-operation/proto
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail, failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -20,7 +20,7 @@ type FixGitData =
   | ({ stage: "apply" } & FixGitApplied)
   | { stage: "commit"; committed: true; message: string };
 
-export const fixGitCommand: QtcCommand<FixGitData> = {
+export const fixGitCommand: CliCommand<FixGitData> = {
   name: "fix-git",
   describe:
     "Resuelve conflictos de merge inequívocos: prepara las tres versiones, valida la resolución semántica y stagea solo archivos aún en conflicto. " +

@@ -8,6 +8,8 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
+const ALPHA = { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" };
+
 function writeDsn(paths: PathsService, lines: Record<string, string>): void {
   const file = paths.userDsnFile();
   mkdirSync(dirname(file), { recursive: true });
@@ -32,17 +34,17 @@ describe("runMcpDoctor", () => {
   });
 
   it("status=ok cuando DSN + entry MCP correctos", () => {
-    writeDsn(paths, { DB_CERT_DSN: "postgres://x" });
+    writeDsn(paths, { ALPHA_DATABASE_URL: "postgres://x" });
     const setup = runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace: root,
     });
     if ("ok" in setup) throw new Error("setup refused");
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace: root,
     });
@@ -51,10 +53,10 @@ describe("runMcpDoctor", () => {
   });
 
   it("status=missing-mcp cuando DSN existe pero entry no", () => {
-    writeDsn(paths, { DB_CERT_DSN: "postgres://x" });
+    writeDsn(paths, { ALPHA_DATABASE_URL: "postgres://x" });
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace: root,
     });
@@ -65,7 +67,7 @@ describe("runMcpDoctor", () => {
   it("status=missing-dsn cuando ni DSN ni entry existen", () => {
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace: root,
     });
@@ -76,13 +78,13 @@ describe("runMcpDoctor", () => {
   it("status=dsn-mismatch cuando entry existe pero DSN no", () => {
     runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace: root,
     });
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace: root,
     });
@@ -91,12 +93,12 @@ describe("runMcpDoctor", () => {
   });
 
   it("status=extra-entry cuando entry existe pero shape difiere", () => {
-    writeDsn(paths, { DB_CERT_DSN: "postgres://x" });
+    writeDsn(paths, { ALPHA_DATABASE_URL: "postgres://x" });
     writeFileSync(
       join(root, ".mcp.json"),
       JSON.stringify({
         mcpServers: {
-          cert: {
+          alpha: {
             command: "node",
             args: ["custom.js"],
             env: { CUSTOM: "true" },
@@ -106,7 +108,7 @@ describe("runMcpDoctor", () => {
     );
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
-      instances: ["cert"],
+      connections: [ALPHA],
       scope: "workspace",
       workspace: root,
     });
@@ -114,25 +116,24 @@ describe("runMcpDoctor", () => {
     expect(result.reports[0]?.status).toBe("extra-entry");
   });
 
-  it("ve el DSN por el mismo candidato que usaría el launcher, y reporta esa variable", () => {
-    // Un diagnóstico que dice `missing-dsn` sobre una conexión que el launcher
-    // arranca sin problema contradice al runtime: es peor que no diagnosticar.
-    writeDsn(paths, { DB_CERT_DSN: "postgres://x" });
+  it("usa la variable DSN exacta registrada", () => {
+    const tenantAlpha = { name: "tenant-alpha", dsnVar: "TENANT_ALPHA_DATABASE_URL" };
+    writeDsn(paths, { TENANT_ALPHA_DATABASE_URL: "postgres://x" });
     const setup = runMcpSetup(env, {
       hosts: ["claude"],
-      instances: ["qtc-cert"],
+      connections: [tenantAlpha],
       scope: "workspace",
       workspace: root,
     });
     if ("ok" in setup) throw new Error("setup refused");
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
-      instances: ["qtc-cert"],
+      connections: [tenantAlpha],
       scope: "workspace",
       workspace: root,
     });
     expect(result.reports[0]?.dsn.present).toBe(true);
-    expect(result.reports[0]?.dsn.key).toBe("DB_CERT_DSN");
+    expect(result.reports[0]?.dsn.key).toBe("TENANT_ALPHA_DATABASE_URL");
     expect(result.reports[0]?.status).toBe("ok");
   });
 });

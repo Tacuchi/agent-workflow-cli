@@ -12,7 +12,7 @@ import { renderDirectiveHuman } from "../../domain/flow/directive.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId, readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, sessionCodeFlag } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail, failSemantic, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -57,7 +57,8 @@ const ENVELOPE = [
   "",
   "  execution       outcome: completed | needs_input | blocked | failed | cancelled",
   "                  invocation: {program, args[], target, input} — el OBJETO idéntico al que la directiva selló; si cambia el programa, un argumento, el target o el input, se rechaza.",
-  "                  validations: [{id, passed, detail}] — un ítem por CADA evidencia que la directiva exige, con `passed: true` y `detail` no vacío: ahí va la salida real de la herramienta, no una afirmación sobre ella.",
+  "                  validations: [{id, passed, detail, proof?}] — un ítem por CADA evidencia que la directiva exige, con `passed: true` y `detail` no vacío: ahí va la salida real de la herramienta, no una afirmación sobre ella.",
+  "                  proof es obligatorio para `workline.source-bounded`: {kind: 'command'|'inspection', source, relative_cwd, checkout_digest, invocation}; sólo acredita un checkout vigente.",
   "                  effects: {planned[], approved[], applied[]} — el registro de clases de efecto, no una lista.",
   "                  output: opcional — {value, reference: {id, revision, digest, locator}, completeness} o null.",
   "",
@@ -69,7 +70,7 @@ const ENVELOPE = [
   "  authorization   --approval <digest> con el digest que la directiva nombra en `siguiente:` — NO es el state_digest · choice: opcional, y con `Cerrar` o `Compactar` no se pide aprobación.",
 ].join("\n");
 
-export const flowCommand: QtcCommand<FlowDirective> = {
+export const flowCommand: CliCommand<FlowDirective> = {
   name: "flow",
   describe: `Avanza un recorrido de Workline hasta su primera frontera no determinista y devuelve su directiva. Verbos: ${VERBS.join(" | ")}. La respuesta de submit entra por stdin como JSON y la aprobación de efecto viaja aparte en --approval. recover le devuelve los intentos a la frontera agotada vigente conservando todo lo aplicado, y se niega si esa frontera ya ejerció efectos. Usage: aw flow advance --session <código> [--flow <flow> --adopt] · aw flow recover --session <código> [--transition <id>].
 
@@ -145,6 +146,7 @@ ${ENVELOPE}`,
           raw: await readRequiredStdin(),
           approval: approval ?? null,
           executor,
+          git: ctx.git,
         }),
       );
     }

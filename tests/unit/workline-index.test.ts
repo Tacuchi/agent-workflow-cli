@@ -130,6 +130,18 @@ const READY = "---\nstatus: ready-for-plan\n---\n\n# Spec\n";
 const DRAFT = "---\nstatus: draft\n---\n\n# Spec\n";
 
 describe("buildWorklineIndex — the spec→plan relation drives what is unplanned", () => {
+  it("does not fall back to literal docs paths when [docs] is invalid", async () => {
+    const fs = workspace();
+    fs.file("/cwd/.workflow/skills.toml", '[docs]\nplan = "knowledge/plans"\n');
+    fs.file("/cwd/docs/specs/001-spec-a.md", READY);
+    fs.file("/cwd/docs/plans/001-plan-a.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
+
+    const out = await index(fs);
+    expect(out.docs_canon_error).toContain("todavía no admite un destino personalizado");
+    expect(out.specs).toEqual([]);
+    expect(out.plans).toEqual([]);
+  });
+
   it("drops a spec from the pipeline once a plan proves it derives from it", async () => {
     const fs = workspace();
     fs.file("/cwd/docs/specs/003-spec-a.md", READY);

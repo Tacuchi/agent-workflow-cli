@@ -143,6 +143,10 @@ async function ensureUnits(
   }
   const acquired: IsolationUnit[] = [];
   for (const alias of scope.sources) {
+    // `workspace` is the documentary/control checkout itself. It is a valid
+    // source-bounded proof surface, but never a source repository that needs a
+    // per-session Git worktree.
+    if (alias === "workspace") continue;
     const result = await runWorktree(
       { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
       { action: "ensure", alias, sessionCode: run.code },

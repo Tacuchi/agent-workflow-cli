@@ -8,7 +8,7 @@ import type { SessionResolutionError } from "../../application/session-resolver.
 import type { CommandResult } from "../../domain/types.js";
 import { readHookStdin, resolveContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail, failSessionResolution, writeStderr } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -33,7 +33,7 @@ async function lifecycleOptions(
   };
 }
 
-export const checkpointWriteCommand: QtcCommand = {
+export const checkpointWriteCommand: CliCommand = {
   name: "checkpoint-write",
   describe:
     "Write CHECKPOINT.md for the conversation's session (or --code). PreCompact hook target. " +
@@ -67,7 +67,7 @@ function blockedNotice(error: SessionResolutionError): string {
   );
 }
 
-export const autoCompactOnCloseCommand: QtcCommand = {
+export const autoCompactOnCloseCommand: CliCommand = {
   name: "auto-compact-on-close",
   describe: "SessionEnd hook target — checkpoint the conversation's session, and only that one.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

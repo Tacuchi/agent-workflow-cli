@@ -4,11 +4,10 @@ Loaded when a code-editing run touches the database (signal `db`).
 
 ## DB scripts-only — the AI never executes DML/DDL
 
-Distinguished by **execution**, not by file (see the [`SCRIPTS.sql`](../artifacts/artifacts-core/SCRIPTS.sql) schema):
+Classify by **role**, not file (see [`SCRIPTS.sql`](../artifacts/artifacts-core/SCRIPTS.sql)):
 
-- **Read-only queries** (diagnosis/validation) → `SCRIPTS.sql` (session artifact); the AI **does** execute them read-only via MCP (`sql-mutation-guard`).
-- **DDL/DML migrations** (schema/data changes) → the AI **drafts them in `SCRIPTS.sql`** (session artifact) but **NEVER executes them**.
+- **Read-only remote query** → research context: record query, digest and `RemoteContextSnapshot` before approval.
+- **Fixture/ephemeral DB test** → checkout proof; may validate a phase locally.
+- **DDL/DML migration** → draft in session `SCRIPTS.sql`; **NEVER execute**.
 
-> Mutating SQL **stays in the session**; it is never moved to `docs/`. Its promotion to `docs/scripts/` (forward + rollback) is done by a separate `export-*`, never by the loop.
-
-> **Showing beats asserting here:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document — it asks the session's script back, because no narration tells drafting from running.
+> Migration application is a non-blocking handoff, never a task, validation or exit condition. The plan closes on its local contract/tests; the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document and it verifies the session script, not narration.

@@ -7,11 +7,11 @@ import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import { type FuenteSpec, parseFuentesSpecs } from "../parsers/fuentes.js";
 import { parseWorkingBranches } from "../parsers/working-branches.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const workspaceInitCommand: QtcCommand<WorkspaceInitResult> = {
+export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
   name: "workspace-init",
   describe:
     "Initialize the current directory as an agent-workflow workspace (unifies the legacy hub-init + project-init; no project/hub distinction). Minimal scaffold: .workflow/sessions + skills.toml + WORKSPACE block + CLI-owned .gitignore; docs/ folders are born on demand (aw next-number). With external sources it also configures multi-root visibility. Idempotent; re-running reconciles and prunes the legacy upfront scaffold. Usage: aw workspace-init --source alias:path[:rama] (repeatable, 1+) [--working-branch alias:rama] [--qa-branch alias:rama] [--proyecto <name>] [--main-branch <branch>] [--workspace <dir>] [--dry-run] [--format human|json] [--detail].",

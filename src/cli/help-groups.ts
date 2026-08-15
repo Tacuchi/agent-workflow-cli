@@ -100,7 +100,6 @@ const GROUPS: readonly CommandGroup[] = [
       // does not create a workspace, it repairs the durable state of one that a
       // previous namespace left unreadable.
       "workspace-migrate",
-      "bootstrap-dsn",
     ],
   },
   { name: "Hooks", commands: ["hook"] },

@@ -1,11 +1,11 @@
 ---
 name: export-scripts
-description: "Consolidates the workspace's pending SQL into a single `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` bundle with continuous numbering after `00-ROLLBACK.sql`. Reads type-B migrations (DDL/DML) from two sources: `.workflow/sessions/<folder>/SCRIPTS.sql` across N sessions AND standalone `docs/scripts/*.sql` (excluding previous bundles). Ignores read-only type-A (diagnostic queries, not deliverables). Minimal SQL headers + a simple README (3 sections: Files / Apply / Revert). The rollback is derived from the forwards. Read-only/report: it NEVER executes SQL nor commits — the bundle is for a human/DBA to apply. Composes the `sql` capability. Use for 'release SQL bundle', 'prepare the prod push', 'consolidate pending SQLs'. User-invoked via `/w:export-scripts`."
+description: "Consolidates pending SQL into one `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` bundle with continuous numbering after `00-ROLLBACK.sql`. It publishes the net final state, not a chronological transcript. Reads type-B migrations (DDL/DML) from session `SCRIPTS.sql` and standalone `docs/scripts/*.sql`, excluding prior bundles and read-only research. Read-only/report: it NEVER executes SQL nor commits; external application is a handoff. Composes the `sql` capability. User-invoked via `/w:export-scripts`."
 ---
 
 # export-scripts — consolidated SQL bundle, simple and direct
 
-Consolidates the pending SQL migrations of N sessions + standalone files into a single bundle under `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with continuous numbering after `00-ROLLBACK.sql`. **Read-only / report** — the AI **never executes** the SQL; the user/DBA applies the bundle manually.
+Consolidates the pending SQL migrations of N sessions + standalone files into a single bundle under `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with continuous numbering after `00-ROLLBACK.sql`. **Read-only / report** — the AI **never executes** the SQL; external application is an optional handoff.
 
 > `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-scripts.md`.
 
@@ -19,16 +19,16 @@ The **`sql`** capability (built-in default `sql`), resolved via `.workflow/skill
 
 ## When to use
 
-- "Release SQL bundle", "prepare the prod push", "consolidate pending SQLs".
-- Before promoting a branch to certification / `main`.
+- "Release SQL bundle", "consolidate pending SQLs".
+- Before an authorized release handoff.
 - After several `exec`/`quick` sessions left `SCRIPTS.sql` files with migrations.
 
 ## What it does
 
 1. Collects the workspace's SQL from **two sources**: each corpus session's type-B `SCRIPTS.sql` + standalone `docs/scripts/*.sql` (excluding previous bundles).
 2. Classifies the statements by canonical category (DDL-TABLES / DDL-FUNCTIONS / DML / INSERTS).
-3. Consolidates cross-source per category with **continuous numbering** after `00-ROLLBACK.sql`.
-4. Writes the consolidated forwards (each statement with its origin, 1 line).
+3. Resolves the **net final state** across sources, then groups it by category with **continuous numbering** after `00-ROLLBACK.sql`.
+4. Writes only the forwards needed for that final state, retaining traceable origin where useful.
 5. Derives `00-ROLLBACK.sql` **at the end**, reading the already-written forwards.
 6. Writes a minimal `README.md` (Files / Apply / Revert).
 
@@ -90,9 +90,13 @@ If the A + B union is empty → **abort**: there is no pending SQL in the worksp
 
 `aw next-number docs/scripts` → `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`.
 
-### Step 3 — Classification and internal order
+### Step 3 — Net final state, classification and internal order
 
-Group by canonical category: `01 DDL-TABLES` · `02 DDL-FUNCTIONS` · `03 DML` · `04 INSERTS`. Internal order chronological by origin (ascending session → ascending stmt; standalone interleaved by lexical filename order).
+Reconcile the session and standalone candidates against the code and the declared final state. Omit
+objects born and retired within the sequence; write migrated objects directly in their final form;
+omit explicitly retired objects even when their deletion is absent from the input. Then group the
+remaining statements by canonical category: `01 DDL-TABLES` · `02 DDL-FUNCTIONS` · `03 DML` ·
+`04 INSERTS`. Origin is traceability, not an ordering authority over the final contract.
 
 ### Step 4 — Continuous numbering (no gaps)
 
@@ -100,7 +104,7 @@ Assign sequential numbers **only to categories with content**, in canonical orde
 
 ### Step 5 — Write the forwards
 
-Per category with content, one file with a 1-2 line header (`-- 0N-<CATEGORY>.sql — bundle NNN-export-scripts-YYYY-MM-DD`) and, per statement, **a one-line origin comment** (`-- sessionXXX / stmt-id` or `-- docs/scripts/001-filename.sql`) followed by the SQL exactly as the developer wrote it (wrapped in `BEGIN; … COMMIT;` where it applies). Do not replicate motivation/impact/idempotency already present at the origin; no statement index, no invented verification SELECTs.
+Per category with content, one file with a 1-2 line header (`-- 0N-<CATEGORY>.sql — bundle NNN-export-scripts-YYYY-MM-DD`) and traceable origin comments where useful. Write SQL for the reconciled final state, not necessarily the original statement verbatim; preserve explicit intent, idempotency and safe transaction boundaries. Do not replicate motivation/impact already present at the origin; no statement index, no invented verification SELECTs.
 
 ### Step 6 — Derive `00-ROLLBACK.sql` (at the end)
 

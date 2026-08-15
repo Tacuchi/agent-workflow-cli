@@ -2,13 +2,13 @@ import { type WorktreeInput, runWorktree } from "../../application/worktree-serv
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId } from "../context-id.js";
 import { type ParsedArgs, flagValue, sessionCodeFlag } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 const ACTIONS = new Set<WorktreeInput["action"]>(["ensure", "list", "release", "integrate"]);
 
-export const worktreeCommand: QtcCommand = {
+export const worktreeCommand: CliCommand = {
   name: "worktree",
   describe:
     "Isolation unit of a flow: one git worktree of a source on its own branch, so concurrent flows never share a working tree. " +

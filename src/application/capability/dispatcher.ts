@@ -95,7 +95,8 @@ export type HandlerResult =
       kind: "durable";
       artifacts: PublishableArtifact[];
       output: OperationOutput;
-      base?: ProposalBase | null;
+      /** Every document the candidate was computed from, re-checked at apply. */
+      bases?: ProposalBase[];
     };
 
 export interface CapabilityHandler {
@@ -278,7 +279,7 @@ async function attemptStage(
     request,
     authorization,
     artifacts: result.artifacts,
-    base: result.base ?? null,
+    bases: result.bases ?? [],
   });
   if (!prepared.ok) {
     return receiptOf(request, descriptor, resolved, {

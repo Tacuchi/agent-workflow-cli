@@ -1,16 +1,33 @@
 import { join } from "node:path";
+import {
+  correlativeValue,
+  leadingCorrelativeInput,
+  normalizeCorrelativeInput,
+  prefixedCorrelativeInput,
+} from "../../domain/correlative.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
 import type { PathsService } from "../paths-service.js";
 
-export function sessionCodeInt(code: string | null | undefined): number | null {
+export function sessionCorrelative(code: string | null | undefined): string | null {
   if (!code) return null;
-  let s = String(code)
-    .trim()
-    .replace(/session/g, "");
-  s = (s.split("-")[0] ?? "").trim();
-  const n = Number.parseInt(s, 10);
-  return Number.isNaN(n) ? null : n;
+  const value = String(code).trim();
+  return (
+    normalizeCorrelativeInput(value) ??
+    prefixedCorrelativeInput(value, "session") ??
+    leadingCorrelativeInput(value)
+  );
+}
+
+/**
+ * Compatibility projection for older release callers. New range comparisons
+ * use `sessionCorrelative` and the domain comparator so `999 → 1000` stays in
+ * numeric order.
+ */
+export function sessionCodeInt(code: string | null | undefined): number | null {
+  const correlative = sessionCorrelative(code);
+  const value = correlative === null ? null : correlativeValue(correlative);
+  return value === null ? null : Number(value);
 }
 
 export async function collectFilesByExt(

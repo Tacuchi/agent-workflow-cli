@@ -1,4 +1,5 @@
 import { type MarkdownHeading, scanMarkdown } from "../markdown.js";
+import { parsePlanSourceBoundary } from "../source-boundary-policy.js";
 
 export const PHASE_STATES = ["pendiente", "en ejecución", "bloqueada", "validada"] as const;
 
@@ -9,6 +10,8 @@ export interface PhaseItem {
   n: number;
   name: string;
   state: PhaseState;
+  /** Explicit aliases from `> Fuentes:`, or `null` on a legacy/malformed phase. */
+  sources: string[] | null;
   /** first `> Bloqueo:` line of the block, whatever the state; `null` when absent */
   blocker: string | null;
 }
@@ -76,11 +79,18 @@ export function parsePhases(text: string): ParsedPhases {
   }
 
   if (!scan.anyStated) return { total: 0, validated: 0, blocked: 0, items: [] };
+  const sourcesByPhase = new Map(
+    parsePlanSourceBoundary(text).phases.map((phase) => [phase.n, phase.sources]),
+  );
+  const items = scan.items.map((phase) => ({
+    ...phase,
+    sources: sourcesByPhase.get(phase.n) ?? null,
+  }));
   return {
-    total: scan.items.length,
-    validated: scan.items.filter((p) => p.state === "validada").length,
-    blocked: scan.items.filter((p) => p.state === "bloqueada").length,
-    items: scan.items,
+    total: items.length,
+    validated: items.filter((p) => p.state === "validada").length,
+    blocked: items.filter((p) => p.state === "bloqueada").length,
+    items,
   };
 }
 
@@ -113,7 +123,13 @@ function isTasksHeading(name: string): boolean {
 function readPhaseHeading(name: string): PhaseItem | null {
   const match = PHASE_NAME_RE.exec(name);
   if (!match?.[1]) return null;
-  return { n: Number(match[1]), name: (match[2] ?? "").trim(), state: "pendiente", blocker: null };
+  return {
+    n: Number(match[1]),
+    name: (match[2] ?? "").trim(),
+    state: "pendiente",
+    sources: null,
+    blocker: null,
+  };
 }
 
 /**

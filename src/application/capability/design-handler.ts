@@ -16,7 +16,11 @@
  */
 
 import { join } from "node:path";
-import type { CapabilityFailure, ValidationOutcome } from "../../domain/capability/protocol.js";
+import type {
+  CapabilityFailure,
+  CapabilityInputValue,
+  ValidationOutcome,
+} from "../../domain/capability/protocol.js";
 import { requireAdapter } from "../../domain/design/adapter.js";
 import type { DesignMaturity } from "../../domain/design/artifact.js";
 import { DESIGN_DESCRIPTOR, DESIGN_OPERATIONS } from "../../domain/design/capability.js";
@@ -55,9 +59,11 @@ import {
   classifySource,
   reportSources,
 } from "../../domain/design/sources.js";
-import { type ProposalBase, baseDigest } from "../../domain/proposal.js";
+import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
+import type { ProposalBase } from "../../domain/proposal.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { localDateIso } from "../dates.js";
+import { type ConsumerDocument, readConsumerDocument } from "../design/consumer-document.js";
 import { currentEntries, gatePackageContent } from "../design/design-content-gate-service.js";
 import {
   type DesignIndex,
@@ -75,6 +81,7 @@ import {
   buildSimpleProposal,
   resolveSimpleTarget,
 } from "../design/design-simple-service.js";
+import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { buildSemanticRequest, parseSemanticResponse } from "../semantic-operation/protocol.js";
 import type { PublishableArtifact } from "../semantic-operation/publish.js";
 import type { CapabilityHandler, HandlerContext, HandlerResult } from "./dispatcher.js";
@@ -244,6 +251,43 @@ async function authoring(ctx: HandlerContext): Promise<HandlerResult> {
   }
   const workspace = ctx.workspace;
 
+  const consumerInput = inputOf(ctx, "consumer_document");
+  let docsCanon: CoreDocsCanon = DEFAULT_CORE_DOCS_CANON;
+  // A compound design publication changes a spec or plan in the same durable
+  // effect. Resolve the shared documentary roots only when this operation has a
+  // consumer (or is required to carry one), so a package-only design remains
+  // independent while a consumer can never use a layout custody/retirement do
+  // not share.
+  if (consumerInput !== undefined || requiresConsumerDocument(ctx)) {
+    const resolved = await resolveCoreDocsCanon(ctx.fs, ctx.paths);
+    if (!resolved.ok) {
+      return {
+        kind: "blocked",
+        failure: {
+          code: "DOCS_CANON_INVALID",
+          message: resolved.error,
+          action: "corregí [docs] para conservar el layout documental canónico antes de publicar",
+        },
+      };
+    }
+    docsCanon = resolved.canon;
+  }
+
+  const consumer = readConsumerDocument(consumerInput, docsCanon);
+  if (!consumer.ok) return { kind: "blocked", failure: consumer.failure };
+  if (requiresConsumerDocument(ctx) && consumer.value === null) {
+    return {
+      kind: "blocked",
+      failure: {
+        code: "DESIGN_CONSUMER_REQUIRED",
+        message:
+          "esta publicación compuesta fija un baseline nuevo y necesita el documento consumidor final",
+        action:
+          "pasá 'consumer_document' como attachment con los bytes finales, su path de spec/plan y el digest base",
+      },
+    };
+  }
+
   const precondition = await operationPrecondition(ctx);
   if (precondition !== null) return { kind: "blocked", failure: precondition };
 
@@ -307,10 +351,28 @@ async function authoring(ctx: HandlerContext): Promise<HandlerResult> {
 
   const { target } = route.value;
   if (target.mode === "simple") {
-    return simpleProposal(ctx, workspace, report, route.value, target.simple, answered);
+    return simpleProposal(
+      ctx,
+      workspace,
+      report,
+      route.value,
+      target.simple,
+      answered,
+      consumer.value,
+      docsCanon,
+    );
   }
   if (target.mode === "package") {
-    return packageProposal(ctx, workspace, report, route.value, target.package, answered);
+    return packageProposal(
+      ctx,
+      workspace,
+      report,
+      route.value,
+      target.package,
+      answered,
+      consumer.value,
+      docsCanon,
+    );
   }
   return projectionProposal(ctx, workspace, report, route.value, target.projection, answered);
 }
@@ -350,6 +412,8 @@ interface PackageTarget {
   revision: number;
   /** The current manifest, or the initial one a create synthesized. */
   manifest: DesignManifest;
+  /** The exact manifest snapshot {@link manifest} was resolved from. */
+  manifest_base: ProposalBase | null;
 }
 
 /**
@@ -633,6 +697,7 @@ function mintPackageTarget(
       path: designFolder(root.root, packageId, designSlug(title)),
       revision: 1,
       manifest: initialPackageManifest(packageId, title, localDateIso(new Date())),
+      manifest_base: null,
     },
   };
 }
@@ -751,6 +816,7 @@ function continuePackageTarget(ctx: HandlerContext, index: DesignIndex): Package
       path: found.path,
       revision: (current?.revision ?? 0) + 1,
       manifest,
+      manifest_base: found.manifest_base,
     },
   };
 }
@@ -785,6 +851,8 @@ async function simpleProposal(
   route: RouteDecision,
   target: SimpleTarget,
   answered: readonly { path: string; content: string }[],
+  consumer: ConsumerDocument | null,
+  docsCanon: CoreDocsCanon,
 ): Promise<HandlerResult> {
   const documentPath = `${target.path}/${SIMPLE_DESIGN_FILE}`;
   const document = answered.find((a) => a.path === documentPath);
@@ -803,6 +871,8 @@ async function simpleProposal(
     target,
     document: document.content,
     published: localDateIso(new Date()),
+    consumer_document: consumer,
+    docs_canon: docsCanon,
   });
   if (!built.ok) {
     const first = built.failures[0];
@@ -850,7 +920,7 @@ async function simpleProposal(
       reference: null,
       completeness: "partial",
     },
-    base: built.value.base,
+    bases: proposalBases(built.value.base, consumer?.base ?? null),
   };
 }
 
@@ -869,6 +939,8 @@ async function packageProposal(
   route: RouteDecision,
   target: PackageTarget,
   answered: readonly { path: string; content: string }[],
+  consumer: ConsumerDocument | null,
+  docsCanon: CoreDocsCanon,
 ): Promise<HandlerResult> {
   // From workspace-relative to package-relative, which is the vocabulary the
   // candidate builder speaks. The destination check already confined every
@@ -896,6 +968,8 @@ async function packageProposal(
     packagePath: target.path,
     files,
     published: localDateIso(new Date()),
+    consumer_document: consumer,
+    docs_canon: docsCanon,
   });
   if (!candidate.ok) {
     // The gate's own verdict, with its real code and next action: this is where
@@ -945,7 +1019,10 @@ async function packageProposal(
       // `complete` here would let a gate accept a proposal as a package.
       completeness: "partial",
     },
-    base: await packageManifestBase(ctx, workspace, target),
+    // `target.manifest_base` was captured with the exact bytes parsed into
+    // `target.manifest`. A concurrent change therefore fails at apply instead
+    // of being accidentally adopted as this candidate's CAS base.
+    bases: proposalBases(target.manifest_base, consumer?.base ?? null),
   };
 }
 
@@ -1030,7 +1107,7 @@ async function projectionProposal(
     },
     // Nothing to compare and swap: this publication reads no manifest to derive
     // its output, so there is no state it could have been computed against.
-    base: null,
+    bases: [],
   };
 }
 
@@ -1144,22 +1221,6 @@ async function publishedMaturity(
   }
   const verdict = simpleMaturity(parsed.value);
   return { attained: verdict.attained, reasons: verdict.reasons };
-}
-
-/**
- * The compare-and-swap base of a package proposal: the manifest as it stood
- * when the candidate was computed. Null when there is nothing on disk to have
- * moved — a create is protected by its destinations not existing.
- */
-async function packageManifestBase(
-  ctx: HandlerContext,
-  workspace: string,
-  target: PackageTarget,
-): Promise<ProposalBase | null> {
-  const path = `${target.path}/${DESIGN_MANIFEST_FILE}`;
-  const absolute = join(workspace, path);
-  if (!(await ctx.fs.exists(absolute))) return null;
-  return { path, digest: baseDigest(await ctx.fs.readText(absolute)) };
 }
 
 /** The verdict as the receipt states it: mode, signals and the one-line cause. */
@@ -1331,8 +1392,26 @@ function projectionContract(operation: string, target: ProjectionTarget): string
     .trim();
 }
 
+function inputOf(ctx: HandlerContext, name: string): CapabilityInputValue | undefined {
+  return ctx.request.inputs.find((i) => i.name === name);
+}
+
 function inputValue(ctx: HandlerContext, name: string): unknown {
-  return ctx.request.inputs.find((i) => i.name === name)?.value;
+  return inputOf(ctx, name)?.value;
+}
+
+/** A composed refine replaces its consumer in the same approved publication. */
+function requiresConsumerDocument(ctx: HandlerContext): boolean {
+  return (
+    AUTHORING_OPERATIONS.includes(ctx.operation.name) &&
+    ctx.request.caller.route === "compose" &&
+    (ctx.request.caller.flow === "spec-refine" || ctx.request.caller.flow === "plan-refine")
+  );
+}
+
+/** One proposal owns every non-null compare-and-swap base it depends on. */
+function proposalBases(...candidates: Array<ProposalBase | null>): ProposalBase[] {
+  return candidates.filter((candidate): candidate is ProposalBase => candidate !== null);
 }
 
 /** The five operations this floor answers — the descriptor's, not a second list. */

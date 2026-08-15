@@ -95,7 +95,7 @@ ${sessLines}
 }
 
 describe("runCheckpointWrite", () => {
-  it("skips when no active sessions in QTC-PROJECT.Status", async () => {
+  it("skips when no active sessions in WORKFLOW-PROJECT.Status", async () => {
     const fs = makeFs(
       new Map([["/cwd/CLAUDE.md", workflowProjectBlock({ proyecto: "p", sessions: [] })]]),
       new Map([["/cwd/.workflow/sessions", []]]),
@@ -249,13 +249,13 @@ describe("runCheckpointWrite", () => {
     expect("skipped" in result && result.skipped).toBe(true);
   });
 
-  it("regression — back-compat: legacy QTC-PROJECT markers in CLAUDE.md still work", async () => {
-    const sessionFolder = "session001-dev-legacy";
+  it("reads WORKFLOW-PROJECT markers in CLAUDE.md", async () => {
+    const sessionFolder = "session001-dev-markers";
     const sessionPath = `/cwd/.workflow/sessions/${sessionFolder}`;
-    const legacyBlock = `<!-- QTC-PROJECT-START -->
+    const projectBlock = `<!-- WORKFLOW-PROJECT-START -->
 ## Proyecto
 
-legacy
+current
 
 ## Fuentes
 
@@ -271,12 +271,12 @@ _Stack sin detectar._
 
 - Sesiones activas:
   - ${sessionFolder} · fase: planning · ramas: core:feat/x
-- Histórico: \`.qtc/HISTORY.md\`
-<!-- QTC-PROJECT-END -->
+- Histórico: \`.workflow/HISTORY.md\`
+<!-- WORKFLOW-PROJECT-END -->
 `;
     const fs = makeFs(
       new Map([
-        ["/cwd/CLAUDE.md", legacyBlock],
+        ["/cwd/CLAUDE.md", projectBlock],
         [`${sessionPath}/OBJETIVO.md`, "# Objetivo\nfoo\n"],
         [`${sessionPath}/TASKS.md`, "- [ ] T1\n"],
       ]),

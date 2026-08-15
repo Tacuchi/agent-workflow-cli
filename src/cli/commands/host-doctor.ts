@@ -1,10 +1,10 @@
 import { runHostDoctor } from "../../application/host-doctor-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
-export const hostDoctorCommand: QtcCommand = {
+export const hostDoctorCommand: CliCommand = {
   name: "host-doctor",
   describe:
     "Host-level health check: detecta dependencias externas faltantes (jq, etc.) requeridas por plugins instalados.",

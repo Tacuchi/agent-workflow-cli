@@ -16,6 +16,7 @@
  */
 
 import { join } from "node:path";
+import { normalizeCorrelative } from "../../domain/correlative.js";
 import type { SessionState } from "../../domain/types.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { type HistoryRow, readHistoryRows } from "../history-table.js";
@@ -53,8 +54,8 @@ export interface RowSeed {
   code: string;
   name: string;
   state: SessionState;
-  /** The declared date, or `null` when the session never declared one. */
-  date: string | null;
+  /** The declared date, or `—` when the legacy session never declared one. */
+  date: string;
 }
 
 export type ConflictReason =
@@ -105,7 +106,13 @@ export async function planWorkspaceMigration(
     const number = legacyNumber(folder.name);
     if (number === null) continue; // current-model folder: nothing legacy about it
     legacy.push(folder.name);
-    const outcome = await planSession(fs, paths, folder, number, recorded.get(number));
+    const outcome = await planSession(
+      fs,
+      paths,
+      folder,
+      number,
+      recorded.get(normalizeCorrelative(number) ?? number),
+    );
     if (outcome.kind === "sentinel") sentinels.push(outcome.seed);
     if (outcome.kind === "row") rows.push(outcome.seed);
     if (outcome.kind === "conflict") conflicts.push(outcome.conflict);
@@ -163,7 +170,7 @@ async function planSession(
   fs: FileSystemPort,
   paths: PathsService,
   folder: { name: string; path: string },
-  number: number,
+  number: string,
   row: HistoryRow | undefined,
 ): Promise<SessionOutcome> {
   // The record is indexed by number, so a number two folders answer to has ONE
@@ -188,7 +195,9 @@ async function planSession(
         code: entry.code ?? folder.name,
         name: entry.name,
         state: entry.state,
-        date: entry.date ?? null,
+        // A migration cannot infer when an older session happened. Persist an
+        // explicit unknown instead of making the migration date look historic.
+        date: entry.date ?? "—",
       },
     };
   }
@@ -233,15 +242,16 @@ export function sentinelPath(seed: SentinelSeed): string {
 async function readRecord(
   fs: FileSystemPort,
   paths: PathsService,
-): Promise<Map<number, HistoryRow>> {
+): Promise<Map<string, HistoryRow>> {
   const path = paths.cwdHistoryFile();
-  const byNumber = new Map<number, HistoryRow>();
+  const byNumber = new Map<string, HistoryRow>();
   if (!(await fs.exists(path))) return byNumber;
   for (const row of readHistoryRows(await fs.readText(path))) {
     // The SAME reading of "what number does this carry" the resolver and the
     // correlative use: `session047-x`, `047-x` and a bare `047` are one session.
     const digits = sessionNumericCode(row.key);
-    if (digits !== null) byNumber.set(Number.parseInt(digits, 10), row);
+    const number = digits === null ? null : normalizeCorrelative(digits);
+    if (number !== null) byNumber.set(number, row);
   }
   return byNumber;
 }
@@ -254,11 +264,10 @@ async function readRecord(
  * WHOLE folder name as the code, and only the `sessionNNN-<slug>` layout splits
  * a number off.
  */
-function legacyNumber(folder: string): number | null {
+function legacyNumber(folder: string): string | null {
   const { code } = parseSessionFolder(folder);
   if (code === null || code === folder) return null;
-  const parsed = Number.parseInt(code, 10);
-  return Number.isNaN(parsed) ? null : parsed;
+  return normalizeCorrelative(code);
 }
 
 function recordedState(cell: string): SessionState | null {

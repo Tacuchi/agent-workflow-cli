@@ -1,10 +1,10 @@
 import { type MergeStateInput, runMergeState } from "../../application/merge-state-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
-export const mergeStateCommand: QtcCommand = {
+export const mergeStateCommand: CliCommand = {
   name: "merge-state",
   describe:
     "Inspect in-progress merge state per repo, read-only (origin/destination + conflicted files). " +

@@ -11,9 +11,9 @@ vi.mock("../../src/application/self/mcp-config.js", () => ({
     data: {
       connections: [
         {
-          nombre: "cert",
-          server_name: "cert",
-          dsn_var: "DB_CERT_DSN",
+          nombre: "alpha",
+          server_name: "alpha",
+          dsn_var: "ALPHA_DATABASE_URL",
           dsn_visible: true,
           instalado: {
             claude: "no",
@@ -25,9 +25,9 @@ vi.mock("../../src/application/self/mcp-config.js", () => ({
           },
         },
         {
-          nombre: "prod",
-          server_name: "prod",
-          dsn_var: "DB_PROD_DSN",
+          nombre: "beta",
+          server_name: "beta",
+          dsn_var: "BETA_DATABASE_URL",
           dsn_visible: true,
           instalado: {
             claude: "si",
@@ -57,16 +57,16 @@ describe("McpTab — user-scope install", () => {
     const { lastFrame } = render(<McpTab ctx={ctx} isActive />);
     await tick();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("cert");
-    expect(frame).toContain("prod");
-    // prod is installed in the user-scope ~/.claude.json → "installed" pill.
+    expect(frame).toContain("alpha");
+    expect(frame).toContain("beta");
+    // beta is installed in the user-scope ~/.claude.json → "installed" pill.
     expect(frame).toContain("installed");
   });
 
   it("offers 'Install → user scope' in the detail panel of an uninstalled connection", async () => {
     const { lastFrame, stdin } = render(<McpTab ctx={ctx} isActive />);
     await tick();
-    stdin.write(ENTER); // open detail on the focused (first) row = cert, status "no"
+    stdin.write(ENTER); // open detail on the focused (first) row = alpha, status "no"
     await tick();
     expect(lastFrame() ?? "").toContain("Install → user scope");
   });

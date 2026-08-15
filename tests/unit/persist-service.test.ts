@@ -35,12 +35,25 @@ function answer(request: SemanticRequest, over: Record<string, unknown> = {}): s
 }
 
 async function prepared(fs: MemFs): Promise<SemanticRequest> {
-  return await preparePersist(fs, env, paths());
+  const result = await preparePersist(fs, env, paths());
+  if (!result.ok) throw new Error(`expected prepare to succeed: ${result.failure.message}`);
+  return result.value;
 }
 
 // ── prepare ──────────────────────────────────────────────────────────────────
 
 describe("preparePersist — inventories without touching a byte", () => {
+  it("fails closed when a core [docs] route tries to move before every reader supports it", async () => {
+    const fs = workspace();
+    fs.file("/cwd/.workflow/skills.toml", '[docs]\nresearch = "knowledge/research"\n');
+
+    const result = await preparePersist(fs, env, paths());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe("DOCS_CANON_INVALID");
+    expect(result.failure.action).toContain("[docs]");
+  });
+
   it("writes nothing", async () => {
     const fs = workspace();
     fs.file("/cwd/docs/specs/003-spec-x.md", "# Spec\n\n## Origin\n\nvenía de una charla\n");

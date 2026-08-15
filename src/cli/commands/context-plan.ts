@@ -1,11 +1,11 @@
 import { type ContextPlanOutput, runContextPlan } from "../../application/context/plan-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
-import type { HumanRenderContext, QtcCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const contextPlanCommand: QtcCommand<ContextPlanOutput> = {
+export const contextPlanCommand: CliCommand<ContextPlanOutput> = {
   name: "context-plan",
   describe:
     "Devuelve el read-set ordenado de un comando —qué documentos leer, en qué orden y a qué costo— más el recibo de lo cargado. " +

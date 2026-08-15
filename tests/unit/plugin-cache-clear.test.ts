@@ -100,7 +100,10 @@ describe("selfClearPluginCache", () => {
   it("rejects invalid --target", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    const result = await selfClearPluginCache(buildArgs({ plugin: "qtc", target: "linux" }), ctx);
+    const result = await selfClearPluginCache(
+      buildArgs({ plugin: "sample", target: "linux" }),
+      ctx,
+    );
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("INVALID_INPUT");
   });
@@ -108,7 +111,10 @@ describe("selfClearPluginCache", () => {
   it("claude target with no cache → status nothing", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    const result = await selfClearPluginCache(buildArgs({ plugin: "qtc", target: "claude" }), ctx);
+    const result = await selfClearPluginCache(
+      buildArgs({ plugin: "sample", target: "claude" }),
+      ctx,
+    );
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("nothing");
     expect(result.data?.removed).toEqual([]);
@@ -117,13 +123,16 @@ describe("selfClearPluginCache", () => {
   it("claude target removes cache dirs + installed_plugins entry", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    const cacheDir = await seedClaudeCache(home, "qtc-marketplace", "qtc", "2.3.0");
+    const cacheDir = await seedClaudeCache(home, "sample-marketplace", "sample", "2.3.0");
     const installedPath = await seedClaudeInstalledPlugins(home, {
-      "qtc@qtc-marketplace": [{ version: "2.3.0" }],
+      "sample@sample-marketplace": [{ version: "2.3.0" }],
       "other@other-marketplace": [{ version: "1.0.0" }],
     });
 
-    const result = await selfClearPluginCache(buildArgs({ plugin: "qtc", target: "claude" }), ctx);
+    const result = await selfClearPluginCache(
+      buildArgs({ plugin: "sample", target: "claude" }),
+      ctx,
+    );
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("removed");
@@ -132,18 +141,18 @@ describe("selfClearPluginCache", () => {
     const updated = JSON.parse(await fs.readText(installedPath)) as {
       plugins: Record<string, unknown>;
     };
-    expect(updated.plugins).not.toHaveProperty("qtc@qtc-marketplace");
+    expect(updated.plugins).not.toHaveProperty("sample@sample-marketplace");
     expect(updated.plugins).toHaveProperty("other@other-marketplace");
   });
 
   it("--dry-run does not touch filesystem but reports planned removals", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    const cacheDir = await seedClaudeCache(home, "qtc-marketplace", "qtc", "2.3.0");
-    await seedClaudeInstalledPlugins(home, { "qtc@qtc-marketplace": [{}] });
+    const cacheDir = await seedClaudeCache(home, "sample-marketplace", "sample", "2.3.0");
+    await seedClaudeInstalledPlugins(home, { "sample@sample-marketplace": [{}] });
 
     const result = await selfClearPluginCache(
-      buildArgs({ plugin: "qtc", target: "claude" }, ["--dry-run"]),
+      buildArgs({ plugin: "sample", target: "claude" }, ["--dry-run"]),
       ctx,
     );
 
@@ -156,17 +165,17 @@ describe("selfClearPluginCache", () => {
   it("warp target removes skill dirs that match the namespace prefix", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    const qtcSession = await seedWarpSkill(home, "qtc-session");
-    const qtcRules = await seedWarpSkill(home, "qtc-rules");
+    const sampleSession = await seedWarpSkill(home, "sample-session");
+    const sampleRules = await seedWarpSkill(home, "sample-rules");
     const otherSkill = await seedWarpSkill(home, "other-skill");
 
-    const result = await selfClearPluginCache(buildArgs({ plugin: "qtc", target: "warp" }), ctx);
+    const result = await selfClearPluginCache(buildArgs({ plugin: "sample", target: "warp" }), ctx);
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("removed");
     expect(result.data?.removed.length).toBe(2);
-    expect(await fs.exists(qtcSession)).toBe(false);
-    expect(await fs.exists(qtcRules)).toBe(false);
+    expect(await fs.exists(sampleSession)).toBe(false);
+    expect(await fs.exists(sampleRules)).toBe(false);
     expect(await fs.exists(otherSkill)).toBe(true);
   });
 
@@ -175,7 +184,7 @@ describe("selfClearPluginCache", () => {
     const ctx = buildCtx(home, fs);
     await seedWarpSkill(home, "other-skill");
 
-    const result = await selfClearPluginCache(buildArgs({ plugin: "qtc", target: "warp" }), ctx);
+    const result = await selfClearPluginCache(buildArgs({ plugin: "sample", target: "warp" }), ctx);
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("nothing");
@@ -184,16 +193,19 @@ describe("selfClearPluginCache", () => {
   it("codex target removes cache + installed_plugins entry (sibling of claude)", async () => {
     const fs = new NodeFileSystem();
     const ctx = buildCtx(home, fs);
-    const codexCacheDir = join(home, ".codex", "plugins", "cache", "qtc-marketplace", "qtc");
+    const codexCacheDir = join(home, ".codex", "plugins", "cache", "sample-marketplace", "sample");
     await mkdir(join(codexCacheDir, "2.3.0", "skills"), { recursive: true });
     const installedPath = join(home, ".codex", "plugins", "installed_plugins.json");
     await writeFile(
       installedPath,
-      JSON.stringify({ plugins: { "qtc@qtc-marketplace": [{}] } }, null, 2),
+      JSON.stringify({ plugins: { "sample@sample-marketplace": [{}] } }, null, 2),
       "utf8",
     );
 
-    const result = await selfClearPluginCache(buildArgs({ plugin: "qtc", target: "codex" }), ctx);
+    const result = await selfClearPluginCache(
+      buildArgs({ plugin: "sample", target: "codex" }),
+      ctx,
+    );
 
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe("removed");
@@ -202,6 +214,6 @@ describe("selfClearPluginCache", () => {
     const updated = JSON.parse(await fs.readText(installedPath)) as {
       plugins: Record<string, unknown>;
     };
-    expect(updated.plugins).not.toHaveProperty("qtc@qtc-marketplace");
+    expect(updated.plugins).not.toHaveProperty("sample@sample-marketplace");
   });
 });

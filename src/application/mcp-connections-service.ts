@@ -1,20 +1,17 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
-  type McpInstance,
+  type McpConnectionRef,
   normalizeDsnVarName,
   normalizeMcpInstance,
   validateDsnVarName,
   validateMcpInstance,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
-import { readBootstrapDsn } from "./dsn-reader-service.js";
+import { readDsnFile } from "./dsn-reader-service.js";
 import type { PathsService } from "./paths-service.js";
 
-export interface StoredMcpConnection {
-  name: McpInstance;
-  dsnVar: string;
-}
+export interface StoredMcpConnection extends McpConnectionRef {}
 
 export interface McpConnection extends StoredMcpConnection {
   dsnPresent: boolean;
@@ -35,13 +32,82 @@ export interface McpConnectionDeleteResult {
   removed: boolean;
 }
 
+export type McpConnectionSelectionErrorCode =
+  | "NO_MCP_CONNECTIONS"
+  | "MCP_CONNECTION_SELECTION_CONFLICT"
+  | "MCP_CONNECTION_INVALID"
+  | "MCP_CONNECTION_NOT_REGISTERED"
+  | "MCP_INSTANCE_REQUIRED";
+
+export interface McpConnectionSelectionError {
+  ok: false;
+  code: McpConnectionSelectionErrorCode;
+  message: string;
+}
+
+export interface McpConnectionSelection {
+  ok: true;
+  connections: StoredMcpConnection[];
+}
+
+export type McpConnectionSelectionResult = McpConnectionSelection | McpConnectionSelectionError;
+
 export function readMcpConnections(paths: PathsService, env: EnvPort): McpConnection[] {
   const stored = readStoredConnections(paths);
-  const dsn = readBootstrapDsn(paths);
+  const dsn = readDsnFile(paths);
   return stored.map((connection) => ({
     ...connection,
     dsnPresent: Boolean(env.get(connection.dsnVar)) || Boolean(dsn.values[connection.dsnVar]),
   }));
+}
+
+/**
+ * Resolves a registry-owned connection set for every direct MCP operation.
+ *
+ * The registry is the only authority for a connection name and its DSN
+ * variable: an explicit name must already exist there, omission selects the
+ * sole registered connection, and a fan-out is opt-in through
+ * `--all-connections` at the CLI boundary.
+ */
+export function resolveMcpConnectionSelection(
+  paths: PathsService,
+  input: { instance?: string; allConnections?: boolean } = {},
+): McpConnectionSelectionResult {
+  if (input.allConnections && input.instance !== undefined) {
+    return selectionFailure(
+      "MCP_CONNECTION_SELECTION_CONFLICT",
+      "Usá --instance <nombre> o --all-connections, no ambos.",
+    );
+  }
+
+  const connections = readStoredConnections(paths);
+  if (connections.length === 0) {
+    return selectionFailure(
+      "NO_MCP_CONNECTIONS",
+      "No hay conexiones MCP registradas. Registrá una con 'aw self mcp use-env --name <nombre> --dsn-var <VARIABLE>'.",
+    );
+  }
+
+  if (input.allConnections) return { ok: true, connections };
+
+  if (input.instance !== undefined) {
+    const validation = validateMcpInstance(input.instance);
+    if (!validation.ok) return selectionFailure("MCP_CONNECTION_INVALID", validation.error);
+    const connection = connections.find((item) => item.name === validation.value);
+    if (connection === undefined) {
+      return selectionFailure(
+        "MCP_CONNECTION_NOT_REGISTERED",
+        `La conexión MCP '${validation.value}' no está registrada en ${paths.userMcpConnectionsFile()}.`,
+      );
+    }
+    return { ok: true, connections: [connection] };
+  }
+
+  if (connections.length === 1) return { ok: true, connections };
+  return selectionFailure(
+    "MCP_INSTANCE_REQUIRED",
+    `Hay ${connections.length} conexiones MCP registradas. Indicá --instance <nombre> o --all-connections.`,
+  );
 }
 
 export function upsertMcpConnection(
@@ -84,6 +150,13 @@ function normalizeConnection(input: { name: string; dsnVar: string }): StoredMcp
   const validation = validateMcpConnectionInput(input);
   if (!validation.ok) throw new Error(validation.error);
   return validation.value;
+}
+
+function selectionFailure(
+  code: McpConnectionSelectionErrorCode,
+  message: string,
+): McpConnectionSelectionError {
+  return { ok: false, code, message };
 }
 
 function readStoredConnections(paths: PathsService): StoredMcpConnection[] {

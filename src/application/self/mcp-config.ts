@@ -13,7 +13,7 @@ import {
   validateMcpInstance,
 } from "../../domain/mcp-entry.js";
 import type { CommandResult } from "../../domain/types.js";
-import { dsnKeyForInstance, readBootstrapDsn } from "../dsn-reader-service.js";
+import { dsnKeyForInstance, readDsnFile } from "../dsn-reader-service.js";
 import {
   type McpConnection,
   deleteMcpConnection,
@@ -329,10 +329,9 @@ function installConnection(
   // consent the global_requires_force guard asks for, hence force: true.
   const setup = runMcpSetup(ctx.env, {
     hosts: [host],
-    instances: [connection.name],
+    connections: [connection],
     scope: "global",
     force: true,
-    dsnVars: { [connection.name]: connection.dsnVar },
     dryRun: args.flags.has("--dry-run"),
   });
   if ("ok" in setup) return refusal(hostAction(host), connectionView(ctx, connection), setup.hint);
@@ -413,7 +412,7 @@ function removeConnection(
   // User scope; the explicit remove action is the consent the guard asks for.
   const remove = runMcpRemove(ctx.env, {
     hosts: removableHosts,
-    instances: [connection.name],
+    connections: [connection],
     scope: "global",
     force: true,
     dryRun,
@@ -454,9 +453,8 @@ function removeConnection(
 function runDoctor(ctx: CliContext, connection: McpConnection, hosts: McpHost[]): McpDoctorResult {
   return runMcpDoctor(ctx.env, ctx.paths, {
     hosts,
-    instances: [connection.name],
+    connections: [connection],
     scope: "global",
-    dsnVars: { [connection.name]: connection.dsnVar },
   });
 }
 
@@ -490,7 +488,7 @@ function installStatus(ctx: CliContext, connection: McpConnection, host: McpHost
 
 export function isDsnVisible(ctx: CliContext, dsnVar: string): boolean {
   if (ctx.env.get(dsnVar)) return true;
-  const dsn = readBootstrapDsn(ctx.paths);
+  const dsn = readDsnFile(ctx.paths);
   return Boolean(dsn.values[dsnVar]);
 }
 
@@ -560,9 +558,10 @@ async function resolveRegisteredConnection(
     }
     return found;
   }
+  const defaultConnection = connections[0]?.name;
   const selected = await prompts.select<McpInstance>({
     message: "Conexión a operar",
-    default: connections[0]?.name ?? "cert",
+    ...(defaultConnection !== undefined ? { default: defaultConnection } : {}),
     choices: connections.map((item) => ({
       name: `${item.name} (${item.dsnVar})`,
       value: item.name,
@@ -583,7 +582,7 @@ async function resolveConnectionName(
   }
   const value = await prompts.input({
     message: "Nombre de la nueva conexión (slug-kebab)",
-    default: "cert",
+    default: "alpha",
     validate: (input) => {
       const validation = validateMcpInstance(input);
       return validation.ok ? true : validation.error;

@@ -40,7 +40,7 @@ The persistent objective needs a **checkable done-condition** — otherwise the 
 - **Form and weight scale**: a chore = "existing tests/build stay green" (one line); a feature = real acceptance tests. The rule is "**always declare the check before**", not "always write new tests".
 - **Subjective deliverable** (analysis/design): the AI **proposes** the rubric and the **human ratifies** it before pursuing it.
 - **Unresolvable criterion** (no evidence, DB unavailable): closes as `inconclusive` and the loop **degrades** — **never iterates against a fake target**.
-- **Cert-only**: a criterion needing **production or the deployed product** is not a done-condition — nobody in the run can run it, so the phase waits forever. Verify in cert.
+- **Source-bounded**: a closing criterion is demonstrated by a command or inspection tied to the acquired checkout. A deployed product, host runtime or remote connection is research context or an operational handoff, never a done-condition.
 
 **Gate integrity (anti-gaming + independent verification).** The gate only counts if it is not gamed to pass. The loop does **not**: modify the check or loosen a `Success criterion` to force green; weaken, delete or skip tests/validations; use trivial or tautological asserts that always pass (the expected value comes from an independent source, never from the output itself); patch the test instead of fixing the cause (prefer fixing production code).
 

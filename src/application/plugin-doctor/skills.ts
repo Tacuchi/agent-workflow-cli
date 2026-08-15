@@ -1,20 +1,11 @@
-import { join, relative, sep } from "node:path";
+import { join, sep } from "node:path";
 import {
   type ParsedFrontmatter,
   getSkillVersion,
   parseSkillFrontmatter,
 } from "../../domain/skill-frontmatter.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { collectFilesByExt } from "../release-data/common.js";
 import type { DoctorFinding, SkillFrontmatterInfo } from "./common.js";
-
-const SESSION_SPECIFIC_MARKERS = [
-  "session034",
-  "idNegocioFinanciero",
-  "usuario-editar.component",
-  "AuthUserServiceImpl",
-  "tb_acceso_usuario_rol",
-];
 
 export interface SkillsCheckResult {
   skillsCount: number;
@@ -89,28 +80,6 @@ export async function checkReadmeSync(
     });
   }
   return { readmeCountExpected, readmeCountMatch, findings };
-}
-
-export async function checkFrontendDesignGeneralization(
-  skillsDir: string,
-  pluginRoot: string,
-  fs: FileSystemPort,
-): Promise<DoctorFinding[]> {
-  const findings: DoctorFinding[] = [];
-  const fdDir = join(skillsDir, "frontend-design");
-  if (!(await fs.exists(skillsDir)) || !(await fs.exists(fdDir))) return findings;
-  const mdFiles = await collectFilesByExt(fs, fdDir, ".md");
-  mdFiles.sort((a, b) => a.localeCompare(b));
-  for (const mdFile of mdFiles) {
-    let text: string;
-    try {
-      text = await fs.readText(mdFile);
-    } catch {
-      continue;
-    }
-    scanForSessionMarkers(text, mdFile, pluginRoot, findings);
-  }
-  return findings;
 }
 
 async function collectSkillDirs(skillsDir: string, fs: FileSystemPort): Promise<string[]> {
@@ -250,23 +219,6 @@ function checkVersion(skillMd: string, version: string | null, findings: DoctorF
       level: "warn",
       file: skillMd,
       msg: `version '${version}' not semver-compatible`,
-    });
-  }
-}
-
-function scanForSessionMarkers(
-  text: string,
-  mdFile: string,
-  pluginRoot: string,
-  findings: DoctorFinding[],
-): void {
-  for (const marker of SESSION_SPECIFIC_MARKERS) {
-    if (!text.includes(marker)) continue;
-    const rel = relative(pluginRoot, mdFile).split(sep).join("/");
-    findings.push({
-      level: "error",
-      file: rel,
-      msg: `contains session-specific name '${marker}' (frontend-design must stay generalized)`,
     });
   }
 }

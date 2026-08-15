@@ -4,6 +4,23 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [22.0.0] — En preparación
+
+### Breaking
+
+- **Los marcadores QTC se retiran de inmediato.** No habrá alias, lectura dual ni migración automática en v22. Un workspace o integración que todavía los use debe migrarlos con v21.17.0 antes de actualizar.
+- **La ejecución queda limitada al checkout.** Una fase sólo cierra con evidencia local del checkout y fuentes declaradas. Una lectura remota puede informar research, pero no validar ni cerrar trabajo.
+- **`mcp-connections.json` es la única autoridad de conexiones.** Registrá cada conexión con `aw self mcp use-env`; si hay varias, las operaciones directas requieren `--instance <nombre>` y el fan-out explícito es `--all-connections`.
+
+### Migration
+
+- Antes de actualizar, conservá v21.17.0 para revisar y aplicar la migración de marcadores legacy. Refiná cada plan v21 abierto al contrato de fuentes y límite `checkout` antes de iniciarlo con `plan-exec`.
+- Consultá la guía pre-v22 del workspace documental para el orden de preparación, los ejemplos de registro MCP y la separación entre evidencia local y handoffs operativos.
+
+### Notes
+
+- Push, publicación en npm, aplicación de SQL y comprobaciones contra hosts o productos desplegados son handoffs operativos. No bloquean ni certifican el cierre local de una fase.
+
 ## [21.17.0] — 2026-08-15
 
 **Publicar un paquete de diseño podía dejar el árbol sin lo que lo hace legible y reportar éxito igual.** Cuando la publicación no derivaba su destino escribía los artefactos autorados verbatim —sin línea base, sin manifiesto, sin gate— y el recibo decía `completed`; `aw designs` rechazaba después ese mismo árbol. En paralelo convivían dos implementaciones del sellado: la que corría, y otra sin llamadores que concentraba la mayor parte de las pruebas.

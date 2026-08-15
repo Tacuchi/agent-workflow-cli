@@ -4,11 +4,11 @@ import { runGitCommitAdvisor } from "../../application/hook-git-commit-advisor.j
 import { runSqlMutationGuard } from "../../application/hook-sql-mutation-guard.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail, writeStderr } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const hookCommand: QtcCommand = {
+export const hookCommand: CliCommand = {
   name: "hook",
   describe:
     "PreToolUse hook target. Subcommands: branch-check, sql-mutation-guard, git-commit-advisor.",

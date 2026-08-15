@@ -112,7 +112,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     for (const run of [UNO, DOS]) {
       writeFileSync(
         join(workspace, run.plan),
-        `# Plan ${run.code}\n\n## Impacted\n\n- **${ALIAS}:** el source compartido.\n`,
+        `# Plan ${run.code}\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — integración\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — integrar la unidad _(fuentes: ${ALIAS})_\n`,
       );
       const dir = join(deps.paths.cwdSessionsDir(), run.folder);
       mkdirSync(dir, { recursive: true });

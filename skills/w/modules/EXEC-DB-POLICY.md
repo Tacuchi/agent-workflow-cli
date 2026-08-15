@@ -2,6 +2,6 @@
 
 Loaded when a phase touches the database (signal `db`).
 
-## Delta 3 — DB policy: **the AI never executes DML**
+## Delta 3 — DB policy: **checkout proof, never deployed closure**
 
-Full policy in [`DB-SCRIPTS-ONLY.md`](DB-SCRIPTS-ONLY.md), the `db` module of [`../loops/CODE-POLICIES.md`](../loops/CODE-POLICIES.md). **Inline:** read-only queries → the session's `SCRIPTS.sql`, executed via MCP (`sql-mutation-guard`); DDL/DML migrations → the AI **drafts them in `SCRIPTS.sql` but NEVER executes them** — their promotion to `docs/scripts/` is done by a separate `export-*`, never this loop.
+See [`DB-SCRIPTS-ONLY.md`](DB-SCRIPTS-ONLY.md) and [`../loops/CODE-POLICIES.md`](../loops/CODE-POLICIES.md). Fixture/ephemeral-DB checks in the acquired checkout may close a phase. Do not open remote reads here: they are captured research context. Draft DDL/DML in `SCRIPTS.sql`; applying it is handoff and never blocks `validada` or plan closure.

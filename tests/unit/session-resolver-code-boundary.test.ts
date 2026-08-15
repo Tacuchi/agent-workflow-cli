@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   type SessionResolution,
+  nextSessionCorrelative,
   resolveSessionTarget,
 } from "../../src/application/session-resolver.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -27,32 +28,46 @@ function resolved(result: SessionResolution) {
 }
 
 describe("resolveSessionTarget — numeric code word-boundary", () => {
+  it("mints the global session code from 999 to 1000", async () => {
+    const fs = buildFs(["999-cierre-quick"]);
+    expect(await nextSessionCorrelative(fs, paths)).toBe("1000");
+
+    fs.file(`${sessionsDir}/1000-corte-quick/SESSION.md`, "# SESSION\n");
+    expect(await nextSessionCorrelative(fs, paths)).toBe("1001");
+  });
+
   // Reachable once a workspace passes 999 sessions: the global counter emits
   // 4-digit prefixes that coexist with old 3-digit folders. A bare `startsWith`
   // makes code "100" fuzzy-match "1000-…", so the wrong session resolves silently.
   it("resolves a 3-digit code to its own folder, not a longer-numbered one", async () => {
     const fs = buildFs(["100-target-quick", "1000-decoy-quick"]);
-    const result = await resolveSessionTarget(fs, paths, { code: "100" });
+    const result = await resolveSessionTarget(fs, paths, { code: "100", intent: "read" });
     expect(resolved(result).session.folder).toBe("100-target-quick");
     expect(resolved(result).via).toBe("explicit");
   });
 
   it("still resolves an exact full folder name", async () => {
     const fs = buildFs(["100-target-quick", "1000-decoy-quick"]);
-    const result = await resolveSessionTarget(fs, paths, { code: "1000-decoy-quick" });
+    const result = await resolveSessionTarget(fs, paths, {
+      code: "1000-decoy-quick",
+      intent: "read",
+    });
     expect(resolved(result).session.folder).toBe("1000-decoy-quick");
   });
 
   it("still resolves a descriptor prefix up to a dash boundary", async () => {
     const fs = buildFs(["002-correo-otp-spec-refine", "003-correo-plan-new"]);
-    const result = await resolveSessionTarget(fs, paths, { code: "002-correo-otp" });
+    const result = await resolveSessionTarget(fs, paths, {
+      code: "002-correo-otp",
+      intent: "read",
+    });
     expect(resolved(result).session.folder).toBe("002-correo-otp-spec-refine");
   });
 
   it("does not fuzzy-match a numeric code across a dash boundary (abbreviated code)", async () => {
     // "01" normalizes to "001" and must not silently resolve to "012-…".
     const fs = buildFs(["010-a-quick", "011-b-quick", "012-c-quick"]);
-    const result = await resolveSessionTarget(fs, paths, { code: "01" });
+    const result = await resolveSessionTarget(fs, paths, { code: "01", intent: "read" });
     expect(result.outcome).toBe("error");
     if (result.outcome !== "error") return;
     expect(result.code).toBe("SESSION_NOT_FOUND");
@@ -71,12 +86,28 @@ describe("resolveSessionTarget — el nombre exacto de la carpeta termina la bú
   it("una legacy que comparte número vuelve a ser nombrable", async () => {
     const result = await resolveSessionTarget(buildFs(COLLIDING), paths, {
       code: "session047-legacy-x",
+      intent: "read",
     });
     expect(resolved(result).session.folder).toBe("session047-legacy-x");
   });
 
+  it("la escritura sobre una carpeta exacta en colisión falla antes de elegir un registro", async () => {
+    const result = await resolveSessionTarget(buildFs(COLLIDING), paths, {
+      code: "session047-legacy-x",
+      intent: "write",
+    });
+    if (result.outcome !== "error") throw new Error("expected a write collision");
+    expect(result.code).toBe("SESSION_AMBIGUOUS");
+    expect(result.candidates.map((candidate) => candidate.folder)).toEqual(COLLIDING);
+    expect(result.action).toContain("workspace-migrate");
+    expect(result.action).toContain("renombrá");
+  });
+
   it("y el código desnudo sigue siendo ambiguo, con los dos candidatos en la acción", async () => {
-    const result = await resolveSessionTarget(buildFs(COLLIDING), paths, { code: "047" });
+    const result = await resolveSessionTarget(buildFs(COLLIDING), paths, {
+      code: "047",
+      intent: "read",
+    });
     if (result.outcome !== "error") throw new Error("expected an ambiguity");
     expect(result.code).toBe("SESSION_AMBIGUOUS");
     expect(result.candidates.map((c) => c.folder)).toEqual(COLLIDING);
@@ -85,7 +116,7 @@ describe("resolveSessionTarget — el nombre exacto de la carpeta termina la bú
 
   it("un prefijo que casa con una carpeta entera no se lo lleva otra más larga", async () => {
     const fs = buildFs(["009-libre", "009-libre-extendida"]);
-    const result = await resolveSessionTarget(fs, paths, { code: "009-libre" });
+    const result = await resolveSessionTarget(fs, paths, { code: "009-libre", intent: "read" });
     expect(resolved(result).session.folder).toBe("009-libre");
   });
 });
@@ -110,12 +141,18 @@ describe("resolveSessionTarget — type fallback by folder suffix (SESSION.md wi
     ["007-otp-plan-exec", "exec"],
     ["008-otp-quick", "quick"],
   ])("%s → type %s", async (folder, expected) => {
-    const result = await resolveSessionTarget(slimFs(folder), paths, { code: folder });
+    const result = await resolveSessionTarget(slimFs(folder), paths, {
+      code: folder,
+      intent: "read",
+    });
     expect(resolved(result).session.type).toBe(expected);
   });
 
   it("unknown suffix leaves type absent (as before)", async () => {
-    const result = await resolveSessionTarget(slimFs("009-libre"), paths, { code: "009-libre" });
+    const result = await resolveSessionTarget(slimFs("009-libre"), paths, {
+      code: "009-libre",
+      intent: "read",
+    });
     expect(resolved(result).session.type).toBeUndefined();
   });
 
@@ -125,7 +162,10 @@ describe("resolveSessionTarget — type fallback by folder suffix (SESSION.md wi
       `${sessionsDir}/010-x-plan-exec/SESSION.md`,
       "# SESSION — 010-x-plan-exec\n\n## Type\nquick\n",
     );
-    const result = await resolveSessionTarget(fs, paths, { code: "010-x-plan-exec" });
+    const result = await resolveSessionTarget(fs, paths, {
+      code: "010-x-plan-exec",
+      intent: "read",
+    });
     expect(resolved(result).session.type).toBe("quick");
   });
 });

@@ -1,7 +1,18 @@
 import { join } from "node:path";
+import {
+  compareCorrelatives,
+  formatCorrelative,
+  leadingCorrelative,
+  maxCorrelative,
+  nextCorrelative,
+  normalizeCorrelativeInput,
+  prefixedCorrelative,
+  prefixedCorrelativeInput,
+  sameCorrelative,
+} from "../domain/correlative.js";
 import type { SessionState } from "../domain/types.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { maxHistoryNumber } from "./history-table.js";
+import { maxHistoryCorrelative } from "./history-table.js";
 import { withCwdLock } from "./lock-service.js";
 import { firstNonEmptyLine, parseMdSectionBilingual, parseMdValueBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
@@ -10,7 +21,7 @@ import { findArtifact } from "./session-artifacts.js";
 import { bindContextToSession, lookupBinding } from "./session-binding-service.js";
 import { readCustody } from "./session-custody-service.js";
 
-const SESSION_FOLDER_RE = /^session(\d{3})-(.+)$/;
+const SESSION_FOLDER_RE = /^session(\d{3,})-(.+)$/;
 
 /** Folder-local sentinel file marking a session as closed. */
 export const CLOSED_MARKER = ".closed";
@@ -100,7 +111,7 @@ export async function listSessionFolders(
   return entries
     .filter((e) => e.type === "dir" && !e.name.startsWith("."))
     .map((e) => ({ name: e.name, path: e.path }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(compareSessionFolders);
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +130,16 @@ export type SessionErrorCode =
   | "SESSION_CLOSED"
   | "SESSION_AMBIGUOUS"
   | "SESSION_BINDING_INVALID";
+
+/**
+ * Why a caller needs a session target.
+ *
+ * The distinction lives at the resolver seam because a numeric collision is
+ * safe to inspect by its exact folder, but it is never safe to mutate: HISTORY
+ * and the durable session record key by that number. Repeating that rule in
+ * every writer made the first newly-added writer capable of bypassing it.
+ */
+export type SessionIntent = "read" | "write";
 
 /** Which precedence step produced the target (drives who establishes a binding). */
 export type ResolutionVia = "explicit" | "binding" | "sole_active";
@@ -143,7 +164,7 @@ export type SessionResolution =
   | { outcome: "resolved"; via: ResolutionVia; session: SessionEntry }
   | SessionResolutionError;
 
-export interface SessionResolveRequest {
+interface SessionResolveRequestBase {
   /** Explicit identity: `NNN`, `NNN-<slug>`, legacy code, or `sessionNNN-<slug>`. */
   code?: string;
   /** Opaque conversation id, already extracted by the CLI context adapter. */
@@ -154,24 +175,26 @@ export interface SessionResolveRequest {
    * It never relaxes the fallback: a closed session is not a "sole active" one.
    */
   allowClosed?: boolean;
-  /**
-   * Establish the conversation association on success. Set by operations that
-   * own no other lock boundary; `session-create`, `session-resume --reopen` and
-   * `session-close` bind inside their own `withCwdLock` instead, so the lock is
-   * acquired once per operation.
-   */
-  bind?: boolean;
 }
 
 /**
- * Request shape shared by every session-scoped READ: an optional explicit
- * identity, the conversation's own association as the fallback, a closed target
- * accepted (reading a finished line is legitimate), and the association
- * established so later operations in the same conversation stay on this line.
- *
- * `exactOptionalPropertyTypes` is on, hence the spreads instead of assigning
- * `undefined`.
+ * An explicit target request. A read can never carry `bind: true`: binding
+ * changes durable state, so TypeScript makes that mismatch impossible at the
+ * resolver seam instead of relying on callers to remember it.
  */
+export type SessionResolveRequest =
+  | (SessionResolveRequestBase & { intent: "read"; bind?: false })
+  | (SessionResolveRequestBase & {
+      intent: "write";
+      /**
+       * Establish the conversation association on success. Set by operations
+       * that own no other lock boundary; `session-create`, `session-resume
+       * --reopen` and `session-close` bind inside their own `withCwdLock` so
+       * the lock is acquired once per operation.
+       */
+      bind?: boolean;
+    });
+
 /**
  * The request a READ makes: a closed session is legitimate to inspect, and
  * looking never claims the line.
@@ -187,15 +210,13 @@ export function sessionReadRequest(input: {
   contextId?: string;
 }): SessionResolveRequest {
   return {
+    intent: "read",
     ...(input.code !== undefined ? { code: input.code } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
     allowClosed: true,
     bind: false,
   };
 }
-
-/** Both layouts, and a folder that is nothing BUT its number (`042`). */
-const NUMBERED_FOLDER_RE = /^(?:session)?(\d+)(?:-|$)/;
 
 /**
  * Numeric identity of a session folder: `044` for `044-<slug>`, `007` for the
@@ -210,7 +231,7 @@ const NUMBERED_FOLDER_RE = /^(?:session)?(\d+)(?:-|$)/;
  * exactly how the counters ended up disagreeing.
  */
 export function sessionNumericCode(folder: string): string | null {
-  return folder.match(NUMBERED_FOLDER_RE)?.[1] ?? null;
+  return prefixedCorrelative(folder, "session") ?? leadingCorrelative(folder);
 }
 
 /**
@@ -231,7 +252,8 @@ export async function sessionsSharingNumber(
   if (wanted === null) return [];
   const sharing: SessionCandidate[] = [];
   for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
-    if (sessionNumericCode(folder.name) !== wanted) continue;
+    const found = sessionNumericCode(folder.name);
+    if (found === null || !sameCorrelative(found, wanted)) continue;
     sharing.push({
       folder: folder.name,
       code: wanted,
@@ -263,12 +285,15 @@ export async function nextSessionCorrelative(
   fs: FileSystemPort,
   paths: PathsService,
 ): Promise<string> {
-  let max = await maxHistoryNumber(fs, paths.cwdHistoryFile());
+  const correlatives: string[] = [];
+  const history = await maxHistoryCorrelative(fs, paths.cwdHistoryFile());
+  if (history !== null) correlatives.push(history);
   for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
     const digits = sessionNumericCode(folder.name);
-    if (digits !== null) max = Math.max(max, Number.parseInt(digits, 10));
+    if (digits !== null) correlatives.push(digits);
   }
-  return String(max + 1).padStart(3, "0");
+  const maximum = maxCorrelative(correlatives);
+  return maximum === null ? formatCorrelative(1) : nextCorrelative(maximum);
 }
 
 /**
@@ -285,7 +310,7 @@ export async function nextSessionCorrelative(
  * return type: a slug this function had to invent would end up in a filename.
  */
 export function sessionSlug(folder: string, flow: string): string | null {
-  const rest = folder.match(/^(?:session)?\d+-(.+)$/)?.[1];
+  const rest = folder.match(/^(?:session)?\d{3,}-(.+)$/)?.[1];
   const suffix = `-${flow}`;
   if (rest === undefined || !rest.endsWith(suffix)) return null;
   const slug = rest.slice(0, -suffix.length);
@@ -298,7 +323,18 @@ export async function resolveSessionTarget(
   request: SessionResolveRequest,
 ): Promise<SessionResolution> {
   const resolution = await walkPrecedence(fs, paths, request);
-  if (resolution.outcome !== "resolved" || request.bind !== true) return resolution;
+  if (resolution.outcome !== "resolved") return resolution;
+
+  // An exact folder remains a valid READ target even when a legacy folder
+  // shares its number. A WRITE cannot proceed: the durable record would have
+  // no unambiguous row to update. Perform this before binding too — binding is
+  // a write, and must not make a collision look selected.
+  if (request.intent === "write") {
+    const collision = await writeCollision(fs, paths, resolution.session);
+    if (collision !== null) return collision;
+  }
+
+  if (request.bind !== true) return resolution;
   return (await establishBinding(fs, paths, request.contextId, resolution)) ?? resolution;
 }
 
@@ -312,7 +348,7 @@ async function walkPrecedence(
 
   const code = request.code?.trim() ?? "";
   if (code.length > 0) {
-    return resolveExplicit(fs, scanned, code, request.allowClosed === true);
+    return resolveExplicit(fs, scanned, code, request.allowClosed === true, request.intent);
   }
 
   const contextId = request.contextId?.trim() ?? "";
@@ -399,26 +435,34 @@ async function resolveExplicit(
   scanned: ScannedFolder[],
   code: string,
   allowClosed: boolean,
+  intent: SessionIntent,
 ): Promise<SessionResolution> {
   const matches = identityMatches(scanned, code);
   const only = matches.length === 1 ? matches[0] : undefined;
   if (only === undefined) {
-    return matches.length === 0
-      ? resolutionError(
-          "SESSION_NOT_FOUND",
-          `no existe una sesión que coincida con '${code}'`,
-          scanned,
-          "revisá `aw sessions` y reintentá con un código o carpeta existente",
-        )
-      : resolutionError(
-          "SESSION_AMBIGUOUS",
-          `'${code}' coincide con ${matches.length} sesiones`,
-          matches,
-          // The names themselves, because the advice has to be runnable: the
-          // exact folder now ends the search, so each of these resolves to one
-          // session and only one.
-          `reintentá con el nombre exacto de la carpeta: ${matches.map((m) => m.name).join(", ")}`,
-        );
+    if (matches.length === 0) {
+      return resolutionError(
+        "SESSION_NOT_FOUND",
+        `no existe una sesión que coincida con '${code}'`,
+        scanned,
+        "revisá `aw sessions` y reintentá con un código o carpeta existente",
+      );
+    }
+
+    const numerical = numericIdentity(code);
+    if (intent === "write" && numerical !== null) {
+      return writeCollisionError(numerical, candidatesOf(matches));
+    }
+
+    return resolutionError(
+      "SESSION_AMBIGUOUS",
+      `'${code}' coincide con ${matches.length} sesiones`,
+      matches,
+      // The names themselves, because the advice has to be runnable: the
+      // exact folder now ends the search, so each of these resolves to one
+      // session and only one.
+      `reintentá con el nombre exacto de la carpeta: ${matches.map((m) => m.name).join(", ")}`,
+    );
   }
   if (only.state === "closed" && !allowClosed) {
     return resolutionError(
@@ -437,6 +481,37 @@ async function resolveExplicit(
     outcome: "resolved",
     via: "explicit",
     session: await buildSessionEntry(fs, only.path, only.name),
+  };
+}
+
+/** The one refusal every WRITE gets before it can touch a colliding session. */
+async function writeCollision(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+): Promise<SessionResolutionError | null> {
+  const code = sessionNumericCode(session.folder);
+  if (code === null) return null;
+  const sharing = await sessionsSharingNumber(fs, paths, code);
+  return sharing.length > 1 ? writeCollisionError(code, sharing) : null;
+}
+
+function candidatesOf(scanned: ScannedFolder[]): SessionCandidate[] {
+  return scanned.map((candidate) => ({
+    folder: candidate.name,
+    code: candidate.code,
+    state: candidate.state,
+  }));
+}
+
+function writeCollisionError(code: string, candidates: SessionCandidate[]): SessionResolutionError {
+  const folders = candidates.map((candidate) => candidate.folder);
+  return {
+    outcome: "error",
+    code: "SESSION_AMBIGUOUS",
+    message: `el correlativo ${code} corresponde a ${candidates.length} carpetas; una escritura no puede elegir qué registro durable actualizar`,
+    candidates,
+    action: `ejecutá \`aw workspace-migrate\` para revisar la serie y después \`aw workspace-migrate --apply\`, o renombrá una de estas carpetas para que el correlativo sea único antes de escribir: ${folders.join(", ")}`,
   };
 }
 
@@ -546,9 +621,21 @@ function matchesIdentity(folder: string, input: string): boolean {
 }
 
 function numericIdentity(input: string): string | null {
-  if (/^\d+$/.test(input)) return input.padStart(3, "0");
-  const legacy = input.match(/^session(\d+)/);
-  return legacy?.[1] ? legacy[1].padStart(3, "0") : null;
+  return normalizeCorrelativeInput(input) ?? prefixedCorrelativeInput(input, "session");
+}
+
+function compareSessionFolders(
+  left: { name: string; path: string },
+  right: { name: string; path: string },
+): number {
+  const leftCode = sessionNumericCode(left.name);
+  const rightCode = sessionNumericCode(right.name);
+  if (leftCode !== null && rightCode !== null) {
+    return compareCorrelatives(leftCode, rightCode) || left.name.localeCompare(right.name);
+  }
+  if (leftCode !== null) return -1;
+  if (rightCode !== null) return 1;
+  return left.name.localeCompare(right.name);
 }
 
 function resolutionError(

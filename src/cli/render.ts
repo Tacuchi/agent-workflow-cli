@@ -1,5 +1,5 @@
 import type { SessionResolutionError } from "../application/session-resolver.js";
-import type { CommandResult, QtcError } from "../domain/types.js";
+import type { CliError, CommandResult } from "../domain/types.js";
 
 export interface ErrorEnvelope {
   code: string;
@@ -75,7 +75,7 @@ export function renderRaw(payload: unknown): string {
  * disagree about what to do next. The exit code is decided elsewhere and is
  * untouched by which projection printed.
  */
-export function renderHumanError(error: QtcError | undefined, data?: unknown): string {
+export function renderHumanError(error: CliError | undefined, data?: unknown): string {
   const code = error?.code ?? "UNKNOWN";
   const lines = [`✗ ${code}`, error?.message ?? "el comando falló sin detallar la causa"];
   const action = readNextAction(data);

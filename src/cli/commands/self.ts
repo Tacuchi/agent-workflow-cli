@@ -14,7 +14,7 @@ import { selfUninstall } from "../../application/self/uninstall.js";
 import { selfUpdate } from "../../application/self/update-self.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -36,7 +36,7 @@ const SELF_SUBCOMMANDS = [
   "bootstrap",
 ] as const;
 
-export const selfCommand: QtcCommand = {
+export const selfCommand: CliCommand = {
   name: "self",
   describe:
     "Manage the agent-workflow CLI itself (namespace, doctor, detect-hosts, update, install-skill, install-hooks, install-plugin-skills, install-plugin-skills-git, uninstall-skill, mcp, bootstrap). 'self namespace' prints the active namespace; 'self namespace --pin <name>' persists it to ~/.config/agent-workflow/namespace (cross-platform).",

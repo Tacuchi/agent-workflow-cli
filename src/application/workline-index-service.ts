@@ -1,10 +1,12 @@
 import { basename, join, relative } from "node:path";
+import { CORRELATIVE_SOURCE, compareCorrelatives, isCorrelative } from "../domain/correlative.js";
 import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { localDateIso } from "./dates.js";
 import { type DesignGraph, buildDesignGraph } from "./design/design-graph-service.js";
+import { type CoreDocsCanon, resolveCoreDocsCanon } from "./docs-canon-service.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
@@ -16,6 +18,7 @@ import type { PathsService } from "./paths-service.js";
 import { listPendingJournals } from "./retirement/journal.js";
 import { findArtifact } from "./session-artifacts.js";
 import { readSessionPhase } from "./session-narrative.js";
+import { sessionNumericCode } from "./session-resolver.js";
 import { SessionsService } from "./sessions-service.js";
 import { type OrphanUnit, runWorktree } from "./worktree-service.js";
 
@@ -208,6 +211,8 @@ export interface WorklineIndex {
    * visible fact plus the command that converges it.
    */
   pending_retirements: PendingRetirement[];
+  /** Present when `[docs]` is invalid; readers deliberately did not guess paths. */
+  docs_canon_error?: string;
 }
 
 export interface PendingRetirement {
@@ -247,9 +252,11 @@ export async function buildWorklineIndex(
   const cwd = paths.workspaceDir();
 
   const workspace = await readWorkspace(fs, paths, cwd);
-  const specs = await readSpecs(fs, cwd, now);
-  const plans = await readPlans(fs, cwd, specs, now);
-  const sessions = await readSessions(fs, env, paths, now);
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  const docs = canon.ok ? canon.canon : null;
+  const specs = docs === null ? [] : await readSpecs(fs, cwd, docs.spec, now);
+  const plans = docs === null ? [] : await readPlans(fs, cwd, specs, docs, now);
+  const sessions = await readSessions(fs, env, paths, now, docs);
   const isolation = await readIsolation(fs, env, paths, input.git);
   for (const session of sessions) {
     session.units = isolation.bySession.get(session.folder) ?? [];
@@ -270,6 +277,7 @@ export async function buildWorklineIndex(
     designs,
     orphan_units: isolation.orphans,
     pending_retirements: await readPendingRetirements(fs, paths),
+    ...(canon.ok ? {} : { docs_canon_error: canon.error }),
   };
 }
 
@@ -376,7 +384,7 @@ function derivePipeline(
       kind: "checkpoint-orphan",
       priority: 4,
       file: session.folder,
-      number: session.code,
+      number: sessionNumericCode(session.folder),
       slug: session.folder,
       summary: session.summary,
       command: `aw session-resume --code ${session.folder} --reopen`,
@@ -419,7 +427,9 @@ function comparePipeline(a: PipelineItem, b: PipelineItem): number {
   if (a.priority !== b.priority) return a.priority - b.priority;
   const started = Number(b.started ?? false) - Number(a.started ?? false);
   if (started !== 0) return started;
-  return (a.number ?? "").localeCompare(b.number ?? "");
+  const left = a.number ?? "";
+  const right = b.number ?? "";
+  return compareNumberedStrings(left, right);
 }
 
 function isString(value: string | null): value is string {
@@ -451,10 +461,15 @@ async function readWorkspace(
 
 // ── specs ────────────────────────────────────────────────────────────────────
 
-const SPEC_RE = /^(\d{3})-spec(?:-(.+))?\.md$/i;
+const SPEC_RE = new RegExp(`^(${CORRELATIVE_SOURCE})-spec(?:-(.+))?\\.md$`, "i");
 
-async function readSpecs(fs: FileSystemPort, cwd: string, now: Date): Promise<IndexedSpec[]> {
-  const files = dedupeRefined(await listMarkdown(fs, join(cwd, "docs", "specs"), SPEC_RE));
+async function readSpecs(
+  fs: FileSystemPort,
+  cwd: string,
+  specDir: string,
+  now: Date,
+): Promise<IndexedSpec[]> {
+  const files = dedupeRefined(await listMarkdown(fs, join(cwd, specDir), SPEC_RE));
   const out: IndexedSpec[] = [];
   for (const f of files) {
     try {
@@ -550,15 +565,16 @@ function readScalar(lines: string[], key: string): string | undefined {
 
 // ── plans ────────────────────────────────────────────────────────────────────
 
-const PLAN_RE = /^(\d{3})-plan(?:-(.+))?\.md$/i;
+const PLAN_RE = new RegExp(`^(${CORRELATIVE_SOURCE})-plan(?:-(.+))?\\.md$`, "i");
 
 async function readPlans(
   fs: FileSystemPort,
   cwd: string,
   specs: IndexedSpec[],
+  docs: CoreDocsCanon,
   now: Date,
 ): Promise<IndexedPlan[]> {
-  const files = await listMarkdown(fs, join(cwd, "docs", "plans"), PLAN_RE);
+  const files = await listMarkdown(fs, join(cwd, docs.plan), PLAN_RE);
   const byNumber = new Map(specs.map((s) => [s.number, s]));
   const out: IndexedPlan[] = [];
   for (const f of files) {
@@ -584,7 +600,7 @@ async function readPlans(
           .map((phase) => ({ number: phase.n, name: phase.name, blocker: phase.blocker })),
         final_validation_pending:
           planState === "open" && p.total > 0 && p.validated === p.total && t.closed === t.total,
-        spec: resolveSpecRelation(text, byNumber),
+        spec: resolveSpecRelation(text, byNumber, docs.spec),
         date: ts.date,
         relative: ts.relative,
       });
@@ -595,8 +611,12 @@ async function readPlans(
   return sortByNumber(out);
 }
 
-function resolveSpecRelation(text: string, specs: Map<string, IndexedSpec>): SpecRelation {
-  const parsed = parseSpecRelation(text);
+function resolveSpecRelation(
+  text: string,
+  specs: Map<string, IndexedSpec>,
+  specDir: string,
+): SpecRelation {
+  const parsed = parseSpecRelation(text, specDir);
   if (parsed.status === "absent") return { status: "unknown", reason: "no-evidence" };
   if (parsed.status === "ambiguous") {
     return { status: "ambiguous", numbers: parsed.numbers, evidence: parsed.evidence };
@@ -644,13 +664,12 @@ function derivePlanState(
 
 // ── sessions ─────────────────────────────────────────────────────────────────
 
-const LINKED_DOC_RE = /docs\/(?:specs|plans)\/\d{3}-(?:spec|plan)[^\s`)"']*\.md/;
-
 async function readSessions(
   fs: FileSystemPort,
   env: EnvPort,
   paths: PathsService,
   now: Date,
+  docs: CoreDocsCanon | null,
 ): Promise<IndexedSession[]> {
   let list: Awaited<ReturnType<SessionsService["list"]>>;
   try {
@@ -673,7 +692,7 @@ async function readSessions(
       state: s.state === "closed" ? "closed" : "active",
       phase: await readSessionPhase(fs, s.path, s.state === "closed"),
       has_checkpoint: checkpoint !== null && checkpoint !== undefined,
-      linked_doc: await readLinkedDoc(fs, primary),
+      linked_doc: docs === null ? null : await readLinkedDoc(fs, primary, docs),
       date: ts.date,
       relative: ts.relative,
       units: [],
@@ -683,13 +702,26 @@ async function readSessions(
 }
 
 /** The spec/plan a session's `## Origin` points at — `null` when it points at none. */
-async function readLinkedDoc(fs: FileSystemPort, sessionFile: string): Promise<string | null> {
+async function readLinkedDoc(
+  fs: FileSystemPort,
+  sessionFile: string,
+  docs: Pick<CoreDocsCanon, "spec" | "plan">,
+): Promise<string | null> {
   try {
     const origin = parseMdSectionBilingual(await fs.readText(sessionFile), "Origin");
-    return origin === undefined ? null : (LINKED_DOC_RE.exec(origin)?.[0] ?? null);
+    return origin === undefined ? null : (linkedDocPattern(docs).exec(origin)?.[0] ?? null);
   } catch {
     return null;
   }
+}
+
+function linkedDocPattern(docs: Pick<CoreDocsCanon, "spec" | "plan">): RegExp {
+  const escapePattern = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const alternatives = [
+    `${escapePattern(docs.spec)}/${CORRELATIVE_SOURCE}-spec`,
+    `${escapePattern(docs.plan)}/${CORRELATIVE_SOURCE}-plan`,
+  ].join("|");
+  return new RegExp(`(?:${alternatives})[^\\s\`)"']*\\.md`);
 }
 
 // ── discarded ────────────────────────────────────────────────────────────────
@@ -786,7 +818,15 @@ function dedupeRefined(files: DocFile[]): DocFile[] {
 }
 
 function sortByNumber<T extends { number: string; file: string }>(items: T[]): T[] {
-  return items.sort((a, b) => a.number.localeCompare(b.number) || a.file.localeCompare(b.file));
+  return items.sort(
+    (a, b) => compareCorrelatives(a.number, b.number) || a.file.localeCompare(b.file),
+  );
+}
+
+function compareNumberedStrings(left: string, right: string): number {
+  if (left.length === 0 || right.length === 0) return left.localeCompare(right);
+  if (!isCorrelative(left) || !isCorrelative(right)) return left.localeCompare(right);
+  return compareCorrelatives(left, right);
 }
 
 interface ResolvedTimestamp {

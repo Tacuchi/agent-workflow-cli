@@ -23,6 +23,7 @@ function blockWith(fs: FakeFs, fuentes: { alias: string; path: string }[]): Fake
       lastActivity: "2026-01-01 00:00",
       workingBranches: {},
       qaBranches: {},
+      markers: paths().blockMarkers(),
     }),
   );
   return fs;

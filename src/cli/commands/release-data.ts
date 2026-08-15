@@ -2,11 +2,11 @@ import { SessionsCsvError, parseSessionsCsv } from "../../application/parsers/se
 import { runReleaseData } from "../../application/release-data-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const releaseDataCommand: QtcCommand = {
+export const releaseDataCommand: CliCommand = {
   name: "release-data",
   describe:
     "Dump consolidado del corpus de sesiones para la familia export-* " +

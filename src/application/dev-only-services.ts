@@ -1,6 +1,13 @@
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import {
+  formatCorrelative,
+  leadingCorrelative,
+  maxCorrelative,
+  nextCorrelative,
+  sameCorrelative,
+} from "../domain/correlative.js";
 import { HARNESSES, type Harness, type HarnessId, harnessById } from "../domain/harnesses.js";
 import { reservationMarker } from "../domain/reservation.js";
 import {
@@ -393,12 +400,11 @@ export async function runNextNumber(
           claim_reused: true,
         };
       }
-      let number = state.current_max + 1;
-      for (let probe = 0; probe < MAX_CLAIM_PROBES; probe++, number++) {
-        const nnn = String(number).padStart(3, "0");
+      let nnn = state.next;
+      for (let probe = 0; probe < MAX_CLAIM_PROBES; probe++, nnn = nextCorrelative(nnn)) {
         // Taken by NUMBER: another document already holds this correlative under
         // a different slug, so the name is free while the number is not.
-        if (state.files.some((name) => name.startsWith(`${nnn}-`))) continue;
+        if (state.files.some((name) => hasCorrelative(name, nnn))) continue;
         const path = join(target, `${nnn}-${claim}`);
         const { created } = await fs.writeTextExclusive(path, marker);
         if (created) {
@@ -438,8 +444,8 @@ async function heldReservation(
   marker: string,
 ): Promise<{ nnn: string; path: string } | null> {
   for (const name of files) {
-    const nnn = name.slice(0, 3);
-    if (!/^\d{3}$/.test(nnn) || name.slice(3) !== `-${claim}`) continue;
+    const nnn = leadingCorrelative(name);
+    if (nnn === null || name.slice(nnn.length) !== `-${claim}`) continue;
     const path = join(target, name);
     try {
       if ((await fs.readText(path)) === marker) return { nnn, path };
@@ -464,28 +470,36 @@ async function scan(
     created = true;
   }
   const files: string[] = [];
-  const numbers: number[] = [];
+  const correlatives: string[] = [];
   if (exists) {
     const entries = await fs.list(target);
     const sortedEntries = [...entries].sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of sortedEntries) {
       files.push(entry.name);
-      const m = entry.name.match(/^(\d{3})/);
-      if (m?.[1]) numbers.push(Number.parseInt(m[1], 10));
+      const correlative = leadingCorrelative(entry.name);
+      if (correlative !== null) correlatives.push(correlative);
     }
   }
-  const currentMax = numbers.length > 0 ? Math.max(...numbers) : 0;
+  const maximum = maxCorrelative(correlatives);
+  // `current_max` is a legacy JSON number kept for callers that display it.
+  // All minting itself uses `next`, which remains lossless for any digit width.
+  const currentMax = maximum === null ? 0 : Number.parseInt(maximum, 10);
   return {
     directory: normalize(target),
     exists,
     created,
     current_max: currentMax,
-    next: String(currentMax + 1).padStart(3, "0"),
+    next: maximum === null ? formatCorrelative(1) : nextCorrelative(maximum),
     files,
     claimed_path: null,
     claimed_owner: null,
     claim_reused: false,
   };
+}
+
+function hasCorrelative(name: string, wanted: string): boolean {
+  const found = leadingCorrelative(name);
+  return found !== null && sameCorrelative(found, wanted);
 }
 
 function normalize(path: string): string {

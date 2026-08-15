@@ -44,6 +44,7 @@ describe("git-flow command", () => {
       lastActivity: "2026-01-01 00:00",
       workingBranches: { core: "feature/x" },
       qaBranches: { core: "desarrollo" },
+      markers: new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd).blockMarkers(),
     });
     await writeFile(join(cwd, "CLAUDE.md"), block, "utf8");
   });
@@ -149,6 +150,7 @@ describe("git-flow command", () => {
       stack: {},
       lastActivity: "2026-01-01 00:00",
       workingBranches: { core: "feat-a", ui: "feat-b" },
+      markers: new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd).blockMarkers(),
     });
     await writeFile(join(cwd, "CLAUDE.md"), block, "utf8");
   }

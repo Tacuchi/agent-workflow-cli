@@ -37,12 +37,10 @@ export interface WorkspaceMigrationApplied {
    */
   rows_seeded: string[];
   /**
-   * Legacy sessions whose row was born without a declared date, and therefore
-   * carries the day the record was written rather than the day they ran. Said
-   * out loud because it is the one value here that is not a fact about the
-   * session.
+   * Legacy sessions whose row has no declared date. Their durable cell is `—`;
+   * the migration date is never presented as evidence about the session.
    */
-  rows_dated_today: string[];
+  rows_without_date: string[];
   conflicts: MigrationConflict[];
   next_correlative: string;
 }
@@ -79,9 +77,7 @@ async function writePlan(
     await upsertHistoryRow(fs, paths, {
       code: seed.code,
       sesionName: seed.name,
-      // Unsaid when the session never declared one, so the newborn row takes
-      // the record's own default instead of a date invented here.
-      ...(seed.date !== null ? { date: seed.date } : {}),
+      date: seed.date,
       state: seed.state,
     });
   }
@@ -94,7 +90,7 @@ function summarize(plan: WorkspaceMigrationPlan): WorkspaceMigrationApplied {
     duplicates_dropped: plan.markers.filter((h) => h.drops_duplicate).map((hub) => hub.path),
     sentinels_seeded: plan.sentinels.map((seed) => seed.folder),
     rows_seeded: plan.rows.map((seed) => seed.folder),
-    rows_dated_today: plan.rows.filter((s) => s.date === null).map((seed) => seed.folder),
+    rows_without_date: plan.rows.filter((seed) => seed.date === "—").map((seed) => seed.folder),
     conflicts: plan.conflicts,
     next_correlative: plan.next_correlative,
   };

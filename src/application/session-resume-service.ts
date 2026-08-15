@@ -62,12 +62,13 @@ export async function runSessionResume(
   }
 
   const resolution = await resolveSessionTarget(fs, paths, {
+    intent: input.reopen === true ? "write" : "read",
     ...(input.code !== undefined ? { code: input.code } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
     allowClosed: true,
-    // A reopen binds inside its own lock below, so the operation acquires the
-    // workspace lock exactly once.
-    bind: input.reopen !== true,
+    // A plain resume is an inspection. A reopen binds inside its own lock
+    // below, so neither variant delegates a hidden binding write to resolution.
+    bind: false,
   });
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;

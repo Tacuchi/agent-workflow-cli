@@ -271,6 +271,17 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
           id,
           passed: true,
           detail: `salida real de ${id} en el fixture`,
+          ...(id === "workline.source-bounded"
+            ? {
+                proof: {
+                  kind: "inspection" as const,
+                  source: "workspace",
+                  relative_cwd: ".",
+                  checkout_digest: "test-checkout",
+                  invocation: { artifact: "tests/unit/flow-effects.test.ts" },
+                },
+              }
+            : {}),
         })),
         effects: { planned: [...declared], approved: [], applied: [...declared] },
         output: null,

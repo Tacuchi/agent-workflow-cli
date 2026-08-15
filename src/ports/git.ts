@@ -92,6 +92,15 @@ export interface GitPort {
   isDirty(repoPath: string): Promise<boolean>;
   changedFiles(repoPath: string): Promise<string[]>;
   /**
+   * Digest of the exact working-tree state relative to HEAD.
+   *
+   * `isDirty` and `changedFiles` answer whether a tree changed and which paths
+   * moved; neither changes when an already-dirty file's bytes change again.
+   * Checkout-bound evidence needs the latter distinction, so this fingerprint
+   * includes the binary patch, status metadata and untracked file blobs.
+   */
+  checkoutFingerprint(repoPath: string): Promise<string>;
+  /**
    * The commit HEAD points at; `null` on an unborn HEAD.
    *
    * A branch NAME is not a baseline — it keeps meaning something different as

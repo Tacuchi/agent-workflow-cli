@@ -74,4 +74,21 @@ describe("runNextNumber", () => {
     expect(result.created).toBe(false);
     expect(result.next).toBe("008");
   });
+
+  it("continúa 999 hacia 1000 y conserva el orden numérico", async () => {
+    const dir = join(workspace, "docs", "plans");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "999-plan-legacy.md"), "x");
+
+    const after999 = await runNextNumber(fs, env, paths, { directory: "docs/plans", dryRun: true });
+    expect(after999.next).toBe("1000");
+
+    writeFileSync(join(dir, "1000-plan-corte.md"), "x");
+    const after1000 = await runNextNumber(fs, env, paths, {
+      directory: "docs/plans",
+      dryRun: true,
+    });
+    expect(after1000.current_max).toBe(1000);
+    expect(after1000.next).toBe("1001");
+  });
 });

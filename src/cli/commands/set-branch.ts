@@ -1,7 +1,7 @@
 import { runProjectMdUpsertWrite } from "../../application/project-md-upsert-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -11,7 +11,7 @@ function makeSetBranchCommand(
   name: string,
   label: string,
   key: "workingBranches" | "qaBranches",
-): QtcCommand {
+): CliCommand {
   return {
     name,
     describe:

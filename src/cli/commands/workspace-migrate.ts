@@ -23,7 +23,7 @@ import {
 } from "../../application/workspace-migrate/preview.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 import { type FlagContract, reviewFlags, unknownFlagMessage } from "./unknown-flags.js";
@@ -45,7 +45,7 @@ export interface MigrateApplyOutput extends WorkspaceMigrationApplied {
 
 export type WorkspaceMigrateOutput = MigratePreviewOutput | MigrateApplyOutput;
 
-export const workspaceMigrateCommand: QtcCommand<WorkspaceMigrateOutput> = {
+export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
   name: "workspace-migrate",
   describe:
     "Pone al día un workspace con serie legacy: renombra los marcadores del bloque de proyecto al namespace vigente, " +

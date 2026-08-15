@@ -4,7 +4,11 @@ export type McpInstance = string;
 
 export type McpEntryName = string;
 
-export const DEFAULT_MCP_INSTANCES = ["cert", "prod"] as const;
+/** A registered connection and the exact DSN variable it owns. */
+export interface McpConnectionRef {
+  name: McpInstance;
+  dsnVar: string;
+}
 
 export interface McpEntry {
   name: McpEntryName;
@@ -62,9 +66,6 @@ export function validateMcpInstance(
       error: `nombre de conexión MCP inválido: '${input}'. Usá letras, números y guiones; debe iniciar con letra`,
     };
   }
-  if (value === "both") {
-    return { ok: false, error: "'both' está reservado para selección múltiple" };
-  }
   return { ok: true, value };
 }
 
@@ -95,9 +96,10 @@ export function validateDsnVarName(
 /**
  * Ownership check: true when an existing config entry plausibly belongs to this
  * tool. Every shape this CLI ever wrote launches dbhub ("agent-workflow mcp
- * dbhub <x>" today; "npx @bytebase/dbhub" in the legacy era), so a same-named
- * entry with neither marker is the user's own server — remove/cleanup must
- * leave it untouched (at user scope the blast radius is every project).
+ * dbhub --instance <x>" today; "npx @bytebase/dbhub" in the legacy era), so
+ * a same-named entry with neither marker is the user's own server —
+ * remove/cleanup must leave it untouched (at user scope the blast radius is
+ * every project).
  */
 export function isDbhubManagedEntry(raw: { command?: unknown; args?: unknown }): boolean {
   const command = typeof raw.command === "string" ? raw.command : "";
@@ -108,7 +110,7 @@ export function isDbhubManagedEntry(raw: { command?: unknown; args?: unknown }):
 
 export function buildMcpEntry(
   instance: McpInstance,
-  dsnVar?: string,
+  dsnVar: string,
   platform: string = process.platform,
 ): McpEntry {
   const normalized = normalizeMcpInstance(instance);
@@ -117,9 +119,7 @@ export function buildMcpEntry(
     READONLY: "true",
     TRANSPORT: "stdio",
   };
-  if (dsnVar !== undefined) {
-    env.DBHUB_DSN_VAR = normalizeDsnVarName(dsnVar);
-  }
+  env.DBHUB_DSN_VAR = normalizeDsnVarName(dsnVar);
   // Windows: the global npm bin is an `agent-workflow.cmd` shim; hosts that
   // spawn the server without a shell fail (ENOENT/EINVAL) → wrap in `cmd /c`.
   // The doctor compares against this same shape on the same machine — no drift.
@@ -128,8 +128,8 @@ export function buildMcpEntry(
     name: mcpEntryNameFor(normalized),
     command: isWin ? "cmd" : "agent-workflow",
     args: isWin
-      ? ["/c", "agent-workflow", "mcp", "dbhub", normalized]
-      : ["mcp", "dbhub", normalized],
+      ? ["/c", "agent-workflow", "mcp", "dbhub", "--instance", normalized]
+      : ["mcp", "dbhub", "--instance", normalized],
     env,
   };
 }

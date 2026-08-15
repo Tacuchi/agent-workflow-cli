@@ -21,6 +21,7 @@ import {
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { WORKLINE_FLOWS, type WorklineFlow } from "../capability/compose.js";
+import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import type { PathsService } from "../paths-service.js";
 import { recordFlowAdoption } from "../session-custody-recorder.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
@@ -57,9 +58,21 @@ export async function advanceFlow(
   paths: PathsService,
   input: AdvanceFlowInput,
 ): Promise<AdvanceFlowResult> {
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  if (!canon.ok) {
+    return {
+      ok: false,
+      failure: {
+        code: "DOCS_CANON_INVALID",
+        message: canon.error,
+        action: "corregí [docs] para conservar el layout documental canónico antes de avanzar",
+      },
+    };
+  }
   // A write path: a closed line is never advanced by accident, and nothing is
   // chosen by recency — several active sessions with no association is ambiguous.
   const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "write",
     ...(input.code !== undefined ? { code: input.code } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
     allowClosed: false,
@@ -139,7 +152,19 @@ export async function recoverFlowBoundary(
   paths: PathsService,
   input: RecoverFlowInput,
 ): Promise<AdvanceFlowResult> {
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  if (!canon.ok) {
+    return {
+      ok: false,
+      failure: {
+        code: "DOCS_CANON_INVALID",
+        message: canon.error,
+        action: "corregí [docs] para conservar el layout documental canónico antes de recuperar",
+      },
+    };
+  }
   const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "write",
     ...(input.code !== undefined ? { code: input.code } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
     allowClosed: false,

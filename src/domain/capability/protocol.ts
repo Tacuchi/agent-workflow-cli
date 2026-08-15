@@ -30,6 +30,7 @@
 
 import { randomUUID } from "node:crypto";
 import { semanticDigest } from "../../application/semantic-operation/protocol.js";
+import type { CheckoutProof } from "../source-boundary.js";
 import type {
   CapabilityDescriptor,
   CapabilityExposure,
@@ -553,6 +554,8 @@ export interface ValidationOutcome {
   id: string;
   passed: boolean;
   detail: string | null;
+  /** Present whenever the evidence is governed by `workline.source-bounded`. */
+  proof?: CheckoutProof;
 }
 
 /**

@@ -7,11 +7,11 @@ import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import { parseFuentesSpecs } from "../parsers/fuentes.js";
 import { parseWorkingBranches } from "../parsers/working-branches.js";
-import type { QtcCommand } from "../registry.js";
+import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const projectMdUpsertCommand: QtcCommand = {
+export const projectMdUpsertCommand: CliCommand = {
   name: "project-md-upsert",
   describe:
     "Read or update the <NS>-PROJECT block in CLAUDE.md/AGENTS.md. " +

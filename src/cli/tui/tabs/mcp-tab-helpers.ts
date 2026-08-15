@@ -28,7 +28,7 @@ export function buildArgs(action: string, values: Record<string, string> = {}): 
 
 /**
  * Suggest a DSN env var name from a connection alias, mirroring the CLI's
- * `dsnKeyForInstance`: `cert` → `DB_CERT_DSN`, `my-db` → `DB_MY_DB_DSN`.
+ * `dsnKeyForInstance`: `alpha` → `DB_ALPHA_DSN`, `my-db` → `DB_MY_DB_DSN`.
  * Returns "" for an empty alias (no suggestion to prefill).
  */
 export function suggestDsnVar(alias: string): string {

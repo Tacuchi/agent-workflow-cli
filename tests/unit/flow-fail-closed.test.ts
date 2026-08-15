@@ -82,6 +82,22 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
   const bytes = async (): Promise<string> =>
     JSON.stringify(decidedState(await readFile(statePath(), "utf8")));
 
+  it("refuses every flow entry when the core documentary canon is invalid", async () => {
+    await writeFile(paths.cwdSkillsToml(), '[docs]\nplan = "knowledge/plans"\n');
+    const before = await bytes();
+
+    const advanced = await advanceFlow(fs, paths, { code: "001", adopt: false });
+    expect(advanced.ok).toBe(false);
+    if (advanced.ok || !("failure" in advanced)) return;
+    expect(advanced.failure.code).toBe("DOCS_CANON_INVALID");
+
+    const submitted = await submitFlow(fs, paths, { code: "001", raw: "{}", approval: null });
+    expect(submitted.ok).toBe(false);
+    if (submitted.ok || !("failure" in submitted)) return;
+    expect(submitted.failure.code).toBe("DOCS_CANON_INVALID");
+    expect(await bytes()).toBe(before);
+  });
+
   /** Put the run back where `beforeEach` left it, attempts included. */
   const reseed = async (): Promise<void> => {
     await rm(statePath());

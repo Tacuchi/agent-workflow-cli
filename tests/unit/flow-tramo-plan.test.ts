@@ -364,7 +364,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await writeFile(
       join(workdir, PLAN_DOC),
-      `# Plan 031 — tramo\n\n## Impacted\n\n- **${ALIAS}:** el motor de flows.\n`,
+      `# Plan 031 — tramo\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — tramo\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — recorrer el tramo _(fuentes: ${ALIAS})_\n`,
       "utf8",
     );
   });
@@ -404,6 +404,17 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
         id,
         passed: true,
         detail: `salida real de ${id}`,
+        ...(id === "workline.source-bounded"
+          ? {
+              proof: {
+                kind: "inspection" as const,
+                source: "workspace",
+                relative_cwd: ".",
+                checkout_digest: "test-checkout",
+                invocation: { artifact: "tests/unit/flow-tramo-plan.test.ts" },
+              },
+            }
+          : {}),
       })),
       effects: { planned: [...declared], approved: [], applied: [...declared] },
       output: null,

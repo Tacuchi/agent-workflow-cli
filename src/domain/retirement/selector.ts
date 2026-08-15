@@ -13,6 +13,8 @@
  * failure.
  */
 
+import { CORRELATIVE_SOURCE, normalizeCorrelativeInput } from "../correlative.js";
+import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../docs-canon.js";
 import { type WorklineKind, isWorklineKind, nodeFromDocPath } from "../workline-node.js";
 
 export type TargetSelector =
@@ -35,10 +37,12 @@ export type SelectorParse =
   | { ok: true; selector: TargetSelector }
   | { ok: false; problem: SelectorProblem };
 
-const BARE_NUMBER = /^\d{1,4}$/;
-const SESSION_FOLDER = /^(?:session)?\d{3,}-[A-Za-z0-9._-]+$/;
+const SESSION_FOLDER = new RegExp(`^(?:session)?${CORRELATIVE_SOURCE}-[A-Za-z0-9._-]+$`);
 
-export function parseTargetSelector(raw: string): SelectorParse {
+export function parseTargetSelector(
+  raw: string,
+  canon: Pick<CoreDocsCanon, "spec" | "plan"> = DEFAULT_CORE_DOCS_CANON,
+): SelectorParse {
   const text = raw.trim();
   if (text.length === 0) {
     return {
@@ -55,7 +59,7 @@ export function parseTargetSelector(raw: string): SelectorParse {
   // A path is checked first: `docs/plans/024-plan-x.md` contains no `:` on any
   // platform we support, but a Windows spelling could, and the path reading is
   // the more specific of the two.
-  const fromPath = nodeFromDocPath(text);
+  const fromPath = nodeFromDocPath(text, canon);
   if (fromPath !== null) {
     return {
       ok: true,
@@ -70,7 +74,8 @@ export function parseTargetSelector(raw: string): SelectorParse {
 
   const colon = text.indexOf(":");
   if (colon > 0) return parseQualified(text, colon);
-  if (BARE_NUMBER.test(text)) return { ok: true, selector: { form: "bare", key: pad(text) } };
+  const bare = normalizeCorrelativeInput(text);
+  if (bare !== null) return { ok: true, selector: { form: "bare", key: bare } };
   if (SESSION_FOLDER.test(text)) return { ok: true, selector: { form: "folder", folder: text } };
 
   return {
@@ -107,15 +112,14 @@ function parseQualified(text: string, colon: number): SelectorParse {
       },
     };
   }
-  // A session or a quick is addressed by number OR by folder; a spec and a plan
-  // only ever by number, and padding it is what makes `plan:24` and `plan:024`
-  // the same request instead of one that silently finds nothing.
-  const normalized = BARE_NUMBER.test(key) ? pad(key) : key;
-  return { ok: true, selector: { form: "qualified", kind, key: normalized } };
-}
-
-function pad(key: string): string {
-  return key.padStart(3, "0");
+  // A decimal input is one unambiguous identity even when a legacy invocation
+  // omitted its display padding. Normalize it at this boundary; the graph still
+  // contains only full correlatives, and a bare target remains ambiguous when
+  // several node kinds answer to that same number.
+  return {
+    ok: true,
+    selector: { form: "qualified", kind, key: normalizeCorrelativeInput(key) ?? key },
+  };
 }
 
 function normalizeSlashes(path: string): string {

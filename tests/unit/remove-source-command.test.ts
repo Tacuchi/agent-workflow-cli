@@ -56,6 +56,7 @@ describe("remove-source command", () => {
       ],
       stack: {},
       lastActivity: "2026-01-01 00:00",
+      markers: new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd).blockMarkers(),
     });
     await writeFile(join(cwd, "CLAUDE.md"), block, "utf8");
   });

@@ -27,6 +27,7 @@ import {
 import type { GraphNode, RetirementGraph } from "./graph.js";
 
 export type RejectionCode =
+  | "DOCS_CANON_INVALID"
   | "TARGET_NOT_FOUND"
   | "TARGET_AMBIGUOUS"
   | "EVIDENCE_MISSING"
