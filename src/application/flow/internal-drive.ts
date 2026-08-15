@@ -46,7 +46,9 @@ import {
   type FlowRunEvent,
   type FlowRunState,
   applyTransition,
+  restatesLastEvent,
   withActionAttempted,
+  withAttempt,
   withBoundary,
   withEvent,
   withPendingAction,
@@ -55,7 +57,13 @@ import {
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { sessionNumericCode } from "../session-resolver.js";
-import { advanceFlowRun, directiveFor, effectsOfTransition, resolveBoundary } from "./advance.js";
+import {
+  advanceFlowRun,
+  directiveFor,
+  effectsOfTransition,
+  failedExecutionAttempt,
+  resolveBoundary,
+} from "./advance.js";
 import type { InternalActionExecutor, InternalActionOutcome } from "./internal-actions.js";
 import { type FlowRunLocation, type FlowRunMutation, applyUnderLock } from "./run-state-service.js";
 
@@ -238,7 +246,7 @@ function accept(
   const outputDigest = semanticDigest({ output: outcome.output });
 
   if (verdict !== null) {
-    const failure = {
+    const failure: Extract<FlowRunEvent, { kind: "failed" }> = {
       kind: "failed",
       transition: pending.decision.id,
       operation: pending.plan.operation,
@@ -247,12 +255,27 @@ function accept(
       // the trace is where "which precondition was missing" has to survive.
       message: outcome.summary,
       recovery: verdict.detail.action,
-    } as const;
+      // What it applied ANYWAY. A failed operation that got partway is the case
+      // where handing the boundary back as answerable would put a second answer
+      // on top of a half-applied effect, and this is the only record of it.
+      effects: [...outcome.effects],
+    };
     // Re-running `aw flow advance` over a boundary nobody has fixed yet reaches
     // exactly this point again, and appending the identical event every time would
     // turn the trace into a retry counter. The same failure, still standing, is one
-    // fact — the attempt history is where "how many times" belongs.
-    const failed = repeats(state, failure) ? state : withEvent(state, failure);
+    // fact — the attempt history is where "how many times" belongs, and that is
+    // charged right below, every time, precisely because the event is not.
+    const traced = restatesLastEvent(state, failure) ? state : withEvent(state, failure);
+    // The try the cap counts: the action RAN and came back refused. Charged here
+    // rather than on the way into the next advance, so somebody who fixes the
+    // cause gets the run that would have worked instead of a degradation.
+    const failed = withAttempt(
+      traced,
+      failedExecutionAttempt(traced, pending.decision, {
+        code: verdict.detail.code,
+        message: outcome.summary,
+      }),
+    );
     const resolved = resolveBoundary(failed, journey);
     const built = directiveFor(failed, resolved, [], {
       ...(verdict.detail.outcome === undefined ? {} : { outcome: verdict.detail.outcome }),
@@ -308,17 +331,6 @@ function accept(
     state: advanced.state,
     value: { directive: advanced.directive, advanced: true },
   };
-}
-
-/** Whether the trace's last event is this same failure, unchanged. */
-function repeats(state: FlowRunState, failure: Extract<FlowRunEvent, { kind: "failed" }>): boolean {
-  const last = state.events.at(-1);
-  if (last === undefined || last.kind !== "failed") return false;
-  return (
-    last.transition === failure.transition &&
-    last.code === failure.code &&
-    last.message === failure.message
-  );
 }
 
 /**

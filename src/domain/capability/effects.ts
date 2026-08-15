@@ -64,6 +64,20 @@ export function isEffectClass(value: unknown): value is EffectClass {
 export const SELF_AUTHORIZABLE_CLASSES: readonly EffectClass[] = ["read_only", "local_additive"];
 
 /**
+ * Whether these classes reach anything a second attempt could double.
+ *
+ * `read_only` is the one class that leaves nothing behind: repeating it produces
+ * the same reading and credits nothing. Every other class writes, runs, leaves
+ * the machine or destroys, and each of those makes "do it again" a different
+ * question from "do it once". Two guards ask exactly this — whether an exhausted
+ * boundary may be passed over, and whether one may be handed back as answerable
+ * — and they ask it through this predicate so they cannot answer it differently.
+ */
+export function touchesTheWorld(classes: readonly EffectClass[]): boolean {
+  return classes.some((effect) => effect !== "read_only");
+}
+
+/**
  * What the HOST forbids or hardens, independent of what any descriptor says.
  *
  * The strictest policy always wins. A descriptor is authored by whoever wrote

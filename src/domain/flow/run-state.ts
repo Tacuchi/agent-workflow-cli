@@ -25,13 +25,38 @@
 import type { WorklineFlow } from "../../application/capability/compose.js";
 import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
 import { canonicalJson, semanticDigest } from "../../application/semantic-operation/protocol.js";
-import { type EffectClass, isEffectClass } from "../capability/effects.js";
+import { type EffectClass, isEffectClass, touchesTheWorld } from "../capability/effects.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
 import type { LocalProposal } from "../proposal.js";
 import type { FlowDecision } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
 
-export const FLOW_RUN_STATE_VERSION = 7;
+/**
+ * The version this CLI WRITES. Every state it persists carries it.
+ *
+ * Raised by the attempt accounting: a state that carries the monotone floor is a
+ * state whose cap depends on a reader that knows to consult it. The version gate
+ * is an exact-equality check in every build that ever shipped, so an older CLI
+ * refuses a file stamped with a version it does not know — which is the only
+ * mechanism that stops it from reading the new format, IGNORING the floor, and
+ * turning the cap off in silence while somebody alternates CLI versions over one
+ * run. Failing with a cause is the requirement; failing silently is the defect.
+ */
+export const FLOW_RUN_STATE_VERSION = 8;
+
+/**
+ * The versions this CLI READS, newest first.
+ *
+ * Two, and the second one is not a migration: every field version 8 added is
+ * OPTIONAL and its absence is the conservative reading — no floor beyond the
+ * ledger, nothing forgiven, no degradation declared. So a run written before
+ * them is read exactly as it always was, keeps walking, and is re-stamped as
+ * version 8 by its first write. Refusing it instead would strand runs that were
+ * mid-journey when the CLI was upgraded, which is the compatibility the spec
+ * demands; inventing values for the missing fields would be the fabrication the
+ * version gate exists to refuse. Neither happens here.
+ */
+export const FLOW_RUN_STATE_READABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 7];
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -70,9 +95,94 @@ export interface FlowRunAttempt {
  */
 export const MAX_BOUNDARY_ATTEMPTS = 3;
 
-/** How many attempts this run has already spent on one transition. */
+/**
+ * A boundary the run GAVE UP on, and why.
+ *
+ * The cursor cannot express this on its own. An exhausted boundary lands in
+ * `applied` beside the transitions that really happened and in `skipped` beside
+ * the ones a condition passed over, so whoever reads the final state cannot tell
+ * "the criteria were written" from "nobody wrote them and the retry burned".
+ * This is that third fact, and it is a subset of `skipped`: a degradation the run
+ * did not pass over would be a claim about a step it is still standing on.
+ */
+export interface FlowRunDegradation {
+  transition: string;
+  /** Why it was given up on. Never empty — a degradation without cause is a lie. */
+  cause: string;
+}
+
+/**
+ * How many attempts this run has EFFECTIVELY spent on one transition.
+ *
+ * Three numbers, and none of them alone is the answer. The ledger rows are what
+ * this file remembers, and they are exactly what a restored copy of the file
+ * rolls back — the seal detects an edit but not a `cp` of yesterday's state, so
+ * counting rows alone made the cap evadable. The FLOOR is the monotone counter
+ * kept outside the sealed blob (see the run-state service): it never goes
+ * backwards, so the maximum of the two is the count that survives a restore. The
+ * GRANTS are what a recovery gave back, and they are subtracted rather than
+ * deleted from the floor, because a recovery that lowered the counter would
+ * reopen the very hole it is fenced by.
+ *
+ * Both maps are optional on purpose: a run written before the counter existed has
+ * only its rows, which is precisely what it always had. Absence is read as "no
+ * floor beyond the ledger, nothing forgiven" — the conservative value — and never
+ * as a reason to refuse a run that was walking fine.
+ */
 export function attemptsAt(state: FlowRunState, transition: string): number {
-  return state.attempts.filter((attempt) => attempt.transition === transition).length;
+  const spent = state.attempts.filter((attempt) => attempt.transition === transition).length;
+  const floor = state.attempt_floor?.[transition] ?? 0;
+  const granted = state.attempt_grants?.[transition] ?? 0;
+  return Math.max(0, Math.max(spent, floor) - granted);
+}
+
+/**
+ * Why this boundary must NOT be handed back as answerable — or `null`.
+ *
+ * What the recovery guard consults, and it reads the run's own material trace
+ * rather than inferring from the effect ledger: the ledger is run-wide, so it
+ * cannot say WHICH boundary applied what. Two refusals, and the second one is
+ * the doubt rather than the fact:
+ *
+ * - `materialized` — an event of this transition declares it applied something
+ *   past `read_only`, or reports a half-applied effect. The world moved here, so
+ *   giving the boundary back would invite a second answer on top of it.
+ * - `unverified` — the run wrote down that it was ABOUT to run the action and
+ *   the trace never came back. Nobody can say whether the operation reached
+ *   anything, and at a guard "cannot say" reads as refusal. Its way out is an
+ *   advance, which re-runs the action and produces the verdict that is missing.
+ *
+ * Scanned from the END, the same direction every other reader of this trace
+ * walks it — but the whole trace is scanned, not just its last entry, because
+ * the question is "did anything ever happen here", not "what happened last".
+ */
+export type RecoveryBlocker =
+  | { reason: "materialized"; event: FlowRunEvent }
+  | { reason: "unverified" };
+
+export function recoveryBlockedAt(state: FlowRunState, transition: string): RecoveryBlocker | null {
+  const trace = state.events.filter((event) => event.transition === transition);
+  const material = [...trace].reverse().find(declaresMaterialEffect);
+  if (material !== undefined) return { reason: "materialized", event: material };
+  const pending = state.pending_action;
+  if (pending?.transition === transition && pending.attempted && trace.length === 0) {
+    return { reason: "unverified" };
+  }
+  return null;
+}
+
+/**
+ * Whether this event says the world moved — including when it cannot say.
+ *
+ * `FLOW_EFFECT_PARTIAL` is its own answer: the invocation declared complete and
+ * did not apply everything the row demanded, so what it DID apply is exactly the
+ * unknown. And a `failed` event with no `effects` at all comes from a trace
+ * written before the field existed: same unknown, same refusal.
+ */
+function declaresMaterialEffect(event: FlowRunEvent): boolean {
+  if (event.kind !== "failed") return touchesTheWorld(event.effects);
+  if (event.effects === undefined) return true;
+  return event.code === "FLOW_EFFECT_PARTIAL" || touchesTheWorld(event.effects);
 }
 
 /**
@@ -86,9 +196,21 @@ export function attemptsAt(state: FlowRunState, transition: string): number {
  * action, same effects. Sealing the attempts into it would report the caller's
  * own previous refusal back to them as `FLOW_ANSWER_STALE`, replacing a precise
  * reason ("this evidence is missing") with a vague one.
+ *
+ * The floor and the grants leave with the attempts, for the same reason rather
+ * than a new one: they are the same bookkeeping, reconciled from the monotone
+ * counter on every read. A seal that moved when the counter did would turn
+ * recording an attempt — or recovering a boundary — into staleness for an answer
+ * that is still about exactly this position.
  */
 export function positionDigest(state: FlowRunState): string {
-  const { attempts: _spent, digest: _seal, ...position } = state;
+  const {
+    attempts: _spent,
+    attempt_floor: _floor,
+    attempt_grants: _granted,
+    digest: _seal,
+    ...position
+  } = state;
   return semanticDigest(position);
 }
 
@@ -170,6 +292,18 @@ export type FlowRunEvent =
       message: string;
       /** The next action, so a stopped run is never a dead end. */
       recovery: string;
+      /**
+       * What the failed invocation still APPLIED, as it declared it.
+       *
+       * A failure is not the same as "nothing happened", and the difference is
+       * the only thing that separates a boundary somebody may answer again from
+       * one where a second answer lands on top of a half-applied effect. The
+       * recovery guard reads it; nothing else does.
+       *
+       * Optional because a trace written before this field existed cannot say —
+       * and at the guard, `undefined` reads as the refusal, never as `[]`.
+       */
+      effects?: EffectClass[];
     };
 
 /**
@@ -247,6 +381,26 @@ export interface FlowRunState {
   /** Effects across their three moments, so a partial effect is expressible. */
   effects: EffectLedger;
   attempts: FlowRunAttempt[];
+  /**
+   * Boundaries this run gave up on, with the cause — a subset of {@link skipped}.
+   *
+   * Optional because a run written before this field existed cannot say, and
+   * inventing a degradation it never recorded would be the same fabrication the
+   * version gate refuses everywhere else. Absent reads as "none declared", never
+   * as "none happened".
+   */
+  degraded?: FlowRunDegradation[];
+  /**
+   * The monotone counter's word on attempts per transition, reconciled on read.
+   *
+   * A CACHE of the sidecar that lives beside this file, kept here so the engine
+   * stays pure: the service raises it before anything reads the state, and a state
+   * restored from an older copy gets the live floor back, not the one it was
+   * saved with. See {@link attemptsAt}.
+   */
+  attempt_floor?: Record<string, number>;
+  /** Attempts a recovery gave back per transition — also from the sidecar. */
+  attempt_grants?: Record<string, number>;
   /** Seal over every field above. */
   digest: string;
 }
@@ -328,6 +482,89 @@ export function skipTransition(state: FlowRunState, decisionId: string): FlowRun
   });
 }
 
+/**
+ * Pass over a boundary the run GAVE UP on, saying so in its own field.
+ *
+ * A degradation is a skip — the cursor has to leave the step behind — but it is
+ * not the same fact, and the difference is the whole point: one says the
+ * condition never fired, the other says the question was asked as often as it may
+ * be and nobody resolved it. Recorded apart so a reader of the final state can
+ * tell them without reconstructing the attempt history.
+ */
+export function degradeTransition(
+  state: FlowRunState,
+  decisionId: string,
+  cause: string,
+): FlowRunState {
+  const skipped = skipTransition(state, decisionId);
+  return sealRunState({
+    ...withoutSeal(skipped),
+    degraded: [...(state.degraded ?? []), { transition: decisionId, cause }],
+  });
+}
+
+/**
+ * Give a boundary back the attempts it spent — as a GRANT, never as a deletion.
+ *
+ * Recovery cannot lower the monotone counter: the counter is what makes restoring
+ * an older ledger useless, and a recovery that decremented it would hand back the
+ * same hole wearing a supported name. So what is recorded is how many attempts
+ * were forgiven, which only ever grows; the effective count is the difference.
+ * See {@link attemptsAt}.
+ */
+export function grantAttempts(
+  state: FlowRunState,
+  transition: string,
+  attempts: number,
+): FlowRunState {
+  const granted = { ...(state.attempt_grants ?? {}) };
+  granted[transition] = (granted[transition] ?? 0) + attempts;
+  return sealRunState({ ...withoutSeal(state), attempt_grants: granted });
+}
+
+/**
+ * Stamp a state read from an older readable version with the current one.
+ *
+ * Applied on the way OUT of the reader, so the run walks — and is written back —
+ * as one format from the first read onwards, and the version stops being a fact
+ * that varies per file within one workspace. Nothing else is touched: the older
+ * versions this build reads differ from the current one only by fields whose
+ * absence is already the conservative reading, so there is nothing to fill in
+ * and nothing is filled in. Re-sealed because the version is inside the seal.
+ */
+export function atCurrentVersion(state: FlowRunState): FlowRunState {
+  if (state.version === FLOW_RUN_STATE_VERSION) return state;
+  return sealRunState({ ...withoutSeal(state), version: FLOW_RUN_STATE_VERSION });
+}
+
+/**
+ * Reconcile the state with the monotone counter that lives outside its seal.
+ *
+ * The only writer of both maps, so "the sidecar is the authority and the state is
+ * its cache" is one statement in one place. An empty map is written as ABSENT
+ * rather than as `{}`: a run that never spent an attempt keeps the exact bytes it
+ * had before this field existed, which is what makes the change readable in both
+ * directions instead of a silent format break.
+ */
+export function withAttemptCounters(
+  state: FlowRunState,
+  counters: { floor: Record<string, number>; grants: Record<string, number> },
+): FlowRunState {
+  const floor = emptyToAbsent(counters.floor);
+  const grants = emptyToAbsent(counters.grants);
+  const { attempt_floor: _floor, attempt_grants: _granted, ...rest } = withoutSeal(state);
+  return sealRunState({
+    ...rest,
+    ...(floor === undefined ? {} : { attempt_floor: floor }),
+    ...(grants === undefined ? {} : { attempt_grants: grants }),
+  });
+}
+
+function emptyToAbsent(counter: Record<string, number>): Record<string, number> | undefined {
+  const entries = Object.entries(counter).filter(([, count]) => count > 0);
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
+}
+
 /** Move the boundary to where the walk stopped, applying nothing. */
 export function withBoundary(state: FlowRunState, boundary: string | null): FlowRunState {
   return sealRunState({ ...withoutSeal(state), boundary });
@@ -382,6 +619,25 @@ export function withActionAttempted(state: FlowRunState): FlowRunState {
 /** Append one material event to the run's trace, re-sealing the result. */
 export function withEvent(state: FlowRunState, event: FlowRunEvent): FlowRunState {
   return sealRunState({ ...withoutSeal(state), events: [...state.events, event] });
+}
+
+/**
+ * Whether appending this failure would only restate the one already there.
+ *
+ * The same failure, still standing, is ONE fact: re-running a broken action or
+ * re-sending the same refused result reaches the identical verdict, and
+ * appending it every time would turn the trace into a retry counter — which is
+ * what the attempt history is for. Both producers of a failure event ask here,
+ * so the internal driver and an external result cannot disagree about it.
+ */
+export function restatesLastEvent(state: FlowRunState, event: FlowRunEvent): boolean {
+  const last = state.events.at(-1);
+  if (last === undefined || last.kind !== "failed" || event.kind !== "failed") return false;
+  return (
+    last.transition === event.transition &&
+    last.code === event.code &&
+    last.message === event.message
+  );
 }
 
 /** Keep a validated observation for the rule that consumes it later. */
@@ -485,14 +741,16 @@ export function parseRunState(raw: string): FlowRunRead {
       "restauralo o re-adoptá la sesión con 'aw flow advance --adopt'",
     );
   }
-  if (parsed.version !== FLOW_RUN_STATE_VERSION) {
-    // No silent migration, in either direction: an older state predates fields
-    // the engine now reads, and inventing them would fabricate the very history
-    // this file exists to make trustworthy. Re-adoption is explicit and cheap.
+  if (!FLOW_RUN_STATE_READABLE.includes(parsed.version as number)) {
+    // No silent migration, in either direction: a version outside the readable
+    // set either predates fields the engine now reads — and inventing them would
+    // fabricate the very history this file exists to make trustworthy — or comes
+    // from a build ahead of this one, whose fields this build would ignore.
+    // Refusing with the cause is what keeps the second case from being silent.
     return refuse(
       "FLOW_RUN_VERSION_UNSUPPORTED",
       `versión de estado de corrida no soportada: ${String(parsed.version)}`,
-      `esta versión del CLI lee la ${FLOW_RUN_STATE_VERSION}: actualizá el CLI, o re-adoptá la sesión con 'aw flow advance --flow <flow> --adopt' (no hay migración automática)`,
+      `esta versión del CLI lee ${FLOW_RUN_STATE_READABLE.join(" y ")} y escribe la ${FLOW_RUN_STATE_VERSION}: actualizá el CLI, o re-adoptá la sesión con 'aw flow advance --flow <flow> --adopt' (no hay migración automática)`,
     );
   }
   const shape = checkShape(parsed);
@@ -604,6 +862,18 @@ function checkRecordShape(
   }
   if (!isEffectLedger(parsed.effects)) return invalid("no trae el registro de efectos completo");
   if (!isAttemptArray(parsed.attempts)) return invalid("trae un historial de intentos inválido");
+  if (!isDegradationArray(parsed.degraded)) {
+    return invalid("declara una degradación sin transición o sin causa");
+  }
+  // A degradation is a skip that says why: one recorded over a step the run never
+  // passed over would be a claim about a boundary it is still standing on.
+  const skipped = parsed.skipped as string[];
+  if ((parsed.degraded ?? []).some((entry) => !skipped.includes(entry.transition))) {
+    return invalid("declara degradada una transición que el recorrido nunca pasó por alto");
+  }
+  if (!isCounterMap(parsed.attempt_floor) || !isCounterMap(parsed.attempt_grants)) {
+    return invalid("trae una contabilidad de intentos que no es un contador por transición");
+  }
   if (typeof parsed.digest !== "string") return invalid("no trae su sello");
   return null;
 }
@@ -741,7 +1011,10 @@ function isEventArray(value: unknown): value is FlowRunEvent[] {
       return (
         typeof entry.code === "string" &&
         typeof entry.message === "string" &&
-        typeof entry.recovery === "string"
+        typeof entry.recovery === "string" &&
+        // ABSENT-or-well-formed, never defaulted: a version 7 trace has no such
+        // field, and the guard that reads it treats its absence as the refusal.
+        (entry.effects === undefined || isEffectClassArray(entry.effects))
       );
     }
     return false;
@@ -753,6 +1026,33 @@ function isObservationArray(value: unknown): value is FlowObservation[] {
   return value.every(
     (entry) =>
       isRecord(entry) && typeof entry.transition === "string" && isStringArray(entry.signals),
+  );
+}
+
+/**
+ * The two optional fields are checked as ABSENT-or-well-formed, never defaulted.
+ *
+ * Absence is the reading a run written before them gets, and it is the
+ * conservative one — no floor beyond the ledger, nothing forgiven. What is
+ * refused is a field that is THERE and unusable: a counter that is not a number
+ * per transition would make the cap depend on whatever somebody typed, which is
+ * the failure the counter exists to close.
+ */
+function isCounterMap(value: unknown): value is Record<string, number> | undefined {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  return Object.values(value).every((count) => Number.isInteger(count) && (count as number) >= 0);
+}
+
+function isDegradationArray(value: unknown): value is FlowRunDegradation[] | undefined {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry.transition === "string" &&
+      typeof entry.cause === "string" &&
+      entry.cause.trim().length > 0,
   );
 }
 

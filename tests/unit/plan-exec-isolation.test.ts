@@ -193,9 +193,9 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
         "FLOW_SCOPE_PLAN_UNREADABLE",
       ],
       // Y una corrida que no aísla ninguna fuente no tiene dónde escribir.
-      ["sin fuentes", { plan: UNO.plan, sources: [] }, "FLOW_ANSWER_INVALID"],
-      ["fuente repetida", { plan: UNO.plan, sources: [ALIAS, ALIAS] }, "FLOW_ANSWER_INVALID"],
-      ["sin plan", { sources: [ALIAS] }, "FLOW_ANSWER_INVALID"],
+      ["sin fuentes", { plan: UNO.plan, sources: [] }, "FLOW_SCOPE_INVALID"],
+      ["fuente repetida", { plan: UNO.plan, sources: [ALIAS, ALIAS] }, "FLOW_SCOPE_INVALID"],
+      ["sin plan", { sources: [ALIAS] }, "FLOW_SCOPE_INVALID"],
     ];
     for (const [caso, decisions, code] of casos) {
       const directive = await declareScope(UNO, decisions);

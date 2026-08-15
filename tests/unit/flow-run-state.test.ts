@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyUnderLock,
@@ -8,17 +8,27 @@ import {
   readRun,
 } from "../../src/application/flow/run-state-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import type { FlowDecision } from "../../src/domain/flow/authority.js";
 import {
+  FLOW_RUN_STATE_READABLE,
   FLOW_RUN_STATE_VERSION,
+  type FlowRunAttempt,
   type FlowRunState,
   applyTransition,
+  atCurrentVersion,
+  attemptsAt,
   checkAgainstJourney,
+  degradeTransition,
+  grantAttempts,
   newRunState,
   parseRunState,
+  positionDigest,
   serializeRunState,
   skipTransition,
   withActionAttempted,
+  withAttempt,
+  withAttemptCounters,
   withBoundary,
   withObservation,
   withPendingAction,
@@ -74,6 +84,100 @@ describe("estado de corrida — ida y vuelta", () => {
   });
 });
 
+describe("contabilidad de intentos — el ledger, el piso y lo perdonado", () => {
+  const spent = (transition: string, count: number): FlowRunAttempt[] =>
+    Array.from({ length: count }, (_unused, index) => ({
+      invocation_id: `sello-${transition}`,
+      attempt: index + 1,
+      request_digest: `payload-${index}`,
+      parent_request_digest: index === 0 ? null : `payload-${index - 1}`,
+      transition,
+    }));
+
+  it("sin contador, el ledger es la cuenta: un campo ausente asume el valor conservador", () => {
+    const state = { ...newRunState("quick", SESSION), attempts: spent("fixture.a", 2) };
+    expect(state.attempt_floor).toBeUndefined();
+    expect(attemptsAt(state, "fixture.a")).toBe(2);
+    expect(attemptsAt(state, "fixture.b")).toBe(0);
+  });
+
+  it("el piso manda cuando el ledger fue rebobinado, y lo perdonado se resta", () => {
+    const restored = {
+      ...newRunState("quick", SESSION),
+      attempts: spent("fixture.a", 1),
+      attempt_floor: { "fixture.a": 3 },
+    };
+    // Restaurar una copia anterior deja el ledger en uno; el contador sigue en
+    // tres, y tres es lo que cuenta.
+    expect(attemptsAt(restored, "fixture.a")).toBe(3);
+    // Recuperar no borra el contador: registra cuánto devolvió.
+    const recovered = grantAttempts(restored, "fixture.a", 3);
+    expect(recovered.attempt_grants).toEqual({ "fixture.a": 3 });
+    expect(attemptsAt(recovered, "fixture.a")).toBe(0);
+    // Y a partir de ahí se vuelve a contar desde el intento siguiente.
+    const retried = { ...recovered, attempts: spent("fixture.a", 4) };
+    expect(attemptsAt(retried, "fixture.a")).toBe(1);
+  });
+
+  it("los contadores no entran en el sello de la posición: no vuelven vencida una respuesta", () => {
+    const state = newRunState("quick", SESSION);
+    const counted = withAttemptCounters(state, {
+      floor: { "fixture.a": 2 },
+      grants: { "fixture.a": 1 },
+    });
+    expect(positionDigest(counted)).toBe(positionDigest(state));
+    // La degradación sí: es una decisión de la corrida, no contabilidad.
+    expect(positionDigest(degradeTransition(state, "fixture.a", "agotó sus intentos"))).not.toBe(
+      positionDigest(state),
+    );
+  });
+
+  it("un contador vacío no se escribe: el archivo queda como estaba", () => {
+    const state = newRunState("quick", SESSION);
+    const reconciled = withAttemptCounters(state, { floor: {}, grants: {} });
+    expect(serializeRunState(reconciled)).toBe(serializeRunState(state));
+    expect(parseRunState(serializeRunState(reconciled)).ok).toBe(true);
+  });
+});
+
+describe("degradación — una frontera agotada deja dicho por qué", () => {
+  it("degradar omite el paso Y lo declara, con su causa", () => {
+    const state = degradeTransition(
+      newRunState("quick", SESSION),
+      "fixture.a",
+      "agotó sus 3 intentos: degradá el gap",
+    );
+    expect(state.applied).toEqual(["fixture.a"]);
+    expect(state.skipped).toEqual(["fixture.a"]);
+    expect(state.degraded).toEqual([
+      { transition: "fixture.a", cause: "agotó sus 3 intentos: degradá el gap" },
+    ]);
+    // Salteada por condición: omitida SIN degradación. La diferencia que un
+    // lector del estado final no podía hacer.
+    const conditional = skipTransition(state, "fixture.b");
+    expect(conditional.skipped).toEqual(["fixture.a", "fixture.b"]);
+    expect(conditional.degraded?.map((one) => one.transition)).toEqual(["fixture.a"]);
+    const back = parseRunState(serializeRunState(conditional));
+    if (!back.ok) throw new Error(`esperaba un estado válido: ${back.failure.code}`);
+    expect(back.state).toEqual(conditional);
+  });
+
+  it("una degradación sin causa, o sobre un paso que nunca se omitió, se rechaza", () => {
+    const state = degradeTransition(newRunState("quick", SESSION), "fixture.a", "agotó");
+    for (const broken of [
+      { ...state, degraded: [{ transition: "fixture.a" }] },
+      { ...state, degraded: [{ transition: "fixture.a", cause: "  " }] },
+      { ...state, degraded: [{ transition: "fixture.z", cause: "agotó" }] },
+      { ...state, attempt_floor: { "fixture.a": "tres" } },
+      { ...state, attempt_grants: { "fixture.a": -1 } },
+    ]) {
+      const read = parseRunState(JSON.stringify(broken));
+      if (read.ok) throw new Error("un estado mal formado no puede leerse");
+      expect(read.failure.code).toBe("FLOW_RUN_INVALID");
+    }
+  });
+});
+
 describe("estado de corrida — fail-closed", () => {
   it("un estado editado a mano se rechaza con acción", () => {
     const state = newRunState("quick", SESSION);
@@ -116,6 +220,35 @@ describe("estado de corrida — fail-closed", () => {
       expect(read.failure.action).toContain("--adopt");
       expect(read.failure.action).toContain("migración automática");
     }
+  });
+
+  /**
+   * La versión que este CLI escribe es la que un CLI anterior NO lee.
+   *
+   * El formato creció —el piso monótono de intentos, el perdón de una
+   * recuperación, las degradaciones— y la versión se había quedado quieta: un
+   * binario anterior leía el archivo nuevo sin error, ignoraba el piso y apagaba
+   * el techo en silencio. Como la compuerta de versión es igualdad exacta en
+   * todo build que salió, subirla es lo único que hace que ese binario falle con
+   * causa. Y la lectura hacia atrás se preserva aparte, sin migrar nada: los
+   * campos nuevos son opcionales y su ausencia es la lectura conservadora.
+   */
+  it("escribe una versión que un CLI anterior rechaza, y lee la anterior sin inventarle campos", () => {
+    expect(FLOW_RUN_STATE_VERSION).toBeGreaterThan(7);
+    expect(FLOW_RUN_STATE_READABLE).toContain(7);
+    expect(FLOW_RUN_STATE_READABLE).not.toContain(FLOW_RUN_STATE_VERSION + 1);
+
+    const { digest: _seal, ...current } = newRunState("quick", SESSION);
+    const legacy = { ...current, version: 7 };
+    const read = parseRunState(JSON.stringify({ ...legacy, digest: semanticDigest(legacy) }));
+    if (!read.ok) throw new Error(`un ledger de la versión anterior se lee: ${read.failure.code}`);
+    expect(read.state.attempt_floor).toBeUndefined();
+    expect(read.state.degraded).toBeUndefined();
+    // Y se re-sella con la vigente, para que el formato deje de variar por
+    // archivo dentro de un mismo workspace.
+    const stamped = atCurrentVersion(read.state);
+    expect(stamped.version).toBe(FLOW_RUN_STATE_VERSION);
+    expect(parseRunState(JSON.stringify(stamped)).ok).toBe(true);
   });
 
   it("los pasos omitidos son un subconjunto de los que la corrida pasó", () => {
@@ -328,6 +461,77 @@ describe("estado de corrida — sobre un workspace real", () => {
     const after = await readRun(fs, location);
     if (!after.ok) throw new Error("esperaba leer la corrida");
     expect(after.state.applied).toEqual(["fixture.a"]);
+  });
+
+  /**
+   * El contador se escribe aparte, sube solo, y una adopción lo empieza de cero.
+   *
+   * Lo último no es un agujero en la monotonía: para llegar a una adopción hay
+   * que tirar la corrida entera —con todas sus transiciones aplicadas—, que es
+   * un precio incomparable con perder tres intentos. Conservarlo sería peor que
+   * inútil: re-adoptar tras un estado corrupto —la reparación que este mismo CLI
+   * imprime— volvería con la primera frontera ya agotada.
+   */
+  it("el contador vive en su propio archivo, sube solo y una adopción lo reinicia", async () => {
+    const location = locateRun(paths, SESSION);
+    const attempt = {
+      invocation_id: "sello",
+      attempt: 1,
+      request_digest: "payload",
+      parent_request_digest: null,
+      transition: "fixture.a",
+    };
+    await applyUnderLock(
+      fs,
+      location,
+      () => ({ ok: true, state: newRunState("quick", SESSION), value: null }),
+      { allowAbsent: true },
+    );
+    await applyUnderLock(fs, location, (current) => ({
+      ok: true,
+      state: withAttempt(current as FlowRunState, attempt),
+      value: null,
+    }));
+    const counter = JSON.parse(await readFile(location.countersPath, "utf8"));
+    expect(counter.attempts).toEqual({ "fixture.a": 1 });
+
+    // Borrar el estado no borra la cuenta: restaurar es exactamente eso.
+    await rm(location.statePath);
+    await writeFile(location.statePath, serializeRunState(newRunState("quick", SESSION)), "utf8");
+    const restored = await readRun(fs, location);
+    if (!restored.ok) throw new Error("esperaba leer la corrida restaurada");
+    expect(attemptsAt(restored.state, "fixture.a")).toBe(1);
+
+    // Adoptar de nuevo sí: la corrida es otra, y empieza sin intentos.
+    await rm(location.statePath);
+    await applyUnderLock(
+      fs,
+      location,
+      () => ({ ok: true, state: newRunState("quick", SESSION), value: null }),
+      { allowAbsent: true },
+    );
+    const adopted = await readRun(fs, location);
+    if (!adopted.ok) throw new Error("esperaba leer la corrida adoptada");
+    expect(attemptsAt(adopted.state, "fixture.a")).toBe(0);
+    expect(await fs.exists(location.countersPath)).toBe(false);
+  });
+
+  it("un contador ilegible no se degrada a cero: se rechaza con causa", async () => {
+    const location = locateRun(paths, SESSION);
+    await applyUnderLock(
+      fs,
+      location,
+      () => ({ ok: true, state: newRunState("quick", SESSION), value: null }),
+      { allowAbsent: true },
+    );
+    // El contador vive en el runtime del workspace, fuera de la carpeta de la
+    // sesión: un backup de esa carpeta ya no se lo lleva.
+    await mkdir(dirname(location.countersPath), { recursive: true });
+    await writeFile(location.countersPath, "{ esto no es json", "utf8");
+    const read = await readRun(fs, location);
+    if (read.ok) throw new Error("un contador ilegible no puede leerse como cero intentos");
+    expect(read.failure.code).toBe("FLOW_RUN_COUNTER_INVALID");
+    expect(read.failure.action.length).toBeGreaterThan(0);
   });
 
   it("dos aplicaciones concurrentes: una sola ganadora y cero transiciones perdidas", async () => {

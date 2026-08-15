@@ -91,6 +91,23 @@ export class PathsService {
   cwdSessionBindingsFile(): string {
     return join(this.cwdSessionsDir(), ".bindings.json");
   }
+  /**
+   * Monotone attempt counters of the flow runs, one file per session folder.
+   *
+   * Deliberately OUTSIDE the session folders it indexes. The counter exists so
+   * that restoring an earlier copy of a run's ledger cannot give back attempts
+   * already spent, and while it lived inside the session folder a `cp -r` of
+   * that folder took the counter with it — the evasion arrived wearing the shape
+   * of a backup. Here it is workspace runtime, dot-prefixed so
+   * `listSessionFolders` skips it, and already covered by the `.${ns}/sessions/`
+   * entry of the gitignore the CLI manages.
+   */
+  cwdFlowAttemptsDir(): string {
+    return join(this.cwdSessionsDir(), ".flow-attempts");
+  }
+  cwdFlowAttemptsFile(session: string): string {
+    return join(this.cwdFlowAttemptsDir(), `${session}.json`);
+  }
   cwdHistoryFile(): string {
     return join(this.cwdRoot(), "HISTORY.md");
   }

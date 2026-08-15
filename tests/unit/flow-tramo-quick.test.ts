@@ -354,7 +354,11 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
 
     const create = await current();
     expect(create.resolved.stopped?.id).toBe("quick.session-create");
-    expect(create.resolved.action?.invocation.args).toEqual(["session-artifacts", "--code", SESSION]);
+    expect(create.resolved.action?.invocation.args).toEqual([
+      "session-artifacts",
+      "--code",
+      SESSION,
+    ]);
     expect(create.resolved.action?.invocation.target).toBe(SESSION);
     // El placeholder nunca llega a quien ejecuta.
     expect(JSON.stringify(create.resolved.action)).not.toContain("{code}");
@@ -446,9 +450,13 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
       }),
     );
     expect(failed.error?.code).toBe("FLOW_EVIDENCE_MISSING");
-    expect((await current()).state.effects.applied).not.toContain("execute");
-
-    const green = await answer(resultFor(gate.resolved));
+    const refused = await current();
+    expect(refused.state.effects.applied).not.toContain("execute");
+    // El resultado rechazado declaró `execute` aplicado, así que dejó su rastro
+    // en la traza — y la traza es parte de la posición. La respuesta siguiente
+    // va sobre la frontera recalculada, que es la que devuelve el propio
+    // rechazo: nada se acreditó, pero el estado ya no es el mismo.
+    const green = await answer(resultFor(refused.resolved));
     expect(green.error).toBeNull();
     expect(green.effects.applied).toContain("execute");
   });

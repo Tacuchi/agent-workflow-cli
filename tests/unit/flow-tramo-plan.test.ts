@@ -627,7 +627,12 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       ),
     );
     expect(authorized.boundary.kind).toBe("execution");
-    expect(authorized.action?.invocation.args).toEqual(["worktree", "integrate", "--code", SESSION]);
+    expect(authorized.action?.invocation.args).toEqual([
+      "worktree",
+      "integrate",
+      "--code",
+      SESSION,
+    ]);
 
     // Recién después del merge se sella el plan: el `done` es la marca de avance
     // del propio plan-doc (custodia de la corrida) y ahora es verdad de una rama

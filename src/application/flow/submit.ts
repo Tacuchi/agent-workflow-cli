@@ -22,10 +22,19 @@
  */
 
 import { join } from "node:path";
-import { type EffectClass, authorizeEffects } from "../../domain/capability/effects.js";
+import {
+  type EffectClass,
+  authorizeEffects,
+  touchesTheWorld,
+} from "../../domain/capability/effects.js";
 import { AttemptLedger } from "../../domain/capability/protocol.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
-import { type FlowAnswer, claimedSeal, parseFlowAnswer } from "../../domain/flow/answer.js";
+import {
+  type FlowAnswer,
+  claimedSeal,
+  parseFlowAnswer,
+  spendsAttempt,
+} from "../../domain/flow/answer.js";
 import {
   type FlowDecision,
   actionOf,
@@ -44,15 +53,18 @@ import {
   STOP_LABEL,
   stepOf,
 } from "../../domain/flow/directive.js";
-import { executionVerdict } from "../../domain/flow/execution-result.js";
+import { type ExecutionRefusal, executionVerdict } from "../../domain/flow/execution-result.js";
 import {
   type FlowRunAttempt,
+  type FlowRunEvent,
   type FlowRunState,
   applyTransition,
   checkAgainstJourney,
+  restatesLastEvent,
   withApproval,
   withAttempt,
   withBoundary,
+  withEvent,
   withObservation,
   withProposal,
   withScope,
@@ -339,8 +351,9 @@ function decide(
     claimedSeal(input.raw) ?? resolved.seal,
     resolved.stopped.id,
   );
+  const cost: RejectionCost = { journey, identity };
   // 1 · Resend, before anything else.
-  const resend = resendCheck(state, resolved, identity);
+  const resend = resendCheck(state, resolved, cost);
   if (resend !== null) return resend;
 
   // The action the run is waiting on is the one that was EMITTED, and the seal
@@ -348,11 +361,11 @@ function decide(
   // is the diagnosis: when the two differ, the invocation changed underneath a run
   // in flight (a CLI upgraded mid-run), which is a different problem from a state
   // that moved — and it has a different answer.
-  const drifted = actionDrift(state, resolved);
+  const drifted = actionDrift(state, resolved, cost);
   if (drifted !== null) return drifted;
 
   // 2 · The boundary in force decides what is admissible.
-  const admissible = admit(state, resolved, resolved.stopped, input, { journey, identity });
+  const admissible = admit(state, resolved, resolved.stopped, input, cost);
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
 
@@ -365,17 +378,23 @@ function decide(
   // preview showed. Neither ever applies the step by itself.
   const scoped = scopeFrom(state, resolved.stopped, parsed.answer, snapshot.scope);
   if ("failure" in scoped) {
-    return reject(state, resolved, scoped.failure.message, {
-      code: scoped.failure.code,
-      action: scoped.failure.action,
-    });
+    return reject(
+      state,
+      resolved,
+      scoped.failure.message,
+      { code: scoped.failure.code, action: scoped.failure.action },
+      cost,
+    );
   }
   const sealed = sealFrom(scoped.state, resolved.stopped, parsed.answer, snapshot.destinations);
   if ("failure" in sealed) {
-    return reject(state, resolved, sealed.failure.message, {
-      code: sealed.failure.code,
-      action: sealed.failure.action,
-    });
+    return reject(
+      state,
+      resolved,
+      sealed.failure.message,
+      { code: sealed.failure.code, action: sealed.failure.action },
+      cost,
+    );
   }
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
   const approved = grantOf(sealed.state, resolved, parsed.answer, granted, journey);
@@ -483,8 +502,16 @@ function scopeFrom(
   return { state: withScope(state, { plan, sources }) };
 }
 
+/**
+ * A scope answer the boundary read and refused — under its OWN code.
+ *
+ * It reported `FLOW_ANSWER_INVALID` for a while, and that code means "the
+ * envelope could not be read as an answer", so the same string stood for two
+ * opposite facts: one that must not cost an attempt and one that must. A reader
+ * cannot tell them apart, and neither could the table that decides the charge.
+ */
 function invalidScope(message: string, action: string): CapabilityFailure {
-  return { code: "FLOW_ANSWER_INVALID", message, action };
+  return { code: "FLOW_SCOPE_INVALID", message, action };
 }
 
 /**
@@ -667,7 +694,7 @@ function admit(
   resolved: ResolvedBoundary,
   stopped: FlowDecision,
   input: SubmitFlowInput,
-  spent: SpentAttempt,
+  cost: RejectionCost,
 ): { ok: true; answer: FlowAnswer } | { decision: SubmitDecision } {
   const expectedApproval =
     resolved.kind === "authorization"
@@ -685,16 +712,18 @@ function admit(
     request: resolved.request,
   });
   if (!parsed.ok) {
-    // An answer the boundary refused IS an attempt spent: it is the exact event
-    // the chassis' cap counts. Recorded here and nowhere else — a resend, a
-    // decline and a pause are not failed tries at resolving the gap.
+    // An answer the boundary EVALUATED and refused is an attempt spent: it is the
+    // exact event the chassis' cap counts. A payload it could not read as an
+    // answer at all is not — see {@link FLOW_ANSWER_REJECTIONS}, which `reject`
+    // consults. A resend, a decline and a pause are not failed tries either, and
+    // they are classified there rather than being exempted here.
     return {
       decision: reject(
         state,
         resolved,
         parsed.failure.message,
         { code: parsed.failure.code, action: parsed.failure.action },
-        spent,
+        cost,
       ),
     };
   }
@@ -715,6 +744,7 @@ function admit(
             "escribí el CHECKPOINT con 'aw checkpoint-write', compactá, y volvé con 'aw flow advance' a esta misma frontera",
           outcome: "needs_input",
         },
+        cost,
       ),
     };
   }
@@ -729,6 +759,7 @@ function admit(
           action: "reanudá con 'aw flow advance' cuando quieras retomar esta frontera",
           outcome: "cancelled",
         },
+        cost,
       ),
     };
   }
@@ -745,10 +776,54 @@ function admit(
       effectsOfTransition(state, stopped),
     );
     if (verdict !== null) {
-      return { decision: reject(state, resolved, verdict.message, verdict.detail, spent) };
+      const trace = declaredTrace(stopped, resolved, parsed.answer, verdict);
+      return {
+        decision: reject(state, resolved, verdict.message, verdict.detail, {
+          ...cost,
+          ...(trace === null ? {} : { trace }),
+        }),
+      };
     }
   }
   return parsed;
+}
+
+/**
+ * The material fact a REFUSED external result still leaves behind — or `null`.
+ *
+ * A rejected result is not the same as a result about nothing. The executor may
+ * have run the command, written the file and come back with evidence the
+ * boundary did not accept: the effect reached the world regardless of what the
+ * verdict decided about it. Nothing else in the run records that — the trace is
+ * only written by the internal driver — so an external execution could declare
+ * `applied` classes, be refused, exhaust the boundary, and then be handed back as
+ * answerable by a recovery whose whole job is to refuse exactly that.
+ *
+ * Recorded when the result declares an effect past `read_only`, and when the
+ * verdict is a PARTIAL one: "it finished and did not apply everything" is the
+ * case where what did reach the world is precisely the unknown.
+ */
+function declaredTrace(
+  stopped: FlowDecision,
+  resolved: ResolvedBoundary,
+  answer: FlowAnswer,
+  verdict: ExecutionRefusal,
+): FlowRunEvent | null {
+  const applied = answer.result?.effects.applied ?? [];
+  if (!touchesTheWorld(applied) && verdict.detail.code !== "FLOW_EFFECT_PARTIAL") return null;
+  const invocation = resolved.action?.invocation;
+  return {
+    kind: "failed",
+    transition: stopped.id,
+    // What was really run, named the way whoever ran it would recognize it: an
+    // external execution has no internal operation id to quote.
+    operation:
+      invocation === undefined ? stopped.id : [invocation.program, ...invocation.args].join(" "),
+    code: verdict.detail.code,
+    message: verdict.message,
+    recovery: verdict.detail.action,
+    effects: [...applied],
+  };
 }
 
 /**
@@ -759,7 +834,11 @@ function admit(
  * staleness the seal would otherwise report, because the fix is different: nothing
  * is wrong with the state, the invocation is simply no longer the one that ran.
  */
-function actionDrift(state: FlowRunState, resolved: ResolvedBoundary): SubmitDecision | null {
+function actionDrift(
+  state: FlowRunState,
+  resolved: ResolvedBoundary,
+  cost: RejectionCost,
+): SubmitDecision | null {
   const pending = state.pending_action;
   if (pending === null || resolved.action === null) return null;
   if (pending.digest === actionDigest(resolved.action)) return null;
@@ -772,6 +851,7 @@ function actionDrift(state: FlowRunState, resolved: ResolvedBoundary): SubmitDec
       action:
         "volvé a correr 'aw flow advance' para recibir la acción vigente y ejecutá esa antes de responder",
     },
+    cost,
   );
 }
 
@@ -864,8 +944,9 @@ function applyAndAdvance(
 function resendCheck(
   state: FlowRunState,
   resolved: ResolvedBoundary,
-  identity: FlowRunAttempt,
+  cost: RejectionCost,
 ): SubmitDecision | null {
+  const identity = cost.identity;
   const ledger = new AttemptLedger();
   for (const past of state.attempts) {
     const replay = ledger.record(past);
@@ -895,31 +976,43 @@ function resendCheck(
       action: "la frontera vigente es la que devuelve esta directiva; contestá esa",
       outcome: "completed",
     },
+    cost,
   );
 }
 
 /**
  * A rejection, expressed as the recalculated directive.
  *
- * The state handed back is the one that was read: nothing is written on this
- * path, and the caller can see that because the mutation returns `ok: false`
- * only for invocation failures — a business rejection returns the state unchanged
- * with its own outcome.
+ * Whether it spends an attempt is decided HERE, from the code, and never by the
+ * call site. It used to be the call site's business, and six refusals of this
+ * file simply forgot to pass the parameter: a scope answered with an alias the
+ * plan does not name never exhausted, never degraded and never became
+ * recoverable — an unbounded loop inside the very mechanism that exists to bound
+ * one. One place decides, one table says which codes count.
+ *
+ * `cost` is absent only where there is no boundary to charge: a run that already
+ * finished, or one that never stopped at anything.
  */
 function reject(
   state: FlowRunState,
   resolved: ResolvedBoundary,
   message: string,
   detail: { code: string; action: string; outcome?: CapabilityOutcome },
-  spent?: SpentAttempt,
+  cost?: RejectionCost,
 ): SubmitDecision {
   // A refused answer is the one rejection that CHANGES the run: the attempt is
   // recorded, so the boundary that has been tried to its cap degrades instead of
   // being emitted again. The boundary is recalculated over that state, which is
   // what turns the last refusal into the degradation rather than into an
   // identical question with a different error string.
-  const after = spent === undefined ? state : withAttempt(state, spent.identity);
-  const now = spent === undefined ? resolved : resolveBoundary(after, spent.journey);
+  const traced =
+    cost?.trace === undefined || restatesLastEvent(state, cost.trace)
+      ? state
+      : withEvent(state, cost.trace);
+  const after =
+    cost !== undefined && spendsAttempt(detail.code) ? withAttempt(traced, cost.identity) : traced;
+  const now =
+    cost === undefined || after === state ? resolved : resolveBoundary(after, cost.journey);
   const built = directiveFor(after, now, [], {
     // No outcome named ⇒ the boundary decides it: a finished journey reports
     // `completed`, an open one `needs_input`. Hardcoding one here would let a
@@ -940,14 +1033,25 @@ function reject(
     ok: true,
     state: after,
     value: { directive, advanced: false },
-    persist: spent !== undefined,
+    // Persisted exactly when something really changed, whichever half changed it.
+    // Tying this to the attempt alone would drop a material trace that a refusal
+    // produced without charging for it.
+    persist: after !== state,
   };
 }
 
-/** The attempt a refused answer spends, and the journey its boundary belongs to. */
-interface SpentAttempt {
+/**
+ * What a refusal may cost the run: an attempt, a line in its trace, or neither.
+ *
+ * The journey travels with them because recalculating the boundary over the
+ * charged state is what turns the third refusal into a degradation instead of
+ * the same question with a different error string.
+ */
+interface RejectionCost {
   journey: readonly FlowDecision[];
   identity: FlowRunAttempt;
+  /** A material fact the refusal has to leave behind. See {@link declaredTrace}. */
+  trace?: FlowRunEvent;
 }
 
 /**

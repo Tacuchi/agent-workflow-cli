@@ -82,6 +82,115 @@ export type FlowAnswerParse =
   | { ok: true; answer: FlowAnswer }
   | { ok: false; failure: CapabilityFailure };
 
+/**
+ * Which rejections COUNT as an attempt at the boundary, and which never reached
+ * it.
+ *
+ * The cap of three exists to stop a gap from being re-fired forever — that is
+ * doctrine. What it never meant to protect against is a typo in the envelope, and
+ * the difference had a measured cost: hosts spent whole sessions discovering that
+ * `outcome` goes at the top level, that a validation carries `id` and not `name`,
+ * that an authoring boundary wants its bytes in `artifacts` — and every discovery
+ * burned one of the three tries at a boundary they had not yet been able to
+ * answer once. Two typos plus one real attempt exhausted a run.
+ *
+ * So the line is: **did the payload deliver a decision this boundary could
+ * weigh?**
+ *
+ * - `envelope` — nothing was weighed. No payload at all, unparseable JSON, an
+ *   answer addressed to another boundary (`STALE`), a boundary that expects none,
+ *   a result that is not a result (`FLOW_RESULT_INVALID`), bytes in the wrong
+ *   channel or missing from the only channel that carries them
+ *   (`FLOW_ARTIFACTS_*`, and the path/size refusals the semantic protocol
+ *   raises). At an execution boundary the decision IS the result and at an
+ *   authoring one it IS the bytes: with neither there, there is nothing to judge,
+ *   and charging for it charges for the envelope.
+ * - `evaluated` — the decision arrived and did not resolve the gap. A signal
+ *   outside the declared vocabulary, a label that is not one of the emitted
+ *   alternatives, an approval over other effects or none at all, a result about a
+ *   different invocation, an execution that did not complete or left its effect
+ *   half-applied, a scope naming sources the workspace or the plan does not, a
+ *   proposal reaching past what its row declares — and an answer that declares
+ *   nothing at all, which is the feigned convergence the chassis degrades and
+ *   exactly what the cap is for.
+ * - `control` — a real answer that deliberately applies nothing, or the same
+ *   answer arriving twice. Pausing to compact, stopping the run, and a resend are
+ *   all decisions somebody made on purpose; charging them would make the flow
+ *   control the CLI itself offers cost an attempt, which is the loop the cap is
+ *   supposed to prevent rather than one it is supposed to count.
+ *
+ * `FLOW_ANSWER_STALE` is the one worth spelling out. It looks like a bad answer
+ * and is not: it answers a boundary the run has left, so charging it would spend
+ * the CURRENT boundary's budget on a payload that was never about it — and
+ * staleness is frequently the engine's own doing, since the run may have moved
+ * between the directive and the answer.
+ *
+ * Every code the parser, the execution verdict and `submit` can put in front of a
+ * boundary is in here. That is not tidiness: `submit`'s own refusals used to sit
+ * outside the table and outside the charge, so a scope answered with an alias the
+ * plan does not name could be re-sent forever — never exhausting, never
+ * degrading, never recovering. A guard walks the three sources and fails if a
+ * code is missing from this table.
+ */
+export const FLOW_ANSWER_REJECTIONS: Readonly<
+  Record<string, "envelope" | "evaluated" | "control">
+> = {
+  FLOW_ANSWER_MISSING: "envelope",
+  FLOW_ANSWER_INVALID: "envelope",
+  FLOW_ANSWER_STALE: "envelope",
+  FLOW_ANSWER_NOT_EXPECTED: "envelope",
+  FLOW_RESULT_INVALID: "envelope",
+  FLOW_ARTIFACTS_MISSING: "envelope",
+  FLOW_ARTIFACTS_NOT_EXPECTED: "envelope",
+  // Raised by `parseSemanticArtifacts` and forwarded verbatim: a destination
+  // outside the allowlist, a duplicate, an oversized artifact.
+  SEMANTIC_PATH_REJECTED: "envelope",
+  SEMANTIC_RESPONSE_INVALID: "envelope",
+  // The registry moved under a run in flight, so the invocation the result is
+  // about is no longer the one this build emits. Nothing about the ANSWER was
+  // weighed, and the next `advance` re-binds the action by itself.
+  FLOW_ACTION_CHANGED: "envelope",
+  FLOW_ANSWER_AMBIGUOUS: "evaluated",
+  FLOW_SIGNAL_UNKNOWN: "evaluated",
+  FLOW_CHOICE_UNKNOWN: "evaluated",
+  FLOW_APPROVAL_MISSING: "evaluated",
+  FLOW_APPROVAL_MISMATCH: "evaluated",
+  FLOW_ACTION_MISMATCH: "evaluated",
+  // The execution verdict's own vocabulary: it judges a result that WAS read.
+  FLOW_EXECUTION_NOT_COMPLETED: "evaluated",
+  FLOW_EVIDENCE_MISSING: "evaluated",
+  FLOW_EFFECT_PARTIAL: "evaluated",
+  // The scope boundary's own vocabulary. Its answer is `decisions.sources` plus
+  // `decisions.plan`, and every one of these means the CLI read them and found
+  // them wanting — a decision that did not resolve the gap.
+  FLOW_SCOPE_INVALID: "evaluated",
+  FLOW_SCOPE_UNKNOWN_SOURCE: "evaluated",
+  FLOW_SCOPE_NOT_IN_PLAN: "evaluated",
+  FLOW_SCOPE_PLAN_UNREADABLE: "evaluated",
+  // The authoring boundary's: the bytes arrived and what they would do is not
+  // what the row declares, or their destination could not be read.
+  FLOW_PROPOSAL_BEYOND_CONTRACT: "evaluated",
+  FLOW_PROPOSAL_DESTINATION_UNOBSERVED: "evaluated",
+  FLOW_PROPOSAL_BASE_UNREADABLE: "evaluated",
+  FLOW_BOUNDARY_PAUSED: "control",
+  FLOW_BOUNDARY_DECLINED: "control",
+  FLOW_ANSWER_RESENT: "control",
+};
+
+/**
+ * Whether this refusal spends one of the boundary's three attempts.
+ *
+ * A code the table does not classify spends, deliberately: the cap is the only
+ * thing standing between a run and an infinite loop, and a silent exemption would
+ * remove it for whatever was added last. The table is a closed set precisely so
+ * this default is never reached — a guard walks the sources and refuses a code
+ * nobody placed on one side or the other.
+ */
+export function spendsAttempt(code: string): boolean {
+  const classified = FLOW_ANSWER_REJECTIONS[code];
+  return classified === undefined || classified === "evaluated";
+}
+
 export interface ParseAnswerInput {
   raw: string;
   boundary: FlowBoundaryKind;

@@ -9,16 +9,25 @@
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import { journeyOfFlow } from "../../domain/flow/authority.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
-import { type FlowRunState, newRunState } from "../../domain/flow/run-state.js";
+import {
+  type FlowRunState,
+  MAX_BOUNDARY_ATTEMPTS,
+  type RecoveryBlocker,
+  attemptsAt,
+  checkAgainstJourney,
+  grantAttempts,
+  newRunState,
+  recoveryBlockedAt,
+} from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { WORKLINE_FLOWS, type WorklineFlow } from "../capability/compose.js";
 import type { PathsService } from "../paths-service.js";
 import { recordFlowAdoption } from "../session-custody-recorder.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
-import { advanceFlowRun } from "./advance.js";
+import { advanceFlowRun, directiveFor, resolveBoundary } from "./advance.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
-import { applyUnderLock, locateRun } from "./run-state-service.js";
+import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
 
 export interface AdvanceFlowInput {
   code?: string;
@@ -93,6 +102,150 @@ export async function advanceFlow(
   });
   if (!driven.ok) return { ok: false, failure: driven.failure };
   return { ok: true, directive: driven.value };
+}
+
+export interface RecoverFlowInput {
+  code?: string;
+  contextId?: string;
+  /**
+   * The boundary the caller believes is stuck — a CONFIRMATION, never a selector.
+   *
+   * Recovery always acts on the boundary in force: the run cannot be standing
+   * anywhere else, and forgiving attempts at a transition it already passed would
+   * be rewriting history rather than unblocking anything. What naming it buys is
+   * that somebody who read the id in an error and pasted it back finds out when
+   * the run has since moved, instead of recovering something they did not mean.
+   */
+  transition?: string;
+}
+
+/**
+ * Give a boundary that ran out of attempts a way back to being answerable.
+ *
+ * The only supported exit from an exhausted boundary, and it exists because the
+ * alternative in the field was surgery on `.flow-run.json` — which the seal
+ * refuses when you edit it and ACCEPTS when you restore an older copy, so the
+ * only manual "fix" that worked was also the one that rolled the run back.
+ *
+ * What it does is deliberately narrow: it forgives the attempts spent at the
+ * boundary in force and nothing else. The cursor, the effect ledger, the
+ * authorizations, the seated proposal, the trace and every document and artifact
+ * of the session are untouched — recovering is not restarting, and a run that
+ * came back with its applied transitions rolled back would be a worse outcome
+ * than the block it replaces.
+ */
+export async function recoverFlowBoundary(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: RecoverFlowInput,
+): Promise<AdvanceFlowResult> {
+  const resolution = await resolveSessionTarget(fs, paths, {
+    ...(input.code !== undefined ? { code: input.code } : {}),
+    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
+    allowClosed: false,
+    bind: true,
+  });
+  if (resolution.outcome !== "resolved") return { ok: false, session: resolution };
+
+  const location = locateRun(paths, resolution.session.folder);
+  const applied = await applyUnderLock<FlowDirective>(fs, location, (current) => {
+    if (current === null) {
+      return {
+        ok: false,
+        failure: {
+          code: "FLOW_RUN_ABSENT",
+          message: "no hay corrida que recuperar en esta sesión",
+          action: "adoptala primero con 'aw flow advance --flow <flow> --adopt'",
+        },
+      };
+    }
+    return recover(current, input.transition ?? null);
+  });
+  if (!applied.ok) return { ok: false, failure: applied.failure };
+  return { ok: true, directive: applied.value };
+}
+
+/**
+ * The recovery decision, pure over the state read under the lock.
+ *
+ * Two refusals and one grant. It does NOT advance afterwards: returning
+ * answerability is the whole operation, and walking on from here would mean a
+ * command whose job is to unblock could also apply transitions — including,
+ * where the boundary is a delegated one, re-running the very action that failed.
+ */
+function recover(state: FlowRunState, named: string | null): FlowRunMutation<FlowDirective> {
+  const journey = journeyOfFlow(state.flow);
+  const incoherent = checkAgainstJourney(state, journey);
+  if (incoherent !== null) return { ok: false, failure: incoherent };
+
+  const stopped = resolveBoundary(state, journey).stopped;
+  if (stopped === null) {
+    return refuse(
+      "FLOW_RECOVERY_NOT_NEEDED",
+      "el recorrido ya terminó: no hay ninguna frontera trabada",
+      "no queda trabajo pendiente en este recorrido",
+    );
+  }
+  if (named !== null && named !== stopped.id) {
+    return refuse(
+      "FLOW_RECOVERY_OTHER_BOUNDARY",
+      `la corrida está detenida en '${stopped.id}' y se pidió recuperar '${named}'`,
+      `se recupera la frontera vigente: volvé a invocar sin --transition, o con --transition ${stopped.id}`,
+    );
+  }
+  const spent = attemptsAt(state, stopped.id);
+  if (spent < MAX_BOUNDARY_ATTEMPTS) {
+    return refuse(
+      "FLOW_RECOVERY_NOT_NEEDED",
+      `'${stopped.id}' gastó ${spent} de ${MAX_BOUNDARY_ATTEMPTS} intentos: todavía se contesta`,
+      "respondé la frontera vigente con 'aw flow submit': recuperar no es una forma de saltearla",
+    );
+  }
+  // The guard, and it reads the material trace rather than the effect ledger: the
+  // ledger is run-wide and cannot say WHICH boundary applied what. Handing back an
+  // answerable boundary whose action already reached the world would invite a
+  // second answer on top of a half-applied one — and no attempt is worth that.
+  const blocked = recoveryBlockedAt(state, stopped.id);
+  if (blocked !== null) return refuseRecovery(stopped.id, blocked);
+
+  const recovered = grantAttempts(state, stopped.id, spent);
+  const built = directiveFor(recovered, resolveBoundary(recovered, journey), []);
+  if (!built.ok) return { ok: false, failure: built.failure };
+  return { ok: true, state: built.state, value: built.directive };
+}
+
+/**
+ * The two ways a boundary refuses to be handed back, said as what to do next.
+ *
+ * They are not the same dead end and must not read as one. A boundary that
+ * APPLIED something is over: the run has to be repaired outside itself, because
+ * a second answer would land on top of an effect that already happened. A
+ * boundary whose action was begun and never reported back is the opposite — the
+ * missing thing is the verdict, and running the advance produces it.
+ */
+function refuseRecovery(
+  transition: string,
+  blocked: RecoveryBlocker,
+): FlowRunMutation<FlowDirective> {
+  if (blocked.reason === "unverified") {
+    return refuse(
+      "FLOW_RECOVERY_EXECUTION_UNVERIFIED",
+      `'${transition}' dejó anotado que su acción se iba a ejecutar y nunca registró en qué terminó: nadie puede decir si tocó el mundo`,
+      "no se devuelven intentos sobre una ejecución sin veredicto: corré 'aw flow advance' para que la acción vuelva a correr y deje su resultado, y recuperá después si hace falta",
+    );
+  }
+  const moved = blocked.event;
+  return refuse(
+    "FLOW_RECOVERY_EFFECTS_APPLIED",
+    `'${transition}' ya ejerció efectos en esta corrida (${moved.operation}): no se devuelven intentos sobre algo que ya ocurrió`,
+    `el estado queda igual: seguí la recuperación que declara la acción de la fila, o llevá el gap a '## Open questions' — ${
+      moved.kind === "failed" ? moved.recovery : "revisá la traza de la corrida"
+    }`,
+  );
+}
+
+function refuse(code: string, message: string, action: string): FlowRunMutation<FlowDirective> {
+  return { ok: false, failure: { code, message, action } };
 }
 
 /**

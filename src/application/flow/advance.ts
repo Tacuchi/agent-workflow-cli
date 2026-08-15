@@ -25,7 +25,7 @@
  * registry — not this file — is where a new transition is added.
  */
 
-import type { EffectClass } from "../../domain/capability/effects.js";
+import { type EffectClass, touchesTheWorld } from "../../domain/capability/effects.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
 import {
   DOCS_BOUNDARY,
@@ -63,11 +63,14 @@ import {
   skipReason,
 } from "../../domain/flow/rules.js";
 import {
+  type FlowRunAttempt,
+  type FlowRunEvent,
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
   applyTransition,
   attemptsAt,
   checkAgainstJourney,
+  degradeTransition,
   positionDigest,
   skipTransition,
   withBoundary,
@@ -158,16 +161,10 @@ function walk(
   for (let index = state.applied.length; index < journey.length; index += 1) {
     const decision = journey[index];
     if (decision === undefined) break;
-    // A condition that did not fire, or a boundary this run has already tried as
-    // often as it may. Both pass over the step and both say why — the trace has
-    // to distinguish "never happened" from "was given up on".
-    const skipped =
-      skipReason(decision, journey, state.observations) ??
-      nothingToPublish(state, decision) ??
-      exhaustionSkip(state, decision);
-    if (skipped !== null) {
-      state = skipTransition(state, decision.id);
-      applied.push(skippedStepOf(decision, skipped));
+    const passed = passOver(state, decision, journey);
+    if (passed !== null) {
+      state = passed.state;
+      applied.push(passed.step);
       continue;
     }
     if (decision.authority !== "cli") break;
@@ -183,6 +180,35 @@ function walk(
     applied.push(stepOf(decision));
   }
   return { state, applied };
+}
+
+/**
+ * How the walk passes over a step it will not apply — or `null` when it must not.
+ *
+ * A condition that did not fire, and a boundary this run has already tried as
+ * often as it may, both leave the step behind and both say why. They are NOT the
+ * same fact, and the state records them apart: "the gate never appeared" and
+ * "nobody answered it and the retry burned" read identically in a cursor, which
+ * is exactly the lie an exhausted boundary used to tell — credited among the
+ * applied, filed among the skipped, with no degradation declared anywhere.
+ */
+function passOver(
+  state: FlowRunState,
+  decision: FlowDecision,
+  journey: readonly FlowDecision[],
+): { state: FlowRunState; step: FlowStep } | null {
+  const conditional =
+    skipReason(decision, journey, state.observations) ?? nothingToPublish(state, decision);
+  const degraded = conditional === null ? exhaustionSkip(state, decision) : null;
+  const reason = conditional ?? degraded;
+  if (reason === null) return null;
+  return {
+    state:
+      degraded === null
+        ? skipTransition(state, decision.id)
+        : degradeTransition(state, decision.id, degraded),
+    step: skippedStepOf(decision, reason),
+  };
 }
 
 /**
@@ -332,10 +358,22 @@ function blockedCause(
       message: `'${stopped.id}' agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: contestarlo otra vez sería el bucle que la regla evita`,
       action: degradable
         ? `${DEGRADE_ACTION}; el próximo 'aw flow advance' lo pasa por alto dejando dicho por qué y sigue con el resto`
-        : `${DEGRADE_ACTION}, y resolvé este paso fuera de la corrida antes de seguir: saltearlo daría por aprobado un efecto que nadie aprobó, o por hecho algo que nada corrió`,
+        : `${DEGRADE_ACTION}, y resolvé este paso fuera de la corrida antes de seguir: saltearlo daría por aprobado un efecto que nadie aprobó, o por hecho algo que nada corrió. Si lo que hay que rehacer es el intento, '${recoverInvocation(state)}' le devuelve los intentos a esta frontera conservando todo lo aplicado`,
     };
   }
   return null;
+}
+
+/**
+ * The way out of a boundary that cannot be degraded, spelled as a runnable line.
+ *
+ * The session goes in as the FOLDER, the same identity every other invocation of
+ * a directive carries: a bare number matches a legacy folder too, so the one
+ * command offered to somebody whose run is stuck must not be one that fails to
+ * resolve when they paste it.
+ */
+function recoverInvocation(state: FlowRunState): string {
+  return `aw flow recover --session ${state.session}`;
 }
 
 /** Where a gap goes when the loop stops re-firing it — the chassis' destination. */
@@ -390,18 +428,89 @@ function nothingToPublish(state: FlowRunState, decision: FlowDecision): string |
  * is a search, a write or a check credited to nothing. Those stay blocked, and
  * the block says so. What degrades is what only produces a verdict — a judgment
  * or a preference — which is exactly the gap the doctrine degrades.
+ *
+ * A delegated step has ONE way past that exception, and it is narrow twice over.
+ * The run's own trace has to say the action RAN and FAILED — "nobody has executed
+ * it yet" is a boundary still waiting for real work — AND the step has to be one
+ * whose skipping credits nothing: a read. A row that WRITES stays exhausted even
+ * with a failure behind it, because the run would go on to declare itself
+ * finished while the document it exists to produce was never written, which is
+ * the same credit-to-nothing this exception was carved out of. Its way out is not
+ * degradation but `aw flow recover`, and the block says so.
  */
 function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
   if (!exhausted(state, decision)) return null;
   if (!owned(decision)) return null;
-  if (actionOf(decision) !== null) return null;
+  const failure = executionFailure(state, decision.id);
+  if (actionOf(decision) !== null && failure === null) return null;
+  if (failure !== null && touchesTheWorld(effectsOfTransition(state, decision))) return null;
   if (
     authorizeTransition(decision, state.authorizations, subjectOf(state, decision)).missing.length >
     0
   ) {
     return null;
   }
-  return `agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: ${DEGRADE_ACTION}`;
+  const spent = `agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos`;
+  return failure === null
+    ? `${spent}: ${DEGRADE_ACTION}`
+    : `su acción se ejecutó y falló (${failure.code}: ${failure.message}) y ${spent}: ${DEGRADE_ACTION}`;
+}
+
+/**
+ * The failure a delegated action of this transition really produced, if any.
+ *
+ * The LAST event for the transition, not any of them: an action that failed and
+ * then succeeded left both events behind, and reading the older one would call a
+ * finished step failed. Reads the material trace rather than the attempt history
+ * because the two answer different questions — "how many times was this asked"
+ * versus "did anything actually run".
+ */
+function executionFailure(
+  state: FlowRunState,
+  transition: string,
+): Extract<FlowRunEvent, { kind: "failed" }> | null {
+  const last = state.events.filter((event) => event.transition === transition).at(-1);
+  return last !== undefined && last.kind === "failed" ? last : null;
+}
+
+/**
+ * The attempt a delegated action spends when it RUNS and comes back failed.
+ *
+ * The hole this closes was measured: five consecutive `aw flow advance` against a
+ * blocked internal execution returned the identical error and left the ledger
+ * with ZERO rows for that boundary. No attempt was ever recorded, so the cap
+ * never applied, so the boundary never degraded — and with no recovery either,
+ * the run was stuck for good.
+ *
+ * It is charged by whoever ran the operation, at the moment its verdict refuses,
+ * and NOT on the way into an advance. Charging on the way in cost the person who
+ * fixed the cause their real third try — the run degraded the boundary on the
+ * advance that would have re-run the now-working action — and it charged the very
+ * pause the CLI recommends, since coming back with `aw flow advance` is what the
+ * directive tells you to do. A try is a try: the action ran and did not work.
+ */
+export function failedExecutionAttempt(
+  state: FlowRunState,
+  decision: FlowDecision,
+  failure: { code: string; message: string },
+): FlowRunAttempt {
+  const seal = boundarySeal(state, decision);
+  const prior = state.attempts.filter((past) => past.invocation_id === seal);
+  const attempt = prior.length + 1;
+  return {
+    invocation_id: seal,
+    attempt,
+    // The failure itself plus the ordinal: two retries of the same broken action
+    // are two attempts, and a digest that repeated would make the second one look
+    // like a resend of the first.
+    request_digest: semanticDigest({
+      execution_failure: { transition: decision.id, code: failure.code, message: failure.message },
+      attempt,
+    }),
+    parent_request_digest:
+      prior.find((past) => past.attempt === attempt - 1)?.request_digest ?? null,
+    transition: decision.id,
+  };
 }
 
 /** The `docs/` folders a flow may write, said the way a person reads it. */
@@ -613,7 +722,7 @@ export function directiveFor(
       approved: state.effects.approved,
       applied: state.effects.applied,
     },
-    nextAction: overrides.nextAction ?? nextActionFor(boundary, resolved),
+    nextAction: overrides.nextAction ?? nextActionFor(state, boundary, resolved),
   });
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state, directive: built.directive };
@@ -756,9 +865,29 @@ function choicesFor(
   return kind === "human" ? humanChoices(stopped) : [];
 }
 
-function nextActionFor(boundary: FlowBoundary, resolved: ResolvedBoundary): string {
+/**
+ * What the END of a run says — including what it gave up on along the way.
+ *
+ * "Nothing pending" was the whole sentence, and a run that degraded a boundary
+ * said it too: the gap the loop stopped re-firing left no trace in the one line
+ * a reader actually reads, so a run that quietly skipped a step and a run that
+ * answered every one of them closed with the identical words. The degradations
+ * are in the state either way; this is what makes them impossible to miss.
+ */
+function finalAction(state: FlowRunState): string {
+  const degraded = state.degraded ?? [];
+  if (degraded.length === 0) return "no queda trabajo pendiente en este recorrido";
+  const names = degraded.map((one) => `'${one.transition}'`).join(", ");
+  return `el recorrido terminó dejando degradadas ${names}: nadie las resolvió y el estado declara la causa de cada una — ${DEGRADE_ACTION}`;
+}
+
+function nextActionFor(
+  state: FlowRunState,
+  boundary: FlowBoundary,
+  resolved: ResolvedBoundary,
+): string {
   const stopped = resolved.stopped;
-  if (stopped === null) return "no queda trabajo pendiente en este recorrido";
+  if (stopped === null) return finalAction(state);
   const submit = "respondé con 'aw flow submit' sobre la frontera vigente";
   switch (boundary.kind) {
     case "semantic":

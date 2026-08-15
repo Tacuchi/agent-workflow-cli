@@ -12,6 +12,7 @@ import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import {
   FLOW_RUN_STATE_FILE,
   type FlowRunState,
+  attemptsAt,
   newRunState,
   sealRunState,
   serializeRunState,
@@ -125,8 +126,18 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
   const statePath = (): string => join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE);
   // The decided part only: a refused answer spends an attempt now, and that count
   // is the mechanism behind the boundary cap. See `tests/helpers/decided-state.ts`.
-  const bytes = async (): Promise<string> =>
-    JSON.stringify(decidedState(await readFile(statePath(), "utf8")));
+  //
+  // The TRACE leaves with it, and only in this file, because only an execution
+  // boundary can produce one on a rejection: a refused result that declared
+  // applied effects still moved the world, and the trace is the only record of
+  // it. That it is written — and that nothing is credited for it — is asserted
+  // on its own below, so it is checked rather than merely excluded.
+  const bytes = async (): Promise<string> => {
+    const { events: _trace, ...decided } = decidedState(
+      await readFile(statePath(), "utf8"),
+    ) as Record<string, unknown>;
+    return JSON.stringify(decided);
+  };
 
   async function state(): Promise<FlowRunState> {
     const read = await readRun(fs, locateRun(paths, SESSION));
@@ -411,6 +422,111 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
       expect(directive.error?.message).toContain("sesion-creada");
       expect(await bytes()).toBe(before);
     }
+  });
+
+  /**
+   * El sobre no gasta intentos; el resultado evaluado sí.
+   *
+   * Es la mitad medida del defecto: los mismos dos mensajes que este archivo
+   * documenta —el `outcome` anidado, las claves de `validations`— se descubrían
+   * quemando el techo de la frontera, así que dos typos del sobre más un intento
+   * real la agotaban antes de haberla podido contestar una sola vez.
+   */
+  it("un sobre que no es un resultado no gasta intento; una invocación distinta sí", async () => {
+    await reachSeed();
+    await submit(JSON.stringify({ input_digest: await seal(), confirmed: true }));
+    expect(attemptsAt(await state(), "fixture.seed")).toBe(0);
+    const { outcome: _fuera, ...resto } = seedResult(await seal());
+    await submit(JSON.stringify({ ...resto, input_digest: await seal() }));
+    expect(attemptsAt(await state(), "fixture.seed")).toBe(0);
+
+    // Y lo que sí llegó a evaluarse: el resultado dice haber corrido otra cosa.
+    await submit(
+      JSON.stringify(
+        seedResult(await seal(), {
+          invocation: {
+            program: "aw",
+            args: ["session-create", "--type", "exec", "--name", "prueba"],
+            target: ".workflow/sessions",
+            input: null,
+          },
+        }),
+      ),
+    );
+    expect(attemptsAt(await state(), "fixture.seed")).toBe(1);
+  });
+
+  /**
+   * Lo que NADIE ejecutó no se degrada solo, ni siquiera agotado.
+   *
+   * El límite del tratamiento acotado que esta fase le dio a una ejecución
+   * fallida: degradar una fila delegada da por hecha una siembra, una escritura
+   * o un chequeo, y acá la corrida no tiene una sola prueba de que algo haya
+   * corrido —ningún evento en la traza—. Sigue bloqueada, y el bloqueo enseña la
+   * salida en vez de ser un callejón.
+   */
+  it("agotada sin haberse ejecutado nunca, la frontera bloquea y nombra su salida", async () => {
+    await reachSeed();
+    for (let turn = 0; turn < 3; turn += 1) {
+      await submit(
+        JSON.stringify(
+          seedResult(await seal(), {
+            outcome: "failed",
+            validations: [{ id: "sesion-creada", passed: false, detail: `intento ${turn}` }],
+            // Y no declara haber aplicado nada: es la premisa del caso. Un
+            // resultado que SÍ declara efectos deja su rastro en la traza, que
+            // es lo que la prueba de abajo cubre.
+            effects: { planned: ["local_additive"], approved: [], applied: [] },
+          }),
+        ),
+      );
+    }
+    const current = await state();
+    expect(attemptsAt(current, "fixture.seed")).toBe(3);
+    expect(current.events).toEqual([]);
+
+    const advanced = await advanceFlow(fs, paths, { code: "001", adopt: false });
+    if (!advanced.ok) throw new Error("esperaba una directiva");
+    expect(advanced.directive.boundary.kind).toBe("blocked");
+    expect(advanced.directive.error?.code).toBe("FLOW_BOUNDARY_EXHAUSTED");
+    expect(advanced.directive.error?.action).toContain(`aw flow recover --session ${SESSION}`);
+    // No se degradó: nada se dio por hecho.
+    const after = await state();
+    expect(after.skipped).not.toContain("fixture.seed");
+    expect(after.degraded ?? []).toEqual([]);
+  });
+
+  /**
+   * Un resultado rechazado no es un resultado sobre nada.
+   *
+   * El ejecutor pudo haber corrido el comando y escrito el archivo y volver con
+   * una evidencia que la frontera no aceptó: el efecto llegó al mundo igual. La
+   * traza sólo la escribía el ejecutor interno, así que eso no quedaba
+   * registrado en ningún lado — y `aw flow recover`, cuya única guarda es
+   * justamente esa traza, devolvía como contestable una frontera que ya había
+   * aplicado algo.
+   */
+  it("un resultado rechazado que declaró efectos deja su rastro, sin acreditar nada", async () => {
+    await reachSeed();
+    const directive = await submit(
+      JSON.stringify(
+        seedResult(await seal(), {
+          validations: [{ id: "sesion-creada", passed: false, detail: "quedó a medias" }],
+        }),
+      ),
+    );
+    expect(directive.error?.code).toBe("FLOW_EVIDENCE_MISSING");
+    const after = await state();
+    const trace = after.events.filter((event) => event.transition === "fixture.seed");
+    expect(trace).toHaveLength(1);
+    const only = trace[0];
+    if (only === undefined || only.kind !== "failed") throw new Error("esperaba un evento fallido");
+    expect(only.effects).toEqual(["local_additive"]);
+    expect(only.operation).toContain("aw session-create");
+    // Rastro no es crédito: el ledger de efectos de la corrida no se mueve, y la
+    // transición sigue sin aplicarse.
+    expect(after.effects.applied).not.toContain("local_additive");
+    expect(after.applied).not.toContain("fixture.seed");
   });
 
   it("un resultado vencido no avanza", async () => {
