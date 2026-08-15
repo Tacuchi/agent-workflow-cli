@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { McpHost } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
@@ -18,13 +17,42 @@ export type VisibilityDriftStatus =
 export interface VisibilityHostReport {
   host: McpHost;
   scope: "workspace" | "global";
+  /**
+   * Single-path pointer kept for consumers that read one file name: the FIRST
+   * file the registered paths were actually read from. `targets` carries the
+   * whole answer when a host reads more than one.
+   */
   target: string;
+  /**
+   * Every config file the registered paths came from, in host precedence order.
+   * With no file present it holds the one a fix has to create — which is exactly
+   * what `status: "no-settings"` reports.
+   */
+  targets: string[];
   declared_paths: string[];
   registered_paths: string[];
   missing: string[];
   extra: string[];
   status: VisibilityDriftStatus;
   detail?: string;
+}
+
+/**
+ * The config file(s) a report is about.
+ *
+ * Claude Code reads `settings.json` AND `settings.local.json`, so naming a
+ * single hardcoded file makes the report point at a path that may not exist
+ * while the paths were read from the other one. `primary` preserves the
+ * one-path shape; `all` is the honest answer about where the data came from.
+ */
+interface HostTargets {
+  primary: string;
+  all: string[];
+}
+
+/** A host whose registered paths live in exactly one file. */
+function oneTarget(file: string): HostTargets {
+  return { primary: file, all: [file] };
 }
 
 export interface VisibilityDoctorInput {
@@ -62,7 +90,10 @@ export async function runVisibilityDoctor(
 
   const globalReports: VisibilityHostReport[] = [];
   if (input.global) {
-    const home = homedir();
+    // Home comes from the injected EnvPort, like the workspace does: reading
+    // node:os directly made the global scope unobservable from a test, which is
+    // the half of the doctor that touches files outside the workspace.
+    const home = env.homeDir();
     globalReports.push(inspectClaudeGlobal(home, declared), inspectCodexGlobal(home, declared));
   }
 
@@ -94,29 +125,25 @@ function inspectClaude(
   scope: "workspace" | "global",
 ): VisibilityHostReport {
   const claudeDir = join(scopeDir, ".claude");
-  const target = join(claudeDir, "settings.json");
-  const localTarget = join(claudeDir, "settings.local.json");
+  // The file a fix has to create when neither settings file exists yet.
+  const canonical = join(claudeDir, "settings.json");
   if (declared === null) {
-    return baseNoBlock("claude", scope, target);
+    return baseNoBlock("claude", scope, oneTarget(canonical));
   }
   // Claude Code reads settings.json and settings.local.json (local takes precedence);
   // the doctor merges additionalDirectories from both to avoid false negatives
   // when the paths live in the .local file (the per-machine, gitignored convention).
-  if (!existsSync(target) && !existsSync(localTarget)) {
-    return {
-      host: "claude",
+  const read = readClaudeAdditionalDirsMerged(claudeDir);
+  if (!read.found) {
+    return noSettingsReport(
+      "claude",
       scope,
-      target,
-      declared_paths: declared,
-      registered_paths: [],
-      missing: [...declared],
-      extra: [],
-      status: declared.length === 0 ? "ok" : "no-settings",
-      ...(declared.length > 0 ? { detail: `Falta ${target} o settings.local.json` } : {}),
-    };
+      oneTarget(canonical),
+      declared,
+      `Falta ${canonical} o settings.local.json`,
+    );
   }
-  const registered = readClaudeAdditionalDirsMerged(claudeDir);
-  return diffReport("claude", scope, target, declared, registered);
+  return diffReport("claude", scope, read.targets, declared, read.paths);
 }
 
 function inspectCodex(
@@ -125,37 +152,51 @@ function inspectCodex(
   scope: "workspace" | "global",
 ): VisibilityHostReport {
   const target = join(scopeDir, ".codex", "config.toml");
+  const targets = oneTarget(target);
   if (declared === null) {
-    return baseNoBlock("codex", scope, target);
+    return baseNoBlock("codex", scope, targets);
   }
   if (!existsSync(target)) {
-    return {
-      host: "codex",
-      scope,
-      target,
-      declared_paths: declared,
-      registered_paths: [],
-      missing: [...declared],
-      extra: [],
-      status: declared.length === 0 ? "ok" : "no-settings",
-      ...(declared.length > 0 ? { detail: `Falta ${target}` } : {}),
-    };
+    return noSettingsReport("codex", scope, targets, declared, `Falta ${target}`);
   }
   const registered = readCodexWritableRoots(target);
-  return diffReport("codex", scope, target, declared, registered);
+  return diffReport("codex", scope, targets, declared, registered);
 }
 
 function inspectClaudeGlobal(home: string, declared: string[] | null): VisibilityHostReport {
   const claudeDir = join(home, ".claude");
-  const target = join(claudeDir, "settings.json");
-  const registered = readClaudeAdditionalDirsMerged(claudeDir);
-  return globalPollutionReport("claude", target, declared ?? [], registered);
+  const read = readClaudeAdditionalDirsMerged(claudeDir);
+  const targets = read.found ? read.targets : oneTarget(join(claudeDir, "settings.json"));
+  const registered = read.found ? read.paths : [];
+  return globalPollutionReport("claude", targets, declared ?? [], registered);
 }
 
 function inspectCodexGlobal(home: string, declared: string[] | null): VisibilityHostReport {
   const target = join(home, ".codex", "config.toml");
   const registered = existsSync(target) ? readCodexWritableRoots(target) : [];
-  return globalPollutionReport("codex", target, declared ?? [], registered);
+  return globalPollutionReport("codex", oneTarget(target), declared ?? [], registered);
+}
+
+/** Declared sources with no host config file to compare them against. */
+function noSettingsReport(
+  host: McpHost,
+  scope: "workspace" | "global",
+  targets: HostTargets,
+  declared: string[],
+  detail: string,
+): VisibilityHostReport {
+  return {
+    host,
+    scope,
+    target: targets.primary,
+    targets: targets.all,
+    declared_paths: declared,
+    registered_paths: [],
+    missing: [...declared],
+    extra: [],
+    status: declared.length === 0 ? "ok" : "no-settings",
+    ...(declared.length > 0 ? { detail } : {}),
+  };
 }
 
 function inspectWarp(
@@ -170,6 +211,7 @@ function inspectWarp(
     host: "warp",
     scope,
     target,
+    targets: [target],
     declared_paths: [],
     registered_paths: [],
     missing: [],
@@ -182,10 +224,12 @@ function inspectWarp(
 function diffReport(
   host: McpHost,
   scope: "workspace" | "global",
-  target: string,
+  targets: HostTargets,
   declared: string[],
-  registered: string[],
+  rawRegistered: string[],
 ): VisibilityHostReport {
+  const registered = dedupeRegistered(rawRegistered);
+  const where = describeTargets(targets);
   const declaredSet = new Set(declared.map(normalize));
   const registeredSet = new Set(registered.map(normalize));
   const missing = declared.filter((p) => !registeredSet.has(normalize(p)));
@@ -196,7 +240,8 @@ function diffReport(
   return {
     host,
     scope,
-    target,
+    target: targets.primary,
+    targets: targets.all,
     declared_paths: declared,
     registered_paths: registered,
     missing,
@@ -206,7 +251,7 @@ function diffReport(
       ? {
           detail:
             status === "missing-paths"
-              ? `${missing.length} path(s) declarado(s) no registrado(s) en ${target}`
+              ? `${missing.length} path(s) declarado(s) no registrado(s) en ${where}`
               : `${extra.length} path(s) registrado(s) que no son fuentes declaradas`,
         }
       : {}),
@@ -215,17 +260,19 @@ function diffReport(
 
 function globalPollutionReport(
   host: McpHost,
-  target: string,
+  targets: HostTargets,
   declared: string[],
-  registered: string[],
+  rawRegistered: string[],
 ): VisibilityHostReport {
+  const registered = dedupeRegistered(rawRegistered);
   const declaredSet = new Set(declared.map(normalize));
   const polluted = registered.filter((p) => declaredSet.has(normalize(p)));
   const status: VisibilityDriftStatus = polluted.length > 0 ? "global-pollution" : "ok";
   return {
     host,
     scope: "global",
-    target,
+    target: targets.primary,
+    targets: targets.all,
     declared_paths: declared,
     registered_paths: registered,
     missing: [],
@@ -233,21 +280,42 @@ function globalPollutionReport(
     status,
     ...(polluted.length > 0
       ? {
-          detail: `${polluted.length} path(s) del hub también en ${target}. Sugerencia: 'agent-workflow detach-multiroot --global --from-sources'`,
+          detail: `${polluted.length} path(s) del hub también en ${describeTargets(targets)}. Sugerencia: 'agent-workflow detach-multiroot --global --from-sources'`,
         }
       : {}),
   };
 }
 
+/**
+ * One registration per path, first occurrence wins.
+ *
+ * The same directory declared in settings.json AND in settings.local.json is ONE
+ * registration, not two. Dedup is by the RAW string and not by `normalize`:
+ * `registered_paths` is a literal inventory of what the config files contain —
+ * the strings a person has to delete by hand — so two spellings of the same
+ * directory stay two entries. `normalize` governs only the comparison against
+ * the declared sources, which is where the two spellings already collapse; that
+ * is also why this cannot change `missing`/`extra` beyond dropping exact repeats.
+ */
+function dedupeRegistered(registered: string[]): string[] {
+  return [...new Set(registered)];
+}
+
+/** Every file the report was actually read from, for the user-facing message. */
+function describeTargets(targets: HostTargets): string {
+  return targets.all.join(" + ");
+}
+
 function baseNoBlock(
   host: McpHost,
   scope: "workspace" | "global",
-  target: string,
+  targets: HostTargets,
 ): VisibilityHostReport {
   return {
     host,
     scope,
-    target,
+    target: targets.primary,
+    targets: targets.all,
     declared_paths: [],
     registered_paths: [],
     missing: [],
@@ -257,14 +325,27 @@ function baseNoBlock(
   };
 }
 
-/** Merges additionalDirectories from settings.json + settings.local.json (Claude Code reads both). */
-function readClaudeAdditionalDirsMerged(claudeDir: string): string[] {
-  const out: string[] = [];
+type ClaudeSettingsRead = { found: false } | { found: true; targets: HostTargets; paths: string[] };
+
+/**
+ * Merges additionalDirectories from settings.json + settings.local.json (Claude
+ * Code reads both) and says WHICH of the two it actually read.
+ *
+ * Reporting the merge without its provenance is what let the doctor answer `ok`
+ * while pointing at a settings.json that does not exist.
+ */
+function readClaudeAdditionalDirsMerged(claudeDir: string): ClaudeSettingsRead {
+  const files: string[] = [];
+  const paths: string[] = [];
   for (const fname of ["settings.json", "settings.local.json"]) {
     const file = join(claudeDir, fname);
-    if (existsSync(file)) out.push(...readClaudeAdditionalDirs(file));
+    if (!existsSync(file)) continue;
+    files.push(file);
+    paths.push(...readClaudeAdditionalDirs(file));
   }
-  return out;
+  const [primary, ...rest] = files;
+  if (primary === undefined) return { found: false };
+  return { found: true, targets: { primary, all: [primary, ...rest] }, paths };
 }
 
 function readClaudeAdditionalDirs(file: string): string[] {

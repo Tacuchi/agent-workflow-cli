@@ -122,6 +122,10 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // este texto, y el JSON del host de agente sale del mismo objeto sellado.
     "discard",
     "reset",
+    // WS-9 — el drift de visibilidad host por host, proyectado del mismo
+    // resultado que viaja en el JSON. Era el único comando sin proyección
+    // humana: `--format human` imprimía el JSON crudo.
+    "visibility",
   ];
 
   it("no undeclared command acquired a human projection", () => {
