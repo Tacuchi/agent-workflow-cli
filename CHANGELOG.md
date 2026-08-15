@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.11.0] — 2026-08-15
+
+**El launcher de `dbhub` encontraba el DSN sólo si el nombre de la conexión coincidía exactamente con el de la variable, y el doctor de visibilidad señalaba un archivo que podía no existir.** Registrar la conexión como `qtc-cert` derivaba `DB_QTC_CERT_DSN` y fallaba aunque el DSN estuviera en `DB_CERT_DSN` —que es justo lo que escribe `aw bootstrap-dsn`—, y el mensaje nombraba una sola variable sin mencionar las dos salidas que ya existían. Además el banner ASCII del servidor viajaba por el mismo canal que el protocolo JSON-RPC. Del lado de visibilidad, el diagnóstico decía leer `.claude/settings.json` incluso cuando la configuración vivía en `settings.local.json`.
+
+### Added
+
+- **El nombre de la variable DSN tolera el prefijo de organización.** La resolución prueba la clave canónica y después la que resulta de soltar el primer segmento: `qtc-cert` alcanza `DB_QTC_CERT_DSN` y, si no está, `DB_CERT_DSN`. Se suelta **exactamente un** segmento y nunca se llega a un nombre de un solo segmento cuando el alias tiene tres o más: colapsar `qtc-cert-ro` hasta `DB_RO_DSN` haría que aliases de organizaciones distintas compartan una variable genérica, y arrancar un servidor contra la credencial de otro entorno es peor que no arrancar. Cuando resuelve por un nombre no canónico lo dice por stderr, con la variable usada y la que faltaba.
+- **`aw visibility doctor` tiene proyección humana.** Era el único comando que imprimía JSON crudo ante `--format human`. Ahora rinde una línea por host con su veredicto, los archivos de los que se leyó y las rutas que faltan o sobran, más los comandos exactos para corregir cada clase de drift presente. `--detail` funciona también en el caso con drift, que es cuando importa.
+
+### Changed
+
+- **El diagnóstico de un DSN ausente enseña las salidas que existen.** El error lista todas las variables probadas y en qué orden, dice dónde buscó —`process.env` y la ruta concreta de `dsn.env`, nombrando la causa cuando ese archivo no se pudo leer— y nombra las dos vías reales de resolverlo: la variable `DBHUB_DSN_VAR` y `aw mcp setup --instance <x> --dsn-var <NOMBRE>`. Un diagnóstico que nombra otra cosa que la que hay que arreglar es el defecto más caro de este proyecto.
+- **`aw mcp doctor` prueba la misma cadena que el launcher** y reporta la variable que efectivamente lleva el valor, no la canónica supuesta. Un doctor que declara `missing-dsn` sobre una conexión que el launcher arranca sin problema contradice al runtime, y eso es peor que no diagnosticar.
+- **El reporte de visibilidad nombra los archivos que realmente leyó.** `target` deja de ser un nombre fijo y pasa a ser el primer archivo del que salieron las rutas; `targets` lleva la respuesta completa cuando un host lee más de uno. Las rutas registradas se deduplican: una ruta declarada en `settings.json` y en `settings.local.json` aparecía dos veces.
+
+### Fixed
+
+- **El banner del servidor ya no corrompe el canal JSON-RPC.** `stdout` se filtra hasta que arranca el protocolo: las líneas de banner salen por stderr y, desde el primer mensaje, el flujo se entrega crudo sin volver a partirse. El corte reconoce además el caso en que el banner no termina en salto de línea y el primer mensaje viene pegado a su cola —antes ese mensaje se perdía entero— y una línea que ya abre el protocolo se entrega desde su primer byte, blancos incluidos.
+- **Ningún byte del protocolo se pierde al terminar.** Pasar de `stdio: "inherit"` a un pipe abrió una pérdida que antes era estructuralmente imposible: el hijo escribía el descriptor del padre, y ahora cada byte se reescribe por el `stdout` propio, que `process.exit()` descarta si todavía hay cola. El launcher espera el cierre del hijo **y** el vaciado de su propio canal antes de devolver. Medido con un lector lento y una carga de 300 KB: sin la barrera el consumidor no recibía nada y el flujo ni siquiera cerraba limpio; con ella llegan los 300 KB completos.
+- **`aw bootstrap-dsn` dejó de reescribir `dsn.env` entero.** Escribía sólo sus dos claves y perdía cualquier otra que el archivo tuviera —el archivo es compartido por todas las conexiones que la persona haya registrado alguna vez—. Ahora hace upsert conservando comentarios, líneas en blanco y claves ajenas. Un asignamiento indentado se reemplaza en lugar de duplicarse: dejarlo atrás mantenía viva una credencial vieja en un archivo `0600` que el usuario cree actualizado.
+
+### Notes
+
+- **Compatibilidad.** `target` sigue presente en el JSON del doctor de visibilidad, ahora apuntando a un archivo que existe; `targets` es aditivo. La resolución del DSN sólo agrega un candidato de reserva: una conexión que hoy resuelve por su clave canónica no cambia de comportamiento. `DBHUB_DSN_VAR` sigue siendo exacta y no deriva candidatos.
+- **Cobertura nueva.** El launcher y el bootstrap no tenían ningún test; `attachClaude`/`detachClaude` tampoco. El filtro de banner se probó como unidad pura sobre buffers (banner solo, banner con mensaje pegado, mensaje partido entre chunks, entrega cruda posterior y cierre sin protocolo), y la preservación de formato de `dsn.env` caso por caso.
+
 ## [21.10.1] — 2026-08-14
 
 **`fix-git` ya no resuelve a ciegas sobre una rama que pudo ser recreada.** Cuando una rama remota se limpia borrándola y recreándola desde `main`, cualquier copia local anterior conserva commits que fueron retirados a propósito; mergearla o empujarla los reintroducía sin que nadie lo pidiera, y el skill no miraba. Ahora la verificación es piso duro antes de cualquier resolución, y las resoluciones a un lado completo sin evidencia quedan prohibidas.
