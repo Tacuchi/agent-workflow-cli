@@ -35,6 +35,26 @@ export interface SemanticRequest {
   operation: string;
   /** SHA-256 over the inputs this request was built from — the staleness seal. */
   input_digest: string;
+  /**
+   * The scope this request was prepared over, opaque to the protocol and
+   * meaningful only to the operation.
+   *
+   * It exists because the three stages are stateless: `validate` and `apply`
+   * rebuild the request from the workspace, and anything the rebuild derives
+   * from the invocation (which sessions, which day, which pending number) is a
+   * seal input the invoker would otherwise have to reproduce by hand. Copied
+   * back VERBATIM in the answer, it lets the later stages rebuild THIS request
+   * instead of one made from whatever flags the invocation happened to repeat.
+   *
+   * It is sealed by `input_digest`, so an altered echo does not pass as the
+   * original: the rebuilt request digests differently and the answer is stale.
+   */
+  scope?: unknown;
+  /**
+   * What the seal covers, in prose — so a stale rejection can name the concrete
+   * cause instead of only stating that two digests differ.
+   */
+  sealed?: string;
   /** What a valid answer must contain, in prose the model reads. */
   contract: string;
   /** Operation-specific consultative data (never authoritative). */
@@ -60,6 +80,8 @@ export interface SemanticResponse {
   operation: string;
   input_digest: string;
   state: SemanticState;
+  /** The request's `scope`, copied back verbatim. See {@link SemanticRequest.scope}. */
+  scope?: unknown;
   decisions?: Record<string, unknown>;
   artifacts?: SemanticArtifact[];
   reason?: string;
@@ -109,6 +131,10 @@ export interface BuildRequestInput {
   limits: SemanticLimits;
   readSet: string[];
   readSetBytes: number;
+  /** See {@link SemanticRequest.scope}. Operations with no scope omit it. */
+  scope?: unknown;
+  /** See {@link SemanticRequest.sealed}. */
+  sealed?: string;
 }
 
 export function buildSemanticRequest(input: BuildRequestInput): SemanticRequest {
@@ -116,6 +142,11 @@ export function buildSemanticRequest(input: BuildRequestInput): SemanticRequest 
     version: SEMANTIC_PROTOCOL_VERSION,
     operation: input.operation,
     input_digest: semanticDigest(input.inputs),
+    // Spread-on-defined, not `scope: input.scope`: an operation without a scope
+    // must produce the same bytes it produced before the field existed, or its
+    // `request_bytes` (a budgeted figure) moves for a field it never uses.
+    ...(input.scope !== undefined ? { scope: input.scope } : {}),
+    ...(input.sealed !== undefined ? { sealed: input.sealed } : {}),
     contract: input.contract,
     inventory: input.inventory,
     allowed_destinations: input.allowedDestinations,
@@ -175,6 +206,25 @@ export function parseSemanticResponse(
   };
 }
 
+/**
+ * The `scope` an answer echoes, read BEFORE the request it will be checked
+ * against exists — a stage needs it to rebuild that very request.
+ *
+ * `undefined` covers both "the answer carries no scope" (a pre-scope answer,
+ * which falls back to the invocation's own flags) and "the answer is not
+ * readable JSON": diagnosing the second is `parseSemanticResponse`'s job and it
+ * runs a moment later, so failing here would only move the same error earlier
+ * and word it worse.
+ */
+export function readEnvelopeScope(raw: string): unknown {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed.scope : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function parseJson(raw: string): SemanticParse<unknown> {
   if (raw.trim().length === 0) {
     return {
@@ -207,24 +257,47 @@ function checkHeader(
   if (!isRecord(envelope)) {
     return invalid("la respuesta no es un objeto JSON");
   }
+  // Absence is checked BEFORE value, header by header. Folding the two together
+  // makes the error name the missing value (`estado desconocido: undefined`)
+  // instead of the missing FIELD, and an executor who never saw the envelope
+  // cannot tell `state` from `status` by reading that.
+  if (envelope.version === undefined) {
+    return missing("version", `el número ${SEMANTIC_PROTOCOL_VERSION}`);
+  }
   if (envelope.version !== SEMANTIC_PROTOCOL_VERSION) {
     return invalid(`versión de protocolo no soportada: ${String(envelope.version)}`);
+  }
+  if (envelope.operation === undefined) {
+    return missing("operation", `'${request.operation}', copiado del request`);
   }
   if (envelope.operation !== request.operation) {
     return invalid(
       `la respuesta dice operación '${String(envelope.operation)}' y esta es '${request.operation}'`,
     );
   }
+  if (envelope.input_digest === undefined) {
+    return missing("input_digest", `'${request.input_digest}', copiado del request`);
+  }
   // The staleness seal: the world moved between prepare and this answer, so the
   // inventory, the numbering and the duplicate check it reasoned over are gone.
-  // The expected digest travels in the message: re-running prepare is the fix,
-  // and nobody should have to reimplement `canonicalJson` to name it.
+  // The message names WHAT the seal covers — the digests alone say two hashes
+  // differ, which is true of every cause and diagnostic of none.
   if (envelope.input_digest !== request.input_digest) {
     return {
       code: "SEMANTIC_STALE",
-      message: `la respuesta responde a un estado anterior del workspace (este request espera 'input_digest' ${request.input_digest})`,
-      action: `volvé a correr prepare y respondé sobre el request nuevo, con 'input_digest': '${request.input_digest}'`,
+      message: `${request.sealed ?? "el estado que el request selló"} cambió entre preparar y responder: la respuesta trae 'input_digest' ${String(envelope.input_digest)} y este request selló ${request.input_digest}`,
+      // Conditioned like the message above: this module is shared by persist,
+      // fix-git, the flow and the design capability, and none of them carries a
+      // `scope`. Promising an envelope that will bring the scope back would send
+      // those callers looking for something that does not exist there.
+      action:
+        request.scope === undefined
+          ? `volvé a correr prepare y respondé sobre el request nuevo, con 'input_digest': '${request.input_digest}'`
+          : "volvé a correr prepare —el alcance con el que se preparó viaja en el sobre, así que no hace falta repetir los flags— y respondé sobre el request nuevo",
     };
+  }
+  if (envelope.state === undefined) {
+    return missing("state", "proposed | ambiguous | unsupported");
   }
   const state = envelope.state;
   if (state !== "proposed" && state !== "ambiguous" && state !== "unsupported") {
@@ -339,6 +412,11 @@ function invalid(message: string): SemanticFailure {
     message,
     action: "corregí la respuesta según el 'contract' del request y reenviala",
   };
+}
+
+/** A header that is absent names itself, with the value the request expects there. */
+function missing(field: string, expected: string): SemanticFailure {
+  return invalid(`falta el campo obligatorio '${field}' del sobre: esperaba ${expected}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

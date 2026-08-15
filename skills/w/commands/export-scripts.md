@@ -7,7 +7,7 @@ allowed-tools: ["Bash", "Read"]
 ## Run
 
 1. `aw export-scripts prepare --format human` (+ `--sessions`/`--since`/`--source`) → corpus, destination, shape, `input_digest`.
-2. Answer with one JSON: `version`/`operation`/`input_digest` **verbatim**, `state: "proposed"`, `artifacts` = `{ path, content }` per file, all inside the destination; `NNN` is advisory: `apply` renumbers.
+2. Answer with one JSON: `version`/`operation`/`input_digest`/`scope` **verbatim** — the `scope` carries the prepared scope, so 3 and 4 never repeat the scope flags; `state: "proposed"`, `artifacts` = `{ path, content }` per file, all inside the destination; `NNN` is advisory: `apply` renumbers.
 3. `echo '<json>' | aw export-scripts validate --format human` → preview + `approval_digest`; confirm scope and destination with the user.
 4. `echo '<json>' | aw export-scripts apply --approval <digest>`. On rejection nothing was written: fix and repeat step 3.
 

@@ -2,6 +2,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
 import { runNextNumber } from "./dev-only-services.js";
+import { resolveDocsCanon } from "./docs-canon-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { type ReleaseDataInput, runReleaseData } from "./release-data-service.js";
@@ -13,6 +14,7 @@ import {
   approvalDigest,
   buildSemanticRequest,
   parseSemanticResponse,
+  readEnvelopeScope,
 } from "./semantic-operation/protocol.js";
 import { publishArtifacts } from "./semantic-operation/publish.js";
 
@@ -30,8 +32,15 @@ import { publishArtifacts } from "./semantic-operation/publish.js";
 
 export type ExportCategory = "diagrams" | "manuals" | "reports" | "scripts";
 
+export const EXPORT_CATEGORIES: readonly ExportCategory[] = [
+  "diagrams",
+  "manuals",
+  "reports",
+  "scripts",
+];
+
 interface CategoryPolicy {
-  /** The single `docs/` folder this export may write. */
+  /** The single folder this export may write, unless the workspace canon moves it. */
   dir: string;
   /** `dossier` = a numbered directory of files; `document` = one numbered file. */
   shape: "dossier" | "document";
@@ -39,9 +48,15 @@ interface CategoryPolicy {
   required: string[];
   /** Allowed extensions inside the destination. */
   extensions: string[];
-  /** A fixed path outside the numbered unit this export may replace, if any. */
+  /** A file NAME, directly under the category folder, this export may replace. */
   overwritable?: string;
   contract: string;
+}
+
+/** A policy whose folder is the one this workspace actually publishes to. */
+interface ResolvedPolicy extends Omit<CategoryPolicy, "overwritable"> {
+  /** Full workspace-relative path of the overwritable file, or null. */
+  overwritable: string | null;
 }
 
 const POLICIES: Record<ExportCategory, CategoryPolicy> = {
@@ -59,9 +74,9 @@ const POLICIES: Record<ExportCategory, CategoryPolicy> = {
     required: ["README.md"],
     extensions: [".md"],
     // The only file an export may replace, and only with an explicit approval.
-    overwritable: "docs/manuals/INDEX.md",
+    overwritable: "INDEX.md",
     contract:
-      "Un dossier con README.md obligatorio y los manuales en Markdown. Podés incluir docs/manuals/INDEX.md para actualizar el índice: es el ÚNICO archivo sobrescribible y exige aprobación explícita.",
+      "Un dossier con README.md obligatorio y los manuales en Markdown. Podés incluir el INDEX.md de la categoría para actualizar el índice: es el ÚNICO archivo sobrescribible y exige aprobación explícita.",
   },
   reports: {
     dir: "docs/reports",
@@ -76,25 +91,51 @@ const POLICIES: Record<ExportCategory, CategoryPolicy> = {
     shape: "dossier",
     required: ["00-ROLLBACK.sql", "README.md"],
     extensions: [".sql", ".md"],
+    // The net-final-state doctrine travels HERE, in the contract the composer
+    // must obey, and not in the `skills/w` bundle: the bundle's context budget
+    // is a frozen gate with 121 B of headroom and this is ~700 B, so shipping it
+    // there would mean cutting live doctrine to pay for it. The contract reaches
+    // the same reader at the exact moment the bundle is being written, and its
+    // bytes are request bytes, which no frozen gate prices.
     contract:
-      "Un dossier con 00-ROLLBACK.sql y README.md obligatorios, más los forwards NN-<nombre>.sql numerados de forma continua desde 01. El CLI NUNCA ejecuta SQL.",
+      "Un dossier con 00-ROLLBACK.sql y README.md obligatorios, más los forwards NN-<nombre>.sql numerados de forma continua desde 01. El CLI NUNCA ejecuta SQL. El bundle publica el ESTADO FINAL NETO de la secuencia, no una réplica por sesión: lo que nace y muere dentro de la secuencia se omite; lo migrado va directo a su forma final; lo que el contexto declara retirado se omite aunque ningún script lo elimine. 00-ROLLBACK.sql invierte ese ESTADO FINAL en orden seguro para las dependencias, no el reverso literal de los forwards. Reconciliá contra el código además de las sesiones y la base. Excluí identidades concretas y semillas de prueba; conservá funciones reutilizables, tablas maestras y el registro de menú/rol.",
   },
 };
 
 const LIMITS = { max_artifacts: 64, max_artifact_bytes: 512 * 1024 };
 const FORWARD_RE = /^(\d{2})-[^/]+\.sql$/;
 
-export interface ExportSelection {
+/**
+ * Everything `prepare` resolved about WHICH work this export covers and HOW its
+ * unit is named — the whole of what a later stage would otherwise re-derive.
+ *
+ * It travels inside the request and comes back verbatim in the answer, which is
+ * what lets `validate` and `apply` rebuild the same preparation. `date` and
+ * `next` belong here for the same reason the filters do: they are not workspace
+ * state (the day is the clock's, and the real number is minted inside the lock
+ * anyway), but the unit's name is built from them, so re-deriving them at a
+ * later stage renames the destination the answer was written against.
+ */
+export interface ExportScope {
   sessions?: string[];
   since?: string;
   source?: string;
-  /** Deterministic date for the unit's name; defaults to today. */
-  date?: string;
+  /** The day that names the unit. */
+  date: string;
+  /** Consultative number that named the unit; `apply` mints the real one. */
+  next: string;
 }
+
+/** A scope not yet resolved: whatever the invocation declared, if anything. */
+export type ExportSelection = Partial<ExportScope>;
 
 export interface ExportPrepared {
   category: ExportCategory;
   request: SemanticRequest;
+  /** The folder this workspace publishes the category to (canon or default). */
+  dir: string;
+  /** The scope this preparation resolved — echoed by the answer, never re-derived. */
+  scope: ExportScope;
   /** Consultative — `apply` mints the real one inside the lock. */
   next: string;
   unit: string;
@@ -126,8 +167,23 @@ export async function prepareExport(
   paths: PathsService,
   category: ExportCategory,
   selection: ExportSelection = {},
+  // Injected so the midnight boundary is testable: a preparation that outlives
+  // the day used to rename its own destination on the next stage.
+  now: () => Date = () => new Date(),
 ): Promise<SemanticParse<ExportPrepared>> {
-  const policy = POLICIES[category];
+  const canon = await resolveDocsCanon(fs, paths, EXPORT_CATEGORIES);
+  if (!canon.ok) {
+    return {
+      ok: false,
+      failure: {
+        code: "EXPORT_DESTINATION_INVALID",
+        message: canon.error,
+        action:
+          "corregí la tabla [docs] de skills.toml, o quitala para usar el destino por defecto",
+      },
+    };
+  }
+  const policy = resolvePolicy(category, canon.canon[category]);
   const corpus = await readCorpus(fs, env, paths, selection);
   if ("error" in corpus) {
     return {
@@ -150,10 +206,36 @@ export async function prepareExport(
     };
   }
 
-  const next = (await runNextNumber(fs, env, paths, { directory: policy.dir, dryRun: true })).next;
-  const date = selection.date ?? localDateIso(new Date());
+  // Pinned when the answer echoed them, derived only on a first preparation:
+  // re-deriving either at `validate` renames the very unit the answer wrote to,
+  // and neither is workspace state that a stale check should be defending.
+  const next =
+    selection.next ??
+    (await runNextNumber(fs, env, paths, { directory: policy.dir, dryRun: true })).next;
+  const date = selection.date ?? localDateIso(now());
+  // Rejected HERE and not only when the envelope comes back: `prepare` used to
+  // accept any string, mint `…-export-manuals-lunes` and let the composer be
+  // blamed at `validate` for a scope it had copied verbatim, exactly as asked.
+  // The invocation that supplied it is the one that can fix it.
+  if (!DATE_RE.test(date)) {
+    return {
+      ok: false,
+      failure: {
+        code: "EXPORT_SCOPE_INVALID",
+        message: `--date '${date}' no tiene la forma YYYY-MM-DD`,
+        action: "repetí la invocación con una fecha YYYY-MM-DD, o sin --date para usar la de hoy",
+      },
+    };
+  }
   const unit =
     policy.shape === "dossier" ? `${policy.dir}/${next}-export-${category}-${date}` : policy.dir;
+  const scope: ExportScope = {
+    ...(selection.sessions !== undefined ? { sessions: selection.sessions } : {}),
+    ...(selection.since !== undefined ? { since: selection.since } : {}),
+    ...(selection.source !== undefined ? { source: selection.source } : {}),
+    date,
+    next,
+  };
 
   const inventory = {
     category,
@@ -161,7 +243,7 @@ export async function prepareExport(
     shape: policy.shape,
     required: policy.required,
     extensions: policy.extensions,
-    overwritable: policy.overwritable ?? null,
+    overwritable: policy.overwritable,
     sessions: corpus.sessions,
     date,
   };
@@ -169,18 +251,33 @@ export async function prepareExport(
   const readSet = corpus.sessions.map((s) => s.path ?? s.folder);
   const request = buildSemanticRequest({
     operation: `export-${category}`,
-    // The corpus seals the request: a session appearing or closing between
-    // prepare and apply changes what the dossier should have contained.
-    inputs: { corpus: corpus.sessions, next, date },
-    contract: `${policy.contract} Respondé artifacts con paths dentro de ${unit}${policy.overwritable ? ` (o exactamente ${policy.overwritable})` : ""}. El NNN es consultivo: el CLI reasigna el número dentro del lock.`,
+    // What the seal defends is workspace state: the corpus the scope covers (a
+    // session appearing or closing changes what the dossier should have
+    // contained) and the folder this workspace publishes to. The scope rides
+    // along so an altered echo cannot pass as the original one.
+    inputs: { corpus: corpus.sessions, dir: policy.dir, scope },
+    sealed: "el corpus de sesiones del alcance o el destino declarado de la categoría",
+    scope,
+    contract: `${policy.contract} Respondé artifacts con paths dentro de ${unit}${policy.overwritable === null ? "" : ` (o exactamente ${policy.overwritable})`}. El NNN es consultivo: el CLI reasigna el número dentro del lock. Copiá 'scope' TAL CUAL en tu respuesta: validate y apply lo leen en vez de re-derivarlo.`,
     inventory,
-    allowedDestinations: [unit, ...(policy.overwritable ? [policy.overwritable] : [])],
+    allowedDestinations: [unit, ...(policy.overwritable === null ? [] : [policy.overwritable])],
     limits: LIMITS,
     readSet,
     readSetBytes: readSet.length,
   });
 
-  return { ok: true, value: { category, request, next, unit } };
+  return { ok: true, value: { category, request, dir: policy.dir, scope, next, unit } };
+}
+
+/** The category's policy with the folder this workspace actually publishes to. */
+function resolvePolicy(category: ExportCategory, dir: string | undefined): ResolvedPolicy {
+  const { overwritable, ...base } = POLICIES[category];
+  const resolved = dir ?? base.dir;
+  return {
+    ...base,
+    dir: resolved,
+    overwritable: overwritable === undefined ? null : `${resolved}/${overwritable}`,
+  };
 }
 
 async function readCorpus(
@@ -203,6 +300,100 @@ async function readCorpus(
   return { sessions: data.sessions as Array<{ folder: string; path?: string }> };
 }
 
+// ── the scope, travelling between stages ─────────────────────────────────────
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const NEXT_RE = /^\d{3,}$/;
+
+/**
+ * The scope an answer echoes back, so `validate` and `apply` rebuild the
+ * preparation the answer was written against.
+ *
+ * Three outcomes and no fourth: a scope that is there and well formed, no scope
+ * at all (an answer written before this field existed — the invocation's own
+ * flags still decide, exactly as they did), and a scope that is there but
+ * malformed, which is a rejection. Reading a broken echo as "no echo" would
+ * quietly export a different corpus than the one that was approved.
+ */
+export function readExportScope(raw: string): SemanticParse<ExportScope | null> {
+  const echoed = readEnvelopeScope(raw);
+  if (echoed === undefined || echoed === null) return { ok: true, value: null };
+  if (typeof echoed !== "object" || Array.isArray(echoed)) return malformedScope("no es un objeto");
+
+  const scope = echoed as Record<string, unknown>;
+  const why = scopeShapeError(scope);
+  if (why !== null) return malformedScope(why);
+  return {
+    ok: true,
+    value: {
+      ...(scope.sessions !== undefined ? { sessions: scope.sessions as string[] } : {}),
+      ...(scope.since !== undefined ? { since: scope.since as string } : {}),
+      ...(scope.source !== undefined ? { source: scope.source as string } : {}),
+      date: scope.date as string,
+      next: scope.next as string,
+    },
+  };
+}
+
+/** Why this echo is not the scope `prepare` emitted, or `null` when it is. */
+function scopeShapeError(scope: Record<string, unknown>): string | null {
+  if (typeof scope.date !== "string" || !DATE_RE.test(scope.date)) {
+    return "'date' tiene que ser YYYY-MM-DD";
+  }
+  if (typeof scope.next !== "string" || !NEXT_RE.test(scope.next)) {
+    return "'next' tiene que ser el correlativo de 3 dígitos";
+  }
+  if (scope.sessions !== undefined && !isStringArray(scope.sessions)) {
+    return "'sessions' tiene que ser una lista de códigos de texto";
+  }
+  for (const key of ["since", "source"] as const) {
+    if (scope[key] !== undefined && typeof scope[key] !== "string") {
+      return `'${key}' tiene que ser texto`;
+    }
+  }
+  return null;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function malformedScope(why: string): SemanticParse<ExportScope | null> {
+  return {
+    ok: false,
+    failure: {
+      code: "SEMANTIC_RESPONSE_INVALID",
+      message: `el 'scope' del sobre no tiene la forma que prepare emitió: ${why}`,
+      action: "copiá el 'scope' del request TAL CUAL, sin reescribirlo",
+    },
+  };
+}
+
+/**
+ * Scope flags the invocation repeated that CONTRADICT the echoed scope.
+ *
+ * Repeating them is still supported and still works — that is what every
+ * existing invocation does. Repeating them with a different value is not the
+ * same thing: one of the two answers is not the one the proposal was written
+ * against, and picking either in silence hides which.
+ */
+export function conflictingScopeFlags(echoed: ExportScope, flags: ExportSelection): string[] {
+  const same = (a: string[] | undefined, b: string[] | undefined): boolean =>
+    (a ?? []).join(",") === (b ?? []).join(",");
+  const conflicts: string[] = [];
+  if (flags.sessions !== undefined && !same(flags.sessions, echoed.sessions)) {
+    conflicts.push("--sessions");
+  }
+  for (const [flag, key] of [
+    ["--since", "since"],
+    ["--source", "source"],
+    ["--date", "date"],
+  ] as const) {
+    if (flags[key] !== undefined && flags[key] !== echoed[key]) conflicts.push(flag);
+  }
+  return conflicts;
+}
+
 // ── validate ─────────────────────────────────────────────────────────────────
 
 export function validateExport(
@@ -212,11 +403,13 @@ export function validateExport(
   const parsed = parseSemanticResponse(raw, prepared.request);
   if (!parsed.ok) return parsed;
 
-  const policy = POLICIES[prepared.category];
+  // From what was prepared, never from the policy table: the folder is the
+  // workspace's, and re-reading it here would let the two stages disagree.
+  const policy = resolvePolicy(prepared.category, prepared.dir);
   const artifacts = parsed.value.artifacts ?? [];
   const inUnit = artifacts.filter((a) => a.path !== policy.overwritable);
   const overwrites = artifacts.some((a) => a.path === policy.overwritable)
-    ? (policy.overwritable ?? null)
+    ? policy.overwritable
     : null;
 
   const shape = checkShape(inUnit, policy, prepared.unit);
@@ -241,7 +434,7 @@ export function validateExport(
 
 function checkShape(
   artifacts: SemanticArtifact[],
-  policy: CategoryPolicy,
+  policy: ResolvedPolicy,
   unit: string,
 ): SemanticFailure | null {
   if (artifacts.length === 0) return reject("la propuesta no trae ningún artefacto del dossier");
@@ -324,7 +517,7 @@ export async function applyExport(
   const parsed = parseSemanticResponse(input.raw, input.prepared.request);
   if (!parsed.ok) return parsed;
 
-  const policy = POLICIES[input.prepared.category];
+  const policy = resolvePolicy(input.prepared.category, input.prepared.dir);
   const result = await withCwdLock(fs, paths, async () => {
     const minted = (await runNextNumber(fs, env, paths, { directory: policy.dir })).next;
     const artifacts = (parsed.value.artifacts ?? []).map((artifact) =>
@@ -359,14 +552,21 @@ function renumber(
   artifact: SemanticArtifact,
   prepared: ExportPrepared,
   minted: string,
-  policy: CategoryPolicy,
+  policy: ResolvedPolicy,
 ): SemanticArtifact {
   if (artifact.path === policy.overwritable) return artifact;
   if (policy.shape === "document") {
     const name = artifact.path.slice(policy.dir.length + 1).replace(/^\d{3}-/, "");
     return { path: `${policy.dir}/${minted}-${name}`, content: artifact.content };
   }
-  const unit = prepared.unit.replace(/\/\d{3}-/, `/${minted}-`);
+  // The number to move is the UNIT's own, which is its LAST segment — never the
+  // first `/NNN-` of the path. Since the category's folder became configurable,
+  // a canon that is itself numbered (`docs/003-manuales`) would eat the
+  // replacement: the export would be approved into `docs/003-manuales/…` and
+  // written into `docs/001-manuales/…`, a folder outside `allowed_destinations`
+  // that nothing downstream re-checks.
+  const unitName = prepared.unit.slice(policy.dir.length + 1).replace(/^\d{3}-/, `${minted}-`);
+  const unit = `${policy.dir}/${unitName}`;
   return {
     path: `${unit}/${artifact.path.slice(prepared.unit.length + 1)}`,
     content: artifact.content,

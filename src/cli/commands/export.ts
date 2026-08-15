@@ -2,12 +2,16 @@ import {
   type ExportApplied,
   type ExportCategory,
   type ExportPrepared,
+  type ExportScope,
   type ExportSelection,
   type ExportValidation,
   applyExport,
+  conflictingScopeFlags,
   prepareExport,
+  readExportScope,
   validateExport,
 } from "../../application/export-service.js";
+import type { SemanticFailure } from "../../application/semantic-operation/protocol.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
@@ -30,6 +34,38 @@ const DESCRIBES: Record<ExportCategory, string> = {
 };
 
 /**
+ * The answer envelope, published where an executor can read it WITHOUT running
+ * the operation.
+ *
+ * Same reason as `aw flow`'s: the contract is enforced in
+ * `semantic-operation/protocol.ts` and, until now, was documented nowhere — so
+ * the only way to learn that the field is `state` and not `status` was to send
+ * an answer without it and read `estado desconocido: undefined`, which names
+ * the value and not the field. A contract only a failed attempt can teach
+ * charges every executor the same tuition.
+ *
+ * Kept beside the command rather than in the doctrine bundle because the
+ * bundle's context budget is a frozen gate and this is reference material: it
+ * is read while composing an answer, not on every run.
+ */
+const ENVELOPE = [
+  "Sobre de `validate` / `apply` — un único objeto JSON por stdin, con sus campos en el NIVEL SUPERIOR:",
+  "",
+  "  obligatorio     version: el número que el request trae en 'version'.",
+  "                  operation: 'export-<categoría>', copiado del request.",
+  "                  input_digest: el 'input_digest' del request, copiado tal cual.",
+  "                  state: proposed | ambiguous | unsupported.",
+  "",
+  "  proposed        artifacts: [{path, content}] — cada path dentro del destino que el request declara en 'allowed_destinations'.",
+  "                  scope: el 'scope' del request, copiado TAL CUAL. Es el alcance con el que se preparó: validate y apply lo leen en vez de re-derivarlo, así que NO hace falta repetir --sessions/--since/--source/--date. Repetirlos con otro valor se rechaza.",
+  "",
+  "  ambiguous       reason: por qué no se puede decidir. No se escribe nada.",
+  "  unsupported     reason: por qué la operación no aplica. No se escribe nada.",
+  "",
+  "  aprobación      --approval <digest> con el 'approval_digest' que devolvió validate — viaja como flag, no dentro del sobre.",
+].join("\n");
+
+/**
  * The four exports are the same command with a different policy: same stages,
  * same validation, same authorization. Only the category changes, which is why
  * they are built here instead of copied four times.
@@ -37,7 +73,9 @@ const DESCRIBES: Record<ExportCategory, string> = {
 function exportCommand(category: ExportCategory): QtcCommand<ExportData> {
   return {
     name: `export-${category}`,
-    describe: `${DESCRIBES[category]} Escribe SOLO en su carpeta y nunca crea una sesión. Usage: aw export-${category} prepare | validate | apply --approval <digest> [--overwrite] [--sessions <a,b>] [--since <YYYY-MM-DD>] [--source <alias>] [--date <YYYY-MM-DD>].`,
+    describe: `${DESCRIBES[category]} Escribe SOLO en su carpeta y nunca crea una sesión. Usage: aw export-${category} prepare | validate | apply --approval <digest> [--overwrite] [--sessions <a,b>] [--since <YYYY-MM-DD>] [--source <alias>] [--date <YYYY-MM-DD>].
+
+${ENVELOPE}`,
 
     async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ExportData>> {
       const stage = args.rest[0];
@@ -48,16 +86,21 @@ function exportCommand(category: ExportCategory): QtcCommand<ExportData> {
         );
       }
 
+      // stdin FIRST on the later stages: the answer carries the scope its
+      // proposal was written against, and rebuilding the request without it is
+      // what used to reject a perfectly current answer as stale.
+      const raw = stage === "prepare" ? "" : await readRequiredStdin();
+      const scope = resolveStageScope(stage, raw, args);
+      if (!scope.ok) return failSemantic(scope.failure);
+
       // Each stage rebuilds the request from the workspace: stateless, and the
       // corpus digest is what detects a session that moved meanwhile.
-      const prepared = await prepareExport(ctx.fs, ctx.env, ctx.paths, category, selection(args));
+      const prepared = await prepareExport(ctx.fs, ctx.env, ctx.paths, category, scope.selection);
       if (!prepared.ok) return failSemantic(prepared.failure);
 
       if (stage === "prepare") {
         return { ok: true, data: { stage: "prepare", prepared: prepared.value }, exitCode: 0 };
       }
-
-      const raw = await readRequiredStdin();
       return stage === "validate"
         ? runValidate(raw, prepared.value)
         : await runApply(args, ctx, raw, prepared.value);
@@ -95,6 +138,46 @@ function exportCommand(category: ExportCategory): QtcCommand<ExportData> {
       return `export-${category} · publicados ${data.written.length} archivo(s):\n${data.written.map((w) => `  ${w}`).join("\n")}\n`;
     },
   };
+}
+
+type StageScope =
+  | { ok: true; selection: ExportSelection }
+  | { ok: false; failure: SemanticFailure };
+
+/**
+ * What this stage should prepare over: the scope the answer echoes when there
+ * is one, the invocation's own flags otherwise.
+ */
+function resolveStageScope(stage: string, raw: string, args: ParsedArgs): StageScope {
+  const flags = selection(args);
+  if (stage === "prepare") return { ok: true, selection: flags };
+
+  const echoed = readExportScope(raw);
+  if (!echoed.ok) return echoed;
+  if (echoed.value === null) return { ok: true, selection: flags };
+
+  const conflicts = conflictingScopeFlags(echoed.value, flags);
+  if (conflicts.length > 0) {
+    return {
+      ok: false,
+      failure: {
+        code: "EXPORT_SCOPE_CONFLICT",
+        message: `${conflicts.join(" y ")} contradice(n) el alcance con el que se preparó (${describeScope(echoed.value)})`,
+        action: `quitá los flags de alcance en ${stage}: el sobre ya trae el alcance de la preparación`,
+      },
+    };
+  }
+  return { ok: true, selection: echoed.value };
+}
+
+function describeScope(scope: ExportScope): string {
+  const parts = [
+    ...(scope.sessions === undefined ? [] : [`--sessions ${scope.sessions.join(",")}`]),
+    ...(scope.since === undefined ? [] : [`--since ${scope.since}`]),
+    ...(scope.source === undefined ? [] : [`--source ${scope.source}`]),
+    `--date ${scope.date}`,
+  ];
+  return parts.join(" ");
 }
 
 function runValidate(raw: string, prepared: ExportPrepared): CommandResult<ExportData> {
