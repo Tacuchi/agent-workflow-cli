@@ -4,6 +4,28 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.17.0] — 2026-08-15
+
+**Publicar un paquete de diseño podía dejar el árbol sin lo que lo hace legible y reportar éxito igual.** Cuando la publicación no derivaba su destino escribía los artefactos autorados verbatim —sin línea base, sin manifiesto, sin gate— y el recibo decía `completed`; `aw designs` rechazaba después ese mismo árbol. En paralelo convivían dos implementaciones del sellado: la que corría, y otra sin llamadores que concentraba la mayor parte de las pruebas.
+
+### Changed
+
+- **Una sola implementación viva del sellado.** Sobrevive la del manejador, y el criterio importa: la retirada escribía directo, salteando el sello de propuesta, la vista previa y la aprobación que atraviesa todo efecto durable — conservarla era conservar un segundo camino de escritura sin frontera de aprobación. Su cobertura se migró repartida por lo que cada caso pregunta.
+- **La madurez sale del catálogo que se publica**, con una sola función sobre el manifiesto: la misma pregunta para el árbol que una publicación va a dejar y para el ya publicado, así que el recibo y la validación posterior no pueden contradecirse sobre el mismo árbol. `handoff` pasa a ser alcanzable, y quien no lo alcanza recibe su razón.
+
+### Fixed
+
+- **Ningún recibo declara `handoff` sobre un paquete que no lo alcanza.** Había dos caminos: juzgar sólo los archivos que la revisión introduce —una revisión de tokens salía handoff mientras el flujo vigente seguía en outline— y filtrar los claims por lo que `currentness` marca, que descarta todo artefacto no enumerado, cosa perfectamente legal. Ahora la vigencia la resuelve el mismo criterio que ya usaba el gate de contenido, que cae a la revisión más alta por artefacto cuando el manifiesto calla.
+- **Publicar deja el árbol legible, o no publica.** Nada se escribe cuando la operación se rechaza.
+- **Dos diagnósticos recuperados** que sólo tenía la implementación retirada: un paquete roto se distingue de uno inexistente, y una identidad reclamada por dos paquetes se informa en vez de resolverse eligiendo el primero.
+- **Una operación fuera de un workspace deja de emitir un contrato insatisfacible**, que quemaba una ronda de autoría sin poder aplicar nunca.
+
+### Notes
+
+- **Las dos operaciones que no acuñan revisión conservan su contrato.** Una proyección la deriva el CLI del manifiesto y una decisión de gobierno se sella dentro de él: publicar sus artefactos sin línea base no es el defecto, el defecto era que el recibo no lo dijera. Publican dentro de un paquete ya indexado declarando que no sellan, y se rechazan sólo cuando no hay paquete donde escribir. Romperlas o retirarlas habría sido la misma mentira movida de sitio.
+- **El protocolo de la capacidad se lee en `aw capability --help`** —qué repite cada verbo, qué viaja por entrada estándar y de dónde sale cada digest—, con el precedente de `aw flow --help` y sin costo de presupuesto del bundle.
+- **Un hueco que este trabajo destapó y no cierra:** la suite retirada probaba que publicar el documento y su revisión era una transición todo-o-nada. Como la función nunca tuvo llamadores, esa transición **nunca estuvo implementada**; lo que se retira es la prueba de una promesa que nadie cumplía. Queda anotada en el código, en el lugar exacto donde vivían esos casos.
+
 ## [21.16.0] — 2026-08-15
 
 **Validar y aplicar una exportación exigían repetir los mismos flags de alcance, y aun repitiéndolos el rechazo por vencimiento llegaba igual por dos causas que nadie controlaba.** El protocolo rearma el pedido desde el workspace en cada etapa —diseño deliberado—, pero el sello cubría además el próximo número correlativo del destino y la fecha del día: numerar en ese directorio entre dos etapas, o cruzar la medianoche, vencía una preparación cuyo alcance no había cambiado. Y el mensaje sugería volver a preparar, que es una pista falsa.
