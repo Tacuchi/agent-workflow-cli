@@ -312,6 +312,82 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     expect(proposal.event.command).toBe("reset");
   });
 
+  it("declara una custodia VACÍA antes de aplicar, sin prometer una restauración", async () => {
+    // El estado real de toda sesión nacida por el protocolo antes de este arreglo:
+    // custodia sellada, cero artefactos. `reset` sobre ella no restaura nada.
+    const quick = await session("suelto-quick");
+
+    const proposal = proposalOf(await prepare("reset", `session:${quick}`));
+    expect(proposal.custody).toEqual([{ session: quick, declared: 0, restored: 0 }]);
+    expect(proposal.restores).toEqual([]);
+    // La única huella durable tampoco insinúa un rollback que no ocurrió.
+    expect(proposal.event.summary).toBe(`retirada session:${quick} sin restaurar ningún artefacto`);
+
+    const preview = retirementPreview(proposal);
+    expect(preview.restores_nothing).toBe(true);
+    expect(preview.custody).toEqual([{ session: quick, declared: 0, restored: 0 }]);
+
+    const human = renderRetirementPreview(preview);
+    // Dicho ANTES de aplicar y fuera de toda sección: una sección vacía se omite,
+    // y esta advertencia no puede depender de un encabezado que no se imprime.
+    expect(human).toContain("Nada vuelve atrás");
+    expect(human).toContain(`${quick}: sin artefactos declarados`);
+  });
+
+  it("distingue una custodia CON artefactos y dice cuántos vuelven atrás", async () => {
+    write(specFile("025"), SPEC("025"));
+    const before = PLAN("024", "025");
+    write(planFile("024"), before);
+    const exec = await session("algo-plan-exec", [planFile("024")]);
+    write(planFile("024"), before.replace("- [ ] T1.1", "- [x] T1.1"));
+
+    const proposal = proposalOf(await prepare("reset", `session:${exec}`));
+    expect(proposal.custody).toEqual([{ session: exec, declared: 1, restored: 1 }]);
+
+    const preview = retirementPreview(proposal);
+    expect(preview.restores_nothing).toBe(false);
+    const human = renderRetirementPreview(preview);
+    expect(human).toContain(`${exec}: 1 artefacto(s) declarados, 1 vuelve(n) atrás`);
+    expect(human).not.toContain("Nada vuelve atrás");
+  });
+
+  it("un discard declara lo custodiado sin hablar de restaurar: nunca restaura", async () => {
+    write(specFile("025"), SPEC("025"));
+    write(planFile("024"), PLAN("024", "025"));
+    const exec = await session("algo-plan-exec", [planFile("024")]);
+
+    const proposal = proposalOf(await prepare("discard", "plan:024"));
+    expect(proposal.custody).toEqual([{ session: exec, declared: 1, restored: 0 }]);
+
+    const human = renderRetirementPreview(retirementPreview(proposal));
+    expect(human).toContain(`${exec}: 1 artefacto(s) declarados`);
+    // `restores_nothing` es cierto para TODO discard, así que anunciarlo sería
+    // ruido: un discard nunca prometió devolver nada.
+    expect(human).not.toContain("Nada vuelve atrás");
+  });
+
+  it("el rechazo por falta de custodia nombra el registro ausente, no una fecha de nacimiento", async () => {
+    // Una carpeta hecha a mano HOY: es la ausencia del archivo lo único que se
+    // verificó, y de una ausencia no se deduce cuándo nació la sesión.
+    const folder = "090-hecha-a-mano-plan-exec";
+    mkdirSync(join(workspace, ".workflow", "sessions", folder), { recursive: true });
+    writeFileSync(
+      join(workspace, ".workflow", "sessions", folder, "SESSION.md"),
+      `# SESSION — ${folder}\n`,
+    );
+
+    const outcome = await prepare("reset", `session:${folder}`);
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejection.code).toBe("EVIDENCE_MISSING");
+    expect(outcome.rejection.message).toContain("no hay registro de custodia");
+    expect(outcome.rejection.message).toContain(".custody.json");
+    // Y ofrece la salida en vez de dejar al usuario adivinando.
+    expect(outcome.rejection.action).toContain("aw discard");
+    const said = `${outcome.rejection.message} ${outcome.rejection.action}`;
+    expect(said).not.toMatch(/naci|antes de que|legacy/i);
+  });
+
   it("no escribe nada: ni sesión, ni journal, ni archivo, ni ref", async () => {
     write(specFile("025"), SPEC("025"));
     write(planFile("024"), PLAN("024", "025"));

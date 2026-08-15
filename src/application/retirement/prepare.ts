@@ -16,6 +16,7 @@ import { join } from "node:path";
 import {
   type ClosureEntry,
   type ReadSetEntry,
+  type RetirementCustodyScope,
   type RetirementDelete,
   type RetirementEvent,
   type RetirementMode,
@@ -108,6 +109,7 @@ async function buildProposal(
   const readSet: ReadSetEntry[] = [];
   const deletes: RetirementDelete[] = [];
   const restores: RetirementRestore[] = [];
+  const custody: RetirementCustodyScope[] = [];
   const units: RetirementUnit[] = [];
   const blocks: AttributionBlock[] = [];
   const dirty: RetirementProposal["dirty"] = [];
@@ -122,6 +124,7 @@ async function buildProposal(
         deletes,
         restores,
         restored,
+        custody,
         units,
         dirty,
         reverts,
@@ -168,6 +171,7 @@ async function buildProposal(
       ),
       deletes: finalDeletes,
       restores,
+      custody,
       bindings,
       units,
       dirty,
@@ -186,6 +190,7 @@ interface SessionCollector {
   deletes: RetirementDelete[];
   restores: RetirementRestore[];
   restored: Set<string>;
+  custody: RetirementCustodyScope[];
   units: RetirementUnit[];
   dirty: RetirementProposal["dirty"];
   reverts: RetirementProposal["reverts"];
@@ -229,6 +234,11 @@ async function collectSession(
   if (custody === null) return;
   collector.readSet.push({ id: `custody:${facts.folder}`, digest: custody.digest });
 
+  // Counted before the loop that consumes it, so what the proposal declares is
+  // the custody's own number and not a by-product of what this mode happened to
+  // act on. `declared: 0` is the state the whole notice exists for.
+  const restoresBefore = collector.restores.length;
+
   for (const artifact of custody.artifacts) {
     if (artifact.role === "output") {
       // Born inside the session: it goes, in both modes.
@@ -251,6 +261,12 @@ async function collectSession(
     });
     collector.restored.add(artifact.path);
   }
+
+  collector.custody.push({
+    session: facts.folder,
+    declared: custody.artifacts.length,
+    restored: collector.restores.length - restoresBefore,
+  });
 
   const attribution = await attributeGitEffects(deps.git, custody, {
     scratchDir: tmpdir(),
@@ -295,11 +311,18 @@ function eventOf(
   deletes: readonly RetirementDelete[],
   restores: readonly RetirementRestore[],
 ): RetirementEvent {
+  const target = formatNodeId(closure.target.id);
+  // The row is the only durable trace, so a reset that put nothing back says so
+  // in it. "restaurado 0 artefacto(s)" reads as a count somebody may skim past;
+  // naming the absence is what keeps HISTORY from implying a rollback that the
+  // operation never performed.
   const summary =
     closure.mode === "discard"
       ? `retirado ${targetText}: ${closure.entries.length} nodos, ${deletes.length} rutas`
-      : `restaurado ${restores.length} artefacto(s) y retirada ${formatNodeId(closure.target.id)}`;
-  return { command: closure.mode, key: formatNodeId(closure.target.id), summary };
+      : restores.length === 0
+        ? `retirada ${target} sin restaurar ningún artefacto`
+        : `restaurado ${restores.length} artefacto(s) y retirada ${target}`;
+  return { command: closure.mode, key: target, summary };
 }
 
 /** `null` when the path is not there — an absence is a fact, not a failure. */

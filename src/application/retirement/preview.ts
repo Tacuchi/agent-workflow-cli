@@ -25,6 +25,21 @@ export interface RetirementPreview {
   disappears: Array<{ node: string; path: string; reason: string }>;
   /** Paths whose bytes come back, and the ones that go back to not existing. */
   restores: Array<{ path: string; to: "bytes-previos" | "inexistente"; changed_since: boolean }>;
+  /**
+   * What each session in the closure declared it was holding.
+   *
+   * Shown even when it is uneventful because its INTERESTING value is a zero, and
+   * a section that only appears on zero would be a section nobody learns to read.
+   */
+  custody: Array<{ session: string; declared: number; restored: number }>;
+  /**
+   * `true` when this retirement puts no file back at all.
+   *
+   * Derived rather than authored, and stated as its own flag because the preview
+   * omits empty sections: without it, "nothing is restored" would be communicated
+   * by the absence of a heading, which is the silence `S029/AC-06` refuses.
+   */
+  restores_nothing: boolean;
   /** Paths whose current content is dropped, per working tree. */
   local_changes: Array<{ alias: string; tree: string; paths: string[]; exclusive_unit: boolean }>;
   /** Commits that get a revert commit — never a rewrite. */
@@ -70,6 +85,12 @@ export function retirementPreview(proposal: RetirementProposal): RetirementPrevi
       // sealed, so restoring it discards whatever happened in between.
       changed_since: restore.current_digest !== restore.digest,
     })),
+    custody: proposal.custody.map((scope) => ({
+      session: scope.session,
+      declared: scope.declared,
+      restored: scope.restored,
+    })),
+    restores_nothing: proposal.restores.length === 0,
     local_changes: proposal.dirty.map((change) => ({
       alias: change.alias,
       tree: change.tree,
@@ -115,7 +136,22 @@ export function renderRetirementPreview(preview: RetirementPreview): string {
   const verb = preview.mode === "discard" ? "Retirar" : "Restaurar";
   lines.push(`${verb} ${preview.target}`);
   lines.push(`Digest de aprobación: ${preview.digest}`);
+  // Said BEFORE the sections rather than by omitting one of them: a `reset` whose
+  // scope declared no input restores nothing, and the person about to approve it
+  // believes they are going back to a previous state. A discard never restores, so
+  // announcing it there would be noise instead of a warning.
+  if (preview.mode === "reset" && preview.restores_nothing) {
+    lines.push(
+      "",
+      "Nada vuelve atrás: ninguna sesión del alcance declaró entradas, así que este reset no devuelve ningún archivo a su estado previo.",
+    );
+  }
 
+  section(
+    lines,
+    "Custodia declarada",
+    preview.custody.map((scope) => custodyLine(preview.mode, scope)),
+  );
   section(
     lines,
     "Desaparece",
@@ -160,6 +196,27 @@ export function renderRetirementPreview(preview: RetirementPreview): string {
   }
   section(lines, "Huella en HISTORY", [preview.history_row]);
   return lines.join("\n");
+}
+
+/**
+ * One session's declaration, read for the mode that is about to run.
+ *
+ * A discard never restores, so quoting a restore count there would describe a
+ * decision nobody is taking; what a discard's reader needs is only how much the
+ * session had declared it was holding.
+ */
+function custodyLine(
+  mode: RetirementPreview["mode"],
+  scope: RetirementPreview["custody"][number],
+): string {
+  if (scope.declared === 0) {
+    return `${scope.session}: sin artefactos declarados — su custodia nació vacía y no hay estado previo que devolver`;
+  }
+  const declared = `${scope.session}: ${scope.declared} artefacto(s) declarados`;
+  if (mode === "discard") return declared;
+  return scope.restored === 0
+    ? `${declared}, ninguno es una entrada: no vuelve atrás ninguno`
+    : `${declared}, ${scope.restored} vuelve(n) atrás`;
 }
 
 function section(lines: string[], title: string, items: readonly string[]): void {

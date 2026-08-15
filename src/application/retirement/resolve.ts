@@ -223,7 +223,7 @@ function unprovableEdges(key: string, edges: readonly WorklineEdge[]): Retiremen
     message: `'${key}' tiene descendientes cuya procedencia no se puede probar`,
     candidates: edges.map((e) => `${formatNodeId(e.from)} (${e.evidence})`),
     action:
-      "esas sesiones nacieron sin custodia: retirálas individualmente por su carpeta, o dejá el objetivo como está",
+      "esas sesiones no tienen un registro de custodia que pruebe su procedencia: retirálas individualmente por su carpeta, o dejá el objetivo como está",
   };
 }
 
@@ -337,7 +337,8 @@ export function resolveResetSession(graph: RetirementGraph, target: GraphNode): 
           code: "EVIDENCE_MISSING",
           message: `no se puede probar hasta dónde llegó '${facts.folder}': ${facts.custody_gap ?? "sin evidencia"}`,
           candidates: [facts.folder],
-          action: "es una sesión legacy: no hay baseline que restaurar, y reset no lo inventa",
+          action:
+            "sin registro de custodia no hay baseline que restaurar, y reset no lo inventa: usá `aw discard` sobre su carpeta si querés retirarla igual",
         },
       };
     }
@@ -392,9 +393,10 @@ export function resolveResetClosure(graph: RetirementGraph, session: GraphNode):
       ok: false,
       rejection: {
         code: "EVIDENCE_MISSING",
-        message: `'${formatNodeId(session.id)}' no tiene custodia: no hay salidas ni entradas que probar`,
+        message: `'${formatNodeId(session.id)}' no tiene registro de custodia: no hay entradas ni salidas que probar`,
         candidates: [formatNodeId(session.id)],
-        action: "es una sesión legacy: retirala a mano o usá discard sobre su carpeta",
+        action:
+          "reset devuelve un baseline sellado y acá no hay ninguno: usá `aw discard` sobre su carpeta, o retirala a mano",
       },
     };
   }

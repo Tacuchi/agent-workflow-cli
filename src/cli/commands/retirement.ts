@@ -162,7 +162,16 @@ function render(
       : `${mode} aplicado: ${data.target}`,
   ];
   if (data.removed.length > 0) lines.push(`Retirado: ${data.removed.join(", ")}`);
-  if (data.restored.length > 0) lines.push(`Restaurado: ${data.restored.join(", ")}`);
+  if (data.restored.length > 0) {
+    lines.push(`Restaurado: ${data.restored.join(", ")}`);
+  } else if (mode === "reset") {
+    // The other half of the same rule the preview applies: an empty list renders
+    // as an ABSENT line, and "reset aplicado" on its own reads as "you are back
+    // where you started". A reset with no declared input restores nothing, and
+    // that has to survive into the report, not only into the preview nobody
+    // re-reads afterwards.
+    lines.push("Nada volvió atrás: la sesión no declaraba entradas en su custodia.");
+  }
   if (data.published !== null) {
     lines.push(`Publicado en ${data.published.ref}: ${data.published.to.slice(0, 12)}`);
   }

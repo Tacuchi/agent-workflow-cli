@@ -216,9 +216,14 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(prepared.result.ok).toBe(true);
     const data = prepared.result.data as { digest: string; preview: { restores: unknown[] } };
     expect(data.preview.restores).toEqual([]);
+    // Antes de aplicar, la vista dice que no hay nada que devolver — y por qué.
+    expect(prepared.human).toContain("Nada vuelve atrás");
+    expect(prepared.human).toContain(`${quick}: sin artefactos declarados`);
 
     const applied = await run("reset", "apply", `session:${quick}`, "--approval", data.digest);
     expect(applied.result.ok).toBe(true);
+    // Y después de aplicar tampoco se lee «listo» donde no se restauró nada.
+    expect(applied.human).toContain("Nada volvió atrás");
     expect(existsSync(join(workspace, ".workflow", "sessions", quick))).toBe(false);
     const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
     expect(board.sessions.active).toEqual([]);

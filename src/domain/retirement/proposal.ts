@@ -157,6 +157,30 @@ export interface RetirementUnit {
   repo: string;
 }
 
+/**
+ * What one session in the closure declared it was holding.
+ *
+ * It is sealed rather than derived by the reader because the two states it
+ * separates are indistinguishable from the rest of the proposal: a session whose
+ * custody declares nothing and one whose declared artifacts are all outputs both
+ * produce an empty `restores`, and an empty list renders as an ABSENT section —
+ * silence, exactly where "nothing came back" has to be said out loud.
+ *
+ * Counting instead of listing is deliberate: the paths themselves are already in
+ * `restores` and `deletes`, and duplicating them would give the same fact two
+ * spellings that can disagree. What is missing from those lists is the DENOMINATOR
+ * — how much the session ever declared — and that is what makes "0 restored" read
+ * as "there was nothing" rather than as "something was skipped".
+ */
+export interface RetirementCustodyScope {
+  /** Folder of the session the declaration belongs to. */
+  session: string;
+  /** Artifacts its sealed custody declares — everything it received or produced. */
+  declared: number;
+  /** Of those, the paths THIS retirement puts back. Always `0` for a discard. */
+  restored: number;
+}
+
 /** The one durable Workline trace a successful retirement leaves. */
 export interface RetirementEvent {
   /** `discard` or `reset` — the command, as it will read in HISTORY. */
@@ -182,6 +206,8 @@ export interface RetirementProposal {
   closure: ClosureEntry[];
   deletes: RetirementDelete[];
   restores: RetirementRestore[];
+  /** What each session in the closure declared, so an empty custody is visible. */
+  custody: RetirementCustodyScope[];
   /** Conversation associations that stop resolving. */
   bindings: string[];
   units: RetirementUnit[];
@@ -225,6 +251,7 @@ export function retirementDigest(body: Omit<RetirementProposal, "digest">): stri
         current_digest: r.current_digest,
       }))
       .sort((a, b) => order(a.path, b.path)),
+    custody: [...body.custody].sort((a, b) => order(a.session, b.session)),
     bindings: [...body.bindings].sort(order),
     units: [...body.units].sort((a, b) =>
       order(`${a.alias}/${a.session}`, `${b.alias}/${b.session}`),

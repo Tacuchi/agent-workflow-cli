@@ -16,7 +16,7 @@
 
 import { join, relative } from "node:path";
 import type { SessionCustody } from "../../domain/session/custody.js";
-import { custodyCompleteness } from "../../domain/session/custody.js";
+import { CUSTODY_FILE, custodyCompleteness } from "../../domain/session/custody.js";
 import {
   type EdgeEvidence,
   type WorklineEdge,
@@ -216,9 +216,19 @@ async function sessionNode(
   };
 }
 
+/**
+ * Why the record cannot be trusted, said only from what was actually checked.
+ *
+ * The absent case used to read "nació antes de que existiera el registro", which
+ * is a BIRTH DATE inferred from a missing file — and a folder created by hand
+ * today gets the same sentence. What the reading proves is narrower and enough:
+ * the file is not in the folder. Whether it was never written, was deleted or was
+ * never going to exist is not knowable from here, and stating one of them as fact
+ * sends the reader to look for a cause that may not be theirs.
+ */
 function custodyGap(read: CustodyRead): string | null {
   if (read.status === "absent") {
-    return "la sesión no tiene custodia: nació antes de que existiera el registro";
+    return `no hay registro de custodia en la carpeta de la sesión (falta '${CUSTODY_FILE}')`;
   }
   if (read.status === "unreadable") return read.reason;
   const verdict = custodyCompleteness(read.custody);

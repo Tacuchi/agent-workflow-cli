@@ -155,6 +155,113 @@ describe("session custody — what a run received, created and changed", () => {
     expect(custodyCompleteness(custody).complete).toBe(true);
   });
 
+  /**
+   * The protocol's own road: the five command skills open a session with
+   * `--name <slug>-<flow>` and pass no `--input`, so what the custody ends up
+   * holding is exactly what the CLI can derive from that descriptor.
+   */
+  describe("a session born through the documented protocol declares its inputs", () => {
+    async function bare(type: string, name: string) {
+      const result = await runSessionCreate(fs, paths, { type, name, objetivo: "o" });
+      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+      return result.sessionCreate;
+    }
+
+    beforeEach(() => mkdirSync(join(workspace, "docs", "specs"), { recursive: true }));
+
+    it("seals the plan a `-plan-exec` works on, with no skill passing --input", async () => {
+      const plan = "docs/plans/024-plan-correo-otp.md";
+      writeFileSync(join(workspace, plan), "# Plan 024\n> Estado: open\n");
+
+      const record = await bare("exec", "correo-otp-plan-exec");
+
+      expect(record.inputs).toEqual([plan]);
+      expect(record.inputs_from).toBe("derived");
+      expect(record.inputs_note).toBeUndefined();
+      const custody = await custodyOf(record.folder);
+      // The baseline is the real bytes, so this session is resettable — which is
+      // precisely what it was not before the derivation existed.
+      expect(custody.artifacts[0]?.before.content).toBe("# Plan 024\n> Estado: open\n");
+      // And the document becomes a PROVABLE parent instead of no edge at all.
+      expect(custody.parents).toEqual([{ kind: "plan", key: "024" }]);
+    });
+
+    it("seals the SPEC for `-plan-new`: the plan it writes has no number yet", async () => {
+      const spec = "docs/specs/029-spec-correo-otp.md";
+      writeFileSync(join(workspace, spec), "---\nstatus: ready-for-plan\n---\n");
+      writeFileSync(join(workspace, "docs/plans/024-plan-correo-otp.md"), "# Plan 024\n");
+
+      const record = await bare("refine", "correo-otp-plan-new");
+
+      expect(record.inputs).toEqual([spec]);
+      expect((await custodyOf(record.folder)).parents).toEqual([{ kind: "spec", key: "029" }]);
+    });
+
+    it("seals the spec a `-spec-refine` works on", async () => {
+      const spec = "docs/specs/029-spec-correo-otp.md";
+      writeFileSync(join(workspace, spec), "---\nstatus: draft\n---\n");
+      expect((await bare("refine", "correo-otp-spec-refine")).inputs).toEqual([spec]);
+    });
+
+    it("derives nothing for a quick: a quick works on no document", async () => {
+      writeFileSync(join(workspace, "docs/plans/024-plan-suelto.md"), "# Plan 024\n");
+      const record = await bare("quick", "suelto-quick");
+      expect(record.inputs).toEqual([]);
+      expect(record.inputs_from).toBe("none");
+      // No flow document to look for, so there is nothing to explain either.
+      expect(record.inputs_note).toBeUndefined();
+    });
+
+    it("refuses to CHOOSE when two documents answer to the same slug, and says so", async () => {
+      writeFileSync(join(workspace, "docs/plans/024-plan-correo-otp.md"), "# Plan 024\n");
+      writeFileSync(join(workspace, "docs/plans/031-plan-correo-otp.md"), "# Plan 031\n");
+
+      const record = await bare("exec", "correo-otp-plan-exec");
+
+      // Sealing the wrong plan is worse than sealing none: a later reset would
+      // put somebody else's bytes back.
+      expect(record.inputs).toEqual([]);
+      expect(record.inputs_from).toBe("none");
+      expect(record.inputs_note).toContain("024-plan-correo-otp.md");
+      expect(record.inputs_note).toContain("031-plan-correo-otp.md");
+      expect(record.inputs_note).toContain("--input");
+      expect((await custodyOf(record.folder)).artifacts).toEqual([]);
+    });
+
+    it("says why the custody is empty when the flow's document is not there", async () => {
+      const record = await bare("exec", "inexistente-plan-exec");
+      expect(record.inputs).toEqual([]);
+      expect(record.inputs_from).toBe("none");
+      expect(record.inputs_note).toContain("docs/plans/NNN-plan-inexistente.md");
+    });
+
+    it("never derives from a descriptor that is only a flow name", async () => {
+      // `--name plan-exec` leaves an empty slug: matching on it would adopt any
+      // `docs/plans/NNN-plan.md` as this run's input.
+      writeFileSync(join(workspace, "docs/plans/024-plan.md"), "# Plan 024\n");
+      const record = await bare("exec", "plan-exec");
+      expect(record.inputs).toEqual([]);
+      expect(record.inputs_note).toBeUndefined();
+    });
+
+    it("lets an explicit --input win: the caller is the authority", async () => {
+      const derivable = "docs/plans/024-plan-correo-otp.md";
+      const chosen = "docs/specs/029-spec-otra-cosa.md";
+      writeFileSync(join(workspace, derivable), "# Plan 024\n");
+      writeFileSync(join(workspace, chosen), "---\nstatus: draft\n---\n");
+
+      const result = await runSessionCreate(fs, paths, {
+        type: "exec",
+        name: "correo-otp-plan-exec",
+        objetivo: "o",
+        inputs: [chosen],
+      });
+      if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+      expect(result.sessionCreate.inputs).toEqual([chosen]);
+      expect(result.sessionCreate.inputs_from).toBe("declared");
+    });
+  });
+
   it("refuses an input that is not a workspace-relative path", async () => {
     const result = await runSessionCreate(fs, paths, {
       type: "quick",

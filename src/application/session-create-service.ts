@@ -46,8 +46,20 @@ export interface SessionCreateRecordOutput {
   custody_path: string;
   /** Declared inputs whose previous state the custody now holds. */
   inputs: string[];
+  /**
+   * Where `inputs` came from.
+   *
+   * `declared` — the caller passed `--input`, and the caller is authoritative.
+   * `derived` — the CLI read the run's own document off its descriptor.
+   * `none` — the custody holds no baseline, and `inputs_note` says why.
+   */
+  inputs_from: InputsOrigin;
+  /** Why nothing was sealed, whenever the flow DID have a document to look for. */
+  inputs_note?: string;
   origin?: string;
 }
+
+export type InputsOrigin = "declared" | "derived" | "none";
 
 export interface SessionCreateFullOutput {
   sessionCreate: SessionCreateRecordOutput;
@@ -68,11 +80,14 @@ export async function runSessionCreate(
   if ("error" in validated) return validated;
   const { type, name, objetivo } = validated;
 
+  const declared = input.inputs ?? [];
+  const derived = declared.length > 0 ? EMPTY_DERIVATION : await deriveInputs(fs, paths, name);
+
   // Baselines are read BEFORE the claim so the bytes sealed are the ones that
   // existed before this session could touch anything, and a declared input that
   // cannot be read fails the creation instead of producing a custody that
   // pretends to know what it received.
-  const baselines = await readBaselines(fs, paths, input.inputs ?? []);
+  const baselines = await readBaselines(fs, paths, declared.length > 0 ? declared : derived.paths);
   if ("error" in baselines) return baselines;
 
   const folderInfo = await claimSessionFolder(
@@ -106,10 +121,99 @@ export async function runSessionCreate(
     session_path: sessionFilePath,
     custody_path: folderInfo.custodyPath,
     inputs: baselines.artifacts.map((a) => a.path),
+    inputs_from: originOf(declared, derived),
   };
+  if (derived.note !== undefined) record.inputs_note = derived.note;
   if (origin && origin.length > 0) record.origin = origin;
 
   return { sessionCreate: record };
+}
+
+/**
+ * The document each embarked flow RECEIVES, keyed by the suffix its descriptor
+ * carries.
+ *
+ * The five command skills open their session with `--name <slug>-<flow>` and none
+ * of them passes `--input`, so every session born through the documented protocol
+ * used to declare zero artifacts — and a `reset` over one of those restored
+ * nothing while reporting success. Making the skills pass the path would put the
+ * contract in a place that can forget it: a skill is prose, five copies of it
+ * drift, and the bundle it lives in is at its context ceiling. The CLI already
+ * owns both spellings — the folder is `NNN-<slug>-<flow>` and the document is
+ * `docs/<dir>/NNN-<kind>-<slug>.md` — so it derives what it already knows.
+ *
+ * `plan-new` reads from `specs` and not from `plans` on purpose: it WRITES its
+ * plan, whose number does not exist yet, so what it receives is the spec it
+ * derives from. `quick` is absent because a quick works on no document.
+ */
+const FLOW_INPUTS: ReadonlyArray<{ flow: string; dir: string; kind: string }> = [
+  { flow: "spec-refine", dir: "specs", kind: "spec" },
+  { flow: "plan-new", dir: "specs", kind: "spec" },
+  { flow: "plan-refine", dir: "plans", kind: "plan" },
+  { flow: "plan-exec", dir: "plans", kind: "plan" },
+];
+
+interface Derivation {
+  paths: string[];
+  /** Present only when a flow HAD a document to find and it was not found once. */
+  note?: string;
+}
+
+const EMPTY_DERIVATION: Derivation = { paths: [] };
+
+/**
+ * The run's input document, read off its own descriptor — or the reason there is
+ * none.
+ *
+ * Never guesses: a slug that answers to two documents leaves the custody empty
+ * and SAYS so, because sealing the baseline of the wrong plan is worse than
+ * sealing none — a later `reset` would put somebody else's bytes back.
+ */
+async function deriveInputs(
+  fs: FileSystemPort,
+  paths: PathsService,
+  name: string,
+): Promise<Derivation> {
+  const descriptor = sessionDescriptor(name);
+  const flow = FLOW_INPUTS.find((f) => descriptor.endsWith(`-${f.flow}`));
+  if (flow === undefined) return EMPTY_DERIVATION;
+  const slug = descriptor.slice(0, -(flow.flow.length + 1));
+  if (slug.length === 0) return EMPTY_DERIVATION;
+
+  const relativeDir = `docs/${flow.dir}`;
+  const wanted = new RegExp(`^\\d{3}-${flow.kind}-${escapeRegExp(slug)}\\.md$`, "i");
+  const found = await listNames(fs, join(paths.workspaceDir(), relativeDir), wanted);
+  const only = found.length === 1 ? found[0] : undefined;
+  if (only !== undefined) return { paths: [`${relativeDir}/${only}`] };
+  return {
+    paths: [],
+    note:
+      found.length === 0
+        ? `la custodia nace sin entradas: no hay ningún '${relativeDir}/NNN-${flow.kind}-${slug}.md' que sellar`
+        : `la custodia nace sin entradas: '${slug}' responde a ${found.length} documentos (${found.join(", ")}) y el CLI no elige por vos; volvé a crearla con --input <ruta>`,
+  };
+}
+
+/** Filenames of `dir` matching `re`, sorted; an unreadable directory has none. */
+async function listNames(fs: FileSystemPort, dir: string, re: RegExp): Promise<string[]> {
+  if (!(await fs.exists(dir))) return [];
+  try {
+    return (await fs.list(dir))
+      .filter((entry) => entry.type === "file" && re.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function originOf(declared: readonly string[], derived: Derivation): InputsOrigin {
+  if (declared.length > 0) return "declared";
+  return derived.paths.length > 0 ? "derived" : "none";
 }
 
 type Baselines = { artifacts: CustodyArtifact[] } | SessionCreateError;
@@ -149,6 +253,18 @@ async function readBaselines(
     }
   }
   return { artifacts };
+}
+
+/**
+ * The `--name` a caller passed, with any leading `NNN-` normalized away.
+ *
+ * Shared by the folder claim and the input derivation because both read the same
+ * descriptor: if only one of them normalized, a `--name 028-x-plan-exec` would
+ * land in folder `007-x-plan-exec` while its document was looked up under the
+ * slug `028-x`.
+ */
+function sessionDescriptor(name: string): string {
+  return name.replace(/^\d{3}-/, "");
 }
 
 interface ValidatedInput {
@@ -225,9 +341,8 @@ async function claimSessionFolder(
     // The CLI owns the session number: a single global, sequential counter across
     // ALL sessions in `.workflow/sessions/` (any type), so numbering never resets
     // per type nor collides. Callers pass only the descriptor via `--name`; the
-    // `NNN-` prefix is assigned here. A descriptor that already carries a leading
-    // `NNN-` is normalized away first so the prefix can't double up.
-    const descriptor = name.replace(/^\d{3}-/, "");
+    // `NNN-` prefix is assigned here.
+    const descriptor = sessionDescriptor(name);
     // The same derivation `aw sessions` publishes: the number that gets
     // announced has to be the number that gets assigned.
     const number = await nextSessionCorrelative(fs, paths);
