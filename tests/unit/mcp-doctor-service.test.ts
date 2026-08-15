@@ -113,4 +113,26 @@ describe("runMcpDoctor", () => {
     expect(result.summary.extra).toBe(1);
     expect(result.reports[0]?.status).toBe("extra-entry");
   });
+
+  it("ve el DSN por el mismo candidato que usaría el launcher, y reporta esa variable", () => {
+    // Un diagnóstico que dice `missing-dsn` sobre una conexión que el launcher
+    // arranca sin problema contradice al runtime: es peor que no diagnosticar.
+    writeDsn(paths, { DB_CERT_DSN: "postgres://x" });
+    const setup = runMcpSetup(env, {
+      hosts: ["claude"],
+      instances: ["qtc-cert"],
+      scope: "workspace",
+      workspace: root,
+    });
+    if ("ok" in setup) throw new Error("setup refused");
+    const result = runMcpDoctor(env, paths, {
+      hosts: ["claude"],
+      instances: ["qtc-cert"],
+      scope: "workspace",
+      workspace: root,
+    });
+    expect(result.reports[0]?.dsn.present).toBe(true);
+    expect(result.reports[0]?.dsn.key).toBe("DB_CERT_DSN");
+    expect(result.reports[0]?.status).toBe("ok");
+  });
 });

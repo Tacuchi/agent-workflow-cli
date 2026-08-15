@@ -7,7 +7,7 @@ import {
   normalizeMcpInstance,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
-import { dsnKeyForInstance, readBootstrapDsn } from "./dsn-reader-service.js";
+import { dsnKeyCandidates, dsnKeyForInstance, readBootstrapDsn } from "./dsn-reader-service.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
 import { resolveScopeDir } from "./mcp-scope-common.js";
 import type { PathsService } from "./paths-service.js";
@@ -68,10 +68,20 @@ function buildReport(
   scope: "workspace" | "global",
   dsnVars: Record<string, string> | undefined,
 ): McpDriftReport {
-  const dsnKey = dsnVars?.[normalizeMcpInstance(instance)] ?? dsnKeyForInstance(instance);
-  const entry = buildMcpEntry(instance, dsnVars?.[normalizeMcpInstance(instance)]);
+  const declaredVar = dsnVars?.[normalizeMcpInstance(instance)];
+  const entry = buildMcpEntry(instance, declaredVar);
   const snapshot = readMcpEntry(host, scopeDir, entry.name, scope);
-  const dsnPresent = Boolean(env.get(dsnKey)) || (dsn.exists && Boolean(dsn.values[dsnKey]));
+  // Probe the same chain the launcher probes, in the same order. A doctor that
+  // only knows the canonical name reports `missing-dsn` for a connection the
+  // launcher would start happily — a diagnosis contradicting the runtime is
+  // worse than none. What gets reported is the variable that carries the value,
+  // never the canonical name assumed.
+  const candidates = declaredVar !== undefined ? [declaredVar] : dsnKeyCandidates(instance);
+  const resolvedKey =
+    candidates.find((key) => Boolean(env.get(key))) ??
+    (dsn.exists ? candidates.find((key) => Boolean(dsn.values[key])) : undefined);
+  const dsnKey = resolvedKey ?? candidates[0] ?? dsnKeyForInstance(instance);
+  const dsnPresent = resolvedKey !== undefined;
 
   const dsnInfo = {
     path: dsn.path,
