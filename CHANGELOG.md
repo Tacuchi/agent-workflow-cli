@@ -4,6 +4,27 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.16.0] — 2026-08-15
+
+**Validar y aplicar una exportación exigían repetir los mismos flags de alcance, y aun repitiéndolos el rechazo por vencimiento llegaba igual por dos causas que nadie controlaba.** El protocolo rearma el pedido desde el workspace en cada etapa —diseño deliberado—, pero el sello cubría además el próximo número correlativo del destino y la fecha del día: numerar en ese directorio entre dos etapas, o cruzar la medianoche, vencía una preparación cuyo alcance no había cambiado. Y el mensaje sugería volver a preparar, que es una pista falsa.
+
+### Added
+
+- **El alcance viaja con lo preparado** y vuelve en el sobre, así que `validate` y `apply` lo leen en lugar de re-derivarlo. Sigue sellado: un eco alterado no pasa. Si la invocación repite un flag con OTRO valor se rechaza en vez de elegir uno en silencio; repetir los mismos valores funciona igual que antes.
+- **El destino de una categoría se declara en `[docs]` de `skills.toml`**, con la cascada que ese archivo ya tiene. Un workspace cuyo canon documental difiere del que la política asumía dejaba dos árboles paralelos. Es fail-closed —un canon ilegible no publica— y sólo acepta destinos documentales: apuntar al runtime del CLI habría publicado unidades que el workspace luego enumera como sesiones fantasma.
+- **El sobre de `validate` se lee en la ayuda del comando**, con sus cuatro cabeceras obligatorias y su nombre exacto.
+
+### Fixed
+
+- **`apply` ya no puede escribir fuera del destino aprobado.** La renumeración sustituía el primer `NNN-` de la ruta entera: inocuo mientras las carpetas eran literales, pero con un canon numerado (`docs/003-manuales`) se comía ese número y publicaba en `docs/001-manuales` — una carpeta que nadie aprobó, ausente de los destinos permitidos y que nada aguas abajo re-verifica. Ahora se renumera sólo el último segmento.
+- **Omitir una cabecera del sobre nombra el campo que falta**, en vez de reportar un valor indefinido o disfrazarlo de vencimiento.
+- **El remedio que sugiere un vencimiento corresponde a quien lo lee.** El protocolo lo comparten `persist`, `fix-git`, el recorrido y la capacidad de diseño, y ninguno lleva alcance en su sobre: prometerles uno los mandaba a buscar algo que ahí no existe.
+- **Una fecha malformada se rechaza al preparar.** Se aceptaba, se acuñaba el destino con ella, y el reproche caía después sobre quien la había copiado tal cual, como se le pedía.
+
+### Notes
+
+- **Doctrina de estado final neto.** La consolidación de scripts declara ahora qué publica —lo que nace y muere dentro de la secuencia se omite, lo migrado va a su forma final, y la reversión es el inverso del estado final en orden seguro para sus dependencias—. Vive en el contrato del request y no en el bundle: el presupuesto de contexto tenía 121 bytes de margen contra unos 700 que ocupa, y lo único comprimible era resumen legítimo. Límite conocido: quien redacte sin pasar por el comando no la ve.
+
 ## [21.15.0] — 2026-08-15
 
 **El bloque que el CLI administra dentro de `CLAUDE.md` y `AGENTS.md` adoptaba lo ajeno o lo borraba, según dónde estuviera escrito.** Su recorrido era posicional: abierta la sección de ramas, cualquier línea con forma de par clave-valor se tomaba como una rama más y el render la devolvía anidada bajo ese encabezado, perpetuándola. Y lo que cayera fuera de esa sección corría peor suerte: desaparecía sin aviso en la reescritura siguiente.
