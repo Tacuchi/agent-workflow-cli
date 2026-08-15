@@ -58,8 +58,16 @@ export async function gatePackageContent(
  * The revision of each artifact the gate answers for: the one `currentness`
  * declares current, or — when no revision or several are declared — the
  * highest cataloged one, the same answer a correct currentness derives.
+ *
+ * Exported because the maturity ceiling asks the identical question, and the
+ * two answers have to be one. Filtering the catalog by the entries `currentness`
+ * MARKS drops every artifact it does not enumerate — legal, and what
+ * `manifest-maximal.json` does with its screen — so a second implementation of
+ * "which revision is current" reported `handoff` over a package holding an
+ * `outline` one. Note the shape this guarantees: exactly one entry per
+ * catalogued id, so an empty result means an empty catalog and nothing else.
  */
-function currentEntries(manifest: DesignManifest, key: "flows" | "screens"): CatalogEntry[] {
+export function currentEntries(manifest: DesignManifest, key: "flows" | "screens"): CatalogEntry[] {
   const declared = new Map(manifest.currentness.map((c) => [c.ref, c.state]));
   const byId = new Map<string, CatalogEntry[]>();
   for (const entry of manifest.catalog[key]) {

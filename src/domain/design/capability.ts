@@ -254,7 +254,10 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       summary: "regenerar las proyecciones de una revisión y preparar el handoff a un proveedor",
       exposure: ["direct", "compose"],
       workspace: "optional",
-      interaction: "single_pass",
+      // It asks for its content like the authoring operations do, and declaring
+      // `single_pass` while answering `needs_input` is the same lie as declaring
+      // an operation that cannot run: a descriptor is read to compose a call.
+      interaction: "needs_input",
       inputs: [
         { name: "package", kind: "reference", required: true, sensitivity: "public", schema: null },
         { name: "profile", kind: "selection", required: true, sensitivity: "public", schema: null },
@@ -271,6 +274,15 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
           idempotent: true,
           authorization: "invocation",
           approval: "none",
+        },
+        // Regenerating a projection REPLACES the one it regenerates — that is
+        // what regenerating means. Undeclared, the operation applied an effect
+        // class its own descriptor denied having.
+        {
+          class: "mutate_overwrite",
+          idempotent: true,
+          authorization: "preflight",
+          approval: "visible",
         },
         // A provider profile can leave the machine. Declared here rather than
         // decided at call time: the preflight is what makes the destination and
@@ -289,7 +301,9 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       summary: "sellar una decisión de gobierno sobre una revisión existente",
       exposure: ["direct", "compose"],
       workspace: "optional",
-      interaction: "single_pass",
+      // Same reason as `render`: the decision is authored, so the operation
+      // publishes its contract and waits for an answer.
+      interaction: "needs_input",
       inputs: [
         { name: "package", kind: "reference", required: true, sensitivity: "public", schema: null },
         {
@@ -304,7 +318,9 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       output: {
         kind: "reference",
         schema: CANONICAL_SCHEMAS.review,
-        completeness: ["complete"],
+        // `partial` is what the proposal stage reports: the decision is drafted
+        // and previewed, and nothing is on disk until the approval lands.
+        completeness: ["complete", "partial"],
       },
       effects: [
         { class: "read_only", idempotent: true, authorization: "invocation", approval: "none" },

@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { cutRenderBundle } from "../../src/application/design/design-bundle-service.js";
 import { readDesignIndex } from "../../src/application/design/design-index-service.js";
-import { publishDesignRevision } from "../../src/application/design/design-publish-service.js";
 import { type AdapterRegistry, requireAdapter } from "../../src/domain/design/adapter.js";
 import { type ScreenArtifact, validateDesignArtifact } from "../../src/domain/design/artifact.js";
 import type { DesignManifest } from "../../src/domain/design/manifest.js";
@@ -16,6 +15,7 @@ import {
   validateDesignRendition,
 } from "../../src/domain/design/rendition.js";
 import { crossVisualEvidence } from "../../src/domain/design/visual-evidence.js";
+import { packageCandidate } from "../helpers/design-package.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
 const fixture = (name: string): string =>
@@ -101,17 +101,15 @@ function workspace(): MemFs {
 
 const EXPORT_DIR = "renditions/VIS-002-r001-export-portable";
 
-/** Publish one rendition plus its companion files over r1. */
+/** The candidate of one rendition plus its companion files, over r1. */
 async function publish(
   fs: MemFs,
   files: Array<{ path: string; content: string }>,
   dataAuthorization?: string,
-): ReturnType<typeof publishDesignRevision> {
-  return publishDesignRevision(fs, WS, {
-    packageId: "DES-001",
+): ReturnType<typeof packageCandidate> {
+  return packageCandidate(fs, WS, {
+    packagePath: PKG,
     files,
-    published: "2026-08-03",
-    expectedBase: "DES-001@r1",
     ...(dataAuthorization === undefined ? {} : { dataAuthorization }),
   });
 }
@@ -164,16 +162,19 @@ describe("F5 · el export portable vive dentro del package y queda sellado por s
     ]);
     if (!result.ok) throw new Error(JSON.stringify(result.failures));
 
-    expect(result.value.written).toContain(`${PKG}/${EXPORT_DIR}/preview.html`);
+    expect(result.value.artifacts.map((a) => a.path)).toContain(
+      `${PKG}/${EXPORT_DIR}/preview.html`,
+    );
     // La preview NO se cataloga: su autoridad es el documento de la rendition, y un
     // baseline solo puede sellar paths que el catálogo nombra.
-    const manifest = JSON.parse(
-      await fs.readText(`${WS}/${PKG}/design-manifest.json`),
-    ) as DesignManifest;
+    const manifest = result.value.manifest;
     expect(manifest.catalog.renditions.map((e) => e.path)).toContain(
       `${EXPORT_DIR}/rendition.json`,
     );
     expect(JSON.stringify(manifest.catalog)).not.toContain("preview.html");
+    expect(result.value.baseline.selection.map((s) => s.path)).not.toContain(
+      `${EXPORT_DIR}/preview.html`,
+    );
   });
 
   it("un export con un recurso remoto no se publica", async () => {
@@ -337,7 +338,11 @@ describe("F5 · el camino local funciona sin proveedor, cuenta ni red", () => {
       { path: `${EXPORT_DIR}/preview.html`, content: OFFLINE_HTML },
     ]);
     expect(result.ok, JSON.stringify("failures" in result ? result.failures : [])).toBe(true);
-    expect(await fs.readText(`${WS}/${PKG}/${EXPORT_DIR}/preview.html`)).toBe(OFFLINE_HTML);
+    if (!result.ok) return;
+    const preview = result.value.artifacts.find(
+      (a) => a.path === `${PKG}/${EXPORT_DIR}/preview.html`,
+    );
+    expect(preview?.content).toBe(OFFLINE_HTML);
   });
 
   it("el perfil portable declara sus tres capacidades y ninguna más", () => {

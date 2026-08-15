@@ -42,12 +42,47 @@ import type { CliContext } from "../types.js";
 
 const VERBS: readonly CapabilityVerb[] = ["prepare", "continue", "validate", "apply"];
 
+/**
+ * The stage-to-stage protocol, published where an executor can READ it instead
+ * of spending attempts discovering it.
+ *
+ * Everything here is enforced elsewhere and stated nowhere: the digest seal in
+ * `semantic-operation/protocol.ts`, the approval check in `local-proposal.ts`,
+ * the stdin channel in `parseCarried` right below. Until this existed the only
+ * way to learn that `--approval` takes the PROPOSAL's digest and not the
+ * request's was to send the wrong one and read the mismatch — and a burnt
+ * attempt is how every executor paid the same tuition. Same reason
+ * `aw flow --help` carries its envelope, and the same trade-off: kept beside
+ * the command rather than in the doctrine bundle, whose context budget is
+ * frozen and whose readers load it on every run. This is reference material,
+ * read once by whoever is composing a call.
+ */
+const PROTOCOL = [
+  "Protocolo de `aw capability` — los cuatro verbos son ETAPAS de un mismo intento, no una conversación con memoria:",
+  "",
+  "  siempre    Repetí --capability, --operation y TODOS los --input de la etapa anterior, en cada etapa. El request se reconstruye entero cada vez y su `input_digest` sella exactamente esos inputs: uno que falte o cambie devuelve SEMANTIC_STALE en vez de continuar.",
+  "",
+  "  canal      Lo que no es flag entra por STDIN, como un único objeto JSON. No hay ningún flag de archivo: ni --answer, ni --plan, ni --request.",
+  "",
+  "  prepare    No lee stdin. Devuelve `needs_input` y en `gaps` el contrato, los destinos permitidos y el `input_digest` que hay que copiar.",
+  "",
+  '  validate   stdin: {"request": <el request que devolvió prepare>, "answer": {...}}.',
+  "             `answer` es el sobre semántico y va con 'version': 1 · 'operation' CALIFICADA — 'design.create', no 'create' · 'input_digest' copiado del request · 'state': 'proposed' · 'artifacts': [{path, content}] con rutas dentro de los destinos permitidos.",
+  "             Devuelve `plan` cuando la operación propone efectos durables; sin plan no hay nada que aplicar.",
+  "",
+  '  apply      stdin: {"request": <el MISMO request>, "plan": <el plan de validate>, "pin": <el pin del intento>}.',
+  "             --approval <digest> es el de `plan.proposal.digest`. NO es `request_digest` ni `input_digest`: mandar cualquiera de esos devuelve PROPOSAL_APPROVAL_MISMATCH.",
+  "             `pin` es opcional y revalida la selección: si la mejora que resolvió el primer intento cambió, el intento se bloquea en vez de contestar la segunda mitad de otra pregunta.",
+  "             Escribe todo o nada, y vuelve a leer cada base antes del primer byte.",
+  "",
+  '  continue   stdin: {"parent": <el request del intento que se contesta>}. Es la etapa de una operación que preguntó, no un reintento de prepare.',
+].join("\n");
+
 export const capabilityCommand: QtcCommand<CapabilityAttempt> = {
   name: "capability",
-  describe:
-    "Invoca una capacidad conformante por su contrato: prepare | continue | validate | apply. " +
-    "La operación viaja en --operation y cada intento devuelve envelope, output y receipt. " +
-    "Usage: aw capability prepare --capability design --operation validate --input package=DES-001.",
+  describe: `Invoca una capacidad conformante por su contrato: prepare | continue | validate | apply. La operación viaja en --operation y cada intento devuelve envelope, output y receipt. Usage: aw capability prepare --capability design --operation validate --input package=DES-001.
+
+${PROTOCOL}`,
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<CapabilityAttempt>> {
     const requestedHost = args.values.get("host");

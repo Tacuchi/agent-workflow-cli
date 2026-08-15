@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildDesignGraph } from "../../src/application/design/design-graph-service.js";
-import { publishDesignRevision } from "../../src/application/design/design-publish-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runResume } from "../../src/application/resume-service.js";
 import { type StatusOutput, runStatusCommand } from "../../src/application/status-service.js";
@@ -206,89 +205,20 @@ describe("resume — un diseño irresoluble cambia el siguiente paso", () => {
   });
 });
 
-describe("publicar el documento y la revisión es UNA transición", () => {
-  const SPEC = "docs/specs/013-spec-ui.md";
-
-  /** A package with r1 published, so the publication under test is its r2. */
-  function packageAt(): MemFs {
-    const manifest = JSON.parse(fixture("manifest-maximal.json")) as Record<string, unknown>;
-    const baselines = manifest.baselines as Array<Record<string, unknown>>;
-    manifest.baselines = [baselines[0]];
-    manifest.current_baseline = {
-      revision: 1,
-      path: "baselines/DES-001-r001.json",
-      digest: (baselines[0] as Record<string, unknown>).digest,
-    };
-    manifest.governance = { reviews: [], revocations: [] };
-    manifest.currentness = [];
-    const catalog = manifest.catalog as Record<string, Array<Record<string, unknown>>>;
-    catalog.flows = [catalog.flows[0] as Record<string, unknown>];
-
-    const fs = new MemFs();
-    fs.file(`${WS}/${REAL}/design-manifest.json`, JSON.stringify(manifest, null, 2));
-    for (const path of [
-      "flows/FLW-001-r001-alta-miembro.md",
-      "screens/SCR-001-r001-formulario-alta.md",
-      "design-system/rules/RUL-001-r001-densidad.md",
-      "tokens/TOK-001-r001-base.tokens.json",
-      "renditions/VIS-001-r001-formulario-alta/rendition.json",
-      `assets/${"5".repeat(64)}-logo.svg`,
-    ]) {
-      fs.file(`${WS}/${REAL}/${path}`, `contenido de ${path}\n`);
-    }
-    fs.file(`${WS}/${SPEC}`, "# Spec\n\nversión vieja\n");
-    return fs;
-  }
-
-  const NEW_FLOW = {
-    path: "flows/FLW-001-r002-alta-miembro.md",
-    content: fixture("FLW-001-r002-alta-miembro.md"),
-  };
-
-  it("la spec nueva se escribe en el MISMO lote que la revisión", async () => {
-    const fs = packageAt();
-    const result = await publishDesignRevision(fs, WS, {
-      packageId: "DES-001",
-      files: [NEW_FLOW],
-      published: "2026-08-03",
-      expectedBase: "DES-001@r1",
-      documents: [{ path: SPEC, content: "# Spec\n\nversión nueva\n" }],
-    });
-    if (!result.ok) throw new Error(result.failures[0]?.message);
-    expect(result.value.written).toContain(SPEC);
-    // The document goes AFTER the manifest: a reference is only visible once the
-    // baseline it points at is already there.
-    expect(result.value.written.indexOf(SPEC)).toBeGreaterThan(
-      result.value.written.indexOf(`${REAL}/design-manifest.json`),
-    );
-    expect(await fs.readText(`${WS}/${SPEC}`)).toContain("versión nueva");
-  });
-
-  it("una base stale no deja el documento escrito ni la revisión a medias", async () => {
-    const fs = packageAt();
-    const result = await publishDesignRevision(fs, WS, {
-      packageId: "DES-001",
-      files: [NEW_FLOW],
-      published: "2026-08-03",
-      expectedBase: "DES-001@r7",
-      documents: [{ path: SPEC, content: "# Spec\n\nversión nueva\n" }],
-    });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.failures[0]?.code).toBe("DESIGN_BASE_STALE");
-    expect(await fs.readText(`${WS}/${SPEC}`)).toContain("versión vieja");
-  });
-
-  it("un documento fuera del workspace se rechaza como cualquier path insegura", async () => {
-    const result = await publishDesignRevision(packageAt(), WS, {
-      packageId: "DES-001",
-      files: [NEW_FLOW],
-      published: "2026-08-03",
-      expectedBase: "DES-001@r1",
-      documents: [{ path: "../../etc/passwd", content: "x" }],
-    });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.failures[0]?.code).toBe("DESIGN_PATH_UNSAFE");
-  });
-});
+/**
+ * HUECO CONOCIDO — «publicar el documento y la revisión es UNA transición».
+ *
+ * Acá vivían tres casos sobre `documents`: la spec o el plan que cita el
+ * baseline viajaba en el MISMO lote todo-o-nada que la revisión, y DESPUÉS del
+ * manifest, para que una referencia solo fuera visible apuntando a un baseline
+ * que ya estaba. Esa capacidad la ofrecía `publishDesignRevision`, que nunca
+ * tuvo un llamador en producción: se retiró con el plan 030 y la ruta viva
+ * —`packageProposal`— publica únicamente archivos DEL package.
+ *
+ * O sea que la transición no está implementada y no lo estaba antes: lo que se
+ * pierde al retirar la función es la prueba de una promesa que nadie cumplía,
+ * no una regresión. Reponerla exige que la capacidad acepte el documento como
+ * entrada declarada —hoy el descriptor no la tiene— y que el lote durable lo
+ * lleve; hasta entonces el documento se escribe en un paso aparte y una
+ * referencia colgante sigue siendo posible.
+ */

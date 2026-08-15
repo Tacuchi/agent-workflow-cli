@@ -28,148 +28,36 @@ import { KIND_LIST } from "../../domain/design/revision.js";
 import { crossVisualEvidence } from "../../domain/design/visual-evidence.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import type { SemanticFailure } from "../semantic-operation/protocol.js";
-import { type PublishableArtifact, publishArtifacts } from "../semantic-operation/publish.js";
-import { type DesignIndex, readDesignIndex } from "./design-index-service.js";
+import type { PublishableArtifact } from "../semantic-operation/publish.js";
 
 /**
- * Publishing a package revision: all of it, or none of it.
+ * The candidate of a package revision: all of it, or none of it.
  *
  * A package is several files that only mean something together — the manifest,
  * the baseline that seals them, the artifacts themselves, the projections. Half
  * of that on disk is worse than none: a manifest that indexes a baseline nobody
  * wrote, or a baseline sealing bytes that are not there.
  *
- * So the order is strict, and the first write is late:
+ * So the order is strict and NOTHING here writes:
  *
  *   1. read the package and everything the revision will seal;
  *   2. build the whole candidate — manifest, baseline, projections;
- *   3. validate ALL of it, including the compare-and-swap against the base;
- *   4. only then hand the batch to `publishArtifacts`, which captures every
- *      previous state and rolls back on any failure.
+ *   3. validate ALL of it before handing the batch back.
  *
- * Nothing between 1 and 3 touches the filesystem for writing. Step 4 is
- * all-or-nothing by construction, and the new revision's files are written
- * EXCLUSIVELY so a concurrent publication loses the race instead of being
- * silently overwritten.
- *
- * Steps 2+3 live in {@link buildPackageCandidate}, exported on its own because
- * the capability route needs exactly the same candidate WITHOUT the write: its
- * `validate` stage hands the artifacts to the durable handshake, which is the
- * one that publishes them once approved.
+ * The write is somebody else's job on purpose. This module used to own a second
+ * entry point that located the package, ran its own compare-and-swap and called
+ * `publishArtifacts` straight away — a publication that bypassed the seal, the
+ * preview and the approval every other durable effect goes through, and that no
+ * production caller ever reached. It is gone: the capability handler fixes the
+ * target BEFORE the content is authored, builds this candidate inside its
+ * `validate` stage, and `applyLocalProposal` publishes the batch all-or-nothing
+ * once the approval is in. One sealing implementation, one writer.
  */
 
 export interface PublishFile {
   /** Package-relative path of a normative file this revision introduces. */
   path: string;
   content: string;
-}
-
-export interface PublishInput {
-  packageId: string;
-  files: PublishFile[];
-  /** Publication date. Passed in: the domain never reads the clock. */
-  published: string;
-  /**
-   * The baseline the caller PREPARED against (`DES-001@r1`, or `null` for a
-   * package with nothing published). REQUIRED: this is the compare-and-swap,
-   * and a safety check that can be omitted is a safety check nobody performs.
-   * Stating `null` for a fresh package is a claim the caller can be wrong about
-   * — which is the point.
-   */
-  expectedBase: string | null;
-  /**
-   * Who authorized REAL material in this revision, and for what (AC-SEC-03).
-   *
-   * Absent is the normal case: previews, bundles and assets are synthetic or
-   * redacted by default, so a rendition declaring `data_classification: real`
-   * without this is refused instead of quietly shipping personal data into a
-   * durable, shareable dossier.
-   */
-  dataAuthorization?: string;
-  /**
-   * Workspace-relative documents that must land WITH this revision — the spec or
-   * plan whose `## Design references` points at the baseline being published
-   * (AC-FLW-07).
-   *
-   * They ride the same all-or-nothing batch on purpose. Writing the document in
-   * a second step is what produces the dangling reference this contract removes:
-   * either the document cites a baseline that was never published, or a
-   * published baseline has no consumer. Unlike package files these are
-   * `overwrite: true` — a spec being refined already exists.
-   */
-  documents?: PublishFile[];
-}
-
-export interface PublishOutcome {
-  revision: number;
-  baseline: DesignBaseline;
-  /** Workspace-relative paths written, in the order they were written. */
-  written: string[];
-}
-
-export type PublishResolution =
-  | { ok: true; value: PublishOutcome }
-  | { ok: false; failures: DesignFailure[] };
-
-export async function publishDesignRevision(
-  fs: FileSystemPort,
-  workspace: string,
-  input: PublishInput,
-): Promise<PublishResolution> {
-  const unsafe = [...input.files, ...(input.documents ?? [])].flatMap((f) => pathFailure(f.path));
-  if (unsafe.length > 0) return { ok: false, failures: unsafe };
-
-  const index = await readDesignIndex(fs, workspace);
-  const located = locate(index, input.packageId);
-  if ("failures" in located) return { ok: false, failures: located.failures };
-  const { manifest, packagePath } = located;
-
-  const current = manifest.current_baseline;
-  const actual = current === null ? null : `${manifest.id}@r${current.revision}`;
-  if (input.expectedBase !== actual) {
-    return {
-      ok: false,
-      failures: [
-        {
-          code: "DESIGN_BASE_STALE",
-          artifact: `${packagePath}/design-manifest.json`,
-          message: `preparaste sobre ${input.expectedBase ?? "ninguna revisión"} y la vigente es ${actual ?? "ninguna"}`,
-          action:
-            "alguien publicó mientras preparabas esta: releé el package y rehacé la revisión sobre la base nueva",
-        },
-      ],
-    };
-  }
-
-  const candidate = await buildPackageCandidate(fs, workspace, {
-    manifest,
-    packagePath,
-    files: input.files,
-    published: input.published,
-    ...(input.dataAuthorization !== undefined
-      ? { dataAuthorization: input.dataAuthorization }
-      : {}),
-  });
-  if (!candidate.ok) return { ok: false, failures: candidate.failures };
-
-  // The documents go LAST, after the manifest switched the package to the new
-  // revision: a reference is only ever visible pointing at a baseline that is
-  // already there. `publishArtifacts` rolls the whole batch back either way.
-  const published = await publishArtifacts(fs, workspace, [
-    ...candidate.value.artifacts,
-    ...(input.documents ?? []).map((d) => ({ ...d, overwrite: true })),
-  ]);
-  if (!published.ok)
-    return { ok: false, failures: [publishFailure(published.failure, packagePath)] };
-  return {
-    ok: true,
-    value: {
-      revision: candidate.value.revision,
-      baseline: candidate.value.baseline,
-      written: published.value.written,
-    },
-  };
 }
 
 export interface PackageCandidateInput {
@@ -184,6 +72,14 @@ export interface PackageCandidateInput {
   files: PublishFile[];
   /** Publication date. Passed in: the domain never reads the clock. */
   published: string;
+  /**
+   * Who authorized REAL material in this revision, and for what (AC-SEC-03).
+   *
+   * Absent is the normal case: previews, bundles and assets are synthetic or
+   * redacted by default, so a rendition declaring `data_classification: real`
+   * without this is refused instead of quietly shipping personal data into a
+   * durable, shareable dossier.
+   */
   dataAuthorization?: string;
 }
 
@@ -207,9 +103,9 @@ export type PackageCandidate =
  * never written here.
  *
  * This is the publish half the capability route was missing: it wrote the
- * authored files verbatim and nobody sealed anything. The gates run in the same
- * order as a direct publication, so a candidate that fails here names exactly
- * what a publication would have refused.
+ * authored files verbatim and nobody sealed anything. It is now the ONLY
+ * implementation of the seal, so a candidate that fails here names exactly what
+ * every publication refuses — there is no second path with a second answer.
  */
 export async function buildPackageCandidate(
   fs: FileSystemPort,
@@ -222,12 +118,21 @@ export async function buildPackageCandidate(
   const catalog = mergeCatalog(input.manifest, input.files, input.dataAuthorization);
   if ("failures" in catalog) return { ok: false, failures: catalog.failures };
 
-  // A file this revision introduces must not be on disk yet. Today that is only
-  // discovered by the exclusive WRITE; checking it here is what lets the
-  // proposal route fail inside `validate`, before the first byte moves. It runs
-  // AFTER the catalog merge: a revision already catalogued is diagnosed as the
-  // duplicate it is, not as a lost race.
-  const collisions = await alreadyPublished(fs, workspace, input.packagePath, input.files);
+  const revision = (input.manifest.current_baseline?.revision ?? 0) + 1;
+
+  // A file this revision introduces must not be on disk yet — its own baseline
+  // included, because a baseline already there means somebody else minted this
+  // revision. Otherwise that collision is only discovered by the exclusive
+  // WRITE, and the generic layer answers it by OFFERING to overwrite: illegal
+  // here, since overwriting a published baseline destroys an immutable
+  // revision. Checking it now is what lets the proposal fail inside `validate`,
+  // before the first byte moves, and in this domain's words. It runs AFTER the
+  // catalog merge: a revision already catalogued is diagnosed as the duplicate
+  // it is, not as a lost race.
+  const collisions = await alreadyPublished(fs, workspace, input.packagePath, [
+    ...input.files,
+    { path: baselinePath(input.manifest.id, revision), content: "" },
+  ]);
   if (collisions.length > 0) return { ok: false, failures: collisions };
 
   // Los archivos locales de una rendition se comprueban antes que las citas: una
@@ -254,7 +159,6 @@ export async function buildPackageCandidate(
   );
   if (evidence.length > 0) return { ok: false, failures: evidence };
 
-  const revision = (input.manifest.current_baseline?.revision ?? 0) + 1;
   const selection = await buildSelection(
     fs,
     workspace,
@@ -329,78 +233,6 @@ function pathFailure(path: string): DesignFailure[] {
       action: "una publicación escribe DENTRO de su package: usá una ruta relativa sin '..'",
     },
   ];
-}
-
-/** Last resort: a package with no manifest and no diagnosis of its own. */
-function brokenManifest(packagePath: string): DesignFailure {
-  return {
-    code: "DESIGN_MANIFEST_MISSING",
-    artifact: `${packagePath}/design-manifest.json`,
-    message: "el package no tiene un manifest legible",
-    action: "reparalo antes de publicar sobre él",
-  };
-}
-
-/**
- * A publication failure said in this domain's terms.
- *
- * The generic layer offers «confirmá la sobrescritura, o publicá en otro
- * destino»: here both are ILLEGAL — overwriting a published baseline destroys
- * an immutable revision, and a revision has no other destination. And the
- * artifact named must be the file to fix, not the dossier it lives in.
- */
-function publishFailure(failure: SemanticFailure, packagePath: string): DesignFailure {
-  // `publishArtifacts` ya nombra la ruta relativa al workspace entre comillas.
-  const quoted = /'([^']+)'/.exec(failure.message);
-  const artifact = quoted?.[1] ?? packagePath;
-  if (failure.code !== "PUBLISH_TARGET_EXISTS") {
-    return { ...failure, artifact };
-  }
-  return {
-    code: "DESIGN_BASE_STALE",
-    artifact,
-    message: `'${artifact}' ya existe: alguien publicó esta revisión mientras preparabas`,
-    action:
-      "releé el package y rehacé la revisión sobre la base nueva: una publicada no se reescribe",
-  };
-}
-
-function locate(
-  index: DesignIndex,
-  packageId: string,
-): { manifest: DesignManifest; packagePath: string } | { failures: DesignFailure[] } {
-  const found = index.packages.filter((p) => p.id === packageId || p.declared_id === packageId);
-  if (found.length > 1) {
-    return {
-      failures: [
-        {
-          code: "DESIGN_REFERENCE_AMBIGUOUS",
-          artifact: index.root,
-          message: `${packageId} está declarado por ${found.length} packages`,
-          action: "dos packages no pueden reclamar la misma identidad: renombrá uno",
-        },
-      ],
-    };
-  }
-  const entry = found[0];
-  if (entry === undefined) {
-    return {
-      failures: [
-        {
-          code: "DESIGN_REFERENCE_MISSING",
-          artifact: index.root,
-          message: `no hay un package ${packageId} bajo ${index.root}/`,
-          action: "revisá 'aw designs': publicar exige un package existente",
-        },
-      ],
-    };
-  }
-  // Un package ROTO no es un package inexistente: son problemas muy distintos
-  // para quien tiene que arreglar uno, así que se devuelven sus fallos reales.
-  if (entry.manifest == null) {
-    return { failures: entry.failures.length > 0 ? entry.failures : [brokenManifest(entry.path)] };
-  }
-  return { manifest: entry.manifest as DesignManifest, packagePath: entry.path };
 }
 
 /**

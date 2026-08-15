@@ -267,7 +267,7 @@ describe("F10 · la raíz de salida: por defecto dentro, explícita fuera", () =
   });
 });
 
-describe("F10 · el caso que antes fallaba: crear fuera de un workspace", () => {
+describe("F10 · crear fuera de un workspace: un contrato que se pueda contestar, o ninguno", () => {
   it("las cuatro operaciones que escriben ya no exigen workspace", () => {
     const required = DESIGN_DESCRIPTOR.operations
       .filter((o) => o.workspace === "required")
@@ -275,7 +275,16 @@ describe("F10 · el caso que antes fallaba: crear fuera de un workspace", () => 
     expect(required, "ninguna operación de design exige workspace").toEqual([]);
   });
 
-  it("fuera de un workspace, con raíz explícita, la operación avanza en vez de bloquearse", async () => {
+  /**
+   * The round this used to burn. Outside a workspace the destinations derived
+   * from an explicit root are ABSOLUTE, and the write boundary admits only
+   * workspace-relative paths inside the declared ones: an absolute answer is
+   * refused for being absolute and a relative one for falling outside them. The
+   * contract had no valid reply, so `prepare` published a question that could
+   * only ever be answered wrong — and `apply` demands a workspace anyway, so
+   * even a lucky answer had nowhere to land.
+   */
+  it("fuera de un workspace, una raíz explícita se rechaza al preparar y no publica el contrato", async () => {
     const result = await dispatchCapability(
       {
         verb: "prepare",
@@ -293,10 +302,13 @@ describe("F10 · el caso que antes fallaba: crear fuera de un workspace", () => 
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Antes de esta fase esto devolvía CAPABILITY_WORKSPACE_REQUIRED.
-    expect(result.attempt.receipt.outcome).toBe("needs_input");
-    expect(result.attempt.receipt.error).toBeNull();
-    expect(result.attempt.receipt.gaps.join(" ")).toContain("/tmp/mis-disenos");
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.code).toBe("DESIGN_WORKSPACE_ABSENT");
+    expect(result.attempt.receipt.error?.message).toContain("absolutos");
+    expect(result.attempt.receipt.error?.action).toContain("dentro del workspace");
+    // Y sobre todo: no se publicó ningún contrato ni ningún destino que
+    // contestar, que es lo que quemaba la ronda de autoría.
+    expect(result.attempt.receipt.gaps).toEqual([]);
   });
 
   it("fuera de un workspace y SIN raíz, devuelve un resultado explícito y no escribe", async () => {
@@ -406,7 +418,13 @@ describe("F10 · las superficies que B2 dejó sin llamador ahora lo tienen", () 
     expect(result.attempt.receipt.error?.action).toContain("portable-html");
   });
 
-  it("un perfil registrado pasa la resolución", async () => {
+  // Un perfil registrado pasa su resolución, y lo que frena a `render` ya no es
+  // el adapter: es que no hay ningún package indexado donde escribir. Sin uno,
+  // los artefactos caerían en una carpeta sin manifest — el árbol ilegible que
+  // `aw designs` después rechaza, que es exactamente lo que hacía la ruta
+  // verbatim.
+  it("un perfil registrado pasa la resolución, y sin package indexado se rechaza declarando por qué", async () => {
+    const fs = new MemFs();
     const result = await dispatchCapability(
       {
         verb: "prepare",
@@ -416,11 +434,36 @@ describe("F10 · las superficies que B2 dejó sin llamador ahora lo tienen", () 
         target: DESIGNS_DIR,
         inputs: [text("package", "DES-001"), text("profile", "portable-html")],
       },
-      context(),
+      context(WORKSPACE, fs),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.attempt.receipt.outcome).toBe("needs_input");
+    expect(result.attempt.receipt.error?.code).not.toBe("DESIGN_ADAPTER_UNKNOWN");
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.code).toBe("DESIGN_PACKAGE_NOT_FOUND");
+    expect([...fs.writes.keys()], "un rechazo no escribe").toEqual([]);
+  });
+
+  // El sobre exige que `package` VENGA; que diga algo es de esta ruta, y sin
+  // eso no hay package indexado que resolver ni destino que declarar.
+  it("y con un package en blanco tampoco adivina uno", async () => {
+    const fs = new MemFs();
+    const result = await dispatchCapability(
+      {
+        verb: "prepare",
+        capability: "design",
+        operation: "render",
+        route: "direct",
+        target: DESIGNS_DIR,
+        inputs: [text("package", "  "), text("profile", "portable-html")],
+      },
+      context(WORKSPACE, fs),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.error?.code).toBe("DESIGN_FIELD_INVALID");
+    expect(result.attempt.receipt.error?.message).toContain("package que ya existe");
+    expect([...fs.writes.keys()]).toEqual([]);
   });
 
   it("`record` verifica su precondición contra el package que va a sellar", async () => {
@@ -476,11 +519,14 @@ describe("F10 · el CLI decide 'fuera de un workspace' por la regla real del rep
     ["title=Alta", "sources=a.md", "target=/tmp/mis-disenos"],
   );
 
-  it("sin `.workflow/`, una raíz absoluta explícita es válida", async () => {
+  // Las dos mitades del mismo hecho: el CLI resuelve el workspace por `.<ns>/` y
+  // no por el cwd, así que la MISMA invocación se diagnostica distinto según lo
+  // que hay en el disco. Que las dos causas difieran es lo que prueba que la
+  // regla se aplicó; si el cwd se entregara como workspace, ambas dirían lo mismo.
+  it("sin `.workflow/` no hay workspace, y una publicación de diseño lo dice", async () => {
     const result = await capabilityCommand.execute(CREATE, cliContext(new MemFs()));
     expect(result.ok).toBe(true);
-    expect(result.data?.receipt.error).toBeNull();
-    expect(result.data?.receipt.outcome).toBe("needs_input");
+    expect(result.data?.receipt.error?.code).toBe("DESIGN_WORKSPACE_ABSENT");
   });
 
   it("con `.workflow/`, la misma raíz absoluta se rechaza por no ser relativa", async () => {

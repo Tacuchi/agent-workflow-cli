@@ -26,10 +26,12 @@ import {
 } from "../../domain/design/manifest.js";
 import {
   SIMPLE_DESIGN_FILE,
+  type SimpleMaturity,
   archivedDesignPath,
   designFolder,
   designSlug,
   nextPackageId,
+  simpleMaturity,
   validateSimpleDesign,
 } from "../../domain/design/simple.js";
 import type { ProposalArtifact, ProposalBase } from "../../domain/proposal.js";
@@ -64,8 +66,18 @@ export type SimpleResolution =
 export function resolveSimpleTarget(
   index: DesignIndex,
   operation: string,
-  inputs: { title: string | null; packageId: string | null },
+  inputs: {
+    title: string | null;
+    packageId: string | null;
+    /**
+     * Where the folder is minted, when the caller narrowed it. Defaults to the
+     * index's own root: a declared destination the CLI then ignores would put
+     * the design somewhere other than the allowlist the request published.
+     */
+    root?: string;
+  },
 ): SimpleResolution {
+  const root = inputs.root ?? index.root;
   if (operation === "create") {
     const title = inputs.title ?? "";
     if (title.trim().length === 0) {
@@ -84,7 +96,7 @@ export function resolveSimpleTarget(
       ok: true,
       value: {
         packageId,
-        path: designFolder(index.root, packageId, designSlug(title)),
+        path: designFolder(root, packageId, designSlug(title)),
         revision: 1,
         supersedes: null,
         manifest: null,
@@ -158,6 +170,13 @@ export interface SimpleProposal {
   revision: number;
   packageId: string;
   title: string;
+  /**
+   * The gate's verdict over the document, derived here because this is where it
+   * is already parsed. Reporting it is what makes `handoff` reachable on this
+   * route: the maturity used to be fixed at "none" because the route had no
+   * ladder, and a maturity that depends on the path taken is not a verdict.
+   */
+  maturity: SimpleMaturity;
 }
 
 export type SimpleProposalResult =
@@ -234,6 +253,7 @@ export async function buildSimpleProposal(
       revision: target.revision,
       packageId: target.packageId,
       title: parsed.value.title,
+      maturity: simpleMaturity(parsed.value),
     },
   };
 }

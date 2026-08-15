@@ -96,7 +96,10 @@ describe("cada clase de efecto se autoriza según lo que realmente pide", () => 
     const render = findOperation(DESIGN_DESCRIPTOR, "render") as CapabilityOperation;
     const validate = findOperation(DESIGN_DESCRIPTOR, "validate") as CapabilityOperation;
     expect(render.effects.map((e) => e.class)).toContain("network_external");
+    // Y regenerar una proyección REEMPLAZA la que regenera: sin declararlo, la
+    // operación aplicaba una clase que su propio descriptor negaba tener.
     expect(authorizeEffects(render.effects, NO_CONTEXT).needsPreflight).toEqual([
+      "mutate_overwrite",
       "network_external",
     ]);
     expect(authorizeEffects(validate.effects, NO_CONTEXT).needsPreflight).toEqual([]);

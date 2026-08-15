@@ -120,6 +120,16 @@ export interface DesignBaselineRef {
 export interface DesignReceiptFields {
   package: string | null;
   baseline: DesignBaselineRef | null;
+  /**
+   * Why this attempt carries no baseline — null whenever it carries one.
+   *
+   * `render` and `record` publish without minting a revision, and that is their
+   * nature rather than a failure: a projection is derived from the manifest and
+   * a governance decision decides ON a baseline instead of creating one. What
+   * was a defect is a receipt that showed `baseline: null` and said nothing, so
+   * "no sealed anything" and "had nothing to seal" read the same.
+   */
+  unsealed: string | null;
   /** Where it landed, and under which root mode. */
   path: string | null;
   root: OutputRoot["kind"] | null;
@@ -127,12 +137,15 @@ export interface DesignReceiptFields {
   maturity: {
     requested: DesignMaturity | null;
     /**
-     * Null on the simple route, and null is the honest answer there: a maturity
-     * ladder is a property of a catalog of flows and screens, and a design that
-     * is one document has none to climb. Reporting `outline` instead would let a
-     * consumer read "not ready yet" into a design that is complete.
+     * DERIVED from the gates' verdict, on every route.
+     *
+     * It used to be fixed per route — `null` for a simple design, "the ladder
+     * the route has" for a package — and a maturity that answers differently
+     * depending on which code path published the same evidence is not a verdict.
+     * Worse, `null` made `handoff` unreachable on the route that is the default:
+     * the ceiling existed and nothing could ever touch it.
      */
-    attained: DesignMaturity | null;
+    attained: DesignMaturity;
   };
   sources: DesignSource[];
   /** Rendition ids produced or refreshed by this attempt. */

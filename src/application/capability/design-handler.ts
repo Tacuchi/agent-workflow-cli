@@ -18,6 +18,7 @@
 import { join } from "node:path";
 import type { CapabilityFailure, ValidationOutcome } from "../../domain/capability/protocol.js";
 import { requireAdapter } from "../../domain/design/adapter.js";
+import type { DesignMaturity } from "../../domain/design/artifact.js";
 import { DESIGN_DESCRIPTOR, DESIGN_OPERATIONS } from "../../domain/design/capability.js";
 import {
   type DesignReceiptFields,
@@ -36,6 +37,7 @@ import {
   DESIGN_MANIFEST_SCHEMA_ID,
   type DesignManifest,
 } from "../../domain/design/manifest.js";
+import { PROJECTIONS } from "../../domain/design/naming.js";
 import { DESIGN_ADAPTERS } from "../../domain/design/profiles.js";
 import {
   SIMPLE_CORE_SECTIONS,
@@ -44,6 +46,8 @@ import {
   designFolder,
   designSlug,
   nextPackageId,
+  simpleMaturity,
+  validateSimpleDesign,
 } from "../../domain/design/simple.js";
 import {
   type DesignSource,
@@ -52,9 +56,12 @@ import {
   reportSources,
 } from "../../domain/design/sources.js";
 import { type ProposalBase, baseDigest } from "../../domain/proposal.js";
+import type { FileSystemPort } from "../../ports/file-system.js";
 import { localDateIso } from "../dates.js";
+import { currentEntries, gatePackageContent } from "../design/design-content-gate-service.js";
 import {
   type DesignIndex,
+  type DesignPackageEntry,
   readDesignIndex,
   resolveDesignPackage,
 } from "../design/design-index-service.js";
@@ -69,6 +76,7 @@ import {
   resolveSimpleTarget,
 } from "../design/design-simple-service.js";
 import { buildSemanticRequest, parseSemanticResponse } from "../semantic-operation/protocol.js";
+import type { PublishableArtifact } from "../semantic-operation/publish.js";
 import type { CapabilityHandler, HandlerContext, HandlerResult } from "./dispatcher.js";
 import { registerCapability } from "./dispatcher.js";
 
@@ -124,30 +132,44 @@ async function validatePackage(ctx: HandlerContext): Promise<HandlerResult> {
     };
   }
 
+  // The SAME content gate `aw designs` runs. Judging a package with the
+  // structural check alone answered `handoff` for a tree the listing then
+  // rejected — the verdict and the listing have to be the same verdict.
+  const content = await gatePackageContent(ctx.fs, ctx.workspace, found);
+  const failures = [...found.failures, ...content];
+  const ok = found.ok && content.length === 0;
   const validations: ValidationOutcome[] = [
     {
       id: "design-manifest",
       passed: found.ok,
       detail: found.ok ? null : found.failures.map((f) => `${f.code}: ${f.message}`).join("; "),
     },
+    {
+      id: "design-content",
+      passed: content.length === 0,
+      detail:
+        content.length === 0 ? null : content.map((f) => `${f.code}: ${f.message}`).join("; "),
+    },
   ];
   const report = reportSources([], `${id}`);
   const simple = found.mode === "simple";
-  const maturity = attainedMaturity(
-    requestedMaturity(ctx),
-    found.ok ? "handoff" : "outline",
-    report,
-  );
+  const gate = ok
+    ? await publishedMaturity(ctx.fs, ctx.workspace, found)
+    : { attained: "outline" as const, reasons: failures.map((f) => f.message) };
+  const maturity = attainedMaturity(requestedMaturity(ctx), gate.attained, report);
   const fields: DesignReceiptFields = {
     package: found.id,
     baseline:
       found.current_baseline === null
         ? null
         : { revision: found.current_baseline.revision, digest: found.current_baseline.digest },
+    // A verdict publishes nothing, so there is nothing it could have failed to
+    // seal: the package's own baseline above is the whole answer.
+    unsealed: null,
     path: found.path,
     root: "workspace",
     indexable: true,
-    maturity: { requested: requestedMaturity(ctx), attained: simple ? null : maturity.attained },
+    maturity: { requested: requestedMaturity(ctx), attained: maturity.attained },
     sources: [],
     renditions: [],
     // Judging an existing design reports the route it IS, not one this attempt
@@ -160,7 +182,7 @@ async function validatePackage(ctx: HandlerContext): Promise<HandlerResult> {
     kind: "completed",
     validations,
     output: {
-      value: { design: fields, ok: found.ok, failures: found.failures },
+      value: { design: fields, ok, failures, gaps: [...gate.reasons, ...maturity.gaps] },
       reference:
         found.id === null || found.current_baseline === null
           ? null
@@ -201,6 +223,27 @@ async function authoring(ctx: HandlerContext): Promise<HandlerResult> {
     };
   }
 
+  // Outside a workspace every destination this route could declare is ABSOLUTE,
+  // and the write boundary only admits workspace-relative paths inside the
+  // declared ones: an absolute answer is refused for being absolute and a
+  // relative one for falling outside them. No answer exists, so publishing the
+  // contract burns an authoring round over a question with no valid reply — and
+  // `apply` demands a workspace anyway, so it could never land either. The
+  // refusal belongs here, where the root is decided, and not one stage later
+  // where it reads as the author's mistake.
+  if (ctx.workspace === null) {
+    return {
+      kind: "blocked",
+      failure: {
+        code: "DESIGN_WORKSPACE_ABSENT",
+        message: `fuera de un workspace los destinos de '${ctx.operation.name}' son absolutos y ninguna respuesta puede caer dentro de ellos`,
+        action:
+          "corré la operación dentro del workspace donde debe quedar el diseño: 'target' acota la carpeta DENTRO del workspace, no publica fuera de él",
+      },
+    };
+  }
+  const workspace = ctx.workspace;
+
   const precondition = await operationPrecondition(ctx);
   if (precondition !== null) return { kind: "blocked", failure: precondition };
 
@@ -222,7 +265,7 @@ async function authoring(ctx: HandlerContext): Promise<HandlerResult> {
   // what a valid answer looks like, and where it may land, are different on the
   // two routes, so asking first and classifying afterwards would publish a
   // contract for a route the run is not on.
-  const route = await decideRoute(ctx, sources, root.value);
+  const route = await decideRoute(ctx, workspace, sources, root.value);
   if (!route.ok) return { kind: "blocked", failure: route.failure };
 
   const request = buildSemanticRequest({
@@ -262,10 +305,28 @@ async function authoring(ctx: HandlerContext): Promise<HandlerResult> {
   if (!parsed.ok) return { kind: "blocked", failure: parsed.failure };
   const answered = parsed.value.artifacts ?? [];
 
-  return route.value.target === null
-    ? packageProposal(ctx, report, route.value, answered)
-    : simpleProposal(ctx, report, route.value, answered);
+  const { target } = route.value;
+  if (target.mode === "simple") {
+    return simpleProposal(ctx, workspace, report, route.value, target.simple, answered);
+  }
+  if (target.mode === "package") {
+    return packageProposal(ctx, workspace, report, route.value, target.package, answered);
+  }
+  return projectionProposal(ctx, workspace, report, route.value, target.projection, answered);
 }
+
+/**
+ * Which route this attempt is on, with everything that route already fixed.
+ *
+ * A discriminated union and not two nullable fields: the package route used to
+ * carry a null target meaning «publish verbatim», and that third state is
+ * exactly the one that wrote artifacts nobody sealed and reported success. A
+ * route that cannot name its destination now fails to be a route at all.
+ */
+type RouteTarget =
+  | { mode: "simple"; simple: SimpleTarget }
+  | { mode: "package"; package: PackageTarget }
+  | { mode: "projection"; projection: ProjectionTarget };
 
 /** The two routes' shared answer: where to write, what to write, and why. */
 interface RouteDecision {
@@ -273,14 +334,7 @@ interface RouteDecision {
   contract: string;
   inventory: unknown;
   destinations: string[];
-  /** Present exactly on the simple route: the identity and folder already fixed. */
-  target: SimpleTarget | null;
-  /**
-   * Present on the package route when the target could be derived BEFORE the
-   * contract was published (create/update over the index). Null there means the
-   * verbatim path: `render`/`record`, or an authoring call with no index.
-   */
-  packageTarget: PackageTarget | null;
+  target: RouteTarget;
   root: OutputRoot;
 }
 
@@ -298,6 +352,27 @@ interface PackageTarget {
   manifest: DesignManifest;
 }
 
+/**
+ * What a `render` or a `record` publishes over — {@link PackageTarget}'s mirror
+ * for the operations that mint no revision.
+ *
+ * There is no baseline to derive and no compare-and-swap to run, so all a route
+ * has to fix here is WHERE it writes — a package the index already carries — and
+ * WHY nothing gets sealed, because that second half is what the receipt owes.
+ */
+interface ProjectionTarget {
+  /**
+   * The package as the index reports it, manifest already validated. The whole
+   * entry and not its pieces: what this route publishes over is a design that
+   * EXISTS, and its maturity is answered by the same function that answers it
+   * for `validate` — which needs to know whether it is a simple design or a
+   * package to know what to read.
+   */
+  entry: IndexedPackage;
+  /** Why this publication mints no revision, in the receipt's own words. */
+  unsealed: string;
+}
+
 type RouteResolution =
   | { ok: true; value: RouteDecision }
   | { ok: false; failure: CapabilityFailure };
@@ -313,16 +388,20 @@ type RouteResolution =
  */
 async function decideRoute(
   ctx: HandlerContext,
+  workspace: string,
   sources: DesignSource[],
   root: OutputRoot,
 ): Promise<RouteResolution> {
-  const index = ctx.workspace === null ? null : await readDesignIndex(ctx.fs, ctx.workspace);
+  // Always readable, never null: a workspace with no `docs/designs/` yet answers
+  // an EMPTY index, and outside a workspace `authoring` already refused. A
+  // nullable index here used to carry a third state that every branch below had
+  // to restate and that no invocation could reach.
+  const index = await readDesignIndex(ctx.fs, workspace);
   // By IDENTITY and only when one was named. `find(p => p.id === null)` would
   // match the first package whose manifest does not validate — an entry that has
   // no identity is not the one this invocation continues.
   const named = packageInput(ctx);
-  const targeted =
-    index === null || named === null ? null : (index.packages.find((p) => p.id === named) ?? null);
+  const targeted = named === null ? null : (index.packages.find((p) => p.id === named) ?? null);
 
   const verdict = judgeExpansion(
     declaredExpansionSignals(ctx),
@@ -337,9 +416,9 @@ async function decideRoute(
     }),
   );
 
-  // The package route is also the only one available outside a workspace or
-  // outside `docs/designs/`: a simple design derives its identity from the index,
-  // and there is no index to derive it from.
+  // The package route is also the only one available outside `docs/designs/`: a
+  // simple design derives its identity from the index, and a root the index does
+  // not cover has none to derive from.
   //
   // `render` and `record` are package operations whatever the signals say —
   // projecting revisions and sealing governance decisions are things a catalog
@@ -348,7 +427,6 @@ async function decideRoute(
   if (
     verdict.mode === "package" ||
     !AUTHORING_OPERATIONS.includes(ctx.operation.name) ||
-    index === null ||
     !isIndexable(root)
   ) {
     return packageRoute(ctx, verdict, index, root);
@@ -357,6 +435,7 @@ async function decideRoute(
   const resolved = resolveSimpleTarget(index, ctx.operation.name, {
     title: textInput(ctx, "title"),
     packageId: packageInput(ctx),
+    root: root.root,
   });
   if (!resolved.ok) {
     const { code, message, action } = resolved.failure;
@@ -378,58 +457,39 @@ async function decideRoute(
       // The exact file, not its folder: on the simple route the CLI already knows
       // the one destination, so anything else is not a design it can publish.
       destinations: [`${resolved.value.path}/${SIMPLE_DESIGN_FILE}`],
-      target: resolved.value,
-      packageTarget: null,
+      target: { mode: "simple", simple: resolved.value },
       root,
     },
   };
 }
 
 /**
- * The package route: sealed when the target can be derived, verbatim when not.
+ * The package route. It seals, or it does not run.
  *
- * The compare-and-swap base is the caller's claim on this route, and a safety
- * check that can be omitted is one nobody performs. It is demanded HERE rather
- * than in the descriptor because the simple route derives it instead.
+ * There used to be a third outcome, declared in the code as a known limitation:
+ * when the target could not be derived the answer was written EXACTLY as
+ * authored — no baseline, no manifest, no gate — and the receipt said
+ * `completed` anyway. The measured effect was a tree `aw designs` refuses right
+ * afterwards, which only a hand check ever discovers. An operation that did not
+ * happen is a better outcome than a dossier nobody can read, so what used to be
+ * a silent half-write is now either a sealed publication or a refusal that names
+ * what is missing.
  */
 function packageRoute(
   ctx: HandlerContext,
   verdict: ExpansionVerdict,
-  index: DesignIndex | null,
+  index: DesignIndex,
   root: OutputRoot,
 ): RouteResolution {
-  if (ctx.operation.name === "update" && textInput(ctx, "base") === null) {
-    return {
-      ok: false,
-      failure: {
-        code: "DESIGN_FIELD_INVALID",
-        message: "actualizar un package declara sobre qué revisión se preparó",
-        action:
-          "pasá 'base' con la revisión vigente (por ejemplo DES-001@r3), o null si el package no publicó ninguna",
-      },
-    };
+  // `render` and `record` author no normative content: a projection is derived
+  // from the manifest and a governance decision decides ON a baseline. Minting
+  // no revision is their NATURE, not a defect, so they get their own route
+  // instead of the refusal that briefly made both unreachable.
+  if (!AUTHORING_OPERATIONS.includes(ctx.operation.name)) {
+    return projectionRoute(ctx, verdict, index, root);
   }
 
-  // KNOWN LIMITATION: `render`/`record` — and a create/update with no index to
-  // derive from (outside a workspace or outside `docs/designs/`) — still run
-  // the verbatim path: the answer is published as authored, with no derived
-  // manifest, baseline or gate. Only create/update over the index seal.
-  if (index === null || !AUTHORING_OPERATIONS.includes(ctx.operation.name) || !isIndexable(root)) {
-    return {
-      ok: true,
-      value: {
-        verdict,
-        contract: contractFor(ctx.operation.name),
-        inventory: { root: root.root, mode: root.kind },
-        destinations: [root.root],
-        target: null,
-        packageTarget: null,
-        root,
-      },
-    };
-  }
-
-  const resolved = resolvePackageTarget(ctx, index);
+  const resolved = resolvePackageTarget(ctx, index, root);
   if (!resolved.ok) return { ok: false, failure: resolved.failure };
   const target = resolved.value;
   return {
@@ -447,8 +507,74 @@ function packageRoute(
       // The package folder, not the taxonomy root: the destination check is
       // segment-based, so every artifact lands INSIDE this package or nowhere.
       destinations: [target.path],
-      target: null,
-      packageTarget: target,
+      target: { mode: "package", package: target },
+      root,
+    },
+  };
+}
+
+/** Why each non-authoring operation mints no revision, said in its own receipt. */
+const UNSEALED_CAUSE: Record<string, string> = {
+  render:
+    "'render' regenera proyecciones: las deriva el CLI del manifest y ningún baseline las selecciona, así que no hay revisión que acuñar",
+  record:
+    "'record' decide SOBRE una revisión que ya existe: sella una decisión de gobierno y no acuña una línea base nueva",
+};
+
+/**
+ * The route of an operation that publishes WITHOUT minting a revision.
+ *
+ * It writes inside a package the index already carries, and refuses when there
+ * is none. The two halves are one rule: with a manifest already there the tree
+ * stays readable — `aw designs` accepts afterwards exactly what it accepted
+ * before, because nothing sealed moves — and without one the files would land in
+ * a folder the listing then rejects for having no manifest, which is the
+ * illegible tree this plan exists to stop.
+ */
+function projectionRoute(
+  ctx: HandlerContext,
+  verdict: ExpansionVerdict,
+  index: DesignIndex,
+  root: OutputRoot,
+): RouteResolution {
+  const operation = ctx.operation.name;
+  const named = packageInput(ctx);
+  if (named === null) {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_FIELD_INVALID",
+        message: `'${operation}' escribe dentro de un package que ya existe y no se declaró cuál`,
+        action: "pasá 'package' con su id, por ejemplo DES-007",
+      },
+    };
+  }
+  const located = locatePackage(index, named);
+  if (!located.ok) return { ok: false, failure: located.failure };
+
+  const entry = located.value;
+  const target: ProjectionTarget = {
+    entry,
+    unsealed: UNSEALED_CAUSE[operation] ?? `'${operation}' no acuña una revisión`,
+  };
+  return {
+    ok: true,
+    value: {
+      verdict,
+      contract: projectionContract(operation, target),
+      inventory: {
+        root: root.root,
+        mode: entry.manifest.mode,
+        package: entry.manifest.id,
+        path: entry.path,
+        // Consultative and load-bearing: an author who does not know the answer
+        // will not be sealed writes a revision nobody asked for.
+        seals: false,
+      },
+      // The package folder the INDEX reports, not the root the invocation named:
+      // this operation writes into a package that already exists, wherever it is.
+      destinations: [entry.path],
+      target: { mode: "projection", projection: target },
       root,
     },
   };
@@ -459,38 +585,119 @@ function packageRoute(
  *
  * `create` mints the identity and the folder from the title, over an initial
  * manifest that exists only to give the candidate builder a line to start from.
- * `update` locates the package BY IDENTITY and checks the declared base against
- * the line in force — the same compare-and-swap `publishDesignRevision` runs,
- * moved to the moment the contract is fixed instead of discovered mid-publish.
+ * It needs no index: with none there is no line to continue, and a package
+ * written to a declared root numbers from that root. `update` locates the
+ * package BY IDENTITY and checks the declared base against the line in force —
+ * the compare-and-swap, run at the moment the contract is fixed instead of
+ * discovered mid-publish.
  */
+type PackageTargetResolution =
+  | { ok: true; value: PackageTarget }
+  | { ok: false; failure: CapabilityFailure };
+
 function resolvePackageTarget(
   ctx: HandlerContext,
   index: DesignIndex,
-): { ok: true; value: PackageTarget } | { ok: false; failure: CapabilityFailure } {
-  if (ctx.operation.name === "create") {
-    const title = textInput(ctx, "title");
-    if (title === null) {
-      return {
-        ok: false,
-        failure: {
-          code: "DESIGN_FIELD_INVALID",
-          message: "un package nuevo necesita un título",
-          action: "pasá 'title' con el nombre humano del diseño: de ahí salen la carpeta y el id",
-        },
-      };
-    }
-    const packageId = nextPackageId(index.packages.map((p) => p.id ?? p.declared_id));
+  root: OutputRoot,
+): PackageTargetResolution {
+  return ctx.operation.name === "create"
+    ? mintPackageTarget(ctx, index, root)
+    : continuePackageTarget(ctx, index);
+}
+
+/** A brand-new package: the identity and the folder, from the title and the root. */
+function mintPackageTarget(
+  ctx: HandlerContext,
+  index: DesignIndex,
+  root: OutputRoot,
+): PackageTargetResolution {
+  const title = textInput(ctx, "title");
+  if (title === null) {
     return {
-      ok: true,
-      value: {
-        packageId,
-        path: designFolder(index.root, packageId, designSlug(title)),
-        revision: 1,
-        manifest: initialPackageManifest(packageId, title, localDateIso(new Date())),
+      ok: false,
+      failure: {
+        code: "DESIGN_FIELD_INVALID",
+        message: "un package nuevo necesita un título",
+        action: "pasá 'title' con el nombre humano del diseño: de ahí salen la carpeta y el id",
       },
     };
   }
+  const packageId = nextPackageId(index.packages.map((p) => p.id ?? p.declared_id));
+  return {
+    ok: true,
+    value: {
+      packageId,
+      // The DECLARED root, not the index's: a `target` that narrows where the
+      // package lands has to be where it lands, or the folder and the
+      // destination allowlist the request publishes disagree.
+      path: designFolder(root.root, packageId, designSlug(title)),
+      revision: 1,
+      manifest: initialPackageManifest(packageId, title, localDateIso(new Date())),
+    },
+  };
+}
 
+/**
+ * The package an operation writes into, located BY IDENTITY.
+ *
+ * Shared by the two routes that continue a package that already exists, so
+ * "ambiguous", "missing" and "broken" get one diagnosis each: three answers that
+ * differ only in wording is how a fix ends up applied to whichever copy the
+ * reader happened to hit.
+ */
+/** An index entry that resolved: the manifest is there and it validated. */
+type IndexedPackage = DesignPackageEntry & { manifest: DesignManifest };
+
+type PackageLookup =
+  | { ok: true; value: IndexedPackage }
+  | { ok: false; failure: CapabilityFailure };
+
+function locatePackage(index: DesignIndex, named: string): PackageLookup {
+  // By identity, and never by the FIRST match. Two packages claiming one id
+  // break every reference to it, and picking whichever the walk reached first
+  // would write into one of them at random.
+  const claiming = index.packages.filter((p) => p.id === named || p.declared_id === named);
+  if (claiming.length > 1) {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_REFERENCE_AMBIGUOUS",
+        message: `${named} está declarado por ${claiming.length} packages: ${claiming.map((p) => p.path).join(", ")}`,
+        action:
+          "dos packages no pueden reclamar la misma identidad: renombrá uno y volvé a intentar",
+      },
+    };
+  }
+  const found = claiming[0];
+  if (found === undefined) {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_PACKAGE_NOT_FOUND",
+        message: `no hay ningún package ${named} bajo ${index.root}/`,
+        action: `revisá 'aw designs' para ver las identidades publicadas bajo ${index.root}/`,
+      },
+    };
+  }
+  // A BROKEN package is not a missing one: they are very different problems for
+  // whoever has to fix one, so what comes back is the manifest's own diagnosis
+  // and not «no existe».
+  if (found.manifest === null) {
+    const first = found.failures[0];
+    return {
+      ok: false,
+      failure: {
+        code: first?.code ?? "DESIGN_MANIFEST_MISSING",
+        message: `${found.manifest_path}: ${first?.message ?? "el package no tiene un manifest legible"}`,
+        action: first?.action ?? "reparalo antes de publicar sobre él",
+      },
+    };
+  }
+  return { ok: true, value: { ...found, manifest: found.manifest } };
+}
+
+/** The next revision of a package that exists: located by identity, base checked. */
+function continuePackageTarget(ctx: HandlerContext, index: DesignIndex): PackageTargetResolution {
   const named = packageInput(ctx);
   if (named === null) {
     return {
@@ -502,17 +709,10 @@ function resolvePackageTarget(
       },
     };
   }
-  const found = index.packages.find((p) => p.id === named) ?? null;
-  if (found === null || found.manifest === null) {
-    return {
-      ok: false,
-      failure: {
-        code: "DESIGN_PACKAGE_NOT_FOUND",
-        message: `no hay ningún package ${named} legible bajo ${index.root}/`,
-        action: `revisá 'aw designs' para ver las identidades publicadas bajo ${index.root}/`,
-      },
-    };
-  }
+  const located = locatePackage(index, named);
+  if (!located.ok) return { ok: false, failure: located.failure };
+
+  const found = located.value;
   const manifest = found.manifest;
   const current = manifest.current_baseline;
   const actual = current === null ? null : `${manifest.id}@r${current.revision}`;
@@ -580,11 +780,12 @@ function initialPackageManifest(packageId: string, title: string, created: strin
 /** The simple route's durable step: one authored document, everything else derived. */
 async function simpleProposal(
   ctx: HandlerContext,
+  workspace: string,
   report: SourceReport,
   route: RouteDecision,
+  target: SimpleTarget,
   answered: readonly { path: string; content: string }[],
 ): Promise<HandlerResult> {
-  const target = route.target as SimpleTarget;
   const documentPath = `${target.path}/${SIMPLE_DESIGN_FILE}`;
   const document = answered.find((a) => a.path === documentPath);
   if (answered.length !== 1 || document === undefined) {
@@ -598,9 +799,7 @@ async function simpleProposal(
     };
   }
 
-  // A target only exists when `decideRoute` read the index, which it only does
-  // inside a workspace: the simple route and a null workspace cannot coexist.
-  const built = await buildSimpleProposal(ctx.fs, ctx.workspace as string, {
+  const built = await buildSimpleProposal(ctx.fs, workspace, {
     target,
     document: document.content,
     published: localDateIso(new Date()),
@@ -617,14 +816,19 @@ async function simpleProposal(
     };
   }
 
+  // The gate's verdict over the document, exactly as the package route takes it
+  // from the gate over its own: what the design attains cannot depend on which
+  // route wrote it.
+  const gate = built.value.maturity;
+  const maturity = attainedMaturity(requestedMaturity(ctx), gate.attained, report);
   const fields: DesignReceiptFields = {
     package: built.value.packageId,
     baseline: { revision: built.value.revision, digest: built.value.digest },
+    unsealed: null,
     path: target.path,
     root: route.root.kind,
     indexable: true,
-    // No ladder to climb: see `DesignReceiptFields.maturity`.
-    maturity: { requested: requestedMaturity(ctx), attained: null },
+    maturity: { requested: requestedMaturity(ctx), attained: maturity.attained },
     sources: report.sources,
     renditions: [],
     route: routeOf(route.verdict),
@@ -641,7 +845,7 @@ async function simpleProposal(
       value: {
         design: fields,
         artifacts: built.value.artifacts.map((a) => a.path),
-        gaps: [],
+        gaps: [...gate.reasons, ...maturity.gaps],
       },
       reference: null,
       completeness: "partial",
@@ -651,54 +855,21 @@ async function simpleProposal(
 }
 
 /**
- * The expanded route's durable step.
+ * The expanded route's durable step. The CLI owns the seal, always.
  *
- * With a derived target (create/update over the index) the CLI owns the seal:
- * the authored artifacts are candidate files, and the manifest, the baseline
- * and `PACKAGE.md` are DERIVED here — the same candidate `publishDesignRevision`
- * publishes, so the gate verdict the `012` computes runs NOW, inside `validate`,
- * and an invalid tree is blocked before the first byte moves.
- *
- * Without one (`render`/`record`, or no index to derive from) the package is
- * published exactly as authored. That verbatim path is the known limitation
- * `decideRoute` documents, not a second contract.
+ * The authored artifacts are candidate files, and the manifest, the baseline
+ * and `PACKAGE.md` are DERIVED here — the one candidate the whole system
+ * publishes, so the gate verdict runs NOW, inside `validate`, and an invalid
+ * tree is blocked before the first byte moves.
  */
 async function packageProposal(
   ctx: HandlerContext,
+  workspace: string,
   report: SourceReport,
   route: RouteDecision,
+  target: PackageTarget,
   answered: readonly { path: string; content: string }[],
 ): Promise<HandlerResult> {
-  const target = route.packageTarget;
-  if (target === null) {
-    const artifacts = answered.map((a) => ({ path: a.path, content: a.content }));
-    const maturity = attainedMaturity(requestedMaturity(ctx), "outline", report);
-    const fields: DesignReceiptFields = {
-      package: packageInput(ctx),
-      baseline: null,
-      path: route.root.root,
-      root: route.root.kind,
-      indexable: isIndexable(route.root),
-      maturity: { requested: requestedMaturity(ctx), attained: maturity.attained },
-      sources: report.sources,
-      renditions: [],
-      route: routeOf(route.verdict),
-    };
-
-    return {
-      kind: "durable",
-      artifacts,
-      output: {
-        value: { design: fields, artifacts: artifacts.map((a) => a.path), gaps: maturity.gaps },
-        reference: null,
-        // The durable step has not run yet, so nothing is published. Claiming
-        // `complete` here would let a gate accept a proposal as a package.
-        completeness: "partial",
-      },
-      base: null,
-    };
-  }
-
   // From workspace-relative to package-relative, which is the vocabulary the
   // candidate builder speaks. The destination check already confined every
   // answer to the package folder, so the prefix always strips.
@@ -706,7 +877,7 @@ async function packageProposal(
   const files: PackageCandidateInput["files"] = [];
   for (const artifact of answered) {
     const relative = artifact.path.slice(prefix.length);
-    if (CLI_DERIVED_FILES.includes(relative) || relative.startsWith("baselines/")) {
+    if (owns(DERIVED_PATHS, relative)) {
       return {
         kind: "blocked",
         failure: {
@@ -720,9 +891,7 @@ async function packageProposal(
     files.push({ path: relative, content: artifact.content });
   }
 
-  // The target only exists when `decideRoute` read the index, which it only
-  // does inside a workspace.
-  const candidate = await buildPackageCandidate(ctx.fs, ctx.workspace as string, {
+  const candidate = await buildPackageCandidate(ctx.fs, workspace, {
     manifest: target.manifest,
     packagePath: target.path,
     files,
@@ -742,17 +911,17 @@ async function packageProposal(
     };
   }
 
-  // The gate passed over the merged catalog, so the verdict a proposal may
-  // claim is what THIS revision's flows and screens claim for themselves — the
-  // ones already sealed were judged when they were published.
-  const maturity = attainedMaturity(
-    requestedMaturity(ctx),
-    claimedMaturity(candidate.value.manifest, files),
-    report,
-  );
+  // The verdict over the catalog this revision LEAVES, not over the files it
+  // brings. A revision of a single token introduces no document that could
+  // object, and judging only what it introduces answered `handoff` for a package
+  // whose current flow was still `outline` — a receipt the `validate` right
+  // afterwards contradicted about the same tree.
+  const gate = catalogMaturity(candidate.value.manifest);
+  const maturity = attainedMaturity(requestedMaturity(ctx), gate.attained, report);
   const fields: DesignReceiptFields = {
     package: target.packageId,
     baseline: { revision: candidate.value.revision, digest: candidate.value.baseline.digest },
+    unsealed: null,
     path: target.path,
     root: route.root.kind,
     indexable: isIndexable(route.root),
@@ -769,35 +938,212 @@ async function packageProposal(
       value: {
         design: fields,
         artifacts: candidate.value.artifacts.map((a) => a.path),
-        gaps: maturity.gaps,
+        gaps: [...gate.reasons, ...maturity.gaps],
       },
       reference: null,
       // The durable step has not run yet, so nothing is published. Claiming
       // `complete` here would let a gate accept a proposal as a package.
       completeness: "partial",
     },
-    base: await packageManifestBase(ctx, target),
+    base: await packageManifestBase(ctx, workspace, target),
   };
 }
 
-/** Package-relative file paths the CLI derives and seals — authoring one is rejected. */
-const CLI_DERIVED_FILES: readonly string[] = [DESIGN_MANIFEST_FILE, "PACKAGE.md"];
+/**
+ * The durable step of a publication that mints NO revision.
+ *
+ * What it refuses is the only way one of these operations can leave the package
+ * unreadable: a hand-authored manifest or baseline seals the tree with something
+ * nobody derived, and `aw designs` rejects it right afterwards. Everything else
+ * lands as authored — a projection replaces the one it regenerates, anything
+ * else is additive — and the receipt says, in words, that nothing was sealed.
+ */
+async function projectionProposal(
+  ctx: HandlerContext,
+  workspace: string,
+  report: SourceReport,
+  route: RouteDecision,
+  target: ProjectionTarget,
+  answered: readonly { path: string; content: string }[],
+): Promise<HandlerResult> {
+  const entry = target.entry;
+  const prefix = `${entry.path}/`;
+  const artifacts: PublishableArtifact[] = [];
+  for (const artifact of answered) {
+    const relative = artifact.path.slice(prefix.length);
+    if (owns(SEALED_PATHS, relative)) {
+      return {
+        kind: "blocked",
+        failure: {
+          code: "DESIGN_FIELD_INVALID",
+          message: `'${artifact.path}' es lo que sella el package, y '${ctx.operation.name}' no acuña revisión`,
+          action: `quitalo de 'artifacts': ${DESIGN_MANIFEST_FILE} y 'baselines/' los deriva y sella una publicación de contenido normativo, con 'create' o 'update'`,
+        },
+      };
+    }
+    artifacts.push({
+      path: artifact.path,
+      content: artifact.content,
+      // Regenerating a projection REPLACES it — that is what regenerating means,
+      // and `render` declares `mutate_overwrite` for exactly this. Nothing else
+      // is regenerable: a governance record decides on bytes that already exist,
+      // so publishing over one would rewrite a decision somebody made.
+      overwrite: PROJECTIONS.includes(relative),
+    });
+  }
+
+  // The design's own maturity, unchanged: this publication catalogues nothing,
+  // so reporting anything else would credit or blame it for a verdict it did
+  // not move. Through the same function `validate` uses, which is what keeps a
+  // simple design judged by its document instead of by an empty catalog.
+  const gate = await publishedMaturity(ctx.fs, workspace, entry);
+  const maturity = attainedMaturity(requestedMaturity(ctx), gate.attained, report);
+  const fields: DesignReceiptFields = {
+    package: entry.manifest.id,
+    // Null, and SAID: `unsealed` is what turns "no hay línea base" from an
+    // omission into a declaration.
+    baseline: null,
+    unsealed: target.unsealed,
+    path: entry.path,
+    root: route.root.kind,
+    // Resolved FROM the index, so it is indexed whatever root the invocation
+    // happened to name.
+    indexable: true,
+    maturity: { requested: requestedMaturity(ctx), attained: maturity.attained },
+    sources: report.sources,
+    renditions: [],
+    route: routeOf(route.verdict),
+  };
+
+  return {
+    kind: "durable",
+    artifacts,
+    output: {
+      value: {
+        design: fields,
+        artifacts: artifacts.map((a) => a.path),
+        gaps: [...gate.reasons, ...maturity.gaps],
+      },
+      reference: null,
+      // Nothing is on disk until the approval lands, here as everywhere else.
+      completeness: "partial",
+    },
+    // Nothing to compare and swap: this publication reads no manifest to derive
+    // its output, so there is no state it could have been computed against.
+    base: null,
+  };
+}
 
 /**
- * The maturity this revision's own flows and screens claim, as the merged
- * catalog recorded it: `outline` as soon as one of them claims no more, and
- * `handoff` when none says otherwise — the kinds without a maturity ladder
- * have no vote.
+ * Package-relative paths the CLI SEALS. Authoring one is refused on every route:
+ * a hand-written manifest or baseline is precisely the tree the listing rejects.
  */
-function claimedMaturity(
-  manifest: DesignManifest,
-  files: PackageCandidateInput["files"],
-): "outline" | "handoff" {
-  const introduced = new Set(files.map((f) => f.path));
-  const claims = [...manifest.catalog.flows, ...manifest.catalog.screens]
-    .filter((entry) => introduced.has(entry.path))
-    .map((entry) => entry.maturity);
-  return claims.includes("outline") ? "outline" : "handoff";
+const SEALED_PATHS: readonly string[] = [DESIGN_MANIFEST_FILE, "baselines"];
+
+/** What a SEALING publication also derives for itself: the projections it renders. */
+const DERIVED_PATHS: readonly string[] = [...SEALED_PATHS, ...PROJECTIONS];
+
+/** Is this package-relative path one of `owned` — the entry itself, or under it? */
+function owns(owned: readonly string[], relative: string): boolean {
+  return owned.some((path) => relative === path || relative.startsWith(`${path}/`));
+}
+
+/** One artifact's vote on the maturity of the whole revision. */
+interface MaturityClaim {
+  /** How the artifact is named in a reason. */
+  subject: string;
+  maturity: DesignMaturity;
+}
+
+interface MaturityCeiling {
+  attained: DesignMaturity;
+  /** Empty exactly when `attained` is `handoff`. */
+  reasons: string[];
+}
+
+/**
+ * The maturity a catalog attains as a whole.
+ *
+ * `handoff` is a property of the WHOLE thing being published: a package is
+ * consumed as one dossier, so the weakest CURRENT document is what an
+ * implementer hits. The empty case is vacuously `handoff`, and that is only
+ * sound because every caller derives its claims from {@link currentEntries},
+ * which yields exactly one entry per catalogued id: no claims means the catalog
+ * has no flow and no screen — no ladder to climb — rather than a filter having
+ * eaten the ones it has.
+ */
+function ceilingOf(claims: readonly MaturityClaim[]): MaturityCeiling {
+  const holding = claims.filter((c) => c.maturity !== "handoff");
+  if (holding.length === 0) return { attained: "handoff", reasons: [] };
+  return {
+    attained: "outline",
+    reasons: holding.map(
+      (c) =>
+        `${c.subject} alcanza '${c.maturity}': una publicación vale lo que vale su artefacto más flojo`,
+    ),
+  };
+}
+
+/**
+ * The maturity a package attains — ONE function, over the manifest that IS its
+ * catalog.
+ *
+ * The same question for the tree a publication will LEAVE (the candidate's
+ * manifest) and for the one already published (the entry's), so the receipt and
+ * the `validate` right after it cannot answer differently about the same tree.
+ * Which revision of each artifact answers is the content gate's own
+ * `currentEntries`, and reusing it is the point: reading `currentness` again
+ * here dropped every artifact it did not enumerate, and a manifest is allowed
+ * not to enumerate one.
+ *
+ * Reading the catalog rather than the files is not a shortcut: the manifest
+ * records the maturity each revision was sealed with — the publication gate
+ * refused it otherwise — and that IS the verdict in force.
+ */
+function catalogMaturity(manifest: DesignManifest): MaturityCeiling {
+  const claims = [...currentEntries(manifest, "flows"), ...currentEntries(manifest, "screens")].map(
+    (entry) => ({
+      subject: `${entry.id}@r${entry.revision}`,
+      maturity: entry.maturity ?? ("outline" as DesignMaturity),
+    }),
+  );
+  return ceilingOf(claims);
+}
+
+/**
+ * The gate's verdict over a design that is ALREADY published.
+ *
+ * Two shapes, one question: a simple design is judged by its own document, a
+ * package by its catalog. This only runs once the content gate came back clean,
+ * which is what makes the catalog's recorded maturities trustworthy here.
+ */
+async function publishedMaturity(
+  fs: FileSystemPort,
+  workspace: string,
+  entry: DesignPackageEntry,
+): Promise<MaturityCeiling> {
+  const manifest = entry.manifest;
+  if (manifest === null) {
+    return {
+      attained: "outline",
+      reasons: [`'${entry.manifest_path}' no valida: sin manifest no hay catálogo que juzgar`],
+    };
+  }
+  if (manifest.mode !== "simple") return catalogMaturity(manifest);
+
+  const absolute = join(workspace, entry.path, SIMPLE_DESIGN_FILE);
+  if (!(await fs.exists(absolute))) {
+    return {
+      attained: "outline",
+      reasons: [`'${entry.path}/${SIMPLE_DESIGN_FILE}' no está: no hay documento que juzgar`],
+    };
+  }
+  const parsed = validateSimpleDesign(await fs.readText(absolute), SIMPLE_DESIGN_FILE);
+  if (!parsed.ok || parsed.value === null) {
+    return { attained: "outline", reasons: parsed.failures.map((f) => f.message) };
+  }
+  const verdict = simpleMaturity(parsed.value);
+  return { attained: verdict.attained, reasons: verdict.reasons };
 }
 
 /**
@@ -807,10 +1153,11 @@ function claimedMaturity(
  */
 async function packageManifestBase(
   ctx: HandlerContext,
+  workspace: string,
   target: PackageTarget,
 ): Promise<ProposalBase | null> {
   const path = `${target.path}/${DESIGN_MANIFEST_FILE}`;
-  const absolute = join(ctx.workspace as string, path);
+  const absolute = join(workspace, path);
   if (!(await ctx.fs.exists(absolute))) return null;
   return { path, digest: baseDigest(await ctx.fs.readText(absolute)) };
 }
@@ -933,23 +1280,6 @@ function simpleContract(target: SimpleTarget): string {
   ].join(" ");
 }
 
-function contractFor(operation: string): string {
-  const shared =
-    "Respondé un único objeto JSON con 'version', 'operation', 'input_digest', 'state': 'proposed' " +
-    "y 'artifacts': [{path, content}]. Cada 'path' es relativo al workspace y cae dentro de los " +
-    "destinos permitidos. Ningún artefacto inventa un formato: los del UI Design Package v1 son los únicos aceptados.";
-  const perOperation: Record<string, string> = {
-    create: "Autorá la PRIMERA revisión del package a partir de las fuentes declaradas.",
-    update:
-      "Autorá la revisión SIGUIENTE sobre la base declarada. No reescribas revisiones ya selladas.",
-    render:
-      "Regenerá las proyecciones de la revisión indicada. Una proyección no es normativa y nunca se sella.",
-    record:
-      "Sellá la decisión de gobierno sobre la revisión indicada, sin tocar el contenido del package.",
-  };
-  return `${perOperation[operation] ?? ""} ${shared}`.trim();
-}
-
 /**
  * What a valid answer is on the SEALED package route: the normative artifacts,
  * and nothing the CLI derives.
@@ -971,6 +1301,31 @@ function packageContract(operation: string, target: PackageTarget): string {
     `El frontmatter de cada artefacto declara ese id de package (por ejemplo '${target.packageId}/FLW-001').`,
     "NO autores 'design-manifest.json', nada bajo 'baselines/' ni 'PACKAGE.md': el CLI los deriva y sella a partir de tus artefactos, y rechaza la respuesta si los incluye.",
     "Respondé un único objeto JSON con 'version', 'operation', 'input_digest', 'state': 'proposed' y 'artifacts': [{path, content}]. Cada 'path' es relativo al workspace y cae dentro de los destinos permitidos. Ningún artefacto inventa un formato: los del UI Design Package v1 son los únicos aceptados.",
+  ]
+    .join(" ")
+    .trim();
+}
+
+/**
+ * What a valid answer is on the route that mints NO revision.
+ *
+ * It states that first, and states it before anything else: an author who thinks
+ * the answer will be sealed writes a revision, and a revision is exactly what
+ * this route does not publish.
+ */
+function projectionContract(operation: string, target: ProjectionTarget): string {
+  const perOperation: Record<string, string> = {
+    render:
+      "Regenerá las proyecciones de la revisión vigente. Una proyección no es normativa: sale del manifest y ningún baseline la sella.",
+    record:
+      "Escribí la decisión de gobierno sobre la revisión indicada, sin tocar el contenido normativo del package.",
+  };
+  return [
+    perOperation[operation] ?? "",
+    `Esta operación NO acuña una revisión: ${target.unsealed}.`,
+    `Se escribe DENTRO de '${target.entry.path}', el package ${target.entry.manifest.id} que ya está indexado.`,
+    `NO autores '${DESIGN_MANIFEST_FILE}' ni nada bajo 'baselines/': son lo que sella el package y solo los deriva una publicación de contenido normativo.`,
+    "Respondé un único objeto JSON con 'version', 'operation', 'input_digest', 'state': 'proposed' y 'artifacts': [{path, content}]. Cada 'path' es relativo al workspace y cae dentro de ese package.",
   ]
     .join(" ")
     .trim();

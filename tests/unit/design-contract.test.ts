@@ -3,7 +3,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { gatePlanDesign } from "../../src/application/design/design-gate-service.js";
 import { readDesignIndex } from "../../src/application/design/design-index-service.js";
-import { publishDesignRevision } from "../../src/application/design/design-publish-service.js";
 import { resolveBaselineReference } from "../../src/application/design/design-resolver-service.js";
 import { type DesignBaseline, computeBaselineDigest } from "../../src/domain/design/baseline.js";
 import { computeRecordDigest, judgeExecution } from "../../src/domain/design/governance.js";
@@ -11,6 +10,7 @@ import type { GovernanceRecord } from "../../src/domain/design/governance.js";
 import { type DesignManifest, validateDesignManifest } from "../../src/domain/design/manifest.js";
 import { parseSpecDesignReferences } from "../../src/domain/design/reference.js";
 import { RETIRED_CODE, reportRetiredDesign } from "../../src/domain/design/retired.js";
+import { packageCandidate } from "../helpers/design-package.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
 /**
@@ -94,11 +94,9 @@ describe("cobertura del validador — ocho causas, cada una con artefacto y acci
       `${WS}/${PKG}/design-manifest.json`,
       fixture("manifest-maximal.json"),
     );
-    const result = await publishDesignRevision(fs, WS, {
-      packageId: "DES-001",
+    const result = await packageCandidate(fs, WS, {
+      packagePath: PKG,
       files: [{ path: "../../fuera.md", content: "x" }],
-      published: "2026-08-03",
-      expectedBase: "DES-001@r2",
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;

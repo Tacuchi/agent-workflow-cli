@@ -17,6 +17,7 @@
  * is one no consumer can project.
  */
 
+import type { DesignMaturity } from "./artifact.js";
 import type { DesignFailure } from "./validation.js";
 
 /** The one authored file of a simple design, at the package root. */
@@ -33,8 +34,14 @@ export function archivedDesignPath(revision: number): string {
 /** Always present, always with content: without these there is no design. */
 export const SIMPLE_CORE_SECTIONS = ["Objetivo", "Diseño propuesto", "Validación"] as const;
 
+/**
+ * The section that exists only while something is still open — the simple
+ * vocabulary's word for a blocking unknown.
+ */
+export const SIMPLE_OPEN_SECTION = "Abiertos" as const;
+
 /** Present only when they add information — and then with real content. */
-export const SIMPLE_OPTIONAL_SECTIONS = ["Recorrido", "Decisiones", "Abiertos"] as const;
+export const SIMPLE_OPTIONAL_SECTIONS = ["Recorrido", "Decisiones", SIMPLE_OPEN_SECTION] as const;
 
 /** The closed heading vocabulary, in the order a reader walks them. */
 export const SIMPLE_SECTIONS: readonly string[] = [
@@ -99,6 +106,39 @@ export function validateSimpleDesign(markdown: string, artifact: string): Simple
     ok: true,
     value: { title: titleLine.replace(/^#\s+/, "").trim(), sections },
     failures: [],
+  };
+}
+
+export interface SimpleMaturity {
+  attained: DesignMaturity;
+  /** Empty exactly when `attained` is `handoff`: one line per thing holding it back. */
+  reasons: string[];
+}
+
+/**
+ * The maturity a simple design attains — derived from a gate, not from the route
+ * that published it.
+ *
+ * Of the four things the package `handoff` gate demands, exactly ONE has a
+ * counterpart here, and saying which is the point: a `DESIGN.md` declares no
+ * graph edges, no criterion classification and no default state, so those three
+ * are INAPPLICABLE rather than silently satisfied. The fourth — «no blocking
+ * unknown» — is precisely what `## Abiertos` is, a section the contract only
+ * admits when it says something. A design still asking a question is not
+ * implementable, whatever shape it was written in.
+ *
+ * The document itself is already validated by the time this runs: every core
+ * section present with real content is the floor, so what is left to judge is
+ * whether anything is still open.
+ */
+export function simpleMaturity(design: SimpleDesign): SimpleMaturity {
+  const open = design.sections.some((s) => s.heading === SIMPLE_OPEN_SECTION);
+  if (!open) return { attained: "handoff", reasons: [] };
+  return {
+    attained: "outline",
+    reasons: [
+      `'## ${SIMPLE_OPEN_SECTION}' declara puntos sin resolver: un 'handoff' no deja incógnitas que puedan mover el comportamiento`,
+    ],
   };
 }
 

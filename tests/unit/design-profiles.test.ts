@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { cutRenderBundle } from "../../src/application/design/design-bundle-service.js";
-import { publishDesignRevision } from "../../src/application/design/design-publish-service.js";
 import {
   CONFORMANCE_CAPABILITIES,
   OPTIONAL_CAPABILITIES,
@@ -28,6 +27,7 @@ import {
   type RenditionSource,
   computeSourceDigest,
 } from "../../src/domain/design/rendition.js";
+import { packageCandidate } from "../helpers/design-package.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
 const fixture = (name: string): string =>
@@ -228,8 +228,8 @@ describe("F6 · un locator localiza, y un proveedor sin versión estable lo decl
   });
 
   it("una rendition con un locator incompleto no se publica", async () => {
-    const result = await publishDesignRevision(workspace(), WS, {
-      packageId: "DES-001",
+    const result = await packageCandidate(workspace(), WS, {
+      packagePath: PKG,
       files: [
         {
           path: "renditions/VIS-002-r001-figma/rendition.json",
@@ -237,8 +237,6 @@ describe("F6 · un locator localiza, y un proveedor sin versión estable lo decl
         },
         { path: "renditions/VIS-002-r001-figma/preview.svg", content: PREVIEW },
       ],
-      published: "2026-08-03",
-      expectedBase: "DES-001@r1",
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -273,8 +271,8 @@ describe("F6 · el mismo bundle entregado a los dos perfiles queda como renditio
     );
     expect(forFigma.value.digest).not.toBe(forPortable.value.digest);
 
-    const result = await publishDesignRevision(fs, WS, {
-      packageId: "DES-001",
+    const result = await packageCandidate(fs, WS, {
+      packagePath: PKG,
       files: [
         {
           path: "renditions/VIS-002-r001-figma/rendition.json",
@@ -287,15 +285,10 @@ describe("F6 · el mismo bundle entregado a los dos perfiles queda como renditio
         },
         { path: "renditions/VIS-003-r001-portable/preview.svg", content: PREVIEW },
       ],
-      published: "2026-08-03",
-      expectedBase: "DES-001@r1",
     });
     if (!result.ok) throw new Error(JSON.stringify(result.failures));
 
-    const manifest = JSON.parse(
-      await fs.readText(`${WS}/${PKG}/design-manifest.json`),
-    ) as DesignManifest;
-    const ids = manifest.catalog.renditions.map((e) => e.id);
+    const ids = result.value.manifest.catalog.renditions.map((e) => e.id);
     expect(ids).toContain("VIS-002");
     expect(ids).toContain("VIS-003");
     // Y las dos declaran la MISMA revisión fuente: es lo que las hace dos vistas de
