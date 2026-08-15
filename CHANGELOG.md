@@ -4,6 +4,21 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.14.0] — 2026-08-15
+
+**Un plan podía prometer una validación que nadie iba a poder ejecutar.** Nada impedía redactar una fase cuya condición de terminado exigiera producción o el producto ya desplegado, y el defecto se descubría tarde y de la peor forma: el plan corría hasta esa fase y quedaba bloqueado sin salida, porque nada en una corrida aplica nada a producción. Pasó dos veces con dos planes distintos — uno cuya fase era «producción recupera el acceso», otro esperando que un tercero normalizara datos allá.
+
+### Added
+
+- **Cert-only es doctrina del chasis.** Un criterio que necesita producción o el producto desplegado **no es una condición de terminado**: nadie en la corrida puede ejecutarlo, así que la fase espera para siempre. Se verifica en cert.
+- **Los tres gates que deciden si un documento procede la exigen como evidencia propia** —coherencia del plan, ejecutabilidad del plan refinado y listo-para-plan de la spec—, así que la respuesta devuelve un veredicto para esta regla en vez de disolverla en un «el checklist pasó» genérico. El remedio viaja con el gate: una fase que sólo se valida en producción se reformula para cert, o sale de la fase y se entrega como script + runbook + handoff declarado.
+
+### Notes
+
+- **Por qué no es un módulo.** Un módulo se carga por señal, y cert-only no es condicional: aplica siempre que se redacta. La política de base de datos es un módulo porque sólo rige cuando hay base de datos. Forma distinta para una regla distinta.
+- **Qué se comprimió para hacerle lugar.** El presupuesto de contexto es un gate congelado y los tres tramos están en sus techos por diseño. Se comprimieron cuatro pasajes del chasis con redundancia real —una idea dicha dos veces en el mismo documento—, sin re-congelar el baseline. En el camino, el propio guard cazó una frase pinada que la compresión había soltado; se restauró y los bytes se buscaron en otro lado.
+- **Lo que NO se embarcó.** Las directivas operativas de alcance literal y de disciplina de commit en un repositorio padre describen cómo trabaja un usuario y cómo está organizado su repositorio, no qué puede prometer un plan: embarcarlas impondría el layout de uno a todos. Quedan en las convenciones de cada workspace.
+
 ## [21.13.0] — 2026-08-15
 
 **La ruta por defecto destruía el `CHECKPOINT.md` que un agente acababa de rellenar, y una lectura curiosa redirigía a dónde iba a escribir el cierre.** El centinela que autorizaba sobrescribir era el mismo string que la plantilla emite, así que el único estado protegido era «cero marcadores» y todo relleno parcial se trataba como borrador desechable — con los hooks de compactación y de cierre corriendo esa ruta solos. En paralelo, resolver una sesión ligaba la conversación aunque la superficie fuera de pura lectura, y el registro durable tomaba su fecha del mtime de la carpeta que el propio cierre acababa de tocar.
