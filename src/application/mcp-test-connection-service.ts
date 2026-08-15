@@ -57,7 +57,9 @@ function spawnDbhub(
       stdio: ["pipe", "pipe", "pipe"],
       shell: isWin,
     });
-    let stderr = "";
+    // Chunks stay as bytes: decoding each one splits multibyte characters at the
+    // pipe boundary and garbles the very message the caller is about to show.
+    const stderr: Buffer[] = [];
     let settled = false;
     const settle = (result: McpTestConnectionResult): void => {
       if (settled) return;
@@ -66,7 +68,7 @@ function spawnDbhub(
       resolve(result);
     };
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
+      stderr.push(chunk);
     });
     child.on("error", (err) => settle({ ok: false, source, error: err.message }));
     child.on("exit", (code) => {
@@ -76,7 +78,7 @@ function spawnDbhub(
         settle({
           ok: false,
           source,
-          error: stderr.trim() || `dbhub salió con código ${code}`,
+          error: Buffer.concat(stderr).toString("utf8").trim() || `dbhub salió con código ${code}`,
         });
       }
     });

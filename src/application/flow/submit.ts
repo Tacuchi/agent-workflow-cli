@@ -368,10 +368,13 @@ async function observeCheckouts(
   for (const candidate of candidates) {
     try {
       if (!(await fs.exists(candidate.path)) || !(await git.isGitRepo(candidate.path))) continue;
-      const [head, dirty, changed, worktreeFingerprint] = await Promise.all([
+      // The fingerprint is taken twice, concurrently: a digest that does not
+      // survive its own recomputation must not be reported as a tree that moved.
+      const [head, dirty, changed, worktreeFingerprint, recomputed] = await Promise.all([
         git.head(candidate.path),
         git.isDirty(candidate.path),
         git.changedFiles(candidate.path),
+        git.checkoutFingerprint(candidate.path),
         git.checkoutFingerprint(candidate.path),
       ]);
       states.push({
@@ -383,6 +386,7 @@ async function observeCheckouts(
           changed_files: changed,
           worktree_fingerprint: worktreeFingerprint,
         }),
+        reproducible: worktreeFingerprint === recomputed,
       });
     } catch {
       // An unreadable checkout is deliberately absent from the eligible set; a

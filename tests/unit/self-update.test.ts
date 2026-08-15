@@ -3,7 +3,12 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { selfUpdate } from "../../src/application/self/update-self.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { ProcessPort, RunOptions, RunResult } from "../../src/ports/process.js";
+import type {
+  ProcessPort,
+  RunBinaryResult,
+  RunOptions,
+  RunResult,
+} from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -11,6 +16,9 @@ import { FakeEnv } from "../helpers/fake-env.js";
 class ThrowingProcess implements ProcessPort {
   async run(_cmd: string, _args: string[], _opts?: RunOptions): Promise<RunResult> {
     throw new Error("process.run should not be invoked in --dry-run mode");
+  }
+  async runBinary(_cmd: string, _args: string[], _opts?: RunOptions): Promise<RunBinaryResult> {
+    throw new Error("process.runBinary should not be invoked in --dry-run mode");
   }
   async which(_cmd: string): Promise<string | undefined> {
     return undefined;
@@ -33,6 +41,10 @@ class RecordingProcess implements ProcessPort {
   async run(cmd: string, args: string[], _opts?: RunOptions): Promise<RunResult> {
     this.invocations.push({ cmd, args });
     return { code: 0, stdout: "ok", stderr: "" };
+  }
+  async runBinary(cmd: string, args: string[], opts?: RunOptions): Promise<RunBinaryResult> {
+    const { code, stdout, stderr } = await this.run(cmd, args, opts);
+    return { code, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
   }
   async which(_cmd: string): Promise<string | undefined> {
     return undefined;

@@ -96,13 +96,18 @@ function runGit(args: string[], cwd?: string): Promise<void> {
       GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes",
     };
     const proc = spawn("git", args, { stdio: "pipe", env, ...(cwd ? { cwd } : {}) });
-    let stderr = "";
+    // Chunks stay as bytes: decoding each one splits multibyte characters at the
+    // pipe boundary and garbles git's own message.
+    const stderr: Buffer[] = [];
     proc.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
+      stderr.push(chunk);
     });
     proc.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`git ${args[0]} falló (exit ${code}): ${stderr.trim()}`));
+      else {
+        const detail = Buffer.concat(stderr).toString("utf8").trim();
+        reject(new Error(`git ${args[0]} falló (exit ${code}): ${detail}`));
+      }
     });
     proc.on("error", reject);
   });

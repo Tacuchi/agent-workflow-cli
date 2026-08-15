@@ -386,6 +386,33 @@ export function checkoutDigest(input: {
 export interface CheckoutState {
   source: string;
   digest: string;
+  /**
+   * `false` when two consecutive computations of the digest disagreed. Absent
+   * when it was measured once, which is all a pure caller can do.
+   */
+  reproducible?: boolean;
+}
+
+/** The sources a proof may name, so a rejected one says what it should have been. */
+function eligibleSources(states: readonly CheckoutState[]): string {
+  const names = states.map((state) => state.source);
+  return names.length > 0 ? names.join(", ") : "ninguna";
+}
+
+/**
+ * A digest that does not survive its own recomputation is not evidence that the
+ * checkout moved, and saying so sends the reader to look for a change that may
+ * not exist.
+ */
+function staleMessage(source: string, reproducible: boolean | undefined): string {
+  if (reproducible !== false) {
+    return `el checkout de '${source}' cambió desde que se capturó la prueba`;
+  }
+  return [
+    `el digest de '${source}' no coincide y NO es estable entre dos cómputos consecutivos:`,
+    "o el árbol cambia mientras se valida, o la huella no es reproducible;",
+    "recapturar la prueba no alcanza si persiste",
+  ].join(" ");
 }
 
 /**
@@ -415,13 +442,15 @@ export function validateCheckoutProof(
   if (current === undefined) {
     return {
       code: "WORKLINE_CHECKOUT_PROOF_INVALID",
-      message: `la prueba declara la fuente '${proof.source}', que no pertenece al checkout adquirido`,
+      message:
+        `la prueba declara la fuente '${proof.source}', que no pertenece al ` +
+        `checkout adquirido (elegibles: ${eligibleSources(states)})`,
     };
   }
   if (current.digest !== proof.checkout_digest) {
     return {
       code: "WORKLINE_CHECKOUT_PROOF_STALE",
-      message: `el checkout de '${proof.source}' cambió desde que se capturó la prueba`,
+      message: staleMessage(proof.source, current.reproducible),
     };
   }
   return null;

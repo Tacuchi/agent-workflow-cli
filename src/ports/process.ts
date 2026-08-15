@@ -11,6 +11,13 @@ export interface RunResult {
   stderr: string;
 }
 
+/** Output of a command read as bytes — see `ProcessPort.runBinary`. */
+export interface RunBinaryResult {
+  code: number;
+  stdout: Buffer;
+  stderr: Buffer;
+}
+
 export interface SpawnDetachedOptions {
   cwd?: string;
   env?: Record<string, string>;
@@ -50,7 +57,15 @@ export interface SpawnInTerminalResult {
 // method used only as spawnInTerminal's internal headless fallback, so it is
 // deliberately NOT part of the port.
 export interface ProcessPort {
+  /** Runs a command and decodes its whole output as UTF-8. */
   run(cmd: string, args: string[], opts?: RunOptions): Promise<RunResult>;
+  /**
+   * Same as `run`, without decoding. A caller that hashes or measures output
+   * needs the bytes git emitted: decoding maps every byte that is not valid
+   * UTF-8 to one replacement character, so `git diff --binary` — binary by its
+   * own flag — would lose the very content the caller is trying to pin down.
+   */
+  runBinary(cmd: string, args: string[], opts?: RunOptions): Promise<RunBinaryResult>;
   which(cmd: string): Promise<string | undefined>;
   /**
    * Launch a process in a *visible, persistent* OS terminal window (macOS

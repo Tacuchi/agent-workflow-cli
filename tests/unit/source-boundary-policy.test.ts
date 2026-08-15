@@ -196,6 +196,31 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
       ])?.code,
     ).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
   });
+
+  it("nombra las fuentes elegibles cuando la prueba declara una que no lo es", () => {
+    const failure = validateCheckoutProof(proof, [
+      { source: "workspace", digest },
+      { source: "ui", digest },
+    ]);
+    expect(failure?.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    expect(failure?.message).toContain("workspace, ui");
+  });
+
+  it("dice que no hay ninguna elegible cuando no se pudo observar checkout alguno", () => {
+    expect(validateCheckoutProof(proof, [])?.message).toContain("ninguna");
+  });
+
+  it("separa un checkout que cambió de una huella que no es reproducible", () => {
+    const changed = validateCheckoutProof(proof, [{ source: "cli", digest: "moved" }]);
+    expect(changed?.code).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
+    expect(changed?.message).toContain("cambió desde que se capturó la prueba");
+
+    const unstable = validateCheckoutProof(proof, [
+      { source: "cli", digest: "moved", reproducible: false },
+    ]);
+    expect(unstable?.code).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
+    expect(unstable?.message).toContain("NO es estable");
+  });
 });
 
 describe("SourceBoundaryPolicy — contexto remoto", () => {

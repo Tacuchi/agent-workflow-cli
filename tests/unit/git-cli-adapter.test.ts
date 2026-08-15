@@ -1,21 +1,42 @@
 import { describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
-import type { ProcessPort, RunOptions, RunResult } from "../../src/ports/process.js";
+import type {
+  ProcessPort,
+  RunBinaryResult,
+  RunOptions,
+  RunResult,
+} from "../../src/ports/process.js";
 
 interface ScriptedRun {
   match: (cmd: string, args: string[]) => boolean;
-  result: RunResult;
+  /** stdout may be scripted as raw bytes: the fingerprint reads git's output as bytes. */
+  result: Omit<RunResult, "stdout"> & { stdout: string | Buffer };
 }
+
+const asBuffer = (value: string | Buffer): Buffer =>
+  typeof value === "string" ? Buffer.from(value) : value;
 
 class ScriptedProcess implements ProcessPort {
   public invocations: Array<{ cmd: string; args: string[]; opts?: RunOptions }> = [];
   constructor(private readonly scripts: ScriptedRun[]) {}
-  async run(cmd: string, args: string[], opts?: RunOptions): Promise<RunResult> {
+  private script(cmd: string, args: string[], opts?: RunOptions): ScriptedRun["result"] {
     this.invocations.push({ cmd, args, opts });
     for (const s of this.scripts) {
       if (s.match(cmd, args)) return s.result;
     }
     return { code: 0, stdout: "", stderr: "" };
+  }
+  async run(cmd: string, args: string[], opts?: RunOptions): Promise<RunResult> {
+    const scripted = this.script(cmd, args, opts);
+    return { ...scripted, stdout: asBuffer(scripted.stdout).toString("utf8") };
+  }
+  async runBinary(cmd: string, args: string[], opts?: RunOptions): Promise<RunBinaryResult> {
+    const scripted = this.script(cmd, args, opts);
+    return {
+      code: scripted.code,
+      stdout: asBuffer(scripted.stdout),
+      stderr: Buffer.from(scripted.stderr),
+    };
   }
   async which(): Promise<string | undefined> {
     return undefined;
@@ -195,7 +216,7 @@ describe("GitCliAdapter — changedFiles lee el formato porcelain sin recortar",
 });
 
 describe("GitCliAdapter — huella del checkout", () => {
-  const fingerprint = (patch: string) =>
+  const fingerprint = (patch: string | Buffer) =>
     new ScriptedProcess([
       {
         match: (_c, args) => args[0] === "diff" && args.includes("--binary"),
@@ -226,6 +247,20 @@ describe("GitCliAdapter — huella del checkout", () => {
     const after = await new GitCliAdapter(
       fingerprint("diff --git a/src/policy.ts\n-old\n+two\n"),
     ).checkoutFingerprint("/repo");
+    expect(after).not.toBe(before);
+  });
+
+  it("distingue dos parches que sólo difieren en bytes que no son utf-8", async () => {
+    // Todo byte suelto decodifica al MISMO carácter de reemplazo: hasheando la
+    // salida como texto, dos árboles distintos darían una huella idéntica.
+    const patch = (byte: number) =>
+      Buffer.concat([
+        Buffer.from("diff --git a/src/policy.ts\n+línea "),
+        Buffer.from([byte]),
+        Buffer.from("\n"),
+      ]);
+    const before = await new GitCliAdapter(fingerprint(patch(0xe1))).checkoutFingerprint("/repo");
+    const after = await new GitCliAdapter(fingerprint(patch(0xe9))).checkoutFingerprint("/repo");
     expect(after).not.toBe(before);
   });
 });

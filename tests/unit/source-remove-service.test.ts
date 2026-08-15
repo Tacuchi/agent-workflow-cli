@@ -19,6 +19,10 @@ class FakeProc implements ProcessPort {
   async run() {
     return { code: 0, stdout: "", stderr: "" };
   }
+  async runBinary() {
+    const { code, stdout, stderr } = await this.run();
+    return { code, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
+  }
   async which() {
     return undefined;
   }

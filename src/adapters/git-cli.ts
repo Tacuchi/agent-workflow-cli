@@ -12,7 +12,7 @@ import type {
   RevertRehearsal,
   WorktreeEntry,
 } from "../ports/git.js";
-import type { ProcessPort, RunOptions, RunResult } from "../ports/process.js";
+import type { ProcessPort, RunBinaryResult, RunOptions, RunResult } from "../ports/process.js";
 
 /**
  * Non-interactive git env: `GIT_TERMINAL_PROMPT=0` makes git FAIL FAST instead of
@@ -20,6 +20,9 @@ import type { ProcessPort, RunOptions, RunResult } from "../ports/process.js";
  * would otherwise hang the TUI, recoverable only with Ctrl+C). Applied to every
  * git command — harmless for local ops, essential for the network ones.
  */
+/** Stands in for the blob id of an untracked path git cannot hash; never a real one. */
+const UNHASHABLE_BLOB = "unhashable";
+
 function nonInteractiveGitEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -37,11 +40,28 @@ export class GitCliAdapter implements GitPort {
     return { cwd: repoPath, env: nonInteractiveGitEnv(), ...extra };
   }
 
+  private failed(label: string, repoPath: string, stderr: string): Error {
+    return new Error(`git ${label} failed in ${repoPath}: ${stderr.trim()}`);
+  }
+
   /** Run git, throwing `git <label> failed in <repo>: <stderr>` on non-zero exit. */
   private async mustRun(label: string, args: string[], repoPath: string): Promise<RunResult> {
     const result = await this.process.run("git", args, this.opts(repoPath));
     if (result.code !== 0) {
-      throw new Error(`git ${label} failed in ${repoPath}: ${result.stderr.trim()}`);
+      throw this.failed(label, repoPath, result.stderr);
+    }
+    return result;
+  }
+
+  /** `mustRun` for output that must not be decoded (see `ProcessPort.runBinary`). */
+  private async mustRunBinary(
+    label: string,
+    args: string[],
+    repoPath: string,
+  ): Promise<RunBinaryResult> {
+    const result = await this.process.runBinary("git", args, this.opts(repoPath));
+    if (result.code !== 0) {
+      throw this.failed(label, repoPath, result.stderr.toString("utf8"));
     }
     return result;
   }
@@ -95,16 +115,23 @@ export class GitCliAdapter implements GitPort {
    * submodule facts; untracked files need their own blob ids because `git diff
    * HEAD` does not include them.  The value never leaves the checkout and is
    * only used as an opaque component of `CheckoutProof.checkout_digest`.
+   *
+   * Git's output is hashed as BYTES and never decoded: a digest that has to be
+   * reproducible cannot depend on a text encoding it does not need.
    */
   async checkoutFingerprint(repoPath: string): Promise<string> {
     const [patch, status, untracked] = await Promise.all([
-      this.mustRun(
+      this.mustRunBinary(
         "diff for checkout fingerprint",
         ["diff", "--binary", "--full-index", "--no-ext-diff", "HEAD", "--"],
         repoPath,
       ),
-      this.mustRun("status for checkout fingerprint", ["status", "--porcelain=v2", "-z"], repoPath),
-      this.mustRun(
+      this.mustRunBinary(
+        "status for checkout fingerprint",
+        ["status", "--porcelain=v2", "-z"],
+        repoPath,
+      ),
+      this.mustRunBinary(
         "untracked files for checkout fingerprint",
         ["ls-files", "--others", "--exclude-standard", "-z"],
         repoPath,
@@ -112,24 +139,29 @@ export class GitCliAdapter implements GitPort {
     ]);
     const hash = createHash("sha256");
     hash.update("patch\0", "utf8");
-    hash.update(patch.stdout, "utf8");
+    hash.update(patch.stdout);
     hash.update("status\0", "utf8");
-    hash.update(status.stdout, "utf8");
+    hash.update(status.stdout);
 
     const paths = untracked.stdout
+      .toString("utf8")
       .split("\0")
       .filter((path) => path.length > 0)
       .sort();
     for (const path of paths) {
-      const blob = await this.mustRun(
-        "untracked blob for checkout fingerprint",
+      const blob = await this.process.run(
+        "git",
         ["hash-object", "--no-filters", "--", path],
-        repoPath,
+        this.opts(repoPath),
       );
       hash.update("untracked\0", "utf8");
       hash.update(path, "utf8");
       hash.update("\0", "utf8");
-      hash.update(blob.stdout.trim(), "utf8");
+      // A dangling symlink, a link to a directory, or a file git cannot open has
+      // no blob id, and it is recorded as such. Failing here dropped the WHOLE
+      // source from the eligible set — one unhashable entry left a readable tree
+      // with no way to prove itself, rejected for a source that does exist.
+      hash.update(blob.code === 0 ? blob.stdout.trim() : UNHASHABLE_BLOB, "utf8");
       hash.update("\0", "utf8");
     }
     return `sha256:${hash.digest("hex")}`;
@@ -253,12 +285,20 @@ export class GitCliAdapter implements GitPort {
 
   private async readStage(repoPath: string, hash: string | undefined): Promise<ConflictStage> {
     if (hash === undefined) return { hash: null, content: null, bytes: 0 };
-    const result = await this.process.run("git", ["cat-file", "-p", hash], this.opts(repoPath));
+    const result = await this.process.runBinary(
+      "git",
+      ["cat-file", "-p", hash],
+      this.opts(repoPath),
+    );
     if (result.code !== 0) return { hash, content: null, bytes: 0 };
-    const bytes = Buffer.byteLength(result.stdout, "utf8");
     // A NUL byte is the same heuristic git itself uses to call a blob binary.
-    const content = result.stdout.includes("\u0000") ? null : result.stdout;
-    return { hash, content, bytes };
+    const binary = result.stdout.includes(0);
+    // The size is the bytes git stored, which a decoded blob no longer measures.
+    return {
+      hash,
+      content: binary ? null : result.stdout.toString("utf8"),
+      bytes: result.stdout.length,
+    };
   }
 
   async stagePath(repoPath: string, path: string): Promise<void> {

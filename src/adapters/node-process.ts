@@ -14,6 +14,7 @@ import {
 } from "../application/terminal-launch.js";
 import type {
   ProcessPort,
+  RunBinaryResult,
   RunOptions,
   RunResult,
   SpawnDetachedOptions,
@@ -71,6 +72,23 @@ export class NodeProcess implements ProcessPort {
   ) {}
 
   async run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
+    const result = await this.runBinary(cmd, args, opts);
+    return {
+      code: result.code,
+      stdout: result.stdout.toString("utf8"),
+      stderr: result.stderr.toString("utf8"),
+    };
+  }
+
+  /**
+   * Chunks are kept as bytes and joined before anyone decodes them.
+   *
+   * Decoding chunk by chunk turns every multibyte sequence that straddles a
+   * chunk boundary into replacement characters, and where a pipe splits is not
+   * stable between runs — so the same command over the same tree returned a
+   * different string each time.
+   */
+  async runBinary(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunBinaryResult> {
     const useShell = this.platform === "win32" && needsWinShell(cmd);
     return new Promise((resolve, reject) => {
       const child = spawn(cmd, args, {
@@ -80,15 +98,15 @@ export class NodeProcess implements ProcessPort {
         shell: useShell,
       });
 
-      let stdout = "";
-      let stderr = "";
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
       let timer: NodeJS.Timeout | undefined;
 
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
+      child.stdout.on("data", (chunk: Buffer) => {
+        stdout.push(chunk);
       });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr.push(chunk);
       });
 
       child.on("error", (err) => {
@@ -98,7 +116,11 @@ export class NodeProcess implements ProcessPort {
 
       child.on("close", (code) => {
         if (timer) clearTimeout(timer);
-        resolve({ code: code ?? 0, stdout, stderr });
+        resolve({
+          code: code ?? 0,
+          stdout: Buffer.concat(stdout),
+          stderr: Buffer.concat(stderr),
+        });
       });
 
       if (opts.timeoutMs && opts.timeoutMs > 0) {

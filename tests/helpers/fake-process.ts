@@ -1,4 +1,4 @@
-import type { ProcessPort, RunResult } from "../../src/ports/process.js";
+import type { ProcessPort, RunBinaryResult, RunResult } from "../../src/ports/process.js";
 
 /**
  * Shared ProcessPort stub: canned run/which, recorded calls, throwing spawns.
@@ -16,6 +16,10 @@ export class FakeProcess implements ProcessPort {
   async run(cmd: string, args: string[] = []): Promise<RunResult> {
     this.calls.push({ cmd, args });
     return this.opts.run?.(cmd, args) ?? { code: 1, stdout: "", stderr: "" };
+  }
+  async runBinary(cmd: string, args: string[] = []): Promise<RunBinaryResult> {
+    const { code, stdout, stderr } = await this.run(cmd, args);
+    return { code, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
   }
   async which(cmd: string): Promise<string | undefined> {
     return this.opts.which?.(cmd);
