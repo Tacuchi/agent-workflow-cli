@@ -694,6 +694,26 @@ const PLAN_INPUT = "modules/PLAN-INPUT.md";
 const DB_SCRIPTS_ONLY = "modules/DB-SCRIPTS-ONLY.md";
 
 /**
+ * Cert-only, asked at the gate that decides whether a document may promote.
+ *
+ * The rule: no phase, task or gate may NEED production or the deployed product
+ * to be validated. Two real plans stalled on it — one whose phase was "producción
+ * recupera el acceso", another waiting on a third party to normalize data there —
+ * and both were unfinishable by construction, because nothing in a run applies
+ * anything to production. What genuinely needs it ships as prepared script +
+ * runbook + declared handoff, OUTSIDE any phase; reading production (data
+ * read-only, code, branches) stays allowed, and a local check may exist but never
+ * blocks a phase from closing.
+ *
+ * It rides as an evidence id and not as doctrine prose because this is where the
+ * judgment happens: the gate hands back one `{id, passed, detail}` per evidence,
+ * so the answer has to state the verdict for THIS rule instead of folding it into
+ * a general "the checklist passed". The `detail` is where the reader learns which
+ * phase, if any, was reformulated.
+ */
+const CERT_ONLY_EVIDENCE = "plan.cert-only";
+
+/**
  * What PLAN's documents say about who decides their deterministic steps.
  *
  * Nine documents, one marker each — the three loops, the four PLAN modules, and
@@ -1619,10 +1639,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         reason:
           "el checklist de ready-for-plan es un juicio sobre lo que dice la spec, no la lectura del artefacto que lo contiene",
       },
-      evidence: ["spec.ready-for-plan-checklist"],
+      evidence: ["spec.ready-for-plan-checklist", CERT_ONLY_EVIDENCE],
       idempotent: true,
       recovery:
-        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real",
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real. Una fase que sólo se valida en producción se reformula para validarse en cert, o lo que exige producción sale de la fase y se entrega como script + runbook + handoff declarado",
     },
   },
   {
@@ -1903,10 +1923,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         reason:
           "la coherencia del plan es un juicio sobre lo que dice, no la lectura del artefacto que lo contiene",
       },
-      evidence: ["plan.coherence-checklist"],
+      evidence: ["plan.coherence-checklist", CERT_ONLY_EVIDENCE],
       idempotent: true,
       recovery:
-        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real",
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real. Una fase que sólo se valida en producción se reformula para validarse en cert, o lo que exige producción sale de la fase y se entrega como script + runbook + handoff declarado",
     },
   },
   {
@@ -2087,10 +2107,10 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         reason:
           "la forma ejecutable del plan es un juicio sobre lo que dice, no la lectura del artefacto que lo contiene",
       },
-      evidence: ["plan.executability-checklist"],
+      evidence: ["plan.executability-checklist", CERT_ONLY_EVIDENCE],
       idempotent: true,
       recovery:
-        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real",
+        "lo que el checklist reprobó vuelve al loop como gap: resolvelo y volvé a evaluar el gate con su estado real. Una fase que sólo se valida en producción se reformula para validarse en cert, o lo que exige producción sale de la fase y se entrega como script + runbook + handoff declarado",
     },
   },
   {

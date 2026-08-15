@@ -22,7 +22,7 @@ A loop **is a persistent objective**: it exists to fulfill the `SESSION.Objectiv
 
 "Don't stop until convergence" is sustained by the loop itself — its `repeat:` plus the convergence gate — never by a host hook, which is what makes it harness-agnostic. Each heir instantiates the frame: `spec-refine` pursues the spec; the plan loops pursue the plan up to their gate; `plan-exec` up to its final validation; `quick-loop` its prompt.
 
-> **Inter-turn continuity.** The same `CHECKPOINT`+resume governs the **next prompt**: the objective persists **across turns**, not only within a run. The canonical rules (command = new work line · re-run = `create_or_resume` · bare prompt = continue the most recent session · reopening closed sessions · consented escalation) live in [`../SKILL.md`](../SKILL.md) § *Operating context* — **single source**; this engine executes them via *Compact / resume* (case 3).
+> **Inter-turn continuity.** The same `CHECKPOINT`+resume governs the **next prompt**: the objective persists **across turns**, not only within a run. The canonical rules (command = new work line · re-run = `create_or_resume` · bare prompt = continue the most recent session · reopening closed sessions · consented escalation) are the **single source** in [`../SKILL.md`](../SKILL.md) § *Operating context*; this engine executes them via *Compact / resume* (case 3).
 
 ## Verification-first
 
@@ -40,6 +40,7 @@ The persistent objective needs a **checkable done-condition** — otherwise the 
 - **Form and weight scale**: a chore = "existing tests/build stay green" (one line); a feature = real acceptance tests. The rule is "**always declare the check before**", not "always write new tests".
 - **Subjective deliverable** (analysis/design): the AI **proposes** the rubric and the **human ratifies** it before pursuing it.
 - **Unresolvable criterion** (no evidence, DB unavailable): closes as `inconclusive` and the loop **degrades** — **never iterates against a fake target**.
+- **Cert-only**: a criterion needing **production or the deployed product** is not a done-condition — nobody in the run can run it, so the phase waits forever. Verify in cert.
 
 **Gate integrity (anti-gaming + independent verification).** The gate only counts if it is not gamed to pass. The loop does **not**: modify the check or loosen a `Success criterion` to force green; weaken, delete or skip tests/validations; use trivial or tautological asserts that always pass (the expected value comes from an independent source, never from the output itself); patch the test instead of fixing the cause (prefer fixing production code).
 
@@ -51,7 +52,7 @@ Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG
 - **is it already there?** — in the codebase, the stdlib or the platform → reuse it, never reinvent;
 - **could it be smaller?** — same behavior, fewer moving parts → shrink it.
 
-This is a **built-in floor** owed by every gate with **no external skill**; the code-editing loops *raise* it with the installed ambient conventions (`CODE-POLICIES.md` § *Closing review gate*) but never fall below it. Bounded by *Gate integrity*: never trim validation at trust boundaries, error handling, security, accessibility or anything the spec explicitly requires — minimality cuts over-building, never correctness. Each heir instantiates the lens: **spec** = over-specified/gold-plated scope · **plan** = over-engineered solution / needless phase-task · **code** = the `delete`/`stdlib`/`native`/`yagni`/`shrink` diff lens.
+A **built-in floor** owed by every gate with **no external skill**; the code-editing loops *raise* it with the installed ambient conventions (`CODE-POLICIES.md` § *Closing review gate*), never lower it. Bounded by *Gate integrity*: minimality cuts over-building, never correctness — never trim validation at trust boundaries, error handling, security, accessibility or anything the spec requires. Each heir's lens: **spec** = over-specified scope · **plan** = over-engineered solution / needless phase-task · **code** = the `delete`/`stdlib`/`native`/`yagni`/`shrink` diff lens.
 
 ## Artifacts as a live log — the artifact-first cycle
 
@@ -67,7 +68,7 @@ The loop works **artifact-first**: the artifact is **seeded before** executing a
 
 ## Gap-driven convergent engine
 
-The common cycle — each heir instantiates it in its `## Sequence` with its own gap taxonomy: detect the gaps, seed `CHECKPOINT.Pending/Next` (*artifact-first*), resolve each with its resolver, integrate, repeat until none is left and the convergence gate can run. The pacing is the CLI's — one open boundary at a time, which meets the ≤3 ceiling by construction. Why it is gap-driven at all stays here: a plan fixed up front cannot notice what it did not know.
+The common cycle — each heir instantiates it in its `## Sequence` with its own gap taxonomy: detect the gaps, seed `CHECKPOINT.Pending/Next` (*artifact-first*), resolve each with its resolver, integrate, repeat until none is left and the convergence gate can run. Pacing is the CLI's — one open boundary at a time, meeting the ≤3 ceiling by construction. Why gap-driven at all: a plan fixed up front cannot notice what it did not know.
 
 ## Internal sessions (managed) — one session per run
 
@@ -90,7 +91,7 @@ Investigation is **inline**: an activity **inside the run's current session**, n
 - **Autonomous**: the AI investigates inline and reports **without asking permission**. The human learns of it at integration time and keeps control via the `flow` control.
 - **Scope**: the current conversation (settled conclusions are reused, never re-derived) + workspace + associated repos + DB MCPs.
 - **DB rule** — the single exception to autonomy: it lives in the `db` module and is loaded **before** any query runs.
-- **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes with status **`inconclusive`** in `CONCLUSIONS` and reports why. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the session's `BACKLOG` when the flow has no doc) — instead of re-firing it. Counting the attempts and refusing the one past the cap is the CLI's; declaring where a degraded gap GOES is doctrine's, because a gap dropped without a destination is the convergence this engine promises, faked.
+- **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes **`inconclusive`** in `CONCLUSIONS` with its reason. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the session's `BACKLOG` when the flow has no doc) — instead of re-firing it. Capping the attempts is the CLI's; declaring where a degraded gap GOES is doctrine's, because a gap dropped without a destination is this engine's promised convergence, faked.
 
 ## Structured-choice (design & batching)
 
@@ -123,7 +124,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 ## docs/ boundary — no auto-export (hard rule)
 
-A loop writes into `docs/` **only** its own flow's doc plus, when it composes a capability whose own deliverable is a `docs/` category, that category — today only the **UI Design Package** under `docs/designs` (`design`). Which folders that is per flow, and refusing any delegated step whose target leaves them, is the CLI's. **Published, never graduated**: the test is the origin, not the folder. No loop **graduates/promotes artifacts** into `docs/`: migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are done by the separate **`export-*`** skills, as an explicit later step; artifacts stay in their sessions until then. A task that creates a tool/utility has it documented in `docs/tools` by the ambient `creating-tools` skill (auto-discovered; Workline does not bind it).
+A loop writes into `docs/` **only** its own flow's doc plus, when it composes a capability whose own deliverable is a `docs/` category, that category — today only the **UI Design Package** under `docs/designs` (`design`). Which folders that is per flow, and refusing any delegated step whose target leaves them, is the CLI's. **Published, never graduated**: the test is the origin, not the folder. No loop **graduates/promotes artifacts** into `docs/` — migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are the separate **`export-*`** skills', an explicit later step; artifacts stay in their sessions until then. A task creating a tool has it documented in `docs/tools` by the ambient `creating-tools` skill (auto-discovered; Workline does not bind it).
 
 ## Conditional modules
 

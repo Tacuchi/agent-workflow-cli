@@ -449,3 +449,41 @@ describe("registro de autoridad — la migración cerró observable", () => {
     expect(counted("spec-refine", "modules/DESIGN-REFERENCES.md")).toBe(2);
   });
 });
+
+describe("registro de autoridad — cert-only se pide donde se juzga", () => {
+  /**
+   * La regla: ninguna fase, tarea o gate puede NECESITAR producción ni el
+   * producto desplegado para validarse. Dos planes reales quedaron trabados por
+   * eso, y los dos eran incumplibles por construcción: nada en una corrida
+   * aplica nada a producción.
+   *
+   * Viaja como evidencia de los tres gates que deciden si un documento procede,
+   * porque ahí es donde ocurre el juicio: la respuesta devuelve un veredicto por
+   * cada evidencia, así que la regla no puede disolverse en un «el checklist
+   * pasó» genérico.
+   */
+  const CERT_ONLY = "plan.cert-only";
+
+  it.each(["plan-new.coherence-gate", "plan-refine.executability-gate", "spec-refine.ready-gate"])(
+    "%s la exige junto a su checklist",
+    (id) => {
+      const decision = FLOW_DECISIONS.find((row) => row.id === id);
+      expect(decision, id).toBeDefined();
+      const action = actionOf(decision as (typeof FLOW_DECISIONS)[number]);
+      expect(action?.evidence, id).toContain(CERT_ONLY);
+      // Junto a, nunca en lugar de: el gate sigue pidiendo su checklist propio.
+      expect((action?.evidence ?? []).length, id).toBeGreaterThan(1);
+    },
+  );
+
+  it("no la pide ninguna otra frontera: el juicio vive en los gates de promoción", () => {
+    const asking = FLOW_DECISIONS.filter((decision) =>
+      (actionOf(decision)?.evidence ?? []).includes(CERT_ONLY),
+    ).map((decision) => decision.id);
+    expect(asking.sort()).toEqual([
+      "plan-new.coherence-gate",
+      "plan-refine.executability-gate",
+      "spec-refine.ready-gate",
+    ]);
+  });
+});
