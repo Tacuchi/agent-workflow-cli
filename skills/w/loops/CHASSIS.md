@@ -2,7 +2,7 @@
 
 This document is the **common engine** of the Workline loops: the doctrine every loop runs underneath its deltas. **It is not a skill** — it is a referenced document: every loop orders it read from its `## Inherits`, **always, before its deltas**. If you edit the engine, edit it **here** — heirs never repeat it, they only reference it.
 
-> **When each step below happens is no longer this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. They consume no model worker, subagent or external process: the CLI advances them locally to the first real frontier. What stays is what each rule is FOR — the half no engine carries.
+> **When each step below happens is no longer this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. They consume no model worker, subagent or external process: the CLI advances them locally to the first real frontier. What stays is what each rule is FOR — the half no engine carries. Answering the frontier it stops at is `aw flow submit`, and its envelope — which fields each kind of frontier demands, and where each digest comes from — is **read** with `aw flow --help`, never guessed.
 
 ## Heirs (canonical list)
 
@@ -20,7 +20,7 @@ The two that edit code also apply [`CODE-POLICIES.md`](CODE-POLICIES.md).
 
 A loop **is a persistent objective**: it exists to fulfill the `SESSION.Objective` declared at start, and **it is not finished until the convergence gate confirms the objective was met**. Gap-driven iteration is the *method*; the artifacts are the *record*; the objective is the *frame*.
 
-"Don't stop until convergence" is sustained by the loop itself — its `repeat:` plus the convergence gate — never by a host hook, which is what makes it harness-agnostic. Each heir instantiates the frame: `spec-refine` pursues the spec; the plan loops pursue the plan up to their gate; `plan-exec` up to its final validation; `quick-loop` most directly of all (the prompt *is* the objective).
+"Don't stop until convergence" is sustained by the loop itself — its `repeat:` plus the convergence gate — never by a host hook, which is what makes it harness-agnostic. Each heir instantiates the frame: `spec-refine` pursues the spec; the plan loops pursue the plan up to their gate; `plan-exec` up to its final validation; `quick-loop` its prompt.
 
 > **Inter-turn continuity.** The same `CHECKPOINT`+resume governs the **next prompt**: the objective persists **across turns**, not only within a run. The canonical rules (command = new work line · re-run = `create_or_resume` · bare prompt = continue the most recent session · reopening closed sessions · consented escalation) live in [`../SKILL.md`](../SKILL.md) § *Operating context* — **single source**; this engine executes them via *Compact / resume* (case 3).
 
@@ -41,8 +41,6 @@ The persistent objective needs a **checkable done-condition** — otherwise the 
 - **Subjective deliverable** (analysis/design): the AI **proposes** the rubric and the **human ratifies** it before pursuing it.
 - **Unresolvable criterion** (no evidence, DB unavailable): closes as `inconclusive` and the loop **degrades** — **never iterates against a fake target**.
 
-> The **convergence gate** is, operationally, **"all `Success criteria` green"**. The per-heir gates are **instances** of it, with the criteria seeded at start.
-
 **Gate integrity (anti-gaming + independent verification).** The gate only counts if it is not gamed to pass. The loop does **not**: modify the check or loosen a `Success criterion` to force green; weaken, delete or skip tests/validations; use trivial or tautological asserts that always pass (the expected value comes from an independent source, never from the output itself); patch the test instead of fixing the cause (prefer fixing production code).
 
 Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration**: when the deliverable warrants it, the final verification is an **independent** pass (subagent only when the CLI's independent-partition rule admits it, or a clean re-read) that does not assume the implementation is correct — *only command output counts*.
@@ -61,7 +59,7 @@ The loop works **artifact-first**: the artifact is **seeded before** executing a
 
 1. **BEFORE — seed the intent.** Before executing, record in the artifact what is **about to** be done: `CHECKPOINT.Pending`/`Next` = the imminent work (`SESSION.Objective` already fixed the run's what).
 2. **EXECUTE.** Resolve the gap / run the phase / edit the code.
-3. **AFTER — bring to actual state.** `CHECKPOINT.Pending → Completed`; `DECISION` records the non-obvious **as it is decided**; `BACKLOG` **only if** something is deferred/follow-up (`session-close` no longer fabricates an empty BACKLOG).
+3. **AFTER — bring to actual state.** `CHECKPOINT.Pending → Completed`; `DECISION` records the non-obvious **as it is decided**; `BACKLOG` **only if** something is deferred/follow-up.
 
 > The artifact expresses the **intent** (before) and then the **result** (after), at **every** gap/phase boundary — not only on `Compactar`/`Cerrar`. Session artifacts are the run's live log; the spec/plan is the **guiding base**.
 
@@ -75,9 +73,9 @@ The common cycle — each heir instantiates it in its `## Sequence` with its own
 
 The loop creates and manages its session under `.workflow/sessions/`; **the user never creates it**. **A single session per run**: it keeps progress live (`CHECKPOINT`) and enables resume. Artifacts: `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` only if something is deferred; code-editing loops add `DECISION` and `SCRIPTS.sql`). Each heir declares its descriptor and `Type` in its own `## Internal sessions`.
 
-> Research is **inline** — an activity inside this same session, never a session of its own — and the flow's input document (spec/plan) **never** goes inside a session; it lives in `docs/`.
+> The flow's input document (spec/plan) **never** goes inside a session; it lives in `docs/`.
 
-**CLI**: `aw session-create --type <type> --name <slug>-<flow> --objetivo "<one-line objective>"` opens it · `aw checkpoint-write` / `aw checkpoint-read` keep it resumable · `aw session-close` closes it and upserts its HISTORY.md row.
+**CLI**: `aw session-create --type <type> --name <slug>-<flow> --objetivo "<one-line objective>"` opens it · `aw checkpoint-write` / `aw checkpoint-read` keep it resumable. **Closing it is the CLI's own move**, run at `finalize`: a loop never issues the close itself, and one issued mid-run leaves the next `advance`/`submit` standing on a closed session.
 
 > The caller passes **only the descriptor** via `--name` — **never** a number; the CLI owns the global `NNN`. How it is assigned, how a session is located or reopened, and how a failed history upsert is repaired, are in the `sessions` module.
 

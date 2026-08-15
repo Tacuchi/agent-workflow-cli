@@ -18,6 +18,7 @@
 
 import { join } from "node:path";
 import {
+  NARRATIVE_BEGIN,
   type NarrativeFact,
   type NarrativeSource,
   type SessionNarrative,
@@ -339,13 +340,17 @@ export async function writeSessionNarrative(
   const file = join(input.path, canonicalArtifactFilename("session"));
   if (!(await fs.exists(file))) return false;
   const narrative = await buildSessionNarrative(fs, paths, input);
+  const document = await fs.readText(file);
   // A brand-new session has nothing to narrate that the document above does not
   // already say — its objective and its criteria ARE the entry point at that
   // point. Writing the block anyway would add, to every session at the moment it
   // has least to tell, a copy of the two sections right above it. The block earns
   // its place once something happened outside `SESSION.md`.
-  if (!addsAnything(narrative)) return false;
-  const document = await fs.readText(file);
+  //
+  // That is a rule about CREATING the block, never about refreshing one: a
+  // document that already carries it has a reader trusting it, and a block left
+  // declaring a state the session no longer has is worse than a thin one.
+  if (!document.includes(NARRATIVE_BEGIN) && !addsAnything(narrative)) return false;
   const next = upsertNarrativeBlock(document, renderNarrativeBlock(narrative));
   if (next === document) return false;
   await fs.writeText(file, next);

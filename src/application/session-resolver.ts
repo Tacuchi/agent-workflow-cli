@@ -347,7 +347,12 @@ async function resolveExplicit(
       "SESSION_CLOSED",
       `la sesión '${only.name}' está cerrada`,
       [only],
-      "reabrila con `aw session-resume --code <NNN> --reopen` o elegí una sesión activa",
+      // The FOLDER, never a `<NNN>` placeholder: this action exists to be run
+      // verbatim, and a bare number can match a legacy `sessionNNN-` folder that
+      // shares it — leaving the reader to solve an ambiguity the resolver already
+      // solved. Mid-journey this is the only way out: a run whose session was
+      // closed from outside resolves with `allowClosed:false` and stops here.
+      `reabrila con \`aw session-resume --code ${only.name} --reopen\` y reintentá, o elegí una sesión activa`,
     );
   }
   return {
@@ -390,7 +395,10 @@ async function resolveFromBinding(
       "SESSION_BINDING_INVALID",
       `la conversación está asociada a '${lookup.folder}', que está cerrada`,
       scanned,
-      "reasociá la conversación con `aw session-resume --code <NNN> --reopen`",
+      // Same closed session reached through the association instead of an
+      // explicit identity, so it gets the same exact way out — with the folder
+      // the binding already names.
+      `reasociá la conversación con \`aw session-resume --code ${lookup.folder} --reopen\``,
     );
   }
   return {

@@ -7,6 +7,7 @@ import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact } from "./session-artifacts.js";
 import { bindContextToSession } from "./session-binding-service.js";
+import { writeSessionNarrative } from "./session-narrative.js";
 import {
   CLOSED_MARKER,
   type SessionEntry,
@@ -76,6 +77,12 @@ export async function runSessionResume(
     const reopened = await reopenUnderLock(fs, paths, session, input.contextId);
     if (reopened !== null) return reopened;
     state = "active";
+    // Reopening is a mutation of what the narrative projects, so it rewrites the
+    // block the same way closing does. Skipping it left the CLI declaring the
+    // session "cerrada" inside `SESSION.md` while `aw sessions` called it active
+    // — and that block is the FIRST thing an agent reads when it comes back,
+    // including in the payload below, which carries the document verbatim.
+    await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
   }
 
   const cwd = env.cwd();

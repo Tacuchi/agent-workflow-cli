@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
+import { resolveSessionTarget } from "../../src/application/session-resolver.js";
 import { runSessionResume } from "../../src/application/session-resume-service.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { NARRATIVE_BEGIN, NARRATIVE_END } from "../../src/domain/session/narrative.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs as FakeFs } from "../helpers/mem-fs.js";
@@ -13,12 +15,27 @@ const folder = "003-foo-quick";
 const sessionPath = `${sessionsDir}/${folder}`;
 const closedMarker = `${sessionPath}/.closed`;
 
-function buildFs(opts: { closed: boolean }): FakeFs {
+const SESSION_DOC = "# SESSION — foo\n\n## Objective\nhacer foo\n\n## Type\nquick\n";
+
+/** The block as `session-close` left it: the CLI's own account of the session. */
+const CLOSED_BLOCK = [
+  NARRATIVE_BEGIN,
+  "## Recorrido",
+  "",
+  "- **Estado:** cerrada",
+  "",
+  NARRATIVE_END,
+].join("\n");
+
+function buildFs(opts: { closed: boolean; narrated?: boolean }): FakeFs {
   const fs = new FakeFs({ lenient: true });
   fs.file(
     `${sessionPath}/SESSION.md`,
-    "# SESSION — foo\n\n## Objective\nhacer foo\n\n## Type\nquick\n",
+    opts.narrated === true ? `${SESSION_DOC}\n${CLOSED_BLOCK}\n` : SESSION_DOC,
   );
+  if (opts.narrated === true) {
+    fs.file(`${sessionPath}/CHECKPOINT.md`, "# CHECKPOINT\n\n## Completed\n- se cerró F1\n");
+  }
   if (opts.closed) fs.file(closedMarker, "");
   return fs;
 }
@@ -53,6 +70,73 @@ describe("runSessionResume --reopen", () => {
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.state).toBe("active");
+  });
+
+  // La reapertura movía el estado que `aw sessions` publica y dejaba intacto el
+  // bloque administrado dentro de SESSION.md: el CLI declaraba «cerrada» una
+  // sesión que él mismo acababa de reactivar, y eso es lo PRIMERO que lee quien
+  // retoma — el payload de abajo devuelve el documento entero.
+  it("reabrir deja coherente el bloque administrado: ninguna superficie dice cerrada", async () => {
+    const fs = buildFs({ closed: true, narrated: true });
+    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      code: folder,
+      reopen: true,
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.state).toBe("active");
+
+    const document = await fs.readText(`${sessionPath}/SESSION.md`);
+    expect(document).not.toContain("**Estado:** cerrada");
+    expect(document).toContain("**Estado:** reanudada");
+    // Un solo bloque: la reescritura reemplaza el anterior, no lo anida.
+    expect(document.split(NARRATIVE_BEGIN)).toHaveLength(2);
+    // Y el payload de reanudación viaja con el documento ya corregido.
+    expect(result.objetivo).toContain("**Estado:** reanudada");
+    expect(result.objetivo).not.toContain("**Estado:** cerrada");
+  });
+
+  it("sin --reopen el bloque no se toca: una lectura no reescribe la sesión", async () => {
+    const fs = buildFs({ closed: true, narrated: true });
+    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      code: folder,
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+    expect(result.state).toBe("closed");
+    expect(fs.writes.has(`${sessionPath}/SESSION.md`)).toBe(false);
+  });
+});
+
+describe("SESSION_CLOSED — el error enseña la salida", () => {
+  // Cerrar a mitad de recorrido es recuperable, pero el error decía `--code
+  // <NNN>`: un marcador de posición que quien lo recibe tiene que resolver, y
+  // que en un workspace con una carpeta legacy homónima resuelve a dos sesiones.
+  it("la acción nombra la operación exacta, con la carpeta y no un placeholder", async () => {
+    const fs = buildFs({ closed: true });
+    const resolution = await resolveSessionTarget(fs, paths, { code: "003" });
+    if (resolution.outcome !== "error") throw new Error("se esperaba SESSION_CLOSED");
+    expect(resolution.code).toBe("SESSION_CLOSED");
+    expect(resolution.action).toContain(`aw session-resume --code ${folder} --reopen`);
+    expect(resolution.action).not.toContain("<NNN>");
+  });
+
+  it("esa acción, ejecutada tal cual, devuelve la sesión al recorrido", async () => {
+    const fs = buildFs({ closed: true });
+    const resolution = await resolveSessionTarget(fs, paths, { code: "003" });
+    if (resolution.outcome !== "error") throw new Error("se esperaba SESSION_CLOSED");
+    // La invocación se lee del propio error: si dejara de ser ejecutable verbatim,
+    // esta prueba se cae en vez de seguir comprobando una que nadie emite.
+    const invoked = resolution.action.match(/aw session-resume --code (\S+) --reopen/);
+    if (invoked?.[1] === undefined) throw new Error(`acción no ejecutable: ${resolution.action}`);
+
+    const resumed = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      code: invoked[1],
+      reopen: true,
+    });
+    if ("error" in resumed) throw new Error(`unexpected error: ${resumed.error}`);
+    expect(resumed.state).toBe("active");
+    // Y el recorrido vuelve a resolver: `advance`/`submit` piden allowClosed:false.
+    const again = await resolveSessionTarget(fs, paths, { code: "003" });
+    expect(again.outcome).toBe("resolved");
   });
 });
 
