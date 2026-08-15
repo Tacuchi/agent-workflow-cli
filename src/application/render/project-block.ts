@@ -2,11 +2,18 @@ import { localMinuteIso } from "../dates.js";
 import type {
   DefaultBranches,
   ParsedProjectBlock,
+  PreservedLine,
+  PreservedSlot,
   ProjectBlockMarkers,
   ProjectFuente,
   ProjectStack,
 } from "../parsers/project-block.js";
-import { LEGACY_QTC_MARKERS } from "../parsers/project-block.js";
+import {
+  BLOCK_PLACEHOLDER_FUENTES,
+  BLOCK_PLACEHOLDER_PROYECTO,
+  BLOCK_PLACEHOLDER_STACK,
+  LEGACY_QTC_MARKERS,
+} from "../parsers/project-block.js";
 
 export interface RenderProjectBlockInput {
   proyecto: string;
@@ -16,6 +23,8 @@ export interface RenderProjectBlockInput {
   defaultBranches?: DefaultBranches;
   workingBranches?: Record<string, string>;
   qaBranches?: Record<string, string>;
+  /** Foreign lines carried over from the block being rewritten, put back in place. */
+  preservedLines?: PreservedLine[];
   /** Path used in the "Histórico:" line. Default `.workflow/HISTORY.md`. */
   historicoPath?: string;
   /** Markers used to wrap the block. Default = legacy QTC markers (kept for back-compat parsing). */
@@ -26,22 +35,30 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const markers = input.markers ?? LEGACY_QTC_MARKERS;
   const historicoPath = input.historicoPath ?? ".workflow/HISTORY.md";
   const last = input.lastActivity ?? localMinuteIso();
+  const kept = input.preservedLines;
   const proyectoSection =
-    input.proyecto.trim().length > 0
-      ? input.proyecto.trim()
-      : "_Describe el proyecto aquí: qué es y por qué existe._";
+    input.proyecto.trim().length > 0 ? input.proyecto.trim() : BLOCK_PLACEHOLDER_PROYECTO;
 
   const statusLines: string[] = [];
-  // Defaults go FIRST: an older parser ignores an unknown `- ` line only while no
-  // branch section is open — after one, it would swallow them as branch entries.
+  // Each slot re-emits the foreign lines that followed the entry it names, so a
+  // hand-written note lands back exactly where its author put it.
+  statusLines.push(...slotLines(kept, "status:start"));
+  // Defaults go FIRST: an older CLI's parser ignores an unknown `- ` line only
+  // while no branch section is open — after one, it would swallow them. This
+  // parser no longer needs the ordering, but blocks are read by both.
   const defaults = formatDefaultBranches(input.defaultBranches);
   if (defaults !== null) statusLines.push(defaults);
+  statusLines.push(...slotLines(kept, "status:defaults"));
   const wb = formatWorkingBranches(input.workingBranches);
   if (wb !== null) statusLines.push(wb);
+  statusLines.push(...slotLines(kept, "status:working"));
   const qa = formatQaBranches(input.qaBranches);
   if (qa !== null) statusLines.push(qa);
+  statusLines.push(...slotLines(kept, "status:qa"));
   statusLines.push(`- Última actividad: ${last}`);
+  statusLines.push(...slotLines(kept, "status:activity"));
   statusLines.push(`- Histórico: \`${historicoPath}\``);
+  statusLines.push(...slotLines(kept, "status:historico"));
 
   return [
     markers.start,
@@ -51,17 +68,32 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
     "",
     "## Fuentes",
     "",
-    formatFuentesTable(input.fuentes),
+    [formatFuentesTable(input.fuentes), ...slotLines(kept, "fuentes")].join("\n"),
     "",
     "## Stack",
     "",
-    formatStackList(input.stack),
+    [formatStackList(input.stack), ...slotLines(kept, "stack")].join("\n"),
     "",
     "## Status",
     "",
     statusLines.join("\n"),
+    // Sections the block does not own, heading and body, after everything it
+    // does. Their place relative to generated sections cannot be honoured by a
+    // rewrite, but losing them can be avoided — and that is the whole point.
+    ...trailingSection(kept),
     markers.end,
   ].join("\n");
+}
+
+/** The foreign sections, with the blank line that separates them from `## Status`. */
+function trailingSection(preserved: PreservedLine[] | undefined): string[] {
+  const lines = slotLines(preserved, "trailing");
+  return lines.length === 0 ? [] : ["", lines.join("\n")];
+}
+
+function slotLines(preserved: PreservedLine[] | undefined, slot: PreservedSlot): string[] {
+  if (preserved === undefined) return [];
+  return preserved.filter((line) => line.slot === slot).map((line) => line.text);
 }
 
 export function blockFromParsed(
@@ -76,6 +108,8 @@ export function blockFromParsed(
     workingBranches: overrides.workingBranches ?? parsed.working_branches,
     qaBranches: overrides.qaBranches ?? parsed.qa_branches,
   };
+  const preserved = overrides.preservedLines ?? parsed.preserved_lines;
+  if (preserved !== undefined) input.preservedLines = preserved;
   if (overrides.lastActivity !== undefined) {
     input.lastActivity = overrides.lastActivity;
   } else if (parsed.last_activity !== null) {
@@ -88,7 +122,7 @@ export function blockFromParsed(
 
 function formatFuentesTable(fuentes: ProjectFuente[]): string {
   if (fuentes.length === 0) {
-    return "_Sin fuentes declaradas. Edita manualmente o usa `project-md-upsert --init`._";
+    return BLOCK_PLACEHOLDER_FUENTES;
   }
   const lines = ["| Alias | Path | Rama principal |", "|---|---|---|"];
   for (const f of fuentes) {
@@ -103,19 +137,15 @@ function formatFuentesTable(fuentes: ProjectFuente[]): string {
 }
 
 function formatStackList(stack: ProjectStack): string {
-  // Mirror Python: if stack is null/undefined → "Edita manualmente si aplica."
-  // If stack is a dict with keys (even if all undefined) → "_Stack sin detectar._"
-  // In the cmd_project_md_upsert flow stack always arrives with a shape (never null),
-  // so the first branch is unreachable; our detectStackDict mimics that behavior by
-  // returning the empty shape `{}` ONLY when there are no files to detect — in that
-  // case we preserve the short message Python emits there.
+  // An empty shape means "nothing detected" — never "no stack section": the
+  // upsert flow always hands a shape, so the placeholder is the only fallback.
   const lines: string[] = [];
   if (stack.language) lines.push(`- Lenguaje: ${stack.language}`);
   if (stack.framework) lines.push(`- Framework: ${stack.framework}`);
   if (stack.db) lines.push(`- BD: ${stack.db}`);
   if (stack.build) lines.push(`- Build: ${stack.build}`);
   if (lines.length === 0) {
-    return "_Stack sin detectar._";
+    return BLOCK_PLACEHOLDER_STACK;
   }
   return lines.join("\n");
 }

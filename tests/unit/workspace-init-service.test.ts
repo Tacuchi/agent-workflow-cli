@@ -10,6 +10,7 @@ import {
   pruneReleasedLock,
   runWorkspaceInit,
 } from "../../src/application/workspace-init-service.js";
+import { workspaceInitCommand } from "../../src/cli/commands/workspace-init.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -294,6 +295,74 @@ describe("runWorkspaceInit", () => {
     expect(claude).toContain("/tmp/lib-fake");
   });
 
+  it("reconcile sin una fuente: no deja su rama de trabajo ni la de QA huérfanas", async () => {
+    await init({
+      sources: [
+        { alias: "a", path: "/tmp/a" },
+        { alias: "b", path: "/tmp/b" },
+      ],
+      workingBranches: { a: "feature/a", b: "feature/b" },
+      qaBranches: { a: "desarrollo", b: "qa/b" },
+    });
+
+    const second = await init({ sources: [{ alias: "a", path: "/tmp/a" }] });
+
+    // Ni en el bloque (los dos archivos) ni en el JSON que devuelve el comando.
+    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
+      const text = readFileSync(join(workspace, file), "utf-8");
+      expect(text).toContain("  - a: feature/a");
+      expect(text).not.toContain("feature/b");
+      expect(text).not.toContain("qa/b");
+    }
+    const projectMd = second.project_md;
+    if ("error" in projectMd) throw new Error(projectMd.error);
+    expect(projectMd.working_branches).toEqual({ a: "feature/a" });
+    expect(projectMd.qa_branches).toEqual({ a: "desarrollo" });
+    expect(projectMd.dropped_lines).toEqual(["  - b: feature/b", "  - b: qa/b"]);
+  });
+
+  it("--proyecto sobre un workspace descrito: renombra y PRESERVA la descripción", async () => {
+    await init({ proyecto: "Nombre viejo" });
+    const claude = join(workspace, "CLAUDE.md");
+    writeFileSync(
+      claude,
+      readFileSync(claude, "utf-8").replace(
+        "Nombre viejo",
+        "Nombre viejo\n\nEste workspace coordina dos repos.\n\n- Regla: nunca pushear desde acá.",
+      ),
+    );
+
+    await init({ proyecto: "Nombre nuevo" });
+
+    const after = readFileSync(claude, "utf-8");
+    expect(after).toContain("Nombre nuevo");
+    expect(after).not.toContain("Nombre viejo");
+    expect(after).toContain("Este workspace coordina dos repos.");
+    expect(after).toContain("- Regla: nunca pushear desde acá.");
+  });
+
+  it("una nota humana en el bloque sobrevive al reconcile y la 2a corrida no cambia nada", async () => {
+    await init({ workingBranches: { app: "feature/x" } });
+    const nota = "- Nota: la ruta de app apunta a mi clon local";
+    const claude = join(workspace, "CLAUDE.md");
+    writeFileSync(
+      claude,
+      readFileSync(claude, "utf-8").replace(
+        "- Ramas de trabajo actuales:",
+        `${nota}\n- Ramas de trabajo actuales:`,
+      ),
+    );
+
+    await init();
+    const first = readFileSync(claude, "utf-8");
+    await init();
+    const second = readFileSync(claude, "utf-8");
+
+    expect(first).toContain(`${nota}\n- Ramas de trabajo actuales:`);
+    expect(first).not.toContain(`  ${nota}`);
+    expect(second).toBe(first);
+  });
+
   it("--dry-run no escribe nada y devuelve preview", async () => {
     const result = await init({ dryRun: true });
     expect(result.dry_run).toBe(true);
@@ -301,6 +370,38 @@ describe("runWorkspaceInit", () => {
     expect(existsSync(join(workspace, ".workflow"))).toBe(false);
     expect(existsSync(join(workspace, "docs"))).toBe(false);
     expect(result.scaffold.created.length).toBeGreaterThan(0);
+  });
+
+  it("--dry-run deriva el informe del FS: distingue un workspace virgen de uno inicializado", async () => {
+    const sessionsDir = join(workspace, ".workflow", "sessions");
+
+    const virgin = await init({ dryRun: true });
+    expect(virgin.scaffold.created).toEqual([sessionsDir]);
+    expect(virgin.scaffold.existing).toEqual([]);
+    expect(virgin.skills_toml).toBe("created");
+    const virginMd = virgin.project_md;
+    if ("error" in virginMd) throw new Error(virginMd.error);
+    expect(virginMd.results?.map((r) => r.action)).toEqual(["created", "created"]);
+
+    await init();
+    const initialized = await init({ dryRun: true });
+    expect(initialized.scaffold.created).toEqual([]);
+    expect(initialized.scaffold.existing).toEqual([sessionsDir]);
+    expect(initialized.skills_toml).toBe("exists");
+    const initializedMd = initialized.project_md;
+    if ("error" in initializedMd) throw new Error(initializedMd.error);
+    // Mismo input → el bloque ya está escrito: la vista previa no lo llama creación.
+    expect(initializedMd.results?.map((r) => r.action)).toEqual(["unchanged", "unchanged"]);
+  });
+
+  it("--dry-run anuncia 'updated' cuando el bloque existe pero cambiaría", async () => {
+    await init();
+    const preview = await init({ dryRun: true, proyecto: "Otro nombre" });
+    const projectMd = preview.project_md;
+    if ("error" in projectMd) throw new Error(projectMd.error);
+    expect(projectMd.results?.map((r) => r.action)).toEqual(["updated", "updated"]);
+    // Sigue siendo una vista previa: el nombre no llegó al disco.
+    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf-8")).not.toContain("Otro nombre");
   });
 
   it("--workspace ≠ env.cwd() escribe en workspace, no en cwd", async () => {
@@ -488,5 +589,38 @@ describe("runWorkspaceInit", () => {
     expect(existsSync(lockPath)).toBe(true);
     expect(await pruneReleasedLock(fs, wsPaths)).toEqual([lockPath]);
     expect(existsSync(lockPath)).toBe(false);
+  });
+});
+
+describe("lo que la reescritura no pudo conservar llega al humano", () => {
+  // Declararlo sólo en un campo del JSON no es declararlo: `workspace-init`
+  // tiene proyección humana, así que en el modo por defecto el JSON no se
+  // imprime y la pérdida se la comía la superficie que la persona realmente lee.
+  const humanOf = (data: unknown, detail: boolean): string =>
+    workspaceInitCommand.renderHuman?.(
+      { ok: true, data, exitCode: 0 } as never,
+      { detail } as never,
+    ) ?? "";
+
+  const withDropped = {
+    ok: true,
+    dry_run: false,
+    workspace: "/w",
+    sources: 1,
+    skills_toml: "exists",
+    scaffold: {},
+    attach_multiroot: {},
+    project_md: { dropped_lines: ["  - b: feature/b"] },
+  };
+
+  it("las nombra sin --detail, que es el modo por defecto", () => {
+    const text = humanOf(withDropped, false);
+    expect(text).toContain("- b: feature/b");
+    expect(text).toMatch(/retiraron 1 línea/);
+  });
+
+  it("y no inventa la sección cuando no se retiró nada", () => {
+    const text = humanOf({ ...withDropped, project_md: {} }, false);
+    expect(text).not.toMatch(/retiraron/);
   });
 });

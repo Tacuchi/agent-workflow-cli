@@ -9,7 +9,9 @@ import { readWorkspaceBlock } from "./parsers/project-block.js";
 import { PathsService } from "./paths-service.js";
 import {
   type ProjectMdUpsertError,
+  type ProjectMdUpsertInput,
   type ProjectMdUpsertOutput,
+  previewProjectMdUpsert,
   runProjectMdUpsertWrite,
 } from "./project-md-upsert-service.js";
 
@@ -182,12 +184,14 @@ export async function runWorkspaceInit(
   const validation = validateSources(sources);
   if (validation) return validation;
 
-  if (input.dryRun) {
-    return buildDryRunResult(fs, workspace, wsPaths, paths.namespace, sources);
-  }
-
   // Everything is scoped to `workspace` (which may differ from the process cwd).
   const targetEnv = workspace !== resolve(env.cwd()) ? overrideCwd(env, workspace) : env;
+  // Built once: the preview must describe the very upsert the real run performs.
+  const upsertInput = buildUpsertInput(input, proyecto, sources, mainBranch);
+
+  if (input.dryRun) {
+    return buildDryRunResult(fs, targetEnv, workspace, wsPaths, sources, upsertInput);
+  }
 
   const scaffold = await scaffoldDirs(fs, workspace, wsPaths);
   const skillsToml = await seedSkillsToml(fs, wsPaths);
@@ -202,22 +206,7 @@ export async function runWorkspaceInit(
   // Previous sources (to detach removed ones) come from the same existing block.
   const previousPaths = (existing?.fuentes ?? []).map((f) => f.path).filter((p) => p.length > 0);
 
-  const projectMd = await runProjectMdUpsertWrite(fs, targetEnv, wsPaths, {
-    op: "init",
-    proyecto,
-    fuentes: sources.map((s) => ({
-      alias: s.alias,
-      path: s.path,
-      ...(s.mainBranch !== undefined ? { mainBranch: s.mainBranch } : {}),
-    })),
-    // Declared set is authoritative (supports removing a source by re-running).
-    replaceFuentes: true,
-    ...(mainBranch !== undefined ? { mainBranch } : {}),
-    ...(input.workingBranches !== undefined ? { workingBranches: input.workingBranches } : {}),
-    ...(input.qaBranches !== undefined ? { qaBranches: input.qaBranches } : {}),
-    verbose: true,
-    ...(input.lastActivity !== undefined ? { lastActivity: input.lastActivity } : {}),
-  });
+  const projectMd = await runProjectMdUpsertWrite(fs, targetEnv, wsPaths, upsertInput);
 
   if ("error" in projectMd) {
     return {
@@ -258,17 +247,46 @@ export async function runWorkspaceInit(
   };
 }
 
-/** Minimal activation scaffold: sessions/ is the operating-context marker. */
-function plannedScaffold(workspace: string, ns: string): string[] {
-  return [join(workspace, `.${ns}`, "sessions")];
+/** The upsert both the real run and the preview describe — one input, one truth. */
+function buildUpsertInput(
+  input: WorkspaceInitInput,
+  proyecto: string,
+  sources: WorkspaceSource[],
+  mainBranch: string | undefined,
+): ProjectMdUpsertInput {
+  return {
+    op: "init",
+    proyecto,
+    fuentes: sources.map((s) => ({
+      alias: s.alias,
+      path: s.path,
+      ...(s.mainBranch !== undefined ? { mainBranch: s.mainBranch } : {}),
+    })),
+    // Declared set is authoritative (supports removing a source by re-running),
+    // which is also what makes the upsert prune the branches it leaves behind.
+    replaceFuentes: true,
+    ...(mainBranch !== undefined ? { mainBranch } : {}),
+    ...(input.workingBranches !== undefined ? { workingBranches: input.workingBranches } : {}),
+    ...(input.qaBranches !== undefined ? { qaBranches: input.qaBranches } : {}),
+    verbose: true,
+    ...(input.lastActivity !== undefined ? { lastActivity: input.lastActivity } : {}),
+  };
 }
 
+/**
+ * Preview derived from the workspace as it IS. Every field here answers a
+ * question about disk — does the activation marker exist, is skills.toml
+ * already seeded, what would the block write do to each file — because a report
+ * of canned values reads identically on a virgin workspace and on an
+ * initialized one, and so tells the reader nothing.
+ */
 async function buildDryRunResult(
   fs: FileSystemPort,
+  env: EnvPort,
   workspace: string,
   wsPaths: PathsService,
-  namespace: string,
   sources: WorkspaceSource[],
+  upsertInput: ProjectMdUpsertInput,
 ): Promise<WorkspaceInitResult> {
   const anyExternal = sources.some((s) => isExternalToWorkspace(s.path, workspace));
   // The prune preview is read-only but REAL: a re-run deletes git-tracked
@@ -277,14 +295,20 @@ async function buildDryRunResult(
     ...(await pruneLegacyScaffold(fs, workspace, wsPaths, false)),
     ...(await pruneReleasedLock(fs, wsPaths, false)),
   ];
+  const sessionsDir = wsPaths.cwdSessionsDir();
+  const sessionsExists = await fs.exists(sessionsDir);
   return {
     ok: true,
     dry_run: true,
     workspace,
     sources: sources.length,
-    scaffold: { created: plannedScaffold(workspace, namespace), existing: [], pruned },
-    skills_toml: "created",
-    project_md: { ok: true, action: "init" },
+    scaffold: {
+      created: sessionsExists ? [] : [sessionsDir],
+      existing: sessionsExists ? [sessionsDir] : [],
+      pruned,
+    },
+    skills_toml: (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "created",
+    project_md: await previewProjectMdUpsert(fs, env, wsPaths, upsertInput),
     attach_multiroot: anyExternal
       ? { skipped: true, reason: "dry_run" }
       : { skipped: true, reason: "no_external_sources" },

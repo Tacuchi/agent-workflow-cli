@@ -235,6 +235,102 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     expect(claude).not.toContain("qa/plugin");
   });
 
+  it("una nota humana dentro del bloque sobrevive al re-init en LOS DOS archivos", async () => {
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      workingBranches: { core: "feature/x" },
+      lastActivity: FIXED_TS,
+    });
+    // Una persona anota dentro del bloque, en el archivo que lee su host.
+    const nota = "- Nota: la ruta de core es local a esta máquina";
+    const claude = join(cwd, "CLAUDE.md");
+    await fs.writeText(
+      claude,
+      (await readFile(claude, "utf8")).replace(
+        "- Ramas de trabajo actuales:",
+        `${nota}\n- Ramas de trabajo actuales:`,
+      ),
+    );
+
+    await runProjectMdUpsertWrite(fs, env, paths, { op: "init", lastActivity: FIXED_TS });
+
+    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
+      const text = await readFile(join(cwd, file), "utf8");
+      expect(text).toContain(`${nota}\n- Ramas de trabajo actuales:`);
+      // Y no se adoptó como rama: no aparece anidada bajo el encabezado.
+      expect(text).not.toContain(`  ${nota}`);
+    }
+  });
+
+  it("una nota escrita SÓLO en AGENTS.md no se pierde (el bloque vive en dos archivos)", async () => {
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      lastActivity: FIXED_TS,
+    });
+    const nota = "- Recordatorio: pedir acceso al repo de plugins";
+    const agents = join(cwd, "AGENTS.md");
+    await fs.writeText(
+      agents,
+      (await readFile(agents, "utf8")).replace("- Histórico:", `${nota}\n- Histórico:`),
+    );
+
+    await runProjectMdUpsertWrite(fs, env, paths, { op: "init", lastActivity: FIXED_TS });
+
+    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
+      expect(await readFile(join(cwd, file), "utf8")).toContain(nota);
+    }
+  });
+
+  it("--proyecto renombra el workspace y PRESERVA su descripción", async () => {
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      proyecto: "Nombre viejo\n\nDescripción larga escrita a mano.\n\n- Un detalle importante.",
+      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      lastActivity: FIXED_TS,
+    });
+
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      proyecto: "Nombre nuevo",
+      lastActivity: FIXED_TS,
+    });
+    expect("error" in result).toBe(false);
+    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("Nombre nuevo");
+    expect(claude).not.toContain("Nombre viejo");
+    expect(claude).toContain("Descripción larga escrita a mano.");
+    expect(claude).toContain("- Un detalle importante.");
+  });
+
+  it("replaceFuentes poda las ramas de una fuente que ya no se declara y lo DECLARA", async () => {
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [
+        { alias: "core", path: "/repo/core", mainBranch: "main" },
+        { alias: "plugin", path: "/repo/plugin", mainBranch: "main" },
+      ],
+      workingBranches: { core: "feature/a", plugin: "feature/b" },
+      qaBranches: { core: "desarrollo", plugin: "qa/plugin" },
+      lastActivity: FIXED_TS,
+    });
+
+    const result = await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      replaceFuentes: true,
+      verbose: true,
+      lastActivity: FIXED_TS,
+    });
+    if ("error" in result) throw new Error(result.error);
+    expect(result.working_branches).toEqual({ core: "feature/a" });
+    expect(result.qa_branches).toEqual({ core: "desarrollo" });
+    expect(result.dropped_lines).toEqual(["  - plugin: feature/b", "  - plugin: qa/plugin"]);
+    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(claude).not.toContain("plugin");
+  });
+
   it("removeAliases of the last source leaves an empty fuentes table", async () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",

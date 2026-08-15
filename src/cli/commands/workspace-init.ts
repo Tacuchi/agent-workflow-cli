@@ -79,6 +79,20 @@ export const workspaceInitCommand: QtcCommand<WorkspaceInitResult> = {
       lines.push(`  Scaffold   ${JSON.stringify(data.scaffold)}`);
       lines.push(`  Multiroot  ${JSON.stringify(data.attach_multiroot)}`);
     }
+    // Unconditional, and never behind `--detail`: a line the rewrite could not
+    // carry is the one thing here a person has to know, and declaring it only in
+    // a JSON field this projection replaces is not declaring it at all.
+    const projectMd = data.project_md;
+    const dropped =
+      projectMd !== undefined && "dropped_lines" in projectMd
+        ? (projectMd.dropped_lines ?? [])
+        : [];
+    if (dropped.length > 0) {
+      lines.push(
+        `  Se retiraron ${dropped.length} línea(s) del bloque que ya no corresponden a ninguna fuente declarada:`,
+      );
+      for (const line of dropped) lines.push(`    ${line.trim()}`);
+    }
     return `${lines.join("\n")}\n`;
   },
 };
