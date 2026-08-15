@@ -37,6 +37,7 @@ export const checkpointWriteCommand: QtcCommand = {
   name: "checkpoint-write",
   describe:
     "Write CHECKPOINT.md for the conversation's session (or --code). PreCompact hook target. " +
+    "An existing CHECKPOINT with content is preserved; --force overwrites it. " +
     "Usage: aw checkpoint-write [--code <session>] [--force] [--can-pause].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const base = await lifecycleOptions(args, ctx);

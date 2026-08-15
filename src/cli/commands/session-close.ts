@@ -8,6 +8,12 @@ import type { ParsedArgs } from "../parser.js";
 import type { QtcCommand } from "../registry.js";
 import { fail, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
+import { type FlagContract, reviewFlags, unknownFlagMessage } from "./unknown-flags.js";
+
+// `--name` belongs to `session-create`, where it is mandatory; here it names
+// nothing, and being ignored is how an invocation that meant something else
+// came back as a clean close.
+const FLAGS: FlagContract = { known: ["code", "refs"] };
 
 export const sessionCloseCommand: QtcCommand = {
   name: "session-close",
@@ -15,6 +21,14 @@ export const sessionCloseCommand: QtcCommand = {
     "Close a session: write the .closed marker, release the conversation bindings pointing at it and upsert its HISTORY.md row. " +
     "Usage: aw session-close --code <session> [--refs <csv>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
+    const review = reviewFlags(args, FLAGS);
+    if (review.unknown.length > 0) {
+      return fail("UNKNOWN_FLAG", unknownFlagMessage(review, FLAGS), {
+        unknown_flags: review.unknown,
+        action: "corregí el flag y reintentá: `aw session-close --code <sesión> [--refs <csv>]`",
+      });
+    }
+
     const input: SessionCloseInput = {};
     const code = args.values.get("code");
     if (code !== undefined) input.code = code;

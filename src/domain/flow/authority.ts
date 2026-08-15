@@ -3190,6 +3190,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   },
   { command: "history-update", reason: "reparación del registro durable" },
   { command: "project-md-upsert", reason: "escritura del bloque de proyecto en el host" },
+  {
+    command: "workspace-migrate",
+    reason:
+      "puesta al día puntual de un hub con serie legacy: no abre recorrido ni sesión, y su autoridad es su propio contrato — sin `--apply` no escribe nada, y una sesión sobre la que el histórico y el disco se contradicen queda intacta",
+  },
   { command: "code-scan", reason: "barrido read-only del código" },
   { command: "plugin-doctor", reason: "diagnóstico de instalación" },
   { command: "plugin-cache", reason: "mantenimiento de caché" },

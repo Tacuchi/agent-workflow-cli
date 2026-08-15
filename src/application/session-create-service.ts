@@ -5,12 +5,12 @@ import type { SessionType } from "../domain/types.js";
 import { type WorklineNodeId, nodeFromDocPath } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
-import { maxHistoryNumber } from "./history-table.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
 import { bindContextToSession, readBindingRegistry } from "./session-binding-service.js";
 import { baselineOf, birthCustody, custodyPath, writeCustody } from "./session-custody-service.js";
+import { nextSessionCorrelative } from "./session-resolver.js";
 import { renderSessionMarkdown } from "./templates/session.js";
 
 const VALID_TYPES = ["research", "refine", "exec", "quick"] as const;
@@ -228,7 +228,9 @@ async function claimSessionFolder(
     // `NNN-` prefix is assigned here. A descriptor that already carries a leading
     // `NNN-` is normalized away first so the prefix can't double up.
     const descriptor = name.replace(/^\d{3}-/, "");
-    const number = await nextSessionNumber(fs, paths, sessionsDir);
+    // The same derivation `aw sessions` publishes: the number that gets
+    // announced has to be the number that gets assigned.
+    const number = await nextSessionCorrelative(fs, paths);
     const folder = `${number}-${descriptor}`;
     const sessionPath = join(sessionsDir, folder);
     if (await fs.exists(sessionPath)) {
@@ -274,31 +276,4 @@ function parentsOf(artifacts: readonly CustodyArtifact[]): WorklineNodeId[] {
     parents.push(node);
   }
   return parents;
-}
-
-/**
- * Next global session number: the maximum of what the sessions folder holds and
- * what `HISTORY.md` remembers, plus one, zero-padded. Type-agnostic — one
- * sequence for every session regardless of kind.
- *
- * HISTORY is read as well as the folder because a RETIRED session leaves no
- * folder behind: scanning live directories alone would hand `119` to a new
- * session after the old `119` was discarded, and the two would then share a row
- * key, a unit branch and a `--code`. Numbering is monotonic even across
- * deletions — an identity is spent once. Legacy `sessionNNN-…` folders carry no
- * leading digit and are ignored by the folder half, while the history half still
- * recognizes their rows.
- */
-async function nextSessionNumber(
-  fs: FileSystemPort,
-  paths: PathsService,
-  sessionsDir: string,
-): Promise<string> {
-  const entries = await fs.list(sessionsDir);
-  let max = await maxHistoryNumber(fs, paths.cwdHistoryFile());
-  for (const entry of entries) {
-    const m = entry.name.match(/^(\d{3})/);
-    if (m?.[1]) max = Math.max(max, Number.parseInt(m[1], 10));
-  }
-  return String(max + 1).padStart(3, "0");
 }

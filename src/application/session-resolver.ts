@@ -1,13 +1,14 @@
 import { join } from "node:path";
 import type { SessionState } from "../domain/types.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { localDateIso } from "./dates.js";
+import { maxHistoryNumber } from "./history-table.js";
 import { withCwdLock } from "./lock-service.js";
 import { firstNonEmptyLine, parseMdSectionBilingual, parseMdValueBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact } from "./session-artifacts.js";
 import { bindContextToSession, lookupBinding } from "./session-binding-service.js";
+import { readCustody } from "./session-custody-service.js";
 
 const SESSION_FOLDER_RE = /^session(\d{3})-(.+)$/;
 
@@ -58,7 +59,7 @@ export async function buildSessionEntry(
   const state: SessionState = await stateFromClosedMarker(fs, sessionPath);
 
   const requirement = await readRequirement(fs, sessionPath);
-  const date = requirement.date ?? (await mtimeAsDate(fs, sessionPath));
+  const date = requirement.date ?? (await declaredBirthDate(fs, sessionPath));
   const summary = requirement.summary ?? (name ? name.replace(/-/g, " ") : folder);
   const type = requirement.type ?? typeFromNameSuffix(folder);
 
@@ -171,6 +172,16 @@ export interface SessionResolveRequest {
  * `exactOptionalPropertyTypes` is on, hence the spreads instead of assigning
  * `undefined`.
  */
+/**
+ * The request a READ makes: a closed session is legitimate to inspect, and
+ * looking never claims the line.
+ *
+ * `bind` is off because binding is a write, and this shape is what read surfaces
+ * ask with. It used to be on, and that turned glancing at another session into
+ * re-pointing the conversation at it: the SessionEnd hook that followed, carrying
+ * no `--code`, then wrote its checkpoint over the wrong line. Whoever wants the
+ * association asks for it explicitly.
+ */
 export function sessionReadRequest(input: {
   code?: string;
   contextId?: string;
@@ -179,9 +190,12 @@ export function sessionReadRequest(input: {
     ...(input.code !== undefined ? { code: input.code } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
     allowClosed: true,
-    bind: true,
+    bind: false,
   };
 }
+
+/** Both layouts, and a folder that is nothing BUT its number (`042`). */
+const NUMBERED_FOLDER_RE = /^(?:session)?(\d+)(?:-|$)/;
 
 /**
  * Numeric identity of a session folder: `044` for `044-<slug>`, `007` for the
@@ -190,10 +204,71 @@ export function sessionReadRequest(input: {
  * Deliberately distinct from `parseSessionFolder().code`, which returns the
  * WHOLE folder name for current-model folders — HISTORY rows and the commit
  * advisor key off that shape, so it stays as it is.
+ *
+ * ONE reading of "what number does this folder carry", shared by the resolver,
+ * the correlative and the collision check: three regexes for one question is
+ * exactly how the counters ended up disagreeing.
  */
 export function sessionNumericCode(folder: string): string | null {
-  const m = folder.match(/^(?:session)?(\d+)-/);
-  return m?.[1] ?? null;
+  return folder.match(NUMBERED_FOLDER_RE)?.[1] ?? null;
+}
+
+/**
+ * The sessions that carry ONE numeric identity.
+ *
+ * More than one is a workspace the durable record cannot index: `HISTORY.md` is
+ * keyed by number, so the row of `047-algo-quick` and the row of the legacy
+ * `session047-legacy-x` are the same row. It only happens where a legacy series
+ * was never brought over, and the honest answer there is to say so rather than
+ * to let one session's record overwrite the other's.
+ */
+export async function sessionsSharingNumber(
+  fs: FileSystemPort,
+  paths: PathsService,
+  code: string,
+): Promise<SessionCandidate[]> {
+  const wanted = sessionNumericCode(code);
+  if (wanted === null) return [];
+  const sharing: SessionCandidate[] = [];
+  for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    if (sessionNumericCode(folder.name) !== wanted) continue;
+    sharing.push({
+      folder: folder.name,
+      code: wanted,
+      state: await stateFromClosedMarker(fs, folder.path),
+    });
+  }
+  return sharing;
+}
+
+/**
+ * The next global session correlative — the ONE derivation of it.
+ *
+ * There were three, and no two of them agreed. `session-create` scanned folders
+ * with a pattern the legacy `sessionNNN-` layout does not match, so a legacy
+ * folder with no row in the history was invisible and its number got handed out
+ * a second time. `aw sessions` filtered for all-digit codes over a field that,
+ * for the current model, holds the WHOLE folder name — so it counted only the
+ * legacy folders and announced `001` in a workspace whose next session was
+ * going to be `004`. Announcing one number and assigning another is not a
+ * cosmetic divergence: whoever reads the announcement writes it into a document
+ * name, and the session that follows takes a different identity.
+ *
+ * So it reads BOTH sources, in both layouts: every numbered folder on disk, and
+ * every row `HISTORY.md` ever recorded (the only memory of a session whose
+ * folder was retired). The maximum plus one, and nobody derives it anywhere
+ * else.
+ */
+export async function nextSessionCorrelative(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<string> {
+  let max = await maxHistoryNumber(fs, paths.cwdHistoryFile());
+  for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    const digits = sessionNumericCode(folder.name);
+    if (digits !== null) max = Math.max(max, Number.parseInt(digits, 10));
+  }
+  return String(max + 1).padStart(3, "0");
 }
 
 /**
@@ -325,7 +400,7 @@ async function resolveExplicit(
   code: string,
   allowClosed: boolean,
 ): Promise<SessionResolution> {
-  const matches = scanned.filter((s) => matchesIdentity(s.name, code));
+  const matches = identityMatches(scanned, code);
   const only = matches.length === 1 ? matches[0] : undefined;
   if (only === undefined) {
     return matches.length === 0
@@ -339,7 +414,10 @@ async function resolveExplicit(
           "SESSION_AMBIGUOUS",
           `'${code}' coincide con ${matches.length} sesiones`,
           matches,
-          "reintentá con el nombre exacto de la carpeta",
+          // The names themselves, because the advice has to be runnable: the
+          // exact folder now ends the search, so each of these resolves to one
+          // session and only one.
+          `reintentá con el nombre exacto de la carpeta: ${matches.map((m) => m.name).join(", ")}`,
         );
   }
   if (only.state === "closed" && !allowClosed) {
@@ -438,6 +516,22 @@ async function resolveSoleActive(
 }
 
 /**
+ * The sessions an explicit identity names — one of them when it names a folder.
+ *
+ * A folder's own name is the last word on which session it is, and it has to
+ * be: the ambiguity error tells the reader to "retry with the exact folder
+ * name", and for a legacy `session047-…` sharing its number with `047-…` that
+ * advice was impossible to follow — the exact name went back through the
+ * numeric reading and matched both again, so the legacy session could not be
+ * named at all. Exact equality ends the search before the fuzzy pass runs.
+ */
+function identityMatches(scanned: ScannedFolder[], code: string): ScannedFolder[] {
+  const exact = scanned.find((s) => s.name === code);
+  if (exact !== undefined) return [exact];
+  return scanned.filter((s) => matchesIdentity(s.name, code));
+}
+
+/**
  * Identity match, anchored on a `-` word boundary so `100` never matches
  * `1000-…` nor `01` matches `012-…`. A numeric identity also reaches the legacy
  * `sessionNNN-…` layout, so one code resolves a session in either format.
@@ -529,11 +623,24 @@ async function readRequirement(
   };
 }
 
-async function mtimeAsDate(fs: FileSystemPort, path: string): Promise<string | undefined> {
-  try {
-    const info = await fs.stat(path);
-    return localDateIso(info.mtime);
-  } catch {
-    return undefined;
-  }
+/**
+ * The day the session declared it was born, or nothing.
+ *
+ * It used to be the folder's mtime, which is not a fact about the session at
+ * all: closing one writes CHECKPOINT.md and `.closed` INSIDE its folder, so the
+ * date moved to today every time anybody operated on it and the durable record
+ * aged itself forward. The custody sealed at creation records the birth date
+ * once and never again, so it is the only reading that cannot drift.
+ *
+ * A session older than the custody record — or one whose custody cannot be read
+ * — has no declared date, and this says so instead of inventing one: the row
+ * that already exists in `HISTORY.md` then keeps the date it was written with,
+ * which is the best evidence left of when that session actually ran.
+ */
+async function declaredBirthDate(
+  fs: FileSystemPort,
+  sessionPath: string,
+): Promise<string | undefined> {
+  const read = await readCustody(fs, sessionPath);
+  return read.status === "present" ? read.custody.created : undefined;
 }

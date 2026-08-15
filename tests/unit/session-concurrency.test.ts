@@ -169,6 +169,28 @@ describe("the full identity matrix resolves one target or one actionable error",
       expect: { folder: "session007-legacy" },
     },
     {
+      // A workspace whose legacy series was never brought over: `047` names two
+      // sessions, and the bare number cannot choose between them.
+      name: "legacy y modelo nuevo comparten número, código desnudo",
+      folders: [{ folder: "047-algo-quick" }, { folder: "session047-legacy-x" }],
+      request: { code: "047" },
+      expect: { code: "SESSION_AMBIGUOUS" },
+    },
+    {
+      // …and the way out the error advertises resolves to exactly one: the exact
+      // folder ends the search before the numeric reading matches both again.
+      name: "legacy en colisión, nombrada por su carpeta exacta",
+      folders: [{ folder: "047-algo-quick" }, { folder: "session047-legacy-x" }],
+      request: { code: "session047-legacy-x" },
+      expect: { folder: "session047-legacy-x" },
+    },
+    {
+      name: "la del modelo nuevo en colisión, también por su carpeta exacta",
+      folders: [{ folder: "047-algo-quick" }, { folder: "session047-legacy-x" }],
+      request: { code: "047-algo-quick" },
+      expect: { folder: "047-algo-quick" },
+    },
+    {
       name: "several active, binding decides",
       folders: [{ folder: "001-a-quick" }, { folder: "002-b-quick" }],
       request: { contextId: "conv-a" },

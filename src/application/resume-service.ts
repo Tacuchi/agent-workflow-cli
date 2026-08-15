@@ -6,7 +6,7 @@ import type { DesignRefState } from "./design/design-graph-service.js";
 import { projectRun } from "./flow/run-projection.js";
 import type { PathsService } from "./paths-service.js";
 import { buildSessionNarrative } from "./session-narrative.js";
-import { resolveSessionTarget } from "./session-resolver.js";
+import { resolveSessionTarget, sessionReadRequest } from "./session-resolver.js";
 import {
   type IndexedPlan,
   type IndexedSession,
@@ -138,14 +138,7 @@ async function resumeSession(
   index: WorklineIndex,
   input: ResumeInput,
 ): Promise<ResumeOutcome> {
-  // `bind: false` on purpose: this is a read. `sessionReadRequest` would record
-  // the conversation→session association, and `resume` must not write.
-  const resolution = await resolveSessionTarget(fs, paths, {
-    ...(input.code !== undefined ? { code: input.code } : {}),
-    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
-    allowClosed: true,
-    bind: false,
-  });
+  const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
 
   if (resolution.outcome !== "resolved") {
     return {

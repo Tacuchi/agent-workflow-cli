@@ -320,12 +320,13 @@ _Stack sin detectar._
     if (!("checkpoint_path" in r1) || "skipped" in r1) throw new Error("first call should write");
     const content1 = fs.writes.get(`${sessionPath}/CHECKPOINT.md`) ?? "";
 
-    // Second call: existing CHECKPOINT.md has placeholders → re-writes (placeholders are part of draft).
-    // To test true idempotency post-AI-fill, we'd need to manually strip placeholders. For now we
-    // verify that re-write returns success again (not skip-because-synthesized).
+    // Second call over the CLI's own untouched output: still free to regenerate,
+    // because the file is byte-for-byte the template it wrote. The case this
+    // test used to admit it did not cover — a PARTIALLY filled checkpoint, which
+    // is the one that lost work — lives in `checkpoint-sentinel.test.ts`.
     const r2 = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), new FakeGit(), paths);
-    expect("checkpoint_path" in r2 || "skipped" in r2).toBe(true);
-    // Sanity: content is non-empty markdown.
+    if (!("checkpoint_path" in r2)) throw new Error(JSON.stringify(r2));
+    expect(r2.preserved).toBeUndefined();
     expect(content1.length).toBeGreaterThan(50);
     expect(content1).toContain(sessionFolder);
   });

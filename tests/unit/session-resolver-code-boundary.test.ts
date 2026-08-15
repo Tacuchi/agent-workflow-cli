@@ -64,6 +64,32 @@ describe("resolveSessionTarget — numeric code word-boundary", () => {
   });
 });
 
+// S027/AC-09 — there is always a spelling that names one session and only one.
+describe("resolveSessionTarget — el nombre exacto de la carpeta termina la búsqueda", () => {
+  const COLLIDING = ["047-algo-quick", "session047-legacy-x"];
+
+  it("una legacy que comparte número vuelve a ser nombrable", async () => {
+    const result = await resolveSessionTarget(buildFs(COLLIDING), paths, {
+      code: "session047-legacy-x",
+    });
+    expect(resolved(result).session.folder).toBe("session047-legacy-x");
+  });
+
+  it("y el código desnudo sigue siendo ambiguo, con los dos candidatos en la acción", async () => {
+    const result = await resolveSessionTarget(buildFs(COLLIDING), paths, { code: "047" });
+    if (result.outcome !== "error") throw new Error("expected an ambiguity");
+    expect(result.code).toBe("SESSION_AMBIGUOUS");
+    expect(result.candidates.map((c) => c.folder)).toEqual(COLLIDING);
+    for (const folder of COLLIDING) expect(result.action).toContain(folder);
+  });
+
+  it("un prefijo que casa con una carpeta entera no se lo lleva otra más larga", async () => {
+    const fs = buildFs(["009-libre", "009-libre-extendida"]);
+    const result = await resolveSessionTarget(fs, paths, { code: "009-libre" });
+    expect(resolved(result).session.folder).toBe("009-libre");
+  });
+});
+
 describe("resolveSessionTarget — type fallback by folder suffix (SESSION.md without ## Type)", () => {
   // New-model SESSION.md no longer renders ## Type; the resolver derives it
   // from the descriptor's <slug>-<flow> suffix. Legacy artifacts with the

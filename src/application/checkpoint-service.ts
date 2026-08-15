@@ -27,6 +27,12 @@ import {
  * carries it is the TEMPLATE asking to be written, and any reader that presents
  * it as content is reporting a fact nobody stated. `computeCheckpointStatus`
  * calls such a checkpoint `draft`; everything else has to be able to agree.
+ *
+ * This is now the ONLY declaration of the marker, and classifying a draft is the
+ * only thing it means. `checkpoint-write-service.ts` used to declare its own
+ * copy and read it as permission to overwrite the file — a second, opposite
+ * meaning for the same string, which the write path resolved by destroying
+ * whatever had been written into the template.
  */
 export const PLACEHOLDER_MARKER = "_[AI:";
 const DEFAULT_STALE_THRESHOLD_SECONDS = 300;
@@ -268,8 +274,6 @@ export async function runCheckpointRead(
   paths: PathsService,
   input: { code?: string; contextId?: string },
 ): Promise<CheckpointReadResult> {
-  // Reading a checkpoint is a read: a closed session's checkpoint is legitimate
-  // to inspect, and the association makes later turns stay on this line.
   const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;
@@ -359,10 +363,18 @@ export async function runResumeSummary(
   const actives = await findActiveSessions(fs, paths);
   const activeFolders = actives.map((a) => a.folder);
 
-  const target = await resolveLifecycleTarget(fs, paths, {
-    ...(options.code !== undefined ? { code: options.code } : {}),
-    ...(options.contextId !== undefined ? { contextId: options.contextId } : {}),
-  });
+  // Does NOT bind, which is what the paragraph above always claimed and the
+  // code did not do: presenting a session is not claiming it. PostCompact only
+  // restores; the association it reports was established by whoever wrote.
+  const target = await resolveLifecycleTarget(
+    fs,
+    paths,
+    {
+      ...(options.code !== undefined ? { code: options.code } : {}),
+      ...(options.contextId !== undefined ? { contextId: options.contextId } : {}),
+    },
+    "read-only",
+  );
 
   const summary =
     target.outcome === "resolved"

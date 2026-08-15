@@ -3,7 +3,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { findActiveSessions } from "./checkpoint-service.js";
-import { formatCheckpointMd } from "./checkpoint/markdown.js";
+import { formatCheckpointMd, isPristineCheckpoint } from "./checkpoint/markdown.js";
 import { extractSessionState } from "./checkpoint/state-reader.js";
 import {
   type LifecycleOptions,
@@ -15,7 +15,17 @@ import type { PathsService } from "./paths-service.js";
 import { writeSessionNarrative } from "./session-narrative.js";
 import type { SessionCandidate, SessionEntry, SessionResolutionError } from "./session-resolver.js";
 
-const PLACEHOLDER_MARKER = "_[AI:";
+// This module deliberately owns NO placeholder marker of its own. `_[AI:` used
+// to be declared here as well as in `checkpoint-service.ts`, with incompatible
+// meanings: over there it classifies a checkpoint as a draft that still needs
+// the agent (coherent, and it stays), here it granted permission to destroy the
+// file. Since the template always emits the marker, that permission was
+// permanent. Provenance decides who may overwrite now, and the one surviving
+// marker means one thing only.
+
+/** Said to the caller whenever content was kept instead of being regenerated. */
+const PRESERVED_REASON =
+  "CHECKPOINT.md tiene contenido escrito y se conservó; pasar --force para regenerarlo";
 
 export interface CheckpointWriteOutput {
   session: string;
@@ -26,6 +36,8 @@ export interface CheckpointWriteOutput {
   tasks_closed?: number;
   files_touched_count?: number;
   skipped?: boolean;
+  /** The existing CHECKPOINT had content: nothing was written, nothing was lost. */
+  preserved?: true;
   reason?: string;
 }
 
@@ -73,22 +85,22 @@ export async function runCheckpointWrite(
   paths: PathsService,
   options: CheckpointWriteOptions = {},
 ): Promise<CheckpointWriteResult> {
-  const target = await resolveLifecycleTarget(fs, paths, options);
+  // Binds: writing a CHECKPOINT and refreshing SESSION.md IS this conversation
+  // claiming the line, and the next hook run (which carries no `--code`) needs
+  // the association to land on the same one.
+  const target = await resolveLifecycleTarget(fs, paths, options, "bind");
   if (target.outcome !== "resolved") return unresolved(fs, paths, target);
   const session = target.session;
   const cpPath = join(session.path, "CHECKPOINT.md");
 
-  if ((await fs.exists(cpPath)) && options.force !== true) {
-    const existing = await fs.readText(cpPath);
-    if (!existing.includes(PLACEHOLDER_MARKER)) {
-      return {
-        session: session.folder,
-        checkpoint_path: cpPath,
-        skipped: true,
-        reason:
-          "CHECKPOINT.md ya está sintetizado (sin placeholders); pasar --force para regenerar",
-      };
-    }
+  if (await hasContentToPreserve(fs, cpPath, options.force === true)) {
+    return {
+      session: session.folder,
+      checkpoint_path: cpPath,
+      skipped: true,
+      preserved: true,
+      reason: PRESERVED_REASON,
+    };
   }
 
   const state = await extractSessionState(fs, git, env.cwd(), session.path);
@@ -118,6 +130,7 @@ export interface AutoCompactOnCloseOutput {
     checkpoint_path?: string;
     progress_pct?: number | null;
     skipped?: boolean;
+    preserved?: true;
     reason?: string;
     error?: string;
   }>;
@@ -141,10 +154,16 @@ export async function runAutoCompactOnClose(
   paths: PathsService,
   options: LifecycleOptions = {},
 ): Promise<AutoCompactOnCloseOutput> {
-  const target = await resolveLifecycleTarget(fs, paths, {
-    ...options,
-    canPauseCompaction: false,
-  });
+  // Does NOT bind: the host is exiting, so there is no later turn the
+  // association could serve, and establishing one is a locked write that fails
+  // the whole resolution when it cannot be taken — which would cost the
+  // checkpoint this surface exists to save.
+  const target = await resolveLifecycleTarget(
+    fs,
+    paths,
+    { ...options, canPauseCompaction: false },
+    "read-only",
+  );
   if (target.outcome !== "resolved") {
     const detail = unresolvedDetail(target);
     return {
@@ -166,16 +185,16 @@ async function writeCheckpointForTarget(
   session: SessionEntry,
 ): Promise<AutoCompactOnCloseOutput["checkpoints_written"][number]> {
   const cpPath = join(session.path, "CHECKPOINT.md");
-  if (await fs.exists(cpPath)) {
-    const existing = await fs.readText(cpPath);
-    if (!existing.includes(PLACEHOLDER_MARKER)) {
-      return {
-        session: session.folder,
-        checkpoint_path: cpPath,
-        skipped: true,
-        reason: "CHECKPOINT.md ya sintetizado",
-      };
-    }
+  // No `force` here on purpose: SessionEnd is a hook, and a hook is never the
+  // declared intention that AC-02 asks for before overwriting content.
+  if (await hasContentToPreserve(fs, cpPath, false)) {
+    return {
+      session: session.folder,
+      checkpoint_path: cpPath,
+      skipped: true,
+      preserved: true,
+      reason: PRESERVED_REASON,
+    };
   }
   try {
     const state = await extractSessionState(fs, git, cwd, session.path);
@@ -193,6 +212,24 @@ async function writeCheckpointForTarget(
       error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
     };
   }
+}
+
+/**
+ * The single guard both lifecycle write paths ask before touching the file.
+ *
+ * Absent file → nothing to lose. Sealed and intact → the CLI's own untouched
+ * template, so regenerating it is free. Anything else — filled in, hand-edited,
+ * or written by a version that predates the seal — is somebody's work, and only
+ * `--force` gets past it.
+ */
+async function hasContentToPreserve(
+  fs: FileSystemPort,
+  cpPath: string,
+  force: boolean,
+): Promise<boolean> {
+  if (force) return false;
+  if (!(await fs.exists(cpPath))) return false;
+  return !isPristineCheckpoint(await fs.readText(cpPath));
 }
 
 async function unresolved(

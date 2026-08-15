@@ -6,6 +6,7 @@ import {
   type SessionEntry,
   buildSessionEntry,
   listSessionFolders,
+  nextSessionCorrelative,
   serializeSessionEntry,
 } from "./session-resolver.js";
 
@@ -44,12 +45,12 @@ export class SessionsService {
     // output-shape compatibility until callers are reworked.
     const legacy: SessionEntry[] = [];
 
-    const numericCodes = sessions
-      .map((s) => s.code)
-      .filter((c): c is string => c !== null && /^\d+$/.test(c))
-      .map((c) => Number.parseInt(c, 10));
-    const nextCorr =
-      numericCodes.length > 0 ? String(Math.max(...numericCodes) + 1).padStart(3, "0") : "001";
+    // The number this reports is the number `session-create` will assign: one
+    // derivation, no chance of announcing a correlative somebody else spends.
+    // It used to filter all-digit codes over a field that holds the whole folder
+    // name in the current model, so it counted the legacy folders and nothing
+    // else.
+    const nextCorr = await nextSessionCorrelative(this.fs, this.paths);
 
     const activeCount = sessions.filter((s) => s.state === "active").length;
     const closedCount = sessions.filter((s) => s.state === "closed").length;

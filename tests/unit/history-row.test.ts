@@ -82,4 +82,18 @@ describe("renderRefs — BUILTIN_RENDERERS (post R5)", () => {
       "[DEC](../docs/decisiones/001-x.md), https://ci.example.com/run/9",
     );
   });
+
+  /**
+   * El "—" de aquí abajo es una CELDA VACÍA, no la ausencia de referencias, y la
+   * diferencia costó datos: `session-close` sin `--refs` pasaba por acá y el
+   * upsert escribía ese guión sobre las referencias que ya estaban en la fila.
+   * Quien no nombra referencias no llama a esta función (ver
+   * `upsertHistoryRow`); lo que llega vacío sí se renderiza vacío, porque
+   * borrarlas a propósito es una decisión legítima.
+   */
+  it("vaciar a propósito rinde la celda vacía; no nombrarlas no es asunto de este render", () => {
+    expect(renderRefs("")).toBe("—");
+    expect(renderRefs("   ")).toBe("—");
+    expect(renderRefs(null)).toBe("—");
+  });
 });

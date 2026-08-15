@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { runResumeSummary } from "../../src/application/checkpoint-service.js";
+import { runArtifactsCommand } from "../../src/application/artifacts-service.js";
+import { runCheckpointRead, runResumeSummary } from "../../src/application/checkpoint-service.js";
 import {
   runAutoCompactOnClose,
   runCheckpointWrite,
 } from "../../src/application/checkpoint-write-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { lookupBinding } from "../../src/application/session-binding-service.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { DiffNumstatEntry, GitPort } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -232,6 +234,81 @@ describe("lifecycle surfaces never write to a closed session", () => {
     expect(result.reason).toContain("cerrada");
     expect(result.action).toContain("--reopen");
     expect(fs.writes.size).toBe(0);
+  });
+});
+
+describe("reading never moves the conversation's line", () => {
+  /** Where `conv-a` points right now, `null` when it points nowhere. */
+  async function bound(fs: MemFs): Promise<string | null> {
+    const lookup = await lookupBinding(fs, paths, "conv-a");
+    return lookup.status === "bound" ? lookup.folder : null;
+  }
+
+  // The reported hijack, end to end: the conversation works on 020, someone
+  // reads ANOTHER session's checkpoint, and the SessionEnd hook — which carries
+  // no `--code` — used to write to the session that was merely looked at,
+  // leaving the real line with no checkpoint at all.
+  it("a checkpoint-read of another session does not redirect the close", async () => {
+    const fs = seedTwoActive();
+    const contextId = "conv-a";
+    await runCheckpointWrite(fs, env, git, paths, { code: "020", contextId });
+    expect(await bound(fs)).toBe("020-vieja-quick");
+
+    const read = await runCheckpointRead(fs, paths, { code: "044", contextId });
+    if ("sessionError" in read) throw new Error(JSON.stringify(read));
+    expect(read.session).toBe("044-nueva-plan-exec");
+    expect(await bound(fs)).toBe("020-vieja-quick");
+
+    const close = await runAutoCompactOnClose(fs, env, git, paths, { contextId });
+    expect(close.checkpoints_written[0]?.session).toBe("020-vieja-quick");
+  });
+
+  it("reading a session this conversation never claimed leaves it unclaimed", async () => {
+    const fs = seedTwoActive();
+    const read = await runCheckpointRead(fs, paths, {
+      code: "044",
+      contextId: "conv-a",
+    });
+    if ("sessionError" in read) throw new Error(JSON.stringify(read));
+    // Nothing at all was written: not the registry, not the session.
+    expect(fs.writes.size).toBe(0);
+    expect(await bound(fs)).toBeNull();
+  });
+
+  it("the PostCompact summary reports a line without claiming it", async () => {
+    const fs = new MemFs({ lenient: true });
+    fs.file(`${sessionsDir}/001-sola-quick/SESSION.md`, "# SESSION — 001-sola-quick\n");
+
+    const summary = await runResumeSummary(fs, paths, { contextId: "conv-a" });
+    expect(summary.primary_session).toBe("001-sola-quick");
+    expect(fs.writes.size).toBe(0);
+    expect(await bound(fs)).toBeNull();
+  });
+
+  // The same hijack through the OTHER read surface. `session-artifacts` counts a
+  // session's artifacts and writes nothing, but it shared the request helper with
+  // the write paths, so inspecting another line re-pointed the conversation at it
+  // — and the SessionEnd hook that followed, carrying no `--code`, wrote there.
+  it("a session-artifacts of another session does not redirect the close either", async () => {
+    const fs = seedTwoActive();
+    const contextId = "conv-a";
+    await runCheckpointWrite(fs, env, git, paths, { code: "020", contextId });
+    expect(await bound(fs)).toBe("020-vieja-quick");
+
+    const artifacts = await runArtifactsCommand(fs, env, paths, { code: "044", contextId });
+    if ("sessionError" in artifacts) throw new Error(JSON.stringify(artifacts));
+    expect(await bound(fs)).toBe("020-vieja-quick");
+
+    const close = await runAutoCompactOnClose(fs, env, git, paths, { contextId });
+    expect(close.checkpoints_written[0]?.session).toBe("020-vieja-quick");
+  });
+
+  // Writing is what claims a line, and it still must: quick 115's loop depends
+  // on the `--code` run binding so the hook run that follows resolves alone.
+  it("checkpoint-write still binds, because writing IS claiming", async () => {
+    const fs = seedTwoActive();
+    await runCheckpointWrite(fs, env, git, paths, { code: "044", contextId: "conv-a" });
+    expect(await bound(fs)).toBe("044-nueva-plan-exec");
   });
 });
 

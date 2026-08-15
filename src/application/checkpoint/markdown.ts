@@ -1,4 +1,21 @@
+import { createHash } from "node:crypto";
 import type { SessionState } from "./state-reader.js";
+
+/**
+ * The trailing seal: a digest of the very bytes this module emitted.
+ *
+ * The guard that decided whether a CHECKPOINT could be regenerated used to look
+ * for `_[AI:`, a string this template ALWAYS writes (critical context, skills
+ * used, one per touched file). Sentinel and generator were the same string, so
+ * the only protected state was "not a single marker left anywhere" and every
+ * partially filled checkpoint counted as a disposable draft — the default
+ * lifecycle route destroyed written prose with exit 0 and no warning.
+ *
+ * A digest is the one thing filling the template in cannot reproduce: it holds
+ * only while the file is still exactly what the CLI wrote.
+ */
+const SEAL_RE =
+  /<!-- written by agent-workflow\.checkpoint at [^\n]* · template sha256=([0-9a-f]{64}) -->\n?$/;
 
 export function formatCheckpointMd(state: SessionState): string {
   const lines: string[] = [];
@@ -7,8 +24,30 @@ export function formatCheckpointMd(state: SessionState): string {
   appendFilesTouched(lines, state);
   appendContext(lines);
   appendRefs(lines, state);
-  lines.push("", `<!-- written by agent-workflow.checkpoint at ${state.timestamp} -->`, "");
-  return lines.join("\n");
+  // Body first, seal second: the seal states a fact ABOUT the body, so it can
+  // never be part of what it measures.
+  const body = `${lines.join("\n")}\n\n`;
+  return `${body}<!-- written by agent-workflow.checkpoint at ${state.timestamp} · template sha256=${digestOf(body)} -->\n`;
+}
+
+/**
+ * True only when `text` is byte for byte what `formatCheckpointMd` produced —
+ * an untouched template that can be regenerated without losing anything.
+ *
+ * An UNSEALED file (written before this seal existed) is not pristine either.
+ * The asymmetry is deliberate: keeping a stale template by mistake costs one
+ * regeneration behind `--force`, dropping a filled checkpoint by mistake costs
+ * the work it recorded.
+ */
+export function isPristineCheckpoint(text: string): boolean {
+  const match = text.match(SEAL_RE);
+  const sealed = match?.[1];
+  if (sealed === undefined || match?.index === undefined) return false;
+  return digestOf(text.slice(0, match.index)) === sealed;
+}
+
+function digestOf(body: string): string {
+  return createHash("sha256").update(body, "utf8").digest("hex");
 }
 
 function appendHeader(lines: string[], state: SessionState): void {

@@ -28,6 +28,18 @@ export interface LifecycleOptions {
   canPauseCompaction?: boolean;
 }
 
+/**
+ * Whether resolving ALSO claims the line for this conversation.
+ *
+ * It used to be unconditional — `bind: true` hardcoded inside the resolve —
+ * so a pure read moved the association: a `checkpoint-read --code 006` returned
+ * `checkpoint: null` and, on the way, redirected the conversation to 006; the
+ * SessionEnd hook then checkpointed 006 and left the real line with nothing.
+ * Every surface now has to say it out loud, which is why this is a required
+ * argument and not an optional flag with a convenient default.
+ */
+export type LifecycleBinding = "bind" | "read-only";
+
 export type LifecycleTarget =
   | { outcome: "resolved"; session: SessionEntry }
   /** Pausable host: stop and require a selection before anything is written. */
@@ -42,13 +54,14 @@ export async function resolveLifecycleTarget(
   fs: FileSystemPort,
   paths: PathsService,
   options: LifecycleOptions,
+  binding: LifecycleBinding,
 ): Promise<LifecycleTarget> {
   // `allowClosed` stays off: a lifecycle surface writes or restores state, and
   // a closed line is not a valid destination for either.
   const resolution = await resolveSessionTarget(fs, paths, {
     ...(options.code !== undefined ? { code: options.code } : {}),
     ...(options.contextId !== undefined ? { contextId: options.contextId } : {}),
-    bind: true,
+    bind: binding === "bind",
   });
   if (resolution.outcome === "resolved") {
     return { outcome: "resolved", session: resolution.session };

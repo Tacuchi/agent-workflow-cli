@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { reservationMarker } from "../domain/reservation.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { historyFields, upsertHistoryRow } from "./history-update-service.js";
+import { historyFields, sharedNumberError, upsertHistoryRow } from "./history-update-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
@@ -12,6 +12,7 @@ import {
   type SessionEntry,
   type SessionResolutionError,
   resolveSessionTarget,
+  sessionsSharingNumber,
 } from "./session-resolver.js";
 
 export interface SessionCloseInput {
@@ -133,6 +134,17 @@ export async function runSessionClose(
   const resolution = await resolveSessionTarget(fs, paths, { code: input.code, allowClosed: true });
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;
+
+  // The record indexes rows by number, so two folders sharing one means this
+  // close could only register by overwriting the other session's row. Asked HERE
+  // rather than only inside the primitive: down there the lock is held and
+  // `.closed` is already on disk, so the refusal came back as a non-fatal
+  // `history_error` on a session that had ALREADY been closed — a half mutation,
+  // with the durable record still calling it active and no way to repair it. The
+  // whole close is refused instead, and the one remedy is named before anything
+  // moves.
+  const sharing = await sessionsSharingNumber(fs, paths, session.folder);
+  if (sharing.length > 1) return { sessionError: sharedNumberError(session.folder, sharing) };
 
   // Durable artifacts survive close. CHECKPOINT is a resume safety net (no-op
   // when the loop already wrote one). BACKLOG is NOT fabricated: the owning loop

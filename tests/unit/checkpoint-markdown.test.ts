@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { formatCheckpointMd } from "../../src/application/checkpoint/markdown.js";
+import {
+  formatCheckpointMd,
+  isPristineCheckpoint,
+} from "../../src/application/checkpoint/markdown.js";
 import type { SessionState } from "../../src/application/checkpoint/state-reader.js";
 
 function baseState(overrides: Partial<SessionState> = {}): SessionState {
@@ -94,8 +97,72 @@ describe("formatCheckpointMd — EN headings", () => {
     expect(md).toContain("- Skills used: _[AI: list the skills invoked during the session]_");
   });
 
-  it("trailing comment uses EN", () => {
+  it("trailing comment uses EN and carries the generation timestamp", () => {
     const md = formatCheckpointMd(baseState());
-    expect(md).toContain("<!-- written by agent-workflow.checkpoint at 2026-05-08 12:00 -->");
+    expect(md).toContain(
+      "<!-- written by agent-workflow.checkpoint at 2026-05-08 12:00 · template",
+    );
+  });
+});
+
+// ── the seal: what tells an untouched template from written work ─────────────
+
+describe("isPristineCheckpoint", () => {
+  it("recognises the bytes it just emitted", () => {
+    expect(isPristineCheckpoint(formatCheckpointMd(baseState()))).toBe(true);
+  });
+
+  it("seals every rendering, whatever the state produced", () => {
+    const md = formatCheckpointMd(
+      baseState({
+        progress_pct: 60,
+        tasks: { open: 2, closed: 3, total: 5 },
+        last_decision: { id: "DEC-001", excerpt: "use atomic-write at port" },
+        files_touched: [{ path: "src/foo.ts", added: 10, removed: 2 }],
+        origen: "analyze:016",
+        artefacts: { tasks: true, scripts_count: 2 },
+      }),
+    );
+    expect(isPristineCheckpoint(md)).toBe(true);
+  });
+
+  // The whole defect in one assertion: the template ALWAYS emits `_[AI:`, so a
+  // sentinel made of that string can never tell these two files apart.
+  it("rejects a template whose placeholders were partially filled in", () => {
+    const filled = formatCheckpointMd(baseState()).replace(
+      "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and the latest entry in DECISIONS.md.]_",
+      "Cerré el guard de sobrescritura y lo probé con relleno parcial.",
+    );
+    expect(filled).toContain("_[AI:");
+    expect(isPristineCheckpoint(filled)).toBe(false);
+  });
+
+  it("rejects a file that only gained a line at the end, before the seal", () => {
+    const md = formatCheckpointMd(baseState());
+    expect(isPristineCheckpoint(md.replace("## Refs\n", "## Refs\n\n- Nota mía\n"))).toBe(false);
+  });
+
+  it("rejects a checkpoint written by a version that predates the seal", () => {
+    const legacy = [
+      "# Checkpoint — session042-dev-foo",
+      "",
+      "- Updated: 2026-05-08 12:00",
+      "",
+      "## Last action",
+      "",
+      "Lo que hice ayer.",
+      "",
+      "<!-- written by agent-workflow.checkpoint at 2026-05-08 12:00 -->",
+      "",
+    ].join("\n");
+    expect(isPristineCheckpoint(legacy)).toBe(false);
+  });
+
+  // Forging the sentinel used to be as cheap as leaving the template's own
+  // string in place; forging this one means computing the digest of the file.
+  it("rejects a seal copied onto content it does not measure", () => {
+    const md = formatCheckpointMd(baseState());
+    const seal = md.slice(md.lastIndexOf("<!-- written by"));
+    expect(isPristineCheckpoint(`# Checkpoint — otra cosa\n\n${seal}`)).toBe(false);
   });
 });
