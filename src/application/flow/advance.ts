@@ -78,7 +78,7 @@ import {
   buildSemanticRequest,
   semanticDigest,
 } from "../semantic-operation/protocol.js";
-import { sessionNumericCode, sessionSlug } from "../session-resolver.js";
+import { sessionSlug } from "../session-resolver.js";
 
 export interface AdvanceInput {
   state: FlowRunState;
@@ -240,7 +240,13 @@ export interface ResolvedBoundary {
 function runBinding(state: FlowRunState): RunBinding {
   return {
     session: state.session,
-    code: sessionNumericCode(state.session) ?? state.session,
+    // The FOLDER, never the bare number. `--code 047` matches both `047-<slug>`
+    // and a legacy `session047-<slug>`, so in a workspace holding both, the
+    // invocation this engine seals cannot be satisfied: running it verbatim
+    // fails to resolve, and correcting it makes it a different invocation the
+    // submit refuses. The folder is the one identity that always resolves to
+    // one session, and every `--code` position accepts it.
+    code: state.session,
     // Read off the folder, not off a narration: the run's own session is named
     // `NNN-<slug>-<flow>`, so the slug the numbering claim needs is already a
     // fact the engine holds by the time this boundary is emitted.

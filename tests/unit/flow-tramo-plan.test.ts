@@ -607,7 +607,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     // de la sesión: el commit del batch aterriza en la rama de la unidad, y leer el
     // checkout compartido acá dejaría verde un batch que no commiteó nada.
     expect(after.resolved.kind).toBe("execution");
-    expect(approved.action?.invocation.args).toEqual(["worktree", "list", "--code", CODE]);
+    expect(approved.action?.invocation.args).toEqual(["worktree", "list", "--code", SESSION]);
     // El grant no aplicó nada: la transición del commit sigue pendiente de su
     // salida real (el `execute` del ledger es el de la validación ya corrida).
     const committed = await answer(resultFor(after.resolved));
@@ -627,7 +627,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       ),
     );
     expect(authorized.boundary.kind).toBe("execution");
-    expect(authorized.action?.invocation.args).toEqual(["worktree", "integrate", "--code", CODE]);
+    expect(authorized.action?.invocation.args).toEqual(["worktree", "integrate", "--code", SESSION]);
 
     // Recién después del merge se sella el plan: el `done` es la marca de avance
     // del propio plan-doc (custodia de la corrida) y ahora es verdad de una rama

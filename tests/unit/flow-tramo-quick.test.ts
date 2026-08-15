@@ -155,10 +155,12 @@ describe("las reglas del tramo, sobre observaciones que nadie filtró", () => {
     const action = actionOf(rowOf("quick.session-create"));
     if (action === null) throw new Error("quick.session-create dejó de delegar");
 
-    const binding = { session: SESSION, code: CODE, slug: "tramo-quick" };
+    // `code` es el FOLDER, igual que lo liga la corrida: el número desnudo no
+    // resuelve en un workspace que además tiene una carpeta legacy homónima.
+    const binding = { session: SESSION, code: SESSION, slug: "tramo-quick" };
     const bound = bindAction(action, binding);
     if (!bound.ok) throw new Error(`esperaba ligar la acción: ${bound.unbound}`);
-    expect(bound.action.invocation.args).toEqual(["session-artifacts", "--code", CODE]);
+    expect(bound.action.invocation.args).toEqual(["session-artifacts", "--code", SESSION]);
     expect(bound.action.invocation.target).toBe(SESSION);
 
     // Un nombre que no existe no se liga con nada, y emitirlo sería mandar a
@@ -352,7 +354,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
 
     const create = await current();
     expect(create.resolved.stopped?.id).toBe("quick.session-create");
-    expect(create.resolved.action?.invocation.args).toEqual(["session-artifacts", "--code", CODE]);
+    expect(create.resolved.action?.invocation.args).toEqual(["session-artifacts", "--code", SESSION]);
     expect(create.resolved.action?.invocation.target).toBe(SESSION);
     // El placeholder nunca llega a quien ejecuta.
     expect(JSON.stringify(create.resolved.action)).not.toContain("{code}");
@@ -606,10 +608,10 @@ describe("resume y status proyectan la frontera vigente", () => {
     const execution = await projectRun(fs, paths, SESSION);
     expect(execution?.boundary).toBe("execution");
     expect(execution?.transition).toBe("quick.session-create");
-    expect(execution?.invocation).toBe(`aw session-artifacts --code ${CODE}`);
+    expect(execution?.invocation).toBe(`aw session-artifacts --code ${SESSION}`);
     // El comando que continúa la corrida ES la invocación: nadie tiene que
     // reconstruirla leyendo prosa.
-    expect(execution?.command).toBe(`aw session-artifacts --code ${CODE}`);
+    expect(execution?.command).toBe(`aw session-artifacts --code ${SESSION}`);
     expect(execution?.summary).toContain("aw flow submit");
   });
 

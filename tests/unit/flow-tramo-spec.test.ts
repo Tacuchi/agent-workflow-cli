@@ -277,7 +277,7 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
     expect(adopted.directive.action?.invocation.args).toEqual([
       "session-artifacts",
       "--code",
-      CODE,
+      SESSION,
     ]);
 
     // Una narración no es un resultado.

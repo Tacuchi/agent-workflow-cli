@@ -381,7 +381,8 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
       "--claim",
       "plan-alpha.md",
       "--code",
-      "201",
+      // El FOLDER: es la única identidad que resuelve a una sola sesión.
+      "201-alpha-plan-new",
     ]);
     for (const arg of action.invocation.args) {
       expect(arg).not.toMatch(/[{<][a-z_-]+[}>]/);
