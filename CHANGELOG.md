@@ -4,6 +4,33 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.13.0] — 2026-08-15
+
+**La ruta por defecto destruía el `CHECKPOINT.md` que un agente acababa de rellenar, y una lectura curiosa redirigía a dónde iba a escribir el cierre.** El centinela que autorizaba sobrescribir era el mismo string que la plantilla emite, así que el único estado protegido era «cero marcadores» y todo relleno parcial se trataba como borrador desechable — con los hooks de compactación y de cierre corriendo esa ruta solos. En paralelo, resolver una sesión ligaba la conversación aunque la superficie fuera de pura lectura, y el registro durable tomaba su fecha del mtime de la carpeta que el propio cierre acababa de tocar.
+
+### Added
+
+- **`aw workspace-migrate`.** Pone al día un hub con serie legacy: reconoce los marcadores del bloque con el prefijo antiguo conservando su contenido, siembra los centinelas de cierre **desde el histórico y con sus fechas** —nunca desde el mtime, que es justo la corrupción que este release cierra— y reserva el rango de números legacy en el correlativo. Es read-only sin `--apply`: lo que una persona lee antes de aplicar es exactamente lo que va a pasar. Cuando el histórico y el disco se contradicen, lo reporta y no toca esa sesión.
+
+### Changed
+
+- **Un solo correlativo.** Convivían tres derivaciones del mismo número: la de creación ignoraba las carpetas legacy sin fila en el histórico, la del histórico sí las contaba, y la que se le publicaba al consumidor sólo contaba las legacy. En un workspace enteramente del modelo nuevo el tablero anunciaba `001` mientras la creación asignaba `004`; con una sola carpeta legacy, anunciaba `002` y asignaba `001`, dejando el código desnudo irresoluble. Ahora las tres superficies comparten una derivación.
+- **La fecha de una fila es un hecho de la sesión.** Sale de la custodia que se sella al crearla, no del sistema de archivos. Antes venía del mtime de la carpeta —y como el propio cierre escribe dentro, la fila se auto-envejecía hacia hoy con cada operación—. Una sesión anterior al registro de custodia conserva la fecha que el histórico ya tenía.
+- **Un flag que el comando no reconoce deja de ignorarse en silencio.**
+
+### Fixed
+
+- **Un CHECKPOINT rellenado sobrevive.** El render sella un digest de sus propios bytes, así que sólo la plantilla intacta se reconoce como tal: rellenarla es exactamente lo que no puede reproducir ese sello. Regenerar contenido pasa a exigir `--force`, que recupera su sentido, y el resultado dice si escribió o si conservó. Un archivo sin sello —escrito por una versión anterior— se conserva también: ante procedencia desconocida, conservar. El marcador de plantilla queda declarado una sola vez, con un solo significado; existía duplicado en dos módulos, y la copia del camino de escritura lo leía como permiso para destruir.
+- **Leer no reclama la línea.** El vínculo conversación→sesión pasa a ser una decisión declarada por cada llamador y no un efecto de resolver. Con el vínculo en una sesión, inspeccionar otra con `checkpoint-read` o con `session-artifacts` lo movía, y el hook de cierre que seguía —que no lleva `--code`— escribía en la sesión equivocada, dejando a la real sin checkpoint.
+- **El histórico conserva lo que nadie le pidió cambiar.** Un upsert reemplazaba la línea entera, así que actualizar un estado sin nombrar referencias las borraba. La fila se inserta ahora dentro de la tabla y no al final del archivo, donde acumulaba filas huérfanas que partían la tabla en dos, y cerrar dos veces la actualiza en lugar de agregar una segunda.
+- **Sin saber de quién es la fila, no se escribe.** Un `--code` desnudo degradaba la clave de la fila de OTRA sesión y le borraba fecha y referencias — y era la forma que los propios mensajes de error sugerían. Se niega, con los candidatos nombrados. Reparar una fila cuya carpeta ya no existe sigue siendo posible nombrándola entera, que es lo que hace falta después de un retiro.
+- **Un cierre que no puede registrarse no se aplica a medias.** Con dos carpetas compartiendo número, el cierre escribía el centinela, invalidaba los vínculos y devolvía éxito con el registro diciendo `active`. Ahora se niega antes de tocar nada y nombra el único remedio.
+
+### Notes
+
+- **Compatibilidad.** El formato de la tabla del histórico y el render de los artefactos de sesión no cambian: las pruebas byte-exactas que los fijan siguen intactas y sin regenerar. Este release preserva valores, no formatos.
+- **Cómo se verificó.** Una revisión adversarial encontró dos críticos: el secuestro del vínculo seguía vivo por `session-artifacts`, y el arreglo de identidad había cerrado de paso la única puerta de reparación del registro —una fila cuya carpeta se retiró quedaba congelada—. Ambos cerrados, el primero verificado por mutación sobre las tres superficies de lectura.
+
 ## [21.12.0] — 2026-08-15
 
 **Un recorrido trabado dejó de ser un callejón sin salida, y la directiva que el CLI emite volvió a ser ejecutable tal cual.** La invocación se sellaba con el número desnudo de la sesión, que en un workspace con una carpeta legacy homónima casa con dos: ejecutarla verbatim fallaba por ambigüedad y corregirla a mano la convertía en otra invocación que el `submit` rechazaba, así que a los tres intentos la frontera quedaba agotada sin salida. El techo, además, lo gastaban los errores de tipeo del sobre —no las respuestas insuficientes—, una ejecución que fallaba no agotaba ni degradaba sino que se colgaba, y el único reset existente era restaurar a mano una copia del ledger. El contrato del sobre, en fin, sólo se aprendía quemando intentos.
