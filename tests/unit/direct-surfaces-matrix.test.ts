@@ -126,6 +126,11 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // resultado que viaja en el JSON. Era el único comando sin proyección
     // humana: `--format human` imprimía el JSON crudo.
     "visibility",
+    // plan 026 F5 — la vista previa de la migración de un hub legacy. La
+    // proyección humana es obligatoria acá por la misma razón que en `discard`:
+    // lo que una persona lee antes de tipear `--apply` es exactamente este
+    // texto, y sale del mismo plan que viaja en el JSON.
+    "workspace-migrate",
   ];
 
   it("no undeclared command acquired a human projection", () => {

@@ -54,6 +54,7 @@ import { stackCommand } from "./stack.js";
 import { statusCommand } from "./status.js";
 import { visibilityCommand } from "./visibility.js";
 import { workspaceInitCommand } from "./workspace-init.js";
+import { workspaceMigrateCommand } from "./workspace-migrate.js";
 import { worktreeCommand } from "./worktree.js";
 
 export const ALL_COMMANDS: readonly QtcCommand[] = [
@@ -113,6 +114,9 @@ export const ALL_COMMANDS: readonly QtcCommand[] = [
   attachMultirootCommand,
   detachMultirootCommand,
   projectMdUpsertCommand,
+  // The punctual way into the current model for a hub that carries a legacy
+  // series. Read-only without `--apply`.
+  workspaceMigrateCommand,
   sessionResumeCommand,
   selfCommand,
 ];

@@ -96,6 +96,10 @@ const GROUPS: readonly CommandGroup[] = [
       "release-data",
       "code-scan",
       "project-md-upsert",
+      // Lives with the record-repair family and not with `workspace-init`: it
+      // does not create a workspace, it repairs the durable state of one that a
+      // previous namespace left unreadable.
+      "workspace-migrate",
       "bootstrap-dsn",
     ],
   },
