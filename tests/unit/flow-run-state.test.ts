@@ -306,9 +306,19 @@ describe("estado de corrida — fail-closed", () => {
         ?.attempted,
     ).toBe(false);
 
+    // Las observaciones se ACUMULAN. Reemplazar la anterior de la misma
+    // transición perdía hallazgos en silencio: un segundo reconocimiento pisaba
+    // al primero, así que una corrida sólo podía recordar el último.
     const once = withObservation(waiting, { transition: "fixture.a", signals: ["s1"] });
     const twice = withObservation(once, { transition: "fixture.a", signals: ["s1", "s2"] });
-    expect(twice.observations).toEqual([{ transition: "fixture.a", signals: ["s1", "s2"] }]);
+    expect(twice.observations).toEqual([
+      { transition: "fixture.a", signals: ["s1"] },
+      { transition: "fixture.a", signals: ["s1", "s2"] },
+    ]);
+    // Pero un repetido EXACTO no se apila: contestar dos veces lo mismo es una
+    // observación enviada dos veces, y acumularla convertiría la traza en un
+    // contador de intentos, que es para lo que está el historial de intentos.
+    expect(withObservation(twice, { transition: "fixture.a", signals: ["s2", "s1"] })).toBe(twice);
     expect(parseRunState(serializeRunState(twice)).ok).toBe(true);
   });
 

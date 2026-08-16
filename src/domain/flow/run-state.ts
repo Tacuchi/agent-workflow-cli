@@ -641,15 +641,38 @@ export function restatesLastEvent(state: FlowRunState, event: FlowRunEvent): boo
   );
 }
 
-/** Keep a validated observation for the rule that consumes it later. */
+/**
+ * Keep a validated observation for the rule that consumes it later.
+ *
+ * Observations ACCUMULATE. They used to replace the previous one for the same
+ * transition, and that silently lost findings: a run that recognises a second
+ * divergence overwrote the first, so a gate meant to carry every declaration
+ * forward could only ever remember the last one. Thresholds are unaffected —
+ * `thresholdFired` already unions the signals of every observation of a
+ * transition and counts them DISTINCT — so accumulating changes what is
+ * remembered without changing what fires.
+ *
+ * An exact repeat is not appended: re-answering a boundary with the same signals
+ * is one observation sent twice, and letting it pile up would turn the trace
+ * into a retry counter, which is what the attempt history is for.
+ */
 export function withObservation(state: FlowRunState, observation: FlowObservation): FlowRunState {
+  const repeated = state.observations.some(
+    (past) =>
+      past.transition === observation.transition && sameSignals(past.signals, observation.signals),
+  );
+  if (repeated) return state;
   return sealRunState({
     ...withoutSeal(state),
-    observations: [
-      ...state.observations.filter((past) => past.transition !== observation.transition),
-      observation,
-    ],
+    observations: [...state.observations, observation],
   });
+}
+
+function sameSignals(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((signal, index) => signal === right[index]);
 }
 
 /** Record one attempt in the persisted history, re-sealing the result. */

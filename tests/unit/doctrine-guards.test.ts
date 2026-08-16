@@ -863,14 +863,23 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     ]);
   });
 
-  it("the deviation gate lives only in plan-exec, with its three destinations", async () => {
+  it("the deviation gate lives only in plan-exec, with its four destinations", async () => {
     const exec = await readSurface(PLAN_EXEC);
     expect(exec).toContain("## Deviation gate");
     expect(exec).toContain("**Marking order (hard rule):**");
     expect(exec).toContain("**Local decision \u2014 `plan-exec` continues.**");
+    expect(exec).toContain(
+      "**Composable decision \u2014 a note is registered and execution continues.**",
+    );
     expect(exec).toContain("**Structural deviation \u2014 stop and return to `plan-refine`.**");
     expect(exec).toContain("**Functional change \u2014 return to `spec-refine`.**");
     expect(exec).toContain("This gate lives **only** in this loop");
+    // Eligibility is CLOSURE, never size: the sentence that keeps a count from
+    // ever becoming the threshold.
+    expect(exec).toContain("**Eligibility is closure, never size.**");
+    // And an escalation never leaves empty-handed.
+    expect(exec).toContain("**escalation package**");
+    expect(exec).toContain("declares that it consumed it");
     // A structural deviation cannot be absorbed by a DECISION entry.
     const decision = await readSurface(join("artifacts", "artifacts-exec", "DECISION.md"));
     expect(decision).toContain("**Local decisions only.**");

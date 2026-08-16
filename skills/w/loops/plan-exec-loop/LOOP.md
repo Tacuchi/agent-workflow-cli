@@ -139,22 +139,47 @@ reconciliation** in `CHECKPOINT`, never reported as published.
 
 ## Deviation gate
 
-Execution resolves **detail**, never **redesign**. This gate lives **only** in this loop — the chassis does not carry it.
+Execution resolves **detail**, never **redesign** — and between those two there is a third thing: a
+divergence that keeps the functional lineage and can be reconciled **forward**.
+This gate lives **only** in this loop — the chassis does not carry it. It has **four** exits, and the
+run stops at it: declaring a deviation no longer carries on to the commit by itself.
 
-- **Local decision — `plan-exec` continues.** A class or method name; a local helper; internal code layout; imports; a choice between equivalent APIs already allowed; a fix needed to compile; a minor refactor that does not move the journey; one extra focused test for a risk found while implementing. Recorded in `DECISION` only when it is not obvious.
+- **Local decision — `plan-exec` continues.** A class or method name; a local helper; internal code layout; imports; a choice between equivalent APIs already allowed; a fix needed to compile; a minor refactor that does not move the journey; one extra focused test for a risk found while implementing. Declares **no signal** — the gate is not raised — and is recorded in `DECISION` only when it is not obvious.
+- **Composable decision — a note is registered and execution continues.** The change amends how the promise is met without changing who promised it. It is the only exit that writes a **decision note**, and it is available **only** when all four closures hold (below). The spec and the plan stay byte-exact.
 - **Structural deviation — stop and return to `plan-refine`.** Stop when the change touches: an input or output; an observable state; a relevant endpoint or public contract; the set of participating components or repositories; the phase order; the simulation boundary; the integration strategy; a material dependency; the main persistence mechanism; a phase already `validada`; the evidence needed to demonstrate the result. A decision that substantially expands or shrinks the work counts too.
 - **Functional change — return to `spec-refine`.** Stop when the change touches: the expected result; the functional scope; a business rule; an acceptance criterion; the actor or consumer; or a product decision.
 
-On either return path: `CHECKPOINT` records the state reached and the trigger, the phase keeps the state it really has (`en ejecución` or `bloqueada`, never `validada`), the working tree is left committed or acknowledged (Delta 2), and the human is told through a structured-choice which command to run. Resuming later over the corrected plan is a normal `create_or_resume`.
+**Eligibility is closure, never size.** The composable exit opens only when the four close: the
+divergence stays in the **same functional lineage**; its **intent is settled**, so nothing further has
+to be elicited; its **transitive impact can be enumerated**, every consumer nameable; and its
+**result can be sealed and recovered**, so an identical retry gives the same outcome and a failure
+leaves nothing half-written. Counts — of criteria, phases or repositories — are reported and decide
+nothing: a divergence touching one criterion that closes three of the four is not composable, and one
+touching nine that closes all four is.
 
-| Finding | `plan-exec` | `plan-refine` | `spec-refine` |
-|---|---|---|---|
-| Rename a helper · internal implementation · test for a local risk | continues | — | — |
-| Change the public DTO | stops | yes | yes, if behavior changes |
-| Add a participating repository | stops | yes | — |
-| Move the simulation to another boundary | stops | yes | — |
-| Change the phase order | stops | yes | — |
-| Add a functional rule · change an acceptance criterion | stops | — | yes |
+> **Which exit the run takes is the person's, and which are offered is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Recognizing the divergence and closing its eligibility are judgment; counting the closures and raising the choice are a rule.
+
+On any exit that leaves the phase: `CHECKPOINT` records the state reached and the trigger, the phase
+keeps the state it really has (`en ejecución` or `bloqueada`, never `validada`), and the working tree
+is left committed or acknowledged (Delta 2). On the two return paths and on an escalation, the
+**escalation package** travels with it — diagnosis, decisions already taken, evidence gathered and the
+return point — and the destination **declares that it consumed it**, so returning never costs redoing
+the analysis execution had already done. Resuming later over the corrected plan is a normal
+`create_or_resume`.
+
+**More than one divergence may appear in a run, and every one is kept.** A later recognition never
+erases an earlier one.
+
+| Finding | `plan-exec` | note | `plan-refine` | `spec-refine` |
+|---|---|---|---|---|
+| Rename a helper · internal implementation · test for a local risk | continues | — | — | — |
+| Same promise, different route, four closures held | continues | yes | — | — |
+| Change the public DTO | stops | — | yes | yes, if behavior changes |
+| Add a participating repository | stops | — | yes | — |
+| Move the simulation to another boundary | stops | — | yes | — |
+| Change the phase order | stops | — | yes | — |
+| Add a functional rule · change an acceptance criterion | stops | — | — | yes |
+| Does not compose against this lineage at all | stops | — | — | a spec of its own |
 
 ## Delta 2 — Git policy: **safe branch + proposed commits**
 

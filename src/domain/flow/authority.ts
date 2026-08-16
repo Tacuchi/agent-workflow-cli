@@ -1420,6 +1420,20 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
+    id: "spec-refine.escalation-adoption",
+    scope: "spec-refine",
+    title: "adoptar el paquete de escalación que llega de una ejecución, si llega uno",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: SPEC_LOOP,
+    attribution: SPEC_ATTRIBUTION,
+    // The destination DECLARES what it consumes. Without this the package
+    // arrived nowhere: the refine re-derived the diagnosis execution had already
+    // produced, which is precisely the cost this whole capability exists to
+    // remove.
+    signals: ["spec.escalation-adopted", "spec.escalation-absent"],
+  },
+  {
     id: "spec-refine.baseline-scope",
     scope: "spec-refine",
     title: "decidir cuánto comportamiento actual hace falta establecer",
@@ -2023,6 +2037,19 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
+    id: "plan-refine.escalation-adoption",
+    scope: "plan-refine",
+    title: "adoptar el paquete de escalación que llega de una ejecución, si llega uno",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_REFINE_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // Same contract as its spec-refine sibling: the destination says whether it
+    // consumed the package, so "volver cuesta rehacer el análisis" stops being
+    // true by construction rather than by good intentions.
+    signals: ["plan.escalation-adopted", "plan.escalation-absent"],
+  },
+  {
     id: "plan-refine.journey-map",
     scope: "plan-refine",
     title: "mapear contrato observable, recorrido técnico, estrategia incremental y evidencia",
@@ -2454,24 +2481,107 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
-    // Only the two that LEAVE the loop are signals. A local decision declares
-    // nothing, which is the doctrine's own default — "plan-exec continues" — and
-    // it is what keeps the gate below from stopping a run that has nothing to
-    // classify.
-    signals: ["plan.deviation-structural", "plan.deviation-functional"],
+    // A local decision declares NOTHING, which is the doctrine's own default —
+    // "plan-exec continues" — and it is what keeps the gate below from stopping a
+    // run that has nothing to classify. The other three leave the phase: two of
+    // them leave the loop, and `composable` is the fourth exit — the divergence
+    // that keeps its functional lineage and can be reconciled forward.
+    signals: [
+      "plan.deviation-structural",
+      "plan.deviation-functional",
+      "plan.deviation-composable",
+      "plan.deviation-escalation",
+    ],
+  },
+  {
+    id: "plan-exec.deviation-eligibility",
+    scope: "plan-exec",
+    title: "cerrar las cuatro condiciones que hacen componible una divergencia",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // Eligibility is CLOSURE, never size. The four signals are the four things
+    // that have to close, and the threshold below demands all four: a divergence
+    // that touches one criterion and closes three of them is not composable, and
+    // one that touches nine and closes the four is. Counts of criteria, phases or
+    // repositories are reported in the note and set no threshold — that is the
+    // difference between informing a decision and making it.
+    signals: [
+      "plan.closure-lineage",
+      "plan.closure-intent",
+      "plan.closure-impact",
+      "plan.closure-recoverable",
+    ],
+    condition: {
+      threshold: { observed: "plan-exec.deviation-recognition", min: 1 },
+      otherwise: "no se declaró ninguna desviación: no hay elegibilidad que cerrar",
+    },
   },
   {
     id: "plan-exec.deviation-gate",
     scope: "plan-exec",
-    title: "clasificar la desviación en local, estructural o funcional y derivar",
-    authority: "cli",
+    title: "elegir la salida de la desviación entre sus cuatro caminos",
+    authority: "human",
     ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
+    // This row used to declare no action, no alternatives and no effects, so the
+    // walk AUTO-APPLIED it and carried on to `pending-effects`, `task-marking`
+    // and the commit. Declaring a structural deviation stopped nothing, asked
+    // nothing and routed nowhere: the structured-choice the doctrine promised
+    // existed only in prose. It is a real boundary now, and which way the run
+    // leaves is the person's.
     condition: {
       threshold: { observed: "plan-exec.deviation-recognition", min: 1 },
       otherwise:
         "no se declaró ninguna desviación estructural ni funcional: lo local se resuelve en la fase y la ejecución sigue",
+    },
+    alternatives: [
+      {
+        label: "Registrar la decisión y seguir",
+        consequence:
+          "queda una nota de decisión durable sobre el contrato efectivo y la ejecución sigue desde su punto de reanudación; la spec y el plan no se tocan",
+        recommended: true,
+      },
+      {
+        label: "Volver a plan-refine",
+        consequence:
+          "la desviación es estructural: la corrida para, el plan se reabre con /w:plan-refine y recibe el paquete de escalación ya reunido",
+        recommended: false,
+      },
+      {
+        label: "Volver a spec-refine",
+        consequence:
+          "la desviación cambia lo prometido: la corrida para y /w:spec-refine recibe el paquete, sin rehacer el análisis",
+        recommended: false,
+      },
+      {
+        label: "Escalar a una spec nueva",
+        consequence:
+          "lo hallado no compone contra este linaje: nace una spec propia con el diagnóstico, las decisiones y la evidencia ya reunidos",
+        recommended: false,
+      },
+    ],
+  },
+  {
+    id: "plan-exec.escalation-package",
+    scope: "plan-exec",
+    title: "entregar diagnóstico, decisiones, evidencia y punto de retorno al destino",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // Escalating without the package is what made returning expensive: the
+    // destination re-derived the analysis execution had already done. The package
+    // travels so the next loop ADOPTS it instead of lifting it again.
+    condition: {
+      threshold: {
+        observed: "plan-exec.deviation-recognition",
+        min: 1,
+        of: ["plan.deviation-structural", "plan.deviation-functional", "plan.deviation-escalation"],
+      },
+      otherwise: "la desviación se resolvió componiendo: no hay escalación que empaquetar",
     },
   },
   {

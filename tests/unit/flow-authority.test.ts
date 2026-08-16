@@ -88,6 +88,10 @@ describe("registro de autoridad — forma y unicidad", () => {
       "quick.db-touched",
       "quick.review-findings",
       "quick.commit-authorization",
+      // El destino DECLARA lo que consume: sin esta fila el paquete de
+      // escalación llegaba a ningún lado y el refine volvía a derivar el
+      // diagnóstico que la ejecución ya había producido.
+      "spec-refine.escalation-adoption",
       "spec-refine.baseline-scope",
       "spec-refine.split-signal",
       "spec-refine.split-choice",
@@ -109,6 +113,7 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-new.split-choice",
       "plan-new.save-proposal",
       "plan-new.save-confirmation",
+      "plan-refine.escalation-adoption",
       "plan-refine.journey-map",
       "plan-refine.batch-eligibility-signal",
       "plan-refine.split-signal",
@@ -127,6 +132,12 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.source-scope",
       "plan-exec.implementation",
       "plan-exec.deviation-recognition",
+      // La elegibilidad es CIERRE, no tamaño: cuatro señales que tienen que
+      // cerrar. Y el gate dejó de auto-aplicarse: es la persona quien elige
+      // por cuál de las cuatro salidas se va la corrida.
+      "plan-exec.deviation-eligibility",
+      "plan-exec.deviation-gate",
+      "plan-exec.escalation-package",
       // La frontera que declara qué queda por hacer al cerrar el batch. Sin ella,
       // las tres filas que escriben, corren o commitean exigían su efecto aunque
       // en un batch legítimo no hubiera nada que hacer.
@@ -413,7 +424,10 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // Diez desde que el guardado es una propuesta sellada: entra la fila que
     // entrega los bytes y la que los publica, y sale la promoción del status —
     // el sello viaja DENTRO de esos bytes, así que ya no es una escritura aparte.
-    expect(counted("spec-refine", "loops/spec-refine-loop/LOOP.md")).toBe(10);
+    // Once, la que adopta el paquete de escalación que llega de una ejecución:
+    // el destino declara lo que consume, y por eso volver deja de costar rehacer
+    // el análisis.
+    expect(counted("spec-refine", "loops/spec-refine-loop/LOOP.md")).toBe(11);
     expect(counted("spec-refine", "modules/IDEATION-GATE.md")).toBe(2);
     // PLAN's three journeys, whole — 49 rows, of which 10 are new: the eligibility
     // observation and its isolation rule in each of the three, refine's own split
@@ -435,7 +449,12 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // `plan-exec.unit-integration` el recorrido terminaba informando "listo" sobre
     // commits que sólo existían en `aw/<sesión>`. Abrir la unidad y devolverla son
     // dos pasos del mismo recorrido, y ninguno de los dos puede ser una costumbre.
-    expect(plan).toHaveLength(55);
+    // 55 + 3, las que hacen del gate de desviación una máquina y no sólo
+    // doctrina: la que cierra las cuatro condiciones de elegibilidad, la que
+    // empaqueta la escalación con su diagnóstico, y la que en `plan-refine`
+    // declara haberla consumido. El propio `plan-exec.deviation-gate` ya estaba
+    // en el registro: lo que le faltaba no era existir, era detenerse.
+    expect(plan).toHaveLength(58);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos
