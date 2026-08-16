@@ -31,6 +31,7 @@ export const DOCS_CATEGORIES = [
   "research",
   "spec",
   "plan",
+  "decision",
   "diagrams",
   "manuals",
   "reports",
@@ -42,16 +43,26 @@ export type DocsCategory = (typeof DOCS_CATEGORIES)[number];
 /** The three categories that form Workline's document graph. */
 export const CORE_DOC_CATEGORIES = ["research", "spec", "plan"] as const;
 
+/**
+ * Categories a workspace may NOT relocate.
+ *
+ * The three core ones, plus `decision`: a decision note amends the effective
+ * contract of a spec its plan was derived from, so flow, status and resume all
+ * have to find the same chain. A note tree the workspace could move is a chain
+ * one reader finds and another does not — and a contract that half the surfaces
+ * can see is worse than no contract at all.
+ */
+const FIXED_CATEGORIES: ReadonlySet<string> = new Set([...CORE_DOC_CATEGORIES, "decision"]);
+
 export type CoreDocsCategory = (typeof CORE_DOC_CATEGORIES)[number];
 
 export { DEFAULT_CORE_DOCS_CANON } from "../domain/docs-canon.js";
 export type { CoreDocsCanon } from "../domain/docs-canon.js";
 
-const CORE_DOC_CATEGORY_SET: ReadonlySet<string> = new Set(CORE_DOC_CATEGORIES);
-
 /** Current layout when the workspace has no `[docs]` table. */
 export const DEFAULT_DOCS_CANON: Readonly<Record<DocsCategory, string>> = {
   ...DEFAULT_CORE_DOCS_CANON,
+  decision: "docs/decisions",
   diagrams: "docs/diagrams",
   manuals: "docs/manuals",
   reports: "docs/reports",
@@ -160,8 +171,8 @@ function checkDestination(
   // write still targets another. Keep the shared defaults centralised now and
   // refuse a relocation until that migration is complete.
   if (
-    CORE_DOC_CATEGORY_SET.has(category) &&
-    safe.path !== DEFAULT_DOCS_CANON[category as CoreDocsCategory]
+    FIXED_CATEGORIES.has(category) &&
+    safe.path !== DEFAULT_DOCS_CANON[category as DocsCategory]
   ) {
     return {
       ok: false,

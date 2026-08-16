@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { canonicalJson } from "../../application/semantic-operation/protocol.js";
+import { sealedRecordDigest } from "../sealed-record.js";
 import { isCalendarDate } from "./baseline.js";
 import { CANONICAL_SCHEMAS } from "./capability.js";
 import { isDigest, parseBaselineRef } from "./identity.js";
@@ -90,8 +89,7 @@ const DECISIONS: ReadonlySet<string> = new Set(["proposed", "approved", "rejecte
  * unverifiable — you cannot hash a value that contains its own hash.
  */
 export function computeRecordDigest(record: Omit<GovernanceRecord, "digest">): string {
-  const { digest: _drop, ...rest } = record as GovernanceRecord;
-  return `sha256:${createHash("sha256").update(canonicalJson(rest), "utf8").digest("hex")}`;
+  return sealedRecordDigest(record as unknown as Record<string, unknown>);
 }
 
 export function validateDesignReview(
