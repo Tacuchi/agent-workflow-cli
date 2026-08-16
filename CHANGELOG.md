@@ -4,7 +4,7 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [22.1.0] — 2026-08-16
 
 **Un plan y su spec pueden volver a estar de acuerdo sin rehacer ninguno de los dos.** Hasta acá, cuando la ejecución encontraba una divergencia con la spec, las únicas salidas eran seguir de largo o rehacer el linaje entero: el gate de desviación era doctrina sin máquina y el recorrido lo auto-aplicaba hasta el commit. Ahora la corrida se detiene, ofrece cuatro salidas, y la componible registra una decisión durable que enmienda el contrato sin reescribir lo que ya se validó.
 
