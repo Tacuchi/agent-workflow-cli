@@ -28,6 +28,7 @@ import { canonicalJson, semanticDigest } from "../../application/semantic-operat
 import { type EffectClass, isEffectClass, touchesTheWorld } from "../capability/effects.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
 import type { LocalProposal } from "../proposal.js";
+import type { PlanReconciliation } from "../reconciliation.js";
 import type { FlowDecision } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
 
@@ -42,21 +43,22 @@ import type { EffectGrant } from "./authorization.js";
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 8;
+export const FLOW_RUN_STATE_VERSION = 9;
 
 /**
  * The versions this CLI READS, newest first.
  *
- * Two, and the second one is not a migration: every field version 8 added is
- * OPTIONAL and its absence is the conservative reading — no floor beyond the
- * ledger, nothing forgiven, no degradation declared. So a run written before
- * them is read exactly as it always was, keeps walking, and is re-stamped as
- * version 8 by its first write. Refusing it instead would strand runs that were
- * mid-journey when the CLI was upgraded, which is the compatibility the spec
- * demands; inventing values for the missing fields would be the fabrication the
- * version gate exists to refuse. Neither happens here.
+ * Three, and none of the older two is a migration: every field versions 8 and 9
+ * added is OPTIONAL and its absence is the conservative reading — no floor
+ * beyond the ledger, nothing forgiven, no degradation declared, nothing owed
+ * recorded. So a run written before them is read exactly as it always was, keeps
+ * walking, and is re-stamped current by its first write. Refusing it instead
+ * would strand runs that were mid-journey when the CLI was upgraded, which is
+ * the compatibility the spec demands; inventing values for the missing fields
+ * would be the fabrication the version gate exists to refuse. Neither happens
+ * here.
  */
-export const FLOW_RUN_STATE_READABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 7];
+export const FLOW_RUN_STATE_READABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 8, 7];
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -402,8 +404,32 @@ export interface FlowRunState {
   attempt_floor?: Record<string, number>;
   /** Attempts a recovery gave back per transition — also from the sidecar. */
   attempt_grants?: Record<string, number>;
+  /**
+   * Where a registered decision sent the work back to, still unsettled.
+   *
+   * This is the bounded continuity, and what it is NOT matters as much as what
+   * it is: it does not move {@link applied}, {@link skipped} or
+   * {@link boundary}. The journey stays a linear append-only pass, because a
+   * cursor that could go back would make every already-applied transition
+   * re-runnable, and the ledger that caps attempts is built on the cursor only
+   * ever growing. What moves is the position in the PLAN — which was never the
+   * cursor's to hold.
+   *
+   * Optional for the same reason as the fields above it: a run written before
+   * this existed cannot say, and absent reads as "nothing owed was recorded",
+   * never as "nothing is owed".
+   */
+  continuation?: FlowContinuation | null;
   /** Seal over every field above. */
   digest: string;
+}
+
+/** The plan position a decision's first unsettled obligation resumes at. */
+export interface FlowContinuation {
+  /** Where execution comes back, from the owed note's own resume point. */
+  resume_point: string;
+  /** The note that owes it. */
+  by: string;
 }
 
 export type FlowRunRead =
@@ -666,6 +692,38 @@ export function withObservation(state: FlowRunState, observation: FlowObservatio
     ...withoutSeal(state),
     observations: [...state.observations, observation],
   });
+}
+
+/**
+ * Point the run at the first thing a decision still owes — or clear it.
+ *
+ * It takes the whole reconciliation and not a bare point on purpose. The rule is
+ * "the FIRST new or pending obligation reached", and that is a fact about the
+ * entire effective contract: a second note handed its own resume point would
+ * move the run FORWARD, stepping over work an earlier decision is still owed. By
+ * reading the projection, settling everything clears the continuation on its own
+ * and there is no separate "we are done" call anybody can forget to make.
+ */
+export function withContinuation(
+  state: FlowRunState,
+  reconciliation: PlanReconciliation,
+): FlowRunState {
+  const first = reconciliation.pending[0];
+  if (first === undefined) return consumeContinuation(state);
+  const held = state.continuation ?? null;
+  if (held !== null && held.by === first.by && held.resume_point === first.resume_point) {
+    return state;
+  }
+  return sealRunState({
+    ...withoutSeal(state),
+    continuation: { resume_point: first.resume_point, by: first.by },
+  });
+}
+
+/** Record that the run reached the point it was sent back to. */
+export function consumeContinuation(state: FlowRunState): FlowRunState {
+  if ((state.continuation ?? null) === null) return state;
+  return sealRunState({ ...withoutSeal(state), continuation: null });
 }
 
 function sameSignals(a: readonly string[], b: readonly string[]): boolean {

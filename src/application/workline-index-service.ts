@@ -1,13 +1,25 @@
 import { basename, join, relative } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives, isCorrelative } from "../domain/correlative.js";
-import { type BaselineAlignment, alignSpecBaseline } from "../domain/lineage.js";
+import type { DecisionNote } from "../domain/decision-note.js";
+import { composeEffectiveContract } from "../domain/effective-contract.js";
+import {
+  type BaselineAlignment,
+  type PlanBaselineSeal,
+  alignSpecBaseline,
+} from "../domain/lineage.js";
+import { type PlanReconciliation, reconciliationOf } from "../domain/reconciliation.js";
 import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { localDateIso } from "./dates.js";
+import { noteIndexPath, readNoteIndex } from "./decision-note-service.js";
 import { type DesignGraph, buildDesignGraph } from "./design/design-graph-service.js";
-import { type CoreDocsCanon, resolveCoreDocsCanon } from "./docs-canon-service.js";
+import {
+  type CoreDocsCanon,
+  DEFAULT_DOCS_CANON,
+  resolveCoreDocsCanon,
+} from "./docs-canon-service.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
@@ -16,6 +28,7 @@ import { parseProjectBlock } from "./parsers/project-block.js";
 import {
   type SpecEvidence,
   parsePlanBaselineSeal,
+  parseSpecCriteria,
   parseSpecRelation,
 } from "./parsers/spec-relation.js";
 import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
@@ -118,6 +131,15 @@ export interface IndexedPlan {
    * plan can have the first without the second.
    */
   baseline: BaselineAlignment;
+  /**
+   * What a decision left this plan owing, or `null` when it has no sealed,
+   * aligned baseline to compose a contract against.
+   *
+   * Pending compensatory work is NEW work of the effective contract, never a
+   * correction of the plan document: the phases and checkboxes it invalidated
+   * keep their historical state, because they record what really happened.
+   */
+  reconciliation: PlanReconciliation | null;
   date: string;
   relative: string;
 }
@@ -617,6 +639,21 @@ async function readPlans(
     specTexts.set(number, text);
     return text;
   };
+  // One read of each lineage's chain, for the same reason the specs are read
+  // once: two plans of one spec must be judged against one reading of its notes.
+  const chains = new Map<string, DecisionNote[]>();
+  const chainOf = async (spec: IndexedSpec): Promise<DecisionNote[]> => {
+    const cached = chains.get(spec.number);
+    if (cached !== undefined) return cached;
+    const path = noteIndexPath(DEFAULT_DOCS_CANON.decision, spec.number, spec.slug);
+    const read = await readNoteIndex(fs, cwd, path, { path: spec.file, number: spec.number });
+    // A chain that does not parse is NOT "no obligations": reporting it as a
+    // clean slate would let a plan close over compensation nobody could read.
+    const notes = read.ok ? read.read.index.notes : [];
+    chains.set(spec.number, notes);
+    return notes;
+  };
+
   const out: IndexedPlan[] = [];
   for (const f of files) {
     try {
@@ -625,7 +662,15 @@ async function readPlans(
       const sealedSpec = seal.status === "sealed" ? await specTextOf(seal.baseline.number) : null;
       const t = parseTasks(text);
       const p = parsePhases(text);
-      const planState = derivePlanState(parsePlanStatus(text).declared, t, p);
+      const alignment = alignSpecBaseline(seal, sealedSpec);
+      const reconciliation = await reconciliationFor(
+        alignment,
+        seal,
+        sealedSpec,
+        byNumber,
+        chainOf,
+      );
+      const planState = derivePlanState(parsePlanStatus(text).declared, t, p, reconciliation);
       const ts = await resolveTimestamp(fs, f.path, undefined, now);
       out.push({
         file: relFromCwd(f.path, cwd),
@@ -644,7 +689,8 @@ async function readPlans(
         final_validation_pending:
           planState === "open" && p.total > 0 && p.validated === p.total && t.closed === t.total,
         spec: resolveSpecRelation(text, byNumber, docs.spec),
-        baseline: alignSpecBaseline(seal, sealedSpec),
+        baseline: alignment,
+        reconciliation,
         date: ts.date,
         relative: ts.relative,
       });
@@ -723,13 +769,69 @@ function derivePlanState(
   declared: ParsedPlanStatus["declared"],
   tasks: ParsedTasks,
   phases: ParsedPhases,
+  reconciliation: PlanReconciliation | null,
 ): PlanState {
   if (declared === "unknown") return "inconsistent";
   if (declared !== "done") return "open";
   if (tasks.closed !== tasks.total) return "inconsistent";
+  // A decision left compensatory work owing, so the counters agreeing is not the
+  // same as the contract being satisfied — and this is exactly `inconsistent`'s
+  // existing meaning: the document says one thing and shows another. Gating it
+  // HERE is what closes the closure path end to end, because the flow's own
+  // `plan-exec.plan-done` row seals the plan only once the board reads it closed.
+  if (reconciliation !== null && !reconciliation.closable) return "inconsistent";
   // Legacy contract (`legacy-tasks`): no phase marks, so the checkboxes decide.
   if (phases.total === 0) return "done";
   return phases.validated === phases.total ? "done" : "inconsistent";
+}
+
+/**
+ * What this plan still owes, or `null` when the question does not apply.
+ *
+ * Only a plan whose seal ALIGNS gets a reconciliation. An unsealed plan has no
+ * baseline to compose against, and a divergent one is already being reported as
+ * divergent — deriving obligations from a contract the plan is not on would
+ * answer a question nobody asked with numbers nobody can act on.
+ *
+ * A contract that BLOCKS is not a clean slate either: it comes back as pending
+ * with the composition's own refusal as the work owed, so a plan whose chain
+ * cannot be read never slips through as closable.
+ */
+async function reconciliationFor(
+  alignment: BaselineAlignment,
+  seal: PlanBaselineSeal,
+  specText: string | null,
+  byNumber: ReadonlyMap<string, IndexedSpec>,
+  chainOf: (spec: IndexedSpec) => Promise<DecisionNote[]>,
+): Promise<PlanReconciliation | null> {
+  if (alignment.status !== "aligned" || seal.status !== "sealed" || specText === null) return null;
+  const spec = byNumber.get(seal.baseline.number);
+  if (spec === undefined) return null;
+
+  // An empty chain composes to a contract with no obligations, so it needs no
+  // special case: a plan nobody amended owes nothing and stays closable.
+  const chain = await chainOf(spec);
+  const composed = composeEffectiveContract(
+    {
+      path: spec.file,
+      number: spec.number,
+      digest: alignment.digest,
+      criteria: parseSpecCriteria(specText),
+    },
+    chain,
+  );
+  if (composed.status === "blocked") {
+    return {
+      pending: composed.failures.map((failure) => ({
+        text: `${failure.code}: ${failure.message}`,
+        by: "composición",
+        resume_point: failure.action,
+      })),
+      resume_point: composed.failures[0]?.action ?? null,
+      closable: false,
+    };
+  }
+  return reconciliationOf(composed.contract, chain);
 }
 
 // ── sessions ─────────────────────────────────────────────────────────────────
