@@ -1,5 +1,6 @@
 import { CORRELATIVE_SOURCE, compareCorrelatives } from "../../domain/correlative.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
+import { type PlanBaselineSeal, parsePlanBaseline, specCriteria } from "../../domain/lineage.js";
 import { parseMdSectionBilingual, scanMarkdown } from "../markdown.js";
 
 /**
@@ -57,6 +58,62 @@ export function parseSpecRelation(
     return { status: "ambiguous", numbers, evidence };
   }
   return { status: "absent" };
+}
+
+/**
+ * The baseline a plan sealed: WHICH bytes of its spec it was derived from.
+ *
+ * Read from the same header blockquote and with the same bound as `Derived
+ * from`, and kept a separate call because the two answer different questions —
+ * one names the spec, the other pins its version. A plan may legitimately have
+ * the first and not the second: every plan written before the seal existed
+ * does, and that reads `absent`, never a failure.
+ */
+export function parsePlanBaselineSeal(
+  text: string,
+  specDir: string = DEFAULT_CORE_DOCS_CANON.spec,
+): PlanBaselineSeal {
+  const { lines, fenced, headings } = scanMarkdown(text);
+  const firstSection = headings.find((h) => h.level >= 2);
+  const end = firstSection?.line ?? lines.length;
+  return parsePlanBaseline(lines, fenced, end, specDir);
+}
+
+/**
+ * The literal spec path on the plan's `Derived from` line.
+ *
+ * `parseSpecRelation` answers by NUMBER on purpose — resolving it against the
+ * real inventory is the caller's job, and a path in a document is a hint that
+ * can be stale. Sealing a baseline is the one caller that needs the written
+ * path itself: it is what the seal records as its hint, and reading the bytes
+ * it points at is how the digest is computed. `null` when the plan declares no
+ * `Derived from` path, or declares more than one.
+ */
+export function parseDerivedFromPath(
+  text: string,
+  specDir: string = DEFAULT_CORE_DOCS_CANON.spec,
+): string | null {
+  const { lines, fenced, headings } = scanMarkdown(text);
+  const firstSection = headings.find((h) => h.level >= 2);
+  const end = firstSection?.line ?? lines.length;
+  const specPath = specPathPattern(specDir);
+  const found: string[] = [];
+  for (let i = 0; i < end; i += 1) {
+    const line = lines[i];
+    if (line === undefined || fenced[i] === true) continue;
+    if (!DERIVED_FROM_RE.test(line)) continue;
+    for (const match of line.matchAll(new RegExp(specPath.source, specPath.flags))) {
+      found.push(match[0]);
+    }
+  }
+  const unique = [...new Set(found)];
+  return unique.length === 1 ? (unique[0] as string) : null;
+}
+
+/** The acceptance criteria a spec states, in order and without duplicates. */
+export function parseSpecCriteria(text: string): string[] {
+  const { lines, fenced } = scanMarkdown(text);
+  return specCriteria(lines, fenced);
 }
 
 /**

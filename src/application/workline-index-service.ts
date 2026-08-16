@@ -1,5 +1,6 @@
 import { basename, join, relative } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives, isCorrelative } from "../domain/correlative.js";
+import { type BaselineAlignment, alignSpecBaseline } from "../domain/lineage.js";
 import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -12,7 +13,11 @@ import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./ma
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
 import { type ParsedPlanStatus, parsePlanStatus } from "./parsers/plan-status.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
-import { type SpecEvidence, parseSpecRelation } from "./parsers/spec-relation.js";
+import {
+  type SpecEvidence,
+  parsePlanBaselineSeal,
+  parseSpecRelation,
+} from "./parsers/spec-relation.js";
 import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { listPendingJournals } from "./retirement/journal.js";
@@ -107,8 +112,25 @@ export interface IndexedPlan {
   final_validation_pending: boolean;
   /** which spec this plan proves it came from */
   spec: SpecRelation;
+  /**
+   * WHICH VERSION of that spec it was derived from, checked against the spec as
+   * it reads now. `spec` answers the number; this answers the contract, and a
+   * plan can have the first without the second.
+   */
+  baseline: BaselineAlignment;
   date: string;
   relative: string;
+}
+
+/** A plan that consumes a given spec, with how its seal stands against it. */
+export interface SpecConsumer {
+  /** Workspace-relative path of the plan. */
+  file: string;
+  number: string;
+  slug: string;
+  /** `open` / `done` / `inconsistent` — whether this consumer is still live. */
+  plan_state: PlanState;
+  alignment: BaselineAlignment;
 }
 
 export interface IndexedSession {
@@ -576,10 +598,31 @@ async function readPlans(
 ): Promise<IndexedPlan[]> {
   const files = await listMarkdown(fs, join(cwd, docs.plan), PLAN_RE);
   const byNumber = new Map(specs.map((s) => [s.number, s]));
+  // Read each spec at most once: every plan derived from the same spec compares
+  // against the same bytes, and re-reading them per plan would let two plans in
+  // one board be judged against two different reads of one file.
+  const specTexts = new Map<string, string | null>();
+  const specTextOf = async (number: string): Promise<string | null> => {
+    const cached = specTexts.get(number);
+    if (cached !== undefined) return cached;
+    const spec = byNumber.get(number);
+    let text: string | null = null;
+    if (spec !== undefined) {
+      try {
+        text = await fs.readText(join(cwd, spec.file));
+      } catch {
+        text = null;
+      }
+    }
+    specTexts.set(number, text);
+    return text;
+  };
   const out: IndexedPlan[] = [];
   for (const f of files) {
     try {
       const text = await fs.readText(f.path);
+      const seal = parsePlanBaselineSeal(text, docs.spec);
+      const sealedSpec = seal.status === "sealed" ? await specTextOf(seal.baseline.number) : null;
       const t = parseTasks(text);
       const p = parsePhases(text);
       const planState = derivePlanState(parsePlanStatus(text).declared, t, p);
@@ -601,6 +644,7 @@ async function readPlans(
         final_validation_pending:
           planState === "open" && p.total > 0 && p.validated === p.total && t.closed === t.total,
         spec: resolveSpecRelation(text, byNumber, docs.spec),
+        baseline: alignSpecBaseline(seal, sealedSpec),
         date: ts.date,
         relative: ts.relative,
       });
@@ -609,6 +653,32 @@ async function readPlans(
     }
   }
   return sortByNumber(out);
+}
+
+/**
+ * Every plan known to consume a spec, and how each one's seal stands against
+ * the spec's current content.
+ *
+ * Membership is the plan's RESOLVED relation, not its seal: derivation is what
+ * makes a plan a consumer, and a plan that names the spec without sealing it is
+ * still one — its `unsealed` alignment is precisely the answer that says it
+ * cannot be judged further. A plan whose provenance is `unknown` or `ambiguous`
+ * is deliberately absent: attaching it here would be the guess `parseSpecRelation`
+ * exists to refuse.
+ */
+export function specConsumers(specNumber: string, plans: readonly IndexedPlan[]): SpecConsumer[] {
+  const out: SpecConsumer[] = [];
+  for (const plan of plans) {
+    if (plan.spec.status !== "resolved" || plan.spec.number !== specNumber) continue;
+    out.push({
+      file: plan.file,
+      number: plan.number,
+      slug: plan.slug,
+      plan_state: plan.plan_state,
+      alignment: plan.baseline,
+    });
+  }
+  return out;
 }
 
 function resolveSpecRelation(

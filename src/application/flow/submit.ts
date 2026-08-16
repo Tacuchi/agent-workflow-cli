@@ -71,6 +71,7 @@ import {
   withScope,
 } from "../../domain/flow/run-state.js";
 import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
+import { type SpecBaseline, specBaselineDigest, withSpecBaseline } from "../../domain/lineage.js";
 import { destinationsOf, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
 import { reservationMarker } from "../../domain/reservation.js";
@@ -79,6 +80,7 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
+import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
@@ -245,6 +247,8 @@ interface Observation {
   scope: ScopeSnapshot;
   /** `null` when this caller has no live Git reader (pure/test callers). */
   checkouts: CheckoutState[] | null;
+  /** Per plan artifact, the baseline its publication must seal. */
+  baselines: BaselineSnapshot;
 }
 
 async function observe(
@@ -258,7 +262,78 @@ async function observe(
     destinations: await observeDestinations(fs, paths, raw),
     scope: await observeScope(fs, paths, raw),
     checkouts: await observeCheckouts(fs, paths, session, git),
+    baselines: await observeSpecBaselines(fs, paths, raw),
   };
+}
+
+type BaselineSnapshot = ReadonlyMap<string, SpecBaseline>;
+
+/**
+ * The baseline one plan document seals, or `null` when it cannot seal one.
+ *
+ * Every `null` here is a plan that stays UNSEALED, which is a legitimate
+ * reading: no `Derived from` path, two contradictory ones, a path that escapes
+ * the workspace, or a spec nobody can read. None of them is an error — a wrong
+ * seal would be.
+ */
+async function baselineOfPlan(
+  fs: FileSystemPort,
+  root: string,
+  content: string,
+  specDir: string,
+): Promise<SpecBaseline | null> {
+  const specPath = parseDerivedFromPath(content, specDir);
+  if (specPath === null || !checkSafeRelativePath(specPath).ok) return null;
+  const relation = parseSpecRelation(content, specDir);
+  if (relation.status !== "declared") return null;
+  try {
+    const specText = await fs.readText(join(root, specPath));
+    return { path: specPath, number: relation.number, digest: specBaselineDigest(specText) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * For every PLAN artifact in the payload, the exact spec bytes it was derived
+ * from — read here, never taken from the sender.
+ *
+ * A digest supplied by whoever wrote the document would prove only that they
+ * typed something; the point of the seal is that publication computed it from
+ * the file the plan names. A plan whose `Derived from` is absent or
+ * contradictory yields nothing, and publication then writes no seal — an
+ * unsealed plan is a legitimate diagnostic, a wrong seal is not.
+ */
+async function observeSpecBaselines(
+  fs: FileSystemPort,
+  paths: PathsService,
+  raw: string,
+): Promise<BaselineSnapshot> {
+  const out = new Map<string, SpecBaseline>();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return out;
+  }
+  const artifacts = (parsed as { artifacts?: unknown } | null)?.artifacts;
+  if (!Array.isArray(artifacts) || artifacts.length === 0) return out;
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  // An unreadable canon cannot tell a plan from anything else. Sealing on a
+  // guess would stamp a baseline into whatever the payload happened to carry.
+  if (!canon.ok) return out;
+  const root = await resolveWorkspaceRootFrom(fs, paths);
+  for (const entry of artifacts) {
+    const path = (entry as { path?: unknown })?.path;
+    const content = (entry as { content?: unknown })?.content;
+    if (typeof path !== "string" || typeof content !== "string") continue;
+    const relative = path.trim();
+    if (out.has(relative)) continue;
+    if (coreDocumentKindForPath(relative, canon.canon) !== "plan") continue;
+    const baseline = await baselineOfPlan(fs, root, content, canon.canon.spec);
+    if (baseline !== null) out.set(relative, baseline);
+  }
+  return out;
 }
 
 /**
@@ -517,7 +592,13 @@ function decide(
       cost,
     );
   }
-  const sealed = sealFrom(scoped.state, resolved.stopped, parsed.answer, snapshot.destinations);
+  const sealed = sealFrom(
+    scoped.state,
+    resolved.stopped,
+    parsed.answer,
+    snapshot.destinations,
+    snapshot.baselines,
+  );
   if ("failure" in sealed) {
     return reject(
       state,
@@ -689,6 +770,7 @@ function sealFrom(
   stopped: FlowDecision,
   answer: FlowAnswer,
   snapshot: DestinationSnapshot,
+  baselines: BaselineSnapshot,
 ): { state: FlowRunState } | { failure: CapabilityFailure } {
   const contract = proposalContractOf(stopped);
   if (contract === null || answer.artifacts.length === 0) return { state };
@@ -712,9 +794,13 @@ function sealFrom(
   const reservation = baseDigest(reservationMarker(state.session));
   const artifacts = answer.artifacts.map((artifact) => {
     const seen = snapshot.get(artifact.path);
+    const baseline = baselines.get(artifact.path);
     return {
       path: artifact.path,
-      content: artifact.content,
+      // Publication seals the baseline into the very bytes it is about to
+      // propose, so preview, approval and write cover it as one thing.
+      content:
+        baseline === undefined ? artifact.content : withSpecBaseline(artifact.content, baseline),
       overwrite: seen?.exists === true,
       /**
        * Completing THIS run's reservation replaces no document.
