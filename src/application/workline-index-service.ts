@@ -1,7 +1,7 @@
 import { basename, join, relative } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives, isCorrelative } from "../domain/correlative.js";
 import type { DecisionNote } from "../domain/decision-note.js";
-import { composeEffectiveContract } from "../domain/effective-contract.js";
+import { type EffectiveContract, composeEffectiveContract } from "../domain/effective-contract.js";
 import {
   type BaselineAlignment,
   type PlanBaselineSeal,
@@ -140,9 +140,39 @@ export interface IndexedPlan {
    * keep their historical state, because they record what really happened.
    */
   reconciliation: PlanReconciliation | null;
+  /**
+   * The contract this plan is really committed to — baseline plus the notes in
+   * force — or `null` when there is none to compose.
+   *
+   * `null` covers two different situations and {@link reconciliation} is what
+   * tells them apart: a plan with no aligned seal has nothing to compose (and
+   * its reconciliation is `null` too), while a chain that BLOCKS has a
+   * reconciliation full of the composition's refusals. Neither ever reads as an
+   * empty contract, because "committed to nothing" is a claim, not an absence.
+   */
+  contract: EffectiveContract | null;
   date: string;
   relative: string;
 }
+
+/**
+ * Where a consumer of a baseline stands, once its notes are applied.
+ *
+ * Four values, and the fourth is the one that keeps the other three honest. An
+ * open plan is `aligned` only when it can be PROVEN aligned: sealed, on the
+ * current baseline, and owing nothing. A plan whose seal is absent, malformed or
+ * divergent cannot be shown as aligned and has no compensation either — calling
+ * it one or the other would answer a question its documents never answered.
+ */
+export type ConsumerStanding =
+  /** Sealed on the current baseline and owing nothing. */
+  | "aligned"
+  /** Open, with compensatory work a decision left owing. */
+  | "pending-reconciliation"
+  /** Closed: its contract is history, and history is not reconciled forward. */
+  | "historical"
+  /** No sealed baseline, or one that no longer matches. Says so, claims nothing. */
+  | "unproven";
 
 /** A plan that consumes a given spec, with how its seal stands against it. */
 export interface SpecConsumer {
@@ -153,6 +183,8 @@ export interface SpecConsumer {
   /** `open` / `done` / `inconsistent` — whether this consumer is still live. */
   plan_state: PlanState;
   alignment: BaselineAlignment;
+  /** The reading AC-09 asks for, derived from the two fields above plus the chain. */
+  standing: ConsumerStanding;
 }
 
 export interface IndexedSession {
@@ -663,14 +695,13 @@ async function readPlans(
       const t = parseTasks(text);
       const p = parsePhases(text);
       const alignment = alignSpecBaseline(seal, sealedSpec);
-      const reconciliation = await reconciliationFor(
-        alignment,
-        seal,
-        sealedSpec,
-        byNumber,
-        chainOf,
+      const lineage = await reconciliationFor(alignment, seal, sealedSpec, byNumber, chainOf);
+      const planState = derivePlanState(
+        parsePlanStatus(text).declared,
+        t,
+        p,
+        lineage.reconciliation,
       );
-      const planState = derivePlanState(parsePlanStatus(text).declared, t, p, reconciliation);
       const ts = await resolveTimestamp(fs, f.path, undefined, now);
       out.push({
         file: relFromCwd(f.path, cwd),
@@ -690,7 +721,8 @@ async function readPlans(
           planState === "open" && p.total > 0 && p.validated === p.total && t.closed === t.total,
         spec: resolveSpecRelation(text, byNumber, docs.spec),
         baseline: alignment,
-        reconciliation,
+        reconciliation: lineage.reconciliation,
+        contract: lineage.contract,
         date: ts.date,
         relative: ts.relative,
       });
@@ -722,9 +754,31 @@ export function specConsumers(specNumber: string, plans: readonly IndexedPlan[])
       slug: plan.slug,
       plan_state: plan.plan_state,
       alignment: plan.baseline,
+      standing: standingOf(plan),
     });
   }
   return out;
+}
+
+/**
+ * Read one consumer's standing, in the order that keeps each answer truthful.
+ *
+ * Closed first: a `done` plan's contract is history, and asking whether history
+ * owes compensation is asking the wrong question — the reconciliation gate is
+ * exactly what stops a plan from reaching `done` while it owes anything, so a
+ * plan that got there owes nothing by construction.
+ *
+ * Then the seal, and only then the chain: without a provable alignment there is
+ * no contract to owe against, so `unproven` outranks both of the readings that
+ * would otherwise be guesses.
+ */
+function standingOf(plan: IndexedPlan): ConsumerStanding {
+  if (plan.plan_state === "done") return "historical";
+  if (plan.baseline.status !== "aligned") return "unproven";
+  if (plan.reconciliation === null || !plan.reconciliation.closable) {
+    return "pending-reconciliation";
+  }
+  return "aligned";
 }
 
 function resolveSpecRelation(
@@ -803,10 +857,11 @@ async function reconciliationFor(
   specText: string | null,
   byNumber: ReadonlyMap<string, IndexedSpec>,
   chainOf: (spec: IndexedSpec) => Promise<DecisionNote[]>,
-): Promise<PlanReconciliation | null> {
-  if (alignment.status !== "aligned" || seal.status !== "sealed" || specText === null) return null;
+): Promise<PlanContractReading> {
+  const none: PlanContractReading = { reconciliation: null, contract: null };
+  if (alignment.status !== "aligned" || seal.status !== "sealed" || specText === null) return none;
   const spec = byNumber.get(seal.baseline.number);
-  if (spec === undefined) return null;
+  if (spec === undefined) return none;
 
   // An empty chain composes to a contract with no obligations, so it needs no
   // special case: a plan nobody amended owes nothing and stays closable.
@@ -822,16 +877,28 @@ async function reconciliationFor(
   );
   if (composed.status === "blocked") {
     return {
-      pending: composed.failures.map((failure) => ({
-        text: `${failure.code}: ${failure.message}`,
-        by: "composición",
-        resume_point: failure.action,
-      })),
-      resume_point: composed.failures[0]?.action ?? null,
-      closable: false,
+      contract: null,
+      reconciliation: {
+        pending: composed.failures.map((failure) => ({
+          text: `${failure.code}: ${failure.message}`,
+          by: "composición",
+          resume_point: failure.action,
+        })),
+        resume_point: composed.failures[0]?.action ?? null,
+        closable: false,
+      },
     };
   }
-  return reconciliationOf(composed.contract, chain);
+  return {
+    contract: composed.contract,
+    reconciliation: reconciliationOf(composed.contract, chain),
+  };
+}
+
+/** What one plan's lineage says, read once and reported on two fields. */
+interface PlanContractReading {
+  reconciliation: PlanReconciliation | null;
+  contract: EffectiveContract | null;
 }
 
 // ── sessions ─────────────────────────────────────────────────────────────────

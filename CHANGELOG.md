@@ -4,6 +4,29 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Un plan y su spec pueden volver a estar de acuerdo sin rehacer ninguno de los dos.** Hasta acá, cuando la ejecución encontraba una divergencia con la spec, las únicas salidas eran seguir de largo o rehacer el linaje entero: el gate de desviación era doctrina sin máquina y el recorrido lo auto-aplicaba hasta el commit. Ahora la corrida se detiene, ofrece cuatro salidas, y la componible registra una decisión durable que enmienda el contrato sin reescribir lo que ya se validó.
+
+Guía de migración: [`docs/migracion-baseline-y-decisiones.md`](docs/migracion-baseline-y-decisiones.md). **No hay que migrar nada**: los planes sin sello se leen `unsealed` y se cierran igual, y una corrida en curso se lee y se re-estampa sola.
+
+### Added
+
+- **El plan sella el baseline exacto de su spec.** Una línea `> Baseline: <spec>@sha256:…` en el blockquote de cabecera, estampada por la publicación —nunca a mano— para que vista previa, aprobación y escritura cubran la misma cosa. Se lee `aligned`, `divergent`, `unsealed` o `malformed`, y ninguna de las cuatro se degrada a otra.
+- **Notas de decisión durables**, selladas y append-only, en `docs/decisions/<spec>-decisions-<slug>.json`. Categoría **no relocalizable**: `flow`, `status` y `resume` tienen que encontrar la misma cadena. Una nota vive FUERA de lo que decide — guardarla adentro cambiaría el digest del documento y el contrato enmendado dejaría de ser el que se enmendó. Corregir una nota es publicar otra que la sustituya por referencia.
+- **`composeEffectiveContract`: el contrato efectivo se deriva en UNA sola función.** Compone las notas vigentes en orden sobre el baseline, o **bloquea** con su acción correctiva (`CONTRACT_OVERLAP`, `CONTRACT_ASSERTION_ABSENT`, `CONTRACT_BASELINE_ABSENT`, `CONTRACT_CONTRADICTION`). No hay tercera respuesta donde gane la más nueva.
+- **Vista previa y autorización únicas.** Antes de decidir se muestran las ocho cosas que la decisión necesita —baseline, cambio efectivo, consumidores, impacto, evidencia conservada e invalidada, obligaciones, punto de retorno y efectos locales—, todas derivadas del contrato compuesto y de la nota sellada. Elegir una alternativa registra la nota y autoriza exactamente esos efectos, **sin una segunda confirmación**. Nunca cubre efectos destructivos ni de red externa.
+- **Obligaciones compensatorias.** Una decisión que invalida trabajo cerrado **no lo destilda ni lo edita**: la fase sigue `validada` y sus casillas marcadas. Aparece trabajo nuevo del contrato efectivo, ligado a su nota, y el plan deja de ser cerrable hasta saldarlo.
+- **`status` y `resume` proyectan el contrato efectivo**, las notas que aplican y la reconciliación pendiente. Cada consumidor conocido se lee `aligned`, `pending-reconciliation`, `historical` o `unproven`.
+
+### Changed
+
+- **`plan-exec.deviation-gate` pasa de `cli` a `human`, con cuatro salidas**: registrar la decisión y seguir (recomendada), volver a `plan-refine`, volver a `spec-refine`, o escalar a una spec nueva. Las tres últimas arman un paquete de escalación que el destino declara consumido — `spec-refine` y `plan-refine` ganaron su fila de adopción como primera fila de juicio.
+- **La elegibilidad de la salida componible es cierre, no tamaño**: linaje, intención, impacto y recuperabilidad, no cuántas líneas cambian.
+- **Las observaciones de una corrida se acumulan** en vez de reemplazarse, así que más de una divergencia en una misma corrida sobrevive entera.
+- **Estado de corrida 8 → 9** por un campo opcional (`continuation`). Se leen las versiones **9, 8 y 7**: una corrida a mitad de camino se lee tal como estaba y se re-estampa en su primera escritura. La continuidad mueve la posición en el PLAN y **nunca el cursor del recorrido**, que sigue siendo una pasada lineal append-only.
+- **`resume` deja de reportar «sus contadores no lo respaldan» sobre un plan sano.** Un plan retenido por una obligación tiene los contadores cuadrados: lo que se debe es trabajo, no un arreglo del documento.
+
 ## [22.0.1] — 2026-08-15
 
 **El gate source-bounded era insatisfacible en un workspace con el árbol sucio, grande y con acentos.** `aw flow submit` rechazaba toda evidencia `workline.source-bounded` con `WORKLINE_CHECKOUT_PROOF_STALE` —«el checkout cambió desde que se capturó la prueba»— sin que el checkout cambiara. No había respuesta correcta posible y cada intento quemaba uno de los tres de la frontera. Como los cinco loops exigen esa evidencia para converger, el workspace afectado se quedaba sin ruta de cierre por `aw flow`.

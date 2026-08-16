@@ -296,11 +296,62 @@ function describePlanNext(
   if (blocked !== undefined) {
     return `BLOQUEADA F${blocked.number} — ${blocked.blocker ?? "sin motivo declarado"}`;
   }
+  // Compensation outranks every reading below it, and it outranks the
+  // `inconsistent` line too: a plan held open by an obligation has counters that
+  // agree perfectly, so "sus contadores no lo respaldan" would send somebody to
+  // repair a document that is not broken. What is owed is work, not a fix.
+  const owed = describePendingReconciliation(plan);
+  if (owed !== null) return owed;
   if (plan.plan_state === "inconsistent") {
     return "el plan se declara done pero sus contadores no lo respaldan: repararlo a mano";
   }
+  // Said before the phase counters, because "continuar por la primera fase no
+  // validada" is advice about a contract we cannot prove this plan is on.
+  if (plan.baseline.status !== "aligned") return describeUnprovenBaseline(plan);
   if (plan.final_validation_pending) return "todo ejecutado: falta la validación final y el cierre";
   return "continuar por la primera fase no validada";
+}
+
+/**
+ * What a plan owes, when it owes anything — the one thing that must be said
+ * before offering to run or to close it.
+ *
+ * Both halves of AC-11 come from here: a plan with an open obligation is neither
+ * executable as it stands nor closable, and saying so with the obligation and
+ * its resume point is what keeps the refusal actionable instead of a wall.
+ */
+function describePendingReconciliation(plan: IndexedPlan): string | null {
+  const reconciliation = plan.reconciliation;
+  if (reconciliation === null || reconciliation.closable) return null;
+  const [first] = reconciliation.pending;
+  if (first === undefined) {
+    return "RECONCILIACIÓN PENDIENTE — el contrato efectivo no se puede componer: ni ejecutable ni cerrable";
+  }
+  const more = reconciliation.pending.length - 1;
+  const rest = more > 0 ? ` (+${more} más)` : "";
+  return `RECONCILIACIÓN PENDIENTE por ${first.by} — ${first.text}${rest}: retomá en ${first.resume_point}, ni ejecutable ni cerrable tal cual`;
+}
+
+/**
+ * A plan whose baseline nobody can prove, said as exactly that.
+ *
+ * The 31 plans that predate the seal are the common case, and the honest report
+ * is "it does not have one" — never "aligned" and never "derived from the
+ * current contract". A divergent seal is the louder version of the same problem
+ * and gets its own line rather than being folded in.
+ */
+function describeUnprovenBaseline(plan: IndexedPlan): string {
+  const baseline = plan.baseline;
+  if (baseline.status === "divergent") {
+    return `BASELINE DIVERGENTE — la spec cambió desde que se selló (${baseline.sealed_digest} → ${baseline.current_digest}): revisá el plan contra la spec vigente antes de seguir`;
+  }
+  if (baseline.status === "malformed") {
+    return `BASELINE ILEGIBLE — ${baseline.why}: ${baseline.action}`;
+  }
+  if (baseline.status === "unresolved") {
+    return `BASELINE SIN SPEC — ${baseline.path} no está en el workspace: no hay contrato contra el que validar`;
+  }
+  return "SIN SELLO DE BASELINE — el plan no dice de qué versión de su spec deriva: no se puede afirmar que esté alineado";
 }
 
 /**
