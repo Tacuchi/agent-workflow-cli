@@ -72,7 +72,7 @@ import {
 } from "../../domain/flow/run-state.js";
 import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
 import { type SpecBaseline, specBaselineDigest, withSpecBaseline } from "../../domain/lineage.js";
-import { destinationsOf, sealProposal } from "../../domain/proposal.js";
+import { destinationsOf, observedEffects, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
 import { reservationMarker } from "../../domain/reservation.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
@@ -814,9 +814,9 @@ function sealFrom(
       reserved: seen?.exists === true && seen.digest === reservation,
     };
   });
-  const effects: EffectClass[] = [];
-  if (artifacts.some((a) => !a.overwrite || a.reserved)) effects.push("local_additive");
-  if (artifacts.some((a) => a.overwrite && !a.reserved)) effects.push("mutate_overwrite");
+  const effects = observedEffects(
+    artifacts.map((a) => ({ overwrite: a.overwrite && !a.reserved })),
+  );
   const beyond = effects.filter((effect) => !contract.effects.includes(effect));
   if (beyond.length > 0) {
     return {

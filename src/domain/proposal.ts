@@ -156,3 +156,20 @@ export function proposalDigest(body: Omit<LocalProposal, "digest">): string {
 export function destinationsOf(proposal: LocalProposal): string[] {
   return [...new Set(proposal.artifacts.map((a) => a.path))].sort();
 }
+
+/**
+ * What publishing these artifacts really exercises — observed, never declared.
+ *
+ * One rule, one place. Whoever seals a proposal has to answer "does this
+ * overwrite anything?", and two callers answering it separately is how a preview
+ * comes to say "creates" about a write the authorization then classifies as a
+ * replacement. Callers that know a destination is theirs already (a slot the run
+ * reserved to hold a number, and never published into) pass `overwrite: false`
+ * for it: nobody's content is lost, which is the only thing the classes measure.
+ */
+export function observedEffects(artifacts: readonly { overwrite: boolean }[]): EffectClass[] {
+  const effects: EffectClass[] = [];
+  if (artifacts.some((a) => !a.overwrite)) effects.push("local_additive");
+  if (artifacts.some((a) => a.overwrite)) effects.push("mutate_overwrite");
+  return effects;
+}

@@ -286,6 +286,30 @@ export function checkAppendOnly(
   return failures;
 }
 
+/**
+ * Whether two notes record the SAME decision, ignoring which correlative it got.
+ *
+ * This is what makes "an identical retry recovers the same result without
+ * deciding again" a property of content. The id cannot take part: a retry mints
+ * the next number off a chain that already holds the first attempt, so comparing
+ * sealed digests would call every retry a new decision and append a duplicate —
+ * the chain would grow one indistinguishable note per interrupted run, and the
+ * composition would then report an overlap nobody caused.
+ *
+ * Everything else does take part, including the fields that look like prose. Two
+ * notes that supersede the same assertions for different stated reasons are two
+ * decisions, and treating the second as a repeat of the first would drop the
+ * reason the chain exists to preserve.
+ */
+export function sameDecision(a: DecisionNote, b: DecisionNote): boolean {
+  return canonicalDecision(a) === canonicalDecision(b);
+}
+
+function canonicalDecision(note: DecisionNote): string {
+  const { id: _id, digest: _digest, ...rest } = note;
+  return sealedRecordDigest(rest as unknown as Record<string, unknown>);
+}
+
 /** The notes still in force: every one nobody later superseded. */
 export function effectiveNotes(chain: readonly DecisionNote[]): DecisionNote[] {
   const superseded = new Set(
