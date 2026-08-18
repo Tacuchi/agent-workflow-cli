@@ -986,12 +986,14 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(exec).toContain("**A blocker without a reason is not a blocker (hard rule).**");
     expect(exec).toContain("`blocker: null`");
     expect(exec).toContain("names **the action that unblocks it**");
-    // The reader has to render the reason, not just count the phase.
+    // The reader has to render the reason, not just count the phase — and there is
+    // exactly ONE reader deriving it now, which is why the string is pinned in the
+    // shared projection rather than in the command that consumes it.
     const index = await readSrc("workline-index-service.ts");
     expect(index).toContain("blocked_phases");
     expect(index).toContain("`null` on a legacy block that declares none");
-    const resume = await readSrc("resume-service.ts");
-    expect(resume).toContain('blocked.blocker ?? "sin motivo declarado"');
+    expect(index).toContain('blocked.blocker ?? "sin motivo declarado"');
+    expect(await readSrc("resume-service.ts")).not.toContain("sin motivo declarado");
   });
 
   it("the shape decision is resolved before the gap loop and never stored in pending_human", async () => {
@@ -1094,18 +1096,83 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   });
 
   it("`resume` routes by plan_state — done is the only state it does not resume", async () => {
-    // The routing table moved into the runtime: `derivePipeline` skips `done`
-    // and `describePlanNext` gives every other state its own re-entry point.
+    // The routing table moved into the shared projection: `derivePipeline` skips
+    // `done` and `planNext` gives every other state its own re-entry point, in one
+    // chain. `resume` consumes that chain instead of running a second one — a
+    // second one is how the board and the offer described the same plan
+    // differently in the first place.
     const index = await readSrc("workline-index-service.ts");
     expect(index).toContain('if (plan.plan_state === "done") continue;');
+    expect(index).toContain('plan.plan_state === "inconsistent"');
+    expect(index).toContain("plan.final_validation_pending");
+    expect(index).toContain("BLOQUEADA F");
     const service = await readSrc("resume-service.ts");
-    expect(service).toContain('plan.plan_state === "inconsistent"');
-    expect(service).toContain("plan.final_validation_pending");
-    expect(service).toContain("BLOQUEADA F");
+    expect(service).toContain("planDetail");
+    expect(service).not.toContain("final_validation_pending");
     // And the skill states the rule without owning it.
     const doc = await readSurface("commands/resume.md");
     expect(doc).toContain("A plan is not finished because its boxes are ticked");
     expect(doc).toContain("comes back as inconsistent");
+  });
+});
+
+describe("Doctrine guards — G20 · what a pending item owes, and how the choice is offered", () => {
+  // The two surfaces used to relay a list and a route and nothing else, which is
+  // how the board could print `plan 031 — 100%, fases 6/6` about a plan whose
+  // final validation had never run, and how `/w:resume` could offer one item out
+  // of four. The rule now lives in the CLI; these pins keep the doctrine from
+  // losing it in silence, which is the drift class that costs a whole surface.
+
+  it("`status` owes each item its next step, and an obligation before the percentage", async () => {
+    const doc = await readSurface("commands/status.md");
+    expect(doc).toContain("what it still owes");
+    expect(doc).toContain("An obligation comes before the percentage");
+    // The three that leave an item neither runnable nor closable, by name.
+    expect(doc).toMatch(/design reference/i);
+    expect(doc).toMatch(/reconciliation/i);
+    expect(doc).toMatch(/baseline/i);
+    // And the misleading reading the spec exists to fix, said outright.
+    expect(doc).toContain("`100%`");
+    expect(doc).toContain("`validada`");
+  });
+
+  it("`status` reports a loose session as a notice, and tells the two empties apart", async () => {
+    const doc = await readSurface("commands/status.md");
+    expect(doc).toContain("Sessions are not the user's work");
+    expect(doc).toMatch(/\*\*notice\*\*/);
+    expect(doc).toContain("never a pending row");
+    expect(doc).toContain("Nothing pending");
+    expect(doc).toContain("/w:workspace-init");
+    // An empty pipeline for want of a workspace is NOT "nothing pending".
+    expect(doc).toContain('never "nothing pending"');
+  });
+
+  it("`resume` analyses briefly, offers one option per candidate and chains the chosen command", async () => {
+    const doc = await readSurface("commands/resume.md");
+    expect(doc).toContain("Analyse briefly first");
+    expect(doc).toContain("One option per candidate");
+    expect(doc).toContain("re-entry command");
+    expect(doc).toContain("`flow` slot");
+    expect(doc).toContain("in the same turn");
+    // Choosing must not be mistaken for the CLI acting: it runs no route.
+    expect(doc).toContain("It runs no route and writes nothing");
+    expect(doc).toContain("No candidates");
+  });
+
+  it("`resume` degrades the mechanism and never the candidates", async () => {
+    const doc = await readSurface("commands/resume.md");
+    expect(doc).toMatch(/group by class into ≤3 questions/);
+    expect(doc).toContain("labelled markdown");
+    expect(doc).toContain("declare the degradation");
+    expect(doc).toContain("Nothing trimmed, merged or dropped");
+  });
+
+  it("neither surface still calls a loose session a candidate of the pipeline", async () => {
+    // The class stays in the model (nothing was removed) but it stopped being
+    // work the user is asked to weigh, so the doctrine may not list it as one.
+    const resume = await readSurface("commands/resume.md");
+    expect(resume).toContain("A loose session is a notice, never a candidate");
+    expect(resume).not.toMatch(/→ loose checkpoint/);
   });
 });
 

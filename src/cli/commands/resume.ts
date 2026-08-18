@@ -55,13 +55,13 @@ export const resumeCommand: CliCommand<ResumeOutcome> = {
     if (outcome === undefined) return "";
     switch (outcome.status) {
       case "idle":
-        return `${outcome.action}\n`;
-      case "proposal":
-        return `${renderProposal(outcome.proposal, context.detail)}\n`;
-      case "candidates":
-        return renderCandidates(outcome.candidates, outcome.action, context.detail);
+      case "uninitialized":
       case "invalid_target":
         return `${outcome.action}\n`;
+      case "proposal":
+        return renderRecommendation(outcome.proposal, outcome.candidates, context.detail);
+      case "candidates":
+        return renderCandidates(outcome.candidates, outcome.action, context.detail);
     }
   },
 };
@@ -84,6 +84,27 @@ function renderProposal(proposal: ResumeProposal, detail: boolean): string {
 
 function because(text: string | null): string {
   return text === null ? "" : ` — ${text}`;
+}
+
+/**
+ * The recommendation, and then the rest of what is pending.
+ *
+ * The others are printed because they ARE the offer: leaving them in the JSON
+ * only would put the choice one surface away from the reading that produced it,
+ * which is the split this command exists to close. Nothing is truncated.
+ */
+function renderRecommendation(
+  proposal: ResumeProposal,
+  candidates: ResumeProposal[] | undefined,
+  detail: boolean,
+): string {
+  const others = (candidates ?? []).filter((c) => c.file !== proposal.file);
+  const lines = [renderProposal(proposal, detail)];
+  if (others.length > 0) {
+    lines.push("", `También pendiente (${others.length}), en el orden del CLI:`, "");
+    for (const other of others) lines.push(renderProposal(other, detail), "");
+  }
+  return `${lines.join("\n").trimEnd()}\n`;
 }
 
 function renderCandidates(candidates: ResumeProposal[], action: string, detail: boolean): string {

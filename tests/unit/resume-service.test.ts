@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { type ResumeInput, runResume } from "../../src/application/resume-service.js";
+import { runStatusCommand } from "../../src/application/status-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -214,6 +215,132 @@ describe("runResume — reads state, never records it", () => {
     fs.file("/cwd/docs/plans/005-plan-x.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
     session(fs, "010-suelta-quick", "algo", "prompt", "seguir");
 
+    await resume(fs);
+    expect(fs.writes.size).toBe(0);
+  });
+});
+
+// ── the whole pipeline is the offer ──────────────────────────────────────────
+
+/**
+ * `resume` used to offer the head of the pipeline and its ties, and nothing else.
+ *
+ * So the open plans below them were pending work `status` listed and `resume`
+ * never named: choosing what to pick up meant reading one surface and typing from
+ * the other. What must NOT change is who decides — priority, the tie-break and
+ * the spec→plan link stay the CLI's, and the command is still only presented.
+ */
+function nine(): MemFs {
+  const fs = workspace();
+  for (const n of ["001", "002", "003"]) fs.file(`/cwd/docs/specs/${n}-spec-borrador.md`, DRAFT);
+  for (const n of ["004", "005"]) fs.file(`/cwd/docs/specs/${n}-spec-lista.md`, READY);
+  for (const n of ["010", "011", "012", "013"]) {
+    fs.file(`/cwd/docs/plans/${n}-plan-abierto.md`, "# Plan\n\n## Tasks\n- [ ] T1\n");
+  }
+  return fs;
+}
+
+describe("runResume — sin target, la oferta es el pipeline completo", () => {
+  it("devuelve los 9 pendientes de las tres clases, en el orden del CLI", async () => {
+    const out = await resume(nine());
+    if (out.status !== "candidates") throw new Error(`esperaba candidates, vino ${out.status}`);
+
+    expect(out.candidates.map((c) => [c.kind, c.number])).toEqual([
+      ["spec-unrefined", "001"],
+      ["spec-unrefined", "002"],
+      ["spec-unrefined", "003"],
+      ["spec-unplanned", "004"],
+      ["spec-unplanned", "005"],
+      ["plan-open", "010"],
+      ["plan-open", "011"],
+      ["plan-open", "012"],
+      ["plan-open", "013"],
+    ]);
+    // El empate de cabeza sigue siendo el empate, y se dice sobre cuántos.
+    expect(out.action).toContain("3 candidatos empatados en cabeza sobre 9 pendientes");
+  });
+
+  it("cada candidato lleva su progreso, su siguiente y su comando de re-entrada", async () => {
+    const out = await resume(nine());
+    if (out.status !== "candidates") throw new Error(`esperaba candidates, vino ${out.status}`);
+
+    for (const candidate of out.candidates) {
+      expect(candidate.progress).not.toBe("");
+      expect(candidate.next).not.toBe("");
+      expect(candidate.command).toMatch(/^\/w:(spec-refine|plan-new|plan-exec) docs\//);
+    }
+  });
+
+  it("sin empate hay recomendación Y el resto de la oferta, no una sola cosa", async () => {
+    const fs = workspace();
+    fs.file("/cwd/docs/specs/001-spec-borrador.md", DRAFT);
+    fs.file("/cwd/docs/plans/010-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
+    fs.file("/cwd/docs/plans/011-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
+
+    const out = await resume(fs);
+    if (out.status !== "proposal") throw new Error(`esperaba una propuesta, vino ${out.status}`);
+    expect(out.proposal.number).toBe("001");
+    // Los planes abiertos que antes quedaban fuera de la oferta ahora entran.
+    expect(out.candidates?.map((c) => c.number)).toEqual(["001", "010", "011"]);
+  });
+
+  it("y describe cada ítem igual que el tablero: una sola derivación", async () => {
+    const fs = nine();
+    const board = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    const out = await resume(fs);
+    if (out.status !== "candidates") throw new Error(`esperaba candidates, vino ${out.status}`);
+
+    expect(out.candidates.map((c) => [c.objective, c.progress, c.next])).toEqual(
+      board.pipeline.map((i) => [i.detail.objective, i.detail.progress, i.detail.next]),
+    );
+  });
+
+  it("sin pendientes sigue devolviendo idle, sin abrir ninguna elección", async () => {
+    const fs = workspace();
+    fs.file(
+      "/cwd/docs/plans/001-plan-a.md",
+      "# Plan\n\n> Estado: done\n> Derived from docs/specs/003-spec-a.md\n\n## Tasks\n- [x] T1\n",
+    );
+    fs.file("/cwd/docs/specs/003-spec-a.md", READY);
+
+    const out = await resume(fs);
+    expect(out.status).toBe("idle");
+  });
+
+  // Un pipeline vacío por falta de workspace no es «nada pendiente»: quien lee
+  // esa respuesta se va a buscar trabajo que ninguna carpeta está registrando.
+  it("sin workspace lo dice y propone inicializarlo, nunca idle", async () => {
+    const out = await resume(new MemFs({ lenient: true }));
+    expect(out.status).toBe("uninitialized");
+    if (out.status !== "uninitialized") return;
+    expect(out.action).toContain("/w:workspace-init");
+  });
+});
+
+describe("runResume — lo que la oferta ampliada NO cambió", () => {
+  it("un target explícito sigue ganándole al pipeline y no trae candidatos", async () => {
+    const fs = nine();
+    const out = await resume(fs, { target: "docs/plans/012-plan-abierto.md" });
+    if (out.status !== "proposal") throw new Error(`esperaba una propuesta, vino ${out.status}`);
+
+    expect(out.via).toBe("explicit");
+    expect(out.proposal.number).toBe("012");
+    expect(out.candidates).toBeUndefined();
+  });
+
+  it("--code sigue resolviendo la sesión y sin escribir nada", async () => {
+    const fs = nine();
+    session(fs, "049-x-plan-exec", "ejecutar el plan 008", "docs/plans/008-plan-x.md", "cerrar F3");
+
+    const out = await resume(fs, { code: "049" });
+    if (out.status !== "proposal") throw new Error(`esperaba una propuesta, vino ${out.status}`);
+    expect(out.proposal.kind).toBe("session");
+    expect(out.candidates).toBeUndefined();
+    expect(fs.writes.size).toBe(0);
+  });
+
+  it("ofrecer los 9 tampoco escribe ni ejecuta nada", async () => {
+    const fs = nine();
     await resume(fs);
     expect(fs.writes.size).toBe(0);
   });

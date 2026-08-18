@@ -29,16 +29,31 @@ export const statusCommand: CliCommand<StatusOutput> = {
     const data = result.data;
     if (data === undefined) return "";
 
-    const lines = [`${data.workspace.name} · ${data.workspace.path}`, ""];
-    if (data.pipeline.length === 0) {
-      lines.push("Sin pipeline pendiente.");
-    } else {
-      lines.push(...renderPipeline(data.pipeline));
-    }
+    const header = `${data.workspace.name} · ${data.workspace.path}`;
+    const lines = [header, ""];
+    lines.push(...renderPipeline(data.pipeline));
     // A broken design reference is PENDING work, not history: it stays in the
     // default view for the same reason an open plan does. Valid references and
     // orphaned packages are inventory and wait for `--detail`.
     lines.push(...renderDesignAlerts(data, lines.at(-1)));
+    lines.push(...renderLooseSessions(data, lines.at(-1)));
+    // Nothing rendered, and the two reasons for that are not the same answer: a
+    // folder nobody initialized has an empty pipeline because no workspace is
+    // tracking it, and reporting peace there sends someone looking for work that
+    // was never registered. One line either way, and no empty section under it.
+    if (lines.length === 2) {
+      return data.workspace.initialized
+        ? `${header} — sin pendientes\n`
+        : `${header} — sin workspace de Workline: creá uno con /w:workspace-init\n`;
+    }
+    // With something to show, the same fact is a notice: the documents are real
+    // and worth listing, and they are still outside a workspace.
+    if (!data.workspace.initialized) {
+      lines.push(
+        ...(lines.at(-1) === "" ? [] : [""]),
+        "Aviso: este directorio no es un workspace de Workline — creá uno con /w:workspace-init",
+      );
+    }
     if (context.detail) lines.push("", ...renderDetail(data));
     return `${lines.join("\n").trimEnd()}\n`;
   },
@@ -48,9 +63,31 @@ const GROUP_TITLES: Record<PipelineItem["kind"], string> = {
   "spec-unrefined": "Specs sin refinar",
   "spec-unplanned": "Specs sin plan",
   "plan-open": "Planes abiertos",
+  // Kept because the model keeps the class: a loose checkpoint is reported as a
+  // notice now, so nothing reaches this row — and the day something does, it is
+  // titled rather than rendered as a blank group.
   "checkpoint-orphan": "Checkpoints sueltos",
 };
 
+/** `plan` · `spec` · `sesión` — how an item names itself when its detail leads. */
+const KIND_NOUNS: Record<PipelineItem["kind"], string> = {
+  "spec-unrefined": "spec",
+  "spec-unplanned": "spec",
+  "plan-open": "plan",
+  "checkpoint-orphan": "sesión",
+};
+
+/**
+ * Each pending item over three lines: what it is, what it still owes, and the
+ * command that continues it.
+ *
+ * The middle line is the whole point — a board that listed only the title and the
+ * command could say `plan 031 — 100%, fases 6/6` about a plan whose final
+ * validation had never run. When what it owes is an OBLIGATION that leaves it
+ * neither runnable nor closable, that obligation takes the headline and the
+ * percentage drops below it: read in the other order, the number is the part
+ * people believe.
+ */
 function renderPipeline(pipeline: PipelineItem[]): string[] {
   const lines: string[] = [];
   for (const kind of Object.keys(GROUP_TITLES) as Array<PipelineItem["kind"]>) {
@@ -58,11 +95,32 @@ function renderPipeline(pipeline: PipelineItem[]): string[] {
     if (items.length === 0) continue;
     lines.push(`${GROUP_TITLES[kind]} (${items.length})`);
     for (const item of items) {
-      lines.push(`  ${item.summary}`);
+      const { next, progress, obligation } = item.detail;
+      lines.push(
+        obligation ? `  ${KIND_NOUNS[item.kind]} ${item.number} — ${next}` : `  ${item.summary}`,
+      );
+      lines.push(`    ${obligation ? progress : next}`);
       lines.push(`    ${item.command}`);
     }
     lines.push("");
   }
+  return lines;
+}
+
+/**
+ * Loose sessions, as a notice with its count and how to look.
+ *
+ * The folders stay out of the default view on purpose: what a person needs here
+ * is to know the work exists and that nothing on this board accounts for it.
+ * Retiring one is another job, and this read does not do it.
+ */
+function renderLooseSessions(data: StatusOutput, before: string | undefined): string[] {
+  const count = data.loose_sessions.length;
+  if (count === 0) return [];
+  const lines = before === "" ? [] : [""];
+  lines.push(
+    `Aviso: ${count} sesión(es) con trabajo y sin documento asociado — vela con 'aw status --detail'`,
+  );
   return lines;
 }
 

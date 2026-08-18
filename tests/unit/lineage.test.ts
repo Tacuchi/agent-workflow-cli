@@ -19,7 +19,11 @@ import {
   parseSpecCriteria,
 } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { buildWorklineIndex, specConsumers } from "../../src/application/workline-index-service.js";
+import {
+  type PipelineItem,
+  buildWorklineIndex,
+  specConsumers,
+} from "../../src/application/workline-index-service.js";
 import {
   alignSpecBaseline,
   formatSpecBaseline,
@@ -202,18 +206,51 @@ describe("F1.3 — los criterios de una spec se extraen en orden y sin duplicado
   });
 });
 
-describe("F1.4 — el pipeline de un plan alineado queda byte-idéntico", () => {
+describe("F1.4 — el sello no mueve el ruteo del pipeline", () => {
+  /**
+   * Lo que este guard protege es la RUTA: qué se lista, en qué orden y con qué
+   * comando. Desde que el ítem lleva su detalle, el sello sí mueve una cosa —
+   * qué le falta al plan —, y tiene que moverla: un baseline que nadie puede
+   * probar es una obligación que el tablero debe nombrar antes que el porcentaje.
+   * Comparar el ítem entero volvería a atar F1 a esa lectura.
+   */
+  const routing = (pipeline: readonly PipelineItem[]) =>
+    pipeline.map(({ kind, priority, file, number, slug, summary, command, started }) => ({
+      kind,
+      priority,
+      file,
+      number,
+      slug,
+      summary,
+      command,
+      started,
+    }));
+
   it("sellar un plan no mueve una sola letra de las prioridades", async () => {
     const before = await index(workspace(plan(null)));
     const after = await index(workspace(plan(SEALED)));
-    expect(JSON.stringify(after.pipeline)).toBe(JSON.stringify(before.pipeline));
+    expect(JSON.stringify(routing(after.pipeline))).toBe(JSON.stringify(routing(before.pipeline)));
   });
 
   it("tampoco las mueve que el plan quede divergente: el pipeline es de F7, no de F1", async () => {
     const edited = SPEC.replace("una sola vez.", "una sola vez,");
     const before = await index(workspace(plan(null)));
     const after = await index(workspace(plan(SEALED), edited));
-    expect(JSON.stringify(after.pipeline)).toBe(JSON.stringify(before.pipeline));
+    expect(JSON.stringify(routing(after.pipeline))).toBe(JSON.stringify(routing(before.pipeline)));
+  });
+
+  it("y lo único que mueve es qué le falta: sin sello es obligación, sellado no", async () => {
+    const unsealed = await index(workspace(plan(null)));
+    const sealed = await index(workspace(plan(SEALED)));
+
+    expect(unsealed.pipeline[0]?.detail).toMatchObject({
+      next: expect.stringContaining("SIN SELLO DE BASELINE"),
+      obligation: true,
+    });
+    expect(sealed.pipeline[0]?.detail).toMatchObject({
+      next: "continuar por la primera fase no validada",
+      obligation: false,
+    });
   });
 });
 

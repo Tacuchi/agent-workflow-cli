@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runStatusCommand } from "../../src/application/status-service.js";
+import { type StatusOutput, runStatusCommand } from "../../src/application/status-service.js";
+import { statusCommand } from "../../src/cli/commands/status.js";
+import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs as FakeFs } from "../helpers/mem-fs.js";
@@ -723,5 +725,182 @@ describe("runStatusCommand — edge cases", () => {
     expect(out.specs).toEqual([]);
     expect(out.plans).toHaveLength(1);
     expect(out.plans[0]).toMatchObject({ tasks_total: 0, tasks_done: 0, progress_pct: 0 });
+  });
+});
+
+// ── the default view says what each pending item still owes ──────────────────
+
+/**
+ * The board's own bug, pinned: a plan with every task done and every phase
+ * validated read `plan 031 — 100%, fases 6/6` under "Planes abiertos" and said
+ * nothing about the final validation it was waiting on. Listing all the pending
+ * work while computing what any of it owed for none of it is what made that
+ * possible, so these cases assert the rendered text, not the model.
+ */
+function render(data: StatusOutput, detail = false): string {
+  return statusCommand.renderHuman?.({ ok: true, data, exitCode: 0 }, { detail }) ?? "";
+}
+
+const SEALED_SPEC = "docs/specs/030-spec-sellada.md";
+const SEALED_SPEC_TEXT = "---\nstatus: ready-for-plan\n---\n\n# Spec 030 — sellada\n";
+
+/**
+ * A plan of `n` phases, all validated and all tasks done, still open.
+ *
+ * `sealed` decides WHICH of the two things it owes: with its baseline proven, all
+ * that is left is the final validation; without it, the unprovable baseline
+ * outranks that — which is the precedence, not an accident of the fixture.
+ */
+function executedPlan(n: number, sealed = false): string {
+  const lines = ["# Plan", ""];
+  if (sealed) {
+    lines.push(
+      `> Derived from ${SEALED_SPEC}`,
+      `> Baseline: ${SEALED_SPEC}@sha256:${baseDigest(SEALED_SPEC_TEXT)}`,
+    );
+  }
+  lines.push("> Estado: open", "", "## Tasks", "");
+  for (let i = 1; i <= n; i += 1) {
+    lines.push(`### F${i} — fase ${i}`, "> Estado: validada", "", `- [x] T${i}.1 — hecho`, "");
+  }
+  return lines.join("\n");
+}
+
+async function board(fs: FakeFs): Promise<StatusOutput> {
+  return await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+}
+
+function pending(): FakeFs {
+  const fs = new FakeFs();
+  fs.file("/cwd/.workflow/sessions/.keep", "");
+  return fs;
+}
+
+describe("status human — cada pendiente dice cuál es su paso siguiente", () => {
+  it("un plan ejecutado que nadie cerró dice que falta la validación final y el cierre", async () => {
+    const fs = pending();
+    fs.file(`/cwd/${SEALED_SPEC}`, SEALED_SPEC_TEXT, NOW);
+    fs.file("/cwd/docs/plans/031-plan-hecho.md", executedPlan(6, true), NOW);
+
+    const data = await board(fs);
+    const text = render(data);
+    // El síntoma que la spec nombra sigue en su línea de título…
+    expect(text).toContain("plan 031 — 100%, fases 6/6");
+    // …y ya no es lo único que se dice de él.
+    expect(text).toContain("todo ejecutado: falta la validación final y el cierre");
+  });
+
+  it("un plan con una fase bloqueada nombra la fase y su motivo declarado", async () => {
+    const fs = pending();
+    fs.file(
+      "/cwd/docs/plans/017-plan-trabado.md",
+      "# Plan\n\n> Estado: open\n\n## Tasks\n\n### F4 — la trabada\n> Estado: bloqueada\n> Bloqueo: el endpoint todavía no existe\n\n- [x] T4.1 — hecho\n",
+      NOW,
+    );
+
+    const text = render(await board(fs));
+    expect(text).toContain("BLOQUEADA F4 — el endpoint todavía no existe");
+  });
+
+  it("un bloqueo sin motivo declarado se dice así, no se calla", async () => {
+    const fs = pending();
+    fs.file(
+      "/cwd/docs/plans/018-plan-mudo.md",
+      "# Plan\n\n> Estado: open\n\n## Tasks\n\n### F2 — la muda\n> Estado: bloqueada\n\n- [ ] T2.1 — queda\n",
+      NOW,
+    );
+
+    expect(render(await board(fs))).toContain("BLOQUEADA F2 — sin motivo declarado");
+  });
+
+  it("una obligación pendiente se nombra ANTES que el porcentaje", async () => {
+    const fs = pending();
+    // Sin sello de baseline: el plan no dice de qué versión de su spec deriva.
+    fs.file("/cwd/docs/plans/020-plan-sin-sello.md", executedPlan(2), NOW);
+
+    const text = render(await board(fs));
+    const obligation = text.indexOf("SIN SELLO DE BASELINE");
+    const percentage = text.indexOf("2/2 tareas (100%)");
+    expect(obligation).toBeGreaterThan(-1);
+    expect(percentage).toBeGreaterThan(obligation);
+    // Y el título del ítem sigue nombrando de qué plan se habla.
+    expect(text).toContain("plan 020 — SIN SELLO DE BASELINE");
+  });
+
+  it("de una spec pendiente dice su status y cuántas preguntas abiertas le quedan", async () => {
+    const fs = pending();
+    fs.file(
+      "/cwd/docs/specs/015-spec-borrador.md",
+      "---\nstatus: draft\n---\n\n# Spec\n\n## Open questions\n\n- ¿una?\n",
+      NOW,
+    );
+
+    const text = render(await board(fs));
+    expect(text).toContain("spec 015 — draft · 1 pregunta(s) abierta(s)");
+    expect(text).toContain("refinar hasta ready-for-plan");
+  });
+});
+
+describe("status human — las sesiones dejan de ser trabajo del usuario", () => {
+  function loose(): FakeFs {
+    const fs = pending();
+    fs.file(
+      "/cwd/.workflow/sessions/013-suelta-quick/SESSION.md",
+      "# SESSION\n\n## Objective\nalgo suelto\n\n## Origin\n- prompt directo\n",
+      NOW,
+    );
+    fs.file(
+      "/cwd/.workflow/sessions/013-suelta-quick/CHECKPOINT.md",
+      "# CHECKPOINT\n\n## Completed\n- algo\n\n## Pending / Next\n- seguir\n",
+      NOW,
+    );
+    return fs;
+  }
+
+  it("el plan es el pendiente y la sesión suelta es un aviso con su cuenta y cómo verla", async () => {
+    const fs = loose();
+    fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n", NOW);
+
+    const text = render(await board(fs));
+    expect(text).toContain("Planes abiertos (1)");
+    expect(text).toContain("Aviso: 1 sesión(es) con trabajo y sin documento asociado");
+    expect(text).toContain("aw status --detail");
+    // La carpeta no se enumera en la vista por defecto; --detail ya las lista.
+    expect(text).not.toContain("013-suelta-quick");
+    expect(render(await board(fs), true)).toContain("013-suelta-quick");
+  });
+
+  it("sin ninguna sesión suelta no imprime un aviso vacío", async () => {
+    const fs = pending();
+    fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n", NOW);
+
+    expect(render(await board(fs))).not.toContain("Aviso:");
+  });
+});
+
+describe("status human — los dos vacíos no se dicen igual", () => {
+  it("sin nada pendiente responde en una línea, sin secciones ni avisos", async () => {
+    const fs = pending();
+    fs.file(
+      "/cwd/docs/plans/001-plan-cerrado.md",
+      "# Plan\n\n> Estado: done\n> Derived from docs/specs/003-spec-a.md\n\n## Tasks\n- [x] T1\n",
+      NOW,
+    );
+    fs.file("/cwd/docs/specs/003-spec-a.md", "---\nstatus: ready-for-plan\n---\n\n# Spec\n", NOW);
+
+    const text = render(await board(fs));
+    expect(text.trimEnd().split("\n")).toHaveLength(1);
+    expect(text).toContain("sin pendientes");
+    expect(text).not.toContain("Planes abiertos");
+    expect(text).not.toContain("Aviso:");
+  });
+
+  it("sin workspace lo dice y propone inicializarlo: nunca «nada pendiente»", async () => {
+    const data = await board(new FakeFs({ lenient: true }));
+    const text = render(data);
+
+    expect(data.workspace.initialized).toBe(false);
+    expect(text).toContain("/w:workspace-init");
+    expect(text).not.toContain("sin pendientes");
   });
 });

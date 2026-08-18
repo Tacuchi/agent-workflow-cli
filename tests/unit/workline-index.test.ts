@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { noteIndexPath, sealNote } from "../../src/application/decision-note-service.js";
 import { parseSpecRelation } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
+import { type DecisionNote, NOTE_SCHEMA } from "../../src/domain/decision-note.js";
+import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -196,7 +199,10 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
 });
 
 describe("buildWorklineIndex — pipeline order", () => {
-  it("ranks unrefined spec → unplanned spec → open plan → orphan checkpoint", async () => {
+  // La cuarta clase salió del pipeline de trabajo del usuario: la mecánica de
+  // sesión la maneja el workline central, así que un checkpoint suelto se reporta
+  // como aviso y deja de competir con un plan abierto por la atención de alguien.
+  it("ranks unrefined spec → unplanned spec → open plan, y la sesión suelta va al aviso", async () => {
     const fs = workspace();
     fs.file("/cwd/docs/specs/001-spec-draft.md", DRAFT);
     fs.file("/cwd/docs/specs/002-spec-ready.md", READY);
@@ -215,8 +221,8 @@ describe("buildWorklineIndex — pipeline order", () => {
       "spec-unrefined",
       "spec-unplanned",
       "plan-open",
-      "checkpoint-orphan",
     ]);
+    expect(out.loose_sessions).toEqual(["010-suelta-quick"]);
   });
 
   it("puts a started plan ahead of an untouched one", async () => {
@@ -283,5 +289,291 @@ describe("buildWorklineIndex — pipeline order", () => {
 
     const out = await index(fs);
     expect(out.pipeline).toEqual([]);
+  });
+});
+
+// ── per-item detail: derived once, in one order ──────────────────────────────
+
+/**
+ * The precedence a pending item's `next` follows, one case per link.
+ *
+ * The chain used to live in `resume-service`, which computed it for the head of
+ * the pipeline and its ties only — so `status`, which lists them all, said
+ * nothing. Moving it here is the point of the change, and its order is the part
+ * that must survive the move: a plan holding both a blocked phase and a pending
+ * reconciliation still reports the blocked phase, and one whose baseline nobody
+ * can prove is never told to "continue with the first unvalidated phase".
+ */
+
+const D_SPEC = "docs/specs/033-spec-detalle.md";
+const D_PLAN = "docs/plans/032-plan-detalle.md";
+
+const D_SPEC_TEXT = [
+  "---",
+  "status: ready-for-plan",
+  "---",
+  "",
+  "# Spec 033 — detalle",
+  "",
+  "## Acceptance criteria",
+  "",
+  "- [ ] S033/AC-01 — una.",
+  "- [ ] S033/AC-02 — otra.",
+  "",
+].join("\n");
+
+const D_DIGEST = `sha256:${baseDigest(D_SPEC_TEXT)}`;
+
+/** A plan over two phases, with whatever header lines and phase states the case needs. */
+function detailPlan(
+  options: {
+    header?: readonly string[];
+    f1?: string;
+    f2?: string;
+    design?: boolean;
+  } = {},
+): string {
+  const lines = [
+    "# Plan 032 — detalle",
+    "",
+    `> Derived from ${D_SPEC}`,
+    ...(options.header ?? [`> Baseline: ${D_SPEC}@${D_DIGEST}`, "> Estado: open"]),
+    "> Límite de ejecución: checkout",
+    "",
+  ];
+  if (options.design === true) {
+    lines.push(
+      "## Design references",
+      "",
+      "- package: `DES-001@r2`",
+      "  baseline_hint: `docs/designs/999-design-inexistente`",
+      `  digest: \`sha256:${"2".repeat(64)}\``,
+      "",
+    );
+  }
+  lines.push(
+    "## Tasks",
+    "",
+    "### F1 — la primera",
+    `> Estado: ${options.f1 ?? "validada"}`,
+    ...(options.f1 === "bloqueada" ? ["> Bloqueo: falta aplicar la migración 014"] : []),
+    "",
+    "- [x] T1.1 — hecho _(fuentes: workspace)_",
+    "",
+    "### F2 — la segunda",
+    `> Estado: ${options.f2 ?? "pendiente"}`,
+    "",
+    `- [${options.f2 === "validada" ? "x" : " "}] T2.1 — queda _(fuentes: workspace)_`,
+    "",
+  );
+  return lines.join("\n");
+}
+
+/** The workspace of a single spec and a single plan, plus optional extra files. */
+function detailWorkspace(planText: string, specText = D_SPEC_TEXT): MemFs {
+  const fs = new MemFs({ lenient: true });
+  fs.file("/cwd/.workflow/sessions/.keep", "");
+  fs.file(`/cwd/${D_SPEC}`, specText);
+  fs.file(`/cwd/${D_PLAN}`, planText);
+  return fs;
+}
+
+/** The pending note chain the reconciliation link needs, written where the index reads it. */
+function seedObligation(fs: MemFs, planText: string): void {
+  const chain = {
+    schema: "workline.decision-index/v1" as const,
+    spec: { path: D_SPEC, number: "033" },
+    notes: [] as DecisionNote[],
+  };
+  const note = sealNote(chain, {
+    schema: NOTE_SCHEMA,
+    lineage: {
+      spec: { path: D_SPEC, number: "033", digest: D_DIGEST },
+      plan: { path: D_PLAN, number: "032", digest: `sha256:${baseDigest(planText)}` },
+      execution: { session: "134-x", phase: "F1" },
+    },
+    decision: "F1 ya no satisface el contrato",
+    reason: "la afirmación que probaba cambió",
+    supersedes_assertions: ["S033/AC-01"],
+    supersedes_note: null,
+    scope: "functional",
+    consumers: [D_PLAN],
+    evidence_preserved: ["F1/T1.1 como historia"],
+    evidence_invalidated: ["F1/T1.1 como prueba"],
+    obligations: ["revalidar F1"],
+    resume_point: "F1/T1.1",
+    date: "2026-07-29",
+  });
+  fs.file(
+    `/cwd/${noteIndexPath("docs/decisions", "033", "detalle")}`,
+    JSON.stringify({ ...chain, notes: [note] }),
+  );
+}
+
+/** The detail of the plan item, which is the only pending item in these fixtures. */
+async function planItem(fs: MemFs) {
+  const out = await index(fs);
+  const item = out.pipeline.find((p) => p.file === D_PLAN);
+  if (item === undefined)
+    throw new Error(`el plan no está en el pipeline: ${JSON.stringify(out.pipeline)}`);
+  return item;
+}
+
+describe("derivePipeline — cada eslabón de la precedencia, en su orden", () => {
+  it("1 · un diseño irresoluble gana a todo lo demás, y es obligación", async () => {
+    const item = await planItem(detailWorkspace(detailPlan({ design: true, f1: "bloqueada" })));
+    expect(item.detail.next).toContain("DISEÑO IRRESOLUBLE DES-001@r2");
+    expect(item.detail.obligation).toBe(true);
+  });
+
+  it("2 · una fase bloqueada gana a la reconciliación pendiente, y NO es obligación", async () => {
+    const text = detailPlan({ f1: "bloqueada" });
+    const fs = detailWorkspace(text);
+    seedObligation(fs, text);
+
+    const item = await planItem(fs);
+    expect(item.detail.next).toBe("BLOQUEADA F1 — falta aplicar la migración 014");
+    expect(item.detail.obligation).toBe(false);
+  });
+
+  it("2b · una fase bloqueada sin motivo declarado lo dice así", async () => {
+    const text = detailPlan({ f1: "bloqueada" }).replace(
+      "> Bloqueo: falta aplicar la migración 014\n",
+      "",
+    );
+    const item = await planItem(detailWorkspace(text));
+    expect(item.detail.next).toBe("BLOQUEADA F1 — sin motivo declarado");
+  });
+
+  it("3 · la reconciliación pendiente gana al plan inconsistente, con su punto de retorno", async () => {
+    // `done` con una fase pendiente es justo lo que hace `inconsistent`: si la
+    // obligación no ganara, el tablero mandaría a reparar un plan que no está roto.
+    const text = detailPlan({ header: [`> Baseline: ${D_SPEC}@${D_DIGEST}`, "> Estado: done"] });
+    const fs = detailWorkspace(text);
+    seedObligation(fs, text);
+
+    const item = await planItem(fs);
+    expect(item.detail.next).toContain("RECONCILIACIÓN PENDIENTE por DEC-001 — revalidar F1");
+    expect(item.detail.next).toContain("retomá en F1/T1.1");
+    expect(item.detail.obligation).toBe(true);
+  });
+
+  it("4 · el plan inconsistente gana al baseline sin probar, y NO es obligación", async () => {
+    const item = await planItem(detailWorkspace(detailPlan({ header: ["> Estado: done"] })));
+    expect(item.detail.next).toBe(
+      "el plan se declara done pero sus contadores no lo respaldan: repararlo a mano",
+    );
+    expect(item.detail.obligation).toBe(false);
+  });
+
+  it("5 · un baseline sin sello gana a la validación final pendiente, y es obligación", async () => {
+    const item = await planItem(
+      detailWorkspace(detailPlan({ header: ["> Estado: open"], f2: "validada" })),
+    );
+    expect(item.detail.next).toContain("SIN SELLO DE BASELINE");
+    expect(item.detail.obligation).toBe(true);
+  });
+
+  it("5b · un baseline divergente nombra los dos digests", async () => {
+    const item = await planItem(detailWorkspace(detailPlan(), D_SPEC_TEXT.replace("una.", "una,")));
+    expect(item.detail.next).toContain("BASELINE DIVERGENTE");
+    expect(item.detail.obligation).toBe(true);
+  });
+
+  it("6 · con todo validado y el sello alineado, lo que falta es la validación final", async () => {
+    const item = await planItem(detailWorkspace(detailPlan({ f2: "validada" })));
+    expect(item.detail.next).toBe("todo ejecutado: falta la validación final y el cierre");
+    expect(item.detail.obligation).toBe(false);
+    expect(item.detail.progress).toBe("2/2 tareas (100%) · fases 2/2");
+  });
+
+  it("7 · y si queda fase por validar, el paso es continuar por ella", async () => {
+    const item = await planItem(detailWorkspace(detailPlan()));
+    expect(item.detail.next).toBe("continuar por la primera fase no validada");
+    expect(item.detail.obligation).toBe(false);
+  });
+});
+
+describe("derivePipeline — de una spec pendiente se dice su status y sus preguntas", () => {
+  it("y nada que exija correr el motor del refine", async () => {
+    const fs = workspace();
+    fs.file(
+      "/cwd/docs/specs/015-spec-borrador.md",
+      "---\nstatus: draft\n---\n\n# Spec\n\n## Open questions\n\n- ¿una?\n- ¿dos?\n",
+    );
+
+    const out = await index(fs);
+    expect(out.pipeline[0]?.detail).toEqual({
+      objective: "spec 015 — borrador",
+      progress: "status draft, 2 pregunta(s) abierta(s)",
+      next: "refinar hasta ready-for-plan",
+      obligation: false,
+    });
+    // El tablero muestra UNA línea por ítem, así que el status y la cuenta de
+    // preguntas que AC-05 le debe a una spec viajan en el título que ya imprime.
+    expect(out.pipeline[0]?.summary).toBe("spec 015 — draft · 2 pregunta(s) abierta(s)");
+  });
+
+  it("una spec refinada y sin plan dice que le falta generarlo", async () => {
+    const fs = workspace();
+    fs.file("/cwd/docs/specs/016-spec-lista.md", READY);
+
+    const out = await index(fs);
+    expect(out.pipeline[0]).toMatchObject({
+      kind: "spec-unplanned",
+      summary: "spec 016 — ready-for-plan · 0 pregunta(s) abierta(s)",
+      detail: {
+        progress: "status ready-for-plan, 0 pregunta(s) abierta(s)",
+        next: "generar su plan",
+        obligation: false,
+      },
+    });
+  });
+});
+
+// ── the loose session leaves the pipeline and becomes a notice ───────────────
+
+describe("buildWorklineIndex — una sesión suelta es un aviso, no trabajo del usuario", () => {
+  function looseWorkspace(): MemFs {
+    const fs = workspace();
+    fs.file(
+      "/cwd/.workflow/sessions/013-suelta-quick/SESSION.md",
+      "# SESSION\n\n## Objective\nalgo suelto\n\n## Origin\n- prompt directo\n",
+    );
+    fs.file(
+      "/cwd/.workflow/sessions/013-suelta-quick/CHECKPOINT.md",
+      "# CHECKPOINT\n\n## Completed\n- algo\n\n## Pending / Next\n- seguir\n",
+    );
+    return fs;
+  }
+
+  it("sale del pipeline y se reporta por su carpeta en loose_sessions", async () => {
+    const out = await index(looseWorkspace());
+    expect(out.pipeline).toEqual([]);
+    expect(out.loose_sessions).toEqual(["013-suelta-quick"]);
+  });
+
+  it("no compite con un plan abierto: el plan es el único pendiente", async () => {
+    const fs = looseWorkspace();
+    fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
+
+    const out = await index(fs);
+    expect(out.pipeline.map((p) => p.kind)).toEqual(["plan-open"]);
+    expect(out.loose_sessions).toEqual(["013-suelta-quick"]);
+  });
+
+  it("una sesión con documento asociado no es suelta", async () => {
+    const fs = workspace();
+    fs.file(
+      "/cwd/.workflow/sessions/014-x-plan-exec/SESSION.md",
+      "# SESSION\n\n## Objective\nejecutar\n\n## Origin\n- docs/plans/005-plan-x.md\n",
+    );
+    fs.file(
+      "/cwd/.workflow/sessions/014-x-plan-exec/CHECKPOINT.md",
+      "# CHECKPOINT\n\n## Completed\n- x\n",
+    );
+
+    const out = await index(fs);
+    expect(out.loose_sessions).toEqual([]);
   });
 });

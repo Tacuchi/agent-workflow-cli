@@ -81,6 +81,14 @@ export interface StatusOutput {
   pending_retirements: PendingRetirement[];
   /** what is left to do, in priority order — the same list `resume` routes from */
   pipeline: PipelineItem[];
+  /**
+   * Active sessions holding work with no document of their own, by folder.
+   *
+   * A notice, never a row of pending work: the session mechanics belong to the
+   * central workline, and asking a person to weigh a loose checkpoint against an
+   * open plan asked them to do the runtime's bookkeeping.
+   */
+  loose_sessions: string[];
   /** the design traceability graph, so a broken reference is visible without opening files */
   designs: DesignGraph;
   /** Units that outlived their session: pending cleanup, never cleaned on their own. */
@@ -146,6 +154,7 @@ export async function runStatusCommand(
     terminal_events: events,
     pending_retirements: index.pending_retirements,
     pipeline: index.pipeline,
+    loose_sessions: index.loose_sessions,
     designs: index.designs,
     orphan_units: index.orphan_units,
     ...(index.docs_canon_error !== undefined ? { docs_canon_error: index.docs_canon_error } : {}),

@@ -13,9 +13,13 @@ import {
   type IndexedSession,
   type IndexedSpec,
   type PipelineItem,
+  type PipelineItemDetail,
   type SessionUnit,
   type WorklineIndex,
   buildWorklineIndex,
+  planDetail,
+  specDetail,
+  unresolvedDesignRefs,
 } from "./workline-index-service.js";
 
 /**
@@ -76,9 +80,25 @@ export interface ResumeProposal {
 }
 
 export type ResumeOutcome =
-  | { status: "proposal"; via: "explicit" | "pipeline"; proposal: ResumeProposal }
+  | {
+      status: "proposal";
+      via: "explicit" | "pipeline";
+      proposal: ResumeProposal;
+      /**
+       * Every pending item, in the order the CLI decided — present only on the
+       * pipeline route, where there is a pipeline to offer. `proposal` stays the
+       * recommendation, so a caller that only ever read it keeps reading it.
+       */
+      candidates?: ResumeProposal[];
+    }
   | { status: "candidates"; candidates: ResumeProposal[]; action: string }
   | { status: "idle"; action: string }
+  /**
+   * No workspace here — never `idle`. An empty pipeline for want of a workspace
+   * is not "nothing pending", and answering the two the same way sent people
+   * looking for work that no folder was tracking yet.
+   */
+  | { status: "uninitialized"; action: string }
   | { status: "invalid_target"; target: string; action: string };
 
 export async function runResume(
@@ -102,7 +122,13 @@ export async function runResume(
 
   if (input.code !== undefined) return await resumeSession(fs, paths, index, input);
   if (input.target !== undefined) return resumeTarget(index, input.target);
-  return await resumePipeline(fs, paths, index);
+  if (!index.workspace.initialized) {
+    return {
+      status: "uninitialized",
+      action: `no hay workspace de Workline en ${index.workspace.path}: creá uno con /w:workspace-init`,
+    };
+  }
+  return resumePipeline(index);
 }
 
 // ── explicit target ──────────────────────────────────────────────────────────
@@ -169,15 +195,21 @@ async function resumeSession(
 
 // ── no target: the documental pipeline ───────────────────────────────────────
 
-async function resumePipeline(
-  fs: FileSystemPort,
-  paths: PathsService,
-  index: WorklineIndex,
-): Promise<ResumeOutcome> {
+/**
+ * The whole pipeline comes back as candidates, in the order the CLI decided.
+ *
+ * It used to offer only the head and its ties, so the open plans below them were
+ * pending work `status` listed and `resume` never named — and choosing what to
+ * pick up meant reading one surface and typing from the other. Priority and the
+ * tie-break are untouched: what a tie still changes is whether one item can be
+ * called the recommendation at all.
+ */
+function resumePipeline(index: WorklineIndex): ResumeOutcome {
   const [head] = index.pipeline;
   if (head === undefined) {
     return { status: "idle", action: "no hay trabajo pendiente: el pipeline está vacío" };
   }
+  const candidates = index.pipeline.map((item) => pipelineProposal(index, item));
 
   // A tie is priority + progress, never date. Two items that reach here are
   // equally next, and picking one for the user is what this replaces.
@@ -185,173 +217,78 @@ async function resumePipeline(
     (item) =>
       item.priority === head.priority && (item.started ?? false) === (head.started ?? false),
   );
-
   if (tied.length > 1) {
-    const candidates = await Promise.all(
-      tied.map((item) => pipelineProposal(fs, paths, index, item)),
-    );
     return {
       status: "candidates",
       candidates,
-      action: `${tied.length} candidatos con la misma prioridad: elegí uno y volvé a invocar con su ruta`,
+      action: `${tied.length} candidatos empatados en cabeza sobre ${candidates.length} pendientes: elegí uno y volvé a invocar con su ruta`,
     };
   }
   return {
     status: "proposal",
     via: "pipeline",
-    proposal: await pipelineProposal(fs, paths, index, head),
+    proposal: pipelineProposal(index, head),
+    candidates,
   };
 }
 
-async function pipelineProposal(
-  fs: FileSystemPort,
-  paths: PathsService,
-  index: WorklineIndex,
-  item: PipelineItem,
-): Promise<ResumeProposal> {
-  if (item.kind === "plan-open") {
-    const plan = index.plans.find((p) => p.file === item.file);
-    if (plan !== undefined) return planProposal(plan, index);
-  }
-  if (item.kind === "checkpoint-orphan") {
-    const session = index.sessions.find((s) => s.folder === item.file);
-    if (session !== undefined) {
-      return await sessionProposal(fs, paths, session.folder, session.path, session);
-    }
-  }
-  const spec = index.specs.find((s) => s.file === item.file);
-  if (spec !== undefined) return specProposal(spec, index);
+/**
+ * A pipeline item, projected — never looked up and re-derived.
+ *
+ * The item already carries what it owes, computed once where the pipeline is
+ * built, so this cannot describe the same item differently from the board that
+ * lists it. It used to re-find the spec or plan behind the row and run the
+ * derivation again, which is exactly the seam the two surfaces drifted through.
+ */
+function pipelineProposal(index: WorklineIndex, item: PipelineItem): ResumeProposal {
   return {
     kind: item.kind,
     file: item.file,
     number: item.number,
-    objective: item.summary,
-    progress: "—",
-    next: item.summary,
+    ...told(item.detail),
     command: item.command,
+    ...designOf(index, item.file),
   };
 }
 
 // ── proposals ────────────────────────────────────────────────────────────────
 
 function specProposal(spec: IndexedSpec, index: WorklineIndex): ResumeProposal {
-  const planned = index.plans.some(
-    (p) => p.spec.status === "resolved" && p.spec.number === spec.number,
-  );
   const refine = spec.status !== "ready-for-plan";
   return {
     kind: refine ? "spec-unrefined" : "spec-unplanned",
     file: spec.file,
     number: spec.number,
-    objective: `spec ${spec.number}${spec.slug ? ` — ${spec.slug}` : ""}`,
-    progress: `status ${spec.status}, ${spec.open_questions} pregunta(s) abierta(s)`,
-    next: refine
-      ? "refinar hasta ready-for-plan"
-      : planned
-        ? "ya tiene plan derivado"
-        : "generar su plan",
+    ...told(specDetail(spec, index.plans)),
     command: refine ? `/w:spec-refine ${spec.file}` : `/w:plan-new ${spec.file}`,
     ...designOf(index, spec.file),
   };
 }
 
 function planProposal(plan: IndexedPlan, index: WorklineIndex): ResumeProposal {
-  const [blocked] = plan.blocked_phases;
-  const phases =
-    plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
-  const design = designOf(index, plan.file);
   return {
     kind: "plan-open",
     file: plan.file,
     number: plan.number,
-    objective: `plan ${plan.number}${plan.slug ? ` — ${plan.slug}` : ""}`,
-    progress: `${plan.tasks_done}/${plan.tasks_total} tareas (${plan.progress_pct}%)${phases}`,
-    // A missing reference outranks the plan's own next step: plan-exec fails
-    // closed on it, so proposing "implementá F3" would send someone into a wall.
-    next: describeMissingDesign(design) ?? describePlanNext(plan, blocked),
+    ...told(planDetail(plan, index.designs)),
     command: `/w:plan-exec ${plan.file}`,
-    ...design,
+    ...designOf(index, plan.file),
   };
+}
+
+/** The three fields a proposal takes verbatim from the shared derivation. */
+function told(detail: PipelineItemDetail): Pick<ResumeProposal, "objective" | "progress" | "next"> {
+  return { objective: detail.objective, progress: detail.progress, next: detail.next };
 }
 
 /** The document's non-valid references, or nothing at all to say. */
 function designOf(index: WorklineIndex, file: string): Pick<ResumeProposal, "design"> {
-  const design = index.designs.references
-    .filter((r) => r.from === file && r.state !== "valid")
-    .map((r) => ({ state: r.state, baseline: r.baseline, detail: r.detail }));
+  const design = unresolvedDesignRefs(index.designs, file).map((r) => ({
+    state: r.state,
+    baseline: r.baseline,
+    detail: r.detail,
+  }));
   return design.length === 0 ? {} : { design };
-}
-
-function describeMissingDesign(design: Pick<ResumeProposal, "design">): string | null {
-  const missing = (design.design ?? []).filter((d) => d.state === "missing");
-  const [first] = missing;
-  if (first === undefined) return null;
-  return `DISEÑO IRRESOLUBLE ${first.baseline} — ${first.detail ?? "no resuelve"}`;
-}
-
-function describePlanNext(
-  plan: IndexedPlan,
-  blocked: IndexedPlan["blocked_phases"][number] | undefined,
-): string {
-  if (blocked !== undefined) {
-    return `BLOQUEADA F${blocked.number} — ${blocked.blocker ?? "sin motivo declarado"}`;
-  }
-  // Compensation outranks every reading below it, and it outranks the
-  // `inconsistent` line too: a plan held open by an obligation has counters that
-  // agree perfectly, so "sus contadores no lo respaldan" would send somebody to
-  // repair a document that is not broken. What is owed is work, not a fix.
-  const owed = describePendingReconciliation(plan);
-  if (owed !== null) return owed;
-  if (plan.plan_state === "inconsistent") {
-    return "el plan se declara done pero sus contadores no lo respaldan: repararlo a mano";
-  }
-  // Said before the phase counters, because "continuar por la primera fase no
-  // validada" is advice about a contract we cannot prove this plan is on.
-  if (plan.baseline.status !== "aligned") return describeUnprovenBaseline(plan);
-  if (plan.final_validation_pending) return "todo ejecutado: falta la validación final y el cierre";
-  return "continuar por la primera fase no validada";
-}
-
-/**
- * What a plan owes, when it owes anything — the one thing that must be said
- * before offering to run or to close it.
- *
- * Both halves of AC-11 come from here: a plan with an open obligation is neither
- * executable as it stands nor closable, and saying so with the obligation and
- * its resume point is what keeps the refusal actionable instead of a wall.
- */
-function describePendingReconciliation(plan: IndexedPlan): string | null {
-  const reconciliation = plan.reconciliation;
-  if (reconciliation === null || reconciliation.closable) return null;
-  const [first] = reconciliation.pending;
-  if (first === undefined) {
-    return "RECONCILIACIÓN PENDIENTE — el contrato efectivo no se puede componer: ni ejecutable ni cerrable";
-  }
-  const more = reconciliation.pending.length - 1;
-  const rest = more > 0 ? ` (+${more} más)` : "";
-  return `RECONCILIACIÓN PENDIENTE por ${first.by} — ${first.text}${rest}: retomá en ${first.resume_point}, ni ejecutable ni cerrable tal cual`;
-}
-
-/**
- * A plan whose baseline nobody can prove, said as exactly that.
- *
- * The 31 plans that predate the seal are the common case, and the honest report
- * is "it does not have one" — never "aligned" and never "derived from the
- * current contract". A divergent seal is the louder version of the same problem
- * and gets its own line rather than being folded in.
- */
-function describeUnprovenBaseline(plan: IndexedPlan): string {
-  const baseline = plan.baseline;
-  if (baseline.status === "divergent") {
-    return `BASELINE DIVERGENTE — la spec cambió desde que se selló (${baseline.sealed_digest} → ${baseline.current_digest}): revisá el plan contra la spec vigente antes de seguir`;
-  }
-  if (baseline.status === "malformed") {
-    return `BASELINE ILEGIBLE — ${baseline.why}: ${baseline.action}`;
-  }
-  if (baseline.status === "unresolved") {
-    return `BASELINE SIN SPEC — ${baseline.path} no está en el workspace: no hay contrato contra el que validar`;
-  }
-  return "SIN SELLO DE BASELINE — el plan no dice de qué versión de su spec deriva: no se puede afirmar que esté alineado";
 }
 
 /**

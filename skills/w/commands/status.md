@@ -15,14 +15,18 @@ Read-only single pass: no loop, no session, no writes. Transversal.
 ## Run
 
 1. `aw status --format human`; `--detail` for the full inventory ("detalle", "todo", "historial").
-2. **Relay it verbatim.** The CLI already selects, groups and humanizes. Never paraphrase, re-sort, add or drop a line.
-3. **Host context, opportunistic.** Host with *cheap* host-memory → append a `▸ CONTEXTO DEL HOST` section with a few recent-focus signals. Otherwise omit silently. Never scan transcripts, never ask.
+2. **Relay it verbatim.** The CLI selects, groups and humanizes: never paraphrase, re-sort, add or drop a line.
+3. **Host context, opportunistic.** Cheap host-memory → append a `▸ CONTEXTO DEL HOST` section with a few recent-focus signals. Otherwise omit silently; never scan transcripts, never ask.
 
-> **The default view is what is LEFT TO DO** — unrefined specs, refined specs with no plan, plans not `done`. `--detail` brings back history, sessions and discarded items — re-run rather than explain an absence.
+> **The default view is what is LEFT TO DO** — unrefined specs, refined specs with no plan, plans not `done` — and each says **what it still owes**, under its title. `--detail` brings back history, sessions and discarded items: re-run, never explain an absence.
 
-> **Automation reads JSON.** Piped or with `--json` / `--format json`, `aw status` emits its machine-readable envelope; `--detail` is human-only.
+> **An obligation comes before the percentage.** What leaves an item neither runnable nor closable — an unresolvable design reference, a pending reconciliation, an unprovable baseline — takes the title, and the progress drops below it. A plan at `100%` with every phase `validada` is not finished either: it owes its final validation and its close.
 
-`initialized: false`, everything empty → say the folder is not an agent-workflow workspace and suggest `/w:workspace-init`.
+> **Sessions are not the user's work.** One carrying work with no document of its own is a **notice** — count and how to look — never a pending row.
+
+> **Automation reads JSON.** Piped or with `--json` / `--format json` it emits its envelope; `--detail` is human-only.
+
+Nothing pending → one line, no empty section. No workspace → it offers `/w:workspace-init`; an empty pipeline for want of one is never "nothing pending".
 
 ## More context
 

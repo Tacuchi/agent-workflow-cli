@@ -410,15 +410,14 @@ describe("Phase contract — plan loops ↔ the transversal surfaces ↔ the run
     const status = await readSurface("commands/status.md");
     const resume = await readSurface("commands/resume.md");
     expect(exec).toContain("> Estado: validada");
-    // The reader half is the CLI now — the skills only relay what it prints.
-    for (const [name, doc] of [
-      ["index", await readFile(INDEX_SERVICE, "utf8")],
-      ["resume-service", await readFile(RESUME_SERVICE, "utf8")],
-    ] as const) {
-      expect(doc, name).toContain("phases_validated");
-      expect(doc, name).toContain("phases_total");
-      expect(doc, name).toContain("validada");
-    }
+    // The reader half is the CLI now — the skills only relay what it prints, and
+    // the reading itself is single: the shared projection derives the mark and
+    // `resume` consumes that, so the two cannot end up speaking different ones.
+    const indexDoc = await readFile(INDEX_SERVICE, "utf8");
+    expect(indexDoc).toContain("phases_validated");
+    expect(indexDoc).toContain("phases_total");
+    expect(indexDoc).toContain("validada");
+    expect(await readFile(RESUME_SERVICE, "utf8")).toContain("planDetail");
     expect(resume).toContain("not `validada`");
     expect(status).toContain("plans not `done`");
   });
@@ -465,8 +464,9 @@ describe("Phase contract — plan loops ↔ the transversal surfaces ↔ the run
     const index = await readFile(INDEX_SERVICE, "utf8");
     expect(index).toContain("> Estado: bloqueada");
     expect(index).toContain('phase.state === "bloqueada"');
-    // And the reader surfaces the declared reason instead of a bare state.
-    expect(await readFile(RESUME_SERVICE, "utf8")).toContain("sin motivo declarado");
+    // And the reader surfaces the declared reason instead of a bare state — where
+    // the one derivation lives, not in each command that shows it.
+    expect(index).toContain("sin motivo declarado");
     expect(await readSurface("commands/resume.md")).toContain(
       "`bloqueada` phase with its declared reason",
     );

@@ -36,7 +36,6 @@ import type { PathsService } from "./paths-service.js";
 import { listPendingJournals } from "./retirement/journal.js";
 import { findArtifact } from "./session-artifacts.js";
 import { readSessionPhase } from "./session-narrative.js";
-import { sessionNumericCode } from "./session-resolver.js";
 import { SessionsService } from "./sessions-service.js";
 import { type OrphanUnit, runWorktree } from "./worktree-service.js";
 
@@ -246,6 +245,33 @@ export interface IndexedDiscarded {
  */
 export type PipelineKind = "spec-unrefined" | "spec-unplanned" | "plan-open" | "checkpoint-orphan";
 
+/**
+ * What an item still owes, derived HERE and nowhere else.
+ *
+ * `status` lists it and `resume` offers it as a choice, so a second derivation is
+ * the one way the two surfaces could describe the same item differently — and
+ * they did: `resume` computed this for the head of the pipeline and its ties,
+ * while `status`, which lists them all, never computed it at all. That is why a
+ * plan with every task done and every phase validated read as `100%, fases 6/6`
+ * and said nothing about the final validation it was still waiting on.
+ */
+export interface PipelineItemDetail {
+  /** The item named as its own work: `plan 034 — estado-y-reanudacion-guiada`. */
+  objective: string;
+  /** How far it got: `2/4 tareas (50%)·fases 1/3` · `status draft, 2 pregunta(s)`. */
+  progress: string;
+  /** The next pending step, or the obligation the work is waiting on. */
+  next: string;
+  /**
+   * `next` is an obligation that leaves the item neither runnable nor closable:
+   * an unresolvable design reference, a pending reconciliation, a baseline
+   * nobody can prove. The board owes those BEFORE the percentage, because a
+   * plan reading `100%` with its obligation further down is the misleading view
+   * this projection exists to prevent.
+   */
+  obligation: boolean;
+}
+
 export interface PipelineItem {
   kind: PipelineKind;
   priority: 1 | 2 | 3 | 4;
@@ -256,6 +282,8 @@ export interface PipelineItem {
   summary: string;
   /** the exact command that continues this item — presented, never executed */
   command: string;
+  /** what it still owes — the single derivation both surfaces read */
+  detail: PipelineItemDetail;
   /** plans only: work already started outranks an untouched plan */
   started?: boolean;
 }
@@ -267,6 +295,16 @@ export interface WorklineIndex {
   sessions: IndexedSession[];
   discarded: IndexedDiscarded[];
   pipeline: PipelineItem[];
+  /**
+   * Active sessions holding work with no document of their own, by folder.
+   *
+   * Reported as a NOTICE and deliberately out of `pipeline`: the session
+   * mechanics are the central workline's, so a loose checkpoint competing for
+   * attention with an open plan asked a person to do the runtime's bookkeeping.
+   * Making it vanish would be worse — the work inside it is recorded nowhere
+   * else — so it is named, counted, and left where it is.
+   */
+  loose_sessions: string[];
   /** `spec → package → flow/screen → plan/task`, with its four reference states. */
   designs: DesignGraph;
   /**
@@ -349,7 +387,8 @@ export async function buildWorklineIndex(
     plans,
     sessions,
     discarded,
-    pipeline: derivePipeline(specs, plans, sessions),
+    pipeline: derivePipeline(specs, plans, designs),
+    loose_sessions: looseSessions(sessions),
     designs,
     orphan_units: isolation.orphans,
     pending_retirements: await readPendingRetirements(fs, paths),
@@ -426,18 +465,15 @@ async function readIsolation(
 function derivePipeline(
   specs: IndexedSpec[],
   plans: IndexedPlan[],
-  sessions: IndexedSession[],
+  designs: DesignGraph,
 ): PipelineItem[] {
-  const plannedSpecs = new Set(
-    plans.map((p) => (p.spec.status === "resolved" ? p.spec.number : null)).filter(isString),
-  );
-
   const items: PipelineItem[] = [];
   for (const spec of specs) {
+    const detail = specDetail(spec, plans);
     if (spec.status !== "ready-for-plan") {
-      items.push(specItem(spec, 1, "spec-unrefined", "/w:spec-refine"));
-    } else if (!plannedSpecs.has(spec.number)) {
-      items.push(specItem(spec, 2, "spec-unplanned", "/w:plan-new"));
+      items.push(specItem(spec, 1, "spec-unrefined", "/w:spec-refine", detail));
+    } else if (!specIsPlanned(spec, plans)) {
+      items.push(specItem(spec, 2, "spec-unplanned", "/w:plan-new", detail));
     }
   }
   for (const plan of plans) {
@@ -450,24 +486,18 @@ function derivePipeline(
       slug: plan.slug,
       summary: planSummary(plan),
       command: `/w:plan-exec ${plan.file}`,
+      detail: planDetail(plan, designs),
       started: plan.tasks_done > 0 || plan.phases_validated > 0,
     });
   }
-  for (const session of sessions) {
-    if (session.state !== "active" || !session.has_checkpoint) continue;
-    if (session.linked_doc !== null) continue;
-    items.push({
-      kind: "checkpoint-orphan",
-      priority: 4,
-      file: session.folder,
-      number: sessionNumericCode(session.folder),
-      slug: session.folder,
-      summary: session.summary,
-      command: `aw session-resume --code ${session.folder} --reopen`,
-      started: true,
-    });
-  }
   return items.sort(comparePipeline);
+}
+
+/** Active sessions carrying work that no document accounts for, by folder. */
+function looseSessions(sessions: readonly IndexedSession[]): string[] {
+  return sessions
+    .filter((s) => s.state === "active" && s.has_checkpoint && s.linked_doc === null)
+    .map((s) => s.folder);
 }
 
 function specItem(
@@ -475,6 +505,7 @@ function specItem(
   priority: 1 | 2,
   kind: PipelineKind,
   command: string,
+  detail: PipelineItemDetail,
 ): PipelineItem {
   return {
     kind,
@@ -482,8 +513,9 @@ function specItem(
     file: spec.file,
     number: spec.number,
     slug: spec.slug,
-    summary: `spec ${spec.number} — ${spec.status}`,
+    summary: `spec ${spec.number} — ${spec.status} · ${openQuestions(spec)}`,
     command: `${command} ${spec.file}`,
+    detail,
   };
 }
 
@@ -492,6 +524,145 @@ function planSummary(plan: IndexedPlan): string {
     plan.phases_total > 0 ? `, fases ${plan.phases_validated}/${plan.phases_total}` : "";
   const blocked = plan.phases_blocked > 0 ? `, ${plan.phases_blocked} bloqueada(s)` : "";
   return `plan ${plan.number} — ${plan.progress_pct}%${phases}${blocked}`;
+}
+
+// ── per-item detail: the single derivation both surfaces read ─────────────────
+
+function openQuestions(spec: IndexedSpec): string {
+  return `${spec.open_questions} pregunta(s) abierta(s)`;
+}
+
+/** Whether a plan already derives from this spec, by proven lineage. */
+function specIsPlanned(spec: IndexedSpec, plans: readonly IndexedPlan[]): boolean {
+  return plans.some((p) => p.spec.status === "resolved" && p.spec.number === spec.number);
+}
+
+/**
+ * What a spec owes. Its `status` and its open questions and nothing more: any
+ * further reading of a draft would mean running the refine engine from a
+ * read-only view, which is exactly what this projection may not do.
+ */
+export function specDetail(spec: IndexedSpec, plans: readonly IndexedPlan[]): PipelineItemDetail {
+  const refine = spec.status !== "ready-for-plan";
+  return {
+    objective: `spec ${spec.number}${spec.slug ? ` — ${spec.slug}` : ""}`,
+    progress: `status ${spec.status}, ${openQuestions(spec)}`,
+    next: refine
+      ? "refinar hasta ready-for-plan"
+      : specIsPlanned(spec, plans)
+        ? "ya tiene plan derivado"
+        : "generar su plan",
+    obligation: false,
+  };
+}
+
+/** What a plan owes, and whether saying it outranks saying its percentage. */
+export function planDetail(plan: IndexedPlan, designs: DesignGraph): PipelineItemDetail {
+  const phases =
+    plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
+  return {
+    objective: `plan ${plan.number}${plan.slug ? ` — ${plan.slug}` : ""}`,
+    progress: `${plan.tasks_done}/${plan.tasks_total} tareas (${plan.progress_pct}%)${phases}`,
+    ...planNext(plan, designs),
+  };
+}
+
+/** The document's design references that are NOT valid, in graph order. */
+export function unresolvedDesignRefs(
+  designs: DesignGraph,
+  file: string,
+): DesignGraph["references"] {
+  return designs.references.filter((r) => r.from === file && r.state !== "valid");
+}
+
+/**
+ * The one precedence chain, in the one order — moved here whole, never re-cut.
+ *
+ * A missing reference outranks the plan's own next step because `plan-exec` fails
+ * closed on it, so proposing "implementá F3" would send someone into a wall. A
+ * blocked phase comes next: it is the live fact about this checkout. Then the
+ * compensation, which outranks the `inconsistent` line too — a plan held open by
+ * an obligation has counters that agree perfectly, so "sus contadores no lo
+ * respaldan" would send somebody to repair a document that is not broken. The
+ * baseline is said before the phase counters, because "continuar por la primera
+ * fase no validada" is advice about a contract we cannot prove this plan is on.
+ */
+function planNext(
+  plan: IndexedPlan,
+  designs: DesignGraph,
+): Pick<PipelineItemDetail, "next" | "obligation"> {
+  const missing = describeMissingDesign(designs, plan.file);
+  if (missing !== null) return { next: missing, obligation: true };
+  const [blocked] = plan.blocked_phases;
+  if (blocked !== undefined) {
+    return {
+      next: `BLOQUEADA F${blocked.number} — ${blocked.blocker ?? "sin motivo declarado"}`,
+      obligation: false,
+    };
+  }
+  const owed = describePendingReconciliation(plan);
+  if (owed !== null) return { next: owed, obligation: true };
+  if (plan.plan_state === "inconsistent") {
+    return {
+      next: "el plan se declara done pero sus contadores no lo respaldan: repararlo a mano",
+      obligation: false,
+    };
+  }
+  if (plan.baseline.status !== "aligned") {
+    return { next: describeUnprovenBaseline(plan), obligation: true };
+  }
+  if (plan.final_validation_pending) {
+    return { next: "todo ejecutado: falta la validación final y el cierre", obligation: false };
+  }
+  return { next: "continuar por la primera fase no validada", obligation: false };
+}
+
+function describeMissingDesign(designs: DesignGraph, file: string): string | null {
+  const [first] = unresolvedDesignRefs(designs, file).filter((r) => r.state === "missing");
+  if (first === undefined) return null;
+  return `DISEÑO IRRESOLUBLE ${first.baseline} — ${first.detail ?? "no resuelve"}`;
+}
+
+/**
+ * What a plan owes, when it owes anything — the one thing that must be said
+ * before offering to run or to close it.
+ *
+ * A plan with an open obligation is neither executable as it stands nor
+ * closable, and saying so with the obligation and its resume point is what keeps
+ * the refusal actionable instead of a wall.
+ */
+function describePendingReconciliation(plan: IndexedPlan): string | null {
+  const reconciliation = plan.reconciliation;
+  if (reconciliation === null || reconciliation.closable) return null;
+  const [first] = reconciliation.pending;
+  if (first === undefined) {
+    return "RECONCILIACIÓN PENDIENTE — el contrato efectivo no se puede componer: ni ejecutable ni cerrable";
+  }
+  const more = reconciliation.pending.length - 1;
+  const rest = more > 0 ? ` (+${more} más)` : "";
+  return `RECONCILIACIÓN PENDIENTE por ${first.by} — ${first.text}${rest}: retomá en ${first.resume_point}, ni ejecutable ni cerrable tal cual`;
+}
+
+/**
+ * A plan whose baseline nobody can prove, said as exactly that.
+ *
+ * The plans that predate the seal are the common case, and the honest report is
+ * "it does not have one" — never "aligned" and never "derived from the current
+ * contract". A divergent seal is the louder version of the same problem and gets
+ * its own line rather than being folded in.
+ */
+function describeUnprovenBaseline(plan: IndexedPlan): string {
+  const baseline = plan.baseline;
+  if (baseline.status === "divergent") {
+    return `BASELINE DIVERGENTE — la spec cambió desde que se selló (${baseline.sealed_digest} → ${baseline.current_digest}): revisá el plan contra la spec vigente antes de seguir`;
+  }
+  if (baseline.status === "malformed") {
+    return `BASELINE ILEGIBLE — ${baseline.why}: ${baseline.action}`;
+  }
+  if (baseline.status === "unresolved") {
+    return `BASELINE SIN SPEC — ${baseline.path} no está en el workspace: no hay contrato contra el que validar`;
+  }
+  return "SIN SELLO DE BASELINE — el plan no dice de qué versión de su spec deriva: no se puede afirmar que esté alineado";
 }
 
 /**
@@ -506,10 +677,6 @@ function comparePipeline(a: PipelineItem, b: PipelineItem): number {
   const left = a.number ?? "";
   const right = b.number ?? "";
   return compareNumberedStrings(left, right);
-}
-
-function isString(value: string | null): value is string {
-  return value !== null;
 }
 
 // ── workspace ────────────────────────────────────────────────────────────────

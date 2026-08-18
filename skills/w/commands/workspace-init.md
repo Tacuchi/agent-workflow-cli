@@ -12,16 +12,16 @@ allowed-tools:
 
 Turns the current folder into a Workline workspace: **1+ sources** (repos), one source = standalone. No project/hub modes.
 
-`aw workspace-init --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run] --format human`
+`aw workspace-init --source alias:path[:branch] [flags above] --format human`
 
-> **The CLI writes; this wrapper does not** — `Write` and `Edit` are deliberately absent from `allowed-tools`. Use `--dry-run` to preview, then re-run without it. Relay the CLI's output; do not re-render it.
+> **The CLI writes; this wrapper does not** — `Write` and `Edit` are absent from `allowed-tools` on purpose. `--dry-run` previews; re-run without it. Relay the output, never re-render it.
 
 ## Interactive steps
 
-1. **Sources** — the CLI detects the repo path(s); the user confirms aliases, paths, branches. Multiple `--source` accepted.
-2. **Default skills** — present the catalog of capabilities (roles). Per role: `built-in default`, a third-party skill (`skills.sh`), or `off`; the result lands in `.workflow/skills.toml`. Cascade: `built-in → ~/.workflow/skills.toml (global) → .workflow/skills.toml (workspace)`. The template also ships a commented `[compaction]` section — the `mode` switch for the loops' context self-regulation (`confirm` default, `auto` opt-in).
-3. **Minimal scaffold** — only the activation set: `.workflow/sessions/` (the marker that activates the operating context), `.workflow/skills.toml`, the `WORKSPACE` block in CLAUDE.md/AGENTS.md and the CLI-owned `.gitignore`. **Nothing else upfront**: each `docs/<category>` folder is born on demand at its first numbered write (`aw next-number docs/<cat>`); `.workflow/launch/<alias>/` and `docs/logs/` at the first launch.
-4. **External sources** — a source outside the workspace folder gets multi-root visibility (gitignored) and a reconcile.
+1. **Sources** — the CLI detects the repo path(s); the user confirms aliases, paths and branches. Multiple `--source` accepted.
+2. **Default skills** — present the catalog of capabilities (roles). Per role: `built-in default`, a third-party skill (`skills.sh`), or `off`; the result lands in `.workflow/skills.toml`. Cascade: `built-in → ~/.workflow/skills.toml (global) → .workflow/skills.toml (workspace)`. The template also ships a commented `[compaction]` section: the `mode` switch for the loops' context self-regulation (`confirm` default, `auto` opt-in).
+3. **Minimal scaffold** — only the activation set: `.workflow/sessions/` (the marker that activates the operating context), `.workflow/skills.toml`, the `WORKSPACE` block in CLAUDE.md/AGENTS.md and the CLI-owned `.gitignore`. **Nothing else upfront**: each `docs/<category>` is born on demand at its first numbered write (`aw next-number docs/<cat>`), and `.workflow/launch/<alias>/` plus `docs/logs/` at the first launch.
+4. **External sources** — one outside the workspace folder gets multi-root visibility (gitignored) and a reconcile.
 
 **Idempotent** — a re-run reconciles: it keeps manual configuration and prunes the legacy scaffold.
 
