@@ -4,6 +4,39 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [22.3.0] — 2026-08-18
+
+**El catálogo describía mecanismos de hooks que sus hosts no tienen.** crush figuraba sin hooks y los tiene; gemini nombraba un evento —`BeforeTool`— que no aparece ni una vez en el binario de `agy`; opencode nombraba su evento sin decir nunca dónde vive su plugin. Y lo que ninguna entrada decía era lo que más importa: cuál de los cinco eventos de la plantilla llega de verdad a cada host. Un lector suponía paridad, y en tres de ellos viaja el **enforcement** y no la **resumabilidad**.
+
+Cada entrada del catálogo pasó a ser un contrato verificable —dónde viven los hooks, en qué forma, qué evento viaja y cuál no con su razón, y contra qué runtime se verificó— y sobre ese contrato crush y gemini quedaron administrados, codex genera su bundle de plugin y opencode su módulo. Nada que migrar.
+
+### Added
+
+- **Contrato de hooks por host.** `HarnessHooks` declara su `artifact` (la ruta y la forma contra la que se escribe un instalador), un `Record` sobre los **cinco eventos de la plantilla** donde cada host contesta `carried`, `degraded` u `omitted` con su razón, y un `verified` fechado con el runtime que se leyó. Es un `Record` sobre la unión cerrada a propósito: un host nuevo sin respuesta para un evento **no compila**.
+- **crush y gemini quedan administrados.** `aw self install-hooks --target crush|gemini` escribe el artefacto y `aw self uninstall --with-hooks` lo retira. En crush los hooks se mergean dentro de su propio `crush.json` junto a los del usuario; en gemini viven bajo un hook con nombre en `~/.agents/hooks.json`. La propiedad es por entrada y por comando: un hook ajeno —incluso uno que se llame como el nuestro— se conserva.
+- **Los matchers se TRADUCEN, nunca se copian.** Los de la plantilla nombran tools de Claude (`Edit`, `Bash`); crush los llama `edit`/`write`/`multiedit`/`bash` y agy usa sus step types en minúscula (`file_change`, `run_command`). Copiar el matcher instala un hook que **no dispara nunca** y soltarlo lo hace disparar en **todos** los tools, así que un matcher sin traducción **salta su hook y lo declara**.
+- **La vía de plugin de Codex se genera.** `aw self install-hooks --target codex` escribe un bundle (`.codex-plugin/plugin.json` con `"hooks": "./hooks.json"` y los cinco eventos verbatim) bajo `~/.agent-workflow/codex-plugin/`, y reporta el estado nuevo **`generated`**, nunca `installed`: codex instala plugins **por marketplace** y ese paso es de la persona. Ninguna rama escribe un `trusted_hash`.
+- **opencode recibe un módulo de plugin generado**, declarado en `opencode.json`, que registra `tool.execute.before` y **traduce en los dos sentidos**: sus tools al payload de Claude que los hooks leen, y el exit 2 del CLI a un `throw` que bloquea. El guard de SQL no viaja —su matcher no nombra ningún tool de opencode que el puente pueda producir— y la omisión queda escrita en el encabezado del propio módulo.
+- **Guards de catálogo nuevos**: los eventos declarados son exactamente los de la plantilla del bundle y en su orden; todo host con hooks contesta los cinco; el mecanismo que se imprime no nombra un evento que el host omite.
+
+### Changed
+
+- **`aw self install-hooks` deja de contestar `unsupported` en crush, gemini, codex y opencode.** Sólo warp y oz siguen ahí, que no tienen sistema de hooks.
+- **El mecanismo que imprimen las superficies se DERIVA del contrato** en vez de ser una frase escrita a mano por host — que es lo que dejó tres entradas mintiendo sin que nada fallara. Junto a él viaja la cobertura: qué eventos lleva ese host y cuáles omite.
+- **`HARNESS.md`** corrige la fila de enforcement de gemini y crush, fecha el contrato al **2026-08-18** y agrega el bloque que explica, host por host, qué viaja y qué no.
+
+### Fixed
+
+- **Un host apagado en `[Config]` ya no aparece en el resto de la TUI.** La preferencia existía y sólo la respetaba el tile de status: la sección de administración de hosts y el selector de destino de MCP lo listaban igual y ofrecían instalarle cosas. Ahora lo filtran y sus contadores cuentan los visibles; `[Config]` sigue mostrándolos todos, que es donde se reactivan.
+- **Un host oculto con instalación se reporta en vez de esconderse.** Si un host apagado tiene skill o hooks instalados, la pantalla que lo ocultó lo nombra en una línea: ocultarlo en silencio dejaba un artefacto sin forma de retirarlo desde la TUI.
+- **El atajo `i` del estado vacío dejaba de funcionar con claude apagado.** Buscaba `claude` en una lista que ya no lo tenía y quedaba en un no-op silencioso mientras la barra seguía ofreciendo «install on Claude»; ahora instala en el primer host listado y la etiqueta lo nombra.
+
+### Notes
+
+- **Nada que migrar.** Los hosts que ya estaban administrados —claude y kimi— no cambian de comportamiento, y `~/.codex/hooks.json` sigue siendo lo que el catálogo declara para codex: lo que se agrega es la segunda vía, la del plugin.
+- **El contrato es del checkout, no de un host corriendo.** Todo lo de arriba se verifica con tests y fixtures locales sobre HOME temporal. Observar que un crush, un agy o un opencode instalados cargan lo generado —e instalar el bundle de codex por marketplace— es un handoff opcional, nunca una condición de cierre.
+- **Los runtimes que se leyeron para fechar el contrato**: crush v0.89.0, agy 1.0.16, codex-cli 0.147.0 y opencode 1.18.15.
+
 ## [22.2.0] — 2026-08-18
 
 **El tablero listaba todo sin decir qué le faltaba a nada, y `resume` decía qué le faltaba a uno sin listar el resto.** Las dos superficies necesitan la misma lectura —por cada pendiente, qué le falta— y existía a medias y en el lugar equivocado: la derivaba `resume-service`, y sólo para la cabeza del pipeline o sus empates. El resultado observable era una vista engañosa: un plan con todas sus tareas hechas y sus 6 fases validadas aparecía como `plan 031 — 100%, fases 6/6`, sin decir que lo que le faltaba era la validación final y el cierre.
