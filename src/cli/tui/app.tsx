@@ -369,12 +369,24 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
             />
           ) : null}
           {activeTab === "workflow" ? (
-            <WorkflowTab ctx={ctx} isActive={true} onToast={pushToast} />
+            <WorkflowTab
+              ctx={ctx}
+              isActive={true}
+              onToast={pushToast}
+              disabledHosts={prefs.disabledHosts}
+            />
           ) : null}
           {activeTab === "project" ? (
             <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
           ) : null}
-          {activeTab === "mcp" ? <McpTab ctx={ctx} isActive={true} onToast={pushToast} /> : null}
+          {activeTab === "mcp" ? (
+            <McpTab
+              ctx={ctx}
+              isActive={true}
+              onToast={pushToast}
+              disabledHosts={prefs.disabledHosts}
+            />
+          ) : null}
           {activeTab === "skills" ? (
             <SkillsTab ctx={ctx} isActive={true} onToast={pushToast} />
           ) : null}

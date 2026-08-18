@@ -47,6 +47,8 @@ export interface HostAdminSectionProps {
   onSummary?: (summary: HostAdminSummary) => void;
   /** Extra line for the detail panel meta of a host with hooks armed. */
   hooksMetaSuffix?: string;
+  /** Hosts [Config] turned off. They leave the list; nothing else changes. */
+  disabledHosts?: readonly string[];
 }
 
 /**
@@ -99,8 +101,13 @@ export function HostAdminSection({
   onToast,
   onSummary,
   hooksMetaSuffix,
+  disabledHosts = [],
 }: HostAdminSectionProps) {
   const [rows, setRows] = useState<TargetRow[]>([]);
+  // Hosts the list is hiding that still have something on disk. Counted here
+  // rather than dropped, because a skill or a hook the person can no longer see
+  // is one they can no longer remove from the TUI either.
+  const [hiddenInstalled, setHiddenInstalled] = useState<string[]>([]);
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
@@ -121,20 +128,10 @@ export function HostAdminSection({
     const losses = await reportHookTemplateLosses(ctx).catch(() => []);
     const degradationsByTarget = new Map(losses.map((l) => [l.target, l.losses]));
 
-    const next: TargetRow[] = [];
-    for (const host of HOSTS) {
-      const path = pathForTarget(host.id, home);
-      next.push({
-        kind: "host",
-        id: host.id,
-        name: host.name,
-        pill: supportPill(host),
-        installed: path ? await ctx.fs.exists(path) : false,
-        hooks_installed: armedByTarget.get(host.id) === true,
-        hook_degradations: degradationsByTarget.get(host.id) ?? [],
-        path: friendlyPath(host.id),
-      });
-    }
+    const { rows: next, hidden } = await buildHostRows(ctx, home, disabledHosts, {
+      armed: armedByTarget,
+      degradations: degradationsByTarget,
+    });
     for (const dest of SHARED_DESTINATIONS) {
       const path = pathForTarget(dest.id, home);
       next.push({
@@ -149,8 +146,9 @@ export function HostAdminSection({
       });
     }
     setRows(next);
+    setHiddenInstalled(hidden);
     setCursor((c) => Math.min(Math.max(0, c), Math.max(0, next.length - 1)));
-  }, [ctx]);
+  }, [ctx, disabledHosts]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -185,6 +183,9 @@ export function HostAdminSection({
     onSummary?.({ installed: installedCount, total: totalCount });
   }, [onSummary, installedCount, totalCount]);
 
+  // What the empty-state shortcut installs on: whatever host is first in the
+  // list the person is actually looking at.
+  const emptyStateTarget: TargetRow | null = hostRows[0] ?? null;
   const focused: TargetRow | null = rows[cursor] ?? null;
   const isInstalled = focused?.installed === true;
   const isBackedFocused = focused ? BACKED_INSTALL_TARGETS.has(focused.id) : false;
@@ -261,8 +262,10 @@ export function HostAdminSection({
     (input, key) => {
       if (!isActive || busy || mode.kind !== "list") return;
       if ((input === "i" || input === "I") && installedCount === 0) {
-        const claude = hostRows.find((r) => r.id === "claude");
-        if (claude) void runComposite("install", claude);
+        // The first host STILL LISTED, not a hardcoded claude: with claude
+        // turned off in [Config] the shortcut used to find nothing and do
+        // nothing, while the bar kept offering it.
+        if (emptyStateTarget) void runComposite("install", emptyStateTarget);
         return;
       }
       if (key.upArrow) {
@@ -340,12 +343,21 @@ export function HostAdminSection({
       <SectionHead
         label="Hosts"
         count={totalCount}
+        {...(disabledHosts.length > 0
+          ? { rightAction: `${disabledHosts.length} off in [Config]` }
+          : {})}
         // Overflow indicator without spending a terminal row: the range of the
         // window currently rendered, only when rows hide above or below.
         {...(rangeHint ? { hint: rangeHint } : {})}
         {...(detailVisible ? { rightAction: "esc to close detail" } : {})}
         marginTop={0}
       />
+
+      {hiddenInstalled.length > 0 ? (
+        <Text color={colors.warn}>
+          {`${icons.alertDot} ${hiddenInstalled.join(", ")} ${hiddenInstalled.length === 1 ? "is" : "are"} off in [Config] and still installed — re-enable to manage`}
+        </Text>
+      ) : null}
 
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
@@ -440,13 +452,47 @@ export function HostAdminSection({
         </Box>
       ) : null}
 
-      {installedCount === 0 ? (
+      {installedCount === 0 && emptyStateTarget ? (
         <Box marginTop={1}>
-          <QuickActions actions={[{ key: "i", label: "install on Claude" }]} />
+          <QuickActions actions={[{ key: "i", label: `install on ${emptyStateTarget.name}` }]} />
         </Box>
       ) : null}
     </Box>
   );
+}
+
+/**
+ * The host rows the list shows, and the disabled ones that still have something.
+ *
+ * EVERY host is probed, disabled ones included: what a disabled host has on disk
+ * is exactly what the notice has to report, and skipping the probe would make
+ * "hidden" and "hidden but installed" indistinguishable.
+ */
+async function buildHostRows(
+  ctx: CliContext,
+  home: string,
+  disabledHosts: readonly string[],
+  state: { armed: Map<string, boolean>; degradations: Map<string, string[]> },
+): Promise<{ rows: TargetRow[]; hidden: string[] }> {
+  const rows: TargetRow[] = [];
+  const hidden: string[] = [];
+  const off = new Set(disabledHosts);
+  for (const host of HOSTS) {
+    const path = pathForTarget(host.id, home);
+    const row: TargetRow = {
+      kind: "host",
+      id: host.id,
+      name: host.name,
+      pill: supportPill(host),
+      installed: path ? await ctx.fs.exists(path) : false,
+      hooks_installed: state.armed.get(host.id) === true,
+      hook_degradations: state.degradations.get(host.id) ?? [],
+      path: friendlyPath(host.id),
+    };
+    if (!off.has(host.id)) rows.push(row);
+    else if (row.installed || row.hooks_installed) hidden.push(row.name);
+  }
+  return { rows, hidden };
 }
 
 function pathForTarget(target: InstallTarget, home: string): string | null {

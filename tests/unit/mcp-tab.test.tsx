@@ -44,6 +44,7 @@ vi.mock("../../src/application/self/mcp-config.js", () => ({
 }));
 
 import { selfMcpConfig } from "../../src/application/self/mcp-config.js";
+import { INSTALLABLE_MCP_HOSTS, mcpHostLabel } from "../../src/cli/tui/tabs/mcp-tab-helpers.js";
 import { McpTab } from "../../src/cli/tui/tabs/mcp-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
 
@@ -130,4 +131,41 @@ describe("McpTab — user-scope install", () => {
     expect(frame.split("\n").length).toBeLessThanOrEqual(20);
     expect(frame).toContain("de 40"); // range indicator in the SectionHead hint
   }, 15000);
+
+  // Un host apagado en [Config] es un opt-out de targeting: ofrecer instalarle
+  // un MCP contradice la única pantalla desde la que se apaga.
+  describe("hosts apagados en [Config]", () => {
+    async function openHostPicker(disabledHosts?: readonly string[]): Promise<string> {
+      const { lastFrame, stdin, unmount } = render(
+        <McpTab ctx={ctx} isActive {...(disabledHosts ? { disabledHosts } : {})} />,
+      );
+      await tick();
+      stdin.write(ENTER); // detail de la primera conexión
+      await tick();
+      stdin.write(ENTER); // acción por defecto: instalar → abre el selector de host
+      await tick();
+      const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
+      unmount();
+      return frame;
+    }
+
+    it("el selector no ofrece el host apagado y sí los demás", async () => {
+      const frame = await openHostPicker(["claude"]);
+      expect(frame).toContain("INSTALL ALPHA INTO…");
+      expect(frame).not.toContain(mcpHostLabel("claude"));
+      expect(frame).toContain(mcpHostLabel("codex"));
+      expect(frame).toContain(`INSTALL ALPHA INTO… ${INSTALLABLE_MCP_HOSTS.length - 1}`);
+    });
+
+    it("con todos apagados lo dice, en vez de mostrar una lista vacía", async () => {
+      const frame = await openHostPicker([...INSTALLABLE_MCP_HOSTS]);
+      expect(frame).toContain("every MCP host is off in [Config]");
+    });
+
+    it("sin nada apagado el selector ofrece el catálogo entero", async () => {
+      const frame = await openHostPicker();
+      expect(frame).toContain(mcpHostLabel("claude"));
+      expect(frame).toContain(`INSTALL ALPHA INTO… ${INSTALLABLE_MCP_HOSTS.length}`);
+    });
+  });
 });

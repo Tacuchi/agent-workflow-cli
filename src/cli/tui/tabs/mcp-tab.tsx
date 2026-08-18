@@ -1,5 +1,5 @@
 import { Box, Text, useInput, useStdout } from "ink";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { testMcpConnection } from "../../../application/mcp-test-connection-service.js";
 import {
@@ -8,6 +8,7 @@ import {
   isDsnVisible,
   selfMcpConfig,
 } from "../../../application/self/mcp-config.js";
+import { harnessForMcpHost } from "../../../domain/harnesses.js";
 import type { McpHost } from "../../../domain/mcp-entry.js";
 import type { CommandResult } from "../../../domain/types.js";
 import type { CliContext } from "../../types.js";
@@ -78,6 +79,8 @@ export interface McpTabProps {
   ctx: CliContext;
   isActive: boolean;
   onToast?: (msg: ToastBridgeInput) => void;
+  /** Hosts [Config] turned off — they leave the install destinations. */
+  disabledHosts?: readonly string[];
 }
 
 // Crash-safe DSN visibility check (env + local dsn file) for the review
@@ -90,10 +93,24 @@ function safeDsnVisible(ctx: CliContext, dsnVar: string): boolean {
   }
 }
 
-export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
+export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabProps) {
   const [connections, setConnections] = useState<SelfMcpConnectionView[]>([]);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const { stdout } = useStdout();
+
+  // An MCP host is named by its own id, so the opt-out is resolved THROUGH the
+  // catalog rather than by comparing two different vocabularies of "host". A
+  // host the catalog cannot resolve stays offered on purpose: hiding a
+  // destination we failed to classify would be worse than showing it, and the
+  // catalog guard already proves every McpHost has its spec.
+  const hostChoices = useMemo(() => {
+    if (disabledHosts.length === 0) return HOST_CHOICES;
+    const off = new Set(disabledHosts);
+    return HOST_CHOICES.filter((h) => {
+      const target = harnessForMcpHost(h)?.installTarget;
+      return target === undefined || !off.has(target);
+    });
+  }, [disabledHosts]);
 
   useLockWhile(mode.kind !== "list" && mode.kind !== "detail");
 
@@ -146,10 +163,10 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
       if (mode.kind !== "select-host") return;
       if (key.upArrow) return setMode({ ...mode, cursor: Math.max(0, mode.cursor - 1) });
       if (key.downArrow)
-        return setMode({ ...mode, cursor: Math.min(HOST_CHOICES.length - 1, mode.cursor + 1) });
+        return setMode({ ...mode, cursor: Math.min(hostChoices.length - 1, mode.cursor + 1) });
       if (key.escape) return setMode({ kind: "detail" });
       if (key.return) {
-        const host = HOST_CHOICES[mode.cursor];
+        const host = hostChoices[mode.cursor];
         if (host) void runInstall(mode.name, host);
       }
     },
@@ -508,8 +525,13 @@ export function McpTab({ ctx, isActive, onToast }: McpTabProps) {
 
           {mode.kind === "select-host" ? (
             <Box marginTop={1} flexDirection="column">
-              <SectionHead label={`Install ${mode.name} into…`} count={HOST_CHOICES.length} />
-              {HOST_CHOICES.map((host, i) => (
+              <SectionHead label={`Install ${mode.name} into…`} count={hostChoices.length} />
+              {hostChoices.length === 0 ? (
+                <Text color={colors.warn}>
+                  {`${icons.alertDot} every MCP host is off in [Config] — re-enable one to install`}
+                </Text>
+              ) : null}
+              {hostChoices.map((host, i) => (
                 <ListRow
                   key={host}
                   icon={icons.diamond}

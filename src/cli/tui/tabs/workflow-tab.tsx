@@ -15,12 +15,14 @@ export interface WorkflowTabProps {
   ctx: CliContext;
   isActive: boolean;
   onToast?: (msg: ToastBridgeInput) => void;
+  /** Hosts [Config] turned off — they leave this tab's host list. */
+  disabledHosts?: readonly string[];
 }
 
 // Ids of the 3 flows inside WORKFLOW_CONTENT.phases (excludes bootstrap/export).
 const FLOW_IDS: ReadonlySet<string> = new Set(["spec", "plan", "quick"]);
 
-export function WorkflowTab({ ctx, isActive, onToast }: WorkflowTabProps) {
+export function WorkflowTab({ ctx, isActive, onToast, disabledHosts }: WorkflowTabProps) {
   const w = WORKFLOW_CONTENT;
   const flowNames = w.phases
     .filter((p) => FLOW_IDS.has(p.id))
@@ -75,6 +77,7 @@ export function WorkflowTab({ ctx, isActive, onToast }: WorkflowTabProps) {
         ctx={ctx}
         isActive={isActive}
         {...(onToast ? { onToast } : {})}
+        {...(disabledHosts ? { disabledHosts } : {})}
         // "template" and not "hooks", because how many of them a host really
         // carries is what the host row itself reports.
         hooksMetaSuffix={`hooks armed · SKILL + ${w.slashCommands.length} slash + ${w.hooks.length} template hooks`}

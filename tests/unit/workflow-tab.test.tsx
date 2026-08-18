@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
+import { SKILL_DIR_NAME, TARGET_ROOTS } from "../../src/application/self/install-skill.js";
 import { WORKFLOW_CONTENT } from "../../src/cli/tui/data/workflow-content.js";
 import { HOSTS, SHARED_DESTINATIONS } from "../../src/cli/tui/hosts.js";
 import { WorkflowTab } from "../../src/cli/tui/tabs/workflow-tab.js";
@@ -50,8 +51,10 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  async function renderFlat(): Promise<string> {
-    const { lastFrame, unmount } = render(<WorkflowTab ctx={buildCtx(home)} isActive />);
+  async function renderFlat(disabledHosts?: readonly string[]): Promise<string> {
+    const { lastFrame, unmount } = render(
+      <WorkflowTab ctx={buildCtx(home)} isActive {...(disabledHosts ? { disabledHosts } : {})} />,
+    );
     await new Promise((r) => setTimeout(r, 80));
     const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
     unmount();
@@ -97,6 +100,41 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
       expect(frame).toContain(host.name);
     }
     expect(frame).toContain("skills/w/");
+  });
+
+  // Un host apagado en [Config] es un opt-out de targeting, y hasta ahora sólo lo
+  // respetaba el tile de status: acá se listaba igual y se podía instalar en él.
+  describe("hosts apagados en [Config]", () => {
+    const OFF = HOSTS[0];
+    const ON = HOSTS[1];
+
+    it("el host apagado desaparece de la lista y los activos siguen", async () => {
+      if (!OFF || !ON) throw new Error("el catálogo debe tener al menos dos hosts");
+      const frame = await renderFlat([OFF.id]);
+      expect(frame).not.toContain(OFF.name);
+      expect(frame).toContain(ON.name);
+    });
+
+    it("la cabecera dice cuántos quedaron afuera, así el conteo no miente", async () => {
+      if (!OFF) throw new Error("el catálogo debe tener al menos un host");
+      const frame = await renderFlat([OFF.id]);
+      expect(frame).toContain("1 off in [Config]");
+      // El contador de la sección cuenta los visibles, no el catálogo entero.
+      expect(frame).toContain(`HOSTS ${HOSTS.length - 1}`);
+    });
+
+    it("si el host apagado TIENE instalación, la pantalla lo avisa en vez de esconderla", async () => {
+      if (!OFF) throw new Error("el catálogo debe tener al menos un host");
+      await mkdir(join(home, ...TARGET_ROOTS[OFF.id], SKILL_DIR_NAME), { recursive: true });
+      const frame = await renderFlat([OFF.id]);
+      expect(frame).not.toContain(`◆ ${OFF.name}`);
+      expect(frame).toContain(`${OFF.name} is off in [Config] and still installed`);
+    });
+
+    it("sin hosts apagados no aparece ni el aviso ni la nota de la cabecera", async () => {
+      const frame = await renderFlat();
+      expect(frame).not.toContain("off in [Config]");
+    });
   });
 
   // The hooks-armed section mounts here now, so its ~/.claude/settings.json
@@ -170,7 +208,9 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
     frame = lastFrame() ?? "";
     expect(frame).toContain(`${total - 3}–${total} de ${total}`);
     expect(frame).toContain(SHARED_DESTINATIONS[SHARED_DESTINATIONS.length - 1]?.name ?? "");
-    // The first host scrolled out of the window.
-    expect(frame).not.toContain(HOSTS[0]?.name ?? "");
+    // The first host scrolled out of the window. Asserted on its ROW: the
+    // empty-state bar names the first LISTED host, so the bare name still
+    // appears at the bottom and would make this pass for the wrong reason.
+    expect(frame).not.toContain(`◆ ${HOSTS[0]?.name ?? ""}`);
   });
 });
