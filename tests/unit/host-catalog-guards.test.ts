@@ -14,7 +14,10 @@ import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
-import { hooksArmedProbeCoverage } from "../../src/application/self/host-states.js";
+import {
+  capabilitiesFor,
+  hooksArmedProbeCoverage,
+} from "../../src/application/self/host-states.js";
 import { hookInstallerCoverage } from "../../src/application/self/install-hooks.js";
 import {
   HOOKS_MANAGED_TARGETS,
@@ -27,9 +30,13 @@ import { HOSTS, SHARED_DESTINATIONS, supportPill } from "../../src/cli/tui/hosts
 import {
   HARNESSES,
   HOST_INSTALL_TARGETS,
+  type HookEventSupport,
   MCP_FILE_HOSTS,
   SHARED_INSTALL_TARGETS,
+  TEMPLATE_HOOK_EVENTS,
   harnessForMcpHost,
+  hookCoverage,
+  hookMechanism,
 } from "../../src/domain/harnesses.js";
 import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
@@ -83,8 +90,8 @@ describe("cobertura de hooks: declarar 'gestionado' obliga a implementarlo", () 
   // coberturas seguían devolviendo [] y la comparación derivada comparaba dos
   // listas a las que les faltaba lo mismo — cuatro tests en verde mientras la
   // instalación de hooks en kimi desaparecía en silencio.
-  it("los hosts con hooks gestionados son exactamente claude y kimi", () => {
-    expect([...HOOKS_MANAGED_TARGETS].sort()).toEqual(["claude", "kimi"]);
+  it("los hosts con hooks gestionados son exactamente claude, crush, gemini y kimi", () => {
+    expect([...HOOKS_MANAGED_TARGETS].sort()).toEqual(["claude", "crush", "gemini", "kimi"]);
   });
 
   it("todo host con hooks gestionados tiene instalador", () => {
@@ -106,6 +113,103 @@ describe("cobertura de hooks: declarar 'gestionado' obliga a implementarlo", () 
     );
     expect(fromDomain.length).toBeGreaterThan(0);
     expect([...HOOKS_MANAGED_TARGETS].sort()).toEqual([...fromDomain].sort());
+  });
+});
+
+describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
+  // El catálogo describía mecanismos que los runtimes no tienen: crush figuraba
+  // sin hooks y sí los tiene, gemini nombraba un evento (`BeforeTool`) que no
+  // aparece en su binario, y opencode nombraba su evento sin decir nunca dónde
+  // va el plugin. Nada podía fallar porque nada era comparable con un archivo.
+
+  const HOSTS_WITH_HOOKS = HARNESSES.filter((h) => h.hooks !== null);
+
+  it("los eventos declarados son exactamente los de la plantilla del bundle, en su orden", async () => {
+    const raw = await readFile(join(process.cwd(), "skills/w/hooks/hooks.template.json"), "utf8");
+    const template = JSON.parse(raw) as { hooks: Record<string, unknown> };
+    expect(Object.keys(template.hooks)).toEqual([...TEMPLATE_HOOK_EVENTS]);
+  });
+
+  /** Lo que ese host dice sobre un evento, sea cual sea el estado. */
+  function said(support: HookEventSupport): string {
+    if (support.state === "omitted") return support.reason;
+    if (support.state === "degraded") return `${support.native} ${support.loss}`;
+    return support.native;
+  }
+
+  it("todo host con hooks contesta los cinco eventos con una razón que se puede leer", () => {
+    expect(HOSTS_WITH_HOOKS.length).toBeGreaterThan(0);
+    for (const { id, hooks } of HOSTS_WITH_HOOKS) {
+      if (hooks === null) continue;
+      expect(hooks.artifact.path.length, id).toBeGreaterThan(0);
+      expect(hooks.artifact.entry.length, id).toBeGreaterThan(0);
+      // Una fecha: un contrato sin fecha no se puede volver a verificar.
+      expect(hooks.verified, id).toMatch(/\d{4}/);
+      const answers = TEMPLATE_HOOK_EVENTS.map((event) => said(hooks.events[event]));
+      expect(
+        answers.filter((answer) => answer.trim().length > 0),
+        id,
+      ).toHaveLength(TEMPLATE_HOOK_EVENTS.length);
+    }
+  });
+
+  it("el mecanismo que se imprime no nombra un evento que el host omite", () => {
+    for (const spec of HOSTS_WITH_HOOKS) {
+      const hooks = spec.hooks;
+      if (hooks === null) continue;
+      const printed = hookMechanism(hooks);
+      for (const event of TEMPLATE_HOOK_EVENTS) {
+        if (hooks.events[event].state !== "omitted") continue;
+        expect(printed, `${spec.id} promete ${event} en su mecanismo`).not.toContain(event);
+      }
+    }
+  });
+
+  it("los tres hosts que el catálogo describía mal declaran lo que sus runtimes tienen", () => {
+    const crush = HARNESSES.find((h) => h.id === "crush")?.hooks;
+    expect(crush?.artifact).toEqual({
+      kind: "config-merge",
+      path: "~/.config/crush/crush.json",
+      entry: "hooks{} (HookConfig: command · matcher · timeout)",
+    });
+    expect(crush?.events.PreToolUse.state).toBe("carried");
+
+    const gemini = HARNESSES.find((h) => h.id === "gemini")?.hooks;
+    expect(gemini?.events.PreToolUse.state).toBe("carried");
+    // `BeforeTool` no existe en el binario: ni el mecanismo que se imprime ni
+    // ningún evento pueden volver a nombrarlo. La nota de verificación SÍ lo
+    // nombra, y para eso está: dice qué se buscó y no se encontró.
+    expect(gemini === undefined ? "" : hookMechanism(gemini)).not.toContain("BeforeTool");
+    expect(JSON.stringify(gemini?.events)).not.toContain("BeforeTool");
+
+    const opencode = HARNESSES.find((h) => h.id === "opencode")?.hooks;
+    expect(opencode?.artifact.kind).toBe("plugin-module");
+    expect(opencode?.artifact.path).toBe(".opencode/plugin/");
+    expect(opencode?.events.PreToolUse).toEqual({
+      state: "carried",
+      native: "tool.execute.before",
+    });
+  });
+
+  it("en crush, gemini y opencode viaja el enforcement y NO la resumabilidad", () => {
+    for (const id of ["crush", "gemini", "opencode"] as const) {
+      const hooks = HARNESSES.find((h) => h.id === id)?.hooks;
+      expect(hooks?.events.PreToolUse.state, id).toBe("carried");
+      for (const event of ["SessionStart", "SessionEnd", "PreCompact", "PostCompact"] as const) {
+        expect(hooks?.events[event].state, `${id}/${event}`).toBe("omitted");
+      }
+    }
+  });
+
+  it("la asimetría se proyecta: el estado de hooks dice qué lleva y qué omite", () => {
+    for (const spec of HOSTS_WITH_HOOKS) {
+      const hooks = spec.hooks;
+      if (hooks === null) continue;
+      const detail = capabilitiesFor(spec).find((c) => c.id === "hooks")?.detail ?? "";
+      expect(detail, spec.id).toContain(hookCoverage(hooks));
+      const omits = TEMPLATE_HOOK_EVENTS.some((e) => hooks.events[e].state === "omitted");
+      if (omits) expect(detail, spec.id).toContain("omits");
+    }
   });
 });
 

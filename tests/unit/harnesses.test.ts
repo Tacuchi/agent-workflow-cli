@@ -3,6 +3,7 @@ import {
   HARNESSES,
   harnessById,
   harnessForMcpHost,
+  hookMechanism,
   resolveGlobalMcpRawPath,
 } from "../../src/domain/harnesses.js";
 
@@ -97,9 +98,10 @@ describe("HARNESSES registry — shape invariants", () => {
 
   it("un host con hooks gestionados declara su mecanismo", () => {
     for (const h of HARNESSES) {
-      if (h.hooks?.managed === true) {
-        expect(h.hooks.mechanism.length, `${h.id}`).toBeGreaterThan(0);
-      }
+      if (h.hooks?.managed !== true) continue;
+      // El mecanismo dejó de ser una frase suelta: se deriva del artefacto, así
+      // que lo que se exige es que ese artefacto exista y se pueda imprimir.
+      expect(hookMechanism(h.hooks), `${h.id}`).toContain(h.hooks.artifact.path);
     }
   });
 

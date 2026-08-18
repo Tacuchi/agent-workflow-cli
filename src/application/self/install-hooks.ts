@@ -5,6 +5,16 @@ import { parse as parseToml } from "smol-toml";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
+import { readPackageVersion } from "../../runtime/version.js";
+import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
+import { CODEX_PLUGIN_DIR, buildCodexPluginBundle } from "./codex-plugin.js";
+import {
+  AGY_HOOK_NAME,
+  type AgyNamedHook,
+  hooksTemplateToAgy,
+  hooksTemplateToCrush,
+  isOurHookEntry,
+} from "./hooks-json.js";
 import { auditHooksSection, hooksTemplateToToml, upsertManagedHooksBlock } from "./hooks-toml.js";
 import {
   INSTALL_TARGETS,
@@ -13,6 +23,11 @@ import {
   findUpward,
 } from "./install-skill.js";
 import { HOOKS_MANAGED_TARGETS } from "./install-targets.js";
+import {
+  OPENCODE_PLUGIN_FILE,
+  buildOpencodePlugin,
+  declareOpencodePlugin,
+} from "./opencode-plugin.js";
 
 export interface HookEntry {
   matcher?: string;
@@ -37,8 +52,13 @@ export interface SelfInstallHooksData {
    * entry the host would reject, and since its loader discards the WHOLE section
    * over one bad entry, writing would have disarmed every hook in the file —
    * ours and the user's. Reported instead of applied.
+   *
+   * `generated` = the artifact was written and is NOT armed, because arming it is
+   * a step only the person can run. Kept apart from `installed` for the reason
+   * every state here is kept apart: reporting a bundle nobody installed as
+   * installed is the one thing these surfaces must never do.
    */
-  status: "installed" | "dry-run" | "noop" | "unsupported" | "blocked";
+  status: "installed" | "dry-run" | "noop" | "unsupported" | "blocked" | "generated";
   target: InstallTarget;
   config_path: string | null;
   events_installed: string[];
@@ -85,6 +105,17 @@ export async function selfInstallHooks(
 
   const target = targetArg as InstallTarget;
 
+  // Codex is not a managed host and is not an unsupported one either: its plugin
+  // route produces a real artifact that only the PERSON can install. Placed
+  // before the managed check so it is not swallowed by the "unsupported" answer.
+  if (target === "codex" || target === "opencode") {
+    const loaded = await loadTemplate(args, ctx, resolveTemplate);
+    if ("error" in loaded) return loaded.error;
+    return target === "codex"
+      ? generateCodexPlugin(ctx, target, loaded.template, dryRun)
+      : installOpencodePlugin(ctx, target, loaded.template, dryRun);
+  }
+
   if (!HOOKS_MANAGED_TARGETS.has(target)) {
     return {
       ok: true,
@@ -101,56 +132,89 @@ export async function selfInstallHooks(
     };
   }
 
-  const templatePathArg = args.values.get("template");
-  const templatePath = templatePathArg ?? (await resolveTemplate());
+  const loaded = await loadTemplate(args, ctx, resolveTemplate);
+  if ("error" in loaded) return loaded.error;
+  return installHooksFor(target, ctx, loaded.template, dryRun);
+}
+
+/** The bundled template, resolved and validated, or the failure that stops the run. */
+async function loadTemplate(
+  args: ParsedArgs,
+  ctx: CliContext,
+  resolveTemplate: () => Promise<string | null>,
+): Promise<{ template: HooksTemplate } | { error: CommandResult<SelfInstallHooksData> }> {
+  const fail = (code: string, message: string): { error: CommandResult<SelfInstallHooksData> } => ({
+    error: { ok: false, error: { code, message }, exitCode: 1 },
+  });
+
+  const templatePath = args.values.get("template") ?? (await resolveTemplate());
   if (templatePath === null) {
-    return {
-      ok: false,
-      error: {
-        code: "TEMPLATE_NOT_FOUND",
-        message:
-          "hooks.template.json not found in bundled skill location. Pass --template <path> to override.",
-      },
-      exitCode: 1,
-    };
+    return fail(
+      "TEMPLATE_NOT_FOUND",
+      "hooks.template.json not found in bundled skill location. Pass --template <path> to override.",
+    );
   }
   if (!(await ctx.fs.exists(templatePath))) {
-    return {
-      ok: false,
-      error: {
-        code: "TEMPLATE_NOT_FOUND",
-        message: `hooks template not found at ${templatePath}.`,
-      },
-      exitCode: 1,
-    };
+    return fail("TEMPLATE_NOT_FOUND", `hooks template not found at ${templatePath}.`);
   }
-
-  const templateText = await ctx.fs.readText(templatePath);
   let template: HooksTemplate;
   try {
-    template = JSON.parse(templateText);
+    template = JSON.parse(await ctx.fs.readText(templatePath));
   } catch (err) {
-    return {
-      ok: false,
-      error: {
-        code: "TEMPLATE_INVALID_JSON",
-        message: `hooks template at ${templatePath} is invalid JSON: ${(err as Error).message}`,
-      },
-      exitCode: 1,
-    };
+    return fail(
+      "TEMPLATE_INVALID_JSON",
+      `hooks template at ${templatePath} is invalid JSON: ${(err as Error).message}`,
+    );
   }
   if (!isHooksTemplate(template)) {
-    return {
-      ok: false,
-      error: {
-        code: "TEMPLATE_INVALID_SCHEMA",
-        message: `hooks template at ${templatePath} missing 'hooks' top-level key.`,
-      },
-      exitCode: 1,
-    };
+    return fail(
+      "TEMPLATE_INVALID_SCHEMA",
+      `hooks template at ${templatePath} missing 'hooks' top-level key.`,
+    );
   }
+  return { template };
+}
 
-  return installHooksFor(target, ctx, template, dryRun);
+/**
+ * Codex: write the plugin bundle, and say plainly that it is not armed.
+ *
+ * The status is `generated`, never `installed`: the two `codex plugin` commands
+ * that arm it are the person's, and no `trusted_hash` is written here or
+ * anywhere else — forging one would forge their security approval.
+ */
+async function generateCodexPlugin(
+  ctx: CliContext,
+  target: InstallTarget,
+  template: HooksTemplate,
+  dryRun: boolean,
+): Promise<CommandResult<SelfInstallHooksData>> {
+  const root = join(ctx.env.homeDir(), ...CODEX_PLUGIN_DIR);
+  const bundle = buildCodexPluginBundle(template, readPackageVersion());
+  if (!dryRun) {
+    for (const [relative, contents] of Object.entries(bundle.files)) {
+      const path = join(root, relative);
+      await ctx.fs.mkdirp(dirname(path));
+      await ctx.fs.writeText(path, contents);
+    }
+  }
+  return {
+    ok: true,
+    data: {
+      status: dryRun ? "dry-run" : "generated",
+      target,
+      config_path: root,
+      events_installed: Object.keys(template.hooks),
+      events_already_present: [],
+      backup_path: null,
+      warning: [
+        `The bundle was written to ${root} and is NOT armed.`,
+        "Codex installs plugins through a marketplace, so arming it is yours to run:",
+        bundle.install_commands.map((c) => `\`${c}\``).join(" then "),
+        "Its hooks skip codex's per-hook trust review because they ship inside a plugin; nothing here writes a trusted_hash.",
+      ].join(" "),
+    },
+    exitCode: 0,
+  };
 }
 
 /**
@@ -171,6 +235,8 @@ const HOOK_INSTALLERS: Partial<
 > = {
   claude: installClaudeHooks,
   kimi: installKimiHooks,
+  crush: installCrushHooks,
+  gemini: installAgyHooks,
 };
 
 /** Managed targets with no installer wired. Must be empty. */
@@ -431,6 +497,268 @@ async function installClaudeHooks(
       events_installed: eventsInstalled,
       events_already_present: eventsAlreadyPresent,
       backup_path: backup,
+    },
+    exitCode: 0,
+  };
+}
+
+/**
+ * Crush: JSON merge into its own `crush.json` → `hooks`.
+ *
+ * The file is the SAME one its MCP servers live in, so the merge is per key and
+ * never a rewrite: everything the person configured — models, lsp, mcp, and any
+ * hook of their own — is read, kept and written back beside ours.
+ */
+async function installCrushHooks(
+  ctx: CliContext,
+  target: InstallTarget,
+  template: HooksTemplate,
+  dryRun: boolean,
+): Promise<CommandResult<SelfInstallHooksData>> {
+  const configPath = crushGlobalMcpFile(ctx.env.homeDir());
+  const read = await readJsonConfig(ctx, configPath, "crush.json");
+  if ("error" in read) return read.error;
+
+  const { emitted, skipped } = hooksTemplateToCrush(template);
+  const warning = skipNotice(skipped, "Crush");
+  const existingHooks = isRecord(read.data.hooks) ? read.data.hooks : {};
+  const merged: Record<string, unknown> = { ...existingHooks };
+  const events: string[] = [];
+  for (const [event, ours] of Object.entries(emitted)) {
+    const theirs = Array.isArray(existingHooks[event]) ? (existingHooks[event] as unknown[]) : [];
+    // Ours replace ours, never theirs: a reinstall must not append a second copy,
+    // and a hook the person wrote is not ours to drop.
+    const kept = theirs.filter((entry) => !isOurHookEntry(entry));
+    const next = [...kept, ...ours];
+    if (isDeepStrictEqual(theirs, next)) continue;
+    merged[event] = next;
+    events.push(event);
+  }
+
+  return writeMergedConfig(ctx, {
+    target,
+    configPath,
+    dryRun,
+    changed: events,
+    unchanged: events.length === 0 ? Object.keys(emitted) : [],
+    next: { ...read.data, hooks: merged },
+    warning,
+  });
+}
+
+/**
+ * agy: one named hook in `~/.agents/hooks.json`.
+ *
+ * `.agents/` is the customization root agy's own doc names, and the user-global
+ * one is NOT verified — which is why the catalog says so and the install result
+ * repeats it. Writing the artifact is what this can prove; that a running agy
+ * loads it is an operator's observation, never this command's claim.
+ */
+async function installAgyHooks(
+  ctx: CliContext,
+  target: InstallTarget,
+  template: HooksTemplate,
+  dryRun: boolean,
+): Promise<CommandResult<SelfInstallHooksData>> {
+  const configPath = join(ctx.env.homeDir(), ".agents", "hooks.json");
+  const read = await readJsonConfig(ctx, configPath, "hooks.json");
+  if ("error" in read) return read.error;
+
+  const { emitted, skipped } = hooksTemplateToAgy(template);
+  const notices = [skipNotice(skipped, "agy")];
+  notices.push(
+    `Written to ${configPath}. agy documents its customization root as the workspace's .agents/; whether it also reads a user-global one is NOT verified here — confirm it in a running host before relying on it.`,
+  );
+  const warning = notices.filter((n) => n !== undefined).join(" ");
+
+  if (emitted === null) {
+    return {
+      ok: true,
+      data: {
+        status: "noop",
+        target,
+        config_path: configPath,
+        events_installed: [],
+        events_already_present: [],
+        backup_path: null,
+        warning,
+      },
+      exitCode: 0,
+    };
+  }
+  const existing = read.data[AGY_HOOK_NAME];
+  const already = isDeepStrictEqual(existing, emitted as AgyNamedHook);
+  return writeMergedConfig(ctx, {
+    target,
+    configPath,
+    dryRun,
+    changed: already ? [] : Object.keys(emitted),
+    unchanged: already ? Object.keys(emitted) : [],
+    next: { ...read.data, [AGY_HOOK_NAME]: emitted },
+    warning,
+  });
+}
+
+function skipNotice(
+  skipped: readonly { event: string; reason: string }[],
+  host: string,
+): string | undefined {
+  if (skipped.length === 0) return undefined;
+  return `Not expressible in ${host} and therefore skipped: ${skipped
+    .map((s) => `${s.event} (${s.reason})`)
+    .join("; ")}.`;
+}
+
+/** A host config read as JSON, or the failure that must stop the install. */
+async function readJsonConfig(
+  ctx: CliContext,
+  path: string,
+  label: string,
+): Promise<{ data: Record<string, unknown> } | { error: CommandResult<SelfInstallHooksData> }> {
+  if (!(await ctx.fs.exists(path))) return { data: {} };
+  const text = await ctx.fs.readText(path);
+  if (text.trim().length === 0) return { data: {} };
+  try {
+    const parsed = JSON.parse(text);
+    return { data: isRecord(parsed) ? parsed : {} };
+  } catch (err) {
+    return {
+      error: {
+        ok: false,
+        error: {
+          code: "SETTINGS_INVALID_JSON",
+          message: `${path} is invalid ${label}: ${(err as Error).message}. Fix manually before retrying.`,
+        },
+        exitCode: 1,
+      },
+    };
+  }
+}
+
+interface MergedWrite {
+  target: InstallTarget;
+  configPath: string;
+  dryRun: boolean;
+  changed: string[];
+  unchanged: string[];
+  next: Record<string, unknown>;
+  warning: string | undefined;
+}
+
+/** The write half both JSON dialects share: noop, dry-run, or backup-then-write. */
+async function writeMergedConfig(
+  ctx: CliContext,
+  write: MergedWrite,
+): Promise<CommandResult<SelfInstallHooksData>> {
+  const base = {
+    target: write.target,
+    config_path: write.configPath,
+    ...(write.warning === undefined ? {} : { warning: write.warning }),
+  };
+  if (write.changed.length === 0) {
+    return {
+      ok: true,
+      data: {
+        ...base,
+        status: "noop",
+        events_installed: [],
+        events_already_present: write.unchanged,
+        backup_path: null,
+      },
+      exitCode: 0,
+    };
+  }
+  if (write.dryRun) {
+    return {
+      ok: true,
+      data: {
+        ...base,
+        status: "dry-run",
+        events_installed: write.changed,
+        events_already_present: write.unchanged,
+        backup_path: null,
+      },
+      exitCode: 0,
+    };
+  }
+  await ctx.fs.mkdirp(dirname(write.configPath));
+  const backup = await tryBackup(write.configPath, ctx);
+  await ctx.fs.writeText(write.configPath, `${JSON.stringify(write.next, null, 2)}\n`);
+  return {
+    ok: true,
+    data: {
+      ...base,
+      status: "installed",
+      events_installed: write.changed,
+      events_already_present: write.unchanged,
+      backup_path: backup,
+    },
+    exitCode: 0,
+  };
+}
+
+/**
+ * opencode: write the plugin module and declare it in `opencode.json`.
+ *
+ * Unlike codex's bundle this one IS armed — opencode loads what sits in its
+ * plugin dir — so the status is `installed`. What it does NOT carry is the whole
+ * template: only `tool.execute.before` exists here, and the guard whose matcher
+ * cannot be bridged to a Claude-shaped payload is reported rather than written.
+ */
+async function installOpencodePlugin(
+  ctx: CliContext,
+  target: InstallTarget,
+  template: HooksTemplate,
+  dryRun: boolean,
+): Promise<CommandResult<SelfInstallHooksData>> {
+  const configPath = opencodeGlobalMcpFile(ctx.env.homeDir());
+  const pluginPath = join(dirname(configPath), "plugin", OPENCODE_PLUGIN_FILE);
+  const read = await readJsonConfig(ctx, configPath, "opencode.json");
+  if ("error" in read) return read.error;
+
+  const plugin = buildOpencodePlugin(template);
+  const existing = (await ctx.fs.exists(pluginPath)) ? await ctx.fs.readText(pluginPath) : null;
+  const config = declareOpencodePlugin(read.data, pluginPath);
+  const changed = existing !== plugin.source || config !== read.data;
+
+  const warning = [
+    skipNotice(plugin.skipped, "the opencode plugin API"),
+    `The module was written to ${pluginPath}; the user-global plugin dir is derived from opencode's global config dir, and its documented one is the workspace's .opencode/plugin/.`,
+  ]
+    .filter((n) => n !== undefined)
+    .join(" ");
+
+  if (!changed) {
+    return {
+      ok: true,
+      data: {
+        status: "noop",
+        target,
+        config_path: pluginPath,
+        events_installed: [],
+        events_already_present: ["PreToolUse"],
+        backup_path: null,
+        warning,
+      },
+      exitCode: 0,
+    };
+  }
+  if (!dryRun) {
+    await ctx.fs.mkdirp(dirname(pluginPath));
+    await ctx.fs.writeText(pluginPath, plugin.source);
+    await ctx.fs.mkdirp(dirname(configPath));
+    await ctx.fs.writeText(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  }
+  return {
+    ok: true,
+    data: {
+      status: dryRun ? "dry-run" : "installed",
+      target,
+      config_path: pluginPath,
+      events_installed: ["PreToolUse"],
+      events_already_present: [],
+      backup_path: null,
+      warning,
     },
     exitCode: 0,
   };

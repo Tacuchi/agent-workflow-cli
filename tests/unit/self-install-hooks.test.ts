@@ -99,24 +99,23 @@ describe("selfInstallHooks", () => {
     if (!result.ok) expect(result.error.code).toBe("INVALID_TARGET");
   });
 
-  // Every non-claude target resolves to the explanatory "unsupported" result
-  // (warning + null config_path), not a generic INVALID_TARGET — the
-  // daily-status documents them as valid hosts.
-  it.each(["codex", "warp", "oz", "gemini", "opencode", "crush"])(
-    "--target %s → unsupported (not INVALID_TARGET)",
-    async (target) => {
-      const result = await selfInstallHooks(
-        buildArgs({ target, template: templatePath }),
-        buildCtx(home),
-      );
-      expect(result.ok).toBe(true);
-      if (result.ok && result.data) {
-        expect(result.data.status).toBe("unsupported");
-        expect(result.data.warning).toContain(target);
-        expect(result.data.config_path).toBeNull();
-      }
-    },
-  );
+  // A target Workline does NOT manage resolves to the explanatory "unsupported"
+  // result (warning + null config_path), not a generic INVALID_TARGET — the
+  // daily-status documents them as valid hosts. Only warp and oz are left: they
+  // have no hook system at all. crush and gemini got config installers, codex a
+  // generated bundle and opencode a generated plugin module.
+  it.each(["warp", "oz"])("--target %s → unsupported (not INVALID_TARGET)", async (target) => {
+    const result = await selfInstallHooks(
+      buildArgs({ target, template: templatePath }),
+      buildCtx(home),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.status).toBe("unsupported");
+      expect(result.data.warning).toContain(target);
+      expect(result.data.config_path).toBeNull();
+    }
+  });
 
   it("--target claude (no existing settings) → installs all events", async () => {
     const result = await selfInstallHooks(

@@ -25,15 +25,24 @@ import {
   type InstallTarget,
   SHARED_SKILL_DESTINATIONS,
   type SupportTier,
+  hookCoverage,
+  hookMechanism,
   verificationFor,
 } from "../../domain/harnesses.js";
 import type { HarnessVerification } from "../../domain/host-verification.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
 import { resolveWarpGlobalMcpPath } from "../multiroot/warp.js";
+import {
+  countOurAgyHooks,
+  countOurCrushHooks,
+  hooksTemplateToAgy,
+  hooksTemplateToCrush,
+} from "./hooks-json.js";
 import { countOurHookEntries, hooksTemplateToToml } from "./hooks-toml.js";
 import { type HooksTemplate, resolveBundledHookTemplate } from "./install-hooks.js";
 import { SKILL_DIR_NAME, USER_COMMANDS_BY_TARGET } from "./install-skill.js";
 import { COMMAND_SKILLS_HOSTS, TARGET_ROOTS } from "./install-targets.js";
+import { buildOpencodePlugin } from "./opencode-plugin.js";
 
 /** Upper bound for a single `--version` call. Probes run in parallel across hosts. */
 const RUNTIME_PROBE_TIMEOUT_MS = 2500;
@@ -255,11 +264,18 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
     spec.hooks === null
       ? { id: "hooks", status: "unsupported", detail: "this host has no hook system" }
       : spec.hooks.managed
-        ? { id: "hooks", status: "native", detail: `installed into ${spec.hooks.mechanism}` }
+        ? {
+            id: "hooks",
+            status: "native",
+            // The coverage rides along even here: claude carries all five, kimi
+            // carries PostCompact with a handler missing, and "installed" alone
+            // would read as parity between the two.
+            detail: `installed into ${hookMechanism(spec.hooks)} — ${hookCoverage(spec.hooks)}`,
+          }
         : {
             id: "hooks",
             status: "degraded",
-            detail: `host supports hooks (${spec.hooks.mechanism}); Workline does not install them here — the CLI commands stay callable`,
+            detail: `host supports hooks (${hookMechanism(spec.hooks)}) — ${hookCoverage(spec.hooks)}; ${notManagedHere(spec)}`,
           },
     spec.mcpHostId === null
       ? {
@@ -269,6 +285,24 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
         }
       : { id: "mcp", status: "native", detail: `written to its ${spec.mcpHostId} MCP config` },
   ];
+}
+
+/**
+ * Why Workline does not arm this host's hooks, and what it does instead.
+ *
+ * Codex is the one host with a second route: a plugin bundle whose hooks skip its
+ * per-hook trust review. The bundle is generated, never installed — codex takes
+ * plugins through a marketplace — so the state says "generated, not armed" and
+ * stops there. Every other unmanaged host gets the plain answer.
+ */
+function notManagedHere(spec: HarnessSpec): string {
+  if (spec.id === "codex") {
+    return "Workline generates its plugin bundle instead ('aw self install-hooks --target codex'), which is NOT armed: installing a codex plugin goes through a marketplace and is yours to run";
+  }
+  if (spec.id === "opencode") {
+    return "Workline generates its plugin module instead ('aw self install-hooks --target opencode'), declared in opencode.json: the tool guards travel, the session and compaction hooks do not";
+  }
+  return "Workline does not install them here — the CLI commands stay callable";
 }
 
 /**
@@ -400,6 +434,14 @@ const HOOKS_ARMED_PROBES: Partial<
     const path = join(home, ".claude", "settings.json");
     return { armed: await claudeHooksArmed(ctx, path), path };
   },
+  crush: async (ctx, home) => {
+    const path = crushGlobalMcpFile(home);
+    return { armed: (await countJsonHooks(ctx, path, countOurCrushHooks)) > 0, path };
+  },
+  gemini: async (ctx, home) => {
+    const path = join(home, ".agents", "hooks.json");
+    return { armed: (await countJsonHooks(ctx, path, countOurAgyHooks)) > 0, path };
+  },
   kimi: async (ctx, home) => {
     // Read through a real TOML parse, NOT by looking for our comment markers:
     // Kimi rewrites this file on its own and drops every comment while keeping
@@ -414,6 +456,29 @@ const HOOKS_ARMED_PROBES: Partial<
     }
   },
 };
+
+/**
+ * Our entries in a JSON host config, read through a real parse.
+ *
+ * Zero on an absent or unreadable file: "we cannot tell" and "they are not
+ * armed" look the same to a probe, and claiming armed on a file nobody could
+ * read is the one answer that would be a lie.
+ */
+async function countJsonHooks(
+  ctx: CliContext,
+  path: string,
+  count: (doc: Record<string, unknown>) => number,
+): Promise<number> {
+  if (!(await ctx.fs.exists(path))) return 0;
+  try {
+    const parsed = JSON.parse(await ctx.fs.readText(path));
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? count(parsed as Record<string, unknown>)
+      : 0;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * A non-empty `hooks{}` is NOT enough: the user may keep hooks of their own.
@@ -455,7 +520,15 @@ const HOOK_TEMPLATE_LOSSES: Partial<Record<InstallTarget, (template: HooksTempla
         ...degraded.map((d) => `${d.event}: ${d.reason}`),
       ];
     },
+    crush: (template) => skipLines(hooksTemplateToCrush(template).skipped),
+    gemini: (template) => skipLines(hooksTemplateToAgy(template).skipped),
+    opencode: (template) => skipLines(buildOpencodePlugin(template).skipped),
   };
+
+/** The four events neither JSON dialect carries, one line each. */
+function skipLines(skipped: readonly { event: string; reason: string }[]): string[] {
+  return skipped.map((s) => `${s.event}: skipped — ${s.reason}`);
+}
 
 /**
  * What each managed host cannot carry from the bundled template.

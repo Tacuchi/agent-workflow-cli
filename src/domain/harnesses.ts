@@ -67,11 +67,105 @@ export interface HarnessRuntime {
   versionArgs: readonly string[];
 }
 
+/**
+ * The events the bundled hook template ships, in template order.
+ *
+ * The per-host contract below is a statement ABOUT this set: "carried" and
+ * "omitted" only mean something against a fixed list. A guard pins it to the
+ * template's own keys, so a sixth event added to the bundle cannot leave every
+ * host silently under-declared.
+ */
+export const TEMPLATE_HOOK_EVENTS = [
+  "SessionStart",
+  "PreToolUse",
+  "SessionEnd",
+  "PreCompact",
+  "PostCompact",
+] as const;
+
+export type TemplateHookEvent = (typeof TEMPLATE_HOOK_EVENTS)[number];
+
+/**
+ * The artifact this host's hooks live in.
+ *
+ * The two kinds are not a stylistic split: merging a key into a config file the
+ * user also edits and dropping a CODE module into a plugin dir have different
+ * ownership, different reversal and different proof. A host that takes a plugin
+ * cannot be armed by the config merger, and saying so in the type is what keeps
+ * an installer from being written against the wrong contract.
+ */
+export type HookArtifact =
+  /** A key merged into a config file the host already owns. */
+  | { kind: "config-merge"; path: string; entry: string }
+  /** A JS/TS module dropped in the host's plugin dir and declared in its config. */
+  | { kind: "plugin-module"; path: string; entry: string };
+
+/**
+ * What ONE template event does on this host.
+ *
+ * `degraded` exists because "carried" and "omitted" cannot describe an event
+ * that arrives with a piece missing — kimi takes `PostCompact` but cannot
+ * express its `type: "prompt"` handler. Folding that into "carried" would
+ * promise a resume the host never performs; folding it into "omitted" would
+ * hide a hook that does run.
+ */
+export type HookEventSupport =
+  | { state: "carried"; native: string }
+  | { state: "degraded"; native: string; loss: string }
+  | { state: "omitted"; reason: string };
+
 export interface HarnessHooks {
-  /** How this host declares hooks, as verified against its docs/source. */
-  mechanism: string;
   /** True when Workline installs and removes its hook set on this host. */
   managed: boolean;
+  /** Where the hooks live and in what shape — the contract an installer writes against. */
+  artifact: HookArtifact;
+  /** What still stands between writing the artifact and an armed hook, when anything does. */
+  caveat?: string;
+  /**
+   * Every template event, answered. A `Record` over the closed event union on
+   * purpose: a host added without an answer for one of them does not compile,
+   * which is what keeps the per-host asymmetry complete instead of implied.
+   */
+  events: Readonly<Record<TemplateHookEvent, HookEventSupport>>;
+  /** What the claim rests on — which runtime was read, and when. */
+  verified: string;
+}
+
+/**
+ * The one-line mechanism every surface prints, derived from the contract.
+ *
+ * It used to be a hand-written string per host, and three of them were wrong:
+ * crush was declared hookless while it has `PreToolUse`, gemini named a
+ * `BeforeTool` event that appears nowhere in its binary, and opencode named its
+ * event without ever saying where the plugin goes. A sentence nobody can
+ * recompute is a sentence nobody notices going stale.
+ */
+export function hookMechanism(hooks: HarnessHooks): string {
+  const base = `${hooks.artifact.path} → ${hooks.artifact.entry}`;
+  return hooks.caveat === undefined ? base : `${base}; ${hooks.caveat}`;
+}
+
+/**
+ * Which template events travel to this host and which do not, in one line.
+ *
+ * Printed next to the hook state because a reader who is only told "supports
+ * hooks" assumes parity — and on crush, gemini and opencode what travels is the
+ * enforcement, never the resumability.
+ */
+export function hookCoverage(hooks: HarnessHooks): string {
+  const carried: string[] = [];
+  const partial: string[] = [];
+  const omitted: string[] = [];
+  for (const event of TEMPLATE_HOOK_EVENTS) {
+    const support = hooks.events[event];
+    if (support.state === "carried") carried.push(event);
+    else if (support.state === "degraded") partial.push(`${event} (${support.loss})`);
+    else omitted.push(event);
+  }
+  const parts = [`carries ${carried.length === 0 ? "no template event" : carried.join(", ")}`];
+  if (partial.length > 0) parts.push(`partial: ${partial.join(", ")}`);
+  if (omitted.length > 0) parts.push(`omits ${omitted.join(", ")}`);
+  return parts.join("; ");
 }
 
 /**
@@ -229,7 +323,18 @@ export const HARNESSES: readonly HarnessSpec[] = [
     support: { tier: "official" },
     runtime: { bins: ["claude"], versionArgs: ["--version"] },
     configDir: { kind: "dir", path: "~/.claude" },
-    hooks: { mechanism: "~/.claude/settings.json → hooks{}", managed: true },
+    hooks: {
+      managed: true,
+      artifact: { kind: "config-merge", path: "~/.claude/settings.json", entry: "hooks{}" },
+      events: {
+        SessionStart: { state: "carried", native: "SessionStart" },
+        PreToolUse: { state: "carried", native: "PreToolUse" },
+        SessionEnd: { state: "carried", native: "SessionEnd" },
+        PreCompact: { state: "carried", native: "PreCompact" },
+        PostCompact: { state: "carried", native: "PostCompact" },
+      },
+      verified: "Jul-2026, against the installed claude runtime (matrix base)",
+    },
     envMarkers: ["CLAUDECODE", "CLAUDE_PLUGIN_ROOT", "CLAUDE_AGENT_ID"],
     mcpHostId: "claude",
     globalMcpPaths: {
@@ -271,11 +376,24 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // an interactive human review, persisted as `trusted_hash` in
     // `[hooks.state]`. Writing the file is therefore not arming it, and forging
     // that hash would forge the person's security decision — so this stays
-    // `managed: false` and the mechanism string says exactly why.
+    // `managed: false` and its `caveat` says exactly why.
     hooks: {
-      mechanism:
-        "~/.codex/hooks.json (Claude-shaped); each hook needs an interactive trust review in codex, recorded as trusted_hash in [hooks.state]",
       managed: false,
+      artifact: {
+        kind: "config-merge",
+        path: "~/.codex/hooks.json",
+        entry: "hooks{} (Claude-shaped)",
+      },
+      caveat:
+        "each hook needs an interactive trust review in codex, recorded as trusted_hash in [hooks.state]",
+      events: {
+        SessionStart: { state: "carried", native: "SessionStart" },
+        PreToolUse: { state: "carried", native: "PreToolUse" },
+        SessionEnd: { state: "carried", native: "SessionEnd" },
+        PreCompact: { state: "carried", native: "PreCompact" },
+        PostCompact: { state: "carried", native: "PostCompact" },
+      },
+      verified: "2026-08-05, against codex-cli 0.146.0 (HookEventsToml enum + real runs)",
     },
     envMarkers: ["CODEX_THREAD_ID", "CODEX_HOME", "CODEX_CLI", "CODEX_RUNTIME"],
     mcpHostId: "codex",
@@ -411,7 +529,32 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // ~/.gemini. Probed in that order so the successor wins.
     runtime: { bins: ["agy", "gemini"], versionArgs: ["--version"] },
     configDir: { kind: "dir", path: "~/.gemini" },
-    hooks: { mechanism: "extension-bundled (BeforeTool)", managed: false },
+    // The catalog used to name a `BeforeTool` event. It appears nowhere in the
+    // binary: what agy has is a single `hooks.json` at the customization root.
+    hooks: {
+      managed: true,
+      artifact: {
+        kind: "config-merge",
+        path: "~/.agents/hooks.json",
+        entry:
+          "named hooks → PreToolUse/PostToolUse (Claude-shaped) · PreInvocation/PostInvocation/Stop (flat handler lists)",
+      },
+      caveat:
+        'handlers are type: "command" only and run synchronously, blocking the loop; the host documents its customization root as the workspace\'s .agents/, so whether a user-global one is read was NOT verified',
+      events: {
+        SessionStart: { state: "omitted", reason: "agy declares no session-start event" },
+        PreToolUse: { state: "carried", native: "PreToolUse" },
+        SessionEnd: {
+          state: "omitted",
+          reason:
+            "its closest event is `Stop`, which fires at the end of every turn and not at session close: carrying the close hook there would run it on every turn",
+        },
+        PreCompact: { state: "omitted", reason: "agy exposes no compaction event" },
+        PostCompact: { state: "omitted", reason: "agy exposes no compaction event" },
+      },
+      verified:
+        "2026-08-18, against agy 1.0.16 (its bundled `hooks.json` doc + the CORTEX_STEP_TYPE tool names in the binary): `BeforeTool` does not appear in the binary",
+    },
     envMarkers: [
       "GEMINI_CLI",
       "GEMINI_SANDBOX",
@@ -428,7 +571,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     },
     projectMcpPath: ".gemini/settings.json",
     pluginManifest: null, // Gemini uses Extensions (gemini-extension.json) — Phase 2
-    pluginHooksDir: null, // Extension-bundled hooks (BeforeTool) — Phase 2
+    pluginHooksDir: null, // agy's hooks are its own hooks.json, not extension-bundled
     skillsDirs: [".agents/skills", ".gemini/skills"],
     installTarget: "gemini",
     invocation: MENTION,
@@ -460,7 +603,26 @@ export const HARNESSES: readonly HarnessSpec[] = [
     support: { tier: "best-effort" },
     runtime: { bins: ["opencode"], versionArgs: ["--version"] },
     configDir: { kind: "mcp-parent" },
-    hooks: { mechanism: "JS/TS plugins (tool.execute.before)", managed: false },
+    hooks: {
+      managed: false,
+      artifact: {
+        kind: "plugin-module",
+        path: ".opencode/plugin/",
+        entry: 'a JS/TS module, declared in opencode.json under "plugin": []',
+      },
+      events: {
+        SessionStart: { state: "omitted", reason: "the plugin API fires no session-start event" },
+        PreToolUse: { state: "carried", native: "tool.execute.before" },
+        SessionEnd: { state: "omitted", reason: "the plugin API fires no session-end event" },
+        PreCompact: {
+          state: "omitted",
+          reason:
+            "its only candidate is `experimental.session.compacting`, an experimental event Workline does not rest resumability on",
+        },
+        PostCompact: { state: "omitted", reason: "the plugin API fires no post-compaction event" },
+      },
+      verified: "2026-08-04, against opencode 1.18.5 (its plugin API event list)",
+    },
     envMarkers: ["OPENCODE", "OPENCODE_BIN", "OPENCODE_CONFIG"],
     mcpHostId: "opencode",
     globalMcpPaths: {
@@ -490,8 +652,8 @@ export const HARNESSES: readonly HarnessSpec[] = [
   },
   {
     // Crush (charmbracelet/crush). Config `crush.json` ($schema charm.land/crush.json);
-    // MCP under `mcp` (type "stdio"). Reads .agents/skills + .claude/skills. Hooks are
-    // preliminary; enforcement via `allowed_tools` allowlist — Phase 3.
+    // MCP under `mcp` (type "stdio"). Reads .agents/skills + .claude/skills. It has
+    // hooks of its own (`hooks` in crush.json) on top of the `allowed_tools` allowlist.
     // Global config verified 2026-07 (README charmbracelet/crush): Unix XDG,
     // Windows %LOCALAPPDATA%\crush\crush.json (override CRUSH_GLOBAL_CONFIG).
     id: "crush",
@@ -500,7 +662,27 @@ export const HARNESSES: readonly HarnessSpec[] = [
     support: { tier: "best-effort", unstableSurface: true },
     runtime: { bins: ["crush"], versionArgs: ["--version"] },
     configDir: { kind: "mcp-parent" },
-    hooks: { mechanism: "preliminary; enforcement via allowed_tools allowlist", managed: false },
+    // The catalog used to deny crush had hooks at all. It has them, in its own
+    // config file, and exactly one event.
+    hooks: {
+      managed: true,
+      artifact: {
+        kind: "config-merge",
+        path: "~/.config/crush/crush.json",
+        entry: "hooks{} (HookConfig: command · matcher · timeout)",
+      },
+      caveat:
+        "matching hooks run in parallel, deduplicated by command; a project crush.json takes precedence over the global one",
+      events: {
+        SessionStart: { state: "omitted", reason: "crush supports only PreToolUse" },
+        PreToolUse: { state: "carried", native: "PreToolUse" },
+        SessionEnd: { state: "omitted", reason: "crush supports only PreToolUse" },
+        PreCompact: { state: "omitted", reason: "crush supports only PreToolUse" },
+        PostCompact: { state: "omitted", reason: "crush supports only PreToolUse" },
+      },
+      verified:
+        '2026-08-04, against crush v0.87.0 (its embedded docs + JSON schema): "Only PreToolUse is currently supported"',
+    },
     envMarkers: ["CRUSH", "CRUSH_CONFIG"],
     mcpHostId: "crush",
     globalMcpPaths: {
@@ -565,7 +747,27 @@ export const HARNESSES: readonly HarnessSpec[] = [
       versionArgs: ["--version"],
     },
     configDir: { kind: "dir", path: "~/.kimi-code" },
-    hooks: { mechanism: "~/.kimi-code/config.toml → [[hooks]]", managed: true },
+    hooks: {
+      managed: true,
+      artifact: {
+        kind: "config-merge",
+        path: "~/.kimi-code/config.toml",
+        entry: "[[hooks]] (event · matcher · command · timeout)",
+      },
+      caveat: "user-global only: kimi has no project-level config",
+      events: {
+        SessionStart: { state: "carried", native: "SessionStart" },
+        PreToolUse: { state: "carried", native: "PreToolUse" },
+        SessionEnd: { state: "carried", native: "SessionEnd" },
+        PreCompact: { state: "carried", native: "PreCompact" },
+        PostCompact: {
+          state: "degraded",
+          native: "PostCompact",
+          loss: 'its type: "prompt" handler cannot be expressed in config.toml and is reported as skipped',
+        },
+      },
+      verified: "2026-07-29, against kimi 0.29.2 (shipped binary + live probes)",
+    },
     envMarkers: [],
     mcpHostId: "kimi",
     globalMcpPaths: {

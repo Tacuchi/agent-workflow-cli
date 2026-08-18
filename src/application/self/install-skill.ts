@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import { DESIGN_DESCRIPTOR } from "../../domain/design/capability.js";
-import { type InstallTarget, harnessByInstallTarget } from "../../domain/harnesses.js";
+import {
+  type InstallTarget,
+  harnessByInstallTarget,
+  hookCoverage,
+  hookMechanism,
+} from "../../domain/harnesses.js";
 import { stampForInstallTarget } from "../../domain/structured-choice-stamp.js";
 import type { CommandResult } from "../../domain/types.js";
 import { installCapabilitySkill } from "../capability/wrapper.js";
@@ -282,7 +287,13 @@ function explainSkipReason(target: InstallTarget, kind: "commands" | "hooks"): s
   if (spec.hooks === null) {
     return `${target}: this host has no hook system. Skipped silently.`;
   }
-  return `${target}: hooks live in ${spec.hooks.mechanism}, which Workline does not write yet. The SKILL works without them and the CLI commands stay callable manually.`;
+  // codex and opencode DO have a generator; saying "not written yet" there would
+  // deny a command this CLI ships.
+  const how =
+    spec.id === "codex" || spec.id === "opencode"
+      ? `run \`agent-workflow self install-hooks --target ${target}\` to generate its plugin artifact`
+      : "Workline does not write it";
+  return `${target}: hooks live in ${hookMechanism(spec.hooks)} (${hookCoverage(spec.hooks)}); ${how}. The SKILL works without them and the CLI commands stay callable manually.`;
 }
 
 export async function selfInstallSkill(

@@ -7,9 +7,12 @@ import type { CliContext } from "../../cli/types.js";
 import { DESIGN_DESCRIPTOR } from "../../domain/design/capability.js";
 import type { CommandResult } from "../../domain/types.js";
 import { uninstallCapabilitySkill } from "../capability/wrapper.js";
+import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
+import { CODEX_PLUGIN_DIR, isOurCodexPlugin } from "./codex-plugin.js";
+import { isOurCommand } from "./hooks-dialect.js";
+import { stripOurAgyHooks, stripOurCrushHooks } from "./hooks-json.js";
 import {
   countOurHookEntries,
-  isOurCommand,
   stripOurHookEntries as stripOurKimiHookEntries,
 } from "./hooks-toml.js";
 import { type HooksTemplate, resolveBundledHookTemplate } from "./install-hooks.js";
@@ -31,6 +34,11 @@ import {
   LEGACY_SKILL_ROOTS_BY_TARGET,
   SHARED_INSTALL_TARGETS,
 } from "./install-targets.js";
+import {
+  OPENCODE_PLUGIN_FILE,
+  isOurOpencodePlugin,
+  undeclareOpencodePlugin,
+} from "./opencode-plugin.js";
 import { updateAgentsLock } from "./uninstall-skill.js";
 
 // Synthesized `w-<command>` skills are removed for the COMMAND_SKILLS_HOSTS
@@ -110,6 +118,8 @@ const HOOK_REMOVERS: Partial<
 > = {
   claude: removeClaudeHooks,
   kimi: removeKimiHooks,
+  crush: removeCrushHooks,
+  gemini: removeAgyHooks,
 };
 
 /** Hooks-managed targets with no remover wired — they would strand hooks. Must be empty. */
@@ -358,6 +368,10 @@ async function removeHooks(
   target: InstallTarget,
   dryRun: boolean,
 ): Promise<UninstallStep | null> {
+  // Codex's bundle is not a managed install, but it IS an artifact we wrote —
+  // and leaving it behind would strand a plugin the person may later install.
+  if (target === "codex") return removeCodexPlugin(ctx, home, target, dryRun);
+  if (target === "opencode") return removeOpencodePlugin(ctx, home, target, dryRun);
   if (!HOOKS_MANAGED_TARGETS.has(target)) return null;
   const remover = HOOK_REMOVERS[target];
   if (remover === undefined) {
@@ -445,6 +459,177 @@ async function removeKimiHooks(
       leftover > 0
         ? `Removed ${removed} of our [[hooks]] entries, but ${leftover} more remain in a shape this version does not recognise — remove them by hand`
         : `Removed ${removed} of our [[hooks]] entries; the rest of config.toml is untouched`,
+  };
+}
+
+/**
+ * Crush: drop our entries from `hooks` in its `crush.json`.
+ *
+ * The file also carries the person's models, lsp and mcp config, so it is read,
+ * edited and written back — never replaced with a hooks-only document.
+ */
+async function removeCrushHooks(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep | null> {
+  return removeJsonHooks(ctx, target, dryRun, crushGlobalMcpFile(home), stripOurCrushHooks);
+}
+
+/**
+ * Codex: delete the plugin bundle we generated, and only when it is ours.
+ *
+ * Ownership is read from the descriptor's `name`, never from the path: a bundle
+ * the person put there is not ours to delete because it sits where we would have
+ * written one.
+ */
+async function removeCodexPlugin(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep | null> {
+  const root = join(home, ...CODEX_PLUGIN_DIR);
+  const descriptor = join(root, ".codex-plugin", "plugin.json");
+  if (!(await ctx.fs.exists(descriptor))) return null;
+  if (!isOurCodexPlugin(await ctx.fs.readText(descriptor))) {
+    return {
+      target,
+      kind: "hooks",
+      path: root,
+      status: "skipped",
+      reason: "a plugin bundle is there but its descriptor is not ours; left untouched",
+    };
+  }
+  if (!dryRun) {
+    await rm(root, { recursive: true, force: true });
+    await removeDirIfEmpty(dirname(root));
+  }
+  return {
+    target,
+    kind: "hooks",
+    path: root,
+    status: dryRun ? "dry-run" : "removed",
+    reason:
+      "Removed the generated Codex plugin bundle; if it was ever installed, run 'codex plugin uninstall agent-workflow' too",
+  };
+}
+
+/**
+ * opencode: delete the module we generated and undeclare it, leaving every other
+ * plugin — on disk and in `plugin[]` — exactly where it was.
+ *
+ * Ownership is the module's own first line: a file of the person's that happens
+ * to sit at that path is not ours to delete.
+ */
+async function removeOpencodePlugin(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep | null> {
+  const configPath = opencodeGlobalMcpFile(home);
+  const pluginPath = join(dirname(configPath), "plugin", OPENCODE_PLUGIN_FILE);
+  if (!(await ctx.fs.exists(pluginPath))) return null;
+  if (!isOurOpencodePlugin(await ctx.fs.readText(pluginPath))) {
+    return {
+      target,
+      kind: "hooks",
+      path: pluginPath,
+      status: "skipped",
+      reason: "a module is there but it is not the one we generated; left untouched",
+    };
+  }
+  if (!dryRun) {
+    await rm(pluginPath, { force: true });
+    await removeDirIfEmpty(dirname(pluginPath));
+    await undeclareInConfig(ctx, configPath, pluginPath);
+  }
+  return {
+    target,
+    kind: "hooks",
+    path: pluginPath,
+    status: dryRun ? "dry-run" : "removed",
+    reason: "Removed the generated opencode plugin and its entry in opencode.json",
+  };
+}
+
+/** Drops the plugin's `plugin[]` entry, and only that, from a config we can read. */
+async function undeclareInConfig(
+  ctx: CliContext,
+  configPath: string,
+  pluginPath: string,
+): Promise<void> {
+  if (!(await ctx.fs.exists(configPath))) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await ctx.fs.readText(configPath));
+  } catch {
+    // An unreadable config is the person's to fix; rewriting it blind would be
+    // worse than leaving one stale entry pointing at a file that is gone.
+    return;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+  const { value, removed } = undeclareOpencodePlugin(parsed as Record<string, unknown>, pluginPath);
+  if (removed) await ctx.fs.writeText(configPath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/** agy: drop our named hook from `~/.agents/hooks.json`, leaving anyone else's. */
+async function removeAgyHooks(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep | null> {
+  return removeJsonHooks(
+    ctx,
+    target,
+    dryRun,
+    join(home, ".agents", "hooks.json"),
+    stripOurAgyHooks,
+  );
+}
+
+/** The removal both JSON dialects share, down to the reason they report. */
+async function removeJsonHooks(
+  ctx: CliContext,
+  target: InstallTarget,
+  dryRun: boolean,
+  path: string,
+  strip: (doc: Record<string, unknown>) => {
+    value: Record<string, unknown>;
+    removed: number;
+    preserved: number;
+  },
+): Promise<UninstallStep | null> {
+  if (!(await ctx.fs.exists(path))) return null;
+  const current = await ctx.fs.readText(path);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(current);
+  } catch {
+    return {
+      target,
+      kind: "hooks",
+      path,
+      status: "skipped",
+      reason: `${path} is invalid JSON; not modified`,
+    };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+
+  const { value, removed, preserved } = strip(parsed as Record<string, unknown>);
+  if (removed === 0) return null;
+  if (!dryRun) {
+    await persistTextWithBackup(path, current, `${JSON.stringify(value, null, 2)}\n`);
+  }
+  return {
+    target,
+    kind: "hooks",
+    path,
+    status: dryRun ? "dry-run" : "removed",
+    reason: `Removed ${removed} of our hook entries${preserved > 0 ? ` (${preserved} of your own preserved)` : ""}`,
   };
 }
 

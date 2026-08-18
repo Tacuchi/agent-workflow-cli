@@ -23,6 +23,8 @@
 //     events — and an absent matcher means "always", which is exactly what that
 //     Claude matcher expresses.
 
+import type { HookDegradation, HookSkip } from "./hooks-dialect.js";
+import { isOurCommand } from "./hooks-dialect.js";
 import type { HookEntry, HooksTemplate } from "./install-hooks.js";
 
 export const MANAGED_BLOCK_BEGIN =
@@ -67,23 +69,6 @@ export interface TomlHookEntry {
   matcher?: string;
   command: string;
   timeout?: number;
-}
-
-export interface HookSkip {
-  event: string;
-  reason: string;
-}
-
-/**
- * A hook that DID install but not whole. Kept apart from {@link HookSkip} because
- * the two say different things to whoever reads the install output: a skip means
- * the hook is not there, a degradation means it is there and does less. Collapsing
- * them would report a working hook as missing, or a missing one as working.
- */
-export interface HookDegradation {
-  event: string;
-  /** What the host could not carry, and what it does instead. */
-  reason: string;
 }
 
 export interface HookTransformResult {
@@ -202,14 +187,11 @@ export function renderManagedHooksBlock(entries: readonly TomlHookEntry[]): stri
 }
 
 /**
- * OWNERSHIP IS BY DATA, NOT BY COMMENT.
- *
- * The marked block is for humans reading the file. It cannot be the identity of
+ * The marked block is for humans reading the file — it cannot be the identity of
  * our entries, because Kimi Code rewrites its own `config.toml` whenever it
  * touches a setting (`kimi provider remove`, an OAuth refresh, …): it
- * re-serializes the parsed config, which keeps the `hooks` array and drops
- * EVERY comment — our markers included. Identity therefore rests on the same
- * signal the Claude side uses: every command we install invokes this CLI.
+ * re-serializes the parsed config, which keeps the `hooks` array and drops EVERY
+ * comment, our markers included. Identity therefore rests on `isOurCommand`.
  *
  * Without this, one routine Kimi command left our hooks armed and unremovable,
  * and every reinstall appended a duplicate set.
@@ -220,12 +202,6 @@ export function renderManagedHooksBlock(entries: readonly TomlHookEntry[]): stri
 const OUR_COMMAND_RE = /^\s*command\s*=\s*["']agent-workflow(?=[\s"']|$)/;
 const HOOK_TABLE_HEADER = "[[hooks]]";
 const TOML_KEY_RE = /^\s*[A-Za-z_][\w-]*\s*=/;
-
-/** True when this command line invokes THIS CLI (and not a lookalike binary). */
-export function isOurCommand(command: string): boolean {
-  const trimmed = command.trimStart();
-  return trimmed === "agent-workflow" || trimmed.startsWith("agent-workflow ");
-}
 
 export interface HookSweepResult {
   text: string;
