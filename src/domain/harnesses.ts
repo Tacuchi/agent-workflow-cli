@@ -621,7 +621,8 @@ export const HARNESSES: readonly HarnessSpec[] = [
         },
         PostCompact: { state: "omitted", reason: "the plugin API fires no post-compaction event" },
       },
-      verified: "2026-08-04, against opencode 1.18.5 (its plugin API event list)",
+      verified:
+        "2026-08-18, against opencode 1.18.15 (its embedded plugin doc: the `Plugin` signature, its hook surface and its plugin dirs)",
     },
     envMarkers: ["OPENCODE", "OPENCODE_BIN", "OPENCODE_CONFIG"],
     mcpHostId: "opencode",
@@ -681,7 +682,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
         PostCompact: { state: "omitted", reason: "crush supports only PreToolUse" },
       },
       verified:
-        '2026-08-04, against crush v0.87.0 (its embedded docs + JSON schema): "Only PreToolUse is currently supported"',
+        '2026-08-18, against crush v0.89.0 (its embedded skill doc + the `config.HookConfig` JSON schema in the binary): "Only PreToolUse is currently supported"',
     },
     envMarkers: ["CRUSH", "CRUSH_CONFIG"],
     mcpHostId: "crush",
