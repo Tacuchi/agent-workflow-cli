@@ -4,6 +4,16 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [22.3.1] — 2026-08-18
+
+**Dos entradas del catálogo quedaron fechadas antes de la verificación que las respalda.** `crush` decía haberse verificado el 2026-08-04 contra v0.87.0 y `opencode` el 2026-08-04 contra 1.18.5, mientras `HARNESS.md` y las notas de la 22.3.0 declaran el contrato fechado el 2026-08-18 contra crush v0.89.0 y opencode 1.18.15 — que es contra lo que se leyó de verdad.
+
+Ninguna afirmación de comportamiento era falsa: esas verificaciones ocurrieron y su conclusión se sostiene. Lo que estaba viejo era la fecha de la evidencia, que es justamente el dato por el que existe el campo.
+
+### Fixed
+
+- **`verified` de crush y de opencode** pasa a nombrar la lectura del 2026-08-18: el doc embebido de crush v0.89.0 más el esquema `config.HookConfig` de su binario, y el doc de plugin embebido de opencode 1.18.15 con su firma `Plugin`, su superficie de hooks y sus directorios. `claude`, `codex` y `kimi` no se tocan: sus entradas siguen fechadas en la verificación que efectivamente las respalda.
+
 ## [22.3.0] — 2026-08-18
 
 **El catálogo describía mecanismos de hooks que sus hosts no tienen.** crush figuraba sin hooks y los tiene; gemini nombraba un evento —`BeforeTool`— que no aparece ni una vez en el binario de `agy`; opencode nombraba su evento sin decir nunca dónde vive su plugin. Y lo que ninguna entrada decía era lo que más importa: cuál de los cinco eventos de la plantilla llega de verdad a cada host. Un lector suponía paridad, y en tres de ellos viaja el **enforcement** y no la **resumabilidad**.
