@@ -4,6 +4,34 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [22.2.0] — 2026-08-18
+
+**El tablero listaba todo sin decir qué le faltaba a nada, y `resume` decía qué le faltaba a uno sin listar el resto.** Las dos superficies necesitan la misma lectura —por cada pendiente, qué le falta— y existía a medias y en el lugar equivocado: la derivaba `resume-service`, y sólo para la cabeza del pipeline o sus empates. El resultado observable era una vista engañosa: un plan con todas sus tareas hechas y sus 6 fases validadas aparecía como `plan 031 — 100%, fases 6/6`, sin decir que lo que le faltaba era la validación final y el cierre.
+
+Nada que migrar: el cambio es aditivo de punta a punta.
+
+### Added
+
+- **Cada pendiente dice qué le falta.** La vista por defecto de `aw status` muestra, además del título y el comando, el paso siguiente que continúa el ítem. Un plan ejecutado sin cerrar dice que falta la validación final y el cierre; una fase bloqueada nombra su motivo declarado, y si el bloqueo no declara ninguno lo dice así.
+- **Una obligación se nombra antes que el porcentaje.** Lo que deja un ítem ni ejecutable ni cerrable —una referencia de diseño irresoluble, una reconciliación pendiente, un baseline que nadie puede probar— toma el titular y el progreso baja debajo. Leído en el otro orden, el número es la parte que la gente cree.
+- **`PipelineItemDetail`: el detalle por ítem se deriva UNA sola vez**, en la proyección compartida que ya aloja el pipeline, y viaja en el ítem (`objective`, `progress`, `next`, `obligation`). `resume` lo consume en vez de recalcularlo, así que las dos superficies no pueden describir el mismo ítem de dos maneras distintas.
+- **`aw resume` sin target ofrece TODOS los pendientes.** El envelope gana `candidates` con el pipeline completo en el orden que ya decide el CLI, conservando `proposal` como la recomendación. Antes ofrecía sólo la cabeza y sus empates, así que los planes abiertos que `status` listaba quedaban fuera de la oferta.
+- **`uninitialized`: un pipeline vacío por falta de workspace deja de leerse como «nada pendiente».** Ambas superficies lo dicen y proponen `/w:workspace-init`. Sin nada pendiente de verdad, `aw status` responde en una línea y no imprime secciones ni avisos vacíos.
+- **Las sesiones sueltas se reportan como aviso propio**, con su cuenta y cómo verlas (`loose_sessions` en el envelope). La mecánica de sesión es del workline central: un checkpoint suelto compitiendo por atención con un plan abierto le pedía a una persona hacer la contabilidad del runtime.
+- **Guard de doctrina G20**, que fija la regla nueva en `commands/status.md` y `commands/resume.md` para que ninguna superficie la pierda en silencio.
+
+### Changed
+
+- **`checkpoint-orphan` deja de ser una clase de trabajo del usuario en el pipeline.** La clase **no** desaparece del modelo; sale de la lista de pendientes y pasa al aviso, así que `counts.pending` cuenta trabajo documental.
+- **`candidates` pasa de ser los empates a ser el pipeline completo** en la ruta sin target. Con empate en cabeza no hay una recomendación única, y el `action` dice cuántos empatan sobre cuántos pendientes hay.
+- **La cadena de precedencia se movió entera, sin re-cortarla**: diseño irresoluble → fase bloqueada → reconciliación pendiente → plan inconsistente → baseline sin probar → validación final pendiente → primera fase no validada. Un plan con fase bloqueada y reconciliación pendiente sigue reportando la fase bloqueada.
+- **`commands/status.md` y `commands/resume.md` declaran cómo se presenta la elección**: análisis breve antes de elegir, una opción por candidato en el orden del CLI, agrupación por clase en hasta 3 preguntas, degradación declarada a markdown rotulado con todos los candidatos, y que elegir invoca el comando en el mismo turno. `commands/workspace-init.md` se comprimió para respetar la mediana de activación del presupuesto de contexto, sin retirar ninguna regla.
+
+### Notes
+
+- **Sólo cambios aditivos en el modelo JSON.** Ningún campo de `aw status` ni de `aw resume` se retiró ni cambió de significado: el envelope de `status` gana `loose_sessions`, `PipelineItem` gana `detail`, y `resume` gana `candidates` y el estado `uninitialized`. La acción `board` del motor de flow y `runResumeSummary` —que alimenta el hook de precompactación— siguen leyendo lo mismo.
+- El presupuesto de contexto cierra en verde en sus tres tramos sin re-congelar el baseline: `activation.median` queda en 2528 contra un techo de 2532, el mismo valor que antes del cambio.
+
 ## [22.1.0] — 2026-08-16
 
 **Un plan y su spec pueden volver a estar de acuerdo sin rehacer ninguno de los dos.** Hasta acá, cuando la ejecución encontraba una divergencia con la spec, las únicas salidas eran seguir de largo o rehacer el linaje entero: el gate de desviación era doctrina sin máquina y el recorrido lo auto-aplicaba hasta el commit. Ahora la corrida se detiene, ofrece cuatro salidas, y la componible registra una decisión durable que enmienda el contrato sin reescribir lo que ya se validó.
