@@ -49,6 +49,9 @@ export function renderStructuredChoiceStamp(spec: HarnessSpec): string {
 
   if (binding.state === "native" && binding.tool !== null) {
     lines[0] += ` Present every human and authorization boundary with \`${binding.tool}\`${ceilingClause(binding.ceilings)}.`;
+    // The forcing sentence: on a host whose own prompt nudges toward prose, the
+    // boundary's options are content, and prose silently drops them.
+    lines.push("While it is reachable, never render a boundary as plain prose instead.");
     lines.push(sentenceClause(binding.sentence, binding.sentenceMaxChars));
     if (binding.customAnswer) {
       lines.push(
@@ -58,13 +61,27 @@ export function renderStructuredChoiceStamp(spec: HarnessSpec): string {
     // The condition leads: a reader who stops at the comma still knows WHEN this
     // applies. Trailing it after the fallback's own long description buried it.
     lines.push(`When ${binding.fallbackReason}, fall back to ${LABELED_MARKDOWN}.`);
+  } else if (binding.state === "degraded" && binding.tool !== null) {
+    // Degraded ≠ denied: the mechanism exists and some turns really offer it, so
+    // the stamp orders using it exactly then — which self-heals the day the host
+    // lists it more often — and names when (and why) markdown takes over.
+    lines[0] += ` Its \`${binding.tool}\` is not always offered: whenever the current turn lists it among the available tools, present every human and authorization boundary with it${ceilingClause(binding.ceilings)}.`;
+    lines.push(sentenceClause(binding.sentence, binding.sentenceMaxChars));
+    if (binding.customAnswer) {
+      lines.push(
+        "It already offers a free-text answer, so do not add an `Other` option of your own.",
+      );
+    }
+    lines.push(`When ${binding.fallbackReason}, fall back to ${LABELED_MARKDOWN}.`);
+    // A degraded host's own prompt tends to prefer prose exactly where the tool is
+    // missing (codex: "never write a multiple choice question as a textual
+    // assistant message") — and prose silently drops the alternatives.
+    lines.push(
+      "Even where this host's own guidance prefers a plain-text question, a Workline boundary still presents every option.",
+    );
   } else {
     lines[0] += ` Present every human and authorization boundary as ${LABELED_MARKDOWN}.`;
-    lines.push(
-      binding.tool === null
-        ? `This host exposes no native selection surface: ${binding.fallbackReason}.`
-        : `Its \`${binding.tool}\` is not reachable: ${binding.fallbackReason}.`,
-    );
+    lines.push(`This host exposes no native selection surface: ${binding.fallbackReason}.`);
   }
 
   lines.push(CONTENT_RULE);

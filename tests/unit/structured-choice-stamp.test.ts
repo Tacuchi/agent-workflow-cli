@@ -42,6 +42,9 @@ describe("renderStructuredChoiceStamp — el mecanismo de ESTE host, no uno gen�
     expect(stamp).toContain("reserving one question slot for the `flow` control");
     // Label y oración funcional van a campos propios en kimi.
     expect(stamp).toContain("their own fields");
+    // El forzado que pide la doctrina: mientras la herramienta alcanza, la
+    // frontera jamás se presenta como prosa.
+    expect(stamp).toContain("never render a boundary as plain prose");
   });
 
   it("la regla de no duplicar `Other` aparece exactamente donde el host ya ofrece respuesta libre", () => {
@@ -49,10 +52,13 @@ describe("renderStructuredChoiceStamp — el mecanismo de ESTE host, no uno gen�
       "do not add an `Other` option of your own",
     );
     // Derivado, no deletreado: si un host cambia de opinión sobre su respuesta
-    // libre, este test lo persigue en vez de quedarse pineado a un host.
+    // libre, este test lo persigue en vez de quedarse pineado a un host. La regla
+    // acompaña a la HERRAMIENTA (también gateada por turno), nunca al fallback.
     for (const spec of HARNESSES) {
       const expected =
-        spec.structuredChoice.state === "native" && spec.structuredChoice.customAnswer;
+        spec.structuredChoice.state !== "unsupported" &&
+        spec.structuredChoice.tool !== null &&
+        spec.structuredChoice.customAnswer;
       const hasRule = renderStructuredChoiceStamp(spec).includes("`Other` option");
       expect(hasRule, spec.id).toBe(expected);
     }
@@ -90,14 +96,20 @@ describe("renderStructuredChoiceStamp — el mecanismo de ESTE host, no uno gen�
     expect(stamp).toContain("degradation to declare, never a sentence to trim");
   });
 
-  it("un host degradado presenta markdown y nombra la razón, sin prometer la herramienta", () => {
+  it("un host degradado con herramienta la usa cuando el turno la lista, y cae a markdown cuando no", () => {
     const stamp = renderStructuredChoiceStamp(specOf("codex"));
-    expect(stamp).toContain("Present every human and authorization boundary as labeled markdown");
-    expect(stamp).toContain("is not reachable");
+    // El gate real (0.149.0) es la lista de tools del turno — el propio prompt de
+    // codex dice "only when it is listed": cuando está listada, SE USA.
+    expect(stamp).toContain("`request_user_input`");
+    expect(stamp).toContain("lists it among the available tools");
+    expect(stamp).toContain("present every human and authorization boundary with it");
+    expect(stamp).toContain("at most 3 questions per call and 3 options each");
+    // Cuando no está listada, el fallback llega con su razón accionable…
+    expect(stamp).toContain("fall back to labeled markdown");
     expect(stamp).toContain("Default mode");
     expect(stamp).toContain("default_mode_request_user_input");
-    // Nunca dice "usá request_user_input": eso es exactamente lo que el router niega.
-    expect(stamp).not.toContain("boundary with `request_user_input`");
+    // …y contrarresta el prompt del host, que ahí prefiere prosa sin opciones.
+    expect(stamp).toContain("still presents every option");
   });
 
   it("un host sin superficie lo dice, y no toma prestado el binding de otro", () => {
@@ -221,7 +233,8 @@ describe("la superficie instalada lleva el binding de su host (y el bundle canó
     expect(result.ok).toBe(true);
     const skill = await readFile(join(home, ".codex/skills/w-quick/SKILL.md"), "utf8");
     expect(skill).toContain("(`codex`, stamped at install)");
-    expect(skill).toContain("as labeled markdown");
+    expect(skill).toContain("`request_user_input`");
+    expect(skill).toContain("fall back to labeled markdown");
     expect(skill).not.toContain("`AskUserQuestion`");
   });
 

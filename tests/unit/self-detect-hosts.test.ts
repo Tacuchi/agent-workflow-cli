@@ -174,10 +174,11 @@ describe("selfDetectHosts — cuatro estados observables por host", () => {
         ?.capabilities.find((c) => c.id === "structured-choice");
     expect(sc("claude")?.status).toBe("native");
     expect(sc("claude")?.detail).toContain("AskUserQuestion");
-    // Codex: la herramienta EXISTE y el router la niega en Default mode → degradado,
-    // nunca "native", y el detalle nombra por qué.
+    // Codex: la herramienta EXISTE pero el turno decide si la lista (Default mode
+    // no lo hace) → degradado, nunca "native", y el detalle dice cuándo SÍ se usa.
     expect(sc("codex")?.status).toBe("degraded");
-    expect(sc("codex")?.detail).toContain("not reachable");
+    expect(sc("codex")?.detail).toContain("not always offered");
+    expect(sc("codex")?.detail).toContain("use it when the turn lists it");
     expect(sc("codex")?.detail).toContain("Default mode");
     // Warp/Oz: sin superficie que anunciar.
     expect(sc("oz")?.status).toBe("unsupported");

@@ -229,13 +229,14 @@ describe("Structured-choice — opciones funcionales y bindings multi-host", () 
     expect(bindings["Warp / Oz"]).toContain("labeled markdown");
     expect(bindings.Generic).toContain("labeled markdown");
 
-    // Estas dos celdas las corrigió la sonda de 2026-08-04, y lo que se exige acá
-    // es MÁS que antes: no basta con nombrar la herramienta, la fila tiene que
-    // decir si se alcanza. "when exposed" no decía cuándo, y la respuesta real es
-    // "hoy, nunca".
+    // La celda de codex la corrigió la sonda de 2026-08-04 ("not reachable") y la
+    // re-sonda de 2026-08-22 sobre 0.149.0 la volvió a corregir: el gate real es la
+    // lista de tools DEL TURNO (Default mode no la lista; exec nunca), así que la
+    // fila exige la semántica por turno con su fallback, no una negativa categórica.
     expect(bindings.Codex).toContain("`request_user_input`");
-    expect(bindings.Codex).toMatch(/not reachable/);
+    expect(bindings.Codex).toMatch(/per turn/);
     expect(bindings.Codex).toContain("Default mode");
+    expect(bindings.Codex).toContain("labeled markdown");
     // La herramienta viva de gemini es `AskQuestion` (Antigravity); `ask_user` es
     // del Gemini CLI retirado y NO está en el binario instalado. La fila tiene que
     // nombrar la primera y desmentir la segunda, no listarlas como equivalentes.

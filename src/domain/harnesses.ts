@@ -414,20 +414,22 @@ export const HARNESSES: readonly HarnessSpec[] = [
     skillsDirs: [".agents/skills", ".codex/skills"],
     installTarget: "codex",
     invocation: MENTION,
-    // `degraded`, not `unsupported`: the tool IS in the runtime (its own router and
-    // TUI renderer name it), so what is missing is reachability — and that has an
-    // opt-in worth naming instead of a capability worth denying.
+    // `degraded`, not `unsupported`: the tool and its whole TUI overlay ARE in the
+    // runtime — what gates it is the TURN's tool list (its own prompt: "only when
+    // it is listed in the available tools for this turn"), so the binding says
+    // "use it when listed" instead of denying the capability, and self-heals when
+    // a mode lists it or the opt-in graduates.
     structuredChoice: {
       state: "degraded",
       tool: "request_user_input",
       ceilings: { questions: 3, options: 3 },
       sentence: "field",
       sentenceMaxChars: null,
-      customAnswer: false,
+      customAnswer: true,
       fallbackReason:
-        "its router refuses the call in Default mode (`request_user_input is unavailable in Default mode`) and exec mode never offers it, while the opt-in `default_mode_request_user_input` is still under development",
+        "the turn does not list it (Default mode leaves it out while the opt-in `default_mode_request_user_input` — `[features]` in `~/.codex/config.toml` — stays under development, and `codex exec` never supports it)",
       evidence:
-        "probe 2026-08-04 on codex-cli 0.146.0: a real run hit the router refusal and the model listed its own tool set without it; `codex features list` reports the opt-in as 'under development false'",
+        "probe 2026-08-22 on codex-cli 0.149.0, read from the shipped binary: the full `RequestUserInputOverlay` TUI exists (selection + free-form answer + an `Other: ` write-in row); availability is per turn (embedded prompt: 'Use the `request_user_input` tool only when it is listed in the available tools for this turn', plus 'Never write a multiple choice question as a textual assistant message'), gated by the literals 'not supported in exec mode', 'requires an interactive stdin terminal' and 'can only be used by the root thread'; `codex features list` still reports `default_mode_request_user_input` as 'under development false'. Supersedes the 0.146.0 router refusal of 2026-08-04",
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
   },
@@ -464,7 +466,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason:
         "its launcher is a 122-byte Bash shim inside Warp.app, with no tool surface of its own to reach",
       evidence:
-        "probe 2026-08-04 on oz v0.2026.07.29.09.05: the shim carries no question-tool name at all",
+        "probe 2026-08-04 on oz v0.2026.07.29.09.05: the shim carries no question-tool name at all. Re-verified 2026-08-22 on oz v0.2026.08.19: still a 122-byte Bash shim with no tool surface of its own",
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
   },
@@ -647,7 +649,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason:
         "a non-interactive run (`opencode run`) starts with the `question` permission set to `deny`, or the call fails",
       evidence:
-        "probe 2026-08-04 on opencode 1.18.5: `QuestionOption` carries its own `label` and `description`, `custom` defaults to true, and no count ceiling is declared; the exported session of a real `run` showed `question` denied",
+        'probe 2026-08-04 on opencode 1.18.5: `QuestionOption` carries its own `label` and `description`, `custom` defaults to true, and no count ceiling is declared; the exported session of a real `run` showed `question` denied. Re-verified 2026-08-22 on opencode 1.18.15: `QuestionOption` and the non-interactive `{"permission":"question","action":"deny"}` default read from the installed binary',
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
   },
@@ -718,7 +720,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       customAnswer: true,
       fallbackReason: "the call fails, or an option's consequence does not fit that cap",
       evidence:
-        "probe 2026-08-04 on crush v0.87.0: ceilings 5×5, a description required on every question (<300 chars) and on every choice (<100 chars), and an automatic fill-in option, all read from the installed binary; the run itself could not be verified (expired auth)",
+        "probe 2026-08-04 on crush v0.87.0: ceilings 5×5, a description required on every question (<300 chars) and on every choice (<100 chars), and an automatic fill-in option, all read from the installed binary; the run itself could not be verified (expired auth). Re-verified 2026-08-22 on crush v0.90.0: same ceilings and caps, and the tool now details four question types (yes_no/single_choice/multi_choice/free_text) with a tabbed multi-question form",
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
   },
@@ -799,7 +801,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason:
         "the call fails, or the permission mode is `auto` or the run is non-interactive (this host's own system rule forbids the call there)",
       evidence:
-        "probe 2026-08-04 on kimi 0.31.1: the tool is in the default agent's list and its schema is 1-4 questions × 2-4 options with `label` + `description`; in `--prompt` it refused the call ('auto mode is active') and degraded to labeled markdown on its own, options and consequences intact",
+        "probe 2026-08-04 on kimi 0.31.1: the tool is in the default agent's list and its schema is 1-4 questions × 2-4 options with `label` + `description`; in `--prompt` it refused the call ('auto mode is active') and degraded to labeled markdown on its own, options and consequences intact. Re-verified 2026-08-22 on kimi 0.36.1: the tool and its auto rule ('Do NOT call AskUserQuestion while auto mode is active') read verbatim from the shipped binary",
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "SubagentStart" },
   },

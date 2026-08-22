@@ -321,7 +321,7 @@ function structuredChoiceDetail(spec: HarnessSpec): string {
     return `${binding.tool} (${ceiling}); labeled markdown when ${binding.fallbackReason}`;
   }
   if (binding.tool !== null) {
-    return `${binding.tool} exists but is not reachable (${binding.fallbackReason}) → labeled markdown`;
+    return `${binding.tool} exists but is not always offered (${binding.fallbackReason}) → use it when the turn lists it, else labeled markdown`;
   }
   return `no native selection surface (${binding.fallbackReason}) → labeled markdown`;
 }
