@@ -237,6 +237,9 @@ describe("Structured-choice — opciones funcionales y bindings multi-host", () 
     expect(bindings.Codex).toMatch(/per turn/);
     expect(bindings.Codex).toContain("Default mode");
     expect(bindings.Codex).toContain("labeled markdown");
+    // La re-sonda del 2026-08-22 probó que el opt-in por config no alcanza: la
+    // fila tiene que nombrar el cambio de modo, que es la vía que sí existe.
+    expect(bindings.Codex).toMatch(/\/plan/);
     // La herramienta viva de gemini es `AskQuestion` (Antigravity); `ask_user` es
     // del Gemini CLI retirado y NO está en el binario instalado. La fila tiene que
     // nombrar la primera y desmentir la segunda, no listarlas como equivalentes.

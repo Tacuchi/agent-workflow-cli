@@ -107,7 +107,12 @@ describe("renderStructuredChoiceStamp — el mecanismo de ESTE host, no uno gen�
     // Cuando no está listada, el fallback llega con su razón accionable…
     expect(stamp).toContain("fall back to labeled markdown");
     expect(stamp).toContain("Default mode");
+    // …que NO manda al opt-in: activarlo no agrega la herramienta (probado
+    // 2026-08-22), y decir sólo "sigue under development" se lee como "activalo".
     expect(stamp).toContain("default_mode_request_user_input");
+    expect(stamp).toContain("does NOT add it");
+    // La vía que sí existe es del humano y está en su TUI, no en un flag.
+    expect(stamp).toContain("`/plan`");
     // …y contrarresta el prompt del host, que ahí prefiere prosa sin opciones.
     expect(stamp).toContain("still presents every option");
   });
