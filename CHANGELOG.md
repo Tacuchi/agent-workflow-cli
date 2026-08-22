@@ -4,6 +4,19 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [22.4.1] — 2026-08-22
+
+**El estampado de codex mandaba a un opt-in que no sirve.** La 22.4.0 dejó la razón del fallback diciendo que `default_mode_request_user_input` "sigue *under development*" — que se lee como *activalo y funciona*. Tres turnos reales por `codex debug app-server send-message-v2` probaron lo contrario: con el flag en `true` (y `codex features list` reportándolo así), el modelo sigue contestando que la herramienta no está disponible en Default mode, y ahí mismo pide que se active el modo Plan. Forzar `-c collaboration_mode=plan` tampoco la trae, porque un modo se cambia por slash command del TUI y no por config.
+
+### Fixed
+
+- **La razón del fallback de codex nombra la vía que sí existe.** Deja de sugerir el opt-in —dice que activarlo **no** agrega la herramienta— y nombra el cambio de modo en el TUI (`/plan`, `/pair`) como el movimiento de la persona, nunca del agente. Un agente que leía la versión anterior podía perseguir un flag inútil o, peor, intentar escribir en la config del host.
+- **`HARNESS.md` fecha el probe y sus límites.** La celda de codex y la nota de evidencia registran los tres turnos, que `ModeKind` tiene seis valores (`plan|default|code|custom|execute|pair_programming`), y que el canal del probe **no tiene TTY** —lo que la herramienta exige—, así que lo que queda probado es que el opt-in no es la palanca, nunca que un modo interactivo falle.
+
+### Added
+
+- **La vía nativa independiente del modo queda registrada.** El handshake MCP de codex, capturado en el mismo probe, anuncia `capabilities.elicitation {form, url}`, y el host usa ese mismo mecanismo para sus propias aprobaciones de tools: un servidor MCP puede rendir un formulario nativo incluso en Default mode. Es doctrina en `HARNESS.md`, no todavía una capacidad del CLI.
+
 ## [22.4.0] — 2026-08-22
 
 **El estampado de codex ordenaba «markdown siempre» contra un runtime que ya trae el picker completo.** La re-sonda del 2026-08-22 sobre codex-cli 0.149.0 encontró el overlay TUI de `request_user_input` terminado —selección, respuesta libre y fila `Other`— y un gate que dejó de ser la negativa categórica de 0.146.0: hoy es **la lista de tools del turno** («use it only when it is listed in the available tools for this turn», dice su propio prompt embebido). Peor: ese mismo prompt **prohíbe presentar multiple-choice como texto**, que es exactamente el fallback que el estampado ordenaba, así que en Default mode el host empuja al modelo a preguntar en prosa vaga en vez de mostrar el tablero de opciones.
