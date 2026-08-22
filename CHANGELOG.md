@@ -4,6 +4,26 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [22.4.0] — 2026-08-22
+
+**El estampado de codex ordenaba «markdown siempre» contra un runtime que ya trae el picker completo.** La re-sonda del 2026-08-22 sobre codex-cli 0.149.0 encontró el overlay TUI de `request_user_input` terminado —selección, respuesta libre y fila `Other`— y un gate que dejó de ser la negativa categórica de 0.146.0: hoy es **la lista de tools del turno** («use it only when it is listed in the available tools for this turn», dice su propio prompt embebido). Peor: ese mismo prompt **prohíbe presentar multiple-choice como texto**, que es exactamente el fallback que el estampado ordenaba, así que en Default mode el host empuja al modelo a preguntar en prosa vaga en vez de mostrar el tablero de opciones.
+
+El binding degradado pasa de negar la herramienta a **usarla exactamente cuando el turno la ofrece**, el fallback queda blindado contra el prompt del host, y los estampados nativos ganan la frase de forzado que faltaba.
+
+### Changed
+
+- **El estampado degradado-con-herramienta ordena usar el tool cuando el turno lo lista**, con sus techos (3×3 en codex), sus campos y la regla de no duplicar `Other`; cuando el turno no lo lista, cae a markdown etiquetado nombrando la razón accionable — Default mode lo deja fuera mientras el opt-in `default_mode_request_user_input` (`[features]` en `~/.codex/config.toml`) siga *under development*, y `codex exec` nunca lo soporta. Autocurativo: si un modo lo lista o el opt-in madura, el picker nativo se usa **sin re-release**.
+- **La contra-instrucción al prompt del host cierra el estampado degradado**: «Even where this host's own guidance prefers a plain-text question, a Workline boundary still presents every option». Sin ella, la doctrina del host y la de Workline chocan en silencio y gana la que borra las alternativas.
+- **Los estampados nativos ganan una frase de forzado**: «While it is reachable, never render a boundary as plain prose instead» — una frontera presentada como prosa teniendo la herramienta alcanzable es un defecto, no un estilo.
+- **El catálogo de codex queda re-fechado al 2026-08-22 sobre 0.149.0**, leído del binario: overlay completo, gate por turno con los literales `not supported in exec mode`, `requires an interactive stdin terminal` y `can only be used by the root thread`, y `customAnswer: true` (fila `Other:` + flujo free-form propios). El detail del doctor (`structured-choice`) dice cuándo SÍ se usa en vez de sólo negar.
+- **Evidencias re-verificadas al 2026-08-22** para kimi 0.36.1, opencode 1.18.15, crush v0.90.0 y oz v0.2026.08.19 — bindings sin cambio, fechados contra lo que hoy está instalado. `HARNESS.md` re-fecha la fila structured-choice, reescribe su nota de evidencia y corrige la celda de codex a la semántica por turno.
+
+### Notes
+
+- **Nada que migrar.** claude/kimi/agy/opencode/crush conservan su binding; lo que cambia en sus wrappers instalados es la frase de forzado. agy sigue en 1.0.16, la misma versión de su evidencia vigente.
+- **Verificar el picker en un codex interactivo es un handoff**, nunca condición de cierre: con la skill re-estampada, un modo que liste el tool (p. ej. Plan) debe presentar la frontera con el overlay nativo.
+- **Vía futura anotada:** `tool_call_mcp_elicitation` está *stable* y activo en codex 0.149.0 — un servidor MCP de Workline podría pedir input estructurado nativo incluso en Default mode (BACKLOG de la sesión 139, candidato a spec).
+
 ## [22.3.1] — 2026-08-18
 
 **Dos entradas del catálogo quedaron fechadas antes de la verificación que las respalda.** `crush` decía haberse verificado el 2026-08-04 contra v0.87.0 y `opencode` el 2026-08-04 contra 1.18.5, mientras `HARNESS.md` y las notas de la 22.3.0 declaran el contrato fechado el 2026-08-18 contra crush v0.89.0 y opencode 1.18.15 — que es contra lo que se leyó de verdad.
