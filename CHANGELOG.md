@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [22.4.2] — 2026-08-22
+
+**La razón del fallback de codex crecía entre la condición y su consecuencia.** La cláusula generada quedaba `When A — B; C, so D, fall back to E`: tres oraciones intercaladas antes de decir qué hacer. El estampado se lee en cada invocación de cada superficie de ese host, así que una cláusula que obliga a releerla es un costo real.
+
+### Fixed
+
+- **La razón del fallback cierra su aposición entre paréntesis**, de modo que `When … (…), fall back to labeled markdown` vuelve a leerse de una pasada. Ningún dato se perdió: el modo por defecto, `codex exec`, el opt-in que no alcanza, su fecha de prueba y el cambio de modo del TUI siguen todos nombrados.
+
 ## [22.4.1] — 2026-08-22
 
 **El estampado de codex mandaba a un opt-in que no sirve.** La 22.4.0 dejó la razón del fallback diciendo que `default_mode_request_user_input` "sigue *under development*" — que se lee como *activalo y funciona*. Tres turnos reales por `codex debug app-server send-message-v2` probaron lo contrario: con el flag en `true` (y `codex features list` reportándolo así), el modelo sigue contestando que la herramienta no está disponible en Default mode, y ahí mismo pide que se active el modo Plan. Forzar `-c collaboration_mode=plan` tampoco la trae, porque un modo se cambia por slash command del TUI y no por config.
