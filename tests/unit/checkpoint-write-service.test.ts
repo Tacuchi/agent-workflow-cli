@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runCheckpointWrite } from "../../src/application/checkpoint-write-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import type { DirEntry } from "../../src/ports/file-system.js";
-import type { DiffNumstatEntry, GitPort } from "../../src/ports/git.js";
+import type { GitPort, LocalChange, NumstatCounts } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -25,7 +25,38 @@ function makeFs(
   return fs;
 }
 
+const localChange = (path: string, untracked = false): LocalChange => ({
+  path,
+  from: null,
+  code: untracked ? "??" : "M.",
+  staged: !untracked,
+  unstaged: false,
+  untracked,
+  head_mode: untracked ? null : "100644",
+  worktree_mode: "100644",
+});
+
+/**
+ * Seeded on purpose, and it records where it was asked.
+ *
+ * A fake missing `localChanges` still let every one of these suites pass: the
+ * collection threw `is not a function`, the whole inventory degraded to "unit
+ * not observed", and no assert noticed — so the only path that reaches
+ * `extractSessionState` in the whole test suite was the failure branch. A
+ * default that returns real changes is what makes these tests exercise the
+ * feature they are supposed to cover.
+ */
 class FakeGit implements GitPort {
+  /** Every repoPath git was asked about, so a test can prove WHERE it looked. */
+  readonly asked: string[] = [];
+
+  constructor(
+    private readonly changes: Record<string, LocalChange[]> = {
+      "/cwd": [localChange("src/foo.ts"), localChange("nuevo.md", true)],
+    },
+    private readonly prefix: string | null = "",
+  ) {}
+
   async isGitRepo() {
     return true;
   }
@@ -38,8 +69,31 @@ class FakeGit implements GitPort {
   async changedFiles() {
     return [];
   }
-  async diffNumstat(): Promise<DiffNumstatEntry[]> {
-    return [];
+  async repoPrefix(repo: string): Promise<string | null> {
+    this.asked.push(`repoPrefix:${repo}`);
+    return this.prefix;
+  }
+
+  async localChanges(repo: string): Promise<LocalChange[]> {
+    this.asked.push(`localChanges:${repo}`);
+    const found = this.changes[repo];
+    if (found === undefined) throw new Error(`git status failed in ${repo}`);
+    return found;
+  }
+
+  async head(): Promise<string | null> {
+    return "abc1234def5678";
+  }
+
+  async numstatFor(
+    _repo: string,
+    tracked: string[],
+    untracked: string[],
+  ): Promise<Record<string, NumstatCounts>> {
+    const counts: Record<string, NumstatCounts> = {};
+    for (const path of tracked) counts[path] = { added: "3", removed: "1" };
+    for (const path of untracked) counts[path] = { added: "7", removed: "0" };
+    return counts;
   }
   async checkout(): Promise<void> {}
   async pull(): Promise<void> {}
@@ -329,5 +383,97 @@ _Stack sin detectar._
     expect(r2.preserved).toBeUndefined();
     expect(content1.length).toBeGreaterThan(50);
     expect(content1).toContain(sessionFolder);
+  });
+});
+
+// ── the write pipeline's happy path, which had no test at all (spec 038) ─────
+
+describe("el inventario que llega al CHECKPOINT.md escrito", () => {
+  const folder = "session900-inventario";
+  const sessionPath = `/cwd/.workflow/sessions/${folder}`;
+
+  function seeded(): MemFs {
+    return makeFs(
+      new Map([
+        [
+          "/cwd/CLAUDE.md",
+          workflowProjectBlock({
+            proyecto: "p",
+            sessions: [{ folder, phase: "execution", branches: ["core:feat/x"] }],
+          }),
+        ],
+      ]),
+      new Map([
+        ["/cwd/.workflow/sessions", [{ path: sessionPath, name: folder, type: "dir" }]],
+        [sessionPath, []],
+      ]),
+    );
+  }
+
+  async function write(git: FakeGit) {
+    const fs = seeded();
+    const result = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), git, paths);
+    return { result, body: await fs.readText(`${sessionPath}/CHECKPOINT.md`) };
+  }
+
+  it("escribe las rutas realmente recolectadas, con su límite y su referencia", async () => {
+    const { body } = await write(new FakeGit());
+
+    // Each of these fails if the collection degrades to "unit not observed",
+    // which is exactly what a fake without `localChanges` used to produce
+    // while every assertion in this file stayed green.
+    expect(body).toContain("_Scope: workspace at `/cwd` (vs abc1234)");
+    expect(body).toContain("- src/foo.ts (+3 -1) — _[AI: purpose in 1 line]_");
+    expect(body).toContain("- nuevo.md (+7 -0) — _[AI: purpose in 1 line]_");
+    expect(body).not.toContain("Not observed");
+    expect(body).not.toContain("No uncommitted changes");
+  });
+
+  it("cuenta el alcance en el JSON de salida, no cero", async () => {
+    const { result } = await write(new FakeGit());
+    expect("files_touched_count" in result && result.files_touched_count).toBe(2);
+  });
+
+  it("le pregunta a git por la RAÍZ del workspace y por nada más", async () => {
+    const git = new FakeGit();
+    await write(git);
+    // The seam the defect lived in: the boundary must be the workspace root,
+    // never whatever directory the process happened to start in.
+    expect(git.asked).toContain("repoPrefix:/cwd");
+    expect(git.asked).toContain("localChanges:/cwd");
+    expect(git.asked.every((call) => call.endsWith(":/cwd"))).toBe(true);
+  });
+
+  it("una recolección que falla se declara, y NO se escribe como árbol limpio", async () => {
+    // No entry for `/cwd`, so the seeded fake throws the way real git would.
+    const { result, body } = await write(new FakeGit({}));
+
+    expect(body).toContain("- **Not observed — workspace** at `/cwd`: git status failed in /cwd");
+    expect(body).toContain("_No unit in scope could be read");
+    expect(body).not.toContain("No uncommitted changes");
+    expect("files_touched_count" in result && result.files_touched_count).toBe(0);
+  });
+
+  it("acota al workspace cuando está anidado en un repositorio mayor", async () => {
+    // Prefix says: this boundary sits at `projects/ws/` inside its repository,
+    // so git's repo-root-relative answers must be filtered and re-spelled.
+    const git = new FakeGit(
+      {
+        "/cwd": [
+          localChange("projects/ws/mio.ts"),
+          localChange("projects/other/ajeno.ts"),
+          localChange("projects/ws2/vecino.ts"),
+        ],
+      },
+      "projects/ws/",
+    );
+    const { body, result } = await write(git);
+
+    expect(body).toContain("- mio.ts (+3 -1)");
+    expect(body).not.toContain("ajeno");
+    // `projects/ws2/` shares a textual prefix with `projects/ws/` and must not
+    // be swallowed by it — the trailing slash is what keeps them apart.
+    expect(body).not.toContain("vecino");
+    expect("files_touched_count" in result && result.files_touched_count).toBe(1);
   });
 });

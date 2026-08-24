@@ -3,6 +3,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { findActiveSessions } from "./checkpoint-service.js";
+import { totalInScope } from "./checkpoint/files-touched.js";
 import { formatCheckpointMd, isPristineCheckpoint } from "./checkpoint/markdown.js";
 import { extractSessionState } from "./checkpoint/state-reader.js";
 import {
@@ -11,7 +12,7 @@ import {
   resolveLifecycleTarget,
   unresolvedDetail,
 } from "./lifecycle-target.js";
-import type { PathsService } from "./paths-service.js";
+import { type PathsService, resolveWorkspaceRoot } from "./paths-service.js";
 import { writeSessionNarrative } from "./session-narrative.js";
 import type { SessionCandidate, SessionEntry, SessionResolutionError } from "./session-resolver.js";
 
@@ -103,7 +104,15 @@ export async function runCheckpointWrite(
     };
   }
 
-  const state = await extractSessionState(fs, git, env.cwd(), session.path);
+  // The workspace root rather than the raw cwd. Today the two coincide by
+  // construction — session resolution already refuses to run from a
+  // subdirectory, so nothing reaches here with a deeper cwd — and what actually
+  // bounds the reading is `repoPrefix` inside the collection. This stays the
+  // resolved root anyway: it is the value the boundary is DEFINED as, so the
+  // day session resolution learns to walk up, the inventory does not silently
+  // widen to the parent repository along with it.
+  const workspaceRoot = await resolveWorkspaceRoot(fs, env, paths);
+  const state = await extractSessionState(fs, git, workspaceRoot, session.path);
   const md = formatCheckpointMd(state);
   await fs.mkdirp(session.path);
   await fs.writeText(cpPath, md);
@@ -119,7 +128,7 @@ export async function runCheckpointWrite(
     progress_pct: state.progress_pct,
     tasks_open: state.tasks.open,
     tasks_closed: state.tasks.closed,
-    files_touched_count: state.files_touched.length,
+    files_touched_count: totalInScope(state.files_touched),
   };
 }
 
@@ -174,14 +183,15 @@ export async function runAutoCompactOnClose(
       action: detail.action,
     };
   }
-  const entry = await writeCheckpointForTarget(fs, git, env.cwd(), target.session);
+  const workspaceRoot = await resolveWorkspaceRoot(fs, env, paths);
+  const entry = await writeCheckpointForTarget(fs, git, workspaceRoot, target.session);
   return { checkpoints_written: [entry] };
 }
 
 async function writeCheckpointForTarget(
   fs: FileSystemPort,
   git: GitPort,
-  cwd: string,
+  workspaceRoot: string,
   session: SessionEntry,
 ): Promise<AutoCompactOnCloseOutput["checkpoints_written"][number]> {
   const cpPath = join(session.path, "CHECKPOINT.md");
@@ -197,7 +207,7 @@ async function writeCheckpointForTarget(
     };
   }
   try {
-    const state = await extractSessionState(fs, git, cwd, session.path);
+    const state = await extractSessionState(fs, git, workspaceRoot, session.path);
     const md = formatCheckpointMd(state);
     await fs.mkdirp(session.path);
     await fs.writeText(cpPath, md);

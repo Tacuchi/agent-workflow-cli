@@ -64,3 +64,25 @@ describe("computeCheckpointStatus — EN canon (R3 reader gap fix)", () => {
     expect(age ?? 0).toBeGreaterThan(3000);
   });
 });
+
+// ── the heading the generator emits TODAY, not only the legacy one ───────────
+
+describe("el encabezado vigente de archivos tocados se sigue leyendo", () => {
+  // The fixture above pins `## Files touched (post-last-commit)`, which the
+  // generator no longer writes: it proves legacy checkpoints still parse, and
+  // proves nothing about the heading every NEW checkpoint carries. Both belong
+  // to the same alias group, and only a test says so.
+  const CURRENT = EN_CHECKPOINT.replace("## Files touched (post-last-commit)", "## Files touched");
+
+  it("`## Files touched` sin sufijo temporal sigue detectando su marcador sin rellenar", async () => {
+    const path = "/fake/session043/CHECKPOINT.md";
+    const fs = new MemFs({ lenient: true }).file(path, CURRENT);
+    const result = await computeCheckpointStatus(fs, "/fake/session043", {
+      now: new Date("2026-05-08T12:00:00Z"),
+    });
+
+    expect(CURRENT).not.toContain("post-last-commit");
+    expect(result.unfilled_placeholders).toContain("archivos_proposito");
+    expect(result.status).toBe("draft");
+  });
+});

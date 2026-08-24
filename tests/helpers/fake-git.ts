@@ -1,4 +1,4 @@
-import type { DiffNumstatEntry, GitPort, MergeResult, WorktreeEntry } from "../../src/ports/git.js";
+import type { GitPort, MergeResult, NumstatCounts, WorktreeEntry } from "../../src/ports/git.js";
 
 /** A recorded GitPort call: method name + positional args. */
 export interface GitCall {
@@ -109,8 +109,17 @@ export class RecordingGit implements GitPort {
     return this.opts.changed ?? [];
   }
 
-  async diffNumstat(_repo: string): Promise<DiffNumstatEntry[]> {
-    return [];
+  /** Every boundary IS its repository root: nothing here reads a nested one. */
+  async repoPrefix(): Promise<string | null> {
+    return "";
+  }
+
+  async numstatFor(
+    _repo: string,
+    _tracked: string[],
+    _untracked: string[],
+  ): Promise<Record<string, NumstatCounts>> {
+    return {};
   }
 
   private maybeThrow(op: RecordingGitOptions["throwOn"]): void {
