@@ -1,4 +1,10 @@
 import { createHash } from "node:crypto";
+import {
+  CONTEXTUAL_LIMIT,
+  type FilesTouched,
+  type TouchedFile,
+  WORKSPACE_UNIT,
+} from "./files-touched.js";
 import type { SessionState } from "./state-reader.js";
 
 /**
@@ -82,19 +88,77 @@ function appendDecisions(lines: string[], state: SessionState): void {
   }
 }
 
+/**
+ * The heading no longer says "post-last-commit".
+ *
+ * It promised a window this section never delivered — the inventory is the
+ * CURRENT state of the tree, and reading it as "what changed since the last
+ * commit of this session" is what made an operator distrust it. The reference
+ * each unit is actually compared against is now stated in the section itself,
+ * which is both honest and more useful than a label in the heading. The former
+ * headings stay readable: they are kept as aliases in the heading table.
+ */
 function appendFilesTouched(lines: string[], state: SessionState): void {
-  lines.push("", "## Files touched (post-last-commit)", "");
-  const files = state.files_touched;
-  if (files.length === 0) {
-    lines.push("_No uncommitted changes detected in cwd._");
+  const touched = state.files_touched;
+  lines.push("", "## Files touched", "");
+  lines.push(scopeLine(touched), "");
+  for (const unit of touched.unobserved) {
+    lines.push(`- **Not observed — ${unit.alias}** at \`${unit.boundary}\`: ${unit.reason}`);
+  }
+  if (touched.unobserved.length > 0) lines.push("");
+
+  // Claimed paths first: the readable cap applies to the rest, so nothing the
+  // session actually produced can be pushed out of sight by unrelated noise.
+  const shown = [...touched.linked, ...touched.contextual];
+  if (shown.length === 0) {
+    // "Nothing changed" is only sayable when something was read. A collection
+    // that failed is declared above and must never be spelled as a clean tree.
+    lines.push(
+      touched.observed.length === 0
+        ? "_No unit in scope could be read — see the declaration above._"
+        : "_No uncommitted changes inside the scope above._",
+    );
     return;
   }
-  for (const f of files.slice(0, 20)) {
-    lines.push(`- ${f.path} (+${f.added} -${f.removed}) — _[AI: purpose in 1 line]_`);
+  for (const file of shown) {
+    lines.push(`- ${labelOf(file)}${countsOf(file)} — _[AI: purpose in 1 line]_`);
   }
-  if (files.length > 20) {
-    lines.push(`- _… and ${files.length - 20} more_`);
+  if (touched.omitted.length > 0) {
+    // Named by unit, not merely counted: "30 more" over two units reads as if
+    // both were shown, and a reader has no way to tell which one was cut.
+    const total = touched.omitted.reduce((sum, entry) => sum + entry.count, 0);
+    const noun = total === 1 ? "change" : "changes";
+    const perUnit = touched.omitted.map((entry) => `${entry.unit} ${entry.count}`).join(", ");
+    lines.push(
+      `- _… and ${total} more contextual ${noun} not listed (cap ${CONTEXTUAL_LIMIT}): ${perUnit}_`,
+    );
   }
+}
+
+/** States the boundary and the reference, so the inventory explains itself. */
+function scopeLine(touched: FilesTouched): string {
+  if (touched.observed.length === 0) {
+    return "_Scope: no unit could be read. What this section reports is the current working-tree state, never a window over the session._";
+  }
+  const units = touched.observed.map((unit) => {
+    const reference =
+      unit.reference === null ? "no commit yet" : `vs ${unit.reference.slice(0, 7)}`;
+    return `${unit.alias} at \`${unit.boundary}\` (${reference})`;
+  });
+  return `_Scope: ${units.join("; ")}. Current working-tree state, untracked files included — not a window over the session._`;
+}
+
+/** A path from another unit is spelled with its alias: two units can share one. */
+function labelOf(file: TouchedFile): string {
+  return file.unit === WORKSPACE_UNIT ? file.path : `${file.unit}:${file.path}`;
+}
+
+function countsOf(file: TouchedFile): string {
+  if (file.added === null || file.removed === null) return "";
+  // git spells a binary file's deltas as `-`, and `(+- --)` reads like a
+  // rendering bug rather than like "this file has no line count".
+  if (file.added === "-" || file.removed === "-") return " (binary)";
+  return ` (+${file.added} -${file.removed})`;
 }
 
 function appendContext(lines: string[]): void {

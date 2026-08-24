@@ -1,8 +1,9 @@
 import { join } from "node:path";
 import type { DirEntry, FileSystemPort } from "../../ports/file-system.js";
-import type { DiffNumstatEntry, GitPort } from "../../ports/git.js";
+import type { GitPort } from "../../ports/git.js";
 import { localMinuteIso } from "../dates.js";
 import { findArtifact, listExistingArtifacts } from "../session-artifacts.js";
+import { type FilesTouched, collectFilesTouched } from "./files-touched.js";
 
 export interface SessionState {
   folder: string;
@@ -10,15 +11,20 @@ export interface SessionState {
   progress_pct: number | null;
   last_decision: { id: string; excerpt: string } | null;
   artefacts: Record<string, boolean | number>;
-  files_touched: DiffNumstatEntry[];
+  files_touched: FilesTouched;
   origen: string | null;
   timestamp: string;
 }
 
+/**
+ * `workspaceRoot` and not the process's cwd on purpose: the cwd is wherever the
+ * operator happened to stand, and using it made the inventory's boundary an
+ * accident of invocation instead of a property of the session.
+ */
 export async function extractSessionState(
   fs: FileSystemPort,
   git: GitPort,
-  cwd: string,
+  workspaceRoot: string,
   sessionPath: string,
 ): Promise<SessionState> {
   const folder = sessionPath.split(/[\\/]/).pop() ?? "";
@@ -27,7 +33,7 @@ export async function extractSessionState(
   const progressPct = tasks.total > 0 ? Math.round((100 * tasks.closed) / tasks.total) : null;
   const lastDecision = await readLastDecision(fs, sessionPath);
   const artefacts = await listArtefacts(fs, sessionPath);
-  const filesTouched = await git.diffNumstat(cwd);
+  const filesTouched = await collectFilesTouched(fs, git, workspaceRoot, sessionPath);
   const origen = await readOrigen(fs, sessionPath);
 
   return {

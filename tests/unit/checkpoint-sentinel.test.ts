@@ -5,7 +5,7 @@ import {
 } from "../../src/application/checkpoint-write-service.js";
 import { formatCheckpointMd } from "../../src/application/checkpoint/markdown.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import type { DiffNumstatEntry, GitPort } from "../../src/ports/git.js";
+import type { GitPort, LocalChange, NumstatCounts } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -40,8 +40,40 @@ class FakeGit implements GitPort {
   async changedFiles() {
     return [];
   }
-  async diffNumstat(): Promise<DiffNumstatEntry[]> {
-    return [];
+  async repoPrefix(): Promise<string | null> {
+    return "";
+  }
+
+  // Seeded, not empty: a fake without `localChanges` made the whole collection
+  // throw and degrade to "unit not observed", so these suites exercised only
+  // the failure branch while looking green.
+  async localChanges(): Promise<LocalChange[]> {
+    return [
+      {
+        path: "src/foo.ts",
+        from: null,
+        code: "M.",
+        staged: true,
+        unstaged: false,
+        untracked: false,
+        head_mode: "100644",
+        worktree_mode: "100644",
+      },
+    ];
+  }
+
+  async head(): Promise<string | null> {
+    return "abc1234def5678";
+  }
+
+  async numstatFor(
+    _repo: string,
+    tracked: string[],
+    _untracked: string[],
+  ): Promise<Record<string, NumstatCounts>> {
+    const counts: Record<string, NumstatCounts> = {};
+    for (const path of tracked) counts[path] = { added: "3", removed: "1" };
+    return counts;
   }
   async checkout(): Promise<void> {}
   async pull(): Promise<void> {}
@@ -212,7 +244,13 @@ describe("the sentinel is no longer a string the generator emits", () => {
       progress_pct: null,
       last_decision: null,
       artefacts: {},
-      files_touched: [],
+      files_touched: {
+        observed: [{ alias: "workspace", boundary: "/ws", reference: "abc1234" }],
+        unobserved: [],
+        linked: [],
+        contextual: [],
+        omitted: 0,
+      },
       origen: null,
       timestamp: "2026-05-08 12:00",
     }).replace("## Refs", `## Notas mías\n\n${PROSA}\n\n## Refs`);

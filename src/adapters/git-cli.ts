@@ -3,12 +3,12 @@ import type {
   CommitReceipt,
   ConflictStage,
   ConflictStages,
-  DiffNumstatEntry,
   GitAttempt,
   GitOperationState,
   GitPort,
   LocalChange,
   MergeResult,
+  NumstatCounts,
   RevertRehearsal,
   WorktreeEntry,
 } from "../ports/git.js";
@@ -167,30 +167,88 @@ export class GitCliAdapter implements GitPort {
     return `sha256:${hash.digest("hex")}`;
   }
 
-  async diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]> {
-    try {
+  async repoPrefix(repoPath: string): Promise<string | null> {
+    const result = await this.process.run(
+      "git",
+      ["rev-parse", "--show-prefix"],
+      this.opts(repoPath),
+    );
+    // A non-zero exit here means "this is not a repository", which is a real
+    // answer about a boundary rather than a failure to report as one.
+    if (result.code !== 0) return null;
+    return result.stdout.trim();
+  }
+
+  async numstatFor(
+    repoPath: string,
+    tracked: string[],
+    untracked: string[],
+  ): Promise<Record<string, NumstatCounts>> {
+    return {
+      ...(await this.trackedNumstat(repoPath, tracked)),
+      ...(await this.untrackedNumstat(repoPath, untracked)),
+    };
+  }
+
+  private async trackedNumstat(
+    repoPath: string,
+    paths: string[],
+  ): Promise<Record<string, NumstatCounts>> {
+    if (paths.length === 0) return {};
+    // `--relative` makes git spell the answer the way the caller asked the
+    // question — relative to THIS directory, not to the repository root — so a
+    // nested workspace gets back the same paths it passed in.
+    //
+    // `-z` is not a nicety: without it git applies `core.quotePath` and answers
+    // `"a\303\261o.txt"` for a path the caller asked about as `año.txt`. The
+    // lookup then misses and that file silently loses its counts. `localChanges`
+    // already reads with `-z`, so this keeps both sides in one spelling.
+    // Records are `added TAB removed TAB path NUL`.
+    const result = await this.process.run(
+      "git",
+      ["diff", "--numstat", "-z", "--relative", "HEAD", "--", ...paths],
+      this.opts(repoPath, { timeoutMs: 5000 }),
+    );
+    if (result.code !== 0) return {};
+    const counts: Record<string, NumstatCounts> = {};
+    for (const record of result.stdout.split("\0")) {
+      const [added, removed, path] = record.split("\t");
+      if (added !== undefined && removed !== undefined && path !== undefined) {
+        counts[path] = { added, removed };
+      }
+    }
+    return counts;
+  }
+
+  /**
+   * A path with no entry in `HEAD` is counted against an empty file instead.
+   *
+   * `--no-index` exits 1 to say "there ARE differences", which is the only
+   * outcome a brand-new file can produce. Reading that as failure is what would
+   * leave every untracked path — the ones a resume most needs — uncounted.
+   */
+  private async untrackedNumstat(
+    repoPath: string,
+    paths: string[],
+  ): Promise<Record<string, NumstatCounts>> {
+    const counts: Record<string, NumstatCounts> = {};
+    for (const path of paths) {
       const result = await this.process.run(
         "git",
-        ["diff", "--numstat", "HEAD"],
+        // The LITERAL "/dev/null", never the platform's own null device: git
+        // special-cases this exact string as the empty side everywhere, Git for
+        // Windows included, while Windows's real null device is just a path it
+        // fails to read — which would leave every untracked file uncounted.
+        ["diff", "--numstat", "--no-index", "--", "/dev/null", path],
         this.opts(repoPath, { timeoutMs: 5000 }),
       );
-      if (result.code !== 0) return [];
-      const entries: DiffNumstatEntry[] = [];
-      for (const line of result.stdout.split("\n")) {
-        const parts = line.split("\t");
-        if (
-          parts.length >= 3 &&
-          parts[0] !== undefined &&
-          parts[1] !== undefined &&
-          parts[2] !== undefined
-        ) {
-          entries.push({ added: parts[0], removed: parts[1], path: parts[2] });
-        }
+      if (result.code !== 0 && result.code !== 1) continue;
+      const [added, removed] = (result.stdout.split("\n")[0] ?? "").split("\t");
+      if (added !== undefined && removed !== undefined) {
+        counts[path] = { added, removed };
       }
-      return entries;
-    } catch {
-      return [];
     }
+    return counts;
   }
 
   async checkout(repoPath: string, branch: string): Promise<void> {

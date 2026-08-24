@@ -8,7 +8,7 @@ import {
 import { PathsService } from "../../src/application/paths-service.js";
 import { lookupBinding } from "../../src/application/session-binding-service.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { DiffNumstatEntry, GitPort } from "../../src/ports/git.js";
+import type { GitPort, LocalChange, NumstatCounts } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -30,8 +30,40 @@ class FakeGit implements GitPort {
   async changedFiles() {
     return [];
   }
-  async diffNumstat(): Promise<DiffNumstatEntry[]> {
-    return [];
+  async repoPrefix(): Promise<string | null> {
+    return "";
+  }
+
+  // Seeded, not empty: a fake without `localChanges` made the whole collection
+  // throw and degrade to "unit not observed", so these suites exercised only
+  // the failure branch while looking green.
+  async localChanges(): Promise<LocalChange[]> {
+    return [
+      {
+        path: "src/foo.ts",
+        from: null,
+        code: "M.",
+        staged: true,
+        unstaged: false,
+        untracked: false,
+        head_mode: "100644",
+        worktree_mode: "100644",
+      },
+    ];
+  }
+
+  async head(): Promise<string | null> {
+    return "abc1234def5678";
+  }
+
+  async numstatFor(
+    _repo: string,
+    tracked: string[],
+    _untracked: string[],
+  ): Promise<Record<string, NumstatCounts>> {
+    const counts: Record<string, NumstatCounts> = {};
+    for (const path of tracked) counts[path] = { added: "3", removed: "1" };
+    return counts;
   }
   async checkout(): Promise<void> {}
   async pull(): Promise<void> {}

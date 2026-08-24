@@ -1,7 +1,7 @@
-export interface DiffNumstatEntry {
+/** Line deltas for one path, as git spells them (`-` for a binary file). */
+export interface NumstatCounts {
   added: string;
   removed: string;
-  path: string;
 }
 
 /** Outcome of a `git merge`: ok=false with conflicted files on merge conflict. */
@@ -108,8 +108,31 @@ export interface GitPort {
    * is the commit, which never changes.
    */
   head(repoPath: string): Promise<string | null>;
-  /** Files touched in HEAD diff: `git diff --numstat HEAD`. */
-  diffNumstat(repoPath: string): Promise<DiffNumstatEntry[]>;
+  /**
+   * The directory's own path relative to its repository root, with a trailing
+   * slash; `""` when the directory IS the root, `null` when it is in no repo.
+   *
+   * This is what bounds a reading to a workspace nested inside a bigger
+   * repository. `localChanges` answers for the whole repository and spells its
+   * paths from the repository root, so without this prefix a nested workspace
+   * cannot tell its own files from a sibling project's — which is how a
+   * checkpoint came to list hundreds of entries that were never its own.
+   */
+  repoPrefix(repoPath: string): Promise<string | null>;
+  /**
+   * Line deltas for named paths only, keyed by the path as it was asked for.
+   *
+   * Two lists because git has two answers. A tracked path is compared against
+   * `HEAD`; an untracked one has no entry there at all, so `git diff HEAD --
+   * <it>` succeeds and says nothing, and the count has to come from a
+   * comparison against an empty file instead. A path git cannot read is simply
+   * absent from the result — a missing count is not worth failing a checkpoint.
+   */
+  numstatFor(
+    repoPath: string,
+    tracked: string[],
+    untracked: string[],
+  ): Promise<Record<string, NumstatCounts>>;
   /** `git checkout <branch>`. Throws on failure. */
   checkout(repoPath: string, branch: string): Promise<void>;
   /** `git pull` on the checked-out branch. Throws on failure. */
