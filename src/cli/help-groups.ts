@@ -71,6 +71,11 @@ const GROUPS: readonly CommandGroup[] = [
       "flow",
       "resume-summary",
       "next-number",
+      // The reservations of numbered documents nobody is finishing, and the one
+      // authorized way to give a correlative back: it revokes the claim durably
+      // before releasing it, so a late sealed publication is rejected rather
+      // than colliding on a number somebody else now holds.
+      "claims",
       // Context budget & read-set resolution (spec 009): what a command costs
       // to load, and which documents it actually has to load.
       "context-budget",

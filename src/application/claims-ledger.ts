@@ -248,3 +248,116 @@ export function completedClaimsIn(
   }
   return completed;
 }
+
+/**
+ * Every claim this ledger has ever revoked.
+ *
+ * Membership is permanent by construction: one `revoked` record fences the claim
+ * forever, and no later record lifts it. That is what "irrevocable" has to mean
+ * to be worth anything — a fence somebody can reopen is not a fence, and the
+ * whole reason a recovery may free a correlative is that no late publication can
+ * still land on it.
+ */
+export function revokedKeys(events: readonly ClaimEvent[]): Set<string> {
+  const revoked = new Set<string>();
+  for (const event of events) {
+    if (event.event === "revoked") revoked.add(claimKey(event.claim));
+  }
+  return revoked;
+}
+
+/** Whether this exact claim is fenced. */
+export function isRevoked(events: readonly ClaimEvent[], claim: ClaimIdentity): boolean {
+  return revokedKeys(events).has(claimKey(claim));
+}
+
+/**
+ * The destinations of a publication that a revocation forbids.
+ *
+ * Checked at the publication point rather than at the release: once a recovery
+ * has freed a correlative, the slot no longer exists on disk, so a late sealed
+ * proposal would read its destination as a plain creation and land a document on
+ * a number that may already belong to somebody else. The fence is the only thing
+ * standing between "the reservation was recovered" and "two documents share a
+ * correlative".
+ */
+export function revokedAmong(
+  events: readonly ClaimEvent[],
+  owner: string,
+  destinations: readonly string[],
+): ClaimIdentity[] {
+  const revoked = revokedKeys(events);
+  if (revoked.size === 0) return [];
+  const blocked: ClaimIdentity[] = [];
+  for (const path of destinations) {
+    const claim = claimOfDocsPath(path, owner);
+    if (claim === null || !revoked.has(claimKey(claim))) continue;
+    blocked.push(claim);
+  }
+  return blocked;
+}
+
+/**
+ * Destinations that look like a numbered document of this owner's category space.
+ *
+ * Used only to scope the fail-closed: a ledger with unreadable lines cannot prove
+ * the ABSENCE of a revocation, so a publication that could be completing a
+ * reservation must refuse rather than guess. A write that is not a numbered
+ * document in a category cannot be a reservation, so it is never held up by a
+ * ledger it does not depend on.
+ */
+export function claimShapedAmong(owner: string, destinations: readonly string[]): ClaimIdentity[] {
+  const shaped: ClaimIdentity[] = [];
+  for (const path of destinations) {
+    const claim = claimOfDocsPath(path, owner);
+    if (claim !== null) shaped.push(claim);
+  }
+  return shaped;
+}
+
+/** A slot's identity without its owner: what a file on disk can be matched by. */
+export interface SlotIdentity {
+  category: string;
+  correlative: string;
+  name: string;
+}
+
+function sameSlot(claim: ClaimIdentity, slot: SlotIdentity): boolean {
+  return (
+    claim.category === slot.category &&
+    claim.correlative === slot.correlative &&
+    claim.name === slot.name
+  );
+}
+
+/**
+ * Whether this slot was ever published, by anyone.
+ *
+ * Asked BEFORE the bytes are interpreted, because bytes lie in one direction that
+ * matters: a published document whose content happens to be empty looks exactly
+ * like the legacy placeholder a recovery is allowed to delete. The record knows
+ * the difference and the file does not, so the record decides.
+ */
+export function wasPublished(events: readonly ClaimEvent[], slot: SlotIdentity): boolean {
+  return events.some((event) => event.event === "published" && sameSlot(event.claim, slot));
+}
+
+/**
+ * The owner whose claim on this slot is still open, or `null`.
+ *
+ * Lets a file that is no longer its own intact marker — emptied by an editor, a
+ * `> file`, a checkout — still be attributed to the session that reserved it.
+ * Without this the same file reads as ownerless, and freeing it would give the
+ * correlative back with no fence for the owner that is still holding it.
+ */
+export function openOwnerOfSlot(
+  events: readonly ClaimEvent[],
+  slot: SlotIdentity,
+): ClaimIdentity | null {
+  let open: ClaimIdentity | null = null;
+  for (const event of events) {
+    if (!sameSlot(event.claim, slot)) continue;
+    open = event.event === "claimed" ? event.claim : null;
+  }
+  return open;
+}

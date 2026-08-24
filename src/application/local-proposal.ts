@@ -73,6 +73,18 @@ export interface ApplyProposalInput {
    * attribute to the run that created it.
    */
   recordBaseline?: (destinations: readonly PublishedDestination[]) => Promise<void>;
+  /**
+   * Refuse the publication from INSIDE the lock, before anything is read or written.
+   *
+   * A caller that checked its own precondition before calling this function would
+   * be checking it outside the critical section, which is the M1 -> M2 window this
+   * whole lock exists to close: the check passes, another process changes the
+   * world, and the write lands anyway. The reservation fence is exactly that kind
+   * of precondition — a recovery may revoke a claim and free its correlative at
+   * any moment — so it has to be evaluated here, holding the same lock the write
+   * holds, or it is not a fence.
+   */
+  precondition?: (destinations: readonly string[]) => Promise<CapabilityFailure | null>;
 }
 
 /** One destination and the bytes it held before a publication touched it. */
@@ -148,6 +160,14 @@ async function applyCritical(
   fs: FileSystemPort,
   input: ApplyProposalInput,
 ): Promise<CriticalProposalOutcome> {
+  // First, and ahead of the already-landed shortcut on purpose: a forbidden
+  // publication must be refused whether or not its bytes happen to be there
+  // already, because the re-entry would otherwise be credited as a success and
+  // record a completion the fence exists to deny.
+  if (input.precondition !== undefined) {
+    const refused = await input.precondition(input.proposal.artifacts.map((a) => a.path));
+    if (refused !== null) return { kind: "refused", failure: refused };
+  }
   if (await alreadyLanded(fs, input.root, input.proposal.artifacts)) return { kind: "already" };
 
   const stale = await checkBases(fs, input);

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openClaimsOf, readClaimEvents } from "../../src/application/claims-ledger.js";
+import { applyRecovery, previewRecovery } from "../../src/application/claims-recovery.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
@@ -655,5 +656,31 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     expect(await readFile(join(workdir, reserved(alpha)), "utf8")).toBe(
       reservationMarker(alpha.folder),
     );
+  });
+
+  it("una publicación sancionada que llega DESPUÉS de la revocación se rechaza", async () => {
+    const alpha = walker("201", "alpha");
+    // La propuesta queda sellada y aprobada-por-aprobar: es «sancionada».
+    await walkTo(alpha, "plan-new.save-confirmation");
+    const target = reserved(alpha);
+
+    // Mientras tanto, una recuperación autorizada revoca ese claim y devuelve el
+    // correlativo al conjunto elegible.
+    const preview = await previewRecovery(fs, paths, target);
+    if ("error" in preview) throw new Error(preview.error);
+    const recovered = await applyRecovery(fs, paths, {
+      target,
+      approval: preview.proposal.digest,
+    });
+    if ("error" in recovered) throw new Error(recovered.error);
+    expect(await plans()).toHaveLength(0);
+
+    // Y ahora llega la publicación. Sin el cerco escribiría un documento sobre un
+    // número que ya puede ser de otro: el slot no está en disco, así que nada
+    // aguas abajo lo vería siquiera como una sobrescritura.
+    const after = await approve(alpha);
+
+    expect(JSON.stringify(after)).toContain("revocada");
+    expect(await plans()).toHaveLength(0);
   });
 });
