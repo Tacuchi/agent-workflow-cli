@@ -189,6 +189,12 @@ export interface FlowDirective {
    * back. Sealed by `state_digest` along with the state and the transition, so
    * changing the program, an argument, the target, the input or the demanded
    * evidence makes any result that quotes the old seal stale.
+   *
+   * Those five ARE the seal's whitelist, so the action is no longer uniformly
+   * sealed: `checkouts` is a host-local observation attached on the way out and is
+   * deliberately outside it. That is what lets an answer produced on one machine
+   * stay valid — a path inside the seal would make an identical reply stale merely
+   * for having been written somewhere else.
    */
   action: DelegatedAction | null;
   /** Non-empty exactly at a human or authorization boundary. */
@@ -664,6 +670,19 @@ function askLines(directive: FlowDirective): string[] {
     lines.push(`ejecutar: ${[call.program, ...call.args].join(" ")}`);
     lines.push(`en: ${call.target}${call.input === null ? "" : " (con input por stdin)"}`);
     lines.push(`evidencia exigida: ${directive.action.evidence.join(", ")}`);
+    // The root the validator will measure, said out loud. Publishing it is the
+    // whole point: the prover cannot deduce which directory the digest covers, and
+    // the alias alone sent readers hunting for a change in an intact tree.
+    const checkouts = directive.action.checkouts ?? [];
+    if (checkouts.length > 0) {
+      const observed = checkouts
+        .map((checkout) => `${checkout.source} → ${checkout.root}`)
+        .join(" · ");
+      lines.push(`checkout que validará (observación local de esta corrida): ${observed}`);
+      lines.push(
+        "esa raíz es de este host; la regla portátil que la eligió está en 'aw flow --help', y 'aw flow prove' captura y prevalida la prueba contra ella",
+      );
+    }
     lines.push(`si vuelve fallida o parcial: ${directive.action.recovery}`);
   }
   for (const choice of directive.choices) {

@@ -20,12 +20,14 @@ import {
   recoveryBlockedAt,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import type { GitPort } from "../../ports/git.js";
 import { WORKLINE_FLOWS, type WorklineFlow } from "../capability/compose.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import type { PathsService } from "../paths-service.js";
 import { recordFlowAdoption } from "../session-custody-recorder.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import { advanceFlowRun, directiveFor, resolveBoundary } from "./advance.js";
+import { publishObservedCheckouts } from "./checkout-observation.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
 import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
@@ -33,6 +35,13 @@ import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-ser
 export interface AdvanceFlowInput {
   code?: string;
   contextId?: string;
+  /**
+   * Reader used ONLY to verify the roots the directive publishes.
+   *
+   * Optional because a pure caller has none, and its absence is a real answer: the
+   * directive then names no root at all rather than one nobody checked.
+   */
+  git?: GitPort;
   /** Required only to adopt a session that has no run state yet. */
   flow?: string;
   /** Initialize the run state of a legacy session instead of refusing. */
@@ -114,12 +123,19 @@ export async function advanceFlow(
     value: applied.value,
   });
   if (!driven.ok) return { ok: false, failure: driven.failure };
-  return { ok: true, directive: driven.value };
+  // After the lock, so the walk stays pure and the seal is long computed. The roots
+  // are VERIFIED before being published, exactly as `submit` verifies its own.
+  return {
+    ok: true,
+    directive: await publishObservedCheckouts(fs, paths, session, input.git, driven.value),
+  };
 }
 
 export interface RecoverFlowInput {
   code?: string;
   contextId?: string;
+  /** Reader used ONLY to verify the roots the directive publishes. See above. */
+  git?: GitPort;
   /**
    * The boundary the caller believes is stuck — a CONFIRMATION, never a selector.
    *
@@ -187,7 +203,16 @@ export async function recoverFlowBoundary(
     return recover(current, input.transition ?? null);
   });
   if (!applied.ok) return { ok: false, failure: applied.failure };
-  return { ok: true, directive: applied.value };
+  return {
+    ok: true,
+    directive: await publishObservedCheckouts(
+      fs,
+      paths,
+      resolution.session.folder,
+      input.git,
+      applied.value,
+    ),
+  };
 }
 
 /**

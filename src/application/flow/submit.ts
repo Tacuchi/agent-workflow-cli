@@ -70,12 +70,12 @@ import {
   withProposal,
   withScope,
 } from "../../domain/flow/run-state.js";
-import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
 import { type SpecBaseline, specBaselineDigest, withSpecBaseline } from "../../domain/lineage.js";
 import { destinationsOf, observedEffects, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
 import { reservationMarker } from "../../domain/reservation.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
+import type { CheckoutIdentity } from "../../domain/source-boundary.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
@@ -86,7 +86,6 @@ import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import {
   type CheckoutState,
-  checkoutDigest,
   sourceAliasesOfPlan,
   validatePlanSourceBoundary,
 } from "../source-boundary-policy.js";
@@ -98,6 +97,8 @@ import {
   effectsOfTransition,
   resolveBoundary,
 } from "./advance.js";
+import { observeCheckout, withObservedCheckouts } from "./checkout-observation.js";
+import { resolveCheckoutCandidates } from "./checkout-observation.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
 import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
@@ -174,14 +175,20 @@ export async function submitFlow(
   // A REFUSED answer never drives: the directive it produced is the refusal, and
   // replacing it with whatever the CLI did next would tell the sender their answer
   // was fine. The run stays where the refusal left it.
-  if (!applied.value.advanced) return { ok: true, directive: applied.value.directive };
+  // Every directive this verb returns carries the roots too. A boundary is reached
+  // by the submit that answered the PREVIOUS one at least as often as by an
+  // `advance`, so decorating only the walk left the commonest arrival blind.
+  const observed = identitiesOf(snapshot.checkouts);
+  if (!applied.value.advanced) {
+    return { ok: true, directive: withObservedCheckouts(applied.value.directive, observed) };
+  }
   const driven = await driveInternalActions(fs, location, input.executor, {
     ok: true,
     state: applied.state,
     value: applied.value.directive,
   });
   if (!driven.ok) return { ok: false, failure: driven.failure };
-  return { ok: true, directive: driven.value };
+  return { ok: true, directive: withObservedCheckouts(driven.value, observed) };
 }
 
 /**
@@ -414,61 +421,32 @@ async function observeCheckouts(
   git: GitPort | undefined,
 ): Promise<CheckoutState[] | null> {
   if (git === undefined) return null;
-  let root: string;
-  let block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
-  try {
-    root = await resolveWorkspaceRootFrom(fs, paths);
-    block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
-  } catch {
-    return [];
-  }
-  const candidates: Array<{ source: string; path: string }> = [{ source: "workspace", path: root }];
-  if (block !== null) {
-    try {
-      const units = await fs.realPath(paths.userUnitsDir());
-      const key = workspaceKey(paths.workspaceDir());
-      for (const source of block.fuentes) {
-        candidates.push({
-          source: source.alias,
-          path: unitPath(units, { workspaceKey: key, alias: source.alias, session }),
-        });
-      }
-    } catch {
-      // A run without isolated units can still prove its documentary checkout.
-      // Any proof naming another source stays invalid because it is absent below.
-    }
-  }
-
+  // The SAME resolution the directive published, from the same function: two
+  // callers computing this apart is what made a rejection claim the tree moved
+  // when all that differed was the directory each side measured.
+  const candidates = await resolveCheckoutCandidates(fs, paths, session);
   const states: CheckoutState[] = [];
   for (const candidate of candidates) {
-    try {
-      if (!(await fs.exists(candidate.path)) || !(await git.isGitRepo(candidate.path))) continue;
-      // The fingerprint is taken twice, concurrently: a digest that does not
-      // survive its own recomputation must not be reported as a tree that moved.
-      const [head, dirty, changed, worktreeFingerprint, recomputed] = await Promise.all([
-        git.head(candidate.path),
-        git.isDirty(candidate.path),
-        git.changedFiles(candidate.path),
-        git.checkoutFingerprint(candidate.path),
-        git.checkoutFingerprint(candidate.path),
-      ]);
-      states.push({
-        source: candidate.source,
-        digest: checkoutDigest({
-          source: candidate.source,
-          head,
-          dirty,
-          changed_files: changed,
-          worktree_fingerprint: worktreeFingerprint,
-        }),
-        reproducible: worktreeFingerprint === recomputed,
-      });
-    } catch {
-      // An unreadable checkout is deliberately absent from the eligible set; a
-      // proof against it fails closed instead of being treated as a clean tree.
-    }
+    // An unreadable checkout is deliberately absent from the eligible set: a proof
+    // against it fails closed instead of being treated as a clean tree.
+    const state = await observeCheckout(fs, git, candidate);
+    if (state !== null) states.push(state);
   }
   return states;
+}
+
+/**
+ * The alias→root pairs worth publishing: the ones actually OBSERVED.
+ *
+ * Narrower than the candidate list on purpose. A root that survived observation is
+ * a real git checkout, so the directive advertises only what the validator would
+ * also accept — advertising a root it would refuse as ineligible is the very
+ * divergence between shown and measured that this contract closes.
+ */
+function identitiesOf(checkouts: readonly CheckoutState[] | null): CheckoutIdentity[] {
+  return (checkouts ?? []).flatMap((state) =>
+    state.root === undefined ? [] : [{ source: state.source, root: state.root }],
+  );
 }
 
 /**

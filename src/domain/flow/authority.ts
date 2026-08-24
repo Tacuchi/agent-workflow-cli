@@ -26,7 +26,7 @@
 import { WORKLINE_FLOWS, type WorklineFlow } from "../../application/capability/compose.js";
 import type { EffectClass } from "../capability/effects.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../docs-canon.js";
-import { SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
+import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
 
 const SPEC_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.spec;
 const PLAN_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.plan;
@@ -510,6 +510,16 @@ export interface DelegatedAction {
   idempotent: boolean;
   /** What to do when the result comes back failed or partial. Never empty. */
   recovery: string;
+  /**
+   * The local checkouts this action's source-bounded evidence will be measured
+   * against — present only when the evidence demands a `CheckoutProof`.
+   *
+   * Not a decision and not part of the seal: it is an observation of the host, so
+   * it can change under a boundary that never moved. It is here because it was the
+   * one input the prover could not deduce, and learning it by having a proof
+   * rejected costs an attempt the boundary cannot spare.
+   */
+  checkouts?: readonly CheckoutIdentity[];
 }
 
 /** The delegated action of a transition, or `null` when the engine applies it itself. */
