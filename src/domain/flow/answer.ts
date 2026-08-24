@@ -627,10 +627,20 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
       },
     };
   }
-  const validations = readValidations(body.validations);
-  if (validations === null) {
-    return { ok: false, failure: badResult(badValidations(body.validations, action.evidence)) };
+  const read = readValidations(body.validations);
+  if (!read.ok) {
+    // The rejection lands on the half that is actually wrong: a diagnosable nested
+    // proof is the proof's, and only a container breaking its own shape is the
+    // envelope's. Reserving FLOW_RESULT_INVALID for the latter is the point.
+    return {
+      ok: false,
+      failure:
+        read.defect !== null
+          ? proofShapeFailure(read.defect)
+          : badResult(badValidations(body.validations, action.evidence)),
+    };
   }
+  const validations = read.validations;
   const effects = readLedger(body.effects);
   if (effects === null) {
     return {
@@ -747,56 +757,173 @@ function readInvocation(value: unknown): DelegatedInvocation | null {
   return { program: value.program, args: value.args, target: value.target, input };
 }
 
-function readValidations(value: unknown): ValidationOutcome[] | null {
-  if (value === undefined) return [];
-  if (!Array.isArray(value)) return null;
+/**
+ * `defect: null` means the CONTAINER broke its own shape; a defect present means
+ * the container was fine and one nested proof was not. The two are different
+ * rejections with different corrective actions, and collapsing them is what made
+ * a correct `validations` list get blamed for a malformed proof.
+ */
+type ValidationsRead =
+  | { ok: true; validations: ValidationOutcome[] }
+  | { ok: false; defect: ProofShapeDefect | null };
+
+function readValidations(value: unknown): ValidationsRead {
+  if (value === undefined) return { ok: true, validations: [] };
+  if (!Array.isArray(value)) return { ok: false, defect: null };
   const out: ValidationOutcome[] = [];
   for (const entry of value) {
-    if (!isRecord(entry)) return null;
-    if (typeof entry.id !== "string" || typeof entry.passed !== "boolean") return null;
+    if (!isRecord(entry)) return { ok: false, defect: null };
+    if (typeof entry.id !== "string" || typeof entry.passed !== "boolean") {
+      return { ok: false, defect: null };
+    }
     const detail = entry.detail === undefined ? null : entry.detail;
-    if (detail !== null && typeof detail !== "string") return null;
-    const proof = entry.proof === undefined ? undefined : readCheckoutProof(entry.proof);
-    if (proof === null) return null;
-    out.push({
-      id: entry.id,
-      passed: entry.passed,
-      detail,
-      ...(proof !== undefined ? { proof } : {}),
-    });
+    if (detail !== null && typeof detail !== "string") return { ok: false, defect: null };
+    if (entry.proof === undefined) {
+      out.push({ id: entry.id, passed: entry.passed, detail });
+      continue;
+    }
+    const read = readCheckoutProof(entry.proof);
+    if (!read.ok) return { ok: false, defect: read.defect };
+    out.push({ id: entry.id, passed: entry.passed, detail, proof: read.proof });
   }
-  return out;
+  return { ok: true, validations: out };
 }
 
-function readCheckoutProof(value: unknown): CheckoutProof | null {
-  if (!isRecord(value)) return null;
-  if (value.kind !== "command" && value.kind !== "inspection") return null;
+/**
+ * Why a nested `CheckoutProof` was refused, in the terms a fix needs.
+ *
+ * The knowledge was always here — the reader below has always known which fields
+ * each `kind` requires. What it used to do with that knowledge was throw it away
+ * and return `null`, which discarded the WHOLE `validations` list and made the
+ * envelope report a malformed container. The list was fine; the proof was not.
+ */
+interface ProofShapeDefect {
+  /** The `kind` the proof declared, or `null` when it is not one this contract has. */
+  kind: string | null;
+  /** The fields that `kind` requires — what a corrective edit has to produce. */
+  expected: readonly string[];
+  /** The keys that actually arrived, so the fix is a rename and not a search. */
+  received: readonly string[];
+  /** Which half is wrong, so the message does not blame the whole object. */
+  where: "kind" | "proof" | "invocation";
+}
+
+type ProofRead = { ok: true; proof: CheckoutProof } | { ok: false; defect: ProofShapeDefect };
+
+/** The fields each `kind` demands of its `invocation`, named once. */
+const PROOF_INVOCATION_FIELDS: Readonly<Record<"command" | "inspection", readonly string[]>> = {
+  command: ["program", "args"],
+  inspection: ["artifact"],
+};
+
+const PROOF_FIELDS = ["kind", "source", "relative_cwd", "checkout_digest", "invocation"] as const;
+
+function readCheckoutProof(value: unknown): ProofRead {
+  if (!isRecord(value)) {
+    return {
+      ok: false,
+      defect: { kind: null, expected: [...PROOF_FIELDS], received: [], where: "proof" },
+    };
+  }
+  const declared = typeof value.kind === "string" ? value.kind : null;
+  if (value.kind !== "command" && value.kind !== "inspection") {
+    // Its own case, because a misspelled kind used to produce a message whose
+    // expected and received lists were byte-identical — the reader was told the
+    // shape was wrong and shown the shape they had sent. A typo is the likeliest
+    // way to get here, so it is the case that most needs a usable sentence.
+    return {
+      ok: false,
+      defect: {
+        kind: declared,
+        expected: ["command", "inspection"],
+        received: declared === null ? [] : [declared],
+        where: "kind",
+      },
+    };
+  }
+  const expected = [
+    ...PROOF_FIELDS,
+    ...PROOF_INVOCATION_FIELDS[value.kind].map((f) => `invocation.${f}`),
+  ];
   if (
     typeof value.source !== "string" ||
     typeof value.relative_cwd !== "string" ||
     typeof value.checkout_digest !== "string" ||
     !isRecord(value.invocation)
   ) {
-    return null;
+    return {
+      ok: false,
+      defect: { kind: value.kind, expected, received: Object.keys(value), where: "proof" },
+    };
   }
   const invocation = value.invocation;
   if (value.kind === "command") {
-    if (typeof invocation.program !== "string" || !isStringArray(invocation.args)) return null;
+    if (typeof invocation.program !== "string" || !isStringArray(invocation.args)) {
+      return {
+        ok: false,
+        defect: {
+          kind: "command",
+          expected: PROOF_INVOCATION_FIELDS.command,
+          received: Object.keys(invocation),
+          where: "invocation",
+        },
+      };
+    }
     return {
-      kind: "command",
+      ok: true,
+      proof: {
+        kind: "command",
+        source: value.source,
+        relative_cwd: value.relative_cwd,
+        checkout_digest: value.checkout_digest,
+        invocation: { program: invocation.program, args: invocation.args },
+      },
+    };
+  }
+  if (typeof invocation.artifact !== "string") {
+    return {
+      ok: false,
+      defect: {
+        kind: "inspection",
+        expected: PROOF_INVOCATION_FIELDS.inspection,
+        received: Object.keys(invocation),
+        where: "invocation",
+      },
+    };
+  }
+  return {
+    ok: true,
+    proof: {
+      kind: "inspection",
       source: value.source,
       relative_cwd: value.relative_cwd,
       checkout_digest: value.checkout_digest,
-      invocation: { program: invocation.program, args: invocation.args },
-    };
-  }
-  if (typeof invocation.artifact !== "string") return null;
+      invocation: { artifact: invocation.artifact },
+    },
+  };
+}
+
+/**
+ * The proof's own rejection — never the container's.
+ *
+ * `FLOW_RESULT_INVALID` is reserved for a result or a `validations` list that
+ * breaks its OWN shape. Spending it on a diagnosable nested proof sent readers to
+ * rebuild a list that was already correct.
+ */
+function proofShapeFailure(defect: ProofShapeDefect): CapabilityFailure {
+  const received =
+    defect.received.length > 0 ? `trae: ${defect.received.join(", ")}` : "viene vacía";
+  const message =
+    defect.where === "kind"
+      ? `el 'proof' declara kind ${defect.kind === null ? "ninguno" : `'${defect.kind}'`}, que no existe: los kinds son 'command' (pide invocation {program, args}) e 'inspection' (pide invocation {artifact})`
+      : defect.where === "invocation"
+        ? `el 'proof' de kind '${defect.kind}' trae una 'invocation' que ese kind no acepta: espera ${defect.expected.join(", ")} y ${received}`
+        : `el 'proof' de kind '${defect.kind ?? "(ausente)"}' no satisface la forma de su kind: espera ${defect.expected.join(", ")} (${received})`;
   return {
-    kind: "inspection",
-    source: value.source,
-    relative_cwd: value.relative_cwd,
-    checkout_digest: value.checkout_digest,
-    invocation: { artifact: invocation.artifact },
+    code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+    message,
+    action:
+      "corregí el 'proof' anidado, no la lista 'validations': un kind 'command' pide {program, args} y un 'inspection' pide {artifact} — sin 'target' ni 'input', aunque la directiva los traiga. 'aw flow prove' lo produce ya bien formado y sin gastar intento",
   };
 }
 

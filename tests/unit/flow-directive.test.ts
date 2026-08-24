@@ -21,6 +21,7 @@ import {
   buildFlowDirective,
   renderDirectiveHuman,
 } from "../../src/domain/flow/directive.js";
+import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 
 /**
  * The directive: every combination that would let a run lie is refused, and no
@@ -161,6 +162,41 @@ describe("directiva de frontera — la forma válida", () => {
     expect(human).toContain(".workflow/sessions");
     expect(human).toContain("sesion-creada");
     expect(human).toContain("volvé a sembrar");
+  });
+
+  it("publica la raíz observada cuando la evidencia exige un CheckoutProof", () => {
+    const built = buildFlowDirective({
+      ...BASE,
+      boundary: boundary({ kind: "execution", authority: "cli" }),
+      outcome: "needs_input",
+      action: delegated({
+        evidence: ["sesion-creada", SOURCE_BOUNDED_EVIDENCE],
+        checkouts: [{ source: "workspace", root: "/hosts/este/proyectos/hub" }],
+      }),
+      nextAction: "corré la invocación y devolvé su resultado",
+    });
+    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
+    const human = renderDirectiveHuman(built.directive);
+    // El dato que quien prueba NO podía deducir: contra qué directorio se compara.
+    expect(human).toContain("workspace → /hosts/este/proyectos/hub");
+    expect(human).toContain("observación local de esta corrida");
+    // Lo transferible es la regla, no la ruta, y el lector va a ella por nombre.
+    expect(human).toContain("aw flow --help");
+    expect(human).toContain("aw flow prove");
+  });
+
+  it("no inventa una raíz cuando nadie la observó", () => {
+    const built = buildFlowDirective({
+      ...BASE,
+      boundary: boundary({ kind: "execution", authority: "cli" }),
+      outcome: "needs_input",
+      action: delegated({ evidence: ["sesion-creada", SOURCE_BOUNDED_EVIDENCE] }),
+      nextAction: "corré la invocación y devolvé su resultado",
+    });
+    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
+    const human = renderDirectiveHuman(built.directive);
+    expect(human).toContain("evidencia exigida");
+    expect(human).not.toContain("checkout que validará");
   });
 
   it("los motivos de frontera son el vocabulario cerrado de la spec", () => {

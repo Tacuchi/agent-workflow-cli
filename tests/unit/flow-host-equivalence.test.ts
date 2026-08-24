@@ -61,6 +61,17 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
  * estructural la caza aunque el fixture siga verde, porque un fixture solo mide
  * los hosts que alguien se acordó de simular.
  *
+ * **La única excepción declarada, y por qué existe.** `action.checkouts` publica la
+ * raíz local que ESTE host observó para la evidencia source-bounded, así que es un
+ * dato de máquina dentro de la directiva. No contradice la tesis: no entra en la
+ * derivación ni en el sello —el digest de la acción es una lista blanca de cinco
+ * campos y no puede alcanzarla—, y existe porque el dato que quien prueba NO podía
+ * deducir era justamente contra qué directorio se lo iba a comparar; aprenderlo
+ * haciéndose rechazar una prueba cuesta un intento que la frontera no tiene. Acá se
+ * compara todo lo demás byte a byte y se afirma que la diferencia no puede ser otra
+ * cosa: un segundo campo local que alguien agregue mañana rompe esta prueba en vez
+ * de colarse detrás del primero.
+ *
  * La reanudación es la otra mitad de la fase, y es la que dice qué carga el
  * estado: un recorrido detenido en una frontera lo levanta otra conversación —
  * incluso una que no existía cuando se detuvo— reconstruyendo frontera, acción y
@@ -382,7 +393,12 @@ describe("una frontera detenida se reanuda desde otro host", () => {
 
     expect(picked.directive.boundary.transition).toBe(left.stopped?.id);
     expect(picked.directive.boundary.kind).toBe("execution");
-    expect(canonicalJson(picked.directive.action)).toBe(canonicalJson(emitted));
+    // Se aparta la única excepción declarada (ver la cabecera) y se compara el
+    // resto byte a byte. Apartar exactamente UNA clave nombrada es lo que convierte
+    // esto en un guardián: cualquier otro campo local sobreviviría al descarte y
+    // haría fallar la comparación.
+    const { checkouts: _hostLocal, ...portable } = picked.directive.action ?? {};
+    expect(canonicalJson(portable)).toBe(canonicalJson(emitted));
     expect(picked.directive.state_digest).toBe(left.seal);
     expect(picked.directive.next_action).toContain(emitted.invocation.program);
     // La acción pendiente que el estado guarda es la que la directiva reemitió:

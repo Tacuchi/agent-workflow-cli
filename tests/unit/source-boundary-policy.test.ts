@@ -221,6 +221,32 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
     expect(unstable?.code).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
     expect(unstable?.message).toContain("NO es estable");
   });
+
+  it("nombra la raíz que midió y la acción que corresponde a cada causa", () => {
+    // El alias solo era activamente engañoso en un hub anidado: afirmaba que el
+    // árbol se movió cuando el árbol estaba intacto y lo único distinto era el
+    // directorio medido, así que mandaba a buscar un cambio que no existía.
+    const root = "/hosts/este/proyectos/hub";
+
+    const changed = validateCheckoutProof(proof, [{ source: "cli", digest: "moved", root }]);
+    expect(changed?.message).toContain(root);
+    expect(changed?.message).toContain("recapturala");
+
+    const unstable = validateCheckoutProof(proof, [
+      { source: "cli", digest: "moved", reproducible: false, root },
+    ]);
+    expect(unstable?.message).toContain(root);
+    expect(unstable?.message).toContain("estabilizá");
+    // Estabilizar y recapturar no son el mismo arreglo, y confundirlos es el costo.
+    expect(unstable?.message).not.toContain("cambió desde que se capturó");
+  });
+
+  it("sin raíz observada el mensaje sigue siendo válido, sólo con el alias", () => {
+    const failure = validateCheckoutProof(proof, [{ source: "cli", digest: "moved" }]);
+    expect(failure?.code).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
+    expect(failure?.message).toContain("'cli'");
+    expect(failure?.message).not.toContain("undefined");
+  });
 });
 
 describe("SourceBoundaryPolicy — contexto remoto", () => {

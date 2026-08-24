@@ -391,6 +391,14 @@ export interface CheckoutState {
    * when it was measured once, which is all a pure caller can do.
    */
   reproducible?: boolean;
+  /**
+   * Absolute local root the digest was computed over, when the caller observed it.
+   *
+   * Optional on purpose: a pure caller holding only alias and digest keeps working,
+   * and its rejection names the alias alone exactly as it did before. The execution
+   * route always resolves a root, so the message it produces is the complete one.
+   */
+  root?: string;
 }
 
 /** The sources a proof may name, so a rejected one says what it should have been. */
@@ -403,15 +411,26 @@ function eligibleSources(states: readonly CheckoutState[]): string {
  * A digest that does not survive its own recomputation is not evidence that the
  * checkout moved, and saying so sends the reader to look for a change that may
  * not exist.
+ *
+ * Both branches name the DIRECTORY they measured, not just the alias. On a nested
+ * hub the alias alone was actively misleading: it asserted the tree had moved when
+ * the tree was intact and only the measured directory differed, so the reader went
+ * hunting for a change that was not there. Each branch also carries its own
+ * corrective action, because "recapture" and "stabilize" are not the same advice
+ * and one of them is useless for the other cause.
  */
-function staleMessage(source: string, reproducible: boolean | undefined): string {
-  if (reproducible !== false) {
-    return `el checkout de '${source}' cambió desde que se capturó la prueba`;
+function staleMessage(current: CheckoutState): string {
+  const at = current.root === undefined ? "" : ` (${current.root})`;
+  if (current.reproducible !== false) {
+    return [
+      `el checkout de '${current.source}'${at} cambió desde que se capturó la prueba:`,
+      "recapturala contra esa misma raíz y no escribas en ella entre la captura y el submit",
+    ].join(" ");
   }
   return [
-    `el digest de '${source}' no coincide y NO es estable entre dos cómputos consecutivos:`,
-    "o el árbol cambia mientras se valida, o la huella no es reproducible;",
-    "recapturar la prueba no alcanza si persiste",
+    `el digest de '${current.source}'${at} no coincide y NO es estable entre dos cómputos`,
+    "consecutivos: o el árbol cambia mientras se valida, o la huella no es reproducible;",
+    "estabilizá esa raíz antes de reintentar, porque recapturar no alcanza si persiste",
   ].join(" ");
 }
 
@@ -450,7 +469,7 @@ export function validateCheckoutProof(
   if (current.digest !== proof.checkout_digest) {
     return {
       code: "WORKLINE_CHECKOUT_PROOF_STALE",
-      message: staleMessage(proof.source, current.reproducible),
+      message: staleMessage(current),
     };
   }
   return null;
