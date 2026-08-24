@@ -28,12 +28,13 @@
  */
 
 import { join } from "node:path";
+import { compareCorrelatives, isCorrelative } from "../domain/correlative.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { PathsService } from "./paths-service.js";
 
 /** Lives next to HISTORY.md: workspace state, never workspace corpus. */
-export const LEDGER_FILE = "claims.jsonl";
-export const LEDGER_VERSION = 1;
+const LEDGER_FILE = "claims.jsonl";
+const LEDGER_VERSION = 1;
 
 /**
  * What happened to a claim.
@@ -43,7 +44,7 @@ export const LEDGER_VERSION = 1;
  * Collapsing them would either lose numbers or hand out a number that is holding
  * a document.
  */
-export type ClaimEventKind = "claimed" | "published" | "released" | "revoked";
+type ClaimEventKind = "claimed" | "published" | "released" | "revoked";
 
 /**
  * What makes two records the same slot.
@@ -109,7 +110,7 @@ export async function appendClaimEvent(
   await fs.appendText(ledgerPath(paths), `${JSON.stringify(record)}\n`);
 }
 
-export interface LedgerRead {
+interface LedgerRead {
   events: ClaimEvent[];
   /**
    * Lines that did not parse, kept as a COUNT rather than dropped silently.
@@ -192,7 +193,7 @@ export function openClaimsOf(events: readonly ClaimEvent[], owner: string): Clai
  * `null` for anything that is not a numbered document inside a category, which
  * is what keeps this from reading a claim out of an unrelated destination.
  */
-export function claimOfDocsPath(path: string, owner: string): ClaimIdentity | null {
+function claimOfDocsPath(path: string, owner: string): ClaimIdentity | null {
   const parts = path.split("/").filter((segment) => segment.length > 0);
   const docsAt = parts.indexOf("docs");
   if (docsAt === -1 || parts.length - docsAt !== 3) return null;
@@ -258,7 +259,7 @@ export function completedClaimsIn(
  * whole reason a recovery may free a correlative is that no late publication can
  * still land on it.
  */
-export function revokedKeys(events: readonly ClaimEvent[]): Set<string> {
+function revokedKeys(events: readonly ClaimEvent[]): Set<string> {
   const revoked = new Set<string>();
   for (const event of events) {
     if (event.event === "revoked") revoked.add(claimKey(event.claim));
@@ -316,7 +317,7 @@ export function claimShapedAmong(owner: string, destinations: readonly string[])
 }
 
 /** A slot's identity without its owner: what a file on disk can be matched by. */
-export interface SlotIdentity {
+interface SlotIdentity {
   category: string;
   correlative: string;
   name: string;
@@ -360,4 +361,44 @@ export function openOwnerOfSlot(
     open = event.event === "claimed" ? event.claim : null;
   }
   return open;
+}
+
+/**
+ * Correlatives of this category that were released and never published, ascending.
+ *
+ * The second reason this ledger exists. Minting used to compute `max + 1` and
+ * probe forward only, so a correlative given back in the middle of the range was
+ * lost forever — this workspace's own `docs/plans` has a permanent hole at `033`
+ * from exactly that. Only the record can tell a number that came back from one
+ * that never existed, because the disk looks identical either way.
+ *
+ * Judged per (category, correlative) and by the LAST terminal record, not by the
+ * presence of any: a number can be released, re-claimed and then published, and
+ * after that it is spent. `published` is the one state that never becomes eligible
+ * again — a correlative holding a document is not a free number, whatever else
+ * the history says about it.
+ *
+ * Ascending because the rule has to be deterministic and reproducible, and
+ * lowest-first also fills the holes rather than growing the range. The caller is
+ * still responsible for skipping anything taken on disk: this answers "did the
+ * record give it back", never "is the name free right now".
+ */
+export function eligibleCorrelatives(events: readonly ClaimEvent[], category: string): string[] {
+  const state = new Map<string, ClaimEventKind>();
+  for (const event of events) {
+    if (event.claim.category !== category) continue;
+    if (event.event === "claimed") continue;
+    state.set(event.claim.correlative, event.event);
+  }
+  const eligible: string[] = [];
+  for (const [correlative, last] of state) {
+    // Validated before it can be handed out. A single semi-valid ledger line
+    // would otherwise put a non-correlative into the mint, where it becomes an
+    // unrecognizable filename or a throw on the comparator.
+    if (last === "released" && isCorrelative(correlative)) eligible.push(correlative);
+  }
+  // `compareCorrelatives` and not a hand-rolled numeric sort: it is bigint-based,
+  // so it stays correct past the width where `parseInt` loses precision — and a
+  // second ordering rule for the same domain type is a second thing to keep true.
+  return eligible.sort(compareCorrelatives);
 }

@@ -13,6 +13,7 @@ import {
 import {
   applyRecovery,
   previewRecovery,
+  sanctionedActionFor,
   scanSlots,
 } from "../../src/application/claims-recovery.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
@@ -300,5 +301,50 @@ describe("aw claims recover", () => {
     } finally {
       await held.release();
     }
+  });
+
+  it("la reserva de una sesión ACTIVA no ofrece la recuperación: la resuelve su dueño", async () => {
+    // La sesión existe y no tiene marcador `.closed`: está viva.
+    const dir = join(workspace, ".workflow", "sessions", OWNER);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
+    await claimSlot("plan-alpha.md", OWNER);
+
+    const scan = await scanSlots(fs, paths);
+    const slot = scan.slots[0];
+    if (slot === undefined) throw new Error("esperaba la reserva");
+
+    expect(slot.ownerActive).toBe(true);
+    // Ofrecerle la recuperación al tablero era destructivo: revoca de forma
+    // irrevocable el slot de una corrida que sigue viva, y el motor de flow lee
+    // este mismo campo como «el comando sancionado que sigue».
+    expect(sanctionedActionFor(slot)).toBe(`aw session-close --code ${OWNER}`);
+    expect(sanctionedActionFor(slot)).not.toContain("claims recover");
+  });
+
+  it("la reserva de una sesión CERRADA sí ofrece la recuperación", async () => {
+    const dir = join(workspace, ".workflow", "sessions", OWNER);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
+    await claimSlot("plan-alpha.md", OWNER);
+    writeFileSync(join(dir, ".closed"), "");
+
+    const scan = await scanSlots(fs, paths);
+    const slot = scan.slots[0];
+    if (slot === undefined) throw new Error("esperaba la reserva");
+
+    expect(slot.ownerActive).toBe(false);
+    expect(sanctionedActionFor(slot)).toBe("aw claims recover docs/plans/001-plan-alpha.md");
+  });
+
+  it("un placeholder legacy no tiene dueño vivo que consultar", async () => {
+    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    writeFileSync(join(workspace, "docs", "plans", "009-plan-viejo.md"), "");
+
+    const slot = (await scanSlots(fs, paths)).slots[0];
+    if (slot === undefined) throw new Error("esperaba el placeholder");
+
+    expect(slot.ownerActive).toBeNull();
+    expect(sanctionedActionFor(slot)).toContain("--confirm-no-producer");
   });
 });

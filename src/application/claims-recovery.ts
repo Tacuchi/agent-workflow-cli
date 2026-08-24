@@ -47,6 +47,7 @@ import {
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { semanticDigest } from "./semantic-operation/protocol.js";
+import { CLOSED_MARKER, listSessionFolders } from "./session-resolver.js";
 
 /**
  * What a numbered file that is not a document actually is.
@@ -56,7 +57,7 @@ import { semanticDigest } from "./semantic-operation/protocol.js";
  * holds a correlative and names nobody, so it can never be released on the
  * strength of its own bytes.
  */
-export type SlotKind = "reservation" | "legacy-placeholder";
+type SlotKind = "reservation" | "legacy-placeholder";
 
 export interface SlotState {
   /** Workspace-relative, always `docs/<category>/<NNN>-<name>`. */
@@ -70,6 +71,16 @@ export interface SlotState {
   /** Already fenced by a previous revocation: its release is a completion, not a new one. */
   revoked: boolean;
   /**
+   * The owner is still an ACTIVE session — `null` when there is no owner.
+   *
+   * The difference decides which action is sanctioned, and getting it wrong is
+   * destructive: a reservation whose owner is still running is finished or closed
+   * by that owner, and only a slot nobody is going to finish is recovered.
+   * Recovering a live run's slot revokes it irrevocably, so the run can never
+   * publish into the number it is holding.
+   */
+  ownerActive: boolean | null;
+  /**
    * The bytes are still exactly this owner's marker.
    *
    * A slot that is NOT intact may still be a reservation — the ledger says who
@@ -80,7 +91,7 @@ export interface SlotState {
 }
 
 /** The identity a reservation's slot maps to, or `null` for an unattributable one. */
-export function claimOfSlot(slot: SlotState): ClaimIdentity | null {
+function claimOfSlot(slot: SlotState): ClaimIdentity | null {
   if (slot.owner === null) return null;
   return {
     category: slot.category,
@@ -90,7 +101,7 @@ export function claimOfSlot(slot: SlotState): ClaimIdentity | null {
   };
 }
 
-export interface SlotScan {
+interface SlotScan {
   slots: SlotState[];
   /** Unreadable is reported, never folded into "there were none". */
   error?: string;
@@ -113,6 +124,7 @@ function slotOf(
   fileName: string,
   text: string,
   events: readonly ClaimEvent[],
+  activeOwners: ReadonlySet<string>,
 ): SlotState | null {
   const correlative = leadingCorrelative(fileName);
   if (correlative === null) return null;
@@ -125,7 +137,14 @@ function slotOf(
   const markerOwner = reservationOwnerOf(text);
   const base = { path: `docs/${category}/${fileName}`, category, correlative, name };
   if (markerOwner !== null) {
-    return { ...base, kind: "reservation", owner: markerOwner, revoked: false, intact: true };
+    return {
+      ...base,
+      kind: "reservation",
+      owner: markerOwner,
+      ownerActive: activeOwners.has(markerOwner),
+      revoked: false,
+      intact: true,
+    };
   }
   // Real content and no marker: a document, by its bytes this time.
   if (text.trim().length > 0) return null;
@@ -133,9 +152,23 @@ function slotOf(
   // owner's reservation with damaged bytes — not nobody's placeholder.
   const open = openOwnerOfSlot(events, slot);
   if (open !== null) {
-    return { ...base, kind: "reservation", owner: open.owner, revoked: false, intact: false };
+    return {
+      ...base,
+      kind: "reservation",
+      owner: open.owner,
+      ownerActive: activeOwners.has(open.owner),
+      revoked: false,
+      intact: false,
+    };
   }
-  return { ...base, kind: "legacy-placeholder", owner: null, revoked: false, intact: false };
+  return {
+    ...base,
+    kind: "legacy-placeholder",
+    owner: null,
+    ownerActive: null,
+    revoked: false,
+    intact: false,
+  };
 }
 
 /**
@@ -150,19 +183,55 @@ async function walkSlots(
   fs: FileSystemPort,
   docs: string,
   events: readonly ClaimEvent[],
+  activeOwners: ReadonlySet<string>,
   into: SlotState[],
 ): Promise<void> {
   for (const category of await fs.list(docs)) {
     if (category.type !== "dir") continue;
     for (const entry of await fs.list(category.path)) {
-      if (entry.type !== "file") continue;
-      const slot = slotOf(category.name, entry.name, await fs.readText(entry.path), events);
+      // The filename decides whether the bytes are worth reading at all. Reading
+      // every file in every docs/ subdirectory to then discard most of them on the
+      // first line of `slotOf` made a scan that runs on EVERY board projection pay
+      // for the whole corpus.
+      if (entry.type !== "file" || leadingCorrelative(entry.name) === null) continue;
+      const slot = slotOf(
+        category.name,
+        entry.name,
+        await fs.readText(entry.path),
+        events,
+        activeOwners,
+      );
       if (slot === null) continue;
       const claim = claimOfSlot(slot);
       slot.revoked = claim !== null && isRevoked(events, claim);
       into.push(slot);
     }
   }
+}
+
+/**
+ * The session folders that are still open.
+ *
+ * Read once per scan, because the sanctioned action for a slot depends on it: a
+ * reservation of a live session is that session's to finish or close, and only a
+ * slot nobody is finishing may be recovered.
+ */
+async function activeSessionFolders(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<ReadonlySet<string>> {
+  const active = new Set<string>();
+  try {
+    for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+      if (await fs.exists(join(folder.path, CLOSED_MARKER))) continue;
+      active.add(folder.name);
+    }
+  } catch {
+    // An unreadable sessions dir means nobody can be proven alive. The fallback is
+    // the conservative one: with no owner known to be active, no slot is offered
+    // for recovery on the strength of liveness it could not check.
+  }
+  return active;
 }
 
 /**
@@ -181,10 +250,11 @@ export async function scanSlots(fs: FileSystemPort, paths: PathsService): Promis
   const docs = join(paths.workspaceDir(), "docs");
   const slots: SlotState[] = [];
   const ledger = await readClaimEvents(fs, paths);
+  const activeOwners = await activeSessionFolders(fs, paths);
   const sorted = (): SlotState[] => slots.sort((a, b) => a.path.localeCompare(b.path));
   if (!(await fs.exists(docs))) return { slots };
   try {
-    await walkSlots(fs, docs, ledger.events, slots);
+    await walkSlots(fs, docs, ledger.events, activeOwners, slots);
   } catch (error) {
     return {
       slots: sorted(),
@@ -194,7 +264,7 @@ export async function scanSlots(fs: FileSystemPort, paths: PathsService): Promis
   return { slots: sorted() };
 }
 
-export interface RecoveryProposal {
+interface RecoveryProposal {
   version: 1;
   target: string;
   kind: SlotKind;
@@ -224,11 +294,11 @@ export interface RecoveryProposal {
   digest: string;
 }
 
-export function sealRecovery(body: Omit<RecoveryProposal, "digest">): RecoveryProposal {
+function sealRecovery(body: Omit<RecoveryProposal, "digest">): RecoveryProposal {
   return { ...body, digest: semanticDigest(body) };
 }
 
-export type RecoveryFailure = { error: string; action: string };
+type RecoveryFailure = { error: string; action: string };
 
 /** The proposal for one slot, or why there is none. */
 export async function previewRecovery(
@@ -258,7 +328,7 @@ export async function previewRecovery(
   };
 }
 
-export interface RecoveryApplied {
+interface RecoveryApplied {
   target: string;
   revoked: ClaimIdentity | null;
   released: boolean;
@@ -368,7 +438,7 @@ async function recoverUnderLock(
 }
 
 /** The owner field of a slot that never had one. Never a session folder. */
-export const LEGACY_OWNERLESS = "(placeholder legacy sin dueño)";
+const LEGACY_OWNERLESS = "(placeholder legacy sin dueño)";
 
 /** `docs/<cat>/<NNN>-<name>` split the same way every ledger record splits it. */
 function slotIdentityOf(target: string): {
@@ -385,4 +455,25 @@ function slotIdentityOf(target: string): {
     correlative,
     name: correlative.length > 0 ? file.slice(correlative.length + 1) : file,
   };
+}
+
+/**
+ * The one action this slot sanctions, named per slot.
+ *
+ * A reservation of a live session is resumed or closed by its owner; only a slot
+ * nobody is finishing gets recovered. And a slot whose bytes are not its own
+ * intact marker carries the confirmation flag in the command itself, so the
+ * operator sees the extra assertion being asked of them before they type it.
+ */
+export function sanctionedActionFor(slot: SlotState): string {
+  // A live owner's reservation is NOT a recovery candidate. Naming the recovery
+  // here was destructive: the board handed the running session the one command
+  // that revokes its own slot irrevocably, and the flow reads this very field as
+  // "the sanctioned next command". Closing the owner releases an intact
+  // reservation as part of closing, which is the action that actually resolves it.
+  if (slot.ownerActive === true && slot.owner !== null) {
+    return `aw session-close --code ${slot.owner}`;
+  }
+  const confirm = slot.intact ? "" : " --confirm-no-producer";
+  return `aw claims recover ${slot.path}${confirm}`;
 }

@@ -9,6 +9,7 @@ import { type TerminalEvent, readEvents } from "./retirement/history-events.js";
 import {
   type IndexedDiscarded,
   type IndexedPlan,
+  type IndexedReservation,
   type IndexedSpec,
   type IndexedWorkspace,
   type PendingRetirement,
@@ -79,6 +80,17 @@ export interface StatusOutput {
    * reading — and finishing it is a mutation, so what a read owes is the fact.
    */
   pending_retirements: PendingRetirement[];
+  /**
+   * Correlatives held by a reservation or a legacy placeholder.
+   *
+   * Reported as their own thing, never counted among `specs` or `plans` and never
+   * a pipeline row: a held number is not work anybody should weigh against an open
+   * plan, and presenting one as an executable document is exactly what this board
+   * used to do.
+   */
+  reservations: IndexedReservation[];
+  /** Non-fatal, never silent: an unreadable `docs/` is not an empty one. */
+  reservations_error?: string;
   /** what is left to do, in priority order — the same list `resume` routes from */
   pipeline: PipelineItem[];
   /**
@@ -153,6 +165,10 @@ export async function runStatusCommand(
     discarded: index.discarded,
     terminal_events: events,
     pending_retirements: index.pending_retirements,
+    reservations: index.reservations,
+    ...(index.reservations_error !== undefined
+      ? { reservations_error: index.reservations_error }
+      : {}),
     pipeline: index.pipeline,
     loose_sessions: index.loose_sessions,
     designs: index.designs,

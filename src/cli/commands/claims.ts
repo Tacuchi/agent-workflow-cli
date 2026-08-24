@@ -1,4 +1,9 @@
-import { applyRecovery, previewRecovery, scanSlots } from "../../application/claims-recovery.js";
+import {
+  applyRecovery,
+  previewRecovery,
+  sanctionedActionFor,
+  scanSlots,
+} from "../../application/claims-recovery.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand } from "../registry.js";
@@ -37,13 +42,8 @@ export const claimsCommand: CliCommand = {
             name: slot.name,
             owner: slot.owner,
             revoked: slot.revoked,
-            // The sanctioned action, named per slot: a reservation of a live
-            // session is resumed or closed by its owner, and only a slot nobody
-            // is finishing is recovered.
-            next:
-              slot.kind === "legacy-placeholder"
-                ? `aw claims recover ${slot.path} --confirm-no-producer`
-                : `aw claims recover ${slot.path}`,
+            intact: slot.intact,
+            next: sanctionedActionFor(slot),
           })),
           ...(scan.error !== undefined ? { error: scan.error } : {}),
         },

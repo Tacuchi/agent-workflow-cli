@@ -12,6 +12,7 @@ import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
+import { type SlotState, sanctionedActionFor, scanSlots } from "./claims-recovery.js";
 import { localDateIso } from "./dates.js";
 import { noteIndexPath, readNoteIndex } from "./decision-note-service.js";
 import { type DesignGraph, buildDesignGraph } from "./design/design-graph-service.js";
@@ -325,8 +326,37 @@ export interface WorklineIndex {
    * visible fact plus the command that converges it.
    */
   pending_retirements: PendingRetirement[];
+  /**
+   * Correlatives held by a reservation or a legacy placeholder — never documents.
+   *
+   * Their own collection, deliberately OUT of `specs` and `plans`: a numbered file
+   * that only holds a reservation marker used to be counted as a plan and offered
+   * with `/w:plan-exec`, so the board invited somebody to execute a document that
+   * did not exist yet. It is not a pipeline row either — nothing here is work the
+   * user should weigh against an open plan — it is a held number, with the one
+   * action that resolves it.
+   */
+  reservations: IndexedReservation[];
+  /** Non-fatal, never silent: an unreadable `docs/` is not an empty one. */
+  reservations_error?: string;
   /** Present when `[docs]` is invalid; readers deliberately did not guess paths. */
   docs_canon_error?: string;
+}
+
+export interface IndexedReservation {
+  file: string;
+  kind: SlotState["kind"];
+  correlative: string;
+  /** `null` only for a legacy placeholder: it names nobody by construction. */
+  owner: string | null;
+  /** The owner is still an active session — `null` when there is no owner. */
+  ownerActive: boolean | null;
+  /** Its bytes are still exactly its owner's marker. */
+  intact: boolean;
+  /** Already fenced by an irrevocable revocation; its release is a completion. */
+  revoked: boolean;
+  /** The single action that resolves it — resume, close, or recover. */
+  next: string;
 }
 
 export interface PendingRetirement {
@@ -368,8 +398,16 @@ export async function buildWorklineIndex(
   const workspace = await readWorkspace(fs, paths, cwd);
   const canon = await resolveCoreDocsCanon(fs, paths);
   const docs = canon.ok ? canon.canon : null;
-  const specs = docs === null ? [] : await readSpecs(fs, cwd, docs.spec, now);
-  const plans = docs === null ? [] : await readPlans(fs, cwd, specs, docs, now);
+  // Scanned BEFORE the documents, because it is what tells them apart: a
+  // reservation and a legacy placeholder both look like a numbered document to a
+  // filename regex, and only the ledger plus the bytes together can say which is
+  // which. Their paths are then excluded from the corpus rather than filtered out
+  // of it afterwards, so nothing downstream — pipeline, resume, the TUI — can see
+  // a held number as executable work.
+  const slotScan = await scanSlots(fs, paths);
+  const heldPaths = new Set(slotScan.slots.map((slot) => slot.path));
+  const specs = docs === null ? [] : await readSpecs(fs, cwd, docs.spec, now, heldPaths);
+  const plans = docs === null ? [] : await readPlans(fs, cwd, specs, docs, now, heldPaths);
   const sessions = await readSessions(fs, env, paths, now, docs);
   const isolation = await readIsolation(fs, env, paths, input.git);
   for (const session of sessions) {
@@ -392,6 +430,17 @@ export async function buildWorklineIndex(
     designs,
     orphan_units: isolation.orphans,
     pending_retirements: await readPendingRetirements(fs, paths),
+    reservations: slotScan.slots.map((slot) => ({
+      file: slot.path,
+      kind: slot.kind,
+      correlative: slot.correlative,
+      owner: slot.owner,
+      ownerActive: slot.ownerActive,
+      intact: slot.intact,
+      revoked: slot.revoked,
+      next: sanctionedActionFor(slot),
+    })),
+    ...(slotScan.error !== undefined ? { reservations_error: slotScan.error } : {}),
     ...(canon.ok ? {} : { docs_canon_error: canon.error }),
   };
 }
@@ -711,10 +760,12 @@ async function readSpecs(
   cwd: string,
   specDir: string,
   now: Date,
+  held: ReadonlySet<string> = new Set(),
 ): Promise<IndexedSpec[]> {
   const files = dedupeRefined(await listMarkdown(fs, join(cwd, specDir), SPEC_RE));
   const out: IndexedSpec[] = [];
   for (const f of files) {
+    if (held.has(relFromCwd(f.path, cwd))) continue;
     try {
       const text = await fs.readText(f.path);
       const status = resolveSpecStatus(text);
@@ -816,6 +867,7 @@ async function readPlans(
   specs: IndexedSpec[],
   docs: CoreDocsCanon,
   now: Date,
+  held: ReadonlySet<string> = new Set(),
 ): Promise<IndexedPlan[]> {
   const files = await listMarkdown(fs, join(cwd, docs.plan), PLAN_RE);
   const byNumber = new Map(specs.map((s) => [s.number, s]));
@@ -855,6 +907,7 @@ async function readPlans(
 
   const out: IndexedPlan[] = [];
   for (const f of files) {
+    if (held.has(relFromCwd(f.path, cwd))) continue;
     try {
       const text = await fs.readText(f.path);
       const seal = parsePlanBaselineSeal(text, docs.spec);

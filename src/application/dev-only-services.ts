@@ -17,7 +17,13 @@ import {
 } from "../domain/resource-policy.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { appendClaimEvent } from "./claims-ledger.js";
+import {
+  type ClaimEvent,
+  appendClaimEvent,
+  eligibleCorrelatives,
+  isRevoked,
+  readClaimEvents,
+} from "./claims-ledger.js";
 import { withCwdLock } from "./lock-service.js";
 import { parseMdSection, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
@@ -440,49 +446,102 @@ async function mintUnderLock(
       };
     }
   }
-  let nnn = state.next;
-  for (let probe = 0; probe < MAX_CLAIM_PROBES; probe++, nnn = nextCorrelative(nnn)) {
-    // Taken by NUMBER: another document already holds this correlative under a
-    // different slug, so the name is free while the number is not.
-    if (state.files.some((name) => hasCorrelative(name, nnn))) continue;
-    const path = join(target, `${nnn}-${mint.name}`);
-    // Atomic AND exclusive. The marker goes through the same primitive as a
-    // document on purpose: a half-written marker IS the anonymous zero-byte
-    // placeholder this mechanism exists to retire, and there is no reason to
-    // keep a way of producing one.
-    const { created } = await fs.publishTextExclusive(path, mint.bytes);
-    if (!created) continue;
-    if (mint.kind === "publish") {
-      // A publication leaves no reservation, so it has no lifecycle to record:
-      // the document on disk IS the whole story, and `scan` already reads its
-      // correlative as spent straight from the file.
-      return { ...state, next: nnn, published_path: normalize(path) };
+  // Correlatives the ledger says came back, lowest first, BEFORE `max + 1`.
+  //
+  // The old mint computed `max + 1` and probed forward only, so a number released
+  // in the middle of the range was gone for good — this workspace still carries a
+  // permanent hole from exactly that. The disk cannot tell a number that was given
+  // back from one that never existed; only the record can, which is why the
+  // eligible set is read here and not derived from the directory listing.
+  const ledger = await readClaimEvents(fs, paths);
+  const reusable = eligibleCorrelatives(ledger.events, basename(target));
+  // Each reusable correlative gets ONE attempt — it is a specific number, not a
+  // starting point — and then `max + 1` gets the forward probe it always had.
+  for (const candidate of [...reusable, null]) {
+    let nnn = candidate ?? state.next;
+    const probes = candidate === null ? MAX_CLAIM_PROBES : 1;
+    for (let probe = 0; probe < probes; probe++, nnn = nextCorrelative(nnn)) {
+      const taken = await attemptAt(fs, paths, target, mint, state, nnn, ledger.events);
+      if (taken !== null) return taken;
     }
-    // Inside the same lock that just materialized the slot. A reservation
-    // without its record is a claim nobody can account for once the marker is
-    // gone — the half of the original defect the marker alone never closed.
-    await appendClaimEvent(fs, paths, {
-      at: new Date().toISOString(),
-      event: "claimed",
-      claim: {
-        category: basename(target),
-        correlative: nnn,
-        name: mint.name,
-        owner: mint.owner,
-      },
-      cause: "aw next-number --claim",
-    });
-    return {
-      ...state,
-      next: nnn,
-      claimed_path: normalize(path),
-      claimed_owner: mint.owner,
-      claim_reused: false,
-    };
   }
   throw new Error(
     `no se pudo ${mint.kind === "publish" ? "publicar" : "reclamar"} un correlativo en ${target}: ${MAX_CLAIM_PROBES} números consecutivos ya estaban tomados`,
   );
+}
+
+/**
+ * Take exactly this correlative, or answer `null` so the caller tries the next.
+ *
+ * Everything here happens under the mint's lock. The record is written in the
+ * same breath as the slot for the same reason the release is: a reservation
+ * without its line is a claim nobody can account for once the marker is gone.
+ */
+async function attemptAt(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: string,
+  mint: Mint,
+  state: NextNumberOutput,
+  nnn: string,
+  events: readonly ClaimEvent[],
+): Promise<NextNumberOutput | null> {
+  // Taken by NUMBER: another document already holds this correlative under a
+  // different slug, so the name is free while the number is not. A released
+  // correlative can also have been taken again since, which is why the record
+  // answers "was it given back" and the disk answers "is it free now".
+  if (state.files.some((name) => hasCorrelative(name, nnn))) return null;
+  // Never hand out a claim key that is already FENCED.
+  //
+  // A revocation is permanent and keyed by category/correlative/name/owner, so a
+  // recovery followed by the same owner re-claiming the same document name used to
+  // mint the identical key — and the publication point then refused it forever.
+  // The run walked away holding a slot it could never complete, and the refusal's
+  // advice ("ask for a new one") looped straight back to the same key through the
+  // idempotent re-entry. Skipping it here is what keeps the eligible set from
+  // handing back a number that is only nominally free.
+  if (
+    mint.kind === "claim" &&
+    isRevoked(events, {
+      category: basename(target),
+      correlative: nnn,
+      name: mint.name,
+      owner: mint.owner,
+    })
+  ) {
+    return null;
+  }
+  const path = join(target, `${nnn}-${mint.name}`);
+  // Atomic AND exclusive. The marker goes through the same primitive as a
+  // document on purpose: a half-written marker IS the anonymous zero-byte
+  // placeholder this mechanism exists to retire, and there is no reason to keep a
+  // way of producing one.
+  const { created } = await fs.publishTextExclusive(path, mint.bytes);
+  if (!created) return null;
+  if (mint.kind === "publish") {
+    // A publication leaves no reservation, so it has no lifecycle to record: the
+    // document on disk IS the whole story, and `scan` already reads its
+    // correlative as spent straight from the file.
+    return { ...state, next: nnn, published_path: normalize(path) };
+  }
+  await appendClaimEvent(fs, paths, {
+    at: new Date().toISOString(),
+    event: "claimed",
+    claim: {
+      category: basename(target),
+      correlative: nnn,
+      name: mint.name,
+      owner: mint.owner,
+    },
+    cause: "aw next-number --claim",
+  });
+  return {
+    ...state,
+    next: nnn,
+    claimed_path: normalize(path),
+    claimed_owner: mint.owner,
+    claim_reused: false,
+  };
 }
 
 export async function runNextNumber(
