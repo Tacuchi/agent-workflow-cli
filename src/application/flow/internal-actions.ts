@@ -33,6 +33,7 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
 import { runArtifactsCommand } from "../artifacts-service.js";
+import { appendClaimEvent, completedClaimsIn, readClaimEvents } from "../claims-ledger.js";
 import { applyLocalProposal } from "../local-proposal.js";
 import { parseMdSectionBilingual } from "../markdown.js";
 import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
@@ -228,17 +229,83 @@ async function publish(
   }
   const result = applied.result;
   const destinations = proposal.artifacts.map((a) => a.path);
+  const claims = await recordCompletedClaims(deps, run.session, result, destinations);
   return {
     ok: true,
     summary: result.already_applied
       ? `la propuesta ya estaba aplicada: ${destinations.join(", ")} sin cambios`
       : `publicado: ${result.written.join(", ")}`,
-    output: canonicalJson({ ...result, digest: proposal.digest, destinations }),
+    output: canonicalJson({ ...result, digest: proposal.digest, destinations, claims }),
     // Only what really landed. A re-entry that found the bytes already there
     // credits the same classes — the effect IS applied — and the summary is what
     // distinguishes "now" from "already", which is the honest split.
     effects: [...result.applied],
   };
+}
+
+/** What the completion recording managed to do, so none of it has to be silent. */
+interface ClaimRecording {
+  recorded: string[];
+  /** The ledger could not be read or appended to. Reported, never swallowed. */
+  ledger_error?: string;
+  /** Lines that did not parse: the open set may be incomplete, so say so. */
+  ledger_unreadable?: number;
+}
+
+/**
+ * Record every open claim of this session that the publication just completed.
+ *
+ * Completing a reservation is a PUBLICATION: the correlative is spent for good
+ * and must never come back to the eligible set. Getting this wrong in either
+ * direction is durable, so both directions are handled deliberately:
+ *
+ * - **Under-recording is the dangerous one.** A claim left open about a
+ *   correlative that is holding a published document is an invitation for a later
+ *   recovery to release a live document. That is why the already-applied re-entry
+ *   is covered too: `applyLocalProposal` answers that case with `written: []`, and
+ *   returning early on an empty list left the claim open forever, unfixable,
+ *   because every retry answers the same way.
+ * - **Over-recording is a durable lie.** So a destination only counts when it
+ *   closes one of THIS owner's open claims, read from the ledger itself. Any other
+ *   write travels through this same publication path and must record nothing.
+ *
+ * It never fails the publication — the bytes are already on disk and the person's
+ * document exists — but it never goes quiet either: what it could not do comes
+ * back to the caller and into the operation's output.
+ */
+async function recordCompletedClaims(
+  deps: InternalActionDeps,
+  owner: string,
+  result: { written: readonly string[]; already_applied: boolean },
+  destinations: readonly string[],
+): Promise<ClaimRecording> {
+  const recorded: string[] = [];
+  try {
+    const read = await readClaimEvents(deps.fs, deps.paths);
+    const completed = completedClaimsIn(read.events, owner, {
+      written: result.written,
+      already_applied: result.already_applied,
+      destinations,
+    });
+    for (const claim of completed) {
+      await appendClaimEvent(deps.fs, deps.paths, {
+        at: new Date().toISOString(),
+        event: "published",
+        claim,
+        cause: "la propuesta sellada de su dueño completó la reserva",
+      });
+      recorded.push(`${claim.category}/${claim.correlative}-${claim.name}`);
+    }
+    return {
+      recorded,
+      ...(read.unreadable > 0 ? { ledger_unreadable: read.unreadable } : {}),
+    };
+  } catch (error) {
+    return {
+      recorded,
+      ledger_error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function board(deps: InternalActionDeps): Promise<InternalActionOutcome> {

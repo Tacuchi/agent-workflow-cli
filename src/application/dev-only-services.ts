@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import {
   formatCorrelative,
   leadingCorrelative,
@@ -17,6 +17,7 @@ import {
 } from "../domain/resource-policy.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { appendClaimEvent } from "./claims-ledger.js";
 import { withCwdLock } from "./lock-service.js";
 import { parseMdSection, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
@@ -418,6 +419,7 @@ function mintOf(
  */
 async function mintUnderLock(
   fs: FileSystemPort,
+  paths: PathsService,
   target: string,
   mint: Mint,
 ): Promise<NextNumberOutput> {
@@ -450,15 +452,33 @@ async function mintUnderLock(
     // keep a way of producing one.
     const { created } = await fs.publishTextExclusive(path, mint.bytes);
     if (!created) continue;
-    return mint.kind === "publish"
-      ? { ...state, next: nnn, published_path: normalize(path) }
-      : {
-          ...state,
-          next: nnn,
-          claimed_path: normalize(path),
-          claimed_owner: mint.owner,
-          claim_reused: false,
-        };
+    if (mint.kind === "publish") {
+      // A publication leaves no reservation, so it has no lifecycle to record:
+      // the document on disk IS the whole story, and `scan` already reads its
+      // correlative as spent straight from the file.
+      return { ...state, next: nnn, published_path: normalize(path) };
+    }
+    // Inside the same lock that just materialized the slot. A reservation
+    // without its record is a claim nobody can account for once the marker is
+    // gone — the half of the original defect the marker alone never closed.
+    await appendClaimEvent(fs, paths, {
+      at: new Date().toISOString(),
+      event: "claimed",
+      claim: {
+        category: basename(target),
+        correlative: nnn,
+        name: mint.name,
+        owner: mint.owner,
+      },
+      cause: "aw next-number --claim",
+    });
+    return {
+      ...state,
+      next: nnn,
+      claimed_path: normalize(path),
+      claimed_owner: mint.owner,
+      claim_reused: false,
+    };
   }
   throw new Error(
     `no se pudo ${mint.kind === "publish" ? "publicar" : "reclamar"} un correlativo en ${target}: ${MAX_CLAIM_PROBES} números consecutivos ya estaban tomados`,
@@ -491,7 +511,7 @@ export async function runNextNumber(
     );
   }
 
-  const minted = await withCwdLock(fs, paths, () => mintUnderLock(fs, target, mint), {
+  const minted = await withCwdLock(fs, paths, () => mintUnderLock(fs, paths, target, mint), {
     waitMs: CLAIM_LOCK_WAIT_MS,
   });
 

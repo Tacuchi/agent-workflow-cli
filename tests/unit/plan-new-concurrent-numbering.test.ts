@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { openClaimsOf, readClaimEvents } from "../../src/application/claims-ledger.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
@@ -604,5 +605,55 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
 
     expect(empty.ok).toBe(false);
     await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("completar la reserva propia queda registrado como publicación, no como liberación", async () => {
+    const alpha = walker("201", "alpha");
+    await walkTo(alpha, "plan-new.save-confirmation");
+    await approve(alpha);
+
+    const read = await readClaimEvents(fs, paths);
+    const mine = read.events.filter((e) => e.claim.owner === alpha.folder);
+    // El correlativo se gastó para siempre: `published` y `released` son hechos
+    // distintos, y confundirlos devolvería al conjunto elegible un número que
+    // está sosteniendo un documento.
+    expect(mine.map((e) => e.event)).toEqual(["claimed", "published"]);
+    expect(openClaimsOf(read.events, alpha.folder)).toEqual([]);
+  });
+
+  it("una reserva MODIFICADA no se libera al cerrar: fail-closed sobre bytes inciertos", async () => {
+    const alpha = walker("201", "alpha");
+    await walkTo(alpha, "plan-new.phase-shaping");
+    const slot = join(workdir, reserved(alpha));
+    await writeFile(slot, "alguien escribió algo acá que no es el marcador\n", "utf8");
+
+    const closed = await runSessionClose(fs, paths, { code: "201" });
+    if (!("sessionClose" in closed)) throw new Error("esperaba cerrar la sesión");
+
+    // Sólo el marcador propio INTACTO se libera. Cualquier otra cosa se preserva
+    // hasta una recuperación explícita, porque un archivo con bytes que nadie
+    // reconoce puede ser trabajo de alguien.
+    expect(closed.sessionClose.reservations_released).toBeUndefined();
+    expect(await readFile(slot, "utf8")).toContain("no es el marcador");
+    const read = await readClaimEvents(fs, paths);
+    expect(read.events.filter((e) => e.event === "released")).toEqual([]);
+    // Y sigue abierta: nadie la cerró, así que una recuperación explícita la ve.
+    expect(openClaimsOf(read.events, alpha.folder)).toHaveLength(1);
+  });
+
+  it("una interrupción sin evento terminal deja la reserva abierta, sin caducidad por reloj", async () => {
+    const alpha = walker("201", "alpha");
+    await walkTo(alpha, "plan-new.phase-shaping");
+
+    // No hay cierre, ni cancelación, ni publicación: la corrida simplemente se
+    // fue. La reserva sigue existiendo y atribuida, y ningún reloj la retira.
+    const read = await readClaimEvents(fs, paths);
+    expect(read.events.map((e) => e.event)).toEqual(["claimed"]);
+    const open = openClaimsOf(read.events, alpha.folder);
+    expect(open).toHaveLength(1);
+    expect(open[0]?.owner).toBe(alpha.folder);
+    expect(await readFile(join(workdir, reserved(alpha)), "utf8")).toBe(
+      reservationMarker(alpha.folder),
+    );
   });
 });

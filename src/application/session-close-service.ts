@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { leadingCorrelative } from "../domain/correlative.js";
 import { reservationMarker } from "../domain/reservation.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { appendClaimEvent } from "./claims-ledger.js";
 import { historyFields, sharedNumberError, upsertHistoryRow } from "./history-update-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
@@ -300,10 +301,32 @@ async function releaseReservations(
     for (const category of await fs.list(docs)) {
       if (category.type !== "dir") continue;
       for (const entry of await fs.list(category.path)) {
-        if (entry.type !== "file" || leadingCorrelative(entry.name) === null) {
+        const correlative = leadingCorrelative(entry.name);
+        if (entry.type !== "file" || correlative === null) {
           continue;
         }
         if ((await fs.readText(entry.path)) !== marker) continue;
+        // The record goes in BEFORE the file is removed, and the order is the
+        // whole safety argument. Recording after would leave a window — an I/O
+        // error, a Ctrl-C, a SIGKILL — where the marker is already gone and no
+        // line says the correlative came back: a number freed with zero durable
+        // trace, which is exactly the state this ledger exists to end.
+        //
+        // Reversed, the worst case is a conservative OVER-statement: a `released`
+        // record for a marker still on disk. A retry or a recovery reconciles
+        // that; nothing reconciles a silent deletion. Same doctrine the baseline
+        // seal follows — before, not after, and not only on success.
+        await appendClaimEvent(fs, paths, {
+          at: new Date().toISOString(),
+          event: "released",
+          claim: {
+            category: category.name,
+            correlative,
+            name: entry.name.slice(correlative.length + 1),
+            owner: folder,
+          },
+          cause: "aw session-close: la reserva seguía intacta al cerrar su sesión",
+        });
         await fs.remove(entry.path);
         released.push(`docs/${category.name}/${entry.name}`);
       }
