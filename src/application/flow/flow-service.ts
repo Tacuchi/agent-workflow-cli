@@ -13,10 +13,11 @@ import {
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
   type RecoveryBlocker,
-  attemptsAt,
+  attemptAccountingAt,
   checkAgainstJourney,
   grantAttempts,
   newRunState,
+  normalizeAttemptChain,
   recoveryBlockedAt,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -218,11 +219,17 @@ function recover(state: FlowRunState, named: string | null): FlowRunMutation<Flo
       `se recupera la frontera vigente: volvé a invocar sin --transition, o con --transition ${stopped.id}`,
     );
   }
-  const spent = attemptsAt(state, stopped.id);
-  if (spent < MAX_BOUNDARY_ATTEMPTS) {
+  const accounting = attemptAccountingAt(state, stopped.id);
+  const spent = accounting.spent;
+  // TWO ways in, and the second one is why this verb exists at all. Exhaustion is
+  // the boundary the run walked into legitimately. The other is a boundary that
+  // still has budget on paper and cannot be answered anyway, because its own rows
+  // will not yield the next ordinal — and refusing that one for `spent < MAX` is
+  // exactly what left editing the ledger by hand as the only way out.
+  if (spent < MAX_BOUNDARY_ATTEMPTS && accounting.unanswerable === null) {
     return refuse(
       "FLOW_RECOVERY_NOT_NEEDED",
-      `'${stopped.id}' gastó ${spent} de ${MAX_BOUNDARY_ATTEMPTS} intentos: todavía se contesta`,
+      `'${stopped.id}' gastó ${spent} de ${MAX_BOUNDARY_ATTEMPTS} intentos y su contabilidad es coherente (filas ${accounting.rows}, piso ${accounting.floor}, grants ${accounting.granted}, disponibles ${accounting.available}): todavía se contesta`,
       "respondé la frontera vigente con 'aw flow submit': recuperar no es una forma de saltearla",
     );
   }
@@ -233,7 +240,12 @@ function recover(state: FlowRunState, named: string | null): FlowRunMutation<Flo
   const blocked = recoveryBlockedAt(state, stopped.id);
   if (blocked !== null) return refuseRecovery(stopped.id, blocked);
 
-  const recovered = grantAttempts(state, stopped.id, spent);
+  // The grant gives the budget back. The chain relabel is what makes the boundary
+  // ANSWERABLE when the rows were the problem: handing back three attempts over a
+  // ledger that still refuses the ordinal would be a recovery that reports success
+  // and changes nothing. Coherent accounting is left exactly as it is.
+  const granted = grantAttempts(state, stopped.id, spent);
+  const recovered = accounting.unanswerable === null ? granted : normalizeAttemptChain(granted);
   const built = directiveFor(recovered, resolveBoundary(recovered, journey), []);
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state: built.state, value: built.directive };

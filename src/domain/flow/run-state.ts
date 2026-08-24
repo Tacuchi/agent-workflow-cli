@@ -26,6 +26,7 @@ import type { WorklineFlow } from "../../application/capability/compose.js";
 import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
 import { canonicalJson, semanticDigest } from "../../application/semantic-operation/protocol.js";
 import { type EffectClass, isEffectClass, touchesTheWorld } from "../capability/effects.js";
+import { AttemptLedger } from "../capability/protocol.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
 import type { LocalProposal } from "../proposal.js";
 import type { PlanReconciliation } from "../reconciliation.js";
@@ -132,10 +133,164 @@ export interface FlowRunDegradation {
  * as a reason to refuse a run that was walking fine.
  */
 export function attemptsAt(state: FlowRunState, transition: string): number {
-  const spent = state.attempts.filter((attempt) => attempt.transition === transition).length;
+  return spendAt(state, transition).spent;
+}
+
+/**
+ * The three numbers and the difference between them, computed once.
+ *
+ * Kept apart from {@link attemptAccountingAt} so the cap check stays what it was
+ * — three lookups and a subtraction — while the richer reading built on top does
+ * not restate the arithmetic. Two copies of this formula is exactly how the
+ * directive and the recovery guard would end up disagreeing about the same run.
+ */
+function spendAt(
+  state: FlowRunState,
+  transition: string,
+): { rows: FlowRunAttempt[]; floor: number; granted: number; spent: number } {
+  const rows = state.attempts.filter((attempt) => attempt.transition === transition);
   const floor = state.attempt_floor?.[transition] ?? 0;
   const granted = state.attempt_grants?.[transition] ?? 0;
-  return Math.max(0, Math.max(spent, floor) - granted);
+  return { rows, floor, granted, spent: Math.max(0, Math.max(rows.length, floor) - granted) };
+}
+
+/**
+ * One representation of the count, by the name it carries in the state.
+ *
+ * Named rather than positional because the point of reporting a conflict is that
+ * whoever reads it can go look: `attempt_floor` and `attempts` are fields
+ * somebody can open in the file, and "2 against 1" without them is a riddle.
+ */
+export interface AttemptRepresentation {
+  name: string;
+  value: number;
+}
+
+/** Two representations of the same count that do not agree, and why. */
+export interface AttemptConflict {
+  between: [AttemptRepresentation, AttemptRepresentation];
+  /** Never empty: a conflict nobody can act on is noise with a field name. */
+  cause: string;
+}
+
+/**
+ * Everything one transition's accounting says, with its parts still visible.
+ *
+ * {@link attemptsAt} answers the only question the cap needs — how much is spent
+ * — and answering it SWALLOWS the three numbers it came from. That is precisely
+ * what a caller cannot report: a message that says "1 of 3" cannot say which
+ * representation disagreed when they do disagree, and whoever is stuck is left
+ * comparing prose against a sealed file they are told not to edit. So the reading
+ * is derived once, here, with its inputs kept, and every consumer projects this
+ * object instead of recomputing a number of its own.
+ *
+ * Derived on READ and never persisted: every field comes from data the state
+ * already carries, which is why observability costs the ledger no new version.
+ */
+export interface AttemptAccounting {
+  transition: string;
+  /** Rows this run persisted for the transition. */
+  rows: number;
+  /** The monotone counter's word, reconciled into the state on read. */
+  floor: number;
+  /** What a recovery forgave. */
+  granted: number;
+  /** The effective spend the cap is measured against. */
+  spent: number;
+  /** Evaluated decisions the boundary still admits. Never below zero. */
+  available: number;
+  /** The ordinals the rows carry, in the order they were recorded. */
+  ordinals: number[];
+  /** Representations that disagree. Empty when they all say the same thing. */
+  conflicts: AttemptConflict[];
+  /**
+   * Why this boundary cannot be answered again, or `null`.
+   *
+   * NOT exhaustion. Exhaustion is `spent` against the cap and it is a boundary
+   * the run walked into legitimately, with its own code and its own way out.
+   * This is the other half of the same question: the persisted rows cannot yield
+   * the next ordinal, so the ledger will refuse whatever ordinal a submit
+   * computes. Handing such a boundary over as answerable asks somebody for a
+   * number their own file rejects — and the attempt it costs is spent on nothing.
+   */
+  unanswerable: CapabilityFailure | null;
+}
+
+/**
+ * The whole accounting of one transition, conflicts named and answerability read.
+ *
+ * The one reading the engine, the directive and the recovery guard share.
+ */
+export function attemptAccountingAt(state: FlowRunState, transition: string): AttemptAccounting {
+  const { rows, floor: read, granted, spent } = spendAt(state, transition);
+  // The floor the FILE will hold, not the one this invocation happened to read.
+  // `raiseCounters` lifts it to at least the row count on every write, so the
+  // pre-raise value left the directive reporting a floor one write behind itself
+  // — and a projection that disagrees with the state it describes is the very
+  // thing this reading exists to stop. It cannot mask a real divergence: a
+  // counter that runs AHEAD of the rows stays ahead of this maximum.
+  const floor = Math.max(read, rows.length);
+  const ordinals = rows.map((attempt) => attempt.attempt);
+  const conflicts: AttemptConflict[] = [];
+  if (floor > rows.length) {
+    conflicts.push({
+      between: [
+        { name: "attempt_floor", value: floor },
+        { name: "attempts", value: rows.length },
+      ],
+      cause:
+        "el contador monótono declara más intentos que las filas persistidas: o se restauró una copia anterior del ledger, o una escritura murió entre el contador y el estado",
+    });
+  }
+  if (granted > Math.max(rows.length, floor)) {
+    conflicts.push({
+      between: [
+        { name: "attempt_grants", value: granted },
+        { name: "attempts", value: Math.max(rows.length, floor) },
+      ],
+      cause: "se perdonan más intentos de los que esta transición llegó a registrar",
+    });
+  }
+  const highest = ordinals.length === 0 ? 0 : Math.max(...ordinals);
+  if (highest !== rows.length) {
+    conflicts.push({
+      between: [
+        { name: "attempts[].attempt", value: highest },
+        { name: "attempts", value: rows.length },
+      ],
+      cause:
+        "el ordinal más alto que las filas declaran no coincide con cuántas filas hay: la cadena tiene un hueco, un número repetido, o se reinició bajo otro sello",
+    });
+  }
+  return {
+    transition,
+    rows: rows.length,
+    floor,
+    granted,
+    spent,
+    available: Math.max(0, MAX_BOUNDARY_ATTEMPTS - spent),
+    ordinals,
+    conflicts,
+    unanswerable: unanswerableAt(state),
+  };
+}
+
+/**
+ * The refusal a submit would hit replaying this run's own history, or `null`.
+ *
+ * The ledger validates ordinals keyed by the boundary SEAL rather than by
+ * transition, so the question cannot be asked about one transition in isolation:
+ * it is asked the way `submit` asks it, by replaying every row the run persisted.
+ * A failed replay is not a prediction — it is the same failure the next submit
+ * returns, produced before anybody pays an attempt to discover it.
+ */
+function unanswerableAt(state: FlowRunState): CapabilityFailure | null {
+  const ledger = new AttemptLedger();
+  for (const past of state.attempts) {
+    const replay = ledger.record(past);
+    if (!replay.ok) return replay.failure;
+  }
+  return null;
 }
 
 /**
@@ -539,6 +694,35 @@ export function degradeTransition(
  * were forgiven, which only ever grows; the effective count is the difference.
  * See {@link attemptsAt}.
  */
+/**
+ * Relabel the attempt chain so the ledger accepts it again — losing no row.
+ *
+ * The ledger validates ordinals per boundary SEAL: contiguous from 1, each row
+ * linked to the digest of the one before it. A run whose chain was broken by an
+ * older build of this very CLI — the recovery that rewound `attempts` and then
+ * appended a duplicate — stays readable and keeps every fact worth keeping, but
+ * every future submit dies on the replay. Renumbering is the smallest repair that
+ * makes it answerable: the rows, their digests and their seals all survive in the
+ * order they happened, and only the LABELS are made consistent with that order.
+ *
+ * It is not a way around the cap, which is the reason it is safe to do at all:
+ * the monotone floor and the grants are untouched here, so what the boundary has
+ * already spent is exactly what it spent before. And it is not a repair of a
+ * TAMPERED ledger either — the seal is verified before anything gets this far.
+ */
+export function normalizeAttemptChain(state: FlowRunState): FlowRunState {
+  const ordinal = new Map<string, number>();
+  const previous = new Map<string, string>();
+  const attempts = state.attempts.map((row) => {
+    const next = (ordinal.get(row.invocation_id) ?? 0) + 1;
+    ordinal.set(row.invocation_id, next);
+    const parent = next === 1 ? null : (previous.get(row.invocation_id) ?? null);
+    previous.set(row.invocation_id, row.request_digest);
+    return { ...row, attempt: next, parent_request_digest: parent };
+  });
+  return sealRunState({ ...withoutSeal(state), attempts });
+}
+
 export function grantAttempts(
   state: FlowRunState,
   transition: string,

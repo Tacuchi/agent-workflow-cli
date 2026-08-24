@@ -63,11 +63,13 @@ import {
   skipReason,
 } from "../../domain/flow/rules.js";
 import {
+  type AttemptAccounting,
   type FlowRunAttempt,
   type FlowRunEvent,
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
   applyTransition,
+  attemptAccountingAt,
   attemptsAt,
   checkAgainstJourney,
   degradeTransition,
@@ -347,6 +349,9 @@ function blockedCause(
       action: `este recorrido solo escribe ${describeAllowance(state.flow)}: promover algo a otra carpeta de docs es un paso 'export-*' aparte, nunca un efecto del loop`,
     };
   }
+  // Read once and passed down: `conflictClause` and the unanswerable check both
+  // want it, and each call replays the run's attempt history.
+  const accounting = attemptAccountingAt(state, stopped.id);
   if (exhausted(state, stopped)) {
     // Two different situations wear the same code, and saying which one this is
     // matters: one continues on the next advance, the other cannot. Reporting the
@@ -355,13 +360,49 @@ function blockedCause(
     const degradable = exhaustionSkip(state, stopped) !== null;
     return {
       code: "FLOW_BOUNDARY_EXHAUSTED",
-      message: `'${stopped.id}' agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: contestarlo otra vez sería el bucle que la regla evita`,
+      message: `'${stopped.id}' agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: contestarlo otra vez sería el bucle que la regla evita${conflictClause(accounting)}`,
       action: degradable
         ? `${DEGRADE_ACTION}; el próximo 'aw flow advance' lo pasa por alto dejando dicho por qué y sigue con el resto`
         : `${DEGRADE_ACTION}, y resolvé este paso fuera de la corrida antes de seguir: saltearlo daría por aprobado un efecto que nadie aprobó, o por hecho algo que nada corrió. Si lo que hay que rehacer es el intento, '${recoverInvocation(state)}' le devuelve los intentos a esta frontera conservando todo lo aplicado`,
     };
   }
+  // Not exhausted, and still not answerable: the rows this run persisted cannot
+  // yield the next ordinal, so the ledger would refuse whatever number a submit
+  // computed. Presenting the boundary as answerable here is what used to burn an
+  // attempt on a question nobody could answer — and then leave `recover` saying
+  // the frontier "todavía se contesta", which was the dead end.
+  const stuck = accounting.unanswerable;
+  if (stuck !== null) {
+    return {
+      code: "FLOW_BOUNDARY_UNANSWERABLE",
+      // The subject is the RUN's ledger, not this transition's rows: the replay is
+      // keyed by boundary seal and walks every row, so the break can sit anywhere
+      // and still refuse the ordinal here. Blaming this transition for it would
+      // send somebody to read the wrong part of the file.
+      message: `la contabilidad de la corrida no permite contestar '${stopped.id}': no puede producir el ordinal siguiente (${stuck.code}: ${stuck.message})${conflictClause(accounting)}`,
+      action: `no se pide un ordinal que el propio ledger va a rechazar: '${recoverInvocation(state)}' abre un grant nuevo sobre esta frontera conservando su historia, lo ya aplicado y sus controles de integridad`,
+    };
+  }
   return null;
+}
+
+/**
+ * The disagreeing representations, said inline — or nothing.
+ *
+ * The structured block on the directive is the machine's copy; this is the half a
+ * person reads in the message that stopped them. Empty when the accounting is
+ * coherent, which is the normal case and deserves no parenthesis.
+ */
+function conflictClause(accounting: AttemptAccounting): string {
+  const conflicts = accounting.conflicts;
+  if (conflicts.length === 0) return "";
+  const named = conflicts
+    .map(
+      (conflict) =>
+        `${conflict.between[0].name}=${conflict.between[0].value} contra ${conflict.between[1].name}=${conflict.between[1].value} (${conflict.cause})`,
+    )
+    .join("; ");
+  return `. Su contabilidad está en conflicto: ${named}`;
 }
 
 /**
@@ -722,6 +763,11 @@ export function directiveFor(
       approved: state.effects.approved,
       applied: state.effects.applied,
     },
+    // Derived here rather than by each caller: the directive is the one surface
+    // every host and every agent already reads, so this is where the spend stops
+    // being prose.
+    attemptAccounting:
+      resolved.stopped === null ? null : attemptAccountingAt(state, resolved.stopped.id),
     nextAction: overrides.nextAction ?? nextActionFor(state, boundary, resolved),
   });
   if (!built.ok) return { ok: false, failure: built.failure };

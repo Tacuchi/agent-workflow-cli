@@ -312,6 +312,19 @@ function checkSeal(
   return null;
 }
 
+/**
+ * The flow control this body carries, or `null`.
+ *
+ * Its own function so the semantic parse does not grow one more shape to reason
+ * about: `choice` is a control only when the label is one the run already knows
+ * how to honour, and anything else is not a control at all.
+ */
+function flowControlOf(body: Record<string, unknown>): string | null {
+  const choice = body.choice;
+  if (typeof choice !== "string") return null;
+  return isFlowControl(choice) ? choice : null;
+}
+
 function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput): FlowAnswerParse {
   const proposes = proposalContractOf(input.decision);
   const declared = new Set(input.decision.signals ?? []);
@@ -324,7 +337,17 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
   if (decisions !== undefined && !isRecord(decisions)) {
     return { ok: false, failure: invalid("'decisions' tiene que ser un objeto") };
   }
-  const substance = checkSubstance(body, { signals, decisions, proposes: proposes !== null });
+  // A flow control IS an answer, including here. It used to die on the emptiness
+  // check below — a semantic boundary demands signals or decisions — and
+  // `FLOW_ANSWER_AMBIGUOUS` is an EVALUATED rejection, so asking to compact cost
+  // an attempt at exactly the boundary somebody was trying to pause.
+  const control = flowControlOf(body);
+  const substance = checkSubstance(body, {
+    signals,
+    decisions,
+    proposes: proposes !== null,
+    control,
+  });
   if (substance !== null) return { ok: false, failure: substance };
   const artifacts = proposes === null ? EMPTY : parseArtifacts(body.artifacts, input);
   if (!Array.isArray(artifacts)) return { ok: false, failure: artifacts.failure };
@@ -348,7 +371,10 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       input_digest: body.input_digest as string,
       signals,
       decisions: isRecord(decisions) ? decisions : {},
-      choice: null,
+      // Carried so `submit` can recognize the pause or the stop it already knows
+      // how to honour. Anything that is not a control stays `null`: a semantic
+      // boundary has no alternatives of its own to pick from.
+      choice: control,
       result: null,
       artifacts,
     },
@@ -370,7 +396,12 @@ const EMPTY: SemanticArtifact[] = [];
  */
 function checkSubstance(
   body: Record<string, unknown>,
-  answered: { signals: readonly string[]; decisions: unknown; proposes: boolean },
+  answered: {
+    signals: readonly string[];
+    decisions: unknown;
+    proposes: boolean;
+    control: string | null;
+  },
 ): CapabilityFailure | null {
   const hasArtifacts = Array.isArray(body.artifacts) && body.artifacts.length > 0;
   if (hasArtifacts && !answered.proposes) {
@@ -390,6 +421,7 @@ function checkSubstance(
   }
   const decisions = answered.decisions;
   const empty =
+    answered.control === null &&
     answered.signals.length === 0 &&
     !hasArtifacts &&
     (decisions === undefined || Object.keys(decisions as Record<string, unknown>).length === 0);

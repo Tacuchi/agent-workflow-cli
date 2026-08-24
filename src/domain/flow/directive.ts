@@ -44,6 +44,7 @@ import {
   type TransitionOwnership,
   trancheOfFlow,
 } from "./authority.js";
+import type { AttemptAccounting } from "./run-state.js";
 
 export const FLOW_DIRECTIVE_VERSION = 1;
 
@@ -215,6 +216,18 @@ export interface FlowDirective {
   authorizations: EffectClass[];
   degradations: Degradation[];
   error: CapabilityFailure | null;
+  /**
+   * What the boundary in force has spent, and what disagrees — or `null`.
+   *
+   * `null` only where there is no boundary to count: a finished run. Everywhere
+   * else it travels, whether or not the directive carries an error, because the
+   * question "how many tries do I have left" is asked most often by somebody who
+   * has not been refused yet. Its absence used to be the whole defect: the spend
+   * lived in a Spanish sentence inside `next_action`, so a host could show it to
+   * a person and no program could read it, and the representations that
+   * disagreed had no field to be named in at all.
+   */
+  attempt_accounting: AttemptAccounting | null;
   /** Never empty. A directive with no next action is a dead end. */
   next_action: string;
 }
@@ -244,6 +257,7 @@ export const FLOW_DIRECTIVE_KEYS = [
   "authorizations",
   "degradations",
   "error",
+  "attempt_accounting",
   "next_action",
 ] as const;
 
@@ -297,6 +311,7 @@ export interface BuildDirectiveInput {
   authorizations?: readonly EffectClass[];
   degradations?: readonly Degradation[];
   error?: CapabilityFailure | null;
+  attemptAccounting?: AttemptAccounting | null;
   nextAction: string;
 }
 
@@ -327,6 +342,7 @@ export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
     authorizations: [...(input.authorizations ?? [])],
     degradations: [...(input.degradations ?? [])],
     error: input.error ?? null,
+    attempt_accounting: input.attemptAccounting ?? null,
     next_action: input.nextAction,
   };
 

@@ -24,8 +24,12 @@ import {
   FLOW_RUN_STATE_VERSION,
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
+  attemptAccountingAt,
   attemptsAt,
+  normalizeAttemptChain,
   parseRunState,
+  recoveryBlockedAt,
+  sealRunState,
   withActionAttempted,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -781,6 +785,259 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       if (elsewhere.ok) throw new Error("no se recupera una frontera que no está en curso");
       expect(elsewhere.failure.code).toBe("FLOW_RECOVERY_OTHER_BOUNDARY");
       expect(elsewhere.failure.action).toContain("fixture.observe");
+    });
+  });
+
+  /**
+   * Los dos huecos que el plan 038 cierra, y las conductas que ya estaban bien.
+   *
+   * Las primeras tres fijan lo que un probe demostró correcto en 22.4.2: el
+   * desfase que el informe de origen reportó NO se reproduce, así que lo que hace
+   * falta es que no pueda romperse en silencio. Las que siguen cubren lo que de
+   * verdad faltaba: que la contabilidad se pueda LEER, y que una frontera que no
+   * se puede contestar tenga salida en vez de un `FLOW_RECOVERY_NOT_NEEDED`.
+   */
+  describe("la contabilidad se lee como un solo hecho y la frontera trabada tiene salida", () => {
+    async function recover(): Promise<
+      | { ok: true; directive: FlowDirective }
+      | { ok: false; failure: { code: string; message: string; action: string } }
+    > {
+      const result = await recoverFlowBoundary(fs, paths, { code: CODE });
+      if (result.ok) return result;
+      if ("session" in result) throw new Error("no se esperaba un problema de sesión");
+      return result;
+    }
+
+    /**
+     * Reproduce lo que la recuperación de 22.3.x dejaba en el ledger: una fila
+     * duplicada al final de `attempts`. La cadena queda con dos filas que dicen
+     * ser el mismo intento con contenido distinto, que es lo que el replay
+     * rechaza — y con el gasto todavía por debajo del techo.
+     */
+    async function corruptChain(): Promise<void> {
+      const applied = await applyUnderLock(fs, locateRun(paths, SESSION), (current) => {
+        if (current === null) throw new Error("esperaba una corrida");
+        const rows = current.attempts;
+        const last = rows[rows.length - 1];
+        if (last === undefined) throw new Error("esperaba al menos un intento registrado");
+        // Distinto SIEMPRE: reemplazar el último carácter por una 'f' fija dejaba
+        // el gemelo idéntico cuando el digest ya terminaba en 'f', y entonces el
+        // ledger lo leía como un reenvío y la corrida no quedaba desfasada. Un
+        // fixture que corrompe una vez de cada dieciséis no prueba nada.
+        const tail = last.request_digest.endsWith("f") ? "0" : "f";
+        const twin = { ...last, request_digest: `${last.request_digest.slice(0, 63)}${tail}` };
+        const { digest: _seal, ...rest } = current;
+        return {
+          ok: true,
+          state: sealRunState({ ...rest, attempts: [...rows, twin] }),
+          value: null,
+        };
+      });
+      if (!applied.ok) throw new Error("no se pudo preparar el ledger desfasado");
+    }
+
+    it("AC-01: un rechazo evaluado deja todas las representaciones en el mismo gasto", async () => {
+      await refuseObserve();
+      const one = attemptAccountingAt(await state(), "fixture.observe");
+      expect(one).toMatchObject({ rows: 1, floor: 1, granted: 0, spent: 1, ordinals: [1] });
+      expect(one.available).toBe(MAX_BOUNDARY_ATTEMPTS - 1);
+      expect(one.conflicts).toEqual([]);
+      expect(one.unanswerable).toBeNull();
+
+      await refuseObserve();
+      const two = attemptAccountingAt(await state(), "fixture.observe");
+      expect(two).toMatchObject({ rows: 2, floor: 2, granted: 0, spent: 2, ordinals: [1, 2] });
+      expect(two.conflicts).toEqual([]);
+      // Y el número con el que se mide el techo es EL MISMO que la lectura declara:
+      // dos fórmulas para un gasto es cómo la directiva y recover terminaban
+      // diciendo cosas distintas de la misma corrida.
+      expect(attemptsAt(await state(), "fixture.observe")).toBe(two.spent);
+    });
+
+    it("AC-02: tras dos rechazos evaluados, una tercera decisión válida aplica", async () => {
+      await refuseObserve();
+      await refuseObserve();
+      expect(attemptsAt(await state(), "fixture.observe")).toBe(2);
+
+      const applied = await answerObserve();
+      // Se afirma sobre las transiciones APLICADAS. El error que trae la directiva
+      // pertenece a la frontera SIGUIENTE —`fixture.board`, que el fixture hace
+      // fallar a propósito—, no a la que se acaba de contestar: mirarlo ahí es
+      // cómo se reporta un defecto que no existe.
+      expect((await state()).applied).toContain("fixture.observe");
+      expect(applied.boundary.transition).toBe("fixture.board");
+    });
+
+    it("AC-03: una respuesta stale y un control de flujo no gastan presupuesto", async () => {
+      const stale = await submit(
+        JSON.stringify({ input_digest: "0".repeat(64), signals: ["fixture.senal-a"] }),
+      );
+      expect(stale.error?.code).toBe("FLOW_ANSWER_STALE");
+      expect(attemptsAt(await state(), "fixture.observe")).toBe(0);
+
+      // El control se reconoce EN la frontera semántica y la deja en pie. Antes
+      // moría en el chequeo de vacuidad —que pide señales o decisiones— y volvía
+      // `FLOW_ANSWER_AMBIGUOUS`, que es un rechazo EVALUADO: pedir compactar
+      // costaba un intento justo en la frontera que se quería pausar.
+      const control = await submit(
+        JSON.stringify({ input_digest: await seal(), choice: "Compactar" }),
+      );
+      expect(control.error?.code).toBe("FLOW_BOUNDARY_PAUSED");
+      expect(spendsAttempt("FLOW_BOUNDARY_PAUSED")).toBe(false);
+      expect(attemptsAt(await state(), "fixture.observe")).toBe(0);
+      // Y la frontera sigue siendo la misma: pausar no la mueve.
+      expect(control.boundary.transition).toBe("fixture.observe");
+
+      // Y sigue contestable: se contesta y aplica.
+      await answerObserve();
+      expect((await state()).applied).toContain("fixture.observe");
+    });
+
+    it("AC-04: la directiva lleva la contabilidad como dato, no como prosa", async () => {
+      const fresh = await advance();
+      expect(fresh.attempt_accounting).toMatchObject({
+        transition: "fixture.observe",
+        spent: 0,
+        available: MAX_BOUNDARY_ATTEMPTS,
+        conflicts: [],
+      });
+
+      const refused = await refuseObserve();
+      expect(refused.attempt_accounting).toMatchObject({
+        transition: "fixture.observe",
+        rows: 1,
+        floor: 1,
+        granted: 0,
+        spent: 1,
+        available: MAX_BOUNDARY_ATTEMPTS - 1,
+      });
+    });
+
+    it("AC-04: una representación en conflicto viaja con su nombre y su valor", async () => {
+      await refuseObserve();
+      await corruptChain();
+      const accounting = attemptAccountingAt(await state(), "fixture.observe");
+      const named = accounting.conflicts.flatMap((conflict) =>
+        conflict.between.map((side) => side.name),
+      );
+      expect(named).toContain("attempts[].attempt");
+      expect(named).toContain("attempts");
+      for (const conflict of accounting.conflicts) {
+        expect(conflict.cause.trim().length).toBeGreaterThan(10);
+        for (const side of conflict.between) expect(Number.isInteger(side.value)).toBe(true);
+      }
+      // Y el error que devuelve la frontera los nombra también, no sólo el bloque.
+      const directive = await advance();
+      expect(directive.error?.code).toBe("FLOW_BOUNDARY_UNANSWERABLE");
+      expect(directive.error?.message).toContain("attempts[].attempt");
+      expect(directive.attempt_accounting?.conflicts.length).toBeGreaterThan(0);
+    });
+
+    it("AC-05: una frontera que no puede rendir su ordinal no se ofrece como contestable", async () => {
+      await refuseObserve();
+      await corruptChain();
+      const accounting = attemptAccountingAt(await state(), "fixture.observe");
+      // El presupuesto alcanza y sin embargo no se puede contestar: es el caso
+      // que quedaba sin salida.
+      expect(accounting.spent).toBeLessThan(MAX_BOUNDARY_ATTEMPTS);
+      expect(accounting.unanswerable?.code).toBe("CAPABILITY_ATTEMPT_DIVERGED");
+
+      const directive = await advance();
+      expect(directive.error?.code).toBe("FLOW_BOUNDARY_UNANSWERABLE");
+      expect(directive.error?.action).toContain("aw flow recover");
+    });
+
+    it("AC-06: recover abre grant ante la divergencia, no sólo ante el agotamiento", async () => {
+      await refuseObserve();
+      await corruptChain();
+      const before = await state();
+
+      const recovered = await recover();
+      if (!recovered.ok)
+        throw new Error(
+          `esperaba recuperar: ${recovered.failure.code} / ${recovered.failure.message}`,
+        );
+      expect(recovered.directive.boundary.transition).toBe("fixture.observe");
+
+      const after = await state();
+      // La historia y lo aplicado se conservan: ninguna fila se borró.
+      expect(after.attempts.length).toBe(before.attempts.length);
+      expect(after.applied).toEqual(before.applied);
+      expect(after.effects).toEqual(before.effects);
+      // Y ahora sí se puede contestar: la cadena volvió a ser válida.
+      const accounting = attemptAccountingAt(after, "fixture.observe");
+      expect(accounting.unanswerable).toBeNull();
+      expect(accounting.available).toBe(MAX_BOUNDARY_ATTEMPTS);
+      await answerObserve();
+      expect((await state()).applied).toContain("fixture.observe");
+    });
+
+    it("AC-06: una frontera que sí se contesta sigue sin recuperarse", async () => {
+      await refuseObserve();
+      const refused = await recover();
+      if (refused.ok) throw new Error("recuperar no es una forma de saltear una frontera viva");
+      expect(refused.failure.code).toBe("FLOW_RECOVERY_NOT_NEEDED");
+      // La negativa también nombra su contabilidad.
+      expect(refused.failure.message).toContain("filas 1");
+      expect(refused.failure.message).toContain("disponibles 2");
+    });
+
+    it("AC-07: una aprobación sin efecto aplicado no impide recuperar", async () => {
+      for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await refuseObserve();
+      const before = await state();
+      // Ninguna de las tres respuestas movió el mundo: `read_only` está en el
+      // ledger y no es materialización. La guarda mira eso, no que la lista esté
+      // vacía, así que una frontera agotada sin efecto material se recupera.
+      expect(before.effects.applied).toEqual(["read_only"]);
+      expect(recoveryBlockedAt(before, "fixture.observe")).toBeNull();
+
+      const recovered = await recover();
+      if (!recovered.ok) throw new Error(`esperaba recuperar: ${recovered.failure.code}`);
+      const after = await state();
+      // Y ninguna autorización se volvió un efecto aplicado por el camino.
+      expect(after.effects.applied).toEqual(before.effects.applied);
+      expect(attemptAccountingAt(after, "fixture.observe").available).toBe(MAX_BOUNDARY_ATTEMPTS);
+    });
+
+    it("AC-08: una corrida de versión legible con el desfase se recupera igual", async () => {
+      await refuseObserve();
+      await corruptChain();
+      // Y encima la corrida viene de una versión anterior del ledger: se lee, y
+      // recibe la misma salida sancionada sin editar ni retirar nada a mano.
+      const raw = JSON.parse(await readFile(statePath(), "utf8")) as Record<string, unknown>;
+      const legacy: Record<string, unknown> = { ...raw, version: 8 };
+      legacy.digest = undefined;
+      const clean = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
+      await writeFile(
+        statePath(),
+        JSON.stringify({ ...clean, digest: semanticDigest(clean) }),
+        "utf8",
+      );
+
+      const read = await state();
+      expect(read.version).toBe(FLOW_RUN_STATE_VERSION);
+      const recovered = await recover();
+      if (!recovered.ok) throw new Error(`esperaba recuperar: ${recovered.failure.code}`);
+      expect(attemptAccountingAt(await state(), "fixture.observe").unanswerable).toBeNull();
+      await answerObserve();
+      expect((await state()).applied).toContain("fixture.observe");
+    });
+
+    it("el contrato persistido no se movió: una prueba lo fija", () => {
+      // El diagnóstico se computa al leer, así que ninguna corrida en vuelo
+      // escrita por un CLI anterior queda afuera por un cambio de versión.
+      expect(FLOW_RUN_STATE_VERSION).toBe(9);
+    });
+
+    it("renumerar la cadena no devuelve intentos: el techo lo siguen fijando piso y grants", async () => {
+      for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await refuseObserve();
+      const before = await state();
+      const relabeled = normalizeAttemptChain(before);
+      // Mismo gasto, mismas filas: lo único que se toca son las etiquetas.
+      expect(attemptsAt(relabeled, "fixture.observe")).toBe(attemptsAt(before, "fixture.observe"));
+      expect(relabeled.attempts.length).toBe(before.attempts.length);
+      expect(relabeled.attempt_floor).toEqual(before.attempt_floor);
+      expect(relabeled.attempt_grants).toEqual(before.attempt_grants);
     });
   });
 });
