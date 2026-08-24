@@ -136,8 +136,7 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
     const claim = args[args.indexOf("--claim") + 1] as string;
     const out = await runNextNumber(fs, new FakeEnv(workdir, workdir), paths, {
       directory,
-      claim,
-      owner: SESSION,
+      claim: { name: claim, owner: SESSION },
     });
     if (out.claimed_path === null) throw new Error("el reclamo no materializó el slot");
     return relative(workdir, out.claimed_path);

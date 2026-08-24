@@ -1,5 +1,6 @@
 import {
   appendFile,
+  link,
   lstat,
   mkdir,
   open,
@@ -55,6 +56,60 @@ export class NodeFileSystem implements FileSystemPort {
         // tmp may not exist if writeFile failed before creating it
       }
       throw err;
+    }
+  }
+
+  /**
+   * Atomic AND exclusive: stage the full content to a tmp, then `link` it onto
+   * `path`.
+   *
+   * `link` is the primitive that gives both properties at once — it is atomic
+   * and it fails with EEXIST instead of clobbering, which `rename` would do. So
+   * the destination never exists in a partial state and never overwrites a
+   * document somebody else published.
+   *
+   * Two details are load-bearing, and both were defects here first:
+   *
+   * 1. **The staging name must not read as a correlative.** It used to be
+   *    `<path>.<pid>.<n>.publish.tmp`, which begins with the target's own
+   *    `NNN-`, so `leadingCorrelative` read a number out of the leftover and the
+   *    correlative was consumed FOREVER by a file no reader recognizes, no
+   *    `heldReservation` matches and no session close reclaims. The staging name
+   *    now begins with a dot and carries no correlative at all. It stays in the
+   *    target's own directory because `link` needs both ends on one filesystem.
+   * 2. **The staging write belongs inside the try.** A staging write that fails
+   *    after creating the file (ENOSPC, EDQUOT, EIO) would otherwise strand its
+   *    partial tmp, which is the very "failure before the commit leaves an
+   *    effect behind" this method exists to prevent.
+   *
+   * A filesystem without hard links (exFAT/FAT32, some FUSE and network mounts)
+   * answers EPERM/ENOTSUP/EXDEV rather than EEXIST. There the exclusive-create
+   * path is used instead: it keeps the command WORKING, at the cost of the
+   * atomicity this filesystem cannot offer — a declared degradation, never a
+   * silent one, and never a wrong answer.
+   */
+  async publishTextExclusive(path: string, content: string): Promise<{ created: boolean }> {
+    const tmpPath = join(
+      dirname(path),
+      `.aw-publish-${process.pid}-${++NodeFileSystem.writeCounter}.tmp`,
+    );
+    try {
+      await writeFile(tmpPath, content, "utf8");
+      await link(tmpPath, path);
+      return { created: true };
+    } catch (err) {
+      const code = (err as NodeError).code;
+      if (code === "EEXIST") return { created: false };
+      if (code === "EPERM" || code === "ENOTSUP" || code === "EXDEV") {
+        return await this.writeTextExclusive(path, content);
+      }
+      throw err;
+    } finally {
+      try {
+        await unlink(tmpPath);
+      } catch {
+        // Best effort: the content is already at its real name, or never landed.
+      }
     }
   }
 

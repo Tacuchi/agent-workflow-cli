@@ -13,6 +13,7 @@ import { locateRun, readRun } from "../../src/application/flow/run-state-service
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
+import { CLOSED_MARKER } from "../../src/application/session-resolver.js";
 import { nextNumberCommand } from "../../src/cli/commands/dev-only.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -158,8 +159,7 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
         // plantilla, así que las dos mitades nunca se encontraban.
         const claimed = await runNextNumber(fs, new FakeEnv(workdir, workdir), paths, {
           directory: argAfter(action.invocation.args, "next-number"),
-          claim: argAfter(action.invocation.args, "--claim"),
-          owner: run.folder,
+          claim: { name: argAfter(action.invocation.args, "--claim"), owner: run.folder },
         });
         run.claimed = claimed.next;
         detail = JSON.stringify(claimed);
@@ -342,13 +342,11 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     const env = new FakeEnv(workdir, workdir);
     const first = await runNextNumber(fs, env, paths, {
       directory: "docs/plans",
-      claim: "plan-alpha.md",
-      owner: "201-alpha-plan-new",
+      claim: { name: "plan-alpha.md", owner: "201-alpha-plan-new" },
     });
     const again = await runNextNumber(fs, env, paths, {
       directory: "docs/plans",
-      claim: "plan-alpha.md",
-      owner: "201-alpha-plan-new",
+      claim: { name: "plan-alpha.md", owner: "201-alpha-plan-new" },
     });
 
     expect(again.claimed_path).toBe(first.claimed_path);
@@ -359,8 +357,7 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     // La de otra sesión con el mismo nombre NO es reentrada: es un número nuevo.
     const stranger = await runNextNumber(fs, env, paths, {
       directory: "docs/plans",
-      claim: "plan-alpha.md",
-      owner: "202-beta-plan-new",
+      claim: { name: "plan-alpha.md", owner: "202-beta-plan-new" },
     });
     expect(stranger.claimed_path).not.toBe(first.claimed_path);
     expect(await plans()).toHaveLength(2);
@@ -508,5 +505,104 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     );
     expect(unresolved.ok).toBe(false);
     expect(await plans()).toHaveLength(1);
+  });
+
+  it("un reclamo sin --code se niega antes de crear nada y nombra la vía atómica", async () => {
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    const anonymous = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--claim", "plan-huerfano.md"]),
+      ctx,
+    );
+
+    expect(anonymous.ok).toBe(false);
+    // La negativa no basta si el llamador no sabe por dónde seguir: nombra la
+    // publicación atómica, que es lo que reemplazó al reclamo anónimo.
+    expect(JSON.stringify(anonymous)).toContain("--publish");
+    // Y se niega ANTES de cualquier efecto: docs/plans ni siquiera se creó, que
+    // es más fuerte que estar vacío.
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("una sesión cerrada no reclama, y el correlativo no se consume", async () => {
+    const folder = "203-cerrada-plan-new";
+    await mkdir(join(paths.cwdSessionsDir(), folder), { recursive: true });
+    await writeFile(
+      join(paths.cwdSessionsDir(), folder, "SESSION.md"),
+      SESSION_MD("cerrada"),
+      "utf8",
+    );
+    await writeFile(join(paths.cwdSessionsDir(), folder, CLOSED_MARKER), "", "utf8");
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    const closed = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--claim", "plan-cerrada.md", "--code", "203"]),
+      ctx,
+    );
+
+    expect(closed.ok).toBe(false);
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("--code sin --claim se niega: una consulta no reserva nada", async () => {
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    const consulted = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--code", "201"]),
+      ctx,
+    );
+
+    expect(consulted.ok).toBe(false);
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("un flag sin valor se niega en vez de descartar en silencio lo que viene por stdin", async () => {
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    // `--publish` sin valor no llega a `values`, así que sin la negativa la
+    // invocación se leía como consulta: exit 0, published_path null, y el
+    // documento que el llamador venía canalizando, perdido sin aviso.
+    const valueless = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--publish"]),
+      ctx,
+    );
+
+    expect(valueless.ok).toBe(false);
+    expect(JSON.stringify(valueless)).toContain("stdin");
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("un resto de nombre vacío se niega antes de publicar un documento sin nombre", async () => {
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    // Publicaba `docs/plans/001-`: un archivo que ningún lector de docs/
+    // reconoce, y el correlativo consumido igual.
+    const empty = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--publish", ""]),
+      ctx,
+    );
+
+    expect(empty.ok).toBe(false);
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
   });
 });

@@ -33,7 +33,10 @@ describe("runNextNumber --claim", () => {
   it("hands eight concurrent claims eight distinct numbers and eight distinct files", async () => {
     const results = await Promise.all(
       Array.from({ length: 8 }, (_, i) =>
-        runNextNumber(fs, env, paths, { directory: "docs/plans", claim: `plan-${i}.md` }),
+        runNextNumber(fs, env, paths, {
+          directory: "docs/plans",
+          claim: { name: `plan-${i}.md`, owner: `20${i}-flujo-plan-new` },
+        }),
       ),
     );
 
@@ -56,7 +59,7 @@ describe("runNextNumber --claim", () => {
 
     const claimed = await runNextNumber(fs, env, paths, {
       directory: "docs/specs",
-      claim: "spec-tres.md",
+      claim: { name: "spec-tres.md", owner: "201-tres-spec-new" },
     });
 
     expect(claimed.next).toBe("003");
@@ -75,7 +78,10 @@ describe("runNextNumber --claim", () => {
     // The claim becomes a real write: a separator would mint outside the
     // directory the caller named, and the caller is a command-line argument.
     await expect(
-      runNextNumber(fs, env, paths, { directory: "docs/plans", claim: "../fuera.md" }),
+      runNextNumber(fs, env, paths, {
+        directory: "docs/plans",
+        claim: { name: "../fuera.md", owner: "201-x-plan-new" },
+      }),
     ).rejects.toThrow(/separadores de ruta/);
     expect(existsSync(join(workspace, "docs", "fuera.md"))).toBe(false);
   });

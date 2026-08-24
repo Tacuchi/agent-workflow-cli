@@ -313,6 +313,16 @@ export interface NextNumberOutput {
    */
   claimed_owner: string | null;
   /**
+   * The document this call PUBLISHED in one pass — `null` for a query and for a
+   * claim.
+   *
+   * A publication is the other half of the reservation story: the caller that
+   * has no session to own a slot does not get one, it gets the finished
+   * document. Reporting it in its own field is what keeps "I hold a number" and
+   * "I wrote a document" two different answers instead of one ambiguous path.
+   */
+  published_path: string | null;
+  /**
    * True when this call handed back a reservation it already held.
    *
    * The claim is a WRITE, so a resumed run asking again would otherwise mint a
@@ -327,21 +337,30 @@ export interface NextNumberInput {
   /** Pure query: never creates the directory (plan/dry-run mode). */
   dryRun?: boolean;
   /**
-   * Claim the correlative by materializing `<NNN>-<claim>` inside the directory.
+   * Claim the correlative by materializing `<NNN>-<name>` inside the directory,
+   * for the session that will own it.
+   *
    * The scan and the creation happen inside ONE workspace-lock boundary, so no
    * other flow can read the same maximum; the exclusive creation then makes the
    * name itself unshareable even if the lock ever expires underneath.
-   */
-  claim?: string;
-  /**
-   * The session that will own the reservation, when the caller has one.
    *
-   * Without it the slot is anonymous and behaves exactly as it did before: an
-   * empty file nobody can claim as theirs. With it the slot carries its owner,
-   * which is what lets a later sealed proposal complete THIS run's reservation
-   * without asking to overwrite whatever happens to be at that path.
+   * **The owner travels inside the claim, and that is the point.** A durable
+   * reservation nobody can attribute used to be reachable simply by omitting an
+   * optional field, and the empty file it left behind had no re-entry, no close
+   * and no recovery. Pairing the two in one object makes the anonymous claim
+   * unrepresentable rather than merely discouraged.
    */
-  owner?: string;
+  claim?: { name: string; owner: string };
+  /**
+   * Publish `<NNN>-<name>` with its FINAL bytes in one operation.
+   *
+   * This is the answer for a single-pass creation that has no session to own a
+   * reservation. Assigning the number and writing the document are the same
+   * locked, atomic, exclusive act, so there is no reserved state in between for
+   * an interruption to strand: either the document is there whole, or the
+   * correlative was never consumed.
+   */
+  publish?: { name: string; content: string };
 }
 
 /**
@@ -358,6 +377,94 @@ const CLAIM_LOCK_WAIT_MS = 10_000;
 /** Upper bound on numbers skipped because a concurrent flow already took them. */
 const MAX_CLAIM_PROBES = 50;
 
+/** What this call is going to write, or `null` for a pure query. */
+type Mint =
+  | { kind: "claim"; name: string; bytes: string; owner: string }
+  | { kind: "publish"; name: string; bytes: string };
+
+/**
+ * Resolve the call into the single write it will attempt.
+ *
+ * A claim always carries its owner here because the input type cannot express
+ * one without it — the anonymous durable reservation is not a call this function
+ * refuses, it is a call nobody can construct.
+ */
+function mintOf(
+  claim: NextNumberInput["claim"],
+  publish: NextNumberInput["publish"],
+  dryRun: boolean,
+): Mint | null {
+  if (dryRun) return null;
+  if (publish !== undefined) {
+    return { kind: "publish", name: publish.name, bytes: publish.content };
+  }
+  if (claim !== undefined && claim.name.length > 0) {
+    return {
+      kind: "claim",
+      name: claim.name,
+      bytes: reservationMarker(claim.owner),
+      owner: claim.owner,
+    };
+  }
+  return null;
+}
+
+/**
+ * The mint itself, already inside the workspace lock.
+ *
+ * Extracted so `runNextNumber` reads as what it is — resolve the mode, guard the
+ * name, take the lock, report — instead of nesting the whole critical section
+ * inside its own argument list.
+ */
+async function mintUnderLock(
+  fs: FileSystemPort,
+  target: string,
+  mint: Mint,
+): Promise<NextNumberOutput> {
+  const state = await scan(fs, target, false);
+  // Re-entry, before minting anything: a run that already holds this exact slot
+  // gets it back. Handing it a second number instead would abandon the first
+  // one, and an abandoned reservation is the empty document nobody is coming
+  // back for. A publication has no slot to re-enter — it never left one open.
+  if (mint.kind === "claim") {
+    const held = await heldReservation(fs, target, state.files, mint.name, mint.bytes);
+    if (held !== null) {
+      return {
+        ...state,
+        next: held.nnn,
+        claimed_path: normalize(held.path),
+        claimed_owner: mint.owner,
+        claim_reused: true,
+      };
+    }
+  }
+  let nnn = state.next;
+  for (let probe = 0; probe < MAX_CLAIM_PROBES; probe++, nnn = nextCorrelative(nnn)) {
+    // Taken by NUMBER: another document already holds this correlative under a
+    // different slug, so the name is free while the number is not.
+    if (state.files.some((name) => hasCorrelative(name, nnn))) continue;
+    const path = join(target, `${nnn}-${mint.name}`);
+    // Atomic AND exclusive. The marker goes through the same primitive as a
+    // document on purpose: a half-written marker IS the anonymous zero-byte
+    // placeholder this mechanism exists to retire, and there is no reason to
+    // keep a way of producing one.
+    const { created } = await fs.publishTextExclusive(path, mint.bytes);
+    if (!created) continue;
+    return mint.kind === "publish"
+      ? { ...state, next: nnn, published_path: normalize(path) }
+      : {
+          ...state,
+          next: nnn,
+          claimed_path: normalize(path),
+          claimed_owner: mint.owner,
+          claim_reused: false,
+        };
+  }
+  throw new Error(
+    `no se pudo ${mint.kind === "publish" ? "publicar" : "reclamar"} un correlativo en ${target}: ${MAX_CLAIM_PROBES} números consecutivos ya estaban tomados`,
+  );
+}
+
 export async function runNextNumber(
   fs: FileSystemPort,
   env: EnvPort,
@@ -365,67 +472,33 @@ export async function runNextNumber(
   input: NextNumberInput,
 ): Promise<NextNumberOutput> {
   const cwd = env.cwd();
-  const { directory, dryRun = false, claim, owner } = input;
+  const { directory, dryRun = false, claim, publish } = input;
   const target = isAbsolute(directory) ? directory : join(cwd, directory);
-  const wantsClaim = claim !== undefined && claim.length > 0 && !dryRun;
-
-  if (!wantsClaim) return scan(fs, target, dryRun);
-  // The claim becomes a real filesystem write, so it is a name and never a path:
-  // a separator would let `--claim ../…` mint outside the directory the caller
-  // named — and every caller of this is a command-line argument.
-  if (/[\\/]/.test(claim as string)) {
+  if (claim !== undefined && publish !== undefined) {
     throw new Error(
-      `el reclamo '${claim}' no puede contener separadores de ruta: es el resto del nombre del archivo, no una ruta`,
+      "reclamar y publicar se excluyen: un reclamo reserva el número para escribirlo después, una publicación lo asigna y escribe el documento en el mismo acto",
     );
   }
 
-  const marker = owner === undefined ? "" : reservationMarker(owner);
-  const claimed = await withCwdLock(
-    fs,
-    paths,
-    async () => {
-      const state = await scan(fs, target, false);
-      // Re-entry, before minting anything: a run that already holds this exact
-      // slot gets it back. Handing it a second number instead would abandon the
-      // first one, and an abandoned reservation is the empty document nobody is
-      // coming back for.
-      const held =
-        owner === undefined ? null : await heldReservation(fs, target, state.files, claim, marker);
-      if (held !== null) {
-        return {
-          ...state,
-          next: held.nnn,
-          claimed_path: normalize(held.path),
-          claimed_owner: owner ?? null,
-          claim_reused: true,
-        };
-      }
-      let nnn = state.next;
-      for (let probe = 0; probe < MAX_CLAIM_PROBES; probe++, nnn = nextCorrelative(nnn)) {
-        // Taken by NUMBER: another document already holds this correlative under
-        // a different slug, so the name is free while the number is not.
-        if (state.files.some((name) => hasCorrelative(name, nnn))) continue;
-        const path = join(target, `${nnn}-${claim}`);
-        const { created } = await fs.writeTextExclusive(path, marker);
-        if (created) {
-          return {
-            ...state,
-            next: nnn,
-            claimed_path: normalize(path),
-            claimed_owner: owner ?? null,
-            claim_reused: false,
-          };
-        }
-      }
-      throw new Error(
-        `no se pudo reclamar un correlativo en ${target}: ${MAX_CLAIM_PROBES} números consecutivos ya estaban tomados`,
-      );
-    },
-    { waitMs: CLAIM_LOCK_WAIT_MS },
-  );
+  const mint = mintOf(claim, publish, dryRun);
+  if (mint === null) return scan(fs, target, dryRun);
+  // The mint becomes a real filesystem write, so it is a name and never a path:
+  // a separator would let `../…` land outside the directory the caller named —
+  // and every caller of this is a command-line argument.
+  if (/[\\/]/.test(mint.name)) {
+    throw new Error(
+      `el nombre '${mint.name}' no puede contener separadores de ruta: es el resto del nombre del archivo, no una ruta`,
+    );
+  }
 
-  if ("error" in claimed) throw new Error(`no se pudo reclamar el correlativo: ${claimed.error}`);
-  return claimed;
+  const minted = await withCwdLock(fs, paths, () => mintUnderLock(fs, target, mint), {
+    waitMs: CLAIM_LOCK_WAIT_MS,
+  });
+
+  if ("error" in minted) {
+    throw new Error(`no se pudo tomar el correlativo: ${minted.error}`);
+  }
+  return minted;
 }
 
 /**
@@ -493,6 +566,7 @@ async function scan(
     files,
     claimed_path: null,
     claimed_owner: null,
+    published_path: null,
     claim_reused: false,
   };
 }
