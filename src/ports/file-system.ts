@@ -35,6 +35,21 @@ export interface FileSystemPort {
    * "already exists" propagate as exceptions.
    */
   writeTextExclusive(path: string, content: string): Promise<{ created: boolean }>;
+  /**
+   * Create `path` with `content` **atomically and exclusively**: either the file
+   * appears already holding every byte, or it does not appear at all.
+   *
+   * `writeTextExclusive` above is exclusive but NOT atomic — it opens `wx` and
+   * only then writes, so a process that dies in between leaves a ZERO-BYTE file
+   * at the destination. For a lock that is harmless: the holder's identity is
+   * the file's existence. For a numbered document it is the whole bug this
+   * primitive exists to close — an empty file nobody can attribute, occupying a
+   * correlative, is exactly what a reader afterwards has to guess about.
+   *
+   * Returns `{ created: false }` when the path is already taken, so the caller's
+   * mint can move to the next correlative without inspecting anything.
+   */
+  publishTextExclusive(path: string, content: string): Promise<{ created: boolean }>;
   /** Idempotent removal of a file or directory (recursive). A missing path is silently ignored. */
   remove(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;

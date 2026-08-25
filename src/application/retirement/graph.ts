@@ -35,6 +35,7 @@ import type { PathsService } from "../paths-service.js";
 import { type CustodyRead, readCustody } from "../session-custody-service.js";
 import {
   type IndexedPlan,
+  type IndexedReservation,
   type IndexedSession,
   type IndexedSpec,
   type WorklineIndex,
@@ -75,6 +76,22 @@ export interface GraphNode {
 export class RetirementGraph {
   private readonly nodes = new Map<string, GraphNode>();
   readonly edges: WorklineEdge[] = [];
+
+  /**
+   * The held correlatives, carried alongside the nodes and deliberately NOT as
+   * nodes.
+   *
+   * A reservation owns nothing and nothing descends from it, so it has no place
+   * in a provenance walk. But it is exactly what the resolver needs to stop
+   * answering "no such node" about a path that visibly exists: the number is
+   * held, it is simply not a document yet, and the difference is the whole
+   * distinction the index already draws.
+   */
+  constructor(
+    readonly reservations: readonly IndexedReservation[],
+    /** Where each kind lives, so a bare number never answers across categories. */
+    readonly canon: CoreDocsCanon,
+  ) {}
 
   add(node: GraphNode): void {
     this.nodes.set(formatNodeId(node.id), node);
@@ -136,7 +153,7 @@ export async function buildRetirementGraph(
   const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, {
     ...(deps.git !== undefined ? { git: deps.git } : {}),
   });
-  const graph = new RetirementGraph();
+  const graph = new RetirementGraph(index.reservations, canon);
   const root = deps.paths.workspaceDir();
 
   for (const spec of index.specs) addDoc(graph, root, "spec", spec);

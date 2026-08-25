@@ -25,6 +25,7 @@
  */
 
 import type { EffectClass } from "../../domain/capability/effects.js";
+import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { InternalActionPlan } from "../../domain/flow/authority.js";
 import type { FlowRunScope } from "../../domain/flow/run-state.js";
 import type { LocalProposal } from "../../domain/proposal.js";
@@ -33,6 +34,16 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
 import { runArtifactsCommand } from "../artifacts-service.js";
+import {
+  appendClaimEvent,
+  claimKey,
+  claimShapedAmong,
+  completedClaimsIn,
+  ledgerPath,
+  openClaimsOf,
+  readClaimEvents,
+  revokedAmong,
+} from "../claims-ledger.js";
 import { applyLocalProposal } from "../local-proposal.js";
 import { parseMdSectionBilingual } from "../markdown.js";
 import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
@@ -214,6 +225,10 @@ async function publish(
     // The run's session owns whatever this publication creates or overwrites, and
     // the baseline is sealed while the previous bytes still exist. A legacy
     // session with no custody records nothing and publishes exactly as before.
+    // The fence travels INTO the critical section: a recovery can revoke a claim
+    // and free its correlative at any instant, so a check made out here would be
+    // a check made before the lock — precisely the window it must close.
+    precondition: (destinations) => revokedFence(deps, run.session, destinations),
     recordBaseline: (destinations) =>
       recordPublication({ fs: deps.fs, paths: deps.paths }, run.session, destinations).then(
         () => undefined,
@@ -228,17 +243,129 @@ async function publish(
   }
   const result = applied.result;
   const destinations = proposal.artifacts.map((a) => a.path);
+  const claims = await recordCompletedClaims(deps, run.session, result, destinations);
   return {
     ok: true,
     summary: result.already_applied
       ? `la propuesta ya estaba aplicada: ${destinations.join(", ")} sin cambios`
       : `publicado: ${result.written.join(", ")}`,
-    output: canonicalJson({ ...result, digest: proposal.digest, destinations }),
+    output: canonicalJson({ ...result, digest: proposal.digest, destinations, claims }),
     // Only what really landed. A re-entry that found the bytes already there
     // credits the same classes — the effect IS applied — and the summary is what
     // distinguishes "now" from "already", which is the honest split.
     effects: [...result.applied],
   };
+}
+
+/**
+ * The revocation that forbids this publication, or `null` when none does.
+ *
+ * Fail-closed, and scoped so it cannot become a general outage: a ledger with
+ * unreadable lines cannot prove the ABSENCE of a revocation, so a write that
+ * COULD be completing a reservation refuses rather than guesses. A destination
+ * that is not a numbered document in a category cannot be a reservation, so it is
+ * never held up by a ledger it does not depend on — an unreadable ledger must not
+ * stop every loop in the system from saving.
+ */
+async function revokedFence(
+  deps: InternalActionDeps,
+  owner: string,
+  destinations: readonly string[],
+): Promise<CapabilityFailure | null> {
+  const read = await readClaimEvents(deps.fs, deps.paths);
+  const blocked = revokedAmong(read.events, owner, destinations);
+  if (blocked.length > 0) {
+    return {
+      code: "CLAIM_REVOKED",
+      message: `la publicación fue revocada: ${blocked.map((c) => claimKey(c)).join(", ")} ya volvió al conjunto elegible y su correlativo puede ser de otro`,
+      action:
+        "el correlativo ya no es de esta corrida: pedí uno nuevo con 'aw next-number --claim' y volvé a sellar la propuesta",
+    };
+  }
+  if (read.unreadable > 0) {
+    // Scoped to claims this owner ACTUALLY holds in the ledger, not to every
+    // numbered destination. Otherwise one unparseable line — and this file is a
+    // committed append-only JSONL, so a merge conflict produces exactly that —
+    // would refuse every SPEC, PLAN and QUICK save in the workspace, which is a
+    // workspace-wide outage rather than the narrow fail-closed this needs to be.
+    const mine = new Set(openClaimsOf(read.events, owner).map((claim) => claimKey(claim)));
+    const atRisk = claimShapedAmong(owner, destinations).filter((claim) =>
+      mine.has(claimKey(claim)),
+    );
+    if (atRisk.length > 0) {
+      return {
+        code: "CLAIM_LEDGER_UNREADABLE",
+        message: `el registro de claims tiene ${read.unreadable} línea(s) ilegible(s), así que no se puede probar que ${atRisk.map((c) => claimKey(c)).join(", ")} no esté revocado`,
+        action: `arreglá las líneas ilegibles de ${ledgerPath(deps.paths)} (una por línea, JSON válido) y volvé a publicar`,
+      };
+    }
+  }
+  return null;
+}
+
+/** What the completion recording managed to do, so none of it has to be silent. */
+interface ClaimRecording {
+  recorded: string[];
+  /** The ledger could not be read or appended to. Reported, never swallowed. */
+  ledger_error?: string;
+  /** Lines that did not parse: the open set may be incomplete, so say so. */
+  ledger_unreadable?: number;
+}
+
+/**
+ * Record every open claim of this session that the publication just completed.
+ *
+ * Completing a reservation is a PUBLICATION: the correlative is spent for good
+ * and must never come back to the eligible set. Getting this wrong in either
+ * direction is durable, so both directions are handled deliberately:
+ *
+ * - **Under-recording is the dangerous one.** A claim left open about a
+ *   correlative that is holding a published document is an invitation for a later
+ *   recovery to release a live document. That is why the already-applied re-entry
+ *   is covered too: `applyLocalProposal` answers that case with `written: []`, and
+ *   returning early on an empty list left the claim open forever, unfixable,
+ *   because every retry answers the same way.
+ * - **Over-recording is a durable lie.** So a destination only counts when it
+ *   closes one of THIS owner's open claims, read from the ledger itself. Any other
+ *   write travels through this same publication path and must record nothing.
+ *
+ * It never fails the publication — the bytes are already on disk and the person's
+ * document exists — but it never goes quiet either: what it could not do comes
+ * back to the caller and into the operation's output.
+ */
+async function recordCompletedClaims(
+  deps: InternalActionDeps,
+  owner: string,
+  result: { written: readonly string[]; already_applied: boolean },
+  destinations: readonly string[],
+): Promise<ClaimRecording> {
+  const recorded: string[] = [];
+  try {
+    const read = await readClaimEvents(deps.fs, deps.paths);
+    const completed = completedClaimsIn(read.events, owner, {
+      written: result.written,
+      already_applied: result.already_applied,
+      destinations,
+    });
+    for (const claim of completed) {
+      await appendClaimEvent(deps.fs, deps.paths, {
+        at: new Date().toISOString(),
+        event: "published",
+        claim,
+        cause: "la propuesta sellada de su dueño completó la reserva",
+      });
+      recorded.push(`${claim.category}/${claim.correlative}-${claim.name}`);
+    }
+    return {
+      recorded,
+      ...(read.unreadable > 0 ? { ledger_unreadable: read.unreadable } : {}),
+    };
+  } catch (error) {
+    return {
+      recorded,
+      ledger_error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function board(deps: InternalActionDeps): Promise<InternalActionOutcome> {

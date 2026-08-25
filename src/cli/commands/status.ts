@@ -37,6 +37,12 @@ export const statusCommand: CliCommand<StatusOutput> = {
     // orphaned packages are inventory and wait for `--detail`.
     lines.push(...renderDesignAlerts(data, lines.at(-1)));
     lines.push(...renderLooseSessions(data, lines.at(-1)));
+    // A held correlative is not pending work — nobody should weigh it against an
+    // open plan — but it must be VISIBLE. Leaving it out of the human view took
+    // the board from wrong (it used to offer `/w:plan-exec` on a bare marker) to
+    // silent, and the one case that actually needs a person to decide — an
+    // ownerless legacy placeholder — had no trace outside `aw claims`.
+    lines.push(...renderReservations(data, lines.at(-1)));
     // Nothing rendered, and the two reasons for that are not the same answer: a
     // folder nobody initialized has an empty pipeline because no workspace is
     // tracking it, and reporting peace there sends someone looking for work that
@@ -114,6 +120,46 @@ function renderPipeline(pipeline: PipelineItem[]): string[] {
  * is to know the work exists and that nothing on this board accounts for it.
  * Retiring one is another job, and this read does not do it.
  */
+/** What a held correlative IS, in the words a person needs to decide. */
+function reservationState(slot: StatusOutput["reservations"][number]): string {
+  if (slot.kind === "legacy-placeholder") return "placeholder legacy ambiguo, sin dueño";
+  const notes = [
+    slot.ownerActive === true ? "sesión activa" : null,
+    slot.intact ? null : "marcador alterado",
+    slot.revoked ? "revocada" : null,
+  ].filter((note) => note !== null);
+  return `reserva de ${slot.owner}${notes.length > 0 ? ` (${notes.join(", ")})` : ""}`;
+}
+
+/**
+ * Correlatives held by a reservation or a legacy placeholder, with the one action
+ * that resolves each.
+ *
+ * Never a pipeline group: a held number is not a document somebody can execute,
+ * and presenting it as one is the defect this whole change exists to close. It is
+ * a notice with its own line per slot, because the action differs by state — a
+ * live owner finishes or closes its own reservation, and only a slot nobody is
+ * finishing gets recovered.
+ */
+function renderReservations(data: StatusOutput, before: string | undefined): string[] {
+  if (data.reservations.length === 0 && data.reservations_error === undefined) return [];
+  const lines = before === "" ? [] : [""];
+  if (data.reservations.length > 0) {
+    lines.push(`Correlativos reservados (${data.reservations.length}) — no son documentos:`);
+    for (const slot of data.reservations) {
+      lines.push(
+        `  ${slot.correlative} · ${slot.file} — ${reservationState(slot)}`,
+        `    → ${slot.next}`,
+      );
+    }
+  }
+  // An unreadable docs/ is not an empty one, and the board has to say which.
+  if (data.reservations_error !== undefined) {
+    lines.push(`Aviso: ${data.reservations_error}`);
+  }
+  return lines;
+}
+
 function renderLooseSessions(data: StatusOutput, before: string | undefined): string[] {
   const count = data.loose_sessions.length;
   if (count === 0) return [];

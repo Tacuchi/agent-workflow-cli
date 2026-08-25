@@ -34,6 +34,9 @@ class AtomicFakeFs implements FileSystemPort {
     this.files.set(p, content);
     return { created: true };
   }
+  async publishTextExclusive(p: string, content: string): Promise<{ created: boolean }> {
+    return this.writeTextExclusive(p, content);
+  }
   async remove(p: string): Promise<void> {
     this.files.delete(p);
   }

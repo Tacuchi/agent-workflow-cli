@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { openClaimsOf, readClaimEvents } from "../../src/application/claims-ledger.js";
+import { applyRecovery, previewRecovery } from "../../src/application/claims-recovery.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
@@ -13,6 +15,7 @@ import { locateRun, readRun } from "../../src/application/flow/run-state-service
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
+import { CLOSED_MARKER } from "../../src/application/session-resolver.js";
 import { nextNumberCommand } from "../../src/cli/commands/dev-only.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -158,8 +161,7 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
         // plantilla, así que las dos mitades nunca se encontraban.
         const claimed = await runNextNumber(fs, new FakeEnv(workdir, workdir), paths, {
           directory: argAfter(action.invocation.args, "next-number"),
-          claim: argAfter(action.invocation.args, "--claim"),
-          owner: run.folder,
+          claim: { name: argAfter(action.invocation.args, "--claim"), owner: run.folder },
         });
         run.claimed = claimed.next;
         detail = JSON.stringify(claimed);
@@ -342,13 +344,11 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     const env = new FakeEnv(workdir, workdir);
     const first = await runNextNumber(fs, env, paths, {
       directory: "docs/plans",
-      claim: "plan-alpha.md",
-      owner: "201-alpha-plan-new",
+      claim: { name: "plan-alpha.md", owner: "201-alpha-plan-new" },
     });
     const again = await runNextNumber(fs, env, paths, {
       directory: "docs/plans",
-      claim: "plan-alpha.md",
-      owner: "201-alpha-plan-new",
+      claim: { name: "plan-alpha.md", owner: "201-alpha-plan-new" },
     });
 
     expect(again.claimed_path).toBe(first.claimed_path);
@@ -359,8 +359,7 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     // La de otra sesión con el mismo nombre NO es reentrada: es un número nuevo.
     const stranger = await runNextNumber(fs, env, paths, {
       directory: "docs/plans",
-      claim: "plan-alpha.md",
-      owner: "202-beta-plan-new",
+      claim: { name: "plan-alpha.md", owner: "202-beta-plan-new" },
     });
     expect(stranger.claimed_path).not.toBe(first.claimed_path);
     expect(await plans()).toHaveLength(2);
@@ -508,5 +507,180 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     );
     expect(unresolved.ok).toBe(false);
     expect(await plans()).toHaveLength(1);
+  });
+
+  it("un reclamo sin --code se niega antes de crear nada y nombra la vía atómica", async () => {
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    const anonymous = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--claim", "plan-huerfano.md"]),
+      ctx,
+    );
+
+    expect(anonymous.ok).toBe(false);
+    // La negativa no basta si el llamador no sabe por dónde seguir: nombra la
+    // publicación atómica, que es lo que reemplazó al reclamo anónimo.
+    expect(JSON.stringify(anonymous)).toContain("--publish");
+    // Y se niega ANTES de cualquier efecto: docs/plans ni siquiera se creó, que
+    // es más fuerte que estar vacío.
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("una sesión cerrada no reclama, y el correlativo no se consume", async () => {
+    const folder = "203-cerrada-plan-new";
+    await mkdir(join(paths.cwdSessionsDir(), folder), { recursive: true });
+    await writeFile(
+      join(paths.cwdSessionsDir(), folder, "SESSION.md"),
+      SESSION_MD("cerrada"),
+      "utf8",
+    );
+    await writeFile(join(paths.cwdSessionsDir(), folder, CLOSED_MARKER), "", "utf8");
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    const closed = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--claim", "plan-cerrada.md", "--code", "203"]),
+      ctx,
+    );
+
+    expect(closed.ok).toBe(false);
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("--code sin --claim se niega: una consulta no reserva nada", async () => {
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    const consulted = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--code", "201"]),
+      ctx,
+    );
+
+    expect(consulted.ok).toBe(false);
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("un flag sin valor se niega en vez de descartar en silencio lo que viene por stdin", async () => {
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    // `--publish` sin valor no llega a `values`, así que sin la negativa la
+    // invocación se leía como consulta: exit 0, published_path null, y el
+    // documento que el llamador venía canalizando, perdido sin aviso.
+    const valueless = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--publish"]),
+      ctx,
+    );
+
+    expect(valueless.ok).toBe(false);
+    expect(JSON.stringify(valueless)).toContain("stdin");
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("un resto de nombre vacío se niega antes de publicar un documento sin nombre", async () => {
+    const ctx = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+    } as unknown as CliContext;
+
+    // Publicaba `docs/plans/001-`: un archivo que ningún lector de docs/
+    // reconoce, y el correlativo consumido igual.
+    const empty = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--publish", ""]),
+      ctx,
+    );
+
+    expect(empty.ok).toBe(false);
+    await expect(readdir(join(workdir, "docs/plans"))).rejects.toThrow(/ENOENT/);
+  });
+
+  it("completar la reserva propia queda registrado como publicación, no como liberación", async () => {
+    const alpha = walker("201", "alpha");
+    await walkTo(alpha, "plan-new.save-confirmation");
+    await approve(alpha);
+
+    const read = await readClaimEvents(fs, paths);
+    const mine = read.events.filter((e) => e.claim.owner === alpha.folder);
+    // El correlativo se gastó para siempre: `published` y `released` son hechos
+    // distintos, y confundirlos devolvería al conjunto elegible un número que
+    // está sosteniendo un documento.
+    expect(mine.map((e) => e.event)).toEqual(["claimed", "published"]);
+    expect(openClaimsOf(read.events, alpha.folder)).toEqual([]);
+  });
+
+  it("una reserva MODIFICADA no se libera al cerrar: fail-closed sobre bytes inciertos", async () => {
+    const alpha = walker("201", "alpha");
+    await walkTo(alpha, "plan-new.phase-shaping");
+    const slot = join(workdir, reserved(alpha));
+    await writeFile(slot, "alguien escribió algo acá que no es el marcador\n", "utf8");
+
+    const closed = await runSessionClose(fs, paths, { code: "201" });
+    if (!("sessionClose" in closed)) throw new Error("esperaba cerrar la sesión");
+
+    // Sólo el marcador propio INTACTO se libera. Cualquier otra cosa se preserva
+    // hasta una recuperación explícita, porque un archivo con bytes que nadie
+    // reconoce puede ser trabajo de alguien.
+    expect(closed.sessionClose.reservations_released).toBeUndefined();
+    expect(await readFile(slot, "utf8")).toContain("no es el marcador");
+    const read = await readClaimEvents(fs, paths);
+    expect(read.events.filter((e) => e.event === "released")).toEqual([]);
+    // Y sigue abierta: nadie la cerró, así que una recuperación explícita la ve.
+    expect(openClaimsOf(read.events, alpha.folder)).toHaveLength(1);
+  });
+
+  it("una interrupción sin evento terminal deja la reserva abierta, sin caducidad por reloj", async () => {
+    const alpha = walker("201", "alpha");
+    await walkTo(alpha, "plan-new.phase-shaping");
+
+    // No hay cierre, ni cancelación, ni publicación: la corrida simplemente se
+    // fue. La reserva sigue existiendo y atribuida, y ningún reloj la retira.
+    const read = await readClaimEvents(fs, paths);
+    expect(read.events.map((e) => e.event)).toEqual(["claimed"]);
+    const open = openClaimsOf(read.events, alpha.folder);
+    expect(open).toHaveLength(1);
+    expect(open[0]?.owner).toBe(alpha.folder);
+    expect(await readFile(join(workdir, reserved(alpha)), "utf8")).toBe(
+      reservationMarker(alpha.folder),
+    );
+  });
+
+  it("una publicación sancionada que llega DESPUÉS de la revocación se rechaza", async () => {
+    const alpha = walker("201", "alpha");
+    // La propuesta queda sellada y aprobada-por-aprobar: es «sancionada».
+    await walkTo(alpha, "plan-new.save-confirmation");
+    const target = reserved(alpha);
+
+    // Mientras tanto, una recuperación autorizada revoca ese claim y devuelve el
+    // correlativo al conjunto elegible.
+    const preview = await previewRecovery(fs, paths, target);
+    if ("error" in preview) throw new Error(preview.error);
+    const recovered = await applyRecovery(fs, paths, {
+      target,
+      approval: preview.proposal.digest,
+    });
+    if ("error" in recovered) throw new Error(recovered.error);
+    expect(await plans()).toHaveLength(0);
+
+    // Y ahora llega la publicación. Sin el cerco escribiría un documento sobre un
+    // número que ya puede ser de otro: el slot no está en disco, así que nada
+    // aguas abajo lo vería siquiera como una sobrescritura.
+    const after = await approve(alpha);
+
+    expect(JSON.stringify(after)).toContain("revocada");
+    expect(await plans()).toHaveLength(0);
   });
 });

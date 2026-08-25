@@ -3296,6 +3296,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
     reason:
       "comando transversal de retiro: mismo contrato que `discard` en modo restauración, sin corrida propia por la misma razón — la sesión que vuelve atrás es la que se retira",
   },
+  {
+    command: "claims",
+    reason:
+      "comando transversal de reservas: mismo contrato que `discard` y `reset` —vista previa y `--approval` con el digest recomputado sobre el árbol vivo— y sin corrida propia por una razón más fuerte todavía, porque la reserva que libera puede ser la de la corrida que lo dirigiera. Su autoridad es el orden que aplica: comprobar que el marcador sigue intacto, sellar la revocación irrevocable acotada al claim y sólo después liberar",
+  },
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },
   { command: "checkpoint-read", reason: "lectura del CHECKPOINT sin decidir continuación" },

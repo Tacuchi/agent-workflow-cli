@@ -69,6 +69,12 @@ export class MemFs implements FileSystemPort {
     await this.writeText(p, content);
     return { created: true };
   }
+  /** In memory the write is one step, so atomic and exclusive coincide. */
+  async publishTextExclusive(p: string, content: string): Promise<{ created: boolean }> {
+    if (this.files.has(p)) return { created: false };
+    await this.writeText(p, content);
+    return { created: true };
+  }
   async remove(p: string): Promise<void> {
     this.files.delete(p);
     this.dirMtime.delete(p);

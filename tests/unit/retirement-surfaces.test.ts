@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
+import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { recordCommit, recordUnitTaken } from "../../src/application/session-custody-recorder.js";
@@ -262,5 +263,67 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     // Y una salida vacía nunca se confunde con un éxito: un rechazo no proyecta.
     const rejected = await cmd.execute(parseArgv(["discard", "prepare", "plan:999"]), ctx);
     expect(cmd.renderHuman?.(rejected, { detail: false })).toBe("");
+  });
+
+  /**
+   * A reserved correlative is not a node, and for a long time that made the
+   * retirement answer "no such node" about a file the person was looking at.
+   * Two surfaces then disagreed about whether the path existed: `aw status`
+   * listed it as a reservation with its sanctioned action, and `aw discard`
+   * denied it and sent the person back to `aw status`.
+   */
+  async function claim(owner: string, name: string): Promise<string> {
+    const result = await runNextNumber(fs, ctx.env, paths, {
+      directory: "docs/specs",
+      claim: { name, owner },
+    });
+    return `docs/specs/${result.next}-${name}`;
+  }
+
+  it("6 · el retiro sobre la ruta de una reserva nombra la recuperación, no niega el nodo", async () => {
+    const owner = await session("algo-spec-new");
+    const held = await claim(owner, "spec-nueva.md");
+
+    const rejected = await run("discard", "prepare", held);
+
+    expect(rejected.result.ok).toBe(false);
+    // Deja de declararla inexistente: dice lo que ES y de quién.
+    expect(rejected.result.error?.message).not.toContain("no existe ningún nodo");
+    expect(rejected.result.error?.message).toContain(held);
+    expect(rejected.result.error?.message).toContain(owner);
+    // Y entrega la acción sancionada que el tablero ya calcula para ESE slot.
+    const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
+    const slot = board.reservations.find((r) => r.file === held);
+    expect(slot?.next).toBe(`aw session-close --code ${owner}`);
+    expect(rejected.result.error?.details?.action).toContain(slot?.next ?? "");
+    // Nada se tocó: sigue siendo una reserva de su dueño.
+    expect(existsSync(join(workspace, held))).toBe(true);
+  });
+
+  it("6c · un correlativo reservado en OTRA categoría no contesta por el número pedido", async () => {
+    const owner = await session("algo-spec-new");
+    const held = await claim(owner, "spec-nueva.md");
+    const correlative = held.slice("docs/specs/".length, "docs/specs/".length + 3);
+
+    // specs y plans son espacios de numeración INDEPENDIENTES: contestar
+    // `plan:NNN` con la reserva de una spec devolvería un comando destructivo
+    // apuntado a algo que la persona nunca nombró.
+    const rejected = await run("discard", "prepare", `plan:${correlative}`);
+
+    expect(rejected.result.ok).toBe(false);
+    expect(rejected.result.error?.message).not.toContain(held);
+    expect(rejected.result.error?.message).toContain("no existe ningún nodo");
+  });
+
+  it("6b · también reconoce el correlativo reservado cuando se lo nombra por número", async () => {
+    const owner = await session("algo-spec-new");
+    const held = await claim(owner, "spec-nueva.md");
+    const correlative = held.slice("docs/specs/".length, "docs/specs/".length + 3);
+
+    const rejected = await run("discard", "prepare", `spec:${correlative}`);
+
+    expect(rejected.result.ok).toBe(false);
+    expect(rejected.result.error?.message).toContain(held);
+    expect(rejected.result.error?.details?.candidates).toEqual([held]);
   });
 });

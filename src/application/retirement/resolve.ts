@@ -17,13 +17,16 @@
  *   would be orphaned, so its presence is a refusal rather than a wider closure.
  */
 
+import type { CoreDocsCanon } from "../../domain/docs-canon.js";
 import type { ClosureEntry, RetirementMode } from "../../domain/retirement/proposal.js";
 import { type TargetSelector, selectorText } from "../../domain/retirement/selector.js";
 import {
   type WorklineEdge,
+  type WorklineKind,
   type WorklineNodeId,
   formatNodeId,
 } from "../../domain/workline-node.js";
+import type { IndexedReservation } from "../workline-index-service.js";
 import type { GraphNode, RetirementGraph } from "./graph.js";
 
 export type RejectionCode =
@@ -61,6 +64,8 @@ export function resolveTarget(graph: RetirementGraph, selector: TargetSelector):
   const matches = candidatesFor(graph, selector);
   if (matches.length === 1 && matches[0] !== undefined) return { ok: true, node: matches[0] };
   if (matches.length === 0) {
+    const held = heldSlotFor(graph, selector);
+    if (held !== undefined) return { ok: false, rejection: rejectHeldSlot(selector, held) };
     return {
       ok: false,
       rejection: {
@@ -80,6 +85,75 @@ export function resolveTarget(graph: RetirementGraph, selector: TargetSelector):
       action:
         "reintentá con la forma explícita: spec:<NNN>, plan:<PPP>, quick:<NNN> o session:<carpeta>",
     },
+  };
+}
+
+/**
+ * The held correlative a selector landed on, when it landed on one.
+ *
+ * A reservation is deliberately not a node, so every selector that names one
+ * falls through the graph and comes back as "no such node" — about a file the
+ * person can see on disk. That answer is not merely unhelpful: it sends them to
+ * `aw status`, which correctly reports the slot as a reservation, and leaves them
+ * with two surfaces disagreeing about whether the path exists.
+ *
+ * The path is tried first and the correlative second, so naming another file at
+ * the same number still reports the truth — the number is taken, and by what.
+ */
+function heldSlotFor(
+  graph: RetirementGraph,
+  selector: TargetSelector,
+): IndexedReservation | undefined {
+  if (selector.form === "folder") return undefined;
+  if (selector.form === "path") {
+    const byPath = graph.reservations.find((slot) => slot.file === selector.path);
+    if (byPath !== undefined) return byPath;
+  }
+  // Specs and plans are INDEPENDENT numbering spaces, so a bare correlative match
+  // across them is not a near miss — it is a different slot. Answering `plan:001`
+  // with a specs reservation would hand back a destructive command aimed at
+  // something the person never named. Only `bare` may cross, and only because
+  // "any kind that answers to this number" is what a bare number means.
+  const within = selector.form === "bare" ? null : `${directoryOf(graph.canon, selector.kind)}/`;
+  return graph.reservations.find(
+    (slot) =>
+      slot.correlative === selector.key && (within === null || slot.file.startsWith(within)),
+  );
+}
+
+/** Where a kind's documents live. `quick` and `session` own no directory. */
+function directoryOf(canon: CoreDocsCanon, kind: WorklineKind): string | null {
+  if (kind === "spec") return canon.spec;
+  if (kind === "plan") return canon.plan;
+  return null;
+}
+
+/**
+ * What a retirement owes somebody who aimed it at a reserved correlative.
+ *
+ * Not a node, so not retirable — but the refusal says what the path IS and hands
+ * over the action the board already computed for that exact slot, instead of
+ * denying its existence. Which action that is depends on facts this module does
+ * not re-derive: a live owner finishes or closes its own reservation, and only a
+ * slot nobody is going to finish is recovered. Recomputing it here would be a
+ * second opinion about a destructive command, and the two could disagree.
+ */
+function rejectHeldSlot(selector: TargetSelector, slot: IndexedReservation): RetirementRejection {
+  const what =
+    slot.owner === null
+      ? `un placeholder legacy ambiguo: sostiene el correlativo ${slot.correlative} y no nombra a nadie`
+      : `una reserva de numeración de '${slot.owner}': sostiene el correlativo ${slot.correlative} y todavía no es un documento`;
+  const named = selectorText(selector);
+  return {
+    code: "TARGET_NOT_FOUND",
+    // Naming the file twice when the person already typed it reads as a stutter
+    // and buries the part that is new: what the path IS.
+    message:
+      named === slot.file
+        ? `'${named}' es ${what}`
+        : `'${named}' apunta a ${slot.file}, que es ${what}`,
+    candidates: [slot.file],
+    action: `el retiro no libera un correlativo reservado: ${slot.next}`,
   };
 }
 

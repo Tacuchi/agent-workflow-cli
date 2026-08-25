@@ -9,6 +9,7 @@ import { capabilityCommand } from "./capability.js";
 import { checkBranchCommand } from "./check-branch.js";
 import { checkpointReadCommand } from "./checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-write.js";
+import { claimsCommand } from "./claims.js";
 import { codeScanCommand } from "./code-scan.js";
 import { contextBudgetCommand } from "./context-budget.js";
 import { contextPlanCommand } from "./context-plan.js";
@@ -98,6 +99,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   harnessCommand,
   profilesCommand,
   logsCommand,
+  claimsCommand,
   nextNumberCommand,
   // Retirement: the two cross-cutting commands that take work away. They open no
   // flow and create no session, because a retirement can end by deleting the very

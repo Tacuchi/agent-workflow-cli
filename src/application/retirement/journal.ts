@@ -163,6 +163,17 @@ async function parseJournal(fs: FileSystemPort, path: string): Promise<JournalRe
   if (!isJournal(parsed)) {
     return { status: "unreadable", reason: `${path} no tiene la forma de un journal de retiro` };
   }
+  // A journal written before the proposal carried reservations is still a valid
+  // operation in flight, and refusing it would strand the one retirement least
+  // able to be re-prepared — its workspace is already half gone. An absent list
+  // means "this retirement releases no correlative", which is exactly what it
+  // was approved to do.
+  if (!Array.isArray(parsed.proposal.reservations)) {
+    return {
+      status: "present",
+      journal: { ...parsed, proposal: { ...parsed.proposal, reservations: [] } },
+    };
+  }
   return { status: "present", journal: parsed };
 }
 

@@ -113,6 +113,9 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "include-legacy",
   "include-recent-closed",
   "can-pause",
+  // Presence-only: the operator STATING that no producer is left for a legacy
+  // placeholder. Without this the path that follows it would be eaten as its value.
+  "confirm-no-producer",
   // `aw flow advance --adopt` is presence-only; without this the verb or the
   // session code that follows it would be swallowed as its value.
   "adopt",

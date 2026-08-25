@@ -13,6 +13,7 @@
 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { reservationOwnerOf } from "../../domain/reservation.js";
 import {
   type ClosureEntry,
   type ReadSetEntry,
@@ -22,6 +23,7 @@ import {
   type RetirementMode,
   type RetirementProposal,
   type RetirementPublication,
+  type RetirementReservation,
   type RetirementRestore,
   type RetirementUnit,
   sealRetirementProposal,
@@ -32,10 +34,12 @@ import { formatNodeId } from "../../domain/workline-node.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
+import { claimOfDocsPath } from "../claims-ledger.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { readBindingRegistry } from "../session-binding-service.js";
+import type { IndexedReservation } from "../workline-index-service.js";
 import { type AttributionBlock, attributeGitEffects } from "./attribution.js";
 import { type GraphNode, type RetirementGraph, buildRetirementGraph } from "./graph.js";
 import {
@@ -92,7 +96,23 @@ export async function prepareRetirement(
     };
   }
 
-  const { graph } = await buildRetirementGraph(deps, canon.canon);
+  const { graph, index } = await buildRetirementGraph(deps, canon.canon);
+  // A partial slot scan cannot seal a scope. The proposal would enumerate only
+  // the reservations the walk managed to see, and the preview would present that
+  // truncated list as the whole of what this retirement gives back — the exact
+  // conflation of "unreadable" with "there were none" that every other reader of
+  // `docs/` in this codebase refuses to make.
+  if (index.reservations_error !== undefined) {
+    return {
+      ok: false,
+      rejection: {
+        code: "EVIDENCE_MISSING",
+        message: `no se puede determinar qué correlativos sostiene este alcance: ${index.reservations_error}`,
+        candidates: [],
+        action: "arreglá el archivo de docs/ que no se puede leer y volvé a preparar el retiro",
+      },
+    };
+  }
   const found = resolveTarget(graph, parsed.selector);
   if (!found.ok) return { ok: false, rejection: found.rejection };
 
@@ -102,7 +122,7 @@ export async function prepareRetirement(
       : await resetClosure(graph, found.node);
   if (!closure.ok) return { ok: false, rejection: closure.rejection };
 
-  return buildProposal(deps, closure.closure, selectorText(parsed.selector));
+  return buildProposal(deps, closure.closure, selectorText(parsed.selector), index.reservations);
 }
 
 function resetClosure(
@@ -118,12 +138,14 @@ async function buildProposal(
   deps: PrepareDeps,
   closure: ResolvedClosure,
   targetText: string,
+  slots: readonly IndexedReservation[],
 ): Promise<PrepareOutcome> {
   const readSet: ReadSetEntry[] = [];
   const deletes: RetirementDelete[] = [];
   const restores: RetirementRestore[] = [];
   const custody: RetirementCustodyScope[] = [];
   const units: RetirementUnit[] = [];
+  const reservations: RetirementReservation[] = [];
   const blocks: AttributionBlock[] = [];
   const dirty: RetirementProposal["dirty"] = [];
   const reverts: RetirementProposal["reverts"] = [];
@@ -139,6 +161,8 @@ async function buildProposal(
         restored,
         custody,
         units,
+        reservations,
+        slots,
         dirty,
         reverts,
         publications,
@@ -187,6 +211,7 @@ async function buildProposal(
       custody,
       bindings,
       units,
+      reservations,
       dirty,
       reverts,
       // More than one would mean two commit points; the attribution refuses that
@@ -205,6 +230,9 @@ interface SessionCollector {
   restored: Set<string>;
   custody: RetirementCustodyScope[];
   units: RetirementUnit[];
+  reservations: RetirementReservation[];
+  /** Every held correlative in the workspace, as the index projects them. */
+  slots: readonly IndexedReservation[];
   dirty: RetirementProposal["dirty"];
   reverts: RetirementProposal["reverts"];
   publications: RetirementPublication[];
@@ -244,6 +272,8 @@ async function collectSession(
     });
   }
 
+  collectReservations(collector, facts.folder);
+
   if (custody === null) return;
   collector.readSet.push({ id: `custody:${facts.folder}`, digest: custody.digest });
 
@@ -275,6 +305,8 @@ async function collectSession(
     collector.restored.add(artifact.path);
   }
 
+  collectRestoredMarkers(collector, facts.folder, restoresBefore);
+
   collector.custody.push({
     session: facts.folder,
     declared: custody.artifacts.length,
@@ -295,6 +327,64 @@ async function collectSession(
       id: `git:${source.alias}/HEAD`,
       digest: (await headOf(deps.git, tree)) ?? "unborn",
     });
+  }
+}
+
+/**
+ * The correlatives this session is still holding.
+ *
+ * Collected BEFORE the custody check, on purpose: a reservation is not a
+ * custody artifact — nothing records it there — so a legacy session with no
+ * readable custody holds its numbers exactly like any other, and returning early
+ * would strand precisely the sessions least able to account for themselves.
+ *
+ * Owner-scoped by the marker the index already read, which is what keeps a
+ * retirement from ever naming somebody else's slot: the whole list is filtered by
+ * this folder, and a slot whose owner is another session simply is not in it.
+ */
+function collectReservations(collector: SessionCollector, folder: string): void {
+  for (const slot of collector.slots) {
+    if (slot.owner !== folder) continue;
+    const claim = claimOfDocsPath(slot.file, slot.owner);
+    // Not a `docs/<category>/<NNN>-<name>` path: nothing here can name it as a
+    // claim, so nothing here may release it either.
+    if (claim === null) continue;
+    collector.reservations.push({ path: slot.file, claim, intact: slot.intact });
+  }
+}
+
+/**
+ * The slots a `reset` is about to RE-CREATE by restoring its own marker.
+ *
+ * A session that completed its own reservation has that destination sealed in
+ * custody as an `input` whose baseline is the marker — because the bytes that
+ * were there before the publication ARE the marker. So restoring it writes the
+ * reservation back, and the session that owned it is removed in the same
+ * operation.
+ *
+ * Reproduced before this existed, and the result was worse than the stranded
+ * number this whole change is about: the ledger has already recorded that claim
+ * as `published`, which is terminal, so `slotOf` refuses to read the path as a
+ * slot at all. The board therefore counted a file whose entire content is
+ * `<!-- aw:reserva … -->` as a published spec, and no surface could resolve it —
+ * not `aw claims recover`, which only sees slots, and not the retirement, which
+ * had already finished.
+ *
+ * Enumerated here rather than discovered while applying, so it travels in the
+ * sealed list and is visible in the preview like every other correlative that
+ * comes back. `intact` is true by construction: the bytes about to be written
+ * are the marker, and `apply` re-reads them anyway before removing anything.
+ */
+function collectRestoredMarkers(collector: SessionCollector, folder: string, from: number): void {
+  for (const restore of collector.restores.slice(from)) {
+    if (!restore.existed || restore.content === null) continue;
+    // Only its OWN marker. Another session's reservation is not this
+    // retirement's to give back, in this path exactly as in every other.
+    if (reservationOwnerOf(restore.content) !== folder) continue;
+    const claim = claimOfDocsPath(restore.path, folder);
+    if (claim === null) continue;
+    if (collector.reservations.some((held) => held.path === restore.path)) continue;
+    collector.reservations.push({ path: restore.path, claim, intact: true });
   }
 }
 
