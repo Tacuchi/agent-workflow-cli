@@ -13,6 +13,14 @@ function lines(chunks: string[]): Record<string, unknown>[] {
     .map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
+/** Un host que declara la vía, para poder afirmar la causa y el remedio. */
+const VIA = {
+  available: true as const,
+  evidence: "probe 2026-08-22",
+  blockedBy: "the host was started with `--yolo`",
+  recoverBy: "start it on its default approval policy",
+};
+
 describe("el servidor sobre una entrada y una salida reales", () => {
   it("atraviesa el saludo, la solicitud y la elección, y termina cuando la entrada cierra", async () => {
     const input = new PassThrough();
@@ -23,7 +31,7 @@ describe("el servidor sobre una entrada y una salida reales", () => {
     output.on("data", (c) => out.push(c.toString()));
     diagnostics.on("data", (c) => err.push(c.toString()));
 
-    const done = runElicitationStdio({ input, output, diagnostics, now: () => 5000 });
+    const done = runElicitationStdio({ input, output, diagnostics, now: () => 5000, via: VIA });
 
     input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 0, method: "initialize", params: {} })}\n`);
     input.write(
@@ -73,7 +81,7 @@ describe("el servidor sobre una entrada y una salida reales", () => {
     const diagnostics = new PassThrough();
     output.on("data", (c) => out.push(c.toString()));
 
-    const done = runElicitationStdio({ input, output, diagnostics, now: () => 0 });
+    const done = runElicitationStdio({ input, output, diagnostics, now: () => 0, via: VIA });
     const mensaje = `${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "initialize", params: {} })}\n`;
     const corte = Math.floor(mensaje.length / 2);
     // Un host escribe por pipe: un mensaje grande NO llega de una sola pieza. Si el
@@ -98,7 +106,7 @@ describe("el servidor sobre una entrada y una salida reales", () => {
     output.on("data", (c) => out.push(c.toString()));
     diagnostics.on("data", (c) => err.push(c.toString()));
 
-    const done = runElicitationStdio({ input, output, diagnostics, now: () => 0 });
+    const done = runElicitationStdio({ input, output, diagnostics, now: () => 0, via: VIA });
     input.write("{ esto no es json\n");
     input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 9, method: "initialize", params: {} })}\n`);
     input.end();

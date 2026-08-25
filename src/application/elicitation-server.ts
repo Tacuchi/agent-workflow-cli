@@ -16,6 +16,7 @@
  * sólo ocurre dentro de la interfaz interactiva del host.
  */
 
+import { degradationNotice, renderLabeledMarkdown } from "../domain/degradation-notice.js";
 import {
   type BoundaryQuestion,
   type ElicitationOutcome,
@@ -23,6 +24,7 @@ import {
   elicitationRequestsFor,
   isFlowControl,
 } from "../domain/elicitation.js";
+import type { HarnessMcpElicitation } from "../domain/harnesses.js";
 
 export const SERVER_NAME = "agent-workflow";
 export const TOOL_NAME = "structured_choice";
@@ -35,6 +37,11 @@ export interface ElicitationServerDeps {
   send: (message: unknown) => void;
   /** Milisegundos monótonos. Inyectado porque la clasificación es una regla. */
   now: () => number;
+  /**
+   * Lo que el catálogo declara para ESTE host, que es de donde salen la causa y
+   * la forma de arrancar que recupera el selector.
+   */
+  via: HarnessMcpElicitation;
 }
 
 /** Lo que el agente recibe por cada pregunta contestada. */
@@ -52,6 +59,20 @@ export interface StructuredChoiceResult {
   answers: BoundaryAnswer[];
   /** El rótulo de la pregunta donde se cortó, cuando no se contestaron todas. */
   stopped_at?: string;
+  /**
+   * Por qué no hubo elección y qué hacer, ya redactado.
+   *
+   * Viaja con el resultado en vez de dejar que el agente lo componga: el motivo
+   * exacto —sobre todo la diferencia entre «tu política lo declinó» y «lo cerraste
+   * vos»— sale del catálogo y del reloj, y el agente no tiene ninguno de los dos.
+   */
+  notice?: string;
+  /**
+   * La frontera entera en markdown etiquetado, generada del MISMO dato que la
+   * solicitud nativa: así la degradada no puede perder una alternativa que la
+   * nativa sí mostraba.
+   */
+  fallback_markdown?: string;
 }
 
 interface Pending {
@@ -79,10 +100,19 @@ export function createElicitationServer(deps: ElicitationServerDeps): Elicitatio
 
   function finish(outcome: ElicitationOutcome["kind"], stoppedAt?: string): void {
     if (pending === null) return;
+    const notice = outcome === "chosen" ? "" : degradationNotice(outcome, deps.via);
     const result: StructuredChoiceResult = {
       outcome,
       answers: pending.answers,
       ...(stoppedAt === undefined ? {} : { stopped_at: stoppedAt }),
+      ...(notice === ""
+        ? {}
+        : {
+            notice,
+            // Sólo las que quedaron sin contestar: repetir las ya resueltas le
+            // pediría a la persona que decida dos veces lo mismo.
+            fallback_markdown: renderLabeledMarkdown(pending.questions.slice(pending.index)),
+          }),
     };
     const toolCallId = pending.toolCallId;
     pending = null;

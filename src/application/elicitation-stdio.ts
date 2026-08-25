@@ -8,6 +8,7 @@
  * puede manejar desde una prueba con un cliente falso.
  */
 
+import type { HarnessMcpElicitation } from "../domain/harnesses.js";
 import { createElicitationServer } from "./elicitation-server.js";
 
 export interface StdioDeps {
@@ -17,6 +18,8 @@ export interface StdioDeps {
   /** Diagnóstico. NUNCA la salida estándar. */
   diagnostics: NodeJS.WritableStream;
   now?: () => number;
+  /** El catálogo del host en el que corre, para poder nombrar causa y remedio. */
+  via: HarnessMcpElicitation;
 }
 
 /**
@@ -29,6 +32,7 @@ export function runElicitationStdio(deps: StdioDeps): Promise<void> {
   const server = createElicitationServer({
     send: (message) => deps.output.write(`${JSON.stringify(message)}\n`),
     now: deps.now ?? (() => Date.now()),
+    via: deps.via,
   });
 
   /** Un mensaje suelto: cortar la sesión por un byte dejaría al host sin servidor. */

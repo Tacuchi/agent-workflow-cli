@@ -26,6 +26,8 @@ import {
 } from "./install-targets.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 
+import { type McpOfferOutcome, offerWorklineServer } from "./mcp-offer.js";
+
 export const SKILL_DIR_NAME = "w";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
 
@@ -74,6 +76,14 @@ export interface SelfInstallSkillData {
   source: string;
   source_kind: "path" | "bundled";
   dests: SelfInstallTargetResult[];
+  /**
+   * El servidor MCP propio, por host donde la vía se declara disponible.
+   *
+   * Se informa aunque no haya cambiado nada: una instalación que toca la
+   * configuración MCP de alguien y no lo dice es un efecto silencioso sobre un
+   * archivo que la persona también edita a mano.
+   */
+  mcp_server?: McpOfferOutcome[];
 }
 
 const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [...INSTALL_TARGETS, "all"];
@@ -392,6 +402,15 @@ export async function selfInstallSkill(
     results.push(entry);
   }
 
+  // Después de las superficies, no antes: si la instalación de una superficie
+  // falla, no queda ofrecido un servidor para un host que no tiene el estampado
+  // que le dice al agente cuándo alcanzarlo.
+  const mcpServer = offerWorklineServer({
+    targets: existingTargets.map((t) => t.target),
+    scopeDir: ctx.env.homeDir(),
+    dryRun,
+  });
+
   return {
     ok: true,
     data: {
@@ -399,6 +418,7 @@ export async function selfInstallSkill(
       source: sourceArg,
       source_kind: sourceKind,
       dests: results,
+      ...(mcpServer.length === 0 ? {} : { mcp_server: mcpServer }),
     },
     exitCode: 0,
   };

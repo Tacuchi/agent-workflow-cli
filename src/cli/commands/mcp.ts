@@ -20,7 +20,7 @@ import {
   resolveWarpGlobalMcpPath,
   resolveWarpProjectMcpPath,
 } from "../../application/multiroot/warp.js";
-import { MCP_FILE_HOSTS, harnessById } from "../../domain/harnesses.js";
+import { type HarnessId, MCP_FILE_HOSTS, harnessById } from "../../domain/harnesses.js";
 import { type McpHost, type McpInstance, mcpEntryNameFor } from "../../domain/mcp-entry.js";
 import type { CommandResult, ExitCode } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
@@ -51,7 +51,7 @@ export const mcpCommand: CliCommand = {
         "Los subcomandos MCP no aceptan una conexión posicional. Usá --instance <nombre> o --all-connections cuando el subcomando permite fan-out.",
       );
     }
-    if (subcommand === "serve") return runServeSub();
+    if (subcommand === "serve") return runServeSub(args);
     if (subcommand === "dbhub") return runDbhubSub(args, ctx);
     if (subcommand === "setup") return runSetupSub(args, ctx);
     if (subcommand === "remove") return runRemoveSub(args, ctx);
@@ -71,11 +71,20 @@ export const mcpCommand: CliCommand = {
  * por el protocolo, así que cualquier cosa que el renderizador imprimiera ahí
  * corrompería la sesión del cliente. Por eso `data` viaja indefinido.
  */
-async function runServeSub(): Promise<CommandResult> {
+async function runServeSub(args: ParsedArgs): Promise<CommandResult> {
+  // Qué host lo lanzó: el propio host lo dice al registrarlo, porque el servidor
+  // no tiene forma de detectarlo desde adentro. Sin ese dato la degradación no
+  // podría nombrar la política ni la forma de arrancar que la recupera.
+  const declared = args.values.get("host");
+  const spec = declared === undefined ? null : harnessById(declared as HarnessId);
   await runElicitationStdio({
     input: process.stdin,
     output: process.stdout,
     diagnostics: process.stderr,
+    via: spec?.structuredChoice.mcpElicitation ?? {
+      available: false,
+      reason: "el servidor se lanzó sin declarar en qué host corre (--host)",
+    },
   });
   return { ok: true, exitCode: 0 };
 }

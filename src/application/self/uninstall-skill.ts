@@ -25,6 +25,15 @@ export interface UninstallRemoval {
 export interface SelfUninstallSkillData {
   status: "removed" | "dry-run" | "noop";
   removed: UninstallRemoval[];
+  /**
+   * El servidor MCP propio, retirado de los hosts de estos destinos.
+   *
+   * Simétrico de la instalación por obligación, no por prolijidad: la decisión de
+   * dejarlo ofrecido sin pedir un comando aparte sólo se sostiene si retirarlo lo
+   * quita. Una vía que se instala sola y hay que desinstalar a mano deja basura en
+   * la configuración de alguien que creyó haberse ido del todo.
+   */
+  mcp_server?: McpOfferOutcome[];
   lock_updated: boolean;
   lock_path?: string;
   lock_warning?: string;
@@ -34,6 +43,8 @@ export interface SelfUninstallSkillData {
 // parity with install when a host is added — the clean-legacy v14.5.1 lesson.
 const ALL_TARGETS: readonly InstallTarget[] = INSTALL_TARGETS;
 const TARGET_CHOICES: readonly UninstallTargetChoice[] = [...ALL_TARGETS, "all"];
+
+import { type McpOfferOutcome, withdrawWorklineServer } from "./mcp-offer.js";
 
 export async function selfUninstallSkill(
   args: ParsedArgs,
@@ -67,11 +78,17 @@ export async function selfUninstallSkill(
     ? await updateAgentsLock(ctx, home, includeLegacy, dryRun)
     : { updated: false };
 
+  // Sobre TODOS los hosts de los destinos, no sólo los que hoy declaran la vía:
+  // si la disponibilidad de un host se retirara del catálogo después de una
+  // instalación, mirar sólo los vigentes dejaría su entrada abandonada para siempre.
+  const mcpServer = withdrawWorklineServer({ targets, scopeDir: home, dryRun });
+
   return {
     ok: true,
     data: {
       status: resolveStatus(dryRun, removals.length),
       removed: removals,
+      ...(mcpServer.length === 0 ? {} : { mcp_server: mcpServer }),
       lock_updated: lockResult.updated,
       ...(lockResult.path ? { lock_path: lockResult.path } : {}),
       ...(lockResult.warning ? { lock_warning: lockResult.warning } : {}),

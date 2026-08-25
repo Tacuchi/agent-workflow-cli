@@ -229,6 +229,47 @@ export interface HarnessInvocation {
  */
 export type StructuredChoiceState = "native" | "degraded" | "unsupported";
 
+/**
+ * La vía MCP: un servidor propio que rinde el selector NATIVO del host pidiéndole
+ * la elección por `elicitation`, para los turnos donde la herramienta del host no
+ * figura entre las ofrecidas.
+ *
+ * Es una union discriminada y no un booleano con campos sueltos, y ésa es la
+ * garantía: declarar la vía disponible SIN evidencia fechada no compila. `AC-10`
+ * exige que ningún host afirme la capacidad sin haberla observado, y un guard que
+ * lo revise después es una regla que alguien puede olvidar — el tipo no.
+ *
+ * `blockedBy` y `recoverBy` son lo que vuelve accionable la degradación: pedirle
+ * una elección a una persona ES interrumpirla, así que una política de arranque
+ * que promete no interrumpir no puede rendir un selector, y lo honesto es nombrar
+ * esa política y la forma de arrancar que la recupera en vez de fingir lo contrario.
+ */
+export type HarnessMcpElicitation =
+  | {
+      available: true;
+      /** Qué lo sostiene, con su fecha. Sin esto no hay forma de escribir `true`. */
+      evidence: string;
+      /**
+       * La política de arranque que anula el selector y cómo arrancar para
+       * recuperarlo. En INGLÉS, como el resto del catálogo: alimentan el estampado,
+       * que es inglés, y mezclar idiomas a mitad de oración se lee peor que
+       * cualquiera de los dos. Lo que la persona lee en castellano lo compone el CLI.
+       */
+      blockedBy: string;
+      recoverBy: string;
+    }
+  | {
+      available: false;
+      /** Por qué no se declara. Nadie la observó todavía, y eso se dice. */
+      reason: string;
+    };
+
+/** Lo que se declara mientras nadie haya observado la vía en ese host. */
+export const MCP_ELICITATION_UNOBSERVED: HarnessMcpElicitation = {
+  available: false,
+  reason: "nadie observó la capacidad de elicitation en este host todavía",
+};
+
 export interface HarnessStructuredChoice {
   state: StructuredChoiceState;
   /** The host's native tool, when it has one at all — even one it does not reach. */
@@ -252,6 +293,8 @@ export interface HarnessStructuredChoice {
   fallbackReason: string;
   /** What the claim rests on — doc, installed runtime or a real run — with its date. */
   evidence: string;
+  /** La vía MCP para los turnos donde `tool` no está ofrecida. */
+  mcpElicitation: HarnessMcpElicitation;
 }
 
 /** The mention form every host that auto-discovers skills by description shares. */
@@ -359,6 +402,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "the call fails, or the asker is a subagent (the tool belongs to the main agent only)",
       evidence:
         "official docs 2026-08-02; the binding in daily use, and the regression plan 016 preserves",
+      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "Task" },
   },
@@ -430,6 +474,13 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "the turn does not list it (Default mode leaves it out, `codex exec` never supports it, and enabling the `default_mode_request_user_input` opt-in does NOT add it — probed 2026-08-22; only a TUI mode switch such as `/plan` or `/pair` does, which is the person's move to offer and never the agent's to make)",
       evidence:
         "probe 2026-08-22 on codex-cli 0.149.0, read from the shipped binary: the full `RequestUserInputOverlay` TUI exists (selection + free-form answer + an `Other: ` write-in row); availability is per turn (embedded prompt: 'Use the `request_user_input` tool only when it is listed in the available tools for this turn', plus 'Never write a multiple choice question as a textual assistant message'), gated by the literals 'not supported in exec mode', 'requires an interactive stdin terminal' and 'can only be used by the root thread'; three real turns through `codex debug app-server send-message-v2` had the model answer that the tool is unavailable in this mode — including one with `--enable default_mode_request_user_input` (which `codex features list` does report as true), where it added that Plan mode has to be turned on, and one forcing `-c collaboration_mode=plan`, so the opt-in alone does not add it; `ModeKind` is `plan|default|code|custom|execute|pair_programming`, switched by TUI slash commands, and the probe channel has no TTY, which the tool requires. Its MCP client announces `capabilities.elicitation {form, url}` (handshake captured 2026-08-22), so an MCP server can render a native form even in Default mode. Supersedes the 0.146.0 router refusal of 2026-08-04",
+      mcpElicitation: {
+        available: true,
+        evidence:
+          "probe 2026-08-22 on codex-cli 0.149.0 through its interactive UI: its MCP client announces `capabilities.elicitation {form, url}` in the handshake, and a GENERIC `elicitation/create` — protocol only, no host-internal field — rendered a native selector with title, description, numbered navigable options, confirm and cancel, returning `{action:'accept',content:{...}}` under the schema key. A second request carrying the host's own `_meta` behaved identically, so the path does not depend on it. Under `--yolo` both requests came back `{action:'decline'}` immediately and with nothing shown",
+        blockedBy: "the host was started with `--yolo`, or with approvals turned off",
+        recoverBy: "start `codex` on its default approval policy, without `--yolo`",
+      },
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
   },
@@ -467,6 +518,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "its launcher is a 122-byte Bash shim inside Warp.app, with no tool surface of its own to reach",
       evidence:
         "probe 2026-08-04 on oz v0.2026.07.29.09.05: the shim carries no question-tool name at all. Re-verified 2026-08-22 on oz v0.2026.08.19: still a 122-byte Bash shim with no tool surface of its own",
+      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
   },
@@ -510,6 +562,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       customAnswer: false,
       fallbackReason: "no structured-choice surface is documented for it",
       evidence: "official docs 2026-08-02; it ships no CLI, so there is nothing local to probe",
+      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
   },
@@ -592,6 +645,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason: "the call fails or the host disables the tool (`AskQuestionToolConfig`)",
       evidence:
         "probe 2026-08-04 on agy 1.0.16 (Antigravity, the successor that reuses ~/.gemini): its shipped proto declares `AskQuestionEntry` with `options`, `is_multi_select` and `write_in_response`, and `AskQuestionOption` with `id` + `text` only; no per-call ceiling is declared anywhere. The run itself is unverified — `agy --print` returned nothing within 150s",
+      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
   },
@@ -650,6 +704,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "a non-interactive run (`opencode run`) starts with the `question` permission set to `deny`, or the call fails",
       evidence:
         'probe 2026-08-04 on opencode 1.18.5: `QuestionOption` carries its own `label` and `description`, `custom` defaults to true, and no count ceiling is declared; the exported session of a real `run` showed `question` denied. Re-verified 2026-08-22 on opencode 1.18.15: `QuestionOption` and the non-interactive `{"permission":"question","action":"deny"}` default read from the installed binary',
+      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
   },
@@ -721,6 +776,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason: "the call fails, or an option's consequence does not fit that cap",
       evidence:
         "probe 2026-08-04 on crush v0.87.0: ceilings 5×5, a description required on every question (<300 chars) and on every choice (<100 chars), and an automatic fill-in option, all read from the installed binary; the run itself could not be verified (expired auth). Re-verified 2026-08-22 on crush v0.90.0: same ceilings and caps, and the tool now details four question types (yes_no/single_choice/multi_choice/free_text) with a tabbed multi-question form",
+      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
   },
@@ -802,6 +858,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "the call fails, or the permission mode is `auto` or the run is non-interactive (this host's own system rule forbids the call there)",
       evidence:
         "probe 2026-08-04 on kimi 0.31.1: the tool is in the default agent's list and its schema is 1-4 questions × 2-4 options with `label` + `description`; in `--prompt` it refused the call ('auto mode is active') and degraded to labeled markdown on its own, options and consequences intact. Re-verified 2026-08-22 on kimi 0.36.1: the tool and its auto rule ('Do NOT call AskUserQuestion while auto mode is active') read verbatim from the shipped binary",
+      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "SubagentStart" },
   },

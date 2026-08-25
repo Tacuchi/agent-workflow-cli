@@ -42,6 +42,7 @@ import { countOurHookEntries, hooksTemplateToToml } from "./hooks-toml.js";
 import { type HooksTemplate, resolveBundledHookTemplate } from "./install-hooks.js";
 import { SKILL_DIR_NAME, USER_COMMANDS_BY_TARGET } from "./install-skill.js";
 import { COMMAND_SKILLS_HOSTS, TARGET_ROOTS } from "./install-targets.js";
+import { type McpViaState, readMcpViaState } from "./mcp-via-state.js";
 import { buildOpencodePlugin } from "./opencode-plugin.js";
 
 /** Upper bound for a single `--version` call. Probes run in parallel across hosts. */
@@ -102,6 +103,13 @@ export interface HostStateReport {
   runtime: RuntimeProbe;
   workline: { installed: boolean; path: string };
   capabilities: HostCapability[];
+  /**
+   * La vía MCP en este host, con sus tres preguntas por separado.
+   *
+   * Aparte de `capabilities` porque ahí cada capacidad tiene UN estado, y acá lo
+   * que la persona necesita saber es cuál de las tres arreglar.
+   */
+  mcp_via: McpViaState;
   status: HostStatus;
   /** Proportional next action, or null when nothing is pending. */
   advice: string | null;
@@ -363,6 +371,7 @@ export async function reportHostState(
   const status = deriveStatus(configPresent, runtime, installed);
 
   return {
+    mcp_via: readMcpViaState(spec, home),
     host: spec.id,
     target: spec.installTarget,
     label: spec.label,
