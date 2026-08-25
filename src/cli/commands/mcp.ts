@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { runHarness } from "../../application/dev-only-services.js";
+import { runElicitationStdio } from "../../application/elicitation-stdio.js";
 import {
   type StoredMcpConnection,
   resolveMcpConnectionSelection,
@@ -35,7 +36,7 @@ const HOST_VALUES: ReadonlySet<string> = new Set([...FILE_HOSTS, "all"]);
 export const mcpCommand: CliCommand = {
   name: "mcp",
   describe:
-    "MCP server tooling. Connections come from mcp-connections.json. Subcomandos: dbhub [--instance i] | setup/remove/doctor [--host h] [--instance i|--all-connections] [--workspace dir] [--global] [--dry-run] [--force] | warp-status.",
+    "MCP server tooling. `serve` corre el servidor propio de Workline, que presenta una frontera humana con el selector nativo del host por elicitation; su salida estándar es el canal JSON-RPC. Connections come from mcp-connections.json. Subcomandos: serve | dbhub [--instance i] | setup/remove/doctor [--host h] [--instance i|--all-connections] [--workspace dir] [--global] [--dry-run] [--force] | warp-status.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const subcommand = args.rest[0];
     if (
@@ -50,6 +51,7 @@ export const mcpCommand: CliCommand = {
         "Los subcomandos MCP no aceptan una conexión posicional. Usá --instance <nombre> o --all-connections cuando el subcomando permite fan-out.",
       );
     }
+    if (subcommand === "serve") return runServeSub();
     if (subcommand === "dbhub") return runDbhubSub(args, ctx);
     if (subcommand === "setup") return runSetupSub(args, ctx);
     if (subcommand === "remove") return runRemoveSub(args, ctx);
@@ -57,10 +59,26 @@ export const mcpCommand: CliCommand = {
     if (subcommand === "warp-status") return runWarpStatusSub(args, ctx);
     return fail(
       "INVALID_INPUT",
-      "mcp requiere subcomando: dbhub [--instance <nombre>] | setup | remove | doctor | warp-status",
+      "mcp requiere subcomando: serve | dbhub [--instance <nombre>] | setup | remove | doctor | warp-status",
     );
   },
 };
+
+/**
+ * El servidor propio, hablando por la entrada y la salida de ESTE proceso.
+ *
+ * No devuelve datos para renderizar y no puede: la salida estándar ya está tomada
+ * por el protocolo, así que cualquier cosa que el renderizador imprimiera ahí
+ * corrompería la sesión del cliente. Por eso `data` viaja indefinido.
+ */
+async function runServeSub(): Promise<CommandResult> {
+  await runElicitationStdio({
+    input: process.stdin,
+    output: process.stdout,
+    diagnostics: process.stderr,
+  });
+  return { ok: true, exitCode: 0 };
+}
 
 async function runDbhubSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
   if (args.rest[1] !== undefined) {
