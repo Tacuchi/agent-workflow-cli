@@ -192,8 +192,13 @@ export function openClaimsOf(events: readonly ClaimEvent[], owner: string): Clai
  *
  * `null` for anything that is not a numbered document inside a category, which
  * is what keeps this from reading a claim out of an unrelated destination.
+ *
+ * Exported because it is the ONE place that decides how a path splits into a
+ * claim identity: the publication reads it to credit a completion and the
+ * retirement reads it to name what it is giving back, and two spellings of that
+ * split would join to two different histories for the same slot.
  */
-function claimOfDocsPath(path: string, owner: string): ClaimIdentity | null {
+export function claimOfDocsPath(path: string, owner: string): ClaimIdentity | null {
   const parts = path.split("/").filter((segment) => segment.length > 0);
   const docsAt = parts.indexOf("docs");
   if (docsAt === -1 || parts.length - docsAt !== 3) return null;

@@ -27,6 +27,7 @@
  * disagree, and the one a person reads would be the one that is wrong.
  */
 
+import type { ClaimIdentity } from "../../application/claims-ledger.js";
 import { semanticDigest } from "../../application/semantic-operation/protocol.js";
 import type { WorklineNodeId } from "../workline-node.js";
 
@@ -181,6 +182,34 @@ export interface RetirementCustodyScope {
   restored: number;
 }
 
+/**
+ * A numbering reservation one of the retired sessions is still holding.
+ *
+ * It travels as its OWN list and never as a node of the provenance graph. A
+ * reservation is not a document: nothing descends from it, the index already
+ * keeps it out of `specs` and `plans`, and making it a fourth node kind would
+ * mean inventing edge semantics for something nobody inherits.
+ *
+ * It is sealed here — rather than looked up again while applying — for the same
+ * reason every other scope line is: the person approves a digest over a LIST, so
+ * a reservation that appeared or vanished between the preview and the apply stops
+ * the approval from fitting instead of silently widening what gets deleted.
+ *
+ * `intact` is what decides whether this retirement may give the slot back. Bytes
+ * still exactly the owner's marker → nothing was ever written there and releasing
+ * it loses nothing. Anything else is somebody's work: it stays put, and it is
+ * enumerated all the same, because a slot left behind in silence is precisely the
+ * orphan this change exists to end.
+ */
+export interface RetirementReservation {
+  /** Workspace-relative `docs/<category>/<NNN>-<name>`. */
+  path: string;
+  /** The claim it joins to in the ledger — owner included, always. */
+  claim: ClaimIdentity;
+  /** Its bytes are still exactly its owner's marker. Only these are released. */
+  intact: boolean;
+}
+
 /** The one durable Workline trace a successful retirement leaves. */
 export interface RetirementEvent {
   /** `discard` or `reset` — the command, as it will read in HISTORY. */
@@ -211,6 +240,8 @@ export interface RetirementProposal {
   /** Conversation associations that stop resolving. */
   bindings: string[];
   units: RetirementUnit[];
+  /** Reservations the retired sessions hold; the intact ones are given back. */
+  reservations: RetirementReservation[];
   dirty: RetirementDirtyChange[];
   reverts: RetirementRevert[];
   /** The one ref this retirement moves, or `null` when it moves none. */
@@ -256,6 +287,7 @@ export function retirementDigest(body: Omit<RetirementProposal, "digest">): stri
     units: [...body.units].sort((a, b) =>
       order(`${a.alias}/${a.session}`, `${b.alias}/${b.session}`),
     ),
+    reservations: [...body.reservations].sort((a, b) => order(a.path, b.path)),
     dirty: [...body.dirty]
       .map((d) => ({ ...d, paths: [...d.paths].sort(order) }))
       .sort((a, b) => order(a.alias, b.alias)),

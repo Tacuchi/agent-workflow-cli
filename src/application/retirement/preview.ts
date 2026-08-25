@@ -60,6 +60,16 @@ export interface RetirementPreview {
   } | null;
   /** Isolation units the retirement reconciles. */
   units: Array<{ alias: string; session: string; branch: string }>;
+  /**
+   * Held correlatives the retired sessions give back, and the ones they do not.
+   *
+   * Both halves in one list, because the person approving needs to see the same
+   * decision twice over: a number that comes back, and a number that stays held
+   * because somebody wrote into it. Splitting them into two sections would let
+   * the second one be an ABSENT heading, which is how a stranded correlative
+   * became invisible in the first place.
+   */
+  reservations: Array<{ path: string; owner: string; released: boolean }>;
   /** Conversation associations that stop resolving. */
   bindings: number;
   /** The single row HISTORY gains on success. */
@@ -117,6 +127,13 @@ export function retirementPreview(proposal: RetirementProposal): RetirementPrevi
       alias: unit.alias,
       session: unit.session,
       branch: unit.branch,
+    })),
+    reservations: proposal.reservations.map((reservation) => ({
+      path: reservation.path,
+      owner: reservation.claim.owner,
+      // The DECISION, not the input fact: what a reader has to weigh is whether
+      // the number comes back, and `intact` is only the reason it does.
+      released: reservation.intact,
     })),
     bindings: proposal.bindings.length,
     history_row: `${proposal.event.command} · ${proposal.event.key} · ${proposal.event.summary}`,
@@ -190,6 +207,25 @@ export function renderRetirementPreview(preview: RetirementPreview): string {
     lines,
     "Unidades que se reconcilian",
     preview.units.map((u) => `${u.alias} · ${u.branch}`),
+  );
+  section(
+    lines,
+    "Reservas de numeración que se liberan",
+    preview.reservations.filter((r) => r.released).map((r) => `${r.path} (de ${r.owner})`),
+  );
+  section(
+    lines,
+    "Reservas que NO se liberan: sus bytes ya no son el marcador de su dueño",
+    preview.reservations
+      .filter((r) => !r.released)
+      .map(
+        (r) =>
+          // Phrased as what will be true AFTERWARDS, never as a command to run
+          // now: while this preview is on screen the retirement has not happened,
+          // its owner may still be alive, and `aw claims recover` on a live
+          // session's slot revokes it irrevocably.
+          `${r.path} — alguien escribió ahí; el correlativo queda tomado y, una vez aplicado este retiro, lo libera 'aw claims recover ${r.path} --confirm-no-producer'`,
+      ),
   );
   if (preview.bindings > 0) {
     section(lines, "Asociaciones de conversación que dejan de resolver", [`${preview.bindings}`]);

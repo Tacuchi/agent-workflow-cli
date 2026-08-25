@@ -26,8 +26,10 @@
  */
 
 import { join } from "node:path";
+import { reservationMarker } from "../../domain/reservation.js";
 import type { RetirementProposal, RetirementRestore } from "../../domain/retirement/proposal.js";
 import { baselineDigest } from "../../domain/session/custody.js";
+import { appendClaimEvent, claimKey, openClaimsOf, readClaimEvents } from "../claims-ledger.js";
 import { localDateIso } from "../dates.js";
 import { withCwdLock } from "../lock-service.js";
 import { invalidateBindingsTo } from "../session-binding-service.js";
@@ -72,6 +74,21 @@ export interface ApplyResult {
    */
   units_released: string[];
   pending_reconciliation: string[];
+  /** Numbering reservations of the retired sessions that were given back. */
+  reservations_released: string[];
+  /**
+   * Reservations this retirement did NOT give back, for either of two reasons:
+   * their bytes are no longer their owner's marker, or freeing them failed.
+   *
+   * In the first case somebody wrote in there, and the retirement will not free
+   * the correlative on the strength of a claim the file itself no longer
+   * supports. In the second, the operation is already past its commit point, so
+   * the slot is reported instead of being allowed to abort a completion that is
+   * owed. Either way it is reported rather than dropped: the slot outlives the
+   * session that held it, and a held number nobody is told about is the orphan
+   * this whole release exists to prevent.
+   */
+  reservations_held: string[];
   /** Whether this call performed the work or recognized it as already done. */
   already_applied: boolean;
 }
@@ -371,6 +388,15 @@ async function finish(
 
   await appendEvent(deps.fs, deps.paths, eventOf(proposal, (deps.now ?? (() => new Date()))()));
 
+  // AFTER the row, and the order is the whole point. For a retirement with no git
+  // side the row IS the commit point, so releasing before it would give a
+  // correlative back for an operation the re-entry then reads as rolled back.
+  // Past it, the only failure left is a release that did not finish — and that one
+  // heals: `hasEvent` is already true, so the next entry re-runs `finish` and
+  // completes it. It also runs after the restores above, which is what lets a
+  // `reset` give back a slot its own restore just re-materialized.
+  const reservations = await releaseReservations(deps, proposal);
+
   for (const ref of journal.private_refs) {
     if (publication === null) continue;
     await deps.git.deleteRef(publication.repo, ref);
@@ -401,9 +427,89 @@ async function finish(
         .map((r) => `${r.alias}:${r.commit.slice(0, 12)}`),
       units_released: units.released,
       pending_reconciliation: units.unreconciled,
+      reservations_released: reservations.released,
+      reservations_held: reservations.held,
       already_applied: alreadyApplied,
     },
   };
+}
+
+/**
+ * Give back the correlatives the retired sessions were still holding.
+ *
+ * This is the cancellation half of the reservation's life, and it lives HERE
+ * rather than behind a surface of its own: retiring a session is the
+ * cancellation this system already has, and a second vocabulary for it would
+ * mean two ways to cancel that can disagree about what a cancel releases.
+ *
+ * Past the commit point, so it inherits the retirement's own guarantees instead
+ * of inventing any: the same approval by digest covers it, the same preview
+ * enumerated it, and a failure BEFORE the commit point never reaches it — which
+ * is what makes a rolled-back retirement one that released nothing.
+ *
+ * Two rules, and both are the close's, deliberately unchanged:
+ *
+ * - the record goes in BEFORE the file goes, so a crash between them
+ *   over-states a release rather than freeing a number with no trace of it;
+ * - the bytes are re-read and compared to the owner's marker HERE, even though
+ *   the proposal already said `intact`. The seal proves what the person
+ *   approved; only the read proves what is on disk at the moment of deleting it,
+ *   and between those two moments is exactly where a late publication lands.
+ */
+async function releaseReservations(
+  deps: ApplyDeps,
+  proposal: RetirementProposal,
+): Promise<{ released: string[]; held: string[] }> {
+  const released: string[] = [];
+  const held: string[] = [];
+  if (proposal.reservations.length === 0) return { released, held };
+  // Read ONCE, before the loop: it is what keeps a retry from writing a second
+  // `released` line for a claim the previous attempt already recorded.
+  const ledger = await readClaimEvents(deps.fs, deps.paths);
+  for (const reservation of proposal.reservations) {
+    // The sealed verdict decides FIRST. A slot the preview said would not be
+    // freed is never reported as freed by this retirement, even when somebody
+    // else's sanctioned recovery removed it in the meantime.
+    if (!reservation.intact) {
+      held.push(reservation.path);
+      continue;
+    }
+    // Past the commit point there is no failing, so a slot this cannot free is
+    // REPORTED rather than allowed to abort the completion — the same rule the
+    // unit reconciliation below follows, and for the same reason: everything
+    // after the row is owed to a retirement that already happened. The journal
+    // outlives a throw here, so the next entry finishes what this one could not.
+    try {
+      const absolute = join(deps.paths.workspaceDir(), reservation.path);
+      const present = await deps.fs.exists(absolute);
+      if (
+        present &&
+        (await deps.fs.readText(absolute)) !== reservationMarker(reservation.claim.owner)
+      ) {
+        held.push(reservation.path);
+        continue;
+      }
+      const open = new Set(
+        openClaimsOf(ledger.events, reservation.claim.owner).map((claim) => claimKey(claim)),
+      );
+      if (open.has(claimKey(reservation.claim))) {
+        await appendClaimEvent(deps.fs, deps.paths, {
+          at: (deps.now ?? (() => new Date()))().toISOString(),
+          event: "released",
+          claim: reservation.claim,
+          cause: `aw ${proposal.mode}: la reserva seguía intacta al retirar la sesión que la tenía`,
+        });
+      }
+      // `remove` is force+recursive, so an already-gone slot is a no-op rather
+      // than a branch: a re-entry finishing a previous attempt reports the same
+      // scope without a second ledger line, which the guard above already ensures.
+      await deps.fs.remove(absolute);
+      released.push(reservation.path);
+    } catch {
+      held.push(reservation.path);
+    }
+  }
+  return { released, held };
 }
 
 /**

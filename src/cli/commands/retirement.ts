@@ -185,6 +185,17 @@ function render(
       `Sin reconciliar: ${data.pending_reconciliation.join(", ")} — la unidad tiene trabajo sin commitear y no se fuerza`,
     );
   }
+  if (data.reservations_released.length > 0) {
+    lines.push(`Correlativos liberados: ${data.reservations_released.join(", ")}`);
+  }
+  if (data.reservations_held.length > 0) {
+    // Said in the report and not only in the preview: this is the one line that
+    // tells somebody a number survived the retirement that was supposed to give
+    // it back, and the preview is not what they re-read afterwards.
+    lines.push(
+      `Reservas NO liberadas: ${data.reservations_held.join(", ")} — sus bytes ya no son el marcador de su dueño; liberalas con 'aw claims recover <ruta> --confirm-no-producer'`,
+    );
+  }
   if (context.detail) {
     lines.push(
       `Digest: ${data.digest}`,

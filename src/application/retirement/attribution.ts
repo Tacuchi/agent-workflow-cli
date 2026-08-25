@@ -23,6 +23,7 @@
  * operation — a scope that would need two is refused while it is still a proposal.
  */
 
+import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   RetirementDirtyChange,
@@ -336,7 +337,31 @@ async function rehearse(
   source: CustodySource,
   options: AttributionOptions,
 ): Promise<PreparedReverts | RehearsalFailure> {
-  const worktree = join(options.scratchDir, `rehearsal-${options.opId}-${source.alias}`);
+  // A UNIQUE directory per rehearsal, and the uniqueness is the fix for a real
+  // collision. The path used to be `rehearsal-<opId>-<alias>`, where `opId` is a
+  // session folder: correlatives restart per workspace, so two workspaces on one
+  // machine routinely hold a `001-algo-plan-exec` with the same source alias, and
+  // two concurrent retirements then aimed `git worktree add` at the SAME path in
+  // the shared tmpdir. The loser fails with "no se pudo preparar un árbol
+  // temporal" — a spurious refusal, never a destructive act, but a refusal about
+  // a repository that is perfectly fine. Reproduced deterministically by two test
+  // files running in parallel.
+  //
+  // `mkdtemp` is the repo's existing answer for this (self/skills-manager.ts,
+  // self/install-plugin-skills-git.ts) and it is the OS guaranteeing the name,
+  // which is what a pid or a timestamp would only approximate. The worktree goes
+  // INSIDE it because `git worktree add` wants to create its own directory.
+  let scratch: string;
+  try {
+    scratch = await mkdtemp(join(options.scratchDir, `aw-rehearsal-${options.opId}-`));
+  } catch (err) {
+    return {
+      reason: `no se pudo preparar un árbol temporal para ensayar los reverts: ${message(err)}`,
+      contested: [],
+      action: "liberá espacio o revisá el repositorio y reintentá; nada se aplicó",
+    };
+  }
+  const worktree = join(scratch, source.alias);
   try {
     await git.worktreeAddDetached(repo, worktree, expectedOld);
   } catch (err) {
@@ -420,6 +445,10 @@ async function rehearse(
     // reachable through the private ref the coordinator sets, never through a tree.
     try {
       await git.worktreeRemove(repo, worktree);
+      // The directory `mkdtemp` made is ours alone, so it goes with the tree it
+      // was created to hold. Left behind it would leak one empty directory per
+      // rehearsal into the tmpdir.
+      await rm(scratch, { recursive: true, force: true });
     } catch {
       // Best-effort: a tree that cannot be removed is reported by `worktree list`
       // as an orphan, which is a visible state and not a silent one.

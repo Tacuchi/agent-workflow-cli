@@ -6,12 +6,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
+import { appendClaimEvent, readClaimEvents } from "../../src/application/claims-ledger.js";
+import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   type ApplyDeps,
   applyRetirement,
   recoverPendingRetirements,
 } from "../../src/application/retirement/apply.js";
+import { appendEvent, eventOf } from "../../src/application/retirement/history-events.js";
 import {
   journalDir,
   openJournal,
@@ -20,6 +23,7 @@ import {
 } from "../../src/application/retirement/journal.js";
 import { prepareRetirement } from "../../src/application/retirement/prepare.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
+import { recordPublication } from "../../src/application/session-custody-recorder.js";
 import { recordCommit, recordUnitTaken } from "../../src/application/session-custody-recorder.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { runWorktree } from "../../src/application/worktree-service.js";
@@ -509,5 +513,391 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
     expect(history()).not.toContain("## Retiros");
     expect(existsSync(journalDir(paths))).toBe(false);
+  });
+
+  /**
+   * The cancellation half of a reservation's life, run for real.
+   *
+   * Retiring a session IS cancelling it, so these are the tests that say the
+   * retirement stopped abandoning correlatives — and, just as load-bearing, that
+   * it only ever gives back the ones its own target was holding intact.
+   */
+  async function claim(owner: string, name: string, directory = "docs/specs"): Promise<string> {
+    const result = await runNextNumber(fs, deps.env, paths, {
+      directory,
+      claim: { name, owner },
+    });
+    return `${directory}/${result.next}-${name}`;
+  }
+
+  async function ledgerEvents(): Promise<Array<{ event: string; path: string; owner: string }>> {
+    const read = await readClaimEvents(fs, paths);
+    return read.events.map((e) => ({
+      event: e.event,
+      path: `docs/${e.claim.category}/${e.claim.correlative}-${e.claim.name}`,
+      owner: e.claim.owner,
+    }));
+  }
+
+  it("retirar la sesión libera su reserva intacta y lo registra en el ledger", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-mia.md");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+
+    const outcome = await applyRetirement(deps, {
+      mode: "discard",
+      target: `session:${folder}`,
+      approval: proposal.digest,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    // El correlativo dejó de estar tomado y el retiro lo dice.
+    expect(existsSync(join(workspace, held))).toBe(false);
+    expect(outcome.result.reservations_released).toEqual([held]);
+    expect(outcome.result.reservations_held).toEqual([]);
+    // Y la huella sobrevive a la carpeta que la tenía: el ledger vive fuera.
+    expect(await ledgerEvents()).toEqual([
+      { event: "claimed", path: held, owner: folder },
+      { event: "released", path: held, owner: folder },
+    ]);
+    // Una sola operación, una sola fila.
+    expect(rowsFor(proposal.digest)).toBe(1);
+  });
+
+  it("no toca la reserva de otra sesión ni la que tiene el marcador dañado", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const other = await session("otro-plan-new");
+    const damaged = await claim(folder, "spec-danada.md");
+    const foreign = await claim(other, "spec-ajena.md");
+    writeFileSync(join(workspace, damaged), "");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+
+    const outcome = await applyRetirement(deps, {
+      mode: "discard",
+      target: `session:${folder}`,
+      approval: proposal.digest,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    // Bytes inciertos: el retiro los deja donde están y lo dice en su reporte.
+    expect(existsSync(join(workspace, damaged))).toBe(true);
+    expect(outcome.result.reservations_held).toEqual([damaged]);
+    expect(outcome.result.reservations_released).toEqual([]);
+    // La ajena sigue siendo de su dueño, y sin un solo registro nuevo sobre ella.
+    expect(existsSync(join(workspace, foreign))).toBe(true);
+    expect(await ledgerEvents()).toEqual([
+      { event: "claimed", path: damaged, owner: folder },
+      { event: "claimed", path: foreign, owner: other },
+    ]);
+  });
+
+  it("un retiro que se deshace antes del punto de commit no libera ningún correlativo", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-mia.md");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+    const before = await ledgerEvents();
+
+    // El mid-state real: journal escrito, ref sin mover, punto de commit sin pasar.
+    const journal = openJournal({
+      proposal,
+      quarantine: quarantinePath(paths, proposal.digest),
+      opened: "2026-08-24",
+    });
+    await writeJournal(fs, paths, journal);
+    mkdirSync(journal.quarantine, { recursive: true });
+
+    const recovery = await recoverPendingRetirements(newProcess());
+
+    expect(recovery.recovered).toEqual([
+      { digest: proposal.digest, outcome: "rolled-back", target: `session:${folder}` },
+    ]);
+    // La liberación vive DENTRO de la transacción: si el retiro no ocurre,
+    // tampoco ocurre ella — ni el borrado ni el registro.
+    expect(existsSync(join(workspace, held))).toBe(true);
+    expect(await ledgerEvents()).toEqual(before);
+  });
+
+  it("un retiro que falla antes del punto de commit no libera ningún correlativo", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-mia.md");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+
+    // La cuarentena no se puede preparar: el retiro se cae ANTES del punto de
+    // commit y hace rollback. Es el estado en el que, por contrato, nada
+    // observable llegó a tocarse — y un correlativo devuelto es observable.
+    const real = new NodeFileSystem();
+    const brittle = new Proxy(real, {
+      get(target, prop) {
+        if (prop === "mkdirp") {
+          return async (path: string): Promise<void> => {
+            if (path.endsWith(".quarantine")) throw new Error("ENOSPC simulado");
+            return target.mkdirp(path);
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    const outcome = await applyRetirement(
+      { ...newProcess(), fs: brittle },
+      { mode: "discard", target: `session:${folder}`, approval: proposal.digest },
+    );
+
+    expect(outcome.ok).toBe(false);
+    // La liberación vive DENTRO de la transacción y DESPUÉS de su punto de
+    // commit: un retiro que no ocurrió no devuelve ningún número, ni en disco
+    // ni en el ledger.
+    expect(existsSync(join(workspace, held))).toBe(true);
+    expect((await ledgerEvents()).some((e) => e.event === "released")).toBe(false);
+    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+  });
+
+  it("terminar dos veces el mismo retiro no agrega un segundo registro de liberación", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-mia.md");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+
+    const first = await applyRetirement(deps, {
+      mode: "discard",
+      target: `session:${folder}`,
+      approval: proposal.digest,
+    });
+    expect(first.ok).toBe(true);
+
+    // Un journal que reaparece: un proceso que pasó el punto de commit y murió
+    // creyendo que le faltaba trabajo. La reentrada TERMINA, nunca reempieza.
+    await writeJournal(fs, paths, {
+      ...openJournal({
+        proposal,
+        quarantine: quarantinePath(paths, proposal.digest),
+        opened: "2026-08-24",
+      }),
+      phase: "committed" as const,
+    });
+    const recovery = await recoverPendingRetirements(newProcess());
+
+    expect(recovery.recovered[0]?.outcome).toBe("completed");
+    // El ledger es append-only: una liberación que se registrara dos veces sería
+    // una historia que dice que el mismo correlativo volvió dos veces.
+    expect((await ledgerEvents()).filter((e) => e.event === "released")).toEqual([
+      { event: "released", path: held, owner: folder },
+    ]);
+    expect(rowsFor(proposal.digest)).toBe(1);
+  });
+
+  it("el correlativo que el retiro libera vuelve al conjunto elegible", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-mia.md");
+    const correlative = held.slice("docs/specs/".length, "docs/specs/".length + 3);
+    const proposal = await proposalFor("discard", `session:${folder}`);
+
+    await applyRetirement(deps, {
+      mode: "discard",
+      target: `session:${folder}`,
+      approval: proposal.digest,
+    });
+    const next = await runNextNumber(fs, deps.env, paths, {
+      directory: "docs/specs",
+      claim: { name: "spec-otra.md", owner: await session("nuevo-spec-new") },
+    });
+
+    // Liberado y nunca publicado: el hueco se vuelve a llenar en vez de perderse.
+    expect(next.next).toBe(correlative);
+  });
+
+  it("una reserva cuyos bytes cambiaron DESPUÉS del sello no se libera al terminar", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-mia.md");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+    // El sello dice que estaba intacta, y lo estaba cuando se selló.
+    expect(proposal.reservations[0]?.intact).toBe(true);
+
+    // El punto de commit ya pasó —la fila está en HISTORY— y el proceso murió
+    // antes de completar. Entre ese momento y la reentrada, alguien escribió ahí.
+    await appendEvent(fs, paths, eventOf(proposal, new Date()));
+    await writeJournal(fs, paths, {
+      ...openJournal({
+        proposal,
+        quarantine: quarantinePath(paths, proposal.digest),
+        opened: "2026-08-24",
+      }),
+      phase: "committed" as const,
+    });
+    writeFileSync(join(workspace, held), "# trabajo de alguien\n");
+
+    const recovery = await recoverPendingRetirements(newProcess());
+
+    expect(recovery.recovered[0]?.outcome).toBe("completed");
+    // La reentrada NO vuelve a preparar ni compara digests: si se fiara del sello
+    // borraría trabajo. Los bytes se releen en el momento exacto de borrarlos.
+    expect(readFileSync(join(workspace, held), "utf-8")).toBe("# trabajo de alguien\n");
+    expect((await ledgerEvents()).some((e) => e.event === "released")).toBe(false);
+  });
+
+  it("registra la liberación ANTES de borrar el archivo", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-mia.md");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+
+    // Un borrado que falla es el único modo de observar el ORDEN. Al revés, una
+    // caída entre los dos pasos dejaría el correlativo libre sin una sola línea
+    // que lo diga, que es el estado exacto que el ledger existe para terminar.
+    const real = new NodeFileSystem();
+    const brittle = new Proxy(real, {
+      get(target, prop) {
+        if (prop === "remove") {
+          return async (path: string): Promise<void> => {
+            if (path.endsWith("spec-mia.md")) throw new Error("EIO simulado");
+            return target.remove(path);
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    const outcome = await applyRetirement(
+      { ...newProcess(), fs: brittle },
+      { mode: "discard", target: `session:${folder}`, approval: proposal.digest },
+    );
+
+    // Pasado el punto de commit no se falla: el slot que no se pudo liberar se
+    // REPORTA y la operación termina igual, como hace la reconciliación de
+    // unidades. Abortar acá dejaría a medias una completitud que ya se debe.
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.reservations_held).toEqual([held]);
+    expect(outcome.result.reservations_released).toEqual([]);
+
+    // El archivo sigue ahí porque el borrado falló, y el registro YA está puesto:
+    // sobre-declarar una liberación se reconcilia; una liberación muda, no.
+    expect(existsSync(join(workspace, held))).toBe(true);
+    expect((await ledgerEvents()).filter((e) => e.event === "released")).toEqual([
+      { event: "released", path: held, owner: folder },
+    ]);
+    // Y la fila de HISTORY YA está: la liberación corre PASADO el punto de
+    // commit, que en un retiro sin git ES esa fila. Antes de ella, este mismo
+    // fallo habría devuelto un correlativo de una operación que la reentrada
+    // lee como deshecha.
+    expect(rowsFor(proposal.digest)).toBe(1);
+
+    // Y por estar del lado bueno del punto de commit, se CURA sola: la reentrada
+    // termina la liberación en vez de dejarla a medias, y sin duplicar el registro.
+    await writeJournal(fs, paths, {
+      ...openJournal({
+        proposal,
+        quarantine: quarantinePath(paths, proposal.digest),
+        opened: "2026-08-24",
+      }),
+      phase: "committed" as const,
+    });
+    await recoverPendingRetirements(newProcess());
+    expect(existsSync(join(workspace, held))).toBe(false);
+    expect((await ledgerEvents()).filter((e) => e.event === "released")).toHaveLength(1);
+  });
+
+  it("si la fila de HISTORY no se puede escribir, el correlativo NO se libera", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-mia.md");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+
+    // Este retiro no tiene lado git, así que su punto de commit ES la fila de
+    // HISTORY. Hacerla fallar es la única forma de observar de qué lado del
+    // punto de commit corre la liberación.
+    const real = new NodeFileSystem();
+    const brittle = new Proxy(real, {
+      get(target, prop) {
+        if (prop === "writeText") {
+          return async (path: string, content: string): Promise<void> => {
+            if (path.endsWith("HISTORY.md")) throw new Error("ENOSPC simulado");
+            return target.writeText(path, content);
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    await applyRetirement(
+      { ...newProcess(), fs: brittle },
+      { mode: "discard", target: `session:${folder}`, approval: proposal.digest },
+    ).catch(() => undefined);
+
+    // El punto de commit no se pasó: la operación es, para toda reentrada, una
+    // que no ocurrió. Devolver su correlativo igual lo pondría en el conjunto
+    // elegible de otra sesión mientras esta sigue leyéndose como deshecha.
+    expect(rowsFor(proposal.digest)).toBe(0);
+    expect(existsSync(join(workspace, held))).toBe(true);
+    expect((await ledgerEvents()).some((e) => e.event === "released")).toBe(false);
+  });
+
+  it("un reset devuelve el correlativo que su propia restauración vuelve a materializar", async () => {
+    const folder = await session("algo-spec-new");
+    const held = await claim(folder, "spec-mia.md");
+    const marker = readFileSync(join(workspace, held), "utf-8");
+    // La sesión completó su propia reserva: el destino se sella en custodia con
+    // rol `input` y baseline = EL MARCADOR, y el ledger acredita `published`.
+    writeFileSync(join(workspace, held), "---\nstatus: draft\n---\n\n# Spec\n");
+    await recordPublication(deps, folder, [{ path: held, previous: marker }]);
+    await appendClaimEvent(fs, paths, {
+      at: new Date().toISOString(),
+      event: "published",
+      claim: {
+        category: "specs",
+        correlative: held.slice(11, 14),
+        name: "spec-mia.md",
+        owner: folder,
+      },
+      cause: "el flujo completó su propia reserva",
+    });
+
+    const proposal = await proposalFor("reset", `session:${folder}`);
+    // Enumerado ANTES de aprobar, no descubierto al aplicar.
+    expect(proposal.reservations.map((r) => r.path)).toEqual([held]);
+
+    const outcome = await applyRetirement(deps, {
+      mode: "reset",
+      target: `session:${folder}`,
+      approval: proposal.digest,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    // Sin esto el reset restauraba el marcador sobre el documento y borraba a su
+    // dueño: un archivo cuyo contenido entero es `<!-- aw:reserva … -->` que el
+    // ledger ya marcó `published`, así que `slotOf` NO lo lee como slot y el
+    // tablero lo contaba como una spec publicada. Ninguna superficie lo resolvía.
+    expect(existsSync(join(workspace, held))).toBe(false);
+    expect(outcome.result.reservations_released).toEqual([held]);
+    const index = await buildWorklineIndex(fs, deps.env, paths, {});
+    expect(index.specs.map((s) => s.file)).not.toContain(held);
+    expect(index.reservations).toEqual([]);
+  });
+
+  it("una reserva sellada NO liberable jamás se reporta como liberada, ni si otro la borró", async () => {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const held = await claim(folder, "spec-danada.md");
+    writeFileSync(join(workspace, held), "");
+    const proposal = await proposalFor("discard", `session:${folder}`);
+    expect(proposal.reservations[0]?.intact).toBe(false);
+
+    // Entre el sello y el final, la recuperación sancionada la liberó de verdad.
+    const journal = openJournal({
+      proposal,
+      quarantine: quarantinePath(paths, proposal.digest),
+      opened: "2026-08-24",
+    });
+    await appendEvent(fs, paths, eventOf(proposal, new Date()));
+    await writeJournal(fs, paths, { ...journal, phase: "committed" as const });
+    rmSync(join(workspace, held));
+
+    await recoverPendingRetirements(newProcess());
+
+    // La vista previa dijo que NO la liberaba. Atribuirse el borrado de otro
+    // convertiría el reporte en una afirmación falsa sobre un efecto destructivo.
+    expect((await ledgerEvents()).some((e) => e.event === "released")).toBe(false);
   });
 });

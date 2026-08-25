@@ -1,11 +1,20 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
+import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { prepareRetirement } from "../../src/application/retirement/prepare.js";
 import type { PrepareDeps } from "../../src/application/retirement/prepare.js";
@@ -467,5 +476,130 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     // que la que importa —un revert— no quede sepultada entre encabezados vacíos.
     expect(human).not.toContain("Commits que se revierten");
     expect(human).not.toContain("Unidades que se reconcilian");
+  });
+
+  /**
+   * Reservations of the retired session — the cancellation half of a claim's life.
+   *
+   * Retiring a session IS cancelling it, so what these fix is a subsystem that
+   * used to be blind to reservations altogether: the closure walked documents and
+   * sessions, the correlative its target was holding was in neither list, and the
+   * retirement completed leaving a numbered file in `docs/` that nobody owned any
+   * more.
+   */
+  async function claim(owner: string, name: string, directory = "docs/specs"): Promise<string> {
+    const result = await runNextNumber(fs, deps.env, paths, {
+      directory,
+      claim: { name, owner },
+    });
+    return `${directory}/${result.next}-${name}`;
+  }
+
+  it("enumera las reservas intactas de la sesión que retira, y jamás la de otra sesión", async () => {
+    write(specFile("025"), SPEC("025"));
+    write(planFile("024"), PLAN("024", "025"));
+    const mine = await session("algo-plan-exec", [planFile("024")]);
+    const other = await session("otro-plan-new");
+    const held = await claim(mine, "spec-mia.md");
+    const foreign = await claim(other, "spec-ajena.md");
+
+    const proposal = proposalOf(await prepare("discard", `session:${mine}`));
+
+    expect(proposal.reservations).toEqual([
+      {
+        path: held,
+        claim: {
+          category: "specs",
+          correlative: held.slice("docs/specs/".length, "docs/specs/".length + 3),
+          name: "spec-mia.md",
+          owner: mine,
+        },
+        intact: true,
+      },
+    ]);
+    // La ajena no aparece por ninguna vía: el alcance se filtra por dueño, no por
+    // categoría ni por proximidad de correlativo.
+    expect(proposal.reservations.some((r) => r.path === foreign)).toBe(false);
+    // Y sigue sin escribir nada: `prepare` sólo mira.
+    expect(existsSync(join(workspace, foreign))).toBe(true);
+    expect(existsSync(join(workspace, held))).toBe(true);
+  });
+
+  it("una reserva con el marcador dañado se enumera, y como NO liberable", async () => {
+    const mine = await session("algo-plan-exec");
+    const held = await claim(mine, "spec-mia.md");
+    // El marcador se perdió pero el ledger sigue diciendo de quién es el slot.
+    // Los bytes ya no respaldan el reclamo, así que el retiro lo nombra y no lo
+    // libera: es la misma afirmación extra que exige una recuperación.
+    write(held, "");
+
+    const proposal = proposalOf(await prepare("discard", `session:${mine}`));
+    const preview = retirementPreview(proposal);
+
+    expect(proposal.reservations).toHaveLength(1);
+    expect(proposal.reservations[0]?.intact).toBe(false);
+    expect(preview.reservations).toEqual([{ path: held, owner: mine, released: false }]);
+    const human = renderRetirementPreview(preview);
+    expect(human).toContain("Reservas que NO se liberan");
+    expect(human).toContain(`aw claims recover ${held} --confirm-no-producer`);
+    expect(human).not.toContain("Reservas de numeración que se liberan");
+  });
+
+  it("un documento escrito sobre el correlativo reservado deja de ser una reserva", async () => {
+    const mine = await session("algo-plan-exec");
+    const held = await claim(mine, "spec-mia.md");
+    // Bytes reales: el índice deja de verlo como slot y pasa a ser un documento
+    // del corpus. Que el retiro no lo enumere es la garantía, no un descuido —
+    // liberar un correlativo que ya sostiene trabajo es exactamente AC-07.
+    write(held, "---\nstatus: draft\n---\n\n# Spec — algo que alguien escribió\n");
+
+    const proposal = proposalOf(await prepare("discard", `session:${mine}`));
+
+    expect(proposal.reservations).toEqual([]);
+    expect(proposal.deletes.some((d) => d.path === held)).toBe(false);
+  });
+
+  it("la vista previa nombra el correlativo que vuelve, con su dueño", async () => {
+    const mine = await session("algo-plan-exec");
+    const held = await claim(mine, "spec-mia.md");
+
+    const human = renderRetirementPreview(
+      retirementPreview(proposalOf(await prepare("discard", `session:${mine}`))),
+    );
+
+    expect(human).toContain("Reservas de numeración que se liberan");
+    expect(human).toContain(`${held} (de ${mine})`);
+  });
+
+  it("un archivo numerado ilegible en docs/ rechaza el retiro en vez de sellar un alcance parcial", async () => {
+    const mine = await session("algo-plan-exec");
+    await claim(mine, "spec-mia.md");
+    // Un `docs/` que no se puede recorrer entero no es un `docs/` sin reservas:
+    // sellar lo que el barrido alcanzó a ver presentaría una lista truncada como
+    // si fuera todo lo que este retiro devuelve.
+    const broken = join(workspace, "docs", "plans", "001-plan-rota.md");
+    writeFileSync(broken, "x");
+    chmodSync(broken, 0o000);
+    try {
+      const outcome = await prepare("discard", `session:${mine}`);
+      expect(outcome.ok).toBe(false);
+      if (outcome.ok) return;
+      expect(outcome.rejection.code).toBe("EVIDENCE_MISSING");
+      expect(outcome.rejection.message).toContain("correlativos");
+      expect(outcome.rejection.action).toContain("docs/");
+    } finally {
+      chmodSync(broken, 0o644);
+    }
+  });
+
+  it("una reserva que aparece después de la vista previa cambia el sello", async () => {
+    const mine = await session("algo-plan-exec");
+    const before = proposalOf(await prepare("discard", `session:${mine}`)).digest;
+
+    await claim(mine, "spec-mia.md");
+
+    // El alcance creció en un archivo que se va a borrar: la aprobación anterior
+    // ya no describe lo que pasaría, así que tiene que dejar de encajar.
+    expect(proposalOf(await prepare("discard", `session:${mine}`)).digest).not.toBe(before);
   });
 });
