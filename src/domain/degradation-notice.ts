@@ -31,12 +31,19 @@ export function renderLabeledMarkdown(questions: readonly BoundaryQuestion[]): s
     }
     lines.push("");
   }
-  lines.push("Contestá por etiqueta, o con `Aceptar recomendaciones` para tomar las primeras.");
+  lines.push("Answer by label, or with `Aceptar recomendaciones` to take every first option.");
   return lines.join("\n");
 }
 
 /**
- * Por qué no hubo elección, dicho para esta persona y en su idioma.
+ * Por qué no hubo elección, dicho para el AGENTE que lo va a presentar.
+ *
+ * En inglés como el resto del catálogo y del estampado, y no en el idioma de la
+ * persona, porque esto es dato de protocolo que el agente relaya: quien traduce a
+ * la persona es él, y mezclar los dos idiomas a mitad de oración —que es lo que
+ * pasaba al componer castellano alrededor de campos ingleses del catálogo— se lee
+ * peor que cualquiera de los dos. Las etiquetas de las alternativas siguen viniendo
+ * de quien llama, así que ésas ya están en el idioma de la persona.
  *
  * El rechazo automático es el único que nombra una política y una forma de
  * arrancar: es el único que la persona no vio. Los demás describen lo que sí hizo,
@@ -48,20 +55,20 @@ export function degradationNotice(
 ): string {
   switch (outcome) {
     case "refused-by-host": {
-      const causa = via.available
-        ? `${via.blockedBy}. Para recuperarlo: ${via.recoverBy}`
-        : "este host no declara la vía de selector nativo";
-      // Ni un veto ni una exigencia: se nombra la causa, se nombra el remedio y el
-      // trabajo sigue. Bloquear hasta que alguien cambie su política sería frenar
-      // el trabajo por una preferencia de presentación.
-      return `El host declinó el selector en el acto y sin mostrarte nada, así que esto NO se leyó como una decisión tuya. La causa es que ${causa}. Mientras tanto la frontera va acá abajo, completa, y el trabajo sigue.`;
+      const cause = via.available
+        ? `${via.blockedBy}. To get the selector back: ${via.recoverBy}`
+        : "this host does not declare the native-selector path";
+      // Neither a veto nor a demand: name the cause, name the remedy, carry on.
+      // Blocking until somebody changes their policy would stop the work over a
+      // presentation preference.
+      return `The host refused the selector instantly and showed the person nothing, so this was NOT read as their decision. The cause is that ${cause}. Present the boundary below in full and carry on.`;
     }
     case "declined-by-person":
-      return "Rechazaste el selector, así que la frontera sigue pendiente y no se aplicó ninguna transición. Va acá abajo para que la contestes cuando quieras.";
+      return "The person saw the selector and refused it, so the boundary stays pending and no transition was applied. Present it below so they can answer when they want to.";
     case "cancelled":
-      return "Cerraste el selector sin elegir, así que la frontera sigue pendiente y no se registró ninguna elección. Va acá abajo.";
+      return "The person closed the selector without choosing, so the boundary stays pending and no choice was recorded. Present it below.";
     case "empty":
-      return "El selector volvió sin elección ni texto, así que la frontera sigue pendiente. Va acá abajo.";
+      return "The selector came back with neither a choice nor any text, so the boundary stays pending. Present it below.";
     default:
       return "";
   }
@@ -74,4 +81,4 @@ export function degradationNotice(
  * antes evita que se lea como una falla de la vía justo cuando está funcionando.
  */
 export const APPROVAL_NOTICE =
-  "La primera vez, tu host te va a pedir que autorices esta herramienta. Podés persistir esa autorización para la sesión y no vuelve a interrumpir en las fronteras siguientes.";
+  "The first time, this host asks the person to approve the tool. Say so as part of the presentation, and note that persisting the approval stops it interrupting every later boundary of the session.";

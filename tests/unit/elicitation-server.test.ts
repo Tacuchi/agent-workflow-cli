@@ -130,7 +130,7 @@ describe("el servidor propio, manejado por un cliente falso", () => {
     expect(run.elicitations).toHaveLength(1);
     // Y la degradación viaja YA REDACTADA: el motivo exacto sale del catálogo y
     // del reloj, y el agente no tiene ninguno de los dos.
-    expect(run.result?.notice).toContain("NO se leyó como una decisión tuya");
+    expect(run.result?.notice).toContain("NOT read as their decision");
     expect(run.result?.notice).toContain("--yolo");
     expect(run.result?.notice).toContain("default approval policy");
     // La frontera entera sobrevive a la degradación, con sus dos preguntas.
@@ -167,7 +167,7 @@ describe("el servidor propio, manejado por un cliente falso", () => {
     // decidir dos veces lo mismo.
     expect(run.result?.fallback_markdown).toContain("¿Integro la unidad?");
     expect(run.result?.fallback_markdown).not.toContain("¿Aprobás los commits?");
-    expect(run.result?.notice).toContain("Rechazaste el selector");
+    expect(run.result?.notice).toContain("saw the selector and refused it");
   });
 
   it("una elección NO trae degradación: no hay nada que degradar", () => {
