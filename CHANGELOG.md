@@ -4,6 +4,26 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [23.0.0] — 2026-08-25
+
+**Workline deja de exigir un scaffold antes de ser útil, y `plan-exec` pasa a conservar toda la evidencia de sus iteraciones.** La raíz se resuelve desde el marcador más cercano —o el cwd exacto—, las primeras escrituras materializan sólo el runtime y el pipeline ya no puede ofrecer una continuación contradictoria con su estado.
+
+### Changed
+
+- **El workspace es implícito por defecto.** `status`, `resume`, TUI, skills, flows y checkpoints comparten una única raíz resuelta; `workspace-init` sin fuentes sólo materializa el runtime mínimo.
+- **`plan-exec` usa estado v10.** Los batches se sellan antes de ejecutarse, el preview de decisión queda durable antes de elegir y el cierre vuelve a comprobar tareas, fases, validación, Git e integración.
+- **La elicitation MCP valida y conserva respuestas libres**, negocia el lifecycle legacy de forma explícita y trata una entrada homónima ajena como conflicto sin escribirla.
+
+### Removed
+
+- **Ya no se admite reanudar implícitamente una corrida legacy activa.** Una corrida v7–v9 requiere `aw flow advance --adopt`; no se migra ni re-sella al leerla.
+- **`workspace` deja de ser un alias configurable** y el estado MCP especulativo `usable` desaparece.
+
+### Migration
+
+- Materializá por anticipado con `aw workspace-init` sólo si necesitás el runtime antes de la primera mutación.
+- Para continuar una corrida legacy, confirmá su flow y usá `aw flow advance --code <NNN> --flow <flow> --adopt`.
+
 ## [22.4.2] — 2026-08-22
 
 **La razón del fallback de codex crecía entre la condición y su consecuencia.** La cláusula generada quedaba `When A — B; C, so D, fall back to E`: tres oraciones intercaladas antes de decir qué hacer. El estampado se lee en cada invocación de cada superficie de ese host, así que una cláusula que obliga a releerla es un costo real.
