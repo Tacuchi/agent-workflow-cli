@@ -51,7 +51,12 @@ export const skillsCommand: CliCommand<SkillsData> = {
       };
     }
     const resolution = await resolveSkills(ctx.fs, ctx.paths);
-    const validation = await checkInstalledBindings(ctx.fs, ctx.env, resolution);
+    const validation = await checkInstalledBindings(
+      ctx.fs,
+      ctx.env,
+      resolution,
+      ctx.paths.workspaceDir(),
+    );
     const data: SkillsData = {
       skills: resolution.skills,
       sources: resolution.sources,

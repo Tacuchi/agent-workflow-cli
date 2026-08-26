@@ -68,8 +68,9 @@ interface Candidate {
 export async function buildCapabilityInventory(
   fs: FileSystemPort,
   env: EnvPort,
+  workspaceRoot?: string,
 ): Promise<CapabilityInventory> {
-  const roots = skillRoots(env);
+  const roots = skillRoots(env, workspaceRoot);
   const candidates: Candidate[] = [];
   for (const root of roots) {
     candidates.push(...(await scanRoot(fs, root)));

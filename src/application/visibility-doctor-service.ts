@@ -80,7 +80,7 @@ export async function runVisibilityDoctor(
   paths: PathsService,
   input: VisibilityDoctorInput,
 ): Promise<VisibilityDoctorResult> {
-  const workspace = input.workspace ? resolve(input.workspace) : resolve(env.cwd());
+  const workspace = input.workspace ? resolve(input.workspace) : paths.workspaceDir();
   const declared = await readDeclaredFuentes(fs, paths, workspace);
   const reports: VisibilityHostReport[] = [
     inspectClaude(workspace, declared, "workspace"),

@@ -17,8 +17,7 @@ export interface StdioDeps {
   output: NodeJS.WritableStream;
   /** Diagnóstico. NUNCA la salida estándar. */
   diagnostics: NodeJS.WritableStream;
-  now?: () => number;
-  /** El catálogo del host en el que corre, para poder nombrar causa y remedio. */
+  /** El catálogo del host en el que corre, para habilitar sólo una vía observada. */
   via: HarnessMcpElicitation;
 }
 
@@ -31,7 +30,6 @@ export interface StdioDeps {
 export function runElicitationStdio(deps: StdioDeps): Promise<void> {
   const server = createElicitationServer({
     send: (message) => deps.output.write(`${JSON.stringify(message)}\n`),
-    now: deps.now ?? (() => Date.now()),
     via: deps.via,
   });
 

@@ -7,6 +7,10 @@ import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.
 import type { PathsService } from "./paths-service.js";
 import { ProcessRegistryService } from "./process-registry-service.js";
 import { runProjectMdUpsertWrite } from "./project-md-upsert-service.js";
+import {
+  type WorklineMaterialization,
+  ensureWorklineMaterialized,
+} from "./workspace-materialization-service.js";
 
 export interface RemoveSourceDeps {
   fs: FileSystemPort;
@@ -20,6 +24,8 @@ export interface RemoveSourceResult {
   path: string;
   /** Processes (launched from this source) that were running and got stopped. */
   processesStopped: number;
+  /** Runtime receipt when this removal materialized an implicit Workline root. */
+  materialization?: WorklineMaterialization;
 }
 
 export interface RemoveSourceError {
@@ -52,6 +58,12 @@ export async function removeSource(
     return { error: `unknown_source: ${alias}` };
   }
 
+  // `runMultiroot` writes host-owned files synchronously, outside the generic
+  // FileSystemPort guard. Resolve the target first, then materialize before its
+  // first possible mutation (and before the ensuing block rewrite), retaining
+  // the receipt in this operation's result.
+  const materialization = await ensureWorklineMaterialized(fs, paths);
+
   // 2. Remove multi-root visibility (claude/codex/warp/oz). Idempotent per host.
   await runMultiroot(fs, env, paths, "detach", { paths: [fuente.path] });
 
@@ -76,7 +88,12 @@ export async function removeSource(
   // 5. Delete the generated launch scripts (.workflow/launch/<alias>).
   await fs.remove(join(paths.cwdLaunchDir(), alias));
 
-  return { alias, path: fuente.path, processesStopped: running.length };
+  return {
+    alias,
+    path: fuente.path,
+    processesStopped: running.length,
+    ...(materialization.materialized ? { materialization } : {}),
+  };
 }
 
 /** Read the WORKSPACE block (CLAUDE.md → AGENTS.md) and return the source for the alias. */

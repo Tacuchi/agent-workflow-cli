@@ -104,10 +104,10 @@ export interface HostStateReport {
   workline: { installed: boolean; path: string };
   capabilities: HostCapability[];
   /**
-   * La vía MCP en este host, con sus tres preguntas por separado.
+   * La vía MCP en este host, con disponibilidad y oferta por separado.
    *
    * Aparte de `capabilities` porque ahí cada capacidad tiene UN estado, y acá lo
-   * que la persona necesita saber es cuál de las tres arreglar.
+   * que la persona necesita saber cuál de esas dos condiciones falta.
    */
   mcp_via: McpViaState;
   status: HostStatus;

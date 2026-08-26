@@ -10,7 +10,11 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
 import { resolveSourceBranches } from "./branch-resolver.js";
-import { type ParsedProjectBlock, readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ParsedProjectBlock,
+  readWorkspaceBlock,
+  resolveWorkspaceSourcePath,
+} from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
 import { detectLaunchDescriptor } from "./source-launch-scripts-service.js";
@@ -45,14 +49,12 @@ export interface ProjectSource {
 
 export interface ProjectTabData {
   workspaceName: string;
-  /** Absolute workspace path (cwd) */
+  /** Absolute resolved Workline root. */
   workspacePath: string;
   /**
-   * True when the workspace has a WORKSPACE block in CLAUDE.md/AGENTS.md
-   * (i.e. it was initialized with workspace-init).
-   *
-   * When false, the tab renders a landing with the init option instead of
-   * the full content.
+   * True when the workspace has a WORKSPACE block in CLAUDE.md/AGENTS.md.
+   * Kept as data for the configuration affordance; it no longer gates the
+   * normal Project tab view.
    */
   initialized: boolean;
   /** Git data for the primary repo (cwd, or the first declared source) */
@@ -85,8 +87,8 @@ export interface ProjectTabDataDeps {
  * lands in `warnings[]`.
  */
 export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<ProjectTabData> {
-  const { fs, env, git, process: proc, paths } = deps;
-  const cwd = env.cwd();
+  const { fs, git, process: proc, paths } = deps;
+  const cwd = paths.workspaceDir();
   const warnings: string[] = [];
 
   const block = await safeRun(
@@ -99,7 +101,10 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
   const workspaceName = block?.proyecto || basename(cwd);
 
   // Primary repo: the first declared source (if any), else the cwd.
-  const primaryRepoPath = block && block.fuentes.length > 0 ? (block.fuentes[0]?.path ?? cwd) : cwd;
+  const primaryRepoPath =
+    block && block.fuentes.length > 0
+      ? resolveWorkspaceSourcePath(cwd, block.fuentes[0]?.path ?? cwd)
+      : cwd;
   const primarySource = block?.fuentes[0];
   const primaryMainBranch = primarySource
     ? resolveSourceBranches(primarySource, block).prod
@@ -118,7 +123,10 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
   const sources: ProjectSource[] = [];
   if (block) {
     for (const f of block.fuentes) {
-      const repoPath = f.path;
+      // New configuration stores absolute paths, but normalize legacy relative
+      // entries here too so every TUI Git/launch probe stays rooted in the
+      // resolved Workline directory rather than the process cwd.
+      const repoPath = resolveWorkspaceSourcePath(cwd, f.path);
       const isRepo = await safeRun(
         `is-repo:${f.alias}`,
         () => git.isGitRepo(repoPath),
@@ -140,7 +148,7 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
       );
       const launchable = await safeRun(
         `launchable:${f.alias}`,
-        () => readLaunchable(fs, paths.cwdLaunchDir(), f.alias, f.path),
+        () => readLaunchable(fs, paths.cwdLaunchDir(), f.alias, repoPath),
         warnings,
         false,
       );
@@ -153,7 +161,7 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
       );
       sources.push({
         alias: f.alias,
-        path: f.path,
+        path: repoPath,
         branch: branch ?? null,
         mainBranch: roles.prod,
         commitCount,

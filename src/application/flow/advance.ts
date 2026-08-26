@@ -72,11 +72,13 @@ import {
   attemptAccountingAt,
   attemptsAt,
   checkAgainstJourney,
+  currentBatchIteration,
   degradeTransition,
   positionDigest,
   skipTransition,
   withBoundary,
   withPendingAction,
+  withPlanExecBatchStageForTransition,
 } from "../../domain/flow/run-state.js";
 import {
   type SemanticRequest,
@@ -106,6 +108,17 @@ export type AdvanceResult =
 export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
   const incoherent = checkAgainstJourney(input.state, input.journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
+
+  // A handoff is terminal for this run even though the linear journey still has
+  // rows after the gate. Letting `advance` walk those rows would build the
+  // escalation package and then continue toward commits, which is exactly the
+  // contradictory route the typed choice closes.
+  if (input.state.handoff !== null && input.state.handoff !== undefined) {
+    const stopped = input.journey[input.state.applied.length] ?? null;
+    let state = withBoundary(input.state, stopped?.id ?? null);
+    state = withPendingAction(state, null);
+    return directiveFor(state, resolveBoundary(state, input.journey), input.applied ?? []);
+  }
 
   const walked = walk(input.state, input.journey);
   let state = walked.state;
@@ -178,7 +191,10 @@ function walk(
       break;
     }
     if (actionOf(decision) !== null) break;
-    state = applyTransition(state, decision.id, effectsOf(decision));
+    state = withPlanExecBatchStageForTransition(
+      applyTransition(state, decision.id, effectsOf(decision)),
+      decision.id,
+    );
     applied.push(stepOf(decision));
   }
   return { state, applied };
@@ -200,7 +216,8 @@ function passOver(
   journey: readonly FlowDecision[],
 ): { state: FlowRunState; step: FlowStep } | null {
   const conditional =
-    skipReason(decision, journey, state.observations) ?? nothingToPublish(state, decision);
+    skipReason(decision, journey, state.observations, currentBatchIteration(state, decision.id)) ??
+    nothingToPublish(state, decision);
   const degraded = conditional === null ? exhaustionSkip(state, decision) : null;
   const reason = conditional ?? degraded;
   if (reason === null) return null;
@@ -536,6 +553,7 @@ export function failedExecutionAttempt(
   failure: { code: string; message: string },
 ): FlowRunAttempt {
   const seal = boundarySeal(state, decision);
+  const batchIteration = currentBatchIteration(state, decision.id);
   const prior = state.attempts.filter((past) => past.invocation_id === seal);
   const attempt = prior.length + 1;
   return {
@@ -551,6 +569,7 @@ export function failedExecutionAttempt(
     parent_request_digest:
       prior.find((past) => past.attempt === attempt - 1)?.request_digest ?? null,
     transition: decision.id,
+    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
   };
 }
 
@@ -578,6 +597,24 @@ export function resolveBoundary(
       pending,
       seal: boundarySeal(state, null),
       error: null,
+    };
+  }
+  if (state.handoff !== null && state.handoff !== undefined) {
+    return {
+      stopped,
+      kind: "blocked",
+      authorization: null,
+      request: null,
+      action: null,
+      proposal: null,
+      choices: [],
+      pending,
+      seal: boundarySeal(state, stopped),
+      error: {
+        code: "FLOW_HANDOFF",
+        message: `la corrida entregó '${state.handoff.destination}' desde '${state.selected_choice?.label ?? "la desviación"}' y no puede continuar hacia '${stopped.id}'`,
+        action: state.handoff.command,
+      },
     };
   }
   const emitted = emittedAction(state, stopped);
@@ -752,6 +789,8 @@ export function directiveFor(
     action: resolved.action,
     choices: resolved.choices,
     proposal: resolved.proposal,
+    decisionPreview:
+      state.decision_preparation?.kind === "prepared" ? state.decision_preparation.preview : null,
     authorizations: resolved.authorization?.covered ?? [],
     // The cause of a block travels with the boundary that declares it: a
     // `blocked` directive without its error is refused at construction.
@@ -802,10 +841,14 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
     proposes === null
       ? ""
       : ` Devolvé en 'artifacts' los bytes exactos que hay que escribir, cada uno con su 'path' dentro de ${proposes.destinations.join(", ")}. El CLI sella la propuesta, la muestra como vista previa y la escribe entera o no la escribe: vos no armás digests, envelopes ni referencias.`;
+  const decisionDraft =
+    decision.id === "plan-exec.deviation-recognition"
+      ? " Si la desviación puede resolverse registrando una decisión, incluí en 'decisions.decision' su question y draft completos ahora: el CLI preparará y mostrará el preview sellado antes de que una persona elija registrarlo."
+      : "";
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera. ${taxonomy}${authoring} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera. ${taxonomy}${authoring}${decisionDraft} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: proposes === null ? [] : [...proposes.destinations],
     limits:
@@ -843,12 +886,14 @@ export function flowControlChoices(stopping?: string): FlowDirective["choices"] 
       consequence:
         "se persiste el CHECKPOINT y la corrida retoma en esta misma frontera después de compactar el contexto",
       recommended: false,
+      outcome: { kind: "control", control: "pause" },
     },
     {
       label: STOP_LABEL,
       consequence:
         stopping ?? "el recorrido queda detenido acá, con su estado y su frontera persistidos",
       recommended: false,
+      outcome: { kind: "control", control: "stop" },
     },
   ];
 }
@@ -870,6 +915,7 @@ function humanChoices(decision: FlowDecision): FlowDirective["choices"] {
             label: "Resolver la frontera",
             consequence: `decidís '${decision.title}' y el recorrido sigue desde ahí`,
             recommended: true,
+            outcome: { kind: "continue" },
           },
         ]
       : own.map((choice) => ({ ...choice }));
@@ -893,6 +939,7 @@ function authorizationChoices(
       label: "Autorizar el efecto",
       consequence: `'${decision.title}' ejerce ${missing} y el recorrido sigue; la autorización queda registrada en la corrida`,
       recommended: true,
+      outcome: { kind: "continue" },
     },
     ...flowControlChoices(
       `no se ejerce ${missing} y el recorrido queda detenido acá, sin nada aplicado`,
@@ -932,6 +979,7 @@ function nextActionFor(
   boundary: FlowBoundary,
   resolved: ResolvedBoundary,
 ): string {
+  if (state.handoff !== null && state.handoff !== undefined) return state.handoff.command;
   const stopped = resolved.stopped;
   if (stopped === null) return finalAction(state);
   const submit = "respondé con 'aw flow submit' sobre la frontera vigente";

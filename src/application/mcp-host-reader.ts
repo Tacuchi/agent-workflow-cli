@@ -13,6 +13,8 @@ export interface McpEntrySnapshot {
   target: string;
   name: string;
   exists: boolean;
+  /** A same-named raw value exists but cannot be decoded as an MCP entry. */
+  present?: boolean;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
@@ -67,27 +69,36 @@ export function readMcpEntry(
   return readJsonMcpEntry(host, target, name);
 }
 
-// Shared preamble: exists check → read → empty check → try-parse → key extract →
-// entry validate. Returns the entry record, or null for every not-found/invalid case.
+type LoadedMcpEntry =
+  | { state: "entry"; value: Record<string, unknown> }
+  | { state: "foreign"; value: unknown }
+  | null;
+
+// Shared preamble: exists check → read → empty check → try-parse → key extract.
+// A same-named scalar is preserved as `foreign`: it is not a usable entry, but
+// callers deciding ownership must not mistake it for an absent name.
 function loadEntryObject(
   target: string,
   parse: (text: string) => unknown,
   key: string,
   name: string,
-): Record<string, unknown> | null {
+): LoadedMcpEntry {
   if (!existsSync(target)) return null;
   const text = readFileSync(target, "utf-8");
   if (text.trim().length === 0) return null;
-  let data: Record<string, unknown>;
+  let data: unknown;
   try {
-    data = parse(text) as Record<string, unknown>;
+    data = parse(text);
   } catch {
     return null;
   }
-  const servers = (data[key] ?? {}) as Record<string, unknown>;
+  if (!isRecord(data)) return null;
+  const servers = data[key];
+  if (!isRecord(servers)) return null;
   const entry = servers[name];
-  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
-  return entry as Record<string, unknown>;
+  if (entry === undefined) return null;
+  if (!isRecord(entry)) return { state: "foreign", value: entry };
+  return { state: "entry", value: entry };
 }
 
 // Standard Claude-shaped snapshot: command/args/env fields on the entry.
@@ -112,9 +123,11 @@ function stdSnapshot(
 }
 
 function readJsonMcpEntry(host: McpHost, target: string, name: string): McpEntrySnapshot {
-  const e = loadEntryObject(target, JSON.parse, "mcpServers", name);
-  if (!e) return { host, target, name, exists: false };
-  return stdSnapshot(host, target, name, e);
+  const loaded = loadEntryObject(target, JSON.parse, "mcpServers", name);
+  if (!loaded) return { host, target, name, exists: false };
+  if (loaded.state === "foreign")
+    return { host, target, name, exists: false, present: true, raw: loaded.value };
+  return stdSnapshot(host, target, name, loaded.value);
 }
 
 // Reader for hosts that store the MCP entry under the top-level `mcp` key.
@@ -122,8 +135,11 @@ function readJsonMcpEntry(host: McpHost, target: string, name: string): McpEntry
 // command is the first array element and args are the rest; env lives under
 // `environment`. Crush: { type:"stdio", command, args, env } (Claude-like fields).
 function readMcpKeyEntry(host: McpHost, target: string, name: string): McpEntrySnapshot {
-  const e = loadEntryObject(target, JSON.parse, "mcp", name);
-  if (!e) return { host, target, name, exists: false };
+  const loaded = loadEntryObject(target, JSON.parse, "mcp", name);
+  if (!loaded) return { host, target, name, exists: false };
+  if (loaded.state === "foreign")
+    return { host, target, name, exists: false, present: true, raw: loaded.value };
+  const e = loaded.value;
 
   if (host === "opencode") {
     const cmd = Array.isArray(e.command)
@@ -153,9 +169,15 @@ function readTomlMcpEntry(
   name: string,
   serversKey: string,
 ): McpEntrySnapshot {
-  const e = loadEntryObject(target, parseToml, serversKey, name);
-  if (!e) return { host, target, name, exists: false };
-  return stdSnapshot(host, target, name, e);
+  const loaded = loadEntryObject(target, parseToml, serversKey, name);
+  if (!loaded) return { host, target, name, exists: false };
+  if (loaded.state === "foreign")
+    return { host, target, name, exists: false, present: true, raw: loaded.value };
+  return stdSnapshot(host, target, name, loaded.value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function toStringRecord(obj: unknown): Record<string, string> {

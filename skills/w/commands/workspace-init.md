@@ -1,5 +1,5 @@
 ---
-description: "Use when starting Workline in a folder with no workspace yet — turns it into one (minimal scaffold: sessions marker, skills.toml, WORKSPACE block, .gitignore). Run once before any flow. Backed by `aw workspace-init`."
+description: "Use to materialize Workline runtime early, or configure explicit workspace sources. Flows work without a prior init. Backed by `aw workspace-init`."
 argument-hint: --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run]
 allowed-tools:
   [
@@ -8,22 +8,21 @@ allowed-tools:
   ]
 ---
 
-# workspace-init — workspace bootstrap
+# workspace-init — materialize or configure
 
-Turns the current folder into a Workline workspace: **1+ sources** (repos), one source = standalone. No project/hub modes.
+Workline already has an implicit workspace at the resolved root: the nearest ancestor with `.<namespace>/sessions/`, or exactly the invoked directory when none exists. It never guesses a Git root.
 
-`aw workspace-init --source alias:path[:branch] [flags above] --format human`
+`aw workspace-init [--source alias:path[:branch]] [flags above] --format human`
 
 > **The CLI writes; this wrapper does not** — `Write` and `Edit` are absent from `allowed-tools` on purpose. `--dry-run` previews; re-run without it. Relay the output, never re-render it.
 
-## Interactive steps
+## Modes
 
-1. **Sources** — the CLI detects the repo path(s); the user confirms aliases, paths and branches. Multiple `--source` accepted.
-2. **Default skills** — present the catalog of capabilities (roles). Per role: `built-in default`, a third-party skill (`skills.sh`), or `off`; the result lands in `.workflow/skills.toml`. Cascade: `built-in → ~/.workflow/skills.toml (global) → .workflow/skills.toml (workspace)`. The template also ships a commented `[compaction]` section: the `mode` switch for the loops' context self-regulation (`confirm` default, `auto` opt-in).
-3. **Minimal scaffold** — only the activation set: `.workflow/sessions/` (the marker that activates the operating context), `.workflow/skills.toml`, the `WORKSPACE` block in CLAUDE.md/AGENTS.md and the CLI-owned `.gitignore`. **Nothing else upfront**: each `docs/<category>` is born on demand at its first numbered write (`aw next-number docs/<cat>`), and `.workflow/launch/<alias>/` plus `docs/logs/` at the first launch.
-4. **External sources** — one outside the workspace folder gets multi-root visibility (gitignored) and a reconcile.
+Without sources, it only materializes the minimal runtime under the lock: the CLI-owned `.gitignore` block when the root belongs to Git, then `.<namespace>/sessions/` as the final marker. It does not create `docs/`, `skills.toml`, a WORKSPACE block, launch files, `HISTORY.md` or a Git repository.
 
-**Idempotent** — a re-run reconciles: it keeps manual configuration and prunes the legacy scaffold.
+With `--source`, it configures/reconciles the metadata, branches and multiroot visibility. `workspace` is the reserved implicit source pointing at the root and cannot be configured as an alias. A workspace `skills.toml` is created only when there is a real capability override.
+
+Both modes are idempotent. A normal first mutation also materializes the same runtime automatically, so this command is optional rather than a gate.
 
 Done → the user can run `/w:spec-new`, `/w:plan-new` or `/w:quick`.
 

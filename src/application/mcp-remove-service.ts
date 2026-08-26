@@ -10,20 +10,21 @@ import type { EnvPort } from "../ports/env.js";
 import { removeMcpEntry } from "./mcp-host-writer.js";
 import {
   type McpErrorRecord,
+  type McpScopeInput,
   type McpScopeRefusal,
   buildGlobalRefusal,
   resolveScopeDir,
   toErrorRecord,
 } from "./mcp-scope-common.js";
+import type { WorklineMaterialization } from "./workspace-materialization-service.js";
 
-export interface McpRemoveInput {
+export type McpRemoveInput = McpScopeInput & {
   hosts: McpHost[];
   connections: McpConnectionRef[];
-  scope: "workspace" | "global";
-  workspace?: string;
   dryRun?: boolean;
-  force?: boolean;
-}
+  /** The narrow, observed action that authorizes a global host-config write. */
+  globalApproval?: "explicit-cli-force" | "explicit-self-action";
+};
 
 export interface McpRemoveResult {
   scope: "workspace" | "global";
@@ -31,25 +32,29 @@ export interface McpRemoveResult {
   dry_run: boolean;
   removed: McpWriteResult[];
   skipped: McpWriteResult[];
+  /** Same-named entries with a different generated shape; nothing was removed. */
+  conflicts: McpWriteResult[];
   errors: McpErrorRecord[];
+  /** First-write receipt when the CLI materialized an implicit workspace for removal. */
+  materialization?: WorklineMaterialization;
 }
 
 export function runMcpRemove(
   env: EnvPort,
   input: McpRemoveInput,
 ): McpRemoveResult | McpScopeRefusal {
-  if (input.scope === "global" && !input.force && !input.dryRun) {
+  if (input.scope === "global" && input.globalApproval === undefined && !input.dryRun) {
     return buildGlobalRefusal(input.hosts);
   }
 
   const scopeDir = resolveScopeDir(env, input);
   const opts: McpWriteOpts = {
     dryRun: input.dryRun ?? false,
-    force: input.force ?? false,
   };
 
   const removed: McpWriteResult[] = [];
   const skipped: McpWriteResult[] = [];
+  const conflicts: McpWriteResult[] = [];
   const errors: McpErrorRecord[] = [];
 
   for (const host of input.hosts) {
@@ -57,7 +62,9 @@ export function runMcpRemove(
       const entry: McpEntry = buildMcpEntry(connection.name, connection.dsnVar);
       try {
         const result = removeMcpEntry(host, entry, { scopeDir, kind: input.scope }, opts);
-        if (result.action === "skipped-idempotent") {
+        if (result.action === "conflict") {
+          conflicts.push(result);
+        } else if (result.action === "skipped-idempotent") {
           skipped.push(result);
         } else {
           removed.push(result);
@@ -74,6 +81,7 @@ export function runMcpRemove(
     dry_run: Boolean(input.dryRun),
     removed,
     skipped,
+    conflicts,
     errors,
   };
 }

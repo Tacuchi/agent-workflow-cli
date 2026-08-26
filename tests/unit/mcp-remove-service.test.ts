@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -51,6 +51,29 @@ describe("runMcpRemove", () => {
     if ("ok" in result) throw new Error("remove refused");
     expect(result.removed).toHaveLength(0);
     expect(result.skipped).toHaveLength(1);
+  });
+
+  it("una entrada homónima ajena queda como conflicto y no se borra", () => {
+    const file = join(workspace, ".mcp.json");
+    const foreign = `${JSON.stringify(
+      { mcpServers: { alpha: { command: "node", args: ["foreign.js"], env: {} } } },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(file, foreign);
+
+    const result = runMcpRemove(env, {
+      hosts: ["claude"],
+      connections: [ALPHA],
+      scope: "workspace",
+      workspace,
+    });
+
+    if ("ok" in result) throw new Error("remove refused");
+    expect(result.removed).toEqual([]);
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts[0]?.action).toBe("conflict");
+    expect(readFileSync(file, "utf-8")).toBe(foreign);
   });
 
   it("scope=global sin --force ni --dry-run retorna refusal con exit 2", () => {

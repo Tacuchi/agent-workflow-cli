@@ -21,6 +21,7 @@ import {
   checkAgainstJourney,
   degradeTransition,
   grantAttempts,
+  legacyRunNeedsAdoption,
   newRunState,
   parseRunState,
   positionDigest,
@@ -244,10 +245,13 @@ describe("estado de corrida — fail-closed", () => {
     if (!read.ok) throw new Error(`un ledger de la versión anterior se lee: ${read.failure.code}`);
     expect(read.state.attempt_floor).toBeUndefined();
     expect(read.state.degraded).toBeUndefined();
-    // Y se re-sella con la vigente, para que el formato deje de variar por
-    // archivo dentro de un mismo workspace.
+    // Sólo una adopción explícita lo re-sella con la vigente. Leerlo o pedir
+    // status jamás inventa los límites de batch que la corrida legacy no tuvo.
     const stamped = atCurrentVersion(read.state);
     expect(stamped.version).toBe(FLOW_RUN_STATE_VERSION);
+    expect(stamped.batches).toEqual([]);
+    expect(stamped.batch_trace).toEqual([]);
+    expect(legacyRunNeedsAdoption(read.state)).toBe(true);
     expect(parseRunState(JSON.stringify(stamped)).ok).toBe(true);
   });
 
@@ -404,6 +408,45 @@ describe("estado de corrida — sobre un workspace real", () => {
     if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
     expect(read.state.flow).toBe("quick");
     expect(read.state.session).toBe(SESSION);
+  });
+
+  it("una corrida v9 se puede leer pero rechaza toda escritura hasta --adopt", async () => {
+    const location = locateRun(paths, SESSION);
+    const { digest: _seal, ...current } = newRunState("quick", SESSION);
+    const legacy = { ...current, version: 9 };
+    await writeFile(
+      location.statePath,
+      JSON.stringify({ ...legacy, digest: semanticDigest(legacy) }),
+      "utf8",
+    );
+
+    const read = await readRun(fs, location);
+    if (!read.ok) throw new Error(`esperaba lectura legacy: ${read.failure.code}`);
+    expect(read.state.version).toBe(9);
+
+    const refused = await applyUnderLock(fs, location, (state) => ({
+      ok: true as const,
+      state: state as FlowRunState,
+      value: null,
+    }));
+    if (refused.ok) throw new Error("una corrida legacy no puede escribirse sin adopción");
+    expect(refused.failure.code).toBe("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
+    expect(refused.failure.action).toContain("--adopt");
+
+    const adopted = await applyUnderLock(
+      fs,
+      location,
+      (state) => ({
+        ok: true as const,
+        state: atCurrentVersion(state as FlowRunState),
+        value: null,
+      }),
+      { allowLegacyAdoption: true },
+    );
+    expect(adopted.ok).toBe(true);
+    if (!adopted.ok) return;
+    expect(adopted.state.version).toBe(FLOW_RUN_STATE_VERSION);
+    expect(adopted.state.batches).toEqual([]);
   });
 
   it("un estado manipulado en disco se rechaza con acción y no avanza", async () => {

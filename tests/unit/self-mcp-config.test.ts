@@ -259,7 +259,7 @@ describe("selfMcpConfig", () => {
     expect(readFileSync(join(project, ".mcp.json"), "utf-8")).toBe(preexisting);
   });
 
-  it("remove conserva una entrada global homónima ajena (guard de ownership)", async () => {
+  it("remove conserva una entrada global homónima ajena y reporta eliminación parcial", async () => {
     // The user has THEIR OWN 'reporting' server in Gemini's global settings —
     // this tool never wrote it. Remove must not touch it.
     const foreign = {
@@ -285,13 +285,17 @@ describe("selfMcpConfig", () => {
       prompts(),
     );
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("expected ok");
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected partial failure");
+    expect(result.error?.code).toBe("MCP_REMOVE_PARTIAL");
     expect(result.data.preserved_foreign).toEqual(["gemini"]);
     // The foreign entry survives with its relevant bytes intact; ours in claude is gone.
     const gemini = JSON.parse(readFileSync(join(home, ".gemini", "settings.json"), "utf-8"));
     expect(gemini.mcpServers.reporting.args).toEqual(["my-server.js"]);
     expect(readFileSync(join(home, ".claude.json"), "utf-8")).not.toContain('"reporting"');
+    // El registro no se borra mientras queda un host en conflicto: así la TUI y
+    // el CLI pueden mostrar exactamente qué configuración debe resolver la persona.
+    expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).toContain("reporting");
   });
 
   it("crear DSN env var sólo devuelve comandos de ayuda y no registra conexión", async () => {

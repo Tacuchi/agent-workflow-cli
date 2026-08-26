@@ -16,6 +16,7 @@ import {
   decisionsOfScope,
   effectsOf,
   flowOfScope,
+  journeyForState,
   journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
@@ -193,23 +194,31 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
     expect(actionOf(commit)?.idempotent).toBe(false);
   });
 
-  it("toda escritura sobre el plan-doc se acredita con la lectura del tablero", () => {
-    for (const id of [
-      "plan-exec.task-marking",
-      "plan-exec.phase-state-transition",
-      "plan-exec.plan-done",
-    ]) {
-      const row = rowOf(EXEC, id);
-      expect(effectsOf(row), id).toContain("mutate_overwrite");
-      expect(actionOf(row)?.invocation.args, id).toEqual(["status", "--json"]);
-      // Cada una exige SU evidencia: el sello cubre la evidencia, así que tres
-      // filas con la misma invocación siguen siendo tres acciones distintas.
-      expect(actionOf(row)?.evidence.length, id).toBe(1);
-    }
-    const evidence = ["task-marking", "phase-state-transition", "plan-done"].map(
-      (name) => actionOf(rowOf(EXEC, `plan-exec.${name}`))?.evidence[0],
+  it("el cierre de tareas y fase pasa por un único CAS interno, no por ediciones manuales", () => {
+    const close = rowOf(EXEC, "plan-exec.batch-close");
+    expect(effectsOf(close)).toContain("mutate_overwrite");
+    expect(actionOf(close)?.execution).toEqual({
+      kind: "internal",
+      operation: "plan-exec.batch-close",
+    });
+    expect(actionOf(close)?.evidence).toEqual(["plan.batch-publicado"]);
+    expect(EXEC.map((row) => row.id)).not.toEqual(
+      expect.arrayContaining([
+        "plan-exec.pending-effects",
+        "plan-exec.task-marking",
+        "plan-exec.phase-state-transition",
+      ]),
     );
-    expect(new Set(evidence).size).toBe(3);
+
+    // `done` remains a distinct final seal after Git/integration; it cannot be
+    // confused with accrediting one batch's checkboxes and phase state.
+    const done = rowOf(EXEC, "plan-exec.plan-done");
+    expect(actionOf(done)?.execution).toEqual({
+      kind: "internal",
+      operation: "plan-exec.plan-done",
+    });
+    expect(actionOf(done)?.invocation.args).toEqual(["flow", "advance", "--code", "{code}"]);
+    expect(actionOf(done)?.evidence).toEqual(["plan.estado-done-sellado"]);
   });
 
   it("ninguna fila de flow acredita una escritura que nada ejecutó", () => {
@@ -376,7 +385,10 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
   async function current() {
     const read = await readRun(fs, locateRun(paths, SESSION));
     if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
-    return { state: read.state, resolved: resolveBoundary(read.state, EXEC) };
+    return {
+      state: read.state,
+      resolved: resolveBoundary(read.state, journeyForState(read.state)),
+    };
   }
 
   async function answer(body: unknown, approval: string | null = null): Promise<FlowDirective> {
@@ -527,34 +539,18 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(state.applied).toContain("plan-exec.batch-isolation");
   });
 
-  it("la contabilidad del plan llega como ejecución y solo el resultado real la aplica", async () => {
-    // Las filas que escriben, corren o commitean ahora se alcanzan sólo si se
-    // declaró que hay algo que hacer: sin señal se saltan, y ése es el arreglo.
-    await walkTo("plan-exec.task-marking", [
-      "plan.tasks-to-mark",
-      "plan.plan-closable",
-      "plan.commit-pending",
-    ]);
-    // Tildar la casilla es la corrida llevando la marca de avance de su propio
-    // plan-doc: custodia de la corrida — sin preflight — pero la escritura sigue
-    // delegada y nada se acredita sin la lectura real del tablero.
-    const gate = await current();
-    expect(gate.resolved.stopped?.id).toBe("plan-exec.task-marking");
-    expect(gate.resolved.kind).toBe("execution");
-    expect(gate.resolved.action).not.toBeNull();
-    expect(gate.state.effects.applied).not.toContain("mutate_overwrite");
-
-    const sealed = await answer(resultFor(gate.resolved));
-    expect(sealed.error).toBeNull();
-    expect(sealed.effects.applied).toContain("mutate_overwrite");
+  it("un batch se cierra después de validar y revisar, antes del resto del cierre", () => {
+    expect(at(EXEC, "plan-exec.batch-close")).toBeGreaterThan(
+      at(EXEC, "plan-exec.validation-execution"),
+    );
+    expect(at(EXEC, "plan-exec.batch-close")).toBeGreaterThan(
+      at(EXEC, "plan-exec.review-findings"),
+    );
+    expect(at(EXEC, "plan-exec.batch-close")).toBeLessThan(at(EXEC, "plan-exec.final-validation"));
   });
 
   it("una validación de fase en rojo no habilita nada de lo que viene después", async () => {
-    await walkTo("plan-exec.validation-execution", [
-      "plan.tasks-to-mark",
-      "plan.plan-closable",
-      "plan.commit-pending",
-    ]);
+    await walkTo("plan-exec.validation-execution", []);
     // Correr las pruebas que el plan declara es la corrida verificándose a sí
     // misma: custodia cubre el `execute` y la frontera llega como ejecución. Lo
     // innegociable no era el preflight sino la salida real, y eso queda.
@@ -579,11 +575,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
   });
 
   it("aprobar los commits ES el grant, y el commit sigue exigiendo su resultado real", async () => {
-    await walkTo("plan-exec.commit-authorization", [
-      "plan.tasks-to-mark",
-      "plan.plan-closable",
-      "plan.commit-pending",
-    ]);
+    await walkTo("plan-exec.commit-authorization", []);
     const approval = await current();
     expect(approval.resolved.kind).toBe("human");
     expect(approval.resolved.choices.map((choice) => choice.label)).toEqual([
@@ -651,7 +643,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     const integrated = await answer(resultFor((await current()).resolved));
     expect(integrated.boundary.transition).toBe("plan-exec.plan-done");
     expect(integrated.boundary.kind).toBe("execution");
-    expect(integrated.action?.invocation.args).toEqual(["status", "--json"]);
+    expect(integrated.action?.invocation.args).toEqual(["flow", "advance", "--code", SESSION]);
     expect((await current()).state.applied).toContain("plan-exec.unit-integration");
   });
 });

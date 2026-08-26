@@ -4,7 +4,12 @@ import { internalActionExecutor } from "../../src/application/flow/internal-acti
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import type { PathsService } from "../../src/application/paths-service.js";
-import { type FlowDecision, effectsOf, journeyOfFlow } from "../../src/domain/flow/authority.js";
+import {
+  type FlowDecision,
+  effectsOf,
+  journeyForState,
+  journeyOfFlow,
+} from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
@@ -111,7 +116,10 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
   async function current(folder: string) {
     const read = await readRun(deps.fs, locateRun(deps.paths, folder));
     if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
-    return { state: read.state, resolved: resolveBoundary(read.state, EXEC) };
+    return {
+      state: read.state,
+      resolved: resolveBoundary(read.state, journeyForState(read.state)),
+    };
   }
 
   /** Whatever the boundary in force admits — the run's own plan where it is asked. */

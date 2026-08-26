@@ -8,6 +8,8 @@ interface ClaudeAttachOk {
   added: string[];
   already_present: string[];
   written: boolean;
+  /** A dry-run found a change but deliberately did not write it. */
+  would_write?: boolean;
 }
 interface ClaudeDetachOk {
   file: string;
@@ -15,6 +17,8 @@ interface ClaudeDetachOk {
   removed: string[];
   not_present: string[];
   written: boolean;
+  /** A dry-run found a change but deliberately did not write it. */
+  would_write?: boolean;
 }
 interface ClaudeFail {
   file: string;
@@ -31,9 +35,13 @@ export function claudeSettingsPath(scopeDir: string): string {
   return join(scopeDir, ".claude", "settings.local.json");
 }
 
-export function attachClaude(paths: string[], scopeDir: string): ClaudeResult {
+export function attachClaude(
+  paths: string[],
+  scopeDir: string,
+  options: { dryRun?: boolean } = {},
+): ClaudeResult {
   const settingsFile = claudeSettingsPath(scopeDir);
-  mkdirSync(join(scopeDir, ".claude"), { recursive: true });
+  const dryRun = options.dryRun === true;
 
   let data: Record<string, unknown> = {};
   if (existsSync(settingsFile)) {
@@ -70,15 +78,28 @@ export function attachClaude(paths: string[], scopeDir: string): ClaudeResult {
     }
   }
   let backup: string | null = null;
-  if (added.length > 0) {
+  if (added.length > 0 && !dryRun) {
+    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     backup = backupFile(settingsFile);
     writeFileSync(settingsFile, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
   }
-  return { file: settingsFile, backup, added, already_present: already, written: added.length > 0 };
+  return {
+    file: settingsFile,
+    backup,
+    added,
+    already_present: already,
+    written: added.length > 0 && !dryRun,
+    ...(dryRun && added.length > 0 ? { would_write: true } : {}),
+  };
 }
 
-export function detachClaude(paths: string[], scopeDir: string): ClaudeResult {
+export function detachClaude(
+  paths: string[],
+  scopeDir: string,
+  options: { dryRun?: boolean } = {},
+): ClaudeResult {
   const settingsFile = claudeSettingsPath(scopeDir);
+  const dryRun = options.dryRun === true;
   if (!existsSync(settingsFile)) {
     return {
       file: settingsFile,
@@ -125,16 +146,32 @@ export function detachClaude(paths: string[], scopeDir: string): ClaudeResult {
   for (const p of targetNorm) {
     if (!removedSet.has(p)) notPresent.push(p);
   }
-  let backup: string | null = null;
-  let written = false;
-  if (removed.length > 0) {
-    backup = backupFile(settingsFile);
-    (perms as Record<string, unknown>).additionalDirectories = newList;
-    data.permissions = perms;
-    writeFileSync(settingsFile, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
-    written = true;
-  }
-  return { file: settingsFile, backup, removed, not_present: notPresent, written };
+  const write = writeClaudeDetach(settingsFile, data, perms, newList, removed.length > 0, dryRun);
+  return {
+    file: settingsFile,
+    backup: write.backup,
+    removed,
+    not_present: notPresent,
+    written: write.written,
+    ...(dryRun && removed.length > 0 ? { would_write: true } : {}),
+  };
+}
+
+function writeClaudeDetach(
+  settingsFile: string,
+  data: Record<string, unknown>,
+  permissions: Record<string, unknown>,
+  kept: unknown[],
+  hasRemoval: boolean,
+  dryRun: boolean,
+): { backup: string | null; written: boolean } {
+  if (!hasRemoval) return { backup: null, written: false };
+  if (dryRun) return { backup: null, written: false };
+  const backup = backupFile(settingsFile);
+  permissions.additionalDirectories = kept;
+  data.permissions = permissions;
+  writeFileSync(settingsFile, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  return { backup, written: true };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

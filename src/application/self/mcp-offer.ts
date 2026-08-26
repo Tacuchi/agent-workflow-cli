@@ -30,7 +30,7 @@ export interface McpOfferInput {
 export interface McpOfferOutcome {
   host: McpHost;
   /** `offered` / `withdrawn` cuando cambió; `unchanged` cuando ya estaba así. */
-  state: "offered" | "withdrawn" | "unchanged" | "failed";
+  state: "offered" | "withdrawn" | "unchanged" | "dry-run" | "conflict" | "failed";
   /** Por qué falló, cuando falló. Nunca se traga el error. */
   error?: string;
 }
@@ -63,7 +63,7 @@ export function offerWorklineServer(input: McpOfferInput): McpOfferOutcome[] {
         host,
         entry,
         { scopeDir: input.scopeDir, kind: "global" },
-        { dryRun: input.dryRun === true, force: true },
+        { dryRun: input.dryRun === true },
       );
       return { host, state: describe(result, "offered") };
     } catch (error) {
@@ -92,7 +92,7 @@ export function withdrawWorklineServer(input: McpOfferInput): McpOfferOutcome[] 
         host,
         entry,
         { scopeDir: input.scopeDir, kind: "global" },
-        { dryRun: input.dryRun === true, force: true },
+        { dryRun: input.dryRun === true },
       );
       return { host, state: describe(result, "withdrawn") };
     } catch (error) {
@@ -114,7 +114,10 @@ function describe(
   result: McpWriteResult,
   changedState: "offered" | "withdrawn",
 ): McpOfferOutcome["state"] {
-  return result.action === "skipped-idempotent" ? "unchanged" : changedState;
+  if (result.action === "skipped-idempotent") return "unchanged";
+  if (result.action === "dry-run") return "dry-run";
+  if (result.action === "conflict") return "conflict";
+  return changedState;
 }
 
 function message(error: unknown): string {

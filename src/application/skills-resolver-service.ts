@@ -114,8 +114,9 @@ export async function checkInstalledBindings(
   fs: FileSystemPort,
   env: EnvPort,
   resolution: SkillsResolution,
+  workspaceRoot?: string,
 ): Promise<BindingValidation> {
-  const roots = skillRoots(env);
+  const roots = skillRoots(env, workspaceRoot);
   const installed = await enumerateInstalledSkills(fs, roots);
   const checks: BindingCheck[] = [];
   const warnings: string[] = [];
@@ -148,11 +149,11 @@ export async function checkInstalledBindings(
  * two lists of "where skills live" would drift, and the day they did, a skill
  * this check warns about would be one the inventory cannot see at all.
  */
-export function skillRoots(env: EnvPort): string[] {
+export function skillRoots(env: EnvPort, workspaceRoot: string = env.cwd()): string[] {
   const dirs = [...new Set(HARNESSES.flatMap((h) => [...h.skillsDirs]))];
   const roots: string[] = [];
   for (const d of dirs) {
-    roots.push(join(env.cwd(), d));
+    roots.push(join(workspaceRoot, d));
     roots.push(join(env.homeDir(), d));
   }
   return [...new Set(roots)];

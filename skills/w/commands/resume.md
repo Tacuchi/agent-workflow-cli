@@ -28,7 +28,7 @@ No target → **every** pending item as `candidates` in the CLI's order, `propos
 2. **One option per candidate** — only for CLI candidates, in its order — each with its re-entry command, plus the `flow` slot. Canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) and [host binding](../harness/HARNESS.md#harness-binding-matrix): the title is the label, `Progreso` + `Siguiente` the sentence.
 3. **Past the host's ceiling**, group by class into ≤3 questions; if a class still will not fit, present them **all** as labelled markdown and declare the degradation. Nothing trimmed, merged or dropped.
 4. **Choosing invokes that command in the same turn.** The destination flow opens its own session and consent boundaries.
-5. **No candidates** → nothing is pending: say it and stop, opening no choice; cheap host-memory may add a recent-focus note, never expensive or blocking. No workspace → offer `/w:workspace-init`.
+5. **No candidates** → nothing is pending: say it and stop, opening no choice; cheap host-memory may add a recent-focus note, never expensive or blocking. An implicit workspace returns `idle` without creating files.
 
 ## What the CLI decides (do not re-derive)
 

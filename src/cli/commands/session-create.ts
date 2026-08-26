@@ -28,7 +28,7 @@ export const sessionCreateCommand: CliCommand = {
     const contextId = readContextId(ctx.env);
     if (contextId !== undefined) input.contextId = contextId;
 
-    const data = await runSessionCreate(ctx.fs, ctx.paths, input);
+    const data = await runSessionCreate(ctx.rawFs ?? ctx.fs, ctx.paths, input);
     if ("error" in data) {
       return fail(data.code ?? "INVALID_INPUT", data.error, data);
     }

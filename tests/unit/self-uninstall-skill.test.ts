@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { TARGET_ROOTS } from "../../src/application/self/install-targets.js";
+import { offerWorklineServer } from "../../src/application/self/mcp-offer.js";
 import { selfUninstallSkill } from "../../src/application/self/uninstall-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -185,6 +186,20 @@ describe("selfUninstallSkill", () => {
     expect(await fs.exists(claudeCanonical)).toBe(true); // preserved
     const lockAfter = JSON.parse(await fs.readText(lockPath));
     expect(lockAfter.skills.w).toBeDefined(); // preserved
+  });
+
+  it("retira también el servidor MCP propio del host seleccionado", async () => {
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    await seedTarget(home, "codex", "w");
+    offerWorklineServer({ targets: ["codex"], scopeDir: home });
+
+    const result = await selfUninstallSkill(buildArgs({ target: "codex" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.mcp_server).toEqual([{ host: "codex", state: "withdrawn" }]);
+    }
   });
 
   it("covers gemini/opencode/crush: single target and --target=all (install↔uninstall round-trip)", async () => {

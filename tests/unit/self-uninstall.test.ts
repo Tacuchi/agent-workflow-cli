@@ -9,6 +9,7 @@ import {
   TARGET_ROOTS,
 } from "../../src/application/self/install-skill.js";
 import type { InstallTarget } from "../../src/application/self/install-skill.js";
+import { offerWorklineServer } from "../../src/application/self/mcp-offer.js";
 import { selfUninstall } from "../../src/application/self/uninstall.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -109,6 +110,19 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     }
     for (const p of distinctPaths) {
       expect(await fs.exists(p)).toBe(false);
+    }
+  });
+
+  it("la ruta de uninstall que usa la TUI retira el servidor MCP propio", async () => {
+    const ctx = buildCtx(home, fs);
+    await seedDir(skillDir(home, "codex"));
+    offerWorklineServer({ targets: ["codex"], scopeDir: home });
+
+    const result = await selfUninstall(buildArgs({ target: "codex" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) {
+      expect(result.data.mcp_server).toEqual([{ host: "codex", state: "withdrawn" }]);
     }
   });
 

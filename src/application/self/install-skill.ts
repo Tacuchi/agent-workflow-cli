@@ -370,21 +370,23 @@ export async function selfInstallSkill(
   }
 
   if (dryRun) {
-    return {
-      ok: true,
-      data: {
+    const mcpServer = offerWorklineServer({
+      targets: existingTargets.map((t) => t.target),
+      scopeDir: ctx.env.homeDir(),
+      dryRun: true,
+    });
+    return buildInstallResult({
+      dryRun: true,
+      source: sourceArg,
+      sourceKind,
+      dests: existingTargets.map((t) => ({
+        target: t.target,
+        dest: destByTarget[t.target],
         status: "dry-run",
-        source: sourceArg,
-        source_kind: sourceKind,
-        dests: existingTargets.map((t) => ({
-          target: t.target,
-          dest: destByTarget[t.target],
-          status: "dry-run",
-          overwrote_existing: t.exists,
-        })),
-      },
-      exitCode: 0,
-    };
+        overwrote_existing: t.exists,
+      })),
+      mcpServer,
+    });
   }
 
   const validation = await validateSourceContents(sourceArg, ctx);
@@ -410,18 +412,56 @@ export async function selfInstallSkill(
     scopeDir: ctx.env.homeDir(),
     dryRun,
   });
+  return buildInstallResult({
+    dryRun: false,
+    source: sourceArg,
+    sourceKind,
+    dests: results,
+    mcpServer,
+  });
+}
+
+interface InstallResultInput {
+  dryRun: boolean;
+  source: string;
+  sourceKind: SelfInstallSkillData["source_kind"];
+  dests: SelfInstallTargetResult[];
+  mcpServer: McpOfferOutcome[];
+}
+
+function buildInstallResult({
+  dryRun,
+  source,
+  sourceKind,
+  dests,
+  mcpServer,
+}: InstallResultInput): CommandResult<SelfInstallSkillData> {
+  const hasMcpProblems = hasMcpServerProblems(mcpServer);
+  const error = hasMcpProblems
+    ? {
+        code: "MCP_OFFER_PARTIAL",
+        message: dryRun
+          ? "La previsualización detectó un conflicto o fallo al ofrecer el servidor MCP."
+          : "La skill se instaló, pero el servidor MCP no se pudo ofrecer en todos los hosts.",
+      }
+    : undefined;
 
   return {
-    ok: true,
+    ok: !hasMcpProblems,
     data: {
-      status: "installed",
-      source: sourceArg,
+      status: dryRun ? "dry-run" : hasMcpProblems ? "partial" : "installed",
+      source,
       source_kind: sourceKind,
-      dests: results,
+      dests,
       ...(mcpServer.length === 0 ? {} : { mcp_server: mcpServer }),
     },
-    exitCode: 0,
+    ...(error === undefined ? {} : { error }),
+    exitCode: hasMcpProblems ? 1 : 0,
   };
+}
+
+function hasMcpServerProblems(outcomes: readonly McpOfferOutcome[]): boolean {
+  return outcomes.some((outcome) => outcome.state === "conflict" || outcome.state === "failed");
 }
 
 type Resolved<T> =

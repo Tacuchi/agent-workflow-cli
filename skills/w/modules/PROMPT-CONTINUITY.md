@@ -12,4 +12,4 @@ Loaded when a bare prompt continues an existing work line (signal `resume`).
 
 > **Which line a prompt joins is not this document's call:** a command opens a new one through `aw session-create`, a bare prompt continues the most recent through `aw resume`. Both fire **before** a run exists, so no journey has a step for them. The reason stays: the **command** is the signal for "new work line", so nobody loses a thread by not typing one, or forks one by typing it twice.
 
-Whether a prompt really belongs to the open line is judgment. Clearly unrelated → offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to the **no-flow** branch (`docs/` by convention + numbering). No workspace → **vanilla** behavior.
+Whether a prompt really belongs to the open line is judgment. Clearly unrelated → offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to the **no-flow** branch (`docs/` by convention + numbering). Every invoked directory has an implicit Workline root; a marker is created only by a mutation.

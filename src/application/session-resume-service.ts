@@ -51,7 +51,7 @@ export type SessionResumeResult =
 
 export async function runSessionResume(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   input: SessionResumeInput,
 ): Promise<SessionResumeResult> {
@@ -86,7 +86,7 @@ export async function runSessionResume(
     await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
   }
 
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   // Dual-read: new-model SESSION.md first, legacy OBJECTIVE.md as fallback.
   const objetivoPath =
     (await findArtifact(session.path, "session", fs)) ??

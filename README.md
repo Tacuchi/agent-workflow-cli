@@ -19,7 +19,7 @@ Workline has three layers plus a permanent `docs/` zone:
   - **PLAN** — `/w:plan-new` → (`/w:plan-refine` — aux, optional) → `/w:plan-exec` → `docs/plans/` (the plan loops may split into sibling plans). A plan is a sequence of **functional states**: every phase names a verifiable state, carries its own primary proof, and — **only when the change carries temporary behavior** — declares where a simulation lives and when it retires. Ticking every checkbox is not validation, and validating every phase is not closing the plan.
   - **QUICK** — `/w:quick` — lightweight shortcut; escalates live to SPEC when the goal outgrows a quick.
   - **EXPORTS** — `/w:export-scripts` · `export-manuals` · `export-diagrams` · `export-reports` (the only path that promotes artifacts to `docs/`).
-  - **Bootstrap** — `/w:workspace-init` turns any folder into a workspace (1+ sources; no project/hub distinction).
+  - **Workspace** — every invoked directory is usable immediately. `/w:workspace-init` only materializes the runtime early, or configures sources when they are supplied.
   - **Transversal** — `/w:status` · `/w:resume` (read-only: composes `/w:status` and proposes how to continue, routed to the target command) · `/w:fix-git` · `/w:generate-launch` · `/w:persist` (persists in-conversation work into `docs/` — classify → `docs/research` · spec draft · plan adoption; the host→`docs/` counterpart of `export-*`).
 - **Layer 2 · Loops** — the AI runs them whole: `spec-refine-loop` · `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` · `quick-loop` — all heirs of the shared engine `skills/w/loops/CHASSIS.md` (+ `CODE-POLICIES.md` for the code-editing loops). Each loop is a **persistent goal** that runs until its success criteria are green (verification-first); gap-driven, with **structured-choice** lifecycle control (compact/close — the host's own question surface where one is reachable, **labeled markdown** where none is; the binding per host is stamped into what gets installed) and resumable `CHECKPOINT`.
 - **Layer 3 · Sessions + artifacts** — internal, ephemeral process state under `.workflow/sessions/` (`SESSION` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` · `ANALYSIS-FILE` · `CONCLUSIONS` · `DECISION` · …). Sessions are slug-named folders, created by loops, never by the user.
@@ -140,7 +140,7 @@ Workspace artifacts live under `.<namespace>/`. Resolution order (first match wi
 
 ## Commands (selected)
 
-- `workspace-init` — scaffold a workspace (`.workflow/` + `docs/` taxonomy + WORKSPACE block + `skills.toml`).
+- `workspace-init` — materialize the runtime early; with sources, configure/reconcile workspace metadata.
 - `skills` — show resolved capability → skill bindings.
 - `sessions` / `session-create --type <research|refine|exec|quick>` / `session-close` / `session-resume` / `session-artifacts` — internal session lifecycle (used by the loops).
 - `checkpoint-read` / `checkpoint-write` — `CHECKPOINT.md` handling.

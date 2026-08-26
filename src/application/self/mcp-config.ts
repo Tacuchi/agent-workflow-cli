@@ -6,7 +6,6 @@ import {
   type McpHost,
   type McpInstance,
   buildMcpEntry,
-  isDbhubManagedEntry,
   mcpEntryNameFor,
   normalizeDsnVarName,
   validateDsnVarName,
@@ -199,7 +198,7 @@ async function listConnectionsMenu(
     message: formatConnectionsBlock(connections),
     default: "install-claude",
     choices: [
-      { type: "separator", separator: "── Instalar / Actualizar ──" },
+      { type: "separator", separator: "── Instalar / Reinstalar ──" },
       ...FILE_HOSTS.map((h) => ({
         name: `▸ ${hostLabel(h)}`,
         value: `install-${h}` as ConnectionMenuAction,
@@ -325,26 +324,26 @@ function installConnection(
   connection: McpConnection,
   host: McpHost,
 ): CommandResult<SelfMcpConfigData> {
-  // User scope: the explicit install action (TUI button / menu choice) IS the
-  // consent the global_requires_force guard asks for, hence force: true.
+  // The explicit install action (CLI/TUI) carries its own narrow global consent;
+  // it is not the public broad `--force` escape hatch.
   const setup = runMcpSetup(ctx.env, {
     hosts: [host],
     connections: [connection],
     scope: "global",
-    force: true,
+    globalApproval: "explicit-self-action",
     dryRun: args.flags.has("--dry-run"),
   });
   if ("ok" in setup) return refusal(hostAction(host), connectionView(ctx, connection), setup.hint);
   const doctor = runDoctor(ctx, connection, [host]);
-  const hasErrors = setup.errors.length > 0;
+  const hasProblems = setup.errors.length > 0 || setup.conflicts.length > 0;
   // The hint cites the file actually written (per-platform global path).
   const warpTarget = [...setup.applied, ...setup.skipped].find((r) => r.host === "warp")?.target;
   const warpHint =
-    host === "warp" && !hasErrors && warpTarget
+    host === "warp" && !hasProblems && warpTarget
       ? buildWarpPostInstallHint(mcpEntryNameFor(connection.name), "global", warpTarget)
       : undefined;
   return {
-    ok: !hasErrors,
+    ok: !hasProblems,
     data: {
       action: hostAction(host),
       connection: connectionView(ctx, connection),
@@ -355,17 +354,17 @@ function installConnection(
       ...(warpHint ? { warp_hint: warpHint } : {}),
       summary: warpHint
         ? `Conexión '${connection.name}' escrita en ${warpHint.file}. Activá 'File-based MCP Servers' en Warp Settings para que la spawnee.`
-        : `Conexión '${connection.name}' instalada/actualizada en ${hostLabel(host)}.`,
+        : `Conexión '${connection.name}' instalada en ${hostLabel(host)}.`,
     },
-    ...(hasErrors
+    ...(hasProblems
       ? {
           error: {
             code: "MCP_SETUP_PARTIAL",
-            message: `${setup.errors.length} error(es) durante setup; ver data.setup.errors`,
+            message: `${setup.errors.length} error(es) y ${setup.conflicts.length} conflicto(s) durante setup; ver data.setup.errors y data.setup.conflicts`,
           },
         }
       : {}),
-    exitCode: hasErrors ? 1 : 0,
+    exitCode: hasProblems ? 1 : 0,
   };
 }
 
@@ -401,31 +400,27 @@ function removeConnection(
   connection: McpConnection,
 ): CommandResult<SelfMcpConfigData> {
   const dryRun = args.flags.has("--dry-run");
-  // Ownership guard: a same-named global entry the tool never wrote (user's own
-  // server) is preserved — remove only fans out to hosts whose entry is ours.
-  const entryName = mcpEntryNameFor(connection.name);
-  const preservedForeign = FILE_HOSTS.filter((host) => {
-    const snapshot = readMcpEntry(host, ctx.env.homeDir(), entryName, "global");
-    return snapshot.exists && !isDbhubManagedEntry(snapshot);
-  });
-  const removableHosts = FILE_HOSTS.filter((host) => !preservedForeign.includes(host));
-  // User scope; the explicit remove action is the consent the guard asks for.
+  // The explicit remove action carries its own narrow global consent.
+  // The writer verifies exact ownership per host and returns a conflict for an
+  // homonymous foreign entry, so this never has to infer ownership from a word
+  // in the command line.
   const remove = runMcpRemove(ctx.env, {
-    hosts: removableHosts,
+    hosts: [...FILE_HOSTS],
     connections: [connection],
     scope: "global",
-    force: true,
+    globalApproval: "explicit-self-action",
     dryRun,
   });
   if ("ok" in remove) return refusal("remove", connectionView(ctx, connection), remove.hint);
-  const hasErrors = remove.errors.length > 0;
-  const deleted = !dryRun && !hasErrors ? deleteMcpConnection(ctx.paths, connection) : null;
+  const hasProblems = remove.errors.length > 0 || remove.conflicts.length > 0;
+  const preservedForeign = [...new Set(remove.conflicts.map((conflict) => conflict.host))];
+  const deleted = !dryRun && !hasProblems ? deleteMcpConnection(ctx.paths, connection) : null;
   const preservedNote =
     preservedForeign.length > 0
       ? ` Se conservó la entrada ajena homónima en: ${preservedForeign.join(", ")}.`
       : "";
   return {
-    ok: !hasErrors,
+    ok: !hasProblems,
     data: {
       action: "remove",
       connection: connectionView(ctx, connection),
@@ -436,17 +431,19 @@ function removeConnection(
       ...(deleted ? { registry: { path: deleted.path, changed: deleted.removed } } : {}),
       summary: dryRun
         ? `Previsualización de eliminación para '${connection.name}'.${preservedNote}`
-        : `Conexión '${connection.name}' eliminada de los hosts con MCP y del registro local.${preservedNote}`,
+        : hasProblems
+          ? `Eliminación parcial de '${connection.name}'.${preservedNote}`
+          : `Conexión '${connection.name}' eliminada de los hosts con MCP y del registro local.${preservedNote}`,
     },
-    ...(hasErrors
+    ...(hasProblems
       ? {
           error: {
             code: "MCP_REMOVE_PARTIAL",
-            message: `${remove.errors.length} error(es) durante remove; ver data.remove.errors`,
+            message: `${remove.errors.length} error(es) y ${remove.conflicts.length} conflicto(s) durante remove; ver data.remove.errors y data.remove.conflicts`,
           },
         }
       : {}),
-    exitCode: hasErrors ? 1 : 0,
+    exitCode: hasProblems ? 1 : 0,
   };
 }
 

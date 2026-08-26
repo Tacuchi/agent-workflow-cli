@@ -19,7 +19,6 @@ import { worklineMcpEntry } from "../../src/domain/workline-mcp-entry.js";
  */
 describe("ofrecer y retirar el servidor propio", () => {
   let home: string;
-  const ajeno = { command: "npx", args: ["-y", "@otro/servidor"], env: { TOKEN: "secreto" } };
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "offer-"));
@@ -90,10 +89,36 @@ describe("ofrecer y retirar el servidor propio", () => {
     expect(outcomes[0]?.state).toBe("unchanged");
   });
 
+  it("una entrada homónima de otra forma queda en conflicto y no se sobreescribe", () => {
+    const foreign = `[mcp_servers.${WORKLINE_MCP_ENTRY_NAME}]\ncommand = "npx"\nargs = ["-y", "@otro/servidor"]\n`;
+    writeFileSync(join(home, ".codex", "config.toml"), foreign);
+
+    const outcomes = offerWorklineServer({ targets: ["codex"], scopeDir: home });
+
+    expect(outcomes).toEqual([{ host: "codex", state: "conflict" }]);
+    expect(codexToml()).toBe(foreign);
+  });
+
+  it("retirar una entrada homónima ajena también queda en conflicto y no escribe", () => {
+    const foreign = `[mcp_servers.${WORKLINE_MCP_ENTRY_NAME}]\ncommand = "npx"\nargs = ["-y", "@otro/servidor"]\n`;
+    writeFileSync(join(home, ".codex", "config.toml"), foreign);
+
+    const outcomes = withdrawWorklineServer({ targets: ["codex"], scopeDir: home });
+
+    expect(outcomes).toEqual([{ host: "codex", state: "conflict" }]);
+    expect(codexToml()).toBe(foreign);
+  });
+
+  it("el dry-run informa el efecto MCP sin crear configuración", () => {
+    const outcomes = offerWorklineServer({ targets: ["codex"], scopeDir: home, dryRun: true });
+
+    expect(outcomes).toEqual([{ host: "codex", state: "dry-run" }]);
+    expect(codexToml()).toBe("");
+  });
+
   it("la entrada declara EN QUÉ host corre, porque el servidor no puede detectarlo", () => {
     // Lo lanza el host por entrada y salida estándar, sin variable que lo
-    // identifique. Sin ese dato la degradación no podría nombrar la política que
-    // le anula el selector ni la forma de arrancar que lo recupera.
+    // identifique. El servidor usa ese dato para habilitar sólo una vía observada.
     offerWorklineServer({ targets: ["codex"], scopeDir: home });
     expect(codexToml()).toContain("--host");
     expect(codexToml()).toContain("codex");

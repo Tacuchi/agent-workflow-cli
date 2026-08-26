@@ -55,7 +55,6 @@ export const resumeCommand: CliCommand<ResumeOutcome> = {
     if (outcome === undefined) return "";
     switch (outcome.status) {
       case "idle":
-      case "uninitialized":
       case "invalid_target":
         return `${outcome.action}\n`;
       case "proposal":
@@ -67,18 +66,27 @@ export const resumeCommand: CliCommand<ResumeOutcome> = {
 };
 
 function renderProposal(proposal: ResumeProposal, detail: boolean): string {
+  const command =
+    proposal.command === null
+      ? `Bloqueado · ${proposal.action.kind === "blocked" ? proposal.action.action : proposal.next}`
+      : proposal.command;
   const lines = [
     `▸ ${proposal.objective}`,
     `  Progreso   ${proposal.progress}`,
     `  Siguiente  ${proposal.next}`,
-    `  Comando    ${proposal.command}`,
+    `  Comando    ${command}`,
   ];
   // Shown without `--detail`: a reference that does not resolve changes WHICH
   // command is next, so hiding it behind a flag would hide the actual blocker.
   for (const design of proposal.design ?? []) {
     lines.push(`  Diseño     [${design.state}] ${design.baseline}${because(design.detail)}`);
   }
-  if (detail) lines.push(`  Ruta       ${proposal.file}`);
+  if (detail) {
+    if (proposal.warning !== undefined) {
+      lines.push(`  Aviso      ${proposal.warning.code}: ${proposal.warning.message}`);
+    }
+    lines.push(`  Ruta       ${proposal.file}`);
+  }
   return lines.join("\n");
 }
 

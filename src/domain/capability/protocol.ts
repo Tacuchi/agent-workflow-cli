@@ -318,10 +318,10 @@ function checkInputs(
 /**
  * Whether the operation can run where the caller is standing.
  *
- * Returning a verdict is the whole contract: being outside a workspace is an
- * answer, never a reason to create one. A capability that scaffolded `.workflow/`
- * to satisfy its own precondition would turn "I asked a question" into "I
- * initialized your project".
+ * The CLI always supplies an implicit resolved workspace root. A caller that
+ * deliberately supplies none receives a verdict, never an inferred write: a
+ * capability must not materialize `.workflow/` merely to satisfy its own
+ * precondition.
  */
 export type WorkspaceCheck =
   | { ok: true; requirement: WorkspaceRequirement }
@@ -338,8 +338,9 @@ export function checkWorkspaceRequirement(
     ok: false,
     failure: {
       code: "CAPABILITY_WORKSPACE_REQUIRED",
-      message: `'${operation.name}' necesita un workspace Workline y no hay ninguno acá`,
-      action: "corré la operación dentro de un workspace, o inicializá uno con 'aw workspace-init'",
+      message: `'${operation.name}' necesita una raíz Workline resuelta y este caller no declaró una`,
+      action:
+        "invocá desde la carpeta que debe ser la raíz Workline o pasá una raíz resuelta; no hace falta ejecutar 'aw workspace-init' antes",
     },
   };
 }

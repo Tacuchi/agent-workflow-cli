@@ -12,12 +12,13 @@ import {
   type IndexedPlan,
   type IndexedSession,
   type IndexedSpec,
+  type PipelineAction,
   type PipelineItem,
   type PipelineItemDetail,
   type SessionUnit,
   type WorklineIndex,
   buildWorklineIndex,
-  planDetail,
+  planPresentation,
   specDetail,
   unresolvedDesignRefs,
 } from "./workline-index-service.js";
@@ -54,8 +55,12 @@ export interface ResumeProposal {
   progress: string;
   /** the next pending step, or what the work is waiting on */
   next: string;
-  /** the exact command that continues it — presented, never run */
-  command: string;
+  /** The same typed route the status pipeline exposes. */
+  action: PipelineAction;
+  /** Compatibility projection of `action`; `null` when the item is blocked. */
+  command: string | null;
+  /** A non-blocking compatibility caveat, shown only with `--detail`. */
+  warning?: { code: string; message: string };
   /**
    * Design references of this document that are NOT valid. Absent when the
    * document pins none or every one resolves — a resume that always carried the
@@ -93,12 +98,6 @@ export type ResumeOutcome =
     }
   | { status: "candidates"; candidates: ResumeProposal[]; action: string }
   | { status: "idle"; action: string }
-  /**
-   * No workspace here — never `idle`. An empty pipeline for want of a workspace
-   * is not "nothing pending", and answering the two the same way sent people
-   * looking for work that no folder was tracking yet.
-   */
-  | { status: "uninitialized"; action: string }
   | { status: "invalid_target"; target: string; action: string };
 
 export async function runResume(
@@ -122,12 +121,6 @@ export async function runResume(
 
   if (input.code !== undefined) return await resumeSession(fs, paths, index, input);
   if (input.target !== undefined) return resumeTarget(index, input.target);
-  if (!index.workspace.initialized) {
-    return {
-      status: "uninitialized",
-      action: `no hay workspace de Workline en ${index.workspace.path}: creá uno con /w:workspace-init`,
-    };
-  }
   return resumePipeline(index);
 }
 
@@ -142,7 +135,8 @@ export async function runResume(
  */
 function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
   const specs = index.specs.filter((s) => s.file === target || s.number === target);
-  const plans = index.plans.filter((p) => p.file === target || p.number === target);
+  const allPlans = index.plans.filter((p) => p.file === target || p.number === target);
+  const plans = allPlans.filter((plan) => plan.plan_state !== "done");
 
   const matches: ResumeProposal[] = [
     ...specs.map((s) => specProposal(s, index)),
@@ -151,6 +145,14 @@ function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
 
   const [first] = matches;
   if (first === undefined) {
+    const [historical] = allPlans;
+    if (historical !== undefined) {
+      return {
+        status: "invalid_target",
+        target,
+        action: `el plan '${historical.file}' ya está cerrado: es histórico y no genera deuda de baseline; elegí un documento pendiente o consultá su evidencia`,
+      };
+    }
     return {
       status: "invalid_target",
       target,
@@ -246,6 +248,7 @@ function pipelineProposal(index: WorklineIndex, item: PipelineItem): ResumePropo
     file: item.file,
     number: item.number,
     ...told(item.detail),
+    action: item.action,
     command: item.command,
     ...designOf(index, item.file),
   };
@@ -260,25 +263,39 @@ function specProposal(spec: IndexedSpec, index: WorklineIndex): ResumeProposal {
     file: spec.file,
     number: spec.number,
     ...told(specDetail(spec, index.plans)),
+    action: {
+      kind: "continue",
+      command: refine ? `/w:spec-refine ${spec.file}` : `/w:plan-new ${spec.file}`,
+      mode: "normal",
+    },
     command: refine ? `/w:spec-refine ${spec.file}` : `/w:plan-new ${spec.file}`,
     ...designOf(index, spec.file),
   };
 }
 
 function planProposal(plan: IndexedPlan, index: WorklineIndex): ResumeProposal {
+  const presentation = planPresentation(plan, index.designs);
   return {
     kind: "plan-open",
     file: plan.file,
     number: plan.number,
-    ...told(planDetail(plan, index.designs)),
-    command: `/w:plan-exec ${plan.file}`,
+    ...told(presentation.detail),
+    action: presentation.action,
+    command: presentation.action.command,
     ...designOf(index, plan.file),
   };
 }
 
 /** The three fields a proposal takes verbatim from the shared derivation. */
-function told(detail: PipelineItemDetail): Pick<ResumeProposal, "objective" | "progress" | "next"> {
-  return { objective: detail.objective, progress: detail.progress, next: detail.next };
+function told(
+  detail: PipelineItemDetail,
+): Pick<ResumeProposal, "objective" | "progress" | "next" | "warning"> {
+  return {
+    objective: detail.objective,
+    progress: detail.progress,
+    next: detail.next,
+    ...(detail.warning === undefined ? {} : { warning: detail.warning }),
+  };
 }
 
 /** The document's non-valid references, or nothing at all to say. */
@@ -326,6 +343,11 @@ async function sessionProposal(
         ? `sesión ${narrative.phase}, sin avance registrado`
         : `sesión ${narrative.phase}: ${result.text}`,
     next: narrative.next?.text ?? "el checkpoint no declara trabajo pendiente",
+    action: {
+      kind: "continue",
+      command: directed ? run.command : `aw session-resume --code ${folder} --reopen`,
+      mode: "normal",
+    },
     command: directed ? run.command : `aw session-resume --code ${folder} --reopen`,
     ...(session !== undefined && session.units.length > 0 ? { units: session.units } : {}),
     ...(run !== null && run.scope !== null ? { scope: run.scope } : {}),

@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { parseMdSection } from "../markdown.js";
 
@@ -16,7 +16,8 @@ export async function readWorkspaceBlock(
   for (const name of BLOCK_MIRROR_FILES) {
     const path = join(dir, name);
     if (!(await fs.exists(path))) continue;
-    const block = parseProjectBlock(await fs.readText(path), markers);
+    const parsed = parseProjectBlock(await fs.readText(path), markers);
+    const block = parsed === null ? null : resolveWorkspaceBlockSources(parsed, dir);
     if (block !== null && accept(block)) return block;
   }
   return null;
@@ -30,6 +31,32 @@ export interface ProjectFuente {
   path: string;
   /** Declared base branch. `null` when the Fuentes cell is empty → the workspace default applies. */
   main_branch: string | null;
+}
+
+/**
+ * Resolve one source coordinate read from a WORKSPACE block.
+ *
+ * New configuration persists absolute paths, but legacy blocks may still hold
+ * a relative one. A block is scoped to the resolved Workline root that holds
+ * it, never to whichever process cwd happens to read it later. Keep absolute
+ * values byte-for-byte so a configured source is not rewritten merely by being
+ * consumed.
+ */
+export function resolveWorkspaceSourcePath(workspace: string, sourcePath: string): string {
+  if (sourcePath.length === 0 || isAbsolute(sourcePath)) return sourcePath;
+  return resolve(workspace, sourcePath);
+}
+
+/** Apply the WORKSPACE source-coordinate rule to a parsed block. */
+export function resolveWorkspaceBlockSources(
+  block: ParsedProjectBlock,
+  workspace: string,
+): ParsedProjectBlock {
+  const fuentes = block.fuentes.map((source) => ({
+    ...source,
+    path: resolveWorkspaceSourcePath(workspace, source.path),
+  }));
+  return { ...block, fuentes };
 }
 
 /**

@@ -426,14 +426,19 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     expect(item.detail.obligation).toBe(true);
   });
 
-  it("2 · una fase bloqueada gana a la reconciliación pendiente, y NO es obligación", async () => {
+  it("2 · una fase bloqueada gana a la reconciliación pendiente y bloquea el route", async () => {
     const text = detailPlan({ f1: "bloqueada" });
     const fs = detailWorkspace(text);
     seedObligation(fs, text);
 
     const item = await planItem(fs);
     expect(item.detail.next).toBe("BLOQUEADA F1 — falta aplicar la migración 014");
-    expect(item.detail.obligation).toBe(false);
+    expect(item.detail.obligation).toBe(true);
+    expect(item.action).toMatchObject({
+      kind: "blocked",
+      command: null,
+      code: "WORKLINE_PLAN_PHASE_BLOCKED",
+    });
   });
 
   it("2b · una fase bloqueada sin motivo declarado lo dice así", async () => {
@@ -458,26 +463,72 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     expect(item.detail.obligation).toBe(true);
   });
 
-  it("4 · el plan inconsistente gana al baseline sin probar, y NO es obligación", async () => {
+  it("4 · un legacy inconsistente sigue ejecutable en modo compatible, sin afirmar baseline", async () => {
     const item = await planItem(detailWorkspace(detailPlan({ header: ["> Estado: done"] })));
     expect(item.detail.next).toBe(
-      "el plan se declara done pero sus contadores no lo respaldan: repararlo a mano",
+      "el plan se declara done pero sus contadores no lo respaldan: reconciliar las tareas y fases acreditadas desde plan-exec",
     );
     expect(item.detail.obligation).toBe(false);
+    expect(item.detail.warning?.code).toBe("WORKLINE_BASELINE_LEGACY_UNSEALED");
+    expect(item.action).toEqual({
+      kind: "continue",
+      command: `/w:plan-exec ${D_PLAN}`,
+      mode: "compatible",
+    });
   });
 
-  it("5 · un baseline sin sello gana a la validación final pendiente, y es obligación", async () => {
+  it("5 · un baseline sin sello es warning de compatibilidad, no bloqueo", async () => {
     const item = await planItem(
       detailWorkspace(detailPlan({ header: ["> Estado: open"], f2: "validada" })),
     );
-    expect(item.detail.next).toContain("SIN SELLO DE BASELINE");
-    expect(item.detail.obligation).toBe(true);
+    expect(item.detail.next).toBe("todo ejecutado: falta la validación final y el cierre");
+    expect(item.detail.obligation).toBe(false);
+    expect(item.detail.warning?.message).toContain("SIN SELLO DE BASELINE");
+    expect(item.action).toMatchObject({ kind: "continue", mode: "compatible" });
   });
 
-  it("5b · un baseline divergente nombra los dos digests", async () => {
+  it("5b · un baseline divergente entrega exactamente a plan-refine", async () => {
     const item = await planItem(detailWorkspace(detailPlan(), D_SPEC_TEXT.replace("una.", "una,")));
     expect(item.detail.next).toContain("BASELINE DIVERGENTE");
     expect(item.detail.obligation).toBe(true);
+    expect(item.action).toEqual({
+      kind: "handoff",
+      command: `/w:plan-refine ${D_PLAN}`,
+      destination: "plan-refine",
+      code: "WORKLINE_BASELINE_DIVERGENT",
+    });
+  });
+
+  it("5c · baseline malformado o spec ausente siempre bloquean, incluso si el plan es inconsistente", async () => {
+    const malformed = await planItem(
+      detailWorkspace(
+        detailPlan({
+          header: [`> Baseline: ${D_SPEC}@no-es-un-sello`, "> Estado: done"],
+        }),
+      ),
+    );
+    expect(malformed.action).toMatchObject({
+      kind: "blocked",
+      command: null,
+      code: "WORKLINE_BASELINE_MALFORMED",
+    });
+
+    const missingSpec = await planItem(
+      detailWorkspace(
+        detailPlan({
+          header: [
+            "> Derived from docs/specs/999-spec-ausente.md",
+            "> Baseline: docs/specs/999-spec-ausente.md@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "> Estado: done",
+          ],
+        }),
+      ),
+    );
+    expect(missingSpec.action).toMatchObject({
+      kind: "blocked",
+      command: null,
+      code: "WORKLINE_BASELINE_SPEC_ABSENT",
+    });
   });
 
   it("6 · con todo validado y el sello alineado, lo que falta es la validación final", async () => {

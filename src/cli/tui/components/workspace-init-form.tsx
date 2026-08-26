@@ -13,7 +13,7 @@ import { dedupeAlias, deriveAlias } from "./workspace-init-alias.js";
 const DEFAULT_MAIN_BRANCH = "main";
 
 /**
- * Native ink form to initialize a WORKSPACE. Collects project + sources (≥1)
+ * Native Ink form to configure WORKSPACE sources. Collects project + sources (≥1)
  * + base branch + working branch INSIDE the TUI and runs `runWorkspaceInit`
  * in-process. No handoff to inquirer (the cause of the Windows crash after
  * ink's teardown). Each source's alias is inferred from its folder name.
@@ -61,14 +61,14 @@ export function WorkspaceInitForm({
       mainBranch: string,
       workingBranch: string,
     ) => {
-      setStep({ kind: "busy", label: `creando workspace · ${fuentes.length} fuentes…` });
+      setStep({ kind: "busy", label: `configurando fuentes · ${fuentes.length} fuentes…` });
       try {
         // The working branch applies to ALL sources (common pattern: a shared
         // feature branch). Empty = no working branch (only the base branch remains).
         const workingBranches = workingBranch
           ? Object.fromEntries(fuentes.map((f) => [f.alias, workingBranch]))
           : {};
-        const result = await runWorkspaceInit(ctx.fs, ctx.env, ctx.paths, {
+        const result = await runWorkspaceInit(ctx.rawFs ?? ctx.fs, ctx.env, ctx.paths, {
           proyecto,
           sources: fuentes,
           workingBranches,
@@ -82,7 +82,7 @@ export function WorkspaceInitForm({
         onDone({
           ok: result.ok,
           summary: result.ok
-            ? `Workspace creado · ${fuentes.length} fuentes${multiroot}`
+            ? `Fuentes configuradas · ${fuentes.length}${multiroot}`
             : "workspace-init no completó",
         });
       } catch (err) {
@@ -106,7 +106,7 @@ export function WorkspaceInitForm({
     return (
       <Box flexDirection="column">
         <SectionHead
-          label="Initialize workspace"
+          label="Configurar fuentes"
           hint="Paso 1 · nombre"
           rightAction="⏎ siguiente · esc cancela"
         />
@@ -129,7 +129,7 @@ export function WorkspaceInitForm({
     return (
       <Box flexDirection="column">
         <SectionHead
-          label="Initialize workspace"
+          label="Configurar fuentes"
           hint={`Paso 2 · fuente #${n} (mín 1)`}
           rightAction="⏎ agrega · vacío = terminar · esc cancela"
         />
@@ -168,7 +168,7 @@ export function WorkspaceInitForm({
     return (
       <Box flexDirection="column">
         <SectionHead
-          label="Initialize workspace"
+          label="Configurar fuentes"
           hint="Paso 3 · rama principal"
           rightAction="⏎ siguiente · esc cancela"
         />
@@ -197,7 +197,7 @@ export function WorkspaceInitForm({
   return (
     <Box flexDirection="column">
       <SectionHead
-        label="Initialize workspace"
+        label="Configurar fuentes"
         hint="Paso 4 · rama de trabajo"
         rightAction="⏎ crear · vacío = sin rama · esc cancela"
       />

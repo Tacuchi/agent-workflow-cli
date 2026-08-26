@@ -239,24 +239,12 @@ export type StructuredChoiceState = "native" | "degraded" | "unsupported";
  * exige que ningún host afirme la capacidad sin haberla observado, y un guard que
  * lo revise después es una regla que alguien puede olvidar — el tipo no.
  *
- * `blockedBy` y `recoverBy` son lo que vuelve accionable la degradación: pedirle
- * una elección a una persona ES interrumpirla, así que una política de arranque
- * que promete no interrumpir no puede rendir un selector, y lo honesto es nombrar
- * esa política y la forma de arrancar que la recupera en vez de fingir lo contrario.
  */
 export type HarnessMcpElicitation =
   | {
       available: true;
       /** Qué lo sostiene, con su fecha. Sin esto no hay forma de escribir `true`. */
       evidence: string;
-      /**
-       * La política de arranque que anula el selector y cómo arrancar para
-       * recuperarlo. En INGLÉS, como el resto del catálogo: alimentan el estampado,
-       * que es inglés, y mezclar idiomas a mitad de oración se lee peor que
-       * cualquiera de los dos. Lo que la persona lee en castellano lo compone el CLI.
-       */
-      blockedBy: string;
-      recoverBy: string;
     }
   | {
       available: false;
@@ -478,8 +466,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
         available: true,
         evidence:
           "probe 2026-08-22 on codex-cli 0.149.0 through its interactive UI: its MCP client announces `capabilities.elicitation {form, url}` in the handshake, and a GENERIC `elicitation/create` — protocol only, no host-internal field — rendered a native selector with title, description, numbered navigable options, confirm and cancel, returning `{action:'accept',content:{...}}` under the schema key. A second request carrying the host's own `_meta` behaved identically, so the path does not depend on it. Under `--yolo` both requests came back `{action:'decline'}` immediately and with nothing shown",
-        blockedBy: "the host was started with `--yolo`, or with approvals turned off",
-        recoverBy: "start `codex` on its default approval policy, without `--yolo`",
       },
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },

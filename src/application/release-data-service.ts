@@ -53,12 +53,12 @@ export interface ReleaseDataError {
 
 export async function runReleaseData(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   input: ReleaseDataInput,
   runtime?: ResolvedRuntime,
 ): Promise<ReleaseDataOutput | ReleaseDataError> {
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   const verbose = input.verbose ?? false;
 
   let docsRoot: string;

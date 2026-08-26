@@ -36,6 +36,25 @@ function loadGolden(name: string): unknown {
   return JSON.parse(readFileSync(join(GOLDEN_DIR, name), "utf8"));
 }
 
+/** `project-md --read` exposes source coordinates as their resolved Workline
+ * paths. Keep the fixture's portable `.` in JSON while binding this one golden
+ * expectation to the test fixture root at runtime. */
+function loadProjectReadGolden(): unknown {
+  const golden = loadGolden("project-read.json") as {
+    block: { fuentes: Array<{ path: string }> } | null;
+  };
+  if (golden.block === null) return golden;
+  return {
+    ...golden,
+    block: {
+      ...golden.block,
+      fuentes: golden.block.fuentes.map((source) =>
+        source.path === "." ? { ...source, path: FIXTURE } : source,
+      ),
+    },
+  };
+}
+
 const fs = new NodeFileSystem();
 const env = new FixtureEnv();
 const paths = new PathsService(normalizeNamespace("workflow"), env.homeDir(), env.cwd());
@@ -48,7 +67,7 @@ describe("Wave 1 read commands — golden parity (new model)", () => {
 
   it("project-md-upsert --read", async () => {
     const result = await runProjectMdRead(fs, env, paths);
-    expect(result).toEqual(loadGolden("project-read.json"));
+    expect(result).toEqual(loadProjectReadGolden());
   });
 
   it("session-resume --code 001", async () => {

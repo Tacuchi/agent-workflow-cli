@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { basename } from "node:path";
 import { GitCliAdapter } from "../adapters/git-cli.js";
 import { NodeEnv } from "../adapters/node-env.js";
 import { NodeFileSystem } from "../adapters/node-file-system.js";
@@ -13,15 +12,21 @@ import {
 import { Logger } from "../application/logging/logger.js";
 import { PathsService } from "../application/paths-service.js";
 import { resolveSkills } from "../application/skills-resolver-service.js";
+import { MaterializingWorkspaceFileSystem } from "../application/workspace-materialization-service.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
-import { NamespaceResolver } from "../runtime/namespace-resolver.js";
+import {
+  DEFAULT_NAMESPACE,
+  NamespaceResolver,
+  type WorklineDirectory,
+  WorklineDirectoryError,
+} from "../runtime/namespace-resolver.js";
 import { readPackageVersion } from "../runtime/version.js";
 import { ALL_COMMANDS, commandDescribes } from "./commands/index.js";
 import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
 import { type MenuAction, shouldShowInteractiveMenu } from "./interactive-menu.js";
 import { type OutputMode, resolveOutputMode } from "./output-mode.js";
-import { parseArgv } from "./parser.js";
+import { type ParsedArgs, parseArgv } from "./parser.js";
 import { type CliCommand, CommandRegistry } from "./registry.js";
 import {
   emitError,
@@ -46,13 +51,8 @@ async function run(argv: string[]): Promise<ExitCode> {
   const registry = new CommandRegistry();
   for (const command of ALL_COMMANDS) registry.register(command);
 
-  let parsed: ReturnType<typeof parseArgv>;
-  try {
-    parsed = parseArgv(argv);
-  } catch (err) {
-    emitError(formatArgvError((err as Error).message));
-    return 1;
-  }
+  const parsed = parseCli(argv);
+  if (parsed === null) return 1;
 
   if (parsed.flags.has("--version")) {
     writeStdout(`${readPackageVersion()}\n`);
@@ -69,43 +69,96 @@ async function run(argv: string[]): Promise<ExitCode> {
   }
 
   const namespaceResolver = new NamespaceResolver(fs, env);
-  const namespace = await namespaceResolver.resolve(parsed.values.get("namespace"));
+  const directory = await resolveWorklineDirectory(namespaceResolver, parsed);
+  if (directory === null) return 1;
+  const namespace = { namespace: directory.namespace, source: directory.namespaceSource };
 
-  const paths = new PathsService(namespace.namespace, env.homeDir(), env.cwd());
+  // All workspace-scoped services receive the same root.  In a virgin folder it
+  // is exactly the invoked cwd; in a materialized workspace it is its nearest
+  // canonical marker's parent — never a guessed repository root.
+  const paths = new PathsService(namespace.namespace, env.homeDir(), directory.root);
+  // Direct writers are spread across the command surface.  Guard their first
+  // workspace-scoped write here so no command can create docs/state before the
+  // canonical sessions marker exists.  The two services that already own their
+  // materialization receipt receive the raw port below, avoiding a duplicate
+  // materialization whose receipt would look merely "existing".
+  const workspaceFs = new MaterializingWorkspaceFileSystem(fs, paths);
 
   const runtimeService = new RuntimeConfigService(fs, env, paths);
   const runtime = await runtimeService.resolveRuntime();
 
   // Operational logger → global user-level daily log. Best-effort; never throws.
   // Built before ctx so the TUI (and its tabs, via ctx.logger) can log too.
-  const logger = new Logger({ fs, paths });
+  // `status` and `resume` are strict filesystem reads. Their operational trace
+  // must not create even the global daily log when invoked from a virgin folder.
+  const logger = new Logger({ fs, paths, enabled: !isStrictReadCommand(parsed.command) });
 
   const skillsResolution = await resolveSkills(fs, paths);
   const ctx: CliContext = {
-    fs,
+    fs: workspaceFs,
+    rawFs: fs,
     env,
     git,
     process: proc,
     runtime,
     namespace,
+    directory,
     paths,
     skills: skillsResolution.skills,
     logger,
   };
 
-  if (
-    shouldShowInteractiveMenu({
-      command: parsed.command,
-      isTTY,
-      hasHelp,
-    })
-  ) {
-    await logger.info(formatTuiEvent("open"));
-    const tuiResult = await runTui(readPackageVersion(), ctx);
-    if (tuiResult.kind === "menu-action") {
-      return await dispatchMenuAction(tuiResult.action, registry);
-    }
-    return tuiResult.exitCode;
+  return await dispatchParsedCommand({
+    parsed,
+    ctx,
+    registry,
+    isTTY,
+    hasHelp,
+    output: output.mode,
+    workspaceFs,
+  });
+}
+
+function parseCli(argv: string[]): ParsedArgs | null {
+  try {
+    return parseArgv(argv);
+  } catch (err) {
+    emitError(formatArgvError((err as Error).message));
+    return null;
+  }
+}
+
+async function resolveWorklineDirectory(
+  resolver: NamespaceResolver,
+  parsed: ParsedArgs,
+): Promise<WorklineDirectory | null> {
+  try {
+    return await resolver.resolveDirectory(parsed.values.get("namespace"));
+  } catch (err) {
+    if (!(err instanceof WorklineDirectoryError)) throw err;
+    emitError({
+      code: err.code,
+      message: err.message,
+      details: { root: err.root, namespaces: err.namespaces },
+    });
+    return null;
+  }
+}
+
+interface ParsedCommandDispatch {
+  parsed: ParsedArgs;
+  ctx: CliContext;
+  registry: CommandRegistry;
+  isTTY: boolean;
+  hasHelp: boolean;
+  output: OutputMode;
+  workspaceFs: MaterializingWorkspaceFileSystem;
+}
+
+async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<ExitCode> {
+  const { parsed, ctx, registry, isTTY, hasHelp, output, workspaceFs } = input;
+  if (shouldShowInteractiveMenu({ command: parsed.command, isTTY, hasHelp })) {
+    return await runInteractiveMenu(ctx, registry);
   }
 
   if (parsed.command === undefined) {
@@ -114,7 +167,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   }
 
   const command = registry.resolve(parsed.command);
-  if (!command) {
+  if (command === undefined) {
     emitError(formatUnknownCommand(parsed.command, registry.list()));
     return 1;
   }
@@ -125,21 +178,78 @@ async function run(argv: string[]): Promise<ExitCode> {
     return 0;
   }
 
-  await logger.info(formatCommandInvocation(parsed));
+  return await executeCommand(parsed, ctx, command, output, workspaceFs);
+}
+
+async function runInteractiveMenu(ctx: CliContext, registry: CommandRegistry): Promise<ExitCode> {
+  await ctx.logger?.info(formatTuiEvent("open"));
+  const tuiResult = await runTui(readPackageVersion(), ctx);
+  return tuiResult.kind === "menu-action"
+    ? await dispatchMenuAction(tuiResult.action, registry)
+    : tuiResult.exitCode;
+}
+
+async function executeCommand(
+  parsed: ParsedArgs,
+  ctx: CliContext,
+  command: CliCommand,
+  output: OutputMode,
+  workspaceFs: MaterializingWorkspaceFileSystem,
+): Promise<ExitCode> {
+  await ctx.logger?.info(formatCommandInvocation(parsed));
   try {
-    const result = await command.execute(parsed, ctx);
-    await logger.log(
+    const commandCtx = commandOwnsMaterializationReceipt(command.name)
+      ? { ...ctx, fs: ctx.rawFs ?? ctx.fs }
+      : ctx;
+    const result = attachMaterializationReceipt(
+      await command.execute(parsed, commandCtx),
+      workspaceFs,
+    );
+    await ctx.logger?.log(
       result.ok ? "info" : "error",
       formatCommandOutcome(command.name, result.exitCode),
     );
-    emit(result, command, output.mode);
+    emit(result, command, output);
     return result.exitCode;
   } catch (err) {
-    await logger.error(formatCommandError(command.name, err));
+    await ctx.logger?.error(formatCommandError(command.name, err));
     const message = err instanceof Error ? err.message : String(err);
-    emit(fail("UNHANDLED", message), command, output.mode);
+    emit(fail("UNHANDLED", message), command, output);
     return 1;
   }
+}
+
+/** Services whose public output already declares the exact first-write effects. */
+function commandOwnsMaterializationReceipt(command: string): boolean {
+  return command === "workspace-init" || command === "session-create";
+}
+
+/**
+ * A generic workspace writer still needs to tell its caller that it created the
+ * runtime marker.  Preserve every typed command payload and add the forward
+ * receipt only when the payload is an object and does not already own that key.
+ */
+function attachMaterializationReceipt(
+  result: CommandResult,
+  fs: MaterializingWorkspaceFileSystem,
+): CommandResult {
+  const materialization = fs.materialization();
+  if (
+    materialization === undefined ||
+    !materialization.materialized ||
+    result.data === undefined ||
+    result.data === null ||
+    Array.isArray(result.data) ||
+    typeof result.data !== "object" ||
+    "materialization" in result.data
+  ) {
+    return result;
+  }
+  return { ...result, data: { ...result.data, materialization } };
+}
+
+function isStrictReadCommand(command: string | undefined): boolean {
+  return command === "status" || command === "resume";
 }
 
 function emit(result: CommandResult, command: CliCommand, mode: OutputMode): void {
@@ -203,12 +313,9 @@ async function dispatchMenuAction(
       // ink's stdin teardown and can phantom-cancel).
       return await run(["self", "update", "--yes"]);
     case "workspace-init": {
-      // Initializes the directory as a workspace (1+ sources). No project/hub
-      // distinction. The interactive form that collects sources lives in the
-      // TUI (project-tab → WorkspaceInitForm); this path is the CLI fallback
-      // with the cwd as the only source.
-      const cwd = process.cwd();
-      return await run(["workspace-init", "--source", `${basename(cwd)}:${cwd}`]);
+      // The fallback pre-materializes the current implicit root.  Source
+      // configuration remains the Project tab's explicit secondary action.
+      return await run(["workspace-init"]);
     }
     case "help":
       printHelp(registry.list());
@@ -227,10 +334,10 @@ function printHelp(commands: string[]): void {
     "                 [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
     "                 <command> [args...]",
     "",
-    "Namespace resolution order: --namespace flag > AW_NAMESPACE env > workspace",
-    "auto-detect (.<ns>/sessions/ in cwd) > ~/.config/agent-workflow/namespace >",
-    "default 'agent-workflow'. Plugins can reclaim a namespace via SessionStart",
-    "hook; new workspaces use .<namespace>/sessions/.",
+    "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
+    "ancestor marker (.<ns>/sessions/) > ~/.config/agent-workflow/namespace >",
+    `default '${DEFAULT_NAMESPACE}'. Without a marker, the invoked directory is the`,
+    "implicit root; new workspaces materialize .<namespace>/sessions/ on first write.",
     "",
     "Commands:",
     "",

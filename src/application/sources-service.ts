@@ -41,12 +41,12 @@ export interface SourcesOutput {
 
 export async function runSources(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   git: GitPort,
   paths: PathsService,
   input: SourcesInput,
 ): Promise<SourcesOutput> {
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
   const verbose = input.verbose === true;
 

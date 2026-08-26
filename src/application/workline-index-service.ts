@@ -78,8 +78,15 @@ export type SpecRelation =
 
 export interface IndexedWorkspace {
   name: string;
+  /** Resolved WorklineDirectory root; kept alongside `path` during the transition. */
+  root: string;
   path: string;
-  /** `.<ns>/` present in the workspace root. */
+  /**
+   * `implicit` has no marker/config, `materialized` has the canonical sessions
+   * marker, and `configured` additionally has a WORKSPACE block.
+   */
+  mode: "implicit" | "materialized" | "configured";
+  /** @deprecated Use `mode`; retained for one release of JSON consumers. */
   initialized: boolean;
 }
 
@@ -247,6 +254,34 @@ export interface IndexedDiscarded {
 export type PipelineKind = "spec-unrefined" | "spec-unplanned" | "plan-open" | "checkpoint-orphan";
 
 /**
+ * The executable consequence of a pending item.
+ *
+ * `next` is prose for a person; this value is the machine-owned answer to
+ * "what may actually be invoked?".  Keeping the two together is what prevents
+ * a board from saying that a plan is blocked while still advertising
+ * `/w:plan-exec` underneath it.
+ */
+export type PipelineAction =
+  | {
+      kind: "continue";
+      command: string;
+      /** A legacy plan may execute, but its unsealed baseline is shown in detail. */
+      mode?: "normal" | "compatible" | "reconcile";
+    }
+  | {
+      kind: "handoff";
+      command: string;
+      destination: "plan-refine" | "spec-refine" | "spec-new";
+      code: string;
+    }
+  | {
+      kind: "blocked";
+      command: null;
+      code: string;
+      action: string;
+    };
+
+/**
  * What an item still owes, derived HERE and nowhere else.
  *
  * `status` lists it and `resume` offers it as a choice, so a second derivation is
@@ -271,6 +306,12 @@ export interface PipelineItemDetail {
    * this projection exists to prevent.
    */
   obligation: boolean;
+  /**
+   * A truthful, non-blocking warning.  In particular a legacy unsealed plan is
+   * runnable in compatibility mode; it is not silently called aligned and it is
+   * not made unexecutable only because publication predates baseline seals.
+   */
+  warning?: { code: string; message: string };
 }
 
 export interface PipelineItem {
@@ -281,8 +322,13 @@ export interface PipelineItem {
   number: string | null;
   slug: string;
   summary: string;
-  /** the exact command that continues this item — presented, never executed */
-  command: string;
+  /** Typed route used by status and resume. */
+  action: PipelineAction;
+  /**
+   * Compatibility projection of {@link action}. New consumers must use `action`;
+   * a blocked item deliberately serializes this as `null`.
+   */
+  command: string | null;
   /** what it still owes — the single derivation both surfaces read */
   detail: PipelineItemDetail;
   /** plans only: work already started outranks an untouched plan */
@@ -527,6 +573,7 @@ function derivePipeline(
   }
   for (const plan of plans) {
     if (plan.plan_state === "done") continue;
+    const presentation = planPresentation(plan, designs);
     items.push({
       kind: "plan-open",
       priority: 3,
@@ -534,8 +581,9 @@ function derivePipeline(
       number: plan.number,
       slug: plan.slug,
       summary: planSummary(plan),
-      command: `/w:plan-exec ${plan.file}`,
-      detail: planDetail(plan, designs),
+      action: presentation.action,
+      command: presentation.action.command,
+      detail: presentation.detail,
       started: plan.tasks_done > 0 || plan.phases_validated > 0,
     });
   }
@@ -563,6 +611,7 @@ function specItem(
     number: spec.number,
     slug: spec.slug,
     summary: `spec ${spec.number} — ${spec.status} · ${openQuestions(spec)}`,
+    action: { kind: "continue", command: `${command} ${spec.file}`, mode: "normal" },
     command: `${command} ${spec.file}`,
     detail,
   };
@@ -607,12 +656,144 @@ export function specDetail(spec: IndexedSpec, plans: readonly IndexedPlan[]): Pi
 
 /** What a plan owes, and whether saying it outranks saying its percentage. */
 export function planDetail(plan: IndexedPlan, designs: DesignGraph): PipelineItemDetail {
+  return planPresentation(plan, designs).detail;
+}
+
+/** The one plan projection shared by the pipeline and direct `resume <plan>`. */
+export function planPresentation(
+  plan: IndexedPlan,
+  designs: DesignGraph,
+): { detail: PipelineItemDetail; action: PipelineAction } {
   const phases =
     plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
-  return {
+  const base = {
     objective: `plan ${plan.number}${plan.slug ? ` — ${plan.slug}` : ""}`,
     progress: `${plan.tasks_done}/${plan.tasks_total} tareas (${plan.progress_pct}%)${phases}`,
-    ...planNext(plan, designs),
+  };
+  // A closed plan is documentary history.  In particular, a legacy plan with
+  // no baseline seal is not retroactively made owing or executable merely
+  // because a direct `resume <plan>` bypassed the pipeline's done filter.
+  if (plan.plan_state === "done") {
+    return {
+      detail: {
+        ...base,
+        next: "plan cerrado: es histórico y no genera deuda de baseline",
+        obligation: false,
+      },
+      action: {
+        kind: "blocked",
+        command: null,
+        code: "WORKLINE_PLAN_HISTORICAL",
+        action: "el plan ya está cerrado; consultá su evidencia o elegí trabajo pendiente",
+      },
+    };
+  }
+  const missing = describeMissingDesign(designs, plan.file);
+  if (missing !== null) {
+    return {
+      detail: { ...base, next: missing, obligation: true },
+      action: {
+        kind: "blocked",
+        command: null,
+        code: "WORKLINE_PLAN_DESIGN_UNRESOLVED",
+        action: "resolvé el diseño referido antes de volver a ejecutar el plan",
+      },
+    };
+  }
+  const [blocked] = plan.blocked_phases;
+  if (blocked !== undefined) {
+    return {
+      detail: {
+        ...base,
+        next: `BLOQUEADA F${blocked.number} — ${blocked.blocker ?? "sin motivo declarado"}`,
+        obligation: true,
+      },
+      action: {
+        kind: "blocked",
+        command: null,
+        code: "WORKLINE_PLAN_PHASE_BLOCKED",
+        action: "resolvé el bloqueo de la fase o registrá una desviación antes de continuar",
+      },
+    };
+  }
+  const owed = describePendingReconciliation(plan);
+  if (owed !== null) {
+    return {
+      detail: { ...base, next: owed, obligation: true },
+      action: {
+        kind: "blocked",
+        command: null,
+        code: "WORKLINE_PLAN_RECONCILIATION_PENDING",
+        action: "cerrá las obligaciones compensatorias desde su punto de reanudación",
+      },
+    };
+  }
+  if (plan.baseline.status === "divergent") {
+    return {
+      detail: { ...base, next: describeUnprovenBaseline(plan), obligation: true },
+      action: {
+        kind: "handoff",
+        command: `/w:plan-refine ${plan.file}`,
+        destination: "plan-refine",
+        code: "WORKLINE_BASELINE_DIVERGENT",
+      },
+    };
+  }
+  if (plan.baseline.status === "malformed") {
+    return {
+      detail: { ...base, next: describeUnprovenBaseline(plan), obligation: true },
+      action: {
+        kind: "blocked",
+        command: null,
+        code: "WORKLINE_BASELINE_MALFORMED",
+        action: plan.baseline.action,
+      },
+    };
+  }
+  if (plan.baseline.status === "unresolved") {
+    return {
+      detail: { ...base, next: describeUnprovenBaseline(plan), obligation: true },
+      action: {
+        kind: "blocked",
+        command: null,
+        code: "WORKLINE_BASELINE_SPEC_ABSENT",
+        action: `restaurá o declará la spec '${plan.baseline.path}' antes de ejecutar`,
+      },
+    };
+  }
+  // A legacy open plan stays executable even when its counters require
+  // reconciliation. Compatibility is an explicit mode rather than a warning
+  // accidentally lost behind the counter repair route.
+  if (plan.baseline.status === "unsealed") {
+    return {
+      detail: {
+        ...base,
+        ...normalPlanNext(plan),
+        warning: {
+          code: "WORKLINE_BASELINE_LEGACY_UNSEALED",
+          message:
+            "SIN SELLO DE BASELINE — ejecución compatible: el plan no afirma de qué versión de la spec derivó",
+        },
+      },
+      action: { kind: "continue", command: `/w:plan-exec ${plan.file}`, mode: "compatible" },
+    };
+  }
+  // The baseline is a precondition of *every* execution mode, including the
+  // reconciliation route. An inconsistent counter line must not accidentally
+  // turn an unreadable/missing contract into an advertised `plan-exec` command.
+  if (plan.plan_state === "inconsistent") {
+    return {
+      detail: {
+        ...base,
+        next: "el plan se declara done pero sus contadores no lo respaldan: reconciliar las tareas y fases acreditadas desde plan-exec",
+        obligation: false,
+      },
+      action: { kind: "continue", command: `/w:plan-exec ${plan.file}`, mode: "reconcile" },
+    };
+  }
+  return {
+    detail: { ...base, ...normalPlanNext(plan) },
+    action: { kind: "continue", command: `/w:plan-exec ${plan.file}`, mode: "normal" },
   };
 }
 
@@ -636,29 +817,12 @@ export function unresolvedDesignRefs(
  * baseline is said before the phase counters, because "continuar por la primera
  * fase no validada" is advice about a contract we cannot prove this plan is on.
  */
-function planNext(
-  plan: IndexedPlan,
-  designs: DesignGraph,
-): Pick<PipelineItemDetail, "next" | "obligation"> {
-  const missing = describeMissingDesign(designs, plan.file);
-  if (missing !== null) return { next: missing, obligation: true };
-  const [blocked] = plan.blocked_phases;
-  if (blocked !== undefined) {
-    return {
-      next: `BLOQUEADA F${blocked.number} — ${blocked.blocker ?? "sin motivo declarado"}`,
-      obligation: false,
-    };
-  }
-  const owed = describePendingReconciliation(plan);
-  if (owed !== null) return { next: owed, obligation: true };
+function normalPlanNext(plan: IndexedPlan): Pick<PipelineItemDetail, "next" | "obligation"> {
   if (plan.plan_state === "inconsistent") {
     return {
-      next: "el plan se declara done pero sus contadores no lo respaldan: repararlo a mano",
+      next: "el plan se declara done pero sus contadores no lo respaldan: reconciliar las tareas y fases acreditadas desde plan-exec",
       obligation: false,
     };
-  }
-  if (plan.baseline.status !== "aligned") {
-    return { next: describeUnprovenBaseline(plan), obligation: true };
   }
   if (plan.final_validation_pending) {
     return { next: "todo ejecutado: falta la validación final y el cierre", obligation: false };
@@ -736,10 +900,12 @@ async function readWorkspace(
   cwd: string,
 ): Promise<IndexedWorkspace> {
   let name = basename(cwd);
+  let configured = false;
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     try {
       if (!(await fs.exists(file))) continue;
       const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
+      if (block !== null) configured = true;
       if (block?.proyecto) {
         name = block.proyecto;
         break;
@@ -748,7 +914,20 @@ async function readWorkspace(
       // ignore; fall back to basename
     }
   }
-  return { name, path: cwd, initialized: await safeExists(fs, paths.cwdRoot()) };
+  let materialized = false;
+  try {
+    materialized = (await fs.stat(paths.cwdSessionsDir())).type === "dir";
+  } catch {
+    // A bare namespace directory is intentionally not a workspace marker.
+  }
+  const mode = configured ? "configured" : materialized ? "materialized" : "implicit";
+  return {
+    name,
+    root: cwd,
+    path: cwd,
+    mode,
+    initialized: mode !== "implicit",
+  };
 }
 
 // ── specs ────────────────────────────────────────────────────────────────────

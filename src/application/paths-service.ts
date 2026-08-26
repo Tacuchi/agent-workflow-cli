@@ -14,16 +14,17 @@ export class PathsService {
   constructor(
     private readonly ns: Namespace,
     private readonly home: string,
-    private readonly cwd: string,
+    /** Resolved Workline root, not necessarily the process cwd. */
+    private readonly root: string,
   ) {}
 
   get namespace(): Namespace {
     return this.ns;
   }
 
-  /** The current workspace directory (cwd the CLI was invoked from). */
+  /** The resolved Workline workspace root. */
   workspaceDir(): string {
-    return this.cwd;
+    return this.root;
   }
 
   // user-level (~/.${ns}/...)
@@ -45,7 +46,7 @@ export class PathsService {
   /**
    * Global, user-level daily operational log for the given local calendar day:
    * `~/.${ns}/logs/agent-workflow-YYYY-MM-DD.log`. The `agent-workflow-` prefix is
-   * literal (like `cwdLogFile`), independent of the namespaced dir; the date uses
+   * literal, independent of the namespaced dir; the date uses
    * LOCAL parts so it matches the user's "today".
    */
   userDailyLogFile(date: Date): string {
@@ -76,9 +77,9 @@ export class PathsService {
     return unitsRoot(this.userRoot());
   }
 
-  // cwd-level (.${ns}/... in current workspace)
+  // workspace-level (.${ns}/... at the resolved Workline root)
   cwdRoot(): string {
-    return join(this.cwd, `.${this.ns}`);
+    return join(this.root, `.${this.ns}`);
   }
   cwdSessionsDir(): string {
     return join(this.cwdRoot(), "sessions");
@@ -111,12 +112,6 @@ export class PathsService {
   cwdHistoryFile(): string {
     return join(this.cwdRoot(), "HISTORY.md");
   }
-  cwdLogsDir(): string {
-    return join(this.cwdRoot(), "logs");
-  }
-  cwdLogFile(): string {
-    return join(this.cwdLogsDir(), "agent-workflow.log");
-  }
   cwdLockFile(): string {
     return join(this.cwdRoot(), ".lock");
   }
@@ -130,7 +125,7 @@ export class PathsService {
   }
   /** Workspace docs/logs dir — per-process launch logs (gitignored). */
   cwdDocsLogsDir(): string {
-    return join(this.cwd, "docs", "logs");
+    return join(this.root, "docs", "logs");
   }
 
   // skills.toml — capability role → skill bindings (cascade: global then workspace)
@@ -157,30 +152,28 @@ export class PathsService {
  * Graduation always lands at the workspace root (the parent of `.<ns>/`),
  * regardless of how many sources the workspace declares.
  *
- * Walks up from `env.cwd()` looking for the nearest directory that contains
- * `.<ns>/` (the workspace marker). This guarantees that even when the user has
- * `cd`-ed into a source subdirectory of the workspace before invoking
- * `graduate`, the destination still resolves to the workspace root rather than
- * the source.
+ * Walks up from the resolved Workline root looking for the nearest directory
+ * that contains the canonical `.<ns>/sessions/` marker. This guarantees that
+ * even when the user invoked the CLI from a source subdirectory, graduation
+ * keeps using the single bootstrap coordinate rather than re-reading raw cwd.
  *
- * Fallback: if no `.<ns>/` marker is found anywhere up the tree (e.g. the user
- * is outside any workspace), returns `env.cwd()` unchanged so the caller can
- * surface the missing-workspace error normally.
+ * Fallback: if no canonical marker is found anywhere up the tree, returns the
+ * given start unchanged. The command bootstrap already made that start the
+ * implicit Workline root, so this never guesses a Git root.
  */
 export async function resolveWorkspaceRoot(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
 ): Promise<string> {
-  return resolveWorkspaceRootFrom(fs, paths, env.cwd());
+  return resolveWorkspaceRootFrom(fs, paths, paths.workspaceDir());
 }
 
 /**
  * The same walk, for a caller that holds no `EnvPort`.
  *
- * It starts from the paths service's own working directory, which is the value
- * `env.cwd()` was used to build it with — so the two entry points cannot resolve
- * to different roots, which is the only reason a second one is safe to have.
+ * It starts from the paths service's resolved workspace root. A caller that
+ * holds a source-local `from` can still ask for the nearest canonical marker.
  */
 export async function resolveWorkspaceRootFrom(
   fs: FileSystemPort,
@@ -188,10 +181,14 @@ export async function resolveWorkspaceRootFrom(
   from: string = paths.workspaceDir(),
 ): Promise<string> {
   const start = from;
-  const wfMarker = `.${paths.namespace}`;
+  const wfMarker = join(`.${paths.namespace}`, "sessions");
   let dir = start;
   while (true) {
-    if (await fs.exists(join(dir, wfMarker))) return dir;
+    try {
+      if ((await fs.stat(join(dir, wfMarker))).type === "dir") return dir;
+    } catch {
+      // No canonical marker at this level; keep looking upward.
+    }
     const parent = dirname(dir);
     if (parent === dir) return start;
     dir = parent;

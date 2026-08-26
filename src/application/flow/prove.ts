@@ -24,7 +24,6 @@
  */
 
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
-import { journeyOfFlow } from "../../domain/flow/authority.js";
 import type { FlowBoundaryKind } from "../../domain/flow/directive.js";
 import {
   type CheckoutIdentity,
@@ -38,6 +37,7 @@ import { type SessionResolutionError, resolveSessionTarget } from "../session-re
 import { validateCheckoutProof } from "../source-boundary-policy.js";
 import { resolveBoundary } from "./advance.js";
 import { observeCheckout, resolveCheckoutCandidates } from "./checkout-observation.js";
+import { journeyForRun } from "./run-journey.js";
 import { locateRun, readRun } from "./run-state-service.js";
 
 export interface ProveFlowInput {
@@ -167,7 +167,7 @@ export async function proveFlowBoundary(
   const run = await readRun(fs, locateRun(paths, session));
   if (!run.ok) return { ok: false, failure: run.failure };
 
-  const resolved = resolveBoundary(run.state, journeyOfFlow(run.state.flow));
+  const resolved = resolveBoundary(run.state, journeyForRun(run.state));
   const action = resolved.action;
   if (action === null || !action.evidence.includes(SOURCE_BOUNDED_EVIDENCE)) {
     // Three different situations, and they need three different sentences. Saying

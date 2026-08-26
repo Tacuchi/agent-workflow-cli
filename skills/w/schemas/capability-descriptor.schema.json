@@ -78,7 +78,7 @@
             "items": { "enum": ["direct", "compose"] }
           },
           "workspace": {
-            "description": "Whether the operation needs a Workline workspace. Being outside one returns an explicit result and never initializes Workline implicitly.",
+            "description": "Whether the operation needs a resolved Workline root. The CLI treats the invoked directory as an implicit root; a caller without one receives an explicit result and never materializes Workline by reading.",
             "enum": ["required", "optional", "standalone"]
           },
           "interaction": {

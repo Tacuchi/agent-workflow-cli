@@ -26,7 +26,7 @@ Read-only single pass: no loop, no session, no writes. Transversal.
 
 > **Automation reads JSON.** Piped or with `--json` / `--format json` it emits its envelope; `--detail` is human-only.
 
-Nothing pending → one line, no empty section. No workspace → it offers `/w:workspace-init`; an empty pipeline for want of one is never "nothing pending".
+Nothing pending → one line, no empty section. In an implicit workspace that is genuinely "nothing pending"; this read creates no marker or other file.
 
 ## More context
 

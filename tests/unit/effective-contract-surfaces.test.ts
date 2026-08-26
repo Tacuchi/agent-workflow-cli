@@ -258,13 +258,12 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
     });
   });
 
-  describe("T7.4 — un plan legacy sin sello se degrada explícitamente", () => {
-    it("resume dice que NO tiene sello, en vez de proponerlo como alineado", async () => {
+  describe("T7.4 — un plan legacy sin sello se declara compatible", () => {
+    it("resume no lo llama alineado, pero sí permite ejecutarlo en modo compatible", async () => {
       seed(null);
       const next = await resumeNext();
 
-      expect(next).toContain("SIN SELLO DE BASELINE");
-      expect(next).toContain("no se puede afirmar que esté alineado");
+      expect(next).toBe("continuar por la primera fase no validada");
     });
 
     it("un sello que ya no coincide se reporta divergente con los dos digests", async () => {

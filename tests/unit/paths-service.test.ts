@@ -27,12 +27,12 @@ describe("PathsService", () => {
     );
   });
 
-  it("resolves cwd-level dirs for namespace 'workflow'", () => {
+  it("resolves workspace-root runtime dirs for namespace 'workflow'", () => {
+    expect(wfPaths.workspaceDir()).toBe("/cwd");
     expect(wfPaths.cwdRoot()).toBe("/cwd/.workflow");
     expect(wfPaths.cwdSessionsDir()).toBe("/cwd/.workflow/sessions");
     expect(wfPaths.cwdHistoryFile()).toBe("/cwd/.workflow/HISTORY.md");
-    expect(wfPaths.cwdLogsDir()).toBe("/cwd/.workflow/logs");
-    expect(wfPaths.cwdLogFile()).toBe("/cwd/.workflow/logs/agent-workflow.log");
+    expect(wfPaths.cwdDocsLogsDir()).toBe("/cwd/docs/logs");
   });
 
   it("uses different namespace correctly", () => {

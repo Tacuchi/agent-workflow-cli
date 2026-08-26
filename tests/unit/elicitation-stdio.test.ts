@@ -13,12 +13,10 @@ function lines(chunks: string[]): Record<string, unknown>[] {
     .map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
-/** Un host que declara la vía, para poder afirmar la causa y el remedio. */
+/** Un host donde la vía está observada. */
 const VIA = {
   available: true as const,
   evidence: "probe 2026-08-22",
-  blockedBy: "the host was started with `--yolo`",
-  recoverBy: "start it on its default approval policy",
 };
 
 describe("el servidor sobre una entrada y una salida reales", () => {
@@ -31,9 +29,17 @@ describe("el servidor sobre una entrada y una salida reales", () => {
     output.on("data", (c) => out.push(c.toString()));
     diagnostics.on("data", (c) => err.push(c.toString()));
 
-    const done = runElicitationStdio({ input, output, diagnostics, now: () => 5000, via: VIA });
+    const done = runElicitationStdio({ input, output, diagnostics, via: VIA });
 
-    input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 0, method: "initialize", params: {} })}\n`);
+    input.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 0,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: { elicitation: {} } },
+      })}\n`,
+    );
+    input.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
     input.write(
       `${JSON.stringify({
         jsonrpc: "2.0",
@@ -46,7 +52,10 @@ describe("el servidor sobre una entrada y una salida reales", () => {
               {
                 header: "Commit",
                 question: "¿Aprobás?",
-                options: [{ label: "Aprobar", consequence: "un commit por fuente" }],
+                options: [
+                  { label: "Aprobar", consequence: "un commit por fuente", recommended: true },
+                  { label: "Dejar para después", consequence: "queda pendiente" },
+                ],
               },
             ],
           },
@@ -81,8 +90,8 @@ describe("el servidor sobre una entrada y una salida reales", () => {
     const diagnostics = new PassThrough();
     output.on("data", (c) => out.push(c.toString()));
 
-    const done = runElicitationStdio({ input, output, diagnostics, now: () => 0, via: VIA });
-    const mensaje = `${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "initialize", params: {} })}\n`;
+    const done = runElicitationStdio({ input, output, diagnostics, via: VIA });
+    const mensaje = `${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: { elicitation: {} } } })}\n`;
     const corte = Math.floor(mensaje.length / 2);
     // Un host escribe por pipe: un mensaje grande NO llega de una sola pieza. Si el
     // resto sin `\n` se descartara en vez de guardarse, se perderían mensajes enteros
@@ -106,9 +115,16 @@ describe("el servidor sobre una entrada y una salida reales", () => {
     output.on("data", (c) => out.push(c.toString()));
     diagnostics.on("data", (c) => err.push(c.toString()));
 
-    const done = runElicitationStdio({ input, output, diagnostics, now: () => 0, via: VIA });
+    const done = runElicitationStdio({ input, output, diagnostics, via: VIA });
     input.write("{ esto no es json\n");
-    input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 9, method: "initialize", params: {} })}\n`);
+    input.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 9,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: { elicitation: {} } },
+      })}\n`,
+    );
     input.end();
     await done;
 

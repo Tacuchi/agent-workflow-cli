@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  AUTO_REFUSAL_THRESHOLD_MS,
   type BoundaryQuestion,
   CHOICE_KEY,
   FLOW_CONTROL,
@@ -37,9 +36,14 @@ const FRONTERA: BoundaryQuestion[] = [
   {
     header: "Integrar",
     question: "¿Integro la unidad?",
-    options: [{ label: "Integrar", consequence: "se mergea a la rama de trabajo" }],
+    options: [
+      { label: "Integrar", consequence: "se mergea a la rama de trabajo", recommended: true },
+      { label: "Dejar separada", consequence: "queda sin integrar en esta iteración" },
+    ],
   },
 ];
+
+const VALID_CHOICES = orderedOptions(FRONTERA[0] as BoundaryQuestion).map((option) => option.label);
 
 describe("una frontera dicha en el vocabulario de elicitation", () => {
   it("emite UNA solicitud por pregunta, numerada sobre el total", () => {
@@ -93,7 +97,7 @@ describe("una frontera dicha en el vocabulario de elicitation", () => {
     // Un `enum` rinde un selector cerrado. Sin este segundo campo la frontera
     // perdería «responder algo distinto», que la doctrina exige.
     expect(schema?.properties[FREE_TEXT_KEY]).toBeDefined();
-    expect(schema?.required).toEqual([CHOICE_KEY]);
+    expect(schema?.required).toBeUndefined();
     const values = (schema?.properties[CHOICE_KEY] as { enum: string[] }).enum;
     expect(values).not.toContain("Otra");
   });
@@ -103,7 +107,7 @@ describe("qué volvió: una elección, o por qué no la hubo", () => {
   it("una aceptación con la elección puesta ES la elección", () => {
     const outcome = classifyElicitationReply(
       { action: "accept", content: { [CHOICE_KEY]: "Aprobar los commits" } },
-      4000,
+      VALID_CHOICES,
     );
 
     expect(outcome).toEqual({ kind: "chosen", choice: "Aprobar los commits", free: false });
@@ -112,7 +116,7 @@ describe("qué volvió: una elección, o por qué no la hubo", () => {
   it("una aceptación con SOLO texto libre también es una elección, y se marca como tal", () => {
     const outcome = classifyElicitationReply(
       { action: "accept", content: { [FREE_TEXT_KEY]: "  commiteá pero sin integrar  " } },
-      4000,
+      VALID_CHOICES,
     );
 
     expect(outcome).toEqual({ kind: "chosen", choice: "commiteá pero sin integrar", free: true });
@@ -121,7 +125,7 @@ describe("qué volvió: una elección, o por qué no la hubo", () => {
   it("una aceptación vacía no es una elección", () => {
     const outcome = classifyElicitationReply(
       { action: "accept", content: { [CHOICE_KEY]: "   " } },
-      4000,
+      VALID_CHOICES,
     );
 
     // AC-05: una respuesta vacía no avanza la frontera ni deja registrada una
@@ -129,38 +133,42 @@ describe("qué volvió: una elección, o por qué no la hubo", () => {
     expect(outcome).toEqual({ kind: "empty" });
   });
 
-  it("un rechazo INMEDIATO es la política del host, nunca una decisión de la persona", () => {
-    const outcome = classifyElicitationReply({ action: "decline" }, 0);
+  it("una respuesta libre tiene prioridad sobre una elección válida", () => {
+    const outcome = classifyElicitationReply(
+      {
+        action: "accept",
+        content: { [CHOICE_KEY]: "Aprobar los commits", [FREE_TEXT_KEY]: "hacelo sin push" },
+      },
+      VALID_CHOICES,
+    );
 
-    // Es lo que devuelve el host arrancado con una política que promete no
-    // interrumpir: contesta rechazada sin mostrar nada. Leerlo como decisión sería
-    // atribuirle a la persona algo que nunca vio.
-    expect(outcome).toEqual({ kind: "refused-by-host" });
+    expect(outcome).toEqual({ kind: "chosen", choice: "hacelo sin push", free: true });
   });
 
-  it("un rechazo con tiempo de lectura SÍ es la persona", () => {
-    const outcome = classifyElicitationReply({ action: "decline" }, AUTO_REFUSAL_THRESHOLD_MS);
+  it("una etiqueta que no estaba entre las alternativas no avanza la frontera", () => {
+    const outcome = classifyElicitationReply(
+      { action: "accept", content: { [CHOICE_KEY]: "inventada" } },
+      VALID_CHOICES,
+    );
 
-    expect(outcome).toEqual({ kind: "declined-by-person" });
+    expect(outcome).toEqual({ kind: "empty" });
   });
 
-  it("una cancelación con tiempo de lectura es la persona cerrando el selector", () => {
-    const outcome = classifyElicitationReply({ action: "cancel" }, 9000);
+  it("un decline queda sin atribución temporal", () => {
+    const outcome = classifyElicitationReply({ action: "decline" }, VALID_CHOICES);
+
+    expect(outcome).toEqual({ kind: "declined" });
+  });
+
+  it("una cancelación queda sin atribución temporal", () => {
+    const outcome = classifyElicitationReply({ action: "cancel" }, VALID_CHOICES);
 
     expect(outcome).toEqual({ kind: "cancelled" });
   });
 
-  it("una cancelación instantánea tampoco la tomó nadie", () => {
-    const outcome = classifyElicitationReply({ action: "cancel" }, 1);
-
-    // Lo que se afirma es que NADIE la vio, y eso es cierto con cualquiera de las
-    // dos formas terminales: el rótulo que le ponga el host no cambia el hecho.
-    expect(outcome).toEqual({ kind: "refused-by-host" });
-  });
-
   it("una respuesta que no tiene forma de respuesta no inventa una elección", () => {
     for (const basura of [null, undefined, 42, "accept", {}, { action: 7 }]) {
-      const outcome = classifyElicitationReply(basura, 9000);
+      const outcome = classifyElicitationReply(basura, VALID_CHOICES);
       expect(outcome.kind).not.toBe("chosen");
     }
   });

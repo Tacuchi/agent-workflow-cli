@@ -31,7 +31,7 @@ export const statusCommand: CliCommand<StatusOutput> = {
 
     const header = `${data.workspace.name} · ${data.workspace.path}`;
     const lines = [header, ""];
-    lines.push(...renderPipeline(data.pipeline));
+    lines.push(...renderPipeline(data.pipeline, context.detail));
     // A broken design reference is PENDING work, not history: it stays in the
     // default view for the same reason an open plan does. Valid references and
     // orphaned packages are inventory and wait for `--detail`.
@@ -43,22 +43,10 @@ export const statusCommand: CliCommand<StatusOutput> = {
     // silent, and the one case that actually needs a person to decide — an
     // ownerless legacy placeholder — had no trace outside `aw claims`.
     lines.push(...renderReservations(data, lines.at(-1)));
-    // Nothing rendered, and the two reasons for that are not the same answer: a
-    // folder nobody initialized has an empty pipeline because no workspace is
-    // tracking it, and reporting peace there sends someone looking for work that
-    // was never registered. One line either way, and no empty section under it.
+    // An implicit Workline root is still a valid read-only workspace.  Empty
+    // means exactly no pending work; it never suggests a mandatory init gate.
     if (lines.length === 2) {
-      return data.workspace.initialized
-        ? `${header} — sin pendientes\n`
-        : `${header} — sin workspace de Workline: creá uno con /w:workspace-init\n`;
-    }
-    // With something to show, the same fact is a notice: the documents are real
-    // and worth listing, and they are still outside a workspace.
-    if (!data.workspace.initialized) {
-      lines.push(
-        ...(lines.at(-1) === "" ? [] : [""]),
-        "Aviso: este directorio no es un workspace de Workline — creá uno con /w:workspace-init",
-      );
+      return `${header} — sin pendientes\n`;
     }
     if (context.detail) lines.push("", ...renderDetail(data));
     return `${lines.join("\n").trimEnd()}\n`;
@@ -94,23 +82,42 @@ const KIND_NOUNS: Record<PipelineItem["kind"], string> = {
  * percentage drops below it: read in the other order, the number is the part
  * people believe.
  */
-function renderPipeline(pipeline: PipelineItem[]): string[] {
+function renderPipeline(pipeline: PipelineItem[], detail: boolean): string[] {
   const lines: string[] = [];
   for (const kind of Object.keys(GROUP_TITLES) as Array<PipelineItem["kind"]>) {
     const items = pipeline.filter((item) => item.kind === kind);
-    if (items.length === 0) continue;
-    lines.push(`${GROUP_TITLES[kind]} (${items.length})`);
-    for (const item of items) {
-      const { next, progress, obligation } = item.detail;
-      lines.push(
-        obligation ? `  ${KIND_NOUNS[item.kind]} ${item.number} — ${next}` : `  ${item.summary}`,
-      );
-      lines.push(`    ${obligation ? progress : next}`);
-      lines.push(`    ${item.command}`);
-    }
-    lines.push("");
+    lines.push(...renderPipelineGroup(kind, items, detail));
   }
   return lines;
+}
+
+function renderPipelineGroup(
+  kind: PipelineItem["kind"],
+  items: PipelineItem[],
+  detail: boolean,
+): string[] {
+  if (items.length === 0) return [];
+  return [
+    `${GROUP_TITLES[kind]} (${items.length})`,
+    ...items.flatMap((item) => renderPipelineItem(item, detail)),
+    "",
+  ];
+}
+
+function renderPipelineItem(item: PipelineItem, detail: boolean): string[] {
+  const { next, progress, obligation } = item.detail;
+  const command =
+    item.command === null
+      ? `    Bloqueado · ${item.action.kind === "blocked" ? item.action.action : next}`
+      : `    ${item.command}`;
+  return [
+    obligation ? `  ${KIND_NOUNS[item.kind]} ${item.number} — ${next}` : `  ${item.summary}`,
+    `    ${obligation ? progress : next}`,
+    command,
+    ...(detail && item.detail.warning !== undefined
+      ? [`    Aviso · ${item.detail.warning.message}`]
+      : []),
+  ];
 }
 
 /**

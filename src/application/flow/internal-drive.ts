@@ -37,7 +37,6 @@ import {
   type FlowDecision,
   type InternalActionPlan,
   internalActionOf,
-  journeyOfFlow,
 } from "../../domain/flow/authority.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { stepOf } from "../../domain/flow/directive.js";
@@ -46,12 +45,14 @@ import {
   type FlowRunEvent,
   type FlowRunState,
   applyTransition,
+  currentBatchIteration,
   restatesLastEvent,
   withActionAttempted,
   withAttempt,
   withBoundary,
   withEvent,
   withPendingAction,
+  withPlanExecBatchStageForTransition,
   withProposal,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -65,6 +66,7 @@ import {
   resolveBoundary,
 } from "./advance.js";
 import type { InternalActionExecutor, InternalActionOutcome } from "./internal-actions.js";
+import { journeyForRun } from "./run-journey.js";
 import { type FlowRunLocation, type FlowRunMutation, applyUnderLock } from "./run-state-service.js";
 
 /**
@@ -141,6 +143,7 @@ async function run(
     code: sessionNumericCode(state.session) ?? state.session,
     scope: state.scope,
     proposal: state.proposal,
+    state_digest: state.digest,
   };
   try {
     return await executor(pending.plan, coordinates);
@@ -163,7 +166,7 @@ async function run(
  * same conclusion as the one that left it there.
  */
 function nextInternal(state: FlowRunState): PendingInternal | null {
-  const journey = journeyOfFlow(state.flow);
+  const journey = journeyForRun(state);
   const resolved = resolveBoundary(state, journey);
   if (resolved.kind !== "execution" || resolved.stopped === null || resolved.action === null) {
     return null;
@@ -220,9 +223,13 @@ async function settle(
     location,
     (live) => {
       if (live === null) return { ok: false, failure: RUN_VANISHED };
-      return accept(live, pending, outcome);
+      return accept(live, pending, outcome, current.state);
     },
-    { expectDigest: current.state.digest },
+    // A stateful internal action (the v10 batch publisher) writes its own
+    // pre-intent and final trace while the driver is outside the run lock. Settle
+    // against that returned state, not the obsolete "attempted" copy; any other
+    // interleaving still fails the same CAS.
+    { expectDigest: outcome.state?.digest ?? current.state.digest },
   );
   if (!applied.ok) return applied;
   return {
@@ -236,8 +243,13 @@ function accept(
   state: FlowRunState,
   pending: PendingInternal,
   outcome: InternalActionOutcome,
+  actionState: FlowRunState,
 ): FlowRunMutation<{ directive: FlowDirective; advanced: boolean }> {
-  const journey = journeyOfFlow(state.flow);
+  const journey = journeyForRun(state);
+  // A stateful batch close returns the NEXT iteration's loop cursor. Its event
+  // still belongs to the batch whose action just ran, so identity comes from the
+  // marked pre-action state rather than the post-publication state we settle.
+  const batchIteration = currentBatchIteration(actionState, pending.decision.id);
   // What the row declares is the CEILING; what a sealed proposal really does is
   // the effect. Judging the publication against the ceiling would refuse a
   // proposal that only creates files on a row that also permits overwriting.
@@ -249,6 +261,7 @@ function accept(
     const failure: Extract<FlowRunEvent, { kind: "failed" }> = {
       kind: "failed",
       transition: pending.decision.id,
+      ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
       operation: pending.plan.operation,
       code: verdict.detail.code,
       // What the operation really found, not the contract's restatement of it:
@@ -271,7 +284,7 @@ function accept(
     // cause gets the run that would have worked instead of a degradation.
     const failed = withAttempt(
       traced,
-      failedExecutionAttempt(traced, pending.decision, {
+      failedExecutionAttempt(actionState, pending.decision, {
         code: verdict.detail.code,
         message: outcome.summary,
       }),
@@ -306,13 +319,17 @@ function accept(
   let next = withEvent(state, {
     kind: "executed",
     transition: pending.decision.id,
+    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
     operation: pending.plan.operation,
     summary: outcome.summary,
     output_digest: outputDigest,
     effects: [...outcome.effects],
     evidence: [...pending.action.evidence],
   });
-  next = applyTransition(next, pending.decision.id, declared);
+  next = withPlanExecBatchStageForTransition(
+    applyTransition(next, pending.decision.id, declared),
+    pending.decision.id,
+  );
   // A published proposal is spent. Leaving it seated would keep a preview of
   // bytes that are already on disk standing in front of the next boundary, and the
   // grant given over its seal would outlive the thing it was given for.

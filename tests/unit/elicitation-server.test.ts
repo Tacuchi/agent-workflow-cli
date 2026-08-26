@@ -4,15 +4,8 @@ import {
   TOOL_NAME,
   createElicitationServer,
 } from "../../src/application/elicitation-server.js";
-import { CHOICE_KEY } from "../../src/domain/elicitation.js";
+import { CHOICE_KEY, FREE_TEXT_KEY } from "../../src/domain/elicitation.js";
 
-/**
- * El servidor manejado por un cliente FALSO guionado, que es la única evidencia de
- * cierre que este comportamiento admite desde el checkout: el renderizado del
- * selector sólo lo ejecuta la interfaz interactiva del host, pero la solicitud
- * emitida y la respuesta consumida sí son observables acá — así se estableció la
- * vía en primer lugar.
- */
 const QUESTIONS = [
   {
     header: "Commit",
@@ -25,20 +18,42 @@ const QUESTIONS = [
   {
     header: "Integrar",
     question: "¿Integro la unidad?",
-    options: [{ label: "Integrar", consequence: "se mergea a la rama de trabajo" }],
+    options: [
+      { label: "Integrar", consequence: "se mergea a la rama de trabajo", recommended: true },
+      { label: "Dejar separada", consequence: "queda sin integrar" },
+    ],
   },
 ];
 
-/** Un cliente de mentira: guiona el reloj y las respuestas, y graba lo emitido. */
-function driver(script: { replies: unknown[]; clock: number[] }) {
+const VIA = {
+  available: true as const,
+  evidence: "probe 2026-08-22",
+};
+
+function startLegacySession(
+  server: ReturnType<typeof createElicitationServer>,
+  options: { elicitation?: boolean } = {},
+): void {
+  server.handle({
+    jsonrpc: "2.0",
+    id: 0,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-06-18",
+      capabilities: options.elicitation === false ? {} : { elicitation: {} },
+    },
+  });
+  server.handle({ jsonrpc: "2.0", method: "notifications/initialized" });
+}
+
+/** Un cliente de mentira que graba el transcript legacy entero. */
+function driver(replies: unknown[]) {
   const sent: Record<string, unknown>[] = [];
-  let tick = 0;
   const server = createElicitationServer({
-    send: (m) => sent.push(m as Record<string, unknown>),
-    now: () => script.clock[tick++] ?? 0,
+    send: (message) => sent.push(message as Record<string, unknown>),
     via: VIA,
   });
-  server.handle({ jsonrpc: "2.0", id: 0, method: "initialize", params: {} });
+  startLegacySession(server);
   server.handle({ jsonrpc: "2.0", id: 1, method: "tools/list" });
   server.handle({
     jsonrpc: "2.0",
@@ -46,16 +61,16 @@ function driver(script: { replies: unknown[]; clock: number[] }) {
     method: "tools/call",
     params: { name: TOOL_NAME, arguments: { questions: QUESTIONS } },
   });
-  for (const reply of script.replies) {
-    const elicit = sent.filter((m) => m.method === "elicitation/create").at(-1);
+  for (const reply of replies) {
+    const elicit = sent.filter((message) => message.method === "elicitation/create").at(-1);
     if (elicit === undefined) break;
     server.handle({ jsonrpc: "2.0", id: elicit.id, result: reply });
   }
-  const call = sent.find((m) => m.id === 2);
+  const call = sent.find((message) => message.id === 2);
   const content = (call?.result as { content?: { text: string }[] } | undefined)?.content;
   return {
     sent,
-    elicitations: sent.filter((m) => m.method === "elicitation/create"),
+    elicitations: sent.filter((message) => message.method === "elicitation/create"),
     result:
       content === undefined
         ? null
@@ -63,34 +78,25 @@ function driver(script: { replies: unknown[]; clock: number[] }) {
   };
 }
 
-/** Un host que declara la vía, para poder afirmar la causa y el remedio. */
-const VIA = {
-  available: true as const,
-  evidence: "probe 2026-08-22",
-  blockedBy: "the host was started with `--yolo`",
-  recoverBy: "start it on its default approval policy",
-};
-
 describe("el servidor propio, manejado por un cliente falso", () => {
-  it("saluda, ofrece su herramienta y recién entonces pide la elección", () => {
-    const run = driver({ replies: [], clock: [0, 0] });
+  it("negocia el lifecycle legacy y sólo pide la elección después de initialized", () => {
+    const run = driver([]);
 
-    const hello = run.sent.find((m) => m.id === 0)?.result as Record<string, unknown>;
+    const hello = run.sent.find((message) => message.id === 0)?.result as Record<string, unknown>;
+    expect(hello.protocolVersion).toBe("2025-06-18");
     expect((hello.serverInfo as { name: string }).name).toBe("agent-workflow");
-    const tools = (run.sent.find((m) => m.id === 1)?.result as { tools: { name: string }[] }).tools;
-    expect(tools.map((t) => t.name)).toEqual([TOOL_NAME]);
-    // Una sola solicitud hasta que la contesten: no se adelanta la siguiente.
+    const tools = (
+      run.sent.find((message) => message.id === 1)?.result as { tools: { name: string }[] }
+    ).tools;
+    expect(tools.map((tool) => tool.name)).toEqual([TOOL_NAME]);
     expect(run.elicitations).toHaveLength(1);
   });
 
   it("recorre las preguntas y devuelve la elección por el resultado de la herramienta", () => {
-    const run = driver({
-      replies: [
-        { action: "accept", content: { [CHOICE_KEY]: "Aprobar" } },
-        { action: "accept", content: { [CHOICE_KEY]: "Integrar" } },
-      ],
-      clock: [0, 3000, 3000, 9000, 9000],
-    });
+    const run = driver([
+      { action: "accept", content: { [CHOICE_KEY]: "Aprobar" } },
+      { action: "accept", content: { [CHOICE_KEY]: "Integrar" } },
+    ]);
 
     expect(run.elicitations).toHaveLength(2);
     expect(run.result).toEqual({
@@ -102,14 +108,26 @@ describe("el servidor propio, manejado por un cliente falso", () => {
     });
   });
 
-  it("pausar en la PRIMERA pregunta corta el recorrido y no sigue preguntando", () => {
-    const run = driver({
-      replies: [{ action: "accept", content: { [CHOICE_KEY]: "Compactar" } }],
-      clock: [0, 2000],
-    });
+  it("una respuesta libre no vacía prevalece sobre el enum", () => {
+    const run = driver([
+      {
+        action: "accept",
+        content: { [CHOICE_KEY]: "Aprobar", [FREE_TEXT_KEY]: "commiteá sin push" },
+      },
+      { action: "accept", content: { [CHOICE_KEY]: "Integrar" } },
+    ]);
 
-    // Es lo que hace honesta la forma de una solicitud por pregunta: seguir
-    // preguntando después de que alguien pidió pausar es no haberle ofrecido pausar.
+    expect(run.result?.answers[0]).toEqual({
+      header: "Commit",
+      choice: "commiteá sin push",
+      free: true,
+      flow_control: false,
+    });
+  });
+
+  it("pausar en la primera pregunta corta el recorrido", () => {
+    const run = driver([{ action: "accept", content: { [CHOICE_KEY]: "Compactar" } }]);
+
     expect(run.elicitations).toHaveLength(1);
     expect(run.result?.answers[0]).toEqual({
       header: "Commit",
@@ -120,143 +138,130 @@ describe("el servidor propio, manejado por un cliente falso", () => {
     expect(run.result?.stopped_at).toBe("Commit");
   });
 
-  it("un rechazo INMEDIATO se devuelve como del host y sin ninguna elección", () => {
-    const run = driver({ replies: [{ action: "decline" }], clock: [0, 0] });
+  it("decline queda sin atribución temporal y conserva toda la frontera", () => {
+    const run = driver([{ action: "decline" }]);
 
-    // El host arrancado con una política que promete no interrumpir contesta así,
-    // sin mostrar nada. No avanza la frontera y no se le atribuye a la persona.
-    expect(run.result?.outcome).toBe("refused-by-host");
+    expect(run.result?.outcome).toBe("declined");
     expect(run.result?.answers).toEqual([]);
-    expect(run.elicitations).toHaveLength(1);
-    // Y la degradación viaja YA REDACTADA: el motivo exacto sale del catálogo y
-    // del reloj, y el agente no tiene ninguno de los dos.
-    expect(run.result?.notice).toContain("NOT read as their decision");
-    expect(run.result?.notice).toContain("--yolo");
-    expect(run.result?.notice).toContain("default approval policy");
-    // La frontera entera sobrevive a la degradación, con sus dos preguntas.
+    expect(run.result?.notice).toContain("selector reported a decline");
+    expect(run.result?.notice).not.toContain("host");
     expect(run.result?.fallback_markdown).toContain("Aprobar — un commit por fuente");
     expect(run.result?.fallback_markdown).toContain("¿Integro la unidad?");
-    expect(run.result?.fallback_markdown).toContain("Compactar");
   });
 
-  it("un rechazo con tiempo de lectura se devuelve como de la persona", () => {
-    const run = driver({ replies: [{ action: "decline" }], clock: [0, 5000] });
+  it("no deja avanzar una etiqueta inventada", () => {
+    const run = driver([{ action: "accept", content: { [CHOICE_KEY]: "inventada" } }]);
 
-    expect(run.result?.outcome).toBe("declined-by-person");
+    expect(run.result?.outcome).toBe("empty");
     expect(run.result?.answers).toEqual([]);
   });
 
-  it("cortar a mitad conserva lo ya contestado y dice dónde se cortó", () => {
-    const run = driver({
-      replies: [{ action: "accept", content: { [CHOICE_KEY]: "Aprobar" } }, { action: "cancel" }],
-      clock: [0, 3000, 3000, 8000, 8000],
-    });
-
-    expect(run.result?.outcome).toBe("cancelled");
-    expect(run.result?.answers).toHaveLength(1);
-    expect(run.result?.stopped_at).toBe("Integrar");
-  });
-
-  it("cortar a mitad NO vuelve a preguntar lo ya resuelto", () => {
-    const run = driver({
-      replies: [{ action: "accept", content: { [CHOICE_KEY]: "Aprobar" } }, { action: "decline" }],
-      clock: [0, 3000, 3000, 9000, 9000],
-    });
-
-    // Repetir en el markdown una pregunta que la persona ya contestó le pediría
-    // decidir dos veces lo mismo.
-    expect(run.result?.fallback_markdown).toContain("¿Integro la unidad?");
-    expect(run.result?.fallback_markdown).not.toContain("¿Aprobás los commits?");
-    expect(run.result?.notice).toContain("saw the selector and refused it");
-  });
-
-  it("una elección NO trae degradación: no hay nada que degradar", () => {
-    const run = driver({
-      replies: [
-        { action: "accept", content: { [CHOICE_KEY]: "Aprobar" } },
-        { action: "accept", content: { [CHOICE_KEY]: "Integrar" } },
-      ],
-      clock: [0, 3000, 3000, 9000, 9000],
-    });
-
-    expect(run.result?.notice).toBeUndefined();
-    expect(run.result?.fallback_markdown).toBeUndefined();
-  });
-
-  it("una llamada sin preguntas no emite ninguna solicitud y lo dice", () => {
+  it("exige initialized antes de tools/call", () => {
     const sent: Record<string, unknown>[] = [];
     const server = createElicitationServer({
-      send: (m) => sent.push(m as never),
-      now: () => 0,
+      send: (message) => sent.push(message as never),
       via: VIA,
     });
     server.handle({
       jsonrpc: "2.0",
-      id: 7,
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: { elicitation: {} } },
+    });
+    server.handle({
+      jsonrpc: "2.0",
+      id: 2,
       method: "tools/call",
-      params: { name: TOOL_NAME, arguments: { questions: [] } },
+      params: { name: TOOL_NAME, arguments: { questions: QUESTIONS } },
     });
 
-    expect(sent.filter((m) => m.method === "elicitation/create")).toHaveLength(0);
-    expect((sent[0]?.result as { isError: boolean }).isError).toBe(true);
+    expect(sent.find((message) => message.id === 2)?.error).toMatchObject({ code: -32002 });
+    expect(sent.some((message) => message.method === "elicitation/create")).toBe(false);
   });
 
-  it("una segunda llamada mientras la primera espera NO deja colgada a la primera", () => {
+  it("exige capability elicitation antes de solicitarla", () => {
     const sent: Record<string, unknown>[] = [];
     const server = createElicitationServer({
-      send: (m) => sent.push(m as never),
-      now: () => 0,
+      send: (message) => sent.push(message as never),
       via: VIA,
     });
-    const call = (id: number) =>
-      server.handle({
-        jsonrpc: "2.0",
-        id,
-        method: "tools/call",
-        params: { name: TOOL_NAME, arguments: { questions: QUESTIONS } },
-      });
+    startLegacySession(server, { elicitation: false });
+    server.handle({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: TOOL_NAME, arguments: { questions: QUESTIONS } },
+    });
 
-    call(1);
-    call(2);
-
-    // La primera sigue viva y esperando su elección; la segunda recibe un rechazo
-    // con forma de resultado. Pisar el estado dejaría a la 1 sin respuesta jamás.
-    expect(sent.filter((m) => m.id === 2)).toHaveLength(1);
-    expect((sent.find((m) => m.id === 2)?.result as { isError: boolean }).isError).toBe(true);
-    expect(sent.filter((m) => m.id === 1)).toHaveLength(0);
-    expect(sent.filter((m) => m.method === "elicitation/create")).toHaveLength(1);
+    expect((sent.find((message) => message.id === 3)?.result as { isError: boolean }).isError).toBe(
+      true,
+    );
+    expect(sent.some((message) => message.method === "elicitation/create")).toBe(false);
   });
 
-  it("una herramienta ajena se contesta con un error, no con silencio", () => {
+  it("responde method not found a server/discover para que un cliente dual haga fallback", () => {
     const sent: Record<string, unknown>[] = [];
     const server = createElicitationServer({
-      send: (m) => sent.push(m as never),
-      now: () => 0,
+      send: (message) => sent.push(message as never),
       via: VIA,
     });
 
-    expect(
-      server.handle({
-        jsonrpc: "2.0",
-        id: 4,
-        method: "tools/call",
-        params: { name: "otra_cosa", arguments: {} },
-      }),
-    ).toBe(true);
-    expect((sent[0]?.result as { isError: boolean }).isError).toBe(true);
+    expect(server.handle({ jsonrpc: "2.0", id: 7, method: "server/discover" })).toBe(true);
+    expect(sent[0]).toEqual({
+      jsonrpc: "2.0",
+      id: 7,
+      error: { code: -32601, message: "Method not found" },
+    });
   });
 
-  it("una petición que no conoce se contesta vacía en vez de dejar al cliente colgado", () => {
+  it.each([
+    ["sin preguntas", { questions: [] }],
+    [
+      "una opción",
+      { questions: [{ ...QUESTIONS[0], options: QUESTIONS[0]?.options.slice(0, 1) }] },
+    ],
+    [
+      "sin recomendación",
+      {
+        questions: [
+          {
+            ...QUESTIONS[0],
+            options: QUESTIONS[0]?.options.map((option) => ({ ...option, recommended: false })),
+          },
+        ],
+      },
+    ],
+    [
+      "etiqueta reservada",
+      {
+        questions: [
+          {
+            ...QUESTIONS[0],
+            options: [
+              { label: "Compactar", consequence: "ajena", recommended: true },
+              { label: "Otra", consequence: "otra" },
+            ],
+          },
+        ],
+      },
+    ],
+  ])("rechaza la entrada completa cuando hay %s", (_reason, arguments_) => {
     const sent: Record<string, unknown>[] = [];
     const server = createElicitationServer({
-      send: (m) => sent.push(m as never),
-      now: () => 0,
+      send: (message) => sent.push(message as never),
       via: VIA,
     });
+    startLegacySession(server);
+    server.handle({
+      jsonrpc: "2.0",
+      id: 8,
+      method: "tools/call",
+      params: { name: TOOL_NAME, arguments: arguments_ },
+    });
 
-    expect(server.handle({ jsonrpc: "2.0", id: 5, method: "resources/list" })).toBe(true);
-    expect(sent[0]).toEqual({ jsonrpc: "2.0", id: 5, result: {} });
-    // Una notificación no lleva id y no se contesta.
-    expect(server.handle({ jsonrpc: "2.0", method: "notifications/initialized" })).toBe(false);
+    expect((sent.find((message) => message.id === 8)?.result as { isError: boolean }).isError).toBe(
+      true,
+    );
+    expect(sent.some((message) => message.method === "elicitation/create")).toBe(false);
   });
 });

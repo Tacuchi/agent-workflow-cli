@@ -227,7 +227,10 @@ async function attemptStage(
   // A continuation runs against the selection the FIRST attempt fixed. If those
   // bytes moved, the conversation is answering something that no longer exists.
   if (input.pin != null) {
-    const stillThere = checkPin(input.pin, await buildCapabilityInventory(ctx.fs, ctx.env));
+    const stillThere = checkPin(
+      input.pin,
+      await buildCapabilityInventory(ctx.fs, ctx.env, ctx.paths.workspaceDir()),
+    );
     if (!stillThere.ok) {
       return receiptOf(request, descriptor, resolved, {
         kind: "blocked",
@@ -400,7 +403,7 @@ async function resolveFor(
     slot === undefined
       ? { state: "floor_and_improvements" as const, reason: null, action: null }
       : classifyCapabilityBinding(slot, descriptor.name);
-  const inventory = await buildCapabilityInventory(ctx.fs, ctx.env);
+  const inventory = await buildCapabilityInventory(ctx.fs, ctx.env, ctx.paths.workspaceDir());
   return resolveCapability({
     descriptor,
     binding,

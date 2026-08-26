@@ -9,9 +9,9 @@
  * cancelación. Esto traduce una frontera a esas solicitudes y traduce de vuelta lo
  * que responden.
  *
- * Todo acá es puro: no habla el protocolo, no toca entrada ni salida y no mide el
- * tiempo. Recibe el reloj ya leído, porque la clasificación de una respuesta es
- * una regla y no una lectura del mundo — y una regla se puede fijar por prueba.
+ * Todo acá es puro: no habla el protocolo ni toca entrada o salida. La respuesta
+ * sólo acredita lo que trae el protocolo; no se infiere quién la produjo por su
+ * tiempo de llegada.
  */
 
 /**
@@ -72,7 +72,8 @@ export interface ElicitationRequest {
   message: string;
   requestedSchema: {
     type: "object";
-    required: readonly string[];
+    /** Elegir y escribir son alternativas; ninguna se exige por el esquema. */
+    required?: readonly string[];
     properties: Record<string, unknown>;
   };
 }
@@ -118,7 +119,6 @@ export function elicitationRequestsFor(
       message: `${question.question} (${index + 1}/${questions.length})`,
       requestedSchema: {
         type: "object" as const,
-        required: [CHOICE_KEY],
         properties: {
           [CHOICE_KEY]: {
             type: "string",
@@ -138,31 +138,12 @@ export function elicitationRequestsFor(
   });
 }
 
-/**
- * Debajo de esto, una negativa no la escribió una persona.
- *
- * Con la política de arranque por defecto el selector se muestra y hay que leerlo,
- * navegarlo y confirmarlo; con una política que promete no interrumpir, el host
- * contesta *rechazada* en el acto y sin mostrar nada — observado sobre el host
- * real, en las dos solicitudes de la misma corrida. En el cable las dos respuestas
- * son el MISMO objeto, así que el tiempo es lo único que las separa.
- *
- * El umbral es generoso a propósito: un rechazo automático vuelve en fracciones de
- * milisegundo y una persona no baja de varias décimas ni leyendo a las apuradas,
- * así que 250 ms deja margen enorme de los dos lados. Y equivocarse cuesta poco por
- * diseño: esto decide QUÉ TEXTO lee la persona, nunca si la frontera avanza —
- * ninguna respuesta que no sea una elección la avanza.
- */
-export const AUTO_REFUSAL_THRESHOLD_MS = 250;
-
 export type ElicitationOutcome =
   /** La persona eligió. `free` es true cuando escribió en vez de elegir. */
   | { kind: "chosen"; choice: string; free: boolean }
-  /** El host se negó solo, sin mostrar nada: es su política, no una decisión. */
-  | { kind: "refused-by-host" }
-  /** La persona vio el selector y lo rechazó. */
-  | { kind: "declined-by-person" }
-  /** La persona cerró el selector sin elegir. */
+  /** El protocolo informó una negativa, sin atribuirla a host ni persona. */
+  | { kind: "declined" }
+  /** El protocolo informó una cancelación, sin atribuirla a host ni persona. */
   | { kind: "cancelled" }
   /** Aceptó sin contestar nada: ni elección ni texto. */
   | { kind: "empty" };
@@ -170,25 +151,26 @@ export type ElicitationOutcome =
 /**
  * Qué fue lo que volvió, dicho una sola vez para que nadie lo interprete de nuevo.
  *
- * Una aceptación con la elección vacía pero con texto libre SÍ es una elección: es
- * exactamente la persona respondiendo algo distinto de lo ofrecido, que es lo que
- * el segundo campo existe para permitir.
+ * Una respuesta libre no vacía tiene prioridad, porque expresa con más precisión
+ * que un enum. Si no la hay, una etiqueta sólo es elección cuando pertenece a la
+ * pregunta presentada; una etiqueta inventada nunca avanza la frontera.
  */
-export function classifyElicitationReply(reply: unknown, elapsedMs: number): ElicitationOutcome {
+export function classifyElicitationReply(
+  reply: unknown,
+  validChoices: readonly string[],
+): ElicitationOutcome {
   const action = actionOf(reply);
   if (action === "accept") {
     const content = contentOf(reply);
-    const choice = stringAt(content, CHOICE_KEY);
-    if (choice !== null) return { kind: "chosen", choice, free: false };
     const free = stringAt(content, FREE_TEXT_KEY);
     if (free !== null) return { kind: "chosen", choice: free, free: true };
+    const choice = stringAt(content, CHOICE_KEY);
+    if (choice !== null && validChoices.includes(choice)) {
+      return { kind: "chosen", choice, free: false };
+    }
     return { kind: "empty" };
   }
-  // Una negativa sin tiempo material para haber sido leída no la tomó nadie. Vale
-  // para las dos formas terminales: lo que se afirma es que NADIE la vio, y eso es
-  // cierto tanto si el host la rotuló rechazo como si la rotuló cancelación.
-  if (elapsedMs < AUTO_REFUSAL_THRESHOLD_MS) return { kind: "refused-by-host" };
-  if (action === "decline") return { kind: "declined-by-person" };
+  if (action === "decline") return { kind: "declined" };
   return { kind: "cancelled" };
 }
 

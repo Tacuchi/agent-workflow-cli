@@ -12,7 +12,6 @@
  */
 
 import { type BoundaryQuestion, type ElicitationOutcome, orderedOptions } from "./elicitation.js";
-import type { HarnessMcpElicitation } from "./harnesses.js";
 
 /**
  * La frontera entera, en el piso universal.
@@ -45,40 +44,19 @@ export function renderLabeledMarkdown(questions: readonly BoundaryQuestion[]): s
  * peor que cualquiera de los dos. Las etiquetas de las alternativas siguen viniendo
  * de quien llama, así que ésas ya están en el idioma de la persona.
  *
- * El rechazo automático es el único que nombra una política y una forma de
- * arrancar: es el único que la persona no vio. Los demás describen lo que sí hizo,
- * y ninguno de los cinco avanza la frontera.
+ * El protocolo no prueba si una negativa o cancelación vino de una política del
+ * host o de una persona. Los dos casos quedan sin atribuir, y ninguno avanza la
+ * frontera.
  */
-export function degradationNotice(
-  outcome: ElicitationOutcome["kind"],
-  via: HarnessMcpElicitation,
-): string {
+export function degradationNotice(outcome: ElicitationOutcome["kind"]): string {
   switch (outcome) {
-    case "refused-by-host": {
-      const cause = via.available
-        ? `${via.blockedBy}. To get the selector back: ${via.recoverBy}`
-        : "this host does not declare the native-selector path";
-      // Neither a veto nor a demand: name the cause, name the remedy, carry on.
-      // Blocking until somebody changes their policy would stop the work over a
-      // presentation preference.
-      return `The host refused the selector instantly and showed the person nothing, so this was NOT read as their decision. The cause is that ${cause}. Present the boundary below in full and carry on.`;
-    }
-    case "declined-by-person":
-      return "The person saw the selector and refused it, so the boundary stays pending and no transition was applied. Present it below so they can answer when they want to.";
+    case "declined":
+      return "The selector reported a decline, so the boundary stays pending and no transition was applied. Present it below so it can be answered explicitly.";
     case "cancelled":
-      return "The person closed the selector without choosing, so the boundary stays pending and no choice was recorded. Present it below.";
+      return "The selector reported a cancellation without a choice, so the boundary stays pending. Present it below.";
     case "empty":
       return "The selector came back with neither a choice nor any text, so the boundary stays pending. Present it below.";
     default:
       return "";
   }
 }
-
-/**
- * La aprobación que el host pide la primera vez, explicada donde se necesita.
- *
- * No es un impedimento: es una interacción extra que se paga una vez. Decirlo
- * antes evita que se lea como una falla de la vía justo cuando está funcionando.
- */
-export const APPROVAL_NOTICE =
-  "The first time, this host asks the person to approve the tool. Say so as part of the presentation, and note that persisting the approval stops it interrupting every later boundary of the session.";

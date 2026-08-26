@@ -34,6 +34,7 @@ import type {
   Degradation,
   EffectLedger,
 } from "../capability/protocol.js";
+import type { DecisionPreview } from "../decision-preview.js";
 import type { PreviewEntry, ProposalScope } from "../proposal.js";
 import {
   type DelegatedAction,
@@ -210,6 +211,14 @@ export interface FlowDirective {
    * else can compute: the seal, the destinations and the effects.
    */
   proposal: DirectiveProposal | null;
+  /**
+   * The full decision-registration view prepared before the deviation choice.
+   *
+   * It is not a second copy of a generic proposal: its eight sections explain
+   * the effective-contract consequence the human is about to authorize. `null`
+   * everywhere except a prepared PLAN-exec deviation gate.
+   */
+  decision_preview: DecisionPreview | null;
   effects: EffectLedger;
   /**
    * Effect classes covered AT THE BOUNDARY IN FORCE — never a run-wide permit.
@@ -259,6 +268,7 @@ export const FLOW_DIRECTIVE_KEYS = [
   "action",
   "choices",
   "proposal",
+  "decision_preview",
   "effects",
   "authorizations",
   "degradations",
@@ -313,6 +323,7 @@ export interface BuildDirectiveInput {
   action?: DelegatedAction | null;
   choices?: readonly FlowChoice[];
   proposal?: DirectiveProposal | null;
+  decisionPreview?: DecisionPreview | null;
   effects?: Partial<EffectLedger>;
   authorizations?: readonly EffectClass[];
   degradations?: readonly Degradation[];
@@ -340,6 +351,7 @@ export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
     action: input.action ?? null,
     choices: [...(input.choices ?? [])],
     proposal: input.proposal ?? null,
+    decision_preview: input.decisionPreview ?? null,
     effects: {
       planned: [...(input.effects?.planned ?? [])],
       approved: [...(input.effects?.approved ?? [])],
@@ -496,11 +508,18 @@ function checkChoices(directive: FlowDirective): CapabilityFailure | null {
     );
   }
   for (const choice of directive.choices) {
-    if (choice.label.trim().length === 0 || choice.consequence.trim().length === 0) {
+    if (!isNonBlankString(choice.label) || !isNonBlankString(choice.consequence)) {
       return reject(
         "FLOW_DIRECTIVE_CHOICE_WITHOUT_CONSEQUENCE",
         "una alternativa no declara su etiqueta o su consecuencia",
         "cada alternativa lleva etiqueta y consecuencia: elegir a ciegas no es elegir",
+      );
+    }
+    if (!isChoiceOutcome(choice.outcome)) {
+      return reject(
+        "FLOW_DIRECTIVE_CHOICE_OUTCOME_INVALID",
+        `la alternativa '${choice.label}' no declara una consecuencia ejecutable válida`,
+        "cada alternativa debe continuar, registrar una decisión, entregar a un destino o ser un control explícito",
       );
     }
   }
@@ -512,6 +531,24 @@ function checkChoices(directive: FlowDirective): CapabilityFailure | null {
     );
   }
   return null;
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isChoiceOutcome(value: unknown): value is FlowChoice["outcome"] {
+  if (typeof value !== "object" || value === null) return false;
+  const outcome = value as Record<string, unknown>;
+  return (
+    outcome.kind === "continue" ||
+    outcome.kind === "register-decision" ||
+    (outcome.kind === "handoff" &&
+      (outcome.destination === "plan-refine" ||
+        outcome.destination === "spec-refine" ||
+        outcome.destination === "spec-new")) ||
+    (outcome.kind === "control" && (outcome.control === "pause" || outcome.control === "stop"))
+  );
 }
 
 function checkBlocked(directive: FlowDirective): CapabilityFailure | null {
@@ -675,6 +712,7 @@ function boundaryLines(directive: FlowDirective): string[] {
   return lines;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one renderer keeps every visible boundary field in one ordered projection.
 function askLines(directive: FlowDirective): string[] {
   const lines: string[] = [];
   if (directive.request !== null) {
@@ -700,6 +738,26 @@ function askLines(directive: FlowDirective): string[] {
       );
     }
     lines.push(`si vuelve fallida o parcial: ${directive.action.recovery}`);
+  }
+  const preview = directive.decision_preview;
+  if (preview !== null) {
+    lines.push(`vista previa de decisión: ${preview.baseline.path} @ ${preview.baseline.digest}`);
+    lines.push(
+      `cambios efectivos: ${preview.effective_change.map((change) => change.assertion).join(", ") || "ninguno"}`,
+    );
+    lines.push(`consumidores: ${preview.consumers.join(", ") || "ninguno"}`);
+    lines.push(
+      `impacto: ${preview.impact.scope} · ${preview.impact.assertions} assertion(es) · ${preview.impact.consumers} consumidor(es)`,
+    );
+    lines.push(
+      `evidencia: conserva ${preview.evidence.preserved.join(", ") || "ninguna"}; invalida ${preview.evidence.invalidated.join(", ") || "ninguna"}`,
+    );
+    lines.push(`obligaciones: ${preview.obligations.join(", ") || "ninguna"}`);
+    lines.push(`reanudación: ${preview.resume_point}`);
+    lines.push(
+      `efectos de decisión: ${preview.effects.classes.join(", ") || "ninguno"} · ${preview.effects.entries.map((entry) => entry.path).join(", ")}`,
+    );
+    lines.push(`sello del preview: ${preview.proposal.digest}`);
   }
   for (const choice of directive.choices) {
     lines.push(

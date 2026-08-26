@@ -37,12 +37,13 @@ import {
   spendsAttempt,
 } from "../../domain/flow/answer.js";
 import {
+  type FlowChoiceOutcome,
   type FlowDecision,
   actionOf,
+  alternativesOf,
   approvalGrantOf,
   effectsOf,
   internalActionOf,
-  journeyOfFlow,
   proposalContractOf,
   publishApprovalOf,
   scopesSources,
@@ -61,18 +62,25 @@ import {
   type FlowRunState,
   applyTransition,
   checkAgainstJourney,
+  currentBatchIteration,
   restatesLastEvent,
   withApproval,
   withAttempt,
   withBoundary,
+  withContinuation,
+  withDecisionPreparation,
   withEvent,
+  withHandoff,
   withObservation,
+  withPlanExecBatchStageForTransition,
   withProposal,
   withScope,
+  withSelectedChoice,
 } from "../../domain/flow/run-state.js";
 import { type SpecBaseline, specBaselineDigest, withSpecBaseline } from "../../domain/lineage.js";
 import { destinationsOf, observedEffects, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
+import type { PlanReconciliation } from "../../domain/reconciliation.js";
 import { reservationMarker } from "../../domain/reservation.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { CheckoutIdentity } from "../../domain/source-boundary.js";
@@ -82,6 +90,10 @@ import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import {
+  commitStoredPlanExecDecision,
+  preparePlanExecDecision,
+} from "../plan-exec-decision-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import {
@@ -101,6 +113,7 @@ import { observeCheckout, withObservedCheckouts } from "./checkout-observation.j
 import { resolveCheckoutCandidates } from "./checkout-observation.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
+import { journeyForRun } from "./run-journey.js";
 import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
 
 export interface SubmitFlowInput {
@@ -153,7 +166,7 @@ export async function submitFlow(
   // scope is checked against. The race it leaves open on the destinations is
   // exactly the one the compare-and-swap closes at publish time.
   const snapshot = await observe(fs, paths, input.raw, resolution.session.folder, input.git);
-  const applied = await applyUnderLock<SubmitOutcome>(fs, location, (current) => {
+  const applied = await applyUnderLock<SubmitOutcome>(fs, location, async (current) => {
     if (current === null) {
       return {
         ok: false,
@@ -164,7 +177,7 @@ export async function submitFlow(
         },
       };
     }
-    return decide(current, input, snapshot);
+    return await decide(fs, paths, current, input, snapshot);
   });
 
   if (!applied.ok) return { ok: false, failure: applied.failure };
@@ -250,6 +263,8 @@ interface ScopeSnapshot {
 }
 
 interface Observation {
+  /** Resolved once for this submit; decision registration uses the same root. */
+  root: string;
   destinations: DestinationSnapshot;
   scope: ScopeSnapshot;
   /** `null` when this caller has no live Git reader (pure/test callers). */
@@ -265,7 +280,9 @@ async function observe(
   session: string,
   git: GitPort | undefined,
 ): Promise<Observation> {
+  const root = await resolveWorkspaceRootFrom(fs, paths);
   return {
+    root,
     destinations: await observeDestinations(fs, paths, raw),
     scope: await observeScope(fs, paths, raw),
     checkouts: await observeCheckouts(fs, paths, session, git),
@@ -501,12 +518,15 @@ async function observeDestinations(
   return snapshot;
 }
 
-function decide(
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: resend, drift, admission, scope, sealing, preview, grant and handoff checks are one intentional precedence contract.
+async function decide(
+  fs: FileSystemPort,
+  paths: PathsService,
   state: FlowRunState,
   input: SubmitFlowInput,
   snapshot: Observation,
-): SubmitDecision {
-  const journey = journeyOfFlow(state.flow);
+): Promise<SubmitDecision> {
+  const journey = journeyForRun(state);
   const incoherent = checkAgainstJourney(state, journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
 
@@ -553,6 +573,14 @@ function decide(
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
 
+  // The registry, not the Spanish consequence text, owns what a selected
+  // alternative does. A handoff must stop before any later plan-exec row can
+  // mark work, validate or commit; a decision selection is durably recorded
+  // even while its registration is handled by the decision bridge below.
+  const selected = choiceOutcomeOf(resolved.stopped, parsed.answer.choice);
+  if (selected?.kind === "handoff") {
+    return applyAndHandoff(state, journey, resolved.stopped, identity, parsed.answer, selected);
+  }
   // 3 · Apply: the answer is the INPUT to the CLI's decision, so what advances is
   // the transition, never the sender's own verdict.
   //
@@ -586,8 +614,25 @@ function decide(
       cost,
     );
   }
+  const preparedForGate = await prepareDecisionForGate(
+    fs,
+    sealed.state,
+    snapshot,
+    parsed.answer,
+    resolved,
+    cost,
+  );
+  if (!preparedForGate.ok) return preparedForGate.decision;
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
-  const approved = grantOf(sealed.state, resolved, parsed.answer, granted, journey);
+  const approved = grantOf(preparedForGate.state, resolved, parsed.answer, granted, journey);
+  // All pure scope/proposal checks have now passed. A durable decision is a
+  // material write, so it must never land when a later validation of the same
+  // answer would refuse the boundary and leave its cursor standing.
+  const registered =
+    selected?.kind === "register-decision"
+      ? await registerSelectedDecision(fs, paths, approved, snapshot, resolved, cost)
+      : null;
+  if (registered !== null && !registered.ok) return registered.decision;
   // An approval NEVER applies a step by itself. Two reasons it must hold, and the
   // second is the one this phase exists for: doctrine may still own the rule, or
   // the step may be delegated — and an approval that applied a delegated
@@ -596,9 +641,21 @@ function decide(
   const holds =
     resolved.kind === "authorization" &&
     (resolved.stopped.ownership !== "cli-owned" || actionOf(resolved.stopped) !== null);
+  let selectedState =
+    selected?.kind === "register-decision"
+      ? withSelectedChoice(approved, {
+          transition: resolved.stopped.id,
+          label: parsed.answer.choice ?? "Registrar la decisión y seguir",
+          outcome: selected,
+        })
+      : approved;
+  if (registered?.ok && registered.reconciliation !== null) {
+    selectedState = withContinuation(selectedState, registered.reconciliation);
+  }
+  if (registered?.ok) selectedState = withDecisionPreparation(selectedState, null);
   return holds
-    ? holdAfterApproval(approved, journey, identity)
-    : applyAndAdvance(approved, journey, resolved.stopped, identity, parsed.answer);
+    ? holdAfterApproval(selectedState, journey, identity)
+    : applyAndAdvance(selectedState, journey, resolved.stopped, identity, parsed.answer);
 }
 
 /**
@@ -610,6 +667,7 @@ function decide(
  * have different fixes. The document's structural contract is then checked as a
  * whole, not by finding a word anywhere in its prose.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the ordered scope refusals are user-facing contract precedence, so extracting them would hide that sequence rather than simplify it.
 function scopeFrom(
   state: FlowRunState,
   stopped: FlowDecision,
@@ -718,6 +776,141 @@ function scopeFrom(
     };
   }
   return { state: withScope(state, { plan, sources }) };
+}
+
+type SelectedDecisionRegistration =
+  | { ok: true; reconciliation: PlanReconciliation | null }
+  | { ok: false; decision: SubmitDecision };
+
+type GateDecisionPreparation =
+  | { ok: true; state: FlowRunState }
+  | { ok: false; decision: SubmitDecision };
+
+/**
+ * Prepare the complete decision view one boundary BEFORE the human choice.
+ *
+ * `deviation-recognition` is where the semantic draft belongs: its result is
+ * sealed in the run, then the following human gate can show that exact view.
+ * A later `Registrar` choice never reads a new draft or recomputes the preview.
+ */
+async function prepareDecisionForGate(
+  fs: FileSystemPort,
+  state: FlowRunState,
+  snapshot: Observation,
+  answer: FlowAnswer,
+  resolved: ResolvedBoundary,
+  cost: RejectionCost,
+): Promise<GateDecisionPreparation> {
+  if (resolved.stopped?.id !== "plan-exec.deviation-recognition") return { ok: true, state };
+  const candidate = answer.decisions.decision;
+  if (candidate === undefined) return { ok: true, state: withDecisionPreparation(state, null) };
+  const plan = state.scope?.plan;
+  if (plan === undefined) {
+    return {
+      ok: false,
+      decision: reject(
+        state,
+        resolved,
+        "la desviación no puede preparar una decisión sin el plan fijado por la corrida",
+        {
+          code: "FLOW_DECISION_SCOPE_MISSING",
+          action: "fijá el scope de plan-exec antes de declarar la decisión que llegará al gate",
+        },
+        cost,
+      ),
+    };
+  }
+  const prepared = await preparePlanExecDecision(fs, {
+    root: snapshot.root,
+    session: state.session,
+    plan,
+    value: candidate,
+  });
+  if (!prepared.ok) {
+    return {
+      ok: false,
+      decision: reject(state, resolved, prepared.failure.message, prepared.failure, cost),
+    };
+  }
+  switch (prepared.kind) {
+    case "settled":
+      return {
+        ok: true,
+        state: withDecisionPreparation(state, { kind: "settled", decision: prepared.decision }),
+      };
+    case "reused":
+      return {
+        ok: true,
+        state: withDecisionPreparation(state, {
+          kind: "reused",
+          note: prepared.note,
+          decision: prepared.decision,
+          resume_point: prepared.resume_point,
+        }),
+      };
+    case "prepared":
+      return {
+        ok: true,
+        state: withDecisionPreparation(state, {
+          kind: "prepared",
+          note: prepared.prepared.note,
+          preview: prepared.prepared.preview,
+          index_path: prepared.indexPath,
+          baseline: {
+            path: prepared.baseline.path,
+            number: prepared.baseline.number,
+            digest: prepared.baseline.digest,
+            criteria: [...prepared.baseline.criteria],
+          },
+        }),
+      };
+  }
+}
+
+/**
+ * The human gate choice is the sole authorization for this registration.
+ *
+ * The prior semantic boundary already called `preparePlanExecDecision` and
+ * persisted its fact/reuse/prepared result. A fresh preference now calls
+ * `commitDecision` over exactly that stored preview; there is no second
+ * confirmation and no post-choice re-preview.
+ */
+async function registerSelectedDecision(
+  fs: FileSystemPort,
+  paths: PathsService,
+  state: FlowRunState,
+  snapshot: Observation,
+  resolved: ResolvedBoundary,
+  cost: RejectionCost,
+): Promise<SelectedDecisionRegistration> {
+  const preparation = state.decision_preparation;
+  if (preparation === null || preparation === undefined) {
+    return {
+      ok: false,
+      decision: reject(
+        state,
+        resolved,
+        "la elección no tiene una vista de decisión preparada que pueda autorizar",
+        {
+          code: "FLOW_DECISION_PREVIEW_ABSENT",
+          action:
+            "declará la pregunta y el borrador en decisions.decision al reconocer la desviación; el CLI mostrará su preview antes de pedir esta elección",
+        },
+        cost,
+      ),
+    };
+  }
+  const committed = await commitStoredPlanExecDecision(fs, paths, snapshot.root, preparation);
+  if (!committed.ok) {
+    return {
+      ok: false,
+      decision: reject(state, resolved, committed.failure.message, committed.failure, cost),
+    };
+  }
+  return {
+    ok: true,
+    reconciliation: committed.kind === "committed" ? committed.reconciliation : null,
+  };
 }
 
 /**
@@ -1001,7 +1194,7 @@ function admit(
       checkouts,
     );
     if (verdict !== null) {
-      const trace = declaredTrace(stopped, resolved, parsed.answer, verdict);
+      const trace = declaredTrace(state, stopped, resolved, parsed.answer, verdict);
       return {
         decision: reject(state, resolved, verdict.message, verdict.detail, {
           ...cost,
@@ -1029,6 +1222,7 @@ function admit(
  * case where what did reach the world is precisely the unknown.
  */
 function declaredTrace(
+  state: FlowRunState,
   stopped: FlowDecision,
   resolved: ResolvedBoundary,
   answer: FlowAnswer,
@@ -1037,9 +1231,11 @@ function declaredTrace(
   const applied = answer.result?.effects.applied ?? [];
   if (!touchesTheWorld(applied) && verdict.detail.code !== "FLOW_EFFECT_PARTIAL") return null;
   const invocation = resolved.action?.invocation;
+  const batchIteration = currentBatchIteration(state, stopped.id);
   return {
     kind: "failed",
     transition: stopped.id,
+    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
     // What was really run, named the way whoever ran it would recognize it: an
     // external execution has no internal operation id to quote.
     operation:
@@ -1116,9 +1312,12 @@ function applyAndAdvance(
   // derived from these on each read, so the two can never disagree.
   let next =
     answer.signals.length > 0
-      ? withObservation(approved, { transition: stopped.id, signals: answer.signals })
+      ? withObservation(approved, observationFor(approved, stopped.id, answer.signals))
       : approved;
-  next = applyTransition(next, stopped.id, effectsOfTransition(next, stopped));
+  next = withPlanExecBatchStageForTransition(
+    applyTransition(next, stopped.id, effectsOfTransition(next, stopped)),
+    stopped.id,
+  );
   // A published proposal is spent, whoever published it. This is the degraded
   // path — no internal executor, so the caller ran the write and returned its
   // result — and leaving the proposal seated would keep a preview of bytes that
@@ -1132,6 +1331,82 @@ function applyAndAdvance(
   // `checkAgainstJourney` exists to refuse.
   next = withBoundary(next, journey[next.applied.length]?.id ?? null);
 
+  const advanced = advanceFlowRun({ state: next, journey, applied: [stepOf(stopped)] });
+  if (!advanced.ok) return { ok: false, failure: advanced.failure };
+  return {
+    ok: true,
+    state: advanced.state,
+    value: { directive: advanced.directive, advanced: true },
+  };
+}
+
+/** The executable outcome declared by the registry for this exact human label. */
+function choiceOutcomeOf(stopped: FlowDecision, label: string | null): FlowChoiceOutcome | null {
+  if (label === null) return null;
+  return alternativesOf(stopped)?.find((choice) => choice.label === label)?.outcome ?? null;
+}
+
+/**
+ * Apply a selected escalation and stop the run on its typed destination.
+ *
+ * No later `plan-exec` transition is even considered: the package, selection,
+ * cursor and terminal handoff are sealed together before `advanceFlowRun` sees
+ * the state. A retry is recognized by the attempt ledger, so it cannot create a
+ * second package or walk the batch toward a commit.
+ */
+function applyAndHandoff(
+  state: FlowRunState,
+  journey: readonly FlowDecision[],
+  stopped: FlowDecision,
+  identity: FlowRunAttempt,
+  answer: FlowAnswer,
+  outcome: Extract<FlowChoiceOutcome, { kind: "handoff" }>,
+): SubmitDecision {
+  const plan = state.scope?.plan ?? null;
+  if (outcome.destination === "plan-refine" && plan === null) {
+    const resolved = resolveBoundary(state, journey);
+    return reject(
+      state,
+      resolved,
+      "la entrega a plan-refine no tiene el plan que debe reabrir",
+      {
+        code: "FLOW_HANDOFF_PLAN_MISSING",
+        action: "fijá el scope de plan-exec antes de elegir una escalación a plan-refine",
+      },
+      { journey, identity },
+    );
+  }
+  const packageBody = {
+    plan,
+    observations: state.observations.filter((observation) =>
+      observation.transition.startsWith("plan-exec.deviation-"),
+    ),
+    decisions: answer.decisions,
+    selection: answer.choice ?? "",
+  };
+  const command =
+    outcome.destination === "plan-refine"
+      ? `/w:plan-refine ${plan}`
+      : outcome.destination === "spec-refine"
+        ? "/w:spec-refine"
+        : "/w:spec-new";
+  let next = withSelectedChoice(state, {
+    transition: stopped.id,
+    label: answer.choice ?? "",
+    outcome,
+  });
+  next = withPlanExecBatchStageForTransition(
+    applyTransition(next, stopped.id, effectsOfTransition(next, stopped)),
+    stopped.id,
+  );
+  next = withAttempt(next, identity);
+  next = withHandoff(next, {
+    destination: outcome.destination,
+    command,
+    package: packageBody,
+    package_digest: semanticDigest(packageBody),
+  });
+  next = withBoundary(next, journey[next.applied.length]?.id ?? null);
   const advanced = advanceFlowRun({ state: next, journey, applied: [stepOf(stopped)] });
   if (!advanced.ok) return { ok: false, failure: advanced.failure };
   return {
@@ -1294,6 +1569,7 @@ function attemptIdentity(
   transition: string,
 ): FlowRunAttempt {
   const digest = semanticDigest({ payload: input.raw, approval: input.approval });
+  const batchIteration = currentBatchIteration(state, transition);
   const prior = state.attempts.filter((past) => past.invocation_id === seal);
   const twin = prior.find((past) => past.request_digest === digest);
   const attempt = twin?.attempt ?? prior.length + 1;
@@ -1309,5 +1585,15 @@ function attemptIdentity(
     // The seal moves with the state; the transition does not while the run
     // stands there. It is what the cap counts over.
     transition,
+    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+  };
+}
+
+function observationFor(state: FlowRunState, transition: string, signals: string[]) {
+  const batchIteration = currentBatchIteration(state, transition);
+  return {
+    transition,
+    signals,
+    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
   };
 }

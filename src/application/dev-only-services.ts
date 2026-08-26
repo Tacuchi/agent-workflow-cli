@@ -546,11 +546,14 @@ async function attemptAt(
 
 export async function runNextNumber(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   input: NextNumberInput,
 ): Promise<NextNumberOutput> {
-  const cwd = env.cwd();
+  // `paths` is the WorklineDirectory resolved once at bootstrap.  A nested
+  // invocation still numbers the workspace's docs tree; it must not quietly
+  // create a second docs/ under the raw process cwd.
+  const cwd = paths.workspaceDir();
   const { directory, dryRun = false, claim, publish } = input;
   const target = isAbsolute(directory) ? directory : join(cwd, directory);
   if (claim !== undefined && publish !== undefined) {

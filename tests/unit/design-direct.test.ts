@@ -520,13 +520,11 @@ describe("F10 · las superficies que B2 dejó sin llamador ahora lo tienen", () 
   });
 });
 
-describe("F10 · el CLI decide 'fuera de un workspace' por la regla real del repo", () => {
+describe("F10 · el CLI usa la raíz implícita resuelta", () => {
   /**
-   * The bug a smoke run caught and no unit test could: the command handed the
-   * cwd over as the workspace unconditionally, so the explicit-root path was
-   * unreachable in production and only ever exercised by a test that passed
-   * `null` by hand. The rule is the one the rest of the repo uses — `.<ns>/`
-   * present in the root — and it is checked here so it cannot drift back.
+   * A Workline root is meaningful before its marker is materialized. The CLI
+   * receives the bootstrap coordinate, so an absolute design target is unsafe
+   * in both a virgin directory and one with `.<ns>/sessions/` already present.
    */
   function cliContext(fs: MemFs): CliContext {
     return {
@@ -554,17 +552,13 @@ describe("F10 · el CLI decide 'fuera de un workspace' por la regla real del rep
     ["title=Alta", "sources=a.md", "target=/tmp/mis-disenos"],
   );
 
-  // Las dos mitades del mismo hecho: el CLI resuelve el workspace por `.<ns>/` y
-  // no por el cwd, así que la MISMA invocación se diagnostica distinto según lo
-  // que hay en el disco. Que las dos causas difieran es lo que prueba que la
-  // regla se aplicó; si el cwd se entregara como workspace, ambas dirían lo mismo.
-  it("sin `.workflow/` no hay workspace, y una publicación de diseño lo dice", async () => {
+  it("sin `.workflow/`, la raíz implícita rechaza una salida absoluta", async () => {
     const result = await capabilityCommand.execute(CREATE, cliContext(new MemFs()));
     expect(result.ok).toBe(true);
-    expect(result.data?.receipt.error?.code).toBe("DESIGN_WORKSPACE_ABSENT");
+    expect(result.data?.receipt.error?.code).toBe("DESIGN_OUTPUT_ROOT_UNSAFE");
   });
 
-  it("con `.workflow/`, la misma raíz absoluta se rechaza por no ser relativa", async () => {
+  it("con `.workflow/`, la misma salida sigue siendo relativa al mismo root", async () => {
     const fs = new MemFs().dir(`${WORKSPACE}/.workflow`);
     const result = await capabilityCommand.execute(CREATE, cliContext(fs));
     expect(result.ok).toBe(true);

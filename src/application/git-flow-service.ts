@@ -3,6 +3,7 @@ import type { GitPort } from "../ports/git.js";
 import { type SourceBranchRoles, resolveSourceBranches } from "./branch-resolver.js";
 import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
+import { ensureWorklineMaterialized } from "./workspace-materialization-service.js";
 
 /** The per-source git-flow actions (see docs/design/git-flow-per-source.md). */
 export type GitFlowAction = "sync" | "to-dev" | "to-qa" | "to-prod";
@@ -96,6 +97,7 @@ export async function runGitFlow(
   const dryRun = input.dryRun === true;
   const results: GitFlowSourceResult[] = [];
   let overall: GitFlowResult["status"] = "ok";
+  let materialized = false;
 
   for (const source of selected.sources) {
     const branches = resolveSourceBranches(source, block);
@@ -116,6 +118,14 @@ export async function runGitFlow(
     if (dryRun) {
       results.push({ source: source.alias, status: "ok", steps: ops.map(toDryStep) });
       continue;
+    }
+
+    // Git is a mutation too, even though it goes through the Git port rather
+    // than FileSystemPort. Materialize at the last point before it can alter a
+    // source checkout, after every selection/no-op check has passed.
+    if (!materialized) {
+      await ensureWorklineMaterialized(fs, paths);
+      materialized = true;
     }
 
     // Any throw belongs to THIS source, never to the batch: the precondition

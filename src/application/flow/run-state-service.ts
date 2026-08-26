@@ -17,9 +17,11 @@ import { dirname, join } from "node:path";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import {
   FLOW_RUN_STATE_FILE,
+  FLOW_RUN_STATE_VERSION,
   type FlowRunRead,
   type FlowRunState,
-  atCurrentVersion,
+  attemptCounterKeyForIteration,
+  legacyRunNeedsAdoption,
   parseRunState,
   serializeRunState,
   withAttemptCounters,
@@ -122,7 +124,10 @@ export async function readRun(fs: FileSystemPort, location: FlowRunLocation): Pr
   if (rolledBack !== null) return { ok: false, failure: rolledBack };
   return {
     ok: true,
-    state: withAttemptCounters(atCurrentVersion(parsed.state), {
+    // Reading historical state is deliberately non-mutating. A v7–v9 run stays
+    // itself until `aw flow advance --adopt` explicitly accepts v10's batch
+    // semantics; merely asking status/resume must never re-stamp it.
+    state: withAttemptCounters(parsed.state, {
       floor: counters.value.attempts,
       grants: counters.value.granted,
     }),
@@ -256,7 +261,8 @@ async function raiseCounters(
 
   const spent = new Map<string, number>();
   for (const attempt of state.attempts) {
-    spent.set(attempt.transition, (spent.get(attempt.transition) ?? 0) + 1);
+    const key = attemptCounterKeyForIteration(attempt.transition, attempt.batch_iteration);
+    spent.set(key, (spent.get(key) ?? 0) + 1);
   }
   const attempts = { ...current.value.attempts };
   for (const [transition, count] of spent) {
@@ -344,6 +350,8 @@ export interface ApplyOptions extends LockOptions {
   expectDigest?: string;
   /** Allow a missing state: the mutation receives `null` and creates the run. */
   allowAbsent?: boolean;
+  /** Only explicit `flow advance --adopt` may write a readable v7–v9 run. */
+  allowLegacyAdoption?: boolean;
 }
 
 /**
@@ -353,13 +361,14 @@ export interface ApplyOptions extends LockOptions {
  * caller had — which is what makes this a compare-and-swap instead of a hopeful
  * overwrite.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: lock acquisition, state validation, counter-before-state persistence, and release must remain one visibly ordered transaction.
 export async function applyUnderLock<T>(
   fs: FileSystemPort,
   location: FlowRunLocation,
   mutate: (current: FlowRunState | null) => Promise<FlowRunMutation<T>> | FlowRunMutation<T>,
   options: ApplyOptions = {},
 ): Promise<FlowRunMutation<T>> {
-  const { expectDigest, allowAbsent, ...lockOptions } = options;
+  const { expectDigest, allowAbsent, allowLegacyAdoption, ...lockOptions } = options;
   await fs.mkdirp(location.dir);
 
   let lock: Awaited<ReturnType<typeof acquireLock>>;
@@ -387,6 +396,16 @@ export async function applyUnderLock<T>(
       if (!absent || allowAbsent !== true) return { ok: false, failure: current.failure };
     }
     const state = current.ok ? current.state : null;
+    if (state !== null && legacyRunNeedsAdoption(state) && allowLegacyAdoption !== true) {
+      return {
+        ok: false,
+        failure: {
+          code: "FLOW_RUN_LEGACY_ADOPTION_REQUIRED",
+          message: `la corrida v${state.version} se puede leer, pero no continuar sin adopción explícita`,
+          action: `corré 'aw flow advance --code ${state.session} --flow ${state.flow} --adopt' para adoptar v${FLOW_RUN_STATE_VERSION} sin inventar batches históricos`,
+        },
+      };
+    }
     if (expectDigest !== undefined && state?.digest !== expectDigest) {
       return {
         ok: false,

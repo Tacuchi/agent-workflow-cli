@@ -178,6 +178,19 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // The submitted scope named a plan and the CLI read it, but its location
   // violates the canonical documentation boundary.
   FLOW_SCOPE_PLAN_OUTSIDE_CANON: "evaluated",
+  FLOW_HANDOFF_PLAN_MISSING: "evaluated",
+  // The plan-exec deviation choice was syntactically admissible but its durable
+  // consequence could not be derived or published against the live lineage.
+  // These are evaluated rather than envelope refusals: the gate read the choice
+  // and the workspace facts needed to act on it.
+  FLOW_DECISION_SCOPE_MISSING: "evaluated",
+  FLOW_DECISION_INPUT_INVALID: "evaluated",
+  FLOW_DECISION_PLAN_UNREADABLE: "evaluated",
+  FLOW_DECISION_LINEAGE_INVALID: "evaluated",
+  FLOW_DECISION_SPEC_UNREADABLE: "evaluated",
+  FLOW_DECISION_UNRESOLVABLE: "evaluated",
+  FLOW_DECISION_PREPARATION_FAILED: "evaluated",
+  FLOW_DECISION_PREVIEW_ABSENT: "evaluated",
   PLAN_SOURCE_BOUNDARY_MISSING: "evaluated",
   PLAN_SOURCE_UNKNOWN: "evaluated",
   PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
@@ -497,12 +510,19 @@ function choiceAnswer(body: Record<string, unknown>, input: ParseAnswerInput): F
       },
     };
   }
+  const decisions = body.decisions;
+  if (decisions !== undefined && !isRecord(decisions)) {
+    return { ok: false, failure: invalid("'decisions' tiene que ser un objeto") };
+  }
   return {
     ok: true,
     answer: {
       input_digest: body.input_digest as string,
       signals: [],
-      decisions: {},
+      // A typed human route may carry the prepared decision draft. Keeping it
+      // through the parser is what lets the gate commit exactly that preview;
+      // discarding it here used to make every choice look like "continue".
+      decisions: isRecord(decisions) ? decisions : {},
       choice,
       result: null,
       artifacts: EMPTY,

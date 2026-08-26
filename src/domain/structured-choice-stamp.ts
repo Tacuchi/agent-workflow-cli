@@ -46,16 +46,15 @@ const CONTENT_RULE =
  * orden de riqueza: donde el host ofrece la suya manda la suya, y esta vía entra a
  * recuperar lo que hoy degrada — no a sustituir un mecanismo que funciona.
  *
- * Dice qué hacer con cada clase de no-respuesta porque es la mitad que decide si
- * la persona entiende lo que pasó: un rechazo instantáneo es su política de
- * arranque y no una decisión suya, y confundirlos le atribuye algo que nunca vio.
+ * Dice qué hacer con cada clase de no-respuesta sin inferir quién la produjo: el
+ * protocolo no vuelve observable la política de arranque ni la persona que cerró
+ * el selector.
  */
 function mcpClause(via: HarnessMcpElicitation): string[] {
   if (!via.available) return [];
   return [
     "When it is not, present it with `structured_choice` of the `agent-workflow` MCP server, which renders this host's own selector; its first call asks you to approve that tool, so say so, and note that persisting the approval stops it interrupting every later boundary.",
-    `A refusal that returns instantly with nothing shown is not the person's decision — it is that ${via.blockedBy}: say so, name that they can ${via.recoverBy}, degrade to labeled markdown with every option intact, and carry on.`,
-    "A refusal they saw, a cancellation or an empty answer leaves the boundary pending: say what happened and how to retry, and never record a choice nobody made.",
+    "A decline, cancellation or empty answer leaves the boundary pending: state only what the protocol returned, present labeled markdown with every option intact, and never record a choice nobody made.",
   ];
 }
 

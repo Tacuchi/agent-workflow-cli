@@ -64,7 +64,7 @@ export function installActionLabel(status: HostInstallStatus): string {
     case "no":
       return "Install → user scope";
     case "drift":
-      return "Update user config";
+      return "Resolve config conflict";
     case "si":
       return "Reinstall → user scope";
   }

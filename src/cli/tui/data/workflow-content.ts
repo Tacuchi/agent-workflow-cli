@@ -54,9 +54,9 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
   overview:
     "3 flows (SPEC · PLAN · QUICK) drive convergent loops — each a persistent goal that runs until its Success criteria are green (verification-first).",
 
-  // The model's 3 FLOWS + bootstrap (workspace-init) + export-* family.
+  // The model's 3 FLOWS + optional runtime materialization + export-* family.
   phases: [
-    { id: "workspace-init", title: "Workspace init" },
+    { id: "workspace-init", title: "Materializar Workline" },
     { id: "spec", title: "SPEC — the what" },
     { id: "plan", title: "PLAN — the how" },
     { id: "quick", title: "QUICK — the shortcut" },

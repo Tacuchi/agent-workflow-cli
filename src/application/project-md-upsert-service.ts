@@ -81,11 +81,11 @@ export interface ProjectMdUpsertError {
 
 export async function runProjectMdUpsertWrite(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   input: ProjectMdUpsertInput,
 ): Promise<ProjectMdUpsertOutput | ProjectMdUpsertError> {
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   const markers = paths.blockMarkers();
   const plan = await buildUpsertPlan(fs, cwd, markers, input);
 
@@ -102,11 +102,11 @@ export async function runProjectMdUpsertWrite(
  */
 export async function previewProjectMdUpsert(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   input: ProjectMdUpsertInput,
 ): Promise<ProjectMdUpsertOutput> {
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   const markers = paths.blockMarkers();
   const plan = await buildUpsertPlan(fs, cwd, markers, input);
   const results: UpsertFileResult[] = [];

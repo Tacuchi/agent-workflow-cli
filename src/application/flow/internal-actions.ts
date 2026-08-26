@@ -24,11 +24,18 @@
  *   reason, and the boundary stays standing.
  */
 
+import { join } from "node:path";
 import type { EffectClass } from "../../domain/capability/effects.js";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { InternalActionPlan } from "../../domain/flow/authority.js";
-import type { FlowRunScope } from "../../domain/flow/run-state.js";
-import type { LocalProposal } from "../../domain/proposal.js";
+import {
+  type FlowRunScope,
+  type FlowRunState,
+  type PlanExecBatch,
+  withPlanExecBatch,
+  withPlanExecBatchLoop,
+} from "../../domain/flow/run-state.js";
+import { type LocalProposal, sealProposal } from "../../domain/proposal.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
@@ -46,13 +53,23 @@ import {
 } from "../claims-ledger.js";
 import { applyLocalProposal } from "../local-proposal.js";
 import { parseMdSectionBilingual } from "../markdown.js";
+import { parsePhases } from "../parsers/phases.js";
+import { parseTasks } from "../parsers/tasks.js";
 import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
+import {
+  type BatchPhaseUpdate,
+  inferPlanExecBatch,
+  preparePlanExecDoneSeal,
+  publishPlanExecBatch,
+} from "../plan-exec-batch-service.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { runSessionClose } from "../session-close-service.js";
 import { recordPublication } from "../session-custody-recorder.js";
 import { runStatusCommand } from "../status-service.js";
+import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
+import { applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
 /** The run's own coordinates — the only scope an internal operation may touch. */
 export interface InternalActionRun {
@@ -76,6 +93,8 @@ export interface InternalActionRun {
    * the window where what was approved and what gets written are two things.
    */
   proposal: LocalProposal | null;
+  /** Current run seal, so a stateful internal operation can preserve its CAS. */
+  state_digest?: string;
 }
 
 export interface InternalActionOutcome {
@@ -94,6 +113,12 @@ export interface InternalActionOutcome {
   output: string;
   /** What the operation ACTUALLY applied — never what the row hoped it would. */
   effects: EffectClass[];
+  /**
+   * A stateful operation may have advanced a durable sub-ledger before the
+   * driver applies its transition. `internal-drive` settles from this seal,
+   * never from the state that existed before the operation ran.
+   */
+  state?: FlowRunState;
 }
 
 export type InternalActionExecutor = (
@@ -122,6 +147,12 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
         return ensureUnits(deps, run);
       case "proposal.publish":
         return publish(deps, run);
+      case "plan-exec.batch-infer":
+        return inferBatch(deps, run);
+      case "plan-exec.batch-close":
+        return closeBatch(deps, run);
+      case "plan-exec.plan-done":
+        return sealPlanDone(deps, run);
     }
   };
 }
@@ -501,6 +532,469 @@ function hasContent(value: unknown): boolean {
   if (value === null || typeof value !== "object") return false;
   const content = (value as { content?: unknown }).content;
   return typeof content === "string" && content.trim().length > 0;
+}
+
+/**
+ * Seal the next batch while the cursor is standing on `batch-inference`.
+ *
+ * This is intentionally separate from publication.  A batch is a snapshot of
+ * work that exists before isolation/implementation/validation, so closing it is
+ * never allowed to manufacture that snapshot retroactively from whatever text
+ * happens to be left after work.  Re-entering an already inferred batch is a
+ * no-op: the original digest remains the authority and a moved plan is caught by
+ * the later publication CAS.
+ */
+async function inferBatch(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
+  if (run.scope === null) {
+    return refusal(
+      "plan-exec.batch-infer",
+      "la corrida no fijó el plan cuyo batch debe inferir",
+      canonicalJson({ scope: null }),
+    );
+  }
+  const scope = run.scope;
+  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  const location = locateRun(deps.paths, run.session);
+  const inferred = await applyUnderLock<{
+    batch: PlanExecBatch | null;
+    created: boolean;
+    no_work: boolean;
+  }>(
+    deps.fs,
+    location,
+    async (current) => {
+      if (current === null) {
+        return {
+          ok: false,
+          failure: {
+            code: "FLOW_RUN_ABSENT",
+            message: "la corrida desapareció antes de sellar su batch",
+            action: "reanudá la corrida con 'aw flow advance' antes de inferir el batch",
+          },
+        };
+      }
+      const active = (current.batches ?? []).find(
+        (batch) => batch.published_plan_digest === undefined,
+      );
+      if (active !== undefined) {
+        return {
+          ok: true,
+          state: current,
+          value: { batch: active, created: false, no_work: false },
+          persist: false,
+        };
+      }
+      let text: string;
+      try {
+        text = await deps.fs.readText(join(root, scope.plan));
+      } catch {
+        return {
+          ok: false,
+          failure: {
+            code: "PLAN_EXEC_BATCH_PLAN_UNREADABLE",
+            message: `no se puede leer '${scope.plan}' para inferir el batch`,
+            action: "restaurá o fijá el plan del scope antes de continuar la ejecución",
+          },
+        };
+      }
+      const next = inferNextBatch(text, current);
+      if (!next.ok) {
+        if (next.failure.code !== "PLAN_EXEC_BATCH_NONE_OPEN") {
+          return { ok: false, failure: next.failure };
+        }
+        return {
+          ok: true,
+          state: withPlanExecBatchLoop(current, { pending: false, iteration: null }),
+          value: { batch: null, created: false, no_work: true },
+        };
+      }
+      return {
+        ok: true,
+        state: withPlanExecBatch(current, next.batch),
+        value: { batch: next.batch, created: true, no_work: false },
+      };
+    },
+    run.state_digest === undefined ? {} : { expectDigest: run.state_digest },
+  );
+  if (!inferred.ok) {
+    return refusal(
+      "plan-exec.batch-infer",
+      `${inferred.failure.message} — ${inferred.failure.action}`,
+      canonicalJson({ failure: inferred.failure }),
+    );
+  }
+  return {
+    ok: true,
+    summary: inferred.value.no_work
+      ? "el plan ya no tiene tareas abiertas: se omite el batch vacío y se expone la validación final"
+      : inferred.value.created
+        ? `batch ${inferred.value.batch?.id ?? "nuevo"} inferido y sellado antes de implementar`
+        : `batch ${inferred.value.batch?.id ?? "actual"} ya estaba inferido; se conserva su snapshot sellado`,
+    output: canonicalJson({ batch: inferred.value.batch, created: inferred.value.created }),
+    effects: [],
+    state: inferred.state,
+  };
+}
+
+/**
+ * Close the already inferred real batch, not a human-declared list of effects.
+ *
+ * This executes only after the batch's validation and review rows. It reads the
+ * batch snapshot sealed at inference, then lets `publishPlanExecBatch` persist
+ * intent → document CAS → v10 trace.
+ * A re-entry finds the pending sealed batch and either confirms its after-digest
+ * or fails stale; it never credits a second range because an agent said so.
+ */
+async function closeBatch(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
+  if (run.scope === null) {
+    return refusal(
+      "plan-exec.batch-close",
+      "la corrida no fijó el plan cuyo batch debe cerrar",
+      canonicalJson({ scope: null }),
+    );
+  }
+  const location = locateRun(deps.paths, run.session);
+  const live = await readRun(deps.fs, location);
+  if (!live.ok) {
+    return refusal(
+      "plan-exec.batch-close",
+      `${live.failure.message} — ${live.failure.action}`,
+      canonicalJson({ failure: live.failure }),
+    );
+  }
+  if (run.state_digest !== undefined && live.state.digest !== run.state_digest) {
+    return refusal(
+      "plan-exec.batch-close",
+      "la corrida cambió mientras se preparaba el cierre del batch",
+      canonicalJson({ expected: run.state_digest, actual: live.state.digest }),
+    );
+  }
+  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  let text: string;
+  try {
+    text = await deps.fs.readText(join(root, run.scope.plan));
+  } catch {
+    return refusal(
+      "plan-exec.batch-close",
+      `no se puede leer '${run.scope.plan}'`,
+      canonicalJson({ plan: run.scope.plan }),
+    );
+  }
+  const batch = (live.state.batches ?? []).find(
+    (current) => current.published_plan_digest === undefined,
+  );
+  if (batch === undefined) {
+    return refusal(
+      "plan-exec.batch-close",
+      "no hay un batch inferido para cerrar: la corrida no puede acreditar tareas que no selló antes de implementarlas",
+      canonicalJson({ code: "PLAN_EXEC_BATCH_NOT_INFERRED", plan: run.scope.plan }),
+    );
+  }
+  const phaseUpdates = phaseUpdatesForClosedBatch(text, batch);
+  if (!phaseUpdates.ok) {
+    return refusal(
+      "plan-exec.batch-close",
+      `${phaseUpdates.failure.message} — ${phaseUpdates.failure.action}`,
+      canonicalJson({ failure: phaseUpdates.failure }),
+    );
+  }
+  const published = await publishPlanExecBatch(deps.fs, deps.paths, {
+    root,
+    location,
+    state_digest: live.state.digest,
+    plan: run.scope.plan,
+    batch,
+    completed_tasks: batch.tasks,
+    phase_updates: phaseUpdates.updates,
+    transition: "plan-exec.batch-close",
+  });
+  if (!published.ok) {
+    return refusal(
+      "plan-exec.batch-close",
+      `${published.failure.message} — ${published.failure.action}`,
+      canonicalJson({ failure: published.failure }),
+    );
+  }
+  return {
+    ok: true,
+    summary: published.already_applied
+      ? `batch ${published.batch.id} ya estaba publicado en ${run.scope.plan}`
+      : `batch ${published.batch.id} publicado: ${published.written.join(", ")}`,
+    output: canonicalJson({
+      batch: published.batch,
+      written: published.written,
+      already_applied: published.already_applied,
+    }),
+    effects: ["mutate_overwrite"],
+    state: published.state,
+  };
+}
+
+const PLAN_DONE_REQUIRED_TRANSITIONS = [
+  "plan-exec.final-validation",
+  "plan-exec.commit-execution",
+  "plan-exec.unit-integration",
+] as const;
+
+/**
+ * Write the final plan seal from the evidence the run already owns.
+ *
+ * This is intentionally an internal action rather than a request to edit a
+ * Markdown line.  The caller cannot assert that the plan is done: every retry
+ * rereads the run, rechecks the documentary closure under the workspace lock,
+ * and publishes only the deterministic `Estado` / `Cierre` pair.
+ */
+async function sealPlanDone(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
+  if (run.scope === null) {
+    return refusal(
+      "plan-exec.plan-done",
+      "la corrida no fijó el plan que debe sellarse",
+      canonicalJson({ scope: null }),
+    );
+  }
+  const location = locateRun(deps.paths, run.session);
+  const live = await readRun(deps.fs, location);
+  if (!live.ok) {
+    return refusal(
+      "plan-exec.plan-done",
+      `${live.failure.message} — ${live.failure.action}`,
+      canonicalJson({ failure: live.failure }),
+    );
+  }
+  if (run.state_digest !== undefined && live.state.digest !== run.state_digest) {
+    return refusal(
+      "plan-exec.plan-done",
+      "la corrida cambió mientras se preparaba el sello final",
+      canonicalJson({ expected: run.state_digest, actual: live.state.digest }),
+    );
+  }
+  const missing = PLAN_DONE_REQUIRED_TRANSITIONS.filter(
+    (transition) => !live.state.applied.includes(transition),
+  );
+  if (missing.length > 0) {
+    return refusal(
+      "plan-exec.plan-done",
+      `todavía falta evidencia de ${missing.join(", ")}`,
+      canonicalJson({ code: "PLAN_EXEC_DONE_PREREQUISITE", missing }),
+    );
+  }
+  const activeBatch = (live.state.batches ?? []).find(
+    (batch) => batch.published_plan_digest === undefined,
+  );
+  if (activeBatch !== undefined || live.state.batch_loop?.pending !== false) {
+    return refusal(
+      "plan-exec.plan-done",
+      "la corrida aún tiene un batch abierto o no cerró el ciclo de batches",
+      canonicalJson({
+        code: "PLAN_EXEC_DONE_BATCH_PENDING",
+        active_batch: activeBatch?.id ?? null,
+        batch_loop: live.state.batch_loop ?? null,
+      }),
+    );
+  }
+
+  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  let text: string;
+  try {
+    text = await deps.fs.readText(join(root, run.scope.plan));
+  } catch {
+    return refusal(
+      "plan-exec.plan-done",
+      `no se puede leer '${run.scope.plan}'`,
+      canonicalJson({ code: "PLAN_EXEC_DONE_PLAN_UNREADABLE", plan: run.scope.plan }),
+    );
+  }
+  const closure = `validación final, commits e integración acreditados por la corrida ${run.session}`;
+  const prepared = preparePlanExecDoneSeal(text, { plan: run.scope.plan, closure });
+  if (!prepared.ok) {
+    return refusal(
+      "plan-exec.plan-done",
+      `${prepared.failure.message} — ${prepared.failure.action}`,
+      canonicalJson({ failure: prepared.failure }),
+    );
+  }
+
+  const proposal = sealProposal({
+    operation: "plan-exec.plan-done",
+    artifacts: [{ path: run.scope.plan, content: prepared.prepared.content, overwrite: true }],
+    bases: [{ path: run.scope.plan, digest: prepared.prepared.before_digest }],
+    effects: ["mutate_overwrite"],
+    requiresApproval: [],
+  });
+  const applied = await applyLocalProposal(deps.fs, deps.paths, {
+    root,
+    proposal,
+    approval: { digest: proposal.digest, granted: [] },
+    selfAuthorized: ["mutate_overwrite"],
+    // The index is re-read while the document publication holds the workspace
+    // lock.  This closes the decision-note race: a new compensatory obligation
+    // cannot appear between the run's earlier reading and a `done` write.
+    precondition: () => planDonePrecondition(deps, run.scope?.plan ?? ""),
+  });
+  if (!applied.ok) {
+    return refusal(
+      "plan-exec.plan-done",
+      `${applied.failure.message} — ${applied.failure.action}`,
+      canonicalJson({ failure: applied.failure }),
+    );
+  }
+  return {
+    ok: true,
+    summary: applied.result.already_applied
+      ? `${run.scope.plan} ya tenía el sello done de esta corrida`
+      : `${run.scope.plan} sellado done con su línea de cierre`,
+    output: canonicalJson({
+      plan: run.scope.plan,
+      closure,
+      written: applied.result.written,
+      already_applied: applied.result.already_applied,
+    }),
+    // A recovered no-op still attests that the exact overwrite is already on
+    // disk, like batch publication's already-applied path.
+    effects: ["mutate_overwrite"],
+  };
+}
+
+/** The documentary checks that must pass in the same critical section as done. */
+async function planDonePrecondition(
+  deps: InternalActionDeps,
+  path: string,
+): Promise<CapabilityFailure | null> {
+  const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, { git: deps.git });
+  if (index.docs_canon_error !== undefined) {
+    return {
+      code: "PLAN_EXEC_DONE_DOCS_CANON_INVALID",
+      message: `no se puede comprobar el cierre: ${index.docs_canon_error}`,
+      action: "corregí el canon documental antes de volver a sellar el plan",
+    };
+  }
+  const plan = index.plans.find((candidate) => candidate.file === path);
+  if (plan === undefined) {
+    return {
+      code: "PLAN_EXEC_DONE_PLAN_MISSING",
+      message: `el plan '${path}' no está en el índice documental`,
+      action: "restaurá el plan en el directorio documental configurado y reintentá",
+    };
+  }
+  if (plan.tasks_done !== plan.tasks_total || plan.phases_validated !== plan.phases_total) {
+    return {
+      code: "PLAN_EXEC_DONE_COUNTERS_OPEN",
+      message: `${path} no está acreditado por completo (${plan.tasks_done}/${plan.tasks_total}, fases ${plan.phases_validated}/${plan.phases_total})`,
+      action: "cerrá los batches pendientes; el sello final no acredita tareas ni fases",
+    };
+  }
+  if (plan.reconciliation !== null && !plan.reconciliation.closable) {
+    return {
+      code: "PLAN_EXEC_DONE_RECONCILIATION_PENDING",
+      message: `${path} conserva obligaciones de reconciliación`,
+      action: `resolvé la compensación desde ${plan.reconciliation.resume_point ?? "su punto de reanudación"} antes de cerrar`,
+    };
+  }
+  if (
+    plan.baseline.status === "divergent" ||
+    plan.baseline.status === "malformed" ||
+    plan.baseline.status === "unresolved"
+  ) {
+    return {
+      code: "PLAN_EXEC_DONE_BASELINE_INVALID",
+      message: `${path} no tiene un baseline ejecutable (${plan.baseline.status})`,
+      action:
+        plan.baseline.status === "divergent"
+          ? `volvé a /w:plan-refine ${path} antes de cerrar`
+          : "restaurá un baseline legible y su spec antes de cerrar",
+    };
+  }
+  return null;
+}
+
+/**
+ * The close transition may validate a phase, but it may never erase a blocker to
+ * make that true.  A blocked phase remains a typed refusal until its actual
+ * blocker has been resolved through the normal plan/deviation route.
+ */
+function phaseUpdatesForClosedBatch(
+  text: string,
+  batch: PlanExecBatch,
+): { ok: true; updates: BatchPhaseUpdate[] } | { ok: false; failure: CapabilityFailure } {
+  const phases = new Map(parsePhases(text).items.map((phase) => [phase.n, phase]));
+  for (const number of batch.phases) {
+    const phase = phases.get(number);
+    if (phase === undefined) {
+      return {
+        ok: false,
+        failure: {
+          code: "PLAN_EXEC_BATCH_PHASE_UNKNOWN",
+          message: `el batch nombra F${number}, que ya no puede leerse del plan`,
+          action:
+            "re-inferí el batch sobre el plan vigente; no se cambia una fase que el CLI no puede ubicar",
+        },
+      };
+    }
+    if (phase.state === "bloqueada" || phase.blocker !== null) {
+      return {
+        ok: false,
+        failure: {
+          code: "PLAN_EXEC_BATCH_PHASE_BLOCKED",
+          message: `F${phase.n} conserva un bloqueo y no puede acreditarse como validada`,
+          action: "resolvé o escalá el bloqueo; el cierre de batch no borra razones de bloqueo",
+        },
+      };
+    }
+  }
+  return {
+    ok: true,
+    // The transition follows completed validation/review, so this is the one
+    // allowed state change. `blocker` stays undefined: the publisher preserves
+    // document evidence instead of deleting it by convention.
+    updates: batch.phases.map((phase) => ({ phase, state: "validada" })),
+  };
+}
+
+function inferNextBatch(text: string, state: FlowRunState): ReturnType<typeof inferPlanExecBatch> {
+  // `inferPlanExecBatch` itself validates that the phase has real, uniquely
+  // labelled Tn.m tasks. We only choose the first still-open phase from the
+  // document, which is a deterministic batch boundary rather than a claimed one.
+  const openPhase = parseTasks(text).items.find(
+    (task) => task.status === "open" && task.phase !== undefined,
+  )?.phase;
+  if (openPhase === undefined) {
+    const unresolved = parsePhases(text).items.find((phase) => phase.state !== "validada");
+    if (unresolved !== undefined) {
+      return {
+        ok: false,
+        failure: {
+          code: "PLAN_EXEC_BATCH_PHASE_UNRESOLVED",
+          message: `F${unresolved.n} sigue '${unresolved.state}' pero no tiene tareas abiertas acreditables`,
+          action:
+            "normalizá la fase con plan-refine; no se salta a la validación final sobre una fase no validada",
+        },
+      };
+    }
+    return {
+      ok: false,
+      failure: {
+        code: "PLAN_EXEC_BATCH_NONE_OPEN",
+        message: "el plan no tiene una fase con tareas abiertas que este batch pueda acreditar",
+        action: "el batch ya está cerrado: reanudá la corrida para que exponga la validación final",
+      },
+    };
+  }
+  const iteration = Math.max(0, ...(state.batches ?? []).map((batch) => batch.iteration)) + 1;
+  return inferPlanExecBatch(text, {
+    id: `batch-${iteration}`,
+    iteration,
+    mode: "continuous",
+    phases: [openPhase],
+  });
 }
 
 /**

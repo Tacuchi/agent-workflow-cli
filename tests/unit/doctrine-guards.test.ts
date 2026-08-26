@@ -1107,7 +1107,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(index).toContain("plan.final_validation_pending");
     expect(index).toContain("BLOQUEADA F");
     const service = await readSrc("resume-service.ts");
-    expect(service).toContain("planDetail");
+    expect(service).toContain("planPresentation");
     expect(service).not.toContain("final_validation_pending");
     // And the skill states the rule without owning it.
     const doc = await readSurface("commands/resume.md");
@@ -1136,15 +1136,15 @@ describe("Doctrine guards — G20 · what a pending item owes, and how the choic
     expect(doc).toContain("`validada`");
   });
 
-  it("`status` reports a loose session as a notice, and tells the two empties apart", async () => {
+  it("`status` reports a loose session as a notice, and recognizes an empty implicit workspace", async () => {
     const doc = await readSurface("commands/status.md");
     expect(doc).toContain("Sessions are not the user's work");
     expect(doc).toMatch(/\*\*notice\*\*/);
     expect(doc).toContain("never a pending row");
     expect(doc).toContain("Nothing pending");
-    expect(doc).toContain("/w:workspace-init");
-    // An empty pipeline for want of a workspace is NOT "nothing pending".
-    expect(doc).toContain('never "nothing pending"');
+    expect(doc).toContain("implicit workspace");
+    expect(doc).toContain('genuinely "nothing pending"');
+    expect(doc).toContain("this read creates no marker");
   });
 
   it("`resume` analyses briefly, offers one option per candidate and chains the chosen command", async () => {

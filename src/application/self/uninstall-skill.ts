@@ -23,7 +23,7 @@ export interface UninstallRemoval {
 }
 
 export interface SelfUninstallSkillData {
-  status: "removed" | "dry-run" | "noop";
+  status: "removed" | "dry-run" | "noop" | "partial";
   removed: UninstallRemoval[];
   /**
    * El servidor MCP propio, retirado de los hosts de estos destinos.
@@ -82,18 +82,30 @@ export async function selfUninstallSkill(
   // si la disponibilidad de un host se retirara del catálogo después de una
   // instalación, mirar sólo los vigentes dejaría su entrada abandonada para siempre.
   const mcpServer = withdrawWorklineServer({ targets, scopeDir: home, dryRun });
+  const hasMcpProblems = mcpServer.some(
+    (outcome) => outcome.state === "conflict" || outcome.state === "failed",
+  );
 
   return {
-    ok: true,
+    ok: !hasMcpProblems,
     data: {
-      status: resolveStatus(dryRun, removals.length),
+      status: hasMcpProblems ? "partial" : resolveStatus(dryRun, removals.length),
       removed: removals,
       ...(mcpServer.length === 0 ? {} : { mcp_server: mcpServer }),
       lock_updated: lockResult.updated,
       ...(lockResult.path ? { lock_path: lockResult.path } : {}),
       ...(lockResult.warning ? { lock_warning: lockResult.warning } : {}),
     },
-    exitCode: 0,
+    ...(hasMcpProblems
+      ? {
+          error: {
+            code: "MCP_WITHDRAW_PARTIAL",
+            message:
+              "La skill se retiró, pero el servidor MCP no se pudo retirar en todos los hosts.",
+          },
+        }
+      : {}),
+    exitCode: hasMcpProblems ? 1 : 0,
   };
 }
 

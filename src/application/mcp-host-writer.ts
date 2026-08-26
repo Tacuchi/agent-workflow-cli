@@ -15,7 +15,7 @@ import {
   type McpWriteAction,
   type McpWriteOpts,
   type McpWriteResult,
-  isDbhubManagedEntry,
+  mcpEntryShapeForHost,
 } from "../domain/mcp-entry.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
 import { backupFile, escapeRegex, purgeStaleBackups } from "./multiroot/paths.js";
@@ -57,39 +57,67 @@ function legacyClaudeSettingsFile(scope: ScopeInput): string {
   return join(scope.scopeDir, ".claude", "settings.json");
 }
 
-function cleanupLegacyClaudeMcpEntry(scope: ScopeInput, name: string, dryRun: boolean): void {
-  if (dryRun) return;
-  const legacy = legacyClaudeSettingsFile(scope);
-  if (!existsSync(legacy)) return;
+type LegacyClaudeEntryInspection =
+  | { state: "absent"; target: string }
+  | {
+      state: "owned";
+      target: string;
+      data: Record<string, unknown>;
+      servers: Record<string, unknown>;
+    }
+  | { state: "conflict"; target: string };
+
+/**
+ * The old Claude settings location is still live user configuration. A
+ * same-named server there is ours only when it has the exact current generated
+ * Claude shape. Invalid containers are also a conflict: writing a second
+ * location while one cannot be safely interpreted would make the operation
+ * partially mutate the user's configuration.
+ */
+function inspectLegacyClaudeMcpEntry(
+  scope: ScopeInput,
+  entry: McpEntry,
+): LegacyClaudeEntryInspection {
+  const target = legacyClaudeSettingsFile(scope);
+  if (!existsSync(target)) return { state: "absent", target };
+
   let data: Record<string, unknown>;
   try {
-    const text = readFileSync(legacy, "utf-8");
-    if (text.trim().length === 0) return;
+    const text = readFileSync(target, "utf-8");
+    if (text.trim().length === 0) return { state: "absent", target };
     const parsed = JSON.parse(text);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
-    data = parsed as Record<string, unknown>;
+    if (!isRecord(parsed)) return { state: "conflict", target };
+    data = parsed;
   } catch {
-    return;
+    return { state: "conflict", target };
   }
-  const mcpServers = data.mcpServers;
-  if (!mcpServers || typeof mcpServers !== "object" || Array.isArray(mcpServers)) return;
-  const servers = mcpServers as Record<string, unknown>;
-  if (!(name in servers)) return;
-  // Ownership guard: at global scope this file is the user's real
-  // ~/.claude/settings.json — a same-named entry the tool never wrote stays.
-  const existing = servers[name];
-  if (!existing || typeof existing !== "object" || Array.isArray(existing)) return;
-  if (!isDbhubManagedEntry(existing as { command?: unknown; args?: unknown })) return;
-  servers[name] = undefined;
-  const remaining = Object.fromEntries(Object.entries(servers).filter(([, v]) => v !== undefined));
+
+  const current = data.mcpServers;
+  if (current === undefined) return { state: "absent", target };
+  if (!isRecord(current)) return { state: "conflict", target };
+  if (!(entry.name in current)) return { state: "absent", target };
+  if (!isDeepStrictEqual(current[entry.name], mcpEntryShapeForHost("claude", entry))) {
+    return { state: "conflict", target };
+  }
+  return { state: "owned", target, data, servers: current };
+}
+
+function cleanupLegacyClaudeMcpEntry(scope: ScopeInput, entry: McpEntry, dryRun: boolean): void {
+  if (dryRun) return;
+  const legacy = inspectLegacyClaudeMcpEntry(scope, entry);
+  if (legacy.state !== "owned") return;
+  legacy.servers[entry.name] = undefined;
+  const remaining = Object.fromEntries(
+    Object.entries(legacy.servers).filter(([, value]) => value !== undefined),
+  );
   if (Object.keys(remaining).length === 0) {
-    data.mcpServers = undefined;
+    legacy.data.mcpServers = undefined;
   } else {
-    data.mcpServers = remaining;
+    legacy.data.mcpServers = remaining;
   }
-  purgeStaleBackups(legacy);
-  const legacyBackup = backupFile(legacy);
-  atomicWriteFileSync(legacy, `${JSON.stringify(data, null, 2)}\n`);
+  purgeStaleBackups(legacy.target);
+  const legacyBackup = backupFile(legacy.target);
+  atomicWriteFileSync(legacy.target, `${JSON.stringify(legacy.data, null, 2)}\n`);
   discardBackup(legacyBackup);
 }
 
@@ -196,40 +224,6 @@ function kimiMcpFile(scope: ScopeInput): string {
   return join(scope.scopeDir, ".kimi-code", "mcp.json");
 }
 
-// Per-host serialization of a dbhub McpEntry into the host's JSON schema.
-// Exhaustive for the same reason the dispatchers are: a new host must state its
-// shape, not inherit Claude's by falling off the end.
-function mcpShapeFor(host: McpHost, entry: McpEntry): Record<string, unknown> {
-  switch (host) {
-    case "opencode":
-      // OpenCode: { type: "local", command: [cmd, ...args], environment, enabled }
-      return {
-        type: "local",
-        command: [entry.command, ...entry.args],
-        environment: { ...entry.env },
-        enabled: true,
-      };
-    case "crush":
-      // Crush: { type: "stdio", command, args, env }
-      return {
-        type: "stdio",
-        command: entry.command,
-        args: [...entry.args],
-        env: { ...entry.env },
-      };
-    case "claude":
-    case "codex":
-    case "warp":
-    case "gemini":
-    // Kimi's stdio entry is `command` + optional `args`/`env`/`cwd` — the same
-    // shape, verified against v0.29.2's MCP config schema.
-    case "kimi":
-      return expectedClaudeShape(entry);
-    default:
-      return assertNeverHost(host);
-  }
-}
-
 // Generic writer for hosts whose MCP config is a JSON file with a top-level
 // object keyed by server name (Gemini `mcpServers`, OpenCode/Crush `mcp`).
 // Preserves other top-level keys and other server entries; idempotent; dry-run;
@@ -242,12 +236,17 @@ function writeJsonMcpEntry(
   opts: McpWriteOpts,
 ): McpWriteResult {
   const data = readJsonFile(file);
-  const bag = ensureRecord(data, topKey);
+  const bag = recordContainer(data, topKey, file) ?? {};
   const existing = bag[entry.name];
-  const expected = mcpShapeFor(host, entry);
+  const expected = mcpEntryShapeForHost(host, entry);
 
   if (isDeepStrictEqual(existing, expected)) {
     return resultSkipped(host, file, entry.name);
+  }
+  // A matching name is not enough to establish ownership. Replacing a server
+  // whose shape differs would overwrite somebody else's configuration.
+  if (existing !== undefined) {
+    return resultConflict(host, file, entry.name);
   }
 
   bag[entry.name] = expected;
@@ -255,9 +254,7 @@ function writeJsonMcpEntry(
   const newJson = `${JSON.stringify(data, null, 2)}\n`;
 
   if (opts.dryRun) {
-    return resultDryRun(host, file, entry.name, [
-      `${topKey}.${entry.name}: ${existing ? "update" : "add"}`,
-    ]);
+    return resultDryRun(host, file, entry.name, [`${topKey}.${entry.name}: add`]);
   }
 
   mkdirSync(dirname(file), { recursive: true });
@@ -276,10 +273,15 @@ function removeJsonMcpEntry(
   opts: McpWriteOpts,
 ): McpWriteResult {
   const data = readJsonFile(file);
-  const bag = ensureRecord(data, topKey);
+  const bag = recordContainer(data, topKey, file);
+  if (bag === undefined) return resultSkipped(host, file, entry.name);
   const existing = bag[entry.name];
+  const expected = mcpEntryShapeForHost(host, entry);
   if (existing === undefined) {
     return resultSkipped(host, file, entry.name);
+  }
+  if (!isDeepStrictEqual(existing, expected)) {
+    return resultConflict(host, file, entry.name);
   }
 
   bag[entry.name] = undefined;
@@ -299,18 +301,30 @@ function removeJsonMcpEntry(
   return resultRemoved(host, file, entry.name, null);
 }
 
-// Claude = the generic JSON writer plus the legacy .claude/settings.json sweep,
-// which runs exactly when the original inline pipeline did: on idempotent skips
-// (respecting dry-run) and after a real write/remove — never on dry-run diffs.
+// Claude = the generic JSON writer plus an ownership-checked legacy
+// .claude/settings.json sweep. A foreign or malformed legacy entry stops before
+// the primary file changes; an exact own entry is swept on a real write/remove.
 function writeClaudeMcpEntry(
   entry: McpEntry,
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
+  const legacy = inspectLegacyClaudeMcpEntry(scope, entry);
+  if (legacy.state === "conflict") return resultConflict("claude", legacy.target, entry.name);
   const res = writeJsonMcpEntry("claude", claudeMcpFile(scope), "mcpServers", entry, opts);
-  if (res.action === "skipped-idempotent")
-    cleanupLegacyClaudeMcpEntry(scope, entry.name, opts.dryRun ?? false);
-  if (res.action === "written") cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
+  // The canonical entry may already be present while the old location still
+  // needs a cleanup. That is still an observable write: report it as such so
+  // a caller's dry-run and first-mutation guard do not mistake it for a noop.
+  if (legacy.state === "owned" && res.action === "skipped-idempotent") {
+    if (opts.dryRun)
+      return resultDryRun("claude", legacy.target, entry.name, [
+        `mcpServers.${entry.name}: remove legacy entry`,
+      ]);
+    cleanupLegacyClaudeMcpEntry(scope, entry, false);
+    return resultWritten("claude", legacy.target, entry.name, null);
+  }
+  if (legacy.state === "owned" && res.action === "written")
+    cleanupLegacyClaudeMcpEntry(scope, entry, false);
   return res;
 }
 
@@ -321,24 +335,16 @@ function writeCodexMcpEntry(
 ): McpWriteResult {
   const configFile = join(scope.scopeDir, ".codex", "config.toml");
   const oldContent = existsSync(configFile) ? readFileSync(configFile, "utf-8") : "";
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = oldContent.length > 0 ? (parseToml(oldContent) as Record<string, unknown>) : {};
-  } catch (err) {
-    throw new McpWriterError(
-      `config.toml inválido en ${configFile}`,
-      configFile,
-      (err as Error).message,
-    );
-  }
-
-  const mcpServers = (parsed.mcp_servers ?? {}) as Record<string, unknown>;
+  const parsed = parseCodexConfig(oldContent, configFile);
+  const mcpServers = recordContainer(parsed, "mcp_servers", configFile) ?? {};
   const existing = mcpServers[entry.name];
-  const expected = expectedClaudeShape(entry);
+  const expected = mcpEntryShapeForHost("codex", entry);
 
   if (isDeepStrictEqual(existing, expected)) {
     return resultSkipped("codex", configFile, entry.name);
+  }
+  if (existing !== undefined) {
+    return resultConflict("codex", configFile, entry.name);
   }
 
   const cleaned = removeCodexMcpBlocks(oldContent, entry.name);
@@ -350,8 +356,8 @@ function writeCodexMcpEntry(
 
   if (opts.dryRun) {
     return resultDryRun("codex", configFile, entry.name, [
-      `[mcp_servers.${entry.name}]: ${existing ? "update" : "add"}`,
-      `[mcp_servers.${entry.name}.env]: ${existing ? "update" : "add"}`,
+      `[mcp_servers.${entry.name}]: add`,
+      `[mcp_servers.${entry.name}.env]: add`,
     ]);
   }
 
@@ -368,10 +374,21 @@ function removeClaudeMcpEntry(
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
+  const legacy = inspectLegacyClaudeMcpEntry(scope, entry);
+  if (legacy.state === "conflict") return resultConflict("claude", legacy.target, entry.name);
   const res = removeJsonMcpEntry("claude", claudeMcpFile(scope), "mcpServers", entry, opts);
-  if (res.action === "skipped-idempotent")
-    cleanupLegacyClaudeMcpEntry(scope, entry.name, opts.dryRun ?? false);
-  if (res.action === "removed") cleanupLegacyClaudeMcpEntry(scope, entry.name, false);
+  // See the matching setup path above: removing an own entry left only in the
+  // legacy file is a removal, not an idempotent skip.
+  if (legacy.state === "owned" && res.action === "skipped-idempotent") {
+    if (opts.dryRun)
+      return resultDryRun("claude", legacy.target, entry.name, [
+        `mcpServers.${entry.name}: remove legacy entry`,
+      ]);
+    cleanupLegacyClaudeMcpEntry(scope, entry, false);
+    return resultRemoved("claude", legacy.target, entry.name, null);
+  }
+  if (legacy.state === "owned" && res.action === "removed")
+    cleanupLegacyClaudeMcpEntry(scope, entry, false);
   return res;
 }
 
@@ -382,16 +399,15 @@ function removeCodexMcpEntry(
 ): McpWriteResult {
   const configFile = join(scope.scopeDir, ".codex", "config.toml");
   const oldContent = existsSync(configFile) ? readFileSync(configFile, "utf-8") : "";
-  if (oldContent.length > 0) {
-    try {
-      parseToml(oldContent);
-    } catch (err) {
-      throw new McpWriterError(
-        `config.toml inválido en ${configFile}`,
-        configFile,
-        (err as Error).message,
-      );
-    }
+  const parsed = parseCodexConfig(oldContent, configFile);
+  const mcpServers = recordContainer(parsed, "mcp_servers", configFile);
+  if (mcpServers === undefined) return resultSkipped("codex", configFile, entry.name);
+  const existing = mcpServers[entry.name];
+  if (existing === undefined) {
+    return resultSkipped("codex", configFile, entry.name);
+  }
+  if (!isDeepStrictEqual(existing, mcpEntryShapeForHost("codex", entry))) {
+    return resultConflict("codex", configFile, entry.name);
   }
 
   const newContent = removeCodexMcpBlocks(oldContent, entry.name);
@@ -433,31 +449,46 @@ function readJsonFile(file: string): Record<string, unknown> {
   if (text.trim().length === 0) return {};
   try {
     const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
+    if (isRecord(parsed)) return parsed;
     throw new Error("contenido no es un objeto JSON");
   } catch (err) {
     throw new McpWriterError(`JSON inválido en ${file}`, file, (err as Error).message);
   }
 }
 
-function ensureRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {
-  const current = parent[key];
-  if (current && typeof current === "object" && !Array.isArray(current)) {
-    return current as Record<string, unknown>;
+function parseCodexConfig(content: string, configFile: string): Record<string, unknown> {
+  if (content.trim().length === 0) return {};
+  try {
+    const parsed = parseToml(content);
+    if (isRecord(parsed)) return parsed;
+    throw new Error("contenido TOML no es un objeto");
+  } catch (err) {
+    throw new McpWriterError(
+      `config.toml inválido en ${configFile}`,
+      configFile,
+      (err as Error).message,
+    );
   }
-  const fresh: Record<string, unknown> = {};
-  parent[key] = fresh;
-  return fresh;
 }
 
-function expectedClaudeShape(entry: McpEntry): Record<string, unknown> {
-  return {
-    command: entry.command,
-    args: [...entry.args],
-    env: { ...entry.env },
-  };
+/**
+ * Missing MCP containers are created only by a successful write. A present
+ * scalar, null, or array is malformed user configuration and must never be
+ * replaced with an empty object behind their back.
+ */
+function recordContainer(
+  parent: Record<string, unknown>,
+  key: string,
+  file: string,
+): Record<string, unknown> | undefined {
+  const current = parent[key];
+  if (current === undefined) return undefined;
+  if (isRecord(current)) return current;
+  throw new McpWriterError(`contenedor '${key}' inválido en ${file}`, file);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 // backupFile/purgeStaleBackups/escapeRegex live in multiroot/paths.ts (single
@@ -539,6 +570,10 @@ function resultSkipped(host: McpHost, target: string, name: string): McpWriteRes
 
 function resultDryRun(host: McpHost, target: string, name: string, diff: string[]): McpWriteResult {
   return { ...action(host, target, name, "dry-run", null), diff };
+}
+
+function resultConflict(host: McpHost, target: string, name: string): McpWriteResult {
+  return action(host, target, name, "conflict", null);
 }
 
 function action(

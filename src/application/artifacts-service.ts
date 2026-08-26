@@ -73,14 +73,14 @@ export type ArtifactsResult = ArtifactsOutput | { sessionError: SessionResolutio
 
 export async function runArtifactsCommand(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   input: ArtifactsInput,
 ): Promise<ArtifactsResult> {
   const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   const verbose = input.verbose === true;
 
   const sessionSummary = await summarizeSession(fs, session.path);

@@ -35,7 +35,7 @@ describe("installStatusPill", () => {
 describe("installActionLabel", () => {
   it("adapts the install action label to the current user-scope status", () => {
     expect(installActionLabel("no")).toBe("Install → user scope");
-    expect(installActionLabel("drift")).toBe("Update user config");
+    expect(installActionLabel("drift")).toBe("Resolve config conflict");
     expect(installActionLabel("si")).toBe("Reinstall → user scope");
   });
 });

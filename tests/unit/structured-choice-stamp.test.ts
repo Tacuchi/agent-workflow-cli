@@ -286,14 +286,13 @@ describe("la vía MCP en el estampado y en el catálogo", () => {
     expect(markdown).toBeGreaterThan(via);
   });
 
-  it("dice qué hacer con cada clase de no-respuesta, y no las confunde", () => {
+  it("dice qué hacer con cada no-respuesta sin atribuirla al host o a una persona", () => {
     const stamp = renderStructuredChoiceStamp(specOf("codex"));
 
-    // Un rechazo instantáneo es la política de arranque; leerlo como decisión le
-    // atribuye a la persona algo que nunca vio.
-    expect(stamp).toContain("returns instantly with nothing shown is not the person's decision");
-    expect(stamp).toContain("--yolo");
-    expect(stamp).toContain("default approval policy");
+    expect(stamp).toContain("A decline, cancellation or empty answer leaves the boundary pending");
+    expect(stamp).toContain("state only what the protocol returned");
+    expect(stamp).not.toContain("--yolo");
+    expect(stamp).not.toContain("default approval policy");
     expect(stamp).toContain("never record a choice nobody made");
     // Y la aprobación de primera vez se explica como parte de la presentación.
     expect(stamp).toContain("approve that tool");
@@ -319,8 +318,6 @@ describe("la vía MCP en el estampado y en el catálogo", () => {
       // runtime. El tipo es una union discriminada, así que esto no es un guard
       // que alguien pueda olvidar: sin `evidence` no compila.
       expect(via.evidence).toMatch(/20\d\d-\d\d-\d\d/);
-      expect(via.blockedBy.length).toBeGreaterThan(0);
-      expect(via.recoverBy.length).toBeGreaterThan(0);
     }
   });
 

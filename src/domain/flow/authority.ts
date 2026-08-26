@@ -215,12 +215,25 @@ export interface FlowDecision {
   realized_by?: Realization;
 }
 
-/** One alternative of a boundary that chooses: what it is, and what it costs. */
+/** The executable path selected by a human alternative. */
+export type FlowChoiceOutcome =
+  /** Apply this boundary and keep walking the current flow. */
+  | { kind: "continue" }
+  /** Prepare and commit the decision preview selected at a plan-exec gate. */
+  | { kind: "register-decision" }
+  /** End the current run and deliver its sealed escalation package to another flow. */
+  | { kind: "handoff"; destination: "plan-refine" | "spec-refine" | "spec-new" }
+  /** Chassis controls are handled before a business alternative is applied. */
+  | { kind: "control"; control: "pause" | "stop" };
+
+/** One alternative of a boundary that chooses: what it is, what it costs, and what it does. */
 export interface FlowChoice {
   label: string;
   /** What choosing it produces. A choice without a consequence is not a choice. */
   consequence: string;
   recommended: boolean;
+  /** A closed, executable consequence; prose is never the routing authority. */
+  outcome: FlowChoiceOutcome;
 }
 
 /**
@@ -375,7 +388,7 @@ export const RUN_PLACEHOLDERS = ["{session}", "{code}", "{slug}"] as const;
  * NEVER interpreted — they stay as the equivalent command a person would run to
  * obtain the same reading, which is what keeps the two comparable.
  *
- * The four members are exactly the deterministic surface the plan names: the
+ * The five members are exactly the deterministic surface the plan names: the
  * board, the sessions' own artifacts (their reading and their seeding), the close
  * and the publication of an already approved proposal. Everything that runs code,
  * touches git or produces a judgment is deliberately NOT here.
@@ -395,6 +408,12 @@ export const INTERNAL_ACTION_OPERATIONS = [
   "worktree.ensure",
   /** Write the run's approved proposal, all of it or none of it. */
   "proposal.publish",
+  /** Seal the next plan-execution batch before any of its work is credited. */
+  "plan-exec.batch-infer",
+  /** Close one sealed plan-execution batch through the document/state CAS. */
+  "plan-exec.batch-close",
+  /** Seal a fully evidenced PLAN-exec document as done. */
+  "plan-exec.plan-done",
 ] as const;
 
 export type InternalActionOperation = (typeof INTERNAL_ACTION_OPERATIONS)[number];
@@ -423,6 +442,15 @@ export const INTERNAL_OPERATION_EFFECTS: Readonly<
   // Creating and replacing, both real — and which of the two happens is decided
   // by the proposal, not by the row: what the row declares here is the ceiling.
   "proposal.publish": ["local_additive", "mutate_overwrite"],
+  // Inference writes only the run's sealed ledger. It changes no project
+  // artifact and therefore has no capability-world effect to authorize.
+  "plan-exec.batch-infer": [],
+  // Batch progress always rewrites the current plan document, but only from the
+  // exact before/after pair persisted in its v10 batch state.
+  "plan-exec.batch-close": ["mutate_overwrite"],
+  // The final seal is a deterministic rewrite, guarded by the completed batch,
+  // final validation, commit and integration evidence already in the run.
+  "plan-exec.plan-done": ["mutate_overwrite"],
 };
 
 /**
@@ -464,7 +492,25 @@ export type InternalActionPlan =
    * by declaring a destination, and the approval that authorized it named the
    * same seal.
    */
-  | { operation: "proposal.publish" };
+  | { operation: "proposal.publish" }
+  /**
+   * Persist the next exact task/phase snapshot before implementation. It takes
+   * no task ids from the invocation: the live plan and the already-fixed scope
+   * are the only authority on what the iteration owns.
+   */
+  | { operation: "plan-exec.batch-infer" }
+  /**
+   * Close the already inferred batch through the CLI-owned plan/document CAS.
+   * It deliberately takes no task ids or status strings from an invocation: the
+   * batch service applies only the snapshot that inference sealed before work.
+   */
+  | { operation: "plan-exec.batch-close" }
+  /**
+   * Seal the plan only after the run itself holds the terminal evidence.  No
+   * caller can provide a status string or closure text: both are re-derived
+   * from the plan and the run at the final boundary.
+   */
+  | { operation: "plan-exec.plan-done" };
 
 export type ActionExecution =
   | ({ kind: "internal" } & InternalActionPlan)
@@ -1129,17 +1175,20 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "no se crea sesión quick: la línea de trabajo pasa al flow SPEC con el objetivo original",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Seguir en quick",
         consequence: "el recorrido continúa como quick con el objetivo tal cual llegó",
         recommended: false,
+        outcome: { kind: "continue" },
       },
       {
         label: "Recortar alcance",
         consequence:
           "el objetivo pasa a ser la sub-tarea que sí entra en un quick y el resto queda en BACKLOG",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -1393,11 +1442,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "se crea un solo commit al cierre de la tarea; sin push, sin --amend y sin --no-verify",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Dejar la tarea sin commitear",
         consequence: "los cambios quedan en el árbol de trabajo y la tarea se registra en BACKLOG",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -1515,12 +1566,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "el original queda reducido a su resultado restante y cada resultado extraído nace como spec hermana",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Una sola spec",
         consequence:
           "el gap queda agotado para esta corrida y el refinamiento sigue sobre esta spec",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -1581,11 +1634,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "se corre una ronda de ideación y sus veredictos vuelven como un lote propio de la conversación",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Seguir sin ideación",
         consequence: "el gap queda agotado para esta corrida y el refinamiento sigue sin la ronda",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -1707,11 +1762,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "se escriben exactamente los archivos de la vista previa —la spec en su lugar, sellada como ready-for-plan— y no se vuelve a preguntar por esos efectos",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Refinar",
         consequence: "el refinamiento sigue abierto, no se escribe nada y la spec queda como está",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -1917,11 +1974,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "cada tramo se elabora completo como plan hermano, con su origen y el orden entre ellos",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Un solo plan",
         consequence: "el gap queda agotado para esta corrida y el trabajo sigue como un plan único",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -1986,11 +2045,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         label: "Aprobar y guardar",
         consequence: `se escriben exactamente los archivos de la vista previa en ${PLAN_DOCS_DIR}, hermanos incluidos si el split fue aceptado`,
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Refinar",
         consequence: "la generación sigue abierta y no se escribe ningún documento",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -2204,11 +2265,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "se escriben exactamente los archivos de la vista previa —el plan en su lugar y los hermanos extraídos, si los hay— y no se vuelve a preguntar por esos efectos",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Refinar",
         consequence: "el refinamiento sigue abierto, no se escribe nada y el plan queda como está",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -2332,14 +2395,38 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "los bloques de fase se editan en su lugar sin agregar alcance ni mover ninguna frontera, y la ejecución sigue",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Ir a plan-refine",
         consequence:
           "la ejecución no arranca: el hallazgo queda en CHECKPOINT y el trabajo sigue en /w:plan-refine",
         recommended: false,
+        outcome: { kind: "handoff", destination: "plan-refine" },
       },
     ],
+  },
+  {
+    id: "plan-exec.source-scope",
+    scope: "plan-exec",
+    title: "fijar el plan de la corrida y las fuentes exactas que va a editar",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: CODE_POLICIES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    // Which sources a plan touches is read off the plan, and the engine never read
+    // one — so this is judgment, and it is the only thing here that is. What the
+    // answer hands over is CHECKED before it is persisted: an alias the WORKSPACE
+    // block does not declare, or one the plan never names, is refused. That is the
+    // half a rule can hold; the other half is why the row exists at all.
+    //
+    // It carries no signals on purpose. A vocabulary would be a verdict over a
+    // fixed taxonomy, and the aliases of a workspace are not one.
+    //
+    // It is deliberately outside the repeatable batch segment: every later batch
+    // must inherit the same already-validated plan/sources, never ask to widen
+    // the edit boundary while work is in progress.
+    scopes_sources: true,
   },
   {
     id: "plan-exec.batch-eligibility-signal",
@@ -2362,6 +2449,22 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: BATCHES_MD,
     attribution: PLAN_ATTRIBUTION,
+    // Its durable snapshot lives in the run ledger, not in the project world.
+    // The plan is read to derive it, but no capability effect is claimed.
+    effects: [],
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["flow", "advance", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
+      execution: { kind: "internal", operation: "plan-exec.batch-infer" },
+      evidence: ["plan.batch-inferido"],
+      idempotent: true,
+      recovery:
+        "reanudá con 'aw flow advance': el batch inferido conserva su digest y sólo se vuelve a inferir si todavía no quedó sellado",
+    },
   },
   {
     id: "plan-exec.batch-isolation",
@@ -2385,24 +2488,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: "modules/DESIGN-REFERENCES.md",
     attribution: "`aw designs --plan`",
-  },
-  {
-    id: "plan-exec.source-scope",
-    scope: "plan-exec",
-    title: "fijar el plan de la corrida y las fuentes exactas que va a editar",
-    authority: "agent",
-    ownership: "cli-owned",
-    document: CODE_POLICIES_MD,
-    attribution: PLAN_ATTRIBUTION,
-    // Which sources a plan touches is read off the plan, and the engine never read
-    // one — so this is judgment, and it is the only thing here that is. What the
-    // answer hands over is CHECKED before it is persisted: an alias the WORKSPACE
-    // block does not declare, or one the plan never names, is refused. That is the
-    // half a rule can hold; the other half is why the row exists at all.
-    //
-    // It carries no signals on purpose. A vocabulary would be a verdict over a
-    // fixed taxonomy, and the aliases of a workspace are not one.
-    scopes_sources: true,
   },
   {
     id: "plan-exec.unit-acquisition",
@@ -2537,8 +2622,8 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     // This row used to declare no action, no alternatives and no effects, so the
-    // walk AUTO-APPLIED it and carried on to `pending-effects`, `task-marking`
-    // and the commit. Declaring a structural deviation stopped nothing, asked
+    // walk AUTO-APPLIED it and carried on to manual progress writes and the commit.
+    // Declaring a structural deviation stopped nothing, asked
     // nothing and routed nowhere: the structured-choice the doctrine promised
     // existed only in prose. It is a real boundary now, and which way the run
     // leaves is the person's.
@@ -2553,24 +2638,28 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "queda una nota de decisión durable sobre el contrato efectivo y la ejecución sigue desde su punto de reanudación; la spec y el plan no se tocan",
         recommended: true,
+        outcome: { kind: "register-decision" },
       },
       {
         label: "Volver a plan-refine",
         consequence:
           "la desviación es estructural: la corrida para, el plan se reabre con /w:plan-refine y recibe el paquete de escalación ya reunido",
         recommended: false,
+        outcome: { kind: "handoff", destination: "plan-refine" },
       },
       {
         label: "Volver a spec-refine",
         consequence:
           "la desviación cambia lo prometido: la corrida para y /w:spec-refine recibe el paquete, sin rehacer el análisis",
         recommended: false,
+        outcome: { kind: "handoff", destination: "spec-refine" },
       },
       {
         label: "Escalar a una spec nueva",
         consequence:
           "lo hallado no compone contra este linaje: nace una spec propia con el diagnóstico, las decisiones y la evidencia ya reunidos",
         recommended: false,
+        outcome: { kind: "handoff", destination: "spec-new" },
       },
     ],
   },
@@ -2592,93 +2681,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         of: ["plan.deviation-structural", "plan.deviation-functional", "plan.deviation-escalation"],
       },
       otherwise: "la desviación se resolvió componiendo: no hay escalación que empaquetar",
-    },
-  },
-  {
-    id: "plan-exec.pending-effects",
-    scope: "plan-exec",
-    title: "reconocer qué queda por hacer al cerrar el batch",
-    authority: "agent",
-    ownership: "cli-owned",
-    document: PLAN_EXEC_LOOP,
-    attribution: PLAN_ATTRIBUTION,
-    // The three rows below it write, run or commit — and in a legitimate batch any
-    // of the three may have nothing to do: boxes already ticked by an earlier run,
-    // phases still pending, a batch with no code. Without this row each of them
-    // demanded its effect anyway, so the only truthful answer was to refuse, and a
-    // refused boundary that keeps being re-emitted exhausts and stops the run.
-    //
-    // The signals are POSITIVE — "there IS something to do" — because the engine's
-    // threshold is positive: a row applies when its signal was observed and is
-    // passed over when it was not. The inverse cannot be expressed, and inverting
-    // one by mistake would skip a step that DID apply, crediting work nobody did.
-    signals: ["plan.tasks-to-mark", "plan.plan-closable", "plan.commit-pending"],
-  },
-  {
-    id: "plan-exec.task-marking",
-    scope: "plan-exec",
-    title: "marcar la tarea cuando su trabajo local termina",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: PLAN_EXEC_LOOP,
-    attribution: PLAN_ATTRIBUTION,
-    effects: ["mutate_overwrite"],
-    // The checkbox is the run's own progress mark on the flow's document —
-    // bookkeeping under run custody, so no preflight; the board's real reading
-    // is still what applies it.
-    custody: "run",
-    condition: {
-      threshold: {
-        observed: "plan-exec.pending-effects",
-        of: ["plan.tasks-to-mark"],
-        min: 1,
-      },
-      otherwise:
-        "ninguna casilla terminó su trabajo local en este batch: no hay nada que marcar en el plan",
-    },
-    // The plan-doc is the per-task source of truth, and the engine does not edit
-    // it — so the write is delegated and what comes back is the board's count of
-    // ticked boxes. "I marked it" is the one thing this contract will not take.
-    action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-      execution: {
-        kind: "external",
-        reason: "marcar la casilla reescribe el plan-doc, y este motor no lo edita",
-      },
-      evidence: ["plan.casillas-marcadas"],
-      idempotent: true,
-      recovery:
-        "marcá la casilla de la tarea cuyo trabajo local terminó y volvé a devolver la lectura del tablero; marcar de nuevo lo ya marcado no rompe nada",
-    },
-  },
-  {
-    id: "plan-exec.phase-state-transition",
-    scope: "plan-exec",
-    title: "aplicar la transición de estado de fase con sus precondiciones",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: PLAN_EXEC_LOOP,
-    attribution: PLAN_ATTRIBUTION,
-    effects: ["mutate_overwrite"],
-    // The `> Estado:` line is the run's own phase ledger on the flow's document:
-    // run custody, no preflight — the precondition below is what really guards it.
-    custody: "run",
-    // The precondition is what this row exists for: `validada` requires the proof
-    // to have RUN and passed, never the checkboxes. The state line is a write on a
-    // document the engine does not own, so the board's reading of that line is the
-    // evidence — and the board is the same thing that calls a plan `inconsistent`
-    // when a state and its boxes disagree.
-    action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-      execution: {
-        kind: "external",
-        reason:
-          "escribir el '> Estado:' de la fase reescribe el plan-doc, y este motor no lo edita",
-      },
-      evidence: ["plan.estado-de-fase-aplicado"],
-      idempotent: true,
-      recovery:
-        "escribí el '> Estado:' que la fase realmente tiene —con su '> Bloqueo:' si quedó bloqueada— y volvé a devolver la lectura; una fase sin su prueba corrida no pasa a validada",
     },
   },
   {
@@ -2732,6 +2734,34 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
+  },
+  {
+    id: "plan-exec.batch-close",
+    scope: "plan-exec",
+    title: "publicar el cierre acreditado del batch en el plan y su traza v10",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: BATCHES_MD,
+    attribution: PLAN_ATTRIBUTION,
+    effects: ["mutate_overwrite"],
+    custody: "run",
+    // The phase validation and review are immediately before this row. Reaching
+    // it is the only authorization for the deterministic publication: the
+    // service derives the next unchecked phase, seals its exact before/after
+    // bytes, writes the intent, and then commits the plan/state CAS.
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["flow", "advance", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
+      execution: { kind: "internal", operation: "plan-exec.batch-close" },
+      evidence: ["plan.batch-publicado"],
+      idempotent: true,
+      recovery:
+        "reanudá con 'aw flow advance': el batch conserva su before/after sellado y o termina exactamente esa publicación o rechaza el plan movido",
+    },
   },
   {
     id: "plan-exec.final-validation",
@@ -2797,12 +2827,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "se crea exactamente un commit por fuente afectada; sin push, sin --amend y sin --no-verify",
         recommended: true,
+        outcome: { kind: "continue" },
       },
       {
         label: "Dejar el batch sin commitear",
         consequence:
           "los cambios quedan en el árbol de trabajo y el batch se registra sin commitear en CHECKPOINT y BACKLOG",
         recommended: false,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -2815,14 +2847,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
     effects: ["execute", "local_additive"],
-    condition: {
-      threshold: {
-        observed: "plan-exec.pending-effects",
-        of: ["plan.commit-pending"],
-        min: 1,
-      },
-      otherwise: "ninguna fuente afectada quedó con cambios sin commitear: no hay commit que crear",
-    },
     // Approving is not committing: the human approval above already carries the
     // grant over this row's exact seal, and what applies the transition is still
     // the real git state coming back — which is also the between-unit precondition
@@ -2908,25 +2932,18 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // The done seal is the last progress mark of the flow's own document: run
     // custody — its condition and the board's reading are the guards that count.
     custody: "run",
-    condition: {
-      threshold: {
-        observed: "plan-exec.pending-effects",
-        of: ["plan.plan-closable"],
-        min: 1,
-      },
-      otherwise:
-        "al plan le quedan fases sin validar: sellarlo acá sería marcarlo done desde los contadores",
-    },
     action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-      execution: {
-        kind: "external",
-        reason: "sellar el done reescribe el plan-doc, y este motor no lo edita",
+      invocation: {
+        program: "aw",
+        args: ["flow", "advance", "--code", "{code}"],
+        target: ".",
+        input: null,
       },
+      execution: { kind: "internal", operation: "plan-exec.plan-done" },
       evidence: ["plan.estado-done-sellado"],
       idempotent: true,
       recovery:
-        "escribí '> Estado: done' y su '> Cierre:' en la línea de abajo y volvé a devolver la lectura; si el tablero no lo lee cerrado, la transición sigue pendiente",
+        "reanudá con 'aw flow advance': el CLI vuelve a comprobar tareas, fases, reconciliación, validación final e integración antes de sellar exactamente el estado done y su cierre",
     },
   },
 
@@ -3203,9 +3220,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     attribution: "`aw designs`",
   },
   {
-    id: "workspace-init.scaffold",
+    id: "workspace-init.materialize-or-configure",
     scope: cmd("workspace-init"),
-    title: "sembrar el andamiaje mínimo del workspace",
+    title: "materializar el runtime mínimo o configurar fuentes explícitas del workspace",
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/WORKSPACE-SCAFFOLD.md",
@@ -3379,6 +3396,76 @@ export function journeyOfFlow(flow: WorklineFlow): readonly FlowDecision[] {
   const at = (placement: RunPlacement): readonly FlowDecision[] =>
     transversal.filter((decision) => decision.placement === placement);
   return [...at("prefix"), ...decisionsOfScope(flow), ...at("suffix")];
+}
+
+/**
+ * The actual cursor journey for a persisted run.
+ *
+ * PLAN-exec alone has a repeatable middle: every sealed batch appends another
+ * copy of `batch-inference … batch-close` to the journey while an open phase
+ * remains.  The cursor therefore remains a normal append-only prefix — it never
+ * rewinds to make a second batch look like a first one — and the final close
+ * simply stops adding a copy, exposing final validation, Git and `done`.
+ *
+ * This intentionally accepts only the small state shape it reads, avoiding a
+ * runtime dependency back from the authority registry to the run-state domain.
+ */
+export function journeyForState(
+  state: {
+    flow: WorklineFlow;
+    batches?: readonly { published_plan_digest?: string }[];
+    batch_loop?: { pending: boolean; iteration: number | null };
+    applied?: readonly string[];
+    boundary?: string | null;
+  },
+  baseJourney?: readonly FlowDecision[],
+): readonly FlowDecision[] {
+  // The runtime normally supplies no base, so this reads the registry directly.
+  // A controlled host may supply its own fixture journey: PLAN-exec still adds
+  // its cursor only when that journey actually contains the batch segment.
+  const base = baseJourney ?? journeyOfFlow(state.flow);
+  if (state.flow !== "plan-exec") return base;
+
+  const first = base.findIndex((decision) => decision.id === "plan-exec.batch-eligibility-signal");
+  const last = base.findIndex((decision) => decision.id === "plan-exec.batch-close");
+  // A registry build missing either boundary must keep the ordinary path rather
+  // than manufacture a cursor whose ids no longer correspond to a real row.
+  if (first < 0 || last < first) return base;
+
+  // An inferred batch belongs to the iteration currently being walked. Counting
+  // it as another completed segment would insert an unearned copy between
+  // inference and implementation. A segment becomes historical only when its
+  // document publication sealed an after-digest.
+  const closed =
+    state.batches?.filter((batch) => batch.published_plan_digest !== undefined).length ?? 0;
+  // A v10 file written before `batch_loop` cannot say whether an already recorded
+  // batch had another phase after it.  Preserve its linear history.  A brand-new
+  // run is the one safe default: it has to walk its first batch segment.
+  const pending = state.batch_loop?.pending ?? closed === 0;
+  const copies = closed + (pending ? 1 : 0);
+  // A plan can arrive already fully accredited (the 7/9 recovery reaches this
+  // branch only after its last real batch; a legacy 9/9 plan reaches it on its
+  // first inference). The eligibility answer and inference action have already
+  // been appended, so removing their segment would make the cursor inconsistent.
+  // Keep just those two rows, then expose final validation without inventing an
+  // empty batch or walking isolation/implementation over work that does not exist.
+  const inference = base.findIndex((decision) => decision.id === "plan-exec.batch-inference");
+  const noWorkInferenceStarted =
+    copies === 0 &&
+    inference >= first &&
+    (state.applied?.includes("plan-exec.batch-inference") === true ||
+      state.boundary === "plan-exec.batch-inference");
+  if (noWorkInferenceStarted) {
+    return [...base.slice(0, first), ...base.slice(first, inference + 1), ...base.slice(last + 1)];
+  }
+  if (copies === 0) return [...base.slice(0, first), ...base.slice(last + 1)];
+  if (copies === 1) return base;
+  const segment = base.slice(first, last + 1);
+  return [
+    ...base.slice(0, first),
+    ...Array.from({ length: copies }, () => segment).flat(),
+    ...base.slice(last + 1),
+  ];
 }
 
 /**

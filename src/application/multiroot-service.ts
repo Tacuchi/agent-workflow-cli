@@ -15,6 +15,8 @@ export interface MultirootInput {
   fromSources?: boolean;
   useGlobal?: boolean;
   workspace?: string;
+  /** Compute host-config changes without creating directories, backups or files. */
+  dryRun?: boolean;
   skipClaude?: boolean;
   skipCodex?: boolean;
   skipWarp?: boolean;
@@ -40,12 +42,12 @@ type Mode = "attach" | "detach";
 
 export async function runMultiroot(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   pathsService: PathsService,
   mode: Mode,
   input: MultirootInput,
 ): Promise<MultirootResult | MultirootError> {
-  const { paths, scopeDir, scope } = await resolveScopeAndPaths(fs, env, pathsService, input);
+  const { paths, scopeDir, scope } = await resolveScopeAndPaths(fs, pathsService, input);
 
   if (input.fromSources && paths.length === 0) {
     return {
@@ -67,13 +69,13 @@ export async function runMultiroot(
     claude: input.skipClaude
       ? { skipped: true }
       : mode === "attach"
-        ? attachClaude(paths, scopeDir)
-        : detachClaude(paths, scopeDir),
+        ? attachClaude(paths, scopeDir, { dryRun: input.dryRun === true })
+        : detachClaude(paths, scopeDir, { dryRun: input.dryRun === true }),
     codex: input.skipCodex
       ? { skipped: true }
       : mode === "attach"
-        ? attachCodex(paths, scopeDir)
-        : detachCodex(paths, scopeDir),
+        ? attachCodex(paths, scopeDir, { dryRun: input.dryRun === true })
+        : detachCodex(paths, scopeDir, { dryRun: input.dryRun === true }),
     warp: input.skipWarp
       ? { skipped: true }
       : mode === "attach"
@@ -88,9 +90,17 @@ export async function runMultiroot(
   return result;
 }
 
+/** Whether a real attach/detach would change a host configuration. */
+export function multirootWouldMutate(result: MultirootResult): boolean {
+  return [result.claude, result.codex].some((host) => {
+    if (typeof host !== "object" || host === null) return false;
+    const candidate = host as { written?: unknown; would_write?: unknown };
+    return candidate.written === true || candidate.would_write === true;
+  });
+}
+
 async function resolveScopeAndPaths(
   fs: FileSystemPort,
-  env: EnvPort,
   pathsService: PathsService,
   input: MultirootInput,
 ): Promise<{ paths: string[]; scopeDir: string; scope: "global" | "workspace" }> {
@@ -105,7 +115,7 @@ async function resolveScopeAndPaths(
     );
   }
   if (input.fromSources) {
-    paths = await readSourcesFromProject(fs, env, pathsService);
+    paths = await readSourcesFromProject(fs, pathsService);
   }
 
   let scopeDir: string;
@@ -117,7 +127,7 @@ async function resolveScopeAndPaths(
     scopeDir = resolve(input.workspace);
     scope = "workspace";
   } else {
-    scopeDir = resolve(env.cwd());
+    scopeDir = pathsService.workspaceDir();
     scope = "workspace";
   }
   return { paths, scopeDir, scope };
@@ -125,12 +135,11 @@ async function resolveScopeAndPaths(
 
 async function readSourcesFromProject(
   fs: FileSystemPort,
-  env: EnvPort,
   pathsService: PathsService,
 ): Promise<string[]> {
   const block = await readWorkspaceBlock(
     fs,
-    env.cwd(),
+    pathsService.workspaceDir(),
     pathsService.blockMarkers(),
     (b) => b.fuentes.length > 0,
   );

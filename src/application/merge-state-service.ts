@@ -2,7 +2,7 @@ import { isAbsolute, join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { parseProjectBlock } from "./parsers/project-block.js";
+import { readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface MergeStateInput {
@@ -56,11 +56,11 @@ export async function runMergeState(
 
 async function resolveTargets(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   input: MergeStateInput,
 ): Promise<{ alias: string | null; path: string }[]> {
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   if (input.path !== undefined) {
     const p = isAbsolute(input.path) ? input.path : join(cwd, input.path);
     return [{ alias: null, path: p }];
@@ -81,18 +81,18 @@ async function readFuentes(
   paths: PathsService,
   cwd: string,
 ): Promise<{ alias: string; path: string }[]> {
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
-    try {
-      if (!(await fs.exists(file))) continue;
-      const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
-      if (block?.fuentes && block.fuentes.length > 0) {
-        return block.fuentes.map((f) => ({ alias: f.alias, path: f.path }));
-      }
-    } catch {
-      // no workspace / unreadable block → no sources (graceful)
-    }
+  try {
+    const block = await readWorkspaceBlock(
+      fs,
+      cwd,
+      paths.blockMarkers(),
+      (candidate) => candidate.fuentes.length > 0,
+    );
+    return block?.fuentes.map((f) => ({ alias: f.alias, path: f.path })) ?? [];
+  } catch {
+    // no workspace / unreadable block → no sources (graceful)
+    return [];
   }
-  return [];
 }
 
 async function inspectRepo(

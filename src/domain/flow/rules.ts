@@ -28,6 +28,7 @@ import {
 export interface DeclaredObservation {
   transition: string;
   signals: readonly string[];
+  batch_iteration?: number;
 }
 
 /**
@@ -41,6 +42,7 @@ export function thresholdFired(
   rule: SignalThreshold,
   journey: readonly FlowDecision[],
   observations: readonly DeclaredObservation[],
+  batchIteration: number | null = null,
 ): boolean {
   const observed = journey.find((decision) => decision.id === rule.observed);
   if (observed === undefined) return false;
@@ -51,7 +53,13 @@ export function thresholdFired(
   const counted = rule.of ?? declaredVocabulary;
   const vocabulary = new Set(declaredVocabulary.filter((signal) => counted.includes(signal)));
   const declared = observations
-    .filter((observation) => observation.transition === rule.observed)
+    .filter(
+      (observation) =>
+        observation.transition === rule.observed &&
+        (batchIteration === null
+          ? observation.batch_iteration === undefined
+          : observation.batch_iteration === batchIteration),
+    )
     .flatMap((observation) => observation.signals)
     .filter((signal) => vocabulary.has(signal));
   return new Set(declared).size >= rule.min;
@@ -69,6 +77,7 @@ export function skipReason(
   decision: FlowDecision,
   journey: readonly FlowDecision[],
   observations: readonly DeclaredObservation[],
+  batchIteration: number | null = null,
 ): string | null {
   const condition = conditionOf(decision);
   if (condition === null) return null;
@@ -76,7 +85,7 @@ export function skipReason(
   // That is the doctrine's own default — "borderline continues without asking" —
   // and it is the direction that assumes nothing: the alternative would emit a
   // question on zero observations and then read the answer as if it had cause.
-  if (thresholdFired(condition.threshold, journey, observations)) return null;
+  if (thresholdFired(condition.threshold, journey, observations, batchIteration)) return null;
   return condition.otherwise;
 }
 

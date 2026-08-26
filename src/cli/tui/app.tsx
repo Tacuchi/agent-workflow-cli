@@ -28,6 +28,7 @@ import { WorkflowTab } from "./tabs/workflow-tab.js";
 import { applyAccent, colors } from "./theme.js";
 import { DEFAULT_TUI_PREFS, type TuiPrefs, TuiPrefsService } from "./tui-prefs.js";
 import { useOnMount } from "./use-on-mount.js";
+import { workspaceRoot } from "./workspace-root.js";
 
 export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
@@ -413,7 +414,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
  * Any read/parse error falls back to basename.
  */
 async function resolveProjectName(ctx: CliContext): Promise<string> {
-  const cwd = ctx.env.cwd();
+  const cwd = workspaceRoot(ctx);
   try {
     const pkgPath = `${cwd}/package.json`;
     if (await ctx.fs.exists(pkgPath)) {
@@ -432,7 +433,7 @@ async function resolveProjectName(ctx: CliContext): Promise<string> {
 }
 
 async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> {
-  const cwd = ctx.env.cwd();
+  const cwd = workspaceRoot(ctx);
 
   // Branch + sync
   let branchLabel = "— · no git";

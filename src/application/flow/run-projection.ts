@@ -12,12 +12,16 @@
  * match its journey says so instead of projecting a boundary nobody can trust.
  */
 
-import { journeyOfFlow } from "../../domain/flow/authority.js";
 import type { FlowBoundaryKind } from "../../domain/flow/directive.js";
-import { type FlowRunScope, checkAgainstJourney } from "../../domain/flow/run-state.js";
+import {
+  type FlowRunScope,
+  checkAgainstJourney,
+  legacyRunNeedsAdoption,
+} from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PathsService } from "../paths-service.js";
 import { resolveBoundary } from "./advance.js";
+import { journeyForRun } from "./run-journey.js";
 import { locateRun, readRun } from "./run-state-service.js";
 
 export interface FlowRunProjection {
@@ -67,7 +71,19 @@ export async function projectRun(
       scope: null,
     };
   }
-  const journey = journeyOfFlow(read.state.flow);
+  if (legacyRunNeedsAdoption(read.state)) {
+    return {
+      flow: read.state.flow,
+      boundary: "blocked",
+      transition: read.state.boundary,
+      title: null,
+      invocation: null,
+      command: `aw flow advance --code ${folder} --flow ${read.state.flow} --adopt`,
+      summary: `corrida legacy v${read.state.version}: requiere adopción explícita antes de continuar`,
+      scope: read.state.scope,
+    };
+  }
+  const journey = journeyForRun(read.state);
   const incoherent = checkAgainstJourney(read.state, journey);
   if (incoherent !== null) {
     return {

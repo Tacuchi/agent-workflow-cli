@@ -28,9 +28,11 @@ import { canonicalJson, semanticDigest } from "../../application/semantic-operat
 import { type EffectClass, isEffectClass, touchesTheWorld } from "../capability/effects.js";
 import { AttemptLedger } from "../capability/protocol.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
+import { type DecisionNote, validateDecisionNote } from "../decision-note.js";
+import type { DecisionPreview } from "../decision-preview.js";
 import type { LocalProposal } from "../proposal.js";
 import type { PlanReconciliation } from "../reconciliation.js";
-import type { FlowDecision } from "./authority.js";
+import type { FlowChoiceOutcome, FlowDecision } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
 
 /**
@@ -44,22 +46,18 @@ import type { EffectGrant } from "./authorization.js";
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 9;
+export const FLOW_RUN_STATE_VERSION = 10;
 
 /**
  * The versions this CLI READS, newest first.
  *
- * Three, and none of the older two is a migration: every field versions 8 and 9
- * added is OPTIONAL and its absence is the conservative reading — no floor
- * beyond the ledger, nothing forgiven, no degradation declared, nothing owed
- * recorded. So a run written before them is read exactly as it always was, keeps
- * walking, and is re-stamped current by its first write. Refusing it instead
- * would strand runs that were mid-journey when the CLI was upgraded, which is
- * the compatibility the spec demands; inventing values for the missing fields
- * would be the fabrication the version gate exists to refuse. Neither happens
- * here.
+ * Versions 9, 8 and 7 remain readable for status, recovery evidence and an
+ * explicit adoption. They are NOT writable execution state: v10 records batches
+ * and their append-only iteration trace, so continuing an old cursor by merely
+ * changing `version` would invent a batch boundary the old run never declared.
+ * An active legacy run must be adopted explicitly before any mutation.
  */
-export const FLOW_RUN_STATE_READABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 8, 7];
+export const FLOW_RUN_STATE_READABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 9, 8, 7];
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -85,6 +83,13 @@ export interface FlowRunAttempt {
    * that does not move while the run stands there, which is the transition id.
    */
   transition: string;
+  /**
+   * The plan-exec batch iteration this attempt belongs to, when the same
+   * transition is walked again for a later batch.  It keeps the per-boundary
+   * retry budget from leaking from F1 into F2 while retaining the full attempt
+   * history in one append-only ledger.
+   */
+  batch_iteration?: number;
 }
 
 /**
@@ -136,6 +141,20 @@ export function attemptsAt(state: FlowRunState, transition: string): number {
   return spendAt(state, transition).spent;
 }
 
+/** The monotone-counter key for one boundary, scoped when that boundary repeats in a batch. */
+export function attemptCounterKey(state: FlowRunState, transition: string): string {
+  const iteration = currentBatchIteration(state, transition);
+  return attemptCounterKeyForIteration(transition, iteration ?? undefined);
+}
+
+/** Stable counter key for a historical attempt whose batch iteration is recorded on the row. */
+export function attemptCounterKeyForIteration(
+  transition: string,
+  iteration: number | undefined,
+): string {
+  return iteration === undefined ? transition : `${transition}@batch-${iteration}`;
+}
+
 /**
  * The three numbers and the difference between them, computed once.
  *
@@ -148,9 +167,17 @@ function spendAt(
   state: FlowRunState,
   transition: string,
 ): { rows: FlowRunAttempt[]; floor: number; granted: number; spent: number } {
-  const rows = state.attempts.filter((attempt) => attempt.transition === transition);
-  const floor = state.attempt_floor?.[transition] ?? 0;
-  const granted = state.attempt_grants?.[transition] ?? 0;
+  const iteration = currentBatchIteration(state, transition);
+  const rows = state.attempts.filter(
+    (attempt) =>
+      attempt.transition === transition &&
+      (iteration === null
+        ? attempt.batch_iteration === undefined
+        : attempt.batch_iteration === iteration),
+  );
+  const key = attemptCounterKey(state, transition);
+  const floor = state.attempt_floor?.[key] ?? 0;
+  const granted = state.attempt_grants?.[key] ?? 0;
   return { rows, floor, granted, spent: Math.max(0, Math.max(rows.length, floor) - granted) };
 }
 
@@ -318,7 +345,14 @@ export type RecoveryBlocker =
   | { reason: "unverified" };
 
 export function recoveryBlockedAt(state: FlowRunState, transition: string): RecoveryBlocker | null {
-  const trace = state.events.filter((event) => event.transition === transition);
+  const iteration = currentBatchIteration(state, transition);
+  const trace = state.events.filter(
+    (event) =>
+      event.transition === transition &&
+      (iteration === null
+        ? event.batch_iteration === undefined
+        : event.batch_iteration === iteration),
+  );
   const material = [...trace].reverse().find(declaresMaterialEffect);
   if (material !== undefined) return { reason: "materialized", event: material };
   const pending = state.pending_action;
@@ -411,6 +445,8 @@ export interface FlowPendingAction {
 export interface FlowObservation {
   transition: string;
   signals: string[];
+  /** See {@link FlowRunAttempt.batch_iteration}. */
+  batch_iteration?: number;
 }
 
 /**
@@ -433,6 +469,8 @@ export type FlowRunEvent =
   | {
       kind: "executed";
       transition: string;
+      /** See {@link FlowRunAttempt.batch_iteration}. */
+      batch_iteration?: number;
       operation: string;
       /** One line, derived from the operation's own output. Never a claim. */
       summary: string;
@@ -444,6 +482,8 @@ export type FlowRunEvent =
   | {
       kind: "failed";
       transition: string;
+      /** See {@link FlowRunAttempt.batch_iteration}. */
+      batch_iteration?: number;
       operation: string;
       code: string;
       message: string;
@@ -485,6 +525,123 @@ export interface FlowRunScope {
   plan: string;
   /** `workspace` plus declared aliases this run may touch — non-empty, no repeats. */
   sources: string[];
+}
+
+/** The bounded lifecycle of one repeatable plan-execution batch. */
+export const PLAN_EXEC_BATCH_STAGES = [
+  "inferred",
+  "isolated",
+  "implementing",
+  "deviation",
+  "validating",
+  "reviewing",
+  "closed",
+  "committing",
+  "integrating",
+  "done",
+] as const;
+
+export type PlanExecBatchStage = (typeof PLAN_EXEC_BATCH_STAGES)[number];
+
+/**
+ * Durable intent for the one document publication that closes a batch.
+ *
+ * The intent is written before the plan bytes.  That makes a crash in between
+ * observable: the next invocation can either finish the exact sealed write or
+ * recognize that its after-digest already landed.  It never recomputes credit
+ * from a changed plan.
+ */
+export interface PlanExecBatchPublication {
+  plan: string;
+  before_plan_digest: string;
+  after_plan_digest: string;
+  transition: string;
+  status: "prepared" | "applied";
+}
+
+/**
+ * A batch is a sealed snapshot of exactly the plan work this iteration owns.
+ *
+ * Task ids are the document's stable labels (`T4.1` etc.), not a claim made by
+ * the agent; the application layer validates them against the current plan
+ * before publication. The plan digest makes a moved document stale rather than
+ * letting a previously inferred batch mark a different task.
+ */
+export interface PlanExecBatch {
+  id: string;
+  iteration: number;
+  mode: "continuous" | "isolated";
+  phases: number[];
+  tasks: string[];
+  plan_digest: string;
+  /** Digest after the CLI-owned task/phase publication, once the batch closes. */
+  published_plan_digest?: string;
+  /** The durable pre-write intent and, after success, its applied proof. */
+  publication?: PlanExecBatchPublication;
+  stage: PlanExecBatchStage;
+}
+
+/** One immutable trace row for a batch iteration. */
+export interface PlanExecBatchTrace {
+  sequence: number;
+  batch_id: string;
+  iteration: number;
+  stage: PlanExecBatchStage;
+  transition: string;
+  kind: "entered" | "completed" | "blocked";
+}
+
+/**
+ * The cursor's repeatable PLAN-exec segment.
+ *
+ * `iteration` names the segment currently being walked, not the last closed
+ * one.  It is sealed beside the batch trace so the dynamic journey can expand
+ * without ever rewinding `applied`: a next batch appends another copy of the
+ * segment, while the final close turns `pending` off and exposes final
+ * validation/Git/done.
+ */
+export interface PlanExecBatchLoop {
+  pending: boolean;
+  iteration: number | null;
+}
+
+/** The fully prepared decision view held at the deviation gate before a choice. */
+export type FlowDecisionPreparation =
+  | {
+      kind: "prepared";
+      note: DecisionNote;
+      preview: DecisionPreview;
+      index_path: string;
+      baseline: { path: string; number: string; digest: string; criteria: string[] };
+    }
+  | { kind: "settled"; decision: string }
+  | { kind: "reused"; note: string; decision: string; resume_point: string };
+
+/** The evidence a handoff destination receives instead of rediscovering it. */
+export interface FlowEscalationPackage {
+  /** Plan whose execution discovered the divergence, if the run had fixed one. */
+  plan: string | null;
+  /** Every validated deviation observation already collected in this run. */
+  observations: FlowObservation[];
+  /** Structured analysis sent with the gate answer; opaque but JSON-only. */
+  decisions: Record<string, unknown>;
+  /** Human label chosen at the gate, retained alongside its typed route. */
+  selection: string;
+}
+
+/** A selected escalation ends this run and hands a sealed package to another flow. */
+export interface FlowHandoff {
+  destination: "plan-refine" | "spec-refine" | "spec-new";
+  command: string;
+  package: FlowEscalationPackage;
+  package_digest: string;
+}
+
+/** The one non-trivial human route selected at the plan-exec deviation gate. */
+export interface FlowChoiceSelection {
+  transition: string;
+  label: string;
+  outcome: Extract<FlowChoiceOutcome, { kind: "register-decision" | "handoff" }>;
 }
 
 export interface FlowRunState {
@@ -560,6 +717,33 @@ export interface FlowRunState {
   /** Attempts a recovery gave back per transition — also from the sidecar. */
   attempt_grants?: Record<string, number>;
   /**
+   * v10 plan-exec batches. Optional only while reading v7–v9; every v10 state
+   * carries the two empty arrays when it has not inferred its first batch yet.
+   */
+  batches?: PlanExecBatch[];
+  /** Append-only per-iteration batch trace; see {@link batches}. */
+  batch_trace?: PlanExecBatchTrace[];
+  /**
+   * Which repeat of the plan-exec batch segment the cursor is walking.
+   *
+   * Optional only for v10 files written before the repeatable segment was
+   * introduced; new states always carry it.  A missing value never fabricates a
+   * new loop over already-recorded batches.
+   */
+  batch_loop?: PlanExecBatchLoop;
+  /** A selected non-local route. An active handoff makes plan-exec terminal. */
+  handoff?: FlowHandoff | null;
+  /** Durable record of the chosen decision/handoff route, never inferred from prose. */
+  selected_choice?: FlowChoiceSelection | null;
+  /**
+   * The decision classification/preview prepared before the deviation gate.
+   *
+   * It is kept in the sealed run instead of recomputed after a human says yes:
+   * that makes the view the person saw, the proposal `commitDecision` writes and
+   * the crash-retry identity one exact object.
+   */
+  decision_preparation?: FlowDecisionPreparation | null;
+  /**
    * Where a registered decision sent the work back to, still unsettled.
    *
    * This is the bounded continuity, and what it is NOT matters as much as what
@@ -617,6 +801,12 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
     proposal: null,
     effects: { planned: [], approved: [], applied: [] },
     attempts: [],
+    batches: [],
+    batch_trace: [],
+    batch_loop: { pending: true, iteration: 1 },
+    handoff: null,
+    selected_choice: null,
+    decision_preparation: null,
   });
 }
 
@@ -729,23 +919,256 @@ export function grantAttempts(
   attempts: number,
 ): FlowRunState {
   const granted = { ...(state.attempt_grants ?? {}) };
-  granted[transition] = (granted[transition] ?? 0) + attempts;
+  const key = attemptCounterKey(state, transition);
+  granted[key] = (granted[key] ?? 0) + attempts;
   return sealRunState({ ...withoutSeal(state), attempt_grants: granted });
 }
 
 /**
- * Stamp a state read from an older readable version with the current one.
+ * Explicitly adopt a readable legacy state into v10.
  *
- * Applied on the way OUT of the reader, so the run walks — and is written back —
- * as one format from the first read onwards, and the version stops being a fact
- * that varies per file within one workspace. Nothing else is touched: the older
- * versions this build reads differ from the current one only by fields whose
- * absence is already the conservative reading, so there is nothing to fill in
- * and nothing is filled in. Re-sealed because the version is inside the seal.
+ * This function is intentionally NOT called by the reader. Calling it is the
+ * durable act of adoption after the caller has named the flow and accepted that
+ * no pre-v10 batch is being reconstructed. Empty batch arrays mean exactly
+ * "legacy history preserved; no v10 batch claimed", never "the old run had no
+ * batches".
  */
 export function atCurrentVersion(state: FlowRunState): FlowRunState {
   if (state.version === FLOW_RUN_STATE_VERSION) return state;
-  return sealRunState({ ...withoutSeal(state), version: FLOW_RUN_STATE_VERSION });
+  return sealRunState({
+    ...withoutSeal(state),
+    version: FLOW_RUN_STATE_VERSION,
+    batches: [],
+    batch_trace: [],
+    batch_loop: { pending: true, iteration: 1 },
+    handoff: null,
+    selected_choice: null,
+    decision_preparation: null,
+  });
+}
+
+/** Whether a parsed state needs the explicit adoption boundary before mutation. */
+export function legacyRunNeedsAdoption(state: FlowRunState): boolean {
+  return state.version !== FLOW_RUN_STATE_VERSION;
+}
+
+/** Record one inferred or declared batch, refusing duplicate ids at the caller's boundary. */
+export function withPlanExecBatch(state: FlowRunState, batch: PlanExecBatch): FlowRunState {
+  const batches = state.batches ?? [];
+  if (batches.some((current) => current.id === batch.id)) return state;
+  const trace = state.batch_trace ?? [];
+  return sealRunState({
+    ...withoutSeal(state),
+    batches: [...batches, batch],
+    batch_trace: [
+      ...trace,
+      {
+        sequence: trace.length + 1,
+        batch_id: batch.id,
+        iteration: batch.iteration,
+        stage: "inferred",
+        transition: "plan-exec.batch-inference",
+        kind: "entered",
+      },
+    ],
+  });
+}
+
+/** Advance one batch phase and append the evidence row in the same sealed state. */
+export function withPlanExecBatchStage(
+  state: FlowRunState,
+  batchId: string,
+  stage: PlanExecBatchStage,
+  transition: string,
+  kind: PlanExecBatchTrace["kind"] = "completed",
+): FlowRunState {
+  const batches = state.batches ?? [];
+  const index = batches.findIndex((batch) => batch.id === batchId);
+  if (index < 0) return state;
+  const current = batches[index];
+  if (current === undefined) return state;
+  const nextBatches = [...batches];
+  nextBatches[index] = { ...current, stage };
+  const trace = state.batch_trace ?? [];
+  const entry: PlanExecBatchTrace = {
+    sequence: trace.length + 1,
+    batch_id: current.id,
+    iteration: current.iteration,
+    stage,
+    transition,
+    kind,
+  };
+  return sealRunState({
+    ...withoutSeal(state),
+    batches: nextBatches,
+    batch_trace: [...trace, entry],
+  });
+}
+
+/**
+ * Record the lifecycle evidence a real PLAN-exec boundary just crossed.
+ *
+ * The batch itself is sealed at `batch-inference`, before implementation. Later
+ * transitions do not re-infer it; they only append the stage that the cursor
+ * actually reached. The small mapping lives beside the state shape so CLI walks,
+ * submitted execution results and internal actions cannot drift into three
+ * different notions of "the current batch".
+ */
+const PLAN_EXEC_BATCH_STAGE_BY_TRANSITION: Readonly<Record<string, PlanExecBatchStage>> = {
+  "plan-exec.batch-isolation": "isolated",
+  "plan-exec.implementation": "implementing",
+  "plan-exec.deviation-recognition": "deviation",
+  "plan-exec.validation-execution": "validating",
+  "plan-exec.review-findings": "reviewing",
+  // These only occur after the final batch publication. They therefore extend
+  // the last closed batch's trace instead of fabricating a new one for Git/done.
+  "plan-exec.final-validation": "validating",
+  "plan-exec.commit-execution": "committing",
+  "plan-exec.unit-integration": "integrating",
+  "plan-exec.plan-done": "done",
+};
+
+const PLAN_EXEC_TERMINAL_BATCH_TRANSITIONS = new Set<string>([
+  "plan-exec.final-validation",
+  "plan-exec.commit-execution",
+  "plan-exec.unit-integration",
+  "plan-exec.plan-done",
+]);
+
+/** Append the stage for a crossed batch boundary, if that boundary owns one. */
+export function withPlanExecBatchStageForTransition(
+  state: FlowRunState,
+  transition: string,
+): FlowRunState {
+  if (state.flow !== "plan-exec") return state;
+  const stage = PLAN_EXEC_BATCH_STAGE_BY_TRANSITION[transition];
+  if (stage === undefined) return state;
+  const reverse = [...(state.batches ?? [])].reverse();
+  const current = PLAN_EXEC_TERMINAL_BATCH_TRANSITIONS.has(transition)
+    ? reverse.find((batch) => batch.published_plan_digest !== undefined)
+    : reverse.find((batch) => batch.published_plan_digest === undefined);
+  if (current === undefined) return state;
+  const last = state.batch_trace?.at(-1);
+  if (current.stage === stage && last?.batch_id === current.id && last.transition === transition) {
+    return state;
+  }
+  return withPlanExecBatchStage(state, current.id, stage, transition, "completed");
+}
+
+/**
+ * Seal whether the just-published batch opens another iteration.
+ *
+ * The final document bytes, not an agent assertion, decide this field.  Keeping
+ * it in the same state publication as the `closed` trace makes a crash recover
+ * to one exact cursor shape.
+ */
+export function withPlanExecBatchLoop(state: FlowRunState, loop: PlanExecBatchLoop): FlowRunState {
+  const current = state.batch_loop;
+  if (current?.pending === loop.pending && current?.iteration === loop.iteration) return state;
+  return sealRunState({ ...withoutSeal(state), batch_loop: loop });
+}
+
+/**
+ * The iteration identity for a transition in the repeatable PLAN-exec segment.
+ *
+ * Prefix/tail rows deliberately return `null`: they run once per flow and keep
+ * their historical retry/observation identity.  The loop field is absent on an
+ * older v10 state, in which case preserving its old unscoped accounting is safer
+ * than pretending we know which historical batch it belonged to.
+ */
+export function currentBatchIteration(
+  state: Pick<FlowRunState, "flow" | "batch_loop">,
+  transition: string,
+): number | null {
+  if (state.flow !== "plan-exec" || !PLAN_EXEC_BATCH_LOOP_TRANSITIONS.has(transition)) return null;
+  const loop = state.batch_loop;
+  return loop?.pending === true && loop.iteration !== null ? loop.iteration : null;
+}
+
+/** The rows that repeat between batch closures; kept local to the state contract. */
+export const PLAN_EXEC_BATCH_LOOP_TRANSITIONS = new Set<string>([
+  "plan-exec.batch-eligibility-signal",
+  "plan-exec.batch-inference",
+  "plan-exec.batch-isolation",
+  "plan-exec.design-precondition",
+  "plan-exec.unit-acquisition",
+  "plan-exec.branch-precondition",
+  "plan-exec.implementation",
+  "plan-exec.deviation-recognition",
+  "plan-exec.deviation-eligibility",
+  "plan-exec.deviation-gate",
+  "plan-exec.escalation-package",
+  "plan-exec.validation-execution",
+  "plan-exec.deferred-check",
+  "plan-exec.review-findings",
+  "plan-exec.batch-close",
+]);
+
+/** Seal the plan bytes the batch publication actually produced. */
+export function withPlanExecBatchPublication(
+  state: FlowRunState,
+  batchId: string,
+  publishedPlanDigest: string,
+): FlowRunState {
+  const batches = state.batches ?? [];
+  const index = batches.findIndex((batch) => batch.id === batchId);
+  if (index < 0) return state;
+  const current = batches[index];
+  if (current === undefined) return state;
+  const next = [...batches];
+  const publication =
+    current.publication === undefined
+      ? {}
+      : {
+          publication: {
+            ...current.publication,
+            after_plan_digest: publishedPlanDigest,
+            status: "applied" as const,
+          },
+        };
+  next[index] = {
+    ...current,
+    published_plan_digest: publishedPlanDigest,
+    ...publication,
+  };
+  return sealRunState({ ...withoutSeal(state), batches: next });
+}
+
+/** Seal the exact before/after pair before the plan document is touched. */
+export function withPlanExecBatchPublicationPrepared(
+  state: FlowRunState,
+  batchId: string,
+  publication: Omit<PlanExecBatchPublication, "status">,
+): FlowRunState {
+  const batches = state.batches ?? [];
+  const index = batches.findIndex((batch) => batch.id === batchId);
+  if (index < 0) return state;
+  const current = batches[index];
+  if (current === undefined) return state;
+  const next = [...batches];
+  next[index] = { ...current, publication: { ...publication, status: "prepared" } };
+  return sealRunState({ ...withoutSeal(state), batches: next });
+}
+
+/** Persist a selected handoff; the advancement engine then refuses to continue this run. */
+export function withHandoff(state: FlowRunState, handoff: FlowHandoff | null): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), handoff });
+}
+
+/** Persist the gate's executable consequence before the run leaves that boundary. */
+export function withSelectedChoice(
+  state: FlowRunState,
+  selected: FlowChoiceSelection | null,
+): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), selected_choice: selected });
+}
+
+/** Persist or clear the exact decision view offered at the human gate. */
+export function withDecisionPreparation(
+  state: FlowRunState,
+  preparation: FlowDecisionPreparation | null,
+): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), decision_preparation: preparation });
 }
 
 /**
@@ -846,6 +1269,7 @@ export function restatesLastEvent(state: FlowRunState, event: FlowRunEvent): boo
   if (last === undefined || last.kind !== "failed" || event.kind !== "failed") return false;
   return (
     last.transition === event.transition &&
+    last.batch_iteration === event.batch_iteration &&
     last.code === event.code &&
     last.message === event.message
   );
@@ -869,7 +1293,9 @@ export function restatesLastEvent(state: FlowRunState, event: FlowRunEvent): boo
 export function withObservation(state: FlowRunState, observation: FlowObservation): FlowRunState {
   const repeated = state.observations.some(
     (past) =>
-      past.transition === observation.transition && sameSignals(past.signals, observation.signals),
+      past.transition === observation.transition &&
+      past.batch_iteration === observation.batch_iteration &&
+      sameSignals(past.signals, observation.signals),
   );
   if (repeated) return state;
   return sealRunState({
@@ -1111,6 +1537,21 @@ function checkRecordShape(
   parsed: Record<string, unknown>,
   invalid: (why: string) => CapabilityFailure,
 ): CapabilityFailure | null {
+  const common = checkCommonRecordShape(parsed, invalid);
+  if (common !== null) return common;
+  if (parsed.version === FLOW_RUN_STATE_VERSION) {
+    const v10 = checkV10RecordShape(parsed, invalid);
+    if (v10 !== null) return v10;
+  }
+  if (typeof parsed.digest !== "string") return invalid("no trae su sello");
+  return null;
+}
+
+/** Record fields shared by every readable flow-run version, in refusal order. */
+function checkCommonRecordShape(
+  parsed: Record<string, unknown>,
+  invalid: (why: string) => CapabilityFailure,
+): CapabilityFailure | null {
   if (!isPendingAction(parsed.pending_action)) {
     return invalid("declara una acción pendiente sin transición o sin sello");
   }
@@ -1140,7 +1581,34 @@ function checkRecordShape(
   if (!isCounterMap(parsed.attempt_floor) || !isCounterMap(parsed.attempt_grants)) {
     return invalid("trae una contabilidad de intentos que no es un contador por transición");
   }
-  if (typeof parsed.digest !== "string") return invalid("no trae su sello");
+  return null;
+}
+
+/** Fields added by v10 that have no truthful default on a persisted run. */
+function checkV10RecordShape(
+  parsed: Record<string, unknown>,
+  invalid: (why: string) => CapabilityFailure,
+): CapabilityFailure | null {
+  if (!isPlanExecBatchArray(parsed.batches)) {
+    return invalid("no trae batches v10 con fases, tareas y sello de plan");
+  }
+  if (!isPlanExecBatchTraceArray(parsed.batch_trace, parsed.batches)) {
+    return invalid(
+      "trae una traza de batches que no es append-only ni corresponde a sus iteraciones",
+    );
+  }
+  if (!isPlanExecBatchLoop(parsed.batch_loop)) {
+    return invalid("declara un ciclo de batches sin su próxima iteración sellada");
+  }
+  if (!isHandoff(parsed.handoff)) {
+    return invalid("declara una entrega de flow sin destino, comando o sello de paquete");
+  }
+  if (!isSelectedChoice(parsed.selected_choice)) {
+    return invalid("declara una consecuencia elegida sin frontera, etiqueta o ruta válida");
+  }
+  if (!isDecisionPreparation(parsed.decision_preparation)) {
+    return invalid("declara una vista de decisión sin nota, preview o linaje sellados");
+  }
   return null;
 }
 
@@ -1192,6 +1660,240 @@ function isScope(value: unknown): value is FlowRunScope | null {
   if (typeof value.plan !== "string" || value.plan.trim().length === 0) return false;
   if (!isStringArray(value.sources) || value.sources.length === 0) return false;
   return value.sources.every((alias) => alias.trim().length > 0);
+}
+
+function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
+  if (!Array.isArray(value)) return false;
+  const ids = new Set<string>();
+  const iterations = new Set<number>();
+  return value.every((entry) => {
+    if (!isRecord(entry)) return false;
+    if (
+      typeof entry.id !== "string" ||
+      entry.id.trim().length === 0 ||
+      ids.has(entry.id) ||
+      typeof entry.iteration !== "number" ||
+      !Number.isInteger(entry.iteration) ||
+      entry.iteration < 1 ||
+      iterations.has(entry.iteration) ||
+      (entry.mode !== "continuous" && entry.mode !== "isolated") ||
+      !Array.isArray(entry.phases) ||
+      entry.phases.length === 0 ||
+      !entry.phases.every(
+        (phase) => typeof phase === "number" && Number.isInteger(phase) && phase > 0,
+      ) ||
+      !isStringArray(entry.tasks) ||
+      entry.tasks.length === 0 ||
+      new Set(entry.tasks).size !== entry.tasks.length ||
+      typeof entry.plan_digest !== "string" ||
+      entry.plan_digest.length === 0 ||
+      (entry.published_plan_digest !== undefined &&
+        (typeof entry.published_plan_digest !== "string" ||
+          entry.published_plan_digest.length === 0)) ||
+      !isPlanExecBatchPublication(entry.publication) ||
+      (entry.publication !== undefined &&
+        entry.publication.status === "applied" &&
+        entry.published_plan_digest !== entry.publication.after_plan_digest) ||
+      !(PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string)
+    ) {
+      return false;
+    }
+    ids.add(entry.id);
+    iterations.add(entry.iteration);
+    return true;
+  });
+}
+
+function isPlanExecBatchPublication(value: unknown): value is PlanExecBatchPublication | undefined {
+  if (value === undefined) return true;
+  return (
+    isRecord(value) &&
+    typeof value.plan === "string" &&
+    value.plan.trim().length > 0 &&
+    typeof value.before_plan_digest === "string" &&
+    value.before_plan_digest.length > 0 &&
+    typeof value.after_plan_digest === "string" &&
+    value.after_plan_digest.length > 0 &&
+    typeof value.transition === "string" &&
+    value.transition.length > 0 &&
+    (value.status === "prepared" || value.status === "applied")
+  );
+}
+
+/** Absent is only the compatibility reading of a v10 file written before the loop cursor. */
+function isPlanExecBatchLoop(value: unknown): value is PlanExecBatchLoop | undefined {
+  if (value === undefined) return true;
+  if (!isRecord(value) || typeof value.pending !== "boolean") return false;
+  if (value.pending) return Number.isInteger(value.iteration) && (value.iteration as number) >= 1;
+  return value.iteration === null;
+}
+
+function isPlanExecBatchTraceArray(
+  value: unknown,
+  batches: unknown,
+): value is PlanExecBatchTrace[] {
+  if (!Array.isArray(value) || !Array.isArray(batches)) return false;
+  const byId = new Map(
+    (batches as PlanExecBatch[]).map((batch) => [batch.id, batch.iteration] as const),
+  );
+  return value.every((entry, index) => {
+    if (!isRecord(entry)) return false;
+    return (
+      entry.sequence === index + 1 &&
+      typeof entry.batch_id === "string" &&
+      byId.get(entry.batch_id) === entry.iteration &&
+      typeof entry.iteration === "number" &&
+      Number.isInteger(entry.iteration) &&
+      typeof entry.transition === "string" &&
+      entry.transition.length > 0 &&
+      (PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string) &&
+      (entry.kind === "entered" || entry.kind === "completed" || entry.kind === "blocked")
+    );
+  });
+}
+
+function isHandoff(value: unknown): value is FlowHandoff | null {
+  if (value === null) return true;
+  if (!isRecord(value)) return false;
+  return (
+    (value.destination === "plan-refine" ||
+      value.destination === "spec-refine" ||
+      value.destination === "spec-new") &&
+    typeof value.command === "string" &&
+    value.command.trim().length > 0 &&
+    isEscalationPackage(value.package) &&
+    typeof value.package_digest === "string" &&
+    value.package_digest === semanticDigest(value.package)
+  );
+}
+
+function isEscalationPackage(value: unknown): value is FlowEscalationPackage {
+  return (
+    isRecord(value) &&
+    (value.plan === null || (typeof value.plan === "string" && value.plan.trim().length > 0)) &&
+    isObservationArray(value.observations) &&
+    isRecord(value.decisions) &&
+    isJsonValue(value.decisions) &&
+    typeof value.selection === "string" &&
+    value.selection.trim().length > 0
+  );
+}
+
+function isJsonValue(value: unknown): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isRecord(value) && Object.values(value).every(isJsonValue);
+}
+
+function isSelectedChoice(value: unknown): value is FlowChoiceSelection | null {
+  if (value === null) return true;
+  if (!isRecord(value) || typeof value.transition !== "string" || typeof value.label !== "string") {
+    return false;
+  }
+  if (!isRecord(value.outcome)) return false;
+  return (
+    value.outcome.kind === "register-decision" ||
+    (value.outcome.kind === "handoff" &&
+      (value.outcome.destination === "plan-refine" ||
+        value.outcome.destination === "spec-refine" ||
+        value.outcome.destination === "spec-new"))
+  );
+}
+
+/** A v10 file written before preview persistence may omit this field. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: each discriminant validates one durable preparation variant.
+function isDecisionPreparation(
+  value: unknown,
+): value is FlowDecisionPreparation | null | undefined {
+  if (value === undefined || value === null) return true;
+  if (!isRecord(value) || typeof value.kind !== "string") return false;
+  if (value.kind === "settled")
+    return typeof value.decision === "string" && value.decision.trim().length > 0;
+  if (value.kind === "reused") {
+    return (
+      typeof value.note === "string" &&
+      value.note.trim().length > 0 &&
+      typeof value.decision === "string" &&
+      value.decision.trim().length > 0 &&
+      typeof value.resume_point === "string" &&
+      value.resume_point.trim().length > 0
+    );
+  }
+  if (value.kind !== "prepared" || !isRecord(value.baseline)) return false;
+  const baseline = value.baseline;
+  if (
+    typeof baseline.path !== "string" ||
+    baseline.path.trim().length === 0 ||
+    typeof baseline.number !== "string" ||
+    baseline.number.trim().length === 0 ||
+    typeof baseline.digest !== "string" ||
+    baseline.digest.trim().length === 0 ||
+    !isStringArray(baseline.criteria) ||
+    typeof value.index_path !== "string" ||
+    value.index_path.trim().length === 0
+  ) {
+    return false;
+  }
+  const checkedBaseline = {
+    path: baseline.path as string,
+    number: baseline.number as string,
+    digest: baseline.digest as string,
+  };
+  const note = validateDecisionNote(value.note);
+  if (!note.ok || note.value === null) return false;
+  if (
+    note.value.lineage.spec.path !== checkedBaseline.path ||
+    note.value.lineage.spec.number !== checkedBaseline.number ||
+    note.value.lineage.spec.digest !== checkedBaseline.digest
+  ) {
+    return false;
+  }
+  return isDecisionPreview(value.preview, checkedBaseline);
+}
+
+function isDecisionPreview(
+  value: unknown,
+  baseline: { path: string; number: string; digest: string },
+): value is DecisionPreview {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.baseline) ||
+    !isRecord(value.impact) ||
+    !isRecord(value.evidence)
+  ) {
+    return false;
+  }
+  const previewBaseline = value.baseline;
+  if (
+    previewBaseline.path !== baseline.path ||
+    previewBaseline.number !== baseline.number ||
+    previewBaseline.digest !== baseline.digest ||
+    !Array.isArray(value.effective_change) ||
+    !isStringArray(value.consumers) ||
+    !isStringArray(value.obligations) ||
+    typeof value.resume_point !== "string" ||
+    value.resume_point.trim().length === 0 ||
+    !isStringArray(value.evidence.preserved) ||
+    !isStringArray(value.evidence.invalidated) ||
+    typeof value.impact.scope !== "string" ||
+    (value.impact.scope !== "functional" && value.impact.scope !== "plan-only") ||
+    !Number.isInteger(value.impact.assertions) ||
+    !Number.isInteger(value.impact.consumers) ||
+    !isRecord(value.effects) ||
+    !isEffectClassArray(value.effects.classes) ||
+    !Array.isArray(value.effects.entries) ||
+    !isProposal(value.proposal)
+  ) {
+    return false;
+  }
+  return value.effects.entries.every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry.path === "string" &&
+      Number.isInteger(entry.bytes) &&
+      typeof entry.overwrite === "boolean",
+  );
 }
 
 function isProposal(value: unknown): value is LocalProposal | null {
@@ -1264,7 +1966,14 @@ function isEventArray(value: unknown): value is FlowRunEvent[] {
   if (!Array.isArray(value)) return false;
   return value.every((entry) => {
     if (!isRecord(entry)) return false;
-    if (typeof entry.transition !== "string" || typeof entry.operation !== "string") return false;
+    if (
+      typeof entry.transition !== "string" ||
+      typeof entry.operation !== "string" ||
+      (entry.batch_iteration !== undefined &&
+        (!Number.isInteger(entry.batch_iteration) || (entry.batch_iteration as number) < 1))
+    ) {
+      return false;
+    }
     if (entry.kind === "executed") {
       return (
         typeof entry.summary === "string" &&
@@ -1291,7 +2000,11 @@ function isObservationArray(value: unknown): value is FlowObservation[] {
   if (!Array.isArray(value)) return false;
   return value.every(
     (entry) =>
-      isRecord(entry) && typeof entry.transition === "string" && isStringArray(entry.signals),
+      isRecord(entry) &&
+      typeof entry.transition === "string" &&
+      isStringArray(entry.signals) &&
+      (entry.batch_iteration === undefined ||
+        (Number.isInteger(entry.batch_iteration) && (entry.batch_iteration as number) >= 1)),
   );
 }
 
@@ -1331,6 +2044,8 @@ function isAttemptArray(value: unknown): value is FlowRunAttempt[] {
       Number.isInteger(entry.attempt) &&
       typeof entry.request_digest === "string" &&
       typeof entry.transition === "string" &&
+      (entry.batch_iteration === undefined ||
+        (Number.isInteger(entry.batch_iteration) && (entry.batch_iteration as number) >= 1)) &&
       (entry.parent_request_digest === null || typeof entry.parent_request_digest === "string"),
   );
 }

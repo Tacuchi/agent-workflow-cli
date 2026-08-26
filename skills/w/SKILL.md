@@ -27,9 +27,9 @@ Anyone needing orientation — a loop at start, a new agent in the workspace, or
 
 ## Knowledge
 
-### Workspace (no modes)
+### Workspace (implicit first)
 
-A single concept: **workspace**. There is no project/hub split. The folder where the agent starts becomes a workspace with `/w:workspace-init` (minimal scaffold: `.workflow/sessions/` + `.workflow/skills.toml` + the `WORKSPACE` block in CLAUDE.md + the CLI-owned `.gitignore`; each `docs/<cat>` folder is born on demand at `aw next-number`). It has 1+ sources (repos); "standalone" = a single source.
+A single concept: **workspace**. There is no project/hub split and no mandatory initialization. The nearest ancestor containing `.<namespace>/sessions/` is the root; with no marker, the folder where the agent starts is the **implicit workspace** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:workspace-init` is an optional early materialization; explicit sources add configured metadata. `workspace` is the reserved source that points to the root, and any extra alias is explicit.
 
 ### The 3-layer architecture + `docs/` zone
 
@@ -77,14 +77,13 @@ Both authoring entry points can **split** with consent: `spec-new` may split a m
 
 ### Operating context — where everything lands
 
-Before any loop, the AI resolves its **operating context** on **every prompt** with two detections: **workspace?** (`.<ns>/sessions/` exists) + **session to continue?** (an active one, or a recent one this prompt continues). That decides the behavior and **where artifacts land** (SQL, scripts, decisions, …):
+Before any loop, the AI resolves the **workspace root** on every prompt (closest `.<ns>/sessions/` ancestor, otherwise the invoked directory) and then the session to continue. The marker is evidence of materialization, not permission to use Workline; pure reads stay byte-identical. That decides where artifacts land:
 
-| Workspace? | Trigger | → Behavior + routing |
-|---|---|---|
-| **Yes** | **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → creates a **new** session (except re-running the same flow over the same input: `create_or_resume` reopens the existing one), starts the loop → artifacts go to **that** session (`SCRIPTS.sql`, …) |
-| **Yes** | **prompt with no command** (related) | **continues/reopens the most recent session** → scripts edit **its** `SCRIPTS.sql` (no new session) |
-| **Yes** | **prompt with no command** (unrelated / no session) | **no flow**: direct work → writes into `docs/` by convention + numbering (`aw next-number`). To persist work already done in this conversation, `/w:persist` classifies and routes it (`docs/research` · spec draft · plan adoption) |
-| **No** | anything | **vanilla** — no workspace, no flow; the AI is free (native) |
+| Trigger | → Behavior + routing |
+|---|---|
+| **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → materializes if needed, creates a **new** session (except re-running the same flow over the same input: `create_or_resume` reopens the existing one), starts the loop → artifacts go to **that** session (`SCRIPTS.sql`, …) |
+| **prompt with no command** (related) | **continues/reopens the most recent session** → scripts edit its `SCRIPTS.sql` (no new session) |
+| **prompt with no command** (unrelated / no session) | **no flow**: direct work → writes into `docs/` by convention + numbering (`aw next-number`). To persist work already done in this conversation, `/w:persist` classifies and routes it (`docs/research` · spec draft · plan adoption) |
 
 **Continuity rule** (single source — the chassis and the loops reference here):
 
@@ -103,7 +102,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 
 ### The commands (`/w:` namespace)
 
-- `/w:workspace-init` — initializes the workspace.
+- `/w:workspace-init` — materializes the runtime early, or configures explicit sources.
 - `/w:spec-new` — generates an initial spec (single-pass, no loop; a bounded reconnaissance of the sources precedes the scope decision).
 - `/w:spec-refine` — starts `spec-refine-loop` to refine the spec until it is `ready-for-plan`: the blocking functional decisions closed, the architecture/implementation ones declared for PLAN.
 - `/w:plan-new` — starts `plan-new-loop` to derive an executable plan from the ready spec.

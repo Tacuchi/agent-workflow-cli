@@ -19,7 +19,7 @@ Central distinction of the model:
 
 > An artifact may be **promoted** to a `docs/` document (e.g. `SCRIPTS.sql` → `docs/scripts/`) — but **only via dedicated `export-*` skills**, **never** automatically by the loops. The spec and the plan **are not** artifacts: they are documents.
 
-> **Routing by operating context** (canonical rules: [`../SKILL.md`](../SKILL.md) § *Operating context*): inside a flow → the **active/continued** session (a prompt with no command edits the most recent session's artifacts); workspace without flow → `docs/` by convention + numbering (or explicitly via [`/w:persist`](../commands/persist.md), which classifies in-conversation work and routes it — `docs/research` · spec draft · plan adoption); no workspace → vanilla. Session→`docs/` promotion is still **only** via `export-*`; persist is the **host→`docs/`** path (it never reads sessions).
+> **Routing by operating context** (canonical rules: [`../SKILL.md`](../SKILL.md) § *Operating context*): inside a flow → the **active/continued** session (a prompt with no command edits the most recent session's artifacts); without a flow → `docs/` by convention + numbering (or explicitly via [`/w:persist`](../commands/persist.md), which classifies in-conversation work and routes it — `docs/research` · spec draft · plan adoption). Every invoked directory is an implicit root and reads create no marker. Session→`docs/` promotion is still **only** via `export-*`; persist is the **host→`docs/`** path (it never reads sessions).
 
 ---
 

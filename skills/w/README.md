@@ -21,6 +21,6 @@ It implements the **stages + loops + artifacts** model. The design source lives 
 | [`hooks/`](hooks/) | — | Host hook template (branch-check, sql-mutation-guard, checkpoint, …) |
 | [`SKILL.md`](SKILL.md) | overview | The `w` orientation skill (guide to the full model) |
 
-## Bootstrap
+## Workspace
 
-Run [`/w:workspace-init`](commands/workspace-init.md) once to turn a folder into a workspace (minimal scaffold: `.workflow/sessions/` + `.workflow/skills.toml` + `WORKSPACE` block + CLI-owned `.gitignore`; `docs/` folders are born on demand). No project/hub distinction — a workspace has 1+ sources.
+Every invoked directory is a usable implicit workspace. The closest `.<namespace>/sessions/` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:workspace-init`](commands/workspace-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.

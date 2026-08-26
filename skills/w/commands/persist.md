@@ -38,7 +38,9 @@ Captures **work already produced in this conversation** — with or without host
 
 Every rejection names its cause and one valid next action; nothing was written. Fix the answer and repeat from step 3.
 
-Requires a **workspace** (`docs/` is the managed surface). Without one → degrade: propose `/w:workspace-init`.
+The resolved **implicit workspace** is the managed surface (`docs/`). No prior
+`/w:workspace-init` is needed: an approved apply writes only its declared
+artifact and materializes the runtime as part of that first mutation.
 
 ## More context
 

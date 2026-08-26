@@ -18,6 +18,7 @@ import { ACCENTS, ACCENT_ORDER, type AccentColor, colors, icons } from "../theme
 import { DEFAULT_TUI_PREFS, type TuiPrefs } from "../tui-prefs.js";
 import { useListCursor } from "../use-list-cursor.js";
 import { useTerminalSize } from "../use-terminal-size.js";
+import { workspaceRoot } from "../workspace-root.js";
 
 export interface ConfigTabProps {
   ctx: CliContext;
@@ -71,7 +72,7 @@ export function ConfigTab({
 }: ConfigTabProps) {
   const { cols } = useTerminalSize();
   const { lock, unlock } = useInputLock();
-  // null until the workspace block is read; stays null outside a workspace, and
+  // null until the workspace block is read; stays null when it is absent, and
   // then the RAMAS section is not rendered nor focusable.
   const [branches, setBranches] = useState<Required<DefaultBranches> | null>(null);
   const controls: Control[] = [
@@ -92,10 +93,14 @@ export function ConfigTab({
     let alive = true;
     void (async () => {
       try {
-        const block = await readWorkspaceBlock(ctx.fs, ctx.env.cwd(), ctx.paths.blockMarkers());
+        const block = await readWorkspaceBlock(
+          ctx.fs,
+          workspaceRoot(ctx),
+          ctx.paths.blockMarkers(),
+        );
         if (alive && block) setBranches(resolveDefaultBranches(block.default_branches));
       } catch {
-        // outside a workspace the tab stays as it was
+        // An unreadable or absent block leaves the optional branch section hidden.
       }
     })();
     return () => {

@@ -1,7 +1,11 @@
 import { resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  resolveWorkspaceSourcePath,
+} from "./parsers/project-block.js";
 import { PathsService } from "./paths-service.js";
 import {
   type LaunchMode,
@@ -57,7 +61,7 @@ export async function runGenerateLaunch(
   paths: PathsService,
   input: GenerateLaunchInput = {},
 ): Promise<GenerateLaunchResult | GenerateLaunchInputError> {
-  const workspace = input.workspace ? resolve(input.workspace) : resolve(env.cwd());
+  const workspace = input.workspace ? resolve(input.workspace) : paths.workspaceDir();
   const wsPaths = new PathsService(paths.namespace, env.homeDir(), workspace);
 
   const block = await readWorkspaceBlock(fs, workspace, wsPaths.blockMarkers());
@@ -65,7 +69,7 @@ export async function runGenerateLaunch(
   if (declared.length === 0) {
     return {
       error: "no_sources_declared",
-      hint: "no sources in the WORKSPACE block — run workspace-init first (or cd into the workspace root)",
+      hint: "no sources in the WORKSPACE block — configurá al menos una con 'aw workspace-init --source alias:path'",
     };
   }
 
@@ -88,7 +92,7 @@ export async function runGenerateLaunch(
   const sources: SourceArtifactResult[] = [];
   const missing: string[] = [];
   for (const fuente of selected) {
-    const sourcePath = resolve(workspace, fuente.path);
+    const sourcePath = resolveWorkspaceSourcePath(workspace, fuente.path);
     if (!(await fs.exists(sourcePath))) {
       missing.push(fuente.alias);
       continue;

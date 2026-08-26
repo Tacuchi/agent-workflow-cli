@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
+import { removeMcpEntry, writeMcpEntry } from "../../src/application/mcp-host-writer.js";
 import { type McpHost, buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
 const alphaEntry = () => buildMcpEntry("alpha", "ALPHA_DATABASE_URL");
@@ -62,13 +62,28 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     const mcpJsonPath = join(scopeDir, ".mcp.json");
     writeFileSync(
       mcpJsonPath,
-      JSON.stringify({ mcpServers: { alpha: { command: "old", args: [], env: {} } } }, null, 2),
+      JSON.stringify({ mcpServers: { other: { command: "old", args: [], env: {} } } }, null, 2),
     );
     const result = writeMcpEntry("claude", alphaEntry(), { scopeDir });
     expect(result.action).toBe("written");
     expect(result.backup).toBeNull();
     const baks = readdirSync(scopeDir).filter((f) => f.startsWith(".mcp.json.bak."));
     expect(baks).toHaveLength(0);
+  });
+
+  it("un nombre homónimo con otra forma es conflicto para write y remove, sin mutar bytes", () => {
+    const mcpJsonPath = join(scopeDir, ".mcp.json");
+    const foreign = `${JSON.stringify(
+      { mcpServers: { alpha: { command: "node", args: ["foreign.js"], env: {} } } },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(mcpJsonPath, foreign);
+
+    expect(writeMcpEntry("claude", alphaEntry(), { scopeDir }).action).toBe("conflict");
+    expect(readFileSync(mcpJsonPath, "utf-8")).toBe(foreign);
+    expect(removeMcpEntry("claude", alphaEntry(), { scopeDir }).action).toBe("conflict");
+    expect(readFileSync(mcpJsonPath, "utf-8")).toBe(foreign);
   });
 
   it("purga .bak.<ts> históricos al iniciar el write", () => {
@@ -81,16 +96,18 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     expect(baks).toHaveLength(0);
   });
 
-  it("limpia entrada legacy en .claude/settings.json al escribir", () => {
+  it("limpia una entrada legacy sólo cuando coincide con la forma generada actual", () => {
     const legacyPath = join(scopeDir, ".claude", "settings.json");
+    const alpha = alphaEntry();
     mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     writeFileSync(
       legacyPath,
       JSON.stringify(
         {
           permissions: { additionalDirectories: ["/some/path"] },
-          // Shape from this tool's legacy era (dbhub) — it IS ours.
-          mcpServers: { alpha: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} } },
+          mcpServers: {
+            alpha: { command: alpha.command, args: alpha.args, env: alpha.env },
+          },
         },
         null,
         2,
@@ -102,15 +119,16 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     expect(legacy.mcpServers).toBeUndefined();
   });
 
-  it("limpia entrada legacy en .claude/settings.json conservando otras entradas mcpServers", () => {
+  it("limpia una entrada propia legacy y conserva las otras entradas mcpServers", () => {
     const legacyPath = join(scopeDir, ".claude", "settings.json");
+    const alpha = alphaEntry();
     mkdirSync(join(scopeDir, ".claude"), { recursive: true });
     writeFileSync(
       legacyPath,
       JSON.stringify(
         {
           mcpServers: {
-            alpha: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} },
+            alpha: { command: alpha.command, args: alpha.args, env: alpha.env },
             keep: { command: "x", args: [], env: {} },
           },
         },
@@ -124,22 +142,73 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     expect(legacy.mcpServers.keep).toBeDefined();
   });
 
-  it("legacy cleanup conserva una entrada homónima ajena (guard de ownership)", () => {
-    // Same name 'alpha', but the server is the user's (mentions neither dbhub nor
-    // agent-workflow): at global scope that file is the real ~/.claude/settings.json.
+  it("declara la limpieza legacy como efecto en setup, incluso si la entrada canónica ya existe", () => {
+    const legacyPath = join(scopeDir, ".claude", "settings.json");
+    const primaryPath = join(scopeDir, ".mcp.json");
+    const alpha = alphaEntry();
+    const owned = { command: alpha.command, args: alpha.args, env: alpha.env };
+    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
+    writeFileSync(primaryPath, JSON.stringify({ mcpServers: { alpha: owned } }, null, 2));
+    const legacyText = `${JSON.stringify({ mcpServers: { alpha: owned } }, null, 2)}\n`;
+    writeFileSync(legacyPath, legacyText);
+
+    const preview = writeMcpEntry("claude", alpha, { scopeDir }, { dryRun: true });
+    expect(preview).toMatchObject({ action: "dry-run", target: legacyPath });
+    expect(readFileSync(legacyPath, "utf-8")).toBe(legacyText);
+
+    const result = writeMcpEntry("claude", alpha, { scopeDir });
+    expect(result).toMatchObject({ action: "written", target: legacyPath });
+    expect(JSON.parse(readFileSync(legacyPath, "utf-8")).mcpServers).toBeUndefined();
+  });
+
+  it("declara la limpieza legacy como eliminación cuando no queda entrada canónica", () => {
+    const legacyPath = join(scopeDir, ".claude", "settings.json");
+    const alpha = alphaEntry();
+    mkdirSync(join(scopeDir, ".claude"), { recursive: true });
+    const legacyText = `${JSON.stringify(
+      { mcpServers: { alpha: { command: alpha.command, args: alpha.args, env: alpha.env } } },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(legacyPath, legacyText);
+
+    const preview = removeMcpEntry("claude", alpha, { scopeDir }, { dryRun: true });
+    expect(preview).toMatchObject({ action: "dry-run", target: legacyPath });
+    expect(readFileSync(legacyPath, "utf-8")).toBe(legacyText);
+
+    const result = removeMcpEntry("claude", alpha, { scopeDir });
+    expect(result).toMatchObject({ action: "removed", target: legacyPath });
+    expect(JSON.parse(readFileSync(legacyPath, "utf-8")).mcpServers).toBeUndefined();
+  });
+
+  it("una entrada legacy dbhub ya no cuenta como propia: conflicto y cero escrituras", () => {
     const legacyPath = join(scopeDir, ".claude", "settings.json");
     mkdirSync(join(scopeDir, ".claude"), { recursive: true });
-    writeFileSync(
-      legacyPath,
-      JSON.stringify(
-        { mcpServers: { alpha: { command: "node", args: ["my-alpha-server.js"], env: {} } } },
-        null,
-        2,
-      ),
+    const foreign = `${JSON.stringify(
+      { mcpServers: { alpha: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} } } },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(legacyPath, foreign);
+
+    expect(writeMcpEntry("claude", alphaEntry(), { scopeDir }).action).toBe("conflict");
+    expect(readFileSync(legacyPath, "utf-8")).toBe(foreign);
+    expect(existsSync(join(scopeDir, ".mcp.json"))).toBe(false);
+  });
+
+  it("no reemplaza un contenedor mcpServers malformado", () => {
+    const mcpJsonPath = join(scopeDir, ".mcp.json");
+    const malformed = `${JSON.stringify({ mcpServers: [] }, null, 2)}\n`;
+    writeFileSync(mcpJsonPath, malformed);
+
+    expect(() => writeMcpEntry("claude", alphaEntry(), { scopeDir })).toThrow(
+      "contenedor 'mcpServers' inválido",
     );
-    writeMcpEntry("claude", alphaEntry(), { scopeDir });
-    const legacy = JSON.parse(readFileSync(legacyPath, "utf-8"));
-    expect(legacy.mcpServers.alpha.args).toEqual(["my-alpha-server.js"]);
+    expect(readFileSync(mcpJsonPath, "utf-8")).toBe(malformed);
+    expect(() => removeMcpEntry("claude", alphaEntry(), { scopeDir })).toThrow(
+      "contenedor 'mcpServers' inválido",
+    );
+    expect(readFileSync(mcpJsonPath, "utf-8")).toBe(malformed);
   });
 });
 
@@ -218,6 +287,38 @@ describe("writeMcpEntry — Codex (config.toml)", () => {
     const mcp = parsed.mcp_servers as Record<string, unknown>;
     expect(mcp.alpha).toBeDefined();
     expect(mcp.beta).toBeDefined();
+  });
+
+  it("falla cerrado ante TOML inválido y conserva sus bytes para write y remove", () => {
+    const configPath = join(scopeDir, ".codex", "config.toml");
+    mkdirSync(join(scopeDir, ".codex"), { recursive: true });
+    const invalid = "mcp_servers = [\n";
+    writeFileSync(configPath, invalid);
+
+    expect(() => writeMcpEntry("codex", alphaEntry(), { scopeDir })).toThrow(
+      "config.toml inválido",
+    );
+    expect(readFileSync(configPath, "utf-8")).toBe(invalid);
+    expect(() => removeMcpEntry("codex", alphaEntry(), { scopeDir })).toThrow(
+      "config.toml inválido",
+    );
+    expect(readFileSync(configPath, "utf-8")).toBe(invalid);
+  });
+
+  it("no reemplaza un contenedor mcp_servers TOML no-record", () => {
+    const configPath = join(scopeDir, ".codex", "config.toml");
+    mkdirSync(join(scopeDir, ".codex"), { recursive: true });
+    const malformed = 'mcp_servers = "not-a-table"\n';
+    writeFileSync(configPath, malformed);
+
+    expect(() => writeMcpEntry("codex", alphaEntry(), { scopeDir })).toThrow(
+      "contenedor 'mcp_servers' inválido",
+    );
+    expect(readFileSync(configPath, "utf-8")).toBe(malformed);
+    expect(() => removeMcpEntry("codex", alphaEntry(), { scopeDir })).toThrow(
+      "contenedor 'mcp_servers' inválido",
+    );
+    expect(readFileSync(configPath, "utf-8")).toBe(malformed);
   });
 });
 

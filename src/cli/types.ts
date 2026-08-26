@@ -5,16 +5,23 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
-import type { ResolvedNamespace } from "../runtime/namespace-resolver.js";
+import type { ResolvedNamespace, WorklineDirectory } from "../runtime/namespace-resolver.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
 
 export interface CliContext {
   fs: FileSystemPort;
+  /**
+   * The unguarded port for the two services that materialize themselves and
+   * include their exact receipt in their own result. Optional for legacy tests.
+   */
+  rawFs?: FileSystemPort;
   env: EnvPort;
   git: GitPort;
   process: ProcessPort;
   runtime: ResolvedRuntime;
   namespace: ResolvedNamespace;
+  /** Bootstrap's one resolved workspace coordinate; optional for lightweight legacy test contexts. */
+  directory?: WorklineDirectory;
   paths: PathsService;
   /** Resolved capability role → skill bindings (skills.toml cascade). */
   skills: ResolvedSkills;

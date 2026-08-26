@@ -32,6 +32,13 @@ export interface LockOptions {
   waitMs?: number;
   /** Poll step while waiting for a busy lock. */
   waitStepMs?: number;
+  /**
+   * Remove the lock on release instead of leaving the historical empty marker.
+   * Used by first-workspace materialization so a virgin write creates only its
+   * declared runtime effects. Existing callers retain the release-marker
+   * protocol by default.
+   */
+  removeOnRelease?: boolean;
 }
 
 export class LockBusyError extends Error {
@@ -80,7 +87,7 @@ export async function acquireLock(
   while (steals < MAX_CLAIM_RETRIES) {
     const result = await fs.writeTextExclusive(lockPath, serialized);
     if (result.created) {
-      return makeHandle(fs, lockPath, pid, ts);
+      return makeHandle(fs, lockPath, pid, ts, options.removeOnRelease === true);
     }
 
     const slot = await readSlot(fs, lockPath, now(), ttlMs);
@@ -143,7 +150,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function makeHandle(fs: FileSystemPort, lockPath: string, pid: number, ts: number): LockHandle {
+function makeHandle(
+  fs: FileSystemPort,
+  lockPath: string,
+  pid: number,
+  ts: number,
+  removeOnRelease: boolean,
+): LockHandle {
   let released = false;
   return {
     path: lockPath,
@@ -153,7 +166,8 @@ function makeHandle(fs: FileSystemPort, lockPath: string, pid: number, ts: numbe
       if (released) return;
       released = true;
       try {
-        await fs.writeText(lockPath, RELEASED_MARKER);
+        if (removeOnRelease) await fs.remove(lockPath);
+        else await fs.writeText(lockPath, RELEASED_MARKER);
       } catch {
         // best-effort: stale lock will auto-expire via ttl
       }

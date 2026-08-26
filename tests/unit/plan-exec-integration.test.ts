@@ -100,11 +100,6 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     };
     walk = planExecWalk(deps, {
       sources: [ALIAS],
-      // Una corrida que de verdad termina un plan las declara las tres: hay tareas
-      // que marcar, hay algo sin commitear y el plan quedó cerrable. Sin ellas las
-      // filas condicionadas se saltean, y un recorrido que "llegó" al final porque
-      // se saltó el commit no prueba nada de esta fase.
-      signals: ["plan.tasks-to-mark", "plan.commit-pending", "plan.plan-closable"],
     });
 
     writeFileSync(join(workspace, "CLAUDE.md"), block(source));
@@ -112,7 +107,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     for (const run of [UNO, DOS]) {
       writeFileSync(
         join(workspace, run.plan),
-        `# Plan ${run.code}\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — integración\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — integrar la unidad _(fuentes: ${ALIAS})_\n`,
+        `# Plan ${run.code}\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — integración\n> Estado: en ejecución\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — integrar la unidad _(fuentes: ${ALIAS})_\n`,
       );
       const dir = join(deps.paths.cwdSessionsDir(), run.folder);
       mkdirSync(dir, { recursive: true });
@@ -293,9 +288,13 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
 
     // Y resuelto, la MISMA transición la acredita: es la frontera a la que se
     // vuelve, no una que haya que saltear.
-    const confirmada = await walk.step(DOS);
-    expect(confirmada.boundary.transition).toBe("plan-exec.plan-done");
-    expect((await walk.current(DOS.folder)).state.applied).toContain("plan-exec.unit-integration");
+    await walk.step(DOS);
+    // Con un ejecutor interno el sello final ya no vuelve como una edición
+    // manual: revalida el plan y escribe `Estado: done` + `Cierre` en la misma
+    // continuación que acreditó la integración.
+    const final = await walk.current(DOS.folder);
+    expect(final.state.applied).toContain("plan-exec.unit-integration");
+    expect(final.state.applied).toContain("plan-exec.plan-done");
   });
 
   it("el cierre dirigido se niega mientras viva una unidad, y cierra cuando ya no", async () => {

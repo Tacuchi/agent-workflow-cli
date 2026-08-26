@@ -8,15 +8,13 @@ import {
 import type { EnvPort } from "../ports/env.js";
 import { readDsnFile } from "./dsn-reader-service.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
-import { resolveScopeDir } from "./mcp-scope-common.js";
+import { type McpScopeInput, resolveScopeDir } from "./mcp-scope-common.js";
 import type { PathsService } from "./paths-service.js";
 
-export interface McpDoctorInput {
+export type McpDoctorInput = McpScopeInput & {
   hosts: McpHost[];
   connections: McpConnectionRef[];
-  scope: "workspace" | "global";
-  workspace?: string;
-}
+};
 
 export interface McpDoctorResult {
   scope: "workspace" | "global";

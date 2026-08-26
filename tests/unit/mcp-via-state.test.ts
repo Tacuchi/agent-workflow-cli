@@ -13,10 +13,10 @@ function specOf(id: HarnessId) {
 }
 
 /**
- * Las tres preguntas por separado, porque no son la misma.
+ * Disponibilidad y oferta van por separado, porque no son lo mismo.
  *
- * Una vía puede estar disponible sin estar ofrecida, y ofrecida sin ser utilizable.
- * Colapsarlas dejaría a la persona sin saber cuál de las tres arreglar.
+ * Una vía puede estar disponible sin estar ofrecida. La aceptación del selector
+ * no se adivina desde el filesystem.
  */
 describe("el estado de la vía MCP en un host", () => {
   let home: string;
@@ -33,21 +33,44 @@ describe("el estado de la vía MCP en un host", () => {
     expect(state.available.reason).toContain("2026-08-22");
     expect(state.offered.yes).toBe(false);
     expect(state.offered.reason).toContain("instalación de superficies");
-    expect(state.usable.yes).toBe(false);
   });
 
-  it("una vez ofrecida, las tres contestan y la tercera nombra lo único que puede desmentirla", () => {
+  it("una vez ofrecida, disponibilidad y oferta contestan sin estado especulativo", () => {
     offerWorklineServer({ targets: ["codex"], scopeDir: home });
 
     const state = readMcpViaState(specOf("codex"), home);
 
     expect(state.available.yes).toBe(true);
     expect(state.offered.yes).toBe(true);
-    // Utilizable es lo único que no se puede afirmar leyendo: lo decide la política
-    // de arranque, y eso sólo se sabe al pedir la primera elección.
-    expect(state.usable.yes).toBe(true);
-    expect(state.usable.reason).toContain("--yolo");
-    expect(state.usable.reason).toContain("default approval policy");
+    expect("usable" in state).toBe(false);
+  });
+
+  it("una entrada homónima ajena se reporta como conflicto y nunca como ofrecida", () => {
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.agent-workflow]\ncommand = "node"\nargs = ["foreign.js"]\n',
+      "utf8",
+    );
+
+    const state = readMcpViaState(specOf("codex"), home);
+
+    expect(state.available.yes).toBe(true);
+    expect(state.offered).toMatchObject({ yes: false });
+    expect(state.offered.reason).toContain("conflicto");
+    expect(state.offered.reason).toContain("ajena");
+  });
+
+  it("también conserva el conflicto cuando la forma homónima ni siquiera es un record", () => {
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      'mcp_servers.agent-workflow = "foreign"\n',
+      "utf8",
+    );
+
+    const state = readMcpViaState(specOf("codex"), home);
+
+    expect(state.offered).toMatchObject({ yes: false });
+    expect(state.offered.reason).toContain("conflicto");
   });
 
   it("un host sin evidencia se declara NO disponible, nunca desconocido", () => {
@@ -57,14 +80,13 @@ describe("el estado de la vía MCP en un host", () => {
     // falle; decir «desconocido» invitaría a suponer la que no se probó.
     expect(state.available.yes).toBe(false);
     expect(state.available.reason).toContain("nadie observó");
-    expect(state.usable.yes).toBe(false);
   });
 
   it("toda respuesta negativa trae su razón, sin excepción", () => {
     writeFileSync(join(home, ".codex", "config.toml"), "");
     for (const id of ["codex", "kimi", "warp", "claude-code"] as const) {
       const state = readMcpViaState(specOf(id), home);
-      for (const answer of [state.available, state.offered, state.usable]) {
+      for (const answer of [state.available, state.offered]) {
         expect(answer.reason.length).toBeGreaterThan(0);
       }
     }

@@ -105,7 +105,7 @@ describe("NamespaceResolver", () => {
     expect(result.source).toBe("default");
   });
 
-  it("falls back to default when multiple namespace candidates match (ambiguous)", async () => {
+  it("fails typed when multiple canonical namespace markers share the nearest level", async () => {
     const dirs = new Map<string, DirEntry[]>([
       [
         "/cwd",
@@ -119,8 +119,11 @@ describe("NamespaceResolver", () => {
     ]);
     const fs = makeFs(new Map(), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
-    const result = await r.resolve(undefined);
-    expect(result.source).toBe("default");
+    await expect(r.resolveDirectory(undefined)).rejects.toMatchObject({
+      code: "WORKLINE_NAMESPACE_AMBIGUOUS",
+      root: "/cwd",
+      namespaces: ["other", "workflow"],
+    });
   });
 
   it("workspace auto-detect wins over user config (locality > preference)", async () => {
@@ -163,5 +166,78 @@ describe("NamespaceResolver", () => {
     const result = await r.resolve(undefined);
     expect(result.source).toBe("workspace");
     expect(result.namespace).toBe("legacy");
+  });
+
+  it("uses the nearest ancestor marker as the shared Workline root", async () => {
+    const fs = makeFs(
+      new Map(),
+      new Map([
+        ["/repo", [{ name: ".workflow", path: "/repo/.workflow", type: "dir" }]],
+        ["/repo/.workflow/sessions", []],
+        ["/repo/packages/app/src", []],
+      ]),
+    );
+    const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/repo/packages/app/src"));
+    await expect(r.resolveDirectory(undefined)).resolves.toEqual({
+      root: "/repo",
+      namespace: "workflow",
+      namespaceSource: "workspace",
+      materialized: true,
+    });
+  });
+
+  it("keeps the exact invoked cwd as an implicit root when no marker exists", async () => {
+    const r = new NamespaceResolver(makeFs(), new FakeEnv("/home/u", "/plain/nested"));
+    await expect(r.resolveDirectory(undefined)).resolves.toEqual({
+      root: "/plain/nested",
+      namespace: "workflow",
+      namespaceSource: "default",
+      materialized: false,
+    });
+  });
+
+  it("honours an explicit namespace without silently selecting a neighbouring marker", async () => {
+    const fs = makeFs(
+      new Map(),
+      new Map([
+        ["/cwd", [{ name: ".workflow", path: "/cwd/.workflow", type: "dir" }]],
+        ["/cwd/.workflow/sessions", []],
+      ]),
+    );
+    const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
+    await expect(r.resolveDirectory("other")).resolves.toEqual({
+      root: "/cwd",
+      namespace: "other",
+      namespaceSource: "flag",
+      materialized: false,
+    });
+  });
+
+  it("honours AW_NAMESPACE at the closest matching marker", async () => {
+    const fs = makeFs(
+      new Map(),
+      new Map([
+        [
+          "/repo",
+          [
+            { name: ".workflow", path: "/repo/.workflow", type: "dir" },
+            { name: ".team", path: "/repo/.team", type: "dir" },
+          ],
+        ],
+        ["/repo/.workflow/sessions", []],
+        ["/repo/.team/sessions", []],
+        ["/repo/packages/app", []],
+      ]),
+    );
+    const r = new NamespaceResolver(
+      fs,
+      new FakeEnv("/home/u", "/repo/packages/app", { AW_NAMESPACE: "team" }),
+    );
+    await expect(r.resolveDirectory(undefined)).resolves.toEqual({
+      root: "/repo",
+      namespace: "team",
+      namespaceSource: "env",
+      materialized: true,
+    });
   });
 });

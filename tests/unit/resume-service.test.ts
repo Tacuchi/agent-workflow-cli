@@ -142,6 +142,30 @@ describe("runResume — an explicit target wins over the pipeline", () => {
     expect(out.proposal.file).toBe("docs/plans/005-plan-x.md");
   });
 
+  it("preserves the compatible legacy warning on an explicit open plan", async () => {
+    const fs = workspace();
+    fs.file("/cwd/docs/plans/006-plan-legado.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
+
+    const out = await resume(fs, { target: "docs/plans/006-plan-legado.md" });
+    if (out.status !== "proposal") throw new Error(`expected a proposal, got ${out.status}`);
+    expect(out.proposal.command).toBe("/w:plan-exec docs/plans/006-plan-legado.md");
+    expect(out.proposal.warning?.code).toBe("WORKLINE_BASELINE_LEGACY_UNSEALED");
+  });
+
+  it("does not offer plan-exec for a closed legacy plan targeted explicitly", async () => {
+    const fs = workspace();
+    fs.file(
+      "/cwd/docs/plans/007-plan-historico.md",
+      "# Plan\n\n> Estado: done\n\n## Tasks\n- [x] T1\n",
+    );
+
+    const out = await resume(fs, { target: "docs/plans/007-plan-historico.md" });
+    expect(out.status).toBe("invalid_target");
+    if (out.status !== "invalid_target") return;
+    expect(out.action).toContain("histórico");
+    expect(out.action).not.toContain("/w:plan-exec");
+  });
+
   // A number is not an identity: spec 005 and plan 005 both exist in real
   // workspaces, so the tie goes back to the caller.
   it("returns candidates when a number names both a spec and a plan", async () => {
@@ -307,13 +331,9 @@ describe("runResume — sin target, la oferta es el pipeline completo", () => {
     expect(out.status).toBe("idle");
   });
 
-  // Un pipeline vacío por falta de workspace no es «nada pendiente»: quien lee
-  // esa respuesta se va a buscar trabajo que ninguna carpeta está registrando.
-  it("sin workspace lo dice y propone inicializarlo, nunca idle", async () => {
+  it("un directorio implícito sin pipeline devuelve idle, sin exigir inicialización", async () => {
     const out = await resume(new MemFs({ lenient: true }));
-    expect(out.status).toBe("uninitialized");
-    if (out.status !== "uninitialized") return;
-    expect(out.action).toContain("/w:workspace-init");
+    expect(out.status).toBe("idle");
   });
 });
 

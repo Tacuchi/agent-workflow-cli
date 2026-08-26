@@ -31,12 +31,12 @@ export interface ListSessionsOutput {
 export class SessionsService {
   constructor(
     private readonly fs: FileSystemPort,
-    private readonly env: EnvPort,
+    _env: EnvPort,
     private readonly paths: PathsService,
   ) {}
 
   async list(input: ListSessionsInput = {}): Promise<ListSessionsOutput> {
-    const cwd = this.env.cwd();
+    const cwd = this.paths.workspaceDir();
     const sessionsDir = this.paths.cwdSessionsDir();
     const sessions = await this.scanFolder(sessionsDir, cwd, input.verbose === true);
 

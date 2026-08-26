@@ -74,7 +74,13 @@ describe("runStatusCommand — full dashboard", () => {
   it("aggregates workspace, specs, plans, sessions, discarded", async () => {
     const out = await runStatusCommand(fullWorkspace(), fakeEnv, paths(), { now: NOW });
 
-    expect(out.workspace).toEqual({ name: "mi-workspace", path: "/cwd", initialized: true });
+    expect(out.workspace).toEqual({
+      name: "mi-workspace",
+      root: "/cwd",
+      path: "/cwd",
+      mode: "configured",
+      initialized: true,
+    });
 
     // specs
     expect(out.specs).toHaveLength(2);
@@ -706,9 +712,15 @@ describe("runStatusCommand — what blocks a phase", () => {
 });
 
 describe("runStatusCommand — edge cases", () => {
-  it("uninitialized workspace: initialized=false, everything empty, name from basename", async () => {
+  it("implicit workspace: mode/root are explicit and collections stay empty", async () => {
     const out = await runStatusCommand(new FakeFs(), fakeEnv, paths(), { now: NOW });
-    expect(out.workspace).toEqual({ name: "cwd", path: "/cwd", initialized: false });
+    expect(out.workspace).toEqual({
+      name: "cwd",
+      root: "/cwd",
+      path: "/cwd",
+      mode: "implicit",
+      initialized: false,
+    });
     expect(out.specs).toEqual([]);
     expect(out.plans).toEqual([]);
     expect(out.sessions).toEqual({ active: [], closed: [] });
@@ -813,18 +825,16 @@ describe("status human — cada pendiente dice cuál es su paso siguiente", () =
     expect(render(await board(fs))).toContain("BLOQUEADA F2 — sin motivo declarado");
   });
 
-  it("una obligación pendiente se nombra ANTES que el porcentaje", async () => {
+  it("un legacy sin sello sigue la ruta compatible y muestra su aviso sólo en detalle", async () => {
     const fs = pending();
-    // Sin sello de baseline: el plan no dice de qué versión de su spec deriva.
     fs.file("/cwd/docs/plans/020-plan-sin-sello.md", executedPlan(2), NOW);
 
-    const text = render(await board(fs));
-    const obligation = text.indexOf("SIN SELLO DE BASELINE");
-    const percentage = text.indexOf("2/2 tareas (100%)");
-    expect(obligation).toBeGreaterThan(-1);
-    expect(percentage).toBeGreaterThan(obligation);
-    // Y el título del ítem sigue nombrando de qué plan se habla.
-    expect(text).toContain("plan 020 — SIN SELLO DE BASELINE");
+    const data = await board(fs);
+    const item = data.pipeline.find((candidate) => candidate.number === "020");
+    expect(item?.action).toMatchObject({ kind: "continue", mode: "compatible" });
+    expect(item?.command).toBe("/w:plan-exec docs/plans/020-plan-sin-sello.md");
+    expect(render(data)).not.toContain("SIN SELLO DE BASELINE");
+    expect(render(data, true)).toContain("SIN SELLO DE BASELINE");
   });
 
   it("de una spec pendiente dice su status y cuántas preguntas abiertas le quedan", async () => {
@@ -878,7 +888,7 @@ describe("status human — las sesiones dejan de ser trabajo del usuario", () =>
   });
 });
 
-describe("status human — los dos vacíos no se dicen igual", () => {
+describe("status human — un root implícito sigue siendo Workline", () => {
   it("sin nada pendiente responde en una línea, sin secciones ni avisos", async () => {
     const fs = pending();
     fs.file(
@@ -895,12 +905,12 @@ describe("status human — los dos vacíos no se dicen igual", () => {
     expect(text).not.toContain("Aviso:");
   });
 
-  it("sin workspace lo dice y propone inicializarlo: nunca «nada pendiente»", async () => {
+  it("sin marcador ni pendientes responde sin pendientes", async () => {
     const data = await board(new FakeFs({ lenient: true }));
     const text = render(data);
 
     expect(data.workspace.initialized).toBe(false);
-    expect(text).toContain("/w:workspace-init");
-    expect(text).not.toContain("sin pendientes");
+    expect(text).toContain("sin pendientes");
+    expect(text).not.toContain("/w:workspace-init");
   });
 });

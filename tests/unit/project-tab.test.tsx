@@ -146,6 +146,7 @@ function buildCtx(
     paths: {
       workspaceDir: () => "/ws",
       blockMarkers: () => MARKERS,
+      cwdSessionsDir: () => "/ws/.workflow/sessions",
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
       cwdLockFile: () => "/ws/.workflow/.lock",
       cwdDocsLogsDir: () => "/ws/docs/logs",
@@ -521,6 +522,7 @@ function buildLaunchCtx(
     paths: {
       workspaceDir: () => "/ws",
       blockMarkers: () => MARKERS,
+      cwdSessionsDir: () => "/ws/.workflow/sessions",
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
       cwdLockFile: () => "/ws/.workflow/.lock",
       cwdDocsLogsDir: () => "/ws/docs/logs",
@@ -804,6 +806,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
       paths: {
         workspaceDir: () => "/ws",
         blockMarkers: () => MARKERS,
+        cwdSessionsDir: () => "/ws/.workflow/sessions",
         cwdProcessesFile: () => "/ws/.workflow/processes.json",
         cwdLockFile: () => "/ws/.workflow/.lock",
         cwdDocsLogsDir: () => "/ws/docs/logs",
@@ -866,8 +869,8 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     expect(spawns).toBe(0);
   });
 
-  it("sin workspace inicializado: NO ofrece Lanzar ni la sección de procesos (AC12)", async () => {
-    // fs.exists=false → no WORKSPACE block → NotInitialized landing.
+  it("sin bloque WORKSPACE mantiene la vista normal y ofrece configurar fuentes", async () => {
+    // fs.exists=false → root implícito, no una pantalla de inicialización obligatoria.
     const ctx = {
       fs: { exists: async () => false, readText: async () => "" },
       env: { cwd: () => "/ws", homeDir: () => "/home", get: () => undefined },
@@ -879,6 +882,7 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
       paths: {
         workspaceDir: () => "/ws",
         blockMarkers: () => MARKERS,
+        cwdSessionsDir: () => "/ws/.workflow/sessions",
         cwdProcessesFile: () => "/ws/.workflow/processes.json",
         cwdLockFile: () => "/ws/.workflow/.lock",
         cwdDocsLogsDir: () => "/ws/docs/logs",
@@ -889,8 +893,9 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     const { lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
     await tick();
     const f = lastFrame() ?? "";
-    expect(f).toContain("not initialized"); // landing
-    expect(f).not.toContain("Procesos lanzados");
+    expect(f).toContain("Workspace");
+    expect(f).toContain("configurar fuentes");
+    expect(f).not.toContain("not initialized");
     expect(f).not.toContain("Lanzar en local");
   });
 });

@@ -1,28 +1,25 @@
-# WORKSPACE-SCAFFOLD — what init versions, ignores and prunes
+# WORKSPACE-SCAFFOLD — runtime materialization and configuration
 
-Loaded when the folder already has a workspace, or the user asks what `workspace-init` writes,
-ignores or removes on a re-run (signal `scaffold`).
+Loaded when the folder already has a materialized workspace, or the user asks what
+`workspace-init` writes, ignores or reconciles on a re-run (signal `scaffold`).
 
 ## Versioning policy (CLI-owned `.gitignore`)
 
-Init writes and owns the full set.
+The first mutation (or `workspace-init` without sources) writes only the runtime set, under the
+workspace lock. The sessions marker is created last.
 
-- **Ignored** — `.workflow/sessions/` (machine-local live log), `.workflow/.lock`,
-  `.workflow/processes.json`, `.workflow/launch/`, `docs/logs/` and, when there are external
-  sources, `.claude/settings.local.json*` / `.codex/config.toml*` (the patterns cover the
-  `.bak.<epoch>` backups).
-- **Versioned** — `.workflow/skills.toml`, `docs/**` (the deliverables) and
-  `.workflow/HISTORY.md`, the durable record: `aw session-close` upserts each closed session's
-  row there.
+- **Ignored** — `.<namespace>/sessions/` (machine-local live log), `.<namespace>/.lock`,
+  `.<namespace>/processes.json`, `.<namespace>/launch/` and `docs/logs/`. The runtime block is
+  added only when the root belongs to Git.
+- **Not created by materialization** — `docs/**`, `skills.toml`, a WORKSPACE block, launch
+  files, HISTORY and Git metadata. Those belong to their owning command.
 
-## Re-run: reconcile + prune
+## Re-run: reconcile
 
-A re-run adds no duplicate entries and overwrites no manual configuration. It prunes the legacy
-upfront scaffold:
+A re-run adds no duplicate runtime entries and overwrites no manual configuration. When explicit
+sources are supplied, it reconciles their metadata, branches and multiroot visibility; a
+`workspace` alias is reserved for the implicit root. It creates `skills.toml` only for a real
+override.
 
-- `.gitkeep`-only taxonomy folders and stray `.gitkeep` files;
-- an empty `docs/logs/`;
-- a released `.workflow/.lock` leftover.
-
-The `.gitignore` is completed to the current set — entries merge under the existing header, never
-duplicated.
+The `.gitignore` runtime block merges idempotently; a read such as `status` or `resume` never
+creates it or any other workspace file.

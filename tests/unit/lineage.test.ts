@@ -232,25 +232,41 @@ describe("F1.4 — el sello no mueve el ruteo del pipeline", () => {
     expect(JSON.stringify(routing(after.pipeline))).toBe(JSON.stringify(routing(before.pipeline)));
   });
 
-  it("tampoco las mueve que el plan quede divergente: el pipeline es de F7, no de F1", async () => {
+  it("un baseline divergente entrega exactamente a plan-refine", async () => {
     const edited = SPEC.replace("una sola vez.", "una sola vez,");
     const before = await index(workspace(plan(null)));
     const after = await index(workspace(plan(SEALED), edited));
-    expect(JSON.stringify(routing(after.pipeline))).toBe(JSON.stringify(routing(before.pipeline)));
+    expect(routing(before.pipeline)[0]?.command).toBe(
+      "/w:plan-exec docs/plans/032-plan-reconciliacion.md",
+    );
+    expect(routing(after.pipeline)[0]?.command).toBe(
+      "/w:plan-refine docs/plans/032-plan-reconciliacion.md",
+    );
+    expect(after.pipeline[0]?.action).toMatchObject({
+      kind: "handoff",
+      destination: "plan-refine",
+      code: "WORKLINE_BASELINE_DIVERGENT",
+    });
   });
 
-  it("y lo único que mueve es qué le falta: sin sello es obligación, sellado no", async () => {
+  it("y lo único que mueve es el modo: sin sello es compatible, sellado normal", async () => {
     const unsealed = await index(workspace(plan(null)));
     const sealed = await index(workspace(plan(SEALED)));
 
     expect(unsealed.pipeline[0]?.detail).toMatchObject({
-      next: expect.stringContaining("SIN SELLO DE BASELINE"),
-      obligation: true,
+      next: "continuar por la primera fase no validada",
+      obligation: false,
+      warning: {
+        code: "WORKLINE_BASELINE_LEGACY_UNSEALED",
+        message: expect.stringContaining("SIN SELLO DE BASELINE"),
+      },
     });
+    expect(unsealed.pipeline[0]?.action).toMatchObject({ kind: "continue", mode: "compatible" });
     expect(sealed.pipeline[0]?.detail).toMatchObject({
       next: "continuar por la primera fase no validada",
       obligation: false,
     });
+    expect(sealed.pipeline[0]?.action).toMatchObject({ kind: "continue", mode: "normal" });
   });
 });
 

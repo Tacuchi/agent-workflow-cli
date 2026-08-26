@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -32,6 +32,7 @@ describe("runMcpSetup", () => {
     if ("ok" in result) throw new Error("did not expect refusal");
     expect(result.applied).toHaveLength(4);
     expect(result.skipped).toHaveLength(0);
+    expect(result.conflicts).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
     expect(result.dry_run).toBe(false);
     expect(result.scope).toBe("workspace");
@@ -66,6 +67,29 @@ describe("runMcpSetup", () => {
     if ("ok" in result) throw new Error("did not expect refusal");
     expect(result.applied.every((r) => r.action === "dry-run")).toBe(true);
     expect(result.dry_run).toBe(true);
+  });
+
+  it("una entrada homónima de forma ajena se informa como conflicto y no se escribe", () => {
+    const file = join(workspace, ".mcp.json");
+    const foreign = `${JSON.stringify(
+      { mcpServers: { alpha: { command: "node", args: ["foreign.js"], env: {} } } },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(file, foreign);
+
+    const result = runMcpSetup(env, {
+      hosts: ["claude"],
+      connections: [ALPHA],
+      scope: "workspace",
+      workspace,
+    });
+
+    if ("ok" in result) throw new Error("did not expect refusal");
+    expect(result.applied).toEqual([]);
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts[0]?.action).toBe("conflict");
+    expect(readFileSync(file, "utf-8")).toBe(foreign);
   });
 
   it("acepta conexiones custom y normaliza el nombre del server", () => {
@@ -104,12 +128,12 @@ describe("runMcpSetup", () => {
     expect(result.exitCode).toBe(2);
   });
 
-  it("scope=global con --force escribe en el home inyectado (EnvPort), no en el real", () => {
+  it("scope=global con consentimiento CLI explícito escribe en el home inyectado (EnvPort), no en el real", () => {
     const result = runMcpSetup(env, {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "global",
-      force: true,
+      globalApproval: "explicit-cli-force",
       workspace,
     });
     expect("ok" in result).toBe(false);

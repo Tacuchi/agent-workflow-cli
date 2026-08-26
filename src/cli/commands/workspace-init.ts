@@ -14,16 +14,15 @@ import type { CliContext } from "../types.js";
 export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
   name: "workspace-init",
   describe:
-    "Initialize the current directory as an agent-workflow workspace (unifies the legacy hub-init + project-init; no project/hub distinction). Minimal scaffold: .workflow/sessions + skills.toml + WORKSPACE block + CLI-owned .gitignore; docs/ folders are born on demand (aw next-number). With external sources it also configures multi-root visibility. Idempotent; re-running reconciles and prunes the legacy upfront scaffold. Usage: aw workspace-init --source alias:path[:rama] (repeatable, 1+) [--working-branch alias:rama] [--qa-branch alias:rama] [--proyecto <name>] [--main-branch <branch>] [--workspace <dir>] [--dry-run] [--format human|json] [--detail].",
+    "Materialize the minimal Workline runtime in the resolved directory, or configure sources when --source is supplied. Without sources it creates only the sessions marker and the Git runtime ignore block when applicable. With sources it reconciles the WORKSPACE block, branches and multi-root visibility. Usage: aw workspace-init [--source alias:path[:rama] (repeatable, 1+)] [--working-branch alias:rama] [--qa-branch alias:rama] [--proyecto <name>] [--main-branch <branch>] [--workspace <dir>] [--dry-run] [--format human|json] [--detail].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceInitResult>> {
     // Canonical flag is --source; --fuente kept as a back-compat alias.
     const sourcesRaw = [
       ...(args.valuesMulti.get("source") ?? []),
       ...(args.valuesMulti.get("fuente") ?? []),
     ];
-    // No --source is allowed: on an already-initialized workspace the service
-    // reconciles, preserving existing sources + description (so paths are never
-    // re-passed through the shell). A genuinely empty workspace still errors.
+    // No --source is the materialization-only form. Metadata options still
+    // require sources so a partial configuration cannot invent a WORKSPACE block.
     const parsed = parseFuentesSpecs(sourcesRaw);
     if ("error" in parsed) return fail<WorkspaceInitResult>("INVALID_INPUT", parsed.error);
     const sources = parsed.fuentes.map(toWorkspaceSource);
@@ -34,7 +33,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []);
     const qaBranches = parseWorkingBranches(args.valuesMulti.get("qa-branch") ?? []);
 
-    const data = await runWorkspaceInit(ctx.fs, ctx.env, ctx.paths, {
+    const data = await runWorkspaceInit(ctx.rawFs ?? ctx.fs, ctx.env, ctx.paths, {
       sources,
       ...(proyecto !== undefined ? { proyecto } : {}),
       ...(mainBranch !== undefined ? { mainBranch } : {}),
@@ -76,6 +75,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
       `  skills.toml ${data.skills_toml}`,
     ];
     if (context.detail) {
+      lines.push(`  Runtime    ${JSON.stringify(data.materialization.effects)}`);
       lines.push(`  Scaffold   ${JSON.stringify(data.scaffold)}`);
       lines.push(`  Multiroot  ${JSON.stringify(data.attach_multiroot)}`);
     }

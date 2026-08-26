@@ -122,17 +122,18 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
   // detail panel / in-flight flow.
   useLockWhile(initForm);
 
-  // Keys for the "not initialized" landing (⏎ opens the wizard · g git status).
+  // Configuration is secondary: the normal workspace view stays available even
+  // without a WORKSPACE block, and `c` opens the source configuration wizard.
   useInput(
-    (input, key) => {
-      if (!data || data.initialized) return;
-      if (key.return) {
+    (input) => {
+      if (!data) return;
+      if (input === "c") {
         setInitForm(true);
         return;
       }
       if (input === "g") onRunAction?.("git:status");
     },
-    { isActive: isActive && !!data && !data.initialized && !initForm },
+    { isActive: isActive && !!data && !initForm },
   );
 
   if (loading || !data) {
@@ -143,22 +144,19 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
     );
   }
 
-  if (!data.initialized) {
-    if (initForm) {
-      return (
-        <WorkspaceInitForm
-          ctx={ctx}
-          defaultProyecto={basename(data.workspacePath)}
-          isActive={isActive}
-          onCancel={() => setInitForm(false)}
-          onDone={({ ok }) => {
-            setInitForm(false);
-            if (ok) void loadData();
-          }}
-        />
-      );
-    }
-    return <NotInitialized data={data} />;
+  if (initForm) {
+    return (
+      <WorkspaceInitForm
+        ctx={ctx}
+        defaultProyecto={basename(data.workspacePath)}
+        isActive={isActive}
+        onCancel={() => setInitForm(false)}
+        onDone={({ ok }) => {
+          setInitForm(false);
+          if (ok) void loadData();
+        }}
+      />
+    );
   }
 
   return (
@@ -168,6 +166,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
       isActive={isActive}
       onRunAction={onRunAction}
       onReload={loadData}
+      onConfigureSources={() => setInitForm(true)}
     />
   );
 }
@@ -202,57 +201,6 @@ function tildePath(path: string, home: string): string {
   if (path === home) return "~";
   if (path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
   return path;
-}
-
-// ===== Landing — uninitialized workspace =====
-
-function NotInitialized({ data }: { data: ProjectTabData }) {
-  return (
-    <Box flexDirection="column">
-      <PageHead
-        title="Workspace"
-        count={{ label: "not initialized", tone: "warn" }}
-        action={<Text color={colors.mute}>WORKSPACE block not found in CLAUDE.md / AGENTS.md</Text>}
-      />
-
-      <SectionHead label="Initialize workspace" marginTop={0} />
-      <Box marginLeft={2} marginTop={0} flexDirection="column">
-        <Box marginBottom={1} flexDirection="column">
-          <Text color={colors.bright} bold>
-            Initialize this directory as a workspace
-          </Text>
-          <Box marginLeft={2} flexDirection="column">
-            <Text color={colors.dim}>
-              Collect 1+ sources (alias · path · main branch) and optional working branches.
-            </Text>
-            <Text color={colors.info}>/w:workspace-init</Text>
-          </Box>
-        </Box>
-        <Text color={colors.dim}>⏎ start wizard</Text>
-      </Box>
-
-      <Box marginTop={1} flexDirection="column">
-        <Text color={colors.faint}>
-          {icons.pin} {data.workspacePath}
-        </Text>
-        {data.git ? (
-          <Box>
-            <Text color={colors.faint}>
-              {icons.branch} {data.git.branch} (base {data.git.base})
-            </Text>
-            {data.git.dirty > 0 ? (
-              <>
-                <Text> </Text>
-                <Text color={colors.warn}>{data.git.dirty} uncommitted</Text>
-              </>
-            ) : null}
-          </Box>
-        ) : (
-          <Text color={colors.faint}>(not a git repo)</Text>
-        )}
-      </Box>
-    </Box>
-  );
 }
 
 // ===== Initialized — WORKSPACE view =====
@@ -343,9 +291,17 @@ interface InitializedProps {
   isActive: boolean;
   onRunAction?: ((id: string) => void) | undefined;
   onReload?: (() => void | Promise<void>) | undefined;
+  onConfigureSources?: (() => void) | undefined;
 }
 
-function Initialized({ ctx, data, isActive, onRunAction, onReload }: InitializedProps) {
+function Initialized({
+  ctx,
+  data,
+  isActive,
+  onRunAction,
+  onReload,
+  onConfigureSources,
+}: InitializedProps) {
   const dirty = data.git?.dirty ?? 0;
   const totalSources = data.sources.length;
   const dirtySources = data.sources.filter((s) => s.dirty).length;
@@ -663,6 +619,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
   const handleListKey = useCallback(
     (input: string, key: { upArrow?: boolean; downArrow?: boolean; return?: boolean }) => {
       if (input === "g") return void onRunAction?.("git:status");
+      if (input === "c") return onConfigureSources?.();
       if (!hasSources) return;
       if (key.upArrow) return setCursor((c) => Math.max(0, c - 1));
       if (key.downArrow) return setCursor((c) => Math.min(targets.length - 1, c + 1));
@@ -671,7 +628,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
         setMode({ kind: "detail" });
       }
     },
-    [hasSources, onRunAction, targets.length],
+    [hasSources, onConfigureSources, onRunAction, targets.length],
   );
 
   // Side panel actions (↑↓ navigate · ⏎ run · esc close).
@@ -1030,6 +987,7 @@ function Initialized({ ctx, data, isActive, onRunAction, onReload }: Initialized
           actions={[
             { key: "⏎", label: "source actions" },
             { key: "g", label: "git status" },
+            { key: "c", label: "configurar fuentes" },
           ]}
         />
       </Box>

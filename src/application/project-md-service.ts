@@ -13,11 +13,11 @@ export interface ProjectReadOutput {
 
 export async function runProjectMdRead(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   options: { verbose?: boolean } = {},
 ): Promise<ProjectReadOutput> {
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   const files = [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")];
   const block: ParsedProjectBlock | null = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
   const payload: ProjectReadOutput = {

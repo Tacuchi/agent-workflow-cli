@@ -151,6 +151,15 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       FLOW_SCOPE_NOT_IN_PLAN: "evaluated",
       FLOW_SCOPE_PLAN_UNREADABLE: "evaluated",
       FLOW_SCOPE_PLAN_OUTSIDE_CANON: "evaluated",
+      FLOW_HANDOFF_PLAN_MISSING: "evaluated",
+      FLOW_DECISION_SCOPE_MISSING: "evaluated",
+      FLOW_DECISION_INPUT_INVALID: "evaluated",
+      FLOW_DECISION_PLAN_UNREADABLE: "evaluated",
+      FLOW_DECISION_LINEAGE_INVALID: "evaluated",
+      FLOW_DECISION_SPEC_UNREADABLE: "evaluated",
+      FLOW_DECISION_UNRESOLVABLE: "evaluated",
+      FLOW_DECISION_PREPARATION_FAILED: "evaluated",
+      FLOW_DECISION_PREVIEW_ABSENT: "evaluated",
       PLAN_SOURCE_BOUNDARY_MISSING: "evaluated",
       PLAN_SOURCE_UNKNOWN: "evaluated",
       PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
@@ -536,12 +545,11 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     /**
      * Compatibilidad hacia atrás, que es la otra mitad del cambio de versión.
      *
-     * Un ledger escrito por la versión anterior no trae piso ni degradaciones, y
-     * su ausencia es la lectura conservadora: la corrida sigue caminando, el
-     * contador vigente sigue mandando, y la primera escritura la re-sella con la
-     * versión que este CLI escribe.
+     * Un ledger escrito por la versión anterior no trae el segmento batch de
+     * v10. Se puede leer sin tocarlo, pero continuar exige adoptar
+     * explícitamente: el CLI no inventa retrospectivamente ese cursor.
      */
-    it("un ledger de la versión anterior se lee, camina, y el contador sigue mandando", async () => {
+    it("un ledger de la versión anterior se lee, exige adopción y conserva el contador", async () => {
       for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await refuseObserve();
       const raw = JSON.parse(await readFile(statePath(), "utf8")) as Record<string, unknown>;
       const legacy: Record<string, unknown> = { ...raw, version: 7 };
@@ -558,11 +566,27 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       );
 
       const read = await state();
-      expect(read.version).toBe(FLOW_RUN_STATE_VERSION);
+      expect(read.version).toBe(7);
       // El ledger viejo no dice nada de intentos gastados; el contador sí.
       expect(attemptsAt(read, "fixture.observe")).toBe(MAX_BOUNDARY_ATTEMPTS);
-      const answered = await answerObserve();
-      expect(answered.error?.code).toBe("FLOW_BOUNDARY_EXHAUSTED");
+      const blocked = await advanceFlow(fs, paths, { code: CODE, adopt: false, executor });
+      if (blocked.ok || "session" in blocked) {
+        throw new Error("una corrida legacy no puede continuar sin adopción");
+      }
+      expect(blocked.failure.code).toBe("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
+      const adopted = await advanceFlow(fs, paths, {
+        code: CODE,
+        flow: "quick",
+        adopt: true,
+      });
+      if (!adopted.ok) throw new Error(`esperaba adoptar: ${adopted.failure.code}`);
+      const migrated = await state();
+      expect(migrated.version).toBe(FLOW_RUN_STATE_VERSION);
+      // El presupuesto persistido sigue mandando después de adoptar: la frontera
+      // ya agotada se degrada; no vuelve a ofrecer una cuarta respuesta.
+      expect(attemptsAt(migrated, "fixture.observe")).toBe(MAX_BOUNDARY_ATTEMPTS);
+      expect(migrated.skipped).toContain("fixture.observe");
+      expect(adopted.directive.boundary.transition).toBe("fixture.board");
     });
   });
 
@@ -1002,8 +1026,8 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     it("AC-08: una corrida de versión legible con el desfase se recupera igual", async () => {
       await refuseObserve();
       await corruptChain();
-      // Y encima la corrida viene de una versión anterior del ledger: se lee, y
-      // recibe la misma salida sancionada sin editar ni retirar nada a mano.
+      // Y encima la corrida viene de una versión anterior del ledger: se lee sin
+      // tocarla y su recuperación queda detrás de la adopción explícita.
       const raw = JSON.parse(await readFile(statePath(), "utf8")) as Record<string, unknown>;
       const legacy: Record<string, unknown> = { ...raw, version: 8 };
       legacy.digest = undefined;
@@ -1015,7 +1039,18 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       );
 
       const read = await state();
-      expect(read.version).toBe(FLOW_RUN_STATE_VERSION);
+      expect(read.version).toBe(8);
+      const legacyRecovery = await recover();
+      if (legacyRecovery.ok) throw new Error("recover no adopta una corrida legacy");
+      expect(legacyRecovery.failure.code).toBe("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
+      const adopted = await advanceFlow(fs, paths, {
+        code: CODE,
+        flow: "quick",
+        adopt: true,
+        executor,
+      });
+      if (!adopted.ok) throw new Error(`esperaba adoptar: ${adopted.failure.code}`);
+      expect((await state()).version).toBe(FLOW_RUN_STATE_VERSION);
       const recovered = await recover();
       if (!recovered.ok) throw new Error(`esperaba recuperar: ${recovered.failure.code}`);
       expect(attemptAccountingAt(await state(), "fixture.observe").unanswerable).toBeNull();
@@ -1024,9 +1059,9 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     });
 
     it("el contrato persistido no se movió: una prueba lo fija", () => {
-      // El diagnóstico se computa al leer, así que ninguna corrida en vuelo
-      // escrita por un CLI anterior queda afuera por un cambio de versión.
-      expect(FLOW_RUN_STATE_VERSION).toBe(9);
+      // Las corridas v7-v9 se siguen leyendo, pero una corrida activa se adopta
+      // explícitamente antes de escribir la semántica de batches de v10.
+      expect(FLOW_RUN_STATE_VERSION).toBe(10);
     });
 
     it("renumerar la cadena no devuelve intentos: el techo lo siguen fijando piso y grants", async () => {

@@ -1,15 +1,16 @@
 /**
  * Qué puede decir la persona sobre la vía MCP en SU host, sin adivinar nada.
  *
- * Son TRES preguntas distintas y por eso van separadas: una vía puede estar
- * disponible sin estar ofrecida —el catálogo la declara pero nadie la instaló— y
- * ofrecida sin ser utilizable —está registrada pero la política con que arrancó el
- * host la anula—. Colapsarlas en un sí o un no dejaría a la persona sin saber cuál
- * de las tres arreglar.
+ * Son DOS preguntas distintas y por eso van separadas: una vía puede estar
+ * disponible sin estar ofrecida —el catálogo la declara pero nadie la instaló—.
+ * Que el selector vaya a ser aceptado o no sólo se conoce al intentarlo, y no se
+ * representa como un estado especulativo de lectura.
  */
 
+import { isDeepStrictEqual } from "node:util";
 import type { HarnessSpec } from "../../domain/harnesses.js";
-import { WORKLINE_MCP_ENTRY_NAME } from "../../domain/workline-mcp-entry.js";
+import { mcpEntryShapeForHost } from "../../domain/mcp-entry.js";
+import { WORKLINE_MCP_ENTRY_NAME, worklineMcpEntry } from "../../domain/workline-mcp-entry.js";
 import { readMcpEntry } from "../mcp-host-reader.js";
 
 export interface ViaAnswer {
@@ -21,7 +22,6 @@ export interface ViaAnswer {
 export interface McpViaState {
   available: ViaAnswer;
   offered: ViaAnswer;
-  usable: ViaAnswer;
 }
 
 export function readMcpViaState(spec: HarnessSpec, scopeDir: string): McpViaState {
@@ -34,32 +34,43 @@ export function readMcpViaState(spec: HarnessSpec, scopeDir: string): McpViaStat
     return {
       available: { yes: false, reason },
       offered: { yes: false, reason: "no se ofrece una vía que el host no declara" },
-      usable: { yes: false, reason },
     };
   }
 
   const available: ViaAnswer = { yes: true, reason: via.evidence };
   if (spec.mcpHostId === null) {
     const reason = "este host no tiene una configuración MCP que el CLI sepa escribir";
-    return { available, offered: { yes: false, reason }, usable: { yes: false, reason } };
+    return { available, offered: { yes: false, reason } };
   }
 
   const snapshot = readMcpEntry(spec.mcpHostId, scopeDir, WORKLINE_MCP_ENTRY_NAME, "global");
   if (!snapshot.exists) {
+    if (snapshot.present) {
+      return {
+        available,
+        offered: {
+          yes: false,
+          reason: `la entrada '${WORKLINE_MCP_ENTRY_NAME}' existe, pero su forma no es la generada por Workline: conflicto con una entrada ajena; no se ofrece`,
+        },
+      };
+    }
     const reason = `la entrada '${WORKLINE_MCP_ENTRY_NAME}' no está en la configuración MCP de este host; la instalación de superficies la deja ofrecida`;
-    return { available, offered: { yes: false, reason }, usable: { yes: false, reason } };
+    return { available, offered: { yes: false, reason } };
+  }
+
+  const expected = mcpEntryShapeForHost(spec.mcpHostId, worklineMcpEntry(spec.mcpHostId));
+  if (!isDeepStrictEqual(snapshot.raw, expected)) {
+    return {
+      available,
+      offered: {
+        yes: false,
+        reason: `la entrada '${WORKLINE_MCP_ENTRY_NAME}' existe, pero su forma no es la generada por Workline: conflicto con una entrada ajena; no se ofrece`,
+      },
+    };
   }
 
   return {
     available,
     offered: { yes: true, reason: `la entrada '${WORKLINE_MCP_ENTRY_NAME}' está registrada` },
-    // Utilizable es lo único que NO se puede afirmar leyendo: lo decide la política
-    // con que se arrancó el host, y eso sólo se sabe al pedir la elección. Se
-    // contesta que sí y se nombra lo único que puede desmentirlo, en vez de fingir
-    // una certeza que ninguna lectura da.
-    usable: {
-      yes: true,
-      reason: `sí, salvo que ${via.blockedBy} — eso sólo se sabe al pedir la primera elección, y si pasa: ${via.recoverBy}`,
-    },
   };
 }

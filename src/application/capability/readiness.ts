@@ -102,7 +102,7 @@ export async function capabilityReadiness(
   input: ReadinessInput,
 ): Promise<CapabilityReadinessReport[]> {
   const skills = await resolveSkills(input.fs, input.paths);
-  const inventory = await buildCapabilityInventory(input.fs, input.env);
+  const inventory = await buildCapabilityInventory(input.fs, input.env, input.paths.workspaceDir());
   const reports: CapabilityReadinessReport[] = [];
 
   for (const name of registeredCapabilities()) {

@@ -10,7 +10,8 @@ import {
   type CapabilityReceipt,
   type CapabilityRequest,
 } from "../../src/domain/capability/protocol.js";
-import type { DelegatedAction } from "../../src/domain/flow/authority.js";
+import type { DecisionPreview } from "../../src/domain/decision-preview.js";
+import type { DelegatedAction, FlowChoice } from "../../src/domain/flow/authority.js";
 import {
   FLOW_BOUNDARY_KINDS,
   FLOW_DIRECTIVE_KEYS,
@@ -21,6 +22,7 @@ import {
   buildFlowDirective,
   renderDirectiveHuman,
 } from "../../src/domain/flow/directive.js";
+import { sealProposal } from "../../src/domain/proposal.js";
 import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 
 /**
@@ -96,6 +98,46 @@ const BASE = {
   nextAction: "respondé con 'aw flow submit'",
 };
 
+function choice(
+  label: string,
+  consequence: string,
+  recommended: boolean,
+  outcome: FlowChoice["outcome"],
+): FlowChoice {
+  return { label, consequence, recommended, outcome };
+}
+
+function decisionPreview(): DecisionPreview {
+  const proposal = sealProposal({
+    operation: "plan-exec.decision-registration",
+    artifacts: [
+      {
+        path: "docs/decisions/033-decisions-x.json",
+        content: '{"notes":["DEC-001"]}\n',
+        overwrite: false,
+      },
+    ],
+    bases: [{ path: "docs/specs/033-spec-x.md", digest: "sha256:spec" }],
+    effects: ["local_additive"],
+    requiresApproval: [],
+  });
+  return {
+    baseline: {
+      path: "docs/specs/033-spec-x.md",
+      number: "033",
+      digest: "sha256:spec",
+    },
+    effective_change: [{ assertion: "S033/AC-01", from: "baseline", to: "amended", by: "DEC-001" }],
+    consumers: ["docs/plans/032-plan-x.md"],
+    impact: { scope: "functional", assertions: 1, consumers: 1 },
+    evidence: { preserved: ["prueba verde"], invalidated: ["prueba anterior"] },
+    obligations: ["revalidar F4"],
+    resume_point: "F4/T4.1",
+    effects: { classes: ["local_additive"], entries: proposal.preview },
+    proposal,
+  };
+}
+
 describe("directiva de frontera — la forma válida", () => {
   it("una frontera semántica trae su pedido acotado y su continuación", () => {
     const built = buildFlowDirective({
@@ -141,6 +183,50 @@ describe("directiva de frontera — la forma válida", () => {
     expect(human).toContain("quick.entry-gate-signal");
     expect(human).toContain(built.directive.next_action);
     expect(human).toContain(built.directive.state_digest);
+  });
+
+  it("muestra el preview durable de decisión antes de la elección humana", () => {
+    const built = buildFlowDirective({
+      ...BASE,
+      flow: "plan-exec",
+      boundary: boundary({
+        kind: "human",
+        transition: "plan-exec.deviation-gate",
+        authority: "human",
+        title: "elegir la salida de la desviación",
+      }),
+      outcome: "needs_input",
+      choices: [
+        choice(
+          "Registrar la decisión y seguir",
+          "autoriza exactamente la vista previa persistida",
+          true,
+          { kind: "register-decision" },
+        ),
+        choice("Refinar el plan", "entrega el paquete a plan-refine", false, {
+          kind: "handoff",
+          destination: "plan-refine",
+        }),
+        choice("Refinar la spec", "entrega el paquete a spec-refine", false, {
+          kind: "handoff",
+          destination: "spec-refine",
+        }),
+        choice("Crear una spec", "entrega el paquete a spec-new", false, {
+          kind: "handoff",
+          destination: "spec-new",
+        }),
+      ],
+      decisionPreview: decisionPreview(),
+      nextAction: "elegí sobre la vista previa que el CLI ya preparó",
+    });
+    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
+    expect(built.directive.decision_preview?.proposal.digest).toBe(
+      decisionPreview().proposal.digest,
+    );
+    const human = renderDirectiveHuman(built.directive);
+    expect(human).toContain("vista previa de decisión");
+    expect(human).toContain("revalidar F4");
+    expect(human).toContain("sello del preview");
   });
 
   it("una frontera de ejecución lleva la invocación y su evidencia, y la proyecta", () => {
@@ -258,8 +344,11 @@ describe("directiva de frontera — la forma válida", () => {
       }),
       outcome: "needs_input",
       choices: [
-        { label: "Seguir", consequence: "el recorrido sigue", recommended: true },
-        { label: "Cerrar", consequence: "la corrida termina acá", recommended: false },
+        choice("Seguir", "el recorrido sigue", true, { kind: "continue" }),
+        choice("Cerrar", "la corrida termina acá", false, {
+          kind: "control",
+          control: "stop",
+        }),
       ],
       nextAction: "elegí una alternativa",
     });
@@ -340,8 +429,8 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
         outcome: "needs_input",
         request: request(),
         choices: [
-          { label: "Sí", consequence: "sigue", recommended: true },
-          { label: "No", consequence: "para", recommended: false },
+          choice("Sí", "sigue", true, { kind: "continue" }),
+          choice("No", "para", false, { kind: "control", control: "stop" }),
         ],
       },
       "FLOW_DIRECTIVE_REQUEST_WITHOUT_SEMANTIC",
@@ -353,7 +442,7 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
         boundary: boundary(),
         outcome: "needs_input",
         request: request(),
-        choices: [{ label: "Sí", consequence: "sigue", recommended: true }],
+        choices: [choice("Sí", "sigue", true, { kind: "continue" })],
       },
       "FLOW_DIRECTIVE_CHOICES_WITHOUT_BOUNDARY",
     ],
@@ -363,7 +452,7 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
         ...BASE,
         boundary: boundary({ kind: "human", authority: "human" }),
         outcome: "needs_input",
-        choices: [{ label: "Sí", consequence: "sigue", recommended: true }],
+        choices: [choice("Sí", "sigue", true, { kind: "continue" })],
       },
       "FLOW_DIRECTIVE_CHOICE_SET_TOO_SMALL",
     ],
@@ -374,11 +463,24 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
         boundary: boundary({ kind: "human", authority: "human" }),
         outcome: "needs_input",
         choices: [
-          { label: "Sí", consequence: "   ", recommended: true },
-          { label: "No", consequence: "para", recommended: false },
+          choice("Sí", "   ", true, { kind: "continue" }),
+          choice("No", "para", false, { kind: "control", control: "stop" }),
         ],
       },
       "FLOW_DIRECTIVE_CHOICE_WITHOUT_CONSEQUENCE",
+    ],
+    [
+      "una alternativa sin resultado ejecutable",
+      {
+        ...BASE,
+        boundary: boundary({ kind: "human", authority: "human" }),
+        outcome: "needs_input",
+        choices: [
+          { ...choice("Sí", "sigue", true, { kind: "continue" }), outcome: undefined as never },
+          choice("No", "para", false, { kind: "control", control: "stop" }),
+        ],
+      },
+      "FLOW_DIRECTIVE_CHOICE_OUTCOME_INVALID",
     ],
     [
       "un conjunto sin recomendación única",
@@ -387,8 +489,8 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
         boundary: boundary({ kind: "human", authority: "human" }),
         outcome: "needs_input",
         choices: [
-          { label: "Sí", consequence: "sigue", recommended: true },
-          { label: "No", consequence: "para", recommended: true },
+          choice("Sí", "sigue", true, { kind: "continue" }),
+          choice("No", "para", true, { kind: "control", control: "stop" }),
         ],
       },
       "FLOW_DIRECTIVE_RECOMMENDATION_AMBIGUOUS",
@@ -409,8 +511,8 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
         boundary: boundary({ kind: "authorization", authority: "human" }),
         outcome: "needs_input",
         choices: [
-          { label: "Autorizar", consequence: "aplica el efecto", recommended: true },
-          { label: "Cerrar", consequence: "no aplica nada", recommended: false },
+          choice("Autorizar", "aplica el efecto", true, { kind: "continue" }),
+          choice("Cerrar", "no aplica nada", false, { kind: "control", control: "stop" }),
         ],
         effects: { planned: ["read_only"] },
         authorizations: ["read_only"],
@@ -451,8 +553,11 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
         boundary: unownedBoundary({ kind: "human", authority: "human" }),
         outcome: "needs_input",
         choices: [
-          { label: "Seguir", consequence: "el recorrido sigue", recommended: true },
-          { label: "Cerrar", consequence: "la corrida termina acá", recommended: false },
+          choice("Seguir", "el recorrido sigue", true, { kind: "continue" }),
+          choice("Cerrar", "la corrida termina acá", false, {
+            kind: "control",
+            control: "stop",
+          }),
         ],
       },
       "FLOW_DIRECTIVE_OWNERSHIP_CONTRADICTED",

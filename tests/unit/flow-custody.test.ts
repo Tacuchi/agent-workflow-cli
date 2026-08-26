@@ -35,9 +35,8 @@ import {
 const CUSTODY_ROWS = [
   "chassis.finalize",
   "quick.convergence-gate",
-  "plan-exec.task-marking",
-  "plan-exec.phase-state-transition",
   "plan-exec.validation-execution",
+  "plan-exec.batch-close",
   "plan-exec.plan-done",
 ];
 

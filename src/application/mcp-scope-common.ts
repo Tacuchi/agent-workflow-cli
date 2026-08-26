@@ -4,10 +4,15 @@ import type { McpHost, McpInstance } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import { McpWriterError } from "./mcp-host-writer.js";
 
-export interface McpScopeInput {
-  scope: "workspace" | "global";
-  workspace?: string;
-}
+/**
+ * A workspace write must be rooted in the Workline directory resolved by the
+ * CLI. Keeping that relationship in the type prevents direct service callers
+ * from silently falling back to their process cwd (which may be a source
+ * subdirectory rather than the workspace root).
+ */
+export type McpScopeInput =
+  | { scope: "workspace"; workspace: string }
+  | { scope: "global"; workspace?: string };
 
 export interface McpScopeRefusal {
   ok: false;
@@ -27,8 +32,7 @@ export function resolveScopeDir(env: EnvPort, input: McpScopeInput): string {
   // Global scope resolves through the port (not os.homedir()) so tests can
   // inject a sandbox home instead of writing the developer's real configs.
   if (input.scope === "global") return env.homeDir();
-  if (input.workspace) return resolve(input.workspace);
-  return resolve(env.cwd());
+  return resolve(input.workspace);
 }
 
 export function buildGlobalHint(hosts: McpHost[]): string {

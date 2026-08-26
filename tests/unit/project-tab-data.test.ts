@@ -55,6 +55,12 @@ interface FakeDepsOptions {
   ownCommits?: Record<string, string>;
   /** Collects every `git` argv the data layer issues. */
   calls?: string[][];
+  /** Git-port paths, used to prove legacy relative sources are root-scoped. */
+  gitPaths?: string[];
+  /** Process cwd values, including Git tile and commit-counter probes. */
+  processCwds?: string[];
+  /** Filesystem paths checked by the launchability probe. */
+  existsPaths?: string[];
   /** Make the counter's subprocess THROW (vs. exit non-zero) to exercise safeRun. */
   throwOnCounter?: boolean;
 }
@@ -64,11 +70,17 @@ function buildDeps({
   currentBranch,
   ownCommits,
   calls,
+  gitPaths,
+  processCwds,
+  existsPaths,
   throwOnCounter,
 }: FakeDepsOptions) {
   return {
     fs: {
-      exists: async (p: string) => p === "/ws/CLAUDE.md",
+      exists: async (p: string) => {
+        existsPaths?.push(p);
+        return p === "/ws/CLAUDE.md";
+      },
       readText: async (p: string) => (p === "/ws/CLAUDE.md" ? claudeMd : ""),
       list: async () => [],
       writeText: async () => {},
@@ -80,13 +92,23 @@ function buildDeps({
       get: () => undefined,
     } as never,
     git: {
-      isGitRepo: async () => true,
-      currentBranch: async () => currentBranch,
-      changedFiles: async () => [],
+      isGitRepo: async (path: string) => {
+        gitPaths?.push(path);
+        return true;
+      },
+      currentBranch: async (path: string) => {
+        gitPaths?.push(path);
+        return currentBranch;
+      },
+      changedFiles: async (path: string) => {
+        gitPaths?.push(path);
+        return [];
+      },
     } as never,
     process: {
-      run: async (_cmd: string, args: string[]) => {
+      run: async (_cmd: string, args: string[], opts?: { cwd?: string }) => {
         calls?.push(args);
+        if (opts?.cwd !== undefined) processCwds?.push(opts.cwd);
         // ahead/behind of the GIT tile — a different rev-list from the counter's
         if (args.includes("rev-list") && args.includes("--left-right")) {
           return { code: 0, stdout: "0\t5", stderr: "" };
@@ -104,11 +126,13 @@ function buildDeps({
       which: async () => undefined,
     } as never,
     paths: {
+      workspaceDir: () => "/ws",
       blockMarkers: () => MARKERS,
       cwdSessionsDir: () => "/ws/.workflow/sessions",
       cwdHistoryFile: () => "/ws/.workflow/HISTORY.md",
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
       cwdLockFile: () => "/ws/.workflow/.lock",
+      cwdLaunchDir: () => "/ws/.workflow/launch",
       cwdDocsLogsDir: () => "/ws/docs/logs",
     } as never,
   };
@@ -166,6 +190,31 @@ describe("buildProjectTabData — workspace view", () => {
     expect(data).not.toHaveProperty("sessions");
     expect(data).not.toHaveProperty("pending");
     expect(data).not.toHaveProperty("workspaceMode");
+  });
+
+  it("interpreta fuentes legacy relativas desde la raíz Workline para Git y launch", async () => {
+    const gitPaths: string[] = [];
+    const processCwds: string[] = [];
+    const existsPaths: string[] = [];
+    const relativeBlock = workspaceBlock(true)
+      .replace("/src/autoservicio", "repos/autoservicio")
+      .replace("/src/pefectivo", "repos/pefectivo");
+    const deps = buildDeps({
+      claudeMd: relativeBlock,
+      currentBranch: "desarrollo",
+      gitPaths,
+      processCwds,
+      existsPaths,
+    });
+
+    const data = await buildProjectTabData(deps);
+
+    const first = "/ws/repos/autoservicio";
+    const second = "/ws/repos/pefectivo";
+    expect(data.sources.map((source) => source.path)).toEqual([first, second]);
+    expect(gitPaths).toEqual(expect.arrayContaining([first, second]));
+    expect(processCwds).toEqual(expect.arrayContaining([first, second]));
+    expect(existsPaths).toEqual(expect.arrayContaining([first, second]));
   });
 });
 

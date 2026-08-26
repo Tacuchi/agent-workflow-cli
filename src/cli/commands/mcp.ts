@@ -9,8 +9,17 @@ import {
 } from "../../application/mcp-connections-service.js";
 import { DbhubLauncherError, runDbhubLauncher } from "../../application/mcp-dbhub-launcher.js";
 import { runMcpDoctor } from "../../application/mcp-doctor-service.js";
-import { runMcpRemove } from "../../application/mcp-remove-service.js";
-import { runMcpSetup } from "../../application/mcp-setup-service.js";
+import {
+  type McpRemoveInput,
+  type McpRemoveResult,
+  runMcpRemove,
+} from "../../application/mcp-remove-service.js";
+import type { McpScopeRefusal } from "../../application/mcp-scope-common.js";
+import {
+  type McpSetupInput,
+  type McpSetupResult,
+  runMcpSetup,
+} from "../../application/mcp-setup-service.js";
 import {
   type WarpPostInstallHint,
   buildWarpPostInstallHint,
@@ -20,6 +29,12 @@ import {
   resolveWarpGlobalMcpPath,
   resolveWarpProjectMcpPath,
 } from "../../application/multiroot/warp.js";
+import { PathsService } from "../../application/paths-service.js";
+import {
+  type WorklineMaterialization,
+  ensureWorklineMaterialized,
+  previewWorklineMaterialization,
+} from "../../application/workspace-materialization-service.js";
 import { type HarnessId, MCP_FILE_HOSTS, harnessById } from "../../domain/harnesses.js";
 import { type McpHost, type McpInstance, mcpEntryNameFor } from "../../domain/mcp-entry.js";
 import type { CommandResult, ExitCode } from "../../domain/types.js";
@@ -73,8 +88,8 @@ export const mcpCommand: CliCommand = {
  */
 async function runServeSub(args: ParsedArgs): Promise<CommandResult> {
   // Qué host lo lanzó: el propio host lo dice al registrarlo, porque el servidor
-  // no tiene forma de detectarlo desde adentro. Sin ese dato la degradación no
-  // podría nombrar la política ni la forma de arrancar que la recupera.
+  // no puede detectarlo desde adentro. Sólo habilita una vía observada; no se usa
+  // para atribuir una negativa o cancelación posterior.
   const declared = args.values.get("host");
   const spec = declared === undefined ? null : harnessById(declared as HarnessId);
   await runElicitationStdio({
@@ -126,65 +141,142 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
 
-  const workspace = args.values.get("workspace");
-  const scope: "workspace" | "global" = args.flags.has("--global") ? "global" : "workspace";
-  const result = runMcpSetup(ctx.env, {
+  // All workspace-scoped MCP artifacts share Workline's resolved root. An
+  // explicit --workspace remains an intentional override; raw process cwd is
+  // only the invocation coordinate and may be a source subdirectory.
+  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const scopeInput = args.flags.has("--global")
+    ? ({ scope: "global" } as const)
+    : ({ scope: "workspace", workspace } as const);
+  const result = await runMcpSetupWithMaterialization(ctx, {
     hosts: hosts.value,
     connections: connections.value,
-    scope,
-    ...(workspace !== undefined ? { workspace } : {}),
+    ...scopeInput,
     dryRun: args.flags.has("--dry-run"),
-    force: args.flags.has("--force"),
+    ...(args.flags.has("--force") ? { globalApproval: "explicit-cli-force" as const } : {}),
   });
 
   if ("ok" in result) {
     return fail("GLOBAL_REQUIRES_FORCE", result.hint, result, result.exitCode);
   }
 
-  const hasErrors = result.errors.length > 0;
-  const warpHints = !hasErrors
+  const hasProblems = result.errors.length > 0 || result.conflicts.length > 0;
+  const warpHints = !hasProblems
     ? buildWarpHintsFor(
         hosts.value,
         connections.value.map((connection) => connection.name),
-        scope,
-        ctx,
+        scopeInput.scope,
         workspace,
       )
     : [];
   return {
-    ok: !hasErrors,
+    ok: !hasProblems,
     data: { ...result, ...(warpHints.length > 0 ? { warp_hints: warpHints } : {}) },
-    ...(hasErrors
+    ...(hasProblems
       ? {
           error: {
             code: "MCP_SETUP_PARTIAL",
-            message: `${result.errors.length} error(es) durante setup; ver data.errors`,
+            message: `${result.errors.length} error(es) y ${result.conflicts.length} conflicto(s) durante setup; ver data.errors y data.conflicts`,
           },
         }
       : {}),
-    exitCode: hasErrors ? 1 : 0,
+    exitCode: hasProblems ? 1 : 0,
   };
+}
+
+/**
+ * MCP writers use host-native synchronous file APIs, so the generic guarded
+ * filesystem cannot observe their mutation. Preflight with the writer's own
+ * dry-run path, materialize only when that preflight has a real effect, then
+ * run the actual write. This preserves pure conflicts/skips and puts the
+ * canonical marker in place before the first host config is touched.
+ */
+async function runMcpSetupWithMaterialization(
+  ctx: CliContext,
+  input: McpSetupInput,
+): Promise<McpSetupResult | McpScopeRefusal> {
+  if (input.scope !== "workspace") return runMcpSetup(ctx.env, input);
+
+  const preview = runMcpSetup(ctx.env, { ...input, dryRun: true });
+  if ("ok" in preview) return preview;
+  if (!hasPendingMcpMutation(preview.applied)) {
+    return input.dryRun ? preview : runMcpSetup(ctx.env, input);
+  }
+
+  const materialization = await materializeMcpWorkspace(
+    ctx,
+    input.workspace,
+    input.dryRun === true,
+  );
+  if (input.dryRun) return { ...preview, materialization };
+
+  const result = runMcpSetup(ctx.env, input);
+  return "ok" in result ? result : { ...result, materialization };
+}
+
+async function runMcpRemoveWithMaterialization(
+  ctx: CliContext,
+  input: McpRemoveInput,
+): Promise<McpRemoveResult | McpScopeRefusal> {
+  if (input.scope !== "workspace") return runMcpRemove(ctx.env, input);
+
+  const preview = runMcpRemove(ctx.env, { ...input, dryRun: true });
+  if ("ok" in preview) return preview;
+  if (!hasPendingMcpMutation(preview.removed)) {
+    return input.dryRun ? preview : runMcpRemove(ctx.env, input);
+  }
+
+  const materialization = await materializeMcpWorkspace(
+    ctx,
+    input.workspace,
+    input.dryRun === true,
+  );
+  if (input.dryRun) return { ...preview, materialization };
+
+  const result = runMcpRemove(ctx.env, input);
+  return "ok" in result ? result : { ...result, materialization };
+}
+
+function hasPendingMcpMutation(results: readonly { action: string }[]): boolean {
+  return results.some((result) => result.action === "dry-run");
+}
+
+async function materializeMcpWorkspace(
+  ctx: CliContext,
+  workspace: string,
+  dryRun: boolean,
+): Promise<WorklineMaterialization> {
+  const root = resolve(workspace);
+  const currentRoot = resolve(ctx.paths.workspaceDir());
+  const paths =
+    root === currentRoot
+      ? ctx.paths
+      : new PathsService(ctx.paths.namespace, ctx.env.homeDir(), root);
+  const fs = ctx.rawFs ?? ctx.fs;
+  return dryRun
+    ? await previewWorklineMaterialization(fs, paths)
+    : await ensureWorklineMaterialized(fs, paths);
 }
 
 function buildWarpHintsFor(
   hosts: McpHost[],
   instances: McpInstance[],
   scope: "workspace" | "global",
-  ctx: CliContext,
-  workspace: string | undefined,
+  workspace: string,
 ): WarpPostInstallHint[] {
   if (!hosts.includes("warp")) return [];
   const file =
     scope === "global"
       ? (resolveWarpGlobalMcpPath() ?? "~/.warp/.mcp.json")
-      : resolveWarpProjectMcpPath(resolve(workspace ?? ctx.env.cwd()));
+      : resolveWarpProjectMcpPath(resolve(workspace));
   return instances.map((instance) =>
     buildWarpPostInstallHint(mcpEntryNameFor(instance), scope, file),
   );
 }
 
-async function runWarpStatusSub(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-  const projectFile = resolveWarpProjectMcpPath(resolve(ctx.env.cwd()));
+async function runWarpStatusSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
+  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const projectFile = resolveWarpProjectMcpPath(resolve(workspace));
   const globalFile = resolveWarpGlobalMcpPath() ?? `${homedir()}/.warp/.mcp.json`;
   const sources = [
     { scope: "workspace" as const, file: projectFile },
@@ -203,7 +295,7 @@ async function runWarpStatusSub(_args: ParsedArgs, ctx: CliContext): Promise<Com
       reports,
       summary: anyDetected
         ? "Archivos .warp/.mcp.json detectados. Activá 'File-based MCP Servers' en Warp Settings si todavía no lo hiciste."
-        : "No se encontró .warp/.mcp.json en cwd ni en home. Primero registrá una conexión con 'agent-workflow mcp setup --host warp'.",
+        : "No se encontró .warp/.mcp.json en el workspace ni en home. Primero registrá una conexión con 'agent-workflow mcp setup --host warp'.",
     },
     exitCode: 0,
   };
@@ -227,33 +319,35 @@ async function runRemoveSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
 
-  const workspace = args.values.get("workspace");
-  const result = runMcpRemove(ctx.env, {
+  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const scopeInput = args.flags.has("--global")
+    ? ({ scope: "global" } as const)
+    : ({ scope: "workspace", workspace } as const);
+  const result = await runMcpRemoveWithMaterialization(ctx, {
     hosts: hosts.value,
     connections: connections.value,
-    scope: args.flags.has("--global") ? "global" : "workspace",
-    ...(workspace !== undefined ? { workspace } : {}),
+    ...scopeInput,
     dryRun: args.flags.has("--dry-run"),
-    force: args.flags.has("--force"),
+    ...(args.flags.has("--force") ? { globalApproval: "explicit-cli-force" as const } : {}),
   });
 
   if ("ok" in result) {
     return fail("GLOBAL_REQUIRES_FORCE", result.hint, result, result.exitCode);
   }
 
-  const hasErrors = result.errors.length > 0;
+  const hasProblems = result.errors.length > 0 || result.conflicts.length > 0;
   return {
-    ok: !hasErrors,
+    ok: !hasProblems,
     data: result,
-    ...(hasErrors
+    ...(hasProblems
       ? {
           error: {
             code: "MCP_REMOVE_PARTIAL",
-            message: `${result.errors.length} error(es) durante remove; ver data.errors`,
+            message: `${result.errors.length} error(es) y ${result.conflicts.length} conflicto(s) durante remove; ver data.errors y data.conflicts`,
           },
         }
       : {}),
-    exitCode: hasErrors ? 1 : 0,
+    exitCode: hasProblems ? 1 : 0,
   };
 }
 
@@ -263,12 +357,14 @@ async function runDoctorSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
 
-  const workspace = args.values.get("workspace");
+  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const scopeInput = args.flags.has("--global")
+    ? ({ scope: "global" } as const)
+    : ({ scope: "workspace", workspace } as const);
   const data = runMcpDoctor(ctx.env, ctx.paths, {
     hosts: hosts.value,
     connections: connections.value,
-    scope: args.flags.has("--global") ? "global" : "workspace",
-    ...(workspace !== undefined ? { workspace } : {}),
+    ...scopeInput,
   });
 
   const okCount = data.summary.ok;

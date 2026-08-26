@@ -124,12 +124,14 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-refine.save-confirmation",
       "plan-exec.entry-gap-recognition",
       "plan-exec.normalization-consent",
-      "plan-exec.batch-eligibility-signal",
       // Qué fuentes toca un plan lo dice el PLAN, y el motor nunca leyó uno: la
       // fila entrega ese juicio y el CLI lo valida contra el workspace antes de
       // persistirlo. Es la única de la jornada que devuelve datos en vez de
       // señales, y por eso no declara vocabulario.
       "plan-exec.source-scope",
+      // El rango se infiere sólo DESPUÉS de que el scope fijó qué plan y fuentes
+      // pueden leerse; desde ahí comienza el segmento repetible del batch.
+      "plan-exec.batch-eligibility-signal",
       "plan-exec.implementation",
       "plan-exec.deviation-recognition",
       // La elegibilidad es CIERRE, no tamaño: cuatro señales que tienen que
@@ -138,10 +140,6 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.deviation-eligibility",
       "plan-exec.deviation-gate",
       "plan-exec.escalation-package",
-      // La frontera que declara qué queda por hacer al cerrar el batch. Sin ella,
-      // las tres filas que escriben, corren o commitean exigían su efecto aunque
-      // en un batch legítimo no hubiera nada que hacer.
-      "plan-exec.pending-effects",
       "plan-exec.review-findings",
       "plan-exec.commit-authorization",
       // Contracted in their own command rather than walked: they decide which
@@ -454,7 +452,9 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // empaqueta la escalación con su diagnóstico, y la que en `plan-refine`
     // declara haberla consumido. El propio `plan-exec.deviation-gate` ya estaba
     // en el registro: lo que le faltaba no era existir, era detenerse.
-    expect(plan).toHaveLength(58);
+    // The manual pending-effects/task/state trio was replaced by one internal
+    // v10 batch close, so the registry loses two rows without losing a route.
+    expect(plan).toHaveLength(56);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos

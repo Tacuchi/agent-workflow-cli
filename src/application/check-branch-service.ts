@@ -53,12 +53,12 @@ export interface CheckBranchOutput {
 
 export async function runCheckBranch(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   git: GitPort,
   paths: PathsService,
   input: CheckBranchInput,
 ): Promise<CheckBranchOutput> {
-  const cwd = env.cwd();
+  const cwd = paths.workspaceDir();
   const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
   const sources = block?.fuentes ?? [];
   if (sources.length === 0) {

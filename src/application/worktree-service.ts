@@ -22,6 +22,7 @@ import {
   listSessionFolders,
   resolveSessionTarget,
 } from "./session-resolver.js";
+import { ensureWorklineMaterialized } from "./workspace-materialization-service.js";
 
 /**
  * How long an integration waits for the workspace lock before giving up.
@@ -310,6 +311,10 @@ async function integrateUnit(
       hint: `posicioná el checkout en '${base}' y volvé a integrar; la integración nunca cambia de rama por su cuenta`,
     };
   }
+  // The merge goes through GitPort, so it would otherwise bypass the command
+  // filesystem guard. All refusal/precondition reads are complete above; from
+  // here on this operation may change a source checkout.
+  await ensureWorklineMaterialized(deps.fs, deps.paths);
   // The merge itself is the serialized part, and only it. Two runs integrating
   // into the same checkout would fight over one index and one MERGE_HEAD, and the
   // loser would find a repository mid-merge it never started. Waiting rather than
@@ -389,7 +394,11 @@ async function resolveTarget(
   deps: WorktreeDeps,
   input: WorktreeInput,
 ): Promise<ResolvedTarget | WorktreeError> {
-  const block = await readWorkspaceBlock(deps.fs, deps.env.cwd(), deps.paths.blockMarkers());
+  const block = await readWorkspaceBlock(
+    deps.fs,
+    deps.paths.workspaceDir(),
+    deps.paths.blockMarkers(),
+  );
   const sources = block?.fuentes ?? [];
   if (sources.length === 0) {
     return {
@@ -468,6 +477,24 @@ async function canonicalUnitsRoot(deps: WorktreeDeps): Promise<string> {
   return deps.fs.realPath(root);
 }
 
+/**
+ * Read-only counterpart of {@link canonicalUnitsRoot}.
+ *
+ * `worktree list` backs `status` and `resume`, so it cannot manufacture the
+ * user-level worktree directory merely to canonicalize a path.  If the root
+ * already exists, retain the real-path comparison used by writers; when it does
+ * not, its lexical spelling is enough because there can be no live unit beneath
+ * a directory that has not been created.
+ */
+async function canonicalUnitsRootForRead(deps: WorktreeDeps): Promise<string> {
+  const root = deps.paths.userUnitsDir();
+  try {
+    return await deps.fs.realPath(root);
+  } catch {
+    return root;
+  }
+}
+
 async function ensureUnit(
   deps: WorktreeDeps,
   target: ResolvedTarget,
@@ -483,6 +510,10 @@ async function ensureUnit(
   // Vanished directories keep holding their branch until git is told, so the
   // prune runs BEFORE the occupancy read — otherwise a unit whose folder the
   // user deleted by hand would look occupied forever.
+  // The worktree itself lives under the user runtime, not under the workspace
+  // root, so materialize explicitly before this first Git mutation rather than
+  // relying on a workspace-path filesystem write to notice it.
+  await ensureWorklineMaterialized(deps.fs, deps.paths);
   await deps.git.worktreePrune(source.path);
   const existing = await deps.git.worktreeList(source.path);
 
@@ -568,6 +599,7 @@ async function releaseUnit(
   }
   const existing = await deps.git.worktreeList(source.path);
   if (!existing.some((w) => samePath(w.path, path))) {
+    await ensureWorklineMaterialized(deps.fs, deps.paths);
     await deps.git.worktreePrune(source.path);
     return {
       alias: source.alias,
@@ -578,6 +610,7 @@ async function releaseUnit(
       visibility: await detach(deps, path),
     };
   }
+  await ensureWorklineMaterialized(deps.fs, deps.paths);
   try {
     await deps.git.worktreeRemove(source.path, path);
   } catch (err) {
@@ -619,9 +652,13 @@ async function listUnits(
   if (typeof narrowed !== "string" && narrowed !== null) return narrowed;
   const only = narrowed;
 
-  const block = await readWorkspaceBlock(deps.fs, deps.env.cwd(), deps.paths.blockMarkers());
+  const block = await readWorkspaceBlock(
+    deps.fs,
+    deps.paths.workspaceDir(),
+    deps.paths.blockMarkers(),
+  );
   const key = workspaceKey(deps.paths.workspaceDir());
-  const root = await canonicalUnitsRoot(deps);
+  const root = await canonicalUnitsRootForRead(deps);
   const sessions = await sessionStates(deps);
 
   const units: ListedUnit[] = [];

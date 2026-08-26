@@ -15,6 +15,10 @@ import { bindContextToSession, readBindingRegistry } from "./session-binding-ser
 import { baselineOf, birthCustody, custodyPath, writeCustody } from "./session-custody-service.js";
 import { nextSessionCorrelative } from "./session-resolver.js";
 import { renderSessionMarkdown } from "./templates/session.js";
+import {
+  type WorklineMaterialization,
+  ensureWorklineMaterialized,
+} from "./workspace-materialization-service.js";
 
 const VALID_TYPES = ["research", "refine", "exec", "quick"] as const;
 
@@ -60,6 +64,8 @@ export interface SessionCreateRecordOutput {
   /** Why nothing was sealed, whenever the flow DID have a document to look for. */
   inputs_note?: string;
   origin?: string;
+  /** First-write effects, or the idempotent marker reading on an existing workspace. */
+  materialization: WorklineMaterialization;
 }
 
 export type InputsOrigin = "declared" | "derived" | "none";
@@ -104,6 +110,12 @@ export async function runSessionCreate(
   const baselines = await readBaselines(fs, paths, declared.length > 0 ? declared : derived.paths);
   if ("error" in baselines) return baselines;
 
+  // A successful session creation is a mutation.  Materialize only after every
+  // validation/read has succeeded, so invalid input remains byte-identical even
+  // in a virgin directory; the returned record declares the effects alongside
+  // the session it created.
+  const materialization = await ensureWorklineMaterialized(fs, paths);
+
   const folderInfo = await claimSessionFolder(
     fs,
     paths,
@@ -137,6 +149,7 @@ export async function runSessionCreate(
     custody_path: folderInfo.custodyPath,
     inputs: baselines.artifacts.map((a) => a.path),
     inputs_from: originOf(declared, derived),
+    materialization,
   };
   if (derived.note !== undefined) record.inputs_note = derived.note;
   if (origin && origin.length > 0) record.origin = origin;

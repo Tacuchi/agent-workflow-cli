@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -180,6 +188,16 @@ describe("runWorktree — the isolation unit of a flow", () => {
       reason: "session_closed",
     });
     expect(listed.orphans[0]?.release).toContain("aw worktree release");
+  });
+
+  it("lists without creating the user worktree root", async () => {
+    const unitsRoot = join(home, ".workflow", "worktrees");
+    expect(existsSync(unitsRoot)).toBe(false);
+
+    const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
+
+    expect(listed.units).toEqual([]);
+    expect(existsSync(unitsRoot)).toBe(false);
   });
 
   it("releases a clean unit and refuses one with uncommitted work", async () => {

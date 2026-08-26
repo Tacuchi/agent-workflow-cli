@@ -61,11 +61,12 @@ describe("runWorkspaceInit", () => {
       "| app | /tmp/app | trunk |",
     );
 
-    // Workspace nuevo: celda vacía, y el reconcile (sin --source) la preserva.
+    // Workspace nuevo: celda vacía; la reconciliación declarada conserva la
+    // fuente y no inventa una rama principal.
     rmSync(join(workspace, "CLAUDE.md"), { force: true });
     await init();
     await runWorkspaceInit(fs, env, paths, {
-      sources: [],
+      sources: [{ alias: "app", path: "/tmp/app" }],
       workspace,
       lastActivity: "2026-01-01 00:00",
     });
@@ -74,7 +75,7 @@ describe("runWorkspaceInit", () => {
     expect(after).not.toContain("| app | /tmp/app | main |");
   });
 
-  it("single source EXTERNA: scaffold + skills.toml + bloque SIN Mode + visibilidad", async () => {
+  it("single source EXTERNA: runtime + bloque SIN Mode + visibilidad, sin template de skills", async () => {
     const result = await init({
       proyecto: "Solo",
       sources: [{ alias: "app", path: "/tmp/app-fake" }],
@@ -91,17 +92,8 @@ describe("runWorkspaceInit", () => {
     }
     expect(existsSync(join(workspace, "docs", "tools"))).toBe(false);
 
-    // skills.toml seeded
-    expect(result.skills_toml).toBe("created");
-    expect(existsSync(join(workspace, ".workflow", "skills.toml"))).toBe(true);
-    const toml = readFileSync(join(workspace, ".workflow", "skills.toml"), "utf-8");
-    expect(toml).toContain("[skills]");
-    expect(toml).toContain('# design = "design"');
-    expect(toml).toContain('# overview = "w"');
-    // commented [compaction] opt-in section: adjacent pair, after the [skills] roles
-    // (uncommenting both must land `mode` inside [compaction], never inside [skills])
-    expect(toml).toContain('# [compaction]\n# mode = "confirm"');
-    expect(toml.indexOf("# [compaction]")).toBeGreaterThan(toml.indexOf("[skills]"));
+    expect(result.skills_toml).toBe("skipped");
+    expect(existsSync(join(workspace, ".workflow", "skills.toml"))).toBe(false);
 
     // block written, no Mode line, has the source
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
@@ -120,15 +112,12 @@ describe("runWorkspaceInit", () => {
     // Visibility uses a pattern: also covers the .bak.<epoch> backups.
     expect(gitignore).toContain(".claude/settings.local.json*");
     expect(gitignore).toContain(".codex/config.toml*");
-    // Full CLI-owned set: sessions + lock + runtime.
-    expect(gitignore).toContain(".workflow/sessions/");
-    expect(gitignore).toContain(".workflow/.lock");
-    expect(gitignore).toContain(".workflow/processes.json");
-    expect(gitignore).toContain(".workflow/launch/");
-    expect(gitignore).toContain("docs/logs/");
+    // Runtime ignores are added only when this directory belongs to Git.
+    expect(gitignore).not.toContain(".workflow/sessions/");
   });
 
-  it("runtime gitignore se agrega incluso para fuente única dentro del workspace", async () => {
+  it("runtime gitignore se agrega para una raíz Workline que pertenece a Git", async () => {
+    mkdirSync(join(workspace, ".git"));
     await init({ sources: [{ alias: "self", path: workspace }] });
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     expect(gitignore).toContain(".workflow/processes.json");
@@ -175,7 +164,7 @@ describe("runWorkspaceInit", () => {
     }
   });
 
-  it("migra carpetas legacy docs/tools/<alias> de launch a .workflow/launch (preserva tools)", async () => {
+  it("configurar fuentes no migra ni crea launch artifacts legacy", async () => {
     const source = mkdtempSync(join(tmpdir(), "ws-init-src-"));
     try {
       writeFileSync(join(source, "package.json"), JSON.stringify({ scripts: { dev: "vite" } }));
@@ -191,14 +180,14 @@ describe("runWorkspaceInit", () => {
 
       await init({ sources: [{ alias: "app", path: source }] });
 
-      // the legacy folder is relocated and removed
-      expect(existsSync(join(workspace, "docs", "tools", "app"))).toBe(false);
-      expect(existsSync(join(workspace, ".workflow", "launch", "app", "launch.json"))).toBe(true);
-      // the edited run.sh (no marker) survives the move (not regenerated)
-      expect(
-        readFileSync(join(workspace, ".workflow", "launch", "app", "run.sh"), "utf-8"),
-      ).toContain("legacy-edit");
-      // a non-launch tool (README, no launch.json) stays intact
+      // Source configuration owns metadata, not launch migration. Existing
+      // artifacts are preserved exactly until an explicit launch action owns
+      // them.
+      expect(existsSync(join(workspace, "docs", "tools", "app", "launch.json"))).toBe(true);
+      expect(readFileSync(join(workspace, "docs", "tools", "app", "run.sh"), "utf-8")).toContain(
+        "legacy-edit",
+      );
+      expect(existsSync(join(workspace, ".workflow", "launch", "app"))).toBe(false);
       expect(existsSync(join(workspace, "docs", "tools", "keepme", "README.md"))).toBe(true);
     } finally {
       rmSync(source, { recursive: true, force: true });
@@ -246,13 +235,13 @@ describe("runWorkspaceInit", () => {
     expect(claude).toContain(join(workspace).split("/").pop() as string);
   });
 
-  it("idempotente: re-correr no duplica scaffold y respeta skills.toml existente", async () => {
+  it("idempotente: re-correr no duplica el runtime ni crea skills.toml vacío", async () => {
     await init();
     const second = await init();
-    // second run: dirs already exist, skills.toml preserved
+    // second run: marker already exists; no empty skill override is seeded.
     expect(second.scaffold.created).toHaveLength(0);
     expect(second.scaffold.existing.length).toBeGreaterThan(0);
-    expect(second.skills_toml).toBe("exists");
+    expect(second.skills_toml).toBe("skipped");
   });
 
   it("reconcile multi-source: re-correr con una fuente removida la detachea", async () => {
@@ -278,7 +267,7 @@ describe("runWorkspaceInit", () => {
     expect(second.detached_removed).toBeDefined();
   });
 
-  it("reconcile SIN --source: preserva las fuentes y la descripción existentes", async () => {
+  it("sin fuentes no reconcilia metadata: materializa solamente y rechaza opciones de configuración", async () => {
     await init({
       proyecto: "Mi Proyecto",
       sources: [
@@ -286,12 +275,17 @@ describe("runWorkspaceInit", () => {
         { alias: "lib", path: "/tmp/lib-fake" },
       ],
     });
-    // Re-run to reconcile the schema, without re-passing sources or description.
-    const second = await init({ sources: [], lastActivity: "2026-01-02 00:00" });
-    expect(second.sources).toBe(2); // preserved, no no_sources error
+    const before = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
+    const second = await runWorkspaceInit(fs, env, paths, {
+      sources: [],
+      workspace,
+      lastActivity: "2026-01-02 00:00",
+    });
+    expect(second).toMatchObject({ error: "no_sources" });
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
-    expect(claude).toContain("Mi Proyecto"); // description preserved (not the basename)
-    expect(claude).toContain("/tmp/app-fake"); // sources preserved
+    expect(claude).toBe(before);
+    expect(claude).toContain("Mi Proyecto");
+    expect(claude).toContain("/tmp/app-fake");
     expect(claude).toContain("/tmp/lib-fake");
   });
 
@@ -378,7 +372,7 @@ describe("runWorkspaceInit", () => {
     const virgin = await init({ dryRun: true });
     expect(virgin.scaffold.created).toEqual([sessionsDir]);
     expect(virgin.scaffold.existing).toEqual([]);
-    expect(virgin.skills_toml).toBe("created");
+    expect(virgin.skills_toml).toBe("skipped");
     const virginMd = virgin.project_md;
     if ("error" in virginMd) throw new Error(virginMd.error);
     expect(virginMd.results?.map((r) => r.action)).toEqual(["created", "created"]);
@@ -387,7 +381,7 @@ describe("runWorkspaceInit", () => {
     const initialized = await init({ dryRun: true });
     expect(initialized.scaffold.created).toEqual([]);
     expect(initialized.scaffold.existing).toEqual([sessionsDir]);
-    expect(initialized.skills_toml).toBe("exists");
+    expect(initialized.skills_toml).toBe("skipped");
     const initializedMd = initialized.project_md;
     if ("error" in initializedMd) throw new Error(initializedMd.error);
     // Mismo input → el bloque ya está escrito: la vista previa no lo llama creación.
@@ -417,7 +411,7 @@ describe("runWorkspaceInit", () => {
       });
       if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
       expect(existsSync(join(target, "CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(target, ".workflow", "skills.toml"))).toBe(true);
+      expect(existsSync(join(target, ".workflow", "skills.toml"))).toBe(false);
       expect(existsSync(join(target, ".workflow", "sessions"))).toBe(true);
       expect(existsSync(join(callerCwd, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(callerCwd, ".workflow"))).toBe(false);
@@ -427,11 +421,31 @@ describe("runWorkspaceInit", () => {
     }
   });
 
-  it("rechaza si 0 fuentes", async () => {
+  it("normaliza una fuente relativa contra la raíz Workline resuelta, no contra el cwd del invocador", async () => {
+    const source = join(workspace, "repo");
+    const nestedCwd = join(workspace, "nested", "caller");
+    mkdirSync(source, { recursive: true });
+    mkdirSync(nestedCwd, { recursive: true });
+    const nestedEnv = new FakeEnv(workspace, nestedCwd);
+
+    const result = await runWorkspaceInit(fs, nestedEnv, paths, {
+      sources: [{ alias: "app", path: "repo" }],
+      lastActivity: "2026-01-01 00:00",
+    });
+    if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
+
+    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf-8")).toContain(`| app | ${source} |  |`);
+    expect(result.attach_multiroot).toEqual({ skipped: true, reason: "no_external_sources" });
+    expect(existsSync(join(nestedCwd, "repo"))).toBe(false);
+  });
+
+  it("sin fuentes sólo materializa el runtime", async () => {
     const result = await runWorkspaceInit(fs, env, paths, { sources: [], workspace });
-    expect("error" in result).toBe(true);
-    if (!("error" in result)) throw new Error("expected error");
-    expect(result.error).toBe("no_sources");
+    if ("error" in result) throw new Error(result.error);
+    expect(result.sources).toBe(0);
+    expect(result.project_md).toEqual({ skipped: true, reason: "materialization_only" });
+    expect(existsSync(join(workspace, ".workflow", "sessions"))).toBe(true);
+    expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(false);
   });
 
   it("rechaza si alias duplicado", async () => {
@@ -447,7 +461,7 @@ describe("runWorkspaceInit", () => {
     expect(result.error).toBe("duplicate_alias");
   });
 
-  it("prune reconcile: poda .gitkeep-only, docs/logs vacía, sessions/.gitkeep y .lock liberado; preserva contenido", async () => {
+  it("configurar fuentes preserva scaffold legacy; no poda docs, sesiones ni locks", async () => {
     // Workspace from the upfront-scaffold era: empty taxonomy with .gitkeep + one folder with content.
     for (const f of ["manuals", "diagrams", "scripts", "designs"]) {
       mkdirSync(join(workspace, "docs", f), { recursive: true });
@@ -463,33 +477,34 @@ describe("runWorkspaceInit", () => {
 
     const result = await init();
 
-    // .gitkeep-only → folder pruned.
+    // The materialization/configuration split is non-destructive: legacy
+    // folders remain until an explicit migration owns their removal.
     for (const f of ["manuals", "diagrams", "scripts", "designs"]) {
-      expect(existsSync(join(workspace, "docs", f))).toBe(false);
+      expect(existsSync(join(workspace, "docs", f, ".gitkeep"))).toBe(true);
     }
-    // With content → stays, but without the stray .gitkeep.
     expect(existsSync(join(workspace, "docs", "specs", "001-spec.md"))).toBe(true);
-    expect(existsSync(join(workspace, "docs", "specs", ".gitkeep"))).toBe(false);
-    // empty docs/logs + sessions/.gitkeep + released .lock → pruned.
-    expect(existsSync(join(workspace, "docs", "logs"))).toBe(false);
-    expect(existsSync(join(workspace, ".workflow", "sessions", ".gitkeep"))).toBe(false);
-    expect(existsSync(join(workspace, ".workflow", ".lock"))).toBe(false);
-    expect(result.scaffold.pruned.length).toBeGreaterThanOrEqual(6);
+    expect(existsSync(join(workspace, "docs", "specs", ".gitkeep"))).toBe(true);
+    expect(existsSync(join(workspace, "docs", "logs"))).toBe(true);
+    expect(existsSync(join(workspace, ".workflow", "sessions", ".gitkeep"))).toBe(true);
+    expect(existsSync(join(workspace, ".workflow", ".lock"))).toBe(true);
+    expect(result.scaffold.pruned).toEqual([]);
   });
 
   it("prune reconcile: NO toca un .lock vigente (pid vivo, no expirado)", async () => {
-    mkdirSync(join(workspace, ".workflow"), { recursive: true });
+    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
     // Genuinely held lock: current {pid, ISO ts} (a numeric ts parses to null = corrupt, stealable).
     writeFileSync(
       join(workspace, ".workflow", ".lock"),
       JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
     );
-    await init();
+    const result = await init();
     // The block upsert fails because the lock is held (by someone else) and init does NOT delete the live lock.
+    expect(result.ok).toBe(false);
     expect(existsSync(join(workspace, ".workflow", ".lock"))).toBe(true);
   });
 
   it("gitignore block-aware: entradas nuevas se insertan bajo el header existente, sin duplicarlo", async () => {
+    mkdirSync(join(workspace, ".git"));
     // .gitignore of a workspace initialized by an older CLI (incomplete set).
     writeFileSync(
       join(workspace, ".gitignore"),
@@ -524,6 +539,7 @@ describe("runWorkspaceInit", () => {
   });
 
   it("gitignore: líneas hand-authored existentes no se duplican (dedupe global por línea)", async () => {
+    mkdirSync(join(workspace, ".git"));
     writeFileSync(
       join(workspace, ".gitignore"),
       [".workflow/sessions/", ".workflow/.lock", ""].join("\n"),
@@ -537,6 +553,7 @@ describe("runWorkspaceInit", () => {
   });
 
   it("gitignore CRLF: el merge bajo header preserva el EOL (no reescribe el archivo a LF)", async () => {
+    mkdirSync(join(workspace, ".git"));
     writeFileSync(
       join(workspace, ".gitignore"),
       [
@@ -555,14 +572,13 @@ describe("runWorkspaceInit", () => {
     expect(gitignore).toContain("node_modules/\r\n");
   });
 
-  it("--dry-run PREVISUALIZA el prune (read-only): reporta qué borraría sin borrar nada", async () => {
+  it("--dry-run no propone poda implícita y conserva el scaffold legacy", async () => {
     mkdirSync(join(workspace, "docs", "manuals"), { recursive: true });
     writeFileSync(join(workspace, "docs", "manuals", ".gitkeep"), "");
     mkdirSync(join(workspace, "docs", "logs"), { recursive: true });
     const result = await init({ dryRun: true });
     expect(result.dry_run).toBe(true);
-    expect(result.scaffold.pruned).toContain(join(workspace, "docs", "manuals"));
-    expect(result.scaffold.pruned).toContain(join(workspace, "docs", "logs"));
+    expect(result.scaffold.pruned).toEqual([]);
     // Nothing was actually deleted.
     expect(existsSync(join(workspace, "docs", "manuals", ".gitkeep"))).toBe(true);
     expect(existsSync(join(workspace, "docs", "logs"))).toBe(true);

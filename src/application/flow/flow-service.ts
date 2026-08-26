@@ -7,15 +7,16 @@
  */
 
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
-import { journeyOfFlow } from "../../domain/flow/authority.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import {
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
   type RecoveryBlocker,
+  atCurrentVersion,
   attemptAccountingAt,
   checkAgainstJourney,
   grantAttempts,
+  legacyRunNeedsAdoption,
   newRunState,
   normalizeAttemptChain,
   recoveryBlockedAt,
@@ -31,6 +32,7 @@ import { advanceFlowRun, directiveFor, resolveBoundary } from "./advance.js";
 import { publishObservedCheckouts } from "./checkout-observation.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
+import { journeyForRun } from "./run-journey.js";
 import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
 
 export interface AdvanceFlowInput {
@@ -96,25 +98,34 @@ export async function advanceFlow(
   // the only moment that can tell an adoption from an ordinary advance.
   const adopting = input.adopt && !(await fs.exists(location.statePath));
 
+  let adoptedExisting = false;
   const applied = await applyUnderLock<FlowDirective>(
     fs,
     location,
     (current) => {
-      const seeded = current ?? seed(input, session);
+      const seeded =
+        current === null
+          ? seed(input, session)
+          : legacyRunNeedsAdoption(current)
+            ? adoptExisting(input, current)
+            : current;
       if ("failure" in seeded) return { ok: false, failure: seeded.failure };
+      if (current !== null && legacyRunNeedsAdoption(current)) adoptedExisting = true;
       const advance = advanceFlowRun({
         state: seeded,
-        journey: journeyOfFlow(seeded.flow),
+        journey: journeyForRun(seeded),
       });
       if (!advance.ok) return { ok: false, failure: advance.failure };
       return { ok: true, state: advance.state, value: advance.directive };
     },
-    { allowAbsent: input.adopt },
+    { allowAbsent: input.adopt, allowLegacyAdoption: input.adopt },
   );
 
   if (!applied.ok) return { ok: false, failure: applied.failure };
   // What the session IS, recorded once, from the adoption that really happened.
-  if (adopting) await recordFlowAdoption({ fs, paths }, session, applied.state.flow);
+  if (adopting || adoptedExisting) {
+    await recordFlowAdoption({ fs, paths }, session, applied.state.flow);
+  }
   // Deciding stopped at the first delegated step; executing continues past every
   // one of them this process owns. Two calls and not one loop, because the walk is
   // pure and the execution is not.
@@ -225,7 +236,7 @@ export async function recoverFlowBoundary(
  * where the boundary is a delegated one, re-running the very action that failed.
  */
 function recover(state: FlowRunState, named: string | null): FlowRunMutation<FlowDirective> {
-  const journey = journeyOfFlow(state.flow);
+  const journey = journeyForRun(state);
   const incoherent = checkAgainstJourney(state, journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
 
@@ -335,4 +346,39 @@ function seed(
     };
   }
   return newRunState(flow as WorklineFlow, session);
+}
+
+/** Turn a readable v7–v9 state into v10 only after the caller explicitly opted in. */
+function adoptExisting(
+  input: AdvanceFlowInput,
+  state: FlowRunState,
+): FlowRunState | { failure: CapabilityFailure } {
+  if (!input.adopt) {
+    return {
+      failure: {
+        code: "FLOW_RUN_LEGACY_ADOPTION_REQUIRED",
+        message: `la corrida v${state.version} requiere adopción explícita antes de continuar`,
+        action: `corré 'aw flow advance --code ${state.session} --flow ${state.flow} --adopt'`,
+      },
+    };
+  }
+  if (input.flow === undefined || !(WORKLINE_FLOWS as readonly string[]).includes(input.flow)) {
+    return {
+      failure: {
+        code: "FLOW_ADOPTION_FLOW_MISSING",
+        message: "adoptar una corrida existente exige confirmar su flow",
+        action: `pasá --flow ${state.flow} junto con --adopt`,
+      },
+    };
+  }
+  if (input.flow !== state.flow) {
+    return {
+      failure: {
+        code: "FLOW_ADOPTION_FLOW_MISMATCH",
+        message: `la corrida declara '${state.flow}', no '${input.flow}'`,
+        action: `adoptala con '--flow ${state.flow}' o elegí la sesión correcta`,
+      },
+    };
+  }
+  return atCurrentVersion(state);
 }

@@ -8,6 +8,8 @@ interface CodexAttachOk {
   additional_writable_roots: { added: string[]; already_present: string[] };
   projects_trusted: { added: string[]; already_present: string[] };
   written: boolean;
+  /** A dry-run found a change but deliberately did not write it. */
+  would_write?: boolean;
 }
 interface CodexDetachOk {
   file: string;
@@ -19,6 +21,8 @@ interface CodexDetachOk {
     skipped: { path: string; reason: string }[];
   };
   written: boolean;
+  /** A dry-run found a change but deliberately did not write it. */
+  would_write?: boolean;
 }
 export type CodexResult = CodexAttachOk | CodexDetachOk;
 
@@ -26,9 +30,13 @@ export function codexConfigPath(scopeDir: string): string {
   return join(scopeDir, ".codex", "config.toml");
 }
 
-export function attachCodex(paths: string[], scopeDir: string): CodexResult {
+export function attachCodex(
+  paths: string[],
+  scopeDir: string,
+  options: { dryRun?: boolean } = {},
+): CodexResult {
   const configFile = codexConfigPath(scopeDir);
-  mkdirSync(join(scopeDir, ".codex"), { recursive: true });
+  const dryRun = options.dryRun === true;
   let content = "";
   if (existsSync(configFile)) content = readFileSync(configFile, "utf-8");
 
@@ -38,7 +46,8 @@ export function attachCodex(paths: string[], scopeDir: string): CodexResult {
 
   let backup: string | null = null;
   let written = false;
-  if (r2.content !== content) {
+  if (r2.content !== content && !dryRun) {
+    mkdirSync(join(scopeDir, ".codex"), { recursive: true });
     backup = backupFile(configFile);
     writeFileSync(configFile, r2.content, "utf-8");
     written = true;
@@ -49,11 +58,17 @@ export function attachCodex(paths: string[], scopeDir: string): CodexResult {
     additional_writable_roots: { added: r1.added, already_present: r1.already },
     projects_trusted: { added: r2.added, already_present: r2.already },
     written,
+    ...(dryRun && r2.content !== content ? { would_write: true } : {}),
   };
 }
 
-export function detachCodex(paths: string[], scopeDir: string): CodexResult {
+export function detachCodex(
+  paths: string[],
+  scopeDir: string,
+  options: { dryRun?: boolean } = {},
+): CodexResult {
   const configFile = codexConfigPath(scopeDir);
+  const dryRun = options.dryRun === true;
   if (!existsSync(configFile)) {
     return {
       file: configFile,
@@ -70,7 +85,7 @@ export function detachCodex(paths: string[], scopeDir: string): CodexResult {
 
   let backup: string | null = null;
   let written = false;
-  if (r2.content !== content) {
+  if (r2.content !== content && !dryRun) {
     backup = backupFile(configFile);
     writeFileSync(configFile, r2.content, "utf-8");
     written = true;
@@ -85,6 +100,7 @@ export function detachCodex(paths: string[], scopeDir: string): CodexResult {
       skipped: r2.skipped,
     },
     written,
+    ...(dryRun && r2.content !== content ? { would_write: true } : {}),
   };
 }
 

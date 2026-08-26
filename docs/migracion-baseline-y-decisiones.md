@@ -1,9 +1,9 @@
 # Migración — baseline sellado y decisiones durables
 
 Qué cambia para un workspace que ya viene usando `plan-exec`, y qué hacer con los
-planes que existían antes. Nada de esto exige una migración previa: **todo plan
-que funcionaba sigue funcionando**, y lo que cambia es lo que el sistema se anima
-a *afirmar* sobre él.
+planes y corridas que existían antes. No hay una reescritura retrospectiva: el
+CLI conserva la evidencia histórica y distingue con precisión qué puede ejecutar,
+qué sólo puede leer y qué debe bloquear.
 
 ## 1. Un plan ahora puede decir de qué versión de su spec deriva
 
@@ -24,30 +24,30 @@ Esa línea **no se escribe a mano**. La sella la publicación: cuando `plan-new`
 está leyendo y lo estampa en los bytes que se aprueban. Vista previa, aprobación
 y escritura cubren la misma cosa.
 
-### Qué significa `sin sello` para los planes que ya existen
+### Matriz de baseline y ruta
 
-Los **32 planes** de este workspace nacieron antes del sello, así que ninguno lo
-tiene. Su lectura es `unsealed`, y eso es un estado legítimo y explícito:
+`unsealed` es un estado legítimo de un plan anterior al sello: no prueba
+alineación, pero tampoco inventa una divergencia. La ruta depende además de si
+el plan está abierto o cerrado:
 
-| Lectura | Qué dice | Qué NO dice |
+| Baseline y estado del plan | Resultado que declara el CLI | Comando |
 |---|---|---|
-| `aligned` | el plan está sobre la versión de la spec que selló | — |
-| `divergent` | la spec cambió desde que se selló, con los dos digests | que el plan esté mal |
-| `unsealed` | **el plan no dice de qué versión deriva** | que esté desalineado |
-| `malformed` | la línea está pero no se puede leer, con su arreglo | que falte |
+| legacy `unsealed`, abierto | ejecutable en modo `compatible`; el aviso `SIN SELLO DE BASELINE` aparece sólo en el detalle | `/w:plan-exec <plan>` |
+| legacy `unsealed`, cerrado (`done`) | `historical`: conserva su evidencia y no crea deuda nueva | ninguno |
+| `aligned` | ejecución normal | `/w:plan-exec <plan>` |
+| `divergent` | la spec cambió desde el digest sellado; se entrega a refinamiento estructural | `/w:plan-refine <plan>` |
+| `malformed` | bloqueo tipado `WORKLINE_BASELINE_MALFORMED` | `null` |
+| spec ausente (`unresolved`) | bloqueo tipado `WORKLINE_BASELINE_SPEC_ABSENT` | `null` |
 
-`unsealed` **no** se presenta como alineado ni como derivado del contrato
-vigente. `resume` lo dice con todas las letras —
-`SIN SELLO DE BASELINE — el plan no dice de qué versión de su spec deriva` — en
-lugar de proponer «continuar por la primera fase no validada» sobre un contrato
-que nadie puede probar.
+Un legacy abierto no se presenta como alineado ni como derivado del contrato
+vigente: sólo puede continuar bajo compatibilidad. Un legacy cerrado es historia,
+no una deuda que el sistema pueda fabricar después. En cambio, `malformed` nunca
+se degrada a `unsealed`: una línea rota es un problema para arreglar, no una
+ausencia para tolerar.
 
-**No hay que sellar nada retroactivamente.** Un plan viejo que se cierra tal cual
-se cierra igual que siempre. El sello aparece solo la próxima vez que
-`plan-refine` republique el plan.
-
-Y `malformed` nunca se degrada a `unsealed`: una línea rota es un problema para
-arreglar, no una ausencia para tolerar.
+**No hay que sellar ni resellar nada retroactivamente.** El sello aparece sólo
+cuando `plan-new` o `plan-refine` publican nuevos bytes del plan; el CLI jamás
+fabrica un baseline para habilitar una corrida vieja.
 
 ## 2. El gate de desviación dejó de ser doctrina y pasó a ser máquina
 
@@ -70,6 +70,11 @@ adopta antes de re-derivar nada.
 La elegibilidad de la salida componible es **cierre, no tamaño**: no se mide por
 cuántas líneas cambian, sino por si el linaje, la intención, el impacto y la
 recuperabilidad quedan cerrados.
+
+Esto es el gate de una desviación encontrada durante una ejecución ya
+habilitada. Un baseline `divergent` no entra por estas cuatro alternativas: la
+matriz anterior lo entrega directamente a `plan-refine` antes de ofrecer
+`plan-exec`.
 
 ### Qué cambia en la práctica
 
@@ -118,6 +123,16 @@ El punto de retorno es siempre la **primera** obligación alcanzada, no la más
 nueva: retomar en la última pisaría trabajo que una decisión anterior todavía
 debe.
 
+### Decisión forward para Specs 033/034 y Plan 032
+
+Las obligaciones históricas incompatibles de Specs 033/034 y del Plan 032 no se
+reescriben ni se simula que nunca existieron. Esta migración las sustituye sólo
+hacia adelante: las nuevas ejecuciones usan la matriz de baseline y el estado
+v10 de batches; una corrida legacy no se resella ni recibe batches inferidos.
+La evidencia y los bytes históricos quedan intactos. Si una ejecución concreta
+necesita enmendar su contrato, lo hace mediante una nota durable append-only,
+nunca editando esas Specs o ese Plan para acomodar el comportamiento nuevo.
+
 ## 5. Consumidores múltiples
 
 Todo plan conocido derivado de un baseline se lee en una de cuatro posiciones:
@@ -125,29 +140,52 @@ Todo plan conocido derivado de un baseline se lee en una de cuatro posiciones:
 - `aligned` — sellado sobre el baseline vigente y sin nada que deber;
 - `pending-reconciliation` — abierto, con compensación pendiente;
 - `historical` — cerrado: su contrato es historia;
-- `unproven` — sin sello, o con uno que ya no coincide.
+- `unproven` — no tiene baseline alineable (sin sello, divergente, ilegible o
+  con spec ausente).
 
 **Ningún consumidor abierto se presenta como alineado hasta cerrar sus
-obligaciones**, y ninguno sin sello se presenta como alineado en absoluto.
+obligaciones**, y ninguno sin sello se presenta como alineado en absoluto. Esta
+clasificación no reemplaza la ruta ejecutable de la matriz: un consumer legacy
+abierto puede estar `unproven` y, aun así, continuar sólo en modo compatible.
 
-## 6. Estado de corrida: versión 8 → 9
+## 6. Estado de corrida: versión 10 y batches repetibles
 
-`.flow-run.json` pasa a versión 9 por un campo nuevo y **opcional**
-(`continuation`, dónde vuelve la ejecución tras una decisión). El CLI lee las
-versiones **9, 8 y 7**: una corrida a mitad de camino escrita por un CLI anterior
-se sigue leyendo tal como estaba y se re-estampa en su primera escritura.
+`.flow-run.json` se escribe ahora en versión **10**. Para `plan-exec` guarda el
+batch tipado: su id e iteración, fases, tareas exactas, digest del plan, etapa y
+traza append-only por iteración. Así la publicación acredita exactamente las
+tareas del batch y el estado o bloqueo de sus fases, en una transición CAS; no
+depende de una afirmación libre de "efectos pendientes".
 
-La continuidad **mueve la posición en el plan, nunca el cursor del recorrido**.
-El recorrido sigue siendo una pasada lineal append-only: un cursor que retrocede
-volvería re-ejecutable todo lo ya aplicado, y el ledger que topea intentos se
-apoya en que sólo crece.
+El ciclo de un batch es explícito: inferir, aislar, implementar, resolver una
+desviación si aparece, validar, revisar, cerrar el batch e integrar. Si quedan
+fases, el `batch_loop` abre la siguiente iteración; sólo el último batch hace la
+validación final antes de sellar el cierre.
+
+El CLI todavía **lee** v9, v8 y v7 para status, evidencia y recuperación, pero
+una corrida legacy activa exige adopción explícita antes de cualquier mutación:
+
+```
+aw flow advance --code <sesión> --flow plan-exec --adopt
+```
+
+Adoptar preserva la historia y empieza v10 con batches y traza vacíos: declara
+que no se reconstruye ni inventa el límite de batches que la corrida anterior
+nunca registró. Leer, `status` o `resume` no migran ni re-estampan nada.
+
+La continuidad sigue moviendo la posición en el plan, nunca el cursor del
+recorrido. El recorrido permanece append-only: un cursor que retrocede volvería
+re-ejecutable trabajo ya aplicado y rompería el ledger de intentos.
 
 ## Resumen: qué hacer hoy
 
 | Situación | Acción |
 |---|---|
-| Planes viejos sin sello | **nada**. Se reportan `unsealed` y se cierran igual |
+| Plan legacy sin sello, abierto | ejecutar sólo en modo compatible; leer el aviso en el detalle |
+| Plan legacy sin sello, cerrado | conservarlo como histórico, sin deuda retrospectiva |
 | Plan que se va a refinar | el sello aparece solo al republicarlo |
-| Corrida `.flow-run.json` en curso | **nada**. Se lee y se re-estampa sola |
+| Baseline divergente | ir exactamente a `plan-refine` |
+| Baseline ilegible o spec ausente | atender el bloqueo tipado; no hay comando de ejecución |
+| Corrida `.flow-run.json` v9/v8/v7 en curso | leerla; usar `aw flow advance --adopt` antes de mutarla |
+| Corrida v10 | publicar batches y traza por iteración; no inferir historia legacy |
 | Aparece una desviación | elegir una de las cuatro salidas del gate |
 | Hay una obligación pendiente | saldarla y publicar la nota que sustituya a su causa |

@@ -17,12 +17,54 @@ export interface McpEntry {
   env: Record<string, string>;
 }
 
-export interface McpWriteOpts {
-  dryRun?: boolean;
-  force?: boolean;
+/**
+ * The complete persisted shape for one host's MCP entry.
+ *
+ * Ownership is deliberately structural: a server bearing the same name is not
+ * ours unless this entire generated representation matches. Keeping the shape
+ * next to the entry contract lets writers and read-only state probes enforce
+ * the same rule without each inventing a partial "looks like Workline" test.
+ */
+export function mcpEntryShapeForHost(host: McpHost, entry: McpEntry): Record<string, unknown> {
+  switch (host) {
+    case "opencode":
+      return {
+        type: "local",
+        command: [entry.command, ...entry.args],
+        environment: { ...entry.env },
+        enabled: true,
+      };
+    case "crush":
+      return {
+        type: "stdio",
+        command: entry.command,
+        args: [...entry.args],
+        env: { ...entry.env },
+      };
+    case "claude":
+    case "codex":
+    case "warp":
+    case "gemini":
+    case "kimi":
+      return {
+        command: entry.command,
+        args: [...entry.args],
+        env: { ...entry.env },
+      };
+  }
 }
 
-export type McpWriteAction = "written" | "removed" | "skipped-idempotent" | "dry-run";
+export interface McpWriteOpts {
+  dryRun?: boolean;
+}
+
+export type McpWriteAction =
+  | "written"
+  | "removed"
+  | "skipped-idempotent"
+  | "dry-run"
+  /** A same-named entry has a different shape and belongs to someone else. */
+  | "conflict";
 
 export interface McpWriteResult {
   host: McpHost;
@@ -91,21 +133,6 @@ export function validateDsnVarName(
     };
   }
   return { ok: true, value };
-}
-
-/**
- * Ownership check: true when an existing config entry plausibly belongs to this
- * tool. Every shape this CLI ever wrote launches dbhub ("agent-workflow mcp
- * dbhub --instance <x>" today; "npx @bytebase/dbhub" in the legacy era), so
- * a same-named entry with neither marker is the user's own server —
- * remove/cleanup must leave it untouched (at user scope the blast radius is
- * every project).
- */
-export function isDbhubManagedEntry(raw: { command?: unknown; args?: unknown }): boolean {
-  const command = typeof raw.command === "string" ? raw.command : "";
-  const args = Array.isArray(raw.args) ? raw.args.filter((x) => typeof x === "string") : [];
-  const haystack = [command, ...args].join(" ");
-  return haystack.includes("dbhub") || haystack.includes("agent-workflow");
 }
 
 export function buildMcpEntry(

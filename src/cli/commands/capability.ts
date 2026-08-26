@@ -191,22 +191,19 @@ function dispatchInputFrom(
 /**
  * The dispatch context, assembled once from the CLI context.
  *
- * `workspace` is null unless this really IS a Workline workspace — the same
- * rule the rest of the repo uses: `.<ns>/` present in the root. Handing the cwd
- * over unconditionally made "outside a workspace" unreachable in production,
- * so the explicit-root path could only ever be exercised by a test that passed
- * null by hand. A smoke run from `/tmp` is what surfaced it.
+ * The bootstrap already resolved one WorklineDirectory.  Its root is meaningful
+ * before materialization too: a capability can prepare/validate from a virgin
+ * folder without inventing a Git root or requiring workspace-init first.
  */
 async function ctx0(
   ctx: CliContext,
   boundHost?: import("../../domain/harnesses.js").HarnessId,
 ): Promise<DispatchContext> {
-  const inWorkspace = await ctx.fs.exists(ctx.paths.cwdRoot());
   return {
     fs: ctx.fs,
     env: ctx.env,
     paths: ctx.paths,
-    workspace: inWorkspace ? ctx.paths.workspaceDir() : null,
+    workspace: ctx.paths.workspaceDir(),
     host: runHarness((k) => ctx.env.get(k), boundHost).agent_host,
   };
 }

@@ -417,7 +417,7 @@ describe("Phase contract — plan loops ↔ the transversal surfaces ↔ the run
     expect(indexDoc).toContain("phases_validated");
     expect(indexDoc).toContain("phases_total");
     expect(indexDoc).toContain("validada");
-    expect(await readFile(RESUME_SERVICE, "utf8")).toContain("planDetail");
+    expect(await readFile(RESUME_SERVICE, "utf8")).toContain("planPresentation");
     expect(resume).toContain("not `validada`");
     expect(status).toContain("plans not `done`");
   });
@@ -572,39 +572,30 @@ describe("directed resume contract — resume.md optional argument (spec 004)", 
   });
 });
 
-describe("lazy workspace-init contract — code ↔ doctrine (spec 008)", () => {
-  // Init went minimal (docs/ born on demand at `aw next-number`); the gitignore
-  // set became CLI-owned; session-close now feeds HISTORY.md. These pins keep
-  // the doctrine describing what the code actually does — the drift class that
-  // left `aw history-update` orphaned for 18 sessions.
-  it("every CLI-owned gitignore entry is documented in workspace-init.md", async () => {
-    const { VISIBILITY_GITIGNORE, runtimeGitignoreEntries } = await import(
-      "../../src/application/workspace-init-service.js"
-    );
-    const doc = await readSurface("commands/workspace-init.md");
-    for (const entry of [...runtimeGitignoreEntries("workflow"), ...VISIBILITY_GITIGNORE]) {
-      expect(doc, `workspace-init.md must document gitignore entry ${entry}`).toContain(entry);
-    }
-  });
-
-  it("workspace-init.md prescribes the minimal scaffold, on-demand docs/ and the reconcile prune", async () => {
+describe("implicit workspace contract — code ↔ doctrine", () => {
+  it("workspace-init.md distinguishes runtime materialization from source configuration", async () => {
     const doc = await readSurface("commands/workspace-init.md");
     expect(doc).toMatch(/minimal/i);
-    expect(doc).toContain("aw next-number");
-    expect(doc).toMatch(/on demand/i);
-    expect(doc).toMatch(/prune/i);
+    expect(doc).toContain(".<namespace>/sessions/");
+    expect(doc).toContain("does not create");
+    expect(doc).toContain("skills.toml");
+    expect(doc).toContain("WORKSPACE block");
     expect(doc).toContain("HISTORY.md");
+    expect(doc).toContain("reserved");
   });
 
-  it("no orientation surface still teaches the OLD upfront docs/ scaffold", async () => {
+  it("orientation surfaces make init optional and do not promise the old scaffold", async () => {
     // Root SKILL.md is the built-in overview role — the first doc an agent loads;
-    // the two READMEs echo the same claim. All three must say on-demand.
+    // the two READMEs echo the same root rule.
     for (const rel of ["SKILL.md", "README.md", "commands/README.md"]) {
       const text = await readFile(join(SKILL_ROOT, rel), "utf8");
-      expect(text, `${rel} must not claim init scaffolds docs/ upfront`).not.toMatch(
-        /`\.workflow\/` \+ `docs\/`/,
+      expect(text, `${rel} must describe the implicit root`).toMatch(/implicit workspace/i);
+      expect(text, `${rel} must not make init mandatory`).not.toMatch(
+        /run .*workspace-init.*once/i,
       );
-      expect(text, `${rel} must describe the on-demand model`).toMatch(/born on demand/i);
+      expect(text, `${rel} must not promise the old scaffold`).not.toMatch(
+        /`\.workflow\/` \+ `\.workflow\/skills\.toml`/,
+      );
     }
   });
 

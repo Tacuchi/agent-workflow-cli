@@ -18,7 +18,7 @@
     "web": "the run needs evidence from outside the workspace",
     "reconnaissance": "a draft is being cut from a raw prompt over unfamiliar terrain",
     "detection": "the CLI's automatic detection was wrong or ambiguous",
-    "scaffold": "the target folder already carries a workspace",
+    "scaffold": "the target has materialized runtime or needs its materialization/configuration contract",
     "classification": "in-conversation work has to be classified before it is written",
     "authoring": "the deliverable's own notation, structure or ordering is not obvious from the material"
   },
@@ -61,9 +61,6 @@
     "plan.escalation-adopted": "this refine consumed the escalation package an execution handed over, instead of re-deriving its diagnosis",
     "plan.escalation-absent": "no escalation package reached this refine, so it starts from the document alone",
     "chassis.context-pressure": "a fresh reader would need the CHECKPOINT to continue this run",
-    "plan.tasks-to-mark": "at least one task of the batch finished its local work and its checkbox is still open",
-    "plan.plan-closable": "every phase of the plan will be validated once this batch closes, so the plan can be sealed done",
-    "plan.commit-pending": "at least one affected source carries uncommitted changes from this batch",
     "quick.db-touched": "the task read from or wrote to a database, so there is a statement to derive into the session script"
   },
   "commands": {

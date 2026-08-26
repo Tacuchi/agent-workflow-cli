@@ -26,8 +26,7 @@ export const WORKLINE_MCP_ENTRY_NAME = "agent-workflow";
 /**
  * El host viaja en los argumentos porque el servidor no puede detectarlo desde
  * adentro: lo lanza el host por entrada y salida estándar, sin variable que lo
- * identifique. Y sin saber en cuál corre no podría nombrar la política que le
- * anula el selector ni la forma de arrancar que lo recupera.
+ * identifique. Así habilita sólo una vía de elicitation observada para ese host.
  */
 export function worklineMcpEntry(host: string, platform: string = process.platform): McpEntry {
   const isWin = platform === "win32";
