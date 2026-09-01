@@ -3,7 +3,6 @@ import type { PathsService } from "./paths-service.js";
 import {
   type SessionCandidate,
   type SessionEntry,
-  type SessionResolutionError,
   resolveSessionTarget,
 } from "./session-resolver.js";
 
@@ -20,12 +19,6 @@ import {
 export interface LifecycleOptions {
   code?: string;
   contextId?: string;
-  /**
-   * The host declared it can hold its compaction while a human selects. Comes
-   * from the adapter, NEVER inferred: guessing it produces false blocks on
-   * hosts that cannot pause, so the default is "it cannot".
-   */
-  canPauseCompaction?: boolean;
 }
 
 /**
@@ -42,14 +35,32 @@ export type LifecycleBinding = "bind" | "read-only";
 
 export type LifecycleTarget =
   | { outcome: "resolved"; session: SessionEntry }
-  /** Pausable host: stop and require a selection before anything is written. */
-  | { outcome: "blocked"; error: SessionResolutionError }
   /**
-   * Non-pausable host: its native compaction completes, but Workline writes,
-   * restores and closes nothing, and says so.
+   * The host's own lifecycle event completes, but Workline writes, restores and
+   * closes nothing on the session line, and says so. There is no third outcome
+   * on purpose: see {@link resolveLifecycleTarget}.
    */
   | { outcome: "degraded"; reason: string; candidates: SessionCandidate[]; action: string };
 
+/** The unresolved half of {@link LifecycleTarget}, for callers that report it. */
+export type LifecycleDegraded = Extract<LifecycleTarget, { outcome: "degraded" }>;
+
+/**
+ * Resolve the target, and NEVER hold the host's event back over it.
+ *
+ * There used to be a third outcome: a host that declared it could pause its
+ * compaction got `blocked` on an ambiguity, so a person could name the session
+ * before anything was written. It was a trap. The remedy the notice offered —
+ * `aw checkpoint-write --code NNN`, run by the agent from inside the very
+ * conversation being compacted — does not always bind that conversation, so the
+ * next `/compact` hit the same ambiguity and blocked again: irrecoverable from
+ * inside, with the compaction the run needed to survive never happening.
+ *
+ * So an unresolved target degrades, always. What replaces the protective pause
+ * is the refuge checkpoint the degraded write path parks (see
+ * `checkpoint-write-service.ts`): the state is preserved out of the way and
+ * adopted once the session does resolve.
+ */
 export async function resolveLifecycleTarget(
   fs: FileSystemPort,
   paths: PathsService,
@@ -67,32 +78,10 @@ export async function resolveLifecycleTarget(
   if (resolution.outcome === "resolved") {
     return { outcome: "resolved", session: resolution.session };
   }
-  // Holding the host's compaction is only worth it when a SELECTION actually
-  // resolves the situation — that is ambiguity, and the spec scopes pausable
-  // blocking to exactly that ("Si una compactación AMBIGUA puede pausarse").
-  // Every other outcome has nothing to pick from: a workspace with no active
-  // session is the normal state between runs, and blocking there would fail
-  // every single compaction with an empty candidate list.
-  if (options.canPauseCompaction === true && resolution.code === "SESSION_AMBIGUOUS") {
-    return { outcome: "blocked", error: resolution };
-  }
   return {
     outcome: "degraded",
     reason: resolution.message,
     candidates: resolution.candidates,
     action: resolution.action,
   };
-}
-
-/** Why the target could not be resolved, in whichever form the outcome took. */
-export function unresolvedDetail(
-  target: Extract<LifecycleTarget, { outcome: "blocked" | "degraded" }>,
-): { reason: string; candidates: SessionCandidate[]; action: string } {
-  return target.outcome === "blocked"
-    ? {
-        reason: target.error.message,
-        candidates: target.error.candidates,
-        action: target.error.action,
-      }
-    : { reason: target.reason, candidates: target.candidates, action: target.action };
 }

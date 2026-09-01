@@ -21,7 +21,7 @@ import type { SessionState } from "./state-reader.js";
  * only while the file is still exactly what the CLI wrote.
  */
 const SEAL_RE =
-  /<!-- written by agent-workflow\.checkpoint at [^\n]* · template sha256=([0-9a-f]{64}) -->\n?$/;
+  /<!-- written by agent-workflow\.checkpoint at ([^\n]*?) · template sha256=([0-9a-f]{64}) -->\n?$/;
 
 export function formatCheckpointMd(state: SessionState): string {
   const lines: string[] = [];
@@ -33,12 +33,13 @@ export function formatCheckpointMd(state: SessionState): string {
   // Body first, seal second: the seal states a fact ABOUT the body, so it can
   // never be part of what it measures.
   const body = `${lines.join("\n")}\n\n`;
-  return `${body}<!-- written by agent-workflow.checkpoint at ${state.timestamp} · template sha256=${digestOf(body)} -->\n`;
+  return `${body}${sealFor(state.timestamp, body)}`;
 }
 
 /**
- * True only when `text` is byte for byte what `formatCheckpointMd` produced —
- * an untouched template that can be regenerated without losing anything.
+ * True only when `text` is byte for byte what the CLI itself wrote — its own
+ * template, plus whatever the CLI later folded into the sealed body (see
+ * {@link appendSealedBlock}) — so regenerating it loses nothing of anybody's.
  *
  * An UNSEALED file (written before this seal existed) is not pristine either.
  * The asymmetry is deliberate: keeping a stale template by mistake costs one
@@ -47,9 +48,88 @@ export function formatCheckpointMd(state: SessionState): string {
  */
 export function isPristineCheckpoint(text: string): boolean {
   const match = text.match(SEAL_RE);
-  const sealed = match?.[1];
+  const sealed = match?.[2];
   if (sealed === undefined || match?.index === undefined) return false;
   return digestOf(text.slice(0, match.index)) === sealed;
+}
+
+/**
+ * Add `block` to a checkpoint without lying about who wrote the file.
+ *
+ * A checkpoint still byte for byte the CLI's own sealed output gets the block
+ * INSIDE the body and a seal recomputed over it, so the file keeps being
+ * demonstrably the CLI's and {@link isPristineCheckpoint} keeps answering the
+ * question it exists to answer: "is there anybody's prose in here?". Appending
+ * PAST the seal instead was what turned the CLI's own template into "content to
+ * preserve" — from the first adopted refuge on, every later lifecycle run
+ * preserved a file nobody had written, so the checkpoint froze for the rest of
+ * the session's life and the only way forward, `--force`, dropped the adopted
+ * text along with the template.
+ *
+ * Anything else — filled in, hand-edited, written before the seal existed — is
+ * appended to plainly. Re-sealing there would claim the CLI wrote somebody's
+ * prose and hand the next run permission to regenerate over it.
+ *
+ * `block` is body-shaped: it starts with its own heading and ends with a blank
+ * line, which is the invariant the sealed body keeps.
+ */
+export function appendSealedBlock(text: string, block: string): string {
+  const match = text.match(SEAL_RE);
+  const timestamp = match?.[1];
+  const sealed = match?.[2];
+  if (timestamp === undefined || sealed === undefined || match?.index === undefined) {
+    return plainAppend(text, block);
+  }
+  const body = text.slice(0, match.index);
+  if (digestOf(body) !== sealed) return plainAppend(text, block);
+  const grown = `${body}${block}`;
+  return `${grown}${sealFor(timestamp, grown)}`;
+}
+
+/**
+ * The `heading` sections a checkpoint already carries, each as a `block` that
+ * {@link appendSealedBlock} accepts back.
+ *
+ * Regeneration replaces the template, and a section the CLI folded in (an
+ * adopted refuge) is not part of any template: without carrying it across, a
+ * regeneration — the ordinary one over a pristine file, or a `--force` — would
+ * drop state that was parked precisely so it would NOT be lost, and the refuge
+ * file it came from is already gone from disk.
+ */
+export function blocksUnder(text: string, heading: string): string[] {
+  const blocks: string[] = [];
+  let current: string[] | null = null;
+  for (const line of text.replace(SEAL_RE, "").split("\n")) {
+    if (line === heading || line.startsWith(`${heading} `)) {
+      if (current !== null) blocks.push(closeBlock(current));
+      current = [line];
+      continue;
+    }
+    if (current === null) continue;
+    // Any other heading ends it: a block owns its own lines and nothing else's.
+    if (line.startsWith("#")) {
+      blocks.push(closeBlock(current));
+      current = null;
+      continue;
+    }
+    current.push(line);
+  }
+  if (current !== null) blocks.push(closeBlock(current));
+  return blocks;
+}
+
+function closeBlock(lines: string[]): string {
+  return `${lines.join("\n").trimEnd()}\n\n`;
+}
+
+function plainAppend(text: string, block: string): string {
+  const tail = block.replace(/\n+$/, "\n");
+  if (text.length === 0) return tail;
+  return `${text.endsWith("\n") ? text : `${text}\n`}\n${tail}`;
+}
+
+function sealFor(timestamp: string, body: string): string {
+  return `<!-- written by agent-workflow.checkpoint at ${timestamp} · template sha256=${digestOf(body)} -->\n`;
 }
 
 function digestOf(body: string): string {

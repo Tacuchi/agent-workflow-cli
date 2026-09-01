@@ -93,6 +93,19 @@ export class PathsService {
     return join(this.cwdSessionsDir(), ".bindings.json");
   }
   /**
+   * Where a lifecycle surface parks a CHECKPOINT it could not file.
+   *
+   * Dot-prefixed for the same reason as the two entries around it:
+   * `listSessionFolders` skips dot-prefixed entries, so a refuge is never read
+   * as a session — which matters more here than anywhere else, because what
+   * lands in this directory is precisely the state of a conversation whose
+   * session could NOT be resolved. It is inside `.${ns}/sessions/`, so the
+   * gitignore the CLI manages already covers it.
+   */
+  cwdSessionsRefugeDir(): string {
+    return join(this.cwdSessionsDir(), ".refuge");
+  }
+  /**
    * Monotone attempt counters of the flow runs, one file per session folder.
    *
    * Deliberately OUTSIDE the session folders it indexes. The counter exists so

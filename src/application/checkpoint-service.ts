@@ -1,11 +1,8 @@
 import { join } from "node:path";
 import { compareCorrelatives } from "../domain/correlative.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import {
-  type LifecycleTarget,
-  resolveLifecycleTarget,
-  unresolvedDetail,
-} from "./lifecycle-target.js";
+import { findRefugeForContext } from "./checkpoint-write-service.js";
+import { type LifecycleDegraded, resolveLifecycleTarget } from "./lifecycle-target.js";
 import { parseMdSection, parseMdSectionBilingual, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { type ArtifactKind, listExistingArtifacts } from "./session-artifacts.js";
@@ -328,6 +325,16 @@ export interface ResumeSummaryOutput {
   continuity: "ok" | "degraded";
   candidates?: SessionCandidate[];
   action?: string;
+  /**
+   * The refuge checkpoint a PreCompact of this conversation parked, if any —
+   * `null` when there is none, absent when continuity is `ok`.
+   *
+   * PostCompact is the one lifecycle channel whose output the model actually
+   * reads. A refuge nobody is told about is a file nobody adopts, so the moment
+   * to name it is exactly the one where the conversation comes back with no
+   * session resolved.
+   */
+  refuge?: { path: string; date: string } | null;
   checkpoint?: {
     actualizado: string | null;
     avance: string | null;
@@ -379,7 +386,7 @@ export async function runResumeSummary(
   const summary =
     target.outcome === "resolved"
       ? await summarizeResolved(fs, activeFolders, target.session)
-      : degradedSummary(activeFolders, target);
+      : await degradedSummary(fs, paths, activeFolders, target, options.contextId);
 
   if (options.includeRecentClosed === true) {
     summary.recent_closed_with_artifacts = await findRecentClosedWithArtifacts(
@@ -430,11 +437,13 @@ async function summarizeResolved(
   return summary;
 }
 
-function degradedSummary(
+async function degradedSummary(
+  fs: FileSystemPort,
+  paths: PathsService,
   activeFolders: string[],
-  target: Extract<LifecycleTarget, { outcome: "degraded" | "blocked" }>,
-): ResumeSummaryOutput {
-  const detail = unresolvedDetail(target);
+  target: LifecycleDegraded,
+  contextId?: string,
+): Promise<ResumeSummaryOutput> {
   return {
     active_sessions: activeFolders,
     primary_session: null,
@@ -446,8 +455,9 @@ function degradedSummary(
     // resolving the target IS the pending action.
     needs_ai_action: activeFolders.length > 0,
     continuity: "degraded",
-    candidates: detail.candidates,
-    action: detail.action,
+    candidates: target.candidates,
+    action: target.action,
+    refuge: await findRefugeForContext(fs, paths, contextId),
   };
 }
 

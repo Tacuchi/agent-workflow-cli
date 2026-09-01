@@ -1,22 +1,27 @@
 import {
+  type CheckpointWriteDegraded,
   type CheckpointWriteOptions,
   runAutoCompactOnClose,
   runCheckpointWrite,
 } from "../../application/checkpoint-write-service.js";
 import type { LifecycleOptions } from "../../application/lifecycle-target.js";
-import type { SessionResolutionError } from "../../application/session-resolver.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readHookStdin, resolveContextId } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand } from "../registry.js";
-import { fail, failSessionResolution, writeStderr } from "../render.js";
+import { fail, writeStderr } from "../render.js";
 import type { CliContext } from "../types.js";
 
 /**
- * Common lifecycle inputs: the explicit target, the conversation id (env var or
- * the hook payload's `session_id`, whichever the host provides), and whether the
- * host declared it can hold its compaction. Two identity signals that contradict
- * each other surface as a failure instead of resolving a session.
+ * Common lifecycle inputs: the explicit target and the conversation id (env var
+ * or the hook payload's `session_id`, whichever the host provides). Two identity
+ * signals that contradict each other surface as a failure instead of resolving
+ * a session.
+ *
+ * `--can-pause` is deliberately NOT read. It used to declare that the host could
+ * hold its compaction, and the hooks already installed on people's machines
+ * still pass it; it stays in the parser's boolean flags — a flag the parser does
+ * not know swallows the token after it — and means nothing here.
  */
 async function lifecycleOptions(
   args: ParsedArgs,
@@ -28,17 +33,16 @@ async function lifecycleOptions(
   return {
     ...(code !== undefined ? { code } : {}),
     ...(context.contextId !== undefined ? { contextId: context.contextId } : {}),
-    // Never inferred: a host that cannot pause would get false blocks.
-    ...(args.flags.has("--can-pause") ? { canPauseCompaction: true } : {}),
   };
 }
 
 export const checkpointWriteCommand: CliCommand = {
   name: "checkpoint-write",
   describe:
-    "Write CHECKPOINT.md for the conversation's session (or --code). PreCompact hook target. " +
-    "An existing CHECKPOINT with content is preserved; --force overwrites it. " +
-    "Usage: aw checkpoint-write [--code <session>] [--force] [--can-pause].",
+    "Write CHECKPOINT.md for the conversation's session (or --code). PreCompact hook target: " +
+    "it NEVER holds a compaction back — with no resolvable session it parks a refuge " +
+    "checkpoint and exits 0. An existing CHECKPOINT with content is preserved; --force " +
+    "overwrites it. Usage: aw checkpoint-write [--code <session>] [--force].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const base = await lifecycleOptions(args, ctx);
     if ("failure" in base) return base.failure;
@@ -47,24 +51,19 @@ export const checkpointWriteCommand: CliCommand = {
     if (args.flags.has("--force")) options.force = true;
 
     const data = await runCheckpointWrite(ctx.fs, ctx.env, ctx.git, ctx.paths, options);
-    // Pausable host: exit 2 is the host-level "hold the compaction" signal, and
-    // the envelope carries the candidates the human picks from. The host shows
-    // a person only stderr for a held compaction — the stdout envelope stays
-    // machine-facing — so the one actionable line goes on that channel too.
-    if ("blocked" in data) {
-      writeStderr(blockedNotice(data.sessionError));
-      return { ...failSessionResolution(data.sessionError), exitCode: 2 };
-    }
+    // Exit 0 whatever happened. A non-zero exit is how a host holds its
+    // compaction, and holding it was irrecoverable from inside the conversation
+    // — the ambiguity the notice asked to fix came back on the next attempt.
+    // The host shows a person only stderr here (the stdout envelope stays
+    // machine-facing), so what degraded and where the state went goes there.
+    if ("continuity" in data) writeStderr(degradedNotice(data));
     return { ok: true, data, exitCode: 0 };
   },
 };
 
-function blockedNotice(error: SessionResolutionError): string {
-  const candidates = error.candidates.map((c) => c.folder).join(" | ");
-  return (
-    `compactación retenida: ${error.message} — ` +
-    `corré 'aw checkpoint-write --code <NNN>' y volvé a compactar (candidatas: ${candidates})\n`
-  );
+function degradedNotice(data: CheckpointWriteDegraded): string {
+  const refuge = data.refuge_path !== null ? ` — refugio: ${data.refuge_path}` : "";
+  return `compactación continúa sin checkpoint: ${data.reason}${refuge}\n`;
 }
 
 export const autoCompactOnCloseCommand: CliCommand = {

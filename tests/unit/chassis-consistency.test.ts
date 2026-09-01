@@ -144,12 +144,18 @@ describe("Self-regulation (proactive compaction) — chasis ↔ harness (spec 00
     expect(sub).toMatch(/degrades to `confirm`/);
     expect(sub).toContain("`Compactar`");
     // Enmendada por el tramo transversal: el documento ya no DECIDE cuál modo
-    // corre ni si el host puede honrarlo — lo decide `aw checkpoint-write
-    // --can-pause`, y decirlo es lo que hace observable esa propiedad. Los
-    // nombres siguen fijados porque el contrato sigue siendo ese; lo que cambió
-    // es quién lo aplica.
-    expect(sub).toContain("`aw checkpoint-write --can-pause`");
+    // corre ni si el host puede honrarlo — lo decide `aw checkpoint-write`, y
+    // decirlo es lo que hace observable esa propiedad. Los nombres siguen
+    // fijados porque el contrato sigue siendo ese; lo que cambió es quién lo
+    // aplica. El `--can-pause` se fue del marcador junto con el bloqueo: el
+    // documento tampoco puede seguir prometiendo una pausa que no existe.
+    expect(sub).toContain("`aw checkpoint-write`");
+    expect(sub).not.toContain("--can-pause");
     expect(sub).toContain("not this document's call");
+    // Y lo que reemplazó a la pausa, dicho donde vive la doctrina: degradar
+    // dejando un refugio. Sin esta línea el módulo podría volver a prometer una
+    // retención mientras el CLI ya no la ejerce.
+    expect(sub).toContain("refuge checkpoint");
   });
 
   it("CHECKPOINT-antes-de-compactar sigue siendo invariante explícita en todos los modos", async () => {

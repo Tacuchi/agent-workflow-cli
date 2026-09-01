@@ -11,7 +11,7 @@
 | `PreToolUse` (`execute_sql`) | `hook sql-mutation-guard` | Blocks DML/DDL over MCP — reads only (DB scripts-only invariant). |
 | `PreToolUse` (Bash) | `hook git-commit-advisor` | **Advisory (does not block)**: warns if a `git commit` message lacks the active session's `sessionNNN` tag (traceability). Does **not** inspect `push`/`--amend`/`--no-verify`. |
 | `SessionEnd` | `auto-compact-on-close` | Writes `CHECKPOINT.md` on close — the resume key (*CHECKPOINT always* — chassis § Convergence / exit). |
-| `PreCompact` | `checkpoint-write --can-pause` | Writes `CHECKPOINT.md` before the host compacts. |
+| `PreCompact` | `checkpoint-write` | Writes `CHECKPOINT.md` before the host compacts. **Never blocks the compaction.** |
 | `PostCompact` | `resume-summary` | Recovers **the conversation's own** loop state after a compact. |
 
 > **Conversation identity (spec 011).** The three lifecycle hooks act on **one**
@@ -24,14 +24,18 @@
 > `.workflow/sessions/.bindings.json` keyed by the SHA-256 of that id — the raw
 > value is never persisted.
 >
-> **Ambiguity is a capability question, not a guess.** `--can-pause` declares
-> that *this host* can hold its compaction: Claude Code can, so the template
-> passes it and `checkpoint-write` exits **2** with the candidate list instead of
-> writing to an arbitrary session. A host that cannot pause omits the flag —
-> its native compaction completes, and Workline reports
-> `continuity: "degraded"` with `primary_session: null`, having written nothing.
-> The flag is never inferred: guessing it produces false blocks. Per-host
-> installation and transport belong to spec 010.
+> **An unresolved session never holds a compaction back.** `PreCompact` always
+> exits **0**. It used to exit 2 on an ambiguity so a person could name the
+> session first, and that trapped the conversation: the remedy it printed does
+> not always bind the conversation, so the next `/compact` blocked again. Now the
+> host's compaction completes, Workline reports `continuity: "degraded"` with
+> `primary_session: null`, and — whenever there is a candidate that could adopt
+> it — parks a **refuge checkpoint** in `.workflow/sessions/.refuge/` naming the
+> reason, the candidates and the way out. `PostCompact` reports it as `refuge`,
+> and the first `checkpoint-write` that does resolve the session (typically
+> `--code <NNN>`) folds it into that session's `CHECKPOINT.md` and removes it.
+> The refuge names its conversation by the SHA-256 of the id, like the
+> association registry. Per-host installation and transport belong to spec 010.
 
 > **What they enforce (host-level, blocking):** invariant **#4** (DB scripts-only) via `sql-mutation-guard` (blocks DML/DDL over MCP), and the *expected-branch* clause of **#5** via `branch-check` (blocks edits on the wrong branch). The rest of git-safe (`push`/`--amend`/`--no-verify`/`--force`) is **doctrinal** — `git-commit-advisor` only **warns**, it does not block; a host may add its own deny hook if it wants hard enforcement.
 >

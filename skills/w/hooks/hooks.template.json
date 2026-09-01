@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agent-workflow checkpoint-write --can-pause",
+            "command": "agent-workflow checkpoint-write",
             "statusMessage": "Escribiendo CHECKPOINT.md antes de compactar...",
             "timeout": 10
           }
@@ -81,7 +81,7 @@
           },
           {
             "type": "prompt",
-            "prompt": "Contexto compactado. El JSON anterior es output de `agent-workflow resume-summary`. Si `continuity` es `ok`, reanudá el loop de `primary_session` desde su CHECKPOINT.md y presentá un resumen. Si `continuity` es `degraded`, NO reanudes ninguna sesión: `active_sessions` es un listado, no una identidad — mostrá `candidates` con su `action` y pedí al usuario que elija (después reintentá con `--code <NNN>`). Si no hay sesiones, terminá."
+            "prompt": "Contexto compactado. El JSON anterior es output de `agent-workflow resume-summary`. Si `continuity` es `ok`, reanudá el loop de `primary_session` desde su CHECKPOINT.md y presentá un resumen. Si `continuity` es `degraded`, NO reanudes ninguna sesión: `active_sessions` es un listado, no una identidad — mostrá `candidates` con su `action` y pedí al usuario que elija (después reintentá con `--code <NNN>`). Si el JSON trae `refuge`, la compactación dejó un CHECKPOINT de refugio fuera de toda sesión: mostrá su `path` y avisá que se adopta al resolver la sesión (`aw checkpoint-write --code <NNN>`). Si no hay sesiones, terminá."
           }
         ]
       }

@@ -1,12 +1,15 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runArtifactsCommand } from "../../src/application/artifacts-service.js";
 import { runCheckpointRead, runResumeSummary } from "../../src/application/checkpoint-service.js";
 import {
   runAutoCompactOnClose,
   runCheckpointWrite,
+  writeRefugeCheckpoint,
 } from "../../src/application/checkpoint-write-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { lookupBinding } from "../../src/application/session-binding-service.js";
+import { hashContextId, lookupBinding } from "../../src/application/session-binding-service.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { GitPort, LocalChange, NumstatCounts } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -81,6 +84,18 @@ class FakeGit implements GitPort {
 
 const git = new FakeGit();
 
+/**
+ * A workspace whose TASKS.md cannot be read, so `extractSessionState` throws and
+ * the write path reports `{ error }` instead of writing a CHECKPOINT — the shape
+ * an I/O failure has in production.
+ */
+class UnreadableTasksFs extends MemFs {
+  override async readText(p: string): Promise<string> {
+    if (p.endsWith("TASKS.md")) throw new Error("EIO: TASKS.md ilegible");
+    return super.readText(p);
+  }
+}
+
 /** Two active sessions — the concurrency case the whole spec exists for. */
 function seedTwoActive(): MemFs {
   const fs = new MemFs({ lenient: true });
@@ -93,6 +108,13 @@ function seedTwoActive(): MemFs {
 
 function checkpointsWritten(fs: MemFs): string[] {
   return [...fs.writes.keys()].filter((p) => p.endsWith("CHECKPOINT.md"));
+}
+
+const refugeDir = `${sessionsDir}/.refuge`;
+
+/** The refuge a conversation's own PreCompact would park, by absolute path. */
+function refugeOf(contextId: string): string {
+  return `${refugeDir}/${hashContextId(contextId)}.md`;
 }
 
 describe("PreCompact → PostCompact keep one folder (same session_id)", () => {
@@ -143,66 +165,72 @@ describe("PreCompact → PostCompact keep one folder (same session_id)", () => {
   });
 });
 
-describe("ambiguity resolves by declared capability", () => {
-  it("pausable host: blocks with the candidates and mutates nothing", async () => {
+// An unresolved session used to be able to HOLD the host's compaction (exit 2)
+// so a person could name the target first. It trapped the conversation: the
+// `--code` remedy the notice printed does not always bind the conversation, so
+// the next /compact hit the same ambiguity and blocked again. The compaction now
+// always completes, and what replaces the pause is the refuge checkpoint.
+describe("an unresolved session degrades with a refuge, never a held compaction", () => {
+  it("an ambiguity parks a refuge naming the reason, the candidates and the way out", async () => {
     const fs = seedTwoActive();
-    const result = await runCheckpointWrite(fs, env, git, paths, { canPauseCompaction: true });
-    if (!("blocked" in result)) throw new Error(`expected a block, got: ${JSON.stringify(result)}`);
-    expect(result.selection_required).toBe(true);
-    expect(result.sessionError.code).toBe("SESSION_AMBIGUOUS");
-    expect(result.sessionError.candidates.map((c) => c.folder)).toEqual([
-      "020-vieja-quick",
-      "044-nueva-plan-exec",
-    ]);
-    expect(checkpointsWritten(fs)).toEqual([]);
-  });
-
-  it("non-pausable host: degrades with primary_session null and mutates nothing", async () => {
-    const fs = seedTwoActive();
-    const result = await runCheckpointWrite(fs, env, git, paths, {});
-    if (!("skipped" in result) || !result.skipped) throw new Error(JSON.stringify(result));
+    const result = await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
+    if (!("continuity" in result)) throw new Error(JSON.stringify(result));
     expect(result.continuity).toBe("degraded");
     expect(result.primary_session).toBeNull();
     expect(result.candidates).toHaveLength(2);
-    expect(fs.writes.size).toBe(0);
+    // No session line was touched: the refuge is the ONLY thing written.
+    expect(checkpointsWritten(fs)).toEqual([]);
+    expect([...fs.writes.keys()]).toEqual([refugeOf("conv-a")]);
+    expect(result.refuge_path).toBe(`.workflow/sessions/.refuge/${hashContextId("conv-a")}.md`);
+
+    const body = await fs.readText(refugeOf("conv-a"));
+    expect(body).toContain("# CHECKPOINT de refugio");
+    expect(body).toContain("hook de ciclo de vida (PreCompact o SessionEnd)");
+    expect(body).toContain("- Motivo: hay 2 sesiones activas");
+    expect(body).toContain("- Candidatas: 020-vieja-quick (active) · 044-nueva-plan-exec (active)");
+    expect(body).toContain("- Acción: indicá cuál con --code");
+    // Same rule as the bindings registry: the raw conversation id never lands.
+    expect(body).toContain(`- Conversación: sha256:${hashContextId("conv-a")}`);
+    expect(body).not.toContain("conv-a");
   });
 
-  // Blocking is the answer to AMBIGUITY, not to every failure. A pausable host
-  // in a workspace with no active session (the normal state between runs) must
-  // still complete its compaction: there is nothing to select, and holding it
-  // would fail every compaction with an empty candidate list.
-  async function expectDegradedNotBlocked(fs: MemFs): Promise<void> {
-    const result = await runCheckpointWrite(fs, env, git, paths, { canPauseCompaction: true });
-    expect("blocked" in result).toBe(false);
-    if (!("skipped" in result) || !result.skipped) throw new Error(JSON.stringify(result));
+  // A refuge nobody could ever adopt is not a rescue, it is litter: a workspace
+  // between runs is the ordinary state, and every compaction there would leave
+  // a file naming no session.
+  it("with nothing to select there is no refuge at all, only the notice", async () => {
+    const fs = new MemFs({ lenient: true });
+    const result = await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
+    if (!("continuity" in result)) throw new Error(JSON.stringify(result));
     expect(result.continuity).toBe("degraded");
+    expect(result.refuge_path).toBeNull();
+    expect(await fs.exists(refugeDir)).toBe(false);
     expect(fs.writes.size).toBe(0);
-  }
-
-  it("pausable host does NOT block a workspace with no sessions at all", async () => {
-    await expectDegradedNotBlocked(new MemFs({ lenient: true }));
   });
 
-  it("pausable host does NOT block when every session is closed", async () => {
+  it("every session closed: still degraded, and the closed folders are the candidates", async () => {
     const fs = seedTwoActive();
     for (const folder of ["020-vieja-quick", "044-nueva-plan-exec"]) {
       fs.file(`${sessionsDir}/${folder}/.closed`, "");
     }
-    await expectDegradedNotBlocked(fs);
+    const result = await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
+    if (!("continuity" in result)) throw new Error(JSON.stringify(result));
+    expect(result.reason).toContain("no hay sesiones activas");
+    expect(checkpointsWritten(fs)).toEqual([]);
+    // Reopening one of them is a real way out, so the parked state is worth keeping.
+    expect(result.refuge_path).not.toBeNull();
+    expect(await fs.readText(refugeOf("conv-a"))).toContain("(closed)");
   });
 
   it("a broken bindings registry degrades rather than holding the compaction", async () => {
     const fs = seedTwoActive();
     fs.file(`${sessionsDir}/.bindings.json`, '{"version":1,"bindings":{');
-    const result = await runCheckpointWrite(fs, env, git, paths, {
-      contextId: "conv-a",
-      canPauseCompaction: true,
-    });
-    expect("blocked" in result).toBe(false);
-    if (!("skipped" in result) || !result.skipped) throw new Error(JSON.stringify(result));
+    const result = await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
+    if (!("continuity" in result)) throw new Error(JSON.stringify(result));
     expect(result.continuity).toBe("degraded");
+    expect(result.refuge_path).not.toBeNull();
     // Fail-closed: the corrupt registry is never rewritten.
     expect(await fs.readText(`${sessionsDir}/.bindings.json`)).toBe('{"version":1,"bindings":{');
+    expect(checkpointsWritten(fs)).toEqual([]);
   });
 
   it("PostCompact never presents an arbitrary session as primary", async () => {
@@ -219,18 +247,146 @@ describe("ambiguity resolves by declared capability", () => {
     expect(summary.action).toContain("--code");
     expect(fs.writes.size).toBe(0);
   });
+
+  // PostCompact is the one lifecycle channel the model actually reads, so a
+  // refuge that is not named here is a file nobody will ever adopt.
+  it("PostCompact names the refuge its own PreCompact left, and nobody else's", async () => {
+    const fs = seedTwoActive();
+    const pre = await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
+    if (!("continuity" in pre)) throw new Error(JSON.stringify(pre));
+
+    const mine = await runResumeSummary(fs, paths, { contextId: "conv-a" });
+    expect(mine.continuity).toBe("degraded");
+    expect(mine.refuge?.path).toBe(pre.refuge_path);
+    expect(mine.refuge?.date).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+
+    const other = await runResumeSummary(fs, paths, { contextId: "conv-b" });
+    expect(other.continuity).toBe("degraded");
+    expect(other.refuge).toBeNull();
+  });
+
+  // La asimetría que dejaba mudo al único canal que el modelo lee: la MISMA
+  // forma de invocación que crea un refugio anónimo (PreCompact TOML de
+  // kimi/crush, o un `aw checkpoint-write` desde una shell cualquiera) era la
+  // única que no podía reportarlo, y `refuge: null` no dice «no sé», afirma que
+  // no hay ninguno.
+  it("PostCompact sin identidad de conversación nombra el refugio anónimo que dejó su PreCompact", async () => {
+    const fs = seedTwoActive();
+    const pre = await runCheckpointWrite(fs, env, git, paths, {});
+    if (!("continuity" in pre)) throw new Error(JSON.stringify(pre));
+    expect(pre.refuge_path).toBe(".workflow/sessions/.refuge/desconocida.md");
+
+    const post = await runResumeSummary(fs, paths, {});
+    expect(post.continuity).toBe("degraded");
+    expect(post.refuge?.path).toBe(pre.refuge_path);
+    expect(post.refuge?.date).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+
+    // Y no se lo atribuye a una conversación que tiene identidad propia.
+    const conConversacion = await runResumeSummary(fs, paths, { contextId: "conv-a" });
+    expect(conConversacion.refuge).toBeNull();
+  });
+
+  // The whole point of parking it: the loop that comes back and names its
+  // session gets the state folded into the checkpoint it will read.
+  it("the refuge survives the compaction and the --code run adopts it", async () => {
+    const fs = seedTwoActive();
+    const pre = await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
+    if (!("continuity" in pre)) throw new Error(JSON.stringify(pre));
+
+    const fix = await runCheckpointWrite(fs, env, git, paths, {
+      code: "044",
+      contextId: "conv-a",
+    });
+    if (!("checkpoint_path" in fix)) throw new Error(JSON.stringify(fix));
+    expect(fix.session).toBe("044-nueva-plan-exec");
+    expect(fix.refuge_adopted).toEqual([pre.refuge_path]);
+
+    const cp = await fs.readText(`${sessionsDir}/044-nueva-plan-exec/CHECKPOINT.md`);
+    expect(cp).toContain("## Refugio adoptado (");
+    expect(cp).toContain("- Motivo: hay 2 sesiones activas");
+    // Gone from disk: a refuge left behind gets adopted again on every run.
+    expect(await fs.exists(refugeOf("conv-a"))).toBe(false);
+  });
 });
 
 describe("SessionEnd acts on one session, never on every active one", () => {
-  it("ambiguous close writes no checkpoint at all", async () => {
+  it("ambiguous close writes no checkpoint at all, and parks the state instead", async () => {
     const fs = seedTwoActive();
-    const result = await runAutoCompactOnClose(fs, env, git, paths, {});
+    const result = await runAutoCompactOnClose(fs, env, git, paths, { contextId: "conv-a" });
     expect(result.checkpoints_written).toEqual([]);
     expect(result.continuity).toBe("degraded");
     expect(result.primary_session).toBeNull();
     expect(result.candidates).toHaveLength(2);
-    // The heart of it: byte-for-byte, no session was touched.
-    expect(fs.writes.size).toBe(0);
+    // The heart of it: no session was touched — the refuge is the only write.
+    expect(checkpointsWritten(fs)).toEqual([]);
+    expect([...fs.writes.keys()]).toEqual([refugeOf("conv-a")]);
+    expect(result.refuge_path).toBe(`.workflow/sessions/.refuge/${hashContextId("conv-a")}.md`);
+  });
+
+  it("a close that DOES resolve adopts the refuge its own compaction left", async () => {
+    const fs = new MemFs({ lenient: true });
+    fs.file(`${sessionsDir}/001-sola-quick/SESSION.md`, "# SESSION — 001-sola-quick\n");
+    const parked = await writeRefugeCheckpoint(fs, paths, {
+      reason: "hay 2 sesiones activas y la conversación no tiene una asociación",
+      action: "indicá cuál con --code <NNN>",
+      candidates: [{ folder: "001-sola-quick", code: "001", state: "active" }],
+      contextId: "conv-a",
+    });
+
+    const result = await runAutoCompactOnClose(fs, env, git, paths, { contextId: "conv-a" });
+    expect(result.checkpoints_written[0]?.refuge_adopted).toEqual([parked]);
+    const cp = await fs.readText(`${sessionsDir}/001-sola-quick/CHECKPOINT.md`);
+    expect(cp).toContain("## Refugio adoptado (");
+    expect(await fs.exists(refugeOf("conv-a"))).toBe(false);
+  });
+
+  // El guard que sólo adopta cuando el CHECKPOINT se pudo escribir. Sin él,
+  // `writeText`/`appendText` CREAN el archivo: el estado parqueado quedaría
+  // archivado bajo una línea de sesión que nadie escribió (sin H1 ni sello) y el
+  // refugio borrado — irrecuperable.
+  it("un cierre que NO logra escribir el CHECKPOINT no se lleva el refugio", async () => {
+    const fs = new UnreadableTasksFs({ lenient: true });
+    fs.file(`${sessionsDir}/001-sola-quick/SESSION.md`, "# SESSION — 001-sola-quick\n");
+    fs.file(`${sessionsDir}/001-sola-quick/TASKS.md`, "- [x] T1\n- [ ] T2\n");
+    const parked = await writeRefugeCheckpoint(fs, paths, {
+      reason: "hay 2 sesiones activas y la conversación no tiene una asociación",
+      action: "indicá cuál con --code <NNN>",
+      candidates: [{ folder: "001-sola-quick", code: "001", state: "active" }],
+      contextId: "conv-a",
+    });
+
+    const result = await runAutoCompactOnClose(fs, env, git, paths, { contextId: "conv-a" });
+    expect(result.checkpoints_written).toHaveLength(1);
+    expect(result.checkpoints_written[0]?.error).toContain("TASKS.md ilegible");
+    expect(result.checkpoints_written[0]?.refuge_adopted).toBeUndefined();
+    // Nada creado, nada perdido: el refugio sigue ahí para la próxima corrida.
+    expect(checkpointsWritten(fs)).toEqual([]);
+    expect(await fs.exists(refugeOf("conv-a"))).toBe(true);
+    expect(await fs.readText(`/cwd/${parked}`)).toContain("- Motivo: hay 2 sesiones activas");
+  });
+
+  // El cierre regenera por su propio camino, así que arrastrar lo adoptado tiene
+  // que valer también acá: si no, el SessionEnd que sigue a una adopción borra
+  // la sección y el refugio ya no existe en disco.
+  it("un cierre que regenera el CHECKPOINT conserva el refugio ya adoptado", async () => {
+    const fs = new MemFs({ lenient: true });
+    fs.file(`${sessionsDir}/001-sola-quick/SESSION.md`, "# SESSION — 001-sola-quick\n");
+    await writeRefugeCheckpoint(fs, paths, {
+      reason: "hay 2 sesiones activas y la conversación no tiene una asociación",
+      action: "indicá cuál con --code <NNN>",
+      candidates: [{ folder: "001-sola-quick", code: "001", state: "active" }],
+      contextId: "conv-a",
+    });
+    await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
+    const cpPath = `${sessionsDir}/001-sola-quick/CHECKPOINT.md`;
+    expect(await fs.readText(cpPath)).toContain("## Refugio adoptado (");
+
+    const close = await runAutoCompactOnClose(fs, env, git, paths, { contextId: "conv-a" });
+    expect(close.checkpoints_written[0]?.preserved).toBeUndefined();
+    expect(close.checkpoints_written[0]?.session).toBe("001-sola-quick");
+    const cp = await fs.readText(cpPath);
+    expect(cp).toContain("## Refugio adoptado (");
+    expect(cp.match(/## Refugio adoptado \(/g)).toHaveLength(1);
   });
 
   it("with an identity it checkpoints exactly that session", async () => {
@@ -256,16 +412,17 @@ describe("lifecycle surfaces never write to a closed session", () => {
     fs.file(`${sessionsDir}/020-vieja-quick/.closed`, "");
     const result = await runCheckpointWrite(fs, env, git, paths, {
       code: "020",
-      canPauseCompaction: true,
+      contextId: "conv-a",
     });
-    // Not a block: a closed target is not something a SELECTION fixes, so the
-    // compaction completes. What matters is that the closed line is untouched
-    // and the reason says how to reach it.
-    if (!("skipped" in result) || !result.skipped) throw new Error(JSON.stringify(result));
+    // The compaction completes. What matters is that the closed line itself is
+    // untouched and the reason says how to reach it — reopening it is a real way
+    // out, so the state is parked next to it rather than dropped.
+    if (!("continuity" in result)) throw new Error(JSON.stringify(result));
     expect(result.continuity).toBe("degraded");
     expect(result.reason).toContain("cerrada");
     expect(result.action).toContain("--reopen");
-    expect(fs.writes.size).toBe(0);
+    expect(checkpointsWritten(fs)).toEqual([]);
+    expect([...fs.writes.keys()]).toEqual([refugeOf("conv-a")]);
   });
 });
 
@@ -344,7 +501,7 @@ describe("reading never moves the conversation's line", () => {
   });
 });
 
-describe("checkpoint-write CLI — exit codes carry the capability decision", () => {
+describe("checkpoint-write CLI — exit 0 always, and the person hears why", () => {
   function ctxFor(fs: MemFs, envOverride: FakeEnv = env): CliContext {
     return { fs, env: envOverride, git, paths } as unknown as CliContext;
   }
@@ -359,20 +516,28 @@ describe("checkpoint-write CLI — exit codes carry the capability decision", ()
     };
   }
 
-  it("--can-pause + ambiguity → exit 2 with the candidates to choose from", async () => {
+  const hostEnv = new FakeEnv("/home/u", "/cwd", { CLAUDE_CODE_SESSION_ID: "conv-claude" });
+
+  // `--can-pause` is still accepted — hooks installed on people's machines keep
+  // passing it, and a flag the parser does not know swallows the token after it
+  // — but it decides nothing: with it or without it, the ambiguity degrades to
+  // exactly the same result at exit 0.
+  it("--can-pause is inert: the same ambiguity, the same degraded result, exit 0", async () => {
     const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
-    const result = await checkpointWriteCommand.execute(
+    const withFlag = await checkpointWriteCommand.execute(
       argv(["--can-pause"]),
-      ctxFor(seedTwoActive()),
+      ctxFor(seedTwoActive(), hostEnv),
     );
-    expect(result.ok).toBe(false);
-    expect(result.exitCode).toBe(2);
-    expect(result.error?.code).toBe("SESSION_AMBIGUOUS");
+    const without = await checkpointWriteCommand.execute(
+      argv([]),
+      ctxFor(seedTwoActive(), hostEnv),
+    );
+    expect(withFlag.ok).toBe(true);
+    expect(withFlag.exitCode).toBe(0);
+    expect(withFlag.data).toEqual(without.data);
   });
 
-  // Regression: this used to exit 2 as well, so every compaction failed in any
-  // workspace with no active session — the normal state between runs.
-  it("--can-pause with nothing to select → exit 0, degraded", async () => {
+  it("nothing to select → exit 0, degraded", async () => {
     const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
     const result = await checkpointWriteCommand.execute(
       argv(["--can-pause"]),
@@ -382,14 +547,7 @@ describe("checkpoint-write CLI — exit codes carry the capability decision", ()
     expect(result.exitCode).toBe(0);
   });
 
-  it("without --can-pause ambiguity degrades at exit 0", async () => {
-    const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
-    const result = await checkpointWriteCommand.execute(argv([]), ctxFor(seedTwoActive()));
-    expect(result.ok).toBe(true);
-    expect(result.exitCode).toBe(0);
-  });
-
-  it("an unambiguous --code writes and exits 0 even on a pausable host", async () => {
+  it("an unambiguous --code writes and exits 0 with the inert flag present", async () => {
     const fs = seedTwoActive();
     const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
     const result = await checkpointWriteCommand.execute(
@@ -407,7 +565,6 @@ describe("checkpoint-write CLI — exit codes carry the capability decision", ()
   // id as fallback, the --code run binds, and the NEXT hook run resolves.
   it("the host-exported id makes a --code run bind, so the retry resolves", async () => {
     const fs = seedTwoActive();
-    const hostEnv = new FakeEnv("/home/u", "/cwd", { CLAUDE_CODE_SESSION_ID: "conv-claude" });
     const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
 
     const fix = await checkpointWriteCommand.execute(
@@ -419,25 +576,70 @@ describe("checkpoint-write CLI — exit codes carry the capability decision", ()
     const retry = await checkpointWriteCommand.execute(argv(["--can-pause"]), ctxFor(fs, hostEnv));
     expect(retry.ok).toBe(true);
     expect(retry.exitCode).toBe(0);
+    // Resolved, not degraded: the retry wrote the bound session's checkpoint.
+    expect(checkpointsWritten(fs)).toEqual([`${sessionsDir}/044-nueva-plan-exec/CHECKPOINT.md`]);
   });
 
-  // Claude Code shows stderr for a held compaction; the stdout envelope it
-  // never shows. Without this line the person sees only the generic block.
-  it("a held compaction tells the person on stderr what to run", async () => {
+  // Claude Code shows a person stderr for a lifecycle hook; the stdout envelope
+  // it never shows. Without this line a degraded compaction is silent.
+  async function noticeFor(fs: MemFs): Promise<{ exitCode?: number; notice: string }> {
     const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
       const result = await checkpointWriteCommand.execute(
         argv(["--can-pause"]),
-        ctxFor(seedTwoActive()),
+        ctxFor(fs, hostEnv),
       );
-      expect(result.exitCode).toBe(2);
-      const notice = spy.mock.calls.map((call) => String(call[0])).join("");
-      expect(notice).toContain("aw checkpoint-write --code");
-      expect(notice).toContain("020-vieja-quick");
-      expect(notice).toContain("044-nueva-plan-exec");
+      return {
+        ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+        notice: spy.mock.calls.map((call) => String(call[0])).join(""),
+      };
     } finally {
       spy.mockRestore();
     }
+  }
+
+  it("a degraded compaction says on stderr what happened and where the refuge is", async () => {
+    const { exitCode, notice } = await noticeFor(seedTwoActive());
+    expect(exitCode).toBe(0);
+    expect(notice).toContain("compactación continúa sin checkpoint");
+    expect(notice).toContain("2 sesiones activas");
+    expect(notice).toContain(`refugio: .workflow/sessions/.refuge/${hashContextId("conv-claude")}`);
+  });
+
+  it("with nothing to park, the notice promises no refuge", async () => {
+    const { exitCode, notice } = await noticeFor(new MemFs({ lenient: true }));
+    expect(exitCode).toBe(0);
+    expect(notice).toContain("compactación continúa sin checkpoint");
+    expect(notice).not.toContain("refugio");
+  });
+});
+
+describe("la plantilla de hooks ya no puede pedir una pausa", () => {
+  interface HookCommand {
+    type: string;
+    command?: string;
+    prompt?: string;
+  }
+
+  async function template(): Promise<Record<string, { hooks: HookCommand[] }[]>> {
+    const path = resolve(__dirname, "..", "..", "skills", "w", "hooks", "hooks.template.json");
+    const parsed = JSON.parse(await readFile(path, "utf8")) as {
+      hooks: Record<string, { hooks: HookCommand[] }[]>;
+    };
+    return parsed.hooks;
+  }
+
+  it("PreCompact invoca checkpoint-write a secas — sin --can-pause en ninguna parte", async () => {
+    const hooks = await template();
+    expect(hooks.PreCompact?.[0]?.hooks[0]?.command).toBe("agent-workflow checkpoint-write");
+    expect(JSON.stringify(hooks)).not.toContain("--can-pause");
+  });
+
+  it("el prompt de PostCompact enseña a mostrar y adoptar el refugio", async () => {
+    const hooks = await template();
+    const prompt = hooks.PostCompact?.[0]?.hooks.find((h) => h.type === "prompt")?.prompt ?? "";
+    expect(prompt).toContain("`refuge`");
+    expect(prompt).toContain("aw checkpoint-write --code");
   });
 });

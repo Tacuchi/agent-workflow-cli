@@ -692,8 +692,11 @@ const CHASSIS_ATTRIBUTION = QUICK_ATTRIBUTION;
  * Its own marker rather than the shared one: compaction is not a step of any
  * journey — it fires at whatever boundary the run happens to be standing on —
  * so the sentence names the command that executes it instead of the walk.
+ *
+ * The bare command, without the `--can-pause` the marker used to carry: the flag
+ * stopped deciding anything the day PreCompact stopped being able to block.
  */
-const COMPACTION_ATTRIBUTION = "`aw checkpoint-write --can-pause`";
+const COMPACTION_ATTRIBUTION = "`aw checkpoint-write`";
 
 /**
  * What the continuity documents say about who resolves which line a prompt joins.
