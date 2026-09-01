@@ -4,6 +4,32 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [24.0.0] — 2026-09-01
+
+**El runtime MCP deja de depender de DBHub, `npx`, la red y el `PATH` para servir PostgreSQL.** Workline publica un catálogo único de tools de lectura, verificable por protocolo, con la misma vía local directa cuando el host todavía no cargó MCP.
+
+### Added
+
+- **`tool list` y `tool call` ejecutan directamente las tools PostgreSQL.** `execute_sql` y `search_objects` comparten catálogo, validación y JSON canónico con MCP; `--input-json -` recibe el input por stdin sin entrar a logs operativos.
+- **`mcp serve-db` implementa el servidor stdio de Workline.** Cada llamada abre una conexión PostgreSQL aislada, transacción `READ ONLY`, timeout de 30 s, rollback y límite de 1.000 filas / 4 MiB.
+- **Recibos y probes separan configuración, launchability, recarga y carga real del host.** La TUI muestra el estado por host y Codex ofrece el comando local equivalente porque MCP sigue siendo opcional.
+- **`mcp migrate` previsualiza y migra sólo shapes históricos propios.** Reconoce legacy, foreign, malformed y current sin sobrescribir una entrada ajena.
+
+### Changed
+
+- **Los descriptores globales usan Node y entrypoint absolutos**, namespace, instancia y host explícitos; no usan shell, `cmd /c`, `npx`, caché ni variables de entorno para arrancar.
+- **`mcp-connections.json` pasa a v2 con `provider: "postgres"`.** Las entradas v1 se interpretan en memoria como PostgreSQL y sólo se reescriben mediante una acción explícita.
+- **Doctor comprueba el lifecycle MCP y la postura del rol PostgreSQL.** Superuser y privilegios de servidor peligrosos bloquean la ejecución; permisos de escritura quedan como advertencia y no acreditan una conexión segura.
+
+### Removed
+
+- **`mcp dbhub` ya no ejecuta `@bytebase/dbhub`.** Conserva durante una versión el nombre como alias deprecado de `mcp serve-db`, con las dos tools Workline publicadas.
+
+### Migration
+
+- Revisá primero `aw mcp migrate --host <host> --all-connections --global`. La escritura exige `--apply --force`; no se migra, reinstala ni reinicia ningún host automáticamente.
+- Rotá cualquier credencial que hubiera quedado embebida en descriptores DBHub legacy y usá un rol PostgreSQL de mínimo privilegio.
+
 ## [23.0.0] — 2026-08-25
 
 **Workline deja de exigir un scaffold antes de ser útil, y `plan-exec` pasa a conservar toda la evidencia de sus iteraciones.** La raíz se resuelve desde el marcador más cercano —o el cwd exacto—, las primeras escrituras materializan sólo el runtime y el pipeline ya no puede ofrecer una continuación contradictoria con su estado.
