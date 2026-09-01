@@ -422,7 +422,11 @@ export interface RefugeAdoptionScope {
  * output stays that way — otherwise the first adoption would freeze the file
  * forever behind "there is content to preserve". Removing the refuge afterwards
  * is not tidying: it is what keeps the next invocation from adopting the same
- * text again.
+ * text again — but ONLY once the block is demonstrably in the file, because two
+ * concurrent hooks read the same `existing` and the loser's append is not in
+ * what finally lands. Removing on the strength of its own write would delete the
+ * parked state from both places it existed in. A refuge left on disk costs one
+ * more adoption attempt; a refuge deleted for nothing is irrecoverable.
  */
 export async function adoptRefuge(
   fs: FileSystemPort,
@@ -433,15 +437,52 @@ export async function adoptRefuge(
   const wanted = digestOfContext(scope.contextId);
   const cpPath = join(session.path, "CHECKPOINT.md");
   const adopted: string[] = [];
-  for (const refuge of await listRefugeCheckpoints(fs, paths)) {
-    if (!adoptable(refuge, wanted, scope.explicitCode === true)) continue;
-    const existing = (await fs.exists(cpPath)) ? await fs.readText(cpPath) : "";
-    await fs.mkdirp(session.path);
-    await fs.writeText(cpPath, appendSealedBlock(existing, adoptedBlock(refuge)));
-    await fs.remove(refuge.path);
-    adopted.push(refuge.relative);
+  // Nothing that happens in here may throw out of a lifecycle surface: a
+  // non-zero exit is how a host HOLDS its compaction, and holding it was the
+  // irrecoverable trap these surfaces stopped being allowed to set. A failure
+  // reports "nothing adopted" and leaves the refuge for the next invocation.
+  try {
+    for (const refuge of await listRefugeCheckpoints(fs, paths)) {
+      if (!adoptable(refuge, wanted, scope.explicitCode === true)) continue;
+      const block = adoptedBlock(refuge);
+      // The block as it reads BACK: the plain-append path collapses the trailing
+      // blank line, so only the text up to its last character is what both
+      // append paths leave verbatim in the file.
+      const folded = block.trimEnd();
+      const existing = (await fs.exists(cpPath)) ? await fs.readText(cpPath) : "";
+      // Already in there — an earlier run adopted it and could not remove the
+      // file, or the run this one raced got there first. The state is safe, so
+      // the refuge is spent and appending again would only duplicate it.
+      if (existing.includes(folded)) {
+        await discardRefuge(fs, refuge.path);
+        continue;
+      }
+      await fs.mkdirp(session.path);
+      await fs.writeText(cpPath, appendSealedBlock(existing, block));
+      if (!(await fs.readText(cpPath)).includes(folded)) continue;
+      await discardRefuge(fs, refuge.path);
+      adopted.push(refuge.relative);
+    }
+  } catch {
+    // Deliberately silent: the caller's contract is the checkpoint it already
+    // wrote, and `refuge_adopted` is simply absent.
   }
   return { adopted };
+}
+
+/**
+ * Drop a refuge whose text is in the CHECKPOINT.
+ *
+ * Cleanup, not the adoption itself: the state is already saved, so a removal
+ * that fails must not cost the run. The next invocation finds the file again,
+ * recognises its own block and retries the removal.
+ */
+async function discardRefuge(fs: FileSystemPort, path: string): Promise<void> {
+  try {
+    await fs.remove(path);
+  } catch {
+    // Left on disk on purpose. It is re-read, not re-adopted.
+  }
 }
 
 /**

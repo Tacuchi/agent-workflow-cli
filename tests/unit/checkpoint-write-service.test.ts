@@ -593,9 +593,49 @@ describe("el refugio se escribe sólo cuando alguien podría adoptarlo", () => {
   });
 });
 
+/**
+ * La otra corrida gana la escritura del CHECKPOINT: las dos leyeron el mismo
+ * contenido previo y en disco queda lo de la última. El doble lo hace
+ * determinista — pisa la escritura de la adopción con el texto ajeno.
+ */
+class LostRaceFs extends MemFs {
+  constructor(private readonly ajeno: string) {
+    super({ lenient: true });
+  }
+  override async writeText(p: string, content: string): Promise<void> {
+    if (p.endsWith("CHECKPOINT.md") && content.includes("## Refugio adoptado")) {
+      return super.writeText(p, this.ajeno);
+    }
+    return super.writeText(p, content);
+  }
+}
+
+/** Un refugio que no se deja borrar: permisos, o ya lo borró la otra corrida. */
+class UnremovableRefugeFs extends MemFs {
+  override async remove(p: string): Promise<void> {
+    if (p.includes("/.refuge/")) throw new Error("EACCES: no se puede borrar el refugio");
+    return super.remove(p);
+  }
+}
+
+/** El CHECKPOINT no se puede escribir: la adopción es la única que lo intenta acá. */
+class UnwritableCheckpointFs extends MemFs {
+  override async writeText(p: string, content: string): Promise<void> {
+    if (p.endsWith("CHECKPOINT.md")) throw new Error("ENOSPC: no se puede escribir CHECKPOINT.md");
+    return super.writeText(p, content);
+  }
+}
+
 describe("la adopción del refugio", () => {
   const folder = "044-b-plan-exec";
   const cpPath = `${sessionsDir}/${folder}/CHECKPOINT.md`;
+
+  /** La sesión activa sobre un doble que ya viene elegido. */
+  function seedOn<T extends MemFs>(fs: T): T {
+    fs.file(`${sessionsDir}/${folder}/SESSION.md`, `# SESSION — ${folder}\n`);
+    fs.file(`${sessionsDir}/${folder}/TASKS.md`, "- [x] T1\n- [ ] T2\n");
+    return fs;
+  }
 
   it("la conversación que lo dejó se lo lleva al CHECKPOINT, y el refugio desaparece", async () => {
     const fs = seedActive(folder);
@@ -740,5 +780,79 @@ describe("la adopción del refugio", () => {
     expect(conCode.refuge_adopted).toEqual([anonimo]);
     expect(await fs.readText(cpPath)).toContain("## Refugio adoptado (");
     expect(await fs.exists(`/cwd/${anonimo}`)).toBe(false);
+  });
+
+  // La carrera: dos hooks del mismo checkout (un PreCompact y un SessionEnd)
+  // leen el mismo CHECKPOINT y la última escritura gana. Borrar el refugio por
+  // la fe de su propia escritura hacía desaparecer el estado parqueado de los
+  // DOS lugares donde existía, sin error y con exit 0.
+  it("si otra corrida gana la escritura del CHECKPOINT, el refugio NO se borra", async () => {
+    const fs = seedOn(new LostRaceFs("# CHECKPOINT — lo escribió la otra corrida\n"));
+    const parked = await park(fs, conv);
+
+    const result = await runCheckpointWrite(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      new FakeGit(),
+      paths,
+      { contextId: conv },
+    );
+    if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
+    // Ni adoptado ni perdido: el bloque no quedó en el archivo, así que el
+    // refugio sigue en disco para que lo plieguen la próxima vez.
+    expect(result.refuge_adopted).toBeUndefined();
+    expect(await fs.exists(`/cwd/${parked}`)).toBe(true);
+    expect(await fs.readText(`/cwd/${parked}`)).toContain("- Motivo: hay 2 sesiones activas");
+  });
+
+  // Adoptar es dejar el bloque en el CHECKPOINT; borrar el archivo es limpieza.
+  // Si la limpieza falla, la corrida siguiente lo encuentra otra vez y no puede
+  // volver a pegar el mismo texto.
+  it("un refugio que no se pudo borrar no se adopta dos veces", async () => {
+    const fs = seedOn(new UnremovableRefugeFs({ lenient: true }));
+    const env = new FakeEnv("/home/u", "/cwd");
+    const parked = await park(fs, conv);
+
+    const primera = await runCheckpointWrite(fs, env, new FakeGit(), paths, {
+      code: "044",
+      contextId: conv,
+    });
+    if (!("checkpoint_path" in primera)) throw new Error(JSON.stringify(primera));
+    expect(primera.refuge_adopted).toEqual([parked]);
+    // El borrado falló, así que el archivo sigue ahí.
+    expect(await fs.exists(`/cwd/${parked}`)).toBe(true);
+
+    const segunda = await runCheckpointWrite(fs, env, new FakeGit(), paths, {
+      code: "044",
+      contextId: conv,
+    });
+    if (!("checkpoint_path" in segunda)) throw new Error(JSON.stringify(segunda));
+    expect(segunda.refuge_adopted).toBeUndefined();
+    const cp = await fs.readText(cpPath);
+    expect(cp.match(/## Refugio adoptado \(/g)).toHaveLength(1);
+  });
+
+  // Las tres llamadas a la adopción quedan FUERA de todo try/catch, así que un
+  // fallo de fs acá salía hasta el proceso: exit 1, o sea el host RETIENE su
+  // compactación. Es el fallo irrecuperable que estas superficies dejaron de
+  // poder provocar.
+  it("una escritura fallida durante la adopción no tumba el hook ni se lleva el refugio", async () => {
+    const fs = seedOn(new UnwritableCheckpointFs({ lenient: true }));
+    // Con prosa adentro el CHECKPOINT se preserva: la única escritura que se
+    // intenta sobre él es la de la adopción.
+    fs.file(cpPath, "# CHECKPOINT — 044\n\nProsa de alguien.\n");
+    const parked = await park(fs, conv);
+
+    const result = await runCheckpointWrite(
+      fs,
+      new FakeEnv("/home/u", "/cwd"),
+      new FakeGit(),
+      paths,
+      { contextId: conv },
+    );
+    if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
+    expect(result.preserved).toBe(true);
+    expect(result.refuge_adopted).toBeUndefined();
+    expect(await fs.exists(`/cwd/${parked}`)).toBe(true);
   });
 });

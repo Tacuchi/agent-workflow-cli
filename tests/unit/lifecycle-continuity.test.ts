@@ -96,6 +96,19 @@ class UnreadableTasksFs extends MemFs {
   }
 }
 
+/**
+ * Un refugio que no se deja borrar: permisos, o la corrida que ganó la carrera
+ * lo borró primero. La adopción corre FUERA del try/catch de la escritura, así
+ * que sin protección propia esa excepción sale hasta `main.ts` y se vuelve
+ * exit 1 — que es exactamente como un host RETIENE su compactación.
+ */
+class UnremovableRefugeFs extends MemFs {
+  override async remove(p: string): Promise<void> {
+    if (p.includes("/.refuge/")) throw new Error("EACCES: no se puede borrar el refugio");
+    return super.remove(p);
+  }
+}
+
 /** Two active sessions — the concurrency case the whole spec exists for. */
 function seedTwoActive(): MemFs {
   const fs = new MemFs({ lenient: true });
@@ -578,6 +591,35 @@ describe("checkpoint-write CLI — exit 0 always, and the person hears why", () 
     expect(retry.exitCode).toBe(0);
     // Resolved, not degraded: the retry wrote the bound session's checkpoint.
     expect(checkpointsWritten(fs)).toEqual([`${sessionsDir}/044-nueva-plan-exec/CHECKPOINT.md`]);
+  });
+
+  // La limpieza del refugio no puede costar la compactación: adoptar es
+  // escribir el bloque, y borrar el archivo es lo que sigue. Un `remove` que
+  // falla dejaba escapar la excepción hasta el proceso, o sea el host retenía
+  // la compactación por no poder borrar un archivo cuyo contenido ya estaba a
+  // salvo dentro del CHECKPOINT.
+  it("un refugio que no se puede borrar no retiene la compactación: exit 0", async () => {
+    const fs = new UnremovableRefugeFs({ lenient: true });
+    fs.file(`${sessionsDir}/044-nueva-plan-exec/SESSION.md`, "# SESSION — 044-nueva-plan-exec\n");
+    fs.file(`${sessionsDir}/044-nueva-plan-exec/TASKS.md`, "- [x] T1\n- [ ] T2\n");
+    await writeRefugeCheckpoint(fs, paths, {
+      reason: "hay 2 sesiones activas y la conversación no tiene una asociación",
+      action: "indicá cuál con --code <NNN>",
+      candidates: [{ folder: "044-nueva-plan-exec", code: "044", state: "active" }],
+      contextId: "conv-claude",
+    });
+
+    const { checkpointWriteCommand } = await import("../../src/cli/commands/checkpoint-write.js");
+    const result = await checkpointWriteCommand.execute(
+      argv([], [["code", "044"]]),
+      ctxFor(fs, hostEnv),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    // Y el estado sí quedó adoptado: lo que falló fue la limpieza.
+    expect(await fs.readText(`${sessionsDir}/044-nueva-plan-exec/CHECKPOINT.md`)).toContain(
+      "## Refugio adoptado (",
+    );
   });
 
   // Claude Code shows a person stderr for a lifecycle hook; the stdout envelope
