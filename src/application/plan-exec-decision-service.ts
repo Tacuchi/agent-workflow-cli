@@ -54,6 +54,15 @@ export type PlanExecDecisionPreparation =
 
 export type PlanExecDecisionCommit =
   | { ok: true; kind: "settled" | "reused"; note?: string; resume_point?: string }
+  /**
+   * A standalone plan's decision: registered, and durable NOWHERE here.
+   *
+   * There is no `docs/decisions/` index for a plan without a spec — the chain is
+   * keyed by the spec's number and slug — so writing one would mint a note under
+   * a lineage nobody declared. What comes back is the record itself, for the run's
+   * trace and for the session's `DECISION.md`.
+   */
+  | { ok: true; kind: "standalone"; decision: string; resume_point: string }
   | {
       ok: true;
       kind: "committed";
@@ -217,6 +226,17 @@ export async function commitStoredPlanExecDecision(
   root: string,
   preparation: FlowDecisionPreparation,
 ): Promise<PlanExecDecisionCommit> {
+  // Nothing durable to commit, and nothing to re-read: the standalone record IS
+  // what the gate showed. It returns before `commitDecision` on purpose — a note
+  // written here would be a decision about a contract that does not exist.
+  if (preparation.kind === "standalone") {
+    return {
+      ok: true,
+      kind: "standalone",
+      decision: preparation.decision,
+      resume_point: preparation.resume_point,
+    };
+  }
   if (preparation.kind === "settled") return { ok: true, kind: "settled" };
   if (preparation.kind === "reused") {
     return {
@@ -293,10 +313,14 @@ async function readLineage(
   const relation = parseSpecRelation(planText);
   const specPath = parseDerivedFromPath(planText);
   if (relation.status !== "declared" || specPath === null) {
+    // Reserved for the plan that SHOULD name a spec and does not: absent or
+    // contradictory evidence. A plan that declares itself standalone never gets
+    // here — the gate registers its decision in the session — so the action names
+    // both exits instead of demanding a lineage the document may not have.
     return fail(
       "FLOW_DECISION_LINEAGE_INVALID",
       "el plan de la corrida no declara una única spec de origen",
-      "abrí el plan con /w:plan-refine y declarale un único 'Derived from docs/specs/NNN-spec-…' antes de registrar una decisión",
+      "abrí el plan con /w:plan-refine y declarale un único 'Derived from docs/specs/NNN-spec-…'; si nació de la conversación y no deriva de ninguna spec, declaralo con '> Standalone: <de dónde salió>' en su cabecera",
     );
   }
   let specText: string;

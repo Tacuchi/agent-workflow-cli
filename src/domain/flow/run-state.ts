@@ -605,7 +605,16 @@ export interface PlanExecBatchLoop {
   iteration: number | null;
 }
 
-/** The fully prepared decision view held at the deviation gate before a choice. */
+/**
+ * The fully prepared decision view held at the deviation gate before a choice.
+ *
+ * `standalone` is the variant with no note in it, and that is not an omission: a
+ * plan that declares no spec has no effective contract to compose against and no
+ * `docs/decisions/` chain to join, so what the gate holds is exactly what the
+ * person will authorize — the decision and where execution resumes. Its record
+ * lives in the session's own `DECISION.md`, the way `quick` has always kept its
+ * decisions.
+ */
 export type FlowDecisionPreparation =
   | {
       kind: "prepared";
@@ -615,7 +624,8 @@ export type FlowDecisionPreparation =
       baseline: { path: string; number: string; digest: string; criteria: string[] };
     }
   | { kind: "settled"; decision: string }
-  | { kind: "reused"; note: string; decision: string; resume_point: string };
+  | { kind: "reused"; note: string; decision: string; resume_point: string }
+  | { kind: "standalone"; decision: string; resume_point: string };
 
 /** The evidence a handoff destination receives instead of rediscovering it. */
 export interface FlowEscalationPackage {
@@ -1814,6 +1824,17 @@ function isDecisionPreparation(
     return (
       typeof value.note === "string" &&
       value.note.trim().length > 0 &&
+      typeof value.decision === "string" &&
+      value.decision.trim().length > 0 &&
+      typeof value.resume_point === "string" &&
+      value.resume_point.trim().length > 0
+    );
+  }
+  // The standalone variant is the whole record, so both halves are demanded:
+  // a decision nobody can read, or one with nowhere to resume from, is not a
+  // decision the run may carry past its gate.
+  if (value.kind === "standalone") {
+    return (
       typeof value.decision === "string" &&
       value.decision.trim().length > 0 &&
       typeof value.resume_point === "string" &&

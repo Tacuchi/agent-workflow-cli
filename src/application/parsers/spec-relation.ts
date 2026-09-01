@@ -17,6 +17,7 @@ export type SpecEvidence = "derived-from" | "origin-path" | "spec-reference";
 export type ParsedSpecRelation =
   | { status: "declared"; number: string; evidence: SpecEvidence }
   | { status: "ambiguous"; numbers: string[]; evidence: SpecEvidence }
+  | { status: "standalone" }
   | { status: "absent" };
 
 // `Spec 011` / `spec 011` — a bare number is NOT evidence: `sesión 047` and
@@ -24,6 +25,18 @@ export type ParsedSpecRelation =
 const SPEC_REFERENCE_RE = new RegExp(`\\bspec\\s+(${CORRELATIVE_SOURCE})\\b`, "gi");
 
 const DERIVED_FROM_RE = /derived from/i;
+
+/**
+ * `> Standalone: <prosa>` — the marker a plan born in the host conversation
+ * carries instead of a `Derived from`.
+ *
+ * Same shape as the seal's own label, deliberately: fixed English label, one
+ * blockquote line, free prose after the colon. The `>` is part of the grammar —
+ * a sentence about the marker is not the marker — and the value is checked for
+ * content by the caller, because `\s*(.+?)\s*$` still matches a line whose
+ * whole value is whitespace.
+ */
+const STANDALONE_LABEL = /^\s*>\s*Standalone:\s*(.+?)\s*$/i;
 
 /**
  * The spec a plan declares as its source, by NUMBER — resolving the number
@@ -40,6 +53,15 @@ const DERIVED_FROM_RE = /derived from/i;
  * 3. An unambiguous `Spec NNN` reference inside `## Origin` — the weakest
  *    accepted form, scoped to that section so a mention in `## Dependencies`
  *    ("la spec 009 consumirá…") is never mistaken for provenance.
+ * 4. `> Standalone: <prosa>` in the header blockquote — the plan declaring that
+ *    it has NO spec because it was born in the conversation. `standalone` is a
+ *    diagnosis, not a defect: the board routes it and the deviation gate lets it
+ *    register decisions, neither of which `absent` may do.
+ *
+ * The order is what makes level 4 safe to add. It is read LAST, so a plan that
+ * carries both the marker and real spec evidence resolves to its spec and the
+ * marker stays inert — the marker can never demote a declared lineage, and
+ * nothing has to be said about a document that contradicts itself.
  *
  * Two different specs at the same level is `ambiguous`, not a coin flip:
  * a human wrote something contradictory and only a human should settle it.
@@ -62,7 +84,7 @@ export function parseSpecRelation(
     if (numbers.length === 1) return { status: "declared", number: first, evidence };
     return { status: "ambiguous", numbers, evidence };
   }
-  return { status: "absent" };
+  return declaresStandalone(text) ? { status: "standalone" } : { status: "absent" };
 }
 
 /**
@@ -231,6 +253,31 @@ function derivedFromNumbers(text: string, specPath: RegExp): string[] {
     found.push(...matchNumbers(line, specPath));
   }
   return dedupe(found);
+}
+
+/**
+ * Whether the plan DECLARES itself standalone in its header blockquote.
+ *
+ * Bounded exactly where `Derived from` and `> Baseline:` are bounded — between
+ * the title and the first `##`, fences excluded — because that is the one place
+ * a plan speaks about its own provenance. Anywhere else the same words are prose
+ * ABOUT the marker: a plan explaining in `## Origin` that "los planes standalone
+ * llevan `> Standalone: …`" is documenting the grammar, not adopting it.
+ *
+ * A marker with no value (`> Standalone:`) declares nothing, so it is not one.
+ * The point of the value is that the next reader learns WHERE the plan came from
+ * without a spec to open, and an empty label answers that with silence.
+ */
+function declaresStandalone(text: string): boolean {
+  const { lines, fenced, headings } = scanMarkdown(text);
+  const firstSection = headings.find((h) => h.level >= 2);
+  const end = firstSection?.line ?? lines.length;
+  for (let i = 0; i < end; i += 1) {
+    const line = lines[i];
+    if (line === undefined || fenced[i] === true) continue;
+    if ((STANDALONE_LABEL.exec(line)?.[1] ?? "").trim().length > 0) return true;
+  }
+  return false;
 }
 
 /** Match a spec path under the workspace's declared documentary canon. */

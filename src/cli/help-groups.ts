@@ -84,6 +84,12 @@ const GROUPS: readonly CommandGroup[] = [
       // `reset` puts an incomplete session's inputs back. Both all-or-nothing.
       "discard",
       "reset",
+      // Documentary maintenance of the same graph those two retire from: it
+      // rewrites the `> Baseline:` line of a plan whose review concluded it
+      // still holds, so a legitimate divergence stops costing a whole
+      // plan-refine. Lives here and not with the doctors because what it
+      // maintains is the spec→plan lineage, not the tool's own records.
+      "reseal",
     ],
   },
   {

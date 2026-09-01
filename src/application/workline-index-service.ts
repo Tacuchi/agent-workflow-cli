@@ -73,9 +73,16 @@ export type PlanState = "open" | "done" | "inconsistent";
  * `unknown` and `ambiguous` are first-class answers, not failures to hide: a
  * plan whose provenance cannot be proven stays visible as unproven rather than
  * being attached to whichever spec looks similar.
+ *
+ * `standalone` is the fourth, and the only one that is not a gap: the plan says
+ * it has no spec because it was born in the conversation. It is deliberately NOT
+ * `unknown` — a plan nobody can trace and a plan that declares its own origin
+ * owe different things, and calling the second one unproven is what made the
+ * board nag forever about a document that is not broken.
  */
 export type SpecRelation =
   | { status: "resolved"; number: string; file: string; evidence: SpecEvidence }
+  | { status: "standalone" }
   | { status: "unknown"; reason: "no-evidence" | "spec-not-found" }
   | { status: "ambiguous"; numbers: string[]; evidence: SpecEvidence };
 
@@ -268,8 +275,16 @@ export type PipelineAction =
   | {
       kind: "continue";
       command: string;
-      /** A legacy plan may execute, but its unsealed baseline is shown in detail. */
-      mode?: "normal" | "compatible" | "reconcile";
+      /**
+       * A legacy plan may execute, but its unsealed baseline is shown in detail.
+       *
+       * `standalone` is the mode of a plan that declares it has no spec: it runs
+       * like `normal` and, unlike `compatible`, carries no warning — there is no
+       * baseline missing, because there is no spec to have sealed one from. The
+       * mode is still its own so a consumer can tell "no contract to prove" from
+       * "a contract nobody proved".
+       */
+      mode?: "normal" | "compatible" | "reconcile" | "standalone";
     }
   | {
       kind: "handoff";
@@ -764,6 +779,18 @@ export function planPresentation(
       },
     };
   }
+  // A plan born in the conversation, said BEFORE the unsealed branch and with no
+  // warning at all — that is the whole point. Its seal is absent and its
+  // alignment therefore `unsealed`, so without this row it would fall into the
+  // legacy route and be told forever that it "no afirma de qué versión de la spec
+  // derivó" about a spec it never had. Nothing else changes: it runs, and it
+  // closes, exactly like a normal plan.
+  if (plan.spec.status === "standalone") {
+    return {
+      detail: { ...base, ...normalPlanNext(plan) },
+      action: { kind: "continue", command: `/w:plan-exec ${plan.file}`, mode: "standalone" },
+    };
+  }
   // A legacy open plan stays executable even when its counters require
   // reconciliation. Compatibility is an explicit mode rather than a warning
   // accidentally lost behind the counter repair route.
@@ -866,11 +893,18 @@ function describePendingReconciliation(plan: IndexedPlan): string | null {
  * "it does not have one" — never "aligned" and never "derived from the current
  * contract". A divergent seal is the louder version of the same problem and gets
  * its own line rather than being folded in.
+ *
+ * The divergent line also names the CHEAP exit, because "review the plan against
+ * the spec" has two possible outcomes and only one of them needs a redesign. When
+ * the review concludes the plan still holds — the whole of the case for a legacy
+ * byte-exact seal, which any editorial edit turns divergent — `aw reseal` closes
+ * it in two commands. The handoff to `/w:plan-refine` stays the recommended
+ * action, and this is the alternative to it, never its replacement.
  */
 function describeUnprovenBaseline(plan: IndexedPlan): string {
   const baseline = plan.baseline;
   if (baseline.status === "divergent") {
-    return `BASELINE DIVERGENTE — la spec cambió desde que se selló (${baseline.sealed_digest} → ${baseline.current_digest}): revisá el plan contra la spec vigente antes de seguir`;
+    return `BASELINE DIVERGENTE — la spec cambió desde que se selló (${baseline.sealed_digest} → ${baseline.current_digest}): revisá el plan contra la spec vigente antes de seguir; si el plan sigue vigente tal cual, cerrá la divergencia con 'aw reseal prepare ${plan.file}'`;
   }
   if (baseline.status === "malformed") {
     return `BASELINE ILEGIBLE — ${baseline.why}: ${baseline.action}`;
@@ -1214,6 +1248,11 @@ function resolveSpecRelation(
 ): SpecRelation {
   const parsed = parseSpecRelation(text, specDir);
   if (parsed.status === "absent") return { status: "unknown", reason: "no-evidence" };
+  // Carried through as itself. Folding it into `unknown` would be the board
+  // deciding that a declared origin is worse than a declared spec, and every
+  // surface downstream reads the difference: the pipeline mode, the warning it
+  // does NOT emit, and the `status` counter of plans that owe a baseline.
+  if (parsed.status === "standalone") return { status: "standalone" };
   if (parsed.status === "ambiguous") {
     return { status: "ambiguous", numbers: parsed.numbers, evidence: parsed.evidence };
   }

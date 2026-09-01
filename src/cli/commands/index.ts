@@ -37,6 +37,7 @@ import { pluginDoctorCommand } from "./plugin-doctor.js";
 import { projectMdUpsertCommand } from "./project-md-upsert.js";
 import { releaseDataCommand } from "./release-data.js";
 import { removeSourceCommand } from "./remove-source.js";
+import { resealCommand } from "./reseal.js";
 import { resumeSummaryCommand } from "./resume-summary.js";
 import { resumeCommand } from "./resume.js";
 import { discardCommand, resetCommand } from "./retirement.js";
@@ -108,6 +109,10 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   // session that drove it.
   discardCommand,
   resetCommand,
+  // The cheap exit a legitimate baseline divergence has: re-sealing a plan whose
+  // review concluded it still holds, instead of walking a whole plan-refine to
+  // make the publication recompute one line.
+  resealCommand,
   codeScanCommand,
   pluginCacheCommand,
   pluginDoctorCommand,

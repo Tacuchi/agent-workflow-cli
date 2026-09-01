@@ -3321,6 +3321,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
     reason:
       "comando transversal de reservas: mismo contrato que `discard` y `reset` —vista previa y `--approval` con el digest recomputado sobre el árbol vivo— y sin corrida propia por una razón más fuerte todavía, porque la reserva que libera puede ser la de la corrida que lo dirigiera. Su autoridad es el orden que aplica: comprobar que el marcador sigue intacto, sellar la revocación irrevocable acotada al claim y sólo después liberar",
   },
+  {
+    command: "reseal",
+    reason:
+      "comando transversal de mantenimiento documental: mismo contrato que `discard`, `reset` y `claims` —`prepare` read-only y `apply` con el digest exacto recomputado bajo el lock del workspace— y sin corrida propia porque no hay recorrido que dirigir: re-sellar es UNA afirmación humana sobre un plan que sigue valiendo, no un tramo con fronteras. La divergencia que sí exige rediseñar el plan sigue entregándose a `/w:plan-refine`",
+  },
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },
   { command: "checkpoint-read", reason: "lectura del CHECKPOINT sin decidir continuación" },

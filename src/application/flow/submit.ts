@@ -57,6 +57,7 @@ import {
 } from "../../domain/flow/directive.js";
 import { type ExecutionRefusal, executionVerdict } from "../../domain/flow/execution-result.js";
 import {
+  type FlowDecisionPreparation,
   type FlowRunAttempt,
   type FlowRunEvent,
   type FlowRunState,
@@ -671,10 +672,22 @@ async function decide(
   if (registered?.ok && registered.reconciliation !== null) {
     selectedState = withContinuation(selectedState, registered.reconciliation);
   }
+  // A standalone decision writes NOTHING durable, so the run's own trace is the
+  // only place it is proven. It is recorded before the transition applies, in the
+  // same state publication, so a crash between the two cannot leave a run that
+  // advanced past a decision nobody can find.
+  const standalone = registered?.ok === true ? registered.standalone : null;
+  if (standalone !== null) {
+    selectedState = withEvent(
+      selectedState,
+      standaloneDecisionEvent(selectedState, resolved.stopped.id, standalone),
+    );
+  }
   if (registered?.ok) selectedState = withDecisionPreparation(selectedState, null);
-  return holds
+  const outcome = holds
     ? holdAfterApproval(selectedState, journey, identity)
     : applyAndAdvance(selectedState, journey, resolved.stopped, identity, parsed.answer);
+  return standalone === null ? outcome : withStandaloneGuidance(outcome, standalone);
 }
 
 /**
@@ -797,8 +810,26 @@ function scopeFrom(
   return { state: withScope(state, { plan, sources }) };
 }
 
+/**
+ * A standalone plan's decision, as the run has to carry it.
+ *
+ * `digest` seals the two halves the person authorized, so the trace proves WHICH
+ * decision was taken rather than merely that one was: there is no note file whose
+ * bytes could be pointed at afterwards.
+ */
+interface StandaloneDecisionRecord {
+  decision: string;
+  resume_point: string;
+  digest: string;
+}
+
 type SelectedDecisionRegistration =
-  | { ok: true; reconciliation: PlanReconciliation | null }
+  | {
+      ok: true;
+      reconciliation: PlanReconciliation | null;
+      /** Non-null exactly when the scoped plan declares no spec. */
+      standalone: StandaloneDecisionRecord | null;
+    }
   | { ok: false; decision: SubmitDecision };
 
 type GateDecisionPreparation =
@@ -838,6 +869,19 @@ async function prepareDecisionForGate(
         cost,
       ),
     };
+  }
+  // The plan of the scope decides WHICH preparation this is. A standalone plan has
+  // no spec to compose against, so calling `preparePlanExecDecision` for it would
+  // refuse with `FLOW_DECISION_LINEAGE_INVALID` and leave the run with handoffs as
+  // its only exits — killing a corrida over a document that is not broken.
+  const standalone = await standaloneDecisionFor(fs, snapshot.root, plan, candidate);
+  if (standalone !== null) {
+    return standalone.ok
+      ? { ok: true, state: withDecisionPreparation(state, standalone.preparation) }
+      : {
+          ok: false,
+          decision: reject(state, resolved, standalone.failure.message, standalone.failure, cost),
+        };
   }
   const prepared = await preparePlanExecDecision(fs, {
     root: snapshot.root,
@@ -886,6 +930,57 @@ async function prepareDecisionForGate(
   }
 }
 
+type StandaloneDecisionPreparation =
+  | { ok: true; preparation: FlowDecisionPreparation }
+  | { ok: false; failure: CapabilityFailure };
+
+/**
+ * The standalone preparation for this answer, or `null` when the plan has a spec.
+ *
+ * `null` means "not my case" and hands the answer straight back to the durable
+ * route: an unreadable plan is one of those, deliberately, because
+ * `readLineage` already refuses it under `FLOW_DECISION_PLAN_UNREADABLE` and two
+ * codes for one missing file would make the same fact readable two ways.
+ *
+ * What it validates is exactly what it will persist — the decision and its resume
+ * point — under the code the gate's payload already owns. There is no note, no
+ * chain and no baseline to check here: the reason this route exists is that none
+ * of them exist for a plan without a spec.
+ */
+async function standaloneDecisionFor(
+  fs: FileSystemPort,
+  root: string,
+  plan: string,
+  value: unknown,
+): Promise<StandaloneDecisionPreparation | null> {
+  let planText: string;
+  try {
+    planText = await fs.readText(join(root, plan));
+  } catch {
+    return null;
+  }
+  if (parseSpecRelation(planText).status !== "standalone") return null;
+  const draft = isRecord(value) && isRecord(value.draft) ? value.draft : {};
+  const decision = typeof draft.decision === "string" ? draft.decision.trim() : "";
+  const resumePoint = typeof draft.resume_point === "string" ? draft.resume_point.trim() : "";
+  if (decision.length === 0 || resumePoint.length === 0) {
+    return {
+      ok: false,
+      failure: {
+        code: "FLOW_DECISION_INPUT_INVALID",
+        message:
+          "el plan de la corrida es standalone y la decisión llegó sin qué se decidió o sin desde dónde se retoma",
+        action:
+          "devolvé en 'decisions.decision' un draft con 'decision' y 'resume_point' no vacíos: un plan sin spec registra su decisión en el DECISION.md de la sesión, y sin punto de reanudación no hay desde dónde seguir",
+      },
+    };
+  }
+  return {
+    ok: true,
+    preparation: { kind: "standalone", decision, resume_point: resumePoint },
+  };
+}
+
 /**
  * The human gate choice is the sole authorization for this registration.
  *
@@ -926,9 +1021,75 @@ async function registerSelectedDecision(
       decision: reject(state, resolved, committed.failure.message, committed.failure, cost),
     };
   }
+  if (committed.kind === "standalone") {
+    return {
+      ok: true,
+      reconciliation: null,
+      standalone: {
+        decision: committed.decision,
+        resume_point: committed.resume_point,
+        digest: `sha256:${baseDigest(`${committed.decision}\n${committed.resume_point}`)}`,
+      },
+    };
+  }
   return {
     ok: true,
     reconciliation: committed.kind === "committed" ? committed.reconciliation : null,
+    standalone: null,
+  };
+}
+
+/**
+ * The one trace row a standalone decision leaves.
+ *
+ * `executed` with no effects and no evidence, and both emptinesses are the claim:
+ * nothing reached the world — no note file, no index — and there is no artifact to
+ * cite. What outlives the gate is the seal over what was decided, which is the
+ * whole reason this event exists: with no `docs/decisions/` entry to point at, a
+ * run that merely advanced would be indistinguishable from one that never decided.
+ */
+function standaloneDecisionEvent(
+  state: FlowRunState,
+  transition: string,
+  record: StandaloneDecisionRecord,
+): FlowRunEvent {
+  const batchIteration = currentBatchIteration(state, transition);
+  return {
+    kind: "executed",
+    transition,
+    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+    operation: "plan-exec.standalone-decision",
+    summary: record.decision,
+    output_digest: record.digest,
+    effects: [],
+    evidence: [],
+  };
+}
+
+/**
+ * The directive, told where this decision has to be written down.
+ *
+ * A durable note ends up in `docs/decisions/` and the plan's reconciliation
+ * carries it forward; a standalone one has neither, so the only thing that keeps
+ * it from evaporating is the agent recording it in the session's canonical
+ * `DECISION.md` — the same place `quick` keeps its decisions. Said in
+ * `next_action` because that is the field every host already reads, and prefixed
+ * rather than replaced so the boundary the run actually landed on is not lost.
+ */
+function withStandaloneGuidance(
+  decision: SubmitDecision,
+  record: StandaloneDecisionRecord,
+): SubmitDecision {
+  if (!decision.ok) return decision;
+  return {
+    ...decision,
+    value: {
+      ...decision.value,
+      directive: {
+        ...decision.value.directive,
+        next_action: `anotá la decisión '${record.decision}' en el DECISION.md de la sesión —el plan es standalone y no hay nota de contrato que la registre— y retomá desde ${record.resume_point}; después: ${decision.value.directive.next_action}`,
+      },
+    },
   };
 }
 
@@ -1641,6 +1802,10 @@ function attemptIdentity(
     transition,
     ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function observationFor(state: FlowRunState, transition: string, signals: string[]) {

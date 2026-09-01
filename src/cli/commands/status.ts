@@ -236,7 +236,13 @@ function renderDetail(data: StatusOutput): string[] {
       lines.push(`  · [${item.kind}] ${item.text} — ${item.source}`);
     }
   }
-  const unproven = data.plans.filter((p) => p.spec.status !== "resolved");
+  // A standalone plan is not debt: it declared that it derives from the
+  // conversation, so there is no spec whose proof is missing. Counting it here
+  // asked somebody, release after release, to go prove a lineage that by
+  // construction does not exist.
+  const unproven = data.plans.filter(
+    (p) => p.spec.status !== "resolved" && p.spec.status !== "standalone",
+  );
   if (unproven.length > 0) {
     lines.push(`Planes sin spec demostrada: ${unproven.map((p) => p.number).join(", ")}`);
   }
