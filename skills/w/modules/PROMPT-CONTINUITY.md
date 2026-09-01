@@ -4,7 +4,7 @@ Loaded when a bare prompt continues an existing work line (signal `resume`).
 
 ## Continuity across prompts (operating context)
 
-`quick` is where the **continuity rule** ([`../../SKILL.md`](../../SKILL.md) § *Operating context*) shows most clearly. Inside a workspace:
+`quick` is where the **continuity rule** ([`../SKILL.md`](../SKILL.md) § *Operating context*) shows most clearly. Inside a workspace:
 
 1. `/w:quick "first prompt"` (**command**) → creates session `NNN-<slug>-quick`, starts the loop. Scripts go to **its** `SCRIPTS.sql`.
 2. `"second prompt"` (**no command**, related work) → does **not** create another session: **continues/reopens the most recent one** (from step 1) and appends the new scripts to **that same** `SCRIPTS.sql`.

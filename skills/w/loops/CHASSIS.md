@@ -115,7 +115,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 > Each heir defines its **prior-work mark**: spec-refine the spec's frontmatter `status`; plan-refine `## Refinement decisions`; plan-exec the plan-doc's `- [x]` checkboxes; quick has no doc (CHECKPOINT only).
 
-> **`Compactar`** (the `flow` control, across all 3 cases) → write `CHECKPOINT.md` in the session → trigger the harness compaction → resume by reading the checkpoint. **CHECKPOINT before compacting** is invariant. The proactive raise, its two modes and their host binding live in the `compaction` module.
+> **`Compactar`** (the `flow` control, across all 3 cases) → write `CHECKPOINT.md` in the session → trigger the harness compaction → resume by reading the checkpoint. **CHECKPOINT before compacting** is invariant. The proactive raise and its host binding live in the `compaction` module.
 
 ## Convergence / exit
 

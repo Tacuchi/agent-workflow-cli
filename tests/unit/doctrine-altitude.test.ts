@@ -229,3 +229,89 @@ describe("doctrine altitude — a standalone plan and the board that reads it", 
     expect(input).toContain("`> Derived from …`");
   });
 });
+
+describe("doctrine altitude — the lineage plan-exec really reads", () => {
+  it("§ Reads names the resolution order the parser applies, header blockquote first", async () => {
+    // The parser's order is fixed and its levels never merge: `> Derived from`
+    // in the header blockquote, then a spec inside `## Origin`, and no spec at
+    // all for a plan carrying `> Standalone:`. A document that puts `## Origin`
+    // first sends the entry gate to a spec the plan did not declare, and leaves
+    // a standalone plan — executable again — hunting for a source it has none of.
+    const both = [
+      "# Plan 041 — lineage",
+      "",
+      "> Derived from docs/specs/039-spec-header.md",
+      "",
+      "## Origin",
+      "Spec 033",
+      "",
+    ].join("\n");
+    expect(parseSpecRelation(both)).toEqual({
+      status: "declared",
+      number: "039",
+      evidence: "derived-from",
+    });
+    // And the marker is read LAST, which is why the sentence lists it last: a
+    // plan carrying both resolves to its spec, and only a plan with no spec
+    // evidence at all has none.
+    const bothMarkerAndSpec = [
+      "# Plan 042 — lineage",
+      "",
+      "> Standalone: conversacion del host",
+      "",
+      "## Origin",
+      "Spec 033",
+      "",
+    ].join("\n");
+    expect(parseSpecRelation(bothMarkerAndSpec)).toEqual({
+      status: "declared",
+      number: "033",
+      evidence: "spec-reference",
+    });
+    const standalone = [
+      "# Plan 043 — lineage",
+      "",
+      "> Standalone: conversacion del host",
+      "",
+      "## Origin",
+      "adopted from host conversation",
+      "",
+    ].join("\n");
+    expect(parseSpecRelation(standalone)).toEqual({ status: "standalone" });
+
+    const reads = await read("loops/plan-exec-loop/LOOP.md");
+    expect(reads).toContain(
+      "**and its source spec** (from its `> Derived from`, else one in `## Origin`; none if `> Standalone:`)",
+    );
+    expect(reads).not.toContain("resolved through the plan's `## Origin`");
+  });
+});
+
+describe("doctrine altitude — the LEVEL of a criteria section is contract too", () => {
+  it("a checklist nested under `### Acceptance criteria` is neither sealed nor addressable, and the doctrine says so", async () => {
+    // The seal and the harvester both read H2 only. A spec that nests its
+    // criteria under another `##` therefore reseals the same digest while its
+    // promise is rewritten, and every plan derived from it stays `aligned`;
+    // in the same stroke no `AC-nn` of that spec can be amended by a decision
+    // note. The level was load-bearing and no document said it.
+    const nested = [
+      "# Spec 099 — nivel",
+      "",
+      "## Requirement",
+      "el precio se muestra al usuario",
+      "",
+      "## Contract",
+      "",
+      "### Acceptance criteria",
+      "- [ ] AC-01: el precio se redondea a 2 decimales",
+      "",
+    ].join("\n");
+    const rewritten = nested.replace("se redondea a 2 decimales", "se TRUNCA y se cobra el doble");
+    expect(functionalSpecDigest(rewritten)).toBe(functionalSpecDigest(nested));
+    expect(parseSpecCriteria(nested, "099")).toEqual([]);
+
+    const loop = await read("loops/spec-refine-loop/LOOP.md");
+    expect(loop).toContain("only under a `##` heading");
+    expect(loop).toContain("a nested `### Acceptance criteria` neither seals nor is addressable");
+  });
+});

@@ -3233,19 +3233,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     attribution: COMPACTION_ATTRIBUTION,
     signals: ["chassis.context-pressure"],
   },
-  {
-    id: "checkpoint-write.compaction-mode",
-    scope: cmd("checkpoint-write"),
-    title: "elegir el modo de compactación confirm o auto desde la configuración",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: "modules/COMPACTION.md",
-    attribution: COMPACTION_ATTRIBUTION,
-  },
+  // There is no mode to choose: the surface writes the CHECKPOINT and returns.
+  // What it does decide is what to do when the session does NOT resolve, and the
+  // answer is never to hold the compaction back — holding it was irrecoverable.
   {
     id: "checkpoint-write.compaction-degradation",
     scope: cmd("checkpoint-write"),
-    title: "degradar auto a confirm cuando el host no tiene mecanismo no interactivo",
+    title:
+      "no retener la compactación: degradar y dejar un refugio cuando la sesión no se resuelve",
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/COMPACTION.md",

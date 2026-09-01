@@ -414,12 +414,11 @@ describe("forma (c) — contratada en su propio comando", () => {
     "session-resume.locate",
     "session-resume.rerun-is-create-or-resume",
     "checkpoint-write.context-pressure-signal",
-    "checkpoint-write.compaction-mode",
     "checkpoint-write.compaction-degradation",
     "checkpoint-write.before-compacting",
   ];
 
-  it("las diez viven en el scope de un comando registrado y ninguna quedó en el chasis", () => {
+  it("las nueve viven en el scope de un comando registrado y ninguna quedó en el chasis", () => {
     const registered = new Set(ALL_COMMANDS.map((command) => command.name));
     const byId = new Map(FLOW_DECISIONS.map((row) => [row.id, row]));
     for (const id of moved) {
@@ -433,10 +432,21 @@ describe("forma (c) — contratada en su propio comando", () => {
     expect(transversal.map((row) => row.id).filter((id) => moved.includes(id))).toEqual([]);
   });
 
+  it("ninguna fila de checkpoint-write promete un modo de compactación", () => {
+    // Hubo dos filas que ofrecían `confirm | auto` y una degradación entre
+    // ambos: ni la doctrina lo dice ya ni ningún código lo leyó nunca. Una fila
+    // del registro es una decisión que alguien toma de verdad, no una intención.
+    const rows = FLOW_DECISIONS.filter((row) => commandOfScope(row.scope) === "checkpoint-write");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.title, row.id).not.toMatch(/\bmodo\b|\bconfirm\b|\bauto\b/);
+    }
+  });
+
   it("checkpoint-write dejó de estar excluido al pasar a estar clasificado", () => {
     // La guarda de exhaustividad prohíbe las dos cosas a la vez, así que la
     // exclusión se retira en la misma edición que crea sus filas — si no, el
-    // registro afirmaría que el comando no decide nada y que decide cuatro cosas.
+    // registro afirmaría que el comando no decide nada y que decide tres cosas.
     const excluded = COMMAND_EXCLUSIONS.map((entry) => entry.command);
     expect(excluded).not.toContain("checkpoint-write");
   });

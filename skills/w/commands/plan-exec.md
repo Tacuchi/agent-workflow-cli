@@ -37,7 +37,7 @@ checkboxes and `> Estado:` line in the living plan.
 ## Two gates that send work back
 
 - **Entry gate** — a plan that would force execution to invent its own structure is not run in silence. A minor gap is normalized **with your consent**; a structural one hands off to `/w:plan-refine`.
-- **Deviation gate** — local detail is resolved inline. A **structural** deviation (a contract, the participating components, the phase order, the simulation boundary) stops execution and returns to `/w:plan-refine`; a **functional** change (result, scope, business rule, acceptance criterion) returns to `/w:spec-refine`.
+- **Deviation gate** — the loop owns it, with **four** exits. Local detail is resolved inline. A divergence that leaves the promise intact registers a decision note on `S{NNN}/AC-nn` and execution continues. A **structural** one (a contract, the components, the phase order, the simulation boundary) returns to `/w:plan-refine`; a moved **promise of the product** (result, scope, business rule, the outcome a criterion states) returns to `/w:spec-refine`. What does not compose against this lineage at all escalates to a spec of its own.
 
 ## More context
 

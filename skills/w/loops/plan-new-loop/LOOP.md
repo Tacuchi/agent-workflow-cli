@@ -142,7 +142,7 @@ Replaces the spec taxonomy with a planning one:
 | Invalid execution batches | phases are missing/duplicated or cross an ineligible continuous boundary | the AI re-infers the maximal partition |
 | Over-engineered solution | approach heavier than the criteria need — needless abstraction/layer/dependency, or a phase/task the spec does not require (chassis § *Minimality*) | AI proposes the lighter path + **human** confirms (**probe** if "lighter works" is a runnable doubt) |
 | Missing deps | order unclear | research / human |
-| Spec criteria uncovered | tasks don't trace to acceptance criteria | the AI derives + human confirms |
+| Spec criteria uncovered | no task or evidence traces to a criterion | the AI derives + human confirms |
 | Unaddressed risks | technical risks unmitigated/undeclared | human / **probe** (Delta 5) |
 | UI without design *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## Design references` in the spec, or UI tasks) and pins no exact root, or its roots are not `handoff` | **`design`** (promote the closure, pin the roots — reusing a valid compact handoff instead of re-promoting it) |
 
@@ -171,7 +171,7 @@ plan-new-loop(spec):
       research · human (structured-choice) · probe · design (reuse a valid handoff, or promote + pin roots)
     integrate + update CHECKPOINT
   coherence gate (read-only) = Success criteria green:
-    - every spec criterion traces to a phase/task (split: exactly one sibling)
+    - every spec criterion traces to a phase/task + evidence (`## Validations`/`Validación de fase`) (split: exactly one sibling)
     - the Final behavior block of ## Solution covers the criteria
     - every ### Fn leaves a verifiable state with its own exit condition — never a list of layers or files
     - the order allows early integration · deps without cycles · Impacted consistent with Solution

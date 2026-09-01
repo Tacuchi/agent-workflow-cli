@@ -692,6 +692,23 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
     expect(loop).toMatch(/`refining` is understood \*\*on read\*\*/);
   });
 
+  it("el gate no confunde la superficie visible del producto con mecánica de verificación", async () => {
+    // The full authoring rule («the visible surface IS functional behavior»)
+    // lived only in `spec-new`, the step that does NOT gate and that this flow
+    // never loads. The gating step kept the prohibitive half, with the bare word
+    // «commands» — which in a CLI product names the very surface a criterion is
+    // supposed to promise. So a criterion like «`aw reseal prepare` returns the
+    // digest» read as test mechanics: either the spec loses its own product
+    // surface, or the gate gets ignored, which is the other way a gate dies.
+    const loop = await readSurface(LOOP);
+    expect(loop).toContain("the commands that PROVE it");
+    expect(loop).toContain("the product's own visible surface");
+    expect(loop).toContain("is behavior, not mechanics");
+    expect(loop).toContain("naming the product's OWN command or flag is not test mechanics");
+    // The prohibition itself stays: mechanics still travel to PLAN.
+    expect(loop).toContain("that travels to `PLAN` with its destination declared");
+  });
+
   it("the SPEC gate never migrates to the shared engine", async () => {
     const chassis = await readSurface("loops/CHASSIS.md");
     expect(chassis).not.toMatch(/ready-for-plan|change-shape/i);
@@ -863,6 +880,34 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     ]);
   });
 
+  it("`## Validations` significa lo mismo en plan-new y en plan-refine, y el gate cubre la evidencia", async () => {
+    // The round moved the verification strategy from the spec to the plan and
+    // parked it in `## Validations`, but only plan-new was updated. plan-refine
+    // — the loop that re-forms the plan IN PLACE, the return path of plan-exec,
+    // and the ONLY one that carries the *Evidence by behavior* placement — kept
+    // the previous definition, so a refine could legitimately prune the derived
+    // validations and still pass its gate. plan-exec then calls «a gap of the
+    // plan» a criterion no validation covers, on a plan two gates already
+    // approved: the hole lands in execution, where improvising the test is
+    // exactly what the doctrine forbids.
+    const planNew = await readSurface(PLAN_NEW);
+    const planRefine = await readSurface(PLAN_REFINE);
+    // (the clause is wrapped in the source, so it is matched across the break)
+    expect(planNew).toMatch(
+      /`## Validations` \*\*derives\*\* from the spec's\s*>?\s*acceptance criteria and `## Scenarios`/,
+    );
+    expect(planRefine).toContain(
+      "`## Validations` keeps the cross-cutting rules and the evidence derived from the spec's criteria and `## Scenarios`",
+    );
+    // The gate is edited ONCE, in plan-new, because plan-refine imports it — so
+    // the imported label may not keep advertising the old checklist.
+    expect(planNew).toContain(
+      "every spec criterion traces to a phase/task + evidence (`## Validations`/`Validación de fase`)",
+    );
+    expect(planNew).toContain("no task or evidence traces to a criterion");
+    expect(planRefine).toContain("plan-new checklist (criterion→task+evidence");
+  });
+
   it("the deviation gate lives only in plan-exec, with its four destinations", async () => {
     const exec = await readSurface(PLAN_EXEC);
     expect(exec).toContain("## Deviation gate");
@@ -884,6 +929,25 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     const decision = await readSurface(join("artifacts", "artifacts-exec", "DECISION.md"));
     expect(decision).toContain("**Local decisions only.**");
     expect(decision).toContain("Deviation gate");
+    // The command SUMMARIZES the gate and is read ALWAYS, before the loop: an
+    // agent who stops at it must not learn the retired trigger («an acceptance
+    // criterion» moving the run back to spec-refine) nor only two of the four
+    // exits. The loop owns the gate; the summary has to name every destination.
+    const cmd = await readSurface(join("commands", "plan-exec.md"));
+    expect(cmd).toContain("the loop owns it, with **four** exits");
+    expect(cmd).toContain("registers a decision note");
+    expect(cmd).toContain("`/w:plan-refine`");
+    expect(cmd).toContain("`/w:spec-refine`");
+    expect(cmd).toContain("escalates to a spec of its own");
+    expect(cmd).not.toMatch(/business rule, acceptance criterion/);
+    // And the four are the CLI's four: the day the registry changes paths, the
+    // summary fails here instead of quietly going stale again.
+    expect(labelsOf("plan-exec.deviation-gate")).toEqual([
+      "Registrar la decisión y seguir",
+      "Volver a plan-refine",
+      "Volver a spec-refine",
+      "Escalar a una spec nueva",
+    ]);
   });
 
   it("the temporary simulation has a declared lifecycle and a retirement gate", async () => {
@@ -1167,6 +1231,25 @@ describe("Doctrine guards — G20 · what a pending item owes, and how the choic
     expect(doc).toContain("Nothing trimmed, merged or dropped");
   });
 
+  it("la escalación a SPEC del fix preview tiene puntero escribible y su rótulo no queda huérfano", async () => {
+    // `Escalar a spec` is offered at the fix preview — with the quick session
+    // ALREADY seeded and before a single line of code — and the CLI hands off
+    // terminally to `/w:spec-new`. Neither disposition case written for the
+    // mid-loop escalation fits it (there is no edited code, and no `NNN` yet),
+    // and the only session-less exception the doctrine grants is the entry gate,
+    // so without these two sentences the run leaves a quick session open whose
+    // `BACKLOG` pointer has no writable form.
+    const quick = await readSurface(join("loops", "quick-loop", "LOOP.md"));
+    expect(quick).toContain("`Escalar a spec` → *Mid-loop escalation*");
+    expect(quick).toContain(
+      '"escalated at the preview — continue in `/w:spec-new`" when no code and no `NNN` exist yet',
+    );
+    // And the code the pointer travels with may not exist at all.
+    expect(quick).toContain("**Any already-edited code stays**");
+    // The label is the CLI's, read where it lives.
+    expect(labelsOf("quick.fix-preview-approval")).toContain("Escalar a spec");
+  });
+
   it("neither surface still calls a loose session a candidate of the pipeline", async () => {
     // The class stays in the model (nothing was removed) but it stopped being
     // work the user is asked to weigh, so the doctrine may not list it as one.
@@ -1206,6 +1289,38 @@ describe("Doctrine guards — G2 · readability caps in the hot path", () => {
           if (words > MAX_SENTENCE_WORDS) offenders.push(`${rel}:${i + 1} sentence ${words} words`);
         }
       });
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("Doctrine guards — G21 · every relative markdown link resolves", () => {
+  // A reference that does not resolve does NOT fail: CHASSIS.md § *Reference
+  // resolution* rule 3 downgrades it to an "optional deep-dive". So a typo in a
+  // path silently turns a canonical source into something the reader may skip —
+  // which is exactly how `modules/PROMPT-CONTINUITY.md` pointed one level too
+  // high (`../../SKILL.md` from `modules/` = `skills/SKILL.md`) and its only
+  // pointer to the continuity rule degraded to optional.
+  it("no relative link in skills/w/**.md points at a path the bundle does not carry", async () => {
+    const files = await listMdFiles(SKILL_ROOT);
+    expect(files.length).toBeGreaterThan(50);
+    const offenders: string[] = [];
+    for (const file of files) {
+      const rel = file.slice(SKILL_ROOT.length + 1);
+      const lines = (await readFile(file, "utf8")).split(/\r?\n/);
+      for (const [index, line] of lines.entries()) {
+        for (const match of line.matchAll(/\[[^\]]*\]\(([^)\s]+)/g)) {
+          const target = match[1];
+          if (target === undefined) continue;
+          // Absolute URLs and pure anchors resolve elsewhere, not on disk.
+          if (/^(https?:|mailto:|#)/.test(target)) continue;
+          const path = target.split("#")[0];
+          if (path === undefined || path === "") continue;
+          if (!(await new NodeFileSystem().exists(resolve(file, "..", path)))) {
+            offenders.push(`${rel}:${index + 1} → ${target}`);
+          }
+        }
+      }
     }
     expect(offenders).toEqual([]);
   });

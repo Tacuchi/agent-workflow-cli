@@ -119,7 +119,7 @@ Each phase carries proof of behavior, not of structure. Three levels, **chosen**
 2. **Focused proofs** — where a layer owns rules, a relevant transformation, error handling, persistence, transactions, temporal logic or an external integration.
 3. **Risk proofs** — security, concurrency, idempotency, retries, known regressions, plausible high-impact failures.
 
-The primary proof lives **inside its `### Fn` block** (`Validación de fase`); `## Validations` keeps the cross-cutting rules and constraints. A simulation gets only the minimum proof that demonstrates the wiring — no suite is built around what the next phase retires.
+The primary proof lives **inside its `### Fn` block** (`Validación de fase`); `## Validations` keeps the cross-cutting rules and the evidence derived from the spec's criteria and `## Scenarios`. A simulation gets only the minimum proof that demonstrates the wiring.
 
 > **Necessity gate** (design criterion, not a record to keep): what behavior does the test demonstrate, what unique failure would it catch, is that already demonstrated elsewhere, does it target a stable boundary or an internal detail, does the layer own logic or risk, is it still worth keeping once the simulation is gone? No clear answer → it is not planned. Whatever slips through and only mirrors structure is flagged `overtest` by execution's closing review gate.
 
@@ -158,7 +158,7 @@ plan-refine-loop(plan):
     integrate + update CHECKPOINT                              # artifact-first cycle
   executability gate (read-only) = Success criteria green:
     - contract · journey · phases · source boundary · simulation · evidence · execution batches · resumability (§ Executability gate)
-    - plan-new checklist (criterion→task · Final behavior block of Solution · deps · Impacted↔Solution · UI→exact roots · minimality)
+    - plan-new checklist (criterion→task+evidence · Final behavior block of Solution · deps · Impacted↔Solution · UI→exact roots · minimality)
       # spec-less plan (adopted/hand-written): criteria anchor to the plan's own Final behavior block/Validations (see Delta 2)
     - re-refine's own check: the plan is REALIGNED with what changed
     whatever fails → comes back as a gap
