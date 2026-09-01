@@ -709,11 +709,28 @@ const CONTINUITY_ATTRIBUTION = "`aw resume`";
 /**
  * The entry gate's rule: two of the five declared signals.
  *
- * Shared by the row that APPLIES it and by the row that only happens when it
- * fired, so the number lives once. Changing it here changes both, which is the
- * whole reason it is a constant and not two literals.
+ * Shared by the row that APPLIES it and by every row that only happens when it
+ * fired — the anti-duplicate search, the gate's own question and the approval of
+ * the fix preview — so the number lives once. Changing it here changes all of
+ * them, which is the whole reason it is a constant and not four literals.
+ *
+ * The observations of the entry boundary persist for the WHOLE run, so the same
+ * object stays evaluable at a row much later in the journey: that is what makes
+ * "the same signal threshold that fires the entry size gate" a reused rule rather
+ * than a coincidence of numbers.
  */
 const ENTRY_SIZE_THRESHOLD: SignalThreshold = { observed: "quick.entry-gate-signal", min: 2 };
+
+/**
+ * The boundary whose answer is the declared fix preview.
+ *
+ * Exported because two layers outside this module need the SAME id: the hint that
+ * tells the agent the exact shape to return, and the validator that refuses a
+ * preview without it. Two literals would let one of the halves keep working while
+ * the other silently stopped applying — a hint about a boundary nobody checks, or
+ * a check nobody was told about.
+ */
+export const FIX_PREVIEW_TRANSITION = "quick.fix-preview";
 
 /**
  * The one thing a session-scoped action needs: this run's session.
@@ -1102,6 +1119,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   // PLAN tranche and travelled with it — those two documents are read by `quick`
   // and `plan-exec` and by nobody else, so only once execution was cut over could
   // their rules be retired without leaving a journey without them.
+  //
+  // Fourteen since the fix preview: declararlo y aprobarlo son dos pasos que la
+  // doctrina ya pedía y que el recorrido no tenía. Sin ellos el único gate humano
+  // sobre el arreglo era `quick.commit-authorization`, que llega cuando el cambio
+  // ya está en el árbol de trabajo — aprobaba el commit, nunca el enfoque.
   {
     id: "quick.entry-gate-signal",
     scope: "quick",
@@ -1303,6 +1325,73 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       recovery:
         "resolvé la rama de la fuente que no coincide y volvé a leer las fuentes: nunca limpies ni cambies de rama sin confirmación",
     },
+  },
+  {
+    id: "quick.fix-preview",
+    scope: "quick",
+    title:
+      "declarar los archivos a tocar, la intención y la forma esperada del diff, proporcional a la tarea",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
+    // No signals, and no `proposes` either: lo que esta frontera pide es una
+    // DECLARACIÓN del arreglo previsto, no bytes. Un preview hecho de bytes sería
+    // el arreglo mismo —ya editado— y la doctrina pide lo contrario: decir qué se
+    // va a hacer ANTES de hacerlo, con el tamaño de la tarea. Una línea para algo
+    // trivial; enfoque, archivos y riesgos para algo complejo; y lista de archivos
+    // vacía cuando el entregable es un análisis. El único gate humano que había
+    // llegaba con el código ya en el árbol de trabajo, así que aprobaba el commit
+    // y nunca el enfoque.
+  },
+  {
+    id: "quick.fix-preview-approval",
+    scope: "quick",
+    title: "aprobar el preview del arreglo antes de que la tarea lo implemente",
+    authority: "human",
+    ownership: "cli-owned",
+    document: QUICK_LOOP,
+    attribution: QUICK_ATTRIBUTION,
+    // «El mismo umbral de señales que dispara el gate de entrada» —y es el MISMO
+    // objeto, no una copia con los mismos dos números: el día que el del gate
+    // cambie, este cambia con él. Las observaciones de la entrada persisten toda
+    // la corrida, así que la regla sigue siendo evaluable acá.
+    condition: {
+      threshold: ENTRY_SIZE_THRESHOLD,
+      otherwise:
+        "el umbral de dos señales no disparó: el preview queda declarado en la sesión y la tarea ejecuta sin parada humana",
+    },
+    alternatives: [
+      {
+        label: "Ejecutar tal cual",
+        consequence: "la tarea implementa exactamente lo previsualizado",
+        recommended: true,
+        outcome: { kind: "continue" },
+      },
+      {
+        label: "Ajustar el enfoque",
+        consequence:
+          "el ajuste se declara en la conversación y el entregable lo respeta: el recorrido continúa y esta frontera no se vuelve a emitir, igual que 'Recortar alcance' en el gate de entrada",
+        recommended: false,
+        outcome: { kind: "continue" },
+      },
+      // «La tarea no implementa» es una promesa, y con `continue` la frontera
+      // SIGUIENTE era justo la que implementa: quien escalaba y después compactaba
+      // volvía a recibir «producir el cambio mínimo» sin rastro de haber declinado.
+      // Un `handoff` es la única forma que el registro tiene de que eso no pase —
+      // corta la corrida, persiste la elección en `selected_choice` y devuelve el
+      // comando del destino— y es además la palabra de la doctrina para escalar a
+      // mitad de loop. No se parece a `Cambiar a SPEC` del gate de entrada por lo
+      // mismo que lo dice el rótulo: allá se elige ANTES de que exista la corrida,
+      // acá la corrida ya está sembrada y hay que pararla.
+      {
+        label: "Escalar a spec",
+        consequence:
+          "la tarea no implementa: la corrida para acá y se entrega a /w:spec-new, y ninguna frontera posterior se emite — el entregable nunca se produce",
+        recommended: false,
+        outcome: { kind: "handoff", destination: "spec-new" },
+      },
+    ],
   },
   {
     id: "quick.deliverable-authoring",

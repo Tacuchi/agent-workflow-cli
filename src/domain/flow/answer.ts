@@ -179,6 +179,10 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // violates the canonical documentation boundary.
   FLOW_SCOPE_PLAN_OUTSIDE_CANON: "evaluated",
   FLOW_HANDOFF_PLAN_MISSING: "evaluated",
+  // El preview del arreglo llegó y no declara lo que la frontera pide: archivos,
+  // intención y forma esperada del diff. La respuesta SE LEYÓ, así que gasta — y
+  // la frontera anuncia la forma exacta, así que el primer intento puede traerla.
+  FLOW_PREVIEW_INVALID: "evaluated",
   // The plan-exec deviation choice was syntactically admissible but its durable
   // consequence could not be derived or published against the live lineage.
   // These are evaluated rather than envelope refusals: the gate read the choice

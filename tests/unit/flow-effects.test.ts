@@ -12,7 +12,11 @@ import {
   SELF_AUTHORIZABLE_CLASSES,
 } from "../../src/domain/capability/effects.js";
 import type { FlowDecision } from "../../src/domain/flow/authority.js";
-import { effectsOf, journeyOfFlow } from "../../src/domain/flow/authority.js";
+import {
+  FIX_PREVIEW_TRANSITION,
+  effectsOf,
+  journeyOfFlow,
+} from "../../src/domain/flow/authority.js";
 import { authorizeTransition, effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { FLOW_RUN_STATE_FILE, newRunState } from "../../src/domain/flow/run-state.js";
@@ -259,7 +263,21 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
    */
   function bodyFor(resolved: Awaited<ReturnType<typeof current>>): Record<string, unknown> {
     if (resolved.kind === "semantic") {
-      return { input_digest: resolved.seal, decisions: { paso: resolved.stopped?.id } };
+      // `quick.fix-preview` es la única frontera semántica del tramo cuyo
+      // CONTENIDO el CLI valida: pide el arreglo previsto —archivos, intención y
+      // forma esperada del diff— y un `paso` genérico se rechaza. Sin esto el
+      // caminante se queda antes de la autorización que este archivo prueba.
+      const decisions =
+        resolved.stopped?.id === FIX_PREVIEW_TRANSITION
+          ? {
+              preview: {
+                files: ["src/dominio/cosa.ts"],
+                intent: "cerrar el borde que el test rojo reproduce",
+                diff: "una guarda nueva y su caso rojo",
+              },
+            }
+          : { paso: resolved.stopped?.id };
+      return { input_digest: resolved.seal, decisions };
     }
     if (resolved.kind === "execution" && resolved.action !== null) {
       const declared = effectsOf(resolved.stopped as FlowDecision);

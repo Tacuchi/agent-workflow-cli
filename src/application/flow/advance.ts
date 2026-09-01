@@ -30,6 +30,7 @@ import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capabili
 import {
   DOCS_BOUNDARY,
   type DelegatedAction,
+  FIX_PREVIEW_TRANSITION,
   type FlowDecision,
   actionOf,
   alternativesOf,
@@ -845,10 +846,17 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
     decision.id === "plan-exec.deviation-recognition"
       ? " Si la desviación puede resolverse registrando una decisión, incluí en 'decisions.decision' su question y draft completos ahora: el CLI preparará y mostrará el preview sellado antes de que una persona elija registrarlo."
       : "";
+  // La misma pista que el borrador de decisión, y por el mismo motivo: la forma
+  // exacta se dice ANTES para que el primer intento la traiga. Acá pesa el doble,
+  // porque un preview inválido es un rechazo evaluado y gasta uno de los tres.
+  const fixPreview =
+    decision.id === FIX_PREVIEW_TRANSITION
+      ? " Devolvé en 'decisions.preview' un objeto con 'files' (las rutas que vas a tocar, lista que puede ir VACÍA si el entregable es un análisis), 'intent' (qué arregla y por qué) y 'diff' (la forma esperada del diff). Proporcional a la tarea: una línea para algo trivial; enfoque, archivos y riesgos para algo complejo."
+      : "";
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera. ${taxonomy}${authoring}${decisionDraft} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera. ${taxonomy}${authoring}${decisionDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: proposes === null ? [] : [...proposes.destinations],
     limits:

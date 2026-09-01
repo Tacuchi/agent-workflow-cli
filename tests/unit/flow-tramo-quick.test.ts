@@ -10,6 +10,7 @@ import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
+  FIX_PREVIEW_TRANSITION,
   type FlowDecision,
   actionOf,
   conditionOf,
@@ -19,7 +20,7 @@ import {
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { bindAction, skipReason, thresholdFired } from "../../src/domain/flow/rules.js";
-import { FLOW_RUN_STATE_FILE } from "../../src/domain/flow/run-state.js";
+import { FLOW_RUN_STATE_FILE, attemptAccountingAt } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
@@ -55,6 +56,24 @@ function rowOf(id: string): FlowDecision {
   return row;
 }
 
+/** Un preview del arreglo con sus tres partes: archivos, intención y forma del diff. */
+const PREVIEW = {
+  files: ["src/dominio/cosa.ts", "tests/unit/cosa.test.ts"],
+  intent: "cerrar el borde que el test rojo reproduce",
+  diff: "una guarda nueva en la función y su caso rojo",
+};
+
+/**
+ * Lo que una frontera semántica del tramo admite en `decisions`, por fila.
+ *
+ * `quick.fix-preview` es la única cuyo contenido el CLI valida —un `paso`
+ * genérico no la atraviesa—, así que vive acá y no repetido en cada caminante:
+ * tres copias del payload es cómo un caminante se queda atrás del contrato.
+ */
+function decisionsFor(id: string | undefined): Record<string, unknown> {
+  return id === FIX_PREVIEW_TRANSITION ? { preview: PREVIEW } : { paso: id };
+}
+
 describe("el tramo QUICK migró como dato, no como prosa", () => {
   it("el umbral de entrada vive UNA vez y lo comparten los pasos que dependen de él", () => {
     const gate = conditionOf(rowOf("quick.gate-choice"));
@@ -63,6 +82,68 @@ describe("el tramo QUICK migró como dato, no como prosa", () => {
     // La MISMA regla, no una copia con vida propia: la búsqueda anti-duplicado y
     // la elección disparan juntas o no disparan.
     expect(search?.threshold).toBe(gate?.threshold);
+  });
+
+  /**
+   * «El mismo umbral de señales que dispara el gate de entrada» — el MISMO objeto.
+   *
+   * Se afirma con `toBe` y no con `toEqual` a propósito: una copia con los mismos
+   * dos números pasaría cualquier comparación por valor y se quedaría atrás el día
+   * que el umbral del gate cambie. La doctrina no dice «dos señales» acá, dice «el
+   * mismo umbral», y eso es una identidad, no una coincidencia.
+   */
+  it("la aprobación del preview reusa el umbral del gate de entrada, no una copia", () => {
+    const gate = conditionOf(rowOf("quick.gate-choice"));
+    const approval = conditionOf(rowOf("quick.fix-preview-approval"));
+    expect(approval?.threshold).toBe(gate?.threshold);
+    // Y su `otherwise` dice lo que la doctrina dice que pasa por debajo del umbral:
+    // el preview queda declarado y la tarea ejecuta, sin parada humana.
+    expect(approval?.otherwise).toContain("sin parada humana");
+  });
+
+  it("el preview se declara ANTES de producir el entregable, y se aprueba entre los dos", () => {
+    // El orden ES el recorrido: el array del registro lo compone. Un preview
+    // después del entregable sería una descripción de lo ya hecho.
+    const ids = JOURNEY.map((decision) => decision.id);
+    const at = (id: string): number => ids.indexOf(id);
+    expect(at("quick.fix-preview")).toBe(at("quick.branch-precondition") + 1);
+    expect(at("quick.fix-preview-approval")).toBe(at("quick.fix-preview") + 1);
+    expect(at("quick.deliverable-authoring")).toBe(at("quick.fix-preview-approval") + 1);
+    // La fila que declara no admite señales: contesta con una declaración, y su
+    // umbral no se deriva de nada que ella observe.
+    expect(rowOf("quick.fix-preview").signals).toBeUndefined();
+    // Y el id que la pista y el validador comparten es este, no uno parecido.
+    expect(FIX_PREVIEW_TRANSITION).toBe("quick.fix-preview");
+    expect(ids).toContain(FIX_PREVIEW_TRANSITION);
+  });
+
+  it("las tres alternativas del preview llevan los rótulos de la doctrina, con una sola recomendación", () => {
+    const alternatives = rowOf("quick.fix-preview-approval").alternatives ?? [];
+    expect(alternatives.map((choice) => choice.label)).toEqual([
+      "Ejecutar tal cual",
+      "Ajustar el enfoque",
+      "Escalar a spec",
+    ]);
+    expect(alternatives.filter((choice) => choice.recommended).map((c) => c.label)).toEqual([
+      "Ejecutar tal cual",
+    ]);
+    // «Ajustar el enfoque» NO re-emite la frontera —el vocabulario de outcomes no
+    // tiene «repetir» y el ajuste es conversacional, igual que `Recortar alcance`
+    // en el gate de entrada—, así que su consecuencia lo dice en vez de dejar a
+    // alguien esperando otra pregunta.
+    const adjust = alternatives.find((choice) => choice.label === "Ajustar el enfoque");
+    expect(adjust?.consequence).toContain("no se vuelve a emitir");
+    // Y «Escalar a spec» NO puede resolverse como `Cambiar a SPEC` del gate de
+    // entrada: aquella elige antes de que la corrida exista —seguir caminando no
+    // contradice nada—, y esta elige con la corrida ya sembrada y una fila después
+    // la que implementa. Con `continue`, «la tarea no implementa» duraba hasta la
+    // frontera siguiente.
+    const escalate = alternatives.find((choice) => choice.label === "Escalar a spec");
+    expect(escalate?.outcome).toEqual({ kind: "handoff", destination: "spec-new" });
+    const changeToSpec = (rowOf("quick.gate-choice").alternatives ?? []).find(
+      (choice) => choice.label === "Cambiar a SPEC",
+    );
+    expect(escalate?.outcome).not.toEqual(changeToSpec?.outcome);
   });
 
   it("toda condición observa una fila anterior del mismo tramo que declara señales", () => {
@@ -418,6 +499,228 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(state.skipped).not.toContain("quick.success-criteria-ratification");
   });
 
+  /**
+   * Camina hasta la frontera pedida contestando lo que cada una admite, y la
+   * devuelve SIN contestarla.
+   *
+   * Es lo que permite probar la respuesta equivocada: llegar a la frontera y no
+   * atravesarla.
+   */
+  async function reach(id: string) {
+    for (let step = 0; step < 25; step += 1) {
+      const at = await current();
+      if (at.resolved.stopped?.id === id) return at;
+      if (at.resolved.stopped === null) {
+        throw new Error(`el recorrido terminó sin pasar por '${id}'`);
+      }
+      await answerReturning(at.resolved);
+    }
+    throw new Error(`el recorrido nunca llegó a '${id}'`);
+  }
+
+  it("por debajo del umbral el preview se declara y NADIE lo aprueba", async () => {
+    await declare(["quick.needs-architecture"]);
+    const preview = await reach(FIX_PREVIEW_TRANSITION);
+    // Es semántica: lo que se pide es una declaración, no bytes ni una etiqueta.
+    expect(preview.resolved.kind).toBe("semantic");
+    // Y la forma exacta viaja en el contrato de la frontera, así que el primer
+    // intento puede traerla sin haberse hecho rechazar para aprenderla.
+    expect(preview.resolved.request?.contract).toContain("decisions.preview");
+    expect(preview.resolved.request?.limits.max_artifacts).toBe(0);
+
+    const directive = await answer({
+      input_digest: preview.resolved.seal,
+      decisions: { preview: PREVIEW },
+    });
+    expect(directive.error).toBeNull();
+    const skipped = directive.applied.find(
+      (step) => step.transition === "quick.fix-preview-approval",
+    );
+    expect(skipped?.outcome).toBe("skipped");
+    expect(skipped?.reason).toContain("sin parada humana");
+    expect(directive.boundary.transition).toBe("quick.deliverable-authoring");
+
+    // Y la reanudación no vuelve a pedir lo ya declarado: releer el estado —que es
+    // exactamente lo que hace un `resume`— resuelve la frontera SIGUIENTE, porque
+    // el cursor es `applied.length` y sólo crece.
+    const resumed = await current();
+    expect(resumed.state.applied).toContain(FIX_PREVIEW_TRANSITION);
+    expect(resumed.state.skipped).toContain("quick.fix-preview-approval");
+    expect(resumed.resolved.stopped?.id).toBe("quick.deliverable-authoring");
+  });
+
+  it("por encima del umbral: sin preview gasta un intento, con preview lo aprueba una persona", async () => {
+    await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
+    const preview = await reach(FIX_PREVIEW_TRANSITION);
+    expect(attemptAccountingAt(preview.state, FIX_PREVIEW_TRANSITION).spent).toBe(0);
+
+    // Una decisión cualquiera atraviesa el chequeo de sustancia y no el del
+    // preview: la frontera pidió archivos, intención y forma del diff.
+    const refused = await answer({
+      input_digest: preview.resolved.seal,
+      decisions: { paso: "arreglar la cosa" },
+    });
+    expect(refused.error?.code).toBe("FLOW_PREVIEW_INVALID");
+    const charged = await current();
+    expect(charged.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
+    // El GASTO, no sólo el código: la tabla de rechazos lo clasifica `evaluated`
+    // porque la respuesta se leyó, y el default de esa tabla es fail-closed.
+    expect(attemptAccountingAt(charged.state, FIX_PREVIEW_TRANSITION).spent).toBe(1);
+
+    const declared = await answer({
+      input_digest: charged.resolved.seal,
+      decisions: { preview: PREVIEW },
+    });
+    expect(declared.error).toBeNull();
+    expect(declared.boundary.transition).toBe("quick.fix-preview-approval");
+    expect(declared.boundary.kind).toBe("human");
+    expect(declared.choices.map((choice) => choice.label)).toEqual([
+      "Ejecutar tal cual",
+      "Ajustar el enfoque",
+      "Escalar a spec",
+      // El control de flujo del chasis, que el motor agrega a toda frontera que
+      // ofrece alternativas.
+      "Compactar",
+      "Cerrar",
+    ]);
+    expect(declared.choices[0]?.recommended).toBe(true);
+    expect(declared.choices.filter((choice) => choice.recommended)).toHaveLength(1);
+
+    const standing = await current();
+    const chosen = await answer({
+      input_digest: standing.resolved.seal,
+      choice: "Ejecutar tal cual",
+    });
+    expect(chosen.error).toBeNull();
+    expect(chosen.boundary.transition).toBe("quick.deliverable-authoring");
+    expect((await current()).state.applied).toContain("quick.fix-preview-approval");
+  });
+
+  it("un preview con lista de archivos VACÍA vale: un análisis no toca ninguno", async () => {
+    await declare(["quick.needs-architecture"]);
+    const preview = await reach(FIX_PREVIEW_TRANSITION);
+    const directive = await answer({
+      input_digest: preview.resolved.seal,
+      decisions: {
+        preview: {
+          files: [],
+          intent: "producir el análisis del borde, sin tocar código",
+          diff: "ningún diff de código: el entregable es el documento de la sesión",
+        },
+      },
+    });
+    expect(directive.error).toBeNull();
+    expect((await current()).state.applied).toContain(FIX_PREVIEW_TRANSITION);
+  });
+
+  /**
+   * La rama que exige que el preview DIGA algo, y no sólo que venga.
+   *
+   * Sin este caso la guarda era letra muerta: los otros casos del preview mueren
+   * en la primera rama —«no vino ningún preview»— o la atraviesan entera, así que
+   * neutralizarla no ponía nada rojo y un preview vacío llegaba a la frontera
+   * donde una persona lo aprueba como «exactamente lo previsualizado».
+   */
+  it("un preview al que le falta la intención o la forma del diff se rechaza y gasta", async () => {
+    await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
+    const preview = await reach(FIX_PREVIEW_TRANSITION);
+
+    const sinIntencion = await answer({
+      input_digest: preview.resolved.seal,
+      decisions: { preview: { files: ["src/dominio/cosa.ts"], diff: "una guarda nueva" } },
+    });
+    expect(sinIntencion.error?.code).toBe("FLOW_PREVIEW_INVALID");
+    expect(sinIntencion.error?.message).toContain("qué arregla o qué forma tendrá el diff");
+    const first = await current();
+    expect(first.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
+    expect(attemptAccountingAt(first.state, FIX_PREVIEW_TRANSITION).spent).toBe(1);
+
+    // Y una forma del diff EN BLANCO no es una forma del diff: la rama mira el
+    // contenido, no la presencia de la clave. Con la lista vacía, que es legítima,
+    // para que lo único que rechace sea lo que falta decir.
+    const enBlanco = await answer({
+      input_digest: first.resolved.seal,
+      decisions: { preview: { files: [], intent: "cerrar el borde", diff: "   " } },
+    });
+    expect(enBlanco.error?.code).toBe("FLOW_PREVIEW_INVALID");
+    const second = await current();
+    expect(second.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
+    expect(attemptAccountingAt(second.state, FIX_PREVIEW_TRANSITION).spent).toBe(2);
+  });
+
+  /**
+   * La otra mitad del contrato: los archivos van como LISTA DE RUTAS.
+   *
+   * «La lista puede ir vacía» ya tenía su caso; que la lista tenga que venir, y
+   * venir con rutas adentro, no lo tenía ninguno — y es justo la mitad que la
+   * doctrina llama «files to touch».
+   */
+  it("un preview sin lista de archivos, o con algo que no son rutas, se rechaza igual", async () => {
+    await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
+    const preview = await reach(FIX_PREVIEW_TRANSITION);
+
+    const sinArchivos = await answer({
+      input_digest: preview.resolved.seal,
+      decisions: { preview: { intent: "cerrar el borde", diff: "una guarda nueva" } },
+    });
+    expect(sinArchivos.error?.code).toBe("FLOW_PREVIEW_INVALID");
+    expect(sinArchivos.error?.message).toContain("lista de archivos a tocar");
+    const first = await current();
+    expect(first.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
+    expect(attemptAccountingAt(first.state, FIX_PREVIEW_TRANSITION).spent).toBe(1);
+
+    // Y la lista se mide elemento por elemento: una ruta de verdad al lado de algo
+    // que no es una ruta sigue siendo una lista, y no es la lista que se pidió.
+    const conBasura = await answer({
+      input_digest: first.resolved.seal,
+      decisions: {
+        preview: { files: [1, "src/dominio/cosa.ts"], intent: "cerrar", diff: "una guarda" },
+      },
+    });
+    expect(conBasura.error?.code).toBe("FLOW_PREVIEW_INVALID");
+    const second = await current();
+    expect(second.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
+    expect(attemptAccountingAt(second.state, FIX_PREVIEW_TRANSITION).spent).toBe(2);
+  });
+
+  /**
+   * «La tarea no implementa» tiene que sobrevivir a una reanudación.
+   *
+   * Resuelta como `continue`, la promesa duraba hasta la frontera siguiente: la
+   * que implementa. Con el host compactando en el medio, `advance` devolvía
+   * «producir el cambio mínimo» y en el estado no quedaba rastro de haber
+   * declinado — el quick producía exactamente lo que se rechazó producir.
+   */
+  it("«Escalar a spec» para la corrida y no la deja volver al entregable", async () => {
+    await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
+    const preview = await reach(FIX_PREVIEW_TRANSITION);
+    await answer({ input_digest: preview.resolved.seal, decisions: { preview: PREVIEW } });
+
+    const standing = await current();
+    expect(standing.resolved.stopped?.id).toBe("quick.fix-preview-approval");
+    const escalated = await answer({
+      input_digest: standing.resolved.seal,
+      choice: "Escalar a spec",
+    });
+    // La entrega ES la frontera: no queda pregunta que contestar ni alternativa
+    // que elegir, y lo que vuelve es el comando del destino.
+    expect(escalated.boundary.kind).toBe("blocked");
+    expect(escalated.error?.code).toBe("FLOW_HANDOFF");
+    expect(escalated.error?.action).toBe("/w:spec-new");
+    expect(escalated.choices).toEqual([]);
+
+    // Y el rastro es durable: releer el estado —que es exactamente lo que hace un
+    // `resume`— encuentra la elección y la entrega, nunca la frontera que produce
+    // el entregable.
+    const resumed = await current();
+    expect(resumed.state.handoff?.destination).toBe("spec-new");
+    expect(resumed.state.selected_choice?.label).toBe("Escalar a spec");
+    expect(resumed.state.selected_choice?.transition).toBe("quick.fix-preview-approval");
+    expect(resumed.resolved.kind).toBe("blocked");
+    expect(resumed.resolved.error?.code).toBe("FLOW_HANDOFF");
+    expect(resumed.state.applied).toContain("quick.fix-preview-approval");
+  });
+
   it("el gate de convergencia llega como ejecución y recién el resultado lo aplica", async () => {
     await declare([]);
     // Caminar hasta el gate contestando lo que cada frontera admite.
@@ -429,7 +732,10 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
         continue;
       }
       if (resolved.kind === "semantic") {
-        await answer({ input_digest: resolved.seal, decisions: { paso: resolved.stopped?.id } });
+        await answer({
+          input_digest: resolved.seal,
+          decisions: decisionsFor(resolved.stopped?.id),
+        });
         continue;
       }
       if (resolved.kind === "legacy") {
@@ -502,7 +808,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
             // camine entero: una fila condicionada se salta cuando su señal no se
             // observó, y este test existe para ver los pasos, no los saltos.
             signals: [...(stopped.signals ?? [])],
-            decisions: { paso: stopped.id },
+            decisions: decisionsFor(stopped.id),
           },
     );
   }
@@ -534,7 +840,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
           ? await answer({
               input_digest: resolved.seal,
               signals: override,
-              decisions: { paso: stopped.id },
+              decisions: decisionsFor(stopped.id),
             })
           : await answerReturning(resolved),
       );

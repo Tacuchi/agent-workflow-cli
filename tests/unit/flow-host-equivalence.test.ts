@@ -10,6 +10,7 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { canonicalJson } from "../../src/application/semantic-operation/protocol.js";
 import {
   type DelegatedAction,
+  FIX_PREVIEW_TRANSITION,
   type FlowDecision,
   effectsOf,
   journeyOfFlow,
@@ -179,7 +180,19 @@ function answerFor(
       body: {
         input_digest: resolved.seal,
         signals: [...(stopped.signals ?? [])],
-        decisions: { paso: stopped.id },
+        // `quick.fix-preview` es la única frontera semántica cuyo CONTENIDO el CLI
+        // valida: sin las tres partes del preview el recorrido se detendría acá y
+        // la equivalencia se mediría sobre medio camino.
+        decisions:
+          stopped.id === FIX_PREVIEW_TRANSITION
+            ? {
+                preview: {
+                  files: ["src/dominio/cosa.ts"],
+                  intent: "cerrar el borde que el test rojo reproduce",
+                  diff: "una guarda nueva y su caso rojo",
+                },
+              }
+            : { paso: stopped.id },
       },
       approval: null,
     };

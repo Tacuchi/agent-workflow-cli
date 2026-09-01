@@ -37,6 +37,7 @@ import {
   spendsAttempt,
 } from "../../domain/flow/answer.js";
 import {
+  FIX_PREVIEW_TRANSITION,
   type FlowChoiceOutcome,
   type FlowDecision,
   actionOf,
@@ -601,6 +602,13 @@ async function decide(
       specPath,
     );
   }
+  // The fix preview is checked HERE and nowhere else: it is a declaration, so no
+  // seal, no destination and no evidence would ever notice its absence, and the
+  // run would walk into the deliverable with the preview it never got.
+  const preview = checkFixPreview(resolved.stopped, parsed.answer);
+  if (preview !== null) {
+    return reject(state, resolved, preview.message, preview, cost);
+  }
   // 3 · Apply: the answer is the INPUT to the CLI's decision, so what advances is
   // the transition, never the sender's own verdict.
   //
@@ -688,6 +696,53 @@ async function decide(
     ? holdAfterApproval(selectedState, journey, identity)
     : applyAndAdvance(selectedState, journey, resolved.stopped, identity, parsed.answer);
   return standalone === null ? outcome : withStandaloneGuidance(outcome, standalone);
+}
+
+/**
+ * The declared fix preview, checked for the three things it has to say.
+ *
+ * Liviano a propósito: no juzga si el enfoque es bueno —eso es lo que la persona
+ * decide en la frontera siguiente— sino que el preview EXISTA con sus tres
+ * partes. Los archivos van como lista y la lista puede ir vacía: un entregable de
+ * análisis no toca ninguno, y exigir al menos uno convertiría la regla en «todo
+ * quick edita código».
+ *
+ * El rechazo es `evaluated` y gasta uno de los tres intentos, y eso es correcto
+ * por diseño: la frontera pidió una declaración y llegó una respuesta sin ella.
+ * La pista de `boundaryRequest` existe justamente para que el primer intento ya
+ * traiga la forma pedida.
+ */
+function checkFixPreview(stopped: FlowDecision, answer: FlowAnswer): CapabilityFailure | null {
+  if (stopped.id !== FIX_PREVIEW_TRANSITION) return null;
+  const action =
+    "devolvé en 'decisions.preview' un objeto con 'files' (lista de rutas, vacía si el entregable es un análisis), 'intent' y 'diff', proporcional al tamaño de la tarea";
+  const preview = answer.decisions.preview;
+  if (typeof preview !== "object" || preview === null || Array.isArray(preview)) {
+    return {
+      code: "FLOW_PREVIEW_INVALID",
+      message: "esta frontera declara el arreglo previsto y la respuesta no trae ningún preview",
+      action,
+    };
+  }
+  const declared = preview as Record<string, unknown>;
+  const said = (field: "intent" | "diff"): boolean =>
+    typeof declared[field] === "string" && (declared[field] as string).trim().length > 0;
+  if (!said("intent") || !said("diff")) {
+    return {
+      code: "FLOW_PREVIEW_INVALID",
+      message: "el preview no dice qué arregla o qué forma tendrá el diff",
+      action,
+    };
+  }
+  const files = declared.files;
+  if (!Array.isArray(files) || files.some((path) => typeof path !== "string")) {
+    return {
+      code: "FLOW_PREVIEW_INVALID",
+      message: "el preview no trae la lista de archivos a tocar como una lista de rutas",
+      action,
+    };
+  }
+  return null;
 }
 
 /**

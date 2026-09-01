@@ -152,6 +152,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       FLOW_SCOPE_PLAN_UNREADABLE: "evaluated",
       FLOW_SCOPE_PLAN_OUTSIDE_CANON: "evaluated",
       FLOW_HANDOFF_PLAN_MISSING: "evaluated",
+      FLOW_PREVIEW_INVALID: "evaluated",
       FLOW_DECISION_SCOPE_MISSING: "evaluated",
       FLOW_DECISION_INPUT_INVALID: "evaluated",
       FLOW_DECISION_PLAN_UNREADABLE: "evaluated",

@@ -82,6 +82,11 @@ describe("registro de autoridad — forma y unicidad", () => {
       "quick.gate-choice",
       "quick.success-criteria-authoring",
       "quick.success-criteria-ratification",
+      // Declarar el arreglo previsto es juicio del agente; aprobarlo es preferencia
+      // de la persona. Ninguna de las dos ganó un `action`: la primera contesta con
+      // una declaración y la segunda con una etiqueta.
+      "quick.fix-preview",
+      "quick.fix-preview-approval",
       "quick.deliverable-authoring",
       // La frontera que declara si el quick tocó una base de datos: sin ella, la
       // regla de scripts-only exigía un SCRIPTS.sql que no debía existir.
@@ -418,7 +423,13 @@ describe("registro de autoridad — la migración cerró observable", () => {
       decisionsOfScope(scope).filter(
         (decision) => decision.document === document && decision.ownership === "cli-owned",
       ).length;
-    expect(counted("quick", QUICK_LOOP)).toBe(12);
+    // Catorce desde el preview del arreglo: la fila que lo DECLARA (archivos,
+    // intención y forma esperada del diff, proporcional a la tarea) y la que lo
+    // aprueba por encima del mismo umbral que dispara el gate de entrada. Antes el
+    // único gate humano sobre el arreglo era `quick.commit-authorization`, que
+    // llega con el código ya en el árbol de trabajo: aprobaba el commit, no el
+    // enfoque.
+    expect(counted("quick", QUICK_LOOP)).toBe(14);
     // Diez desde que el guardado es una propuesta sellada: entra la fila que
     // entrega los bytes y la que los publica, y sale la promoción del status —
     // el sello viaja DENTRO de esos bytes, así que ya no es una escritura aparte.
