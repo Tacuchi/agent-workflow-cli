@@ -4,6 +4,12 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [25.0.1] — 2026-09-01
+
+### Fixed
+
+- **Un rol PostgreSQL privilegiado ya no bloquea las tools de lectura.** `execute_sql` y `search_objects` continúan dentro de su transacción `READ ONLY` y devuelven `DATABASE_ROLE_UNSAFE` en `warnings[]`; `mcp doctor` lo reporta como advertencia sin salir con error. La validación SQL, la confirmación de `transaction_read_only`, el timeout, el rollback y los límites siguen siendo bloqueantes.
+
 ## [25.0.0] — 2026-09-01
 
 **La spec vuelve a ser el «qué» funcional y el plan el «cómo» técnico: cambiar el plan ya no obliga a tocar la spec.** El sello `> Baseline:` digiere el contenido funcional de la spec en vez de sus bytes, los criterios `AC-nn` pasan a ser direccionables, un plan puede nacer de la conversación sin spec, la compactación ya no se retiene nunca, y el quick declara qué va a tocar antes de tocarlo.
