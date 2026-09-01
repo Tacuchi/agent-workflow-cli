@@ -31,7 +31,11 @@ export interface SpecBaseline {
   path: string;
   /** The spec's correlative, read from that path. It, not the path, is the identity. */
   number: string;
-  /** {@link baseDigest} over the spec's exact bytes at derivation time. */
+  /**
+   * The spec's digest at derivation time, `sha256:<64 hex>`: the functional
+   * payload's for anything sealed today, the exact bytes' for a plan sealed
+   * before that payload existed. {@link alignSpecBaseline} accepts both.
+   */
   digest: string;
 }
 
@@ -61,7 +65,13 @@ const BASELINE_LABEL = /^\s*>\s*Baseline:\s*(.+?)\s*$/i;
 const BASELINE_VALUE = /^(\S+?)@(sha256:[0-9a-fA-F]+)$/;
 
 /**
- * The digest of a spec's bytes, in the ONE form this system writes.
+ * The digest of a spec's EXACT bytes.
+ *
+ * No longer what a publication seals — that is `functionalSpecDigest`, over the
+ * sections that state the contract — and kept because it is the other half of
+ * the dual alignment: every plan sealed before the functional digest existed
+ * carries this one, and {@link alignSpecBaseline} accepts either, so those plans
+ * stay aligned instead of being invalidated by a migration they never chose.
  *
  * `sha256:`-prefixed because that is what `isDigest` accepts and what every
  * design baseline already publishes. A bare-hex second spelling would be a
@@ -194,29 +204,58 @@ function headerBlockEnd(lines: readonly string[]): number {
 }
 
 /**
+ * The two digests of a spec as it reads NOW: what a seal means today, and what a
+ * seal meant before the functional payload existed.
+ *
+ * The domain takes them rather than the spec's text because computing the
+ * functional one needs a Markdown scan, and domain does not import parsers.
+ */
+export interface SpecCurrentDigests {
+  /** `functionalSpecDigest` — over the sections that state the contract. */
+  functional: string;
+  /** {@link specBaselineDigest} — over the file's exact bytes. */
+  exact: string;
+}
+
+/**
  * The seal against the spec as it reads NOW.
  *
- * `specText` is `null` when the workspace holds no such spec: that is
+ * `current` is `null` when the workspace holds no such spec: that is
  * `unresolved`, not `divergent` — a document that is not there did not change,
  * and saying it did would send whoever reads it to diff against nothing.
+ *
+ * Alignment accepts EITHER digest, and that is the whole migration: a plan
+ * sealed byte-exact before the functional payload existed stays aligned while
+ * its spec is untouched, and every publication from now on seals the functional
+ * one. No plan is resealed retroactively and none is invalidated by the change.
+ *
+ * What `aligned` REPORTS is always the functional digest, including when the
+ * comparison matched on the legacy one. Everything downstream pins the
+ * functional digest — a decision note records it as the baseline it decided on,
+ * and `composeEffectiveContract` compares the note against exactly this field —
+ * so reporting the byte-exact digest for a legacy seal would make a note
+ * registered seconds ago read as deciding on a baseline that is no longer in
+ * force (`CONTRACT_BASELINE_ABSENT`), with nothing to fix.
  */
 export function alignSpecBaseline(
   seal: PlanBaselineSeal,
-  specText: string | null,
+  current: SpecCurrentDigests | null,
 ): BaselineAlignment {
   if (seal.status === "absent") return { status: "unsealed" };
   if (seal.status === "malformed") {
     return { status: "malformed", why: seal.why, action: seal.action };
   }
-  if (specText === null) {
+  if (current === null) {
     return { status: "unresolved", reason: "spec-not-found", path: seal.baseline.path };
   }
-  const current = specBaselineDigest(specText);
-  if (current === seal.baseline.digest) return { status: "aligned", digest: current };
+  const sealed = seal.baseline.digest;
+  if (sealed === current.functional || sealed === current.exact) {
+    return { status: "aligned", digest: current.functional };
+  }
   return {
     status: "divergent",
-    sealed_digest: seal.baseline.digest,
-    current_digest: current,
+    sealed_digest: sealed,
+    current_digest: current.functional,
   };
 }
 

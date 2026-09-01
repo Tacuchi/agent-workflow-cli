@@ -21,6 +21,7 @@ import {
 } from "../../src/application/flow/internal-actions.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { parsePlanBaselineSeal } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
@@ -31,7 +32,6 @@ import {
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
-import { specBaselineDigest } from "../../src/domain/lineage.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
@@ -46,8 +46,20 @@ status: ready-for-plan
 
 # Spec 033 — linaje
 
+## Requirement
+
+Todo plan sella de qué versión de su spec deriva.
+
+## Acceptance criteria
+
 - S033/AC-03 — todo plan resuelve su spec a un baseline exacto.
 `;
+
+/** La MISMA spec con una edición editorial: una coma en su `## Context`. */
+const SPEC_EDITED = SPEC_BYTES.replace(
+  "## Requirement",
+  "## Context\n\nEl linaje era un número, no un contrato.\n\n## Requirement",
+);
 
 const PLAN_BYTES = `# Plan 032 — linaje
 
@@ -246,17 +258,32 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
     throw new Error("el recorrido nunca llegó a la confirmación");
   }
 
-  it("el plan publicado lleva su `> Baseline:` con el digest de los bytes reales de la spec", async () => {
+  it("el plan publicado lleva su `> Baseline:` con el digest funcional de la spec", async () => {
     await walkToConfirmation();
     const gate = await current();
     await answer({ input_digest: gate.resolved.seal, choice: "Aprobar y guardar" });
 
     const published = await readFile(join(workdir, planPath as string), "utf8");
-    expect(published).toContain(`> Baseline: ${SPEC}@${specBaselineDigest(SPEC_BYTES)}`);
+    expect(published).toContain(`> Baseline: ${SPEC}@${functionalSpecDigest(SPEC_BYTES)}`);
     expect(parsePlanBaselineSeal(published)).toEqual({
       status: "sealed",
-      baseline: { path: SPEC, number: "033", digest: specBaselineDigest(SPEC_BYTES) },
+      baseline: { path: SPEC, number: "033", digest: functionalSpecDigest(SPEC_BYTES) },
     });
+  });
+
+  it("una edición editorial de la spec estampa EXACTAMENTE el mismo sello", async () => {
+    // La spec que la publicación va a leer trae una sección editorial nueva y
+    // ningún cambio en lo que promete. Sellar distinto por eso volvería
+    // divergente —y no cerrable— a todo plan que ya derivaba de ella.
+    expect(SPEC_EDITED).not.toBe(SPEC_BYTES);
+    await writeFile(join(workdir, SPEC), SPEC_EDITED, "utf8");
+
+    await walkToConfirmation();
+    const gate = await current();
+    await answer({ input_digest: gate.resolved.seal, choice: "Aprobar y guardar" });
+
+    const published = await readFile(join(workdir, planPath as string), "utf8");
+    expect(published).toContain(`> Baseline: ${SPEC}@${functionalSpecDigest(SPEC_BYTES)}`);
   });
 
   it("el sello va en los bytes que la persona aprobó, no en una escritura aparte", async () => {
@@ -281,7 +308,7 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
 
     const published = await readFile(join(workdir, planPath as string), "utf8");
     const lines = published.split("\n").filter((l) => /^\s*>\s*Baseline:/i.test(l));
-    expect(lines).toEqual([`> Baseline: ${SPEC}@${specBaselineDigest(SPEC_BYTES)}`]);
+    expect(lines).toEqual([`> Baseline: ${SPEC}@${functionalSpecDigest(SPEC_BYTES)}`]);
   });
 
   it("si la spec que el plan nombra no se puede leer, se publica SIN sello y no con uno inventado", async () => {

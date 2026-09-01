@@ -13,6 +13,7 @@
 //   4. las prioridades del pipeline para planes alineados quedan byte-idénticas.
 
 import { describe, expect, it } from "vitest";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import {
   parseDerivedFromPath,
   parsePlanBaselineSeal,
@@ -95,17 +96,24 @@ function index(fs: MemFs) {
   );
 }
 
+/**
+ * Un sello LEGADO: el digest byte-exacto que la publicación estampaba antes del
+ * payload funcional. Se conserva a propósito en estos casos — son los 7 planes
+ * reales que existen, y la alineación dual tiene que seguir probándolos.
+ */
 const SEALED = `> Baseline: ${SPEC_PATH}@${specBaselineDigest(SPEC)}`;
 
 describe("F1.1 — editar un byte de la spec cambia el veredicto de alineación", () => {
   it("un plan sellado contra la spec vigente está alineado", async () => {
     const board = await index(workspace(plan(SEALED)));
     const p = board.plans[0];
-    expect(p?.baseline).toEqual({ status: "aligned", digest: specBaselineDigest(SPEC) });
+    // El digest que se reporta es SIEMPRE el funcional, incluso cuando la
+    // alineación casó por el sello legado: es el que pinea toda nota nueva.
+    expect(p?.baseline).toEqual({ status: "aligned", digest: functionalSpecDigest(SPEC) });
   });
 
-  it("un solo byte distinto en la spec lo vuelve divergente, con los dos digests", async () => {
-    // Un punto por una coma al final de AC-01: un byte, ningún cambio de sentido.
+  it("un solo byte distinto en un criterio lo vuelve divergente, con los dos digests", async () => {
+    // Un byte DENTRO de `## Acceptance criteria`: el contrato se lee distinto.
     const edited = SPEC.replace("una sola vez.", "una sola vez,");
     expect(edited).not.toBe(SPEC);
     expect(edited.length).toBe(SPEC.length);
@@ -114,7 +122,7 @@ describe("F1.1 — editar un byte de la spec cambia el veredicto de alineación"
     expect(board.plans[0]?.baseline).toEqual({
       status: "divergent",
       sealed_digest: specBaselineDigest(SPEC),
-      current_digest: specBaselineDigest(edited),
+      current_digest: functionalSpecDigest(edited),
     });
   });
 
@@ -271,7 +279,8 @@ describe("F1.4 — el sello no mueve el ruteo del pipeline", () => {
 });
 
 describe("el sello se escribe donde va, y una sola vez", () => {
-  const baseline = { path: SPEC_PATH, number: "033", digest: specBaselineDigest(SPEC) };
+  // Lo que sella una publicación de hoy: el digest FUNCIONAL de la spec.
+  const baseline = { path: SPEC_PATH, number: "033", digest: functionalSpecDigest(SPEC) };
 
   it("se inserta justo después de `Derived from`", () => {
     const stamped = withSpecBaseline(plan(null), baseline);
@@ -301,10 +310,12 @@ describe("el sello se escribe donde va, y una sola vez", () => {
   it("lo que se escribe es exactamente lo que se vuelve a leer", () => {
     const stamped = withSpecBaseline(plan(null), baseline);
     expect(parsePlanBaselineSeal(stamped)).toEqual({ status: "sealed", baseline });
-    expect(alignSpecBaseline(parsePlanBaselineSeal(stamped), SPEC)).toEqual({
-      status: "aligned",
-      digest: baseline.digest,
-    });
+    expect(
+      alignSpecBaseline(parsePlanBaselineSeal(stamped), {
+        functional: functionalSpecDigest(SPEC),
+        exact: specBaselineDigest(SPEC),
+      }),
+    ).toEqual({ status: "aligned", digest: baseline.digest });
   });
 
   it("la ruta literal del `Derived from` es la que se sella como hint", () => {

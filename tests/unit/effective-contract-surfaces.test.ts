@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { noteIndexPath, sealNote } from "../../src/application/decision-note-service.js";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runResume } from "../../src/application/resume-service.js";
 import { buildWorklineIndex, specConsumers } from "../../src/application/workline-index-service.js";
@@ -30,12 +31,17 @@ const PLAN_FILE = "docs/plans/032-plan-x.md";
 const SPEC_TEXT = [
   "# 033 — spec fixture",
   "",
+  "## Acceptance criteria",
+  "",
   "- [ ] **S033/AC-01 — una.** texto",
   "- [ ] **S033/AC-02 — otra.** texto",
   "",
 ].join("\n");
 
+/** El sello LEGADO: los bytes exactos, que es lo que estos planes ya llevaban. */
 const SPEC_DIGEST = `sha256:${baseDigest(SPEC_TEXT)}`;
+/** Lo que pinea toda nota nueva, y lo que el tablero reporta como alineado. */
+const SPEC_FUNCTIONAL = functionalSpecDigest(SPEC_TEXT);
 
 /** Un plan ABIERTO con una fase validada y otra pendiente. */
 function planText(seal: string | null): string {
@@ -99,7 +105,7 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
     const sealed = sealNote(index, {
       schema: NOTE_SCHEMA,
       lineage: {
-        spec: { path: SPEC_FILE, number: "033", digest: SPEC_DIGEST },
+        spec: { path: SPEC_FILE, number: "033", digest: SPEC_FUNCTIONAL },
         plan: {
           path: PLAN_FILE,
           number: "032",

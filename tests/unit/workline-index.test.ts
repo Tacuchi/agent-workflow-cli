@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { noteIndexPath, sealNote } from "../../src/application/decision-note-service.js";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { parseSpecRelation } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
@@ -388,7 +389,9 @@ function seedObligation(fs: MemFs, planText: string): void {
   const note = sealNote(chain, {
     schema: NOTE_SCHEMA,
     lineage: {
-      spec: { path: D_SPEC, number: "033", digest: D_DIGEST },
+      // Una nota pinea el digest FUNCIONAL, que es el que el tablero reporta
+      // para un plan alineado — incluso cuando su sello es el legado exacto.
+      spec: { path: D_SPEC, number: "033", digest: functionalSpecDigest(D_SPEC_TEXT) },
       plan: { path: D_PLAN, number: "032", digest: `sha256:${baseDigest(planText)}` },
       execution: { session: "134-x", phase: "F1" },
     },

@@ -49,8 +49,27 @@ export type Composition =
 export interface BaselineInput {
   path: string;
   number: string;
-  /** The spec's digest as it reads NOW. */
+  /** The spec's digest as it reads NOW — the functional payload's. */
   digest: string;
+  /**
+   * The digest of the spec's EXACT bytes as it reads now, when the caller can
+   * compute it — and the second half of the same migration `alignSpecBaseline`
+   * performs one level up.
+   *
+   * Every note published before the functional payload existed pinned this one,
+   * because it was what the baseline meant then. Comparing such a note against
+   * the functional digest alone reads it as deciding on a baseline that is no
+   * longer in force, over a spec NOBODY TOUCHED — and there is no way out of
+   * that inside the product: the substitute note the message asks for cannot be
+   * published (its own preparation composes the chain first and refuses with
+   * this same code), editing the JSON by hand breaks the note's seal, and
+   * "restore the spec to its sealed baseline" names an edit that never happened.
+   *
+   * So both readings are accepted, for exactly as long as the spec is untouched
+   * — which is precisely the tolerance a legacy SEAL gets. `undefined` when the
+   * caller has no spec text to digest, and then only `digest` is accepted.
+   */
+  legacy_digest?: string | undefined;
   /** The criteria the spec states, in document order. */
   criteria: readonly string[];
 }
@@ -116,9 +135,17 @@ function claimFirst(into: Map<string, string>, items: readonly string[], noteId:
   }
 }
 
-/** A note that decided on other bytes is not stale trivia: it decided elsewhere. */
+/**
+ * A note that decided on other bytes is not stale trivia: it decided elsewhere.
+ *
+ * "Other bytes" means neither reading of the spec as it reads now — see
+ * {@link BaselineInput.legacy_digest}: a note pinned before the functional
+ * payload existed decided on THIS spec, and calling that "no longer in force"
+ * would block a lineage nobody moved with no repair available.
+ */
 function checkBaseline(note: DecisionNote, baseline: BaselineInput): NoteFailure[] {
-  if (note.lineage.spec.digest === baseline.digest) return [];
+  const pinned = note.lineage.spec.digest;
+  if (pinned === baseline.digest || pinned === baseline.legacy_digest) return [];
   return [
     {
       code: "CONTRACT_BASELINE_ABSENT",

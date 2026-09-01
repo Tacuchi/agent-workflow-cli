@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { noteIndexPath, sealNote } from "../../src/application/decision-note-service.js";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import {
@@ -192,6 +193,8 @@ describe("sobre un plan fixture con una fase validada", () => {
   const SPEC_TEXT = [
     "# 033 — spec fixture",
     "",
+    "## Acceptance criteria",
+    "",
     "- [ ] **S033/AC-01 — una.** texto",
     "- [ ] **S033/AC-02 — otra.** texto",
     "",
@@ -248,7 +251,9 @@ describe("sobre un plan fixture con una fase validada", () => {
         spec: {
           path: "docs/specs/033-spec-x.md",
           number: "033",
-          digest: `sha256:${baseDigest(SPEC_TEXT)}`,
+          // Lo que pinea el servicio real: el digest FUNCIONAL. El plan de al
+          // lado sigue sellado byte-exacto (legado) y la composición casa igual.
+          digest: functionalSpecDigest(SPEC_TEXT),
         },
         plan: {
           path: "docs/plans/032-plan-x.md",

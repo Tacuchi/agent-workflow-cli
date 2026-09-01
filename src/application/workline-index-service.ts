@@ -5,7 +5,9 @@ import { type EffectiveContract, composeEffectiveContract } from "../domain/effe
 import {
   type BaselineAlignment,
   type PlanBaselineSeal,
+  type SpecCurrentDigests,
   alignSpecBaseline,
+  specBaselineDigest,
 } from "../domain/lineage.js";
 import { type PlanReconciliation, reconciliationOf } from "../domain/reconciliation.js";
 import type { SessionPhase } from "../domain/session/narrative.js";
@@ -26,6 +28,7 @@ import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./ma
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
 import { type ParsedPlanStatus, parsePlanStatus } from "./parsers/plan-status.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
+import { functionalSpecDigest } from "./parsers/spec-functional.js";
 import {
   type SpecEvidence,
   parsePlanBaselineSeal,
@@ -1069,6 +1072,21 @@ async function readPlans(
     specTexts.set(number, text);
     return text;
   };
+  // Digested once per spec too, and for the same reason: the functional payload
+  // is what a seal means today, the exact bytes are what a legacy seal meant,
+  // and two plans of one spec must be judged against one reading of both.
+  const specDigests = new Map<string, SpecCurrentDigests | null>();
+  const specDigestsOf = async (number: string): Promise<SpecCurrentDigests | null> => {
+    const cached = specDigests.get(number);
+    if (cached !== undefined) return cached;
+    const text = await specTextOf(number);
+    const digests =
+      text === null
+        ? null
+        : { functional: functionalSpecDigest(text), exact: specBaselineDigest(text) };
+    specDigests.set(number, digests);
+    return digests;
+  };
   // One read of each lineage's chain, for the same reason the specs are read
   // once: two plans of one spec must be judged against one reading of its notes.
   const chains = new Map<string, DecisionNote[]>();
@@ -1093,8 +1111,17 @@ async function readPlans(
       const sealedSpec = seal.status === "sealed" ? await specTextOf(seal.baseline.number) : null;
       const t = parseTasks(text);
       const p = parsePhases(text);
-      const alignment = alignSpecBaseline(seal, sealedSpec);
-      const lineage = await reconciliationFor(alignment, seal, sealedSpec, byNumber, chainOf);
+      const sealedDigests =
+        seal.status === "sealed" ? await specDigestsOf(seal.baseline.number) : null;
+      const alignment = alignSpecBaseline(seal, sealedDigests);
+      const lineage = await reconciliationFor(
+        alignment,
+        seal,
+        sealedSpec,
+        byNumber,
+        chainOf,
+        sealedDigests,
+      );
       const planState = derivePlanState(
         parsePlanStatus(text).declared,
         t,
@@ -1256,6 +1283,7 @@ async function reconciliationFor(
   specText: string | null,
   byNumber: ReadonlyMap<string, IndexedSpec>,
   chainOf: (spec: IndexedSpec) => Promise<DecisionNote[]>,
+  digests: SpecCurrentDigests | null,
 ): Promise<PlanContractReading> {
   const none: PlanContractReading = { reconciliation: null, contract: null };
   if (alignment.status !== "aligned" || seal.status !== "sealed" || specText === null) return none;
@@ -1270,7 +1298,11 @@ async function reconciliationFor(
       path: spec.file,
       number: spec.number,
       digest: alignment.digest,
-      criteria: parseSpecCriteria(specText),
+      // The other reading of the same untouched spec: a note published before
+      // the functional payload existed pinned the exact bytes, and the seal's
+      // migration is only half a migration if the note's side refuses it.
+      legacy_digest: digests?.exact,
+      criteria: parseSpecCriteria(specText, spec.number),
     },
     chain,
   );

@@ -194,6 +194,57 @@ describe("F3 — adversarial: ausencia", () => {
     expect(composed.failures[0]?.code).toBe("CONTRACT_BASELINE_ABSENT");
   });
 
+  it("una nota pineada al digest LEGADO compone mientras la spec no se mueva", () => {
+    // Toda nota publicada ANTES del payload funcional pineó los bytes exactos de
+    // la spec, porque era lo que el baseline significaba entonces. Sin esta
+    // lectura dual, el `CONTRACT_BASELINE_ABSENT` de arriba cae sobre una spec
+    // que NADIE tocó, y de ahí no hay salida dentro del producto: la nota
+    // sustituta que el mensaje pide no se puede preparar (esta misma composición
+    // corre primero), editar el JSON a mano rompe el sello de la nota, y
+    // «volvé la spec a su baseline sellado» nombra una edición que no existió.
+    const legacy = `sha256:${"a".repeat(64)}`;
+    const pinned = note({
+      supersedes_assertions: ["S033/AC-01"],
+      lineage: {
+        spec: { ...SPEC, digest: legacy },
+        plan: PLAN,
+        execution: { session: "131-x", phase: "F4" },
+      },
+    });
+    const composed = composeEffectiveContract({ ...BASELINE, legacy_digest: legacy }, [pinned]);
+
+    expect(composed.status).toBe("composed");
+    if (composed.status !== "composed") return;
+    expect(composed.contract.applied).toEqual(["DEC-001"]);
+    expect(composed.contract.assertions[0]).toEqual({
+      id: "S033/AC-01",
+      state: "amended",
+      by: "DEC-001",
+    });
+    // Y el contrato sigue reportando el digest VIGENTE, no el que la nota pineó.
+    expect(composed.contract.spec.digest).toBe(SPEC_DIGEST);
+  });
+
+  it("pero el legado de ENTONCES no vale: la tolerancia dura lo que la spec intacta", () => {
+    const pinned = note({
+      lineage: {
+        spec: { ...SPEC, digest: `sha256:${"a".repeat(64)}` },
+        plan: PLAN,
+        execution: { session: "131-x", phase: "F4" },
+      },
+    });
+    // `legacy_digest` son los bytes de la spec COMO SE LEE HOY: si cambiaron, la
+    // nota decidió sobre otro documento y eso sigue siendo un bloqueo.
+    const composed = composeEffectiveContract(
+      { ...BASELINE, legacy_digest: `sha256:${"b".repeat(64)}` },
+      [pinned],
+    );
+
+    expect(composed.status).toBe("blocked");
+    if (composed.status !== "blocked") return;
+    expect(composed.failures[0]?.code).toBe("CONTRACT_BASELINE_ABSENT");
+  });
+
   it("todo bloqueo trae su acción correctiva, nunca sólo su queja", () => {
     const composed = composeEffectiveContract(BASELINE, [
       note({ supersedes_assertions: ["S033/AC-99"] }),

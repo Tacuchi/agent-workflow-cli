@@ -1,7 +1,12 @@
 import { CORRELATIVE_SOURCE, compareCorrelatives } from "../../domain/correlative.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
 import { type PlanBaselineSeal, parsePlanBaseline, specCriteria } from "../../domain/lineage.js";
-import { parseMdSectionBilingual, scanMarkdown } from "../markdown.js";
+import { type MarkdownHeading, parseMdSectionBilingual, scanMarkdown } from "../markdown.js";
+import {
+  ACCEPTANCE_CRITERIA_KEY,
+  type FunctionalSection,
+  functionalSections,
+} from "./spec-functional.js";
 
 /**
  * Which kind of evidence tied a plan to its spec. Ordered by how explicit the
@@ -110,10 +115,102 @@ export function parseDerivedFromPath(
   return unique.length === 1 ? (unique[0] as string) : null;
 }
 
-/** The acceptance criteria a spec states, in order and without duplicates. */
-export function parseSpecCriteria(text: string): string[] {
-  const { lines, fenced } = scanMarkdown(text);
-  return specCriteria(lines, fenced);
+/**
+ * The acceptance criteria a spec states, in document order and without
+ * duplicates — addressable with the ONE grammar (`S033/AC-01`).
+ *
+ * Two harvests of the same closed grammar, united:
+ *
+ * 1. every literal `S{NNN}/AC-nn` the document mentions, anywhere — what the
+ *    design subsystem already read, unchanged;
+ * 2. when `specNumber` is given, the LABELS inside `## Acceptance criteria` —
+ *    every appearance of it, located by the same function the SEAL uses:
+ *    `- [ ] AC-01: …` states criterion `S{NNN}/AC-01` of that spec.
+ *
+ * The second half is why a decision note can exist at all. Real specs rotulate
+ * their criteria the way doctrine's own template does — with the bare label —
+ * so harvesting only form 1 returned `[]` for them, every note addressing a
+ * criterion blocked as `CONTRACT_ASSERTION_ABSENT` ("the spec does not state
+ * it", about a spec that states it), and the deviation gate's composable exit
+ * was closed for every spec in existence.
+ *
+ * Both forms produce the SAME id, and the dedupe is what lets a spec label a
+ * criterion and mention it in `## Scenarios` without stating it twice.
+ *
+ * `specNumber` must be the three-digit correlative the grammar admits: `S` plus
+ * three digits is the whole vocabulary, so a four-digit correlative cannot form
+ * a valid id and derives nothing rather than emitting one nobody can address.
+ * Without `specNumber` the answer is byte-identical to harvest 1 alone.
+ */
+export function parseSpecCriteria(text: string, specNumber?: string): string[] {
+  const { lines, fenced, headings } = scanMarkdown(text);
+  if (specNumber === undefined || !/^\d{3}$/.test(specNumber)) {
+    return specCriteria(lines, fenced);
+  }
+  const checklists = criteriaSections(headings, lines.length);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (id: string): void => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  };
+  for (const [index, line] of lines.entries()) {
+    if (line === undefined || fenced[index] === true) continue;
+    // The mention harvest, asked one line at a time: the union comes out in
+    // document order and the grammar still lives in exactly one place.
+    for (const id of specCriteria([line], [false])) add(id);
+    if (!checklists.some((section) => index >= section.start && index < section.end)) continue;
+    const label = LABELLED_AC.exec(line)?.[1];
+    if (label !== undefined) add(`S${specNumber}/${label}`);
+  }
+  return out;
+}
+
+/**
+ * A checklist item whose label IS its criterion: `- [ ] AC-01:`, `- [x] **AC-02**:`,
+ * `- [ ] AC-CAP-03.`
+ *
+ * Anchored at the item marker, so the older `- [ ] **S013/AC-CAP-01:**` does not
+ * match here — it is already harvest 1, and matching both would be one criterion
+ * counted twice under two spellings.
+ *
+ * The three Markdown bullet markers, the same ones the payload's tick
+ * normalization accepts: what the SEAL digests as contract is every line of the
+ * section whatever its marker, so recognizing only `-` here would make
+ * `* [ ] AC-04: …` contract and unaddressable at once — a note amending it dies
+ * in `CONTRACT_ASSERTION_ABSENT` about a criterion its own spec states.
+ *
+ * The label ends at a TOKEN BOUNDARY rather than at a closed set of delimiters,
+ * for that same reason one level down. The doctrine recommends EARS
+ * (`- [ ] AC-01 WHEN … THEN …`) and this project writes `- [ ] AC-01 — outcome`:
+ * demanding `:` or `.` right after the label would seal both as contract and
+ * leave them unaddressable. The lookahead still refuses `AC-01abc` and
+ * `AC-01-2`, which are not ids this grammar can form.
+ */
+const LABELLED_AC = /^\s*[-*+]\s*\[[ xX]\]\s*\*{0,2}(AC-(?:[A-Z]+-)?\d+)\*{0,2}(?![0-9A-Za-z-])/;
+
+/**
+ * Every `## Acceptance criteria` section of the spec, in document order.
+ *
+ * Bounded because a bare label only means a criterion THERE: `- [ ] AC-01: …`
+ * inside `## Open questions` is a question about a criterion, and a checklist in
+ * `## Validations` is work to do.
+ *
+ * ALL of them, and located by {@link functionalSections} — the very function the
+ * SEAL uses to decide which text is contract. Two answers to "where are the
+ * criteria" is how one half of the lineage seals a criterion the other half
+ * cannot address: a spec whose checklist is split in two blocks would have its
+ * second block digested as contract while a note amending anything in it is
+ * refused as absent from the spec, and the plan never closes.
+ */
+function criteriaSections(
+  headings: readonly MarkdownHeading[],
+  total: number,
+): FunctionalSection[] {
+  return functionalSections(headings, total).filter(
+    (section) => section.key === ACCEPTANCE_CRITERIA_KEY,
+  );
 }
 
 /**

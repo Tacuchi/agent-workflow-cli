@@ -77,7 +77,7 @@ import {
   withScope,
   withSelectedChoice,
 } from "../../domain/flow/run-state.js";
-import { type SpecBaseline, specBaselineDigest, withSpecBaseline } from "../../domain/lineage.js";
+import { type SpecBaseline, withSpecBaseline } from "../../domain/lineage.js";
 import { destinationsOf, observedEffects, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
 import type { PlanReconciliation } from "../../domain/reconciliation.js";
@@ -88,6 +88,7 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
+import { functionalSpecDigest } from "../parsers/spec-functional.js";
 import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import {
@@ -295,6 +296,10 @@ type BaselineSnapshot = ReadonlyMap<string, SpecBaseline>;
 /**
  * The baseline one plan document seals, or `null` when it cannot seal one.
  *
+ * What gets sealed is the spec's FUNCTIONAL digest, not its exact bytes: a plan
+ * derives from what the spec promises, so a later comma or a rewrapped
+ * paragraph must not turn this plan divergent and make it uncloseable.
+ *
  * Every `null` here is a plan that stays UNSEALED, which is a legitimate
  * reading: no `Derived from` path, two contradictory ones, a path that escapes
  * the workspace, or a spec nobody can read. None of them is an error — a wrong
@@ -312,7 +317,7 @@ async function baselineOfPlan(
   if (relation.status !== "declared") return null;
   try {
     const specText = await fs.readText(join(root, specPath));
-    return { path: specPath, number: relation.number, digest: specBaselineDigest(specText) };
+    return { path: specPath, number: relation.number, digest: functionalSpecDigest(specText) };
   } catch {
     return null;
   }
@@ -579,7 +584,21 @@ async function decide(
   // even while its registration is handled by the decision bridge below.
   const selected = choiceOutcomeOf(resolved.stopped, parsed.answer.choice);
   if (selected?.kind === "handoff") {
-    return applyAndHandoff(state, journey, resolved.stopped, identity, parsed.answer, selected);
+    // Only `spec-refine` needs a document the run never declared: the plan's
+    // scope names the plan, and the spec is one hop away through its lineage.
+    const specPath =
+      selected.destination === "spec-refine"
+        ? await specPathOfScopedPlan(fs, paths, snapshot.root, state.scope?.plan ?? null)
+        : null;
+    return applyAndHandoff(
+      state,
+      journey,
+      resolved.stopped,
+      identity,
+      parsed.answer,
+      selected,
+      specPath,
+    );
   }
   // 3 · Apply: the answer is the INPUT to the CLI's decision, so what advances is
   // the transition, never the sender's own verdict.
@@ -1340,6 +1359,33 @@ function applyAndAdvance(
   };
 }
 
+/**
+ * The spec the run's scoped plan derives from, or `null` when nothing can prove
+ * it.
+ *
+ * Read from the plan's own `Derived from` line, the same hint publication seals,
+ * so the handoff names the document the plan actually claims. Every `null` — no
+ * scope, an unsafe path, an unreadable canon, an unreadable plan, or two
+ * contradictory `Derived from` lines — is a degradation to the bare command and
+ * never a refusal: an escalation blocked over an argument would trap the person
+ * in the deviation it exists to leave.
+ */
+async function specPathOfScopedPlan(
+  fs: FileSystemPort,
+  paths: PathsService,
+  root: string,
+  plan: string | null,
+): Promise<string | null> {
+  if (plan === null || plan.length === 0 || !checkSafeRelativePath(plan).ok) return null;
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  if (!canon.ok) return null;
+  try {
+    return parseDerivedFromPath(await fs.readText(join(root, plan)), canon.canon.spec);
+  } catch {
+    return null;
+  }
+}
+
 /** The executable outcome declared by the registry for this exact human label. */
 function choiceOutcomeOf(stopped: FlowDecision, label: string | null): FlowChoiceOutcome | null {
   if (label === null) return null;
@@ -1361,6 +1407,7 @@ function applyAndHandoff(
   identity: FlowRunAttempt,
   answer: FlowAnswer,
   outcome: Extract<FlowChoiceOutcome, { kind: "handoff" }>,
+  specPath: string | null,
 ): SubmitDecision {
   const plan = state.scope?.plan ?? null;
   if (outcome.destination === "plan-refine" && plan === null) {
@@ -1384,11 +1431,18 @@ function applyAndHandoff(
     decisions: answer.decisions,
     selection: answer.choice ?? "",
   };
+  // The handoff to `spec-refine` used to be the bare command while the one to
+  // `plan-refine` carried its document, so whoever received it had to find the
+  // spec again — the escalation package exists precisely so nothing is
+  // re-derived at the destination. An unreadable plan degrades to the bare
+  // command: an escalation is never blocked over the convenience of an argument.
   const command =
     outcome.destination === "plan-refine"
       ? `/w:plan-refine ${plan}`
       : outcome.destination === "spec-refine"
-        ? "/w:spec-refine"
+        ? specPath === null
+          ? "/w:spec-refine"
+          : `/w:spec-refine ${specPath}`
         : "/w:spec-new";
   let next = withSelectedChoice(state, {
     transition: stopped.id,

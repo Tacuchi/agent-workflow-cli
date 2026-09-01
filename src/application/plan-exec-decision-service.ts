@@ -25,6 +25,7 @@ import {
   prepareDecision,
 } from "./decision-registration-service.js";
 import { DEFAULT_DOCS_CANON } from "./docs-canon-service.js";
+import { functionalSpecDigest } from "./parsers/spec-functional.js";
 import {
   parseDerivedFromPath,
   parseSpecCriteria,
@@ -187,7 +188,10 @@ export async function commitPlanExecDecision(
     number: prepared.baseline.number,
   });
   if (!chain.ok) return noteFailure(chain.failures[0]);
-  const composed = composeEffectiveContract(prepared.baseline, chain.read.index.notes);
+  const composed = composeEffectiveContract(
+    await withLegacyDigest(fs, root, prepared.baseline),
+    chain.read.index.notes,
+  );
   if (composed.status === "blocked") return noteFailure(composed.failures[0]);
   return {
     ok: true,
@@ -233,6 +237,36 @@ export async function commitStoredPlanExecDecision(
     baseline: preparation.baseline,
     indexPath: preparation.index_path,
   });
+}
+
+/**
+ * The baseline with the spec's exact-bytes digest alongside its functional one.
+ *
+ * Needed because the baseline a run PERSISTED before its human gate carries only
+ * the functional digest (that is the durable shape, and widening it would change
+ * a format for a value that is a pure function of the spec as it reads now). Re-
+ * deriving it here is not a re-preview: `digest` and `criteria` are used exactly
+ * as they were authorized, and only the tolerance for a note pinned before the
+ * functional payload existed is restored — without it, `commitDecision` would
+ * WRITE the note and only then refuse to compose the chain it just joined.
+ *
+ * An unreadable spec degrades to the baseline as given: the composition below
+ * then refuses on its own terms, which is the same answer, one step later.
+ */
+async function withLegacyDigest(
+  fs: FileSystemPort,
+  root: string,
+  baseline: BaselineInput,
+): Promise<BaselineInput> {
+  if (baseline.legacy_digest !== undefined) return baseline;
+  try {
+    return {
+      ...baseline,
+      legacy_digest: specBaselineDigest(await fs.readText(join(root, baseline.path))),
+    };
+  } catch {
+    return baseline;
+  }
 }
 
 interface DecisionLineage {
@@ -295,10 +329,20 @@ async function readLineage(
     ok: true,
     value: {
       baseline: {
+        // The FUNCTIONAL digest, which is also what the board reports for an
+        // aligned plan — including one whose seal is the legacy byte-exact one.
+        // A note pinning anything else would read, the instant it is published,
+        // as deciding on a baseline that is no longer in force.
         path: specPath,
         number: relation.number,
-        digest: specBaselineDigest(specText),
-        criteria: parseSpecCriteria(specText),
+        digest: functionalSpecDigest(specText),
+        // And the exact bytes alongside it, which is what every note published
+        // BEFORE the functional payload pinned: composing this chain against the
+        // functional digest alone would refuse an old note over a spec nobody
+        // touched, and that refusal has no repair (the substitute note it asks
+        // for cannot be prepared — this very composition runs first).
+        legacy_digest: specBaselineDigest(specText),
+        criteria: parseSpecCriteria(specText, relation.number),
       },
       planNumber,
       planText,
