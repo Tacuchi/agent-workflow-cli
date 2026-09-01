@@ -909,7 +909,7 @@ async function planDonePrecondition(
       message: `${path} no tiene un baseline ejecutable (${plan.baseline.status})`,
       action:
         plan.baseline.status === "divergent"
-          ? `volvé a /w:plan-refine ${path} antes de cerrar`
+          ? `volvé a /w:plan-refine ${path} antes de cerrar; si al revisarlo contra la spec vigente el plan sigue valiendo tal cual, cerrá la divergencia con 'aw reseal prepare ${path}'`
           : "restaurá un baseline legible y su spec antes de cerrar",
     };
   }

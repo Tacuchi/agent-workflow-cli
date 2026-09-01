@@ -45,6 +45,7 @@ import {
   serializeRunState,
   withDecisionPreparation,
 } from "../../src/domain/flow/run-state.js";
+import { specBaselineDigest } from "../../src/domain/lineage.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -280,6 +281,42 @@ describe("la variante standalone del estado — aditiva, y de ida y vuelta", () 
     if (!back.ok) throw new Error(`esperaba un estado válido: ${back.failure.code}`);
     expect(back.state.decision_preparation).toBeNull();
   });
+
+  it("y el linaje decide la consecuencia del gate: sólo el standalone pierde la nota", () => {
+    // El contraste que hace al enunciado: la fila se escribe UNA vez y promete
+    // «una nota de decisión durable sobre el contrato efectivo». Con spec eso es
+    // cierto y el texto de la fila viaja verbatim; sin spec no hay contrato al
+    // cual sumarla, y prometerla igual sería hacerle aprobar a la persona algo
+    // que no va a pasar. La señal es el linaje ya sellado en la preparación.
+    const base = newRunState("plan-exec", "041-conversacion-plan-exec");
+    const gate = journeyForState(base).find((row) => row.id === "plan-exec.deviation-gate");
+    if (gate === undefined)
+      throw new Error("el gate de la desviación tiene que estar en el recorrido");
+
+    const standalone = resolveBoundary(
+      withDecisionPreparation(base, {
+        kind: "standalone",
+        decision: "el helper vive en el módulo vecino",
+        resume_point: "F1/T1.1",
+      }),
+      [gate],
+    );
+    expect(standalone.choices[0]?.label).toBe("Registrar la decisión y seguir");
+    expect(standalone.choices[0]?.consequence).not.toContain("durable");
+    expect(standalone.choices[0]?.consequence).toContain("DECISION.md");
+
+    const conNota = resolveBoundary(
+      withDecisionPreparation(base, {
+        kind: "reused",
+        note: "docs/decisions/001-decision.md",
+        decision: "el helper vive en el módulo vecino",
+        resume_point: "F1/T1.1",
+      }),
+      [gate],
+    );
+    expect(conNota.choices[0]?.consequence).toContain("durable");
+    expect(conNota.choices[0]?.consequence).not.toContain("DECISION.md");
+  });
 });
 
 // ── la ida completa, sobre una corrida real ──────────────────────────────────
@@ -421,6 +458,13 @@ describe("la ida completa — un desvío componible se registra y la corrida SIG
     expect(gate.resolved.stopped?.id).toBe(GATE);
     expect(gate.resolved.kind).toBe("human");
     expect(gate.resolved.choices[0]?.label).toBe("Registrar la decisión y seguir");
+    // Y su consecuencia dice la verdad de ESTE plan: la fila promete una nota de
+    // decisión durable sobre el contrato efectivo, y acá no hay contrato al cual
+    // sumarla —lo prueba el `docs/decisions` ausente del final de esta misma
+    // prueba—. Lo que la persona aprueba es la ruta real: la traza y el
+    // `DECISION.md` de la sesión.
+    expect(gate.resolved.choices[0]?.consequence).not.toContain("durable");
+    expect(gate.resolved.choices[0]?.consequence).toContain("DECISION.md");
 
     const after = await submit({
       input_digest: gate.resolved.seal,
@@ -529,5 +573,62 @@ describe("la ida completa — un desvío componible se registra y la corrida SIG
     expect(sealed).toContain("> Estado: done");
     expect(sealed).toContain("> Cierre:");
     expect(existsSync(join(workdir, "docs", "decisions"))).toBe(false);
+  });
+
+  it("y el otro lado del mismo gate: un plan DIVERGENTE no cierra, y el rechazo nombra las DOS salidas", async () => {
+    // El contraste del caso de arriba, y el único momento en que `aw reseal`
+    // hace falta de verdad: el agente está DENTRO de `/w:plan-exec`, su doctrina
+    // cargada no nombra el comando en ninguna línea, y si el rechazo dijera sólo
+    // «volvé a /w:plan-refine» la salida de dos comandos quedaría inalcanzable
+    // justo donde se traba. `/w:plan-refine` sigue siendo la acción recomendada:
+    // el reseal es la alternativa, nunca su reemplazo.
+    await mkdir(join(workdir, "docs", "specs"), { recursive: true });
+    // La spec en disco ya no es la que se selló —un byte en un criterio basta—,
+    // así que el plan, que sí declara su linaje, queda `divergent`.
+    await writeFile(
+      join(workdir, SPEC_PATH),
+      SPEC.replace("ciudadano de primera.", "ciudadano de primera,"),
+      "utf8",
+    );
+    await writeFile(
+      join(workdir, PLAN_PATH),
+      `# Plan 071 — sellado contra su spec
+
+> Derived from ${SPEC_PATH}
+> Baseline: ${SPEC_PATH}@${specBaselineDigest(SPEC)}
+> Límite de ejecución: checkout
+
+## Origin
+
+Spec 070.
+
+## Tasks
+
+### F1 — hacer el trabajo
+> Estado: pendiente
+> Fuentes: workspace
+
+- [ ] T1.1 — hacer el trabajo _(fuentes: workspace)_
+`,
+      "utf8",
+    );
+    // Sin señales de desviación: este plan no declara ninguna, así que el
+    // recorrido camina derecho hasta el sello final.
+    const derecho = planExecWalk(
+      { fs, env: new FakeEnv(workdir, workdir), git: new GitCliAdapter(new NodeProcess()), paths },
+      { sources: ["workspace"], signals: [] },
+    );
+    await derecho.walkTo(run, "plan-exec.plan-done");
+    expect((await current()).resolved.stopped?.id).toBe("plan-exec.plan-done");
+    await derecho.step(run);
+
+    const refused = (await current()).state.events.find(
+      (event) => event.operation === "plan-exec.plan-done" && event.kind === "failed",
+    );
+    expect(refused?.message).toContain("no tiene un baseline ejecutable (divergent)");
+    expect(refused?.message).toContain(`/w:plan-refine ${PLAN_PATH}`);
+    expect(refused?.message).toContain(`aw reseal prepare ${PLAN_PATH}`);
+    // Y el sello no se escribió: el rechazo es un rechazo, no un aviso.
+    expect(await readFile(join(workdir, PLAN_PATH), "utf8")).not.toContain("> Estado: done");
   });
 });

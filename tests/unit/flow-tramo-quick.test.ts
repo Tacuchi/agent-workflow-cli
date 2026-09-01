@@ -20,7 +20,16 @@ import {
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { bindAction, skipReason, thresholdFired } from "../../src/domain/flow/rules.js";
-import { FLOW_RUN_STATE_FILE, attemptAccountingAt } from "../../src/domain/flow/run-state.js";
+import {
+  FLOW_RUN_STATE_FILE,
+  type FlowFixPreview,
+  attemptAccountingAt,
+  newRunState,
+  parseRunState,
+  sealRunState,
+  serializeRunState,
+  withFixPreview,
+} from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
@@ -596,6 +605,46 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect((await current()).state.applied).toContain("quick.fix-preview-approval");
   });
 
+  /**
+   * Lo previsualizado SOBREVIVE a la frontera que lo declaró.
+   *
+   * Era la única frontera del tramo cuyo contenido el CLI valida y la única cuya
+   * respuesta se tiraba: `checkFixPreview` miraba las tres partes y devolvía
+   * `null`. Con `Compactar` ofrecido en la propia frontera de aprobación, la
+   * persona volvía a una pregunta —«¿la tarea implementa exactamente esto?»— que
+   * ni el estado ni la directiva podían volver a mostrar.
+   */
+  it("el preview declarado queda en la corrida y la frontera que lo aprueba lo muestra", async () => {
+    await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
+    const preview = await reach(FIX_PREVIEW_TRANSITION);
+    // Antes de declararlo no hay nada que mostrar, y eso también es un hecho.
+    expect(preview.state.fix_preview ?? null).toBeNull();
+
+    const declared = await answer({
+      input_digest: preview.resolved.seal,
+      decisions: { preview: PREVIEW },
+    });
+    expect(declared.boundary.transition).toBe("quick.fix-preview-approval");
+    expect(declared.fix_preview).toEqual(PREVIEW);
+    // Durable, no de ida: releer el estado —lo que hace un `resume`, y lo que
+    // hace `Compactar` en esta misma frontera— vuelve con lo mismo a la vista.
+    expect((await current()).state.fix_preview).toEqual(PREVIEW);
+    const reanudada = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: false });
+    if (!reanudada.ok) throw new Error("esperaba reanudar la corrida");
+    expect(reanudada.directive.boundary.transition).toBe("quick.fix-preview-approval");
+    expect(reanudada.directive.fix_preview).toEqual(PREVIEW);
+
+    // Y sólo ahí: una vez aprobado, el preview deja de ser el sujeto de la
+    // pregunta, así que la directiva de la frontera siguiente no lo arrastra.
+    const chosen = await answer({
+      input_digest: reanudada.directive.state_digest,
+      choice: "Ejecutar tal cual",
+    });
+    expect(chosen.boundary.transition).toBe("quick.deliverable-authoring");
+    expect(chosen.fix_preview).toBeNull();
+    expect((await current()).state.fix_preview).toEqual(PREVIEW);
+  });
+
   it("un preview con lista de archivos VACÍA vale: un análisis no toca ninguno", async () => {
     await declare(["quick.needs-architecture"]);
     const preview = await reach(FIX_PREVIEW_TRANSITION);
@@ -706,14 +755,26 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     // que elegir, y lo que vuelve es el comando del destino.
     expect(escalated.boundary.kind).toBe("blocked");
     expect(escalated.error?.code).toBe("FLOW_HANDOFF");
-    expect(escalated.error?.action).toBe("/w:spec-new");
+    expect(escalated.error?.action).toContain("/w:spec-new");
     expect(escalated.choices).toEqual([]);
+
+    // Y la acción nombra el CIERRE antes del destino: una corrida entregada no
+    // vuelve a caminar, así que `chassis.finalize` —la fila suffix que cierra la
+    // sesión— nunca se emite. Si acá dijera sólo el comando del destino, la
+    // sesión quick quedaría viva en el tablero, sin puntero de escalación.
+    expect(escalated.error?.action).toContain(`aw session-close --code ${SESSION}`);
+    expect(escalated.error?.action).toContain("BACKLOG");
+    expect(escalated.next_action).toBe(escalated.error?.action);
 
     // Y el rastro es durable: releer el estado —que es exactamente lo que hace un
     // `resume`— encuentra la elección y la entrega, nunca la frontera que produce
     // el entregable.
     const resumed = await current();
     expect(resumed.state.handoff?.destination).toBe("spec-new");
+    // Y el paquete lleva lo previsualizado: la respuesta de ELECCIÓN sólo trae el
+    // sí, así que sin esto `spec-new` recibía la escalación sin el arreglo que se
+    // había previsualizado y tenía que volver a deducirlo.
+    expect(resumed.state.handoff?.package.decisions.preview).toEqual(PREVIEW);
     expect(resumed.state.selected_choice?.label).toBe("Escalar a spec");
     expect(resumed.state.selected_choice?.transition).toBe("quick.fix-preview-approval");
     expect(resumed.resolved.kind).toBe("blocked");
@@ -968,5 +1029,50 @@ describe("resume y status proyectan la frontera vigente", () => {
     // Y el archivo sigue intacto: proyectar es leer.
     const raw = await readFile(join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE), "utf8");
     expect(raw).toContain('"version":2');
+  });
+});
+
+/**
+ * El preview persistido es ADITIVO, y eso no es un detalle de forma.
+ *
+ * `FLOW_RUN_STATE_VERSION` no se movió, así que una corrida en vuelo tiene que
+ * leerse igual y —lo que de verdad tapiaría corridas— sellar los MISMOS bytes:
+ * el digest del estado entra en el ledger de intentos y se compara con CAS, así
+ * que una clave nueva en un estado que nunca declaró un preview haría stale a
+ * toda respuesta ya emitida.
+ */
+describe("el preview del arreglo en el estado — aditivo, y de ida y vuelta", () => {
+  it("una corrida que no lo declara no cambia ni sus bytes ni su sello", () => {
+    const state = newRunState("quick", SESSION);
+    const bytes = serializeRunState(state);
+    expect(bytes).not.toContain("fix_preview");
+    const back = parseRunState(bytes);
+    if (!back.ok) throw new Error(`esperaba un estado válido: ${back.failure.code}`);
+    expect(back.state.fix_preview ?? null).toBeNull();
+    expect(back.state.digest).toBe(state.digest);
+  });
+
+  it("y una que sí lo declara lo devuelve igual, con sus tres partes", () => {
+    const state = withFixPreview(newRunState("quick", SESSION), PREVIEW);
+    const back = parseRunState(serializeRunState(state));
+    if (!back.ok) throw new Error(`esperaba un estado válido: ${back.failure.code}`);
+    expect(back.state.fix_preview).toEqual(PREVIEW);
+    expect(back.state.digest).toBe(state.digest);
+  });
+
+  it("un preview ilegible no se lee: mostrarlo de nuevo era el punto", () => {
+    // Re-sellado a propósito: el lector juzga el sello DESPUÉS de la forma, así
+    // que un estado manipulado sin re-sellar se rechazaría por el digest y la
+    // guarda de forma quedaría sin probar.
+    const resealed = (fix: unknown): string => {
+      const { digest: _seal, ...rest } = withFixPreview(newRunState("quick", SESSION), PREVIEW);
+      return JSON.stringify(sealRunState({ ...rest, fix_preview: fix as FlowFixPreview }));
+    };
+    // La intención en blanco es el caso filoso: se serializa sin problema y
+    // dejaría a la frontera de aprobación mostrando un preview que no dice nada.
+    expect(parseRunState(resealed({ ...PREVIEW, intent: "   " })).ok).toBe(false);
+    expect(parseRunState(resealed({ intent: "i", diff: "d" })).ok).toBe(false);
+    // Y el legítimo sigue pasando por la misma puerta.
+    expect(parseRunState(resealed(PREVIEW)).ok).toBe(true);
   });
 });

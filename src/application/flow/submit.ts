@@ -59,6 +59,7 @@ import {
 import { type ExecutionRefusal, executionVerdict } from "../../domain/flow/execution-result.js";
 import {
   type FlowDecisionPreparation,
+  type FlowFixPreview,
   type FlowRunAttempt,
   type FlowRunEvent,
   type FlowRunState,
@@ -72,6 +73,7 @@ import {
   withContinuation,
   withDecisionPreparation,
   withEvent,
+  withFixPreview,
   withHandoff,
   withObservation,
   withPlanExecBatchStageForTransition,
@@ -606,8 +608,8 @@ async function decide(
   // seal, no destination and no evidence would ever notice its absence, and the
   // run would walk into the deliverable with the preview it never got.
   const preview = checkFixPreview(resolved.stopped, parsed.answer);
-  if (preview !== null) {
-    return reject(state, resolved, preview.message, preview, cost);
+  if ("failure" in preview) {
+    return reject(state, resolved, preview.failure.message, preview.failure, cost);
   }
   // 3 · Apply: the answer is the INPUT to the CLI's decision, so what advances is
   // the transition, never the sender's own verdict.
@@ -692,6 +694,14 @@ async function decide(
     );
   }
   if (registered?.ok) selectedState = withDecisionPreparation(selectedState, null);
+  // Lo previsualizado sobrevive a la frontera que lo declaró: la aprobación de
+  // enfoque que viene después dice «implementa exactamente lo previsualizado», y
+  // sin esto la única frontera cuyo CONTENIDO el CLI valida era también la única
+  // cuya respuesta se tiraba —así que `Compactar` ahí volvía a una pregunta que
+  // ya nadie podía mostrar.
+  if (preview.preview !== null) {
+    selectedState = withFixPreview(selectedState, preview.preview);
+  }
   const outcome = holds
     ? holdAfterApproval(selectedState, journey, identity)
     : applyAndAdvance(selectedState, journey, resolved.stopped, identity, parsed.answer);
@@ -711,17 +721,26 @@ async function decide(
  * por diseño: la frontera pidió una declaración y llegó una respuesta sin ella.
  * La pista de `boundaryRequest` existe justamente para que el primer intento ya
  * traiga la forma pedida.
+ *
+ * Lo que sobrevivió a la validación VUELVE: la frontera siguiente aprueba
+ * exactamente lo previsualizado, así que el preview se siembra en la corrida en
+ * vez de tirarse. `{ preview: null }` es «esta frontera no es la del preview».
  */
-function checkFixPreview(stopped: FlowDecision, answer: FlowAnswer): CapabilityFailure | null {
-  if (stopped.id !== FIX_PREVIEW_TRANSITION) return null;
+function checkFixPreview(
+  stopped: FlowDecision,
+  answer: FlowAnswer,
+): { failure: CapabilityFailure } | { preview: FlowFixPreview | null } {
+  if (stopped.id !== FIX_PREVIEW_TRANSITION) return { preview: null };
   const action =
     "devolvé en 'decisions.preview' un objeto con 'files' (lista de rutas, vacía si el entregable es un análisis), 'intent' y 'diff', proporcional al tamaño de la tarea";
   const preview = answer.decisions.preview;
   if (typeof preview !== "object" || preview === null || Array.isArray(preview)) {
     return {
-      code: "FLOW_PREVIEW_INVALID",
-      message: "esta frontera declara el arreglo previsto y la respuesta no trae ningún preview",
-      action,
+      failure: {
+        code: "FLOW_PREVIEW_INVALID",
+        message: "esta frontera declara el arreglo previsto y la respuesta no trae ningún preview",
+        action,
+      },
     };
   }
   const declared = preview as Record<string, unknown>;
@@ -729,20 +748,30 @@ function checkFixPreview(stopped: FlowDecision, answer: FlowAnswer): CapabilityF
     typeof declared[field] === "string" && (declared[field] as string).trim().length > 0;
   if (!said("intent") || !said("diff")) {
     return {
-      code: "FLOW_PREVIEW_INVALID",
-      message: "el preview no dice qué arregla o qué forma tendrá el diff",
-      action,
+      failure: {
+        code: "FLOW_PREVIEW_INVALID",
+        message: "el preview no dice qué arregla o qué forma tendrá el diff",
+        action,
+      },
     };
   }
   const files = declared.files;
   if (!Array.isArray(files) || files.some((path) => typeof path !== "string")) {
     return {
-      code: "FLOW_PREVIEW_INVALID",
-      message: "el preview no trae la lista de archivos a tocar como una lista de rutas",
-      action,
+      failure: {
+        code: "FLOW_PREVIEW_INVALID",
+        message: "el preview no trae la lista de archivos a tocar como una lista de rutas",
+        action,
+      },
     };
   }
-  return null;
+  return {
+    preview: {
+      files: [...(files as string[])],
+      intent: (declared.intent as string).trim(),
+      diff: (declared.diff as string).trim(),
+    },
+  };
 }
 
 /**
@@ -1639,12 +1668,19 @@ function applyAndHandoff(
       { journey, identity },
     );
   }
+  const fixPreview = state.fix_preview ?? null;
   const packageBody = {
     plan,
     observations: state.observations.filter((observation) =>
       observation.transition.startsWith("plan-exec.deviation-"),
     ),
-    decisions: answer.decisions,
+    // The answer's own decisions are the CHOICE's, so a quick escalation would
+    // arrive at `spec-new` with the yes and without what was previewed. The
+    // declared preview travels with it — the destination is the one place that
+    // rewrites it, and rediscovering it there is exactly what the package exists
+    // to avoid.
+    decisions:
+      fixPreview === null ? answer.decisions : { ...answer.decisions, preview: fixPreview },
     selection: answer.choice ?? "",
   };
   // The handoff to `spec-refine` used to be the bare command while the one to

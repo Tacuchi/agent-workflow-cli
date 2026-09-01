@@ -45,7 +45,7 @@ import {
   type TransitionOwnership,
   trancheOfFlow,
 } from "./authority.js";
-import type { AttemptAccounting } from "./run-state.js";
+import type { AttemptAccounting, FlowFixPreview } from "./run-state.js";
 
 export const FLOW_DIRECTIVE_VERSION = 1;
 
@@ -219,6 +219,15 @@ export interface FlowDirective {
    * everywhere except a prepared PLAN-exec deviation gate.
    */
   decision_preview: DecisionPreview | null;
+  /**
+   * The fix preview the quick tranche declared, at the boundary that approves it.
+   *
+   * `null` everywhere else on purpose: the preview is the SUBJECT of exactly one
+   * question — "does the task implement this?" — and carrying it at every later
+   * boundary would turn a standing declaration into ambient context nobody is
+   * being asked about.
+   */
+  fix_preview: FlowFixPreview | null;
   effects: EffectLedger;
   /**
    * Effect classes covered AT THE BOUNDARY IN FORCE — never a run-wide permit.
@@ -269,6 +278,7 @@ export const FLOW_DIRECTIVE_KEYS = [
   "choices",
   "proposal",
   "decision_preview",
+  "fix_preview",
   "effects",
   "authorizations",
   "degradations",
@@ -324,6 +334,7 @@ export interface BuildDirectiveInput {
   choices?: readonly FlowChoice[];
   proposal?: DirectiveProposal | null;
   decisionPreview?: DecisionPreview | null;
+  fixPreview?: FlowFixPreview | null;
   effects?: Partial<EffectLedger>;
   authorizations?: readonly EffectClass[];
   degradations?: readonly Degradation[];
@@ -352,6 +363,7 @@ export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
     choices: [...(input.choices ?? [])],
     proposal: input.proposal ?? null,
     decision_preview: input.decisionPreview ?? null,
+    fix_preview: input.fixPreview ?? null,
     effects: {
       planned: [...(input.effects?.planned ?? [])],
       approved: [...(input.effects?.approved ?? [])],

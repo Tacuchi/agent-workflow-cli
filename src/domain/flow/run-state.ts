@@ -627,6 +627,22 @@ export type FlowDecisionPreparation =
   | { kind: "reused"; note: string; decision: string; resume_point: string }
   | { kind: "standalone"; decision: string; resume_point: string };
 
+/**
+ * The fix a quick run declared BEFORE anyone approved it.
+ *
+ * Its three parts are the ones the boundary demands — which files, what it fixes,
+ * what shape the diff has — and they are kept for the same reason a decision
+ * preparation is: what the person approves at the next boundary has to be the
+ * exact thing that was declared, and a preview that lived only in the answer
+ * could not be shown again after a compaction or a resume.
+ */
+export interface FlowFixPreview {
+  /** Paths the fix will touch. Empty is legitimate: an analysis touches none. */
+  files: string[];
+  intent: string;
+  diff: string;
+}
+
 /** The evidence a handoff destination receives instead of rediscovering it. */
 export interface FlowEscalationPackage {
   /** Plan whose execution discovered the divergence, if the run had fixed one. */
@@ -753,6 +769,16 @@ export interface FlowRunState {
    * the crash-retry identity one exact object.
    */
   decision_preparation?: FlowDecisionPreparation | null;
+  /**
+   * The fix preview the quick tranche declared, kept for the gate that approves it.
+   *
+   * Optional and NEVER written by default — the same discipline as `degraded` and
+   * `attempt_floor`: a run that never declared a preview must serialize exactly
+   * the bytes it did before this field existed, or its seal would move and every
+   * in-flight run would read as stale. Absent means "no preview declared", never
+   * "no preview was promised".
+   */
+  fix_preview?: FlowFixPreview | null;
   /**
    * Where a registered decision sent the work back to, still unsettled.
    *
@@ -1179,6 +1205,19 @@ export function withDecisionPreparation(
   preparation: FlowDecisionPreparation | null,
 ): FlowRunState {
   return sealRunState({ ...withoutSeal(state), decision_preparation: preparation });
+}
+
+/**
+ * Persist the declared fix preview, so the boundary that approves it can show it.
+ *
+ * The mirror of {@link withDecisionPreparation}, with one difference that is the
+ * whole point of the field being optional: this is only ever called with a
+ * preview. A run that declared none keeps the key ABSENT — writing `null` would
+ * add a field to the sealed record and move the digest of every run that never
+ * used it.
+ */
+export function withFixPreview(state: FlowRunState, preview: FlowFixPreview): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), fix_preview: preview });
 }
 
 /**
@@ -1619,6 +1658,9 @@ function checkV10RecordShape(
   if (!isDecisionPreparation(parsed.decision_preparation)) {
     return invalid("declara una vista de decisión sin nota, preview o linaje sellados");
   }
+  if (!isFixPreview(parsed.fix_preview)) {
+    return invalid("declara un preview de arreglo sin archivos, intención o forma del diff");
+  }
   return null;
 }
 
@@ -1871,6 +1913,25 @@ function isDecisionPreparation(
     return false;
   }
   return isDecisionPreview(value.preview, checkedBaseline);
+}
+
+/**
+ * A file written before the preview was persisted may omit this field.
+ *
+ * What it demands are the three parts the boundary itself demands, and it demands
+ * them for the same reason `isDecisionPreparation` demands its own: a preview
+ * whose intent or diff cannot be read is one the approval boundary could not show,
+ * so carrying it would be worse than not having it.
+ */
+function isFixPreview(value: unknown): value is FlowFixPreview | null | undefined {
+  if (value === undefined || value === null) return true;
+  if (!isRecord(value) || !isStringArray(value.files)) return false;
+  return (
+    typeof value.intent === "string" &&
+    value.intent.trim().length > 0 &&
+    typeof value.diff === "string" &&
+    value.diff.trim().length > 0
+  );
 }
 
 function isDecisionPreview(

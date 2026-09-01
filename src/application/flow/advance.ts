@@ -580,6 +580,20 @@ function describeAllowance(flow: FlowRunState["flow"]): string {
   return allowed.length === 0 ? "ninguna carpeta de docs" : allowed.join(" y ");
 }
 
+/**
+ * What a handed-off run tells whoever is in it — and it is TWO steps, not one.
+ *
+ * A handoff is terminal for the walk, so `chassis.finalize` — the suffix row that
+ * closes the session — is never emitted after it, and the destination command
+ * alone would leave a live session on the board with no pointer to where the work
+ * went. The close is named first because that is the order doctrine promises: the
+ * pointer goes into the session's BACKLOG, the close persists the CHECKPOINT, and
+ * only then does the work continue at the destination.
+ */
+function handoffAction(session: string, command: string): string {
+  return `anotá el puntero de escalación en el BACKLOG de la sesión y cerrala con 'aw session-close --code ${session}' —que persiste el CHECKPOINT—; después seguí con ${command}`;
+}
+
 export function resolveBoundary(
   state: FlowRunState,
   journey: readonly FlowDecision[],
@@ -614,7 +628,7 @@ export function resolveBoundary(
       error: {
         code: "FLOW_HANDOFF",
         message: `la corrida entregó '${state.handoff.destination}' desde '${state.selected_choice?.label ?? "la desviación"}' y no puede continuar hacia '${stopped.id}'`,
-        action: state.handoff.command,
+        action: handoffAction(state.session, state.handoff.command),
       },
     };
   }
@@ -647,7 +661,7 @@ export function resolveBoundary(
     request: kind === "semantic" ? boundaryRequest(stopped, state) : null,
     action: kind === "execution" ? emitted.action : null,
     proposal: subject === null ? null : previewOfState(state),
-    choices: choicesFor(kind, stopped, authorization),
+    choices: choicesFor(kind, stopped, authorization, state),
     pending,
     seal: boundarySeal(state, stopped),
     error: blocked,
@@ -792,6 +806,11 @@ export function directiveFor(
     proposal: resolved.proposal,
     decisionPreview:
       state.decision_preparation?.kind === "prepared" ? state.decision_preparation.preview : null,
+    // Only where it is the subject: the quick gate that approves the declared
+    // fix. That is what lets `Compactar` come back to that boundary and show the
+    // very thing the person is being asked to approve.
+    fixPreview:
+      resolved.stopped?.id === "quick.fix-preview-approval" ? (state.fix_preview ?? null) : null,
     authorizations: resolved.authorization?.covered ?? [],
     // The cause of a block travels with the boundary that declares it: a
     // `blocked` directive without its error is refused at construction.
@@ -913,8 +932,14 @@ export function flowControlChoices(stopping?: string): FlowDirective["choices"] 
  * enumerate — and the engine emits them verbatim, which is what makes the
  * directed journey equivalent to the one it replaces instead of merely similar.
  * Whatever the row says, the flow control is appended.
+ *
+ * One consequence is not verbatim, and it cannot be: a row is written once and a
+ * standalone plan has no contract chain to add a note to, so the registry's own
+ * text would promise a durable note that nothing writes. The lineage is already
+ * sealed in the run's decision preparation, so the choice is made HERE, where the
+ * state is — never in the row, which cannot see it.
  */
-function humanChoices(decision: FlowDecision): FlowDirective["choices"] {
+function humanChoices(decision: FlowDecision, state: FlowRunState): FlowDirective["choices"] {
   const own = alternativesOf(decision);
   const resolve: FlowDirective["choices"] =
     own === null
@@ -926,8 +951,37 @@ function humanChoices(decision: FlowDecision): FlowDirective["choices"] {
             outcome: { kind: "continue" },
           },
         ]
-      : own.map((choice) => ({ ...choice }));
+      : own.map((choice) => ({
+          ...choice,
+          ...(standaloneRegistration(decision, state, choice.outcome)
+            ? { consequence: STANDALONE_REGISTRATION_CONSEQUENCE }
+            : {}),
+        }));
   return [...resolve, ...flowControlChoices()];
+}
+
+/** What registering a decision really leaves behind when the plan is standalone. */
+const STANDALONE_REGISTRATION_CONSEQUENCE =
+  "no hay nota de contrato: la decisión queda en la traza de la corrida y la anotás en el DECISION.md de la sesión; la ejecución sigue desde su punto de reanudación";
+
+/**
+ * Whether this alternative is the deviation gate's registration over a plan with
+ * no spec — the only case where the row's durable-note promise is false.
+ *
+ * A null preparation cannot take this exit at all (the submit refuses it with
+ * `FLOW_DECISION_PREVIEW_ABSENT`), so the standalone variant covers every case
+ * where registering can succeed without a note.
+ */
+function standaloneRegistration(
+  decision: FlowDecision,
+  state: FlowRunState,
+  outcome: FlowDirective["choices"][number]["outcome"],
+): boolean {
+  return (
+    decision.id === "plan-exec.deviation-gate" &&
+    outcome.kind === "register-decision" &&
+    state.decision_preparation?.kind === "standalone"
+  );
 }
 
 /**
@@ -959,11 +1013,12 @@ function choicesFor(
   kind: FlowBoundaryKind,
   stopped: FlowDecision,
   unauthorized: TransitionAuthorization | null,
+  state: FlowRunState,
 ): FlowDirective["choices"] {
   if (kind === "authorization" && unauthorized !== null) {
     return authorizationChoices(stopped, unauthorized);
   }
-  return kind === "human" ? humanChoices(stopped) : [];
+  return kind === "human" ? humanChoices(stopped, state) : [];
 }
 
 /**
@@ -987,7 +1042,9 @@ function nextActionFor(
   boundary: FlowBoundary,
   resolved: ResolvedBoundary,
 ): string {
-  if (state.handoff !== null && state.handoff !== undefined) return state.handoff.command;
+  if (state.handoff !== null && state.handoff !== undefined) {
+    return handoffAction(state.session, state.handoff.command);
+  }
   const stopped = resolved.stopped;
   if (stopped === null) return finalAction(state);
   const submit = "respondé con 'aw flow submit' sobre la frontera vigente";
