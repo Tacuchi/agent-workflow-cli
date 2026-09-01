@@ -33,6 +33,7 @@ import {
   ACCEPTANCE_CRITERIA_KEY,
   functionalSpecDigest,
   functionalSpecPayload,
+  unclosedSpecFence,
 } from "../../src/application/parsers/spec-functional.js";
 import {
   parsePlanBaselineSeal,
@@ -232,6 +233,17 @@ describe("el payload funcional — qué mueve el digest y qué es editorial", ()
     expect(functionalSpecPayload(spaced).scenarios).toContain("aw  flow submit");
   });
 
+  it("dentro de un fence el FIN DE LÍNEA no cuenta: un checkout CRLF no mueve el sello", () => {
+    // El `\r` es del sistema de archivos, no de la spec: sin quitarlo, un clon
+    // con `core.autocrlf=true` vuelve `divergent` a todos los planes de
+    // cualquier spec con un bloque cercado, y un plan divergente no cierra.
+    const fenced = SPEC.replace(
+      "## Scenarios",
+      "## Scenarios\n\n```\naw flow submit --code 040\n```",
+    );
+    expect(functionalSpecDigest(fenced.replace(/\n/g, "\r\n"))).toBe(functionalSpecDigest(fenced));
+  });
+
   it("payload VACÍO degrada al byte-exacto: el sello no puede volverse una constante", () => {
     // Sin la caída, una spec sin ninguna sección del allowlist digiere a UNA
     // constante compartida por todas las specs en ese estado: el plan queda
@@ -243,6 +255,10 @@ describe("el payload funcional — qué mueve el digest y qué es editorial", ()
     expect(functionalSpecPayload(bare)).toEqual({});
     expect(functionalSpecDigest(bare)).toBe(specBaselineDigest(bare));
     expect(functionalSpecDigest(bare)).not.toBe(functionalSpecDigest(otra));
+    // Y es el caso LEGÍTIMO: nadie dejó un fence abierto, así que no hay
+    // diagnóstico que dar. Si diera un número, el tablero mandaría a cerrar una
+    // fence que no existe.
+    expect(unclosedSpecFence(bare)).toBeNull();
     // Y cualquier edición la mueve, incluso una que en una spec normal sería
     // editorial: sin secciones no hay nada de qué decir que es prosa.
     const edited = bare.replace("sólo prosa.", "sólo prosa, y una coma.");
@@ -279,6 +295,15 @@ describe("el payload funcional — qué mueve el digest y qué es editorial", ()
       "Un plan NO sella nada.",
     );
     expect(functionalSpecDigest(rewritten)).not.toBe(functionalSpecDigest(unclosed));
+
+    // En el MISMO golpe muere la cosecha de criterios: el `AC-01` está escrito y
+    // ninguna nota puede direccionarlo.
+    expect(parseSpecCriteria(unclosed, "099")).toEqual([]);
+    // Y el estado es OBSERVABLE, que es lo único que lo distingue del caso
+    // legítimo de arriba: sin esto las dos frases que el sistema emite son
+    // falsas —«la spec cambió» sobre una spec que no cambió, y «la spec no lo
+    // enuncia» sobre una spec que lo enuncia— y nada nombra la causa.
+    expect(unclosedSpecFence(unclosed)).toBe(4);
   });
 
   it("un `### Scenario:` no corta `## Scenarios`: su GIVEN/WHEN/THEN es contrato", () => {
@@ -776,6 +801,47 @@ describe("criterios AC-nn — el rótulo de la doctrina es direccionable", () =>
     // enunciar un criterio: sellar y direccionar leen la MISMA sección.
     expect(functionalSpecPayload(nested)[ACCEPTANCE_CRITERIA_KEY]).not.toContain("AC-09");
     expect(parseSpecCriteria(nested, "040")).not.toContain("S040/AC-09");
+  });
+
+  it("el NIVEL es contrato: un checklist entero en `###` no sella ni es direccionable", () => {
+    // Congela la conducta que hoy es INTENCIONAL —el allowlist mira sólo H2— con
+    // su consecuencia completa a la vista, que el caso de arriba no muestra: acá
+    // el checklist NO es un homónimo bajo una sección editorial, es el único que
+    // la spec tiene, anidado bajo otro `##`. Reescribir la promesa («se redondea»
+    // → «se TRUNCA y se cobra el doble») NO mueve el digest y todos los planes
+    // derivados siguen `aligned`, y el fallback de payload vacío no la rescata
+    // porque `## Requirement` sí está en H2. Quien acepte el nivel en el
+    // allowlist romperá el corte de `## Scenarios` (sus `### Scenario:`), así que
+    // la defensa vive en la doctrina: acá queda pineado el precio de desviarse.
+    const h3 = [
+      "# Spec 099 — el redondeo",
+      "",
+      "## Requirement",
+      "",
+      "El precio se muestra con dos decimales.",
+      "",
+      "## Contract",
+      "",
+      "### Acceptance criteria",
+      "",
+      "- [ ] AC-01: el precio se redondea a 2 decimales.",
+      "",
+    ].join("\n");
+    const rewritten = h3.replace(
+      "el precio se redondea a 2 decimales.",
+      "el precio se TRUNCA y se cobra el doble.",
+    );
+    expect(Object.keys(functionalSpecPayload(h3))).toEqual(["requirement"]);
+    expect(functionalSpecDigest(rewritten)).toBe(functionalSpecDigest(h3));
+    expect(parseSpecCriteria(h3, "099")).toEqual([]);
+    // Y no es el fallback de payload vacío el que lo tapa: hay payload real.
+    expect(functionalSpecDigest(h3)).not.toBe(specBaselineDigest(h3));
+    // El mismo criterio en `##` SÍ sella y SÍ es direccionable.
+    const h2 = h3.replace("### Acceptance criteria", "## Acceptance criteria");
+    expect(functionalSpecDigest(h2.replace("se redondea a 2", "se TRUNCA a 2"))).not.toBe(
+      functionalSpecDigest(h2),
+    );
+    expect(parseSpecCriteria(h2, "099")).toEqual(["S099/AC-01"]);
   });
 });
 

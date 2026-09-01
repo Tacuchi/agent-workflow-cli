@@ -28,7 +28,7 @@ import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./ma
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
 import { type ParsedPlanStatus, parsePlanStatus } from "./parsers/plan-status.js";
 import { parseProjectBlock } from "./parsers/project-block.js";
-import { functionalSpecDigest } from "./parsers/spec-functional.js";
+import { functionalSpecDigest, unclosedSpecFence } from "./parsers/spec-functional.js";
 import {
   type SpecEvidence,
   parsePlanBaselineSeal,
@@ -900,10 +900,18 @@ function describePendingReconciliation(plan: IndexedPlan): string | null {
  * byte-exact seal, which any editorial edit turns divergent — `aw reseal` closes
  * it in two commands. The handoff to `/w:plan-refine` stays the recommended
  * action, and this is the alternative to it, never its replacement.
+ *
+ * When the divergence is a spec with an unclosed FENCE, neither exit applies and
+ * the line says so: the contract sections are invisible, so the seal fell back to
+ * the exact bytes and the next edit diverges again — re-sealing that would be the
+ * loop, not the exit.
  */
 function describeUnprovenBaseline(plan: IndexedPlan): string {
   const baseline = plan.baseline;
   if (baseline.status === "divergent") {
+    if (baseline.unclosed_fence !== undefined) {
+      return `BASELINE DIVERGENTE — la spec tiene un fence sin cerrar en la línea ${baseline.unclosed_fence + 1}: cerralo y volvé a mirar; hasta entonces el sello cae al byte-exacto y cualquier edición vuelve a divergir`;
+    }
     return `BASELINE DIVERGENTE — la spec cambió desde que se selló (${baseline.sealed_digest} → ${baseline.current_digest}): revisá el plan contra la spec vigente antes de seguir; si el plan sigue vigente tal cual, cerrá la divergencia con 'aw reseal prepare ${plan.file}'`;
   }
   if (baseline.status === "malformed") {
@@ -1117,7 +1125,11 @@ async function readPlans(
     const digests =
       text === null
         ? null
-        : { functional: functionalSpecDigest(text), exact: specBaselineDigest(text) };
+        : {
+            functional: functionalSpecDigest(text),
+            exact: specBaselineDigest(text),
+            unclosed_fence: unclosedSpecFence(text),
+          };
     specDigests.set(number, digests);
     return digests;
   };

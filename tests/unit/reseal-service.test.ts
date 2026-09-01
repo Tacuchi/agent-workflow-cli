@@ -377,6 +377,32 @@ Spec 040.
     expect(await planOnDisk()).toBe(original);
   });
 
+  it("un blockquote bajo una sección `###` no es cabecera: se rechaza en vez de sellar a ciegas", async () => {
+    // El mismo caso anterior, pero con una sección `###` con blockquote antes
+    // del primer `##`. Si el estampado cortara la cabecera sólo en `##`, la
+    // línea del sello aterrizaría tras `> nota` —fuera del bloque que el lector
+    // mira— y el plan quedaría `prepared` con bytes corruptos y releído `absent`.
+    const original = `# Plan 041 — el re-sello
+
+Derived from ${SPEC_PATH}
+
+### Contexto
+
+> nota de contexto
+
+## Origin
+
+Spec 040.
+`;
+    await seed(original);
+    const prepared = await prepare();
+    expect(prepared).toMatchObject({
+      status: "failed",
+      failure: { code: "RESEAL_PLAN_HEADERLESS" },
+    });
+    expect(await planOnDisk()).toBe(original);
+  });
+
   it("un plan sin `Derived from` se rechaza con un motivo cierto para un standalone", async () => {
     const standalone = `# Plan 041 — el re-sello
 
@@ -434,6 +460,24 @@ sin origen declarado.
       status: "failed",
       failure: { code: "RESEAL_SPEC_ABSENT" },
     });
+  });
+
+  it("una spec con un fence sin cerrar se RECHAZA: resellar ahí graba un sello que vuelve a divergir", async () => {
+    // Con el fence abierto ninguna sección del contrato es visible, el digest
+    // funcional cae al byte-exacto y el sello queda garantizado a divergir con la
+    // próxima coma. Sellarlo sería el bucle: preparar, aplicar, divergir, repetir.
+    const unclosed = SPEC.replace("## Requirement", '```json\n{"a": 1}\n\n## Requirement');
+    await seed(planDoc(legacySeal(SPEC)), unclosed);
+    const prepared = await prepare();
+    expect(prepared).toMatchObject({
+      status: "failed",
+      failure: { code: "RESEAL_SPEC_FENCE_UNCLOSED" },
+    });
+    if (prepared.status === "failed") {
+      // Y dice QUÉ cerrar: sin la línea, la negativa manda a buscar a mano.
+      expect(prepared.failure.action).toContain("línea");
+      expect(prepared.failure.action).toContain(SPEC_PATH);
+    }
   });
 
   it("re-sellar un plan ya alineado es idempotente y no escribe", async () => {
@@ -668,6 +712,25 @@ ${origin}
       status: "aligned",
       digest: functionalSpecDigest(SPEC_EDITED),
     });
+  });
+
+  it("con un fence sin cerrar el tablero nombra la fence, no un cambio que no hubo", async () => {
+    // La frase que el tablero emitía era FALSA sobre esta spec: nadie cambió su
+    // contrato, y mandar a `aw reseal` acá es mandar al bucle.
+    const unclosed = SPEC.replace("## Requirement", '```json\n{"a": 1}\n\n## Requirement');
+    const open = openPlan([
+      `> Derived from ${SPEC_PATH}`,
+      `> Baseline: ${SPEC_PATH}@${functionalSpecDigest(SPEC)}`,
+      "> Estado: open",
+      "> Límite de ejecución: checkout",
+    ]);
+    await writeFile(join(root, SPEC_PATH), unclosed, "utf8");
+    await writeFile(join(root, PLAN_PATH), open, "utf8");
+
+    const board = await buildWorklineIndex(fs, env, paths, { now: NOW });
+    const item = board.pipeline.find((entry) => entry.file === PLAN_PATH);
+    expect(item?.detail.next).toContain("fence sin cerrar en la línea");
+    expect(item?.detail.next).not.toContain("aw reseal prepare");
   });
 
   it("el tablero nombra la salida barata en la línea del plan divergente", async () => {

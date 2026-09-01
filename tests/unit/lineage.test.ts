@@ -307,6 +307,16 @@ describe("el sello se escribe donde va, y una sola vez", () => {
     expect(withSpecBaseline(bare, baseline)).toBe(bare);
   });
 
+  it("un blockquote de una sección `###` no es la cabecera: el sello no aterriza ahí", () => {
+    // El lector corta la cabecera en el PRIMER heading de nivel >= 2, `###`
+    // incluido: si el escritor cortara sólo en `##`, la línea caería dentro del
+    // bloque de estado de una fase y se releería `absent` para siempre.
+    const nested = `# Plan 041\n\nDerived from ${SPEC_PATH}\n\n### Contexto\n\n> nota\n\n## Origin\n\nnada.\n`;
+    expect(withSpecBaseline(nested, baseline)).toBe(nested);
+    const indented = `# Plan 041\n\nDerived from ${SPEC_PATH}\n\n  ## Origin\n\n> nota\n`;
+    expect(withSpecBaseline(indented, baseline)).toBe(indented);
+  });
+
   it("lo que se escribe es exactamente lo que se vuelve a leer", () => {
     const stamped = withSpecBaseline(plan(null), baseline);
     expect(parsePlanBaselineSeal(stamped)).toEqual({ status: "sealed", baseline });

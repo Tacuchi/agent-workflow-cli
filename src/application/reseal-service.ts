@@ -39,7 +39,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { resolveCoreDocsCanon } from "./docs-canon-service.js";
 import { applyLocalProposal } from "./local-proposal.js";
-import { functionalSpecDigest } from "./parsers/spec-functional.js";
+import { functionalSpecDigest, unclosedSpecFence } from "./parsers/spec-functional.js";
 import {
   type ParsedSpecRelation,
   parseDerivedFromPath,
@@ -70,6 +70,7 @@ export type ResealCode =
   | "RESEAL_SPEC_PATH_INVALID"
   | "RESEAL_SPEC_ABSENT"
   | "RESEAL_SPEC_UNREADABLE"
+  | "RESEAL_SPEC_FENCE_UNCLOSED"
   | "RESEAL_APPROVAL_MISMATCH";
 
 export interface ResealFailure {
@@ -185,6 +186,19 @@ export async function prepareReseal(
       "RESEAL_SPEC_UNREADABLE",
       `'${derived}' no se puede leer: ${err instanceof Error ? err.message : String(err)}`,
       "resolvé el acceso a la spec y volvé a preparar el re-sello: un sello sobre bytes que no se leyeron no afirma nada",
+    );
+  }
+
+  const fence = unclosedSpecFence(specText);
+  if (fence !== null) {
+    // With a fence open the spec has no visible contract sections, so the
+    // functional digest degrades to the exact bytes: sealing that would pin a
+    // digest guaranteed to diverge again on the next editorial edit, and the
+    // person would come back here forever. The exit is upstream, in the spec.
+    return fail(
+      "RESEAL_SPEC_FENCE_UNCLOSED",
+      `'${derived}' tiene un fence sin cerrar en la línea ${fence + 1}: sus secciones de contrato no se ven y el sello caería al byte-exacto, que vuelve a divergir con cualquier edición`,
+      `cerrá la fence abierta en la línea ${fence + 1} de '${derived}' y volvé a preparar el re-sello`,
     );
   }
 

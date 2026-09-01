@@ -14,6 +14,16 @@ export interface MarkdownScan {
   fenced: boolean[];
   /** ATX headings found OUTSIDE fenced code blocks, in document order */
   headings: MarkdownHeading[];
+  /**
+   * 0-based index of the fence that the document never closed, or `null`.
+   *
+   * The scan cannot refuse — an unclosed fence is a document that parses, only
+   * with everything after it quoted — so it reports it instead: from here on
+   * there are no more headings, and a reader that degrades silently on that
+   * (`functionalSpecPayload` empties, `parseSpecCriteria` harvests nothing) can
+   * name the cause rather than blame the author's contract.
+   */
+  unclosedFence: number | null;
 }
 
 const HEADING_LINE_RE = /^(#{1,6})\s+(\S.*)$/;
@@ -41,12 +51,14 @@ export function scanMarkdown(text: string): MarkdownScan {
   const headings: MarkdownHeading[] = [];
 
   let fence: string | null = null;
+  let fenceLine: number | null = null;
   for (let i = 0; i < lines.length; i++) {
     const line = (lines[i] ?? "").trim();
     const marker = FENCE_OPEN_RE.exec(line)?.[1] ?? null;
     if (fence === null) {
       if (marker) {
         fence = marker;
+        fenceLine = i;
         fenced[i] = true;
         continue;
       }
@@ -57,10 +69,13 @@ export function scanMarkdown(text: string): MarkdownScan {
       continue;
     }
     fenced[i] = true;
-    if (marker && closesFence(fence, marker, line)) fence = null;
+    if (marker && closesFence(fence, marker, line)) {
+      fence = null;
+      fenceLine = null;
+    }
   }
 
-  return { lines, fenced, headings };
+  return { lines, fenced, headings, unclosedFence: fence === null ? null : fenceLine };
 }
 
 /** CommonMark closing fence: same character, at least as long, the bare marker alone. */

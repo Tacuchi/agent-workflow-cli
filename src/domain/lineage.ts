@@ -54,7 +54,19 @@ export type PlanBaselineSeal =
  */
 export type BaselineAlignment =
   | { status: "aligned"; digest: string }
-  | { status: "divergent"; sealed_digest: string; current_digest: string }
+  | {
+      status: "divergent";
+      sealed_digest: string;
+      current_digest: string;
+      /**
+       * The spec's unclosed fence, when it has one (0-based). Carried BECAUSE it
+       * changes the correction: with a fence open the spec's contract sections
+       * are invisible, the digest fell back to the exact bytes and every further
+       * edit diverges again, so the move is to close the fence — not to diff a
+       * contract that did not change.
+       */
+      unclosed_fence?: number;
+    }
   | { status: "unsealed" }
   | { status: "malformed"; why: string; action: string }
   | { status: "unresolved"; reason: "spec-not-found"; path: string };
@@ -189,7 +201,7 @@ export function withSpecBaseline(planText: string, baseline: SpecBaseline): stri
   return lines.join("\n");
 }
 
-/** Index of the first `##` section, or the end — the header block's bound. */
+/** Index of the first `##`..`######` section, or the end — the header block's bound. */
 function headerBlockEnd(lines: readonly string[]): number {
   let fenced = false;
   for (const [index, raw] of lines.entries()) {
@@ -198,7 +210,11 @@ function headerBlockEnd(lines: readonly string[]): number {
       fenced = !fenced;
       continue;
     }
-    if (!fenced && /^##\s/.test(raw)) return index;
+    // Any section heading closes the block, at ANY level and indented or not:
+    // the readers of this seal bound it at the first heading of level >= 2, and
+    // a longer bound here lands the line inside a phase's blockquote where they
+    // never look for it.
+    if (!fenced && /^\s*#{2,6}\s/.test(raw)) return index;
   }
   return lines.length;
 }
@@ -215,6 +231,13 @@ export interface SpecCurrentDigests {
   functional: string;
   /** {@link specBaselineDigest} — over the file's exact bytes. */
   exact: string;
+  /**
+   * `unclosedSpecFence` — the line where the spec left a fence open, 0-based, or
+   * `null`. Optional so a caller that only compares digests stays unchanged; a
+   * caller that reports the comparison to a person wants it, because that state
+   * makes `functional` fall back to `exact` and the divergence self-renewing.
+   */
+  unclosed_fence?: number | null;
 }
 
 /**
@@ -256,6 +279,9 @@ export function alignSpecBaseline(
     status: "divergent",
     sealed_digest: sealed,
     current_digest: current.functional,
+    ...(typeof current.unclosed_fence === "number"
+      ? { unclosed_fence: current.unclosed_fence }
+      : {}),
   };
 }
 

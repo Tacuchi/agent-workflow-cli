@@ -139,9 +139,10 @@ const TICKED_BOX = /^([-*+]) \[[xX]\]/;
  * - runs of blank lines collapsed to one, and the blank borders of each section
  *   dropped.
  *
- * Inside a fence every line is kept VERBATIM: a fenced block in a spec is a
- * literal — a payload shape, a command, an expected output — where a space is
- * part of what is promised.
+ * Inside a fence every line is kept VERBATIM except its line ending: a fenced
+ * block is a literal — a payload shape, a command, an expected output — where
+ * a space is promised, but the `\r` of a CRLF checkout is the filesystem's,
+ * not the spec's.
  *
  * A section that is absent is omitted rather than keyed to an empty string, so a
  * spec that never had `## Scenarios` digests the same as one that never will. A
@@ -175,13 +176,30 @@ export function functionalSpecPayload(specText: string): Record<string, string> 
  * without anybody declaring a spec without a contract: one UNCLOSED fence in
  * `## Context` marks the rest of the file as fenced, so `scanMarkdown` sees no
  * further heading and every allowlisted section disappears at once. Falling back
- * here makes the seal sensitive to any edit again — exactly the behavior that
- * preceded the functional payload, which is the worst answer this may give.
+ * here makes the seal sensitive to any edit again, so that state is not left
+ * indistinguishable from a spec that genuinely declares no contract:
+ * {@link unclosedSpecFence} names it, and whoever reports a divergence or
+ * prepares a re-seal says WHICH fence to close instead of sending somebody to
+ * diff a spec that did not change.
  */
 export function functionalSpecDigest(specText: string): string {
   const payload = functionalSpecPayload(specText);
   if (Object.keys(payload).length === 0) return specBaselineDigest(specText);
   return `sha256:${semanticDigest(payload)}`;
+}
+
+/**
+ * The line where this spec left a fence open, or `null` — 0-based, like
+ * {@link MarkdownHeading.line}.
+ *
+ * The ONE observable for the state described on {@link functionalSpecDigest}: an
+ * empty payload can mean "no contract declared" or "one fence swallowed the
+ * document", and the two need opposite corrections. A number rather than a
+ * status type because the index already distinguishes them and a second sum type
+ * would be a vocabulary nobody reads.
+ */
+export function unclosedSpecFence(specText: string): number | null {
+  return scanMarkdown(specText).unclosedFence;
 }
 
 /** A line of a section's body, and whether a fence made it untouchable. */
@@ -201,7 +219,10 @@ function normalizeBody(
   for (let i = start; i < end; i += 1) {
     const verbatim = fenced[i] === true;
     const raw = lines[i] ?? "";
-    const line: PayloadLine = { verbatim, text: verbatim ? raw : normalizeLine(raw) };
+    const line: PayloadLine = {
+      verbatim,
+      text: verbatim ? raw.replace(/\r$/, "") : normalizeLine(raw),
+    };
     if (dropped(line, out[out.length - 1])) continue;
     out.push(line);
   }
