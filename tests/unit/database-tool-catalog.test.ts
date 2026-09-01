@@ -128,6 +128,37 @@ describe("DatabaseToolCatalog", () => {
     expect(encodeToolResponse(outcome.response)).not.toContain(DSN);
   });
 
+  it("propaga DATABASE_ROLE_UNSAFE como advertencia sin bloquear la lectura", async () => {
+    postgres.executeResult = {
+      rows: [{ ok: 1 }],
+      truncated: false,
+      warnings: [
+        {
+          code: "DATABASE_ROLE_UNSAFE",
+          message:
+            "El rol PostgreSQL es superusuario; la lectura continúa dentro de una transacción READ ONLY.",
+        },
+      ],
+    };
+
+    const outcome = await catalog.call({
+      tool: "execute_sql",
+      connection: "alpha",
+      input: { sql: "SELECT 1 AS ok" },
+    });
+
+    expect(outcome).toMatchObject({
+      exitCode: 0,
+      response: {
+        success: true,
+        data: {
+          statements: [{ rows: [{ ok: 1 }] }],
+        },
+        warnings: [{ code: "DATABASE_ROLE_UNSAFE" }],
+      },
+    });
+  });
+
   it("bloquea SQL de escritura antes de abrir la conexión", async () => {
     const outcome = await catalog.call({
       tool: "execute_sql",

@@ -63,6 +63,7 @@ import {
 import { DATABASE_TOOL_DESCRIPTORS, type ToolFailure } from "../../domain/database-tools.js";
 import { type HarnessId, MCP_FILE_HOSTS, harnessById } from "../../domain/harnesses.js";
 import {
+  type McpDriftReport,
   type McpHost,
   type McpInstance,
   buildMcpEntry,
@@ -695,26 +696,26 @@ function doctorProbeSnapshot(
 
 function doctorCommandResult(data: ReturnType<typeof runMcpDoctor>): CommandResult {
   const total = data.reports.length;
-  const affected = data.reports.filter(isDoctorReportAffected).length;
-  if (affected === 0) return { ok: true, data, exitCode: 0 };
+  const blocking = data.reports.filter(isDoctorReportBlocking).length;
+  if (blocking === 0) return { ok: true, data, exitCode: 0 };
   return {
     ok: false,
     data,
     error: {
       code: "MCP_DOCTOR_DRIFT",
-      message: `${affected}/${total} entradas con drift, probe o seguridad pendiente (ver data.reports)`,
+      message: `${blocking}/${total} entradas con drift, probe o seguridad pendiente (ver data.reports)`,
     },
     exitCode: 1,
   };
 }
 
-function isDoctorReportAffected(
-  report: ReturnType<typeof runMcpDoctor>["reports"][number],
+export function isDoctorReportBlocking(
+  report: Pick<McpDriftReport, "status" | "probe" | "safety">,
 ): boolean {
   return (
     report.status !== "ok" ||
     report.probe?.outcome === "failed" ||
-    (report.safety !== undefined && report.safety.status !== "safe")
+    report.safety?.status === "blocked"
   );
 }
 
@@ -765,12 +766,12 @@ export function safetyFromRoleOutcome(
       code: inspection.code,
     };
   }
-  const status = inspection.superuser
-    ? "blocked"
-    : inspection.canWrite ||
-        inspection.canCreateRole ||
-        inspection.canCreateDatabase ||
-        inspection.unsafeServerRole === true
+  const status =
+    inspection.superuser ||
+    inspection.canWrite ||
+    inspection.canCreateRole ||
+    inspection.canCreateDatabase ||
+    inspection.unsafeServerRole === true
       ? "warning"
       : "safe";
   return {

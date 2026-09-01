@@ -47,6 +47,12 @@ export interface DatabaseToolDescriptor {
 export interface ToolSuccess {
   success: true;
   data: Record<string, unknown>;
+  warnings?: readonly ToolWarning[];
+}
+
+export interface ToolWarning {
+  code: string;
+  message: string;
 }
 
 export interface ToolFailure {
@@ -95,8 +101,15 @@ export function isDatabaseToolName(value: string): value is DatabaseToolName {
   return (DATABASE_TOOL_NAMES as readonly string[]).includes(value);
 }
 
-export function toolSuccess(data: Record<string, unknown>): ToolSuccess {
-  return { success: true, data };
+export function toolSuccess(
+  data: Record<string, unknown>,
+  warnings: readonly ToolWarning[] = [],
+): ToolSuccess {
+  return {
+    success: true,
+    data,
+    ...(warnings.length === 0 ? {} : { warnings }),
+  };
 }
 
 export function toolFailure(

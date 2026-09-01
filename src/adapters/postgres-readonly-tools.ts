@@ -4,6 +4,7 @@ import { MAX_TOOL_RESULT_BYTES, MAX_TOOL_ROWS } from "../domain/database-tools.j
 import type {
   PostgresQueryOptions,
   PostgresQueryResult,
+  PostgresQueryWarning,
   PostgresReadonlyPort,
   PostgresRoleInspection,
 } from "../ports/postgres-tools.js";
@@ -23,7 +24,7 @@ export class PostgresReadonlyTools implements PostgresReadonlyPort {
     dsn: string,
     options: PostgresQueryOptions = {},
   ): Promise<PostgresQueryResult> {
-    return await this.withReadonlyClient(
+    return await this.readWithRoleWarnings(
       dsn,
       async (client) => await readBoundedCursor(client, sql, [], options.signal),
       ...(options.signal === undefined ? [] : [{ signal: options.signal }]),
@@ -36,7 +37,7 @@ export class PostgresReadonlyTools implements PostgresReadonlyPort {
     dsn: string,
     options: PostgresQueryOptions = {},
   ): Promise<PostgresQueryResult> {
-    return await this.withReadonlyClient(
+    return await this.readWithRoleWarnings(
       dsn,
       async (client) => await readBoundedCursor(client, sql, values, options.signal),
       ...(options.signal === undefined ? [] : [{ signal: options.signal }]),
@@ -44,17 +45,15 @@ export class PostgresReadonlyTools implements PostgresReadonlyPort {
   }
 
   async inspectRole(dsn: string): Promise<PostgresRoleInspection> {
-    return await this.withReadonlyClient(
-      dsn,
-      async (client) => {
-        const result = await client.query<{
-          superuser: boolean;
-          can_create_role: boolean;
-          can_create_database: boolean;
-          can_write: boolean;
-          unsafe_server_role: boolean;
-        }>(
-          `SELECT
+    return await this.withReadonlyClient(dsn, async (client) => {
+      const result = await client.query<{
+        superuser: boolean;
+        can_create_role: boolean;
+        can_create_database: boolean;
+        can_write: boolean;
+        unsafe_server_role: boolean;
+      }>(
+        `SELECT
            r.rolsuper AS superuser,
            r.rolcreaterole AS can_create_role,
            r.rolcreatedb AS can_create_database,
@@ -97,24 +96,38 @@ export class PostgresReadonlyTools implements PostgresReadonlyPort {
            ) AS unsafe_server_role
          FROM pg_roles r
          WHERE r.rolname = current_user`,
+      );
+      const role = result.rows[0];
+      if (role === undefined) {
+        throw new PostgresToolError(
+          "DATABASE_ROLE_UNKNOWN",
+          "No se pudo verificar el rol PostgreSQL.",
         );
-        const role = result.rows[0];
-        if (role === undefined) {
-          throw new PostgresToolError(
-            "DATABASE_ROLE_UNKNOWN",
-            "No se pudo verificar el rol PostgreSQL.",
-          );
-        }
-        return {
-          superuser: role.superuser,
-          canCreateRole: role.can_create_role,
-          canCreateDatabase: role.can_create_database,
-          canWrite: role.can_write,
-          unsafeServerRole: role.unsafe_server_role,
-          transactionReadOnly: true,
-        };
+      }
+      return {
+        superuser: role.superuser,
+        canCreateRole: role.can_create_role,
+        canCreateDatabase: role.can_create_database,
+        canWrite: role.can_write,
+        unsafeServerRole: role.unsafe_server_role,
+        transactionReadOnly: true,
+      };
+    });
+  }
+
+  private async readWithRoleWarnings(
+    dsn: string,
+    work: (client: Client) => Promise<PostgresQueryResult>,
+    options: ReadonlyClientOptions = {},
+  ): Promise<PostgresQueryResult> {
+    return await this.withReadonlyClient(
+      dsn,
+      async (client) => {
+        const warnings = await inspectExecutionRoleWarnings(client);
+        const result = await work(client);
+        return warnings.length === 0 ? result : { ...result, warnings };
       },
-      { allowSuperuser: true },
+      options,
     );
   }
 
@@ -158,7 +171,6 @@ export class PostgresReadonlyTools implements PostgresReadonlyPort {
           "PostgreSQL no confirmó una transacción de solo lectura.",
         );
       }
-      if (!options.allowSuperuser) await rejectUnsafeExecutionRole(client);
       await client.query("SET LOCAL statement_timeout = '30s'");
       return await work(client);
     } catch (error) {
@@ -227,11 +239,9 @@ function queryCancelled(): PostgresToolError {
 
 interface ReadonlyClientOptions {
   signal?: AbortSignal;
-  /** Doctor needs to report superuser rather than being refused by the executor. */
-  allowSuperuser?: boolean;
 }
 
-async function rejectUnsafeExecutionRole(client: Client): Promise<void> {
+async function inspectExecutionRoleWarnings(client: Client): Promise<PostgresQueryWarning[]> {
   const result = await client.query<{ superuser: boolean; unsafe_server_role: boolean }>(
     `SELECT
        role_info.rolsuper AS superuser,
@@ -262,18 +272,25 @@ async function rejectUnsafeExecutionRole(client: Client): Promise<void> {
       "No se pudo verificar la seguridad del rol PostgreSQL.",
     );
   }
-  if (role.superuser) {
-    throw new PostgresToolError(
-      "DATABASE_ROLE_UNSAFE",
-      "La ejecución de tools requiere un rol PostgreSQL que no sea superusuario.",
-    );
-  }
-  if (role.unsafe_server_role) {
-    throw new PostgresToolError(
-      "DATABASE_ROLE_UNSAFE",
-      "La ejecución de tools requiere un rol sin privilegios de servidor peligrosos.",
-    );
-  }
+  return warningsFromExecutionRole(role);
+}
+
+export function warningsFromExecutionRole(role: {
+  superuser: boolean;
+  unsafe_server_role: boolean;
+}): PostgresQueryWarning[] {
+  if (!role.superuser && !role.unsafe_server_role) return [];
+  const risk = role.superuser
+    ? role.unsafe_server_role
+      ? "es superusuario y dispone de privilegios de servidor peligrosos"
+      : "es superusuario"
+    : "dispone de privilegios de servidor peligrosos";
+  return [
+    {
+      code: "DATABASE_ROLE_UNSAFE",
+      message: `El rol PostgreSQL ${risk}; la lectura continúa dentro de una transacción READ ONLY.`,
+    },
+  ];
 }
 
 async function readCursorRows(

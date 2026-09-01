@@ -147,17 +147,20 @@ export class DatabaseToolCatalog {
           ? await this.deps.postgres.execute(call.input.sql, call.dsn)
           : await this.deps.postgres.execute(call.input.sql, call.dsn, { signal: call.signal });
       return this.enforceResultLimit(
-        toolSuccess({
-          statements: [
-            {
-              sql: call.input.sql,
-              rows: result.rows,
-              count: result.rows.length,
-              ...(result.truncated ? { truncated: true } : {}),
-            },
-          ],
-          source_id: "default",
-        }),
+        toolSuccess(
+          {
+            statements: [
+              {
+                sql: call.input.sql,
+                rows: result.rows,
+                count: result.rows.length,
+                ...(result.truncated ? { truncated: true } : {}),
+              },
+            ],
+            source_id: "default",
+          },
+          result.warnings,
+        ),
       );
     });
   }
@@ -180,16 +183,19 @@ export class DatabaseToolCatalog {
         result.rows.slice(0, call.input.limit),
       );
       return this.enforceResultLimit(
-        toolSuccess({
-          object_type: call.input.object_type,
-          pattern: call.input.pattern,
-          ...(call.input.schema === undefined ? {} : { schema: call.input.schema }),
-          ...(call.input.table === undefined ? {} : { table: call.input.table }),
-          detail_level: call.input.detail_level,
-          count: rows.length,
-          results: rows,
-          truncated: result.truncated || result.rows.length > call.input.limit,
-        }),
+        toolSuccess(
+          {
+            object_type: call.input.object_type,
+            pattern: call.input.pattern,
+            ...(call.input.schema === undefined ? {} : { schema: call.input.schema }),
+            ...(call.input.table === undefined ? {} : { table: call.input.table }),
+            detail_level: call.input.detail_level,
+            count: rows.length,
+            results: rows,
+            truncated: result.truncated || result.rows.length > call.input.limit,
+          },
+          result.warnings,
+        ),
       );
     });
   }

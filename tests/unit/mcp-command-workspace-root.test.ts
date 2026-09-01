@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { upsertMcpConnection } from "../../src/application/mcp-connections-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { mcpCommand, safetyFromRoleOutcome } from "../../src/cli/commands/mcp.js";
+import {
+  isDoctorReportBlocking,
+  mcpCommand,
+  safetyFromRoleOutcome,
+} from "../../src/cli/commands/mcp.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -142,15 +146,16 @@ describe("doctor PostgreSQL safety", () => {
     });
   });
 
-  it("conserva superuser como blocked aun si no hay otro riesgo reportado", () => {
-    expect(
-      safetyFromRoleOutcome({
-        superuser: true,
-        canCreateRole: false,
-        canCreateDatabase: false,
-        canWrite: false,
-        transactionReadOnly: true,
-      }),
-    ).toMatchObject({ status: "blocked", unsafe_server_role: false });
+  it("reporta superuser como warning y no lo trata como fallo de doctor", () => {
+    const safety = safetyFromRoleOutcome({
+      superuser: true,
+      canCreateRole: false,
+      canCreateDatabase: false,
+      canWrite: false,
+      transactionReadOnly: true,
+    });
+
+    expect(safety).toMatchObject({ status: "warning", unsafe_server_role: false });
+    expect(isDoctorReportBlocking({ status: "ok", safety })).toBe(false);
   });
 });

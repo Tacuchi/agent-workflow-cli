@@ -6,6 +6,12 @@
 export interface PostgresQueryResult {
   rows: Record<string, unknown>[];
   truncated: boolean;
+  warnings?: readonly PostgresQueryWarning[];
+}
+
+export interface PostgresQueryWarning {
+  code: string;
+  message: string;
 }
 
 /** Optional cancellation propagated from a transport request to PostgreSQL. */
