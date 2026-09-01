@@ -147,7 +147,9 @@ run stops at it: declaring a deviation no longer carries on to the commit by its
 - **Local decision — `plan-exec` continues.** A class or method name; a local helper; internal code layout; imports; a choice between equivalent APIs already allowed; a fix needed to compile; a minor refactor that does not move the journey; one extra focused test for a risk found while implementing. Declares **no signal** — the gate is not raised — and is recorded in `DECISION` only when it is not obvious.
 - **Composable decision — a note is registered and execution continues.** The change amends how the promise is met without changing who promised it. It is the only exit that writes a **decision note**, and it is available **only** when all four closures hold (below). The spec and the plan stay byte-exact.
 - **Structural deviation — stop and return to `plan-refine`.** Stop when the change touches: an input or output; an observable state; a relevant endpoint or public contract; the set of participating components or repositories; the phase order; the simulation boundary; the integration strategy; a material dependency; the main persistence mechanism; a phase already `validada`; the evidence needed to demonstrate the result. A decision that substantially expands or shrinks the work counts too.
-- **Functional change — return to `spec-refine`.** Stop when the change touches: the expected result; the functional scope; a business rule; an acceptance criterion; the actor or consumer; or a product decision.
+- **Functional change — return to `spec-refine`.** Stop when the **promise of the product** moves: the expected result; the functional scope; a business rule; the outcome an acceptance criterion states; the actor or consumer; a product decision. A technical divergence that leaves the promise intact never comes back here — its first exit is `Registrar la decisión y seguir`.
+
+> **How an affirmation is addressed:** a decision note names the criteria it amends as `S{NNN}/AC-nn` — `NNN` from the spec file's number, `AC-nn` the label the criterion carries in the spec's checklist. The CLI **derives** that id from the label plus the file number, so the readable form the spec template writes is already addressable (a criterion that spells the full id is read the same way, never counted twice). A note amending a criterion the spec does not state **at all** is refused with `CONTRACT_ASSERTION_ABSENT`, and the exit is the spec stating it (`spec-refine`), never a second spelling of the id here.
 
 **Eligibility is closure, never size.** The composable exit opens only when the four close: the
 divergence stays in the **same functional lineage**; its **intent is settled**, so nothing further has
@@ -178,7 +180,7 @@ erases an earlier one.
 | Add a participating repository | stops | — | yes | — |
 | Move the simulation to another boundary | stops | — | yes | — |
 | Change the phase order | stops | — | yes | — |
-| Add a functional rule · change an acceptance criterion | stops | — | — | yes |
+| Add a functional rule · move the outcome a criterion promises | stops | — | — | yes |
 | Does not compose against this lineage at all | stops | — | — | a spec of its own |
 
 ## Delta 2 — Git policy: **safe branch + proposed commits**
@@ -201,7 +203,7 @@ adds nothing of its own beyond running on a verified branch and never
   order, then the justified checks and cross-cutting validations. `isolated` runs the same stack for
   its single phase.
 - Each added test is re-weighed at the closing review gate ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate* → *Test-value lens*, tag `overtest`): over-testing is a **finding to fix or justify**, never an automatic rejection.
-- Also run the plan's `## Validations` (cross-cutting rules and constraints) + the Final behavior block of `## Solution` (legacy plans: the `## Final behavior` section) + the spec's acceptance/success criteria (its `## Scenarios`, if present, are ready-made test cases: GIVEN=arrange · WHEN=act · THEN=assert).
+- Also run the plan's `## Validations` (cross-cutting rules and constraints) + the Final behavior block of `## Solution` (legacy plans: the `## Final behavior` section). **What execution runs is the PLAN's evidence, never the spec's prose:** `plan-new` already derived those validations from the spec's acceptance criteria and its `## Scenarios`, so the spec is confirmed functionally **through** them. A criterion no validation covers is a gap of the plan, not a test to improvise here.
 - A validation that **runs and fails** → back into the phase (gap): no advancing, no `validada`.
 
 - **SQL delivery**: validate the migration's behavior against a fixture or ephemeral database in the acquired checkout. The forward/rollback script is delivered through `SCRIPTS.sql` and `export-scripts`; a real application is an optional handoff and never keeps a phase or the plan open.

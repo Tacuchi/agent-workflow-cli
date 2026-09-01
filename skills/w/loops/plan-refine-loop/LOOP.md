@@ -90,9 +90,9 @@ Reuses plan-new-loop's gap taxonomy **in full** ([`plan-new-loop`](../plan-new-l
 
 | Gap | Signal | Resolved by |
 |---|---|---|
-| Plan↔spec drift | the spec was re-refined and the plan fell out of line | **research** (re-reads the spec) / **human** |
+| Plan↔spec drift | the spec changed **functionally** (requirement, scope, criteria, scenarios, behavioral changes) and the plan fell out of line — an editorial edit of the spec is not drift: a `> Baseline:` that still reads one as divergent is closed by **re-sealing** (`aw reseal`, or the re-publication of the plan this loop's own save performs), never by a redesign, and the run does not converge leaving it divergent | **research** (re-reads the spec) / **human** |
 
-> **Spec-less degradation (hand-written / adopted plans).** When the plan has **no source spec** (`## Origin` = adopted / hand-written), the spec-anchored checks **degrade gracefully**: "spec criteria uncovered" and "plan↔spec drift" do **not** apply — criterion→task traceability anchors to the plan's **own** Final behavior block (in `## Solution`) / `## Validations` instead. The rest of the taxonomy (phase shape, simulation, evidence, deps, Impacted↔Solution, UI→SPEC) applies unchanged. Normalizing an adopted plan to the full Delta 1 schema **is** this loop's job (missing `(core)` sections are gaps).
+> **A spec-less plan is a first-class mode (standalone / hand-written / adopted).** When the plan has **no source spec** (`> Standalone:`, or `## Origin` = adopted / hand-written), the spec-anchored checks do not apply: "spec criteria uncovered" and "plan↔spec drift" are out, and criterion→task traceability anchors to the plan's **own** Final behavior block (in `## Solution`) / `## Validations` instead. The rest of the taxonomy (phase shape, simulation, evidence, deps, Impacted↔Solution, UI→SPEC) applies unchanged. Normalizing an adopted plan to the full Delta 1 schema **is** this loop's job (missing `(core)` sections are gaps).
 
 > **Adjust the Solution the laziest-that-works way** (chassis § *Minimality*, generative side): reuse what already exists before adding abstractions, layers or dependencies — the coherence gate only *confirms* minimality, and a re-refine is a chance to *remove* over-building, not add it.
 

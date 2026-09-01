@@ -56,8 +56,8 @@ Systems / components / sources involved. Known constraints.
 - Out: what is NOT included
 
 ## Acceptance criteria
-- [ ] verifiable criterion 1 (EARS style recommended; behavioral ones expand in ## Scenarios)
-- [ ] verifiable criterion 2
+- [ ] AC-01: functional outcome (EARS style recommended; behavioral ones expand in ## Scenarios)
+- [ ] AC-02: …
 
 ## Scenarios         (opt.)
 Behavior made concrete — GIVEN/WHEN/THEN/AND blocks; each traces to ≥1 acceptance criterion.
@@ -86,10 +86,11 @@ Pending doubts. ← the spec-refine-loop closes them.
 - `Scope` always carries `Out`.
 - **Where the reconnaissance lands** — `Context`: the facts that place the request (sources apparently involved, a module's observed responsibility, the relevant technology), **at most one path per component** as an anchor, never a technical inventory. `Assumptions`: the inferences that let the draft advance. `Open questions`: what would need walking the implementation, a human decision, or an unavailable source.
 - **The code found never widens `Scope`** and never becomes a requirement: **acceptance criteria derive from the user's intent**. The reconnaissance may lend vocabulary, name existing actors and boundaries, and avoid obvious contradictions. It must not invent behavior nobody asked for, turn a current technical decision into a user requirement, or impose an implementation as a criterion.
-- **Acceptance criteria = static testable criteria** (the "what"): `plan-exec` validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]`; the spec never mutates by execution, only by a re-refine.
-- **Scenarios = behavior made concrete** (uppercase GIVEN/WHEN/THEN/AND): draft them only when the prompt already describes behavior — deriving the rest is spec-refine work. A scenario earns its place only when it adds GIVEN setup or edge semantics the criterion does not capture — **never restate a criterion 1:1**.
+- **Acceptance criteria = functional, observable outcomes at product level** (the "what"), each labeled `AC-nn`. **That label is what makes it addressable**: a decision note amends it as `S{NNN}/AC-nn`, and the CLI derives the `S{NNN}` from this spec's own file number — spelling the full id on the criterion line is accepted too, never counted twice. What is unaddressable is a criterion with **no label**, and a note naming one the spec does not state is refused with `CONTRACT_ASSERTION_ABSENT`. **The verification strategy — tests, evidence, commands — is the PLAN's** (its `## Validations`): here goes the outcome, there goes how it is proven. Progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]`; the spec never mutates by execution, only by a re-refine.
+- **A criterion never fixes** a commit SHA or a third-party version as a fact of the contract, a file inventory, or an internal mechanism (a lock, a CAS, the name of a class/function/internal module). **The visible surface IS functional behavior**: for a CLI or an API, its commands, flags, observable messages and output formats are legitimate criteria — what stays out are the internal modules and mechanisms that implement them.
+- **Scenarios = behavior made concrete** (uppercase GIVEN/WHEN/THEN/AND): draft them only when the prompt already describes behavior — deriving the rest is spec-refine work. A scenario earns its place only when it adds GIVEN setup or edge semantics the criterion does not capture — **never restate a criterion 1:1**. They illustrate behavior and **feed** the test derivation `plan-new` does; they are not themselves the executable suite.
 - If **UI** is involved, **record the need and stop there**: mention it in `Requirement`/`Context`. This command creates **no design package** and writes no `## Design references` — the design is composed in `spec-refine` (via the [`design`](../roles/design/ROLE.md) capability, which publishes the package the spec then references). Minting a package from a draft would pin an identity before the requirement is even closed. "UI unspecified" is a first-class refinement gap.
-- The **gaps** the loop detects = weak sections of the schema (vague Requirement, Scope without `Out`, untestable criteria, open questions, undeclared assumptions, contradictions) **+ UI unspecified** when the requirement involves UI.
+- The **gaps** the loop detects = weak sections of the schema (vague Requirement, Scope without `Out`, criteria whose outcome is not observable, open questions, undeclared assumptions, contradictions) **+ UI unspecified** when the requirement involves UI.
 - Equivalent alternative: the user writes the draft by hand. Both paths produce the same file.
 
 > **Reuse by escalation:** the live escalation from `/w:quick` (see [`../loops/quick-loop/LOOP.md`](../loops/quick-loop/LOOP.md) § *QUICK delta*) materializes its draft with **this same procedure** (same schema, same single-pass hard rule — **NO RESEARCH**, no reconnaissance: objective and context arrive adopted), with `## Origin` = "escalated from `/w:quick`" + the original prompt. The consent in the structured-choice equals invoking this command.

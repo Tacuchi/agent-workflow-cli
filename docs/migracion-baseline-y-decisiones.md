@@ -24,6 +24,34 @@ Esa línea **no se escribe a mano**. La sella la publicación: cuando `plan-new`
 está leyendo y lo estampa en los bytes que se aprueban. Vista previa, aprobación
 y escritura cubren la misma cosa.
 
+### Qué digiere el sello: el contenido funcional, no los bytes
+
+El sello **no** digiere el archivo entero. Digiere el **contenido funcional** de
+la spec: `## Requirement`, `## Scope`, `## Acceptance criteria`, `## Scenarios`,
+`## Behavioral changes` y `## Affected capabilities`, con los blancos
+normalizados y las casillas sin tildar.
+
+La consecuencia es la que importa: **una edición editorial de la spec ya no
+vuelve divergentes a sus planes.** Corregir un typo, completar `## Context`,
+sumar una entrada a `## Decisions`, reordenar secciones o tildar un criterio deja
+el plan alineado. Cambiar una palabra de `## Scope` sí lo vuelve divergente, que
+es lo que se quería medir desde el principio. Reordenar dos secciones no cuenta
+como cambio, pero **mover texto de una a otra sí**: el contenido se identifica
+por sección, así que sacar algo de `## Scope` y ponerlo en `## Context` es un
+cambio funcional y no un movimiento.
+
+**Los sellos anteriores siguen valiendo.** La alineación acepta el digest
+funcional **o** el byte-exacto que sellaron los planes previos a este cambio: un
+plan sellado antes sigue alineado mientras su spec no cambie, y no hay que
+resellar nada para eso. Lo que el tablero reporta es siempre el digest funcional,
+porque es el que una nota de decisión pinea; si reportara el otro, una nota recién
+publicada se leería como si decidiera sobre un contrato que ya no existe.
+
+Un payload funcional vacío —una spec sin ninguna de esas secciones, o con un
+fence sin cerrar que se traga el resto del documento— **degrada al digest
+byte-exacto**: un digest constante compartido por varias specs dejaría un plan
+alineado para siempre, que es peor que ser sensible a un cambio editorial.
+
 ### Matriz de baseline y ruta
 
 `unsealed` es un estado legítimo de un plan anterior al sello: no prueba
@@ -35,9 +63,10 @@ el plan está abierto o cerrado:
 | legacy `unsealed`, abierto | ejecutable en modo `compatible`; el aviso `SIN SELLO DE BASELINE` aparece sólo en el detalle | `/w:plan-exec <plan>` |
 | legacy `unsealed`, cerrado (`done`) | `historical`: conserva su evidencia y no crea deuda nueva | ninguno |
 | `aligned` | ejecución normal | `/w:plan-exec <plan>` |
-| `divergent` | la spec cambió desde el digest sellado; se entrega a refinamiento estructural | `/w:plan-refine <plan>` |
+| `divergent` | la spec cambió **funcionalmente** desde el digest sellado; se entrega a refinamiento estructural, o se re-sella si el plan sigue vigente tal cual | `/w:plan-refine <plan>` · `aw reseal prepare <plan>` |
 | `malformed` | bloqueo tipado `WORKLINE_BASELINE_MALFORMED` | `null` |
 | spec ausente (`unresolved`) | bloqueo tipado `WORKLINE_BASELINE_SPEC_ABSENT` | `null` |
+| `> Standalone:` (plan sin spec, nacido de la conversación) | modo propio `standalone`, **sin** aviso de sello ausente: es el modo, no un defecto | `/w:plan-exec <plan>` |
 
 Un legacy abierto no se presenta como alineado ni como derivado del contrato
 vigente: sólo puede continuar bajo compatibilidad. Un legacy cerrado es historia,
@@ -48,6 +77,33 @@ ausencia para tolerar.
 **No hay que sellar ni resellar nada retroactivamente.** El sello aparece sólo
 cuando `plan-new` o `plan-refine` publican nuevos bytes del plan; el CLI jamás
 fabrica un baseline para habilitar una corrida vieja.
+
+### `aw reseal`: cerrar una divergencia legítima sin rediseñar el plan
+
+Cuando la divergencia es real y el plan **sigue valiendo tal cual**, recorrer un
+`/w:plan-refine` completo sólo para que la publicación recalcule el sello es un
+precio absurdo — y hasta ahora era el único. Los dos comandos:
+
+```
+aw reseal prepare docs/plans/041-plan-<slug>.md      # read-only: sellado → vigente
+aw reseal apply   docs/plans/041-plan-<slug>.md --approval <digest>
+```
+
+`prepare` no escribe nada: muestra el digest sellado, el vigente y la línea exacta
+que va a quedar. `apply` **vuelve a preparar** sobre el árbol vivo y exige el
+digest que se mostró, así que un plan editado en el medio —o una publicación
+concurrente de `plan-exec`— se rechaza en vez de pisarse. La escritura es una sola
+línea; el resto del plan queda byte a byte igual.
+
+**Un re-sello es una afirmación humana**, no un arreglo automático: quien lo
+ejecuta declara «revisé el plan contra la spec vigente y sigue valiendo». Por eso
+la aprobación es explícita y el CLI nunca lo dispara solo. Si lo que cambió sí
+mueve el plan, la salida sigue siendo `/w:plan-refine`.
+
+Un plan cuya spec está declarada en `## Origin` en vez de en un `> Derived from`
+no se puede re-sellar todavía: el rechazo dice qué línea agregarle. Y un plan
+`> Standalone:` no sella baseline en absoluto, así que ahí no hay nada que
+re-sellar.
 
 ## 2. El gate de desviación dejó de ser doctrina y pasó a ser máquina
 
@@ -93,6 +149,15 @@ peor que no tener contrato.
 
 Una nota nunca se guarda dentro de su spec ni de su plan: eso cambiaría el digest
 del documento, y el contrato enmendado dejaría de ser el contrato que se enmendó.
+
+Una nota **direcciona** lo que enmienda con la gramática `S{NNN}/AC-nn`, y el CLI
+**deriva** ese id del rótulo `AC-nn` que el criterio lleva en el checklist de la
+spec más el número de su archivo. O sea que la forma legible que escribe la
+plantilla —`- [ ] AC-01: <resultado>`— ya es direccionable; una spec que escriba
+el id completo en la línea se lee igual, sin contarlo dos veces. Lo que no se
+puede enmendar es un criterio **sin rótulo**: ahí la nota se rechaza con
+`CONTRACT_ASSERTION_ABSENT` y la salida es rotularlo en la spec, no inventar una
+segunda forma de nombrarlo en la nota.
 
 **La cadena es append-only.** Corregir una nota es publicar otra que la sustituya
 por referencia; nunca reescribirla. Y el contrato efectivo se compone aplicando

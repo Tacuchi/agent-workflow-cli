@@ -103,7 +103,8 @@ status: ready-for-plan    ← stamped on Guardar (vocabulary: draft | refining |
 ## Behavioral changes     (opt. — behavior added / modified / removed / preserved; only
                            when existing behavior is touched — greenfield omits it)
 ## Scope                  (clear In / Out)
-## Acceptance criteria    (testable, - [ ]; EARS style; behavioral ones expand in ## Scenarios)
+## Acceptance criteria    (functional, observable, product-level; - [ ] AC-nn; EARS style;
+                           behavioral ones expand in ## Scenarios)
 ## Scenarios              (opt. — GIVEN/WHEN/THEN/AND blocks; each traces to ≥1 criterion.
                            Only when it adds GIVEN setup or edge semantics the criterion
                            does not capture — NEVER a 1:1 restatement of a criterion)
@@ -124,7 +125,7 @@ The choices a reader needs in order to interpret the contract, each with its why
 
 > **`## Open questions` carries destinations.** Each entry states why it is still open, whether it blocks `ready-for-plan`, and where it goes: `PLAN`, the user, later research, another spec. A question may survive convergence **only** if it does not force `PLAN` to invent behavior.
 
-> **Acceptance criteria = static testable criteria** (the "what"): plan-exec validates them, but progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]` in the spec; the spec never mutates by execution, only by a re-refine.
+> **Acceptance criteria = functional, observable outcomes at product level** (the "what"), each labeled `AC-nn` — the label is what makes it addressable: a decision note amends it as `S{NNN}/AC-nn`, with `S{NNN}` derived from the spec's file number (the full id spelled on the line reads the same, never twice). A note naming a criterion the spec does not state is refused (`CONTRACT_ASSERTION_ABSENT`). **The verification strategy — tests, evidence, commands — is the PLAN's** (its `## Validations`): here goes the outcome, there goes how it is proven. Progress is tracked in the PLAN (its Tasks), never by ticking these `- [ ]` in the spec; the spec never mutates by execution, only by a re-refine.
 
 ## Who decides what
 
@@ -139,7 +140,8 @@ The choices a reader needs in order to interpret the contract, each with its why
 | Vague requirement | the what/why is ambiguous | **human** | SPEC — blocking |
 | Blurry scope | `Out` missing, or In/Out overlap | **human** | SPEC — blocking |
 | Business rule undefined | which condition decides an outcome | **research** or **human** | SPEC — blocking |
-| Untestable criteria | acceptance not verifiable | **human** (derive + confirm — often as a `### Scenario`) | SPEC — blocking |
+| Unverifiable criterion | the outcome is not observable at product level | **human** (make the OUTCOME observable — often as a `### Scenario`) | SPEC — blocking |
+| Test-shaped criterion | the criterion prescribes evidence or test mechanics instead of an outcome | the AI proposes the functional rewrite + **human** confirms | SPEC (the mechanics travel to PLAN) |
 | Internal contradiction | sections contradict each other | **human** | SPEC — blocking |
 | Current behavior unknown | the baseline the change rests on is missing | **research** (inline) | SPEC → `Context` / `Behavioral changes` |
 | Incomplete context | systems/components unidentified | **research** | SPEC |
@@ -223,6 +225,8 @@ finalize:
 - **No blocking gaps** → **ready-for-plan gate** (read-only) = **`Success criteria` green** (*verification-first*; the SPEC instance of the chassis convergence gate). The checklist:
   - the requested outcome is understandable, the relevant current behavior is established, and the behavior change is described whenever existing behavior is touched;
   - `Scope` separates In from Out; every acceptance criterion traces to the `Requirement`; scenarios trace to ≥1 criterion and add GIVEN setup or edge semantics beyond it, without contradicting `Scope` (a 1:1 restatement is gold-plating: cut it);
+  - no criterion prescribes verification mechanics (test names, evidence, commands) or an internal mechanism: that travels to `PLAN` with its destination declared;
+  - every criterion carries its `AC-nn` label — what a decision note amends as `S{NNN}/AC-nn`; an unlabeled criterion is one no decision can address;
   - no material contradictions; the one-vs-many shape was validated at the *Change-shape gate*;
   - every **blocking** functional decision is resolved, and every remaining question carries its destination;
   - **Minimality** — no gold-plating: every criterion and scope item earns its place (chassis § *Minimality*); speculative scope is cut or deferred, and no technical solution was imposed that the requirement did not ask for;

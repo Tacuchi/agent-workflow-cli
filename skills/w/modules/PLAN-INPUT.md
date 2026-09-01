@@ -6,10 +6,10 @@ Loaded when the input is not plainly a `ready-for-plan` spec (signal `input`).
 
 1. **Ready spec** (`docs/specs/NNN-spec-<slug>.md`, `status: ready-for-plan`) → proceed.
 2. **Spec not ready** (`draft`, `refining`, or no mark) → **soft-suggest** `/w:spec-refine`, never a block. `PLAN` questions remain input here.
-3. **Prompt** (no spec) → propose and normally launch `/w:spec-new`, then continue.
+3. **Prompt** (no spec) → **two exits**: (a) **spec first** — propose and launch `/w:spec-new`; the default when the request reads as a product wish; (b) **standalone plan** — planned straight from the conversation, its header carrying `> Standalone: <origen> · sesión NNN-<slug>` instead of `> Derived from …`.
 4. **External plan** (host, hand-written, another agent) → **adopt once, NO RESEARCH** at `docs/plans/PPP-plan-<slug>.md`. Normalize only supplied material; set `## Origin` to "adopted from <source>" + host/model/date; offer `/w:plan-refine` or `/w:plan-exec`. A matching Origin resumes; never overwrite a plan-doc.
 
-> **Mode 3 vs 4:** a prompt that *describes a wish* → SPEC (mode 3); content that *already is a plan* → adopt (mode 4).
+> **Mode 3 vs 4:** a prompt that *describes a wish* → mode 3 (spec first, or a standalone plan when the conversation already settled the how); content that *already is a plan* → adopt (mode 4).
 
 > Adoption is CLI-owned: the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document.
 
@@ -23,7 +23,7 @@ Loaded when the input is not plainly a `ready-for-plan` spec (signal `input`).
 2. **No plan** → soft-suggest `/w:plan-new`; the user decides.
 3. **Returned by `plan-exec`** (unexecutable entry or structural deviation) → retain `validada` phases and redesign only pending work.
 
-> **Spec-less plans are legitimate input.** The coherence gate **degrades gracefully**: criteria trace to the plan's own Final behavior block instead of spec criteria, and the "spec criteria uncovered" gap does not apply.
+> **A spec-less plan is a FIRST-CLASS mode, not a defective plan** (`> Standalone:`, adopted or hand-written). Its contract is its own *Final behavior* block + `## Validations`, so the "spec criteria uncovered" gap does not apply. A marked plan seals no baseline and the board reports its own `standalone` mode, no unsealed notice: the mode here, not a defect. Its deviations register in the session's `DECISION.md` and the run continues — a contract note needs a spec.
 
 ## Numbering
 
